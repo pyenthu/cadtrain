@@ -1,0 +1,101 @@
+{
+  "tool_name": "One-Piece Extended Sealbore (HAL13307)",
+  "aspect_ratio": 8.5,
+  "sections": [
+    {
+      "name": "top_coupling",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "external_threads",
+        "chamfer"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "upper_body",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.25,
+      "features": [
+        "smooth_surface"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "sealbore_section",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.08,
+      "length": 0.35,
+      "features": [
+        "internal_seal_grooves",
+        "precision_bore"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "lower_body",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.2,
+      "features": [
+        "smooth_surface"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "bottom_coupling",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.08,
+      "features": [
+        "external_threads"
+      ],
+      "color": "red"
+    }
+  ],
+  "bore_profile": [
+    {
+      "section": "top_coupling",
+      "bore_diameter": 0.7,
+      "features": [
+        "chamfer_entry"
+      ]
+    },
+    {
+      "section": "upper_body",
+      "bore_diameter": 0.61,
+      "features": [
+        "smooth_transition"
+      ]
+    },
+    {
+      "section": "sealbore_section",
+      "bore_diameter": 0.69,
+      "features": [
+        "extended_sealbore",
+        "seal_grooves"
+      ]
+    },
+    {
+      "section": "lower_body",
+      "bore_diameter": 0.61,
+      "features": [
+        "smooth_transition"
+      ]
+    },
+    {
+      "section": "bottom_coupling",
+      "bore_diameter": 0.7,
+      "features": [
+        "chamfer_exit"
+      ]
+    }
+  ]
+}

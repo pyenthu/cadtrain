@@ -1,0 +1,142 @@
+[
+  {
+    "project": "bridge_plug",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-10T23:50:44.338987",
+    "original_image": "images/original.png",
+    "model_screenshot": null,
+    "user_feedback_raw": "Initial parametric model from VLM analysis. Tool: Cement Retainer. 8 sections identified.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Cement Retainer",
+        "aspect_ratio": 5.2,
+        "sections": [
+          {
+            "number": 1,
+            "name": "Upper Body",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.12,
+            "length": 0.15,
+            "features": [
+              "threads"
+            ],
+            "color": "red"
+          },
+          {
+            "number": 2,
+            "name": "Packer Element",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.08,
+            "length": 0.12,
+            "features": [
+              "rubber_element"
+            ],
+            "color": "hatched"
+          },
+          {
+            "number": 3,
+            "name": "Element Backup",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.12,
+            "length": 0.08,
+            "features": [
+              "grooves"
+            ],
+            "color": "red"
+          },
+          {
+            "number": 4,
+            "name": "Setting Cone",
+            "shape": "cone",
+            "od": 0.8,
+            "wall_thickness": 0.15,
+            "length": 0.1,
+            "features": [
+              "cone"
+            ],
+            "color": "grey"
+          },
+          {
+            "number": 5,
+            "name": "Slip Assembly",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.1,
+            "length": 0.12,
+            "features": [
+              "slips"
+            ],
+            "color": "grey"
+          },
+          {
+            "number": 6,
+            "name": "Body Section",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.12,
+            "length": 0.15,
+            "features": [
+              "threads"
+            ],
+            "color": "red"
+          },
+          {
+            "number": 7,
+            "name": "Valve Housing",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.1,
+            "length": 0.18,
+            "features": [
+              "valve_ports"
+            ],
+            "color": "red"
+          },
+          {
+            "number": 8,
+            "name": "Lower Cone",
+            "shape": "cone",
+            "od": 0.75,
+            "wall_thickness": 0.12,
+            "length": 0.1,
+            "features": [
+              "cone"
+            ],
+            "color": "red"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "diameter": 0.6
+          },
+          {
+            "position": 0.15,
+            "diameter": 0.6
+          },
+          {
+            "position": 0.35,
+            "diameter": 0.5
+          },
+          {
+            "position": 0.55,
+            "diameter": 0.55
+          },
+          {
+            "position": 0.75,
+            "diameter": 0.6
+          },
+          {
+            "position": 1.0,
+            "diameter": 0.5
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]

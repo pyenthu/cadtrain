@@ -1,0 +1,97 @@
+{
+  "tool_name": "Bottom Sub (HAL10408)",
+  "aspect_ratio": 5.5,
+  "sections": [
+    {
+      "name": "flat_top",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.1,
+      "length": 0.03,
+      "features": [],
+      "color": "red"
+    },
+    {
+      "name": "taper",
+      "shape": "cone",
+      "od": 0.87,
+      "od_bottom": 1.0,
+      "wall_thickness": 0.1,
+      "length": 0.06,
+      "features": [],
+      "color": "red"
+    },
+    {
+      "name": "body",
+      "shape": "cylinder",
+      "od": 0.87,
+      "wall_thickness": 0.1,
+      "length": 0.18,
+      "features": [],
+      "color": "red"
+    },
+    {
+      "name": "slips",
+      "shape": "cylinder",
+      "od": 1.08,
+      "wall_thickness": 0.15,
+      "length": 0.17,
+      "features": [
+        "grooves"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "shoulder",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.12,
+      "length": 0.02,
+      "features": [],
+      "color": "red"
+    },
+    {
+      "name": "box_end",
+      "shape": "cylinder",
+      "od": 1.17,
+      "wall_thickness": 0.3,
+      "length": 0.4,
+      "features": [
+        "threads"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "bottom_taper",
+      "shape": "cone",
+      "od": 1.17,
+      "od_bottom": 0.92,
+      "wall_thickness": 0.2,
+      "length": 0.05,
+      "features": [],
+      "color": "red"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "inner_diameter": 0.67
+    },
+    {
+      "position": 0.5,
+      "inner_diameter": 0.67
+    },
+    {
+      "position": 0.55,
+      "inner_diameter": 0.54
+    },
+    {
+      "position": 0.95,
+      "inner_diameter": 0.54
+    },
+    {
+      "position": 1.0,
+      "inner_diameter": 0.75
+    }
+  ]
+}

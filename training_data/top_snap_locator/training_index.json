@@ -1,0 +1,85 @@
+[
+  {
+    "project": "top_snap_locator",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-10T23:50:44.338688",
+    "original_image": "images/original.png",
+    "model_screenshot": null,
+    "user_feedback_raw": "Initial parametric model from VLM analysis. Tool: Top Snap Locator. 5 sections identified.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Top Snap Locator",
+        "aspect_ratio": 4.0,
+        "sections": [
+          {
+            "name": "upper_body",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.6,
+            "features": [
+              "smooth_exterior"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "shoulder_transition",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.15,
+            "length": 0.05,
+            "features": [
+              "shoulder"
+            ],
+            "color": "grey"
+          },
+          {
+            "name": "middle_section",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.15,
+            "length": 0.15,
+            "features": [
+              "circumferential_groove"
+            ],
+            "color": "grey"
+          },
+          {
+            "name": "lower_shoulder",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.15,
+            "length": 0.05,
+            "features": [
+              "shoulder"
+            ],
+            "color": "grey"
+          },
+          {
+            "name": "bottom_section",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.15,
+            "length": 0.15,
+            "features": [
+              "smooth_exterior"
+            ],
+            "color": "grey"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "diameter": 0.7
+          },
+          {
+            "position": 1.0,
+            "diameter": 0.55
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]
