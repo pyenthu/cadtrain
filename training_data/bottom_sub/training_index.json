@@ -1,0 +1,292 @@
+[
+  {
+    "project": "bottom_sub",
+    "iteration": 1,
+    "timestamp": "2026-04-10T22:11:07.691982",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "Start with simple shell cylinder. Need hollow tube with bore.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "body",
+        "property": "type",
+        "from": "solid",
+        "to": "hollow_tube",
+        "reason": "bottom sub is a tube not solid cylinder"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 2,
+    "timestamp": "2026-04-10T22:11:07.692762",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "Top section needs taper widening at top, short flat section above. Bottom needs inward taper. Slips are separate segmented rings mounted on body, not grooves cut into body.",
+    "corrections": [
+      {
+        "category": "COMPONENT",
+        "target": "slips",
+        "property": "type",
+        "from": "grooves_on_body",
+        "to": "separate_segmented_ring",
+        "reason": "slips are separate components"
+      },
+      {
+        "category": "GEOMETRY",
+        "target": "top",
+        "property": "shape",
+        "from": "straight",
+        "to": "taper_then_flat",
+        "reason": "taper widens then flat section"
+      },
+      {
+        "category": "GEOMETRY",
+        "target": "bottom",
+        "property": "shape",
+        "from": "straight",
+        "to": "inward_taper",
+        "reason": "bottom tapers inward"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 3,
+    "timestamp": "2026-04-10T22:11:07.692906",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "MeshPhysicalMaterial washes out on Mac GPU. Use MeshPhongMaterial with specular+shininess instead. Need DoubleSide for cross-section faces.",
+    "corrections": [
+      {
+        "category": "MATERIAL",
+        "target": "all",
+        "property": "type",
+        "from": "MeshPhysicalMaterial",
+        "to": "MeshPhongMaterial",
+        "reason": "PhysicalMaterial env map causes washout on Mac"
+      },
+      {
+        "category": "MATERIAL",
+        "target": "all",
+        "property": "shininess",
+        "from": "N/A",
+        "to": "200-300",
+        "reason": "high shininess for metallic look"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 4,
+    "timestamp": "2026-04-10T22:11:07.693028",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "Red is like paint on outside only. Grey for bore walls, cut faces, inner surfaces, sleeve. Use vertex colors per-face based on radial normal direction.",
+    "corrections": [
+      {
+        "category": "MATERIAL",
+        "target": "housing",
+        "property": "coloring",
+        "from": "single_color",
+        "to": "vertex_colors_per_face",
+        "reason": "red=outer, grey=bore/cut/inner"
+      },
+      {
+        "category": "MATERIAL",
+        "target": "cut_detection",
+        "property": "method",
+        "from": "backface",
+        "to": "radial_normal_check",
+        "reason": "check if normal points outward=red, inward=grey"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 5,
+    "timestamp": "2026-04-10T22:11:07.693152",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "CSG cutaway with cube gives solid cross-section faces. Keep 3 components separate (Housing, Slips, Sleeve) for independent materials and visibility toggle.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "assembly",
+        "property": "structure",
+        "from": "single_fused_mesh",
+        "to": "3_separate_components",
+        "reason": "independent materials, visibility, exploded view"
+      },
+      {
+        "category": "VIEW",
+        "target": "cutaway",
+        "property": "method",
+        "from": "clipping_planes",
+        "to": "CSG_subtract_cube",
+        "reason": "solid cut faces instead of hollow"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 6,
+    "timestamp": "2026-04-10T22:11:07.693348",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "ManifoldCAD in browser via WASM for live parametric rebuilds. Use $derived(JSON.stringify(params)) for deep reactivity. {#key geoVersion} to sync Edges with geometry.",
+    "corrections": [
+      {
+        "category": "COMPONENT",
+        "target": "builder",
+        "property": "location",
+        "from": "build_time_bun",
+        "to": "browser_wasm",
+        "reason": "live parametric adjustment"
+      },
+      {
+        "category": "LAYOUT",
+        "target": "reactivity",
+        "property": "method",
+        "from": "$effect_on_params",
+        "to": "JSON.stringify_derived_key",
+        "reason": "Svelte5 doesn't deep-track nested objects"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 7,
+    "timestamp": "2026-04-10T22:11:07.693555",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "Custom SVTC-style sidebar instead of tweakpane. Collapsible folders with checkbox+color dot for component visibility. Range slider + number input for each param.",
+    "corrections": [
+      {
+        "category": "LAYOUT",
+        "target": "panel",
+        "property": "type",
+        "from": "tweakpane",
+        "to": "custom_svelte_sidebar",
+        "reason": "matches SVTC repo pattern, more control"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 8,
+    "timestamp": "2026-04-10T22:11:07.693765",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "Labels should be offset in Y direction (not X) with x=0, pointing from cut face side. Use Threlte HTML component with leader lines from 3D anchor to label position.",
+    "corrections": [
+      {
+        "category": "LAYOUT",
+        "target": "labels",
+        "property": "direction",
+        "from": "x_offset",
+        "to": "y_offset_x0",
+        "reason": "labels on cut face side"
+      },
+      {
+        "category": "LAYOUT",
+        "target": "labels",
+        "property": "attachment",
+        "from": "on_model",
+        "to": "offset_with_leader_line",
+        "reason": "arrows from dot on model to label text"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 9,
+    "timestamp": "2026-04-10T22:11:07.693984",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "Camera convention: Z-down (tool axis), X-right, Y-into screen. Camera at [5, 0.9, 0], orthographic, zoom ~46. Point lights work better than directional on this geometry.",
+    "corrections": [
+      {
+        "category": "VIEW",
+        "target": "camera",
+        "property": "position",
+        "from": "various",
+        "to": "[5, 0.9, 0]",
+        "reason": "good default viewing angle"
+      },
+      {
+        "category": "VIEW",
+        "target": "camera",
+        "property": "convention",
+        "from": "Y-up",
+        "to": "Z-down",
+        "reason": "matches drilling convention"
+      },
+      {
+        "category": "MATERIAL",
+        "target": "lights",
+        "property": "type",
+        "from": "directional",
+        "to": "point_lights",
+        "reason": "better specular highlights on cylindrical geometry"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 10,
+    "timestamp": "2026-04-10T22:11:07.694202",
+    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "model_screenshot": null,
+    "result_screenshot": null,
+    "user_feedback_raw": "toNonIndexed() + computeVertexNormals() fixes triangle artifacts at bore edges. 128 circular segments for smooth curves. Remove bottom neck - not in original.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "mesh",
+        "property": "normals",
+        "from": "indexed_shared",
+        "to": "non_indexed_per_face",
+        "reason": "fixes jagged edges at bore opening"
+      },
+      {
+        "category": "GEOMETRY",
+        "target": "segments",
+        "property": "count",
+        "from": "64",
+        "to": "128",
+        "reason": "smoother curves"
+      }
+    ],
+    "code_changes": [],
+    "vlm_suggestions": []
+  }
+]

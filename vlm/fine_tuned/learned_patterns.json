@@ -1,0 +1,344 @@
+[
+  {
+    "category": "GEOMETRY",
+    "target": "body",
+    "property": "type",
+    "typical_from": "solid",
+    "typical_to": "hollow_tube",
+    "reason": "bottom sub is a tube not solid cylinder",
+    "occurrences": 1
+  },
+  {
+    "category": "COMPONENT",
+    "target": "slips",
+    "property": "type",
+    "typical_from": "grooves_on_body",
+    "typical_to": "separate_segmented_ring",
+    "reason": "slips are separate components",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "top",
+    "property": "shape",
+    "typical_from": "straight",
+    "typical_to": "taper_then_flat",
+    "reason": "taper widens then flat section",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "bottom",
+    "property": "shape",
+    "typical_from": "straight",
+    "typical_to": "inward_taper",
+    "reason": "bottom tapers inward",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "all",
+    "property": "type",
+    "typical_from": "MeshPhysicalMaterial",
+    "typical_to": "MeshPhongMaterial",
+    "reason": "PhysicalMaterial env map causes washout on Mac",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "all",
+    "property": "shininess",
+    "typical_from": "N/A",
+    "typical_to": "200-300",
+    "reason": "high shininess for metallic look",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "housing",
+    "property": "coloring",
+    "typical_from": "single_color",
+    "typical_to": "vertex_colors_per_face",
+    "reason": "red=outer, grey=bore/cut/inner",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "cut_detection",
+    "property": "method",
+    "typical_from": "backface",
+    "typical_to": "radial_normal_check",
+    "reason": "check if normal points outward=red, inward=grey",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "assembly",
+    "property": "structure",
+    "typical_from": "single_fused_mesh",
+    "typical_to": "3_separate_components",
+    "reason": "independent materials, visibility, exploded view",
+    "occurrences": 1
+  },
+  {
+    "category": "VIEW",
+    "target": "cutaway",
+    "property": "method",
+    "typical_from": "clipping_planes",
+    "typical_to": "CSG_subtract_cube",
+    "reason": "solid cut faces instead of hollow",
+    "occurrences": 1
+  },
+  {
+    "category": "COMPONENT",
+    "target": "builder",
+    "property": "location",
+    "typical_from": "build_time_bun",
+    "typical_to": "browser_wasm",
+    "reason": "live parametric adjustment",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "reactivity",
+    "property": "method",
+    "typical_from": "$effect_on_params",
+    "typical_to": "JSON.stringify_derived_key",
+    "reason": "Svelte5 doesn't deep-track nested objects",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "panel",
+    "property": "type",
+    "typical_from": "tweakpane",
+    "typical_to": "custom_svelte_sidebar",
+    "reason": "matches SVTC repo pattern, more control",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "labels",
+    "property": "direction",
+    "typical_from": "x_offset",
+    "typical_to": "y_offset_x0",
+    "reason": "labels on cut face side",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "labels",
+    "property": "attachment",
+    "typical_from": "on_model",
+    "typical_to": "offset_with_leader_line",
+    "reason": "arrows from dot on model to label text",
+    "occurrences": 1
+  },
+  {
+    "category": "VIEW",
+    "target": "camera",
+    "property": "position",
+    "typical_from": "various",
+    "typical_to": "[5, 0.9, 0]",
+    "reason": "good default viewing angle",
+    "occurrences": 1
+  },
+  {
+    "category": "VIEW",
+    "target": "camera",
+    "property": "convention",
+    "typical_from": "Y-up",
+    "typical_to": "Z-down",
+    "reason": "matches drilling convention",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "lights",
+    "property": "type",
+    "typical_from": "directional",
+    "typical_to": "point_lights",
+    "reason": "better specular highlights on cylindrical geometry",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "mesh",
+    "property": "normals",
+    "typical_from": "indexed_shared",
+    "typical_to": "non_indexed_per_face",
+    "reason": "fixes jagged edges at bore opening",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "segments",
+    "property": "count",
+    "typical_from": "64",
+    "typical_to": "128",
+    "reason": "smoother curves",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "body",
+    "property": "opacity",
+    "typical_from": "0.3-0.45",
+    "typical_to": "1.0",
+    "reason": "housing looked see-through",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "body",
+    "property": "color",
+    "typical_from": "#8899aa",
+    "typical_to": "#cc2222",
+    "reason": "should match red catalog drawing",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "bore",
+    "property": "color",
+    "typical_from": "#0a0a0a",
+    "typical_to": "#999999",
+    "reason": "inner bore should be grey metallic",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "background",
+    "property": "color",
+    "typical_from": "#1a1a2e",
+    "typical_to": "#ffffff",
+    "reason": "white background for comparison",
+    "occurrences": 1
+  },
+  {
+    "category": "PROPORTION",
+    "target": "all_components",
+    "property": "rOuter",
+    "typical_from": "0.25-0.6",
+    "typical_to": "0.1-0.22",
+    "reason": "too wide compared to original",
+    "occurrences": 1
+  },
+  {
+    "category": "PROPORTION",
+    "target": "mandrels",
+    "property": "height",
+    "typical_from": "0.8",
+    "typical_to": "2.5",
+    "reason": "mandrels should be longer",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "element_package",
+    "property": "taper",
+    "typical_from": "abrupt",
+    "typical_to": "gradual_cone",
+    "reason": "original shows gradual taper",
+    "occurrences": 1
+  },
+  {
+    "category": "VIEW",
+    "target": "camera",
+    "property": "type",
+    "typical_from": "perspective",
+    "typical_to": "orthographic",
+    "reason": "flat 2D-like view for comparison",
+    "occurrences": 1
+  },
+  {
+    "category": "VIEW",
+    "target": "clipping",
+    "property": "planes",
+    "typical_from": "none",
+    "typical_to": "quad_cut_90deg",
+    "reason": "show internal bore structure",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "ui",
+    "property": "visible",
+    "typical_from": "true",
+    "typical_to": "false",
+    "reason": "clean view for comparison",
+    "occurrences": 1
+  },
+  {
+    "category": "PROPORTION",
+    "target": "packer_group",
+    "property": "scale_y",
+    "typical_from": "1.0",
+    "typical_to": "0.5",
+    "reason": "too tall compared to original",
+    "occurrences": 1
+  },
+  {
+    "category": "PROPORTION",
+    "target": "packer_group",
+    "property": "scale_xz",
+    "typical_from": "3.0",
+    "typical_to": "6.0",
+    "reason": "diameter needs to be wider",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "compare_page",
+    "property": "panels",
+    "typical_from": "3",
+    "typical_to": "4",
+    "reason": "separate panel for component details",
+    "occurrences": 1
+  },
+  {
+    "category": "LAYOUT",
+    "target": "labels",
+    "property": "position",
+    "typical_from": "overlay",
+    "typical_to": "top_bar",
+    "reason": "cleaner label placement",
+    "occurrences": 1
+  },
+  {
+    "category": "COMPONENT",
+    "target": "upper_mandrel",
+    "property": "type",
+    "typical_from": "solid_mandrel",
+    "typical_to": "hollow_threaded_shell",
+    "reason": "this is a bottom sub connection, not a solid mandrel",
+    "occurrences": 1
+  },
+  {
+    "category": "GEOMETRY",
+    "target": "upper_shell",
+    "property": "wall_thickness",
+    "typical_from": "solid",
+    "typical_to": "thin_wall (rOuter=0.13, rInner=0.10)",
+    "reason": "hollow cylindrical shell",
+    "occurrences": 1
+  },
+  {
+    "category": "COMPONENT",
+    "target": "upper_shell",
+    "property": "internal_feature",
+    "typical_from": "none",
+    "typical_to": "tapered_thread",
+    "reason": "thread for sub connection",
+    "occurrences": 1
+  },
+  {
+    "category": "MATERIAL",
+    "target": "thread_rendering",
+    "property": "approach",
+    "typical_from": "512_box_ridges",
+    "typical_to": "simpler",
+    "reason": "too many small geometries, need simpler thread representation",
+    "occurrences": 1
+  }
+]

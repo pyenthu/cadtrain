@@ -1,0 +1,23 @@
+{
+  "name": "manifold",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@types/bun": "latest",
+    "vite": "^8.0.8"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@threlte/core": "^8.5.9",
+    "@threlte/extras": "^9.14.5",
+    "manifold-3d": "^3.4.1",
+    "playwright": "^1.59.1",
+    "svelte": "^5.55.2",
+    "svelte-tweakpane-ui": "^1.5.16",
+    "three": "^0.183.2"
+  }
+}
