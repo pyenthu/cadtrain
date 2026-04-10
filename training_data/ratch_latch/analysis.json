@@ -1,0 +1,224 @@
+{
+  "sections": [
+    {
+      "name": "TWS Packer and Accessories (90 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 0.673,
+      "wall_thickness": 0.164,
+      "length_proportion": 0.8,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "TWS Receptive Seal (125 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 0.673,
+      "wall_thickness": 0.164,
+      "length_proportion": 0.8,
+      "features": [
+        "seal_interface"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "Setting Sleeve",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 1.0,
+      "wall_thickness": 0,
+      "length_proportion": 0.2,
+      "features": [],
+      "color": "grey"
+    },
+    {
+      "name": "Connection Blank Head",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.238,
+      "length_proportion": 0.19,
+      "features": [
+        "blank_connection"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "Ratch-Latch",
+      "shape": "cylinder",
+      "outer_diameter": 0.8,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.138,
+      "length_proportion": 0.4,
+      "features": [
+        "latch_mechanism"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "Ratch-Latch (125 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 0.8,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.138,
+      "features": [
+        "latch_mechanism"
+      ],
+      "length_proportion": 0.4,
+      "color": "red"
+    },
+    {
+      "name": "Ratch-Latch Premium",
+      "shape": "cylinder",
+      "outer_diameter": 0.8,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.138,
+      "length_proportion": 0.4,
+      "features": [
+        "premium_latch"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "Ratch-Latch (125 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 0.8,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.138,
+      "length_proportion": 0.4,
+      "features": [
+        "latch_mechanism"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "HRN Seal (90 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 0.687,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.081,
+      "length_proportion": 0.44,
+      "features": [
+        "seal_element"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "HRN Seal Unit (125 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 0.687,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.081,
+      "length_proportion": 0.48,
+      "features": [
+        "seal_unit"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "RTR Seal (90 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 0.679,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.077,
+      "length_proportion": 0.48,
+      "features": [
+        "retrievable_seal"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "RTR Seal (125 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 0.679,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.077,
+      "length_proportion": 0.48,
+      "features": [
+        "retrievable_seal"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "AP-LSA\u00ae/HEng",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 1.0,
+      "wall_thickness": 0,
+      "length_proportion": 0.2,
+      "features": [
+        "special_connection"
+      ],
+      "color": "grey"
+    },
+    {
+      "name": "Wireline Adaptor",
+      "shape": "cylinder",
+      "outer_diameter": 0.648,
+      "inner_diameter": 0.525,
+      "wall_thickness": 0.062,
+      "length_proportion": 0.11,
+      "features": [
+        "wireline_interface"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "O&A (90 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 0.462,
+      "wall_thickness": 0.269,
+      "length_proportion": 0.85,
+      "features": [
+        "blanked"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "O&A (110 kit)",
+      "shape": "cylinder",
+      "outer_diameter": 1.0,
+      "inner_diameter": 0.462,
+      "wall_thickness": 0.269,
+      "length_proportion": 0.85,
+      "features": [
+        "blanked"
+      ],
+      "color": "red"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "inner_diameter": 0.673
+    },
+    {
+      "position": 0.1,
+      "inner_diameter": 0.673
+    },
+    {
+      "position": 0.15,
+      "inner_diameter": 1.0
+    },
+    {
+      "position": 0.17,
+      "inner_diameter": 0.525
+    },
+    {
+      "position": 0.85,
+      "inner_diameter": 0.525
+    },
+    {
+      "position": 0.9,
+      "inner_diameter": 0.462
+    },
+    {
+      "position": 1.0,
+      "inner_diameter": 0.462
+    }
+  ]
+}
