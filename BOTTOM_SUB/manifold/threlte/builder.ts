@@ -5,7 +5,7 @@
 
 import Module from 'manifold-3d';
 import * as THREE from 'three';
-import type { AssemblyParams } from '../assembly';
+import { deriveHousing, type AssemblyParams } from '../assembly';
 
 let wasm: any = null;
 let M: any = null;
@@ -117,6 +117,7 @@ export function buildGeometry(params: AssemblyParams): BuildResult {
   const h = params.housing;
   const s = params.sleeve;
   const sl = params.slips;
+  const { bodyID, lowerID } = deriveHousing(h);
 
   // Housing solid
   let solid = cyl(h.bodyLength, h.bodyOD / 2);
@@ -126,41 +127,54 @@ export function buildGeometry(params: AssemblyParams): BuildResult {
   solid = solid.add(mv(cyl(h.bottomTaperH, h.bottomNeckOD / 2, h.lowerOD / 2), [0, 0, -h.lowerLength - h.bottomTaperH]));
 
   // Bore
-  let bore = mv(cyl(h.bodyLength + h.taperLength + h.flatTopLength + 0.5, h.bodyID / 2), [0, 0, -0.1]);
-  bore = bore.add(mv(cyl(h.lowerLength + 0.1, h.lowerID / 2), [0, 0, -h.lowerLength - 0.1]));
-  bore = bore.add(mv(cyl(h.bottomTaperH + 0.1, h.bottomBoreID / 2), [0, 0, -h.lowerLength - h.bottomTaperH - 0.05]));
+  let bore = mv(cyl(h.bodyLength + h.taperLength + h.flatTopLength + 0.5, bodyID / 2), [0, 0, -0.1]);
+  bore = bore.add(mv(cyl(h.lowerLength + 0.1, lowerID / 2), [0, 0, -h.lowerLength - 0.1]));
+  // Internal taper at bottom — bore widens outward from bottomBoreID to lowerID
+  bore = bore.add(mv(cyl(h.bottomTaperH + 0.1, h.bottomBoreID / 2, lowerID / 2), [0, 0, -h.lowerLength - h.bottomTaperH - 0.05]));
 
   let housing = solid.subtract(bore);
 
   // Threads
   for (let i = 0; i < h.numThreads; i++) {
     const tz = -h.lowerLength + h.lowerLength * (i + 0.5) / (h.numThreads + 1);
-    housing = housing.subtract(mv(tube(h.lowerID / 2 + h.threadDepth, h.lowerID / 2 - 0.01, 0.06), [0, 0, tz]));
+    housing = housing.subtract(mv(tube(lowerID / 2 + h.threadDepth, lowerID / 2 - 0.01, 0.06), [0, 0, tz]));
   }
 
   // Pins
   for (let i = 0; i < s.numPins; i++) {
     const pinZ = h.bodyLength * 0.3 + i * s.pinSpacing;
     let pin = rot(cyl(s.pinLength, s.pinRadius), [90, 0, 0]);
-    housing = housing.add(mv(pin, [0, -(h.bodyID / 2 + s.pinLength / 2 - 0.1), pinZ]));
+    housing = housing.add(mv(pin, [0, -(bodyID / 2 + s.pinLength / 2 - 0.1), pinZ]));
     let pin2 = rot(cyl(s.pinLength, s.pinRadius), [90, 0, 0]);
-    housing = housing.add(mv(pin2, [0, (h.bodyID / 2 - s.pinLength / 2 + 0.1), pinZ]));
+    housing = housing.add(mv(pin2, [0, (bodyID / 2 - s.pinLength / 2 + 0.1), pinZ]));
   }
 
-  // Slips — straight body, each groove has sawtooth/tapered profile
+  // Slips — grooved upper portion + smaller-diameter smooth band at bottom
   const slipR = sl.slipOD / 2;
+  const smoothBandR = slipR - sl.grooveDepth * 1.5; // smooth band is narrower than grooved OD
+  // Build upper grooved section at full OD, lower smooth band at reduced OD
   let slipRing = tube(slipR, h.bodyOD / 2, sl.slipHeight);
+  // Trim the smooth band at bottom to smaller OD
+  const smoothBand = sl.slipHeight * 0.1;
+  const trimRing = tube(slipR + 0.01, smoothBandR, smoothBand + 0.01);
+  slipRing = slipRing.subtract(mv(trimRing, [0, 0, -0.005]));
+  // Inner taper at top of slips — small flare to fit around body taper
+  const taperFitH = sl.slipHeight * 0.15;
+  const taperOverlap = Math.max(0, (sl.slipOffset + sl.slipHeight) - h.bodyLength);
+  const bodyODatTop = h.bodyOD + (h.taperTopOD - h.bodyOD) * Math.min(taperOverlap / h.taperLength, 1);
+  const taperFitCone = mv(cyl(taperFitH + 0.01, bodyODatTop / 2, h.bodyOD / 2), [0, 0, sl.slipHeight - taperFitH]);
+  slipRing = slipRing.subtract(taperFitCone);
+
   // Cut sector gaps
   for (let i = 0; i < sl.numSectors; i++) {
     const gap = mv(rot(cube(sl.slipOD + 1, sl.gapWidth, sl.slipHeight + 1, true), [0, 0, i * (360 / sl.numSectors)]), [0, 0, sl.slipHeight / 2]);
     slipRing = slipRing.subtract(gap);
   }
-  // Cut grooves — sawtooth on the OUTER surface
-  // Each tooth: sharp edge at one end, ramps outward to full OD at the other end
-  // We subtract a tapered ring from the outside
-  const grooveH = sl.slipHeight / sl.numGrooves;
+  // Cut grooves — sawtooth on the OUTER surface (above smooth band)
+  const groovedHeight = sl.slipHeight - smoothBand;
+  const grooveH = groovedHeight / sl.numGrooves;
   for (let i = 0; i < sl.numGrooves; i++) {
-    const gz = grooveH * i;
+    const gz = smoothBand + grooveH * i;
     // Big cylinder that covers outside, tapered to cut a ramp into the outer surface
     // taperDirection: 1 = sharp edge at bottom of each tooth (ramp up)
     const cutOuterR = slipR + 0.5; // bigger than slip to ensure full cut

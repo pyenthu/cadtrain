@@ -13,8 +13,7 @@
 export interface HousingParams {
   // Upper body
   bodyOD: number;         // outer diameter of upper body
-  bodyWall: number;       // wall thickness → bodyID = bodyOD - 2*bodyWall (derived)
-  bodyID: number;         // inner diameter (bore) — DERIVED, do not set directly
+  bodyWall: number;       // wall thickness → bodyID = bodyOD - 2*bodyWall
   bodyLength: number;     // length of straight section
 
   // Top taper (widens at top)
@@ -24,8 +23,7 @@ export interface HousingParams {
 
   // Lower box end
   lowerOD: number;        // outer diameter of box end
-  lowerWall: number;      // wall thickness → lowerID = lowerOD - 2*lowerWall (derived)
-  lowerID: number;        // bore of box end — DERIVED
+  lowerWall: number;      // wall thickness → lowerID = lowerOD - 2*lowerWall
   lowerLength: number;    // length of box end
 
   // Bottom profile
@@ -37,6 +35,14 @@ export interface HousingParams {
   // Internal threads
   numThreads: number;     // number of thread grooves in box end
   threadDepth: number;    // depth of thread grooves
+}
+
+/** Derive computed IDs from wall thickness */
+export function deriveHousing(h: HousingParams) {
+  return {
+    bodyID: h.bodyOD - 2 * h.bodyWall,
+    lowerID: h.lowerOD - 2 * h.lowerWall,
+  };
 }
 
 export interface SleeveParams {
@@ -73,29 +79,27 @@ export interface AssemblyParams {
 // Default parameters matching the original HAL10408 drawing
 export const DEFAULT_PARAMS: AssemblyParams = {
   housing: {
-    bodyOD: 2.0,
-    bodyWall: 0.4,
-    bodyID: 1.2,
-    bodyLength: 3.5,
-    taperTopOD: 2.5,
-    taperLength: 0.4,
-    flatTopLength: 0.15,
-    lowerOD: 3.0,
-    lowerWall: 0.5,
-    lowerID: 2.0,
-    lowerLength: 2.5,
+    bodyOD: 2.1,
+    bodyWall: 0.25,
+    bodyLength: 2.3,
+    taperTopOD: 2.9,
+    taperLength: 0.8,
+    flatTopLength: 0.4,
+    lowerOD: 2.8,
+    lowerWall: 0.75,
+    lowerLength: 2.1,
     bottomNeckOD: 2.2,
-    bottomTaperH: 0.4,
+    bottomTaperH: 0.55,
     bottomNeckH: 0.6,
-    bottomBoreID: 1.2,
+    bottomBoreID: 1.8,
     numThreads: 2,
     threadDepth: 0.08,
   },
   sleeve: {
-    sleeveOD: 1.4,
-    sleeveID: 1.0,
-    sleeveLength: 2.5,  // ~60% of body + taper
-    sleeveOffset: -0.3,
+    sleeveOD: 1.5,
+    sleeveID: 1.1,
+    sleeveLength: 4.1,
+    sleeveOffset: -0.1,
     numPins: 2,
     pinRadius: 0.08,
     pinLength: 0.4,
@@ -103,14 +107,14 @@ export const DEFAULT_PARAMS: AssemblyParams = {
   },
   slips: {
     slipOD: 2.6,
-    slipHeight: 2.0,
-    slipOffset: 0.6,
+    slipHeight: 2.6,
+    slipOffset: 0.1,
     numSectors: 4,
     gapWidth: 0.1,
     numGrooves: 14,
-    grooveDepth: 0.06,
+    grooveDepth: 0.08,
     taperDirection: -1,
-    taperAmount: 0.3,    // OD reduces by 0.3 from top to bottom
+    taperAmount: 0.3,
   },
 };
 
@@ -118,13 +122,13 @@ export const DEFAULT_PARAMS: AssemblyParams = {
 export const PARAM_LABELS: Record<string, Record<string, string>> = {
   housing: {
     bodyOD: "Body OD",
-    bodyID: "Body ID (bore)",
+    bodyWall: "Body Wall",
     bodyLength: "Body Length",
     taperTopOD: "Top Taper OD",
     taperLength: "Taper Length",
     flatTopLength: "Flat Top Length",
     lowerOD: "Box End OD",
-    lowerID: "Box End ID",
+    lowerWall: "Box End Wall",
     lowerLength: "Box End Length",
     bottomNeckOD: "Bottom Neck OD",
     bottomTaperH: "Bottom Taper Height",

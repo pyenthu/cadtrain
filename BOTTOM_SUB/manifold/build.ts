@@ -4,7 +4,7 @@
  */
 
 import Module from "manifold-3d";
-import { DEFAULT_PARAMS, type AssemblyParams } from "./assembly";
+import { DEFAULT_PARAMS, deriveHousing, type AssemblyParams } from "./assembly";
 
 const wasm = await Module();
 wasm.setup();
@@ -21,6 +21,7 @@ export function buildAssembly(params: AssemblyParams = DEFAULT_PARAMS) {
   const h = params.housing;
   const s = params.sleeve;
   const sl = params.slips;
+  const { bodyID, lowerID } = deriveHousing(h);
 
   console.log("Building with params:", JSON.stringify(params, null, 2).slice(0, 200) + "...");
 
@@ -32,9 +33,10 @@ export function buildAssembly(params: AssemblyParams = DEFAULT_PARAMS) {
   solid = solid.add(mv(cyl(h.bottomTaperH, h.bottomNeckOD / 2, h.lowerOD / 2), [0, 0, -h.lowerLength - h.bottomTaperH]));
 
   // Bore
-  let bore = mv(cyl(h.bodyLength + h.taperLength + h.flatTopLength + 0.5, h.bodyID / 2), [0, 0, -0.1]);
-  bore = bore.add(mv(cyl(h.lowerLength + 0.1, h.lowerID / 2), [0, 0, -h.lowerLength - 0.1]));
-  bore = bore.add(mv(cyl(h.bottomTaperH + 0.1, h.bottomBoreID / 2), [0, 0, -h.lowerLength - h.bottomTaperH - 0.05]));
+  let bore = mv(cyl(h.bodyLength + h.taperLength + h.flatTopLength + 0.5, bodyID / 2), [0, 0, -0.1]);
+  bore = bore.add(mv(cyl(h.lowerLength + 0.1, lowerID / 2), [0, 0, -h.lowerLength - 0.1]));
+  // Internal taper at bottom — bore widens outward from bottomBoreID to lowerID
+  bore = bore.add(mv(cyl(h.bottomTaperH + 0.1, h.bottomBoreID / 2, lowerID / 2), [0, 0, -h.lowerLength - h.bottomTaperH - 0.05]));
 
   let housing = solid.subtract(bore);
   console.log("  Housing:", housing.numVert(), "verts");
@@ -42,18 +44,32 @@ export function buildAssembly(params: AssemblyParams = DEFAULT_PARAMS) {
   // Internal threads
   for (let i = 0; i < h.numThreads; i++) {
     const tz = -h.lowerLength + h.lowerLength * (i + 0.5) / (h.numThreads + 1);
-    const thread = mv(tube(h.lowerID / 2 + h.threadDepth, h.lowerID / 2 - 0.01, 0.06), [0, 0, tz]);
+    const thread = mv(tube(lowerID / 2 + h.threadDepth, lowerID / 2 - 0.01, 0.06), [0, 0, tz]);
     housing = housing.subtract(thread);
   }
 
   // ═══ SLIPS ═══
-  let slipRing = tube(sl.slipOD / 2, h.bodyOD / 2, sl.slipHeight);
+  const slipR = sl.slipOD / 2;
+  const smoothBandR = slipR - sl.grooveDepth * 1.5;
+  let slipRing = tube(slipR, h.bodyOD / 2, sl.slipHeight);
+  // Trim smooth band at bottom to smaller OD
+  const smoothBand = sl.slipHeight * 0.1;
+  const trimRing = tube(slipR + 0.01, smoothBandR, smoothBand + 0.01);
+  slipRing = slipRing.subtract(mv(trimRing, [0, 0, -0.005]));
+  // Inner taper at top of slips — small flare to fit around body taper
+  const taperFitH = sl.slipHeight * 0.15;
+  const taperOverlap = Math.max(0, (sl.slipOffset + sl.slipHeight) - h.bodyLength);
+  const bodyODatTop = h.bodyOD + (h.taperTopOD - h.bodyOD) * Math.min(taperOverlap / h.taperLength, 1);
+  const taperFitCone = mv(cyl(taperFitH + 0.01, bodyODatTop / 2, h.bodyOD / 2), [0, 0, sl.slipHeight - taperFitH]);
+  slipRing = slipRing.subtract(taperFitCone);
   for (let i = 0; i < sl.numSectors; i++) {
     const gap = mv(rot(cube(sl.slipOD + 1, sl.gapWidth, sl.slipHeight + 1, true), [0, 0, i * (360 / sl.numSectors)]), [0, 0, sl.slipHeight / 2]);
     slipRing = slipRing.subtract(gap);
   }
+  // Grooves only on upper portion
+  const groovedHeight = sl.slipHeight - smoothBand;
   for (let i = 0; i < sl.numGrooves; i++) {
-    const gz = sl.slipHeight * (i + 0.5) / sl.numGrooves;
+    const gz = smoothBand + groovedHeight * (i + 0.5) / sl.numGrooves;
     const groove = mv(tube(sl.slipOD / 2 + 0.01, sl.slipOD / 2 - sl.grooveDepth, 0.04), [0, 0, gz]);
     slipRing = slipRing.subtract(groove);
   }

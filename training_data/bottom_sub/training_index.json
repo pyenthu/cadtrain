@@ -2,10 +2,10 @@
   {
     "project": "bottom_sub",
     "iteration": 1,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.691982",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
     "user_feedback_raw": "Start with simple shell cylinder. Need hollow tube with bore.",
     "corrections": [
       {
@@ -16,17 +16,15 @@
         "to": "hollow_tube",
         "reason": "bottom sub is a tube not solid cylinder"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 2,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.692762",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
     "user_feedback_raw": "Top section needs taper widening at top, short flat section above. Bottom needs inward taper. Slips are separate segmented rings mounted on body, not grooves cut into body.",
     "corrections": [
       {
@@ -53,17 +51,15 @@
         "to": "inward_taper",
         "reason": "bottom tapers inward"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 3,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.692906",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
     "user_feedback_raw": "MeshPhysicalMaterial washes out on Mac GPU. Use MeshPhongMaterial with specular+shininess instead. Need DoubleSide for cross-section faces.",
     "corrections": [
       {
@@ -73,26 +69,16 @@
         "from": "MeshPhysicalMaterial",
         "to": "MeshPhongMaterial",
         "reason": "PhysicalMaterial env map causes washout on Mac"
-      },
-      {
-        "category": "MATERIAL",
-        "target": "all",
-        "property": "shininess",
-        "from": "N/A",
-        "to": "200-300",
-        "reason": "high shininess for metallic look"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 4,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.693028",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
     "user_feedback_raw": "Red is like paint on outside only. Grey for bore walls, cut faces, inner surfaces, sleeve. Use vertex colors per-face based on radial normal direction.",
     "corrections": [
       {
@@ -101,27 +87,17 @@
         "property": "coloring",
         "from": "single_color",
         "to": "vertex_colors_per_face",
-        "reason": "red=outer, grey=bore/cut/inner"
-      },
-      {
-        "category": "MATERIAL",
-        "target": "cut_detection",
-        "property": "method",
-        "from": "backface",
-        "to": "radial_normal_check",
-        "reason": "check if normal points outward=red, inward=grey"
+        "reason": "red=outer, grey=bore/cut/inner — classify by radial normal dot product"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 5,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.693152",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
     "user_feedback_raw": "CSG cutaway with cube gives solid cross-section faces. Keep 3 components separate (Housing, Slips, Sleeve) for independent materials and visibility toggle.",
     "corrections": [
       {
@@ -140,17 +116,15 @@
         "to": "CSG_subtract_cube",
         "reason": "solid cut faces instead of hollow"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 6,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.693348",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
     "user_feedback_raw": "ManifoldCAD in browser via WASM for live parametric rebuilds. Use $derived(JSON.stringify(params)) for deep reactivity. {#key geoVersion} to sync Edges with geometry.",
     "corrections": [
       {
@@ -159,28 +133,18 @@
         "property": "location",
         "from": "build_time_bun",
         "to": "browser_wasm",
-        "reason": "live parametric adjustment"
-      },
-      {
-        "category": "LAYOUT",
-        "target": "reactivity",
-        "property": "method",
-        "from": "$effect_on_params",
-        "to": "JSON.stringify_derived_key",
-        "reason": "Svelte5 doesn't deep-track nested objects"
+        "reason": "live parametric adjustment without rebuild"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 7,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.693555",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
-    "user_feedback_raw": "Custom SVTC-style sidebar instead of tweakpane. Collapsible folders with checkbox+color dot for component visibility. Range slider + number input for each param.",
+    "user_feedback_raw": "Custom SVTC-style sidebar instead of tweakpane. Collapsible folders with checkbox+color dot for component visibility.",
     "corrections": [
       {
         "category": "LAYOUT",
@@ -190,56 +154,36 @@
         "to": "custom_svelte_sidebar",
         "reason": "matches SVTC repo pattern, more control"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 8,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.693765",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
-    "user_feedback_raw": "Labels should be offset in Y direction (not X) with x=0, pointing from cut face side. Use Threlte HTML component with leader lines from 3D anchor to label position.",
+    "user_feedback_raw": "Labels offset in Y direction with leader lines from 3D anchor to label position.",
     "corrections": [
-      {
-        "category": "LAYOUT",
-        "target": "labels",
-        "property": "direction",
-        "from": "x_offset",
-        "to": "y_offset_x0",
-        "reason": "labels on cut face side"
-      },
       {
         "category": "LAYOUT",
         "target": "labels",
         "property": "attachment",
         "from": "on_model",
         "to": "offset_with_leader_line",
-        "reason": "arrows from dot on model to label text"
+        "reason": "arrows from dot on model to offset label text"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 9,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.693984",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
-    "user_feedback_raw": "Camera convention: Z-down (tool axis), X-right, Y-into screen. Camera at [5, 0.9, 0], orthographic, zoom ~46. Point lights work better than directional on this geometry.",
+    "user_feedback_raw": "Camera convention: Z-down (tool axis). Orthographic camera. Point lights work better than directional on cylindrical geometry.",
     "corrections": [
-      {
-        "category": "VIEW",
-        "target": "camera",
-        "property": "position",
-        "from": "various",
-        "to": "[5, 0.9, 0]",
-        "reason": "good default viewing angle"
-      },
       {
         "category": "VIEW",
         "target": "camera",
@@ -256,18 +200,16 @@
         "to": "point_lights",
         "reason": "better specular highlights on cylindrical geometry"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
   },
   {
     "project": "bottom_sub",
     "iteration": 10,
+    "type": "structural",
     "timestamp": "2026-04-10T22:11:07.694202",
-    "original_image": "/Users/neerajsethi/duplicate/BOTTOM_SUB/original.png",
+    "original_image": "images/original.png",
     "model_screenshot": null,
-    "result_screenshot": null,
-    "user_feedback_raw": "toNonIndexed() + computeVertexNormals() fixes triangle artifacts at bore edges. 128 circular segments for smooth curves. Remove bottom neck - not in original.",
+    "user_feedback_raw": "toNonIndexed() + computeVertexNormals() fixes triangle artifacts at bore edges. 192 circular segments for smooth curves.",
     "corrections": [
       {
         "category": "GEOMETRY",
@@ -276,17 +218,119 @@
         "from": "indexed_shared",
         "to": "non_indexed_per_face",
         "reason": "fixes jagged edges at bore opening"
+      }
+    ]
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 11,
+    "type": "structural",
+    "timestamp": "2026-04-10T22:50:00.000000",
+    "original_image": "images/original.png",
+    "model_screenshot": null,
+    "user_feedback_raw": "Bottom internal bore taper is needed — bore should widen outward at the bottom of box end. Use tapered cone (not straight cylinder) for bore at bottom. Direction matters: wider end faces outward (exit), narrower end faces inward.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "bore",
+        "property": "bottom_taper",
+        "from": "straight_cylinder",
+        "to": "tapered_cone_widening_outward",
+        "reason": "internal chamfer at bottom of box end, widens toward exit"
+      }
+    ]
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 12,
+    "type": "structural",
+    "timestamp": "2026-04-10T22:53:00.000000",
+    "original_image": "images/original.png",
+    "model_screenshot": null,
+    "user_feedback_raw": "Slips have a smooth ungrooved band at the bottom (~10% of height). The smooth band has a smaller OD than the grooved section above.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "slips",
+        "property": "groove_coverage",
+        "from": "full_height",
+        "to": "upper_90_percent",
+        "reason": "original shows smooth band at bottom of slips"
       },
       {
         "category": "GEOMETRY",
-        "target": "segments",
-        "property": "count",
-        "from": "64",
-        "to": "128",
-        "reason": "smoother curves"
+        "target": "slips",
+        "property": "smooth_band_od",
+        "from": "same_as_grooved",
+        "to": "reduced_by_1.5x_groove_depth",
+        "reason": "smooth band is narrower diameter than grooved section"
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    ]
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 13,
+    "type": "structural",
+    "timestamp": "2026-04-10T22:55:00.000000",
+    "original_image": "images/original.png",
+    "model_screenshot": null,
+    "user_feedback_raw": "Top of slips has a small inner taper to fit around the tapered body. Calculate the body OD at the slip top based on how much the slip overlaps the taper zone, then cut a cone from the inner bore.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "slips",
+        "property": "inner_bore_top",
+        "from": "straight_bore",
+        "to": "tapered_to_match_body",
+        "reason": "slips must clear the body taper at the top"
+      }
+    ]
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 14,
+    "type": "structural",
+    "timestamp": "2026-04-10T23:05:00.000000",
+    "original_image": "images/original.png",
+    "model_screenshot": null,
+    "user_feedback_raw": "Body ID and Box End ID should be derived from wall thickness (OD - 2*wall), not set directly. Enforces physical constraint that bore depends on OD and wall. UI shows wall thickness slider + read-only computed ID.",
+    "corrections": [
+      {
+        "category": "GEOMETRY",
+        "target": "housing",
+        "property": "bore_derivation",
+        "from": "independent_bodyID_param",
+        "to": "derived_from_wall_thickness",
+        "reason": "physical constraint: ID = OD - 2*wall"
+      }
+    ]
+  },
+  {
+    "project": "bottom_sub",
+    "iteration": 15,
+    "type": "proportions",
+    "timestamp": "2026-04-10T23:05:00.000000",
+    "original_image": "images/original.png",
+    "model_screenshot": "images/model_current.png",
+    "user_feedback_raw": "Converged parameter values after iterative tuning to match HAL10408 catalog drawing.",
+    "converged_params": {
+      "housing": {
+        "bodyOD": 2.1, "bodyWall": 0.25, "bodyLength": 2.3,
+        "taperTopOD": 2.9, "taperLength": 0.8, "flatTopLength": 0.4,
+        "lowerOD": 2.8, "lowerWall": 0.75, "lowerLength": 2.5,
+        "bottomNeckOD": 2.2, "bottomTaperH": 0.4, "bottomBoreID": 1.8,
+        "numThreads": 2, "threadDepth": 0.08
+      },
+      "sleeve": {
+        "sleeveOD": 1.5, "sleeveID": 1.1, "sleeveLength": 4.1, "sleeveOffset": -0.1,
+        "numPins": 2, "pinRadius": 0.08, "pinLength": 0.4, "pinSpacing": 1.2
+      },
+      "slips": {
+        "slipOD": 2.6, "slipHeight": 2.2, "slipOffset": 0.2,
+        "numSectors": 4, "gapWidth": 0.1, "numGrooves": 14,
+        "grooveDepth": 0.08, "taperDirection": -1, "taperAmount": 0.3
+      }
+    },
+    "corrections": []
   }
 ]

@@ -55,9 +55,13 @@
         <input type="number" step="0.1" bind:value={params.housing.bodyOD} />
       </div>
       <div class="param-row">
+        <span>Body Wall</span>
+        <input type="range" min="0.1" max="0.8" step="0.05" bind:value={params.housing.bodyWall} />
+        <input type="number" step="0.05" bind:value={params.housing.bodyWall} />
+      </div>
+      <div class="param-row computed">
         <span>Body ID</span>
-        <input type="range" min="0.5" max="3" step="0.1" bind:value={params.housing.bodyID} />
-        <input type="number" step="0.1" bind:value={params.housing.bodyID} />
+        <span class="computed-val">{(params.housing.bodyOD - 2 * params.housing.bodyWall).toFixed(2)}</span>
       </div>
       <div class="param-row">
         <span>Body Length</span>
@@ -85,9 +89,13 @@
         <input type="number" step="0.1" bind:value={params.housing.lowerOD} />
       </div>
       <div class="param-row">
+        <span>Box End Wall</span>
+        <input type="range" min="0.2" max="1.5" step="0.05" bind:value={params.housing.lowerWall} />
+        <input type="number" step="0.05" bind:value={params.housing.lowerWall} />
+      </div>
+      <div class="param-row computed">
         <span>Box End ID</span>
-        <input type="range" min="0.5" max="3" step="0.1" bind:value={params.housing.lowerID} />
-        <input type="number" step="0.1" bind:value={params.housing.lowerID} />
+        <span class="computed-val">{(params.housing.lowerOD - 2 * params.housing.lowerWall).toFixed(2)}</span>
       </div>
       <div class="param-row">
         <span>Box End Length</span>
@@ -247,6 +255,8 @@
   .folder-body { padding:4px 10px 8px 20px; border-bottom:1px solid #eee; }
   .param-row { display:flex; align-items:center; gap:4px; margin:3px 0; }
   .param-row span { width:80px; font-size:10px; color:#555; flex-shrink:0; }
+  .param-row.computed { opacity:0.7; }
+  .computed-val { font-family:monospace; font-size:11px; color:#888; text-align:right; flex:1; }
   .param-row input[type="range"] { flex:1; height:4px; cursor:pointer; accent-color:#cc2222; }
   .param-row input[type="number"] { width:45px; font-size:10px; font-family:monospace; border:1px solid #ddd; border-radius:3px; padding:2px 4px; text-align:right; }
   .row-check { display:flex; align-items:center; gap:6px; margin:3px 0; cursor:pointer; font-size:11px; }
