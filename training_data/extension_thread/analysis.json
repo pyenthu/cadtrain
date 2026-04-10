@@ -1,13 +1,13 @@
 {
   "tool_name": "Tubing or Millout Extension Thread",
-  "aspect_ratio": 4.5,
+  "aspect_ratio": 7.8,
   "sections": [
     {
       "name": "top_connector",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "od": 0.75,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "external_threads",
         "box_connection"
@@ -18,8 +18,8 @@
       "name": "upper_shoulder",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.2,
-      "length": 0.08,
+      "wall_thickness": 0.12,
+      "length": 0.035,
       "features": [
         "shoulder",
         "groove"
@@ -29,9 +29,9 @@
     {
       "name": "upper_threaded_body",
       "shape": "cylinder",
-      "od": 0.9,
-      "wall_thickness": 0.18,
-      "length": 0.25,
+      "od": 0.78,
+      "wall_thickness": 0.09,
+      "length": 0.32,
       "features": [
         "external_threads",
         "fine_pitch"
@@ -42,8 +42,8 @@
       "name": "mid_shoulder",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.2,
-      "length": 0.06,
+      "wall_thickness": 0.12,
+      "length": 0.025,
       "features": [
         "shoulder"
       ],
@@ -52,9 +52,9 @@
     {
       "name": "lower_threaded_body",
       "shape": "cylinder",
-      "od": 0.9,
-      "wall_thickness": 0.18,
-      "length": 0.25,
+      "od": 0.78,
+      "wall_thickness": 0.09,
+      "length": 0.45,
       "features": [
         "external_threads",
         "fine_pitch"
@@ -64,60 +64,44 @@
     {
       "name": "bottom_connector",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "od": 0.75,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "external_threads",
         "pin_connection"
       ],
       "color": "red"
-    },
-    {
-      "name": "internal_sleeve",
-      "shape": "tube",
-      "od": 0.6,
-      "wall_thickness": 0.08,
-      "length": 0.88,
-      "features": [
-        "internal_threads",
-        "threading_grooves"
-      ],
-      "color": "grey"
-    },
-    {
-      "name": "mill_profile",
-      "shape": "cylinder",
-      "od": 0.52,
-      "wall_thickness": 0.06,
-      "length": 0.12,
-      "features": [
-        "milling_surface",
-        "cutting_edge"
-      ],
-      "color": "grey"
     }
   ],
   "bore_profile": [
     {
       "position": 0.0,
-      "diameter": 0.55,
-      "description": "top_connection_bore"
+      "inner_diameter": 0.59
     },
     {
-      "position": 0.12,
-      "diameter": 0.44,
-      "description": "internal_threading_start"
+      "position": 0.08,
+      "inner_diameter": 0.59
     },
     {
-      "position": 0.88,
-      "diameter": 0.44,
-      "description": "internal_threading_end"
+      "position": 0.115,
+      "inner_diameter": 0.76
+    },
+    {
+      "position": 0.435,
+      "inner_diameter": 0.6
+    },
+    {
+      "position": 0.46,
+      "inner_diameter": 0.76
+    },
+    {
+      "position": 0.935,
+      "inner_diameter": 0.6
     },
     {
       "position": 1.0,
-      "diameter": 0.4,
-      "description": "bottom_connection_bore"
+      "inner_diameter": 0.59
     }
   ]
 }

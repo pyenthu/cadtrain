@@ -1,13 +1,13 @@
 {
   "tool_name": "Top Snap Locator",
-  "aspect_ratio": 4.0,
+  "aspect_ratio": 2.4,
   "sections": [
     {
       "name": "upper_body",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.6,
+      "wall_thickness": 0.05,
+      "length": 0.5,
       "features": [
         "smooth_exterior"
       ],
@@ -16,42 +16,53 @@
     {
       "name": "shoulder_transition",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.05,
+      "od": 1.2,
+      "wall_thickness": 0.1,
+      "length": 0.08,
       "features": [
         "shoulder"
+      ],
+      "color": "grey"
+    },
+    {
+      "name": "upper_middle_section",
+      "shape": "cylinder",
+      "od": 1.2,
+      "wall_thickness": 0.1,
+      "length": 0.12,
+      "features": [
+        "smooth_exterior"
       ],
       "color": "grey"
     },
     {
       "name": "middle_section",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.15,
+      "od": 1.2,
+      "wall_thickness": 0.1,
+      "length": 0.08,
       "features": [
         "circumferential_groove"
       ],
       "color": "grey"
     },
     {
-      "name": "lower_shoulder",
+      "name": "lower_middle_section",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.05,
+      "od": 1.2,
+      "wall_thickness": 0.1,
+      "length": 0.12,
       "features": [
-        "shoulder"
+        "smooth_exterior"
       ],
       "color": "grey"
     },
     {
       "name": "bottom_section",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.15,
+      "od": 1.2,
+      "wall_thickness": 0.1,
+      "length": 0.1,
       "features": [
         "smooth_exterior"
       ],
@@ -61,11 +72,15 @@
   "bore_profile": [
     {
       "position": 0.0,
-      "diameter": 0.7
+      "diameter": 0.9
+    },
+    {
+      "position": 0.5,
+      "diameter": 1.0
     },
     {
       "position": 1.0,
-      "diameter": 0.55
+      "diameter": 1.0
     }
   ]
 }
