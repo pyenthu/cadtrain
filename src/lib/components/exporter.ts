@@ -19,7 +19,7 @@ export interface ExportResult {
  */
 export async function exportComponent(
   geometry: THREE.BufferGeometry,
-  options: { width?: number; height?: number; color?: string; useVertexColors?: boolean } = {}
+  options: { width?: number; height?: number; color?: string } = {}
 ): Promise<ExportResult> {
   const W = options.width || 300;
   const H = options.height || 450;
@@ -29,9 +29,14 @@ export async function exportComponent(
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#ffffff');
 
-  const material = options.useVertexColors
-    ? new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide })
-    : new THREE.MeshPhongMaterial({ color, specular: '#ffffff', shininess: 200, side: THREE.DoubleSide });
+  // SVG renderer needs solid material color (not vertex colors)
+  // FillPass reads polygon.color from material.color
+  const material = new THREE.MeshPhongMaterial({
+    color,
+    specular: '#ffffff',
+    shininess: 200,
+    side: THREE.DoubleSide,
+  });
 
   const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);

@@ -52,8 +52,8 @@
     if (!geo) return;
     const _v = geoVersion; // subscribe to changes
     exporting = true;
-    // Use cutVC for cross-section view with vertex colors
-    exportComponent(geo.cutVC, { width: 200, height: 320, useVertexColors: true })
+    // Use cutVC for cross-section — solid color material for SVG fill
+    exportComponent(geo.cutVC, { width: 200, height: 320 })
       .then(result => {
         svgHtml = result.svgString;
         pngUrl = result.pngDataUrl;
