@@ -159,7 +159,7 @@
   .tags { position: absolute; top: 44px; left: 16px; display: flex; gap: 4px; flex-wrap: wrap; z-index: 10; }
   .tag { font: 10px Arial; background: #e8e8e8; color: #555; padding: 2px 8px; border-radius: 10px; }
   .ms { font-size: 10px; color: #888; font-weight: normal; }
-  .params { width: 240px; background: #fafafa; border-left: 1px solid #ddd; padding: 10px; overflow-y: auto; }
+  .params { width: 280px; min-width: 280px; background: #fafafa; border-left: 1px solid #ddd; padding: 10px; overflow-y: auto; }
   .ph { font: bold 13px Arial; margin-bottom: 8px; }
   .pr { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
   .pr span { width: 80px; font-size: 10px; color: #555; flex-shrink: 0; }

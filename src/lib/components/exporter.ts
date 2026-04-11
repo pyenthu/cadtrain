@@ -92,7 +92,7 @@ export async function exportSVG(
 
   // Camera matching ComponentScene (zoom=60, pos=[6,0,0], Z-down)
   const aspect = W / H;
-  const zoom = 130;
+  const zoom = 100;
   const halfH = H / (2 * zoom);
   const halfW = halfH * aspect;
   const camera = new THREE.OrthographicCamera(
