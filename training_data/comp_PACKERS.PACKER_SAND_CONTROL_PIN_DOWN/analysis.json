@@ -1,0 +1,102 @@
+{
+  "tool_name": "Packers Packer Sand Control Pin Down",
+  "aspect_ratio": 8.5,
+  "sections": [
+    {
+      "name": "upper_connector",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.08,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "upper_mandrel",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "longitudinal_grooves"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "packer_element",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.25,
+      "length": 0.18,
+      "features": [
+        "elastomer_sealing_element",
+        "ribbed_surface"
+      ],
+      "color": "gray"
+    },
+    {
+      "name": "sand_control_section",
+      "shape": "cylinder",
+      "od": 0.9,
+      "wall_thickness": 0.08,
+      "length": 0.35,
+      "features": [
+        "perforated_screen",
+        "filtration_slots",
+        "internal_components"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "lower_mandrel",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.15,
+      "features": [
+        "solid_pipe"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "pin_connection",
+      "shape": "cone",
+      "od": 0.75,
+      "wall_thickness": 0.18,
+      "length": 0.12,
+      "features": [
+        "tapered_pin",
+        "threaded_end"
+      ],
+      "color": "yellow"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "diameter": 0.61
+    },
+    {
+      "position": 0.2,
+      "diameter": 0.55
+    },
+    {
+      "position": 0.38,
+      "diameter": 0.5
+    },
+    {
+      "position": 0.73,
+      "diameter": 0.74
+    },
+    {
+      "position": 0.88,
+      "diameter": 0.55
+    },
+    {
+      "position": 1.0,
+      "diameter": 0.39
+    }
+  ]
+}

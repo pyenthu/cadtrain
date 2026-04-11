@@ -1,0 +1,100 @@
+[
+  {
+    "project": "comp_PACKERS.PACKER_SAND_CTROL_CTRL_BX_DN",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T05:55:15.829919",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Packers Packer Sand Ctrol Ctrl Bx Dn.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Packers Packer Sand Ctrol Ctrl Bx Dn",
+        "aspect_ratio": 8.0,
+        "sections": [
+          {
+            "name": "upper_mandrel",
+            "shape": "cylinder",
+            "od": 0.6,
+            "wall_thickness": 0.15,
+            "length": 0.15,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "packer_element_housing",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.12,
+            "length": 0.12,
+            "features": [
+              "elastomer_element",
+              "backup_rings"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "sand_control_screen",
+            "shape": "cylinder",
+            "od": 0.8,
+            "wall_thickness": 0.08,
+            "length": 0.25,
+            "features": [
+              "wire_wrap_screen",
+              "base_pipe"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "control_valve_section",
+            "shape": "cylinder",
+            "od": 0.7,
+            "wall_thickness": 0.1,
+            "length": 0.18,
+            "features": [
+              "flow_control_valve",
+              "ports"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "lower_mandrel",
+            "shape": "cylinder",
+            "od": 0.6,
+            "wall_thickness": 0.15,
+            "length": 0.3,
+            "features": [
+              "threaded_connection",
+              "flow_ports"
+            ],
+            "color": "yellow"
+          }
+        ],
+        "bore_profile": [
+          {
+            "diameter": 0.3,
+            "length": 0.15
+          },
+          {
+            "diameter": 0.76,
+            "length": 0.12
+          },
+          {
+            "diameter": 0.64,
+            "length": 0.25
+          },
+          {
+            "diameter": 0.5,
+            "length": 0.18
+          },
+          {
+            "diameter": 0.3,
+            "length": 0.3
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]
