@@ -2,6 +2,7 @@
   import { Canvas } from '@threlte/core';
   import { initManifold, buildComponent } from '$components/builder';
   import { COMPONENTS, CATEGORIES } from '$components/library';
+  import { exportComponent } from '$components/exporter';
 
   let ready = $state(false);
   let activeComp = $state(0);
@@ -41,41 +42,28 @@
 
   let comp = $derived(COMPONENTS[activeComp]);
 
-  function generateSVG(comp: any, p: Record<string, number>): string {
-    const W = 200, H = 280, cx = W / 2;
-    const od = p.od || p.bodyOD || p.odTop || p.slipOD || p.odCompressed || 2.5;
-    const wall = p.wall || 0.3;
-    const id = od - 2 * wall;
-    const length = p.length || p.bodyLength || p.height || p.pinLength || 4;
-    const odBottom = p.odBottom || p.odLarge || od;
-    const maxDim = Math.max(od, odBottom);
-    const s = Math.min((W - 30) / maxDim, (H - 40) / length);
-    const rO = od * s / 2, rI = id * s / 2, h = length * s;
-    const rOB = odBottom * s / 2;
-    const y0 = (H - h) / 2;
+  // SVG + PNG export via three-svg-renderer
+  let svgHtml = $state('');
+  let pngUrl = $state('');
+  let exporting = $state(false);
 
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
-    svg += `<rect width="${W}" height="${H}" fill="white"/>`;
-    svg += `<line x1="${cx}" y1="${y0-4}" x2="${cx}" y2="${y0+h+4}" stroke="#0a0" stroke-width="0.5" stroke-dasharray="4,3"/>`;
-    svg += `<path d="M${cx} ${y0} L${cx+rO} ${y0} L${cx+rOB} ${y0+h} L${cx} ${y0+h} Z" fill="#cc2222" stroke="#333" stroke-width="0.7"/>`;
-    svg += `<path d="M${cx} ${y0} L${cx-rO} ${y0} L${cx-rOB} ${y0+h} L${cx} ${y0+h} Z" fill="#cc2222" stroke="#333" stroke-width="0.7"/>`;
-    svg += `<path d="M${cx} ${y0} L${cx-rI} ${y0} L${cx-rI} ${y0+h} L${cx} ${y0+h} Z" fill="#999" stroke="#333" stroke-width="0.4"/>`;
-    const tc = p.threadCount || p.numThreads || p.numGrooves || 0;
-    if (tc > 0) {
-      const td = (p.threadDepth || p.grooveDepth || 0.06) * s;
-      for (let i = 0; i < tc; i++) {
-        const ty = y0 + h * (i + 0.5) / tc;
-        svg += `<line x1="${cx+rO-td}" y1="${ty}" x2="${cx+rO}" y2="${ty}" stroke="#333" stroke-width="0.5"/>`;
-        svg += `<line x1="${cx-rO}" y1="${ty}" x2="${cx-rO+td}" y2="${ty}" stroke="#333" stroke-width="0.5"/>`;
-      }
-    }
-    svg += `<text x="${cx+rO+5}" y="${y0+h/2}" font-size="7" fill="#555">OD:${od.toFixed(1)}</text>`;
-    svg += `<text x="${cx-rI-5}" y="${y0+h/2}" font-size="7" fill="#555" text-anchor="end">ID:${id.toFixed(1)}</text>`;
-    svg += `<text x="${cx}" y="${y0+h+12}" font-size="7" fill="#555" text-anchor="middle">L:${length.toFixed(1)}</text>`;
-    svg += `<text x="${cx}" y="10" font-size="8" font-weight="bold" fill="#333" text-anchor="middle">${comp.name}</text>`;
-    svg += `</svg>`;
-    return svg;
-  }
+  // Auto-export when geometry changes
+  $effect(() => {
+    if (!geo) return;
+    const _v = geoVersion; // subscribe to changes
+    exporting = true;
+    // Use cutVC for cross-section view with vertex colors
+    exportComponent(geo.cutVC, { width: 200, height: 320, useVertexColors: true })
+      .then(result => {
+        svgHtml = result.svgString;
+        pngUrl = result.pngDataUrl;
+        exporting = false;
+      })
+      .catch(e => {
+        console.error('SVG export error:', e);
+        exporting = false;
+      });
+  });
 </script>
 
 <div class="comp-layout">
@@ -104,8 +92,20 @@
   </div>
 
   <div class="svg-col">
-    <div class="svg-label">2D Cross-Section</div>
-    <div class="svg-box">{@html generateSVG(comp, params)}</div>
+    <div class="svg-label">SVG (Vector)</div>
+    <div class="svg-box">
+      {#if exporting}
+        <div class="rendering">Rendering...</div>
+      {:else if svgHtml}
+        {@html svgHtml}
+      {/if}
+    </div>
+    <div class="svg-label" style="margin-top:8px">PNG (Raster)</div>
+    <div class="png-box">
+      {#if pngUrl}
+        <img src={pngUrl} alt="3D render" />
+      {/if}
+    </div>
   </div>
 
   <div class="params">
@@ -137,7 +137,10 @@
   .viewport { flex: 1; position: relative; min-width: 0; }
   .svg-col { width: 210px; background: #fff; border-left: 1px solid #ddd; padding: 8px; display: flex; flex-direction: column; align-items: center; }
   .svg-label { font: bold 10px Arial; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-  .svg-box { border: 1px solid #eee; border-radius: 4px; }
+  .svg-box { border: 1px solid #eee; border-radius: 4px; overflow: hidden; min-height: 150px; display: flex; align-items: center; justify-content: center; }
+  .png-box { border: 1px solid #eee; border-radius: 4px; overflow: hidden; }
+  .png-box img { width: 100%; display: block; }
+  .rendering { font: 11px Arial; color: #888; padding: 20px; }
   .vp-header { position: absolute; top: 8px; left: 16px; font: bold 15px Arial; color: #333; z-index: 10; }
   .vp-desc { position: absolute; top: 28px; left: 16px; font: 11px Arial; color: #888; z-index: 10; }
   .tags { position: absolute; top: 44px; left: 16px; display: flex; gap: 4px; flex-wrap: wrap; z-index: 10; }
