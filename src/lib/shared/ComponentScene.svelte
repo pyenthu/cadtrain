@@ -10,6 +10,7 @@
   <OrbitControls enableDamping />
 </T.OrthographicCamera>
 
+<T.Color args={['#f0f0f0']} attach="background" />
 <T.AmbientLight intensity={0.3} />
 <T.PointLight position={[1, -4, -2]} intensity={200} distance={50} />
 <T.PointLight position={[12, 8, 0]} intensity={120} distance={50} />

@@ -1,8 +1,14 @@
 <script lang="ts">
   import { Canvas } from '@threlte/core';
+  import { WebGLRenderer } from 'three';
   import { initManifold, buildComponent } from '$components/builder';
   import { COMPONENTS, CATEGORIES } from '$components/library';
-  import { exportComponent } from '$components/exporter';
+  import { exportSVG } from '$components/exporter';
+
+  // Custom renderer with preserveDrawingBuffer for canvas capture
+  function createRenderer(canvas: HTMLCanvasElement) {
+    return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  }
 
   let ready = $state(false);
   let activeComp = $state(0);
@@ -42,27 +48,34 @@
 
   let comp = $derived(COMPONENTS[activeComp]);
 
-  // SVG + PNG export via three-svg-renderer
+  // SVG export via three-svg-renderer
   let svgHtml = $state('');
   let pngUrl = $state('');
   let exporting = $state(false);
 
-  // Auto-export when geometry changes
+  // Auto-export SVG when geometry changes
   $effect(() => {
     if (!geo) return;
-    const _v = geoVersion; // subscribe to changes
+    const _v = geoVersion;
     exporting = true;
-    // SVG uses cutVC with solid color, PNG uses cutVC with vertex colors
-    exportComponent(geo.cutVC, { width: 200, height: 320, cutVCGeometry: geo.cutVC })
-      .then(result => {
-        svgHtml = result.svgString;
-        pngUrl = result.pngDataUrl;
-        exporting = false;
-      })
-      .catch(e => {
-        console.error('SVG export error:', e);
-        exporting = false;
+    exportSVG(geo.cutVC, { width: 200, height: 320 })
+      .then(svg => { svgHtml = svg; exporting = false; })
+      .catch(e => { console.error('SVG export error:', e); exporting = false; });
+  });
+
+  // Capture PNG directly from the live Threlte canvas (pixel-perfect match)
+  $effect(() => {
+    if (!geo) return;
+    const _v = geoVersion;
+    // Wait 2 frames for Threlte to render the new geometry
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const canvas = document.querySelector('.viewport canvas') as HTMLCanvasElement;
+        if (canvas) {
+          pngUrl = canvas.toDataURL('image/png');
+        }
       });
+    });
   });
 </script>
 
@@ -85,7 +98,7 @@
       {#each comp.tags as tag}<span class="tag">{tag}</span>{/each}
     </div>
     {#if SceneComponent}
-      <Canvas>
+      <Canvas {createRenderer}>
         <svelte:component this={SceneComponent} {geo} {geoVersion} {showCutaway} {showEdges} />
       </Canvas>
     {/if}
