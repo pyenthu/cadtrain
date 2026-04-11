@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAD Train — Tool 3D Modeling Pipeline</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+    .header { padding: 30px 40px; border-bottom: 1px solid #333; }
+    .header h1 { font-size: 28px; color: #fff; }
+    .header p { font-size: 14px; color: #888; margin-top: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding: 30px 40px; }
+    .card { background: #16213e; border: 1px solid #333; border-radius: 10px; padding: 24px; transition: border-color 0.2s, transform 0.2s; cursor: pointer; text-decoration: none; color: inherit; display: block; }
+    .card:hover { border-color: #cc2222; transform: translateY(-2px); }
+    .card-icon { font-size: 32px; margin-bottom: 12px; }
+    .card h2 { font-size: 16px; color: #fff; margin-bottom: 6px; }
+    .card p { font-size: 12px; color: #888; line-height: 1.5; }
+    .card .badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; margin-top: 10px; }
+    .badge-live { background: #1b4332; color: #52b788; }
+    .badge-count { background: #2a2a4a; color: #aaa; }
+    .section { padding: 10px 40px 0; }
+    .section h3 { font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 2px; }
+    .footer { padding: 30px 40px; text-align: center; color: #444; font-size: 11px; }
+    .footer a { color: #cc2222; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>CAD Train</h1>
+    <p>Parametric 3D tool modeling pipeline — ManifoldCAD + VLM comparison + training data generation</p>
+  </div>
+
+  <div class="section"><h3>Dedicated Tool Viewers</h3></div>
+  <div class="grid">
+    <a class="card" href="/BOTTOM_SUB/manifold/threlte/index.html" id="bottom-sub">
+      <div class="card-icon">🔧</div>
+      <h2>Bottom Sub (HAL10408)</h2>
+      <p>Full parametric model — Housing, Slips, Sleeve with wall thickness constraints, vertex coloring, and tuned parameters.</p>
+      <span class="badge badge-live">Dedicated • Port 3333</span>
+    </a>
+    <a class="card" href="/RATCH_LATCH/manifold/threlte/index.html" id="ratch-latch">
+      <div class="card-icon">🔩</div>
+      <h2>Ratch-Latch Receiving Head</h2>
+      <p>Body + Mandrel + Seal components with threaded neck, shoulder transitions, and seal grooves.</p>
+      <span class="badge badge-live">Dedicated • Port 3335</span>
+    </a>
+  </div>
+
+  <div class="section"><h3>Component Library</h3></div>
+  <div class="grid">
+    <a class="card" href="http://localhost:3334" target="_blank" id="components">
+      <div class="card-icon">🧱</div>
+      <h2>Primitive Components</h2>
+      <p>18 parametric building blocks — cylinders, threads (REG/IF/FH/NC/EUE/LTC), tapers, shoulders, slips, J-latch, packer elements. With tags, SVG + PNG export.</p>
+      <span class="badge badge-live">Port 3334</span>
+    </a>
+  </div>
+
+  <div class="section"><h3>Training Data</h3></div>
+  <div class="grid">
+    <a class="card" href="http://localhost:3336" target="_blank" id="training-tabs">
+      <div class="card-icon">📊</div>
+      <h2>Training Tabs (Assembly Tools)</h2>
+      <p>Tabbed viewer for completion tools — original drawing vs 3D model with VLM analysis. Flow control, packers, tubing hangers, PBRs.</p>
+      <span class="badge badge-live">Port 3336</span>
+    </a>
+    <a class="card" onclick="alert('Run: python vlm/refine.py training_data/bottom_sub/images/original.png')" href="#">
+      <div class="card-icon">🔄</div>
+      <h2>VLM Refinement Loop</h2>
+      <p>Automated compare → param update → screenshot → repeat. Uses Claude vision API to iteratively match 3D model to catalog drawing.</p>
+      <span class="badge badge-count">CLI tool</span>
+    </a>
+  </div>
+
+  <div class="section"><h3>Data & Reference</h3></div>
+  <div class="grid">
+    <a class="card" href="/training_data/reference/thread_specs.json" target="_blank">
+      <div class="card-icon">📋</div>
+      <h2>Thread Specifications</h2>
+      <p>API thread standards — drill pipe (NC, REG, IF, FH), casing (STC, LTC, BTC), tubing (EUE, NUE), and premium connections.</p>
+      <span class="badge badge-count">20+ thread types</span>
+    </a>
+    <a class="card" href="https://github.com/pyenthu/cadtrain" target="_blank">
+      <div class="card-icon">🐙</div>
+      <h2>GitHub Repository</h2>
+      <p>Source code, training data, VLM pipeline, ManifoldCAD builders, Svelte viewers.</p>
+      <span class="badge badge-count">pyenthu/cadtrain</span>
+    </a>
+  </div>
+
+  <div class="footer">
+    <p>CAD Train — <a href="https://github.com/pyenthu/cadtrain">pyenthu/cadtrain</a> — 39 tools • 90 training pairs • 18 primitives</p>
+  </div>
+
+  <script>
+    // Fix links for dedicated viewers that need their own Vite server
+    document.getElementById('bottom-sub').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open('http://localhost:3333', '_blank');
+    });
+    document.getElementById('ratch-latch').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open('http://localhost:3335', '_blank');
+    });
+  </script>
+</body>
+</html>

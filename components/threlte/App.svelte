@@ -3,6 +3,7 @@
   import Scene from './Scene.svelte';
   import { initManifold, buildComponent } from '../builder';
   import { COMPONENTS, CATEGORIES } from '../library';
+  import { exportComponent } from '../exporter';
 
   let ready = $state(false);
   let activeComp = $state(0);
@@ -40,6 +41,22 @@
   }
 
   let comp = $derived(COMPONENTS[activeComp]);
+  let exportSvg = $state('');
+  let exportPng = $state('');
+  let exporting = $state(false);
+
+  async function doExport() {
+    if (!geo) return;
+    exporting = true;
+    try {
+      const result = await exportComponent(geo.full);
+      exportSvg = result.svgString;
+      exportPng = result.pngDataUrl;
+    } catch (e) {
+      console.error('Export error:', e);
+    }
+    exporting = false;
+  }
 
   function generateSVG(comp: any, p: Record<string, number>): string {
     const W = 220, H = 300, cx = W / 2;
@@ -143,12 +160,21 @@
 
     <!-- Exports: SVG + PNG stacked -->
     <div class="exports">
-      <div class="export-label">2D SVG</div>
-      <div class="svg-box">
-        {@html generateSVG(comp, params)}
-      </div>
-      <div class="export-label">3D Snapshot</div>
-      <canvas id="pngCanvas" width="220" height="300" class="png-box"></canvas>
+      <button class="export-btn" onclick={doExport} disabled={exporting || !geo}>
+        {exporting ? 'Rendering...' : 'Export SVG + PNG'}
+      </button>
+      {#if exportSvg}
+        <div class="export-label">SVG (three-svg-renderer)</div>
+        <div class="svg-box">{@html exportSvg}</div>
+      {/if}
+      {#if exportPng}
+        <div class="export-label">PNG (WebGL)</div>
+        <img src={exportPng} class="png-box" alt="3D render" />
+      {/if}
+      {#if !exportSvg && !exportPng}
+        <div class="export-label">Schematic SVG</div>
+        <div class="svg-box">{@html generateSVG(comp, params)}</div>
+      {/if}
     </div>
 
     <!-- Right: params -->
@@ -197,7 +223,10 @@
   .exports { width: 240px; background: #fff; border-left: 1px solid #ddd; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .export-label { font: bold 10px Arial; color: #888; text-transform: uppercase; letter-spacing: 1px; }
   .svg-box { border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: center; }
-  .png-box { border: 1px solid #ddd; border-radius: 4px; width: 220px; height: 300px; background: #f5f5f5; }
+  .png-box { border: 1px solid #ddd; border-radius: 4px; width: 220px; background: #f5f5f5; }
+  .export-btn { width: 100%; padding: 8px; background: #cc2222; color: white; border: none; border-radius: 4px; font: bold 11px Arial; cursor: pointer; }
+  .export-btn:hover { background: #aa1111; }
+  .export-btn:disabled { background: #ccc; cursor: default; }
   .viewport-header { position: absolute; top: 8px; left: 16px; font: bold 16px Arial; color: #333; z-index: 10; }
   .viewport-desc { position: absolute; top: 30px; left: 16px; font: 11px Arial; color: #888; z-index: 10; }
   .viewport-tags { position: absolute; top: 48px; left: 16px; display: flex; gap: 4px; flex-wrap: wrap; z-index: 10; max-width: 500px; }

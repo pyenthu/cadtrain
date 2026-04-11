@@ -6,7 +6,7 @@
   let { geo = null, geoVersion = 0, showCutaway = true, showEdges = true } = $props();
 </script>
 
-<T.OrthographicCamera makeDefault position={[6, 0, 0]} zoom={40} up={[0, 0, -1]}>
+<T.OrthographicCamera makeDefault position={[6, 0, 0]} zoom={80} up={[0, 0, -1]}>
   <OrbitControls enableDamping />
 </T.OrthographicCamera>
 
@@ -30,4 +30,5 @@
   {/key}
 {/if}
 
-<T.AxesHelper args={[1.5]} position={[-4, -3, 4]} />
+<!-- Axes hidden for training screenshots -->
+<!-- <T.AxesHelper args={[1.5]} position={[-4, -3, 4]} /> -->
