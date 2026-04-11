@@ -150,12 +150,13 @@ export function buildFromAnalysis(analysis: ToolAnalysis, params: ToolParams = D
 
     // Thread grooves
     if (sec.features.some((f: string) => f.includes('thread'))) {
-      const threadCount = 12;
-      const threadDepth = 0.06;
+      const threadCount = Math.max(4, Math.round(secH / 0.15));
+      const threadDepth = Math.min(0.08, r1 * 0.06);
+      const grooveH = Math.min(0.05, secH / threadCount * 0.7);
       for (let i = 0; i < threadCount; i++) {
         const tz = z + secH * (i + 0.5) / threadCount;
         const tr = Math.min(r1, r2);
-        const groove = mv(tube(tr + 0.01, tr - threadDepth, 0.04), [0, 0, tz]);
+        const groove = mv(tube(tr + 0.01, tr - threadDepth, grooveH), [0, 0, tz]);
         solid = solid.subtract(groove);
       }
     }
@@ -186,14 +187,14 @@ export function buildFromAnalysis(analysis: ToolAnalysis, params: ToolParams = D
     bore = mv(bore, [0, 0, -0.1]);
   }
 
-  const model = solid.subtract(bore);
+  const centered = solid.subtract(bore).translate([0, 0, -H / 2]);
   const maxOD = S;
 
   // Cut
   const cutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
 
   return {
-    full: manifoldToGeo(model),
-    cutVC: manifoldToCutVC(model.subtract(cutBox), maxOD),
+    full: manifoldToGeo(centered),
+    cutVC: manifoldToCutVC(centered.subtract(cutBox), maxOD),
   };
 }

@@ -82,12 +82,13 @@
 
   function switchTab(i: number) {
     activeTab = i;
-    // Reset params per tool aspect ratio
     const tool = TOOLS[i];
     if (tool) {
+      const ar = tool.analysis.aspect_ratio || 6;
       params = {
         ...structuredClone(DEFAULT_TOOL_PARAMS),
-        totalHeight: (tool.analysis.aspect_ratio || 6) * 2.4,
+        scale: ar > 8 ? 1.8 : ar > 4 ? 2.4 : 3.0,
+        totalHeight: ar * (ar > 8 ? 1.8 : ar > 4 ? 2.4 : 3.0),
       };
     }
   }

@@ -11,7 +11,7 @@
   } = $props();
 </script>
 
-<T.OrthographicCamera makeDefault position={[4, 0, 0]} zoom={30} up={[0, 0, -1]}>
+<T.OrthographicCamera makeDefault position={[8, 0, 0]} zoom={18} up={[0, 0, -1]}>
   <OrbitControls enableDamping />
 </T.OrthographicCamera>
 
