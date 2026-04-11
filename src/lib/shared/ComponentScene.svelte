@@ -6,11 +6,11 @@
   let { geo = null, geoVersion = 0, showCutaway = true, showEdges = true } = $props();
 </script>
 
-<T.OrthographicCamera makeDefault position={[6, 0, 0]} zoom={60} up={[0, 0, -1]}>
+<T.OrthographicCamera makeDefault position={[6, 0, 0]} zoom={130} up={[0, 0, -1]}>
   <OrbitControls enableDamping />
 </T.OrthographicCamera>
 
-<T.Color args={['#f0f0f0']} attach="background" />
+<T.Color args={['#ffffff']} attach="background" />
 <T.AmbientLight intensity={0.3} />
 <T.PointLight position={[1, -4, -2]} intensity={200} distance={50} />
 <T.PointLight position={[12, 8, 0]} intensity={120} distance={50} />

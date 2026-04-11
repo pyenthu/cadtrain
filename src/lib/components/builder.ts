@@ -13,10 +13,10 @@ export async function initManifold() {
   wasm = await Module();
   wasm.setup();
   M = wasm.Manifold;
-  wasm.setCircularSegments(192);
+  wasm.setCircularSegments(256);
 }
 
-function cyl(h: number, r1: number, r2?: number) { return M.cylinder(h, r1, r2 ?? r1, 192); }
+function cyl(h: number, r1: number, r2?: number) { return M.cylinder(h, r1, r2 ?? r1, 256); }
 function tube(outerR: number, innerR: number, h: number) { return cyl(h, outerR).subtract(cyl(h + 0.02, innerR)); }
 function mv(m: any, v: [number, number, number]) { return m.translate(v); }
 function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
