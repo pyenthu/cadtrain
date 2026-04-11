@@ -40,7 +40,10 @@ HAL_PACKERS/images/
 HAL_PACKERS/text/
 HAL_PACKERS/tools/
 HAL_PACKERS/*.pdf
-training_data/*/images/
+# Keep original.png, ignore iteration screenshots
+training_data/*/images/iter_*.png
+training_data/*/images/refine_*.png
+training_data/*/images/model_*.png
 
 # CAD output files
 *.step
