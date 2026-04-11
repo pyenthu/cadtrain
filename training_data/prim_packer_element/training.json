@@ -1,0 +1,15 @@
+[
+  {
+    "component": "Packer Element",
+    "component_id": "packer_element",
+    "params": {
+      "OD (set)": 2.5,
+      "OD (expanded)": 4.0,
+      "Mandrel OD": 1.5,
+      "Length": 2.0,
+      "Rings": 3.0
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

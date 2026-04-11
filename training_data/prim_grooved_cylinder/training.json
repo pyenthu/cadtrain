@@ -1,0 +1,15 @@
+[
+  {
+    "component": "Grooved Cylinder",
+    "component_id": "grooved_cylinder",
+    "params": {
+      "OD": 2.5,
+      "Wall": 0.3,
+      "Length": 3.0,
+      "Grooves": 4.0,
+      "Groove Depth": 0.08
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

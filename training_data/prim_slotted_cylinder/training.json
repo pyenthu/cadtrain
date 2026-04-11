@@ -1,0 +1,16 @@
+[
+  {
+    "component": "Slotted Cylinder",
+    "component_id": "slotted_cylinder",
+    "params": {
+      "OD": 2.5,
+      "Wall": 0.3,
+      "Length": 4.0,
+      "Slots": 4.0,
+      "Slot Width": 0.15,
+      "Slot Depth": 0.2
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

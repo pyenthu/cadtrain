@@ -1,0 +1,14 @@
+[
+  {
+    "component": "Setting Cone",
+    "component_id": "setting_cone",
+    "params": {
+      "OD Top": 1.8,
+      "OD Bottom": 2.8,
+      "Wall": 0.3,
+      "Length": 1.2
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

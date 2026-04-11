@@ -1,0 +1,15 @@
+[
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.0,
+      "Wall": 0.5,
+      "Length": 2.5,
+      "Threads": 8.0,
+      "Thread Depth": 0.08
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

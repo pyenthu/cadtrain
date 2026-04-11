@@ -1,0 +1,14 @@
+[
+  {
+    "component": "Taper (Cone)",
+    "component_id": "taper_cone",
+    "params": {
+      "OD Top": 2.0,
+      "OD Bottom": 3.0,
+      "Wall": 0.3,
+      "Length": 0.8
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

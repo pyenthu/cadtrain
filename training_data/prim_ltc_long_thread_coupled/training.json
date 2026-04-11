@@ -1,0 +1,17 @@
+[
+  {
+    "component": "LTC (Long Thread Coupled)",
+    "component_id": "ltc_long_thread_coupled",
+    "params": {
+      "OD": 5.5,
+      "Wall": 0.35,
+      "Length": 4.0,
+      "Threads": 16.0,
+      "Thread Depth": 0.05,
+      "Coupling OD": 6.05,
+      "Coupling Length": 1.5
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

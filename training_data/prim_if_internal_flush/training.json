@@ -1,0 +1,17 @@
+[
+  {
+    "component": "IF (Internal Flush)",
+    "component_id": "if_internal_flush",
+    "params": {
+      "Body OD": 3.2,
+      "Pin OD": 3.0,
+      "Wall": 0.3,
+      "Body Length": 3.5,
+      "Pin Length": 2.5,
+      "Threads": 14.0,
+      "Thread Depth": 0.05
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

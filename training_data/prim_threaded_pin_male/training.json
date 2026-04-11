@@ -1,0 +1,15 @@
+[
+  {
+    "component": "Threaded Pin (Male)",
+    "component_id": "threaded_pin_male",
+    "params": {
+      "OD": 2.5,
+      "Wall": 0.3,
+      "Length": 2.0,
+      "Threads": 10.0,
+      "Thread Depth": 0.06
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

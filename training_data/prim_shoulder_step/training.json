@@ -1,0 +1,16 @@
+[
+  {
+    "component": "Shoulder (Step)",
+    "component_id": "shoulder_step",
+    "params": {
+      "Small OD": 2.0,
+      "Large OD": 3.0,
+      "Wall": 0.3,
+      "Small Length": 3.0,
+      "Large Length": 2.0,
+      "Taper Height": 0.15
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

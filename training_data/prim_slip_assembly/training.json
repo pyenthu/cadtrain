@@ -1,0 +1,18 @@
+[
+  {
+    "component": "Slip Assembly",
+    "component_id": "slip_assembly",
+    "params": {
+      "Slip OD": 2.8,
+      "Body OD (inner)": 2.0,
+      "Height": 2.0,
+      "Sectors": 4.0,
+      "Grooves": 12.0,
+      "Groove Depth": 0.08,
+      "Gap Width": 0.1,
+      "Smooth Band %": 0.1
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

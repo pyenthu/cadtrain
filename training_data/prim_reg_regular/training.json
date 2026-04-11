@@ -1,0 +1,19 @@
+[
+  {
+    "component": "REG (Regular)",
+    "component_id": "reg_regular",
+    "params": {
+      "Body OD": 3.5,
+      "Pin OD": 2.2,
+      "Pin Taper": 0.06,
+      "Wall": 0.35,
+      "Body Length": 3.0,
+      "Pin Length": 2.0,
+      "Threads": 12.0,
+      "Thread Depth": 0.06,
+      "Shoulder Width": 0.25
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

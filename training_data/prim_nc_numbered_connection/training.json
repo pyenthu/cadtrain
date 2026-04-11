@@ -1,0 +1,18 @@
+[
+  {
+    "component": "NC (Numbered Connection)",
+    "component_id": "nc_numbered_connection",
+    "params": {
+      "Body OD": 4.5,
+      "Pin OD": 3.2,
+      "Wall": 0.5,
+      "Body Length": 2.5,
+      "Pin Length": 1.5,
+      "Threads": 8.0,
+      "Thread Depth": 0.08,
+      "Shoulder Width": 0.45
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

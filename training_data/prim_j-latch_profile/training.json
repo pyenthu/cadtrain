@@ -1,0 +1,16 @@
+[
+  {
+    "component": "J-Latch Profile",
+    "component_id": "j-latch_profile",
+    "params": {
+      "OD": 2.2,
+      "Wall": 0.3,
+      "Length": 1.5,
+      "Slot Width": 0.15,
+      "Slot Depth": 0.25,
+      "J-Slots": 2.0
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]

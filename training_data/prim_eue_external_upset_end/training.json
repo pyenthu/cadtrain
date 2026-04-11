@@ -1,0 +1,18 @@
+[
+  {
+    "component": "EUE (External Upset End)",
+    "component_id": "eue_external_upset_end",
+    "params": {
+      "Body OD": 2.375,
+      "Upset OD": 2.875,
+      "Wall": 0.25,
+      "Body Length": 4.0,
+      "Upset Length": 1.5,
+      "Threads": 10.0,
+      "Thread Depth": 0.05,
+      "Taper Height": 0.2
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  }
+]
