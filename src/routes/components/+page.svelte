@@ -150,7 +150,8 @@
   .viewport { flex: 1; position: relative; min-width: 0; }
   .svg-col { width: 210px; background: #fff; border-left: 1px solid #ddd; padding: 8px; display: flex; flex-direction: column; align-items: center; }
   .svg-label { font: bold 10px Arial; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-  .svg-box { border: 1px solid #eee; border-radius: 4px; overflow: hidden; min-height: 150px; display: flex; align-items: center; justify-content: center; }
+  .svg-box { border: 1px solid #eee; border-radius: 4px; overflow: hidden; min-height: 150px; display: flex; align-items: center; justify-content: center; width: 100%; }
+  .svg-box :global(svg) { width: 100%; height: auto; display: block; }
   .png-box { border: 1px solid #eee; border-radius: 4px; overflow: hidden; }
   .png-box img { width: 100%; display: block; }
   .rendering { font: 11px Arial; color: #888; padding: 20px; }
