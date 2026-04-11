@@ -19,7 +19,7 @@ export interface ExportResult {
  */
 export async function exportComponent(
   geometry: THREE.BufferGeometry,
-  options: { width?: number; height?: number; color?: string } = {}
+  options: { width?: number; height?: number; color?: string; cutVCGeometry?: THREE.BufferGeometry } = {}
 ): Promise<ExportResult> {
   const W = options.width || 300;
   const H = options.height || 450;
@@ -47,13 +47,15 @@ export async function exportComponent(
   point.position.set(4, -3, -2);
   scene.add(point);
 
-  // === OrthographicCamera — matches component viewer Scene ===
-  const frustum = 6;
+  // === OrthographicCamera — match ComponentScene.svelte (zoom=60, pos=[6,0,0]) ===
+  // Three.js OrthographicCamera: frustum = viewSize / (2 * zoom)
+  // With zoom=60 and default viewSize, the frustum half-size ≈ W/(2*zoom)
   const aspect = W / H;
+  const zoom = 60;
+  const halfH = H / (2 * zoom);
+  const halfW = halfH * aspect;
   const camera = new THREE.OrthographicCamera(
-    -frustum * aspect, frustum * aspect,
-    frustum, -frustum,
-    0.1, 100
+    -halfW, halfW, halfH, -halfH, 0.1, 100
   );
   camera.position.set(6, 0, 0);
   camera.up.set(0, 0, -1);
@@ -74,6 +76,16 @@ export async function exportComponent(
   const svgString = svg.svg();
 
   // === PNG Export via offscreen canvas ===
+  // Use vertex-colored geometry if available (matches 3D view: grey bore + red outer)
+  if (options.cutVCGeometry) {
+    const vcMaterial = new THREE.MeshPhongMaterial({
+      vertexColors: true, specular: '#ffffff', shininess: 300, side: THREE.DoubleSide,
+    });
+    const vcMesh = new THREE.Mesh(options.cutVCGeometry, vcMaterial);
+    scene.remove(mesh);
+    scene.add(vcMesh);
+  }
+
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     preserveDrawingBuffer: true,

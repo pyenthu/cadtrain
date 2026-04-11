@@ -52,8 +52,8 @@
     if (!geo) return;
     const _v = geoVersion; // subscribe to changes
     exporting = true;
-    // Use cutVC for cross-section — solid color material for SVG fill
-    exportComponent(geo.cutVC, { width: 200, height: 320 })
+    // SVG uses cutVC with solid color, PNG uses cutVC with vertex colors
+    exportComponent(geo.cutVC, { width: 200, height: 320, cutVCGeometry: geo.cutVC })
       .then(result => {
         svgHtml = result.svgString;
         pngUrl = result.pngDataUrl;
