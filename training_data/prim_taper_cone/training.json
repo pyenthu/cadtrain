@@ -10,5 +10,53 @@
     },
     "image": "images/default.png",
     "variation": "default"
+  },
+  {
+    "component": "Taper (Cone)",
+    "component_id": "taper_cone",
+    "params": {
+      "OD Top": 5.3,
+      "OD Bottom": 3.9,
+      "Wall": 0.35,
+      "Length": 0.5
+    },
+    "image": "images/var_1.png",
+    "variation": "random_1"
+  },
+  {
+    "component": "Taper (Cone)",
+    "component_id": "taper_cone",
+    "params": {
+      "OD Top": 3.5,
+      "OD Bottom": 3.5,
+      "Wall": 0.25,
+      "Length": 3.6
+    },
+    "image": "images/var_2.png",
+    "variation": "random_2"
+  },
+  {
+    "component": "Taper (Cone)",
+    "component_id": "taper_cone",
+    "params": {
+      "OD Top": 5.0,
+      "OD Bottom": 0.9,
+      "Wall": 0.7,
+      "Length": 1.0
+    },
+    "image": "images/var_3.png",
+    "variation": "random_3"
+  },
+  {
+    "component": "Taper (Cone)",
+    "component_id": "taper_cone",
+    "params": {
+      "OD Top": 2.2,
+      "OD Bottom": 5.1,
+      "Wall": 0.45,
+      "Length": 0.9
+    },
+    "image": "images/var_4.png",
+    "variation": "random_4"
   }
 ]

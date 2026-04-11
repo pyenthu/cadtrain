@@ -14,5 +14,69 @@
     },
     "image": "images/default.png",
     "variation": "default"
+  },
+  {
+    "component": "Slip Assembly",
+    "component_id": "slip_assembly",
+    "params": {
+      "Slip OD": 2.6,
+      "Body OD (inner)": 1.0,
+      "Height": 2.2,
+      "Sectors": 6.0,
+      "Grooves": 7.0,
+      "Groove Depth": 0.15,
+      "Gap Width": 0.15,
+      "Smooth Band %": 0.05
+    },
+    "image": "images/var_1.png",
+    "variation": "random_1"
+  },
+  {
+    "component": "Slip Assembly",
+    "component_id": "slip_assembly",
+    "params": {
+      "Slip OD": 2.1,
+      "Body OD (inner)": 1.7,
+      "Height": 3.8,
+      "Sectors": 6.0,
+      "Grooves": 14.0,
+      "Groove Depth": 0.08,
+      "Gap Width": 0.2,
+      "Smooth Band %": 0.05
+    },
+    "image": "images/var_2.png",
+    "variation": "random_2"
+  },
+  {
+    "component": "Slip Assembly",
+    "component_id": "slip_assembly",
+    "params": {
+      "Slip OD": 3.7,
+      "Body OD (inner)": 1.0,
+      "Height": 1.9,
+      "Sectors": 4.0,
+      "Grooves": 11.0,
+      "Groove Depth": 0.09,
+      "Gap Width": 0.2,
+      "Smooth Band %": 0.25
+    },
+    "image": "images/var_3.png",
+    "variation": "random_3"
+  },
+  {
+    "component": "Slip Assembly",
+    "component_id": "slip_assembly",
+    "params": {
+      "Slip OD": 4.4,
+      "Body OD (inner)": 1.7,
+      "Height": 3.1,
+      "Sectors": 8.0,
+      "Grooves": 5.0,
+      "Groove Depth": 0.11,
+      "Gap Width": 0.05,
+      "Smooth Band %": 0.2
+    },
+    "image": "images/var_4.png",
+    "variation": "random_4"
   }
 ]

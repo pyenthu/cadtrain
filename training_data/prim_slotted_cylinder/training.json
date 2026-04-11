@@ -12,5 +12,61 @@
     },
     "image": "images/default.png",
     "variation": "default"
+  },
+  {
+    "component": "Slotted Cylinder",
+    "component_id": "slotted_cylinder",
+    "params": {
+      "OD": 5.4,
+      "Wall": 0.75,
+      "Length": 1.9,
+      "Slots": 2.0,
+      "Slot Width": 0.4,
+      "Slot Depth": 0.35
+    },
+    "image": "images/var_1.png",
+    "variation": "random_1"
+  },
+  {
+    "component": "Slotted Cylinder",
+    "component_id": "slotted_cylinder",
+    "params": {
+      "OD": 3.2,
+      "Wall": 0.35,
+      "Length": 6.6,
+      "Slots": 7.0,
+      "Slot Width": 0.1,
+      "Slot Depth": 0.15
+    },
+    "image": "images/var_2.png",
+    "variation": "random_2"
+  },
+  {
+    "component": "Slotted Cylinder",
+    "component_id": "slotted_cylinder",
+    "params": {
+      "OD": 0.9,
+      "Wall": 0.7,
+      "Length": 8.7,
+      "Slots": 9.0,
+      "Slot Width": 0.45,
+      "Slot Depth": 0.4
+    },
+    "image": "images/var_3.png",
+    "variation": "random_3"
+  },
+  {
+    "component": "Slotted Cylinder",
+    "component_id": "slotted_cylinder",
+    "params": {
+      "OD": 4.0,
+      "Wall": 0.55,
+      "Length": 9.3,
+      "Slots": 7.0,
+      "Slot Width": 0.15,
+      "Slot Depth": 0.4
+    },
+    "image": "images/var_4.png",
+    "variation": "random_4"
   }
 ]

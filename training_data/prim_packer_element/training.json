@@ -11,5 +11,57 @@
     },
     "image": "images/default.png",
     "variation": "default"
+  },
+  {
+    "component": "Packer Element",
+    "component_id": "packer_element",
+    "params": {
+      "OD (set)": 5.5,
+      "OD (expanded)": 7.8,
+      "Mandrel OD": 0.8,
+      "Length": 3.7,
+      "Rings": 3.0
+    },
+    "image": "images/var_1.png",
+    "variation": "random_1"
+  },
+  {
+    "component": "Packer Element",
+    "component_id": "packer_element",
+    "params": {
+      "OD (set)": 4.4,
+      "OD (expanded)": 3.5,
+      "Mandrel OD": 2.3,
+      "Length": 2.8,
+      "Rings": 4.0
+    },
+    "image": "images/var_2.png",
+    "variation": "random_2"
+  },
+  {
+    "component": "Packer Element",
+    "component_id": "packer_element",
+    "params": {
+      "OD (set)": 3.8,
+      "OD (expanded)": 2.2,
+      "Mandrel OD": 1.0,
+      "Length": 3.0,
+      "Rings": 2.0
+    },
+    "image": "images/var_3.png",
+    "variation": "random_3"
+  },
+  {
+    "component": "Packer Element",
+    "component_id": "packer_element",
+    "params": {
+      "OD (set)": 3.4,
+      "OD (expanded)": 7.3,
+      "Mandrel OD": 0.5,
+      "Length": 1.8,
+      "Rings": 2.0
+    },
+    "image": "images/var_4.png",
+    "variation": "random_4"
   }
 ]
