@@ -19,10 +19,27 @@
 
   // Load all tool analyses
   async function loadTools() {
-    const toolIds = [
+    // Dynamically discover all tools with analysis.json
+    const knownIds = [
       'short_ratch_latch', 'extension_thread', 'one_piece_sealbore',
-      'top_snap_locator', 'bridge_plug', 'setting_tool'
+      'top_snap_locator', 'bridge_plug', 'setting_tool',
+      'comp_FLOW_CONTROL.FLOW_COUPLING', 'comp_FLOW_CONTROL.FLOW_PUP_LOWER',
+      'comp_FLOW_CONTROL.FLOW_PUP_UPPER', 'comp_FLOW_CONTROL.NIPPLE_AR_NO_GO',
+      'comp_FLOW_CONTROL.NIPPLE_BN', 'comp_FLOW_CONTROL.NIPPLE_BX',
+      'comp_FLOW_CONTROL.NIPPLE_BXN', 'comp_FLOW_CONTROL.NIPPLE_R_LANDING',
+      'comp_FLOW_CONTROL.TRSSSV_SP', 'comp_FLOW_CONTROL.TRSSV_BALL',
+      'comp_FLOW_CONTROL.TRSSV_FLAPPER',
+      'comp_MISC.GAS_LIFT_MANDREL', 'comp_MISC.MULE_SHOE_RECIPROCATING',
+      'comp_MISC.SIDE_POCKET_MANDREL',
+      'comp_PACKERS.AHC_PACKER', 'comp_PACKERS.ASV', 'comp_PACKERS.Group 1386',
+      'comp_PACKERS.PACKER_ASV', 'comp_PACKERS.PACKER_BAKER_PERMANENT',
+      'comp_PACKERS.PACKER_BAKER_SIGNATURE_DF', 'comp_PACKERS.PACKER_DIRECT',
+      'comp_PACKERS.PACKER_MHR_RATCH', 'comp_PACKERS.PACKER_RH',
+      'comp_PBR.POLISHED_BORE_ASSEMBLY_1', 'comp_PBR.POLISHED_BORE_ASSEMBLY_2',
+      'comp_TUBING_HANGER.TUBING_HANGER_BOX_UP', 'comp_TUBING_HANGER.TUBING_HANGER_DUAL_TBG',
+      'comp_TUBING_HANGER.TUBING_HANGER_PIN_UP', 'perma_lach_pls',
     ];
+    const toolIds = knownIds;
     const loaded: { id: string; name: string; analysis: any }[] = [];
     for (const id of toolIds) {
       try {

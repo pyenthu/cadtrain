@@ -2,223 +2,151 @@
   {
     "project": "perma_lach_pls",
     "iteration": 1,
-    "timestamp": "2026-04-09T20:29:10.217392",
-    "original_image": "/Users/neerajsethi/duplicate/HAL_PACKERS/original_p39.png",
-    "model_screenshot": "/Users/neerajsethi/duplicate/training_data/perma_lach_pls/images/iter_001_model.png",
-    "result_screenshot": null,
-    "user_feedback_raw": "body seems transparent, should be red outside grey metallic inside, background should be white",
-    "corrections": [
-      {
-        "category": "MATERIAL",
-        "target": "body",
-        "property": "opacity",
-        "from": "0.3-0.45",
-        "to": "1.0",
-        "reason": "housing looked see-through"
-      },
-      {
-        "category": "MATERIAL",
-        "target": "body",
-        "property": "color",
-        "from": "#8899aa",
-        "to": "#cc2222",
-        "reason": "should match red catalog drawing"
-      },
-      {
-        "category": "MATERIAL",
-        "target": "bore",
-        "property": "color",
-        "from": "#0a0a0a",
-        "to": "#999999",
-        "reason": "inner bore should be grey metallic"
-      },
-      {
-        "category": "MATERIAL",
-        "target": "background",
-        "property": "color",
-        "from": "#1a1a2e",
-        "to": "#ffffff",
-        "reason": "white background for comparison"
+    "type": "structural",
+    "timestamp": "2026-04-11T00:36:15.930576",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Perma-Lach PLS Packers. 9 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Perma-Lach PLS Packers",
+        "aspect_ratio": 8.5,
+        "sections": [
+          {
+            "name": "Upper Connector",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.12,
+            "length": 0.08,
+            "features": [
+              "threaded connection"
+            ],
+            "color": "gray"
+          },
+          {
+            "name": "Case-Carburized Upper Slips",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.12,
+            "features": [
+              "carburized slips",
+              "slip segments"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "Upper Mandrel",
+            "shape": "cylinder",
+            "od": 0.75,
+            "wall_thickness": 0.1,
+            "length": 0.15,
+            "features": [
+              "mandrel body",
+              "internal passages"
+            ],
+            "color": "gray"
+          },
+          {
+            "name": "Internal J-Latch",
+            "shape": "cylinder",
+            "od": 0.8,
+            "wall_thickness": 0.08,
+            "length": 0.1,
+            "features": [
+              "j-latch mechanism",
+              "locking profile"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "Molded Internal Seal",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.2,
+            "length": 0.06,
+            "features": [
+              "elastomer seal",
+              "molded profile"
+            ],
+            "color": "black"
+          },
+          {
+            "name": "Triple-Seal Multidurometer Element Package",
+            "shape": "cylinder",
+            "od": 0.95,
+            "wall_thickness": 0.25,
+            "length": 0.18,
+            "features": [
+              "multiple sealing elements",
+              "variable durometer"
+            ],
+            "color": "black"
+          },
+          {
+            "name": "Case-Carburized Lower Slips",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.12,
+            "features": [
+              "carburized slips",
+              "spring-loaded drag blocks"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "Running J-Latch",
+            "shape": "cylinder",
+            "od": 0.8,
+            "wall_thickness": 0.1,
+            "length": 0.08,
+            "features": [
+              "running latch",
+              "release mechanism"
+            ],
+            "color": "gray"
+          },
+          {
+            "name": "Lower Connector",
+            "shape": "cylinder",
+            "od": 0.85,
+            "wall_thickness": 0.12,
+            "length": 0.11,
+            "features": [
+              "threaded connection",
+              "sub assembly"
+            ],
+            "color": "gray"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "diameter": 0.5
+          },
+          {
+            "position": 0.2,
+            "diameter": 0.55
+          },
+          {
+            "position": 0.4,
+            "diameter": 0.45
+          },
+          {
+            "position": 0.6,
+            "diameter": 0.5
+          },
+          {
+            "position": 0.8,
+            "diameter": 0.55
+          },
+          {
+            "position": 1.0,
+            "diameter": 0.5
+          }
+        ]
       }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
-  },
-  {
-    "project": "perma_lach_pls",
-    "iteration": 2,
-    "timestamp": "2026-04-09T20:29:10.218305",
-    "original_image": "/Users/neerajsethi/duplicate/HAL_PACKERS/original_p39.png",
-    "model_screenshot": "/Users/neerajsethi/duplicate/training_data/perma_lach_pls/images/iter_002_model.png",
-    "result_screenshot": null,
-    "user_feedback_raw": "proportions wrong, tool should be taller and thinner, more like the original slim shape",
-    "corrections": [
-      {
-        "category": "PROPORTION",
-        "target": "all_components",
-        "property": "rOuter",
-        "from": "0.25-0.6",
-        "to": "0.1-0.22",
-        "reason": "too wide compared to original"
-      },
-      {
-        "category": "PROPORTION",
-        "target": "mandrels",
-        "property": "height",
-        "from": "0.8",
-        "to": "2.5",
-        "reason": "mandrels should be longer"
-      },
-      {
-        "category": "GEOMETRY",
-        "target": "element_package",
-        "property": "taper",
-        "from": "abrupt",
-        "to": "gradual_cone",
-        "reason": "original shows gradual taper"
-      }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
-  },
-  {
-    "project": "perma_lach_pls",
-    "iteration": 3,
-    "timestamp": "2026-04-09T20:29:10.218748",
-    "original_image": "/Users/neerajsethi/duplicate/HAL_PACKERS/original_p39.png",
-    "model_screenshot": "/Users/neerajsethi/duplicate/training_data/perma_lach_pls/images/iter_003_model.png",
-    "result_screenshot": null,
-    "user_feedback_raw": "90 deg quad cut view needed, orthogonal camera, remove UI text, match aspect ratio",
-    "corrections": [
-      {
-        "category": "VIEW",
-        "target": "camera",
-        "property": "type",
-        "from": "perspective",
-        "to": "orthographic",
-        "reason": "flat 2D-like view for comparison"
-      },
-      {
-        "category": "VIEW",
-        "target": "clipping",
-        "property": "planes",
-        "from": "none",
-        "to": "quad_cut_90deg",
-        "reason": "show internal bore structure"
-      },
-      {
-        "category": "LAYOUT",
-        "target": "ui",
-        "property": "visible",
-        "from": "true",
-        "to": "false",
-        "reason": "clean view for comparison"
-      }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
-  },
-  {
-    "project": "perma_lach_pls",
-    "iteration": 4,
-    "timestamp": "2026-04-09T20:29:10.219278",
-    "original_image": "/Users/neerajsethi/duplicate/HAL_PACKERS/original_p39.png",
-    "model_screenshot": "/Users/neerajsethi/duplicate/training_data/perma_lach_pls/images/iter_004_model.png",
-    "result_screenshot": null,
-    "user_feedback_raw": "too tall, reduce height and increase diameter a bit",
-    "corrections": [
-      {
-        "category": "PROPORTION",
-        "target": "packer_group",
-        "property": "scale_y",
-        "from": "1.0",
-        "to": "0.5",
-        "reason": "too tall compared to original"
-      },
-      {
-        "category": "PROPORTION",
-        "target": "packer_group",
-        "property": "scale_xz",
-        "from": "3.0",
-        "to": "6.0",
-        "reason": "diameter needs to be wider"
-      }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
-  },
-  {
-    "project": "perma_lach_pls",
-    "iteration": 5,
-    "timestamp": "2026-04-09T20:29:10.219844",
-    "original_image": "/Users/neerajsethi/duplicate/HAL_PACKERS/original_p39.png",
-    "model_screenshot": "/Users/neerajsethi/duplicate/training_data/perma_lach_pls/images/iter_005_model.png",
-    "result_screenshot": null,
-    "user_feedback_raw": "4 panels needed: original, cross-section, 3D, and labels panel. Labels on top.",
-    "corrections": [
-      {
-        "category": "LAYOUT",
-        "target": "compare_page",
-        "property": "panels",
-        "from": "3",
-        "to": "4",
-        "reason": "separate panel for component details"
-      },
-      {
-        "category": "LAYOUT",
-        "target": "labels",
-        "property": "position",
-        "from": "overlay",
-        "to": "top_bar",
-        "reason": "cleaner label placement"
-      }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
-  },
-  {
-    "project": "perma_lach_pls",
-    "iteration": 6,
-    "timestamp": "2026-04-09T20:51:01.898793",
-    "original_image": "/Users/neerajsethi/duplicate/HAL_PACKERS/original_p39.png",
-    "model_screenshot": "/Users/neerajsethi/duplicate/training_data/perma_lach_pls/images/iter_006_model.png",
-    "result_screenshot": null,
-    "user_feedback_raw": "top section is a cylindrical shell, hollow, ~20% of height, with tapered thread inside. User called it a bottom sub. Complex thread rendering not good \u2014 need simpler approach.",
-    "corrections": [
-      {
-        "category": "COMPONENT",
-        "target": "upper_mandrel",
-        "property": "type",
-        "from": "solid_mandrel",
-        "to": "hollow_threaded_shell",
-        "reason": "this is a bottom sub connection, not a solid mandrel"
-      },
-      {
-        "category": "GEOMETRY",
-        "target": "upper_shell",
-        "property": "wall_thickness",
-        "from": "solid",
-        "to": "thin_wall (rOuter=0.13, rInner=0.10)",
-        "reason": "hollow cylindrical shell"
-      },
-      {
-        "category": "COMPONENT",
-        "target": "upper_shell",
-        "property": "internal_feature",
-        "from": "none",
-        "to": "tapered_thread",
-        "reason": "thread for sub connection"
-      },
-      {
-        "category": "MATERIAL",
-        "target": "thread_rendering",
-        "property": "approach",
-        "from": "512_box_ridges",
-        "to": "simpler",
-        "reason": "too many small geometries, need simpler thread representation"
-      }
-    ],
-    "code_changes": [],
-    "vlm_suggestions": []
+    },
+    "corrections": []
   }
 ]

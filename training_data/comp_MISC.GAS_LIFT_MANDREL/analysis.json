@@ -1,0 +1,69 @@
+{
+  "tool_name": "Misc Gas Lift Mandrel",
+  "aspect_ratio": 8.5,
+  "sections": [
+    {
+      "name": "upper_connection",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "main_body_upper",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.18,
+      "length": 0.65,
+      "features": [
+        "valve_pocket",
+        "side_port"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "main_body_lower",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.18,
+      "length": 0.18,
+      "features": [
+        "threaded_section"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "lower_connection",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.05,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "diameter": 0.55
+    },
+    {
+      "position": 0.12,
+      "diameter": 0.64
+    },
+    {
+      "position": 0.77,
+      "diameter": 0.64
+    },
+    {
+      "position": 1.0,
+      "diameter": 0.55
+    }
+  ]
+}

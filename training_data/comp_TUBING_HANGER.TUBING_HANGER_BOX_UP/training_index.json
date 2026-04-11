@@ -1,0 +1,113 @@
+[
+  {
+    "project": "comp_TUBING_HANGER.TUBING_HANGER_BOX_UP",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T00:35:42.506574",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Tubing Hanger Tubing Hanger Box Up. 6 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Tubing Hanger Tubing Hanger Box Up",
+        "aspect_ratio": 2.5,
+        "sections": [
+          {
+            "name": "upper_connection",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.15,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "bronze"
+          },
+          {
+            "name": "upper_shoulder",
+            "shape": "cylinder",
+            "od": 0.45,
+            "wall_thickness": 0.12,
+            "length": 0.08,
+            "features": [
+              "shoulder_transition"
+            ],
+            "color": "bronze"
+          },
+          {
+            "name": "main_body",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.25,
+            "features": [
+              "hanger_body",
+              "sealing_surfaces"
+            ],
+            "color": "bronze"
+          },
+          {
+            "name": "lower_shoulder",
+            "shape": "cylinder",
+            "od": 0.8,
+            "wall_thickness": 0.12,
+            "length": 0.15,
+            "features": [
+              "tapered_transition"
+            ],
+            "color": "bronze"
+          },
+          {
+            "name": "transition_section",
+            "shape": "cone",
+            "od": 0.6,
+            "wall_thickness": 0.1,
+            "length": 0.12,
+            "features": [
+              "conical_reduction"
+            ],
+            "color": "bronze",
+            "od_bottom": 0.48
+          },
+          {
+            "name": "lower_connection",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.25,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "bronze"
+          }
+        ],
+        "bore_profile": [
+          {
+            "diameter": 0.19,
+            "length": 0.15
+          },
+          {
+            "diameter": 0.21,
+            "length": 0.08
+          },
+          {
+            "diameter": 0.7,
+            "length": 0.25
+          },
+          {
+            "diameter": 0.56,
+            "length": 0.15
+          },
+          {
+            "diameter": 0.4,
+            "length": 0.12
+          },
+          {
+            "diameter": 0.19,
+            "length": 0.25
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]

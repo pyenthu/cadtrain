@@ -1,0 +1,77 @@
+{
+  "tool_name": "Flow Control Nipple Ar No Go",
+  "aspect_ratio": 4.5,
+  "sections": [
+    {
+      "name": "top_connection",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "upper_body",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.68,
+      "features": [
+        "smooth_exterior"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "nipple_profile_section",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.08,
+      "length": 0.08,
+      "features": [
+        "internal_profile",
+        "landing_shoulder"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "bottom_connection",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "diameter": 0.7
+    },
+    {
+      "position": 0.12,
+      "diameter": 0.61
+    },
+    {
+      "position": 0.76,
+      "diameter": 0.61
+    },
+    {
+      "position": 0.8,
+      "diameter": 0.45
+    },
+    {
+      "position": 0.88,
+      "diameter": 0.61
+    },
+    {
+      "position": 1.0,
+      "diameter": 0.7
+    }
+  ]
+}

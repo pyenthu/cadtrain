@@ -1,0 +1,102 @@
+[
+  {
+    "project": "comp_PACKERS.AHC_PACKER",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T00:33:39.366756",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Packers Ahc Packer. 6 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Packers Ahc Packer",
+        "aspect_ratio": 8.0,
+        "sections": [
+          {
+            "name": "upper_connector",
+            "shape": "cylinder",
+            "od": 0.25,
+            "wall_thickness": 0.05,
+            "length": 0.15,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "upper_seal_assembly",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.15,
+            "features": [
+              "packer_elements",
+              "sealing_surface",
+              "ribs"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "upper_mandrel",
+            "shape": "cylinder",
+            "od": 0.25,
+            "wall_thickness": 0.05,
+            "length": 0.15,
+            "features": [
+              "flow_ports",
+              "horizontal_slots"
+            ],
+            "color": "white"
+          },
+          {
+            "name": "central_body",
+            "shape": "cylinder",
+            "od": 0.6,
+            "wall_thickness": 0.1,
+            "length": 0.25,
+            "features": [
+              "control_mechanism",
+              "setting_ports"
+            ],
+            "color": "black"
+          },
+          {
+            "name": "lower_mandrel",
+            "shape": "cylinder",
+            "od": 0.25,
+            "wall_thickness": 0.05,
+            "length": 0.15,
+            "features": [
+              "flow_ports",
+              "horizontal_slots"
+            ],
+            "color": "white"
+          },
+          {
+            "name": "lower_seal_assembly",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.15,
+            "features": [
+              "packer_elements",
+              "sealing_surface",
+              "ribs"
+            ],
+            "color": "red"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "id": 0.15
+          },
+          {
+            "position": 1.0,
+            "id": 0.15
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]

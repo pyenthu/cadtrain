@@ -1,0 +1,97 @@
+{
+  "tool_name": "Packers Packer Asv",
+  "aspect_ratio": 12,
+  "sections": [
+    {
+      "name": "top_connector",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.1,
+      "length": 0.08,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "upper_mandrel",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "solid_body",
+        "external_groove"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "packer_element_housing",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.25,
+      "length": 0.35,
+      "features": [
+        "packer_element",
+        "sealing_surface"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "slip_assembly",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.2,
+      "length": 0.15,
+      "features": [
+        "slip_segments",
+        "grid_pattern"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "compression_ring",
+      "shape": "cylinder",
+      "od": 0.75,
+      "wall_thickness": 0.18,
+      "length": 0.08,
+      "features": [
+        "compression_surface"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "lower_mandrel",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.22,
+      "features": [
+        "internal_mechanism"
+      ],
+      "color": "blue"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "id": 0.3
+    },
+    {
+      "position": 0.2,
+      "id": 0.3
+    },
+    {
+      "position": 0.55,
+      "id": 0.5
+    },
+    {
+      "position": 0.78,
+      "id": 0.39
+    },
+    {
+      "position": 1.0,
+      "id": 0.3
+    }
+  ]
+}

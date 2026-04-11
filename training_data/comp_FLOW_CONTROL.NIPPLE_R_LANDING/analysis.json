@@ -1,0 +1,94 @@
+{
+  "tool_name": "Flow Control Nipple R Landing",
+  "aspect_ratio": 3.2,
+  "sections": [
+    {
+      "name": "Top Connection",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.15,
+      "features": [
+        "threaded connection"
+      ],
+      "color": "white"
+    },
+    {
+      "name": "Upper Landing Profile",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.08,
+      "features": [
+        "landing groove"
+      ],
+      "color": "white"
+    },
+    {
+      "name": "Second Landing Profile",
+      "shape": "cylinder",
+      "od": 0.9,
+      "wall_thickness": 0.13,
+      "length": 0.1,
+      "features": [
+        "landing groove"
+      ],
+      "color": "white"
+    },
+    {
+      "name": "Third Landing Profile",
+      "shape": "cylinder",
+      "od": 0.8,
+      "wall_thickness": 0.11,
+      "length": 0.1,
+      "features": [
+        "landing groove"
+      ],
+      "color": "white"
+    },
+    {
+      "name": "Fourth Landing Profile",
+      "shape": "cylinder",
+      "od": 0.92,
+      "wall_thickness": 0.14,
+      "length": 0.12,
+      "features": [
+        "landing groove"
+      ],
+      "color": "white"
+    },
+    {
+      "name": "Main Body",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.45,
+      "features": [
+        "flow control body"
+      ],
+      "color": "white"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "diameter": 0.7
+    },
+    {
+      "position": 0.15,
+      "diameter": 0.6
+    },
+    {
+      "position": 0.43,
+      "diameter": 0.6
+    },
+    {
+      "position": 0.57,
+      "diameter": 0.6
+    },
+    {
+      "position": 1.0,
+      "diameter": 0.7
+    }
+  ]
+}

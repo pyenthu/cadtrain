@@ -1,0 +1,112 @@
+[
+  {
+    "project": "comp_TUBING_HANGER.TUBING_HANGER_DUAL_TBG",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T00:35:53.610301",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Tubing Hanger Dual Tbg. 7 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Tubing Hanger Dual Tbg",
+        "aspect_ratio": 3.2,
+        "sections": [
+          {
+            "name": "upper_connection_1",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.15,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "copper"
+          },
+          {
+            "name": "upper_connection_2",
+            "shape": "cylinder",
+            "od": 0.25,
+            "wall_thickness": 0.06,
+            "length": 0.08,
+            "features": [
+              "reduced_diameter"
+            ],
+            "color": "copper"
+          },
+          {
+            "name": "upper_connection_3",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.12,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "copper"
+          },
+          {
+            "name": "transition_cone",
+            "shape": "cone",
+            "od": 1.0,
+            "wall_thickness": 0.12,
+            "length": 0.18,
+            "features": [
+              "expansion_cone"
+            ],
+            "color": "copper",
+            "od_bottom": 0.8
+          },
+          {
+            "name": "hanger_body",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.32,
+            "features": [
+              "main_body",
+              "dual_bore"
+            ],
+            "color": "copper"
+          },
+          {
+            "name": "lower_connection_1",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.08,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "copper"
+          },
+          {
+            "name": "lower_connection_2",
+            "shape": "cylinder",
+            "od": 0.25,
+            "wall_thickness": 0.06,
+            "length": 0.07,
+            "features": [
+              "reduced_diameter"
+            ],
+            "color": "copper"
+          }
+        ],
+        "bore_profile": [
+          {
+            "diameter": 0.18,
+            "length": 0.35
+          },
+          {
+            "diameter": 0.7,
+            "length": 0.5
+          },
+          {
+            "diameter": 0.18,
+            "length": 0.15
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]

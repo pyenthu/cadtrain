@@ -1,0 +1,96 @@
+{
+  "tool_name": "Pbr Polished Bore Assembly 2",
+  "aspect_ratio": 4.5,
+  "sections": [
+    {
+      "name": "top_connector",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "upper_coupling",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.2,
+      "length": 0.08,
+      "features": [
+        "coupling_profile"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "upper_mandrel",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.25,
+      "features": [
+        "smooth_bore"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "polished_bore_receptacle",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.25,
+      "length": 0.35,
+      "features": [
+        "polished_bore",
+        "seal_assembly"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "bottom_connector",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.12,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "running_nipple",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.08,
+      "features": [
+        "running_profile",
+        "sealing_elements"
+      ],
+      "color": "yellow"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "diameter": 0.3
+    },
+    {
+      "position": 0.2,
+      "diameter": 0.3
+    },
+    {
+      "position": 0.45,
+      "diameter": 0.5
+    },
+    {
+      "position": 0.8,
+      "diameter": 0.5
+    },
+    {
+      "position": 1.0,
+      "diameter": 0.3
+    }
+  ]
+}

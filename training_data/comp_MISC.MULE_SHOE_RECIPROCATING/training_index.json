@@ -1,0 +1,74 @@
+[
+  {
+    "project": "comp_MISC.MULE_SHOE_RECIPROCATING",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T00:33:21.135253",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Misc Mule Shoe Reciprocating. 3 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Misc Mule Shoe Reciprocating",
+        "aspect_ratio": 3.5,
+        "sections": [
+          {
+            "name": "upper_connection",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.15,
+            "features": [
+              "threaded_connection",
+              "central_bore"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "seal_assembly",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.12,
+            "length": 0.25,
+            "features": [
+              "piston_seals",
+              "reciprocating_mechanism",
+              "pink_seal_elements"
+            ],
+            "color": "red_with_pink_seals"
+          },
+          {
+            "name": "lower_body",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.6,
+            "features": [
+              "central_bore",
+              "uniform_wall"
+            ],
+            "color": "red"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "diameter": 0.7
+          },
+          {
+            "position": 0.15,
+            "diameter": 0.76
+          },
+          {
+            "position": 0.4,
+            "diameter": 0.76
+          },
+          {
+            "position": 1.0,
+            "diameter": 0.7
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]

@@ -1,0 +1,102 @@
+[
+  {
+    "project": "comp_FLOW_CONTROL.TRSSV_FLAPPER",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T00:33:08.276569",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Flow Control Trssv Flapper. 5 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Flow Control Trssv Flapper",
+        "aspect_ratio": 2.5,
+        "sections": [
+          {
+            "name": "upper_connector",
+            "shape": "cylinder",
+            "od": 0.4,
+            "wall_thickness": 0.1,
+            "length": 0.15,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "body_upper",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.25,
+            "features": [
+              "main_housing"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "flapper_chamber",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.35,
+            "features": [
+              "flapper_mechanism",
+              "internal_components",
+              "flow_ports"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "body_lower",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.15,
+            "length": 0.1,
+            "features": [
+              "main_housing"
+            ],
+            "color": "red"
+          },
+          {
+            "name": "lower_connector",
+            "shape": "cylinder",
+            "od": 0.4,
+            "wall_thickness": 0.1,
+            "length": 0.15,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "red"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "diameter": 0.2
+          },
+          {
+            "position": 0.15,
+            "diameter": 0.2
+          },
+          {
+            "position": 0.4,
+            "diameter": 0.7
+          },
+          {
+            "position": 0.75,
+            "diameter": 0.7
+          },
+          {
+            "position": 0.85,
+            "diameter": 0.2
+          },
+          {
+            "position": 1.0,
+            "diameter": 0.2
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]

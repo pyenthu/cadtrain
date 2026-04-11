@@ -1,0 +1,74 @@
+{
+  "tool_name": "Flow Control Trssv Ball",
+  "aspect_ratio": 4.5,
+  "sections": [
+    {
+      "name": "upper_connection",
+      "shape": "cylinder",
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.15,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "upper_body",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.2,
+      "length": 0.4,
+      "features": [
+        "solid_wall"
+      ],
+      "color": "red"
+    },
+    {
+      "name": "valve_housing",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.3,
+      "features": [
+        "ball_valve_chamber",
+        "flow_ports",
+        "seat_rings"
+      ],
+      "color": "gray"
+    },
+    {
+      "name": "lower_body",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.2,
+      "length": 0.15,
+      "features": [
+        "solid_wall"
+      ],
+      "color": "red"
+    }
+  ],
+  "bore_profile": [
+    {
+      "section": "upper_connection",
+      "id": 0.3,
+      "profile": "uniform"
+    },
+    {
+      "section": "upper_body",
+      "id": 0.6,
+      "profile": "uniform"
+    },
+    {
+      "section": "valve_housing",
+      "id": 0.7,
+      "profile": "ball_valve_restriction"
+    },
+    {
+      "section": "lower_body",
+      "id": 0.6,
+      "profile": "uniform"
+    }
+  ]
+}

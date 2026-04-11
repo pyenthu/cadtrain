@@ -1,0 +1,152 @@
+{
+  "tool_name": "Packers Packer Baker Permanent",
+  "aspect_ratio": 8.5,
+  "sections": [
+    {
+      "name": "top_sub",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.143,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "upper_mandrel",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.143,
+      "features": [
+        "smooth_bore"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "upper_seal_assembly",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.095,
+      "features": [
+        "sealing_elements",
+        "ports"
+      ],
+      "color": "yellow_with_threads"
+    },
+    {
+      "name": "upper_slip_assembly",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.08,
+      "length": 0.071,
+      "features": [
+        "slip_segments",
+        "cone_surface"
+      ],
+      "color": "yellow_with_crosshatch"
+    },
+    {
+      "name": "packer_element",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.05,
+      "length": 0.095,
+      "features": [
+        "elastomer_element",
+        "backup_rings"
+      ],
+      "color": "gray"
+    },
+    {
+      "name": "lower_slip_assembly",
+      "shape": "cylinder",
+      "od": 1.0,
+      "wall_thickness": 0.08,
+      "length": 0.071,
+      "features": [
+        "slip_segments",
+        "cone_surface"
+      ],
+      "color": "yellow_with_crosshatch"
+    },
+    {
+      "name": "lower_seal_assembly",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.12,
+      "length": 0.095,
+      "features": [
+        "sealing_elements",
+        "ports"
+      ],
+      "color": "yellow_with_threads"
+    },
+    {
+      "name": "lower_mandrel",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.143,
+      "features": [
+        "smooth_bore"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "bottom_sub",
+      "shape": "cylinder",
+      "od": 0.85,
+      "wall_thickness": 0.15,
+      "length": 0.143,
+      "features": [
+        "threaded_connection"
+      ],
+      "color": "yellow"
+    }
+  ],
+  "bore_profile": [
+    {
+      "position": 0.0,
+      "diameter": 0.55
+    },
+    {
+      "position": 0.24,
+      "diameter": 0.55
+    },
+    {
+      "position": 0.32,
+      "diameter": 0.61
+    },
+    {
+      "position": 0.38,
+      "diameter": 0.84
+    },
+    {
+      "position": 0.46,
+      "diameter": 0.9
+    },
+    {
+      "position": 0.54,
+      "diameter": 0.9
+    },
+    {
+      "position": 0.62,
+      "diameter": 0.84
+    },
+    {
+      "position": 0.68,
+      "diameter": 0.61
+    },
+    {
+      "position": 0.76,
+      "diameter": 0.55
+    },
+    {
+      "position": 1.0,
+      "diameter": 0.55
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+[
+  {
+    "project": "comp_PACKERS.PACKER_DIRECT",
+    "iteration": 1,
+    "type": "structural",
+    "timestamp": "2026-04-11T00:34:41.491639",
+    "original_image": "images/original.png",
+    "user_feedback_raw": "VLM analysis: Packers Packer Direct. 6 sections.",
+    "converged_params": {
+      "vlm_analysis": {
+        "tool_name": "Packers Packer Direct",
+        "aspect_ratio": 8.5,
+        "sections": [
+          {
+            "name": "upper_connector",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.08,
+            "features": [
+              "threaded_connection"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "upper_mandrel",
+            "shape": "cylinder",
+            "od": 0.3,
+            "wall_thickness": 0.06,
+            "length": 0.12,
+            "features": [
+              "smooth_bore",
+              "ports"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "upper_packer_element",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.35,
+            "length": 0.25,
+            "features": [
+              "elastomer_element",
+              "ribs",
+              "sealing_surface"
+            ],
+            "color": "gray"
+          },
+          {
+            "name": "middle_mandrel_section",
+            "shape": "cylinder",
+            "od": 0.32,
+            "wall_thickness": 0.06,
+            "length": 0.1,
+            "features": [
+              "bypass_ports",
+              "flow_control"
+            ],
+            "color": "yellow"
+          },
+          {
+            "name": "lower_packer_element",
+            "shape": "cylinder",
+            "od": 1.0,
+            "wall_thickness": 0.35,
+            "length": 0.25,
+            "features": [
+              "elastomer_element",
+              "ribs",
+              "sealing_surface"
+            ],
+            "color": "gray"
+          },
+          {
+            "name": "lower_connector",
+            "shape": "cylinder",
+            "od": 0.35,
+            "wall_thickness": 0.08,
+            "length": 0.2,
+            "features": [
+              "threaded_connection",
+              "flow_ports"
+            ],
+            "color": "yellow"
+          }
+        ],
+        "bore_profile": [
+          {
+            "position": 0.0,
+            "diameter": 0.19
+          },
+          {
+            "position": 0.2,
+            "diameter": 0.18
+          },
+          {
+            "position": 0.5,
+            "diameter": 0.2
+          },
+          {
+            "position": 0.8,
+            "diameter": 0.18
+          },
+          {
+            "position": 1.0,
+            "diameter": 0.19
+          }
+        ]
+      }
+    },
+    "corrections": []
+  }
+]
