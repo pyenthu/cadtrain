@@ -141,6 +141,16 @@
       </Canvas>
     </div>
 
+    <!-- Exports: SVG + PNG stacked -->
+    <div class="exports">
+      <div class="export-label">2D SVG</div>
+      <div class="svg-box">
+        {@html generateSVG(comp, params)}
+      </div>
+      <div class="export-label">3D Snapshot</div>
+      <canvas id="pngCanvas" width="220" height="300" class="png-box"></canvas>
+    </div>
+
     <!-- Right: params -->
     <div class="params">
       <div class="params-header">Parameters</div>
@@ -166,13 +176,6 @@
           <div>Large ID: {(params.odLarge - 2 * params.wall).toFixed(2)}</div>
         {/if}
       </div>
-      <hr />
-      <div class="export-section">
-        <strong>2D Cross-Section (SVG)</strong>
-        <div class="svg-preview">
-          {@html generateSVG(comp, params)}
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -190,7 +193,11 @@
   .comp-btn { display: block; width: 100%; text-align: left; padding: 6px 12px 6px 20px; border: none; background: none; cursor: pointer; font-size: 12px; color: #333; }
   .comp-btn:hover { background: #eee; }
   .comp-btn.active { background: #cc2222; color: white; font-weight: bold; }
-  .viewport { flex: 1; position: relative; }
+  .viewport { flex: 1; position: relative; min-width: 0; }
+  .exports { width: 240px; background: #fff; border-left: 1px solid #ddd; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .export-label { font: bold 10px Arial; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+  .svg-box { border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: center; }
+  .png-box { border: 1px solid #ddd; border-radius: 4px; width: 220px; height: 300px; background: #f5f5f5; }
   .viewport-header { position: absolute; top: 8px; left: 16px; font: bold 16px Arial; color: #333; z-index: 10; }
   .viewport-desc { position: absolute; top: 30px; left: 16px; font: 11px Arial; color: #888; z-index: 10; }
   .viewport-tags { position: absolute; top: 48px; left: 16px; display: flex; gap: 4px; flex-wrap: wrap; z-index: 10; max-width: 500px; }
@@ -206,7 +213,4 @@
   .row-check input { width: 14px; height: 14px; }
   hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
   .derived { font: 11px monospace; color: #888; }
-  .export-section { margin-top: 4px; }
-  .export-section strong { font-size: 11px; color: #444; }
-  .svg-preview { margin-top: 6px; border: 1px solid #ddd; border-radius: 4px; background: #fff; display: flex; justify-content: center; }
 </style>
