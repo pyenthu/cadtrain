@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { T, useThrelte } from '@threlte/core';
   import { OrbitControls, HTML, Edges } from '@threlte/extras';
   import * as THREE from 'three';

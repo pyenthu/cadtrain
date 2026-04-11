@@ -1,5 +1,5 @@
-<script>
-  import { deriveBody } from '../assembly';
+<script lang="ts">
+  import { deriveBody } from './assembly';
 
   let {
     params = $bindable(),

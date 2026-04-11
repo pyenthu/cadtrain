@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   let {
     params = $bindable(),
     showHousing = $bindable(true),
