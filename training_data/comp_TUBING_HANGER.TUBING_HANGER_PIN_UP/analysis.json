@@ -1,13 +1,13 @@
 {
   "tool_name": "Tubing Hanger Tubing Hanger Pin Up",
-  "aspect_ratio": 2.5,
+  "aspect_ratio": 1.2,
   "sections": [
     {
       "name": "upper_pin_left",
       "shape": "cylinder",
-      "od": 0.25,
-      "wall_thickness": 0.08,
-      "length": 0.15,
+      "od": 0.15,
+      "wall_thickness": 0.04,
+      "length": 0.115,
       "features": [
         "pin_connection"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "upper_pin_right",
       "shape": "cylinder",
-      "od": 0.25,
-      "wall_thickness": 0.08,
-      "length": 0.15,
+      "od": 0.15,
+      "wall_thickness": 0.04,
+      "length": 0.115,
       "features": [
         "pin_connection"
       ],
@@ -28,8 +28,8 @@
       "name": "upper_body",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.2,
+      "wall_thickness": 0.25,
+      "length": 0.192,
       "features": [
         "hanger_body",
         "groove"
@@ -39,9 +39,9 @@
     {
       "name": "central_shoulder",
       "shape": "cylinder",
-      "od": 0.9,
-      "wall_thickness": 0.12,
-      "length": 0.25,
+      "od": 0.8,
+      "wall_thickness": 0.2,
+      "length": 0.154,
       "features": [
         "tapered_profile"
       ],
@@ -50,32 +50,38 @@
     {
       "name": "lower_body",
       "shape": "cone",
-      "od": 0.7,
-      "wall_thickness": 0.1,
-      "length": 0.25,
+      "od": 0.6,
+      "wall_thickness": 0.15,
+      "length": 0.192,
       "features": [
         "conical_taper"
       ],
       "color": "bronze",
-      "od_bottom": 0.56
+      "od_bottom": 0.3
+    },
+    {
+      "name": "lower_pin_left",
+      "shape": "cylinder",
+      "od": 0.15,
+      "wall_thickness": 0.04,
+      "length": 0.115,
+      "features": [
+        "pin_connection"
+      ],
+      "color": "bronze"
+    },
+    {
+      "name": "lower_pin_right",
+      "shape": "cylinder",
+      "od": 0.15,
+      "wall_thickness": 0.04,
+      "length": 0.115,
+      "features": [
+        "pin_connection"
+      ],
+      "color": "bronze"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "diameter": 0.34
-    },
-    {
-      "position": 0.35,
-      "diameter": 0.7
-    },
-    {
-      "position": 0.85,
-      "diameter": 0.5
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.5
-    }
-  ]
+  "bore_profile": "through_bore",
+  "bore_diameter": 0.5
 }

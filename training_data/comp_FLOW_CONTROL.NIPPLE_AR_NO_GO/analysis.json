@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Nipple Ar No Go",
-  "aspect_ratio": 4.5,
+  "aspect_ratio": 6.0,
   "sections": [
     {
       "name": "top_connection",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "threaded_connection"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "upper_body",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.12,
-      "length": 0.68,
+      "od": 0.75,
+      "wall_thickness": 0.06,
+      "length": 0.76,
       "features": [
         "smooth_exterior"
       ],
@@ -27,8 +27,8 @@
     {
       "name": "nipple_profile_section",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.08,
+      "od": 0.75,
+      "wall_thickness": 0.04,
       "length": 0.08,
       "features": [
         "internal_profile",
@@ -40,8 +40,8 @@
       "name": "bottom_connection",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "threaded_connection"
       ],
@@ -51,27 +51,23 @@
   "bore_profile": [
     {
       "position": 0.0,
-      "diameter": 0.7
+      "diameter": 0.84
     },
     {
-      "position": 0.12,
-      "diameter": 0.61
+      "position": 0.08,
+      "diameter": 0.63
     },
     {
-      "position": 0.76,
-      "diameter": 0.61
+      "position": 0.84,
+      "diameter": 0.63
     },
     {
-      "position": 0.8,
-      "diameter": 0.45
-    },
-    {
-      "position": 0.88,
-      "diameter": 0.61
+      "position": 0.92,
+      "diameter": 0.67
     },
     {
       "position": 1.0,
-      "diameter": 0.7
+      "diameter": 0.84
     }
   ]
 }

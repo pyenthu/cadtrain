@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Group 1386",
-  "aspect_ratio": 8.5,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "top_connector",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "od": 1.0,
+      "wall_thickness": 0.18,
+      "length": 0.15,
       "features": [
         "threaded_connection",
         "upper_seal"
@@ -17,9 +17,9 @@
     {
       "name": "upper_mandrel",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.12,
-      "length": 0.18,
+      "od": 1.0,
+      "wall_thickness": 0.15,
+      "length": 0.25,
       "features": [
         "seal_grooves",
         "flow_ports"
@@ -29,9 +29,9 @@
     {
       "name": "packer_element",
       "shape": "cylinder",
-      "od": 1.0,
-      "wall_thickness": 0.25,
-      "length": 0.15,
+      "od": 1.2,
+      "wall_thickness": 0.35,
+      "length": 0.12,
       "features": [
         "rubber_element",
         "expansion_capability"
@@ -41,9 +41,9 @@
     {
       "name": "setting_mechanism",
       "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.18,
-      "length": 0.22,
+      "od": 1.0,
+      "wall_thickness": 0.08,
+      "length": 0.28,
       "features": [
         "setting_ports",
         "pressure_chambers",
@@ -54,23 +54,12 @@
     {
       "name": "lower_mandrel",
       "shape": "cylinder",
-      "od": 0.75,
+      "od": 1.0,
       "wall_thickness": 0.15,
-      "length": 0.25,
+      "length": 0.2,
       "features": [
-        "flow_through",
-        "support_structure"
-      ],
-      "color": "yellow"
-    },
-    {
-      "name": "bottom_connector",
-      "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.12,
-      "length": 0.08,
-      "features": [
-        "threaded_connection"
+        "seal_area",
+        "flow_passage"
       ],
       "color": "yellow"
     }
@@ -78,27 +67,27 @@
   "bore_profile": [
     {
       "position": 0.0,
-      "diameter": 0.55
+      "diameter": 0.64
     },
     {
-      "position": 0.3,
-      "diameter": 0.61
+      "position": 0.15,
+      "diameter": 0.7
     },
     {
-      "position": 0.45,
+      "position": 0.4,
       "diameter": 0.5
     },
     {
-      "position": 0.67,
-      "diameter": 0.44
+      "position": 0.52,
+      "diameter": 0.3
     },
     {
-      "position": 0.92,
-      "diameter": 0.45
+      "position": 0.8,
+      "diameter": 0.84
     },
     {
       "position": 1.0,
-      "diameter": 0.56
+      "diameter": 0.7
     }
   ]
 }

@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Asv",
-  "aspect_ratio": 12,
+  "aspect_ratio": 15,
   "sections": [
     {
       "name": "upper_connector",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.15,
-      "length": 0.08,
+      "od": 0.65,
+      "wall_thickness": 0.12,
+      "length": 0.06,
       "features": [
         "threaded_connection"
       ],
@@ -17,8 +17,8 @@
       "name": "upper_mandrel",
       "shape": "cylinder",
       "od": 0.4,
-      "wall_thickness": 0.1,
-      "length": 0.15,
+      "wall_thickness": 0.08,
+      "length": 0.12,
       "features": [
         "smooth_bore"
       ],
@@ -28,8 +28,8 @@
       "name": "setting_mechanism",
       "shape": "cylinder",
       "od": 0.45,
-      "wall_thickness": 0.08,
-      "length": 0.12,
+      "wall_thickness": 0.06,
+      "length": 0.22,
       "features": [
         "zigzag_profile",
         "setting_ports"
@@ -39,9 +39,9 @@
     {
       "name": "upper_slip_assembly",
       "shape": "cylinder",
-      "od": 0.5,
-      "wall_thickness": 0.1,
-      "length": 0.08,
+      "od": 0.55,
+      "wall_thickness": 0.08,
+      "length": 0.06,
       "features": [
         "slip_segments"
       ],
@@ -50,9 +50,9 @@
     {
       "name": "packer_element",
       "shape": "cylinder",
-      "od": 1.0,
-      "wall_thickness": 0.2,
-      "length": 0.18,
+      "od": 0.95,
+      "wall_thickness": 0.18,
+      "length": 0.14,
       "features": [
         "sealing_element",
         "expansion_profile"
@@ -62,9 +62,9 @@
     {
       "name": "lower_slip_assembly",
       "shape": "cylinder",
-      "od": 0.5,
-      "wall_thickness": 0.1,
-      "length": 0.08,
+      "od": 0.55,
+      "wall_thickness": 0.08,
+      "length": 0.06,
       "features": [
         "slip_segments"
       ],
@@ -73,62 +73,35 @@
     {
       "name": "lower_mandrel",
       "shape": "cylinder",
-      "od": 0.35,
+      "od": 0.4,
       "wall_thickness": 0.08,
-      "length": 0.25,
+      "length": 0.28,
       "features": [
-        "through_bore"
+        "smooth_bore"
       ],
       "color": "light_blue"
     },
     {
-      "name": "tail_pipe",
+      "name": "lower_connector",
       "shape": "cylinder",
-      "od": 0.3,
-      "wall_thickness": 0.08,
+      "od": 0.65,
+      "wall_thickness": 0.12,
       "length": 0.06,
       "features": [
-        "open_end"
+        "threaded_connection"
       ],
-      "color": "light_blue"
+      "color": "red"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "diameter": 0.3
-    },
-    {
-      "position": 0.08,
-      "diameter": 0.2
-    },
-    {
-      "position": 0.23,
-      "diameter": 0.2
-    },
-    {
-      "position": 0.35,
-      "diameter": 0.29
-    },
-    {
-      "position": 0.43,
-      "diameter": 0.3
-    },
-    {
-      "position": 0.61,
-      "diameter": 0.6
-    },
-    {
-      "position": 0.69,
-      "diameter": 0.3
-    },
-    {
-      "position": 0.94,
-      "diameter": 0.19
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.14
-    }
-  ]
+  "bore_profile": {
+    "type": "constant",
+    "diameter": 0.24,
+    "variations": [
+      {
+        "section": "setting_mechanism",
+        "diameter": 0.33,
+        "feature": "setting_ports"
+      }
+    ]
+  }
 }

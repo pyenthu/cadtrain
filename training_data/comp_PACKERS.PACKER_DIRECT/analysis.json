@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Packer Direct",
-  "aspect_ratio": 8.5,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "upper_connector",
       "shape": "cylinder",
-      "od": 0.35,
+      "od": 0.45,
       "wall_thickness": 0.08,
-      "length": 0.08,
+      "length": 0.06,
       "features": [
         "threaded_connection"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "upper_mandrel",
       "shape": "cylinder",
-      "od": 0.3,
-      "wall_thickness": 0.06,
-      "length": 0.12,
+      "od": 0.35,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "smooth_bore",
         "ports"
@@ -29,8 +29,8 @@
       "name": "upper_packer_element",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.35,
-      "length": 0.25,
+      "wall_thickness": 0.325,
+      "length": 0.18,
       "features": [
         "elastomer_element",
         "ribs",
@@ -41,9 +41,9 @@
     {
       "name": "middle_mandrel_section",
       "shape": "cylinder",
-      "od": 0.32,
-      "wall_thickness": 0.06,
-      "length": 0.1,
+      "od": 0.35,
+      "wall_thickness": 0.08,
+      "length": 0.12,
       "features": [
         "bypass_ports",
         "flow_control"
@@ -54,8 +54,8 @@
       "name": "lower_packer_element",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.35,
-      "length": 0.25,
+      "wall_thickness": 0.325,
+      "length": 0.18,
       "features": [
         "elastomer_element",
         "ribs",
@@ -64,38 +64,45 @@
       "color": "gray"
     },
     {
-      "name": "lower_connector",
+      "name": "setting_mechanism",
+      "shape": "cylinder",
+      "od": 0.42,
+      "wall_thickness": 0.085,
+      "length": 0.15,
+      "features": [
+        "hydraulic_chamber",
+        "setting_ports",
+        "pressure_activation"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "lower_mandrel",
       "shape": "cylinder",
       "od": 0.35,
       "wall_thickness": 0.08,
-      "length": 0.2,
+      "length": 0.17,
       "features": [
-        "threaded_connection",
-        "flow_ports"
+        "smooth_bore",
+        "bypass_ports"
+      ],
+      "color": "yellow"
+    },
+    {
+      "name": "lower_connector",
+      "shape": "cylinder",
+      "od": 0.45,
+      "wall_thickness": 0.08,
+      "length": 0.06,
+      "features": [
+        "threaded_connection"
       ],
       "color": "yellow"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "diameter": 0.19
-    },
-    {
-      "position": 0.2,
-      "diameter": 0.18
-    },
-    {
-      "position": 0.5,
-      "diameter": 0.2
-    },
-    {
-      "position": 0.8,
-      "diameter": 0.18
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.19
-    }
-  ]
+  "bore_profile": {
+    "type": "constant",
+    "diameter": 0.19,
+    "variations": []
+  }
 }

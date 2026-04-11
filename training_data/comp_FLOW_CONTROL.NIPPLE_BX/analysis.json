@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Nipple Bx",
-  "aspect_ratio": 8.5,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "upper_connection",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "threaded_connection"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "main_body",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.12,
-      "length": 0.76,
+      "od": 1.0,
+      "wall_thickness": 0.08,
+      "length": 0.84,
       "features": [
         "smooth_bore"
       ],
@@ -28,8 +28,8 @@
       "name": "lower_connection",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "wall_thickness": 0.08,
+      "length": 0.08,
       "features": [
         "threaded_connection"
       ],
@@ -39,14 +39,14 @@
   "bore_profile": [
     {
       "section": "upper_connection",
-      "bore_diameter": 0.7,
+      "bore_diameter": 0.84,
       "features": [
         "threaded_profile"
       ]
     },
     {
       "section": "main_body",
-      "bore_diameter": 0.61,
+      "bore_diameter": 0.84,
       "features": [
         "constant_diameter",
         "flow_control_profile"
@@ -54,7 +54,7 @@
     },
     {
       "section": "lower_connection",
-      "bore_diameter": 0.7,
+      "bore_diameter": 0.84,
       "features": [
         "threaded_profile"
       ]

@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Trsssv Sp",
-  "aspect_ratio": 3.2,
+  "aspect_ratio": 2.8,
   "sections": [
     {
       "name": "upper_connector",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "wall_thickness": 0.08,
+      "length": 0.18,
       "features": [
         "threaded_connection",
         "shoulder"
@@ -17,9 +17,9 @@
     {
       "name": "transition_housing",
       "shape": "cylinder",
-      "od": 0.95,
-      "wall_thickness": 0.12,
-      "length": 0.08,
+      "od": 0.92,
+      "wall_thickness": 0.06,
+      "length": 0.12,
       "features": [
         "reduced_diameter",
         "groove"
@@ -30,8 +30,8 @@
       "name": "main_body",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.18,
-      "length": 0.45,
+      "wall_thickness": 0.08,
+      "length": 0.52,
       "features": [
         "thick_wall",
         "internal_components"
@@ -41,9 +41,9 @@
     {
       "name": "flow_control_section",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.08,
-      "length": 0.15,
+      "od": 0.88,
+      "wall_thickness": 0.05,
+      "length": 0.08,
       "features": [
         "flow_ports",
         "internal_valve",
@@ -55,36 +55,26 @@
       "name": "lower_connector",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.2,
+      "wall_thickness": 0.08,
+      "length": 0.1,
       "features": [
         "threaded_connection",
-        "shoulder",
-        "seal_groove"
+        "shoulder"
       ],
       "color": "yellow"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "diameter": 0.7
-    },
-    {
-      "position": 0.2,
-      "diameter": 0.71
-    },
-    {
-      "position": 0.65,
-      "diameter": 0.69
-    },
-    {
-      "position": 0.8,
-      "diameter": 0.52
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.7
-    }
-  ]
+  "bore_profile": {
+    "upper_bore": 0.84,
+    "main_bore": 0.84,
+    "flow_control_bore": 0.78,
+    "lower_bore": 0.84,
+    "restrictions": [
+      "internal_valve_seat",
+      "flow_control_orifice"
+    ]
+  },
+  "connection_type": "threaded",
+  "material": "steel",
+  "primary_function": "flow_control"
 }

@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Nipple R Landing",
-  "aspect_ratio": 3.2,
+  "aspect_ratio": 2.8,
   "sections": [
     {
       "name": "Top Connection",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.15,
+      "wall_thickness": 0.08,
+      "length": 0.12,
       "features": [
         "threaded connection"
       ],
@@ -16,8 +16,8 @@
     {
       "name": "Upper Landing Profile",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.12,
+      "od": 0.75,
+      "wall_thickness": 0.07,
       "length": 0.08,
       "features": [
         "landing groove"
@@ -27,9 +27,9 @@
     {
       "name": "Second Landing Profile",
       "shape": "cylinder",
-      "od": 0.9,
-      "wall_thickness": 0.13,
-      "length": 0.1,
+      "od": 0.85,
+      "wall_thickness": 0.08,
+      "length": 0.09,
       "features": [
         "landing groove"
       ],
@@ -38,8 +38,8 @@
     {
       "name": "Third Landing Profile",
       "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.11,
+      "od": 0.7,
+      "wall_thickness": 0.06,
       "length": 0.1,
       "features": [
         "landing groove"
@@ -49,9 +49,9 @@
     {
       "name": "Fourth Landing Profile",
       "shape": "cylinder",
-      "od": 0.92,
-      "wall_thickness": 0.14,
-      "length": 0.12,
+      "od": 0.8,
+      "wall_thickness": 0.07,
+      "length": 0.11,
       "features": [
         "landing groove"
       ],
@@ -60,35 +60,15 @@
     {
       "name": "Main Body",
       "shape": "cylinder",
-      "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.45,
+      "od": 0.9,
+      "wall_thickness": 0.08,
+      "length": 0.5,
       "features": [
-        "flow control body"
+        "smooth bore"
       ],
       "color": "white"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "diameter": 0.7
-    },
-    {
-      "position": 0.15,
-      "diameter": 0.6
-    },
-    {
-      "position": 0.43,
-      "diameter": 0.6
-    },
-    {
-      "position": 0.57,
-      "diameter": 0.6
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.7
-    }
-  ]
+  "bore_profile": "stepped_internal",
+  "material": "steel"
 }

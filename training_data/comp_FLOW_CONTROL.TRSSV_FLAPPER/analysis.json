@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Trssv Flapper",
-  "aspect_ratio": 2.5,
+  "aspect_ratio": 4.2,
   "sections": [
     {
       "name": "upper_connector",
       "shape": "cylinder",
-      "od": 0.4,
-      "wall_thickness": 0.1,
-      "length": 0.15,
+      "od": 0.35,
+      "wall_thickness": 0.05,
+      "length": 0.12,
       "features": [
         "threaded_connection"
       ],
@@ -17,8 +17,8 @@
       "name": "body_upper",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.25,
+      "wall_thickness": 0.12,
+      "length": 0.18,
       "features": [
         "main_housing"
       ],
@@ -28,8 +28,8 @@
       "name": "flapper_chamber",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.35,
+      "wall_thickness": 0.12,
+      "length": 0.48,
       "features": [
         "flapper_mechanism",
         "internal_components",
@@ -41,7 +41,7 @@
       "name": "body_lower",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
+      "wall_thickness": 0.12,
       "length": 0.1,
       "features": [
         "main_housing"
@@ -51,9 +51,9 @@
     {
       "name": "lower_connector",
       "shape": "cylinder",
-      "od": 0.4,
-      "wall_thickness": 0.1,
-      "length": 0.15,
+      "od": 0.35,
+      "wall_thickness": 0.05,
+      "length": 0.12,
       "features": [
         "threaded_connection"
       ],
@@ -62,28 +62,39 @@
   ],
   "bore_profile": [
     {
-      "position": 0.0,
-      "diameter": 0.2
+      "section": "upper_connector",
+      "id": 0.25,
+      "profile": "smooth"
     },
     {
-      "position": 0.15,
-      "diameter": 0.2
+      "section": "body_upper",
+      "id": 0.76,
+      "profile": "smooth"
     },
     {
-      "position": 0.4,
-      "diameter": 0.7
+      "section": "flapper_chamber",
+      "id": 0.76,
+      "profile": "complex_internal"
     },
     {
-      "position": 0.75,
-      "diameter": 0.7
+      "section": "body_lower",
+      "id": 0.76,
+      "profile": "smooth"
     },
     {
-      "position": 0.85,
-      "diameter": 0.2
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.2
+      "section": "lower_connector",
+      "id": 0.25,
+      "profile": "smooth"
     }
-  ]
+  ],
+  "key_features": [
+    "flapper_valve_mechanism",
+    "pressure_actuated",
+    "flow_control_ports",
+    "internal_spring_system"
+  ],
+  "connections": {
+    "upper": "threaded_male",
+    "lower": "threaded_male"
+  }
 }

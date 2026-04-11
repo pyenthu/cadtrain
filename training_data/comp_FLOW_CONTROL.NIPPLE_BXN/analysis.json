@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Nipple Bxn",
-  "aspect_ratio": 8.0,
+  "aspect_ratio": 6.0,
   "sections": [
     {
       "name": "upper_body",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.85,
+      "wall_thickness": 0.08,
+      "length": 0.83,
       "features": [
         "smooth_exterior"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "lower_coupling",
       "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.12,
-      "length": 0.15,
+      "od": 0.9,
+      "wall_thickness": 0.07,
+      "length": 0.17,
       "features": [
         "reduced_diameter"
       ],
@@ -29,8 +29,8 @@
     {
       "name": "upper_bore",
       "shape": "cylinder",
-      "id": 0.7,
-      "length": 0.2,
+      "id": 0.84,
+      "length": 0.15,
       "features": [
         "straight_bore"
       ]
@@ -38,8 +38,8 @@
     {
       "name": "flow_control_section",
       "shape": "stepped",
-      "id": 0.4,
-      "length": 0.6,
+      "id": 0.3,
+      "length": 0.68,
       "features": [
         "multiple_flow_restrictions",
         "stepped_profile",
@@ -49,8 +49,8 @@
     {
       "name": "lower_bore",
       "shape": "cylinder",
-      "id": 0.56,
-      "length": 0.2,
+      "id": 0.76,
+      "length": 0.17,
       "features": [
         "straight_bore"
       ]

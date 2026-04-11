@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Packer Asv",
-  "aspect_ratio": 12,
+  "aspect_ratio": 15,
   "sections": [
     {
       "name": "top_connector",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.1,
-      "length": 0.08,
+      "od": 0.35,
+      "wall_thickness": 0.08,
+      "length": 0.06,
       "features": [
         "threaded_connection"
       ],
@@ -16,8 +16,8 @@
     {
       "name": "upper_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.15,
+      "od": 0.35,
+      "wall_thickness": 0.08,
       "length": 0.12,
       "features": [
         "solid_body",
@@ -26,10 +26,22 @@
       "color": "red"
     },
     {
+      "name": "main_body",
+      "shape": "cylinder",
+      "od": 0.35,
+      "wall_thickness": 0.08,
+      "length": 0.25,
+      "features": [
+        "rectangular_ports",
+        "solid_body"
+      ],
+      "color": "red"
+    },
+    {
       "name": "packer_element_housing",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.25,
+      "wall_thickness": 0.08,
       "length": 0.35,
       "features": [
         "packer_element",
@@ -40,9 +52,9 @@
     {
       "name": "slip_assembly",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.2,
-      "length": 0.15,
+      "od": 0.6,
+      "wall_thickness": 0.08,
+      "length": 0.12,
       "features": [
         "slip_segments",
         "grid_pattern"
@@ -50,48 +62,19 @@
       "color": "red"
     },
     {
-      "name": "compression_ring",
-      "shape": "cylinder",
-      "od": 0.75,
-      "wall_thickness": 0.18,
-      "length": 0.08,
-      "features": [
-        "compression_surface"
-      ],
-      "color": "red"
-    },
-    {
       "name": "lower_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.15,
-      "length": 0.22,
+      "od": 0.35,
+      "wall_thickness": 0.08,
+      "length": 0.1,
       "features": [
-        "internal_mechanism"
+        "solid_body"
       ],
-      "color": "blue"
+      "color": "red"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "id": 0.3
-    },
-    {
-      "position": 0.2,
-      "id": 0.3
-    },
-    {
-      "position": 0.55,
-      "id": 0.5
-    },
-    {
-      "position": 0.78,
-      "id": 0.39
-    },
-    {
-      "position": 1.0,
-      "id": 0.3
-    }
-  ]
+  "bore_profile": {
+    "type": "uniform",
+    "diameter": 0.19
+  }
 }

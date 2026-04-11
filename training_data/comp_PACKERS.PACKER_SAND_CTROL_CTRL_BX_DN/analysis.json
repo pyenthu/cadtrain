@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Packer Sand Ctrol Ctrl Bx Dn",
-  "aspect_ratio": 8.0,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "upper_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.15,
-      "length": 0.15,
+      "od": 0.65,
+      "wall_thickness": 0.12,
+      "length": 0.08,
       "features": [
         "threaded_connection"
       ],
@@ -17,8 +17,8 @@
       "name": "packer_element_housing",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.12,
-      "length": 0.12,
+      "wall_thickness": 0.08,
+      "length": 0.06,
       "features": [
         "elastomer_element",
         "backup_rings"
@@ -26,14 +26,26 @@
       "color": "yellow"
     },
     {
+      "name": "upper_intermediate_section",
+      "shape": "cylinder",
+      "od": 0.75,
+      "wall_thickness": 0.1,
+      "length": 0.1,
+      "features": [
+        "flow_ports"
+      ],
+      "color": "yellow"
+    },
+    {
       "name": "sand_control_screen",
       "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.08,
-      "length": 0.25,
+      "od": 0.85,
+      "wall_thickness": 0.06,
+      "length": 0.35,
       "features": [
         "wire_wrap_screen",
-        "base_pipe"
+        "base_pipe",
+        "multiple_screen_sections"
       ],
       "color": "yellow"
     },
@@ -41,47 +53,36 @@
       "name": "control_valve_section",
       "shape": "cylinder",
       "od": 0.7,
-      "wall_thickness": 0.1,
-      "length": 0.18,
+      "wall_thickness": 0.08,
+      "length": 0.15,
       "features": [
         "flow_control_valve",
-        "ports"
+        "ports",
+        "sliding_sleeve"
       ],
       "color": "yellow"
     },
     {
       "name": "lower_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.15,
-      "length": 0.3,
+      "od": 0.65,
+      "wall_thickness": 0.12,
+      "length": 0.26,
       "features": [
         "threaded_connection",
-        "flow_ports"
+        "seal_bore"
       ],
       "color": "yellow"
     }
   ],
-  "bore_profile": [
-    {
-      "diameter": 0.3,
-      "length": 0.15
-    },
-    {
-      "diameter": 0.76,
-      "length": 0.12
-    },
-    {
-      "diameter": 0.64,
-      "length": 0.25
-    },
-    {
-      "diameter": 0.5,
-      "length": 0.18
-    },
-    {
-      "diameter": 0.3,
-      "length": 0.3
-    }
-  ]
+  "bore_profile": {
+    "constant_id": 0.41,
+    "restrictions": [
+      {
+        "section": "control_valve_section",
+        "id": 0.35,
+        "type": "valve_seat"
+      }
+    ]
+  }
 }

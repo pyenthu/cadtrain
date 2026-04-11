@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Nipple Bn",
-  "aspect_ratio": 8.5,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "upper_body",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.85,
+      "wall_thickness": 0.125,
+      "length": 0.92,
       "features": [
         "smooth_exterior",
         "uniform_bore"
@@ -17,9 +17,9 @@
     {
       "name": "lower_nipple",
       "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.2,
-      "length": 0.15,
+      "od": 0.85,
+      "wall_thickness": 0.175,
+      "length": 0.08,
       "features": [
         "reduced_diameter",
         "connection_end"
@@ -31,8 +31,8 @@
     {
       "section": "upper_smooth_bore",
       "shape": "cylinder",
-      "id": 0.7,
-      "length": 0.25,
+      "id": 0.75,
+      "length": 0.35,
       "features": [
         "smooth_passage"
       ]
@@ -40,8 +40,8 @@
     {
       "section": "profile_groove",
       "shape": "cylinder",
-      "id": 0.65,
-      "length": 0.1,
+      "id": 0.7,
+      "length": 0.05,
       "features": [
         "internal_groove",
         "tool_landing_profile"
@@ -50,8 +50,8 @@
     {
       "section": "main_bore",
       "shape": "cylinder",
-      "id": 0.7,
-      "length": 0.5,
+      "id": 0.75,
+      "length": 0.52,
       "features": [
         "flow_passage"
       ]
@@ -59,11 +59,10 @@
     {
       "section": "lower_bore",
       "shape": "cone",
-      "id": 0.4,
-      "length": 0.15,
+      "id": 0.5,
+      "length": 0.08,
       "features": [
-        "tapered_exit",
-        "flow_restriction"
+        "tapered_exit"
       ]
     }
   ]

@@ -1,13 +1,13 @@
 {
   "tool_name": "Flow Control Flow Coupling",
-  "aspect_ratio": 8.0,
+  "aspect_ratio": 6.0,
   "sections": [
     {
       "name": "upper_coupling",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.75,
+      "wall_thickness": 0.18,
+      "length": 0.83,
       "features": [
         "threaded_connection"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "lower_coupling",
       "shape": "cylinder",
-      "od": 0.8,
-      "wall_thickness": 0.12,
-      "length": 0.15,
+      "od": 1.0,
+      "wall_thickness": 0.18,
+      "length": 0.1,
       "features": [
         "shoulder",
         "connection_interface"
@@ -28,9 +28,9 @@
     {
       "name": "flow_control_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
+      "od": 0.5,
       "wall_thickness": 0.08,
-      "length": 0.1,
+      "length": 0.07,
       "features": [
         "flow_ports",
         "control_mechanism"
@@ -41,19 +41,19 @@
   "bore_profile": [
     {
       "position": 0.0,
-      "diameter": 0.7
+      "diameter": 0.64
     },
     {
-      "position": 0.75,
-      "diameter": 0.56
+      "position": 0.83,
+      "diameter": 0.64
     },
     {
-      "position": 0.9,
-      "diameter": 0.44
+      "position": 0.93,
+      "diameter": 0.34
     },
     {
       "position": 1.0,
-      "diameter": 0.44
+      "diameter": 0.34
     }
   ]
 }

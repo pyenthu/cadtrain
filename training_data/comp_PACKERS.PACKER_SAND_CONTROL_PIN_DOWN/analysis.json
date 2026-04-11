@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Packer Sand Control Pin Down",
-  "aspect_ratio": 8.5,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "upper_connector",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.12,
-      "length": 0.08,
+      "od": 0.75,
+      "wall_thickness": 0.08,
+      "length": 0.06,
       "features": [
         "threaded_connection"
       ],
@@ -16,9 +16,9 @@
     {
       "name": "upper_mandrel",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "od": 0.75,
+      "wall_thickness": 0.1,
+      "length": 0.09,
       "features": [
         "longitudinal_grooves"
       ],
@@ -28,8 +28,8 @@
       "name": "packer_element",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.25,
-      "length": 0.18,
+      "wall_thickness": 0.35,
+      "length": 0.12,
       "features": [
         "elastomer_sealing_element",
         "ribbed_surface"
@@ -39,9 +39,9 @@
     {
       "name": "sand_control_section",
       "shape": "cylinder",
-      "od": 0.9,
-      "wall_thickness": 0.08,
-      "length": 0.35,
+      "od": 0.85,
+      "wall_thickness": 0.06,
+      "length": 0.65,
       "features": [
         "perforated_screen",
         "filtration_slots",
@@ -52,51 +52,47 @@
     {
       "name": "lower_mandrel",
       "shape": "cylinder",
-      "od": 0.85,
-      "wall_thickness": 0.15,
-      "length": 0.15,
-      "features": [
-        "solid_pipe"
-      ],
-      "color": "yellow"
-    },
-    {
-      "name": "pin_connection",
-      "shape": "cone",
       "od": 0.75,
-      "wall_thickness": 0.18,
-      "length": 0.12,
+      "wall_thickness": 0.1,
+      "length": 0.08,
       "features": [
-        "tapered_pin",
-        "threaded_end"
+        "flow_ports"
       ],
       "color": "yellow"
     }
   ],
   "bore_profile": [
     {
-      "position": 0.0,
-      "diameter": 0.61
+      "section": "upper_connector",
+      "inner_diameter": 0.59,
+      "profile": "straight"
     },
     {
-      "position": 0.2,
-      "diameter": 0.55
+      "section": "upper_mandrel",
+      "inner_diameter": 0.55,
+      "profile": "straight"
     },
     {
-      "position": 0.38,
-      "diameter": 0.5
+      "section": "packer_element",
+      "inner_diameter": 0.3,
+      "profile": "restricted"
     },
     {
-      "position": 0.73,
-      "diameter": 0.74
+      "section": "sand_control_section",
+      "inner_diameter": 0.73,
+      "profile": "enlarged"
     },
     {
-      "position": 0.88,
-      "diameter": 0.55
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.39
+      "section": "lower_mandrel",
+      "inner_diameter": 0.55,
+      "profile": "straight"
     }
+  ],
+  "key_features": [
+    "elastomer_packer_element",
+    "perforated_sand_screen",
+    "threaded_connections",
+    "variable_bore_geometry",
+    "filtration_capability"
   ]
 }

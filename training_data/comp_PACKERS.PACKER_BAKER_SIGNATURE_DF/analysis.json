@@ -1,13 +1,13 @@
 {
   "tool_name": "Packers Packer Baker Signature Df",
-  "aspect_ratio": 8.5,
+  "aspect_ratio": 12.0,
   "sections": [
     {
       "name": "upper_connector",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.08,
-      "length": 0.25,
+      "od": 0.8,
+      "wall_thickness": 0.12,
+      "length": 0.15,
       "features": [
         "threaded_connection"
       ],
@@ -16,19 +16,19 @@
     {
       "name": "upper_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.08,
-      "length": 0.2,
+      "od": 0.8,
+      "wall_thickness": 0.12,
+      "length": 0.35,
       "features": [
         "smooth_bore"
       ],
       "color": "yellow"
     },
     {
-      "name": "seal_section",
+      "name": "upper_seal_section",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.06,
+      "od": 0.8,
+      "wall_thickness": 0.08,
       "length": 0.08,
       "features": [
         "o_ring_grooves"
@@ -39,8 +39,8 @@
       "name": "packing_element",
       "shape": "cylinder",
       "od": 1.0,
-      "wall_thickness": 0.15,
-      "length": 0.12,
+      "wall_thickness": 0.1,
+      "length": 0.05,
       "features": [
         "elastomer_element",
         "ridged_surface"
@@ -50,8 +50,8 @@
     {
       "name": "lower_seal_section",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.06,
+      "od": 0.8,
+      "wall_thickness": 0.08,
       "length": 0.08,
       "features": [
         "o_ring_grooves"
@@ -61,9 +61,9 @@
     {
       "name": "lower_mandrel",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.08,
-      "length": 0.2,
+      "od": 0.8,
+      "wall_thickness": 0.12,
+      "length": 0.14,
       "features": [
         "smooth_bore"
       ],
@@ -72,39 +72,17 @@
     {
       "name": "lower_connector",
       "shape": "cylinder",
-      "od": 0.6,
-      "wall_thickness": 0.08,
-      "length": 0.07,
+      "od": 0.8,
+      "wall_thickness": 0.12,
+      "length": 0.15,
       "features": [
         "threaded_connection"
       ],
       "color": "yellow"
     }
   ],
-  "bore_profile": [
-    {
-      "position": 0.0,
-      "diameter": 0.44
-    },
-    {
-      "position": 0.45,
-      "diameter": 0.44
-    },
-    {
-      "position": 0.53,
-      "diameter": 0.48
-    },
-    {
-      "position": 0.65,
-      "diameter": 0.48
-    },
-    {
-      "position": 0.73,
-      "diameter": 0.44
-    },
-    {
-      "position": 1.0,
-      "diameter": 0.44
-    }
-  ]
+  "bore_profile": {
+    "type": "constant",
+    "diameter": 0.56
+  }
 }
