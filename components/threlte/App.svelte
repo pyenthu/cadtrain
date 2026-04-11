@@ -40,6 +40,66 @@
   }
 
   let comp = $derived(COMPONENTS[activeComp]);
+
+  function generateSVG(comp: any, p: Record<string, number>): string {
+    const W = 220, H = 300, cx = W / 2;
+    const od = p.od || p.bodyOD || p.odTop || p.slipOD || p.odCompressed || 2.5;
+    const wall = p.wall || 0.3;
+    const id = od - 2 * wall;
+    const length = p.length || p.bodyLength || p.height || p.pinLength || 4;
+    const odBottom = p.odBottom || p.odLarge || od;
+
+    // Scale to fit
+    const maxDim = Math.max(od, odBottom);
+    const sx = (W - 40) / maxDim;  // pixels per inch (width)
+    const sy = (H - 40) / length;  // pixels per inch (height)
+    const s = Math.min(sx, sy);
+
+    const rOuter = od * s / 2;
+    const rInner = id * s / 2;
+    const h = length * s;
+    const rOuterBot = odBottom * s / 2;
+    const y0 = (H - h) / 2;
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+    svg += `<rect width="${W}" height="${H}" fill="white"/>`;
+
+    // Center line
+    svg += `<line x1="${cx}" y1="${y0-5}" x2="${cx}" y2="${y0+h+5}" stroke="#0a0" stroke-width="0.5" stroke-dasharray="4,3"/>`;
+
+    // Outer profile (left half = cross-section, right half = exterior)
+    // Right side — outer surface (red)
+    svg += `<path d="M${cx} ${y0} L${cx+rOuter} ${y0} L${cx+rOuterBot} ${y0+h} L${cx} ${y0+h} Z" fill="#cc2222" stroke="#333" stroke-width="0.8"/>`;
+
+    // Left side — cross-section (grey inner, red outer)
+    svg += `<path d="M${cx} ${y0} L${cx-rOuter} ${y0} L${cx-rOuterBot} ${y0+h} L${cx} ${y0+h} Z" fill="#cc2222" stroke="#333" stroke-width="0.8"/>`;
+    // Bore (grey)
+    svg += `<path d="M${cx} ${y0} L${cx-rInner} ${y0} L${cx-rInner} ${y0+h} L${cx} ${y0+h} Z" fill="#999" stroke="#333" stroke-width="0.5"/>`;
+
+    // Thread grooves if applicable
+    const tc = p.threadCount || p.numThreads || p.numGrooves || 0;
+    if (tc > 0) {
+      const td = (p.threadDepth || p.grooveDepth || 0.06) * s;
+      for (let i = 0; i < tc; i++) {
+        const ty = y0 + h * (i + 0.5) / tc;
+        // Right side threads
+        svg += `<line x1="${cx+rOuter-td}" y1="${ty}" x2="${cx+rOuter}" y2="${ty}" stroke="#333" stroke-width="0.5"/>`;
+        // Left side threads (cross-section)
+        svg += `<line x1="${cx-rOuter}" y1="${ty}" x2="${cx-rOuter+td}" y2="${ty}" stroke="#333" stroke-width="0.5"/>`;
+      }
+    }
+
+    // Dimension lines
+    svg += `<text x="${cx+rOuter+8}" y="${y0+h/2}" font-size="8" fill="#555" text-anchor="start">OD: ${od.toFixed(1)}"</text>`;
+    svg += `<text x="${cx-rInner-8}" y="${y0+h/2}" font-size="8" fill="#555" text-anchor="end">ID: ${id.toFixed(1)}"</text>`;
+    svg += `<text x="${cx}" y="${y0+h+15}" font-size="8" fill="#555" text-anchor="middle">L: ${length.toFixed(1)}"</text>`;
+
+    // Title
+    svg += `<text x="${cx}" y="12" font-size="9" font-weight="bold" fill="#333" text-anchor="middle">${comp.name}</text>`;
+
+    svg += `</svg>`;
+    return svg;
+  }
 </script>
 
 <div class="app">
@@ -106,6 +166,13 @@
           <div>Large ID: {(params.odLarge - 2 * params.wall).toFixed(2)}</div>
         {/if}
       </div>
+      <hr />
+      <div class="export-section">
+        <strong>2D Cross-Section (SVG)</strong>
+        <div class="svg-preview">
+          {@html generateSVG(comp, params)}
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -139,4 +206,7 @@
   .row-check input { width: 14px; height: 14px; }
   hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
   .derived { font: 11px monospace; color: #888; }
+  .export-section { margin-top: 4px; }
+  .export-section strong { font-size: 11px; color: #444; }
+  .svg-preview { margin-top: 6px; border: 1px solid #ddd; border-radius: 4px; background: #fff; display: flex; justify-content: center; }
 </style>
