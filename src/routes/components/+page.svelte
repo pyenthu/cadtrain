@@ -24,6 +24,24 @@
   $effect(() => {
     import('$shared/ComponentScene.svelte').then(m => { SceneComponent = m.default; });
     initManifold().then(() => { ready = true; });
+
+    // Read URL params: ?id=hollow_cylinder&od=2.5&wall=0.3
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get('id');
+      if (id) {
+        const idx = COMPONENTS.findIndex(c => c.id === id);
+        if (idx >= 0) {
+          activeComp = idx;
+          const newParams = structuredClone(COMPONENTS[idx].defaults);
+          for (const [k, _] of Object.entries(newParams)) {
+            const urlVal = url.searchParams.get(k);
+            if (urlVal !== null) newParams[k] = parseFloat(urlVal);
+          }
+          params = newParams;
+        }
+      }
+    }
   });
 
   let paramsKey = $derived(JSON.stringify(params) + activeComp);
