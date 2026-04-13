@@ -1,13 +1,13 @@
 {
   "name": "manifold",
-  "module": "index.ts",
+  "main": "build/index.js",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "vite dev --port 3333",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node build",
+    "start": "HOST=0.0.0.0 PORT=${PORT:-3333} node build",
     "seed": "bun run scripts/seed_cache.ts"
   },
   "devDependencies": {
