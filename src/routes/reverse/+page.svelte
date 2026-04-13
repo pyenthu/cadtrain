@@ -77,6 +77,98 @@
     }
   }
 
+  // Auto-refine state
+  let refining = $state(false);
+  let iter = $state(0);
+  let scoreHistory = $state<any[]>([]);
+  let stopRequested = $state(false);
+  let lastReasoning = $state<string>('');
+
+  // Save to training state
+  let saving = $state(false);
+  let saveMsg = $state<string | null>(null);
+
+  async function saveToTraining() {
+    if (!comp || !preview) return;
+    saving = true;
+    saveMsg = null;
+    try {
+      // Capture the target image (original upload) as the training image
+      // It represents what we identified it as, with the final params
+      const resp = await fetch('/api/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_b64: preview,
+          component_id: comp.id,
+          params,
+          source: 'refined',
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const r = await resp.json();
+      saveMsg = `Added to training data (cache: ${r.cache_size} records)`;
+    } catch (e: any) {
+      saveMsg = `Error: ${e.message}`;
+    }
+    saving = false;
+  }
+
+  async function startRefine() {
+    if (!comp || !preview) return;
+    refining = true;
+    stopRequested = false;
+    scoreHistory = [];
+    lastReasoning = '';
+
+    for (iter = 1; iter <= 10; iter++) {
+      if (stopRequested) break;
+
+      // Wait for canvas to render the current params
+      await new Promise(r => setTimeout(r, 800));
+      const canvas = document.querySelector('.viewer-col canvas') as HTMLCanvasElement;
+      if (!canvas) break;
+      const currentRender = canvas.toDataURL('image/png');
+
+      try {
+        const resp = await fetch('/api/refine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            original_image: preview,
+            current_render: currentRender,
+            component_id: comp.id,
+            current_params: params,
+          }),
+        });
+        if (!resp.ok) {
+          errorMsg = `Refine failed: ${resp.status}`;
+          break;
+        }
+        const r = await resp.json();
+        scoreHistory = [...scoreHistory, { iter, ...r.scores }];
+        lastReasoning = r.reasoning || '';
+
+        if (r.converged) {
+          break;
+        }
+
+        if (r.new_params) {
+          params = { ...params, ...r.new_params };
+        }
+      } catch (e: any) {
+        errorMsg = e.message;
+        break;
+      }
+    }
+
+    refining = false;
+  }
+
+  function stopRefine() {
+    stopRequested = true;
+  }
+
   async function identify() {
     if (!file) return;
     loading = true;
@@ -193,6 +285,43 @@
         </div>
       {/each}
       <hr />
+      <div class="save-section">
+        <strong>Training Cache</strong>
+        <button class="save-btn" onclick={saveToTraining} disabled={saving}>
+          {saving ? 'Saving...' : '💾 Save to Training'}
+        </button>
+        {#if saveMsg}
+          <div class="save-msg" class:success={!saveMsg.startsWith('Error')}>{saveMsg}</div>
+        {/if}
+      </div>
+      <hr />
+      <div class="refine-section">
+        <strong>Auto-Refine</strong>
+        {#if !refining}
+          <button class="refine-btn" onclick={startRefine}>
+            🔁 Auto-Refine to Match
+          </button>
+        {:else}
+          <button class="refine-btn stop" onclick={stopRefine}>
+            ⏹ Stop (iter {iter}/10)
+          </button>
+        {/if}
+        {#if scoreHistory.length > 0}
+          <div class="score-history">
+            {#each scoreHistory as s}
+              <div class="score-row">
+                <span>iter {s.iter}</span>
+                <span class="ssim" class:good={s.ssim > 0.92}>SSIM {s.ssim?.toFixed(3)}</span>
+                <span class="px">px {s.pixel_diff_pct?.toFixed(1)}%</span>
+              </div>
+            {/each}
+          </div>
+          {#if lastReasoning}
+            <div class="ai-reasoning">{lastReasoning}</div>
+          {/if}
+        {/if}
+      </div>
+      <hr />
       <div class="json-block">
         <strong>JSON Output</strong>
         <pre>{JSON.stringify(params, null, 2)}</pre>
@@ -262,6 +391,22 @@
   .pr input[type="range"] { flex: 1; height: 4px; accent-color: #cc2222; min-width: 0; }
   .pr input[type="number"] { width: 50px; font: 10px monospace; border: 1px solid #ddd; border-radius: 3px; padding: 2px 4px; text-align: right; }
 
+  .save-section strong, .refine-section strong { display: block; font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .save-btn { width: 100%; padding: 10px; background: #2e7d32; color: white; border: none; border-radius: 4px; font: bold 11px Arial; cursor: pointer; margin-bottom: 6px; }
+  .save-btn:hover:not(:disabled) { background: #1b5e20; }
+  .save-btn:disabled { background: #ccc; cursor: default; }
+  .save-msg { font-size: 10px; padding: 4px 8px; border-radius: 3px; background: #fff8e1; color: #666; }
+  .save-msg.success { background: #e8f5e9; color: #2e7d32; }
+  .refine-btn { width: 100%; padding: 10px; background: #16213e; color: white; border: none; border-radius: 4px; font: bold 11px Arial; cursor: pointer; margin-bottom: 8px; }
+  .refine-btn:hover { background: #1e3556; }
+  .refine-btn.stop { background: #d32f2f; }
+  .score-history { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 6px; margin-top: 4px; }
+  .score-row { display: flex; gap: 6px; font: 10px monospace; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
+  .score-row:last-child { border-bottom: none; }
+  .score-row .ssim { color: #888; }
+  .score-row .ssim.good { color: #2e7d32; font-weight: bold; }
+  .score-row .px { color: #888; }
+  .ai-reasoning { font-size: 10px; color: #555; line-height: 1.4; padding: 6px; background: #fff8e1; border-left: 2px solid #f57c00; margin-top: 6px; border-radius: 0 4px 4px 0; }
   .json-block strong { display: block; font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
   .json-block pre { font: 10px monospace; background: #fff; padding: 8px; border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; margin: 0; }
 </style>

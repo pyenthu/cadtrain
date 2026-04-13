@@ -10,6 +10,7 @@
         "@threlte/extras": "^9.14.5",
         "manifold-3d": "^3.4.1",
         "playwright": "^1.59.1",
+        "sharp": "^0.34.5",
         "svelte": "^5.55.3",
         "svelte-tweakpane-ui": "^1.5.16",
         "three": "^0.183.2",
