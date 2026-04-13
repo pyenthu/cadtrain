@@ -11,7 +11,7 @@
 import { json, error } from '@sveltejs/kit';
 import Anthropic from '@anthropic-ai/sdk';
 import { COMPONENTS } from '$components/library';
-import { ANTHROPIC_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import { getCache } from '$lib/training/cache';
 import { computePHash } from '$lib/training/phash';
 import type { RequestHandler } from './$types';
@@ -21,8 +21,8 @@ const CACHE_PATH = join(process.cwd(), 'training_data', 'cache.jsonl');
 const TOP_K = 5;
 
 export const POST: RequestHandler = async ({ request }) => {
-  if (!ANTHROPIC_API_KEY) {
-    throw error(500, 'ANTHROPIC_API_KEY not set in .env');
+  if (!env.ANTHROPIC_API_KEY) {
+    throw error(500, 'ANTHROPIC_API_KEY not set');
   }
 
   const formData = await request.formData();
@@ -110,7 +110,7 @@ Use the EXACT parameter keys from the component's param list. Reference the most
   });
 
   // === 4. Call Claude ===
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
   try {
     const response = await client.messages.create({

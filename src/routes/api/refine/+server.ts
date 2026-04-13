@@ -10,7 +10,7 @@
 import { json, error } from '@sveltejs/kit';
 import Anthropic from '@anthropic-ai/sdk';
 import { COMPONENTS } from '$components/library';
-import { ANTHROPIC_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import { compareImages } from '$lib/training/image_diff';
 import type { RequestHandler } from './$types';
 
@@ -22,7 +22,7 @@ function dataUrlToBuffer(dataUrl: string): Buffer {
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-  if (!ANTHROPIC_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY) {
     throw error(500, 'ANTHROPIC_API_KEY not set');
   }
 
@@ -91,7 +91,7 @@ Return ONLY a JSON object with the new parameter values:
 
 Use the EXACT param keys shown above. Stay within the min/max ranges. Make proportional changes (don't overshoot).`;
 
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
   try {
     const response = await client.messages.create({
