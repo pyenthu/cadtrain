@@ -78,14 +78,30 @@ export class TrainingCache {
     }
   }
 
-  /** Find top-K most similar records by Hamming distance. */
+  /**
+   * Find top-K most similar records, weighted by feedback history.
+   *
+   *   score = hamming_distance - (accepted * 0.5) + (wrong_match * 1.0)
+   *
+   * Lower score = better. Records that users have validated rank higher;
+   * records flagged as wrong matches are demoted. Ties broken by `accepted`
+   * desc (more validated records first), then `uses` desc.
+   */
   findSimilar(hash: string, k: number = 5): CacheRecord[] {
     if (!this.records.length) return [];
-    const scored = this.records.map((r) => ({
-      record: r,
-      distance: hammingDistance(hash, r.hash),
-    }));
-    scored.sort((a, b) => a.distance - b.distance);
+    const scored = this.records.map((r) => {
+      const distance = hammingDistance(hash, r.hash);
+      const score = distance - (r.accepted || 0) * 0.5 + (r.wrong_match || 0) * 1.0;
+      return { record: r, score };
+    });
+    scored.sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      // Tiebreak: prefer more accepted, then more uses.
+      if ((b.record.accepted || 0) !== (a.record.accepted || 0)) {
+        return (b.record.accepted || 0) - (a.record.accepted || 0);
+      }
+      return (b.record.uses || 0) - (a.record.uses || 0);
+    });
     return scored.slice(0, k).map((s) => s.record);
   }
 

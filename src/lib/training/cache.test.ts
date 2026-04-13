@@ -93,6 +93,28 @@ describe('TrainingCache', () => {
       }
       expect(cache.findSimilar('aaaaaaaaaaaaaaaa', 3)).toHaveLength(3);
     });
+
+    it('weights by accepted: a validated farther record beats an unvalidated closer one', async () => {
+      // hash differs from query 'ffffffffffffffff' by varying amounts
+      // - 'ffffffffffffff00' has hamming distance 8 (last byte 00)
+      // - 'fffffffffffff0ff' has hamming distance 4
+      // accepted=10 → effective score = 8 - 5 = 3; the unvalidated near record scores 4.
+      await cache.append(makeRecord({ id: 'far_validated', hash: 'ffffffffffffff00', accepted: 10 }));
+      await cache.append(makeRecord({ id: 'near_unvalidated', hash: 'fffffffffffff0ff', accepted: 0 }));
+      const results = cache.findSimilar('ffffffffffffffff', 2);
+      expect(results[0].id).toBe('far_validated');
+      expect(results[1].id).toBe('near_unvalidated');
+    });
+
+    it('weights by wrong_match: a flagged near record loses to a clean farther record', async () => {
+      // 'fffffffffffffffc' has hamming distance 2; wrong_match=5 → score = 2 + 5 = 7
+      // 'fffffffffffffff0' has hamming distance 4; wrong_match=0 → score = 4
+      await cache.append(makeRecord({ id: 'flagged_near', hash: 'fffffffffffffffc', wrong_match: 5 }));
+      await cache.append(makeRecord({ id: 'clean_far', hash: 'fffffffffffffff0', wrong_match: 0 }));
+      const results = cache.findSimilar('ffffffffffffffff', 2);
+      expect(results[0].id).toBe('clean_far');
+      expect(results[1].id).toBe('flagged_near');
+    });
   });
 
   describe('incrementUse()', () => {
@@ -123,6 +145,23 @@ describe('TrainingCache', () => {
       await cache.append(makeRecord({ id: 'r1' }));
       cache.incrementAccepted('r1');
       expect(cache.getAll()[0].accepted).toBe(1);
+    });
+  });
+
+  describe('incrementWrongMatch()', () => {
+    it('increments wrong_match counter', async () => {
+      await cache.append(makeRecord({ id: 'r1' }));
+      cache.incrementWrongMatch('r1');
+      cache.incrementWrongMatch('r1');
+      expect(cache.getAll()[0].wrong_match).toBe(2);
+    });
+
+    it('persists across reload', async () => {
+      await cache.append(makeRecord({ id: 'r1' }));
+      cache.incrementWrongMatch('r1');
+      const fresh = new TrainingCache(path);
+      await fresh.load();
+      expect(fresh.getAll()[0].wrong_match).toBe(1);
     });
   });
 
