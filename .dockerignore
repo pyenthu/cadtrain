@@ -64,10 +64,8 @@ vlm
 plans
 scripts
 
-# Docker itself
-Dockerfile
-docker-entrypoint.sh
-.dockerignore
+# Note: Do NOT exclude Dockerfile or docker-entrypoint.sh —
+# the Dockerfile needs to COPY the entrypoint script into the image.
 
 # Bun
 .bun
