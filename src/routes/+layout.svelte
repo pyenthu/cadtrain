@@ -7,6 +7,7 @@
     { href: '/components', label: 'Components' },
     { href: '/reverse', label: 'Reverse' },
     { href: '/training', label: 'Training' },
+    { href: '/tests', label: 'Tests' },
     { href: '/tools/bottom-sub', label: 'Bottom Sub' },
     { href: '/tools/ratch-latch', label: 'Ratch-Latch' },
   ];
