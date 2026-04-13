@@ -9,7 +9,7 @@
  * Append-only: new records from seed data + user feedback.
  */
 
-import { readFileSync, existsSync, appendFileSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
 import { hammingDistance } from './phash';
 
 export interface CacheRecord {
@@ -44,10 +44,10 @@ export class TrainingCache {
     this.loaded = true;
   }
 
-  /** Append a new record (persists immediately). */
+  /** Append a new record (persists immediately via atomic rewrite). */
   async append(record: CacheRecord): Promise<void> {
     this.records.push(record);
-    appendFileSync(this.path, JSON.stringify(record) + '\n');
+    this.rewriteFile();
   }
 
   /** Find top-K most similar records by Hamming distance. */
@@ -105,9 +105,12 @@ export class TrainingCache {
     return this.records;
   }
 
+  /** Atomic write: write to tmp file, then rename. Prevents corruption on crash. */
   private rewriteFile(): void {
     const text = this.records.map((r) => JSON.stringify(r)).join('\n') + '\n';
-    writeFileSync(this.path, text);
+    const tmp = `${this.path}.tmp`;
+    writeFileSync(tmp, text);
+    renameSync(tmp, this.path);
   }
 }
 
