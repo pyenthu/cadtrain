@@ -70,6 +70,19 @@ export class TrainingCache {
     this.rewriteFile();
   }
 
+  /**
+   * Bulk append: push many records in memory, rewrite the file ONCE.
+   * Use for large indexing jobs where per-record append() would be O(n²).
+   */
+  async appendBatch(records: CacheRecord[]): Promise<void> {
+    for (const r of records) {
+      if (r.wrong_match === undefined) r.wrong_match = 0;
+      if (r.version === undefined) r.version = 2;
+      this.records.push(r);
+    }
+    this.rewriteFile();
+  }
+
   incrementWrongMatch(id: string): void {
     const rec = this.records.find((r) => r.id === id);
     if (rec) {
