@@ -59,10 +59,8 @@ HAL_PACKERS
 HAL_WPS
 
 # Dev-only directories
-tests
-vlm
+scripts/legacy
 plans
-scripts
 
 # Note: Do NOT exclude Dockerfile or docker-entrypoint.sh —
 # the Dockerfile needs to COPY the entrypoint script into the image.
