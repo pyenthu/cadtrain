@@ -2,6 +2,19 @@
 
 Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit** app with **ManifoldCAD** for geometry, **Threlte** for 3D rendering, and **Claude vision** + a **persistent training cache** for reverse identification (PNG → component + params).
 
+## Rules for Claude (read me first)
+
+1. This repo uses **Bun + SvelteKit + adapter-node**. Never switch to adapter-static or add Python to the runtime.
+2. Production code is in `src/`. Legacy standalone Vite apps (`BOTTOM_SUB/manifold/`, `RATCH_LATCH/manifold/`, `components/`, `viewer/`) are non-authoritative and scheduled for deletion.
+3. All API endpoints must use `$env/dynamic/private` (not `$env/static/private`) so env vars are read at runtime, not build time.
+4. The training cache at `training_data/cache.jsonl` is the app's long-term memory. Writes must be atomic (temp file + rename). Never delete it without backup.
+5. Follow plan files in `~/.claude/plans/`. Don't add features outside the current plan's scope.
+6. Before destructive operations (`rm`, `git rm`, `git reset --hard`), show the plan and wait for approval.
+7. Commit after each numbered plan step completes, not after each small edit.
+8. Test changes locally (`bun run build` + tests if applicable) before committing.
+9. When asked to review or audit, use Explore subagents for read-only exploration. Don't modify files during exploration.
+10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
+
 ## Tech stack
 
 - **Runtime:** Bun (dev) / Node.js 22 (production via adapter-node)
