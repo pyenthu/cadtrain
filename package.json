@@ -8,14 +8,18 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "HOST=0.0.0.0 PORT=${PORT:-3333} node build",
-    "seed": "bun run scripts/seed_cache.ts"
+    "seed": "bun run scripts/seed_cache.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.57.1",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
-    "vite": "^8.0.8"
+    "@vitest/expect": "^4.1.4",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
   },
   "peerDependencies": {
     "typescript": "^5"
