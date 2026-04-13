@@ -88,6 +88,32 @@
   let saving = $state(false);
   let saveMsg = $state<string | null>(null);
 
+  // Feedback state
+  let feedbackVerdict = $state<'correct' | 'wrong' | null>(null);
+  let feedbackMsg = $state<string | null>(null);
+
+  async function sendFeedback(verdict: 'correct' | 'wrong') {
+    if (!result?.retrieved_examples?.length) return;
+    feedbackVerdict = verdict;
+    try {
+      const resp = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          verdict,
+          retrieved_ids: result.retrieved_examples.map((e: any) => e.id),
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      feedbackMsg = verdict === 'correct'
+        ? 'Thanks — the matched examples will rank higher next time'
+        : 'Got it — we\'ll demote those examples next time';
+    } catch (e: any) {
+      feedbackMsg = `Error: ${e.message}`;
+      feedbackVerdict = null;
+    }
+  }
+
   async function saveToTraining() {
     if (!comp || !preview) return;
     saving = true;
@@ -173,6 +199,8 @@
     if (!file) return;
     loading = true;
     errorMsg = null;
+    feedbackVerdict = null;
+    feedbackMsg = null;
 
     try {
       const formData = new FormData();
@@ -243,6 +271,28 @@
           <span class="confidence">{(result.confidence * 100).toFixed(0)}%</span>
         </div>
         <div class="reasoning">{result.reasoning}</div>
+        {#if result.retrieved_examples?.length}
+          <div class="feedback-row">
+            <span class="fb-label">Was this right?</span>
+            <button
+              class="fb-btn"
+              class:active={feedbackVerdict === 'correct'}
+              disabled={feedbackVerdict !== null}
+              onclick={() => sendFeedback('correct')}
+              aria-label="Correct identification"
+            >👍</button>
+            <button
+              class="fb-btn"
+              class:active={feedbackVerdict === 'wrong'}
+              disabled={feedbackVerdict !== null}
+              onclick={() => sendFeedback('wrong')}
+              aria-label="Wrong identification"
+            >👎</button>
+          </div>
+          {#if feedbackMsg}
+            <div class="feedback-msg">{feedbackMsg}</div>
+          {/if}
+        {/if}
       </div>
     {/if}
   </div>
@@ -380,6 +430,13 @@
   .ri-header strong { font-size: 13px; color: #333; }
   .confidence { font-size: 10px; background: #1b4332; color: #52b788; padding: 2px 8px; border-radius: 10px; }
   .reasoning { font-size: 10px; color: #666; line-height: 1.5; padding: 6px 0; border-left: 2px solid #cc2222; padding-left: 8px; }
+  .feedback-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+  .fb-label { font-size: 10px; color: #888; flex: 1; }
+  .fb-btn { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 3px 10px; font-size: 14px; cursor: pointer; line-height: 1; }
+  .fb-btn:hover:not(:disabled) { background: #f5f5f5; border-color: #bbb; }
+  .fb-btn:disabled { cursor: default; opacity: 0.5; }
+  .fb-btn.active { background: #e8f5e9; border-color: #2e7d32; opacity: 1; }
+  .feedback-msg { font-size: 9px; color: #2e7d32; margin-top: 4px; padding: 4px 6px; background: #e8f5e9; border-radius: 3px; }
 
   .canvas-wrap { flex: 1; min-height: 400px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; position: relative; }
   .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #888; font-size: 12px; }
