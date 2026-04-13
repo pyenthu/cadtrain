@@ -247,7 +247,8 @@
     <div class="canvas-wrap">
       {#if SceneComponent && geo}
         <Canvas {createRenderer}>
-          <svelte:component this={SceneComponent} {geo} {geoVersion} {showCutaway} {showEdges} />
+          {@const Scene = SceneComponent}
+          <Scene {geo} {geoVersion} {showCutaway} {showEdges} />
         </Canvas>
       {:else if loading}
         <div class="empty">Identifying with Claude...</div>

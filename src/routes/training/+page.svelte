@@ -86,7 +86,8 @@
     <div class="center">
       {#if SceneComponent}
         <Canvas>
-          <svelte:component this={SceneComponent} {geo} {geoVersion} {showCutaway} {showEdges} />
+          {@const Scene = SceneComponent}
+          <Scene {geo} {geoVersion} {showCutaway} {showEdges} />
         </Canvas>
       {/if}
       <div class="info">{buildTime.toFixed(0)}ms</div>
