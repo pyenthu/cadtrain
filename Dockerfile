@@ -21,6 +21,9 @@ RUN bun install --frozen-lockfile
 # Copy source
 COPY . .
 
+# Generate SvelteKit's .svelte-kit dir (types, virtual modules)
+RUN bunx svelte-kit sync
+
 # Build the SvelteKit app (produces ./build directory via adapter-node)
 RUN bun run build
 
