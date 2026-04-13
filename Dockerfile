@@ -7,7 +7,8 @@
 # ============================================================
 
 # ---- Build stage ----
-FROM oven/bun:1.1 AS builder
+# Match local bun version (1.3+) for lockfile compatibility
+FROM oven/bun:1.3 AS builder
 
 WORKDIR /app
 
