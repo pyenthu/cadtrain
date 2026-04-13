@@ -3,8 +3,15 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "dev": "vite dev --port 3333",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node build",
+    "seed": "bun run scripts/seed_cache.ts"
+  },
   "devDependencies": {
-    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.57.1",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",

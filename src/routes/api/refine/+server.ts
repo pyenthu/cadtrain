@@ -11,15 +11,10 @@ import { json, error } from '@sveltejs/kit';
 import Anthropic from '@anthropic-ai/sdk';
 import { COMPONENTS } from '$components/library';
 import { ANTHROPIC_API_KEY } from '$env/static/private';
+import { compareImages } from '$lib/training/image_diff';
 import type { RequestHandler } from './$types';
-import { writeFileSync, mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { spawnSync } from 'child_process';
 
 const SSIM_THRESHOLD = 0.92;
-const PYTHON_BIN = process.env.PYTHON_BIN || 'python3';
-const COMPARE_SCRIPT = join(process.cwd(), 'vlm', 'compare_images.py');
 
 function dataUrlToBuffer(dataUrl: string): Buffer {
   const b64 = dataUrl.split(',')[1] || dataUrl;
@@ -41,34 +36,19 @@ export const POST: RequestHandler = async ({ request }) => {
   const comp = COMPONENTS.find(c => c.id === component_id);
   if (!comp) throw error(400, `Unknown component_id: ${component_id}`);
 
-  // === 1. Write images to temp files for Python diff ===
-  const tmp = mkdtempSync(join(tmpdir(), 'refine-'));
-  const origPath = join(tmp, 'orig.png');
-  const rendPath = join(tmp, 'rend.png');
-  writeFileSync(origPath, dataUrlToBuffer(original_image));
-  writeFileSync(rendPath, dataUrlToBuffer(current_render));
-
-  // === 2. Run Python compare ===
+  // === 1. Compare images via pure-TS implementation ===
   let scores: any = {};
   try {
-    const result = spawnSync(PYTHON_BIN, [COMPARE_SCRIPT, origPath, rendPath], {
-      encoding: 'utf-8',
-      timeout: 10000,
-    });
-    if (result.status !== 0) {
-      console.error('Python compare error:', result.stderr);
-      scores = { error: result.stderr || 'Python compare failed' };
-    } else {
-      scores = JSON.parse(result.stdout);
-    }
+    const origBuffer = dataUrlToBuffer(original_image);
+    const rendBuffer = dataUrlToBuffer(current_render);
+    scores = await compareImages(origBuffer, rendBuffer);
   } catch (e: any) {
     scores = { error: e.message };
   }
 
-  // === 3. Check convergence ===
+  // === 2. Check convergence ===
   const ssim = scores.ssim || 0;
   if (ssim >= SSIM_THRESHOLD) {
-    rmSync(tmp, { recursive: true, force: true });
     return json({
       converged: true,
       scores,
@@ -145,7 +125,6 @@ Use the EXACT param keys shown above. Stay within the min/max ranges. Make propo
     }
 
     const result = JSON.parse(text);
-    rmSync(tmp, { recursive: true, force: true });
 
     return json({
       converged: false,
@@ -154,7 +133,6 @@ Use the EXACT param keys shown above. Stay within the min/max ranges. Make propo
       reasoning: result.reasoning,
     });
   } catch (e: any) {
-    rmSync(tmp, { recursive: true, force: true });
     console.error('Refine error:', e);
     throw error(500, e.message || 'Refinement failed');
   }

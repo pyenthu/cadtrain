@@ -1,0 +1,73 @@
+# Dependencies (will be installed fresh in the container)
+node_modules
+**/node_modules
+
+# Build artifacts
+.svelte-kit
+build
+dist
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+*.log
+.vscode
+.idea
+*.swp
+
+# Other Svelte/Vite sub-apps (dev only)
+BOTTOM_SUB/manifold/node_modules
+BOTTOM_SUB/manifold/.svelte-kit
+RATCH_LATCH/manifold/node_modules
+RATCH_LATCH/manifold/.svelte-kit
+components/node_modules
+components/.svelte-kit
+viewer/node_modules
+viewer/.svelte-kit
+
+# Large generated/demo assets we don't need in production
+static/tmp/rag_frames
+training_data/prim_*/images/var_*.png
+training_data/prim_*/images/var_*.svg
+training_data/prim_*/images/default.png
+training_data/*/analysis.json
+training_data/*/analysis.txt
+training_data/bottom_sub/images/*.png
+training_data/ratch_latch/images/*.png
+training_data/comp_*
+training_data/short_*
+training_data/extension_*
+training_data/one_piece_*
+training_data/top_snap_*
+training_data/bridge_plug
+training_data/setting_tool
+training_data/perma_lach_pls
+training_data/bottom_sub
+training_data/ratch_latch
+
+# Extracted catalog data (not needed at runtime)
+HAL_PACKERS
+HAL_WPS
+
+# Dev-only directories
+tests
+vlm
+plans
+scripts
+
+# Docker itself
+Dockerfile
+docker-entrypoint.sh
+.dockerignore
+
+# Bun
+.bun
