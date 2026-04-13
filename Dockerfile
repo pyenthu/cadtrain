@@ -7,27 +7,30 @@
 # ============================================================
 
 # ---- Build stage ----
-# Match local bun version (1.3+) for lockfile compatibility
-FROM oven/bun:1.3 AS builder
+# Use Node 22 (Vite 8 requires ≥ 20.19 / 22.12) for the build,
+# install deps with bun for speed.
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Copy only manifest first for better caching
+# Install bun (just for fast `bun install`)
+RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://bun.sh/install | bash \
+    && ln -s /root/.bun/bin/bun /usr/local/bin/bun
+
+# Copy manifest first for better caching
 COPY package.json bun.lock ./
 
-# Install dependencies (production + dev needed for build)
+# Install all deps (frozen lockfile)
 RUN bun install --frozen-lockfile
 
 # Copy source
 COPY . .
 
-# Generate SvelteKit's .svelte-kit dir (types, virtual modules)
-RUN bunx svelte-kit sync
+# Build the SvelteKit app via Node (Vite + SvelteKit run on Node, not bun runtime)
+RUN node --version && npx vite --version && npx vite build
 
-# Build the SvelteKit app (produces ./build directory via adapter-node)
-RUN bun run build
-
-# Remove dev dependencies for smaller runtime
+# Strip dev deps for smaller runtime
 RUN bun install --frozen-lockfile --production
 
 # ---- Runtime stage ----
