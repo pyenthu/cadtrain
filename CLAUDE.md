@@ -15,6 +15,21 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 9. When asked to review or audit, use Explore subagents for read-only exploration. Don't modify files during exploration.
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
 
+## Open TODOs (out-of-scope findings)
+
+- **pHash discriminator is too weak for default-param primitive renders.**
+  Discovered during Phase 2 step 2.7 retrieval test (2026-04-13). Four
+  primitives — `seal_bore_polished`, `packer_element`, `nc_numbered_connection`,
+  `grooved_cylinder` — all collapse to the same 64-bit pHash
+  (`ed14926b6d94166d`) because their `var_1.png` renders are nearly
+  identical black-on-white silhouettes. `findSimilar` returns them at
+  hamming distance 0 in arbitrary order, so the integration test
+  baseline is 9/18 (50%) not 18/18. Options when revisiting:
+  (a) render primitives at distinguishing angles/colors before hashing;
+  (b) upgrade pHash to 256-bit;
+  (c) supplement pHash with a shape-hash or edge-histogram fingerprint.
+  Not in Phase 2 scope — logged here so the next plan can address it.
+
 ## Tech stack
 
 - **Runtime:** Bun (dev) / Node.js 22 (production via adapter-node)
