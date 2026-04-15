@@ -23,7 +23,7 @@ function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
 // ═══ BUILDERS ═══
 
-const builders: Record<string, (p: Record<string, number>) => any> = {
+export const builders: Record<string, (p: Record<string, number>) => any> = {
 
   hollow_cylinder(p) {
     const id = p.od - 2 * p.wall;
@@ -289,13 +289,25 @@ export interface ComponentResult {
   manifold: any;
 }
 
-export function buildComponent(componentId: string, params: Record<string, number>): ComponentResult {
+/**
+ * Build a raw primitive manifold from the library, without any centering
+ * or cutaway processing. Used by the composition interpreter
+ * (src/lib/authoring/compose.ts) which needs to apply its own transforms
+ * before finalizing. If you want a ready-to-render geometry, use
+ * `buildComponent` instead.
+ */
+export function buildPrimitiveManifold(componentId: string, params: Record<string, number>): any {
   const builderFn = builders[componentId];
   if (!builderFn) throw new Error(`Unknown component: ${componentId}`);
+  return builderFn(params);
+}
 
-  let manifold = builderFn(params);
-
-  // Center vertically
+/**
+ * Center a manifold vertically, apply the Y-axis half cutaway, and convert
+ * to `full` + `cutVC` three.js geometries. Shared between `buildComponent`
+ * and the composition interpreter so both produce identical render output.
+ */
+export function finalizeManifold(manifold: any, maxOD: number): ComponentResult {
   const mesh = manifold.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const np = mesh.numProp;
@@ -305,18 +317,21 @@ export function buildComponent(componentId: string, params: Record<string, numbe
     if (z < minZ) minZ = z;
     if (z > maxZ) maxZ = z;
   }
-  manifold = manifold.translate([0, 0, -(minZ + maxZ) / 2]);
-
-  const maxOD = Math.max(params.od || 0, params.odTop || 0, params.odBottom || 0,
-    params.odLarge || 0, params.slipOD || 0, params.odCompressed || 0, 3);
-
+  const centered = manifold.translate([0, 0, -(minZ + maxZ) / 2]);
   const cutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
 
   return {
-    full: manifoldToGeo(manifold),
-    cutVC: manifoldToCutVC(manifold.subtract(cutBox), maxOD),
-    manifold,
+    full: manifoldToGeo(centered),
+    cutVC: manifoldToCutVC(centered.subtract(cutBox), maxOD),
+    manifold: centered,
   };
+}
+
+export function buildComponent(componentId: string, params: Record<string, number>): ComponentResult {
+  const manifold = buildPrimitiveManifold(componentId, params);
+  const maxOD = Math.max(params.od || 0, params.odTop || 0, params.odBottom || 0,
+    params.odLarge || 0, params.slipOD || 0, params.odCompressed || 0, 3);
+  return finalizeManifold(manifold, maxOD);
 }
 
 function manifoldToGeo(manifold: any): THREE.BufferGeometry {
