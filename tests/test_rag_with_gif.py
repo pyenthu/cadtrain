@@ -24,6 +24,8 @@ is the source of truth for what /api/identify can return.
 """
 
 import argparse
+import datetime as dt
+import json
 import re
 import shutil
 import sys
@@ -37,6 +39,13 @@ ROOT = Path("/Users/neerajsethi/Desktop/GitHub/cadtrain")
 FRAMES_DIR = ROOT / "static" / "tmp" / "rag_frames"
 GIF_PATH = ROOT / "static" / "tmp" / "rag.gif"
 LIBRARY_TS = ROOT / "src" / "lib" / "components" / "library.ts"
+
+# WEBM + manifest targets for the /tests route
+TESTS_DIR = ROOT / "static" / "tests"
+MANIFEST_PATH = TESTS_DIR / "manifest.json"
+VIDEO_STAGING_DIR = TESTS_DIR / "_video_staging"
+VIDEO_OUT_PATH = TESTS_DIR / "rag_identify.webm"
+TEST_ID = "rag_identify"
 
 # (label, image_path_rel_to_ROOT, expected_library_id)
 #
@@ -69,6 +78,44 @@ def norm(s):
     return (s or "").strip().lower()
 
 
+def update_manifest(status: str, recorded_iso: str, cases_count: int) -> None:
+    """Merge the latest run result into static/tests/manifest.json.
+
+    The manifest is committed alongside the webm so the /tests route can
+    show last-recorded time and pass/fail status without hitting the
+    filesystem on every page load.
+    """
+    if not MANIFEST_PATH.exists():
+        MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        MANIFEST_PATH.write_text(json.dumps({"tests": []}, indent=2) + "\n")
+
+    data = json.loads(MANIFEST_PATH.read_text())
+    entry = next((t for t in data.get("tests", []) if t.get("id") == TEST_ID), None)
+    if entry is None:
+        entry = {
+            "id": TEST_ID,
+            "title": "RAG Identification Pipeline",
+            "description": (
+                "Uploads primitive variations to /reverse, triggers Claude-assisted "
+                "identification, and asserts each returns the expected library id."
+            ),
+            "source": "tests/test_rag_with_gif.py",
+            "video": "/tests/rag_identify.webm",
+            "poster": None,
+            "cases": cases_count,
+        }
+        data.setdefault("tests", []).append(entry)
+
+    entry["status"] = status
+    entry["recorded"] = recorded_iso
+    entry["cases"] = cases_count
+
+    tmp = MANIFEST_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.replace(MANIFEST_PATH)
+    print(f"Manifest updated: {MANIFEST_PATH}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -80,6 +127,11 @@ def main():
         "--headless",
         action="store_true",
         help="Run the browser headless. Default is visible (slow_mo=200) so you can watch the run.",
+    )
+    parser.add_argument(
+        "--record-video",
+        action="store_true",
+        help="Record a WEBM of the run and save it to static/tests/rag_identify.webm alongside an update to static/tests/manifest.json. Used by the /tests route.",
     )
     args = parser.parse_args()
 
@@ -103,10 +155,26 @@ def main():
 
     results = []
 
+    # Prep video staging dir. Playwright writes the webm with a random name
+    # when the context closes; we rename it to the canonical path after.
+    if args.record_video:
+        shutil.rmtree(VIDEO_STAGING_DIR, ignore_errors=True)
+        VIDEO_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+        TESTS_DIR.mkdir(parents=True, exist_ok=True)
+
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=args.headless, slow_mo=200)
-            page = browser.new_page(viewport={"width": 1500, "height": 900})
+            if args.record_video:
+                context = browser.new_context(
+                    viewport={"width": 1500, "height": 900},
+                    record_video_dir=str(VIDEO_STAGING_DIR),
+                    record_video_size={"width": 1500, "height": 900},
+                )
+                page = context.new_page()
+            else:
+                context = None
+                page = browser.new_page(viewport={"width": 1500, "height": 900})
 
             for i, (label, rel_path, expected_id) in enumerate(TEST_CASES):
                 print(f"\n=== Test {i + 1}/{len(TEST_CASES)}: {label} ===")
@@ -187,6 +255,10 @@ def main():
                 results.append(result)
                 time.sleep(1)
 
+            # Closing the context flushes the video file. Must happen before
+            # browser.close() so the webm is fully written when we rename it.
+            if context is not None:
+                context.close()
             browser.close()
     finally:
         # Always assemble the GIF — even on failure — so a broken run
@@ -212,6 +284,21 @@ def main():
             print(f"GIF saved: {GIF_PATH} ({size_mb:.1f} MB)")
             print(f"View at: http://localhost:3333/tmp/rag.gif")
 
+        # Move the webm from the staging dir to the canonical location
+        # used by /tests and the manifest.
+        if args.record_video:
+            staged_webms = sorted(VIDEO_STAGING_DIR.glob("*.webm"))
+            if staged_webms:
+                if VIDEO_OUT_PATH.exists():
+                    VIDEO_OUT_PATH.unlink()
+                staged_webms[0].replace(VIDEO_OUT_PATH)
+                shutil.rmtree(VIDEO_STAGING_DIR, ignore_errors=True)
+                size_mb = VIDEO_OUT_PATH.stat().st_size / 1024 / 1024
+                print(f"WEBM saved: {VIDEO_OUT_PATH} ({size_mb:.1f} MB)")
+                print(f"View at: http://localhost:3333/tests/rag_identify.webm")
+            else:
+                print(f"! No webm produced in {VIDEO_STAGING_DIR}")
+
     # Summary
     print("\n=== RAG Identification Results ===")
     passed = 0
@@ -233,6 +320,11 @@ def main():
     total = len(results)
     pct = (passed / total * 100) if total else 0.0
     print(f"\n {passed}/{total} passed ({pct:.1f}%)")
+
+    if args.record_video and VIDEO_OUT_PATH.exists():
+        status = "pass" if passed == total and total > 0 else "fail"
+        recorded_iso = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        update_manifest(status=status, recorded_iso=recorded_iso, cases_count=total)
 
     sys.exit(0 if passed == total and total > 0 else 1)
 

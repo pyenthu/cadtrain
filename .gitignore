@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build output
+.svelte-kit/
+dist/
+build/
+
+# Generated files
+BOTTOM_SUB/manifold/geometry.js
+BOTTOM_SUB/manifold/params.json
+BOTTOM_SUB/manifold/cutaway.json
+BOTTOM_SUB/manifold/full.json
+
+# Test screenshots (keep original.png only)
+BOTTOM_SUB/manifold/test*.png
+BOTTOM_SUB/manifold/iter*.png
+BOTTOM_SUB/manifold/angle*.png
+BOTTOM_SUB/manifold/edge_test*.png
+BOTTOM_SUB/manifold/et_*.png
+BOTTOM_SUB/manifold/light_test*.png
+BOTTOM_SUB/manifold/latest*.png
+BOTTOM_SUB/manifold/tune_*.png
+BOTTOM_SUB/manifold/vc_*.png
+BOTTOM_SUB/manifold/visual_*.png
+BOTTOM_SUB/manifold/threlte_shot.png
+
+# Large extracted data (PDFs, SVGs, images from catalog extraction)
+HAL_WPS/svg/
+HAL_WPS/images/
+HAL_WPS/text/
+HAL_WPS/tools/
+HAL_WPS/*.pdf
+HAL_PACKERS/svg/
+HAL_PACKERS/images/
+HAL_PACKERS/text/
+HAL_PACKERS/tools/
+HAL_PACKERS/*.pdf
+# Keep original.png, ignore iteration screenshots
+training_data/*/images/iter_*.png
+training_data/*/images/refine_*.png
+training_data/*/images/model_*.png
+
+# CAD output files
+*.step
+*.obj
+*.stl
+*.glb
+*.gltf
+
+# BOTTOM_SUB output and binary files
+BOTTOM_SUB/output/
+BOTTOM_SUB/*.html
+BOTTOM_SUB/*.png
+BOTTOM_SUB/*.bin
+BOTTOM_SUB/*.svg
+
+# Archived legacy work (kept locally, not committed)
+archive/
+
+# Playwright video staging — transient, renamed to canonical path post-run
+static/tests/_video_staging/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*

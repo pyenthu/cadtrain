@@ -1,0 +1,15 @@
+{
+  "tests": [
+    {
+      "id": "rag_identify",
+      "title": "RAG Identification Pipeline",
+      "description": "Uploads 6 primitive variations to /reverse, triggers Claude-assisted identification, and asserts each returns the expected library id. Source: tests/test_rag_with_gif.py",
+      "source": "tests/test_rag_with_gif.py",
+      "video": "/tests/rag_identify.webm",
+      "poster": null,
+      "recorded": null,
+      "status": "never_run",
+      "cases": 6
+    }
+  ]
+}
