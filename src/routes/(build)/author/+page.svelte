@@ -19,12 +19,67 @@
   let showEdges = $state(true);
 
   let spec = $state<AuthoredComponent>(emptyAuthoredComponent());
+  let saving = $state(false);
+  let saveError = $state<string | null>(null);
+  let saveNotice = $state<string | null>(null);
 
   let SceneComponent = $state<any>(null);
   $effect(() => {
     import('$lib/shared/ComponentScene.svelte').then(m => { SceneComponent = m.default; });
     initManifold().then(() => { ready = true; });
+
+    // Load an existing authored component from /api/author/list?id=...
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get('id');
+      if (id) {
+        fetch(`/api/author/list?id=${encodeURIComponent(id)}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((rec) => { if (rec) spec = rec as AuthoredComponent; })
+          .catch((e) => { saveError = `load failed: ${e?.message ?? e}`; });
+      }
+    }
   });
+
+  async function saveSpec() {
+    if (spec.parts.length === 0) {
+      saveError = 'Add at least one part before saving.';
+      return;
+    }
+    if (!spec.name.trim()) {
+      saveError = 'Give the component a name before saving.';
+      return;
+    }
+    saving = true;
+    saveError = null;
+    saveNotice = null;
+    try {
+      // Grab a thumbnail from the live canvas so the cache has something
+      // to fingerprint. Best-effort — a missing canvas just means no hash.
+      let thumbnail: string | undefined;
+      const canvas = document.querySelector('.viewport canvas') as HTMLCanvasElement | null;
+      if (canvas) {
+        try { thumbnail = canvas.toDataURL('image/png'); } catch {}
+      }
+      const payload = { ...spec, thumbnail_b64: thumbnail };
+      const r = await fetch('/api/author/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const err = await r.text();
+        throw new Error(`${r.status} ${err}`);
+      }
+      const result = await r.json();
+      spec.id = result.id;
+      saveNotice = `Saved as ${result.id} (${result.total} total)`;
+    } catch (e: any) {
+      saveError = e?.message ?? String(e);
+    } finally {
+      saving = false;
+    }
+  }
 
   let specKey = $derived(JSON.stringify(spec));
   $effect(() => {
@@ -237,7 +292,12 @@
     <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
       spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
     }} /></label>
-    <button class="save" disabled>Save (Phase 3)</button>
+    <button class="save" onclick={saveSpec} disabled={saving}>
+      {saving ? 'Saving…' : 'Save'}
+    </button>
+    {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
+    {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
+    <a class="library-link" href="/library">→ Browse library</a>
   </div>
 </div>
 
@@ -277,4 +337,9 @@
   .meta input, .meta textarea { font: 11px Arial; padding: 4px 6px; border: 1px solid #ddd; border-radius: 3px; font-family: Arial, sans-serif; }
   .save { margin-top: auto; background: #cc2222; color: white; border: none; padding: 8px; border-radius: 4px; font: bold 12px Arial; cursor: pointer; }
   .save:disabled { background: #aaa; cursor: not-allowed; }
+  .save-msg { font: 10px Arial; padding: 6px 8px; border-radius: 3px; margin-top: 4px; }
+  .save-msg.err { background: #f8d7da; color: #721c24; }
+  .save-msg.ok { background: #d1e7dd; color: #0f5132; }
+  .library-link { font: 11px Arial; color: #cc2222; text-decoration: none; text-align: center; padding: 4px; }
+  .library-link:hover { text-decoration: underline; }
 </style>
