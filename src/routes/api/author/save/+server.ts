@@ -9,6 +9,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { getAuthoredCache } from '$lib/authoring/cache';
+import { writeContextDoc } from '$lib/authoring/context';
 import { computePHash } from '$lib/training/phash';
 import type { AuthoredComponent } from '$lib/authoring/schema';
 import type { RequestHandler } from './$types';
@@ -16,6 +17,7 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 
 const CACHE_PATH = join(process.cwd(), 'training_data', 'authored_cache.jsonl');
+const CONTEXT_PATH = join(process.cwd(), 'training_data', 'authored_context.md');
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
@@ -71,6 +73,13 @@ export const POST: RequestHandler = async ({ request }) => {
   try {
     const cache = await getAuthoredCache(CACHE_PATH);
     await cache.append(record);
+
+    // Regenerate the growing context doc so /api/author/suggest picks it
+    // up on its next call. Best-effort — a failure here doesn't block save.
+    try { writeContextDoc(CONTEXT_PATH, cache); } catch (e) {
+      console.warn('[author/save] context doc write failed:', e);
+    }
+
     return json({ ok: true, id: record.id, total: cache.stats().total });
   } catch (e: any) {
     console.error('[author/save] error:', e);
