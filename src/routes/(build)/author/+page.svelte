@@ -4,7 +4,7 @@
   import { initManifold } from '$lib/components/builder';
   import { COMPONENTS } from '$lib/components/library';
   import { buildAuthored } from '$lib/authoring/compose';
-  import { emptyAuthoredComponent, type AuthoredComponent, type AuthoredPart, type AuthoredOp, type CsgOpKind } from '$lib/authoring/schema';
+  import { emptyAuthoredComponent, type AuthoredComponent, type AuthoredPart, type AuthoredOp, type AuthoringStep, type CsgOpKind } from '$lib/authoring/schema';
 
   function createRenderer(canvas: HTMLCanvasElement) {
     return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -28,6 +28,11 @@
   let hintLoading = $state(false);
   let hintError = $state<string | null>(null);
   let suggestions = $state<any[]>([]);
+
+  function logStep(actor: AuthoringStep['actor'], action: AuthoringStep['action'], payload: unknown) {
+    if (!spec.authoring_log) spec.authoring_log = [];
+    spec.authoring_log.push({ t: new Date().toISOString(), actor, action, payload });
+  }
 
   let SceneComponent = $state<any>(null);
   $effect(() => {
@@ -129,12 +134,14 @@
       params: structuredClone(defaultPrim.defaults),
     };
     spec.parts = [...spec.parts, part];
+    logStep('user', 'add_part', part);
   }
 
   function removePart(idx: number) {
     const removed = spec.parts[idx];
     spec.parts = spec.parts.filter((_, i) => i !== idx);
     spec.ops = spec.ops.filter(o => !o.inputs.includes(removed.id));
+    logStep('user', 'remove_part', { id: removed.id });
   }
 
   function changePrim(idx: number, newPrim: string) {
@@ -153,6 +160,7 @@
       out: nextOpId(),
     };
     spec.ops = [...spec.ops, op];
+    logStep('user', 'add_op', op);
   }
 
   function removeOp(idx: number) {
@@ -160,6 +168,7 @@
     spec.ops = spec.ops
       .filter((_, i) => i !== idx)
       .filter(o => !o.inputs.includes(removed.out));
+    logStep('user', 'remove_op', { out: removed.out });
   }
 
   async function askClaude() {
@@ -179,6 +188,8 @@
       }
       const data = await r.json();
       suggestions = data.suggestions ?? [];
+      logStep('user', 'prompt', hintPrompt);
+      logStep('claude', 'response', data);
     } catch (e: any) {
       hintError = e?.message ?? String(e);
     } finally {
@@ -212,7 +223,7 @@
     } else if (s.action === 'remove_op' && s.target_id) {
       spec.ops = spec.ops.filter(o => o.out !== s.target_id);
     }
-    // Mark as applied visually
+    logStep('user', 'accept_suggestion', { action: s.action, target_id: s.target_id, part: s.part, op: s.op });
     s._applied = true;
     suggestions = [...suggestions];
   }
@@ -363,11 +374,16 @@
       {#if suggestions.length > 0}
         <div class="suggestions">
           {#each suggestions as s, i}
-            <div class="suggestion" class:applied={s._applied}>
+            <div class="suggestion" class:applied={s._applied} class:rejected={s._rejected}>
               <div class="sug-head">
                 <span class="sug-action">{s.action}</span>
-                {#if !s._applied}
+                {#if !s._applied && !s._rejected}
                   <button class="sug-apply" onclick={() => applySuggestion(s)}>Apply</button>
+                  <button class="sug-reject" onclick={() => {
+                    logStep('user', 'reject_suggestion', { action: s.action, target_id: s.target_id, part: s.part, op: s.op });
+                    s._rejected = true;
+                    suggestions = [...suggestions];
+                  }}>Reject</button>
                 {/if}
               </div>
               {#if s.reasoning}<div class="sug-reason">{s.reasoning}</div>{/if}
@@ -438,10 +454,13 @@
   .suggestions { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
   .suggestion { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px; }
   .suggestion.applied { opacity: 0.5; border-color: #28a745; }
+  .suggestion.rejected { opacity: 0.4; border-color: #dc3545; text-decoration: line-through; }
   .sug-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .sug-action { font: bold 10px monospace; color: #16213e; background: #e8ecf1; padding: 2px 6px; border-radius: 3px; }
   .sug-apply { font: bold 9px Arial; background: #28a745; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
   .sug-apply:hover { background: #218838; }
+  .sug-reject { font: bold 9px Arial; background: #dc3545; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
+  .sug-reject:hover { background: #c82333; }
   .sug-reason { font: 10px Arial; color: #555; line-height: 1.4; margin-bottom: 2px; }
   .sug-detail { font: 9px monospace; color: #888; }
 </style>

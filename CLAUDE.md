@@ -244,6 +244,50 @@ docker run -p 3333:3333 \
 4. Attach volume at `/data` (1 GB)
 5. Health check: `/api/cache/stats`
 
+## Architecture: Claude-assisted component authoring (Build sub-app)
+
+The Build sub-app lives under `src/routes/(build)/` and lets users compose
+new components from the 18 primitives, with Claude as an on-demand assistant.
+
+### Routes
+
+| Route | Purpose |
+|---|---|
+| `/author` | Manual editor — add primitives, set params/transforms, apply CSG ops, ask Claude for hints, save |
+| `/library` | Browse authored components — click to open in /author |
+| `/api/author/save` | POST — append/upsert an AuthoredComponent to `training_data/authored_cache.jsonl` |
+| `/api/author/list` | GET — index of authored components; GET `?id=` for a full record |
+| `/api/author/suggest` | POST — Claude hints endpoint (spec + prompt → suggested editing steps) |
+
+### Data model
+
+`src/lib/authoring/schema.ts` defines the JSON recipe:
+
+- **AuthoredComponent** — id, name, description, tags, parts[], ops[], version, source, thumbnail, hash, authoring_log[]
+- **AuthoredPart** — id, prim (library id), params, transform {tx,ty,tz,rx,ry,rz}
+- **AuthoredOp** — op (union/subtract/intersect), inputs[], out
+- **AuthoringStep** — timestamp, actor (user/claude), action, payload — captures every user action, Claude prompt/response, and accept/reject decisions for future fine-tuning
+
+### Composition interpreter (`src/lib/authoring/compose.ts`)
+
+`buildAuthored(spec)` turns a recipe into ManifoldCAD geometry:
+1. For each part: call `buildPrimitiveManifold(prim, params)` → apply transform
+2. For each op: resolve inputs by id, apply CSG
+3. If no ops: implicit union of all parts
+4. Finalize via `finalizeManifold()` (center + cutaway + BufferGeometry)
+
+### Learning pipeline
+
+1. **RAG retrieval** — `AuthoredCache.findSimilar()` returns recent/similar prior authored components as few-shot examples for `/api/author/suggest`
+2. **Growing context doc** — `training_data/authored_context.md` is regenerated on each save via `src/lib/authoring/context.ts`. Loaded into the suggest endpoint's prompt as a cached preamble so Claude sees the full authored library
+3. **Fine-tune data** — every authoring session records `AuthoringStep[]` entries in the `authoring_log` field: user actions (add/modify/remove parts/ops), Claude prompts and responses, and accept/reject decisions on Claude suggestions. When saved, this log persists in `authored_cache.jsonl` and can later be extracted for fine-tuning
+
+### Key constraints
+
+- **No dynamic eval.** Claude emits JSON recipes only — a fixed interpreter executes them against the 18 known primitives. No `new Function`, no `eval`, no sandboxing needed.
+- **Authored components are independent of the training/identification pipeline.** The two caches (`cache.jsonl` for training, `authored_cache.jsonl` for authoring) don't cross-reference each other.
+- **`/api/author/suggest` is rate-limited** at the same 20/10min threshold as `/api/identify`.
+
 ## Things to know / avoid
 
 - **Never** revert to `@sveltejs/adapter-static` — we need SSR for API routes
