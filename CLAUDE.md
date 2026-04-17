@@ -60,26 +60,38 @@ bun run seed           # rebuild training_data/cache.jsonl from prim_* records
 | `/components` | Parametric component library — 18 primitives, live 3D + SVG + PNG export |
 | `/reverse` | Upload image → RAG-based identify → live 3D render → auto-refine loop → save to cache |
 | `/training` | Tabbed viewer for completion tool training data |
-| `/tests` | Visual test GIFs + cache stats |
+| `/tests` | Playwright test recordings (WEBM) + cache stats |
+| `/author` | Manual component editor — compose from primitives, Claude tool-calling assistant |
+| `/library` | Browse and reload authored components |
 | `/tools/bottom-sub` | Dedicated Bottom Sub (HAL10408) parametric viewer |
 | `/tools/ratch-latch` | Dedicated Ratch-Latch Receiving Head viewer |
 | `/api/identify` | POST — RAG-based image → component + params |
 | `/api/refine` | POST — iterative refinement (SSIM + Claude param update) |
 | `/api/accept` | POST — append user-validated result to persistent cache |
+| `/api/feedback` | POST — correct/wrong match feedback on identification |
 | `/api/cache/stats` | GET — training cache statistics |
+| `/api/author/save` | POST — append/upsert authored component to cache |
+| `/api/author/list` | GET — index of authored components; GET `?id=` for full record |
+| `/api/author/chat` | POST — Claude tool-calling chat (replaces /api/author/suggest) |
 
 ## Project layout
 
 ```
 src/
 ├── app.html                          # SvelteKit HTML shell
+├── hooks.server.ts                   # Auth gate + rate limiting
 ├── routes/
-│   ├── +layout.svelte                # Top nav bar
+│   ├── +layout.svelte                # Three-segment nav (Training · Build · Tools)
+│   ├── +layout.ts                    # ssr=false, prerender=false
 │   ├── +page.svelte                  # Landing page
-│   ├── components/+page.svelte       # Component library viewer
-│   ├── reverse/+page.svelte          # Reverse identification + refine + save
-│   ├── training/+page.svelte         # Completion tools tab viewer
-│   ├── tests/+page.svelte            # Test recording gallery
+│   ├── (training)/                   # Route group — URLs unchanged
+│   │   ├── components/+page.svelte   # 18-primitive library viewer
+│   │   ├── reverse/+page.svelte      # Reverse identification + refine + save
+│   │   ├── training/+page.svelte     # Completion tools tab viewer
+│   │   └── tests/+page.svelte        # Playwright WEBM recordings + cache stats
+│   ├── (build)/                      # Route group — Build sub-app
+│   │   ├── author/+page.svelte       # Manual composition editor + Claude chat
+│   │   └── library/+page.svelte      # Browse authored components
 │   ├── tools/
 │   │   ├── bottom-sub/+page.svelte
 │   │   └── ratch-latch/+page.svelte
@@ -87,12 +99,27 @@ src/
 │       ├── identify/+server.ts       # RAG few-shot with cache + Claude vision
 │       ├── refine/+server.ts         # SSIM loop + Claude param updates
 │       ├── accept/+server.ts         # Append to cache.jsonl
-│       └── cache/stats/+server.ts    # Cache statistics
+│       ├── feedback/+server.ts       # Correct/wrong match feedback
+│       ├── cache/stats/+server.ts    # Cache statistics
+│       └── author/
+│           ├── save/+server.ts       # Append/upsert authored component
+│           ├── list/+server.ts       # Index or single-record fetch
+│           └── chat/+server.ts       # Claude tool-calling chat
 └── lib/
     ├── components/
     │   ├── library.ts                # 18 ComponentDef entries (params, tags, defaults)
-    │   ├── builder.ts                # ManifoldCAD buildComponent(id, params) → { full, cutVC, manifold }
+    │   ├── builder.ts                # ManifoldCAD buildComponent + buildPrimitiveManifold + finalizeManifold
     │   └── exporter.ts               # three-svg-renderer SVG export
+    ├── authoring/                    # Build sub-app core
+    │   ├── schema.ts                 # AuthoredComponent / Part / Op / Step types
+    │   ├── compose.ts                # buildAuthored(spec) interpreter
+    │   ├── cache.ts                  # AuthoredCache class (JSONL)
+    │   ├── context.ts                # Growing context doc builder
+    │   ├── toolSchema.ts             # Tool definitions for Claude (planned)
+    │   ├── tools.ts                  # Client-side tool dispatcher (planned)
+    │   ├── chat.svelte.ts            # ChatState class with tool loop (planned)
+    │   ├── systemPrompt.ts           # System prompt builder (planned)
+    │   └── ChatPanel.svelte          # Floating chat UI (planned)
     ├── training/
     │   ├── cache.ts                  # TrainingCache class (JSONL persistence)
     │   ├── phash.ts                  # Perceptual hash via sharp + manual DCT
@@ -102,20 +129,23 @@ src/
     │   └── ratch-latch/              # same structure
     ├── shared/
     │   └── ComponentScene.svelte     # Shared Threlte scene for component viewer
+    ├── rate_limit.ts                 # Token-bucket rate limiter
     └── viewer/
         └── builder.ts                # Generic tabbed training data viewer builder
 
 static/
 ├── training_data -> ../training_data # symlink so images are URL-accessible
-└── tmp/                              # Generated test recordings (rag.gif, etc)
+├── tests/                            # Playwright WEBM recordings + manifest.json
+└── tmp/                              # Generated test frames + rag.gif
 
 training_data/
 ├── cache.jsonl                       # Persistent RAG cache (seeded 122 records, grows with use)
+├── authored_cache.jsonl              # Authored components (grows with /api/author/save)
+├── authored_context.md               # Growing context doc (regenerated on save)
 ├── prim_<component>/                 # Seed training data (18 primitives × ~5 variations)
 │   ├── images/default.png
 │   ├── images/var_N.png
 │   └── training.json                 # [{component_id, params, image}, ...]
-├── comp_<CATEGORY.NAME>/              # Catalog component analyses (from extraction)
 └── reference/                         # Thread spec data etc
 
 scripts/
@@ -278,28 +308,27 @@ new components from the 18 primitives, with Claude as an on-demand assistant.
 
 ### Learning pipeline
 
-1. **RAG retrieval** — `AuthoredCache.findSimilar()` returns recent/similar prior authored components as few-shot examples for `/api/author/suggest`
-2. **Growing context doc** — `training_data/authored_context.md` is regenerated on each save via `src/lib/authoring/context.ts`. Loaded into the suggest endpoint's prompt as a cached preamble so Claude sees the full authored library
+1. **RAG retrieval** — `AuthoredCache.findSimilar()` returns recent/similar prior authored components as few-shot examples for `/api/author/chat`
+2. **Growing context doc** — `training_data/authored_context.md` is regenerated on each save via `src/lib/authoring/context.ts`. Loaded into the chat endpoint's prompt as a cached preamble so Claude sees the full authored library
 3. **Fine-tune data** — every authoring session records `AuthoringStep[]` entries in the `authoring_log` field: user actions (add/modify/remove parts/ops), Claude prompts and responses, and accept/reject decisions on Claude suggestions. When saved, this log persists in `authored_cache.jsonl` and can later be extracted for fine-tuning
 
 ### Key constraints
 
 - **No dynamic eval.** Claude emits JSON recipes only — a fixed interpreter executes them against the 18 known primitives. No `new Function`, no `eval`, no sandboxing needed.
 - **Authored components are independent of the training/identification pipeline.** The two caches (`cache.jsonl` for training, `authored_cache.jsonl` for authoring) don't cross-reference each other.
-- **`/api/author/suggest` is rate-limited** at the same 20/10min threshold as `/api/identify`.
+- **`/api/author/chat` is rate-limited** at the same 20/10min threshold as `/api/identify`.
+- **Model is selectable** — defaults to `AUTHOR_MODEL` env var (or Haiku), overridable per-session via the ChatPanel dropdown (Haiku/Sonnet/Opus).
 
 ## Things to know / avoid
 
 - **Never** revert to `@sveltejs/adapter-static` — we need SSR for API routes
 - **Never** add Python to the production container — the `/api/refine` endpoint uses pure-TS image diff (`src/lib/training/image_diff.ts`). Python `vlm/compare_images.py` is kept only for CLI usage.
 - **Node 22.2.0** is too old for Vite 8 — use `bun --bun run vite dev` locally if you see the warning, or use Node ≥ 22.12
-- Running multiple Vite servers on different ports at once will conflict — each dedicated tool viewer (`BOTTOM_SUB/manifold`, `RATCH_LATCH/manifold`, `components/`, etc.) has its own legacy `vite.config.ts`. **The main SvelteKit app on port 3333 supersedes all of those** — the `src/routes/` and `src/lib/` paths are the authoritative source
+- Running multiple Vite servers on different ports at once will conflict — **the main SvelteKit app on port 3333 supersedes all legacy viewers** — the `src/routes/` and `src/lib/` paths are the authoritative source
 - When adding a new component to `src/lib/components/library.ts`, also add a builder function in `src/lib/components/builder.ts` — they're matched by `component.id`
 - Training data under `training_data/cache.jsonl` should be committed when it grows meaningfully — it's the app's learned memory
 
-## Related directories (legacy / not authoritative)
+## Related directories
 
-- `BOTTOM_SUB/manifold/`, `RATCH_LATCH/manifold/`, `components/`, `viewer/` — earlier standalone Vite apps for each tool. Superseded by the unified SvelteKit app. Kept for reference until the migration is fully trusted.
+- `archive/` — archived legacy work (gitignored): `BOTTOM_SUB_legacy/` (old standalone Vite app + CAD exports), `HAL_PACKERS/` + `HAL_WPS/` (extracted catalog PDFs/SVGs, already indexed into cache), `scripts/` (extract_all.py, pipeline.py, etc.), `training_data_extras/` (comp_* catalog dirs). Kept locally as a safety net, not committed.
 - `vlm/` — Python CLI tools (`refine.py`, `compare.py`, `fine_tune.py`, `compare_images.py`). Useful for batch training data preparation but NOT used at runtime in the deployed app.
-- `HAL_PACKERS/`, `HAL_WPS/` — extracted PDFs and SVGs from source catalogs. Input data for the training set, not runtime.
-- `pipeline.py`, `extract_all.py`, `extract_packers.py`, `find_duplicates.py` — dev-only scripts for building training data from source PDFs.
