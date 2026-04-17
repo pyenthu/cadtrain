@@ -5,6 +5,7 @@
   import { COMPONENTS } from '$lib/components/library';
   import { buildAuthored } from '$lib/authoring/compose';
   import { emptyAuthoredComponent, type AuthoredComponent, type AuthoredPart, type AuthoredOp, type AuthoringStep, type CsgOpKind } from '$lib/authoring/schema';
+  import { setSpec } from '$lib/authoring/tools';
 
   function createRenderer(canvas: HTMLCanvasElement) {
     return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -23,11 +24,7 @@
   let saveError = $state<string | null>(null);
   let saveNotice = $state<string | null>(null);
 
-  // Claude hints state
-  let hintPrompt = $state('');
-  let hintLoading = $state(false);
-  let hintError = $state<string | null>(null);
-  let suggestions = $state<any[]>([]);
+  let ChatPanel = $state<any>(null);
 
   function logStep(actor: AuthoringStep['actor'], action: AuthoringStep['action'], payload: unknown) {
     if (!spec.authoring_log) spec.authoring_log = [];
@@ -37,7 +34,16 @@
   let SceneComponent = $state<any>(null);
   $effect(() => {
     import('$lib/shared/ComponentScene.svelte').then(m => { SceneComponent = m.default; });
+    import('$lib/authoring/ChatPanel.svelte').then(m => { ChatPanel = m.default; });
     initManifold().then(() => { ready = true; });
+
+    // Bind the tool dispatcher to our live spec so Claude's tool calls
+    // mutate the spec directly. The onChange callback forces Svelte to
+    // notice mutations by re-assigning spec.parts/ops.
+    setSpec(spec, () => {
+      spec.parts = [...spec.parts];
+      spec.ops = [...spec.ops];
+    });
 
     // Load an existing authored component from /api/author/list?id=...
     if (typeof window !== 'undefined') {
@@ -169,63 +175,6 @@
       .filter((_, i) => i !== idx)
       .filter(o => !o.inputs.includes(removed.out));
     logStep('user', 'remove_op', { out: removed.out });
-  }
-
-  async function askClaude() {
-    if (!hintPrompt.trim()) return;
-    hintLoading = true;
-    hintError = null;
-    suggestions = [];
-    try {
-      const r = await fetch('/api/author/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec, prompt: hintPrompt }),
-      });
-      if (!r.ok) {
-        const err = await r.text();
-        throw new Error(`${r.status} ${err}`);
-      }
-      const data = await r.json();
-      suggestions = data.suggestions ?? [];
-      logStep('user', 'prompt', hintPrompt);
-      logStep('claude', 'response', data);
-    } catch (e: any) {
-      hintError = e?.message ?? String(e);
-    } finally {
-      hintLoading = false;
-    }
-  }
-
-  function applySuggestion(s: any) {
-    if (s.action === 'add_part' && s.part) {
-      const part = s.part as AuthoredPart;
-      if (!spec.parts.some(p => p.id === part.id)) {
-        spec.parts = [...spec.parts, part];
-      }
-    } else if (s.action === 'modify_part' && s.target_id && s.changes) {
-      const idx = spec.parts.findIndex(p => p.id === s.target_id);
-      if (idx >= 0) {
-        const updated = { ...spec.parts[idx] };
-        if (s.changes.params) updated.params = { ...updated.params, ...s.changes.params };
-        if (s.changes.transform) updated.transform = { ...updated.transform, ...s.changes.transform };
-        if (s.changes.prim) updated.prim = s.changes.prim;
-        spec.parts[idx] = updated;
-        spec.parts = [...spec.parts]; // trigger reactivity
-      }
-    } else if (s.action === 'remove_part' && s.target_id) {
-      spec.parts = spec.parts.filter(p => p.id !== s.target_id);
-      spec.ops = spec.ops.filter(o => !o.inputs.includes(s.target_id));
-    } else if (s.action === 'add_op' && s.op) {
-      if (!spec.ops.some(o => o.out === s.op.out)) {
-        spec.ops = [...spec.ops, s.op as AuthoredOp];
-      }
-    } else if (s.action === 'remove_op' && s.target_id) {
-      spec.ops = spec.ops.filter(o => o.out !== s.target_id);
-    }
-    logStep('user', 'accept_suggestion', { action: s.action, target_id: s.target_id, part: s.part, op: s.op });
-    s._applied = true;
-    suggestions = [...suggestions];
   }
 
   function paramDef(primId: string, key: string) {
@@ -364,37 +313,6 @@
     <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
       spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
     }} /></label>
-    <div class="claude-section">
-      <div class="sec-h">Claude Hints</div>
-      <textarea class="hint-input" bind:value={hintPrompt} rows="2" placeholder="e.g. add a threaded pin at the bottom"></textarea>
-      <button class="hint-btn" onclick={askClaude} disabled={hintLoading || !hintPrompt.trim()}>
-        {hintLoading ? 'Thinking…' : 'Suggest'}
-      </button>
-      {#if hintError}<div class="save-msg err">{hintError}</div>{/if}
-      {#if suggestions.length > 0}
-        <div class="suggestions">
-          {#each suggestions as s, i}
-            <div class="suggestion" class:applied={s._applied} class:rejected={s._rejected}>
-              <div class="sug-head">
-                <span class="sug-action">{s.action}</span>
-                {#if !s._applied && !s._rejected}
-                  <button class="sug-apply" onclick={() => applySuggestion(s)}>Apply</button>
-                  <button class="sug-reject" onclick={() => {
-                    logStep('user', 'reject_suggestion', { action: s.action, target_id: s.target_id, part: s.part, op: s.op });
-                    s._rejected = true;
-                    suggestions = [...suggestions];
-                  }}>Reject</button>
-                {/if}
-              </div>
-              {#if s.reasoning}<div class="sug-reason">{s.reasoning}</div>{/if}
-              {#if s.part}<div class="sug-detail">{s.part.prim} ({s.part.id}) tz={s.part.transform?.tz ?? 0}</div>{/if}
-              {#if s.target_id}<div class="sug-detail">target: {s.target_id}</div>{/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
     <button class="save" onclick={saveSpec} disabled={saving}>
       {saving ? 'Saving…' : 'Save'}
     </button>
@@ -402,6 +320,11 @@
     {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
     <a class="library-link" href="/library">→ Browse library</a>
   </div>
+
+  {#if ChatPanel}
+    {@const Panel = ChatPanel}
+    <Panel />
+  {/if}
 </div>
 
 <style>
@@ -445,22 +368,4 @@
   .save-msg.ok { background: #d1e7dd; color: #0f5132; }
   .library-link { font: 11px Arial; color: #cc2222; text-decoration: none; text-align: center; padding: 4px; }
   .library-link:hover { text-decoration: underline; }
-  .claude-section { margin-top: 12px; padding-top: 8px; border-top: 1px solid #e0e0e0; }
-  .claude-section .sec-h { font: bold 10px Arial; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .hint-input { width: 100%; font: 11px Arial; padding: 6px; border: 1px solid #ddd; border-radius: 3px; resize: vertical; box-sizing: border-box; font-family: Arial, sans-serif; }
-  .hint-btn { width: 100%; margin-top: 4px; padding: 6px; background: #16213e; color: white; border: none; border-radius: 4px; font: bold 11px Arial; cursor: pointer; }
-  .hint-btn:disabled { background: #aaa; cursor: not-allowed; }
-  .hint-btn:hover:not(:disabled) { background: #1e3556; }
-  .suggestions { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-  .suggestion { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px; }
-  .suggestion.applied { opacity: 0.5; border-color: #28a745; }
-  .suggestion.rejected { opacity: 0.4; border-color: #dc3545; text-decoration: line-through; }
-  .sug-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .sug-action { font: bold 10px monospace; color: #16213e; background: #e8ecf1; padding: 2px 6px; border-radius: 3px; }
-  .sug-apply { font: bold 9px Arial; background: #28a745; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
-  .sug-apply:hover { background: #218838; }
-  .sug-reject { font: bold 9px Arial; background: #dc3545; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
-  .sug-reject:hover { background: #c82333; }
-  .sug-reason { font: 10px Arial; color: #555; line-height: 1.4; margin-bottom: 2px; }
-  .sug-detail { font: 9px monospace; color: #888; }
 </style>
