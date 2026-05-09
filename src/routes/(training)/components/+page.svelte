@@ -18,6 +18,15 @@
   let showCutaway = $state(true);
   let showEdges = $state(true);
   let params = $state(structuredClone(COMPONENTS[0].defaults));
+  // Camera override sourced from ?cam={"position":[…],"up":[…],"zoom":n}
+  // — used by scripts/gen_synthetic.ts to drive the synthetic data
+  // pipeline through five distinct angles. Null = use the default
+  // OrthographicCamera in ComponentScene.
+  let cameraOverride = $state<{
+    position?: [number, number, number];
+    up?: [number, number, number];
+    zoom?: number;
+  } | null>(null);
 
   // Lazy import Scene to avoid SSR issues with Three.js
   let SceneComponent = $state<any>(null);
@@ -25,7 +34,11 @@
     import('$shared/ComponentScene.svelte').then(m => { SceneComponent = m.default; });
     initManifold().then(() => { ready = true; });
 
-    // Read URL params: ?id=hollow_cylinder&od=2.5&wall=0.3
+    // Read URL params. Two shapes are supported:
+    //   ?id=hollow_cylinder&od=2.5&wall=0.3        (flat, original)
+    //   ?id=packer_element&p={"od":7,"length":2}   (JSON, used by gen_synthetic)
+    //   ?cam={"position":[4,4,-2],"up":[0,0,-1]}   (camera override)
+    // The flat keys override the JSON ones if both are present.
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       const id = url.searchParams.get('id');
@@ -34,11 +47,31 @@
         if (idx >= 0) {
           activeComp = idx;
           const newParams = structuredClone(COMPONENTS[idx].defaults);
+          // First pass: JSON-encoded params from `?p=`.
+          const pRaw = url.searchParams.get('p');
+          if (pRaw) {
+            try {
+              const parsed = JSON.parse(pRaw);
+              if (parsed && typeof parsed === 'object') Object.assign(newParams, parsed);
+            } catch (e) {
+              console.warn('[components] bad ?p= JSON:', e);
+            }
+          }
+          // Second pass: flat per-key overrides win over the JSON blob.
           for (const [k, _] of Object.entries(newParams)) {
             const urlVal = url.searchParams.get(k);
             if (urlVal !== null) newParams[k] = parseFloat(urlVal);
           }
           params = newParams;
+        }
+      }
+      const camRaw = url.searchParams.get('cam');
+      if (camRaw) {
+        try {
+          const parsed = JSON.parse(camRaw);
+          if (parsed && typeof parsed === 'object') cameraOverride = parsed;
+        } catch (e) {
+          console.warn('[components] bad ?cam= JSON:', e);
         }
       }
     }
@@ -118,7 +151,7 @@
     {#if SceneComponent}
       <Canvas {createRenderer}>
         {@const Scene = SceneComponent}
-        <Scene {geo} {geoVersion} {showCutaway} {showEdges} />
+        <Scene {geo} {geoVersion} {showCutaway} {showEdges} {cameraOverride} />
       </Canvas>
     {/if}
   </div>

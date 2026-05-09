@@ -11,6 +11,7 @@
 
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
 import { hammingDistance } from './phash';
+import { cosineSim, hybridScore } from './embed';
 
 export interface CatalogMeta {
   catalog: 'HAL_PACKERS' | 'HAL_WPS';
@@ -22,10 +23,19 @@ export interface CatalogMeta {
 export interface CacheRecord {
   id: string;
   hash: string;
+  // 512-dim CLIP embedding (Xenova/clip-vit-base-patch32). Optional for
+  // backward compat with pre-migration records — those rank by pHash only
+  // until scripts/migrate_to_clip.ts has run over the cache.
+  embedding?: number[];
   component_id: string;
-  params: Record<string, number>;
+  // Optional taxonomy hint used by hybridScore. Not currently populated
+  // on seed records; reserved for future backfill.
+  component_category?: string;
+  // Widened from number-only because synthetic records carry categorical
+  // params like `profile: 'barrel'`, `pin_or_box: 'pin'`.
+  params: Record<string, number | string>;
   image_b64: string;
-  source: 'seed' | 'refined' | 'manual' | 'catalog' | 'correction';
+  source: 'seed' | 'refined' | 'manual' | 'catalog' | 'correction' | 'synthetic';
   created: string;
   uses: number;
   accepted: number;
@@ -92,27 +102,45 @@ export class TrainingCache {
   }
 
   /**
-   * Find top-K most similar records, weighted by feedback history.
+   * Find top-K most similar records via hybrid CLIP + pHash scoring.
    *
-   *   score = hamming_distance - (accepted * 0.5) + (wrong_match * 1.0)
+   *   score = 0.75 * cosine(embedding)            ← primary semantic match
+   *         + 0.15 * sameCategory                 ← packer ≠ tubing
+   *         + 0.10 * (1 - hamming(pHash) / 64)    ← pixel-level tiebreaker
    *
-   * Lower score = better. Records that users have validated rank higher;
-   * records flagged as wrong matches are demoted. Ties broken by `accepted`
-   * desc (more validated records first), then `uses` desc.
+   * Higher score = better. Pass an empty `queryEmbedding` to fall back to
+   * pHash-only ranking (used during step-by-step migration before any
+   * records have embeddings, and as a safe default).
+   *
+   * Tiebreaks: more `accepted` first, then fewer `wrong_match`, then
+   * more `uses`. Feedback no longer dominates ranking — CLIP cosine is
+   * a stronger signal than hand-counted feedback.
    */
-  findSimilar(hash: string, k: number = 5): CacheRecord[] {
+  async findSimilar(
+    queryEmbedding: number[],
+    queryHash: string,
+    k: number = 5,
+    opts: { categoryHint?: string } = {},
+  ): Promise<CacheRecord[]> {
     if (!this.records.length) return [];
+    const useEmbedding = queryEmbedding.length > 0;
     const scored = this.records.map((r) => {
-      const distance = hammingDistance(hash, r.hash);
-      const score = distance - (r.accepted || 0) * 0.5 + (r.wrong_match || 0) * 1.0;
+      const cos =
+        useEmbedding && r.embedding && r.embedding.length === queryEmbedding.length
+          ? cosineSim(queryEmbedding, r.embedding)
+          : 0;
+      const ham = hammingDistance(queryHash, r.hash);
+      const sameCat = opts.categoryHint != null && r.component_category === opts.categoryHint;
+      const score = hybridScore({ cosine: cos, sameCategory: sameCat, hammingPHash: ham });
       return { record: r, score };
     });
     scored.sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      // Tiebreak: prefer more accepted, then more uses.
-      if ((b.record.accepted || 0) !== (a.record.accepted || 0)) {
-        return (b.record.accepted || 0) - (a.record.accepted || 0);
-      }
+      if (Math.abs(b.score - a.score) > 1e-9) return b.score - a.score;
+      // Tiebreak: more accepted, then fewer wrong_match, then more uses.
+      const ac = (b.record.accepted || 0) - (a.record.accepted || 0);
+      if (ac !== 0) return ac;
+      const wm = (a.record.wrong_match || 0) - (b.record.wrong_match || 0);
+      if (wm !== 0) return wm;
       return (b.record.uses || 0) - (a.record.uses || 0);
     });
     return scored.slice(0, k).map((s) => s.record);
@@ -147,6 +175,7 @@ export class TrainingCache {
       manual: 0,
       catalog: 0,
       correction: 0,
+      synthetic: 0,
     };
     let totalUses = 0;
     let totalAccepted = 0;

@@ -26,6 +26,18 @@
         { href: '/tools/ratch-latch', label: 'Ratch-Latch' },
       ],
     },
+    {
+      label: 'Wells',
+      items: [
+        { href: '/wells', label: 'Extract' },
+      ],
+    },
+    {
+      label: 'Meta',
+      items: [
+        { href: '/plan', label: 'Plan' },
+      ],
+    },
   ];
 </script>
 

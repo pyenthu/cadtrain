@@ -72,16 +72,18 @@ describe('TrainingCache', () => {
   });
 
   describe('findSimilar()', () => {
-    it('returns empty array when cache is empty', () => {
-      expect(cache.findSimilar('ff00ff00ff00ff00', 5)).toEqual([]);
+    it('returns empty array when cache is empty', async () => {
+      expect(await cache.findSimilar([], 'ff00ff00ff00ff00', 5)).toEqual([]);
     });
 
-    it('returns records ordered by hamming distance', async () => {
+    it('returns records ordered by hamming distance when no embeddings', async () => {
+      // No embeddings → cosine = 0 for all; hybrid score collapses to
+      // 0.10 × (1 − ham/64), so closer hash still wins.
       await cache.append(makeRecord({ id: 'same', hash: 'ffffffffffffffff' }));
       await cache.append(makeRecord({ id: 'close', hash: 'fffffffffffffffe' }));
       await cache.append(makeRecord({ id: 'far', hash: '0000000000000000' }));
 
-      const results = cache.findSimilar('ffffffffffffffff', 3);
+      const results = await cache.findSimilar([], 'ffffffffffffffff', 3);
       expect(results[0].id).toBe('same');
       expect(results[1].id).toBe('close');
       expect(results[2].id).toBe('far');
@@ -91,29 +93,66 @@ describe('TrainingCache', () => {
       for (let i = 0; i < 10; i++) {
         await cache.append(makeRecord({ id: `r${i}`, hash: 'aaaaaaaaaaaaaaaa' }));
       }
-      expect(cache.findSimilar('aaaaaaaaaaaaaaaa', 3)).toHaveLength(3);
+      const results = await cache.findSimilar([], 'aaaaaaaaaaaaaaaa', 3);
+      expect(results).toHaveLength(3);
     });
 
-    it('weights by accepted: a validated farther record beats an unvalidated closer one', async () => {
-      // hash differs from query 'ffffffffffffffff' by varying amounts
-      // - 'ffffffffffffff00' has hamming distance 8 (last byte 00)
-      // - 'fffffffffffff0ff' has hamming distance 4
-      // accepted=10 → effective score = 8 - 5 = 3; the unvalidated near record scores 4.
-      await cache.append(makeRecord({ id: 'far_validated', hash: 'ffffffffffffff00', accepted: 10 }));
-      await cache.append(makeRecord({ id: 'near_unvalidated', hash: 'fffffffffffff0ff', accepted: 0 }));
-      const results = cache.findSimilar('ffffffffffffffff', 2);
-      expect(results[0].id).toBe('far_validated');
-      expect(results[1].id).toBe('near_unvalidated');
+    it('embedding cosine dominates pHash when both are available', async () => {
+      // queryEmbedding aligns with `target` and is orthogonal to `decoy`.
+      // Decoy has the closer pHash but its cosine is 0; target wins.
+      const target: number[] = [1, 0, 0, 0];
+      const decoy: number[] = [0, 1, 0, 0];
+      await cache.append(makeRecord({ id: 'target', hash: '0000000000000000', embedding: target }));
+      await cache.append(makeRecord({ id: 'decoy', hash: 'ffffffffffffffff', embedding: decoy }));
+
+      const results = await cache.findSimilar([1, 0, 0, 0], 'ffffffffffffffff', 2);
+      expect(results[0].id).toBe('target');
+      expect(results[1].id).toBe('decoy');
     });
 
-    it('weights by wrong_match: a flagged near record loses to a clean farther record', async () => {
-      // 'fffffffffffffffc' has hamming distance 2; wrong_match=5 → score = 2 + 5 = 7
-      // 'fffffffffffffff0' has hamming distance 4; wrong_match=0 → score = 4
-      await cache.append(makeRecord({ id: 'flagged_near', hash: 'fffffffffffffffc', wrong_match: 5 }));
-      await cache.append(makeRecord({ id: 'clean_far', hash: 'fffffffffffffff0', wrong_match: 0 }));
-      const results = cache.findSimilar('ffffffffffffffff', 2);
-      expect(results[0].id).toBe('clean_far');
-      expect(results[1].id).toBe('flagged_near');
+    it('records without embeddings fall behind embedded matches at the same hash', async () => {
+      const target: number[] = [1, 0, 0, 0];
+      // Both records have the exact query hash, so pHash component is identical.
+      // The embedded record gets +0.75 cosine; the bare record gets 0.
+      await cache.append(makeRecord({ id: 'embedded', hash: 'ffffffffffffffff', embedding: target }));
+      await cache.append(makeRecord({ id: 'bare', hash: 'ffffffffffffffff' }));
+
+      const results = await cache.findSimilar(target, 'ffffffffffffffff', 2);
+      expect(results[0].id).toBe('embedded');
+      expect(results[1].id).toBe('bare');
+    });
+
+    it('accepted breaks ties: validated record wins when scores match', async () => {
+      // Same hash, no embedding → identical hybrid score. accepted decides.
+      await cache.append(makeRecord({ id: 'validated', hash: 'ffffffffffffffff', accepted: 10 }));
+      await cache.append(makeRecord({ id: 'unvalidated', hash: 'ffffffffffffffff', accepted: 0 }));
+      const results = await cache.findSimilar([], 'ffffffffffffffff', 2);
+      expect(results[0].id).toBe('validated');
+      expect(results[1].id).toBe('unvalidated');
+    });
+
+    it('wrong_match breaks ties: clean record wins when scores match', async () => {
+      await cache.append(makeRecord({ id: 'flagged', hash: 'ffffffffffffffff', wrong_match: 5 }));
+      await cache.append(makeRecord({ id: 'clean', hash: 'ffffffffffffffff', wrong_match: 0 }));
+      const results = await cache.findSimilar([], 'ffffffffffffffff', 2);
+      expect(results[0].id).toBe('clean');
+      expect(results[1].id).toBe('flagged');
+    });
+
+    it('categoryHint boosts matching-category records', async () => {
+      // Same hash, same (lack of) embedding. categoryHint="packer" gives
+      // the packer record +0.15, breaking the tie above the feedback layer.
+      await cache.append(
+        makeRecord({ id: 'packer_a', hash: 'ffffffffffffffff', component_category: 'packer' }),
+      );
+      await cache.append(
+        makeRecord({ id: 'tubing_b', hash: 'ffffffffffffffff', component_category: 'tubing' }),
+      );
+      const results = await cache.findSimilar([], 'ffffffffffffffff', 2, {
+        categoryHint: 'packer',
+      });
+      expect(results[0].id).toBe('packer_a');
+      expect(results[1].id).toBe('tubing_b');
     });
   });
 

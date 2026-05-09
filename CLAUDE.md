@@ -17,18 +17,40 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 
 ## Open TODOs (out-of-scope findings)
 
-- **pHash discriminator is too weak for default-param primitive renders.**
-  Discovered during Phase 2 step 2.7 retrieval test (2026-04-13). Four
-  primitives — `seal_bore_polished`, `packer_element`, `nc_numbered_connection`,
-  `grooved_cylinder` — all collapse to the same 64-bit pHash
-  (`ed14926b6d94166d`) because their `var_1.png` renders are nearly
-  identical black-on-white silhouettes. `findSimilar` returns them at
-  hamming distance 0 in arbitrary order, so the integration test
-  baseline is 9/18 (50%) not 18/18. Options when revisiting:
-  (a) render primitives at distinguishing angles/colors before hashing;
-  (b) upgrade pHash to 256-bit;
-  (c) supplement pHash with a shape-hash or edge-histogram fingerprint.
-  Not in Phase 2 scope — logged here so the next plan can address it.
+- **Default-param primitive renders collapse for pHash AND CLIP.**
+  Originally discovered 2026-04-13 with pHash; confirmed for CLIP on
+  2026-05-09. The four primitives `seal_bore_polished`,
+  `packer_element`, `nc_numbered_connection`, `grooved_cylinder` share
+  a 64-bit pHash (`ed14926b6d94166d`) because their `var_1.png`
+  renders are nearly identical black-on-white silhouettes. The CLIP
+  retrieval rollout (commits `842d76c..3cec404`) added CLIP embeddings
+  to every cache record + 700 synthetic samples for those four
+  primitives, but a diagnostic across all 18 primitives showed CLIP
+  giving cosine = 1.000 between **12 of 18** primitives — i.e. CLIP
+  collapses far MORE primitives than pHash does on this domain. The
+  retrieval test stays at 9/18.
+
+  Why CLIP fails here: the default-param renders strip away every
+  visual cue CLIP was trained on (color, shading, texture, 3D form).
+  What's left is a 256×256 black silhouette that maps to the same
+  point in CLIP's vector space regardless of which primitive it
+  represents. Threaded variants, `hollow_cylinder`, `reg_regular`,
+  `if_internal_flush` retain enough geometric distinctness to differ.
+
+  CLIP infrastructure stays in place: it likely still helps for real
+  photo uploads to `/api/identify` (different domain than these test
+  silhouettes), and the embeddings are already on every cache record.
+
+  Options when revisiting:
+  (a) re-render `var_1.png` and cache thumbnails with the project's
+      red-outer / grey-internal vertex coloring + shading before
+      embedding — restores the visual cues CLIP needs.
+  (b) supplement with edge-histogram or shape-context fingerprints
+      designed for line-art domains.
+  (c) fine-tune the CLIP visual encoder on the 18-primitive set.
+  (d) drop the 18-image test as a retrieval benchmark and use real
+      photo uploads instead — the test was always a bad proxy for
+      actual user input.
 
 ## Tech stack
 

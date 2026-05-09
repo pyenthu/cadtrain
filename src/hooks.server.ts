@@ -3,7 +3,12 @@ import { env } from '$env/dynamic/private';
 import { checkRateLimit } from '$lib/rate_limit';
 
 /** Routes subject to rate limiting (prefix match). */
-const RATE_LIMITED_PREFIXES = ['/api/identify', '/api/refine', '/api/author/chat'];
+const RATE_LIMITED_PREFIXES = [
+  '/api/identify',
+  '/api/refine',
+  '/api/author/chat',
+  '/api/wells/extract',
+];
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 

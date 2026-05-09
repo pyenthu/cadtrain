@@ -14,6 +14,7 @@ import { COMPONENTS } from '$components/library';
 import { env } from '$env/dynamic/private';
 import { getCache } from '$lib/training/cache';
 import { computePHash } from '$lib/training/phash';
+import { computeEmbedding } from '$lib/training/embed';
 import type { RequestHandler } from './$types';
 import { join } from 'path';
 
@@ -35,11 +36,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
   // === 1. Retrieve similar examples from cache ===
   const cache = await getCache(CACHE_PATH);
-  const hash = await computePHash(buffer);
-  const similar = cache.findSimilar(hash, TOP_K);
+  const tEmbStart = Date.now();
+  const [hash, embedding] = await Promise.all([computePHash(buffer), computeEmbedding(buffer)]);
+  const tEmb = Date.now() - tEmbStart;
+  const similar = await cache.findSimilar(embedding, hash, TOP_K);
 
-  console.log(`[identify] pHash=${hash}, retrieved ${similar.length} neighbors:`,
-    similar.map((r) => `${r.component_id} (${r.source})`));
+  console.log(
+    `[identify] pHash=${hash} emb=${embedding.length}d (${tEmb}ms), retrieved ${similar.length} neighbors:`,
+    similar.map((r) => `${r.component_id} (${r.source})`),
+  );
 
   // Increment use counter (background, not blocking)
   cache.incrementUse(similar.map((r) => r.id));

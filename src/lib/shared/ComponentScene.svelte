@@ -3,10 +3,37 @@
   import { OrbitControls, Edges } from '@threlte/extras';
   import * as THREE from 'three';
 
-  let { geo = null, geoVersion = 0, showCutaway = true, showEdges = true } = $props();
+  type CameraOverride = {
+    position?: [number, number, number];
+    up?: [number, number, number];
+    zoom?: number;
+  } | null;
+
+  let {
+    geo = null,
+    geoVersion = 0,
+    showCutaway = true,
+    showEdges = true,
+    cameraOverride = null,
+  }: {
+    geo?: any;
+    geoVersion?: number;
+    showCutaway?: boolean;
+    showEdges?: boolean;
+    cameraOverride?: CameraOverride;
+  } = $props();
+
+  // Defaults match the project convention (CLAUDE.md): Z-down, side view at +X.
+  const DEFAULT_POSITION: [number, number, number] = [6, 0, 0];
+  const DEFAULT_UP: [number, number, number] = [0, 0, -1];
+  const DEFAULT_ZOOM = 130;
+
+  let cameraPosition = $derived(cameraOverride?.position ?? DEFAULT_POSITION);
+  let cameraUp = $derived(cameraOverride?.up ?? DEFAULT_UP);
+  let cameraZoom = $derived(cameraOverride?.zoom ?? DEFAULT_ZOOM);
 </script>
 
-<T.OrthographicCamera makeDefault position={[6, 0, 0]} zoom={130} up={[0, 0, -1]}>
+<T.OrthographicCamera makeDefault position={cameraPosition} zoom={cameraZoom} up={cameraUp}>
   <OrbitControls enableDamping />
 </T.OrthographicCamera>
 

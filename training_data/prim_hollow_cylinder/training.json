@@ -1,0 +1,249 @@
+[
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 2.5,
+      "Wall": 0.3,
+      "Length": 4.0
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 2.7,
+      "Wall": 0.1,
+      "Length": 9.0
+    },
+    "image": "images/var_1.png",
+    "variation": "random_1"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 0.5,
+      "Wall": 0.2,
+      "Length": 0.8
+    },
+    "image": "images/var_2.png",
+    "variation": "random_2"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 5.5,
+      "Wall": 0.9,
+      "Length": 2.0
+    },
+    "image": "images/var_3.png",
+    "variation": "random_3"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 2.6,
+      "Wall": 0.35,
+      "Length": 14.9
+    },
+    "image": "images/var_4.png",
+    "variation": "random_4"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 4.5,
+      "Wall": 0.6,
+      "Length": 9.2
+    },
+    "image_3d": "images/var_5.png",
+    "image_svg": "images/var_5.svg",
+    "variation": "random_5"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 5.7,
+      "Wall": 0.95,
+      "Length": 6.4
+    },
+    "image_3d": "images/var_6.png",
+    "image_svg": "images/var_6.svg",
+    "variation": "random_6"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 3.3,
+      "Wall": 0.1,
+      "Length": 2.8
+    },
+    "image_3d": "images/var_7.png",
+    "image_svg": "images/var_7.svg",
+    "variation": "random_7"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 0.6,
+      "Wall": 0.2,
+      "Length": 3.5
+    },
+    "image_3d": "images/var_8.png",
+    "image_svg": "images/var_8.svg",
+    "variation": "random_8"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 3.4,
+      "Wall": 0.45,
+      "Length": 6.7
+    },
+    "image_3d": "images/var_9.png",
+    "image_svg": "images/var_9.svg",
+    "variation": "random_9"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 2.8,
+      "Wall": 0.95,
+      "Length": 3.9
+    },
+    "image_3d": "images/var_10.png",
+    "image_svg": "images/var_10.svg",
+    "variation": "random_10"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 2.6,
+      "Wall": 0.9,
+      "Length": 9.9
+    },
+    "image_3d": "images/var_11.png",
+    "image_svg": "images/var_11.svg",
+    "variation": "random_11"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 4.6,
+      "Wall": 0.9,
+      "Length": 11.5
+    },
+    "image_3d": "images/var_12.png",
+    "image_svg": "images/var_12.svg",
+    "variation": "random_12"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 1.1,
+      "Wall": 0.6,
+      "Length": 8.9
+    },
+    "image_3d": "images/var_13.png",
+    "image_svg": "images/var_13.svg",
+    "variation": "random_13"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 4.0,
+      "Wall": 0.6,
+      "Length": 7.8
+    },
+    "image_3d": "images/var_14.png",
+    "image_svg": "images/var_14.svg",
+    "variation": "random_14"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 4.4,
+      "Wall": 0.95,
+      "Length": 13.5
+    },
+    "image_3d": "images/var_15.png",
+    "image_svg": "images/var_15.svg",
+    "variation": "random_15"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 4.5,
+      "Wall": 0.55,
+      "Length": 8.0
+    },
+    "image_3d": "images/var_16.png",
+    "image_svg": "images/var_16.svg",
+    "variation": "random_16"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 1.1,
+      "Wall": 0.7,
+      "Length": 0.6
+    },
+    "image_3d": "images/var_17.png",
+    "image_svg": "images/var_17.svg",
+    "variation": "random_17"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 5.4,
+      "Wall": 0.2,
+      "Length": 12.9
+    },
+    "image_3d": "images/var_18.png",
+    "image_svg": "images/var_18.svg",
+    "variation": "random_18"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 3.1,
+      "Wall": 0.7,
+      "Length": 3.7
+    },
+    "image_3d": "images/var_19.png",
+    "image_svg": "images/var_19.svg",
+    "variation": "random_19"
+  },
+  {
+    "component": "Hollow Cylinder",
+    "component_id": "hollow_cylinder",
+    "params": {
+      "OD": 5.2,
+      "Wall": 1.0,
+      "Length": 14.1
+    },
+    "image_3d": "images/var_20.png",
+    "image_svg": "images/var_20.svg",
+    "variation": "random_20"
+  }
+]

@@ -1,15 +1,26 @@
 {
   "tests": [
     {
-      "id": "rag_identify",
-      "title": "RAG Identification Pipeline",
-      "description": "Uploads 6 primitive variations to /reverse, triggers Claude-assisted identification, and asserts each returns the expected library id. Source: tests/test_rag_with_gif.py",
-      "source": "tests/test_rag_with_gif.py",
-      "video": "/tests/rag_identify.webm",
+      "id": "wells_smoke",
+      "title": "Wells Extraction Smoke",
+      "description": "Loads /wells, uploads a synthetic well-schematic PNG, fires /api/wells/extract, and verifies the result UI renders without crashing. End-to-end wiring of the WSON pipeline.",
+      "source": "tests/test_wells_smoke.py",
+      "video": "/tests/wells_smoke.webm",
       "poster": null,
-      "recorded": "2026-04-16T01:07:50+00:00",
+      "cases": 1,
       "status": "pass",
-      "cases": 6
+      "recorded": "2026-05-09T06:47:04+00:00"
+    },
+    {
+      "id": "components_smoke",
+      "title": "Components Viewer Smoke",
+      "description": "Loads /components, walks four primitives via the sidebar, and verifies that each renders a 3D canvas + an inline SVG without throwing. Also checks ?id=&p=&cam= URL-driven rendering used by the synthetic data generator.",
+      "source": "tests/test_components_smoke.py",
+      "video": "/tests/components_smoke.webm",
+      "poster": null,
+      "cases": 6,
+      "status": "pass",
+      "recorded": "2026-05-09T06:50:15+00:00"
     }
   ]
 }

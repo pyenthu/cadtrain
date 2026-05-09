@@ -1,0 +1,291 @@
+[
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.0,
+      "Wall": 0.5,
+      "Length": 2.5,
+      "Threads": 8.0,
+      "Thread Depth": 0.08
+    },
+    "image": "images/default.png",
+    "variation": "default"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 2.9,
+      "Wall": 0.6,
+      "Length": 1.5,
+      "Threads": 19.0,
+      "Thread Depth": 0.12
+    },
+    "image": "images/var_1.png",
+    "variation": "random_1"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 4.3,
+      "Wall": 0.75,
+      "Length": 2.1,
+      "Threads": 18.0,
+      "Thread Depth": 0.08
+    },
+    "image": "images/var_2.png",
+    "variation": "random_2"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 1.8,
+      "Wall": 0.4,
+      "Length": 5.3,
+      "Threads": 20.0,
+      "Thread Depth": 0.11
+    },
+    "image": "images/var_3.png",
+    "variation": "random_3"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 2.1,
+      "Wall": 0.3,
+      "Length": 3.8,
+      "Threads": 6.0,
+      "Thread Depth": 0.15
+    },
+    "image": "images/var_4.png",
+    "variation": "random_4"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.7,
+      "Wall": 0.2,
+      "Length": 5.1,
+      "Threads": 11.0,
+      "Thread Depth": 0.12
+    },
+    "image_3d": "images/var_5.png",
+    "image_svg": "images/var_5.svg",
+    "variation": "random_5"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 1.5,
+      "Wall": 0.15,
+      "Length": 1.3,
+      "Threads": 2.0,
+      "Thread Depth": 0.02
+    },
+    "image_3d": "images/var_6.png",
+    "image_svg": "images/var_6.svg",
+    "variation": "random_6"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 5.9,
+      "Wall": 0.4,
+      "Length": 5.6,
+      "Threads": 10.0,
+      "Thread Depth": 0.06
+    },
+    "image_3d": "images/var_7.png",
+    "image_svg": "images/var_7.svg",
+    "variation": "random_7"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 4.0,
+      "Wall": 0.85,
+      "Length": 2.5,
+      "Threads": 8.0,
+      "Thread Depth": 0.14
+    },
+    "image_3d": "images/var_8.png",
+    "image_svg": "images/var_8.svg",
+    "variation": "random_8"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 1.9,
+      "Wall": 0.45,
+      "Length": 6.0,
+      "Threads": 6.0,
+      "Thread Depth": 0.06
+    },
+    "image_3d": "images/var_9.png",
+    "image_svg": "images/var_9.svg",
+    "variation": "random_9"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.8,
+      "Wall": 0.55,
+      "Length": 1.1,
+      "Threads": 8.0,
+      "Thread Depth": 0.03
+    },
+    "image_3d": "images/var_10.png",
+    "image_svg": "images/var_10.svg",
+    "variation": "random_10"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 4.8,
+      "Wall": 0.7,
+      "Length": 3.5,
+      "Threads": 13.0,
+      "Thread Depth": 0.11
+    },
+    "image_3d": "images/var_11.png",
+    "image_svg": "images/var_11.svg",
+    "variation": "random_11"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.7,
+      "Wall": 0.95,
+      "Length": 5.0,
+      "Threads": 3.0,
+      "Thread Depth": 0.12
+    },
+    "image_3d": "images/var_12.png",
+    "image_svg": "images/var_12.svg",
+    "variation": "random_12"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 5.1,
+      "Wall": 0.3,
+      "Length": 5.7,
+      "Threads": 10.0,
+      "Thread Depth": 0.12
+    },
+    "image_3d": "images/var_13.png",
+    "image_svg": "images/var_13.svg",
+    "variation": "random_13"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 0.7,
+      "Wall": 0.15,
+      "Length": 1.9,
+      "Threads": 7.0,
+      "Thread Depth": 0.15
+    },
+    "image_3d": "images/var_14.png",
+    "image_svg": "images/var_14.svg",
+    "variation": "random_14"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 1.2,
+      "Wall": 0.55,
+      "Length": 2.9,
+      "Threads": 19.0,
+      "Thread Depth": 0.12
+    },
+    "image_3d": "images/var_15.png",
+    "image_svg": "images/var_15.svg",
+    "variation": "random_15"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 2.2,
+      "Wall": 0.55,
+      "Length": 4.5,
+      "Threads": 14.0,
+      "Thread Depth": 0.06
+    },
+    "image_3d": "images/var_16.png",
+    "image_svg": "images/var_16.svg",
+    "variation": "random_16"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 0.7,
+      "Wall": 1.0,
+      "Length": 5.2,
+      "Threads": 7.0,
+      "Thread Depth": 0.08
+    },
+    "image_3d": "images/var_17.png",
+    "image_svg": "images/var_17.svg",
+    "variation": "random_17"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.4,
+      "Wall": 0.15,
+      "Length": 5.8,
+      "Threads": 18.0,
+      "Thread Depth": 0.13
+    },
+    "image_3d": "images/var_18.png",
+    "image_svg": "images/var_18.svg",
+    "variation": "random_18"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 4.7,
+      "Wall": 0.75,
+      "Length": 5.1,
+      "Threads": 5.0,
+      "Thread Depth": 0.04
+    },
+    "image_3d": "images/var_19.png",
+    "image_svg": "images/var_19.svg",
+    "variation": "random_19"
+  },
+  {
+    "component": "Threaded Box (Female)",
+    "component_id": "threaded_box_female",
+    "params": {
+      "OD": 3.8,
+      "Wall": 0.45,
+      "Length": 1.3,
+      "Threads": 15.0,
+      "Thread Depth": 0.15
+    },
+    "image_3d": "images/var_20.png",
+    "image_svg": "images/var_20.svg",
+    "variation": "random_20"
+  }
+]
