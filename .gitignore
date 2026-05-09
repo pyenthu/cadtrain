@@ -38,6 +38,10 @@ archive/
 # Playwright video staging — transient, renamed to canonical path post-run
 static/tests/_video_staging/
 
+# Playwright test artifacts (regenerable). Persisted WEBMs that should
+# survive go in static/tests/ and are referenced by manifest.json.
+tests/results/
+
 # OS
 .DS_Store
 Thumbs.db

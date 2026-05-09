@@ -21,6 +21,17 @@
       "cases": 1,
       "status": "pass",
       "recorded": "2026-05-09T13:22:57+00:00"
+    },
+    {
+      "id": "components_eval",
+      "title": "Components Recognition Eval",
+      "description": "Walks /tests/components, screenshots the hero + each of the 18 primitive cases through the right-side navigator. Recorded with the SVTC start-maximized + viewport:null pattern so the bottom-right of the page isn't clipped on a 4K display.",
+      "source": "tests/visual_components_eval.mjs",
+      "video": "/tests/components_eval.webm",
+      "poster": null,
+      "cases": 18,
+      "status": "pass",
+      "recorded": "2026-05-09T22:28:00+00:00"
     }
   ]
 }
