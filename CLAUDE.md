@@ -265,10 +265,27 @@ The reverse pipeline is the heart of the app. Three components work together:
 ## Environment
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...   # required for /api/identify and /api/refine
+ANTHROPIC_API_KEY=sk-ant-...   # required for /api/identify, /api/refine, and the default api backend of /api/wells/extract
+WELLS_BACKEND=api              # 'api' (default) or 'cli'
+WELLS_MODEL=claude-opus-4-7    # API-backend default model
+WELLS_CLI_MODEL=opus           # CLI-backend default model alias
 ```
 
-SvelteKit reads this via `$env/static/private` in server files.
+SvelteKit reads these via `$env/dynamic/private` so they're read at runtime.
+
+### `/api/wells/extract` runtime modes
+
+| Mode | Auth | Where it works |
+|---|---|---|
+| **Local + CLI** (`WELLS_BACKEND=cli`) | `claude` CLI subprocess → Pro/Max OAuth → subscription | Local dev only (Railway has no `claude` binary) |
+| **Local + API** (default) | `@anthropic-ai/sdk` + `ANTHROPIC_API_KEY` from `.env` | Local dev |
+| **Production + API** (default) | `@anthropic-ai/sdk` + Railway env var | Railway Docker |
+
+**Prerequisites for CLI mode**: `claude` must be on `$PATH` and authenticated via OAuth (`claude auth status` should show `"authMethod": "claude.ai"` and `"loggedIn": true`). The CLI is spawned with `--print --output-format json --no-session-persistence --permission-mode bypassPermissions --add-dir <tmp>` and given a temp file path to read.
+
+CLI mode is ~5–7× slower per call than API (CLI startup + agent loop overhead) but doesn't burn API tokens. Subject to Pro/Max session-window rate limits.
+
+Backend dispatch lives in `src/lib/wells/backend.ts`; both backends return the same `WellsExtractResponse` shape so the endpoint code is unified.
 
 ## Testing
 

@@ -209,7 +209,7 @@ export function validateWson(w: Wson): string[] {
     ['completions', w.completions],
     ['perforations', w.perforations],
   ] as const) {
-    list.forEach((it: { top: number; bot: number }, i: number) => {
+    (list ?? []).forEach((it: { top: number; bot: number }, i: number) => {
       if (it.top > it.bot) {
         issues.push(`${section}[${i}].top (${it.top}) > bot (${it.bot})`);
       }
@@ -217,7 +217,7 @@ export function validateWson(w: Wson): string[] {
   }
 
   // Heuristic: tubing in ch[] is the most common extraction mistake.
-  for (const c of w.ch) {
+  for (const c of (w.ch ?? [])) {
     const t = (c.type ?? '').toLowerCase();
     if (t.includes('tubing')) {
       issues.push(
@@ -227,9 +227,10 @@ export function validateWson(w: Wson): string[] {
   }
 
   // Profile must have monotonic md.
-  for (let i = 1; i < w.profile.length; i++) {
-    if (w.profile[i].md < w.profile[i - 1].md) {
-      issues.push(`profile[${i}].md (${w.profile[i].md}) is less than previous`);
+  const profile = w.profile ?? [];
+  for (let i = 1; i < profile.length; i++) {
+    if (profile[i].md < profile[i - 1].md) {
+      issues.push(`profile[${i}].md (${profile[i].md}) is less than previous`);
     }
   }
 

@@ -1,10 +1,11 @@
 /**
  * POST /api/wells/extract
  *
- * Body: multipart/form-data with one of:
+ * Body: multipart/form-data:
  *   - file=<File>      — PDF or image (PNG/JPG)
  *   - text=<string>    — optional supplementary text (deviation tally
- *                        pasted from a doc, etc.); merged into prompt
+ *                        pasted from a doc, etc.)
+ *   - model=<string>   — optional model override
  *
  * Returns a WSON object (per src/lib/wells/schema.ts) extracted by
  * Claude vision. PDF inputs go through type:document so the model
@@ -12,23 +13,29 @@
  * our side, which preserves the deviation tables that often live as
  * embedded text in the source PDFs.
  *
- * The endpoint validates with validateWson before returning. Soft
- * issues (e.g. tubing-in-ch heuristic) are surfaced in the response
- * but don't block — the user can fix in the /wells UI before save.
+ * Backend selection via WELLS_BACKEND env var:
+ *   - api (default) — direct @anthropic-ai/sdk call (per-token billed,
+ *                     works in dev and Railway production)
+ *   - cli           — spawns local `claude` CLI (Pro/Max subscription
+ *                     billed, local dev only — no claude binary in
+ *                     Railway containers)
+ *
+ * The endpoint validates with validateWson before returning.
  */
 
 import { json, error } from '@sveltejs/kit';
-import Anthropic from '@anthropic-ai/sdk';
 import { env } from '$env/dynamic/private';
 import { validateWson, type Wson } from '$lib/wells/schema';
-import { EXTRACTOR_SYSTEM_PROMPT, EXTRACTOR_USER_INSTRUCTION } from '$lib/wells/prompt';
+import { extractViaApi, extractViaCli } from '$lib/wells/backend';
 import type { RequestHandler } from './$types';
 
-const MODEL = env.WELLS_MODEL ?? 'claude-opus-4-7';
-const MAX_TOKENS = 8192;
+type Backend = 'api' | 'cli';
 
 export const POST: RequestHandler = async ({ request }) => {
-  if (!env.ANTHROPIC_API_KEY) throw error(500, 'ANTHROPIC_API_KEY not set');
+  const backend = (env.WELLS_BACKEND ?? 'api') as Backend;
+  if (backend !== 'api' && backend !== 'cli') {
+    throw error(500, `WELLS_BACKEND must be 'api' or 'cli' (got '${backend}')`);
+  }
 
   let form: FormData;
   try {
@@ -37,65 +44,32 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(400, `expected multipart/form-data: ${(e as Error).message}`);
   }
   const file = form.get('file');
-  const text = (form.get('text') as string | null) ?? '';
+  const supplementaryText = (form.get('text') as string | null) ?? '';
+  const modelOverride = (form.get('model') as string | null) ?? '';
 
   if (!(file instanceof File)) throw error(400, 'no `file` field in form data');
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString('base64');
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
   const mime = file.type || 'application/octet-stream';
 
-  // Build the message content. PDFs use the document block (preserves
-  // text + vector); images use the image block.
-  const userContent: Anthropic.Messages.ContentBlockParam[] = [];
+  const fn = backend === 'cli' ? extractViaCli : extractViaApi;
 
-  if (mime === 'application/pdf') {
-    userContent.push({
-      type: 'document',
-      source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-    });
-  } else if (mime.startsWith('image/')) {
-    userContent.push({
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: mime as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
-        data: base64,
-      },
-    });
-  } else {
-    throw error(400, `unsupported file type: ${mime} (use PDF or image)`);
-  }
-
-  if (text.trim()) {
-    userContent.push({
-      type: 'text',
-      text: `Supplementary text from the document (deviation tally, notes, etc.):\n\n${text.trim()}`,
-    });
-  }
-  userContent.push({ type: 'text', text: EXTRACTOR_USER_INSTRUCTION });
-
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-
-  let raw: string;
+  let result: Awaited<ReturnType<typeof extractViaApi>>;
   try {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: EXTRACTOR_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userContent }],
+    result = await fn({
+      fileBuffer,
+      mime,
+      filename: file.name,
+      supplementaryText,
+      modelOverride,
     });
-    const textBlock = response.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw error(500, 'no text content in Claude response');
-    }
-    raw = textBlock.text.trim();
   } catch (e) {
-    console.error('[wells/extract] Claude error:', e);
+    console.error(`[wells/extract] ${backend} backend error:`, e);
     throw error(500, (e as Error).message || 'extraction failed');
   }
 
   // Strip code fences if Claude returned ```json ... ``` despite our ask.
+  let raw = result.rawText;
   if (raw.includes('```')) {
     const start = raw.indexOf('```');
     const end = raw.lastIndexOf('```');
@@ -111,17 +85,18 @@ export const POST: RequestHandler = async ({ request }) => {
     wson = JSON.parse(raw);
   } catch (e) {
     console.error('[wells/extract] JSON parse failed. Raw:', raw.slice(0, 500));
-    throw error(500, `Claude returned non-JSON output: ${(e as Error).message}`);
+    throw error(500, `${result.modelUsed} returned non-JSON output: ${(e as Error).message}`);
   }
 
   const issues = validateWson(wson);
   console.log(
-    `[wells/extract] well="${wson.meta?.wellName ?? '?'}" ` +
+    `[wells/extract:${backend}] ${result.durationMs}ms model=${result.modelUsed} ` +
+      `well="${wson.meta?.wellName ?? '?'}" ` +
       `oh=${wson.oh?.length ?? 0} ch=${wson.ch?.length ?? 0} ` +
       `comp=${wson.completions?.length ?? 0} perf=${wson.perforations?.length ?? 0} ` +
       `strata=${wson.strata?.length ?? 0} profile=${wson.profile?.length ?? 0} ` +
       `issues=${issues.length}`,
   );
 
-  return json({ wson, issues, model: MODEL });
+  return json({ wson, issues, model: result.modelUsed, backend });
 };
