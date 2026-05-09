@@ -265,10 +265,13 @@ The reverse pipeline is the heart of the app. Three components work together:
 ## Environment
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...   # required for /api/identify, /api/refine, and the default api backend of /api/wells/extract
-WELLS_BACKEND=api              # 'api' (default) or 'cli'
-WELLS_MODEL=claude-opus-4-7    # API-backend default model
-WELLS_CLI_MODEL=opus           # CLI-backend default model alias
+ANTHROPIC_API_KEY=sk-ant-...   # required for /api/identify, /api/refine, and the default api backend of /api/wells/extract and /api/identify
+WELLS_BACKEND=api              # 'api' (default) or 'cli' — for /api/wells/extract
+WELLS_MODEL=claude-opus-4-7    # API-backend default model for /api/wells/extract
+WELLS_CLI_MODEL=opus           # CLI-backend default model alias for /api/wells/extract
+IDENTIFY_BACKEND=api           # 'api' (default) or 'cli' — for /api/identify
+IDENTIFY_MODEL=claude-sonnet-4-20250514  # API-backend default model for /api/identify
+IDENTIFY_CLI_MODEL=opus        # CLI-backend default model alias for /api/identify
 ```
 
 SvelteKit reads these via `$env/dynamic/private` so they're read at runtime.
@@ -286,6 +289,17 @@ SvelteKit reads these via `$env/dynamic/private` so they're read at runtime.
 CLI mode is ~5–7× slower per call than API (CLI startup + agent loop overhead) but doesn't burn API tokens. Subject to Pro/Max session-window rate limits.
 
 Backend dispatch lives in `src/lib/wells/backend.ts`; both backends return the same `WellsExtractResponse` shape so the endpoint code is unified.
+
+### `/api/identify` runtime modes
+
+`IDENTIFY_BACKEND=api|cli` (default `api`) selects the same way:
+
+| Mode | RAG retrieval | Notes |
+|---|---|---|
+| **API** | Yes — top-K=5 neighbors from `cache.jsonl` are sent as image blocks alongside the target | Current production behavior |
+| **CLI** | **No (step 1)** — sends only the target image path + 18-primitive catalog text. Cold classification. | RAG-via-file-paths is a deferred follow-up; the agent can't accept image blocks like the API can |
+
+Backend dispatch lives in `src/lib/identify/backend.ts`. Step-1 cold-classification accuracy was verified end-to-end on 3 sample primitives (hollow_cylinder, packer_element, thread_nc) — all identified correctly without RAG.
 
 ## Testing
 
