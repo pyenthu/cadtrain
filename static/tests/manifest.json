@@ -1,17 +1,6 @@
 {
   "tests": [
     {
-      "id": "wells_smoke",
-      "title": "Wells Extraction Smoke",
-      "description": "Loads /wells, uploads a synthetic well-schematic PNG, fires /api/wells/extract, and verifies the result UI renders without crashing. End-to-end wiring of the WSON pipeline.",
-      "source": "tests/test_wells_smoke.py",
-      "video": "/tests/wells_smoke.webm",
-      "poster": null,
-      "cases": 1,
-      "status": "pass",
-      "recorded": "2026-05-09T06:47:04+00:00"
-    },
-    {
       "id": "components_smoke",
       "title": "Components Viewer Smoke",
       "description": "Loads /components, walks four primitives via the sidebar, and verifies that each renders a 3D canvas + an inline SVG without throwing. Also checks ?id=&p=&cam= URL-driven rendering used by the synthetic data generator.",
@@ -20,7 +9,18 @@
       "poster": null,
       "cases": 6,
       "status": "pass",
-      "recorded": "2026-05-09T06:50:15+00:00"
+      "recorded": "2026-05-09T13:22:38+00:00"
+    },
+    {
+      "id": "wells_smoke",
+      "title": "Wells Extraction Smoke",
+      "description": "Loads /wells, uploads a synthetic well-schematic PNG, fires /api/wells/extract, and verifies the result UI renders without crashing. End-to-end wiring of the WSON pipeline.",
+      "source": "tests/test_wells_smoke.py",
+      "video": "/tests/wells_smoke.webm",
+      "poster": null,
+      "cases": 1,
+      "status": "pass",
+      "recorded": "2026-05-09T13:22:57+00:00"
     }
   ]
 }

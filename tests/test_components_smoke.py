@@ -29,7 +29,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-ROOT = Path("/Users/neerajsethi/Desktop/GitHub/cadtrain")
+ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = ROOT / "static" / "tests"
 MANIFEST_PATH = TESTS_DIR / "manifest.json"
 VIDEO_STAGING_DIR = TESTS_DIR / "_video_staging"
