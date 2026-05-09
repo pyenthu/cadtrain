@@ -52,6 +52,19 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
       photo uploads instead — the test was always a bad proxy for
       actual user input.
 
+  **Counter-finding (2026-05-09):** CLI/Opus cold classification (no
+  RAG, no embeddings, no retrieval — just the catalog text + image)
+  hit **17/18 (94.4%)** on `var_1.png` per primitive. The single miss
+  (`taper_cone` → `thread_eue`) came in at 0.6 confidence — the model
+  knew it was uncertain. This contradicts the assumption that the
+  retrieval scaffolding is load-bearing; for the rendered synthetic
+  domain at least, raw VLM is enough. Before investing in any of
+  options (a)–(d), run option (e): the multi-variant ablation
+  (`var_1..var_20` × CLI/Opus, no RAG vs API/Sonnet with RAG) to see
+  whether the CLIP/RAG pipeline is meaningfully helping at all. See
+  `~/.claude/plans/components-cli-recognition.md` for the reordered
+  deferred queue.
+
 ## Tech stack
 
 - **Runtime:** Bun (dev) / Node.js 22 (production via adapter-node)
