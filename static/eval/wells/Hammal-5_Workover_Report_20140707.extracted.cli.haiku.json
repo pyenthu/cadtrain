@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "wellName": "Hammal-5",
+    "units": "m",
+    "td": 1480,
+    "rkbToGl": 6.75,
+    "_shape": "vertical"
+  },
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "top": 6.75,
+      "bot": 456.5,
+      "grade": "K-55",
+      "weight": "40.5 spf"
+    },
+    {
+      "od": 7,
+      "top": 456.5,
+      "bot": 1480,
+      "grade": "N-80",
+      "weight": "23 spf"
+    }
+  ],
+  "cementing": [],
+  "completions": [
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 6.75,
+      "bot": 1480
+    },
+    {
+      "description": "Intake",
+      "top": 1229,
+      "bot": 1229
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1365.5,
+      "bot": 1369.5
+    },
+    {
+      "top": 1373,
+      "bot": 1388
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus VI",
+      "top": 1365.5
+    },
+    {
+      "name": "Yabus VI",
+      "top": 1373
+    }
+  ],
+  "profile": []
+}

@@ -1,0 +1,216 @@
+{
+  "oh": [
+    {
+      "bitSize": 10.75,
+      "top": 0,
+      "bot": 503.6
+    },
+    {
+      "bitSize": 7,
+      "top": 503.6,
+      "bot": 1751
+    }
+  ],
+  "ch": [
+    {
+      "od": 10.75,
+      "grade": "K-55",
+      "weight": 40.5,
+      "top": 0,
+      "bot": 503.6
+    },
+    {
+      "od": 7,
+      "grade": "N-80",
+      "weight": 26,
+      "top": 0,
+      "bot": 1250
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1188.5,
+      "bot": 1200,
+      "label": "Yabus-VI"
+    }
+  ],
+  "cementing": [
+    {
+      "top": 0,
+      "bot": 503.6,
+      "label": "10 3/4\" casing cement"
+    },
+    {
+      "top": 0,
+      "bot": 1250,
+      "label": "7\" casing cement to CHD 1246.0m"
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus-VI",
+      "top": 1188.5,
+      "bot": 1200
+    }
+  ],
+  "completions": [
+    {
+      "description": "Sucker Rod",
+      "od": 1,
+      "top": 0,
+      "bot": 1091.86,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 0,
+      "bot": 1091.86,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Centralizer",
+      "od": 3.5,
+      "top": 550,
+      "bot": 550,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 1
+    },
+    {
+      "description": "Rotor",
+      "od": 3.5,
+      "top": 1060,
+      "bot": 1080,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Stator",
+      "od": 3.5,
+      "top": 1080,
+      "bot": 1091.86,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Stop Bush",
+      "od": 3.5,
+      "top": 1091.86,
+      "bot": 1091.86,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 1
+    },
+    {
+      "description": "Torque Anchor",
+      "od": 3.5,
+      "top": 1095,
+      "bot": 1110,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    }
+  ],
+  "profile": [
+    {
+      "md": 0,
+      "dev": 0.1,
+      "az": 0
+    },
+    {
+      "md": 900,
+      "dev": 0.1,
+      "az": 10
+    },
+    {
+      "md": 1300,
+      "dev": 45,
+      "az": 50
+    },
+    {
+      "md": 2000,
+      "dev": 75,
+      "az": 120
+    },
+    {
+      "md": 2400,
+      "dev": 87,
+      "az": 150
+    },
+    {
+      "md": 3100,
+      "dev": 87,
+      "az": 270
+    }
+  ],
+  "openHole": [
+    {
+      "bitSize": 10.75,
+      "top": 0,
+      "bot": 503.6
+    },
+    {
+      "bitSize": 7,
+      "top": 503.6,
+      "bot": 1751
+    }
+  ],
+  "casedHole": [
+    {
+      "od": 10.75,
+      "grade": "K-55",
+      "weight": 40.5,
+      "top": 0,
+      "bot": 503.6
+    },
+    {
+      "od": 7,
+      "grade": "N-80",
+      "weight": 26,
+      "top": 0,
+      "bot": 1250
+    }
+  ],
+  "meta": {
+    "wellName": "Mooz S-3",
+    "rkbToGl": 6.3,
+    "pbtd": 1246,
+    "td": 1751,
+    "tubingOd": 3.5,
+    "tubingDepth": 1091.86,
+    "location": {
+      "x": 500900,
+      "y": 2750500,
+      "crs": "UTM 38N"
+    },
+    "_wellType": "producer",
+    "display": {
+      "displayOpts": {
+        "autoScale": true,
+        "directional": true,
+        "xScale": 0.17,
+        "yScale": 0.17,
+        "xDiaScale": 6,
+        "preserveAspectRatio": true,
+        "showLeftTrack": true,
+        "cutAzimuth": 0
+      },
+      "layers": {
+        "showHeader": true,
+        "showStrata": true,
+        "showOpenHole": true,
+        "showCasing": true,
+        "showCement": true,
+        "showCompletions": true,
+        "showPerforations": true
+      }
+    }
+  }
+}

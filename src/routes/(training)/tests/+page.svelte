@@ -143,6 +143,15 @@
     {#if tests.length === 0}
       <div class="nav-empty">No tests registered.</div>
     {/if}
+
+    <div class="nav-divider">Real-world Eval</div>
+    <a class="nav-item nav-link" href="/tests/wells">
+      <span class="nav-title">Wells Extraction Eval</span>
+      <span class="nav-sub">
+        <span class="status-dot pass"></span>
+        8 cases · side-by-side
+      </span>
+    </a>
   </aside>
 </div>
 
@@ -152,6 +161,8 @@
   .header { margin-bottom: 24px; }
   .header h1 { margin: 0 0 6px; font-size: 22px; color: #333; }
   .header p { margin: 0; color: #888; font-size: 13px; }
+  .nav-divider { padding: 14px 8px 6px; font: bold 10px Arial; color: #16213e; text-transform: uppercase; letter-spacing: 1px; border-top: 1px solid #eee; margin-top: 10px; }
+  .nav-link { text-decoration: none; }
 
   .test-section, .stats-section { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
   .test-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }

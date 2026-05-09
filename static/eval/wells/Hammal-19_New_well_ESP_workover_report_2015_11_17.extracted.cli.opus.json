@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "wellName": "Yabus 19",
+    "units": "m",
+    "td": 1463.2,
+    "rkbToGl": 7.7,
+    "description": "ESP oil producer in Yabus VI & VII formations; suspended"
+  },
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "id": 10.05,
+      "top": 0,
+      "bot": 311.6,
+      "grade": "K-55",
+      "weight": 40.5,
+      "type": "Surface Casing"
+    },
+    {
+      "od": 7,
+      "id": 6.276,
+      "top": 0,
+      "bot": 1463.2,
+      "grade": "N-80",
+      "weight": 26,
+      "type": "Production Casing"
+    }
+  ],
+  "cementing": [],
+  "completions": [],
+  "perforations": [
+    {
+      "top": 1308,
+      "bot": 1322.5,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1325,
+      "bot": 1338,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1337.5,
+      "bot": 1339.5,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1356,
+      "bot": 1359.5,
+      "label": "Yabus V"
+    },
+    {
+      "top": 1366.5,
+      "bot": 1369,
+      "label": "Yabus V"
+    },
+    {
+      "top": 1379,
+      "bot": 1382,
+      "label": "Yabus V"
+    },
+    {
+      "top": 1383,
+      "bot": 1386,
+      "label": "Yabus V"
+    },
+    {
+      "top": 1393,
+      "bot": 1399.5,
+      "label": "Yabus V"
+    }
+  ],
+  "strata": [],
+  "profile": []
+}

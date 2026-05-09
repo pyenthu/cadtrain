@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "wellName": "",
+    "units": "ft",
+    "description": "Well completion diagram with drilling program"
+  },
+  "oh": [],
+  "ch": [],
+  "cementing": [],
+  "completions": [],
+  "perforations": [],
+  "strata": [],
+  "profile": []
+}

@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "wellName": "Unknown (field doc \u2014 name partially obscured)",
+    "units": "m",
+    "td": 1460,
+    "rkbToGl": 9,
+    "description": "Oil producer (ESP) in Yabus VI & VII formations. Well status: Suspended. Proposed completion as ESP producer.",
+    "_shape": "vertical"
+  },
+  "oh": [],
+  "ch": [],
+  "cementing": [],
+  "completions": [],
+  "perforations": [
+    {
+      "top": 1190.5,
+      "bot": 1198.5,
+      "label": "YABUS VI"
+    },
+    {
+      "top": 1232,
+      "bot": 1238,
+      "label": "YABUS VI"
+    },
+    {
+      "top": 1271,
+      "bot": 1277,
+      "label": "YABUS VI"
+    },
+    {
+      "top": 1305,
+      "bot": 1307.5,
+      "label": "YABUS VI (New)"
+    },
+    {
+      "top": 1310,
+      "bot": 1316.5,
+      "label": "YABUS VI"
+    },
+    {
+      "top": 1378,
+      "bot": 1384,
+      "label": "YABUS VII"
+    },
+    {
+      "top": 1393.5,
+      "bot": 1396.5,
+      "label": "YABUS VII"
+    },
+    {
+      "top": 1419.5,
+      "bot": 1425.5,
+      "label": "YABUS VII"
+    }
+  ],
+  "strata": [
+    {
+      "name": "YABUS VI",
+      "top": 1190.5
+    },
+    {
+      "name": "YABUS VII",
+      "top": 1378
+    }
+  ],
+  "profile": []
+}

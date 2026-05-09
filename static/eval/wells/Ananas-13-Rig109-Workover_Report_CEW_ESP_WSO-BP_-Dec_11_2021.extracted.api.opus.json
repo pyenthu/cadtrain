@@ -1,0 +1,129 @@
+{
+  "meta": {
+    "wellName": "Ananas-13",
+    "units": "m",
+    "td": 1524.5,
+    "rkbToGl": 7.5
+  },
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "id": 0,
+      "top": 0,
+      "bot": 458.5,
+      "grade": "K-55",
+      "weight": 40.5
+    }
+  ],
+  "cementing": [],
+  "completions": [
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 7.5,
+      "bot": 1230
+    },
+    {
+      "description": "Drain valve",
+      "od": 3.5,
+      "top": 1230,
+      "bot": 1231
+    },
+    {
+      "description": "Check valve",
+      "od": 3.5,
+      "top": 1231,
+      "bot": 1232
+    },
+    {
+      "description": "Pump",
+      "od": 3.5,
+      "top": 1232,
+      "bot": 1233.5
+    },
+    {
+      "description": "Intake",
+      "od": 3.5,
+      "top": 1233.5,
+      "bot": 1234
+    },
+    {
+      "description": "Protector",
+      "od": 3.5,
+      "top": 1234,
+      "bot": 1235
+    },
+    {
+      "description": "Motor",
+      "od": 3.5,
+      "top": 1235,
+      "bot": 1237
+    },
+    {
+      "description": "Downhole Sensor",
+      "od": 3.5,
+      "top": 1237,
+      "bot": 1238
+    },
+    {
+      "description": "Centralizer",
+      "od": 3.5,
+      "top": 1238,
+      "bot": 1239
+    },
+    {
+      "description": "Bridge Plug",
+      "od": 3.5,
+      "top": 1413.5,
+      "bot": 1413.5
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1334.5,
+      "bot": 1343.5,
+      "label": "Yabus IV - Existing"
+    },
+    {
+      "top": 1368,
+      "bot": 1370,
+      "label": "Yabus VI - Existing"
+    },
+    {
+      "top": 1374,
+      "bot": 1382,
+      "label": "Yabus VI - Existing"
+    },
+    {
+      "top": 1388,
+      "bot": 1396,
+      "label": "Yabus VI - Existing"
+    },
+    {
+      "top": 1415.5,
+      "bot": 1430,
+      "label": "Yabus VI - Isolated"
+    },
+    {
+      "top": 1462,
+      "bot": 1465,
+      "label": "Yabus VII - Isolated"
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus IV",
+      "top": 1334.5
+    },
+    {
+      "name": "Yabus VI",
+      "top": 1368
+    },
+    {
+      "name": "Yabus VII",
+      "top": 1462
+    }
+  ],
+  "profile": []
+}

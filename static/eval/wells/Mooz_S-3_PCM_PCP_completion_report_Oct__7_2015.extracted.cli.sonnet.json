@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "wellName": "Mooz S-3",
+    "units": "m",
+    "td": 1751,
+    "rkbToGl": 6.3,
+    "_shape": "vertical"
+  },
+  "oh": [
+    {
+      "bitSize": 7,
+      "top": 1250,
+      "bot": 1751
+    }
+  ],
+  "ch": [
+    {
+      "od": 10.75,
+      "id": null,
+      "top": 0,
+      "bot": 503.6,
+      "weight": 40.5,
+      "grade": "K-55"
+    },
+    {
+      "od": 7,
+      "id": null,
+      "top": 0,
+      "bot": 1250,
+      "weight": 26,
+      "grade": "N-80"
+    }
+  ],
+  "cementing": [],
+  "completions": [
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 0,
+      "bot": 1091.86
+    },
+    {
+      "description": "Sucker Rod",
+      "od": null,
+      "top": 503.6,
+      "bot": 1091.86
+    },
+    {
+      "description": "Centralizer",
+      "od": null,
+      "top": 503.6,
+      "bot": 1091.86
+    },
+    {
+      "description": "Rotor",
+      "od": null,
+      "top": 1091.86,
+      "bot": 1091.86
+    },
+    {
+      "description": "Stator",
+      "od": null,
+      "top": 1091.86,
+      "bot": 1091.86
+    },
+    {
+      "description": "Stop Bush",
+      "od": null,
+      "top": 1091.86,
+      "bot": 1091.86
+    },
+    {
+      "description": "Torque Anchor",
+      "od": null,
+      "top": 1091.86,
+      "bot": 1091.86
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1188.5,
+      "bot": 1200,
+      "label": "Yabus-VI (Exist)"
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus-VI",
+      "top": 1188.5
+    }
+  ],
+  "profile": []
+}

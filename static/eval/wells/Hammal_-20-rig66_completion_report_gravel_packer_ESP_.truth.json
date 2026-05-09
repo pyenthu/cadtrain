@@ -1,0 +1,218 @@
+{
+  "oh": [
+    {
+      "bitSize": 14.75,
+      "top": 0,
+      "bot": 500
+    },
+    {
+      "bitSize": 8.5,
+      "top": 500,
+      "bot": 1500
+    }
+  ],
+  "ch": [
+    {
+      "od": 10.75,
+      "grade": "K-55",
+      "weight": 40.5,
+      "top": 0,
+      "bot": 500.7
+    },
+    {
+      "od": 7,
+      "grade": "N-80",
+      "weight": 23,
+      "top": 0,
+      "bot": 1497.2
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1273,
+      "bot": 1284,
+      "label": "Yabus VI-1"
+    },
+    {
+      "top": 1289,
+      "bot": 1290,
+      "label": "Yabus VI-1"
+    },
+    {
+      "top": 1294,
+      "bot": 1298,
+      "label": "Yabus VI-1"
+    },
+    {
+      "top": 1306,
+      "bot": 1308,
+      "label": "Yabus VI-2"
+    },
+    {
+      "top": 1320,
+      "bot": 1323,
+      "label": "Yabus VI-2"
+    },
+    {
+      "top": 1325,
+      "bot": 1328,
+      "label": "Yabus VI-2"
+    },
+    {
+      "top": 1333,
+      "bot": 1342,
+      "label": "Yabus VI-2"
+    },
+    {
+      "top": 1352.5,
+      "bot": 1360,
+      "label": "Yabus VII-1"
+    },
+    {
+      "top": 1375,
+      "bot": 1378,
+      "label": "Yabus VII-1"
+    }
+  ],
+  "cementing": [
+    {
+      "od": 9.625,
+      "top": 800,
+      "bot": 2500
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus VI",
+      "top": 1273,
+      "bot": 1342
+    },
+    {
+      "name": "Yabus VII",
+      "top": 1352.5,
+      "bot": 1378
+    }
+  ],
+  "completions": [
+    {
+      "description": "ESP",
+      "od": 3.5,
+      "top": null,
+      "bot": null,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    }
+  ],
+  "profile": [
+    {
+      "md": 0,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 187.5,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 375,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 468.75,
+      "dev": 15,
+      "az": 0
+    },
+    {
+      "md": 562.5,
+      "dev": 30,
+      "az": 0
+    },
+    {
+      "md": 656.25,
+      "dev": 45,
+      "az": 0
+    },
+    {
+      "md": 750,
+      "dev": 60,
+      "az": 0
+    },
+    {
+      "md": 937.5,
+      "dev": 60,
+      "az": 0
+    },
+    {
+      "md": 1125,
+      "dev": 60,
+      "az": 0
+    },
+    {
+      "md": 1312.5,
+      "dev": 60,
+      "az": 0
+    },
+    {
+      "md": 1500,
+      "dev": 60,
+      "az": 0
+    }
+  ],
+  "openHole": [],
+  "casedHole": [
+    {
+      "od": 10.75,
+      "grade": "K-55",
+      "weight": 40.5,
+      "top": 0,
+      "bot": 500.7
+    },
+    {
+      "od": 7,
+      "grade": "N-80",
+      "weight": 23,
+      "top": 0,
+      "bot": 1497.2
+    }
+  ],
+  "meta": {
+    "wellName": "Hammal-20",
+    "rkbToGl": 7.7,
+    "pbtd": 1485.33,
+    "td": 1500,
+    "tubingOd": null,
+    "tubingDepth": null,
+    "location": {
+      "x": 500650,
+      "y": 2750350,
+      "crs": "UTM 38N"
+    },
+    "_wellType": "producer",
+    "display": {
+      "displayOpts": {
+        "autoScale": true,
+        "directional": true,
+        "xScale": 0.17,
+        "yScale": 0.17,
+        "xDiaScale": 6,
+        "preserveAspectRatio": true,
+        "showLeftTrack": true,
+        "cutAzimuth": 0,
+        "showLabels": true,
+        "flareLabels": false
+      },
+      "layers": {
+        "showHeader": true,
+        "showStrata": true,
+        "showOpenHole": true,
+        "showCasing": true,
+        "showCement": true,
+        "showCompletions": true,
+        "showPerforations": true
+      }
+    }
+  }
+}

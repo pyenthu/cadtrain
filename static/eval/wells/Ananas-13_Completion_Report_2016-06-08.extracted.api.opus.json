@@ -1,0 +1,70 @@
+{
+  "meta": {
+    "wellName": "Ananas-13",
+    "units": "m",
+    "td": 1540,
+    "rkbToGl": 7.5,
+    "description": "Oil Producer (ESP), Moleeta Field, Yabus IV/VI/VII formations",
+    "location": {
+      "x": 432529.952,
+      "y": 1163082.178
+    }
+  },
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "id": 10.079,
+      "top": 0,
+      "bot": 458.5,
+      "grade": "K-55",
+      "weight": 40.5,
+      "type": "Surface"
+    },
+    {
+      "od": 7,
+      "id": 6.276,
+      "top": 0,
+      "bot": 1539.4,
+      "grade": "N-80",
+      "weight": 26,
+      "type": "Production"
+    }
+  ],
+  "cementing": [],
+  "completions": [],
+  "perforations": [
+    {
+      "top": 1334.5,
+      "bot": 1343.5,
+      "label": "Yabus IV"
+    },
+    {
+      "top": 1368,
+      "bot": 1370,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1374,
+      "bot": 1382,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1388,
+      "bot": 1396,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1415.5,
+      "bot": 1430,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1462,
+      "bot": 1465,
+      "label": "Yabus VII"
+    }
+  ],
+  "strata": [],
+  "profile": []
+}

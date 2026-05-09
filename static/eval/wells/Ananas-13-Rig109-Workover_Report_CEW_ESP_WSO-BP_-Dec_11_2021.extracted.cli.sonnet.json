@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "wellName": "Ananas-13",
+    "units": "m",
+    "td": 1524.5,
+    "rkbToGl": 7.5,
+    "description": "Present Well Schematic \u2013 ESP workover (CEW ESP, WSO-BP) Dec 2021"
+  },
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "top": 0,
+      "bot": 458.5,
+      "grade": "K-55",
+      "weight": 40.5,
+      "type": "casing"
+    }
+  ],
+  "cementing": [],
+  "completions": [
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 0,
+      "bot": 1190
+    },
+    {
+      "description": "Drain valve",
+      "od": 3.5,
+      "top": 1190,
+      "bot": 1200
+    },
+    {
+      "description": "Check valve",
+      "od": 3.5,
+      "top": 1200,
+      "bot": 1212
+    },
+    {
+      "description": "Pump",
+      "od": 3.5,
+      "top": 1212,
+      "bot": 1232
+    },
+    {
+      "description": "Intake",
+      "od": 3.5,
+      "top": 1232,
+      "bot": 1238
+    },
+    {
+      "description": "Protector",
+      "od": 3.5,
+      "top": 1238,
+      "bot": 1268
+    },
+    {
+      "description": "Motor",
+      "od": 3.5,
+      "top": 1268,
+      "bot": 1318
+    },
+    {
+      "description": "Downhole Sensor",
+      "od": 3.5,
+      "top": 1318,
+      "bot": 1326
+    },
+    {
+      "description": "Centralizer",
+      "od": 3.5,
+      "top": 1326,
+      "bot": 1332
+    },
+    {
+      "description": "Bridge Plug (BP)",
+      "od": 3.5,
+      "top": 1413.5,
+      "bot": 1413.5
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1334.5,
+      "bot": 1343.5,
+      "label": "Yabus IV \u2013 Existing"
+    },
+    {
+      "top": 1368,
+      "bot": 1370,
+      "label": "Yabus VI \u2013 Existing"
+    },
+    {
+      "top": 1374,
+      "bot": 1382,
+      "label": "Yabus VI \u2013 Existing"
+    },
+    {
+      "top": 1388,
+      "bot": 1396,
+      "label": "Yabus VI \u2013 Existing"
+    },
+    {
+      "top": 1415.5,
+      "bot": 1430,
+      "label": "Yabus VI \u2013 Isolated"
+    },
+    {
+      "top": 1462,
+      "bot": 1465,
+      "label": "Yabus VII \u2013 Isolated"
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus IV",
+      "top": 1334.5
+    },
+    {
+      "name": "Yabus VI",
+      "top": 1368
+    },
+    {
+      "name": "Yabus VII",
+      "top": 1462
+    }
+  ],
+  "profile": []
+}
