@@ -152,6 +152,13 @@
         8 cases · side-by-side
       </span>
     </a>
+    <a class="nav-item nav-link" href="/tests/components">
+      <span class="nav-title">Components Recognition</span>
+      <span class="nav-sub">
+        <span class="status-dot never"></span>
+        CLI wired · eval deferred
+      </span>
+    </a>
   </aside>
 </div>
 
