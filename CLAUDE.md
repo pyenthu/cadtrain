@@ -82,7 +82,10 @@ bun run seed           # rebuild training_data/cache.jsonl from prim_* records
 | `/components` | Parametric component library — 18 primitives, live 3D + SVG + PNG export |
 | `/reverse` | Upload image → RAG-based identify → live 3D render → auto-refine loop → save to cache |
 | `/training` | Tabbed viewer for completion tool training data |
-| `/tests` | Playwright test recordings (WEBM) + cache stats |
+| `/wells` | Upload PDF/image → Claude vision → WSON extraction (well-engineering documents) |
+| `/tests` | Playwright test recordings (WEBM) + cache stats + links to eval viewers |
+| `/tests/wells` | Real-world wells extraction eval — 8 cases × API/CLI × 3 models, side-by-side diff vs ground-truth WSON |
+| `/tests/components` | Components recognition eval — 18 primitives via CLI/Opus, 17/18 (94.4%) top-1 accuracy |
 | `/author` | Manual component editor — compose from primitives, Claude tool-calling assistant |
 | `/library` | Browse and reload authored components |
 | `/tools/bottom-sub` | Dedicated Bottom Sub (HAL10408) parametric viewer |
@@ -95,6 +98,7 @@ bun run seed           # rebuild training_data/cache.jsonl from prim_* records
 | `/api/author/save` | POST — append/upsert authored component to cache |
 | `/api/author/list` | GET — index of authored components; GET `?id=` for full record |
 | `/api/author/chat` | POST — Claude tool-calling chat (replaces /api/author/suggest) |
+| `/api/wells/extract` | POST — PDF/image → WSON extraction. `WELLS_BACKEND=cli\|api` (default api). |
 
 ## Project layout
 
@@ -158,6 +162,9 @@ src/
 static/
 ├── training_data -> ../training_data # symlink so images are URL-accessible
 ├── tests/                            # Playwright WEBM recordings + manifest.json
+├── eval/                             # Persisted eval datasets viewed at /tests/wells + /tests/components
+│   ├── wells/                        # 8 cases × 2 backends × 3 models extracted JSON + 7 truth WSON + index.json
+│   └── components/                   # 18 primitives × CLI/Opus extraction + summary index.json
 └── tmp/                              # Generated test frames + rag.gif
 
 training_data/
