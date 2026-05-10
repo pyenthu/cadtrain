@@ -33,7 +33,7 @@
   $effect(() => { loadIndex(); });
 
   function openInEditor(id: string) {
-    window.location.href = `/author?id=${encodeURIComponent(id)}`;
+    window.location.href = `/archive/author?id=${encodeURIComponent(id)}`;
   }
 
   function prettyDate(iso: string): string {
@@ -47,7 +47,7 @@
     <h1>Authored Library</h1>
     <p>Components you've built from primitives. Click one to open it in the author.</p>
     <div class="actions">
-      <a class="btn primary" href="/author">+ New Component</a>
+      <a class="btn primary" href="/archive/author">+ New Component</a>
       <button class="btn" onclick={loadIndex}>Refresh</button>
     </div>
   </div>
@@ -59,7 +59,7 @@
   {:else if records.length === 0}
     <div class="empty">
       <p>No authored components yet.</p>
-      <p class="hint">Open the <a href="/author">author</a>, compose something from the 18 primitives, and click Save.</p>
+      <p class="hint">Open the <a href="/archive/author">author</a>, compose something from the 18 primitives, and click Save.</p>
     </div>
   {:else}
     <div class="grid">

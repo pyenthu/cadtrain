@@ -32,8 +32,11 @@ training_data/synthetic_cache.jsonl.bak.*
 *.glb
 *.gltf
 
-# Archived legacy work (kept locally, not committed)
-archive/
+# Archived legacy work (kept locally, not committed) — root-level only.
+# Note: src/routes/archive/ is the in-app reference for the previous
+# implementation and IS committed; this rule targets only ./archive at
+# the repo root (BOTTOM_SUB_legacy/, HAL_PACKERS/, etc.).
+/archive/
 
 # Playwright video staging — transient, renamed to canonical path post-run
 static/tests/_video_staging/

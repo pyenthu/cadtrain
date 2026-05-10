@@ -3,11 +3,15 @@
     <h1>CAD Train</h1>
     <p>Two products in one repo: parametric CAD assemblies and well-engineering document extraction.</p>
     <div class="links">
-      <a href="/plan">View plan</a>
+      <a href="/cad">CAD</a>
       <span class="dot">·</span>
-      <a href="/wells">Wells extractor</a>
+      <a href="/wells">Wells</a>
+      <span class="dot">·</span>
+      <a href="/plan">Plan</a>
+      <span class="dot">·</span>
+      <a href="/archive">Archive</a>
     </div>
-    <p class="note">Restructure in progress — see <a href="/plan">/plan</a> for the two-product split.</p>
+    <p class="note">Restructure in progress — see <a href="/plan">/plan</a> bundle F.</p>
   </div>
 </div>
 

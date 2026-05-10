@@ -145,14 +145,14 @@
     {/if}
 
     <div class="nav-divider">Real-world Eval</div>
-    <a class="nav-item nav-link" href="/tests/wells">
+    <a class="nav-item nav-link" href="/archive/tests/wells">
       <span class="nav-title">Wells Extraction Eval</span>
       <span class="nav-sub">
         <span class="status-dot pass"></span>
         8 cases · side-by-side
       </span>
     </a>
-    <a class="nav-item nav-link" href="/tests/components">
+    <a class="nav-item nav-link" href="/archive/tests/components">
       <span class="nav-title">Components Recognition</span>
       <span class="nav-sub">
         <span class="status-dot never"></span>

@@ -318,7 +318,7 @@
     </button>
     {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
     {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
-    <a class="library-link" href="/library">→ Browse library</a>
+    <a class="library-link" href="/archive/library">→ Browse library</a>
   </div>
 
   {#if ChatPanel}

@@ -175,7 +175,7 @@
         </button>
       {/each}
     {/if}
-    <div class="nav-back"><a href="/tests">← back to /tests</a></div>
+    <div class="nav-back"><a href="/archive/tests">← back to /archive/tests</a></div>
   </aside>
 </div>
 
