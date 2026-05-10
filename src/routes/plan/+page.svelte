@@ -45,6 +45,7 @@
     { id: 'D', name: 'Wells → SVTC WSON',      tint: '#0891b2', desc: 'New: extract well-engineering documents into WSON for SVTC drawing apps' },
     { id: 'E', name: 'Infra + deploy',         tint: '#10b981', desc: 'Dockerfile, Railway volume, env config, model pre-pull' },
     { id: 'F', name: 'Meta + UX',              tint: '#ec4899', desc: 'this /plan route, navigation, documentation' },
+    { id: 'G', name: 'Vendor catalog ingest',  tint: '#f59e0b', desc: 'Halliburton/Baker Hughes catalog PDFs → per-page assets → SVG schematics + spec-table JSON + labeled component graph → cache.jsonl with proper component_id (not "unknown")' },
   ];
 
   const tasks: Task[] = [
@@ -109,6 +110,16 @@
     { id: 115, bundle: 'F', lane: 5, start:  2.3, weeks: 0.3, priority: 'high',   status: 'done',   title: 'Playwright e2e suite — routes/navbar/archive-links specs (44 tests, headless 15s)' },
     { id: 116, bundle: 'F', lane: 5, start:  2.6, weeks: 0.5, priority: 'medium', status: 'open',   title: 'Expand e2e: backend smoke tests (upload to /archive/wells + /archive/reverse)' },
     { id: 117, bundle: 'F', lane: 5, start:  3.1, weeks: 0.5, priority: 'low',    status: 'open',   title: 'Wire e2e suite into CI / pre-commit (currently manual via bun run test:e2e)' },
+
+    // ───── G. Vendor catalog ingest ─────
+    { id: 200, bundle: 'G', lane: 6, start:  1.5, weeks: 0.2, priority: 'medium', status: 'done',   title: 'G.0 — Storage convention: static/eval/catalog/<vendor>/ + manifest.json; PDFs gitignored, structure committed' },
+    { id: 201, bundle: 'G', lane: 6, start:  1.7, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.1 — PDF inspector: per-page detection of vector vs raster vs hybrid (PyMuPDF page.get_drawings + get_images + get_text)' },
+    { id: 202, bundle: 'G', lane: 6, start:  2.2, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.2 — SVG extractor: schematic pages → vector SVG via PyMuPDF path traversal; labeled cross-sections preserved with text + bbox' },
+    { id: 203, bundle: 'G', lane: 6, start:  2.7, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.3 — Spec-table extractor: structured page (e.g., Packers p.6) → JSON {casing_size, packer_od, sealbore_id, ...}; validates against existing primitive param ranges' },
+    { id: 204, bundle: 'G', lane: 6, start:  3.2, weeks: 0.7, priority: 'medium', status: 'open',   title: 'G.4 — Component-label graph: extract labeled cross-section pages into {label, bbox, line_to_part_bbox} structure for assembly grammar generation' },
+    { id: 205, bundle: 'G', lane: 6, start:  3.9, weeks: 0.5, priority: 'medium', status: 'open',   title: 'G.5 — Catalog indexer: ingest extracted assets into cache.jsonl with proper component_id (replaces 1,646 "unknown" HAL records); CLIP-embed each' },
+    { id: 206, bundle: 'G', lane: 6, start:  4.4, weeks: 0.5, priority: 'medium', status: 'open',   title: 'G.6 — /cad/catalog/<vendor>/<chapter> browse UI: per-page viewer with toggle (raster/SVG/extracted-data overlay)' },
+    { id: 207, bundle: 'G', lane: 6, start:  4.9, weeks: 0.5, priority: 'low',    status: 'open',   title: 'G.7 — Cross-reference packer model names (Perma-Series, Versa-Trieve, etc.) to authored cadtrain primitives — tag /author entries with vendor model when matched' },
   ];
 
   // Bundle-relative codes (A.1, B.3, …) computed from index within bundle.

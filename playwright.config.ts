@@ -32,7 +32,7 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: HEADED ? 'off' : 'retain-on-failure',
+    video: HEADED ? 'off' : 'on',
     headless: !HEADED,
     launchOptions: HEADED ? { slowMo: 250 } : {},
   },

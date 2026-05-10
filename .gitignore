@@ -41,6 +41,12 @@ training_data/synthetic_cache.jsonl.bak.*
 # Playwright video staging — transient, renamed to canonical path post-run
 static/tests/_video_staging/
 
+# Vendor catalog source PDFs — large + license-uncertain. Keep dir + manifest
+# committed (so the indexer + viewer code know what's expected) but not the
+# binary itself. Drop PDFs into static/eval/catalog/<vendor>/ locally.
+static/eval/catalog/**/*.pdf
+static/eval/catalog/**/*.PDF
+
 # Playwright test artifacts (regenerable). Persisted WEBMs that should
 # survive go in static/tests/ and are referenced by manifest.json.
 tests/results/

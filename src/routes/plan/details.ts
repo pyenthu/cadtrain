@@ -207,4 +207,99 @@ export const details: Record<number, PlanDetail> = {
       'workflow on PR) and/or a pre-commit hook for high-risk paths (anything under ' +
       'src/routes/ or src/lib/shared/). Skip running on docs-only changes.',
   },
+
+  // ───── G. Vendor catalog ingest ─────
+
+  200: {
+    summary:
+      'Convention established: vendor catalog PDFs live under static/eval/catalog/<vendor>/. ' +
+      'A manifest.json per vendor lists chapters with title, page_count, indexed status. ' +
+      'PDFs themselves are gitignored (large + license-uncertain) but the directory + ' +
+      'manifest are committed so the indexer code knows what to expect. First entry: ' +
+      'Halliburton 06_Packers (86 pages).',
+    refs: ['static/eval/catalog/halliburton/manifest.json'],
+  },
+
+  201: {
+    summary:
+      'Per-page inspector that classifies each PDF page by content type. Uses PyMuPDF ' +
+      'or pdf-lib to count vector paths (page.get_drawings), embedded raster images ' +
+      '(page.get_images), and text blocks. Routes pages to the right downstream extractor:\n' +
+      'vector-heavy (≥20 paths, no/few images) → SVG extractor (G.2)\n' +
+      'image-heavy (≥1 raster, few paths) → photo register (no SVG, just thumbnail)\n' +
+      'text-heavy + grid lines → spec-table extractor (G.3)\n' +
+      'mixed → labeled-schematic extractor (G.4)',
+    acceptance: [
+      'For Halliburton 06_Packers, page classification matches manual inspection',
+      'p.1 → cover (text + 2 photos), p.3 → table, p.4 → mixed schematic, p.6 → spec table',
+    ],
+  },
+
+  202: {
+    summary:
+      'Pull vector schematics (Perma-Series cross-sections, assembly diagrams) out as ' +
+      'clean SVG. PyMuPDF gives the path stack; we re-emit as SVG preserving stroke/fill, ' +
+      'normalize coordinates to 0-1000 range, and embed any text labels with their bbox ' +
+      'so downstream code can match labels to parts (G.4).',
+    acceptance: [
+      'Page 4 (Wireline-Set Perma-Series cross-section) extracts as SVG',
+      'Bottom Sub photographs on the same page route to raster (skipped by SVG extractor)',
+      'Output: static/eval/catalog/halliburton/06_packers/p4.svg',
+    ],
+  },
+
+  203: {
+    summary:
+      'Halliburton spec tables are dense but regular: casing_size, packer_od, sealbore_id, ' +
+      'seal_unit_id × N rows. Extract via text-block grouping + grid-line detection. ' +
+      'Output JSON validates: each row\'s OD ∈ existing primitive param ranges (or expands ' +
+      'them if the catalog reveals real-world values outside our assumed bounds).',
+    acceptance: [
+      'p.6 (Wireline-Set Perma-Series specs) → 50+ rows of JSON',
+      'Spec ranges fed back to src/lib/components/library.ts param min/max if needed',
+    ],
+  },
+
+  204: {
+    summary:
+      'Cross-section diagrams (e.g., page 4 of Packers) have leader lines connecting text ' +
+      'labels ("Upper Internal Slips", "Triple-Seal Multidurometer Elements", etc.) to ' +
+      'specific regions of the schematic. Extract this as a graph: { label_text, label_bbox, ' +
+      'line_path, target_part_bbox }. Becomes ground truth for the assembly segmentation work ' +
+      '(prior plan B.x) — we now have real labeled examples instead of synthetic-only.',
+    acceptance: [
+      'Page 4 yields ≥9 labeled parts (matches the 9 callouts on the schematic)',
+      'JSON loads into a viewer that renders the SVG with hoverable labels',
+    ],
+  },
+
+  205: {
+    summary:
+      'Replace the 1,646 HAL_PACKERS + HAL_WPS records currently in cache.jsonl with ' +
+      'component_id="unknown" with proper labels derived from G.2-G.4 extraction. New ' +
+      'records carry: component_id (mapped to the cadtrain 18-primitive taxonomy), ' +
+      'vendor_model_id (e.g., "Perma-Series-AWB"), source="catalog_v2", page_ref, ' +
+      'CLIP embedding (re-computed). Old "unknown" records archived to cache.jsonl.bak.',
+    acceptance: [
+      'Cache /api/cache/stats shows >0 records with vendor_model_id',
+      '/archive/reverse retrieval surfaces real catalog matches with named labels',
+    ],
+  },
+
+  206: {
+    summary:
+      'Browse vendor catalogs in-app at /cad/catalog/halliburton/06_packers — per-page ' +
+      'viewer with three toggles: raster (original render), SVG (extracted paths), and ' +
+      'overlay (label graph from G.4 superimposed on the SVG). Useful for QA-ing the ' +
+      'extraction pipeline and as a reference catalog for users.',
+  },
+
+  207: {
+    summary:
+      'Once both authored cadtrain components and vendor model entries exist, allow ' +
+      'authors to tag their compositions with the vendor model they\'re replicating ' +
+      '(e.g., authored "perma_lach_pls" → tagged "Halliburton PLS Mechanical-Set Double ' +
+      'Grip"). Enables vendor-aware retrieval ("show me everything we have authored ' +
+      'for HAL Versa-Trieve") and seeds the spatial-grammar work in B.x.',
+  },
 };

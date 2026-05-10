@@ -18,16 +18,7 @@
     {
       label: 'Archive',
       items: [
-        { href: '/archive', label: 'Index' },
-        { href: '/archive/components', label: 'Components' },
-        { href: '/archive/reverse', label: 'Reverse' },
-        { href: '/archive/author', label: 'Author' },
-        { href: '/archive/library', label: 'Library' },
-        { href: '/archive/training', label: 'Training' },
-        { href: '/archive/wells', label: 'Wells (old)' },
-        { href: '/archive/tests', label: 'Tests' },
-        { href: '/archive/tools/bottom-sub', label: 'Bottom Sub' },
-        { href: '/archive/tools/ratch-latch', label: 'Ratch-Latch' },
+        { href: '/archive', label: 'Browse' },
       ],
     },
     {
