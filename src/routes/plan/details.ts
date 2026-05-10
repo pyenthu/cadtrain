@@ -165,7 +165,46 @@ export const details: Record<number, PlanDetail> = {
       'split. Add a Methodology (shared) section documenting: dual-backend dispatch ' +
       'pattern (API vs CLI), cold-classification baseline finding, cache-grows-with-use ' +
       'compounding loop, 5-layer validation hierarchy. Add lib/shared/ subsection with ' +
-      'the 6 new modules. Document the cad/wells no-cross-import rule.',
+      'the 4 new modules. Document the cad/wells no-cross-import rule. Add Rule 11 ' +
+      '(prompt for e2e tests after route/UI/backend changes, asking headless vs headed).',
     refs: ['~/.claude/plans/silly-conjuring-deer.md', 'CLAUDE.md'],
+  },
+
+  115: {
+    summary:
+      'Playwright e2e suite added (commit ~ after 55b1f43). 44 tests in 3 specs ' +
+      'under tests/e2e/. Auto-spawns dev server on port 4445 to avoid colliding ' +
+      'with manual `bun run dev` on 3333. Headless run completes in ~15s.',
+    steps: [
+      'bun add -d @playwright/test',
+      'bunx playwright install chromium',
+      'tests/e2e/routes.spec.ts — 16 active routes return 200, 8 removed top-level URLs return 404',
+      'tests/e2e/navbar.spec.ts — 4 segments visible, 10 archive links listed, active highlighting works, click-through navigation',
+      'tests/e2e/archive-links.spec.ts — no stale top-level links inside any archived page; intra-archive nav resolves',
+      'playwright.config.ts — PWHEAD=1 toggles headed mode with slowMo 250',
+    ],
+    acceptance: [
+      '`bun run test:e2e` passes 44/44 in ~15s',
+      '`bun run test:e2e:headed` opens visible Chromium for debugging',
+      'CLAUDE.md Rule 11 codifies when to prompt the user to run it',
+      'Memory file feedback_test_after_route_changes.md persists rule across sessions',
+    ],
+    refs: ['playwright.config.ts', 'tests/e2e/'],
+  },
+
+  116: {
+    summary:
+      'Current e2e suite covers route loading, navbar, intra-archive links — but ' +
+      'no actual backend smoke tests. Next: upload a sample PDF to /archive/wells ' +
+      'and assert WSON response shape; upload a sample image to /archive/reverse ' +
+      'and assert IdentifyResponse shape. Use the API backend (skip CLI tests since ' +
+      'they need claude binary auth and would fail in CI).',
+  },
+
+  117: {
+    summary:
+      'e2e currently runs only when manually triggered. Wire into CI (GitHub Actions ' +
+      'workflow on PR) and/or a pre-commit hook for high-risk paths (anything under ' +
+      'src/routes/ or src/lib/shared/). Skip running on docs-only changes.',
   },
 };

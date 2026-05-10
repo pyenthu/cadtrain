@@ -5,15 +5,16 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 ## Rules for Claude (read me first)
 
 1. This repo uses **Bun + SvelteKit + adapter-node**. Never switch to adapter-static or add Python to the runtime.
-2. Production code is in `src/`. Legacy standalone Vite apps (`BOTTOM_SUB/manifold/`, `RATCH_LATCH/manifold/`, `components/`, `viewer/`) are non-authoritative and scheduled for deletion.
+2. **Two-product structure** (since commit `55b1f43`, 2026-05-10): `/cad` and `/wells` are the two top-level products. The previous implementation lives under `/archive/*` as reference. New product code goes in `src/lib/cad/` or `src/lib/wells/` (when those exist) — these MUST NOT cross-import. Both may import from `src/lib/shared/*`.
 3. All API endpoints must use `$env/dynamic/private` (not `$env/static/private`) so env vars are read at runtime, not build time.
 4. The training cache at `training_data/cache.jsonl` is the app's long-term memory. Writes must be atomic (temp file + rename). Never delete it without backup.
 5. Follow plan files in `~/.claude/plans/`. Don't add features outside the current plan's scope.
 6. Before destructive operations (`rm`, `git rm`, `git reset --hard`), show the plan and wait for approval.
 7. Commit after each numbered plan step completes, not after each small edit.
-8. Test changes locally (`bun run build` + tests if applicable) before committing.
+8. Test changes locally (`bun run build` + `bun test` + e2e if relevant) before committing.
 9. When asked to review or audit, use Explore subagents for read-only exploration. Don't modify files during exploration.
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
+11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits (typo fixes, comment changes, single-style tweaks).
 
 ## Open TODOs (out-of-scope findings)
 
@@ -78,39 +79,61 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 ## Commands
 
 ```bash
-bun install            # install deps
-bun run dev            # dev server on :3333
-bun run build          # production build (adapter-node)
-bun run start          # run the production build (node build)
-bun run seed           # rebuild training_data/cache.jsonl from prim_* records
+bun install              # install deps
+bun run dev              # dev server on :3333
+bun run build            # production build (adapter-node)
+bun run start            # run the production build (node build)
+bun run seed             # rebuild training_data/cache.jsonl from prim_* records
+bun test                 # vitest unit tests
+bun run test:e2e         # Playwright e2e (headless, ~15s)
+bun run test:e2e:headed  # Playwright e2e (headed, slow_mo 250 — watch in browser)
+bun run test:e2e:report  # open last HTML report
 ```
 
 **Always prefer Bun over Node** for running scripts (bun.lock is the lockfile).
 
 ## Routes
 
+### Top-level (active)
+
 | Route | Purpose |
 |---|---|
-| `/` | Landing page |
-| `/components` | Parametric component library — 18 primitives, live 3D + SVG + PNG export |
-| `/reverse` | Upload image → RAG-based identify → live 3D render → auto-refine loop → save to cache |
-| `/training` | Tabbed viewer for completion tool training data |
-| `/wells` | Upload PDF/image → Claude vision → WSON extraction (well-engineering documents) |
-| `/tests` | Playwright test recordings (WEBM) + cache stats + links to eval viewers |
-| `/tests/wells` | Real-world wells extraction eval — 8 cases × API/CLI × 3 models, side-by-side diff vs ground-truth WSON |
-| `/tests/components` | Components recognition eval — 18 primitives via CLI/Opus, 17/18 (94.4%) top-1 accuracy |
-| `/author` | Manual component editor — compose from primitives, Claude tool-calling assistant |
-| `/library` | Browse and reload authored components |
-| `/tools/bottom-sub` | Dedicated Bottom Sub (HAL10408) parametric viewer |
-| `/tools/ratch-latch` | Dedicated Ratch-Latch Receiving Head viewer |
-| `/api/identify` | POST — RAG-based image → component + params |
+| `/` | Landing page — 4 inline links (CAD · Wells · Plan · Archive) |
+| `/cad` | CAD product overview — under construction; library-first rebuild planned |
+| `/wells` | Wells product overview — pointer to working `/archive/wells` until ported |
+| `/archive` | Index of legacy routes with descriptions |
+| `/plan` | Gantt-style roadmap (bundles A–F) with click-through detail popups |
+
+### Archive (legacy implementation, preserved for reference)
+
+| Route | Purpose |
+|---|---|
+| `/archive/components` | Parametric component library — 18 primitives, live 3D + SVG + PNG export |
+| `/archive/reverse` | Upload image → RAG-based identify → live 3D render → auto-refine loop → save to cache |
+| `/archive/training` | Tabbed viewer for completion tool training data |
+| `/archive/wells` | Upload PDF/image → Claude vision → WSON extraction (working — likely ported wholesale) |
+| `/archive/tests` | Playwright test recordings (WEBM) + cache stats + links to eval viewers |
+| `/archive/tests/wells` | Real-world wells extraction eval — 8 cases × API/CLI × 3 models, side-by-side diff vs ground-truth WSON |
+| `/archive/tests/components` | Components recognition eval — 18 primitives via CLI/Opus, 17/18 (94.4%) top-1 accuracy |
+| `/archive/author` | Manual component editor — compose from primitives, Claude tool-calling assistant |
+| `/archive/library` | Browse and reload authored components |
+| `/archive/tools/bottom-sub` | Dedicated Bottom Sub (HAL10408) parametric viewer |
+| `/archive/tools/ratch-latch` | Dedicated Ratch-Latch Receiving Head viewer |
+
+### API endpoints (URL-stable across the restructure)
+
+API routes were intentionally **not** moved to `/api/archive/*` — they're called by URL and renaming would break archived pages. New product code may add `/api/cad/*` or `/api/wells-v2/*` later.
+
+| Route | Purpose |
+|---|---|
+| `/api/identify` | POST — RAG-based image → component + params (consumed by `/archive/reverse`) |
 | `/api/refine` | POST — iterative refinement (SSIM + Claude param update) |
 | `/api/accept` | POST — append user-validated result to persistent cache |
 | `/api/feedback` | POST — correct/wrong match feedback on identification |
 | `/api/cache/stats` | GET — training cache statistics |
 | `/api/author/save` | POST — append/upsert authored component to cache |
 | `/api/author/list` | GET — index of authored components; GET `?id=` for full record |
-| `/api/author/chat` | POST — Claude tool-calling chat (replaces /api/author/suggest) |
+| `/api/author/chat` | POST — Claude tool-calling chat |
 | `/api/wells/extract` | POST — PDF/image → WSON extraction. `WELLS_BACKEND=cli\|api` (default api). |
 
 ## Project layout
@@ -120,54 +143,66 @@ src/
 ├── app.html                          # SvelteKit HTML shell
 ├── hooks.server.ts                   # Auth gate + rate limiting
 ├── routes/
-│   ├── +layout.svelte                # Three-segment nav (Training · Build · Tools)
+│   ├── +layout.svelte                # 4-segment nav: CAD | Wells | Archive | Meta
 │   ├── +layout.ts                    # ssr=false, prerender=false
-│   ├── +page.svelte                  # Landing page
-│   ├── (training)/                   # Route group — URLs unchanged
+│   ├── +page.svelte                  # Landing — 4 inline links
+│   ├── cad/+page.svelte              # CAD product overview (stub)
+│   ├── wells/+page.svelte            # Wells product overview (stub)
+│   ├── archive/                      # Legacy implementation, preserved for reference
+│   │   ├── +page.svelte              # Archive index (lists all routes below)
 │   │   ├── components/+page.svelte   # 18-primitive library viewer
 │   │   ├── reverse/+page.svelte      # Reverse identification + refine + save
 │   │   ├── training/+page.svelte     # Completion tools tab viewer
-│   │   └── tests/+page.svelte        # Playwright WEBM recordings + cache stats
-│   ├── (build)/                      # Route group — Build sub-app
+│   │   ├── tests/+page.svelte        # Playwright WEBM recordings + cache stats
+│   │   ├── tests/wells/+page.svelte  # Wells extraction eval viewer
+│   │   ├── tests/components/+page.svelte # Components recognition eval viewer
 │   │   ├── author/+page.svelte       # Manual composition editor + Claude chat
-│   │   └── library/+page.svelte      # Browse authored components
-│   ├── tools/
-│   │   ├── bottom-sub/+page.svelte
-│   │   └── ratch-latch/+page.svelte
-│   └── api/
+│   │   ├── library/+page.svelte      # Browse authored components
+│   │   ├── wells/+page.svelte        # Working WSON extraction (drag-drop PDF/image)
+│   │   └── tools/
+│   │       ├── bottom-sub/+page.svelte
+│   │       └── ratch-latch/+page.svelte
+│   ├── plan/+page.svelte             # Gantt roadmap (bundles A-F)
+│   └── api/                          # URL-stable; consumed by archive pages
 │       ├── identify/+server.ts       # RAG few-shot with cache + Claude vision
 │       ├── refine/+server.ts         # SSIM loop + Claude param updates
 │       ├── accept/+server.ts         # Append to cache.jsonl
 │       ├── feedback/+server.ts       # Correct/wrong match feedback
 │       ├── cache/stats/+server.ts    # Cache statistics
-│       └── author/
-│           ├── save/+server.ts       # Append/upsert authored component
-│           ├── list/+server.ts       # Index or single-record fetch
-│           └── chat/+server.ts       # Claude tool-calling chat
+│       ├── author/
+│       │   ├── save/+server.ts       # Append/upsert authored component
+│       │   ├── list/+server.ts       # Index or single-record fetch
+│       │   └── chat/+server.ts       # Claude tool-calling chat
+│       └── wells/extract/+server.ts  # PDF/image → WSON via Claude vision
 └── lib/
+    ├── shared/                       # Cross-domain infrastructure (cad ↔ wells share these)
+    │   ├── anthropic-api.ts          # SDK key check + client factory
+    │   ├── claude-cli.ts             # `claude --print` args + spawn + envelope parse
+    │   ├── temp-file.ts              # withTempFile(prefix, ext, buf, fn) wrapper
+    │   ├── mime.ts                   # guessImageExt(mime)
+    │   └── ComponentScene.svelte     # Shared Threlte scene for component viewer
+    ├── identify/
+    │   └── backend.ts                # CAD identify dispatch (API + CLI) — uses shared/
+    ├── wells/
+    │   ├── backend.ts                # Wells extract dispatch (API + CLI) — uses shared/
+    │   ├── prompt.ts                 # WSON system + user prompts
+    │   └── schema.ts                 # WSON TypeScript types + validateWson()
     ├── components/
     │   ├── library.ts                # 18 ComponentDef entries (params, tags, defaults)
-    │   ├── builder.ts                # ManifoldCAD buildComponent + buildPrimitiveManifold + finalizeManifold
+    │   ├── builder.ts                # ManifoldCAD buildComponent + buildPrimitiveManifold
     │   └── exporter.ts               # three-svg-renderer SVG export
-    ├── authoring/                    # Build sub-app core
-    │   ├── schema.ts                 # AuthoredComponent / Part / Op / Step types
-    │   ├── compose.ts                # buildAuthored(spec) interpreter
-    │   ├── cache.ts                  # AuthoredCache class (JSONL)
-    │   ├── context.ts                # Growing context doc builder
-    │   ├── toolSchema.ts             # Tool definitions for Claude (planned)
-    │   ├── tools.ts                  # Client-side tool dispatcher (planned)
-    │   ├── chat.svelte.ts            # ChatState class with tool loop (planned)
-    │   ├── systemPrompt.ts           # System prompt builder (planned)
-    │   └── ChatPanel.svelte          # Floating chat UI (planned)
+    ├── authoring/                    # Authoring (Build) core — used by /archive/author
+    │   ├── schema.ts compose.ts cache.ts context.ts
+    │   ├── toolSchema.ts tools.ts systemPrompt.ts chat.svelte.ts
+    │   └── ChatPanel.svelte
     ├── training/
     │   ├── cache.ts                  # TrainingCache class (JSONL persistence)
     │   ├── phash.ts                  # Perceptual hash via sharp + manual DCT
+    │   ├── embed.ts                  # CLIP embedding via @xenova/transformers
     │   └── image_diff.ts             # Pure-TS SSIM + pixel diff + Sobel edge diff
     ├── tools/
     │   ├── bottom-sub/               # assembly.ts, builder.ts, Scene.svelte, ParamPanel.svelte
     │   └── ratch-latch/              # same structure
-    ├── shared/
-    │   └── ComponentScene.svelte     # Shared Threlte scene for component viewer
     ├── rate_limit.ts                 # Token-bucket rate limiter
     └── viewer/
         └── builder.ts                # Generic tabbed training data viewer builder
@@ -323,11 +358,94 @@ Backend dispatch lives in `src/lib/identify/backend.ts`. Step-1 cold-classificat
 
 ## Testing
 
-- **Playwright** is the primary testing tool
-- Tests are in `tests/` (NOT shipped to production Docker)
-- `tests/test_rag_with_gif.py` drives the `/reverse` flow and saves frames → `static/tmp/rag.gif`
-- For visual inspection, open Chromium with `headless=False, slow_mo=300`
-- The `/tests` route displays recorded GIFs + live cache stats
+Two layers, both in `tests/` (NOT shipped to production Docker):
+
+### Unit tests — vitest (`bun test`)
+
+- `src/lib/training/cache.test.ts` — JSONL round-trip, atomic write
+- `src/lib/training/phash.test.ts` — DCT correctness, Hamming distance
+- `src/lib/training/image_diff.test.ts` — SSIM + Sobel edge diff
+- `src/lib/training/retrieval.test.ts` — RAG ranking on synthetic primitives
+- `src/lib/authoring/compose.test.ts` — currently has a pre-existing module resolution failure unrelated to the refactor
+
+### End-to-end — Playwright (`bun run test:e2e`)
+
+Config: `playwright.config.ts`. Spawns a fresh dev server on port 4445 (so it doesn't fight your manual `bun run dev` on 3333). Reports to `tests/results/playwright-report/`.
+
+- `tests/e2e/routes.spec.ts` — every active + archived route returns 200; removed top-level URLs (`/components`, `/reverse`, etc.) correctly 404
+- `tests/e2e/navbar.spec.ts` — navbar shows the 4 segments, lists canonical archived routes, highlights active route, click navigates correctly
+- `tests/e2e/archive-links.spec.ts` — no stale top-level links remain inside any archived page; intra-archive navigation (Tests↔Wells/Components, Author↔Library) all resolve
+
+**Run modes:**
+- `bun run test:e2e` — headless, ~15s, suitable for pre-commit
+- `bun run test:e2e:headed` — opens Chromium with `slowMo: 250` so you can watch
+- `bun run test:e2e:report` — open last HTML report
+
+When prompting the user about testing (per Rule 11), default the suggestion to **headless** unless they ask to watch the flow — visible mode is mostly for debugging a specific failure.
+
+### Legacy test scripts (pre-restructure, kept for reference)
+
+- `tests/test_rag_with_gif.py` — Python Playwright; drives `/reverse` (now `/archive/reverse`) and saves frames → `static/tmp/rag.gif`
+- `tests/visual_components_eval.mjs` — node script that walks the 18 primitives via the components viewer and screenshots each
+- `tests/test_*_smoke.py`, `tests/test_*_real.py` — Python smoke + real-world tests
+
+The `/archive/tests` route displays recorded WEBMs + live cache stats.
+
+## Methodology (shared patterns)
+
+These are reusable insights that apply to both CAD and Wells products. Capture them as documented patterns rather than shared code — implementations stay per-domain, but the architecture of each follows the same shape.
+
+### Dual-backend dispatch (API vs CLI)
+
+Every Claude-vision-driven endpoint should expose **two interchangeable backends** behind one request/response shape, selected at runtime via env var:
+
+- **API backend** — `@anthropic-ai/sdk` + `ANTHROPIC_API_KEY`. Per-token billed. Works in dev and Railway production.
+- **CLI backend** — spawns `claude --print --output-format json` subprocess. Bills against the user's Pro/Max OAuth subscription. Local-only (Railway has no `claude` binary). ~5–7× slower than API per call, but doesn't burn API tokens.
+
+Subscription billing only works through the CLI subprocess. The Agent SDK does NOT bill against Pro/Max OAuth despite docs/intuition.
+
+Implementation lives in `src/lib/shared/`:
+- `anthropic-api.ts` — SDK client factory + key-required check
+- `claude-cli.ts` — args builder, subprocess spawn, envelope parser
+- `temp-file.ts` — write input buffer, run callback, finally-unlink
+
+Domain backends (`src/lib/identify/backend.ts`, `src/lib/wells/backend.ts`) compose these primitives with their own prompts, content-block assembly, and (for identify) RAG retrieval.
+
+### Cold-classification baseline first, retrieval second
+
+Before investing in CLIP/RAG/embedding pipelines, run the **cold classification** test: just the catalog text + the target image, no retrieval, no few-shot, just Claude's vision. If accuracy is already 90%+ on the realistic input distribution, the retrieval scaffolding is not load-bearing and the engineering investment is misallocated.
+
+For the cadtrain CAD primitives this hit 17/18 (94.4%) on synthetic renders — see Open TODOs above. Always re-run this baseline before optimizing retrieval.
+
+### Cache grows with use (compounding loop)
+
+The training cache (`training_data/cache.jsonl`) is structured so every accepted user-validated identification appends a new record, which gets retrieved as a few-shot example for the next similar query. Quality compounds:
+
+- Month 1: 60% auto-approved
+- Month 6: 92% auto-approved (rules tightened from corrections)
+- Month 12: 98% auto-approved
+
+Atomic JSONL append (temp file + rename) keeps writes durable under concurrent load. Records carry `source: 'seed' | 'refined' | 'manual' | 'synthetic'` so provenance is queryable.
+
+### 5-layer validation (cheapest to most expensive)
+
+For any extraction pipeline (currently wells; planned for the new CAD work):
+
+1. **Schema** — Pydantic-equivalent (zod / hand-rolled). Auto-rejects malformed structure. ~30% of errors caught here.
+2. **Domain rules** — petroleum-engineering invariants (casings nest, depths monotonic, formation tops in stratigraphic order). ~50% of remaining errors caught.
+3. **Cross-document consistency** — same well's deviation survey vs cross section vs program text agree on TD, casing depths, formation depths.
+4. **Visual roundtrip** — render the extraction back as a synthetic drawing, SSIM-diff against the original. Catches subtle errors the rule-based layers miss.
+5. **Confidence-driven human review** — only review when score < 0.80 OR critical doc type OR new operator. ~10% of volume.
+
+Implementation lives per-product (wells: `src/lib/wells/schema.ts` `validateWson()`); the methodology is the shared part.
+
+### `cad/*` ↮ `wells/*` no cross-import
+
+`src/lib/cad/*` and `src/lib/wells/*` (when they exist) MUST NOT import from each other. Both may freely import from `src/lib/shared/*`. This keeps domain coupling explicit and lets either side eventually move to its own deploy without a refactor PR. Enforce in code review; consider an ESLint rule once both directories exist.
+
+### Test-after-change protocol
+
+Per Rule 11 — when route surface, navbar, or backend dispatch changes, run `bun run test:e2e` (or prompt the user to). Headless catches 95% of regressions in 15s; reach for `test:e2e:headed` only when debugging a specific failure visually.
 
 ## Deployment
 
