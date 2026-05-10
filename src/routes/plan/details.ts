@@ -84,4 +84,88 @@ export const details: Record<number, PlanDetail> = {
     summary: 'This page. Built 2026-05-09, mirrors the Gantt pattern from sister-repo SVTC.',
     refs: ['~/Desktop/GitHub/SVTC/src/routes/plan/+page.svelte'],
   },
+
+  // ───── F. Two-product split ─────
+
+  110: {
+    summary:
+      'Extract the API/CLI dispatch pattern that\'s currently duplicated across ' +
+      'src/lib/identify/backend.ts and src/lib/wells/backend.ts. Six small modules ' +
+      'in src/lib/shared/: mime-ext, anthropic-client, cli-subprocess, cli-output-parse, ' +
+      'temp-file, cli-args. Both existing backends refactored to call shared/. RAG and ' +
+      'domain prompts stay in their backend files. ~150 LOC saved.',
+    steps: [
+      'Create src/lib/shared/mime-ext.ts — guessImageExt(mime)',
+      'Create src/lib/shared/anthropic-client.ts — requireAnthropicKey() + createAnthropicClient()',
+      'Create src/lib/shared/cli-subprocess.ts — spawnClaudeCli(args, cleanupPaths)',
+      'Create src/lib/shared/cli-output-parse.ts — parseCliEnvelope(stdout, opts)',
+      'Create src/lib/shared/temp-file.ts — withTempFile(prefix, ext, buffer, fn)',
+      'Create src/lib/shared/cli-args.ts — buildClaudeCliArgs({ model, addDir, system, user })',
+      'Refactor identify/backend.ts to use shared/',
+      'Refactor wells/backend.ts to use shared/',
+      'Verify: bun run build, bun test, manual /reverse + /wells smoke test',
+    ],
+    acceptance: [
+      'bun run build clean',
+      'bun test passes (50+ tests)',
+      'Image upload at /reverse returns identification result',
+      'PDF upload at /wells returns valid WSON',
+      '~150 LOC removed from backend.ts files',
+    ],
+    refs: ['~/.claude/plans/silly-conjuring-deer.md'],
+  },
+
+  111: {
+    summary:
+      'Move all current user-facing routes under src/routes/archive/* so they remain ' +
+      'a reference but are unambiguously "old work." API routes stay at /api/* (no URL ' +
+      'change to avoid breaking archived pages). The src/lib/* tree stays put this PR — ' +
+      'reorganizing lib paths is a separate ~40-file rename PR.',
+    steps: [
+      '(training)/components → archive/(training)/components',
+      '(training)/reverse → archive/(training)/reverse',
+      '(training)/training → archive/(training)/training',
+      '(training)/tests → archive/(training)/tests (incl. tests/components, tests/wells)',
+      '(build)/author → archive/(build)/author',
+      '(build)/library → archive/(build)/library',
+      'tools/bottom-sub → archive/tools/bottom-sub',
+      'tools/ratch-latch → archive/tools/ratch-latch',
+      'wells → archive/wells',
+      'Update internal links in 6 page files (Tests, Author, Library back-/forward-links)',
+    ],
+    acceptance: [
+      'Every archived URL loads in dev server',
+      'Intra-archive nav works (Tests → Tests/Wells, Author → Library)',
+      '/api/identify and /api/wells/extract still respond from archive pages',
+      'Static assets (/training_data, /eval, /tests) still resolve',
+    ],
+    refs: ['~/.claude/plans/silly-conjuring-deer.md'],
+  },
+
+  112: {
+    summary:
+      'Replace the current 5-segment navbar (Training · Build · Tools · Wells · Meta) ' +
+      'with a 4-segment layout: CAD | Wells | Archive | Meta. CAD and Wells initially ' +
+      'point to empty stubs; Archive expands to all 9 archived routes; Meta stays.',
+    refs: ['~/.claude/plans/silly-conjuring-deer.md'],
+  },
+
+  113: {
+    summary:
+      'Create src/routes/cad/+page.svelte and src/routes/wells/+page.svelte as ' +
+      'placeholders explaining the new products are under construction. Rewrite ' +
+      'src/routes/+page.svelte as a clean two-product landing. Optionally add ' +
+      'src/routes/archive/+page.svelte as an index of legacy routes.',
+    refs: ['~/.claude/plans/silly-conjuring-deer.md'],
+  },
+
+  114: {
+    summary:
+      'Rewrite the Routes table in CLAUDE.md to reflect CAD / Wells / Archive / Meta ' +
+      'split. Add a Methodology (shared) section documenting: dual-backend dispatch ' +
+      'pattern (API vs CLI), cold-classification baseline finding, cache-grows-with-use ' +
+      'compounding loop, 5-layer validation hierarchy. Add lib/shared/ subsection with ' +
+      'the 6 new modules. Document the cad/wells no-cross-import rule.',
+    refs: ['~/.claude/plans/silly-conjuring-deer.md', 'CLAUDE.md'],
+  },
 };

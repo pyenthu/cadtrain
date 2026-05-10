@@ -99,6 +99,13 @@
     { id: 100, bundle: 'F', lane: 5, start:  0,   weeks: 0.2, priority: 'medium', status: 'done', title: '/plan Gantt route — this page' },
     { id: 101, bundle: 'F', lane: 5, start:  0.2, weeks: 0.1, priority: 'medium', status: 'done', title: 'Navbar: Wells + Meta segments added' },
     { id: 102, bundle: 'F', lane: 5, start:  0.4, weeks: 0.5, priority: 'low',    status: 'open', title: 'Per-task plan details — populate ./details.ts entries for in-flight items' },
+
+    // ───── F. Two-product split (CAD / Wells / Archive) ─────
+    { id: 110, bundle: 'F', lane: 5, start:  1,   weeks: 0.4, priority: 'high',   status: 'active', title: 'Phase 0 — Extract shared API/CLI infra (identify + wells backends → src/lib/shared/)' },
+    { id: 111, bundle: 'F', lane: 5, start:  1.4, weeks: 0.4, priority: 'high',   status: 'open',   title: 'Phase 1 — Move all current routes under /archive/* (preserve as reference, mark "old work")' },
+    { id: 112, bundle: 'F', lane: 5, start:  1.8, weeks: 0.1, priority: 'medium', status: 'open',   title: 'Phase 1.3 — Navbar rewrite: CAD | Wells | Archive | Meta segments' },
+    { id: 113, bundle: 'F', lane: 5, start:  1.9, weeks: 0.2, priority: 'medium', status: 'open',   title: 'Phase 2 — Empty /cad and /wells stubs + new two-product landing' },
+    { id: 114, bundle: 'F', lane: 5, start:  2.1, weeks: 0.2, priority: 'medium', status: 'open',   title: 'Phase 3 — Update CLAUDE.md (route table, methodology section, lib map for shared/)' },
   ];
 
   // Bundle-relative codes (A.1, B.3, …) computed from index within bundle.
