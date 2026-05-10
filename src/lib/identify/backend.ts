@@ -13,18 +13,26 @@
  *
  * Both functions return the same IdentifyResponse shape. The endpoint
  * picks at runtime via IDENTIFY_BACKEND=cli|api.
+ *
+ * CLI subprocess + temp-file + envelope parsing are factored into
+ * src/lib/shared/. This file owns the catalog text, RAG retrieval, and
+ * content-block assembly — the domain-specific bits.
  */
 
-import { spawn } from 'node:child_process';
-import { writeFile, unlink, mkdtemp } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import Anthropic from '@anthropic-ai/sdk';
 import { COMPONENTS } from '$components/library';
 import { env } from '$env/dynamic/private';
 import { getCache } from '$lib/training/cache';
 import { computePHash } from '$lib/training/phash';
 import { computeEmbedding } from '$lib/training/embed';
+import { createAnthropicClient } from '$lib/shared/anthropic-api';
+import { guessImageExt } from '$lib/shared/mime';
+import { withTempFile } from '$lib/shared/temp-file';
+import {
+  buildClaudeCliArgs,
+  spawnClaudeCli,
+  parseCliEnvelope,
+} from '$lib/shared/claude-cli';
+import { join } from 'node:path';
 
 const CACHE_PATH = join(process.cwd(), 'training_data', 'cache.jsonl');
 const TOP_K = 5;
@@ -67,9 +75,7 @@ Use the EXACT parameter keys from the component's param list.`;
 // ---------- API backend ----------
 
 export async function identifyViaApi(req: IdentifyRequest): Promise<IdentifyResponse> {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY not set (required for api backend)');
-  }
+  const client = createAnthropicClient();
   const base64 = req.imageBuffer.toString('base64');
   const mediaType = req.mime || 'image/png';
 
@@ -124,7 +130,6 @@ ${buildCatalogText()}`;
     text: OUTPUT_SPEC + `\n\nReference the most similar training example in your reasoning.`,
   });
 
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const t0 = Date.now();
   const response = await client.messages.create({
     model: DEFAULT_API_MODEL,
@@ -155,101 +160,51 @@ ${buildCatalogText()}`;
 // ---------- CLI backend (step 1: no RAG) ----------
 
 export async function identifyViaCli(req: IdentifyRequest): Promise<IdentifyResponse> {
-  const dir = await mkdtemp(join(tmpdir(), 'cadtrain-identify-'));
   const ext = guessImageExt(req.mime);
-  const filePath = join(dir, `target${ext}`);
-  await writeFile(filePath, req.imageBuffer);
 
-  const systemPrompt = `You are a downhole tool component identifier. The user will give you the path to an image of an industrial component. Identify which of the 18 catalog primitives below it is, and estimate its parameters.
+  return withTempFile('cadtrain-identify-', ext, req.imageBuffer, async ({ filePath, dir }) => {
+    const systemPrompt = `You are a downhole tool component identifier. The user will give you the path to an image of an industrial component. Identify which of the 18 catalog primitives below it is, and estimate its parameters.
 
 COMPONENT CATALOG (18 types):
 ${buildCatalogText()}
 
 ${OUTPUT_SPEC}`;
 
-  const userPrompt =
-    `Read the image at this path: ${filePath}\n\n` +
-    `Identify which catalog primitive it is and estimate its parameters. Return ONLY the JSON.`;
+    const userPrompt =
+      `Read the image at this path: ${filePath}\n\n` +
+      `Identify which catalog primitive it is and estimate its parameters. Return ONLY the JSON.`;
 
-  const args = [
-    '--print',
-    '--output-format', 'json',
-    '--model', DEFAULT_CLI_MODEL,
-    '--add-dir', dir,
-    '--no-session-persistence',
-    '--permission-mode', 'bypassPermissions',
-    '--append-system-prompt', systemPrompt,
-    userPrompt,
-  ];
-
-  const t0 = Date.now();
-  const proc = spawn('claude', args, {
-    timeout: 5 * 60_000,
-    env: { ...process.env, NO_COLOR: '1' },
-  });
-
-  let stdout = '';
-  let stderr = '';
-  proc.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
-  proc.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
-
-  let exitCode: number;
-  try {
-    exitCode = await new Promise<number>((resolve, reject) => {
-      proc.on('exit', (code) => resolve(code ?? -1));
-      proc.on('error', reject);
+    const args = buildClaudeCliArgs({
+      model: DEFAULT_CLI_MODEL,
+      addDir: dir,
+      systemPrompt,
+      userPrompt,
     });
-  } finally {
-    await unlink(filePath).catch(() => {});
-  }
 
-  if (exitCode !== 0) {
-    throw new Error(
-      `claude CLI exited with code ${exitCode}. stderr: ${stderr.slice(0, 500)}`,
-    );
-  }
+    const t0 = Date.now();
+    const { stdout, stderr, exitCode } = await spawnClaudeCli(args);
 
-  let envelope: { result?: string; subtype?: string } = {};
-  try {
-    envelope = JSON.parse(stdout);
-  } catch (e) {
-    throw new Error(
-      `claude CLI returned non-JSON envelope: ${(e as Error).message}. raw: ${stdout.slice(0, 300)}`,
-    );
-  }
-  let raw = (envelope.result ?? '').trim();
-  if (!raw) {
-    throw new Error(`claude CLI returned empty result. envelope: ${JSON.stringify(envelope).slice(0, 300)}`);
-  }
-  // Strip code fences if model still wrapped despite our ask.
-  if (raw.includes('```')) {
-    const start = raw.indexOf('```');
-    const end = raw.lastIndexOf('```');
-    if (end > start) {
-      let body = raw.slice(start + 3, end).trim();
-      if (body.startsWith('json')) body = body.slice(4).trim();
-      raw = body;
+    if (exitCode !== 0) {
+      throw new Error(
+        `claude CLI exited with code ${exitCode}. stderr: ${stderr.slice(0, 500)}`,
+      );
     }
-  }
 
-  let result: any;
-  try {
-    result = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`identifyViaCli: model returned non-JSON: ${(e as Error).message}. raw: ${raw.slice(0, 300)}`);
-  }
+    const raw = parseCliEnvelope(stdout, { stripCodeFences: true });
 
-  return {
-    result,
-    modelUsed: `claude-cli (${DEFAULT_CLI_MODEL})`,
-    durationMs: Date.now() - t0,
-  };
-}
+    let result: any;
+    try {
+      result = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(
+        `identifyViaCli: model returned non-JSON: ${(e as Error).message}. raw: ${raw.slice(0, 300)}`,
+      );
+    }
 
-function guessImageExt(mime: string): string {
-  if (mime === 'image/png') return '.png';
-  if (mime === 'image/jpeg') return '.jpg';
-  if (mime === 'image/gif') return '.gif';
-  if (mime === 'image/webp') return '.webp';
-  return '.bin';
+    return {
+      result,
+      modelUsed: `claude-cli (${DEFAULT_CLI_MODEL})`,
+      durationMs: Date.now() - t0,
+    };
+  });
 }
