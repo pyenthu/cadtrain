@@ -12,6 +12,7 @@ WORKDIR /app
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/training_data/cache.jsonl ./training_data/cache.jsonl
+COPY --from=builder /app/training_data/authored_cache.jsonl ./training_data/authored_cache.jsonl
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
