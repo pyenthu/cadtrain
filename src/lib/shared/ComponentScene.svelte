@@ -28,9 +28,29 @@
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
   const DEFAULT_ZOOM = 130;
 
+  // Auto-fit zoom: when no override given, derive it from the geometry's
+  // bounding box so multi-part assemblies (packers, sliding sleeves — 6"+
+  // tall) don't overflow the viewport at the single-primitive default zoom.
+  // Heuristic: zoom = ~600 / max(extent), capped to the single-primitive
+  // default at the upper end.
+  function autoZoomFromGeo(g: any, fallback: number): number {
+    if (!g?.cutVC && !g?.full) return fallback;
+    const mesh = g.cutVC ?? g.full;
+    if (!mesh.boundingBox) mesh.computeBoundingBox?.();
+    const bb = mesh.boundingBox;
+    if (!bb) return fallback;
+    const sx = bb.max.x - bb.min.x;
+    const sy = bb.max.y - bb.min.y;
+    const sz = bb.max.z - bb.min.z;
+    const maxExtent = Math.max(sx, sy, sz);
+    if (!isFinite(maxExtent) || maxExtent <= 0) return fallback;
+    const fitted = 600 / maxExtent;
+    return Math.min(fitted, fallback);
+  }
+
   let cameraPosition = $derived(cameraOverride?.position ?? DEFAULT_POSITION);
   let cameraUp = $derived(cameraOverride?.up ?? DEFAULT_UP);
-  let cameraZoom = $derived(cameraOverride?.zoom ?? DEFAULT_ZOOM);
+  let cameraZoom = $derived(cameraOverride?.zoom ?? autoZoomFromGeo(geo, DEFAULT_ZOOM));
 </script>
 
 <T.OrthographicCamera makeDefault position={cameraPosition} zoom={cameraZoom} up={cameraUp}>

@@ -8,15 +8,33 @@ import * as THREE from 'three';
 let wasm: any = null;
 let M: any = null;
 
+// Default segment count for the components-viewer (single primitive at a time —
+// can afford 256 for crisp rendering). Reduced for compose.ts which builds
+// multi-part assemblies (10+ cylinders × CSG union → mobile WebKit OOMs at 256).
+//
+// CIRCULAR_SEGMENTS_DEFAULT — used when nothing overrides
+// CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via setCircularSegmentMode
+// Touching the value affects every M.cylinder call until reset, so callers MUST
+// reset on completion (see compose.ts try/finally).
+export const CIRCULAR_SEGMENTS_DEFAULT = 192;
+export const CIRCULAR_SEGMENTS_COMPOSE = 64;
+
+let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
+
+export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
+  currentSegments = mode === 'compose' ? CIRCULAR_SEGMENTS_COMPOSE : CIRCULAR_SEGMENTS_DEFAULT;
+  if (wasm) wasm.setCircularSegments(currentSegments);
+}
+
 export async function initManifold() {
   if (wasm) return;
   wasm = await Module();
   wasm.setup();
   M = wasm.Manifold;
-  wasm.setCircularSegments(256);
+  wasm.setCircularSegments(currentSegments);
 }
 
-function cyl(h: number, r1: number, r2?: number) { return M.cylinder(h, r1, r2 ?? r1, 256); }
+function cyl(h: number, r1: number, r2?: number) { return M.cylinder(h, r1, r2 ?? r1, currentSegments); }
 function tube(outerR: number, innerR: number, h: number) { return cyl(h, outerR).subtract(cyl(h + 0.02, innerR)); }
 function mv(m: any, v: [number, number, number]) { return m.translate(v); }
 function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
