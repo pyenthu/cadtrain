@@ -52,9 +52,11 @@ for (const route of TOP_LEVEL) {
       // Home is the SVTC-style nav menu — no <h1>, just the .menu-header
       // ('CAD Train') + the route list.
       await expect(page.locator('.menu-header')).toContainText(route.heading);
-    } else if (route.path === '/author') {
-      // Author is an editor — no <h1>, the title lives in .vp-header.
-      await expect(page.locator('.vp-header').first()).toBeVisible();
+    } else if (route.path === '/author' || route.path === '/library') {
+      // Both routes point at the same unified workbench (/library is a thin
+      // client-side redirect to /author). No <h1>; the title lives in
+      // .vp-header. After redirect we may be on /author URL.
+      await expect(page.locator('.vp-header').first()).toBeVisible({ timeout: 10_000 });
     } else {
       await expect(page.locator('h1').first()).toContainText(route.heading);
     }

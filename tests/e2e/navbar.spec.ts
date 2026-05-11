@@ -36,8 +36,10 @@ test('navbar Tests link points to /archive/tests', async ({ page }) => {
 });
 
 test('navbar highlights the active route', async ({ page }) => {
+  // /library redirects to /author — Author becomes the active highlight.
   await page.goto('/library');
-  await expect(page.locator('nav.navbar a.nav-item.active[href="/library"]')).toBeVisible();
+  await page.waitForURL(/\/author/, { timeout: 10_000 });
+  await expect(page.locator('nav.navbar a.nav-item.active[href="/author"]')).toBeVisible();
 
   await page.goto('/author');
   await expect(page.locator('nav.navbar a.nav-item.active[href="/author"]')).toBeVisible();

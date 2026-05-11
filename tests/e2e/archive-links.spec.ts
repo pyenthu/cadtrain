@@ -67,12 +67,10 @@ test('archived Tests page links to /archive/tests/wells and /archive/tests/compo
   await expect(page.locator('main.content a[href="/archive/tests/components"]')).toBeVisible();
 });
 
-test('Library back-link points at /author', async ({ page }) => {
+test('/library redirects to /author', async ({ page }) => {
+  // /library is now a client-side redirect to /author since the workbench
+  // unified both routes. The redirect preserves any ?id= query string.
   await page.goto('/library');
-  await expect(page.locator('main.content a[href="/author"]').first()).toBeVisible();
-});
-
-test('Author forward-link points at /library', async ({ page }) => {
-  await page.goto('/author');
-  await expect(page.locator('main.content a[href="/library"]').first()).toBeVisible();
+  await page.waitForURL(/\/author/, { timeout: 10_000 });
+  await expect(page).toHaveURL(/\/author/);
 });
