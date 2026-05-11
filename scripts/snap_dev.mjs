@@ -1,0 +1,21 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const ctx = await b.newContext({ viewport: { width: 414, height: 896 } });
+const page = await ctx.newPage();
+const errs = [];
+const logs = [];
+page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
+page.on('console', m => {
+  const t = m.type();
+  const text = m.text();
+  if (t === 'error' || t === 'warning') errs.push(`${t.toUpperCase()}: ${text}`);
+  else logs.push(`${t}: ${text}`);
+});
+const url = process.argv[2] || 'http://localhost:3333/';
+await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => errs.push('GOTO: ' + e.message));
+await page.waitForTimeout(parseInt(process.argv[3] || '8000', 10));
+await page.screenshot({ path: '/tmp/cadtrain-snap.png', fullPage: true });
+console.log('URL:', url);
+console.log('Errors/warnings:', errs.length ? '\n  ' + errs.join('\n  ') : '(none)');
+console.log('Logs (last 15):', logs.length ? '\n  ' + logs.slice(-15).join('\n  ') : '(none)');
+await b.close();

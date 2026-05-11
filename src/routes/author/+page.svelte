@@ -6,6 +6,7 @@
   import { buildAuthored } from '$lib/authoring/compose';
   import { emptyAuthoredComponent, type AuthoredComponent, type AuthoredPart, type AuthoredOp, type AuthoringStep, type CsgOpKind } from '$lib/authoring/schema';
   import { setSpec } from '$lib/authoring/tools';
+  import { onMount } from 'svelte';
 
   function createRenderer(canvas: HTMLCanvasElement) {
     return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -47,7 +48,13 @@
   }
 
   let SceneComponent = $state<any>(null);
-  $effect(() => {
+
+  // One-time mount work in onMount, NOT $effect. Was previously inside an
+  // $effect that read `spec` (via setSpec(spec, ...)) AND wrote `spec = rec`
+  // after the URL-id fetch resolved → effect re-ran on every spec write →
+  // re-fetched → infinite loop (293k requests in 8 seconds blanked the page).
+  // onMount runs once after mount; spec writes can't retrigger it.
+  onMount(() => {
     import('$lib/shared/ComponentScene.svelte').then(m => { SceneComponent = m.default; });
     import('$lib/authoring/ChatPanel.svelte').then(m => { ChatPanel = m.default; });
     initManifold().then(() => { ready = true; });
@@ -61,15 +68,13 @@
     });
 
     // Load an existing authored component from /api/author/list?id=...
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      const id = url.searchParams.get('id');
-      if (id) {
-        fetch(`/api/author/list?id=${encodeURIComponent(id)}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((rec) => { if (rec) spec = rec as AuthoredComponent; })
-          .catch((e) => { saveError = `load failed: ${e?.message ?? e}`; });
-      }
+    const url = new URL(window.location.href);
+    const id = url.searchParams.get('id');
+    if (id) {
+      fetch(`/api/author/list?id=${encodeURIComponent(id)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((rec) => { if (rec) spec = rec as AuthoredComponent; })
+        .catch((e) => { saveError = `load failed: ${e?.message ?? e}`; });
     }
   });
 
