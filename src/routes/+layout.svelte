@@ -8,13 +8,22 @@
   // at the bottom as "everything else". `label: null` suppresses the
   // section header so the unlabeled group still groups visually (spacing
   // + divider) without an "OTHER" label.
+  // Author at the very top (most-used surface, no section header). The
+  // Library section is the reference / browse-only data (primitives,
+  // families, KB) — none of those edit anything. Wells is its own
+  // vertical. Meta is project-management surface (Plan, Tests, Archive).
   const navSections = [
     {
-      label: 'Components',
+      label: null,
+      items: [
+        { href: '/author', label: 'Author' },
+      ],
+    },
+    {
+      label: 'Library',
       items: [
         { href: '/primitives', label: 'Primitives' },
         { href: '/families',   label: 'Families' },
-        { href: '/author',     label: 'Author' },
         { href: '/kb',         label: 'KB' },
       ],
     },
@@ -25,7 +34,7 @@
       ],
     },
     {
-      label: null,
+      label: 'Meta',
       items: [
         { href: '/archive/tests', label: 'Tests' },
         { href: '/plan',          label: 'Plan' },

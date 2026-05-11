@@ -81,7 +81,7 @@
         <p class="desc">{arch.description}</p>
         <div class="fam-grid">
           {#each arch.families as f (f.family_id)}
-            <div class="fam">
+            <a class="fam" href="/author?family={f.family_id}">
               <div class="fam-hdr">
                 <span class="fam-name">{f.family_name}</span>
                 <span class="fam-count" class:zero={f.row_count === 0}>{f.row_count}</span>
@@ -91,7 +91,7 @@
               {#if f.kb_connection_names?.length}
                 <div class="fam-conns">{f.kb_connection_names.join(' · ')}</div>
               {/if}
-            </div>
+            </a>
           {/each}
         </div>
       </section>
@@ -129,7 +129,12 @@
   .meta { font: 10px monospace; color: #888; }
   .desc { font: 11px Arial; color: #555; line-height: 1.55; margin: 0 0 12px; max-width: 780px; }
   .fam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
-  .fam { background: #fff; border: 1px solid #e8e8e8; border-radius: 4px; padding: 8px 10px; }
+  .fam {
+    display: block; text-decoration: none; color: inherit;
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 4px; padding: 8px 10px;
+    transition: border-color 100ms, transform 100ms;
+  }
+  .fam:hover { border-color: #cc2222; transform: translateY(-1px); }
   .fam-hdr { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
   .fam-name { font: bold 12px Arial; color: #222; }
   .fam-count { font: bold 11px monospace; color: #cc2222; }

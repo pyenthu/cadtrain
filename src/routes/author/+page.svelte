@@ -103,82 +103,10 @@
   // anchors to the viewport's top-left, not the projected 3D origin.
   let SceneControls = $state<any>(null);
 
-  // Library-tab state: KB → family coverage analysis. The KB has 56 distinct
-  // connection names; pipe/families.ts groups them into ~18 families across
-  // 4 archetypes. This view shows the archetype/family tree with per-family
-  // KB-row counts + a separate bucket for unmapped names (long tail TODO).
-  import { ARCHETYPES, type Archetype } from '$lib/components/pipe/archetypes';
-  import { FAMILIES, familyByConnection, familiesByArchetype } from '$lib/components/pipe/families';
-
-  interface ConnCount { name: string; count: number; }
-  interface FamilyStat { family_id: string; family_name: string; archetype: Archetype; row_count: number; }
-  interface ArchetypeStat { id: Archetype; name: string; total_rows: number; families: FamilyStat[]; }
-  let kbStats = $state<{
-    totalRows: number;
-    distinctConnections: number;
-    archetypes: ArchetypeStat[];
-    unmapped: ConnCount[];
-  }>({ totalRows: 0, distinctConnections: 0, archetypes: [], unmapped: [] });
-  let kbLoaded = $state(false);
-  let kbLoading = $state(false);
-  let kbError = $state<string | null>(null);
-
-  async function loadKbStats() {
-    if (kbLoaded || kbLoading) return;
-    kbLoading = true; kbError = null;
-    try {
-      const r = await fetch('/kb/api/casing-tubing-data.json', { cache: 'no-cache' });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const data = await r.json();
-      const counts = new Map<string, number>();
-      for (const row of data.rows) {
-        const c = row.connection ?? '(unknown)';
-        counts.set(c, (counts.get(c) ?? 0) + 1);
-      }
-
-      // Bucket each connection-name's row count into its family (or
-      // 'unmapped' if no family claims it yet). Then aggregate to archetype.
-      const familyTotals = new Map<string, number>();
-      const unmapped: ConnCount[] = [];
-      for (const [connName, count] of counts) {
-        const fam = familyByConnection(connName);
-        if (fam) familyTotals.set(fam.id, (familyTotals.get(fam.id) ?? 0) + count);
-        else unmapped.push({ name: connName, count });
-      }
-
-      const byArch = familiesByArchetype();
-      const archetypes: ArchetypeStat[] = Object.values(ARCHETYPES).map((arch) => {
-        const fams = (byArch[arch.id] ?? []).map((f) => ({
-          family_id: f.id,
-          family_name: f.name,
-          archetype: arch.id,
-          row_count: familyTotals.get(f.id) ?? 0,
-        }));
-        return {
-          id: arch.id,
-          name: arch.name,
-          total_rows: fams.reduce((s, x) => s + x.row_count, 0),
-          families: fams.sort((a, b) => b.row_count - a.row_count),
-        };
-      }).sort((a, b) => b.total_rows - a.total_rows);
-
-      kbStats = {
-        totalRows: data.rows.length,
-        distinctConnections: counts.size,
-        archetypes,
-        unmapped: unmapped.sort((a, b) => b.count - a.count),
-      };
-      kbLoaded = true;
-    } catch (e: any) {
-      kbError = e?.message ?? String(e);
-    } finally {
-      kbLoading = false;
-    }
-  }
-
-  $effect(() => {
-    if (activeTab === 'library' && !kbLoaded) loadKbStats();
-  });
+  // Pipe-family / archetype browsing now lives at /families. /author is a
+  // pure editor — parts/ops + metadata. ?prim=<id> or ?family=<id> query
+  // params seed a new component for fast browse → build flow.
+  import { pipeJointTemplate } from '$lib/components/pipe/design_space';
 
   // One-time mount work in onMount, NOT $effect. Was previously inside an
   // $effect that read `spec` (via setSpec(spec, ...)) AND wrote `spec = rec`
@@ -202,14 +130,47 @@
     // Load the library list for the left panel.
     loadLibrary();
 
-    // Load an existing authored component from /api/author/list?id=...
+    // Query-param-driven loading. Priority: ?id wins (load existing
+    // authored component) > ?family (seed 3-part pipeJointTemplate) >
+    // ?prim (seed a new component with one part of that primitive).
     const url = new URL(window.location.href);
     const id = url.searchParams.get('id');
+    const family = url.searchParams.get('family');
+    const prim = url.searchParams.get('prim');
+
     if (id) {
       fetch(`/api/author/list?id=${encodeURIComponent(id)}`)
         .then((r) => r.ok ? r.json() : null)
         .then((rec) => { if (rec) spec = rec as AuthoredComponent; })
         .catch((e) => { saveError = `load failed: ${e?.message ?? e}`; });
+    } else if (family) {
+      // ?family=<id> from /families → seed a pipe-joint template (body +
+      // top box + bot pin of that family) so the user lands in /author
+      // with a 3-part assembly already in place.
+      try {
+        const tmpl = pipeJointTemplate(family);
+        spec = {
+          ...emptyAuthoredComponent(),
+          name: `New ${family} pipe joint`,
+          parts: tmpl.parts,
+          design_space: tmpl.design_space,
+        };
+      } catch (e: any) {
+        saveError = `family seed failed: ${e?.message ?? e}`;
+      }
+    } else if (prim) {
+      // ?prim=<id> from /primitives → seed a new component containing one
+      // part of that primitive at its default params.
+      const def = COMPONENTS.find((c) => c.id === prim);
+      if (def) {
+        spec = {
+          ...emptyAuthoredComponent(),
+          name: `New ${def.name}`,
+          parts: [{ id: 'p0', prim: def.id, params: structuredClone(def.defaults) }],
+        };
+      } else {
+        saveError = `unknown primitive: "${prim}"`;
+      }
     }
   });
 
@@ -421,68 +382,12 @@
       <span class="caret">{showEdit ? '▸' : '◂'}</span>
     </button>
     {#if showEdit}
-      <!-- Single "Components" header replaces the prior 3-tab bar
-           (Parameters / Metadata / Library). All three sections are now
-           stacked in one scrollable column so methodology-design and
-           per-instance editing live side by side. -->
       <div class="single-header">Components</div>
 
-      <!-- 1. Methodology surface — pipe-domain OOP hierarchy. -->
-      <div class="lib-tab">
-        <div class="sec">
-          <div class="sec-h">Pipe archetypes <span class="muted">{Object.keys(ARCHETYPES).length} abstract · {FAMILIES.length} families</span></div>
-          <div class="sec-sub">Every pipe joint is body + top(box) + bot(pin). One primitive per archetype, families share geometry, KB rows pick instance dimensions.</div>
-        </div>
-
-        {#if kbLoading}
-          <div class="empty">Loading KB…</div>
-        {:else if kbError}
-          <div class="empty err-text">{kbError}</div>
-        {:else if !kbLoaded}
-          <div class="empty">—</div>
-        {:else}
-          {#each kbStats.archetypes as arch (arch.id)}
-            <div class="sec arch-sec">
-              <div class="arch-h">
-                <span class="arch-name">{arch.name}</span>
-                <span class="arch-meta">{arch.total_rows} rows · {arch.families.length} families</span>
-              </div>
-              {#each arch.families as f (f.family_id)}
-                <div class="fam-row">
-                  <span class="fam-count" class:zero={f.row_count === 0}>{f.row_count}</span>
-                  <span class="fam-name">{f.family_name}</span>
-                  <span class="fam-id">{f.family_id}</span>
-                </div>
-              {/each}
-            </div>
-          {/each}
-
-          {#if kbStats.unmapped.length > 0}
-            <div class="sec unmapped-sec">
-              <div class="sec-h">Unmapped <span class="muted">{kbStats.unmapped.reduce((s, x) => s + x.count, 0)} rows · {kbStats.unmapped.length} names</span></div>
-              <div class="sec-sub">KB connection strings not yet assigned to a family. Add to FAMILIES in src/lib/components/pipe/families.ts when ready.</div>
-              {#each kbStats.unmapped.slice(0, 15) as u (u.name)}
-                <div class="conn-row">
-                  <span class="conn-count">{u.count}</span>
-                  <span class="conn-name">{u.name || '(empty)'}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        {/if}
-
-        <div class="sec methodology-note">
-          <div class="sec-h">Status</div>
-          <div class="empty">
-            Phase A (scaffolding) done — types, taxonomy, DesignSpace template
-            in place. Phase B: fill <code>premium_integral</code> primitive with
-            NEW VAM as the calibration target, then template the other 3
-            archetypes from that pattern.
-          </div>
-        </div>
-      </div>
-      <!-- 2. Parts & ops editor (per-instance design). -->
-      <div class="sec sec-divider">
+      <!-- Parts & ops editor — the per-instance design. Methodology surface
+           (archetypes / families coverage) moved to /families. Primitive
+           browsing moved to /primitives. -->
+      <div class="sec">
         <div class="sec-h">Parts <button class="add" onclick={addPart}>+</button></div>
         {#if spec.parts.length === 0}
           <div class="empty">No parts — click + to add a primitive.</div>
@@ -682,35 +587,7 @@
     font: bold 9px Arial; margin-left: 4px;
   }
 
-  /* Library tab — methodology surface for the pipe OOP hierarchy. Renders
-     the archetype/family tree with KB coverage; unmapped KB connections
-     surface as a separate bucket so gaps are visible. */
-  .lib-tab { display: flex; flex-direction: column; gap: 12px; }
-  .lib-tab .sec { margin: 0; }
-  .lib-tab .sec-sub { font: 10px Arial; color: #888; margin: 4px 0 8px; line-height: 1.4; }
-  .lib-tab .muted { color: #aaa; font: 10px Arial; font-weight: normal; margin-left: 4px; }
-  .lib-tab .err-text { color: #cc2222; }
-  .lib-tab .arch-sec {
-    background: #fafafa; border: 1px solid #ececec; border-radius: 4px;
-    padding: 6px 8px;
-  }
-  .lib-tab .arch-h {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #eee;
-  }
-  .lib-tab .arch-name { font: bold 11px Arial; color: #cc2222; text-transform: uppercase; letter-spacing: 0.4px; }
-  .lib-tab .arch-meta { font: 9px monospace; color: #888; }
-  .lib-tab .fam-row { display: flex; gap: 8px; padding: 2px 0; align-items: baseline; font: 11px Arial; }
-  .lib-tab .fam-count { font: bold 11px monospace; color: #cc2222; min-width: 28px; text-align: right; }
-  .lib-tab .fam-count.zero { color: #ccc; }
-  .lib-tab .fam-name { color: #333; flex: 1; }
-  .lib-tab .fam-id { font: 9px monospace; color: #aaa; }
-  .lib-tab .unmapped-sec { background: #fff8e6; border: 1px solid #f0e0a0; border-radius: 4px; padding: 6px 8px; }
-  .lib-tab .conn-row { display: flex; gap: 8px; padding: 2px 0; align-items: baseline; }
-  .lib-tab .conn-count { font: bold 11px monospace; color: #cc7722; min-width: 28px; text-align: right; }
-  .lib-tab .conn-name { font: 11px Arial; color: #333; }
-  .lib-tab .methodology-note .empty { font: 11px Arial; color: #555; line-height: 1.5; padding: 0; }
-  .lib-tab code { font: 10px monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 2px; color: #cc2222; }
+  /* (Family-taxonomy panel moved to /families; styles removed.) */
 
   /* Collapse toggle. Header bar stays clickable; body hidden when collapsed.
      Collapsed sidebar/meta shrink to a thin sliver with a vertical-text title
