@@ -17,6 +17,12 @@ export interface ComponentDef {
   tags: string[];       // alternate names / roles this shape can play
   params: Record<string, ParamDef>;
   defaults: Record<string, number>;
+  /** Optional parent primitive id. When set, this entry is a SPECIALIZATION
+   *  of the parent — same builder geometry, but with the parameter ranges
+   *  narrowed / fixed to match a specific industry spec. Rendered as an
+   *  indented child of the parent in the sidebar. Example: thread_eue
+   *  inherits from threaded_box with API EUE-specific dimensions. */
+  parent?: string;
 }
 
 export interface ParamDef {
@@ -30,8 +36,17 @@ export interface ParamDef {
 // ═══════════════════════════════════════════════
 // COMPONENT DEFINITIONS
 // ═══════════════════════════════════════════════
+// COMPONENTS is the final exported list. It's built in two steps:
+//   1. BASE_COMPONENTS — hand-authored entries (true primitives + a few
+//      special-case derivations that don't fit the variant generator).
+//   2. Generated variations — driven by VARIATION_SPECS, expanded via
+//      deriveVariation(parent, spec). Each generated entry inherits the
+//      parent's param schema + builder geometry and overrides only the
+//      pieces that distinguish the variant (defaults, optional param
+//      ranges, names, tags). Builder dispatch walks the `parent` chain
+//      so no new builder function is needed per variant.
 
-export const COMPONENTS: ComponentDef[] = [
+const BASE_COMPONENTS: ComponentDef[] = [
   // --- CYLINDERS ---
   {
     id: "hollow_cylinder",
@@ -49,9 +64,9 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "threaded_box",
     name: "Threaded Box (Female)",
-    category: "connection",
-    description: "Internal threads — receives a pin end",
-    tags: ["box end", "female connection", "receiver", "coupling box"],
+    category: "basic",
+    description: "Internal threads — receives a pin end. Generic primitive; specific connection forms (EUE, LTC, REG, NEW VAM…) compose this with a body and per-spec thread profile.",
+    tags: ["box connection", "box end", "female connection", "receiver", "coupling box", "generic_end", "connection", "thread"],
     params: {
       od: { label: "OD", min: 0.5, max: 6, step: 0.1 },
       wall: { label: "Wall", min: 0.1, max: 1, step: 0.05 },
@@ -64,9 +79,9 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "threaded_pin",
     name: "Threaded Pin (Male)",
-    category: "connection",
-    description: "External threads — inserts into a box end",
-    tags: ["pin end", "male connection", "connector pin", "thread nose"],
+    category: "basic",
+    description: "External threads — inserts into a box end. Generic primitive; specific connection forms (EUE, LTC, REG, NEW VAM…) compose this with a body and per-spec thread profile.",
+    tags: ["pin connection", "pin end", "male connection", "connector pin", "thread nose", "generic_end", "connection", "thread"],
     params: {
       od: { label: "OD", min: 0.5, max: 6, step: 0.1 },
       wall: { label: "Wall", min: 0.1, max: 1, step: 0.05 },
@@ -77,25 +92,6 @@ export const COMPONENTS: ComponentDef[] = [
     defaults: { od: 2.5, wall: 0.3, length: 2.0, threadCount: 10, threadDepth: 0.06 },
   },
 
-  {
-    id: "thread_reg",
-    name: "REG (Regular)",
-    category: "connection",
-    description: "Regular API thread — tapered pin with visible threads, shoulder landing",
-    tags: ["API regular", "REG", "rotary shoulder", "tool joint"],
-    params: {
-      bodyOD: { label: "Body OD", min: 1, max: 6, step: 0.1 },
-      pinOD: { label: "Pin OD", min: 0.5, max: 4, step: 0.1 },
-      pinTaper: { label: "Pin Taper", min: 0.02, max: 0.15, step: 0.01 },
-      wall: { label: "Wall", min: 0.1, max: 1, step: 0.05 },
-      bodyLength: { label: "Body Length", min: 1, max: 8, step: 0.1 },
-      pinLength: { label: "Pin Length", min: 0.5, max: 4, step: 0.1 },
-      threadCount: { label: "Threads", min: 4, max: 20, step: 1 },
-      threadDepth: { label: "Thread Depth", min: 0.02, max: 0.12, step: 0.01 },
-      shoulderWidth: { label: "Shoulder Width", min: 0.1, max: 0.5, step: 0.05 },
-    },
-    defaults: { bodyOD: 3.5, pinOD: 2.2, pinTaper: 0.06, wall: 0.35, bodyLength: 3.0, pinLength: 2.0, threadCount: 12, threadDepth: 0.06, shoulderWidth: 0.25 },
-  },
   {
     id: "thread_if",
     name: "IF (Internal Flush)",
@@ -152,9 +148,10 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "thread_eue",
     name: "EUE (External Upset End)",
-    category: "connection",
-    description: "Tubing connection — upset end thicker than body for thread strength",
+    category: "basic",
+    description: "Tubing connection — upset end thicker than body for thread strength. Specialization of threaded_box with API EUE-specific dimensions.",
     tags: ["EUE", "external upset", "tubing connection", "API tubing"],
+    parent: "threaded_box",
     params: {
       bodyOD: { label: "Body OD", min: 1, max: 5, step: 0.1 },
       upsetOD: { label: "Upset OD", min: 1.5, max: 6, step: 0.1 },
@@ -189,9 +186,9 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "taper",
     name: "Taper (Cone)",
-    category: "transition",
-    description: "Smooth diameter transition between two sections",
-    tags: ["cone", "swage", "reducer", "expander", "transition"],
+    category: "basic",
+    description: "Smooth diameter transition between two sections. Doubles as setting/release cones in packer assemblies — same geometry, different role.",
+    tags: ["cone", "swage", "reducer", "expander", "transition", "setting cone", "hold-down cone", "release cone", "wedge"],
     params: {
       odTop: { label: "OD Top", min: 0.5, max: 6, step: 0.1 },
       odBottom: { label: "OD Bottom", min: 0.5, max: 6, step: 0.1 },
@@ -221,7 +218,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "slotted_cylinder",
     name: "Slotted Cylinder",
-    category: "feature",
+    category: "basic",
     description: "Tube with longitudinal or circumferential slots",
     tags: ["collet", "drag spring", "port sub", "flow port", "vent sub"],
     params: {
@@ -237,7 +234,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "seal_bore",
     name: "Seal Bore (Polished)",
-    category: "feature",
+    category: "basic",
     description: "Smooth internal bore with seal grooves",
     tags: ["PBR", "polished bore receptacle", "seal assembly", "sealbore extension"],
     params: {
@@ -253,7 +250,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "grooved_cylinder",
     name: "Grooved Cylinder",
-    category: "feature",
+    category: "basic",
     description: "External circumferential grooves (for seals, snap rings)",
     tags: ["snap ring groove", "lock ring", "seal groove", "profile nipple", "landing nipple"],
     params: {
@@ -270,7 +267,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     id: "slips",
     name: "Slip Assembly",
-    category: "mechanical",
+    category: "basic",
     description: "Segmented gripping ring with sawtooth profile",
     tags: ["slip", "grip", "anchor", "hold-down", "drag block"],
     params: {
@@ -286,23 +283,9 @@ export const COMPONENTS: ComponentDef[] = [
     defaults: { slipOD: 2.8, bodyOD: 2.0, height: 2.0, numSectors: 4, numGrooves: 12, grooveDepth: 0.08, gapWidth: 0.1, smoothBand: 0.1 },
   },
   {
-    id: "cone",
-    name: "Setting Cone",
-    category: "mechanical",
-    description: "Tapered cone that drives slips outward",
-    tags: ["setting cone", "hold-down cone", "release cone", "wedge"],
-    params: {
-      odTop: { label: "OD Top", min: 0.5, max: 4, step: 0.1 },
-      odBottom: { label: "OD Bottom", min: 1, max: 6, step: 0.1 },
-      wall: { label: "Wall", min: 0.1, max: 1, step: 0.05 },
-      length: { label: "Length", min: 0.3, max: 3, step: 0.1 },
-    },
-    defaults: { odTop: 1.8, odBottom: 2.8, wall: 0.3, length: 1.2 },
-  },
-  {
     id: "j_latch",
     name: "J-Latch Profile",
-    category: "mechanical",
+    category: "basic",
     description: "J-slot mechanism for lock/unlock rotation",
     tags: ["j-slot", "ratch-latch", "lock mandrel", "locator", "running tool"],
     params: {
@@ -330,6 +313,134 @@ export const COMPONENTS: ComponentDef[] = [
     },
     defaults: { odCompressed: 2.5, odExpanded: 4.0, mandrelOD: 1.5, length: 2.0, numRings: 3 },
   },
+];
+
+// ═══════════════════════════════════════════════
+// VARIATION GENERATOR
+// ═══════════════════════════════════════════════
+
+/** Delta spec for a generated variation. Only `id`, `name`, `parent`, and
+ *  `defaults` are required; the rest are merged onto the parent. Tags from
+ *  `tagsAdd` are appended after the parent's tags, so the variant remains
+ *  discoverable by both its own name and the parent's vocabulary. */
+export interface VariationSpec {
+  id: string;
+  name: string;
+  parent: string;
+  defaults: Record<string, number>;
+  /** Optional per-param overrides — narrow ranges, change step, etc.
+   *  Anything omitted inherits from the parent. */
+  paramOverrides?: Partial<Record<string, Partial<ParamDef>>>;
+  /** Description override; defaults to "<parent.description> — <variant.name>". */
+  description?: string;
+  /** Tags appended to the parent's tags. */
+  tagsAdd?: string[];
+  /** Category override; defaults to the parent's category. */
+  category?: string;
+}
+
+/** Build a derived ComponentDef from a base + a variation spec. Throws if
+ *  the parent isn't in BASE_COMPONENTS. The result carries `parent: base.id`
+ *  so sidebar nesting + builder fallback both work transparently. */
+function deriveVariation(spec: VariationSpec): ComponentDef {
+  const base = BASE_COMPONENTS.find((c) => c.id === spec.parent);
+  if (!base) throw new Error(`deriveVariation: unknown parent "${spec.parent}"`);
+  const params: Record<string, ParamDef> = {};
+  for (const k of Object.keys(base.params)) {
+    params[k] = { ...base.params[k], ...(spec.paramOverrides?.[k] ?? {}) };
+  }
+  return {
+    id: spec.id,
+    name: spec.name,
+    category: spec.category ?? base.category,
+    description: spec.description ?? `${base.description} Specialization: ${spec.name}.`,
+    tags: [...base.tags, ...(spec.tagsAdd ?? [])],
+    params,
+    defaults: { ...base.defaults, ...spec.defaults },
+    parent: spec.parent,
+  };
+}
+
+// API box/pin variants — STC / LTC / BTC for both genders. The 6 variants
+// share two parents (threaded_box, threaded_pin) so the spec table is just
+// the dimension-and-name delta from each parent's defaults.
+const VARIATION_SPECS: VariationSpec[] = [
+  // --- threaded_box children ---
+  {
+    id: 'box_stc', name: 'STC Box (Short Thread Casing)', parent: 'threaded_box',
+    description: 'Short-thread coupled box for casing — fewer threads, compact body. Specialization of threaded_box with API STC dimensions.',
+    tagsAdd: ['STC', 'short thread casing', 'API STC', 'casing box', 'coupling'],
+    paramOverrides: {
+      od: { min: 4, max: 14 }, wall: { min: 0.2 },
+      length: { min: 1.2, max: 3 }, threadCount: { min: 6, max: 12 },
+      threadDepth: { min: 0.03, max: 0.08 },
+    },
+    defaults: { od: 5.5, wall: 0.35, length: 1.8, threadCount: 8, threadDepth: 0.05 },
+  },
+  {
+    id: 'box_ltc', name: 'LTC Box (Long Thread Casing)', parent: 'threaded_box',
+    description: 'Long-thread coupled box for deep-well casing — more thread engagement, longer body. Specialization of threaded_box with API LTC dimensions.',
+    tagsAdd: ['LTC', 'long thread casing', 'API LTC', 'deep well', 'casing box'],
+    paramOverrides: {
+      od: { min: 4, max: 14 }, wall: { min: 0.2 },
+      length: { min: 2.5, max: 5 }, threadCount: { min: 12, max: 24 },
+      threadDepth: { min: 0.03, max: 0.08 },
+    },
+    defaults: { od: 5.5, wall: 0.35, length: 3.5, threadCount: 16, threadDepth: 0.05 },
+  },
+  {
+    id: 'box_btc', name: 'BTC Box (Buttress Thread Casing)', parent: 'threaded_box',
+    description: 'Buttress-thread coupled box — square thread profile for high-tension casing strings. Specialization of threaded_box with API BTC dimensions.',
+    tagsAdd: ['BTC', 'buttress thread casing', 'API BTC', 'high tension', 'casing box'],
+    paramOverrides: {
+      od: { min: 4, max: 14 }, wall: { min: 0.2 },
+      length: { min: 2, max: 4 }, threadCount: { min: 10, max: 18 },
+      threadDepth: { min: 0.04, max: 0.10 },
+    },
+    defaults: { od: 7.0, wall: 0.4, length: 2.5, threadCount: 12, threadDepth: 0.06 },
+  },
+
+  // --- threaded_pin children ---
+  {
+    id: 'pin_stc', name: 'STC Pin (Short Thread Casing)', parent: 'threaded_pin',
+    description: 'Short-thread casing pin — mates with the STC box coupling. Specialization of threaded_pin with API STC dimensions.',
+    tagsAdd: ['STC', 'short thread casing', 'API STC', 'casing pin'],
+    paramOverrides: {
+      od: { min: 4, max: 14 }, wall: { min: 0.2 },
+      length: { min: 1.2, max: 3 }, threadCount: { min: 6, max: 12 },
+      threadDepth: { min: 0.03, max: 0.08 },
+    },
+    defaults: { od: 5.5, wall: 0.35, length: 1.8, threadCount: 8, threadDepth: 0.05 },
+  },
+  {
+    id: 'pin_ltc', name: 'LTC Pin (Long Thread Casing)', parent: 'threaded_pin',
+    description: 'Long-thread casing pin — mates with the LTC box coupling. Specialization of threaded_pin with API LTC dimensions.',
+    tagsAdd: ['LTC', 'long thread casing', 'API LTC', 'deep well', 'casing pin'],
+    paramOverrides: {
+      od: { min: 4, max: 14 }, wall: { min: 0.2 },
+      length: { min: 2.5, max: 5 }, threadCount: { min: 12, max: 24 },
+      threadDepth: { min: 0.03, max: 0.08 },
+    },
+    defaults: { od: 5.5, wall: 0.35, length: 3.5, threadCount: 16, threadDepth: 0.05 },
+  },
+  {
+    id: 'pin_btc', name: 'BTC Pin (Buttress Thread Casing)', parent: 'threaded_pin',
+    description: 'Buttress-thread casing pin — mates with the BTC box coupling. Specialization of threaded_pin with API BTC dimensions.',
+    tagsAdd: ['BTC', 'buttress thread casing', 'API BTC', 'high tension', 'casing pin'],
+    paramOverrides: {
+      od: { min: 4, max: 14 }, wall: { min: 0.2 },
+      length: { min: 2, max: 4 }, threadCount: { min: 10, max: 18 },
+      threadDepth: { min: 0.04, max: 0.10 },
+    },
+    defaults: { od: 7.0, wall: 0.4, length: 2.5, threadCount: 12, threadDepth: 0.06 },
+  },
+];
+
+/** Final exported library. Order: base entries first (true primitives +
+ *  hand-written specializations), then auto-generated variants. */
+export const COMPONENTS: ComponentDef[] = [
+  ...BASE_COMPONENTS,
+  ...VARIATION_SPECS.map(deriveVariation),
 ];
 
 export const CATEGORIES = [

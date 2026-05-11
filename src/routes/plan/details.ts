@@ -26,6 +26,79 @@ export interface PlanDetail {
 }
 
 export const details: Record<number, PlanDetail> = {
+  // ───── A. Components ─────
+
+  9: {
+    summary:
+      'Make a per-primitive spec MD the source of truth and generate the ManifoldCAD ' +
+      'builder code from it, instead of the current "edit builder.ts directly" flow. ' +
+      'The /primitives Script popup already surfaces the builder function for each ' +
+      'primitive (sliced out of builder.ts via Vite ?raw); next step is to replace ' +
+      'that read-only code view with an editable MD + a "regenerate builder" button.',
+    steps: [
+      'One-shot seed: run each of the 18 builder functions through Claude to produce ' +
+        'a draft spec MD (ops vocabulary: tube/cyl/mv/rot/subtract/add/for-loop-of-rings). ' +
+        'Commit the 18 docs as docs/primitives/<id>.md.',
+      'Hand-curate the seeds where Claude invented post-hoc justifications.',
+      'Define the spec DSL: structured MD with ops blocks (or YAML front-matter + ' +
+        'narrative). Keep it tiny — same vocabulary the builders already use.',
+      'Write the code generator: spec MD → TypeScript builder function. Wire it into ' +
+        'a "regenerate" pipeline (CLI for now, button in /primitives Script popup later).',
+      'Switch /primitives Script popup to render the MD (editable) instead of the .ts; ' +
+        'regenerate writes the .ts back through the generator.',
+    ],
+    acceptance: [
+      '18 per-primitive spec docs committed under docs/primitives/',
+      'Code generator round-trips all 18: spec → generated .ts matches handwritten ' +
+        'output byte-for-byte (or compiles to identical geometry under a fuzz test)',
+      '/primitives Script popup edits the MD, button regenerates the builder',
+    ],
+    refs: [
+      'src/routes/primitives/+page.svelte (Script popup)',
+      'src/lib/components/builder.ts (18 builder functions)',
+    ],
+  },
+
+  10: {
+    summary:
+      'Build a prompt-tuned Claude that turns natural-language primitive ' +
+      'descriptions ("a tube with 8 evenly-spaced grooves around the OD, 0.05 in ' +
+      'deep") into ManifoldCAD builder code in the shape of the functions already ' +
+      'in src/lib/components/builder.ts. Close cousin of task 9 — both want the ' +
+      'human-readable side to drive code generation — but this entry skips the ' +
+      'structured spec MD and goes free-text → code in one step. Useful for adding ' +
+      'a "describe a new primitive" input next to the + button in /primitives.',
+    steps: [
+      'Curate a few-shot prompt: 4-6 (description → builder function) pairs sampled ' +
+        'from existing builders. Include the helper vocabulary (cyl, tube, mv, rot, ' +
+        'subtract, add) and the per-method shape (function name, p destructure, ' +
+        'manifold-chain return).',
+      'Pin the output to ManifoldCAD\'s API surface — system prompt enumerates the ' +
+        'allowed operations + cube/cylinder/sphere primitives, forbids anything else.',
+      'Wire a server endpoint /api/primitives/generate that accepts {description, ' +
+        'name?, paramHints?} and returns {builderSrc, paramDefs}. Subject to the same ' +
+        'rate-limit bucket as /api/identify.',
+      'Hook the + button in /primitives: type a description → call endpoint → drop ' +
+        'the new builder into a draft tab with the generated source + params. Save = ' +
+        'append the function to builder.ts + the ComponentDef to library.ts.',
+      'Safety: never eval the generated code in-browser. Treat it as text the user ' +
+        'reviews and commits — same rule as task 9 + CLAUDE.md no-dynamic-eval.',
+    ],
+    acceptance: [
+      'Generate clean builder code for ~5 fresh primitive descriptions (eg "ribbed ' +
+        'sleeve", "hexagonal sub") that compile without manual edits',
+      'Bad inputs (vague descriptions, unsupported geometry) return a helpful error ' +
+        'message instead of malformed code',
+      '/primitives + button shows the NL input field and the round-trip works ' +
+        'end-to-end',
+    ],
+    refs: [
+      'src/lib/components/builder.ts (target shape — function bodies to emit)',
+      'src/lib/components/library.ts (target shape — ComponentDef to emit alongside)',
+      'CLAUDE.md (no-dynamic-eval rule)',
+    ],
+  },
+
   // ───── B. Retrieval ─────
 
   26: {

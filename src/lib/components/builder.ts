@@ -4,6 +4,7 @@
 
 import Module from 'manifold-3d';
 import * as THREE from 'three';
+import { COMPONENTS } from './library';
 
 let wasm: any = null;
 let M: any = null;
@@ -16,7 +17,7 @@ let M: any = null;
 // CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via setCircularSegmentMode
 // Touching the value affects every M.cylinder call until reset, so callers MUST
 // reset on completion (see compose.ts try/finally).
-export const CIRCULAR_SEGMENTS_DEFAULT = 192;
+export const CIRCULAR_SEGMENTS_DEFAULT = 256;
 export const CIRCULAR_SEGMENTS_COMPOSE = 96;  // 192 crashed mobile even fused; 96 is the sweet spot
 
 let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
@@ -68,28 +69,6 @@ export const builders: Record<string, (p: Record<string, number>) => any> = {
       body = body.subtract(mv(tube(p.od / 2 + 0.01, p.od / 2 - p.threadDepth, 0.04), [0, 0, tz]));
     }
     return body;
-  },
-
-  thread_reg(p) {
-    // REG: body → shoulder → tapered pin with threads
-    const id = p.bodyOD - 2 * p.wall;
-    let body = tube(p.bodyOD / 2, id / 2, p.bodyLength);
-    // Shoulder face
-    const shoulderR = (p.bodyOD - p.pinOD) / 2;
-    body = body.add(mv(cyl(p.shoulderWidth, p.bodyOD / 2), [0, 0, p.bodyLength]));
-    // Tapered pin
-    const pinTopR = p.pinOD / 2;
-    const pinBotR = pinTopR - p.pinTaper * p.pinLength;
-    const pinID = id / 2;
-    let pin = cyl(p.pinLength, pinTopR, pinBotR).subtract(cyl(p.pinLength + 0.02, pinID, pinID));
-    pin = mv(pin, [0, 0, p.bodyLength + p.shoulderWidth]);
-    // Cut threads into pin
-    for (let i = 0; i < p.threadCount; i++) {
-      const tz = p.bodyLength + p.shoulderWidth + p.pinLength * (i + 0.5) / p.threadCount;
-      const localR = pinTopR - p.pinTaper * (p.pinLength * (i + 0.5) / p.threadCount);
-      pin = pin.subtract(mv(tube(localR + 0.01, localR - p.threadDepth, 0.04), [0, 0, tz]));
-    }
-    return body.add(pin);
   },
 
   thread_if(p) {
@@ -256,14 +235,6 @@ export const builders: Record<string, (p: Record<string, number>) => any> = {
     return ring;
   },
 
-  cone(p) {
-    const idTop = p.odTop - 2 * p.wall;
-    const idBottom = p.odBottom - 2 * p.wall;
-    return cyl(p.length, p.odTop / 2, p.odBottom / 2).subtract(
-      mv(cyl(p.length + 0.02, idTop / 2, idBottom / 2), [0, 0, -0.01])
-    );
-  },
-
   j_latch(p) {
     const id = p.od - 2 * p.wall;
     let body = tube(p.od / 2, id / 2, p.length);
@@ -315,9 +286,20 @@ export interface ComponentResult {
  * `buildComponent` instead.
  */
 export function buildPrimitiveManifold(componentId: string, params: Record<string, number>): any {
-  const builderFn = builders[componentId];
-  if (!builderFn) throw new Error(`Unknown component: ${componentId}`);
-  return builderFn(params);
+  let fn = builders[componentId];
+  // Walk the parent chain — derived primitives (ComponentDef.parent) reuse
+  // their base class's builder unless they register their own. Lets us spin
+  // up new spec-variants (box_stc, pin_ltc, …) by just adding a library
+  // entry, no builder code required.
+  if (!fn) {
+    let cur = COMPONENTS.find((c) => c.id === componentId);
+    while (cur?.parent && !fn) {
+      fn = builders[cur.parent];
+      cur = COMPONENTS.find((c) => c.id === cur!.parent);
+    }
+  }
+  if (!fn) throw new Error(`Unknown component: ${componentId}`);
+  return fn(params);
 }
 
 // Module-level cutaway box, lazily created once per session. The cube +

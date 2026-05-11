@@ -59,6 +59,8 @@
     { id:  6, bundle: 'A', lane: 0, start: 0,  weeks: 0.3, priority: 'medium', status: 'done', title: 'URL-driven /components (?p=&cam=) for synthetic data generator' },
     { id:  7, bundle: 'A', lane: 0, start: 1,  weeks: 1.5, priority: 'high',   status: 'deferred', title: 'Re-render primitives with red-outer/grey-internal coloring + shading before pHash/CLIP — shelved: cold-classification 17/18 killed CLIP rationale' },
     { id:  8, bundle: 'A', lane: 0, start: 2,  weeks: 0.5, priority: 'low',    status: 'on-demand', title: 'Add new primitive types as drilling needs surface' },
+    { id:  9, bundle: 'A', lane: 0, start: 2,  weeks: 1.5, priority: 'medium', status: 'todo',      title: 'Per-primitive spec MD → builder code generator: seed MD from existing builder.ts (one-shot Claude), then make MD the source of truth' },
+    { id: 10, bundle: 'A', lane: 0, start: 3,  weeks: 2,   priority: 'medium', status: 'todo',      title: 'NL → ManifoldCAD code: prompt-tuned Claude that turns natural-language primitive descriptions into builder.ts function bodies' },
 
     // ───── B. Retrieval (RAG + CLIP) ─────
     { id: 20, bundle: 'B', lane: 1, start: -7, weeks: 1.5, priority: 'medium', status: 'done', title: 'pHash 2D-DCT perceptual hash + hamming distance' },
