@@ -1,10 +1,7 @@
 <div class="home">
   <div class="menu">
     <div class="menu-header">CAD Train</div>
-    <a href="/primitives" class="menu-item">Primitives <span class="hint">base shapes catalog</span></a>
-    <a href="/families" class="menu-item">Families <span class="hint">pipe component archetypes</span></a>
-    <a href="/author" class="menu-item">Author <span class="hint">compose + edit components</span></a>
-    <a href="/kb" class="menu-item">KB <span class="hint">vendor + operator spec tables</span></a>
+    <a href="/primitives" class="menu-item">Primitives <span class="hint">primitives · compounds · mechanical · KB</span></a>
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
     <a href="/archive/tests" class="menu-item">Tests <span class="hint">recordings + cache stats</span></a>
     <a href="/plan" class="menu-item">Plan <span class="hint">Gantt roadmap</span></a>

@@ -25,6 +25,7 @@
   import { buildAuthored } from '$lib/authoring/compose';
   import { emptyAuthoredComponent, type AuthoredComponent } from '$lib/authoring/schema';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
+  import KbTableViewer from '$lib/shared/KbTableViewer.svelte';
   // Vite ?raw — bundles the file's text at build time so the client can show
   // the script that produces each primitive's geometry in-tab.
   import builderSource from '$lib/components/builder.ts?raw';
@@ -64,6 +65,19 @@
     compound?: boolean;
   }
 
+  // Four sidebar tabs mirror the 4-level hierarchy + a 5th for KB browsing:
+  //   Primitives    - level 1: atomic geometric shapes (+ derived variants
+  //                   indented under their parent as 📁 folders).
+  //   Compositions  - level 2: small named assemblies of primitives
+  //                   ("compounds" — temporary stand-ins until Phase B).
+  //   Components    - level 3: complete physical items (tubing joint,
+  //                   pup joint, packer). Placeholder for the in-situ
+  //                   authoring surface that replaced /author.
+  //   Assemblies    - level 4: multi-component products (full strings,
+  //                   BHAs). Deferred; placeholder.
+  //   KB            - reference tables, driven by /kb/index.json. Not
+  //                   part of the geometric hierarchy but lives here for
+  //                   one-stop-shop access.
   const TREE: Folder[] = [
     {
       id: 'primitives',
@@ -72,12 +86,12 @@
         'hollow_cylinder', 'taper', 'shoulder',
         'grooved_cylinder', 'slotted_cylinder', 'seal_bore',
         'threaded_box', 'threaded_pin',
-        'slips', 'j_latch',
+        'slips', 'j_latch', 'packer_element',
       ].includes(c.id),
     },
     {
-      id: 'compounds',
-      name: 'Compounds',
+      id: 'compositions',
+      name: 'Compositions',
       compound: true,
       match: (c) => c.category === 'connection',
       sub: [
@@ -86,14 +100,35 @@
       ],
     },
     {
-      id: 'mechanical',
-      name: 'Mechanical',
-      match: (c) => c.category === 'mechanical',
+      id: 'components',
+      name: 'Components',
+      match: () => false, // populated later — placeholder for level 3.
+    },
+    {
+      id: 'assemblies',
+      name: 'Assemblies',
+      match: () => false, // deferred — placeholder for level 4.
+    },
+    // KB tab — special: doesn't claim COMPONENTS entries. The sidebar
+    // renders a separate KB list under this tab (driven by /kb/index.json)
+    // and clicking a KB opens it as a 'kb'-kind main tab.
+    {
+      id: 'kb',
+      name: 'KB',
+      match: () => false,
     },
   ];
 
   function itemsInFolder(folder: Folder): typeof COMPONENTS {
-    return COMPONENTS.filter((c) => folder.match(c));
+    // Direct matches via the folder's predicate.
+    const direct = COMPONENTS.filter((c) => folder.match(c));
+    // Derived children of any directly-matched parent are also IN the
+    // folder — a parent in Primitives means its specializations live
+    // there too. This lets the sidebar render the "folder" treatment
+    // without each variant having to be listed by id.
+    const directIds = new Set(direct.map((c) => c.id));
+    const inherited = COMPONENTS.filter((c) => c.parent && directIds.has(c.parent) && !directIds.has(c.id));
+    return [...direct, ...inherited];
   }
 
   function isCompound(c: { id: string; category: string }): boolean {
@@ -147,11 +182,17 @@
   // Author" which seeds an AuthoredComponent.
   interface Tab {
     /** Unique tab key. For an existing primitive, this is the primitive id;
-     *  for a "new from <folder>" draft tab, it is `new:<folder>:<nonce>`. */
+     *  for a "new from <folder>" draft tab, it is `new:<folder>:<nonce>`;
+     *  for a KB tab, it is `kb:<kbId>`. */
     id: string;
-    /** Underlying primitive definition driving the param schema. */
+    /** What kind of content this tab hosts. Drives the tab-body render
+     *  (primitive → live 3D scene + params popup; kb → table viewer). */
+    kind: 'primitive' | 'kb';
+    /** Underlying primitive definition id (only set when kind === 'primitive'). */
     primId: string;
-    /** Display label in the tab bar — name of the primitive (+ "(new)" for drafts). */
+    /** KB id (only set when kind === 'kb'). */
+    kbId?: string;
+    /** Display label in the tab bar. */
     label: string;
     /** Local working copy of params; sliders/inputs bind here. */
     params: Record<string, number>;
@@ -300,7 +341,56 @@
     }
     openTabs = [
       ...openTabs,
-      { id, primId: id, label: def.name, params: structuredClone(def.defaults), draft: false, vars: [] },
+      { id, kind: 'primitive', primId: id, label: def.name, params: structuredClone(def.defaults), draft: false, vars: [] },
+    ];
+    activeTabId = id;
+  }
+
+  // ── KB tab handling ──────────────────────────────────────────────────────
+  interface KbEntry {
+    id: string;
+    title: string;
+    description: string;
+    row_count: number;
+    source_kind?: string;
+    categories?: string[];
+  }
+  let kbList = $state<KbEntry[]>([]);
+  let kbListError = $state<string | null>(null);
+  onMount(async () => {
+    try {
+      const r = await fetch('/kb/index.json', { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const data = await r.json();
+      kbList = (data.kbs ?? []).map((k: any) => ({
+        id: k.id, title: k.title, description: k.description, row_count: k.row_count,
+        source_kind: k.source_kind, categories: k.categories ?? [],
+      }));
+    } catch (e: any) {
+      kbListError = e?.message ?? String(e);
+    }
+  });
+  // KB-specific hover state — shows a card-style callout (title /
+  // description / row count / source kind / categories) to the right of
+  // the sidebar when a KB row is hovered, matching the primitive callout.
+  let hoveredKbId = $state<string | null>(null);
+  let hoverKbTop = $state(0);
+  function onHoverKb(id: string, ev: MouseEvent) {
+    hoveredKbId = id;
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    hoverKbTop = r.top;
+  }
+  function onLeaveKb() { hoveredKbId = null; }
+  let hoveredKb = $derived<KbEntry | null>(hoveredKbId ? kbList.find((k) => k.id === hoveredKbId) ?? null : null);
+  function openKb(kb: KbEntry) {
+    const id = `kb:${kb.id}`;
+    if (openTabs.find((t) => t.id === id)) {
+      activeTabId = id;
+      return;
+    }
+    openTabs = [
+      ...openTabs,
+      { id, kind: 'kb', primId: '', kbId: kb.id, label: kb.title, params: {}, draft: false, vars: [] },
     ];
     activeTabId = id;
   }
@@ -368,7 +458,7 @@
   /** Compose a minimal AuthoredComponent for the active tab so buildAuthored
    *  can construct + finalize the geometry. Single part, no ops. */
   function activeSpec(): AuthoredComponent | null {
-    if (!activeTab) return null;
+    if (!activeTab || activeTab.kind !== 'primitive') return null;
     const s = emptyAuthoredComponent();
     s.id = activeTab.primId;
     s.name = activeTab.label;
@@ -376,11 +466,11 @@
     return s;
   }
 
-  let buildKey = $derived(activeTab ? JSON.stringify({ id: activeTab.primId, p: activeTab.params }) : '');
+  let buildKey = $derived(activeTab && activeTab.kind === 'primitive' ? JSON.stringify({ id: activeTab.primId, p: activeTab.params }) : '');
   let buildTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     const _k = buildKey;
-    if (!ready || !activeTab) { geo = null; buildError = null; return; }
+    if (!ready || !activeTab || activeTab.kind !== 'primitive') { geo = null; buildError = null; return; }
     if (buildTimer) clearTimeout(buildTimer);
     buildTimer = setTimeout(async () => {
       const spec = activeSpec();
@@ -541,8 +631,36 @@
         {/if}
       </div>
 
+      {#if sidebarTab === 'kb'}
+        <!-- KB list — driven by /kb/index.json. Each row is a card-link
+             with the same prim-link styling; hover surfaces the rich
+             callout. Click opens the KB as a tab in the main tab bar. -->
+        {#if kbListError}
+          <div class="sb-empty">{kbListError}</div>
+        {:else if kbList.length === 0}
+          <div class="sb-empty">No KBs registered.</div>
+        {:else}
+          <div class="sb-list">
+            {#each kbList.filter((k) => !filter || k.title.toLowerCase().includes(filter.toLowerCase()) || (k.categories ?? []).some((c) => c.toLowerCase().includes(filter.toLowerCase()))) as kb (kb.id)}
+              <button
+                class="prim-link"
+                class:active={activeTab?.id === `kb:${kb.id}`}
+                onclick={() => openKb(kb)}
+                onmouseenter={(e) => onHoverKb(kb.id, e)}
+                onmouseleave={onLeaveKb}
+                onfocus={(e) => onHoverKb(kb.id, e as unknown as MouseEvent)}
+                onblur={onLeaveKb}
+              >
+                <span class="dot"></span>
+                <span class="pl-name">{kb.title}</span>
+                <span class="prim-kid-count">{kb.row_count.toLocaleString()}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      {/if}
       {#each TREE as f (f.id)}
-        {#if f.id === sidebarTab}
+        {#if f.id === sidebarTab && f.id !== 'kb'}
           {@const items = itemsInFolder(f).filter(matchesFilter)}
           {@const subClaims = (f.sub ?? []).flatMap((sf) => itemsInFolder(sf))}
           {@const leafItems = items.filter((c) => !subClaims.includes(c) && isTopLevel(c, items))}
@@ -575,7 +693,13 @@
             {/each}
           {/if}
           {#if leafItems.length === 0 && (f.sub ?? []).every((sf) => itemsInFolder(sf).filter(matchesFilter).length === 0)}
-            <div class="sb-empty">No primitives match "{filter}".</div>
+            {#if f.id === 'components'}
+              <div class="sb-empty">Level 3 — complete physical items (tubing joint, pup joint, packer). Composed from primitives + compositions in-situ via the <strong>+ New</strong> button. Placeholder until the authoring flow is wired here.</div>
+            {:else if f.id === 'assemblies'}
+              <div class="sb-empty">Level 4 — multi-component products (completion strings, BHAs). Deferred.</div>
+            {:else}
+              <div class="sb-empty">No primitives match "{filter}".</div>
+            {/if}
           {/if}
         {/if}
       {/each}
@@ -586,6 +710,27 @@
   <!-- Hover callout — replaces the old cards grid. Pops out to the right
        of the sidebar when an item is hovered/focused; shows the same
        thumbnail + name + id + tags + description the card used to. -->
+  {#if hoveredKb}
+    <div class="callout" style="top: {hoverKbTop}px;">
+      <div class="cl-thumb kb-thumb"><span>KB</span></div>
+      <div class="cl-body">
+        <div class="cl-hdr">
+          <span class="cl-name">{hoveredKb.title}</span>
+          <span class="cl-id">{hoveredKb.id}</span>
+        </div>
+        <div class="cl-badges">
+          <span class="badge cat">{hoveredKb.row_count.toLocaleString()} rows</span>
+          {#if hoveredKb.source_kind}<span class="badge cat">{hoveredKb.source_kind.replace(/_/g, ' ')}</span>{/if}
+        </div>
+        {#if hoveredKb.description}<p class="cl-desc">{hoveredKb.description}</p>{/if}
+        {#if hoveredKb.categories?.length}
+          <div class="cl-tags">
+            {#each hoveredKb.categories as t}<span class="tag">{t}</span>{/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
   {#if hoveredDef}
     {@const compound = isCompound(hoveredDef)}
     <div class="callout" style="top: {hoverTop}px;">
@@ -649,8 +794,12 @@
       {/if}
     </div>
 
-    <!-- Tab body — left toolbar + editor + preview. -->
-    {#if activeTab && activeDef}
+    <!-- KB tab body — embedded table viewer. Skips the primitive editor. -->
+    {#if activeTab && activeTab.kind === 'kb' && activeTab.kbId}
+      <div class="tab-body kb-tab">
+        <KbTableViewer kbId={activeTab.kbId} />
+      </div>
+    {:else if activeTab && activeDef}
       {@const compound = isCompound(activeDef)}
       <div class="tab-body">
         <!-- Left toolbar — primitive actions + popups for preview/script. -->
@@ -1114,6 +1263,13 @@
     overflow: hidden;
     position: relative;
   }
+  .tab-body.kb-tab { grid-template-columns: 1fr; }
+  .kb-thumb {
+    background: #cc2222 !important;
+    color: #fff;
+    font: bold 18px Arial; letter-spacing: 2px;
+  }
+  .kb-thumb span { letter-spacing: 2px; }
 
   /* Left toolbar — narrow icon-only column. Native title= tooltips appear
      on hover; no under-icon labels so the column stays slim. */

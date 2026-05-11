@@ -1,16 +1,14 @@
 <script lang="ts">
-  // KB table viewer: filterable + sortable table of a single KB's rows.
-  //
-  //   - Search box filters across every column (substring match).
-  //   - Click a column header to sort asc → desc → unsorted.
-  //   - "Show all columns" toggle expands from the curated default set
-  //     (declared per-KB in index.json) to every column in the data.
-  //   - Row count footer reflects post-filter / post-sort.
-  //
-  // Generic — works for any KB whose JSON has a top-level `rows` array of
-  // homogeneous objects. The "next KB" we add doesn't need a new viewer.
+  // Reusable KB table viewer — filterable + sortable table of a single
+  // KB's rows, driven by /kb/index.json. Ported out of the old
+  // /kb/[id]/+page.svelte so it can be embedded inside /primitives' KB tab
+  // (and any future host) without re-implementing the table logic.
   import { onMount } from 'svelte';
-  import { page } from '$app/state';
+
+  interface Props {
+    kbId: string;
+  }
+  let { kbId }: Props = $props();
 
   interface KbMeta {
     id: string;
@@ -22,7 +20,7 @@
   }
 
   let meta = $state<KbMeta | null>(null);
-  let kbHeader = $state<any>(null); // schema_version, source_*, extracted_at, ...
+  let kbHeader = $state<any>(null);
   let rows = $state<Record<string, any>[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -32,23 +30,19 @@
   let sortDir = $state<'asc' | 'desc'>('asc');
   let showAllCols = $state(false);
 
-  const id = $derived(page.params.id);
-
   onMount(async () => {
     try {
       const indexRes = await fetch('/kb/index.json', { cache: 'no-cache' });
       if (!indexRes.ok) throw new Error(`index: ${indexRes.status}`);
       const index = await indexRes.json();
-      const m = index.kbs?.find((k: KbMeta) => k.id === id);
-      if (!m) throw new Error(`KB not found: ${id}`);
+      const m = index.kbs?.find((k: KbMeta) => k.id === kbId);
+      if (!m) throw new Error(`KB not found: ${kbId}`);
       meta = m;
 
       const dataRes = await fetch(m.path, { cache: 'no-cache' });
       if (!dataRes.ok) throw new Error(`data: ${dataRes.status}`);
       const data = await dataRes.json();
       rows = data.rows ?? [];
-      // Strip 'rows' from the header copy so the small info bar can show
-      // schema_version / extraction date / source file etc.
       const { rows: _rows, ...header } = data;
       kbHeader = header;
     } catch (e: any) {
@@ -61,11 +55,9 @@
   let allColumns = $derived(rows.length > 0 ? Object.keys(rows[0]) : []);
   let displayCols = $derived.by(() => {
     if (showAllCols || !meta?.default_columns?.length) return allColumns;
-    // Default cols from index.json, filtered to those actually present.
     return meta.default_columns.filter((c) => allColumns.includes(c));
   });
 
-  // Filter + sort. Recomputed when search / sort / rows change.
   let processedRows = $derived.by(() => {
     let out = rows;
     const q = search.toLowerCase().trim();
@@ -80,7 +72,7 @@
       out = [...out].sort((a, b) => {
         const av = a[col], bv = b[col];
         if (av === bv) return 0;
-        if (av === null || av === undefined) return 1;  // nulls last
+        if (av === null || av === undefined) return 1;
         if (bv === null || bv === undefined) return -1;
         const cmp = (typeof av === 'number' && typeof bv === 'number')
           ? av - bv
@@ -96,9 +88,6 @@
     if (sortDir === 'asc') sortDir = 'desc';
     else { sortCol = null; sortDir = 'asc'; }
   }
-
-  // Format cells: numbers get comma thousands separators for readability;
-  // nulls render as a faint dash.
   function fmt(v: any): string {
     if (v === null || v === undefined || v === '') return '—';
     if (typeof v === 'number') {
@@ -107,7 +96,6 @@
     }
     return String(v);
   }
-
   function colLabel(c: string): string {
     return c
       .replace(/_/g, ' ')
@@ -119,37 +107,25 @@
   }
 </script>
 
-<div class="page">
-  <a class="back" href="/kb">← All KBs</a>
-
+<div class="kbv">
   {#if loading}
     <div class="empty">Loading…</div>
   {:else if error}
     <div class="err">{error}</div>
   {:else if meta}
     <div class="hdr">
-      <h1>{meta.title}</h1>
+      <h2>{meta.title}</h2>
       <p class="sub">{meta.description}</p>
       {#if kbHeader}
         <div class="info">
           <span>extracted {kbHeader.extracted_at}</span>
           <span>·</span>
           <span>{kbHeader.row_count?.toLocaleString() ?? rows.length} rows</span>
-          {#if kbHeader.source_file}
-            <span>·</span>
-            <span>source: <code>{kbHeader.source_file}</code></span>
-          {/if}
         </div>
       {/if}
     </div>
-
     <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Filter across all columns…"
-        bind:value={search}
-        class="search"
-      />
+      <input type="search" placeholder="Filter across all columns…" bind:value={search} class="search" />
       <label class="toggle">
         <input type="checkbox" bind:checked={showAllCols} />
         Show all columns ({allColumns.length})
@@ -159,7 +135,6 @@
         {processedRows.length !== rows.length ? 'matches' : 'rows'}
       </div>
     </div>
-
     <div class="table-wrap">
       <table>
         <thead>
@@ -189,46 +164,52 @@
 </div>
 
 <style>
-  .page {
-    padding: 16px 24px;
-    height: 100%;
-    overflow-y: auto;
-    box-sizing: border-box;
+  .kbv {
+    height: 100%; display: flex; flex-direction: column;
     font-family: Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    padding: 16px 22px;
+    box-sizing: border-box;
+    overflow: hidden;
   }
-  .back { font: 11px Arial; color: #cc2222; text-decoration: none; }
-  .back:hover { text-decoration: underline; }
-  .hdr h1 { margin: 0; font-size: 18px; color: #222; }
-  .sub { margin: 4px 0 4px; font: 11px Arial; color: #666; line-height: 1.5; max-width: 900px; }
-  .info { font: 10px Arial; color: #888; display: flex; gap: 6px; align-items: center; }
-  .info code { font: 10px monospace; color: #555; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
-  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .hdr h2 { margin: 0 0 4px; font-size: 18px; color: #cc2222; }
+  .sub { margin: 0 0 4px; font: 11px Arial; color: #666; line-height: 1.5; }
+  .info { font: 10px monospace; color: #888; display: flex; gap: 6px; margin: 4px 0 12px; }
+  .toolbar {
+    display: flex; gap: 12px; align-items: center;
+    padding: 8px 0; flex-shrink: 0;
+  }
   .search {
-    flex: 0 0 280px; max-width: 100%;
-    padding: 5px 8px; font: 12px Arial;
-    border: 1px solid #ccc; border-radius: 4px;
+    flex: 1; padding: 5px 8px;
+    border: 1px solid #d8d8de; border-radius: 4px;
+    font: 11px Arial; min-width: 0;
   }
-  .search:focus { outline: 2px solid #cc2222; outline-offset: -1px; border-color: #cc2222; }
-  .toggle { font: 11px Arial; color: #555; display: flex; gap: 4px; align-items: center; cursor: pointer; }
-  .rowcount { font: 11px monospace; color: #888; margin-left: auto; }
-  .table-wrap { flex: 1; overflow: auto; border: 1px solid #ddd; border-radius: 4px; background: #fff; min-height: 0; }
-  table { width: 100%; border-collapse: collapse; font: 11px Arial; }
-  thead { position: sticky; top: 0; background: #f4f4f4; z-index: 1; }
+  .search:focus { outline: none; border-color: #cc2222; }
+  .toggle { font: 11px Arial; color: #555; display: inline-flex; align-items: center; gap: 4px; }
+  .toggle input { accent-color: #cc2222; }
+  .rowcount { font: 10px monospace; color: #888; }
+  .table-wrap {
+    flex: 1; min-height: 0;
+    overflow: auto;
+    border: 1px solid #e2e2e8; border-radius: 4px;
+    background: #fff;
+  }
+  table { border-collapse: collapse; width: 100%; font: 11px Arial; }
+  th, td { padding: 4px 8px; border-bottom: 1px solid #f0f0f0; text-align: left; white-space: nowrap; }
   th {
-    text-align: left; padding: 6px 10px; cursor: pointer; user-select: none;
-    border-bottom: 2px solid #ddd; white-space: nowrap;
-    font-weight: 600; color: #444;
+    background: #f7f7f9; cursor: pointer;
+    font: bold 10px Arial; color: #555;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    position: sticky; top: 0; z-index: 1;
+    user-select: none;
   }
-  th:hover { background: #e8e8e8; }
-  th.active { background: #fdf0f0; color: #cc2222; }
-  .arrow { font-size: 9px; margin-left: 4px; opacity: 0.7; }
-  td { padding: 4px 10px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
-  td.num { font-family: monospace; font-variant-numeric: tabular-nums; text-align: right; }
-  td.null { color: #bbb; text-align: center; }
+  th:hover, th.active { color: #cc2222; }
+  .arrow { margin-left: 4px; font-size: 9px; }
+  td.num { text-align: right; font-family: monospace; }
+  td.null { color: #bbb; }
   tbody tr:hover { background: #fafafa; }
-  .empty { font: 12px Arial; color: #888; padding: 40px; text-align: center; }
-  .err { font: 11px monospace; color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; }
+  .empty, .err {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font: 12px Arial; color: #888;
+  }
+  .err { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; }
 </style>

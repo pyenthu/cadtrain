@@ -50,23 +50,45 @@ export const builders: Record<string, (p: Record<string, number>) => any> = {
   },
 
   threaded_box(p) {
-    const id = p.od - 2 * p.wall;
-    let body = tube(p.od / 2, id / 2, p.length);
-    // Internal threads (grooves cut into bore)
+    // Optional 1:N taper on the bore (API SC/LC/BC = 1:16 ≈ 0.0625, where
+    // the bore widens by `taper` units of radius per unit of length toward
+    // z=length). taper=0 → straight cylinder + constant-radius grooves
+    // (legacy behavior, no regression for callers that don't pass it).
+    const taper = p.taper ?? 0;
+    const idBase = p.od - 2 * p.wall;
+    const rStart = idBase / 2;                  // small end (deep inside coupling)
+    const rEnd = idBase / 2 + taper * p.length; // mouth (widest)
+    // Constant OD shell with tapered bore subtracted.
+    let body = cyl(p.length, p.od / 2, p.od / 2);
+    body = body.subtract(mv(cyl(p.length + 0.02, rStart, rEnd), [0, 0, -0.01]));
+    // Threads follow the bore — radius interpolates with z so the cut
+    // depth is constant relative to the local bore wall.
     for (let i = 0; i < p.threadCount; i++) {
-      const tz = p.length * (i + 0.5) / p.threadCount;
-      body = body.subtract(mv(tube(id / 2 + p.threadDepth, id / 2 - 0.01, 0.05), [0, 0, tz]));
+      const t = (i + 0.5) / p.threadCount;
+      const tz = p.length * t;
+      const localR = rStart + (rEnd - rStart) * t;
+      body = body.subtract(mv(tube(localR + p.threadDepth, localR - 0.01, 0.05), [0, 0, tz]));
     }
     return body;
   },
 
   threaded_pin(p) {
+    // Optional 1:N taper on the OD (API SC/LC/BC = 1:16 ≈ 0.0625, where
+    // the OD shrinks by `taper` units of radius per unit length toward
+    // z=length, so the pin nose is the smallest cross-section). taper=0
+    // → straight cylinder + constant-radius grooves (legacy behavior).
+    const taper = p.taper ?? 0;
     const id = p.od - 2 * p.wall;
-    let body = tube(p.od / 2, id / 2, p.length);
-    // External threads (grooves cut into OD)
+    const rStart = p.od / 2;                    // full body OD at z=0
+    const rEnd = p.od / 2 - taper * p.length;   // narrow tip at z=length
+    // Tapered OD with straight bore subtracted.
+    let body = cyl(p.length, rStart, rEnd);
+    body = body.subtract(mv(cyl(p.length + 0.02, id / 2, id / 2), [0, 0, -0.01]));
     for (let i = 0; i < p.threadCount; i++) {
-      const tz = p.length * (i + 0.5) / p.threadCount;
-      body = body.subtract(mv(tube(p.od / 2 + 0.01, p.od / 2 - p.threadDepth, 0.04), [0, 0, tz]));
+      const t = (i + 0.5) / p.threadCount;
+      const tz = p.length * t;
+      const localR = rStart - taper * p.length * t;
+      body = body.subtract(mv(tube(localR + 0.01, localR - p.threadDepth, 0.04), [0, 0, tz]));
     }
     return body;
   },

@@ -68,13 +68,14 @@ const BASE_COMPONENTS: ComponentDef[] = [
     description: "Internal threads — receives a pin end. Generic primitive; specific connection forms (EUE, LTC, REG, NEW VAM…) compose this with a body and per-spec thread profile.",
     tags: ["box connection", "box end", "female connection", "receiver", "coupling box", "generic_end", "connection", "thread"],
     params: {
-      od: { label: "OD", min: 0.5, max: 6, step: 0.1 },
+      od: { label: "OD", min: 0.5, max: 14, step: 0.1 },
       wall: { label: "Wall", min: 0.1, max: 1, step: 0.05 },
       length: { label: "Length", min: 0.5, max: 6, step: 0.1 },
-      threadCount: { label: "Threads", min: 2, max: 20, step: 1 },
+      threadCount: { label: "Threads", min: 2, max: 40, step: 1 },
       threadDepth: { label: "Thread Depth", min: 0.02, max: 0.15, step: 0.01 },
+      taper: { label: "Taper (per length)", min: 0, max: 0.2, step: 0.005 },
     },
-    defaults: { od: 3.0, wall: 0.5, length: 2.5, threadCount: 8, threadDepth: 0.08 },
+    defaults: { od: 3.0, wall: 0.5, length: 2.5, threadCount: 8, threadDepth: 0.08, taper: 0 },
   },
   {
     id: "threaded_pin",
@@ -83,13 +84,14 @@ const BASE_COMPONENTS: ComponentDef[] = [
     description: "External threads — inserts into a box end. Generic primitive; specific connection forms (EUE, LTC, REG, NEW VAM…) compose this with a body and per-spec thread profile.",
     tags: ["pin connection", "pin end", "male connection", "connector pin", "thread nose", "generic_end", "connection", "thread"],
     params: {
-      od: { label: "OD", min: 0.5, max: 6, step: 0.1 },
+      od: { label: "OD", min: 0.5, max: 14, step: 0.1 },
       wall: { label: "Wall", min: 0.1, max: 1, step: 0.05 },
       length: { label: "Length", min: 0.5, max: 6, step: 0.1 },
-      threadCount: { label: "Threads", min: 2, max: 20, step: 1 },
+      threadCount: { label: "Threads", min: 2, max: 40, step: 1 },
       threadDepth: { label: "Thread Depth", min: 0.02, max: 0.15, step: 0.01 },
+      taper: { label: "Taper (per length)", min: 0, max: 0.2, step: 0.005 },
     },
-    defaults: { od: 2.5, wall: 0.3, length: 2.0, threadCount: 10, threadDepth: 0.06 },
+    defaults: { od: 2.5, wall: 0.3, length: 2.0, threadCount: 10, threadDepth: 0.06, taper: 0 },
   },
 
   {
@@ -149,9 +151,9 @@ const BASE_COMPONENTS: ComponentDef[] = [
     id: "thread_eue",
     name: "EUE (External Upset End)",
     category: "basic",
-    description: "Tubing connection — upset end thicker than body for thread strength. Specialization of threaded_box with API EUE-specific dimensions.",
-    tags: ["EUE", "external upset", "tubing connection", "API tubing"],
-    parent: "threaded_box",
+    description: "Tubing connection — pin end with an external upset (thicker wall) carrying API EUE cut threads. Pin-style external threads cut into the upset section. Specialization of threaded_pin with the EUE upset feature.",
+    tags: ["EUE", "external upset", "tubing connection", "API tubing", "pin end", "upset pin"],
+    parent: "threaded_pin",
     params: {
       bodyOD: { label: "Body OD", min: 1, max: 5, step: 0.1 },
       upsetOD: { label: "Upset OD", min: 1.5, max: 6, step: 0.1 },
@@ -361,78 +363,93 @@ function deriveVariation(spec: VariationSpec): ComponentDef {
   };
 }
 
-// API box/pin variants — STC / LTC / BTC for both genders. The 6 variants
-// share two parents (threaded_box, threaded_pin) so the spec table is just
-// the dimension-and-name delta from each parent's defaults.
+// API casing connection variants — SC (Short), LC (Long), BC (Buttress).
+// Defaults derived from static/kb/api/casing-tubing-data.json, anchored to
+// 7" casing as a representative size. The visual distinction comes from
+// (length × threadCount) reflecting the spec's TPI × engagement length:
+//   SC: 8 TPI · short  (~length 2.5)  → ~20 threads visible
+//   LC: 8 TPI · long   (~length 4.0)  → ~32 threads visible
+//   BC: 5 TPI · long   (~length 4.0)  → ~20 threads but visually coarser
+// (Lengths scaled down 3× from real-world inches for canvas readability.)
+//
+// Parent ids use the KB shorthand (SC/LC/BC) — STC/LTC/BTC are aliases
+// included in tagsAdd for the search filter.
 const VARIATION_SPECS: VariationSpec[] = [
-  // --- threaded_box children ---
+  // --- threaded_box children: API casing couplings ---
   {
-    id: 'box_stc', name: 'STC Box (Short Thread Casing)', parent: 'threaded_box',
-    description: 'Short-thread coupled box for casing — fewer threads, compact body. Specialization of threaded_box with API STC dimensions.',
-    tagsAdd: ['STC', 'short thread casing', 'API STC', 'casing box', 'coupling'],
+    id: 'box_sc', name: 'SC Box (Short Thread Coupling)', parent: 'threaded_box',
+    description: 'API Short-thread (SC/STC) coupling box — 8 TPI, short engagement (~6–8" real). Coupling collar slips over two SC pin ends.',
+    tagsAdd: ['SC', 'STC', 'short thread casing', 'API SC', 'casing coupling', '8 TPI'],
     paramOverrides: {
-      od: { min: 4, max: 14 }, wall: { min: 0.2 },
-      length: { min: 1.2, max: 3 }, threadCount: { min: 6, max: 12 },
-      threadDepth: { min: 0.03, max: 0.08 },
+      od: { min: 4, max: 14 }, wall: { min: 0.2, max: 1 },
+      length: { min: 1.5, max: 3 },
+      threadCount: { min: 16, max: 28 },
+      threadDepth: { min: 0.03, max: 0.06 },
     },
-    defaults: { od: 5.5, wall: 0.35, length: 1.8, threadCount: 8, threadDepth: 0.05 },
+    defaults: { od: 7.0, wall: 0.5, length: 2.5, threadCount: 20, threadDepth: 0.04, taper: 0.0625 },
   },
   {
-    id: 'box_ltc', name: 'LTC Box (Long Thread Casing)', parent: 'threaded_box',
-    description: 'Long-thread coupled box for deep-well casing — more thread engagement, longer body. Specialization of threaded_box with API LTC dimensions.',
-    tagsAdd: ['LTC', 'long thread casing', 'API LTC', 'deep well', 'casing box'],
+    id: 'box_lc', name: 'LC Box (Long Thread Coupling)', parent: 'threaded_box',
+    description: 'API Long-thread (LC/LTC) coupling box — 8 TPI, long engagement (~10.5" real). Same thread density as SC; longer body for higher joint strength.',
+    tagsAdd: ['LC', 'LTC', 'long thread casing', 'API LC', 'deep well', 'casing coupling', '8 TPI'],
     paramOverrides: {
-      od: { min: 4, max: 14 }, wall: { min: 0.2 },
-      length: { min: 2.5, max: 5 }, threadCount: { min: 12, max: 24 },
-      threadDepth: { min: 0.03, max: 0.08 },
+      od: { min: 4, max: 14 }, wall: { min: 0.2, max: 1 },
+      length: { min: 3, max: 5 },
+      threadCount: { min: 26, max: 40 },
+      threadDepth: { min: 0.03, max: 0.06 },
     },
-    defaults: { od: 5.5, wall: 0.35, length: 3.5, threadCount: 16, threadDepth: 0.05 },
+    defaults: { od: 7.0, wall: 0.5, length: 4.0, threadCount: 32, threadDepth: 0.04 },
   },
   {
-    id: 'box_btc', name: 'BTC Box (Buttress Thread Casing)', parent: 'threaded_box',
-    description: 'Buttress-thread coupled box — square thread profile for high-tension casing strings. Specialization of threaded_box with API BTC dimensions.',
-    tagsAdd: ['BTC', 'buttress thread casing', 'API BTC', 'high tension', 'casing box'],
+    id: 'box_bc', name: 'BC Box (Buttress Thread Coupling)', parent: 'threaded_box',
+    description: 'API Buttress (BC/BTC) coupling box — 5 TPI, long engagement (~10.6" real). Square buttress profile for high-tension casing strings; visibly coarser threads than SC/LC.',
+    tagsAdd: ['BC', 'BTC', 'buttress thread casing', 'API BC', 'high tension', 'casing coupling', '5 TPI'],
     paramOverrides: {
-      od: { min: 4, max: 14 }, wall: { min: 0.2 },
-      length: { min: 2, max: 4 }, threadCount: { min: 10, max: 18 },
-      threadDepth: { min: 0.04, max: 0.10 },
+      od: { min: 4, max: 14 }, wall: { min: 0.2, max: 1 },
+      length: { min: 3, max: 5 },
+      threadCount: { min: 16, max: 26 },
+      threadDepth: { min: 0.05, max: 0.10 },
     },
-    defaults: { od: 7.0, wall: 0.4, length: 2.5, threadCount: 12, threadDepth: 0.06 },
+    defaults: { od: 7.0, wall: 0.6, length: 4.0, threadCount: 20, threadDepth: 0.07 },
   },
 
-  // --- threaded_pin children ---
+  // --- threaded_pin children: API casing pin ends ---
+  // Mirror the box defaults so a pin + box pair makes up consistently.
   {
-    id: 'pin_stc', name: 'STC Pin (Short Thread Casing)', parent: 'threaded_pin',
-    description: 'Short-thread casing pin — mates with the STC box coupling. Specialization of threaded_pin with API STC dimensions.',
-    tagsAdd: ['STC', 'short thread casing', 'API STC', 'casing pin'],
+    id: 'pin_sc', name: 'SC Pin (Short Thread Pin)', parent: 'threaded_pin',
+    description: 'API Short-thread (SC/STC) pin end — mates inside the SC coupling box. 8 TPI, short engagement.',
+    tagsAdd: ['SC', 'STC', 'short thread casing', 'API SC', 'casing pin', '8 TPI'],
     paramOverrides: {
-      od: { min: 4, max: 14 }, wall: { min: 0.2 },
-      length: { min: 1.2, max: 3 }, threadCount: { min: 6, max: 12 },
-      threadDepth: { min: 0.03, max: 0.08 },
+      od: { min: 4, max: 14 }, wall: { min: 0.2, max: 1 },
+      length: { min: 1.5, max: 3 },
+      threadCount: { min: 16, max: 28 },
+      threadDepth: { min: 0.03, max: 0.06 },
     },
-    defaults: { od: 5.5, wall: 0.35, length: 1.8, threadCount: 8, threadDepth: 0.05 },
+    defaults: { od: 7.0, wall: 0.5, length: 2.5, threadCount: 20, threadDepth: 0.04, taper: 0.0625 },
   },
   {
-    id: 'pin_ltc', name: 'LTC Pin (Long Thread Casing)', parent: 'threaded_pin',
-    description: 'Long-thread casing pin — mates with the LTC box coupling. Specialization of threaded_pin with API LTC dimensions.',
-    tagsAdd: ['LTC', 'long thread casing', 'API LTC', 'deep well', 'casing pin'],
+    id: 'pin_lc', name: 'LC Pin (Long Thread Pin)', parent: 'threaded_pin',
+    description: 'API Long-thread (LC/LTC) pin end — mates inside the LC coupling box. 8 TPI, long engagement.',
+    tagsAdd: ['LC', 'LTC', 'long thread casing', 'API LC', 'deep well', 'casing pin', '8 TPI'],
     paramOverrides: {
-      od: { min: 4, max: 14 }, wall: { min: 0.2 },
-      length: { min: 2.5, max: 5 }, threadCount: { min: 12, max: 24 },
-      threadDepth: { min: 0.03, max: 0.08 },
+      od: { min: 4, max: 14 }, wall: { min: 0.2, max: 1 },
+      length: { min: 3, max: 5 },
+      threadCount: { min: 26, max: 40 },
+      threadDepth: { min: 0.03, max: 0.06 },
     },
-    defaults: { od: 5.5, wall: 0.35, length: 3.5, threadCount: 16, threadDepth: 0.05 },
+    defaults: { od: 7.0, wall: 0.5, length: 4.0, threadCount: 32, threadDepth: 0.04 },
   },
   {
-    id: 'pin_btc', name: 'BTC Pin (Buttress Thread Casing)', parent: 'threaded_pin',
-    description: 'Buttress-thread casing pin — mates with the BTC box coupling. Specialization of threaded_pin with API BTC dimensions.',
-    tagsAdd: ['BTC', 'buttress thread casing', 'API BTC', 'high tension', 'casing pin'],
+    id: 'pin_bc', name: 'BC Pin (Buttress Thread Pin)', parent: 'threaded_pin',
+    description: 'API Buttress (BC/BTC) pin end — mates inside the BC coupling box. 5 TPI, long engagement, coarse thread profile.',
+    tagsAdd: ['BC', 'BTC', 'buttress thread casing', 'API BC', 'high tension', 'casing pin', '5 TPI'],
     paramOverrides: {
-      od: { min: 4, max: 14 }, wall: { min: 0.2 },
-      length: { min: 2, max: 4 }, threadCount: { min: 10, max: 18 },
-      threadDepth: { min: 0.04, max: 0.10 },
+      od: { min: 4, max: 14 }, wall: { min: 0.2, max: 1 },
+      length: { min: 3, max: 5 },
+      threadCount: { min: 16, max: 26 },
+      threadDepth: { min: 0.05, max: 0.10 },
     },
-    defaults: { od: 7.0, wall: 0.4, length: 2.5, threadCount: 12, threadDepth: 0.06 },
+    defaults: { od: 7.0, wall: 0.6, length: 4.0, threadCount: 20, threadDepth: 0.07 },
   },
 ];
 

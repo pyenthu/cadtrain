@@ -10,15 +10,7 @@
     {
       label: null,
       items: [
-        { href: '/author', label: 'Author' },
-      ],
-    },
-    {
-      label: 'Library',
-      items: [
         { href: '/primitives', label: 'Primitives' },
-        { href: '/families',   label: 'Families' },
-        { href: '/kb',         label: 'KB' },
       ],
     },
     {
