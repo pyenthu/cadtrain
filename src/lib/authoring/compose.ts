@@ -16,10 +16,30 @@ import {
   buildPrimitiveManifold,
   finalizeManifold,
   initManifold,
-  setCircularSegmentMode,
   type ComponentResult,
 } from '$lib/components/builder';
 import type { AuthoredComponent, AuthoredPart, AuthoredOp } from './schema';
+
+/**
+ * Per-part result for the multi-mesh render path. Each part is finalized
+ * independently — mobile-safe because we never hold a giant union of all
+ * parts in WASM heap at once. Bottom-sub uses the same multi-mesh shape.
+ */
+export interface AuthoredPartResult {
+  /** Local id from the spec (p0, p1, ...) */
+  id: string;
+  /** Primitive id (hollow_cylinder, packer_element, ...) */
+  prim: string;
+  full: any;        // THREE.BufferGeometry
+  cutVC: any;       // THREE.BufferGeometry (with vertex colors for cutaway)
+}
+
+export interface AuthoredResult {
+  /** Per-part finalized geometry. Render each as a separate <T.Mesh>. */
+  parts: AuthoredPartResult[];
+  /** Total wall-clock build time in ms (sum of per-part finalize calls). */
+  ms: number;
+}
 
 /**
  * Build geometry from an authored spec.
@@ -35,65 +55,84 @@ import type { AuthoredComponent, AuthoredPart, AuthoredOp } from './schema';
  * Restored on completion (try/finally) so subsequent single-primitive
  * renders go back to crisp 192.
  */
-export async function buildAuthored(spec: AuthoredComponent): Promise<ComponentResult> {
+export async function buildAuthored(spec: AuthoredComponent): Promise<AuthoredResult> {
   await initManifold();
 
   if (spec.parts.length === 0) {
     throw new Error('AuthoredComponent has no parts');
   }
 
-  setCircularSegmentMode('compose');
-  try {
-    // Stage 1: build each part as a raw manifold, apply its transform.
-    // Map from local id → manifold. Shared by parts and op outputs since
-    // op ids can be referenced by later ops as if they were parts.
-    const pool: Record<string, any> = {};
+  // Multi-mesh build path (mirrors bottom-sub): each part finalized
+  // independently, no giant union. Mobile-safe because peak WASM heap is
+  // bounded by the single largest part rather than the union of all parts.
+  // CSG ops (subtract / intersect) STILL fuse their inputs into one manifold —
+  // those are intentional fuses (e.g. port holes through a sub) and are
+  // typically 2-3 inputs, well within heap budget.
+  const t0 = Date.now();
+  const maxOD = estimateMaxOD(spec.parts);
 
-    for (const part of spec.parts) {
-      if (pool[part.id] !== undefined) {
-        throw new Error(`Duplicate part id: ${part.id}`);
-      }
-      let m = buildPrimitiveManifold(part.prim, part.params);
-      m = applyTransform(m, part.transform);
-      pool[part.id] = m;
+  // Stage 1: build each part's transformed manifold. Pool also carries op
+  // outputs for chained CSG.
+  const pool: Record<string, any> = {};
+  for (const part of spec.parts) {
+    if (pool[part.id] !== undefined) {
+      throw new Error(`Duplicate part id: ${part.id}`);
     }
-
-    // Stage 2: apply CSG operations in order. Each op's output goes back
-    // into the pool under its `out` id so later ops can reference it.
-    let lastOut: string | null = null;
-
-    for (const op of spec.ops) {
-      if (pool[op.out] !== undefined) {
-        throw new Error(`Op out id collides with existing id: ${op.out}`);
-      }
-      if (op.inputs.length < 2) {
-        throw new Error(`Op ${op.out} needs at least 2 inputs (got ${op.inputs.length})`);
-      }
-      let result = resolve(pool, op.inputs[0], op.out);
-      for (let i = 1; i < op.inputs.length; i++) {
-        const next = resolve(pool, op.inputs[i], op.out);
-        result = applyCsg(result, next, op.op);
-      }
-      pool[op.out] = result;
-      lastOut = op.out;
-    }
-
-    // Final manifold: whichever op ran last, else union of all parts.
-    let finalManifold: any;
-    if (lastOut !== null) {
-      finalManifold = pool[lastOut];
-    } else {
-      finalManifold = pool[spec.parts[0].id];
-      for (let i = 1; i < spec.parts.length; i++) {
-        finalManifold = finalManifold.add(pool[spec.parts[i].id]);
-      }
-    }
-
-    const maxOD = estimateMaxOD(spec.parts);
-    return finalizeManifold(finalManifold, maxOD);
-  } finally {
-    setCircularSegmentMode('default');
+    let m = buildPrimitiveManifold(part.prim, part.params);
+    m = applyTransform(m, part.transform);
+    pool[part.id] = m;
   }
+
+  // Stage 2: apply explicit CSG ops. Each op REPLACES its inputs in the
+  // render set — the resulting fused manifold becomes a single part. Track
+  // which spec.parts ids got consumed so we don't render them twice.
+  const consumed = new Set<string>();
+  const opResults: { id: string; prim: string; manifold: any }[] = [];
+
+  for (const op of spec.ops) {
+    if (pool[op.out] !== undefined) {
+      throw new Error(`Op out id collides with existing id: ${op.out}`);
+    }
+    if (op.inputs.length < 2) {
+      throw new Error(`Op ${op.out} needs at least 2 inputs (got ${op.inputs.length})`);
+    }
+    let result = resolve(pool, op.inputs[0], op.out);
+    for (let i = 1; i < op.inputs.length; i++) {
+      const next = resolve(pool, op.inputs[i], op.out);
+      result = applyCsg(result, next, op.op);
+    }
+    pool[op.out] = result;
+    for (const inp of op.inputs) consumed.add(inp);
+    opResults.push({ id: op.out, prim: 'op', manifold: result });
+  }
+
+  // Stage 3: assemble the render list — every part NOT consumed by an op,
+  // plus every op output. Each gets finalized (centered + cutaway) independently.
+  const partResults: AuthoredPartResult[] = [];
+  for (const part of spec.parts) {
+    if (consumed.has(part.id)) continue;
+    const fin = finalizeManifold(pool[part.id], maxOD);
+    partResults.push({ id: part.id, prim: part.prim, full: fin.full, cutVC: fin.cutVC });
+  }
+  for (const op of opResults) {
+    const fin = finalizeManifold(op.manifold, maxOD);
+    partResults.push({ id: op.id, prim: op.prim, full: fin.full, cutVC: fin.cutVC });
+  }
+
+  return { parts: partResults, ms: Date.now() - t0 };
+}
+
+/**
+ * Backwards-compat shim. The Phase-3 author/library code expected a single
+ * fused ComponentResult. The multi-mesh refactor returns AuthoredResult.
+ * Anything still calling the old shape gets the FIRST part only — usable
+ * for thumbnail/pHash but missing the rest. Update callers to AuthoredResult.
+ */
+export async function buildAuthoredFused(spec: AuthoredComponent): Promise<ComponentResult> {
+  const r = await buildAuthored(spec);
+  if (r.parts.length === 0) throw new Error('No parts produced');
+  const p = r.parts[0];
+  return { full: p.full, cutVC: p.cutVC, manifold: null };
 }
 
 function resolve(pool: Record<string, any>, id: string, forOp: string): any {

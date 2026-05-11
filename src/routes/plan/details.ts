@@ -396,6 +396,71 @@ export const details: Record<number, PlanDetail> = {
     ],
   },
 
+  122: {
+    summary:
+      'User reported: Opus-generated assemblies (8-12 parts each) crashed mobile ' +
+      'Safari while bottom-sub (single dedicated builder) works fine even at high ' +
+      'precision. Investigation: bottom-sub returns SEPARATE manifolds per piece ' +
+      '(housing, slips, sleeve) and renders 3 independent meshes. Old compose.ts ' +
+      'UNIONED all parts into one giant manifold — peak WASM heap during the union ' +
+      "exceeded mobile Safari's ~1GB cap → tab killed.\n\n" +
+      'Fix: refactor buildAuthored() to mirror bottom-sub. Each part is finalized ' +
+      'independently (own centering + own cutaway-box subtract); ComponentScene ' +
+      'now accepts AuthoredResult { parts: [...] } and renders one <T.Mesh> per ' +
+      'part. CSG ops still fuse THEIR inputs (typically 2-3 inputs, fine for heap), ' +
+      'and the op output replaces its inputs in the render set.\n\n' +
+      'Restored 192-segment precision (was 64 in the previous quick fix). The ' +
+      'CIRCULAR_SEGMENTS_COMPOSE infrastructure stays in place for future use but ' +
+      'is no longer called.\n\n' +
+      'Why CSG was the bottleneck: WASM is single-threaded, runs on the main JS ' +
+      'thread, blocks the event loop. It does NOT run in parallel with rendering — ' +
+      'the build phase is sequential, then the GPU renders the result. Memory ' +
+      'peak during build phase = the constraint.',
+    refs: [
+      'src/lib/authoring/compose.ts',
+      'src/lib/shared/ComponentScene.svelte',
+    ],
+  },
+
+  123: {
+    summary:
+      'Pre-built GLB cache for /library — at view time, the library page loads ' +
+      "static GLB binaries (Three.js GLTFLoader) instead of spawning ManifoldCAD. " +
+      'Build pipeline: on /api/author/save, run buildAuthored on the server (Node ' +
+      'WASM), serialize to GLB, write to static/library/<id>.glb. Library cards ' +
+      "fetch their GLB on hover/click; cards never trigger CSG.\n\n" +
+      'Why: GLB load is just bytes → GPU upload, no WASM, no CSG, no heap pressure. ' +
+      "Mobile-safe by construction. CDN-cacheable. The trade-off is parametric " +
+      "editing — sliders need ManifoldCAD live, so /author still uses the WASM " +
+      'path; only /library benefits from the GLB cache.\n\n' +
+      'Open design questions:\n' +
+      ' - Where does the build run? Same /api/author/save handler, or a separate ' +
+      'queue? Build of a 12-part assembly takes 3-10s, which is too slow inline.\n' +
+      ' - Cache invalidation: bumping primitive geometry (builder.ts) invalidates ' +
+      'every GLB. Add a builder-version hash to the filename?\n' +
+      ' - Storage: GLB files in static/ vs Railway volume? Probably volume since ' +
+      'they grow with the library.',
+  },
+
+  124: {
+    summary:
+      'Speculative future work: GPU-based CSG (compute-shader Booleans) for the ' +
+      'giant-mesh path. Today buildAuthored() avoids OOM by NOT fusing all parts. ' +
+      'But there are real assemblies where you want one fused manifold (e.g. for ' +
+      'export to STEP, for downstream FEA, for accurate vertex coloring across ' +
+      'merged surfaces). WASM CSG hits the heap ceiling on those.\n\n' +
+      'GPU CSG approaches to evaluate:\n' +
+      ' - threejs-csg (uses BSP trees on CPU — same problem as Manifold)\n' +
+      ' - manifold-3d itself with WebGPU backend (open issue, not shipped)\n' +
+      ' - Voxel-based CSG (rasterize each mesh into a 3D texture, do boolean ops ' +
+      "as fragment-shader passes, marching-cubes back to mesh — fast but loses " +
+      'sharp edges)\n' +
+      ' - Mesh-Boolean libraries that target WebGPU compute shaders (active ' +
+      'research, e.g. Apple/NVIDIA papers)\n\n' +
+      'Out of scope for current iteration. Worth revisiting once the rest of the ' +
+      'product is settled.',
+  },
+
   // ───── G. Vendor catalog ingest ─────
 
   200: {
