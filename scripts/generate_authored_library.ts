@@ -1,7 +1,8 @@
 /**
  * generate_authored_library.ts
  *
- * Hands the 18-primitive catalog to Claude Opus and asks for a library of
+ * Hands the 18-primitive catalog to the local `claude` CLI subprocess
+ * (Pro/Max OAuth-billed, NOT API tokens) and asks for a library of
  * realistic downhole-tool assemblies as AuthoredComponent JSON. Each
  * generated assembly is validated against the schema and appended to
  * training_data/authored_cache.jsonl.
@@ -9,28 +10,32 @@
  * Once persisted, the records are visible in 3D at /archive/library —
  * clicking any record opens it in /archive/author for parametric editing.
  *
+ * Why CLI not API: subscription billing only works through the CLI
+ * subprocess — the SDK / Agent SDK do NOT bill against Pro/Max OAuth.
+ * (See src/lib/shared/claude-cli.ts for the shared wrapper used by both
+ * /api/identify and /api/wells/extract.)
+ *
  * Usage:
  *   bun run scripts/generate_authored_library.ts                    # 10 assemblies
  *   bun run scripts/generate_authored_library.ts --count 20         # 20
  *   bun run scripts/generate_authored_library.ts --dry-run          # don't save
- *   bun run scripts/generate_authored_library.ts --model claude-sonnet-4-6  # override
+ *   bun run scripts/generate_authored_library.ts --model sonnet     # override (CLI alias)
  *
- * Default model: claude-opus-4-7 (per user request — Opus only for this
- * domain-knowledge-heavy generation; smaller models compose less coherently).
- *
- * Cost: ~$0.10–0.40 per call depending on count + retries (Opus pricing).
+ * Default model: opus (CLI alias — bills against Pro/Max subscription).
+ * Pre-req: `claude` on PATH and `claude auth status` shows
+ *   { authMethod: 'claude.ai', loggedIn: true }.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import { COMPONENTS } from '../src/lib/components/library';
 import type { AuthoredComponent, AuthoredPart, AuthoredOp } from '../src/lib/authoring/schema';
+import { buildClaudeCliArgs, spawnClaudeCli, parseCliEnvelope } from '../src/lib/shared/claude-cli';
 
 const CACHE_PATH = join(process.cwd(), 'training_data', 'authored_cache.jsonl');
-const DEFAULT_MODEL = 'claude-opus-4-7';
+const DEFAULT_MODEL = 'opus';
 const DEFAULT_COUNT = 10;
 
 // ---------- prompt construction ----------
@@ -55,64 +60,36 @@ function buildPrimitiveCatalog(): string {
   }).join('\n\n');
 }
 
-function buildSystemPrompt(): string {
-  return `You are an expert downhole completion engineer composing real production tool assemblies.
+// Prompt templates live as Markdown next to this script so you can iterate
+// on the wording without editing TypeScript. Placeholders:
+//   {{PRIMITIVE_COUNT}}     → number of primitives in the catalog
+//   {{PRIMITIVE_CATALOG}}   → buildPrimitiveCatalog() output
+//   {{COUNT}}               → --count value
+//
+// Edit scripts/prompts/generate_authored.{system,user}.md → re-run.
+const SYSTEM_PROMPT_PATH = join(process.cwd(), 'scripts', 'prompts', 'generate_authored.system.md');
+const USER_PROMPT_PATH = join(process.cwd(), 'scripts', 'prompts', 'generate_authored.user.md');
 
-You have ${COMPONENTS.length} parametric primitives available. Your job is to combine them — with realistic dimensions and proper Z-axis stacking — into recognizable real-world tools used in oil & gas wells.
-
-Hard rules:
-1. Use ONLY the primitive ids listed in the catalog. No invented primitives.
-2. Use ONLY parameters defined for each primitive. No invented params. Stay within the [min, max] ranges.
-3. Use Z-DOWN convention (drilling standard). Position parts via transform.tz so they stack along Z. Top of the assembly = smallest tz, bottom = largest tz. Center the assembly vertically around tz=0.
-4. Choose dimensions that are physically realistic for a real downhole tool — match casing/tubing sizes (typical: 2 7/8", 3 1/2", 4 1/2", 5 1/2", 7"). Don't put a 6" OD packer element on a 1" mandrel.
-5. Components further down a string should generally be smaller OD or matched to their casing/tubing size. Connections (threads) should stack at the ends, body parts in the middle.
-6. Default to UNION composition (which is implicit if you provide no ops). Use SUBTRACT only when one part should clearly cut into another (e.g., port holes through a sub).
-7. Each assembly should be a recognizable named real tool — e.g. "5-1/2\\" Permanent Production Packer", "Wireline Setting Tool", "X-Style Landing Nipple", "EUE Pup Joint", "Bottom Sub with NC-50 Connections", "Otis 'XN' Lock Mandrel", "Snap-Latch Anchor", "Polished Bore Receptacle Extension", etc.
-
-Output format:
-Return ONLY a JSON array (no prose, no code fences, no markdown). Each element is an AuthoredComponent matching this TypeScript shape:
-
-  {
-    "id": "string (slug — lowercase, snake_case)",
-    "name": "string (human readable)",
-    "description": "string (1-2 sentences — what this tool does in the well)",
-    "tags": ["string", ...],     // e.g. ["packer", "production", "permanent"]
-    "version": 1,
-    "created": "ISO timestamp",
-    "source": "claude_suggested",
-    "parts": [
-      {
-        "id": "p0", "p1", "p2", ...
-        "prim": "primitive_id_from_catalog",
-        "params": { "param_name": number, ... },  // all required params, valid ranges
-        "transform": { "tx": 0, "ty": 0, "tz": <z position> }  // tz only usually needed
-      },
-      ...
-    ],
-    "ops": []  // typically empty (implicit union); only fill if you need explicit subtract/intersect
+function loadTemplate(path: string, vars: Record<string, string>): string {
+  let text = readFileSync(path, 'utf-8');
+  for (const [k, v] of Object.entries(vars)) {
+    text = text.replaceAll(`{{${k}}}`, v);
   }
+  return text;
+}
 
-Quality bar: I want assemblies that a completion engineer would look at and immediately say "yes that's a packer" or "yes that's a landing nipple". Realism > novelty.`;
+function buildSystemPrompt(): string {
+  return loadTemplate(SYSTEM_PROMPT_PATH, {
+    PRIMITIVE_COUNT: String(COMPONENTS.length),
+  });
 }
 
 function buildUserPrompt(count: number, primitiveCatalog: string): string {
-  return `Here are the ${COMPONENTS.length} parametric primitives:
-
-${primitiveCatalog}
-
-Now generate exactly ${count} distinct realistic downhole tool assemblies as a JSON array. Cover a mix of:
-  - Production packers (permanent and retrievable)
-  - Bridge plugs / cement retainers
-  - Landing nipples (selective profile types)
-  - Lock mandrels and X-style locks
-  - Pup joints and sub assemblies (EUE, NC, IF threads)
-  - Polished bore receptacles / seal bore extensions
-  - Setting tools / wireline running tools
-  - Bottom subs / mule shoe / re-entry guides
-  - Anchor catchers / hold-down assemblies
-  - Otis flow couplings or sliding sleeves where the primitives allow
-
-Match each tool to a typical casing/tubing size and choose realistic dimensions for that size. Return ONLY the JSON array — no commentary.`;
+  return loadTemplate(USER_PROMPT_PATH, {
+    PRIMITIVE_COUNT: String(COMPONENTS.length),
+    PRIMITIVE_CATALOG: primitiveCatalog,
+    COUNT: String(count),
+  });
 }
 
 // ---------- validation ----------
@@ -288,43 +265,46 @@ async function main() {
   const model = values.model ?? DEFAULT_MODEL;
   const dryRun = !!values['dry-run'];
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    // .env is loaded by SvelteKit at runtime; for a script we read it manually.
-    if (existsSync('.env')) {
-      const env = readFileSync('.env', 'utf-8');
-      const m = env.match(/^ANTHROPIC_API_KEY=(.+)$/m);
-      if (m) process.env.ANTHROPIC_API_KEY = m[1].trim().replace(/^['"]|['"]$/g, '');
-    }
-  }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('error: ANTHROPIC_API_KEY not set (.env or environment)');
-    process.exit(1);
-  }
+  console.log(
+    `▶  Generating ${count} assemblies via claude CLI (model=${model}) — bills against Pro/Max OAuth, not API tokens${dryRun ? ' (dry-run)' : ''}\n`,
+  );
 
-  console.log(`▶  Generating ${count} assemblies via ${model}${dryRun ? ' (dry-run)' : ''}\n`);
-
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const catalog = buildPrimitiveCatalog();
   const system = buildSystemPrompt();
   const user = buildUserPrompt(count, catalog);
 
-  const t0 = Date.now();
-  const response = await client.messages.create({
+  const args = buildClaudeCliArgs({
     model,
-    max_tokens: 16000,
-    system,
-    messages: [{ role: 'user', content: user }],
+    addDir: process.cwd(),
+    systemPrompt: system,
+    userPrompt: user,
   });
+
+  const t0 = Date.now();
+  // CLI startup + agent loop overhead → 5-7× slower than API per call. For 10
+  // assemblies allow up to 10 minutes; the prompt itself is single-shot so a
+  // very long timeout just covers the long-tail.
+  const result = await spawnClaudeCli(args, 10 * 60_000);
   const ms = Date.now() - t0;
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
+  if (result.exitCode !== 0) {
+    console.error(
+      `✗  claude CLI exited ${result.exitCode} after ${(ms / 1000).toFixed(1)}s\n` +
+      `   stderr: ${result.stderr.slice(0, 500)}`,
+    );
+    process.exit(1);
+  }
 
-  console.log(
-    `▶  Response: ${response.usage.input_tokens} in + ${response.usage.output_tokens} out tokens, ${(ms / 1000).toFixed(1)}s\n`,
-  );
+  let text: string;
+  try {
+    text = parseCliEnvelope(result.stdout, { stripCodeFences: true });
+  } catch (e) {
+    console.error('✗  Failed to parse CLI envelope:', (e as Error).message);
+    console.error('\nstdout (first 500):\n', result.stdout.slice(0, 500));
+    process.exit(1);
+  }
+
+  console.log(`▶  CLI returned in ${(ms / 1000).toFixed(1)}s, ${text.length} chars\n`);
 
   let parsed: any[];
   try {
