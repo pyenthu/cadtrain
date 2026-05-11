@@ -71,9 +71,12 @@
     const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
     const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
     if (!isFinite(diagonal) || diagonal <= 0) return fallback;
-    // 600 was tuned for max-axis; bumped slightly to compensate for
-    // diagonal-fit giving a tighter view margin.
-    return Math.min(550 / diagonal, fallback);
+    // Constant is the "viewport budget". Smaller = more zoomed out = more
+    // margin around the object during rotation. Some Opus assemblies are
+    // ~16" tall (parts widely spaced along Z), so we need generous headroom
+    // for the diagonal sweep at 45° rotations. 350 leaves ~30% margin on
+    // a 16" packer. Single primitives still cap at DEFAULT_ZOOM=130.
+    return Math.min(350 / diagonal, fallback);
   }
 
   let cameraPosition = $derived(cameraOverride?.position ?? DEFAULT_POSITION);

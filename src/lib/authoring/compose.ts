@@ -168,7 +168,14 @@ export async function buildAuthored(spec: AuthoredComponent): Promise<AuthoredRe
       fused = fused.add(renderables[i]);
     }
 
-    const fin = finalizeManifold(fused, maxOD, true);
+    // skipCenter=false: the fused manifold gets centered to world origin.
+    // Each part kept its tz-transform during the union (no per-part center),
+    // so internal positioning is preserved — we just re-anchor the whole
+    // assembly's centroid at (0,0,0) so OrbitControls rotates around the
+    // middle of the object, not around an off-center pivot. Bottom-sub
+    // never had this issue because its hand-coded transforms are already
+    // symmetric around origin; Opus's aren't.
+    const fin = finalizeManifold(fused, maxOD, false);
     partResults.push({ id: 'fused', prim: 'fused', full: fin.full, cutVC: fin.cutVC });
   } else {
     for (const part of spec.parts) {
