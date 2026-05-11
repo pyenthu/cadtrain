@@ -40,21 +40,11 @@
   function toggleLibrary() { showLibrary = !showLibrary; localStorage.setItem('author:showLibrary', showLibrary ? '1' : '0'); }
   function toggleEdit() { showEdit = !showEdit; localStorage.setItem('author:showEdit', showEdit ? '1' : '0'); }
 
-  // Right-panel tabs:
-  //   'params'  — parts + ops editor (the per-instance design)
-  //   'meta'    — id / name / description / tags + save
-  //   'library' — methodology surface: existing primitives + KB connection
-  //               coverage analysis. Where we work out what new primitives
-  //               are needed to cover the 56 pipe connection families in
-  //               static/kb/api/casing-tubing-data.json.
-  type TabId = 'params' | 'meta' | 'library';
-  let activeTab = $state<TabId>('params');
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = localStorage.getItem('author:activeTab');
-    if (saved === 'params' || saved === 'meta' || saved === 'library') activeTab = saved;
-  });
-  function setTab(t: TabId) { activeTab = t; localStorage.setItem('author:activeTab', t); }
+  // Right panel is a single "Components" view — pipe-taxonomy methodology
+  // surface on top, parts/ops editor in the middle, metadata at the bottom.
+  // Used to be three separate tabs (Parameters / Metadata / Library) but
+  // they're closely related when designing a pipe component, so they live
+  // together in one scrollable column now.
 
   // Library list — sourced from /api/author/list. Click a card → loads
   // that spec into the workbench (replaces the old separate /library page).
@@ -113,13 +103,22 @@
   // anchors to the viewport's top-left, not the projected 3D origin.
   let SceneControls = $state<any>(null);
 
-  // Library-tab state: KB connection stats. Loaded lazily on first tab
-  // activation (the JSON is ~240 KB — fine to fetch but no point grabbing
-  // it if the user never opens the tab).
+  // Library-tab state: KB → family coverage analysis. The KB has 56 distinct
+  // connection names; pipe/families.ts groups them into ~18 families across
+  // 4 archetypes. This view shows the archetype/family tree with per-family
+  // KB-row counts + a separate bucket for unmapped names (long tail TODO).
+  import { ARCHETYPES, type Archetype } from '$lib/components/pipe/archetypes';
+  import { FAMILIES, familyByConnection, familiesByArchetype } from '$lib/components/pipe/families';
+
   interface ConnCount { name: string; count: number; }
-  let kbStats = $state<{ totalRows: number; distinctConnections: number; topConnections: ConnCount[] }>({
-    totalRows: 0, distinctConnections: 0, topConnections: [],
-  });
+  interface FamilyStat { family_id: string; family_name: string; archetype: Archetype; row_count: number; }
+  interface ArchetypeStat { id: Archetype; name: string; total_rows: number; families: FamilyStat[]; }
+  let kbStats = $state<{
+    totalRows: number;
+    distinctConnections: number;
+    archetypes: ArchetypeStat[];
+    unmapped: ConnCount[];
+  }>({ totalRows: 0, distinctConnections: 0, archetypes: [], unmapped: [] });
   let kbLoaded = $state(false);
   let kbLoading = $state(false);
   let kbError = $state<string | null>(null);
@@ -136,11 +135,38 @@
         const c = row.connection ?? '(unknown)';
         counts.set(c, (counts.get(c) ?? 0) + 1);
       }
+
+      // Bucket each connection-name's row count into its family (or
+      // 'unmapped' if no family claims it yet). Then aggregate to archetype.
+      const familyTotals = new Map<string, number>();
+      const unmapped: ConnCount[] = [];
+      for (const [connName, count] of counts) {
+        const fam = familyByConnection(connName);
+        if (fam) familyTotals.set(fam.id, (familyTotals.get(fam.id) ?? 0) + count);
+        else unmapped.push({ name: connName, count });
+      }
+
+      const byArch = familiesByArchetype();
+      const archetypes: ArchetypeStat[] = Object.values(ARCHETYPES).map((arch) => {
+        const fams = (byArch[arch.id] ?? []).map((f) => ({
+          family_id: f.id,
+          family_name: f.name,
+          archetype: arch.id,
+          row_count: familyTotals.get(f.id) ?? 0,
+        }));
+        return {
+          id: arch.id,
+          name: arch.name,
+          total_rows: fams.reduce((s, x) => s + x.row_count, 0),
+          families: fams.sort((a, b) => b.row_count - a.row_count),
+        };
+      }).sort((a, b) => b.total_rows - a.total_rows);
+
       kbStats = {
         totalRows: data.rows.length,
         distinctConnections: counts.size,
-        topConnections: [...counts].sort((a, b) => b[1] - a[1]).slice(0, 20)
-          .map(([name, count]) => ({ name, count })),
+        archetypes,
+        unmapped: unmapped.sort((a, b) => b.count - a.count),
       };
       kbLoaded = true;
     } catch (e: any) {
@@ -395,90 +421,68 @@
       <span class="caret">{showEdit ? '▸' : '◂'}</span>
     </button>
     {#if showEdit}
-      <div class="tab-bar" role="tablist">
-        <button
-          class="tab"
-          class:active={activeTab === 'params'}
-          role="tab"
-          aria-selected={activeTab === 'params'}
-          onclick={() => setTab('params')}
-        >Parameters <span class="tab-count">{spec.parts.length + spec.ops.length}</span></button>
-        <button
-          class="tab"
-          class:active={activeTab === 'meta'}
-          role="tab"
-          aria-selected={activeTab === 'meta'}
-          onclick={() => setTab('meta')}
-        >Metadata</button>
-        <button
-          class="tab"
-          class:active={activeTab === 'library'}
-          role="tab"
-          aria-selected={activeTab === 'library'}
-          onclick={() => setTab('library')}
-        >Library</button>
-      </div>
+      <!-- Single "Components" header replaces the prior 3-tab bar
+           (Parameters / Metadata / Library). All three sections are now
+           stacked in one scrollable column so methodology-design and
+           per-instance editing live side by side. -->
+      <div class="single-header">Components</div>
 
-      {#if activeTab === 'meta'}
-      <div class="meta-fields">
-        <label>ID<input type="text" bind:value={spec.id} placeholder="e.g. my_sub" /></label>
-        <label>Name<input type="text" bind:value={spec.name} placeholder="e.g. My Bottom Sub" /></label>
-        <label>Description<textarea bind:value={spec.description} rows="3" placeholder="What is this component?"></textarea></label>
-        <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
-          spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
-        }} /></label>
-        <button class="save" onclick={saveSpec} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
-        {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
-      </div>
-      {:else if activeTab === 'library'}
-      <!-- Library tab — methodology surface for working out what primitives
-           are needed to cover the casing/tubing KB's 56 distinct connection
-           families. Two sections to start: what we have, what's in the KB.
-           Future: a coverage matrix mapping connection families → primitives.
-      -->
+      <!-- 1. Methodology surface — pipe-domain OOP hierarchy. -->
       <div class="lib-tab">
         <div class="sec">
-          <div class="sec-h">Existing primitives <span class="tab-count">{COMPONENTS.length}</span></div>
-          {#each COMPONENTS as c (c.id)}
-            <div class="prim-row">
-              <span class="prim-id">{c.id}</span>
-              <span class="prim-name">{c.name}</span>
+          <div class="sec-h">Pipe archetypes <span class="muted">{Object.keys(ARCHETYPES).length} abstract · {FAMILIES.length} families</span></div>
+          <div class="sec-sub">Every pipe joint is body + top(box) + bot(pin). One primitive per archetype, families share geometry, KB rows pick instance dimensions.</div>
+        </div>
+
+        {#if kbLoading}
+          <div class="empty">Loading KB…</div>
+        {:else if kbError}
+          <div class="empty err-text">{kbError}</div>
+        {:else if !kbLoaded}
+          <div class="empty">—</div>
+        {:else}
+          {#each kbStats.archetypes as arch (arch.id)}
+            <div class="sec arch-sec">
+              <div class="arch-h">
+                <span class="arch-name">{arch.name}</span>
+                <span class="arch-meta">{arch.total_rows} rows · {arch.families.length} families</span>
+              </div>
+              {#each arch.families as f (f.family_id)}
+                <div class="fam-row">
+                  <span class="fam-count" class:zero={f.row_count === 0}>{f.row_count}</span>
+                  <span class="fam-name">{f.family_name}</span>
+                  <span class="fam-id">{f.family_id}</span>
+                </div>
+              {/each}
             </div>
           {/each}
-        </div>
-        <div class="sec">
-          <div class="sec-h">KB connections <span class="muted">casing-tubing-data</span></div>
-          {#if kbLoading}
-            <div class="empty">Loading…</div>
-          {:else if kbError}
-            <div class="empty err-text">{kbError}</div>
-          {:else if !kbLoaded}
-            <div class="empty">—</div>
-          {:else}
-            <div class="sec-sub">{kbStats.totalRows} rows · {kbStats.distinctConnections} distinct connections · top {kbStats.topConnections.length}</div>
-            {#each kbStats.topConnections as c (c.name)}
-              <div class="conn-row">
-                <span class="conn-count">{c.count}</span>
-                <span class="conn-name">{c.name}</span>
-              </div>
-            {/each}
+
+          {#if kbStats.unmapped.length > 0}
+            <div class="sec unmapped-sec">
+              <div class="sec-h">Unmapped <span class="muted">{kbStats.unmapped.reduce((s, x) => s + x.count, 0)} rows · {kbStats.unmapped.length} names</span></div>
+              <div class="sec-sub">KB connection strings not yet assigned to a family. Add to FAMILIES in src/lib/components/pipe/families.ts when ready.</div>
+              {#each kbStats.unmapped.slice(0, 15) as u (u.name)}
+                <div class="conn-row">
+                  <span class="conn-count">{u.count}</span>
+                  <span class="conn-name">{u.name || '(empty)'}</span>
+                </div>
+              {/each}
+            </div>
           {/if}
-        </div>
+        {/if}
+
         <div class="sec methodology-note">
-          <div class="sec-h">Methodology — TBD</div>
+          <div class="sec-h">Status</div>
           <div class="empty">
-            Approach: collapse 56 connection names into a small set of visual
-            archetypes (premium tapered, torque-shoulder, API coupled, API
-            upset, line-pipe special). One primitive per archetype, KB rows
-            select instance dimensions. To work out next.
+            Phase A (scaffolding) done — types, taxonomy, DesignSpace template
+            in place. Phase B: fill <code>premium_integral</code> primitive with
+            NEW VAM as the calibration target, then template the other 3
+            archetypes from that pattern.
           </div>
         </div>
       </div>
-      {:else}
-      <div class="sec">
+      <!-- 2. Parts & ops editor (per-instance design). -->
+      <div class="sec sec-divider">
         <div class="sec-h">Parts <button class="add" onclick={addPart}>+</button></div>
         {#if spec.parts.length === 0}
           <div class="empty">No parts — click + to add a primitive.</div>
@@ -569,7 +573,22 @@
           </div>
         {/each}
       </div>
-      {/if}
+
+      <!-- 3. Metadata + save. -->
+      <div class="meta-fields sec-divider">
+        <div class="sec-h">Metadata</div>
+        <label>ID<input type="text" bind:value={spec.id} placeholder="e.g. my_sub" /></label>
+        <label>Name<input type="text" bind:value={spec.name} placeholder="e.g. My Bottom Sub" /></label>
+        <label>Description<textarea bind:value={spec.description} rows="3" placeholder="What is this component?"></textarea></label>
+        <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
+          spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
+        }} /></label>
+        <button class="save" onclick={saveSpec} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
+        {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
+      </div>
     {/if}
   </div>
 
@@ -641,44 +660,57 @@
   .lib-meta { font: 10px Arial; color: #888; margin-bottom: 2px; }
   .lib-tags { font: 9px Arial; color: #aaa; }
 
-  /* Right panel: tab bar lets the user switch between Parameters (parts +
-     ops editor) and Metadata (id/name/desc/tags + save). Single-section
-     view at a time keeps the panel narrow + focused. */
+  /* Right-panel single "Components" view (was previously 3 tabs:
+     Parameters / Metadata / Library). All sections stack in one scrollable
+     column — methodology surface on top, parts/ops editor in the middle,
+     metadata at the bottom. Sec-divider draws a thin rule between them. */
   .meta-fields { display: flex; flex-direction: column; gap: 6px; }
-  .tab-bar {
-    display: flex; gap: 2px; margin: -2px -10px 10px;
-    border-bottom: 1px solid #ddd; background: #f0f0f0; padding: 0 8px;
+  .single-header {
+    margin: -2px -10px 10px;
+    padding: 8px 14px;
+    background: #f0f0f0;
+    border-bottom: 1px solid #ddd;
+    font: bold 11px Arial;
+    color: #cc2222;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
   }
-  .tab {
-    flex: 1; padding: 8px 10px; border: none; background: transparent;
-    font: bold 11px Arial; color: #666; cursor: pointer; letter-spacing: 0.3px;
-    text-transform: uppercase; border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-  }
-  .tab:hover { color: #333; }
-  .tab.active {
-    color: #cc2222; border-bottom-color: #cc2222; background: #fafafa;
-  }
+  .sec-divider { padding-top: 8px; margin-top: 8px; border-top: 1px solid #e5e5e5; }
   .tab-count {
     display: inline-block; min-width: 16px; padding: 1px 5px;
     background: #ddd; color: #555; border-radius: 8px;
     font: bold 9px Arial; margin-left: 4px;
   }
-  .tab.active .tab-count { background: #cc2222; color: white; }
 
-  /* Library tab — methodology surface (primitive catalog + KB coverage). */
-  .lib-tab { display: flex; flex-direction: column; gap: 14px; }
+  /* Library tab — methodology surface for the pipe OOP hierarchy. Renders
+     the archetype/family tree with KB coverage; unmapped KB connections
+     surface as a separate bucket so gaps are visible. */
+  .lib-tab { display: flex; flex-direction: column; gap: 12px; }
   .lib-tab .sec { margin: 0; }
-  .lib-tab .sec-sub { font: 10px Arial; color: #888; margin-bottom: 6px; }
+  .lib-tab .sec-sub { font: 10px Arial; color: #888; margin: 4px 0 8px; line-height: 1.4; }
   .lib-tab .muted { color: #aaa; font: 10px Arial; font-weight: normal; margin-left: 4px; }
   .lib-tab .err-text { color: #cc2222; }
-  .lib-tab .prim-row { display: flex; gap: 8px; padding: 3px 0; align-items: baseline; }
-  .lib-tab .prim-id { font: 9px monospace; color: #777; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; min-width: 92px; }
-  .lib-tab .prim-name { font: 11px Arial; color: #333; }
-  .lib-tab .conn-row { display: flex; gap: 8px; padding: 3px 0; align-items: baseline; }
-  .lib-tab .conn-count { font: bold 11px monospace; color: #cc2222; min-width: 28px; text-align: right; }
+  .lib-tab .arch-sec {
+    background: #fafafa; border: 1px solid #ececec; border-radius: 4px;
+    padding: 6px 8px;
+  }
+  .lib-tab .arch-h {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #eee;
+  }
+  .lib-tab .arch-name { font: bold 11px Arial; color: #cc2222; text-transform: uppercase; letter-spacing: 0.4px; }
+  .lib-tab .arch-meta { font: 9px monospace; color: #888; }
+  .lib-tab .fam-row { display: flex; gap: 8px; padding: 2px 0; align-items: baseline; font: 11px Arial; }
+  .lib-tab .fam-count { font: bold 11px monospace; color: #cc2222; min-width: 28px; text-align: right; }
+  .lib-tab .fam-count.zero { color: #ccc; }
+  .lib-tab .fam-name { color: #333; flex: 1; }
+  .lib-tab .fam-id { font: 9px monospace; color: #aaa; }
+  .lib-tab .unmapped-sec { background: #fff8e6; border: 1px solid #f0e0a0; border-radius: 4px; padding: 6px 8px; }
+  .lib-tab .conn-row { display: flex; gap: 8px; padding: 2px 0; align-items: baseline; }
+  .lib-tab .conn-count { font: bold 11px monospace; color: #cc7722; min-width: 28px; text-align: right; }
   .lib-tab .conn-name { font: 11px Arial; color: #333; }
-  .lib-tab .methodology-note .empty { font: 11px Arial; color: #777; line-height: 1.5; padding: 0; }
+  .lib-tab .methodology-note .empty { font: 11px Arial; color: #555; line-height: 1.5; padding: 0; }
+  .lib-tab code { font: 10px monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 2px; color: #cc2222; }
 
   /* Collapse toggle. Header bar stays clickable; body hidden when collapsed.
      Collapsed sidebar/meta shrink to a thin sliver with a vertical-text title
