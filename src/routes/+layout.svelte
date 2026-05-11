@@ -2,16 +2,10 @@
   import { page } from '$app/state';
   let { children } = $props();
 
-  // Right-rail nav grouped into sections. COMPONENTS is the design workflow
-  // (browse what shapes exist → see family archetypes → build → reference
-  // data). WELLS is its own vertical. Plan / Tests / Archive sit unlabeled
-  // at the bottom as "everything else". `label: null` suppresses the
-  // section header so the unlabeled group still groups visually (spacing
-  // + divider) without an "OTHER" label.
-  // Author at the very top (most-used surface, no section header). The
-  // Library section is the reference / browse-only data (primitives,
-  // families, KB) — none of those edit anything. Wells is its own
-  // vertical. Meta is project-management surface (Plan, Tests, Archive).
+  // SVTC-style nav: compact grid-icon button in the top-right corner; click
+  // reveals a dropdown menu. No always-on rail — content gets the whole
+  // viewport. Sections inside the dropdown stay the same (Author /
+  // Library / Wells / Meta) so the IA didn't move, only the chrome.
   const navSections = [
     {
       label: null,
@@ -44,92 +38,124 @@
   ];
   const allNavLinks = navSections.flatMap((s) => s.items);
 
-  // Longest-matching prefix wins so '/archive/tests' highlights Tests (not Archive).
   let activeHref = $derived.by(() => {
     const path = page.url.pathname;
     return allNavLinks
       .filter((l) => path === l.href || path.startsWith(l.href + '/'))
       .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
   });
+
+  let open = $state(false);
+
+  // Click-outside to close. Wraps the button + the dropdown in
+  // #nav-menu-wrapper so any click inside it doesn't dismiss.
+  function onWindowClick(e: MouseEvent) {
+    const t = e.target as HTMLElement | null;
+    if (!t?.closest('#nav-menu-wrapper')) open = false;
+  }
+  function navClicked() { open = false; }
 </script>
 
+<svelte:window onclick={onWindowClick} />
+
 <div class="layout">
-  <!-- Main content fills the viewport; the navmenu lives on the right as a
-       vertical column. Replaces the prior top-row navbar — the new shape
-       reads more like a workbench (content forward, nav out of the way). -->
   <main class="content">
     {@render children()}
   </main>
-  <nav class="navbar">
-    <a href="/" class="brand" class:active={page.url.pathname === '/'}>CAD Train</a>
-    {#each navSections as sec, secIdx (secIdx)}
-      <div class="nav-section" class:no-label={!sec.label}>
-        {#if sec.label}<div class="section-label">{sec.label}</div>{/if}
-        {#each sec.items as item (item.href)}
-          <a
-            href={item.href}
-            class="nav-item"
-            class:active={activeHref === item.href}
-          >{item.label}</a>
+
+  <div id="nav-menu-wrapper">
+    <button
+      class="nav-btn"
+      class:open
+      type="button"
+      aria-label="Open navigation menu"
+      aria-expanded={open}
+      onclick={(e) => { e.stopPropagation(); open = !open; }}
+    >
+      <!-- 2×2 grid glyph, mirrors SVTC's GridOutline. Inline SVG keeps the
+           component self-contained, no icon-library dependency. -->
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <rect x="1" y="1" width="6" height="6" rx="1.4" fill="currentColor" />
+        <rect x="9" y="1" width="6" height="6" rx="1.4" fill="currentColor" />
+        <rect x="1" y="9" width="6" height="6" rx="1.4" fill="currentColor" />
+        <rect x="9" y="9" width="6" height="6" rx="1.4" fill="currentColor" />
+      </svg>
+    </button>
+
+    {#if open}
+      <nav class="navmenu">
+        <a href="/" class="brand" onclick={navClicked}>CAD Train</a>
+        {#each navSections as sec, i (i)}
+          {#if sec.label}<div class="section-label">{sec.label}</div>{/if}
+          {#each sec.items as item (item.href)}
+            <a
+              href={item.href}
+              class="nav-item"
+              class:active={activeHref === item.href}
+              onclick={navClicked}
+            >{item.label}</a>
+          {/each}
+          {#if i < navSections.length - 1}<hr class="div" />{/if}
         {/each}
-      </div>
-    {/each}
-  </nav>
+      </nav>
+    {/if}
+  </div>
 </div>
 
 <style>
   :global(html, body) { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; font-family: Arial, sans-serif; }
-  .layout { display: flex; flex-direction: row; height: 100vh; }
+  .layout { display: flex; flex-direction: column; height: 100vh; }
   .content { flex: 1; overflow: hidden; min-width: 0; }
-  .navbar {
-    width: 140px; flex-shrink: 0;
-    display: flex; flex-direction: column; gap: 2px;
-    padding: 14px 10px;
-    background: #222;
-    overflow-y: auto;
+
+  /* Fixed corner button + dropdown wrapper. z-index sits above everything
+     so the menu floats over any page content (e.g. /author's 3D canvas). */
+  #nav-menu-wrapper {
+    position: fixed; top: 10px; right: 12px; z-index: 100;
+  }
+  .nav-btn {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: #cc2222; color: #fff;
+    border: none; border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: background 80ms;
+  }
+  .nav-btn:hover { background: #a91d1d; }
+  .nav-btn.open { background: #a91d1d; }
+
+  .navmenu {
+    position: absolute; top: 38px; right: 0;
+    min-width: 180px;
+    background: #fff;
+    border: 1px solid #cc2222;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+    padding: 4px 0;
+    overflow: hidden;
   }
   .brand {
-    font: bold 14px Arial; color: #cc2222;
+    display: block;
+    font: bold 11px Arial; color: #cc2222;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 8px 14px 8px;
+    background: #fef0f0;
+    border-bottom: 1px solid #f5d5d5;
     text-decoration: none;
-    padding: 6px 10px; border-radius: 4px;
-    margin-bottom: 14px;
-    letter-spacing: 0.5px;
   }
-  .brand.active { color: #fff; }
-  .brand:hover { color: #fff; }
-  .nav-section { display: flex; flex-direction: column; gap: 1px; margin-bottom: 10px; }
+  .brand:hover { background: #fbe0e0; }
   .section-label {
-    font: bold 9px Arial; color: #777;
-    letter-spacing: 1px; text-transform: uppercase;
-    padding: 6px 10px 4px;
-    border-top: 1px solid #333;
+    font: bold 9px Arial; color: #cc2222;
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 8px 14px 2px;
   }
-  .nav-section:first-of-type .section-label { border-top: none; padding-top: 0; }
-  .nav-section.no-label { border-top: 1px solid #333; padding-top: 4px; }
   .nav-item {
-    font: 13px Arial; color: #aaa;
+    display: block;
+    font: 13px Arial; color: #333;
     text-decoration: none;
-    padding: 6px 12px; border-radius: 4px;
+    padding: 5px 14px;
   }
-  .nav-item:hover { color: #fff; background: #333; }
-  .nav-item.active { color: #fff; background: #cc2222; }
-
-  /* Below 600px collapse the nav to the bottom so the main content keeps
-     real estate. Becomes a horizontal strip; same DOM, just re-flowed.
-     Section labels are hidden because there isn't horizontal room for
-     them — items still group by section visually via the dividers. */
-  @media (max-width: 600px) {
-    .layout { flex-direction: column; }
-    .navbar {
-      width: 100%; height: auto; flex-direction: row; flex-wrap: wrap;
-      padding: 8px 10px; gap: 4px;
-      border-top: 1px solid #333;
-    }
-    .brand { margin-bottom: 0; margin-right: 12px; }
-    .nav-section { flex-direction: row; gap: 2px; margin-bottom: 0; flex-wrap: wrap; }
-    .section-label { display: none; }
-    .nav-section.no-label { border-top: none; padding-top: 0; }
-    .nav-section + .nav-section { padding-left: 6px; border-left: 1px solid #333; margin-left: 4px; }
-    .nav-item { padding: 6px 10px; font-size: 12px; }
-  }
+  .nav-item:hover { background: #fef0f0; color: #cc2222; }
+  .nav-item.active { background: #cc2222; color: #fff; }
+  .div { border: none; border-top: 1px solid #ececec; margin: 4px 0; }
 </style>
