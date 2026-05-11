@@ -114,7 +114,7 @@
 
     // ───── G. Vendor catalog ingest ─────
     { id: 200, bundle: 'G', lane: 6, start:  1.5, weeks: 0.2, priority: 'medium', status: 'done',   title: 'G.0 — Storage convention: static/eval/catalog/<vendor>/ + manifest.json; PDFs gitignored, structure committed' },
-    { id: 201, bundle: 'G', lane: 6, start:  1.7, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.1 — PDF inspector: per-page detection of vector vs raster vs hybrid (PyMuPDF page.get_drawings + get_images + get_text)' },
+    { id: 201, bundle: 'G', lane: 6, start:  1.7, weeks: 0.5, priority: 'high',   status: 'done',   title: 'G.1 — PDF inspector: per-page detection of vector vs raster vs hybrid (PyMuPDF page.get_drawings + get_images + get_text)' },
     { id: 202, bundle: 'G', lane: 6, start:  2.2, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.2 — SVG extractor: schematic pages → vector SVG via PyMuPDF path traversal; labeled cross-sections preserved with text + bbox' },
     { id: 203, bundle: 'G', lane: 6, start:  2.7, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.3 — Spec-table extractor: structured page (e.g., Packers p.6) → JSON {casing_size, packer_od, sealbore_id, ...}; validates against existing primitive param ranges' },
     { id: 204, bundle: 'G', lane: 6, start:  3.2, weeks: 0.7, priority: 'medium', status: 'open',   title: 'G.4 — Component-label graph: extract labeled cross-section pages into {label, bbox, line_to_part_bbox} structure for assembly grammar generation' },

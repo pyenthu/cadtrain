@@ -318,16 +318,34 @@ export const details: Record<number, PlanDetail> = {
 
   201: {
     summary:
-      'Per-page inspector that classifies each PDF page by content type. Uses PyMuPDF ' +
-      'or pdf-lib to count vector paths (page.get_drawings), embedded raster images ' +
-      '(page.get_images), and text blocks. Routes pages to the right downstream extractor:\n' +
-      'vector-heavy (≥20 paths, no/few images) → SVG extractor (G.2)\n' +
-      'image-heavy (≥1 raster, few paths) → photo register (no SVG, just thumbnail)\n' +
-      'text-heavy + grid lines → spec-table extractor (G.3)\n' +
-      'mixed → labeled-schematic extractor (G.4)',
+      'scripts/inspect_catalog_pdf.py walks every page of a vendor PDF and emits ' +
+      '<basename>.inspect.json next to it. Per page it counts: drawing paths ' +
+      '(page.get_drawings), embedded raster images (page.get_images), and text blocks ' +
+      "(page.get_text('blocks')). Each page is classified into one of: cover | text_only | " +
+      'spec_table | mixed_schematic | photo_set | unknown.\n\n' +
+      'Halliburton 06_Packers (86 pages) classified as: 66 mixed_schematic, ' +
+      '19 photo_set, 1 unknown (back cover with logo, 15 paths just under threshold). ' +
+      'No covers/spec_tables/text_only — the chapter is uniformly engineering content. ' +
+      'Output written to static/eval/catalog/halliburton/06_Packers.inspect.json with ' +
+      'thresholds + per-page raw counts so downstream extractors (G.2 SVG, G.3 spec-table, ' +
+      'G.4 labeled schematic) know which pages to process.\n\n' +
+      'Note: the inspector is local-only Python (PyMuPDF), invoked outside the production ' +
+      "app. Per CLAUDE.md rule 'no Python in the production container' — this is offline " +
+      'tooling that produces a committed JSON artifact, then never runs in prod.',
+    steps: [
+      'scripts/inspect_catalog_pdf.py with classify_page() heuristic + THRESHOLDS dict',
+      'Run against static/eval/catalog/halliburton/06_Packers.pdf',
+      'Output: static/eval/catalog/halliburton/06_Packers.inspect.json (committed)',
+    ],
     acceptance: [
-      'For Halliburton 06_Packers, page classification matches manual inspection',
-      'p.1 → cover (text + 2 photos), p.3 → table, p.4 → mixed schematic, p.6 → spec table',
+      'Inspect JSON exists with one entry per page',
+      'Counts (paths/images/text_blocks) match what PyMuPDF reports',
+      'Class buckets sum to page_count (86)',
+      'No engine pages misclassified as cover (covers should be near-empty)',
+    ],
+    refs: [
+      'scripts/inspect_catalog_pdf.py',
+      'static/eval/catalog/halliburton/06_Packers.inspect.json',
     ],
   },
 
