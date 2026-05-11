@@ -1,6 +1,8 @@
 import { chromium } from 'playwright';
 const b = await chromium.launch();
-const ctx = await b.newContext({ viewport: { width: 414, height: 896 } });
+const vw = parseInt(process.argv[4] || '414', 10);
+const vh = parseInt(process.argv[5] || '896', 10);
+const ctx = await b.newContext({ viewport: { width: vw, height: vh } });
 const page = await ctx.newPage();
 const errs = [];
 const logs = [];

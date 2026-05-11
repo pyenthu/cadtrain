@@ -25,20 +25,64 @@
   let saveError = $state<string | null>(null);
   let saveNotice = $state<string | null>(null);
 
-  // Panel collapse — let the user fold parts/ops sidebar and metadata away
-  // so the 3D viewport gets full width (essential on mobile, useful on
-  // desktop too when reviewing). Persisted to localStorage. Default closed
+  // Panel collapse — let the user fold left (library) and right (metadata +
+  // parts/ops) panels away so the 3D viewport gets full width (essential
+  // on mobile, useful on desktop). Persisted to localStorage. Default closed
   // on phones, open on desktop.
-  let showPartsOps = $state(true);
-  let showMeta = $state(true);
+  let showLibrary = $state(true);
+  let showEdit = $state(true);
   $effect(() => {
     if (typeof window === 'undefined') return;
     const isPhone = window.matchMedia('(max-width: 600px)').matches;
-    showPartsOps = localStorage.getItem('author:showPartsOps') === '1' || (!isPhone && localStorage.getItem('author:showPartsOps') !== '0');
-    showMeta = localStorage.getItem('author:showMeta') === '1' || (!isPhone && localStorage.getItem('author:showMeta') !== '0');
+    showLibrary = localStorage.getItem('author:showLibrary') === '1' || (!isPhone && localStorage.getItem('author:showLibrary') !== '0');
+    showEdit = localStorage.getItem('author:showEdit') === '1' || (!isPhone && localStorage.getItem('author:showEdit') !== '0');
   });
-  function togglePartsOps() { showPartsOps = !showPartsOps; localStorage.setItem('author:showPartsOps', showPartsOps ? '1' : '0'); }
-  function toggleMeta() { showMeta = !showMeta; localStorage.setItem('author:showMeta', showMeta ? '1' : '0'); }
+  function toggleLibrary() { showLibrary = !showLibrary; localStorage.setItem('author:showLibrary', showLibrary ? '1' : '0'); }
+  function toggleEdit() { showEdit = !showEdit; localStorage.setItem('author:showEdit', showEdit ? '1' : '0'); }
+
+  // Library list — sourced from /api/author/list. Click a card → loads
+  // that spec into the workbench (replaces the old separate /library page).
+  interface IndexEntry {
+    id: string;
+    name: string;
+    description: string;
+    tags: string[];
+    source: 'manual' | 'claude_suggested' | 'claude_refined';
+    parts_count: number;
+    has_thumbnail: boolean;
+  }
+  let libRecords = $state<IndexEntry[]>([]);
+  let libLoading = $state(true);
+  let libError = $state<string | null>(null);
+
+  async function loadLibrary() {
+    libLoading = true; libError = null;
+    try {
+      const r = await fetch('/api/author/list', { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const data = await r.json();
+      libRecords = data.records ?? [];
+    } catch (e: any) {
+      libError = e?.message ?? String(e);
+    } finally {
+      libLoading = false;
+    }
+  }
+
+  async function selectLibraryItem(id: string) {
+    // Update URL so reload/share works, then fetch + swap the spec.
+    const url = new URL(window.location.href);
+    url.searchParams.set('id', id);
+    window.history.replaceState({}, '', url);
+    try {
+      const r = await fetch(`/api/author/list?id=${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const rec = await r.json();
+      if (rec) spec = rec as AuthoredComponent;
+    } catch (e: any) {
+      saveError = `load failed: ${e?.message ?? e}`;
+    }
+  }
 
   let ChatPanel = $state<any>(null);
 
@@ -66,6 +110,9 @@
       spec.parts = [...spec.parts];
       spec.ops = [...spec.ops];
     });
+
+    // Load the library list for the left panel.
+    loadLibrary();
 
     // Load an existing authored component from /api/author/list?id=...
     const url = new URL(window.location.href);
@@ -222,103 +269,35 @@
 </script>
 
 <div class="layout">
-  <div class="sidebar" class:collapsed={!showPartsOps}>
-    <button class="panel-toggle" onclick={togglePartsOps} aria-expanded={showPartsOps} title={showPartsOps ? 'Hide parts/ops' : 'Show parts/ops'}>
-      <span class="ph-title">Parts &amp; Ops</span>
-      <span class="caret">{showPartsOps ? '◂' : '▸'}</span>
+  <!-- LEFT PANEL: library list. Click a card to load that component into the
+       workbench. Replaces the old standalone /library grid. -->
+  <div class="sidebar lib-list" class:collapsed={!showLibrary}>
+    <button class="panel-toggle" onclick={toggleLibrary} aria-expanded={showLibrary} title={showLibrary ? 'Hide library' : 'Show library'}>
+      <span class="ph-title">Library</span>
+      <span class="caret">{showLibrary ? '◂' : '▸'}</span>
     </button>
-    {#if showPartsOps}
-    <div class="sec">
-      <div class="sec-h">Parts <button class="add" onclick={addPart}>+</button></div>
-      {#if spec.parts.length === 0}
-        <div class="empty">No parts — click + to add a primitive.</div>
-      {/if}
-      {#each spec.parts as part, i}
-        <div class="part">
-          <div class="part-head">
-            <span class="pid">{part.id}</span>
-            <select bind:value={part.prim} onchange={(e) => changePrim(i, (e.target as HTMLSelectElement).value)}>
-              {#each COMPONENTS as c}
-                <option value={c.id}>{c.name}</option>
-              {/each}
-            </select>
-            <button class="rm" onclick={() => removePart(i)}>×</button>
-          </div>
-          <div class="params">
-            {#each Object.keys(part.params) as key}
-              {@const def = paramDef(part.prim, key)}
-              {#if def}
-                <div class="pr">
-                  <span class="lbl">{def.label}</span>
-                  <input type="range" min={def.min} max={def.max} step={def.step} bind:value={part.params[key]} />
-                  <input type="number" step={def.step} bind:value={part.params[key]} />
-                </div>
-              {/if}
-            {/each}
-          </div>
-          <details class="tx">
-            <summary>Transform</summary>
-            <div class="tx-grid">
-              <label>tx<input type="number" step="0.1" value={part.transform?.tx ?? 0} oninput={(e) => {
-                part.transform = { ...part.transform, tx: parseFloat((e.target as HTMLInputElement).value) || 0 };
-              }} /></label>
-              <label>ty<input type="number" step="0.1" value={part.transform?.ty ?? 0} oninput={(e) => {
-                part.transform = { ...part.transform, ty: parseFloat((e.target as HTMLInputElement).value) || 0 };
-              }} /></label>
-              <label>tz<input type="number" step="0.1" value={part.transform?.tz ?? 0} oninput={(e) => {
-                part.transform = { ...part.transform, tz: parseFloat((e.target as HTMLInputElement).value) || 0 };
-              }} /></label>
-              <label>rx<input type="number" step="0.1" value={part.transform?.rx ?? 0} oninput={(e) => {
-                part.transform = { ...part.transform, rx: parseFloat((e.target as HTMLInputElement).value) || 0 };
-              }} /></label>
-              <label>ry<input type="number" step="0.1" value={part.transform?.ry ?? 0} oninput={(e) => {
-                part.transform = { ...part.transform, ry: parseFloat((e.target as HTMLInputElement).value) || 0 };
-              }} /></label>
-              <label>rz<input type="number" step="0.1" value={part.transform?.rz ?? 0} oninput={(e) => {
-                part.transform = { ...part.transform, rz: parseFloat((e.target as HTMLInputElement).value) || 0 };
-              }} /></label>
-            </div>
-          </details>
-        </div>
-      {/each}
-    </div>
-
-    <div class="sec">
-      <div class="sec-h">Ops <button class="add" onclick={addOp} disabled={spec.parts.length < 2}>+</button></div>
-      {#if spec.ops.length === 0}
-        <div class="empty">No ops — parts will be unioned implicitly.</div>
-      {/if}
-      {#each spec.ops as op, i}
-        <div class="op">
-          <div class="op-head">
-            <span class="pid">{op.out}</span>
-            <select bind:value={op.op}>
-              <option value="union">union</option>
-              <option value="subtract">subtract</option>
-              <option value="intersect">intersect</option>
-            </select>
-            <button class="rm" onclick={() => removeOp(i)}>×</button>
-          </div>
-          <div class="op-inputs">
-            {#each op.inputs as _, inIdx}
-              <select bind:value={op.inputs[inIdx]}>
-                {#each availableIdsFor(i) as id}
-                  <option value={id}>{id}</option>
-                {/each}
-              </select>
-            {/each}
-            <button class="add-in" onclick={() => {
-              op.inputs = [...op.inputs, availableIdsFor(i)[0] ?? ''];
-            }}>+ input</button>
-            {#if op.inputs.length > 2}
-              <button class="rm-in" onclick={() => {
-                op.inputs = op.inputs.slice(0, -1);
-              }}>− input</button>
+    {#if showLibrary}
+      <div class="lib-actions">
+        <button class="lib-action" onclick={() => { spec = emptyAuthoredComponent(); const u = new URL(window.location.href); u.searchParams.delete('id'); window.history.replaceState({}, '', u); }}>+ New</button>
+        <button class="lib-action" onclick={loadLibrary} title="Refresh">↻</button>
+      </div>
+      {#if libLoading}
+        <div class="empty">Loading…</div>
+      {:else if libError}
+        <div class="empty" style="color:#cc2222">{libError}</div>
+      {:else if libRecords.length === 0}
+        <div class="empty">No library items yet. Generate via <code>bun run scripts/generate_authored_library.ts</code> or compose one →</div>
+      {:else}
+        {#each libRecords as r (r.id)}
+          <button class="lib-card" class:active={spec.id === r.id} onclick={() => selectLibraryItem(r.id)}>
+            <div class="lib-name">{r.name}</div>
+            <div class="lib-meta">{r.parts_count} parts · {r.source.replace('_', ' ')}</div>
+            {#if r.tags.length > 0}
+              <div class="lib-tags">{r.tags.slice(0, 3).join(' · ')}</div>
             {/if}
-          </div>
-        </div>
-      {/each}
-    </div>
+          </button>
+        {/each}
+      {/if}
     {/if}
   </div>
 
@@ -343,24 +322,120 @@
     </div>
   </div>
 
-  <div class="meta" class:collapsed={!showMeta}>
-    <button class="panel-toggle" onclick={toggleMeta} aria-expanded={showMeta} title={showMeta ? 'Hide metadata' : 'Show metadata'}>
-      <span class="ph-title">Metadata</span>
-      <span class="caret">{showMeta ? '▸' : '◂'}</span>
+  <!-- RIGHT PANEL: metadata (top) + parts/ops editor (bottom). -->
+  <div class="meta" class:collapsed={!showEdit}>
+    <button class="panel-toggle" onclick={toggleEdit} aria-expanded={showEdit} title={showEdit ? 'Hide editor' : 'Show editor'}>
+      <span class="ph-title">Edit</span>
+      <span class="caret">{showEdit ? '▸' : '◂'}</span>
     </button>
-    {#if showMeta}
-      <label>ID<input type="text" bind:value={spec.id} placeholder="e.g. my_sub" /></label>
-      <label>Name<input type="text" bind:value={spec.name} placeholder="e.g. My Bottom Sub" /></label>
-      <label>Description<textarea bind:value={spec.description} rows="3" placeholder="What is this component?"></textarea></label>
-      <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
-        spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
-      }} /></label>
-      <button class="save" onclick={saveSpec} disabled={saving}>
-        {saving ? 'Saving…' : 'Save'}
-      </button>
-      {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
-      {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
-      <a class="library-link" href="/library">→ Browse library</a>
+    {#if showEdit}
+      <div class="meta-fields">
+        <label>ID<input type="text" bind:value={spec.id} placeholder="e.g. my_sub" /></label>
+        <label>Name<input type="text" bind:value={spec.name} placeholder="e.g. My Bottom Sub" /></label>
+        <label>Description<textarea bind:value={spec.description} rows="2" placeholder="What is this component?"></textarea></label>
+        <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
+          spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
+        }} /></label>
+        <button class="save" onclick={saveSpec} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
+        {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
+      </div>
+
+      <hr class="meta-divider" />
+
+      <div class="sec">
+        <div class="sec-h">Parts <button class="add" onclick={addPart}>+</button></div>
+        {#if spec.parts.length === 0}
+          <div class="empty">No parts — click + to add a primitive.</div>
+        {/if}
+        {#each spec.parts as part, i}
+          <div class="part">
+            <div class="part-head">
+              <span class="pid">{part.id}</span>
+              <select bind:value={part.prim} onchange={(e) => changePrim(i, (e.target as HTMLSelectElement).value)}>
+                {#each COMPONENTS as c}
+                  <option value={c.id}>{c.name}</option>
+                {/each}
+              </select>
+              <button class="rm" onclick={() => removePart(i)}>×</button>
+            </div>
+            <div class="params">
+              {#each Object.keys(part.params) as key}
+                {@const def = paramDef(part.prim, key)}
+                {#if def}
+                  <div class="pr">
+                    <span class="lbl">{def.label}</span>
+                    <input type="range" min={def.min} max={def.max} step={def.step} bind:value={part.params[key]} />
+                    <input type="number" step={def.step} bind:value={part.params[key]} />
+                  </div>
+                {/if}
+              {/each}
+            </div>
+            <details class="tx">
+              <summary>Transform</summary>
+              <div class="tx-grid">
+                <label>tx<input type="number" step="0.1" value={part.transform?.tx ?? 0} oninput={(e) => {
+                  part.transform = { ...part.transform, tx: parseFloat((e.target as HTMLInputElement).value) || 0 };
+                }} /></label>
+                <label>ty<input type="number" step="0.1" value={part.transform?.ty ?? 0} oninput={(e) => {
+                  part.transform = { ...part.transform, ty: parseFloat((e.target as HTMLInputElement).value) || 0 };
+                }} /></label>
+                <label>tz<input type="number" step="0.1" value={part.transform?.tz ?? 0} oninput={(e) => {
+                  part.transform = { ...part.transform, tz: parseFloat((e.target as HTMLInputElement).value) || 0 };
+                }} /></label>
+                <label>rx<input type="number" step="0.1" value={part.transform?.rx ?? 0} oninput={(e) => {
+                  part.transform = { ...part.transform, rx: parseFloat((e.target as HTMLInputElement).value) || 0 };
+                }} /></label>
+                <label>ry<input type="number" step="0.1" value={part.transform?.ry ?? 0} oninput={(e) => {
+                  part.transform = { ...part.transform, ry: parseFloat((e.target as HTMLInputElement).value) || 0 };
+                }} /></label>
+                <label>rz<input type="number" step="0.1" value={part.transform?.rz ?? 0} oninput={(e) => {
+                  part.transform = { ...part.transform, rz: parseFloat((e.target as HTMLInputElement).value) || 0 };
+                }} /></label>
+              </div>
+            </details>
+          </div>
+        {/each}
+      </div>
+
+      <div class="sec">
+        <div class="sec-h">Ops <button class="add" onclick={addOp} disabled={spec.parts.length < 2}>+</button></div>
+        {#if spec.ops.length === 0}
+          <div class="empty">No ops — parts will be unioned implicitly.</div>
+        {/if}
+        {#each spec.ops as op, i}
+          <div class="op">
+            <div class="op-head">
+              <span class="pid">{op.out}</span>
+              <select bind:value={op.op}>
+                <option value="union">union</option>
+                <option value="subtract">subtract</option>
+                <option value="intersect">intersect</option>
+              </select>
+              <button class="rm" onclick={() => removeOp(i)}>×</button>
+            </div>
+            <div class="op-inputs">
+              {#each op.inputs as _, inIdx}
+                <select bind:value={op.inputs[inIdx]}>
+                  {#each availableIdsFor(i) as id}
+                    <option value={id}>{id}</option>
+                  {/each}
+                </select>
+              {/each}
+              <button class="add-in" onclick={() => {
+                op.inputs = [...op.inputs, availableIdsFor(i)[0] ?? ''];
+              }}>+ input</button>
+              {#if op.inputs.length > 2}
+                <button class="rm-in" onclick={() => {
+                  op.inputs = op.inputs.slice(0, -1);
+                }}>− input</button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
     {/if}
   </div>
 
@@ -401,7 +476,7 @@
   .empty-viewport { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 13px; }
   .controls { position: absolute; bottom: 12px; right: 12px; display: flex; gap: 8px; background: rgba(255,255,255,0.9); padding: 6px 10px; border-radius: 4px; z-index: 10; }
   .controls label { font-size: 11px; display: flex; gap: 4px; align-items: center; cursor: pointer; }
-  .meta { width: 240px; min-width: 240px; background: #fafafa; border-left: 1px solid #ddd; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .meta { width: 320px; min-width: 320px; background: #fafafa; border-left: 1px solid #ddd; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
   .meta label { font: 10px Arial; color: #666; display: flex; flex-direction: column; gap: 2px; }
   .meta input, .meta textarea { font: 11px Arial; padding: 4px 6px; border: 1px solid #ddd; border-radius: 3px; font-family: Arial, sans-serif; }
   .save { margin-top: auto; background: #cc2222; color: white; border: none; padding: 8px; border-radius: 4px; font: bold 12px Arial; cursor: pointer; }
@@ -411,6 +486,30 @@
   .save-msg.ok { background: #d1e7dd; color: #0f5132; }
   .library-link { font: 11px Arial; color: #cc2222; text-decoration: none; text-align: center; padding: 4px; }
   .library-link:hover { text-decoration: underline; }
+
+  /* Left library list panel — replaces standalone /library page. Card list
+     where the active component is highlighted, click = load into workbench. */
+  .lib-list { background: #f8f8f8; }
+  .lib-actions { display: flex; gap: 4px; margin-bottom: 8px; }
+  .lib-action {
+    flex: 1; padding: 4px 8px; font: bold 11px Arial; cursor: pointer;
+    background: #fff; border: 1px solid #ddd; border-radius: 3px; color: #333;
+  }
+  .lib-action:hover { background: #f0f0f0; }
+  .lib-card {
+    display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 6px;
+    background: white; border: 1px solid #e0e0e0; border-radius: 4px; cursor: pointer;
+    font-family: inherit; transition: border-color 100ms, background 100ms;
+  }
+  .lib-card:hover { background: #fafafa; border-color: #ccc; }
+  .lib-card.active { background: #fef0f0; border-color: #cc2222; }
+  .lib-name { font: bold 12px Arial; color: #222; line-height: 1.3; margin-bottom: 3px; }
+  .lib-meta { font: 10px Arial; color: #888; margin-bottom: 2px; }
+  .lib-tags { font: 9px Arial; color: #aaa; }
+
+  /* Right panel section divider between Metadata (top) and Parts/Ops (bottom). */
+  .meta-fields { display: flex; flex-direction: column; gap: 6px; }
+  .meta-divider { border: none; border-top: 1px solid #ddd; margin: 12px 0 8px; }
 
   /* Collapse toggle. Header bar stays clickable; body hidden when collapsed.
      Collapsed sidebar/meta shrink to a thin sliver with a vertical-text title
