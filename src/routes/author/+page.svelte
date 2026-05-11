@@ -542,8 +542,6 @@
   .save-msg { font: 10px Arial; padding: 6px 8px; border-radius: 3px; margin-top: 4px; }
   .save-msg.err { background: #f8d7da; color: #721c24; }
   .save-msg.ok { background: #d1e7dd; color: #0f5132; }
-  .library-link { font: 11px Arial; color: #cc2222; text-decoration: none; text-align: center; padding: 4px; }
-  .library-link:hover { text-decoration: underline; }
 
   /* Left library list panel — replaces standalone /library page. Card list
      where the active component is highlighted, click = load into workbench. */
@@ -581,11 +579,6 @@
     letter-spacing: 0.4px;
   }
   .sec-divider { padding-top: 8px; margin-top: 8px; border-top: 1px solid #e5e5e5; }
-  .tab-count {
-    display: inline-block; min-width: 16px; padding: 1px 5px;
-    background: #ddd; color: #555; border-radius: 8px;
-    font: bold 9px Arial; margin-left: 4px;
-  }
 
   /* (Family-taxonomy panel moved to /families; styles removed.) */
 

@@ -7,9 +7,8 @@
       The previous CAD implementation (component library viewer, image → identify pipeline,
       authoring tool) is preserved at
       <a href="/archive/components">/archive/components</a>,
-      <a href="/archive/reverse">/archive/reverse</a>,
-      <a href="/author">/author</a>,
-      <a href="/library">/library</a>.
+      <a href="/archive/reverse">/archive/reverse</a>, and
+      <a href="/author">/author</a>.
     </p>
 
     <p>

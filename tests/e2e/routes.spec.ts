@@ -3,16 +3,16 @@
  * runtime errors. Catches the most common breakage from route moves and
  * import-path renames.
  *
- * Old top-level URLs (/components, /reverse, /author, /library, /tools/*,
- * /tests, /training) should now 404 — they live under /archive/* after
- * the two-product split (commit 55b1f43).
+ * Old top-level URLs (/components, /reverse, /library, /tools/*, /tests,
+ * /training) should now 404 — they live under /archive/* after the
+ * two-product split (commit 55b1f43). /library was removed entirely when
+ * the library panel was merged into /author.
  */
 
 import { test, expect } from '@playwright/test';
 
 const TOP_LEVEL = [
   { path: '/', heading: /CAD Train/i },
-  { path: '/library', heading: /./ },
   { path: '/author', heading: /./ },
   { path: '/wells', heading: /Wells/i },
   { path: '/archive', heading: /Archive/i },
@@ -38,8 +38,9 @@ const REMOVED_TOP_LEVEL = [
   '/tests',
   '/tools/bottom-sub',
   '/tools/ratch-latch',
-  // /author and /library used to be archived; promoted back to top-level
-  // when the user said "move author out of archive" — they're alive again.
+  '/library', // removed when the library panel was merged into /author
+  // /author used to be archived; promoted back to top-level when the user
+  // said "move author out of archive" — it's alive again.
 ];
 
 for (const route of TOP_LEVEL) {
@@ -52,10 +53,8 @@ for (const route of TOP_LEVEL) {
       // Home is the SVTC-style nav menu — no <h1>, just the .menu-header
       // ('CAD Train') + the route list.
       await expect(page.locator('.menu-header')).toContainText(route.heading);
-    } else if (route.path === '/author' || route.path === '/library') {
-      // Both routes point at the same unified workbench (/library is a thin
-      // client-side redirect to /author). No <h1>; the title lives in
-      // .vp-header. After redirect we may be on /author URL.
+    } else if (route.path === '/author') {
+      // The unified workbench has no <h1>; the title lives in .vp-header.
       await expect(page.locator('.vp-header').first()).toBeVisible({ timeout: 10_000 });
     } else {
       await expect(page.locator('h1').first()).toContainText(route.heading);

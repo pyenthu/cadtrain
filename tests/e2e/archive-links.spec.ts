@@ -17,7 +17,8 @@ const STALE_PATTERNS = [
   /\bhref="\/training\b/,
   /\bhref="\/tests\b/,        // bare /tests — /archive/tests is fine
   /\bhref="\/tools\b/,
-  // /wells, /author, /library are OK — those are now top-level stubs.
+  /\bhref="\/library\b/,      // /library was removed when its panel merged into /author
+  // /wells and /author are OK — those are now top-level stubs.
 ];
 
 const ARCHIVED_PAGES = [
@@ -67,10 +68,3 @@ test('archived Tests page links to /archive/tests/wells and /archive/tests/compo
   await expect(page.locator('main.content a[href="/archive/tests/components"]')).toBeVisible();
 });
 
-test('/library redirects to /author', async ({ page }) => {
-  // /library is now a client-side redirect to /author since the workbench
-  // unified both routes. The redirect preserves any ?id= query string.
-  await page.goto('/library');
-  await page.waitForURL(/\/author/, { timeout: 10_000 });
-  await expect(page).toHaveURL(/\/author/);
-});

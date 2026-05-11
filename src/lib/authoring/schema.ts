@@ -7,13 +7,26 @@
  * primitive builders. No eval, no dynamic code.
  */
 
-export interface AuthoredPart {
+/**
+ * AuthoredPart is a discriminated union over three kinds of authored parts.
+ * The `kind` tag distinguishes between:
+ *
+ *   - 'primitive'  — a generic primitive from src/lib/components/library.ts
+ *                    with a free-form `params` bag. This is the legacy shape.
+ *   - 'connection' — a pipe-domain connection (box or pin) with archetype +
+ *                    family + gender semantics; consumed by the
+ *                    src/lib/components/pipe/* hierarchy.
+ *   - 'body'       — a pipe body (od, id, length) — the tubing/casing midsection
+ *                    between two connections.
+ *
+ * Legacy authored_cache.jsonl records lack a `kind` field. The `getPartKind`
+ * helper defaults missing tags to 'primitive', so those records still
+ * round-trip through compose.ts unchanged (PrimitivePart with kind omitted
+ * still matches their structural shape).
+ */
+export interface BasePart {
   /** Local reference id, e.g. "p0". Referenced by ops. */
   id: string;
-  /** Primitive id from src/lib/components/library.ts COMPONENTS array. */
-  prim: string;
-  /** Parameters for that primitive (shape depends on primitive). */
-  params: Record<string, number>;
   /** Optional rigid-body transform applied after building the part. */
   transform?: {
     tx?: number;
@@ -23,6 +36,54 @@ export interface AuthoredPart {
     ry?: number;
     rz?: number;
   };
+}
+
+export interface PrimitivePart extends BasePart {
+  /** Optional discriminator. Legacy authored_cache.jsonl records and
+   *  external code that constructs raw {id, prim, params, transform} omit
+   *  this — getPartKind() defaults it to 'primitive'. New PrimitivePart
+   *  literals should set kind: 'primitive' explicitly to participate in
+   *  discriminated-union narrowing. */
+  kind?: 'primitive';
+  /** Primitive id from src/lib/components/library.ts COMPONENTS array. */
+  prim: string;
+  /** Parameters for that primitive (shape depends on primitive). */
+  params: Record<string, number>;
+}
+
+export interface ConnectionPart extends BasePart {
+  kind: 'connection';
+  /** Family id from FAMILIES in src/lib/components/pipe/families.ts
+   *  (e.g. 'new_vam', 'eue', 'bc'). */
+  family: string;
+  gender: 'box' | 'pin';
+  od: number;
+  conn_length: number;
+  thread_len?: number;
+  // Family-specific params (seal_taper_len, has_shoulder, shoulder_od,
+  // end_form for line-pipe variants, etc.) land here in later phases.
+  // Intentionally not pre-declared as speculative optional fields — they
+  // get added when the corresponding builder + KB lookup are wired up.
+}
+
+export interface BodyPart extends BasePart {
+  kind: 'body';
+  od: number;
+  /** Bore inner diameter. Named `id_in` so it doesn't shadow BasePart.id. */
+  id_in: number;
+  length: number;
+}
+
+export type AuthoredPart = PrimitivePart | ConnectionPart | BodyPart;
+
+/**
+ * Resolve a part's `kind` discriminator, defaulting missing tags to
+ * 'primitive' so existing authored_cache.jsonl records (10 records today,
+ * none of which carry `kind`) keep round-tripping through schema.ts →
+ * compose.ts unchanged.
+ */
+export function getPartKind(part: AuthoredPart | any): 'primitive' | 'connection' | 'body' {
+  return part?.kind ?? 'primitive';
 }
 
 export type CsgOpKind = 'union' | 'subtract' | 'intersect';
