@@ -2,6 +2,7 @@
   import { T } from '@threlte/core';
   import { OrbitControls, Edges } from '@threlte/extras';
   import * as THREE from 'three';
+  import { scene } from '$lib/shared/scene-state.svelte';
 
   type CameraOverride = {
     position?: [number, number, number];
@@ -43,20 +44,13 @@
     return [];
   });
 
-  // Defaults: camera orbits around the world Z axis. Original was at +X;
-  // rotated 90° counterclockwise (viewed from +Z, our "down" axis) → camera
-  // sits at -Y. UP stays [0,0,-1] (Z-down convention) — well axis still
-  // vertical on screen, viewing from the other side.
-  const DEFAULT_POSITION: [number, number, number] = [0, -6, 0];
+  // Default camera convention: camera on -Y looking at origin, UP = -Z
+  // (Z-down drilling convention — well axis stays vertical on screen).
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
   const DEFAULT_ZOOM = 130;
 
-  // Auto-fit zoom: fit the bounding SPHERE (= half the diagonal across the
-  // bbox) into the viewport rather than just the longest axis. Why: when
-  // OrbitControls rotates the object, the diagonal of the bbox sweeps
-  // through the viewport. Fitting only the longest axis means a tall
-  // packer clips when rotated to ~45°. Sphere fitting guarantees the
-  // object stays in frame at every angle.
+  // Auto-fit zoom: fit the bounding SPHERE (= the diagonal across the bbox)
+  // into the viewport so a tall packer doesn't clip when rotated.
   function autoZoomFromMeshes(arr: { full: any; cutVC: any }[], fallback: number): number {
     if (arr.length === 0) return fallback;
     let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -74,31 +68,69 @@
     const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
     const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
     if (!isFinite(diagonal) || diagonal <= 0) return fallback;
-    // Constant is the "viewport budget". Smaller = more zoomed out = more
-    // margin around the object during rotation. Some Opus assemblies are
-    // ~16" tall (parts widely spaced along Z), so we need generous headroom
-    // for the diagonal sweep at 45° rotations. 350 leaves ~30% margin on
-    // a 16" packer. Single primitives still cap at DEFAULT_ZOOM=130.
     return Math.min(350 / diagonal, fallback);
   }
 
-  let cameraPosition = $derived(cameraOverride?.position ?? DEFAULT_POSITION);
+  let cameraPosition = $derived<[number, number, number]>(
+    cameraOverride?.position ?? [scene.cam.x, scene.cam.y, scene.cam.z]
+  );
   let cameraUp = $derived(cameraOverride?.up ?? DEFAULT_UP);
   let cameraZoom = $derived(cameraOverride?.zoom ?? autoZoomFromMeshes(meshes, DEFAULT_ZOOM));
+
+  let light1Pos = $derived<[number, number, number]>([scene.l1.x, scene.l1.y, scene.l1.z]);
+  let light2Pos = $derived<[number, number, number]>([scene.l2.x, scene.l2.y, scene.l2.z]);
+
+  // OrbitControls ref + change-event sync. Without this the camera moves
+  // visually when the user drags the canvas but the input boxes stay frozen
+  // at the typed values — confusing. The conditional writes prevent a
+  // ping-pong with the position-derived prop (setting state to a value it
+  // already has would still queue a derived recompute on every orbit tick).
+  let controls = $state<any>(null);
+  $effect(() => {
+    if (!controls) return;
+    const onChange = () => {
+      if (cameraOverride?.position) return;
+      const cam = controls.object;
+      if (!cam) return;
+      if (scene.cam.x !== cam.position.x) scene.cam.x = cam.position.x;
+      if (scene.cam.y !== cam.position.y) scene.cam.y = cam.position.y;
+      if (scene.cam.z !== cam.position.z) scene.cam.z = cam.position.z;
+    };
+    controls.addEventListener('change', onChange);
+    return () => controls.removeEventListener('change', onChange);
+  });
+
+  // Thick axes helper sizing: three cylinders from origin along +X / +Y / +Z.
+  // Cylinder default geometry lies along +Y — for X and Z we rotate around Z
+  // and X respectively. Length=3, radius=0.08 reads "thick" without dominating
+  // the model. Origin sits at one end (shift by length/2 along the axis).
+  const AX_LEN = 3;
+  const AX_R   = 0.08;
 </script>
 
 <T.OrthographicCamera makeDefault position={cameraPosition} zoom={cameraZoom} up={cameraUp}>
-  <OrbitControls enableDamping />
+  <OrbitControls bind:ref={controls} enableDamping />
 </T.OrthographicCamera>
 
 <T.Color args={['#ffffff']} attach="background" />
 <T.AmbientLight intensity={0.3} />
-<!-- Rotated 90° CCW around Z to match the camera rotation, keeping the
-     lighting consistent relative to the new viewing angle.
-     Same transform applied to camera: (x, y, z) → (y, -x, z).
-     Before: [1, -4, -2] and [12, 8, 0]. -->
-<T.PointLight position={[-4, -1, -2]} intensity={200} distance={50} />
-<T.PointLight position={[8, -12, 0]} intensity={120} distance={50} />
+<T.PointLight position={light1Pos} intensity={scene.l1.i} distance={50} />
+<T.PointLight position={light2Pos} intensity={scene.l2.i} distance={50} />
+
+<!-- Thick axes helper. MeshBasicMaterial so the colours stay flat / unaffected
+     by point-light shading (axes shouldn't darken when L1/L2 swing around). -->
+<T.Mesh position={[AX_LEN / 2, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+  <T.CylinderGeometry args={[AX_R, AX_R, AX_LEN, 16]} />
+  <T.MeshBasicMaterial color="#ff3030" />
+</T.Mesh>
+<T.Mesh position={[0, AX_LEN / 2, 0]}>
+  <T.CylinderGeometry args={[AX_R, AX_R, AX_LEN, 16]} />
+  <T.MeshBasicMaterial color="#30c030" />
+</T.Mesh>
+<T.Mesh position={[0, 0, AX_LEN / 2]} rotation={[Math.PI / 2, 0, 0]}>
+  <T.CylinderGeometry args={[AX_R, AX_R, AX_LEN, 16]} />
+  <T.MeshBasicMaterial color="#3060ff" />
+</T.Mesh>
 
 {#if meshes.length > 0}
   {#key geoVersion + (showCutaway ? '_cut' : '_full')}

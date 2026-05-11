@@ -103,6 +103,10 @@
   }
 
   let SceneComponent = $state<any>(null);
+  // Top-left overlay panel with editable camera + light position/intensity
+  // boxes. Mounted as a normal HTML overlay (NOT via threlte's <HTML>) so it
+  // anchors to the viewport's top-left, not the projected 3D origin.
+  let SceneControls = $state<any>(null);
 
   // One-time mount work in onMount, NOT $effect. Was previously inside an
   // $effect that read `spec` (via setSpec(spec, ...)) AND wrote `spec = rec`
@@ -111,6 +115,7 @@
   // onMount runs once after mount; spec writes can't retrigger it.
   onMount(() => {
     import('$lib/shared/ComponentScene.svelte').then(m => { SceneComponent = m.default; });
+    import('$lib/shared/SceneControls.svelte').then(m => { SceneControls = m.default; });
     import('$lib/authoring/ChatPanel.svelte').then(m => { ChatPanel = m.default; });
     initManifold().then(() => { ready = true; });
 
@@ -326,6 +331,10 @@
       </Canvas>
     {:else if !buildError}
       <div class="empty-viewport">Add a part to see the preview.</div>
+    {/if}
+    {#if SceneControls}
+      {@const Controls = SceneControls}
+      <Controls />
     {/if}
     <div class="controls">
       <label><input type="checkbox" bind:checked={showCutaway} /> Cross-section</label>
