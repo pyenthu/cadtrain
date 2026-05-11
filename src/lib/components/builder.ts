@@ -17,7 +17,7 @@ let M: any = null;
 // Touching the value affects every M.cylinder call until reset, so callers MUST
 // reset on completion (see compose.ts try/finally).
 export const CIRCULAR_SEGMENTS_DEFAULT = 192;
-export const CIRCULAR_SEGMENTS_COMPOSE = 64;
+export const CIRCULAR_SEGMENTS_COMPOSE = 96;  // compromise: ~half the geometry of default, visually nearly identical for assemblies
 
 let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
 
@@ -320,27 +320,47 @@ export function buildPrimitiveManifold(componentId: string, params: Record<strin
   return builderFn(params);
 }
 
+// Module-level cutaway box, lazily created once per session. The cube +
+// translate are tiny but they were previously rebuilt on every finalize
+// call — for multi-part assemblies that's N constructions per frame.
+let _cachedCutBox: any = null;
+function getCutBox(): any {
+  if (!_cachedCutBox && M) {
+    _cachedCutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
+  }
+  return _cachedCutBox;
+}
+
 /**
  * Center a manifold vertically, apply the Y-axis half cutaway, and convert
  * to `full` + `cutVC` three.js geometries. Shared between `buildComponent`
  * and the composition interpreter so both produce identical render output.
+ *
+ * `skipCenter=true`: don't re-center this manifold — caller has already
+ * placed it via a transform and any further centering would destroy the
+ * intended assembly geometry. Used by compose.ts which transforms each
+ * part independently before finalize.
  */
-export function finalizeManifold(manifold: any, maxOD: number): ComponentResult {
-  const mesh = manifold.getMesh();
-  const vp = mesh.vertProperties as Float32Array;
-  const np = mesh.numProp;
-  let minZ = Infinity, maxZ = -Infinity;
-  for (let i = 0; i < vp.length / np; i++) {
-    const z = vp[i * np + 2];
-    if (z < minZ) minZ = z;
-    if (z > maxZ) maxZ = z;
+export function finalizeManifold(manifold: any, maxOD: number, skipCenter = false): ComponentResult {
+  let centered: any;
+  if (skipCenter) {
+    centered = manifold;
+  } else {
+    const mesh = manifold.getMesh();
+    const vp = mesh.vertProperties as Float32Array;
+    const np = mesh.numProp;
+    let minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < vp.length / np; i++) {
+      const z = vp[i * np + 2];
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+    centered = manifold.translate([0, 0, -(minZ + maxZ) / 2]);
   }
-  const centered = manifold.translate([0, 0, -(minZ + maxZ) / 2]);
-  const cutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
 
   return {
     full: manifoldToGeo(centered),
-    cutVC: manifoldToCutVC(centered.subtract(cutBox), maxOD),
+    cutVC: manifoldToCutVC(centered.subtract(getCutBox()), maxOD),
     manifold: centered,
   };
 }

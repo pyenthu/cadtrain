@@ -90,12 +90,16 @@
       {#if showCutaway}
         <T.Mesh geometry={m.cutVC}>
           <T.MeshPhongMaterial vertexColors specular="#ffffff" shininess={300} side={THREE.DoubleSide} />
-          {#if showEdges}<Edges thresholdAngle={20} color="black" />{/if}
+          <!-- Skip Edges overlay for multi-part assemblies: 10 EdgesGeometry
+               passes (one per mesh) tank mobile interaction frame rate. The
+               edges look messy on assemblies anyway since each part's outline
+               doesn't connect to its neighbour. Kept for single primitives. -->
+          {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {:else}
         <T.Mesh geometry={m.full}>
           <T.MeshPhongMaterial color="#cc2222" specular="#ffffff" shininess={300} side={THREE.DoubleSide} />
-          {#if showEdges}<Edges thresholdAngle={20} color="black" />{/if}
+          {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {/if}
     {/each}

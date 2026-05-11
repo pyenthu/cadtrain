@@ -16,6 +16,7 @@ import {
   buildPrimitiveManifold,
   finalizeManifold,
   initManifold,
+  setCircularSegmentMode,
   type ComponentResult,
 } from '$lib/components/builder';
 import type { AuthoredComponent, AuthoredPart, AuthoredOp } from './schema';
@@ -68,19 +69,43 @@ export async function buildAuthored(spec: AuthoredComponent): Promise<AuthoredRe
   // CSG ops (subtract / intersect) STILL fuse their inputs into one manifold —
   // those are intentional fuses (e.g. port holes through a sub) and are
   // typically 2-3 inputs, well within heap budget.
+  //
+  // Compose mode = 96 segments (vs 192 default). Halves triangle count
+  // across the assembly with negligible visual difference at typical view
+  // distances. The runtime cost (Edges pass + per-frame render) drops
+  // proportionally — important for mobile interaction smoothness.
+  setCircularSegmentMode('compose');
+  try {
   const t0 = Date.now();
   const maxOD = estimateMaxOD(spec.parts);
 
   // Stage 1: build each part's transformed manifold. Pool also carries op
   // outputs for chained CSG.
+  //
+  // Primitive cache: many real assemblies repeat the same (prim, params) —
+  // a packer has two slips and two cones with identical params. The slips
+  // builder alone runs ~40 internal CSG ops (sectors + 12 grooves), so
+  // building it twice doubles the wall-clock cost. Cache by JSON-key so
+  // the second occurrence reuses the pre-transform manifold and only pays
+  // for its own transform (cheap). Hit rate on Opus assemblies: ~30-50%.
+  const primCache = new Map<string, any>();
+  function getPrimitive(prim: string, params: Record<string, number>): any {
+    const key = `${prim}::${JSON.stringify(params)}`;
+    let m = primCache.get(key);
+    if (m === undefined) {
+      m = buildPrimitiveManifold(prim, params);
+      primCache.set(key, m);
+    }
+    return m;
+  }
+
   const pool: Record<string, any> = {};
   for (const part of spec.parts) {
     if (pool[part.id] !== undefined) {
       throw new Error(`Duplicate part id: ${part.id}`);
     }
-    let m = buildPrimitiveManifold(part.prim, part.params);
-    m = applyTransform(m, part.transform);
-    pool[part.id] = m;
+    const base = getPrimitive(part.prim, part.params);
+    pool[part.id] = applyTransform(base, part.transform);
   }
 
   // Stage 2: apply explicit CSG ops. Each op REPLACES its inputs in the
@@ -107,19 +132,24 @@ export async function buildAuthored(spec: AuthoredComponent): Promise<AuthoredRe
   }
 
   // Stage 3: assemble the render list — every part NOT consumed by an op,
-  // plus every op output. Each gets finalized (centered + cutaway) independently.
+  // plus every op output. Each gets finalized with skipCenter=true so the
+  // user's transforms persist (otherwise each part re-centers to its own
+  // bbox midpoint and the assembly collapses to overlapping pieces at origin).
   const partResults: AuthoredPartResult[] = [];
   for (const part of spec.parts) {
     if (consumed.has(part.id)) continue;
-    const fin = finalizeManifold(pool[part.id], maxOD);
+    const fin = finalizeManifold(pool[part.id], maxOD, true);
     partResults.push({ id: part.id, prim: part.prim, full: fin.full, cutVC: fin.cutVC });
   }
   for (const op of opResults) {
-    const fin = finalizeManifold(op.manifold, maxOD);
+    const fin = finalizeManifold(op.manifold, maxOD, true);
     partResults.push({ id: op.id, prim: op.prim, full: fin.full, cutVC: fin.cutVC });
   }
 
   return { parts: partResults, ms: Date.now() - t0 };
+  } finally {
+    setCircularSegmentMode('default');
+  }
 }
 
 /**
