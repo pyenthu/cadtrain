@@ -315,6 +315,57 @@ const BASE_COMPONENTS: ComponentDef[] = [
     },
     defaults: { odCompressed: 2.5, odExpanded: 4.0, mandrelOD: 1.5, length: 2.0, numRings: 3 },
   },
+
+  // --- CATALOG-INSPIRED PRIMITIVES (Halliburton Intelligent Completions
+  //     + Multilateral Technology) ---
+  {
+    id: "window_cutout",
+    name: "Pre-Milled Window",
+    category: "basic",
+    description: "Casing joint with a rectangular pre-milled window — multilateral lateral-exit base. Window opens during junction construction.",
+    tags: ["multilateral", "window", "pre-milled", "lateral", "LatchRite", "TAML"],
+    params: {
+      od: { label: "OD", min: 4, max: 14, step: 0.1 },
+      wall: { label: "Wall", min: 0.2, max: 1, step: 0.05 },
+      length: { label: "Length", min: 3, max: 8, step: 0.1 },
+      windowWidth: { label: "Window Width", min: 0.5, max: 4, step: 0.1 },
+      windowHeight: { label: "Window Height", min: 1, max: 5, step: 0.1 },
+      windowOffset: { label: "Window Offset", min: 0.5, max: 5, step: 0.1 },
+    },
+    defaults: { od: 7.0, wall: 0.4, length: 5.0, windowWidth: 2.0, windowHeight: 3.0, windowOffset: 1.0 },
+  },
+  {
+    id: "whipstock",
+    name: "Whipstock",
+    category: "basic",
+    description: "Angled deflector wedge — kicks the milling/drilling bit off-center toward a lateral exit at a multilateral junction.",
+    tags: ["whipstock", "deflector", "ramp", "multilateral junction", "kick-off"],
+    params: {
+      od: { label: "OD", min: 2, max: 10, step: 0.1 },
+      length: { label: "Length", min: 2, max: 8, step: 0.1 },
+      rampHeight: { label: "Ramp Height", min: 0.5, max: 4, step: 0.1 },
+      rampOffset: { label: "Ramp Offset", min: 0, max: 2, step: 0.1 },
+    },
+    defaults: { od: 5.0, length: 4.0, rampHeight: 2.0, rampOffset: 0 },
+  },
+  {
+    id: "sliding_sleeve",
+    name: "Sliding-Sleeve Valve Mandrel",
+    category: "basic",
+    description: "Hollow mandrel with axial ports + polished seal bores at each end. Generic body for interval control valves (HS-ICV, MCC-ICV, circulating valves) without thread/trim detail.",
+    tags: ["ICV", "interval control valve", "sliding sleeve", "HS-ICV", "MCC-ICV", "circulating valve", "seal bore", "valve mandrel", "completion"],
+    params: {
+      od: { label: "OD", min: 2, max: 8, step: 0.1 },
+      wall: { label: "Wall", min: 0.2, max: 1, step: 0.05 },
+      length: { label: "Length", min: 3, max: 10, step: 0.1 },
+      numPorts: { label: "Ports", min: 1, max: 8, step: 1 },
+      portWidth: { label: "Port Width", min: 0.1, max: 1, step: 0.05 },
+      portHeight: { label: "Port Height", min: 0.3, max: 2, step: 0.05 },
+      sealBoreDepth: { label: "Seal-Bore Depth", min: 0.02, max: 0.15, step: 0.01 },
+      sealBoreHeight: { label: "Seal-Bore Height", min: 0.2, max: 1, step: 0.05 },
+    },
+    defaults: { od: 3.5, wall: 0.4, length: 5.0, numPorts: 4, portWidth: 0.4, portHeight: 0.8, sealBoreDepth: 0.06, sealBoreHeight: 0.5 },
+  },
 ];
 
 // ═══════════════════════════════════════════════

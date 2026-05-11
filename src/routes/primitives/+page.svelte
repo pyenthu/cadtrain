@@ -26,6 +26,8 @@
   import { emptyAuthoredComponent, type AuthoredComponent } from '$lib/authoring/schema';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import KbTableViewer from '$lib/shared/KbTableViewer.svelte';
+  import { COMPONENTS_L3, type ComponentL3 } from '$lib/components/components-l3';
+  import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/components/assemblies-l4';
   // Vite ?raw — bundles the file's text at build time so the client can show
   // the script that produces each primitive's geometry in-tab.
   import builderSource from '$lib/components/builder.ts?raw';
@@ -87,6 +89,8 @@
         'grooved_cylinder', 'slotted_cylinder', 'seal_bore',
         'threaded_box', 'threaded_pin',
         'slips', 'j_latch', 'packer_element',
+        // Catalog-inspired (Halliburton Intelligent Completions + Multilateral)
+        'window_cutout', 'whipstock', 'sliding_sleeve',
       ].includes(c.id),
     },
     {
@@ -183,11 +187,16 @@
   interface Tab {
     /** Unique tab key. For an existing primitive, this is the primitive id;
      *  for a "new from <folder>" draft tab, it is `new:<folder>:<nonce>`;
-     *  for a KB tab, it is `kb:<kbId>`. */
+     *  for a KB tab, it is `kb:<kbId>`; for level-3/4 composite tabs it is
+     *  `comp:<id>` or `asm:<id>`. */
     id: string;
     /** What kind of content this tab hosts. Drives the tab-body render
-     *  (primitive → live 3D scene + params popup; kb → table viewer). */
-    kind: 'primitive' | 'kb';
+     *  (primitive → live 3D scene + params popup; kb → table viewer;
+     *  composite → multi-part geometry from a baked AuthoredComponent spec
+     *  with no param editing). */
+    kind: 'primitive' | 'kb' | 'composite';
+    /** Baked AuthoredComponent spec for composite (level 3 / 4) tabs. */
+    compositeSpec?: import('$lib/authoring/schema').AuthoredComponent;
     /** Underlying primitive definition id (only set when kind === 'primitive'). */
     primId: string;
     /** KB id (only set when kind === 'kb'). */
@@ -395,6 +404,24 @@
     activeTabId = id;
   }
 
+  function openComposite(prefix: 'comp' | 'asm', entry: { id: string; name: string; spec?: any; route?: string }) {
+    if ((entry as any).route) {
+      // Legacy tool entry — punt to the existing viewer route.
+      window.location.href = (entry as any).route;
+      return;
+    }
+    const id = `${prefix}:${entry.id}`;
+    if (openTabs.find((t) => t.id === id)) {
+      activeTabId = id;
+      return;
+    }
+    openTabs = [
+      ...openTabs,
+      { id, kind: 'composite', compositeSpec: entry.spec, primId: '', label: entry.name, params: {}, draft: false, vars: [] },
+    ];
+    activeTabId = id;
+  }
+
   function openNewDraft(folder: Folder, ev?: MouseEvent) {
     ev?.stopPropagation();
     // Seed the draft from the first existing leaf in the folder so the
@@ -458,19 +485,31 @@
   /** Compose a minimal AuthoredComponent for the active tab so buildAuthored
    *  can construct + finalize the geometry. Single part, no ops. */
   function activeSpec(): AuthoredComponent | null {
-    if (!activeTab || activeTab.kind !== 'primitive') return null;
-    const s = emptyAuthoredComponent();
-    s.id = activeTab.primId;
-    s.name = activeTab.label;
-    s.parts = [{ id: 'p0', kind: 'primitive', prim: activeTab.primId, params: { ...activeTab.params } }];
-    return s;
+    if (!activeTab) return null;
+    if (activeTab.kind === 'primitive') {
+      const s = emptyAuthoredComponent();
+      s.id = activeTab.primId;
+      s.name = activeTab.label;
+      s.parts = [{ id: 'p0', kind: 'primitive', prim: activeTab.primId, params: { ...activeTab.params } }];
+      return s;
+    }
+    if (activeTab.kind === 'composite' && activeTab.compositeSpec) {
+      return activeTab.compositeSpec;
+    }
+    return null;
   }
 
-  let buildKey = $derived(activeTab && activeTab.kind === 'primitive' ? JSON.stringify({ id: activeTab.primId, p: activeTab.params }) : '');
+  let buildKey = $derived(
+    activeTab && activeTab.kind === 'primitive'
+      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params })
+      : activeTab && activeTab.kind === 'composite'
+      ? `comp:${activeTab.id}`
+      : '',
+  );
   let buildTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     const _k = buildKey;
-    if (!ready || !activeTab || activeTab.kind !== 'primitive') { geo = null; buildError = null; return; }
+    if (!ready || !activeTab || activeTab.kind === 'kb') { geo = null; buildError = null; return; }
     if (buildTimer) clearTimeout(buildTimer);
     buildTimer = setTimeout(async () => {
       const spec = activeSpec();
@@ -631,6 +670,37 @@
         {/if}
       </div>
 
+      {#if sidebarTab === 'components'}
+        <div class="sb-list">
+          {#each COMPONENTS_L3.filter((c) => !filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))) as c (c.id)}
+            <button
+              class="prim-link"
+              class:active={activeTab?.id === `comp:${c.id}`}
+              onclick={() => openComposite('comp', c)}
+              title={c.description}
+            >
+              <span class="dot" class:pipe={c.kind === 'tool'}></span>
+              <span class="pl-name">{c.name}</span>
+              {#if c.kind === 'tool'}<span class="prim-kid-count">tool</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+      {#if sidebarTab === 'assemblies'}
+        <div class="sb-list">
+          {#each ASSEMBLIES_L4.filter((a) => !filter || a.name.toLowerCase().includes(filter.toLowerCase()) || a.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))) as a (a.id)}
+            <button
+              class="prim-link"
+              class:active={activeTab?.id === `asm:${a.id}`}
+              onclick={() => openComposite('asm', a)}
+              title={a.description}
+            >
+              <span class="dot"></span>
+              <span class="pl-name">{a.name}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       {#if sidebarTab === 'kb'}
         <!-- KB list — driven by /kb/index.json. Each row is a card-link
              with the same prim-link styling; hover surfaces the rich
@@ -660,7 +730,7 @@
         {/if}
       {/if}
       {#each TREE as f (f.id)}
-        {#if f.id === sidebarTab && f.id !== 'kb'}
+        {#if f.id === sidebarTab && f.id !== 'kb' && f.id !== 'components' && f.id !== 'assemblies'}
           {@const items = itemsInFolder(f).filter(matchesFilter)}
           {@const subClaims = (f.sub ?? []).flatMap((sf) => itemsInFolder(sf))}
           {@const leafItems = items.filter((c) => !subClaims.includes(c) && isTopLevel(c, items))}
@@ -693,13 +763,7 @@
             {/each}
           {/if}
           {#if leafItems.length === 0 && (f.sub ?? []).every((sf) => itemsInFolder(sf).filter(matchesFilter).length === 0)}
-            {#if f.id === 'components'}
-              <div class="sb-empty">Level 3 — complete physical items (tubing joint, pup joint, packer). Composed from primitives + compositions in-situ via the <strong>+ New</strong> button. Placeholder until the authoring flow is wired here.</div>
-            {:else if f.id === 'assemblies'}
-              <div class="sb-empty">Level 4 — multi-component products (completion strings, BHAs). Deferred.</div>
-            {:else}
-              <div class="sb-empty">No primitives match "{filter}".</div>
-            {/if}
+            <div class="sb-empty">No primitives match "{filter}".</div>
           {/if}
         {/if}
       {/each}

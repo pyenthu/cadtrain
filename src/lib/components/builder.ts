@@ -277,6 +277,66 @@ export const builders: Record<string, (p: Record<string, number>) => any> = {
     return body;
   },
 
+  // Multilateral pre-milled window — casing joint with a rectangular
+  // window cut into the OD wall. Inspired by Halliburton's LatchRite
+  // Pre-Milled Window system in the multilateral catalog: a window joint
+  // sits at the planned lateral exit; the window is opened during junction
+  // construction. params: od/wall/length define the body; windowWidth (in
+  // OD-circumference fraction), windowHeight, windowOffset locate + size
+  // the rectangular cutout.
+  window_cutout(p) {
+    const id = p.od - 2 * p.wall;
+    let body = tube(p.od / 2, id / 2, p.length);
+    // Cutout is a thin rectangular slab oriented along the body axis with
+    // its long edge in z and shorter edge in x. The width param is the
+    // chord length of the window (in OD units); we centre it on the +Y face.
+    const wH = p.windowHeight;
+    const wW = p.windowWidth;
+    const wZ = p.windowOffset;
+    const cut = M.cube([wW, p.od * 1.2, wH], true);
+    body = body.subtract(mv(cut, [0, 0, wZ + wH / 2]));
+    return body;
+  },
+
+  // Whipstock — angled wedge that deflects a milling/drilling bit into a
+  // lateral wellbore. Modeled as a half-cylinder with an inclined top face
+  // (ramp). Used at multilateral junctions to kick off into lateral.
+  // params: od/length/rampHeight/rampOffset.
+  whipstock(p) {
+    // Start with a solid cylinder body the full length.
+    let body = cyl(p.length, p.od / 2);
+    // Subtract a tilted cuboid to carve the ramp. The cuboid sits on the
+    // +X side and rotates about the Y axis by rampAngle (atan(rampHeight/length)).
+    const rampAngle = (Math.atan2(p.rampHeight, p.length) * 180) / Math.PI;
+    const ramp = M.cube([p.od * 1.5, p.od * 1.5, p.length * 1.5], true);
+    let tilted = rot(ramp, [0, -rampAngle, 0]);
+    tilted = mv(tilted, [p.od * 0.6, 0, p.length / 2 + p.rampOffset]);
+    body = body.subtract(tilted);
+    return body;
+  },
+
+  // Sliding-sleeve valve mandrel — hollow body with N axial ports cut
+  // through the wall + a polished seal bore at each end. Generic for
+  // intelligent-completion ICV-style devices (HS-ICV, MCC-ICV in the
+  // Halliburton catalog) without the trim choking detail.
+  sliding_sleeve(p) {
+    const id = p.od - 2 * p.wall;
+    let body = tube(p.od / 2, id / 2, p.length);
+    // Ports are radial slots near the middle.
+    const portZ = p.length / 2;
+    for (let i = 0; i < p.numPorts; i++) {
+      const angle = (i * 360) / p.numPorts;
+      const port = rot(M.cube([p.od * 1.2, p.portWidth, p.portHeight], true), [0, 0, angle]);
+      body = body.subtract(mv(port, [0, 0, portZ]));
+    }
+    // Seal bore bands cut as shallow grooves at each end (polished seal
+    // bore receptacles for the production-string seal stack).
+    const sbH = p.sealBoreHeight;
+    body = body.subtract(mv(tube(id / 2 + p.sealBoreDepth, id / 2 - 0.01, sbH), [0, 0, sbH / 2]));
+    body = body.subtract(mv(tube(id / 2 + p.sealBoreDepth, id / 2 - 0.01, sbH), [0, 0, p.length - sbH * 1.5]));
+    return body;
+  },
+
   packer_element(p) {
     // Stack of rings representing rubber elements
     let element = M.cube([0.001, 0.001, 0.001], true);
