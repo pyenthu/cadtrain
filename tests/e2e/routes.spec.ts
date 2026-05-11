@@ -49,7 +49,13 @@ for (const route of TOP_LEVEL) {
     page.on('pageerror', (err) => errors.push(err.message));
     const response = await page.goto(route.path);
     expect(response?.status(), `${route.path} should return 200`).toBe(200);
-    await expect(page.locator('h1').first()).toContainText(route.heading);
+    if (route.path === '/') {
+      // Home is the SVTC-style nav menu — no <h1>, just the .menu-header
+      // ('CAD Train') + the route list.
+      await expect(page.locator('.menu-header')).toContainText(route.heading);
+    } else {
+      await expect(page.locator('h1').first()).toContainText(route.heading);
+    }
     expect(errors, `${route.path} should not throw runtime errors`).toEqual([]);
   });
 }

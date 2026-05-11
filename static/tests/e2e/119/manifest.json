@@ -1,0 +1,25 @@
+{
+  "task": 119,
+  "run_at": "2026-05-11T01:54:15.629Z",
+  "source": "tests/results/playwright-output",
+  "files": [
+    {
+      "spec": "routes",
+      "file": "routes.webm",
+      "size_bytes": 71145,
+      "src_test": "routes-top-level-route-loads-plan-chromium"
+    },
+    {
+      "spec": "archive-links",
+      "file": "archive-links.webm",
+      "size_bytes": 75980,
+      "src_test": "archive-links-no-stale-top-3d895--inside-archive-tests-wells-chromium"
+    },
+    {
+      "spec": "navbar",
+      "file": "navbar.webm",
+      "size_bytes": 96865,
+      "src_test": "navbar-navbar-highlights-the-active-route-chromium"
+    }
+  ]
+}

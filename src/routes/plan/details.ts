@@ -304,6 +304,42 @@ export const details: Record<number, PlanDetail> = {
     ],
   },
 
+  119: {
+    summary:
+      'Home page reduced to an SVTC-style menu (no marketing copy, no cards): ' +
+      'just .menu-header + a clean list of routes (CAD / Wells / Tests / Plan / Archive) ' +
+      'with one-line hints.\n\n' +
+      'Navbar restructured: dropped the segment+items pattern (and seg-label/sep CSS) ' +
+      'in favour of a flat top-level link list. Tests promoted to a top-level entry pointing ' +
+      'at /archive/tests so recordings + cache stats are one click away (was buried under ' +
+      'the Archive collapse before).\n\n' +
+      'Active-state matching switched from per-link prefix to longest-match-wins so visiting ' +
+      '/archive/tests highlights Tests (not both Tests AND Archive). $derived.by computes the ' +
+      'single winning href once and the loop just compares against it.',
+    steps: [
+      '+layout.svelte: navLinks array; activeHref derived via longest-prefix match',
+      '+page.svelte: rewritten as .menu with .menu-header + 5 .menu-item entries',
+      'navbar.spec.ts: rewritten to assert the 5 nav links + Tests promotion + home-menu parity',
+      'routes.spec.ts: / no longer has <h1>; assertion targets .menu-header instead',
+    ],
+    acceptance: [
+      'Home page shows only the menu — no hero text, no cards, no footer note',
+      'Navbar shows: CAD / Wells / Tests / Plan / Archive (Tests links to /archive/tests)',
+      'Visiting /archive/tests highlights Tests in the navbar, NOT Archive',
+      'e2e suite green: 49/49 (2 LIVE-gated skipped)',
+    ],
+    refs: [
+      'src/routes/+layout.svelte',
+      'src/routes/+page.svelte',
+      'tests/e2e/navbar.spec.ts',
+    ],
+    videos: [
+      '/tests/e2e/119/routes.webm',
+      '/tests/e2e/119/navbar.webm',
+      '/tests/e2e/119/archive-links.webm',
+    ],
+  },
+
   // ───── G. Vendor catalog ingest ─────
 
   200: {
