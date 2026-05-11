@@ -214,6 +214,10 @@ static/
 ├── eval/                             # Persisted eval datasets viewed at /tests/wells + /tests/components
 │   ├── wells/                        # 8 cases × 2 backends × 3 models extracted JSON + 7 truth WSON + index.json
 │   └── components/                   # 18 primitives × CLI/Opus extraction + summary index.json
+├── kb/                               # Knowledge base for Bundle H constrained parametrization
+│   ├── index.json                    # KB manifest (one entry per JSON KB file)
+│   └── api/
+│       └── casing-tubing-data.json   # 299 rows · LP/CSG/TBG operational specs (OD, wall, ID, drift, yield, MUT)
 └── tmp/                              # Generated test frames + rag.gif
 
 training_data/
@@ -226,7 +230,11 @@ training_data/
 │   └── training.json                 # [{component_id, params, image}, ...]
 └── reference/                         # Thread spec data etc
 
+kb-sources/                            # Vendor/operator PDFs feeding scripts/kb/ extractors. GITIGNORED — outputs in static/kb/ ARE committed, raw inputs are not (license-uncertain).
+
 scripts/
+├── kb/
+│   └── build_casing_tubing_data.ts   # Re-extractor: kb-sources/*.pdf → static/kb/api/casing-tubing-data.json
 └── seed_cache.ts                     # Populate cache.jsonl from prim_* training data
 
 vlm/                                   # CLI-only utilities (NOT shipped to production)

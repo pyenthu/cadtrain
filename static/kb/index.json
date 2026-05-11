@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "description": "Knowledge-base manifest. Each entry points at a JSON KB file under static/kb/ that downstream code (e.g. /author constrained parametrization, Bundle H tasks) can fetch by path.",
+  "kbs": [
+    {
+      "id": "casing-tubing-data",
+      "path": "/kb/api/casing-tubing-data.json",
+      "title": "Casing, Tubing & Line-Pipe Operational Inventory (2019)",
+      "description": "Per-pipe operator inventory: 9CAT id, type (LP/CSG/TBG), nominal size, weight, supplier, grade, connection, OD, wall, ID, drift, burst, collapse, pipe + joint yield strengths, make-up torque (min/opti/max), color bands. 299 rows covering 25 line pipe + 235 casing + 39 tubing.",
+      "categories": ["api", "casing", "tubing", "line-pipe", "connection", "grade", "make-up-torque"],
+      "row_count": 299,
+      "source_kind": "operator_inventory",
+      "extractor": "scripts/kb/build_casing_tubing_data.ts"
+    }
+  ]
+}

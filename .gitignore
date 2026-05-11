@@ -47,6 +47,11 @@ static/tests/_video_staging/
 static/eval/catalog/**/*.pdf
 static/eval/catalog/**/*.PDF
 
+# KB source documents (pptx/pdf/etc) feeding scripts/kb/*.ts extractors.
+# Outputs (static/kb/**/*.json) ARE committed; raw inputs are not — they're
+# often vendor catalogs or third-party material with murky licensing.
+kb-sources/
+
 # Playwright test artifacts (regenerable). Persisted WEBMs that should
 # survive go in static/tests/ and are referenced by manifest.json.
 tests/results/
