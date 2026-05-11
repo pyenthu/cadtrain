@@ -118,7 +118,7 @@
 </div>
 
 <style>
-  .page { padding: 22px 28px; max-width: 1100px; margin: 0 auto; font-family: Arial, sans-serif; height: 100%; overflow-y: auto; box-sizing: border-box; }
+  .page { padding: 22px 28px; font-family: Arial, sans-serif; height: 100%; overflow-y: auto; box-sizing: border-box; }
   .hdr h1 { margin: 0 0 4px; font-size: 22px; color: #cc2222; }
   .sub { margin: 0 0 24px; font: 12px Arial; color: #666; max-width: 760px; line-height: 1.55; }
   .sub code { font: 11px monospace; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; color: #333; }

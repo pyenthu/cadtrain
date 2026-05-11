@@ -42,7 +42,7 @@
 </div>
 
 <style>
-  .page { padding: 22px 28px; max-width: 1200px; margin: 0 auto; font-family: Arial, sans-serif; height: 100%; overflow-y: auto; box-sizing: border-box; }
+  .page { padding: 22px 28px; font-family: Arial, sans-serif; height: 100%; overflow-y: auto; box-sizing: border-box; }
   .hdr h1 { margin: 0 0 4px; font-size: 22px; color: #cc2222; }
   .sub { margin: 0 0 22px; font: 12px Arial; color: #666; max-width: 700px; line-height: 1.5; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }

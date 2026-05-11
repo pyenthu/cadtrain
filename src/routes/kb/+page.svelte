@@ -68,7 +68,7 @@
 </div>
 
 <style>
-  .page { padding: 24px 32px; max-width: 1100px; margin: 0 auto; font-family: Arial, sans-serif; height: 100%; overflow-y: auto; box-sizing: border-box; }
+  .page { padding: 24px 32px; font-family: Arial, sans-serif; height: 100%; overflow-y: auto; box-sizing: border-box; }
   .hdr h1 { margin: 0 0 4px; font-size: 22px; color: #cc2222; }
   .sub { margin: 0 0 24px; font-size: 13px; color: #666; max-width: 680px; line-height: 1.5; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
