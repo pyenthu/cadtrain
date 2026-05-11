@@ -43,8 +43,11 @@
     return [];
   });
 
-  // Defaults match the project convention (CLAUDE.md): Z-down, side view at +X.
-  const DEFAULT_POSITION: [number, number, number] = [6, 0, 0];
+  // Defaults: camera orbits around the world Z axis. Original was at +X;
+  // rotated 90° counterclockwise (viewed from +Z, our "down" axis) → camera
+  // sits at -Y. UP stays [0,0,-1] (Z-down convention) — well axis still
+  // vertical on screen, viewing from the other side.
+  const DEFAULT_POSITION: [number, number, number] = [0, -6, 0];
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
   const DEFAULT_ZOOM = 130;
 

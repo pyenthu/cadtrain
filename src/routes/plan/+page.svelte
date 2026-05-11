@@ -45,7 +45,8 @@
     { id: 'D', name: 'Wells → SVTC WSON',      tint: '#0891b2', desc: 'New: extract well-engineering documents into WSON for SVTC drawing apps' },
     { id: 'E', name: 'Infra + deploy',         tint: '#10b981', desc: 'Dockerfile, Railway volume, env config, model pre-pull' },
     { id: 'F', name: 'Meta + UX',              tint: '#ec4899', desc: 'this /plan route, navigation, documentation' },
-    { id: 'G', name: 'Vendor catalog ingest',  tint: '#f59e0b', desc: 'Halliburton/Baker Hughes catalog PDFs → per-page assets → SVG schematics + spec-table JSON + labeled component graph → cache.jsonl with proper component_id (not "unknown")' },
+    { id: 'G', name: 'Vendor catalog ingest',  tint: '#f59e0b', desc: 'Halliburton/Baker Hughes catalog PDFs → per-page assets → SVG schematics + spec-table JSON. Output now feeds bundle H (constrained parametrization), not cache.jsonl' },
+    { id: 'H', name: 'Constrained parametrization', tint: '#7c3aed', desc: 'Designing not building: API/vendor KB tables → DesignSpace + Generator → derived params → Svelte-runes runtime. Replace freeform Opus param picking with coordinates in a constrained choice space.' },
   ];
 
   const tasks: Task[] = [
@@ -56,7 +57,7 @@
     { id:  4, bundle: 'A', lane: 0, start: -4, weeks: 1,   priority: 'medium', status: 'done', title: 'Dedicated /tools/bottom-sub viewer (HAL10408)' },
     { id:  5, bundle: 'A', lane: 0, start: -3, weeks: 1,   priority: 'medium', status: 'done', title: 'Dedicated /tools/ratch-latch viewer' },
     { id:  6, bundle: 'A', lane: 0, start: 0,  weeks: 0.3, priority: 'medium', status: 'done', title: 'URL-driven /components (?p=&cam=) for synthetic data generator' },
-    { id:  7, bundle: 'A', lane: 0, start: 1,  weeks: 1.5, priority: 'high',   status: 'open', title: 'Re-render primitives with red-outer/grey-internal coloring + shading before pHash/CLIP — addresses silhouette collapse' },
+    { id:  7, bundle: 'A', lane: 0, start: 1,  weeks: 1.5, priority: 'high',   status: 'deferred', title: 'Re-render primitives with red-outer/grey-internal coloring + shading before pHash/CLIP — shelved: cold-classification 17/18 killed CLIP rationale' },
     { id:  8, bundle: 'A', lane: 0, start: 2,  weeks: 0.5, priority: 'low',    status: 'on-demand', title: 'Add new primitive types as drilling needs surface' },
 
     // ───── B. Retrieval (RAG + CLIP) ─────
@@ -65,12 +66,12 @@
     { id: 22, bundle: 'B', lane: 1, start: -5, weeks: 1.5, priority: 'high',   status: 'done', title: '/api/identify — RAG few-shot prompt + Claude vision' },
     { id: 23, bundle: 'B', lane: 1, start: -4, weeks: 1,   priority: 'medium', status: 'done', title: '/api/refine — SSIM loop + Claude param updates' },
     { id: 24, bundle: 'B', lane: 1, start: -3, weeks: 0.5, priority: 'medium', status: 'done', title: '/api/accept + /api/feedback — user-validated cache growth' },
-    { id: 25, bundle: 'B', lane: 1, start: -2, weeks: 1,   priority: 'medium', status: 'done', title: 'HAL catalog ingest into cache.jsonl (1,772 records)' },
+    { id: 25, bundle: 'B', lane: 1, start: -2, weeks: 1,   priority: 'medium', status: 'done', title: 'HAL catalog ingest into cache.jsonl (1,772 records) — scaffolding only; 1,646 unknown-component records deleted 2026-05-11 (chore 0cdd687)' },
     { id: 26, bundle: 'B', lane: 1, start:  0, weeks: 0.5, priority: 'large',  status: 'done', title: 'CLIP retrieval rollout — embed module, hybrid scoring, identify wiring' },
     { id: 27, bundle: 'B', lane: 1, start:  0, weeks: 0.3, priority: 'medium', status: 'done', title: 'Synthetic data generator — Playwright × 5 angles × 7 styles (700 samples)' },
-    { id: 28, bundle: 'B', lane: 1, start:  1, weeks: 2,   priority: 'high',   status: 'open', title: 'Address CLIP silhouette collapse — 12 of 18 default-param primitives produce identical embeddings (CLAUDE.md TODO)' },
-    { id: 29, bundle: 'B', lane: 1, start:  3, weeks: 1.5, priority: 'medium', status: 'open', title: 'Replace 18-image retrieval test with real photo benchmark — better proxy for production /api/identify usage' },
-    { id: 30, bundle: 'B', lane: 1, start:  4, weeks: 2,   priority: 'medium', status: 'open', title: 'Domain-adapted CLIP — fine-tune on cadtrain primitive set (gated on real photo benchmark existing first)' },
+    { id: 28, bundle: 'B', lane: 1, start:  1, weeks: 2,   priority: 'high',   status: 'deferred', title: 'Address CLIP silhouette collapse — shelved per cold-classification finding; revisit if Opus-direct-from-image fails for real photos' },
+    { id: 29, bundle: 'B', lane: 1, start:  3, weeks: 1.5, priority: 'medium', status: 'open',     title: 'Replace 18-image retrieval test with real photo benchmark — the open door for retrieval: only justifies CLIP/RAG work if Opus-direct on real photos isn\'t enough' },
+    { id: 30, bundle: 'B', lane: 1, start:  4, weeks: 2,   priority: 'medium', status: 'deferred', title: 'Domain-adapted CLIP fine-tune — shelved; gated on #29 showing meaningful retrieval gain over Opus-direct baseline' },
 
     // ───── C. Authoring (build app) ─────
     { id: 40, bundle: 'C', lane: 2, start: -2, weeks: 2,   priority: 'medium', status: 'done', title: 'Authoring schema (AuthoredComponent / Part / Op / Step) + buildAuthored interpreter' },
@@ -93,8 +94,8 @@
     { id: 80, bundle: 'E', lane: 4, start: -2, weeks: 0.5, priority: 'medium', status: 'done', title: 'Dockerfile (bun build → node:22-slim) + docker-entrypoint.sh' },
     { id: 81, bundle: 'E', lane: 4, start: -1.5, weeks: 0.5, priority: 'medium', status: 'done', title: 'railway.toml + Railway deploy from GitHub' },
     { id: 82, bundle: 'E', lane: 4, start: -1, weeks: 0.3, priority: 'medium', status: 'done', title: 'Railway volume mount for /data (cache persistence across deploys)' },
-    { id: 83, bundle: 'E', lane: 4, start:  0.3, weeks: 0.3, priority: 'low',  status: 'open', title: 'Pre-pull CLIP weights in Dockerfile build (~80 MB, deferred from CLIP plan step 9 — only worth it once CLIP is delivering measurable gains)' },
-    { id: 84, bundle: 'E', lane: 4, start:  1,  weeks: 0.5, priority: 'medium', status: 'open', title: 'warmup() in hooks.server.ts — amortise CLIP model load at boot instead of first /api/identify request' },
+    { id: 83, bundle: 'E', lane: 4, start:  0.3, weeks: 0.3, priority: 'low',    status: 'deferred', title: 'Pre-pull CLIP weights in Dockerfile build — shelved with rest of CLIP work' },
+    { id: 84, bundle: 'E', lane: 4, start:  1,   weeks: 0.5, priority: 'medium', status: 'deferred', title: 'warmup() CLIP at boot — shelved with rest of CLIP work' },
 
     // ───── F. Meta + UX ─────
     { id: 100, bundle: 'F', lane: 5, start:  0,   weeks: 0.2, priority: 'medium', status: 'done', title: '/plan Gantt route — this page' },
@@ -121,12 +122,25 @@
     // ───── G. Vendor catalog ingest ─────
     { id: 200, bundle: 'G', lane: 6, start:  1.5, weeks: 0.2, priority: 'medium', status: 'done',   title: 'G.0 — Storage convention: static/eval/catalog/<vendor>/ + manifest.json; PDFs gitignored, structure committed' },
     { id: 201, bundle: 'G', lane: 6, start:  1.7, weeks: 0.5, priority: 'high',   status: 'done',   title: 'G.1 — PDF inspector: per-page detection of vector vs raster vs hybrid (PyMuPDF page.get_drawings + get_images + get_text)' },
-    { id: 202, bundle: 'G', lane: 6, start:  2.2, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.2 — SVG extractor: schematic pages → vector SVG via PyMuPDF path traversal; labeled cross-sections preserved with text + bbox' },
-    { id: 203, bundle: 'G', lane: 6, start:  2.7, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.3 — Spec-table extractor: structured page (e.g., Packers p.6) → JSON {casing_size, packer_od, sealbore_id, ...}; validates against existing primitive param ranges' },
-    { id: 204, bundle: 'G', lane: 6, start:  3.2, weeks: 0.7, priority: 'medium', status: 'open',   title: 'G.4 — Component-label graph: extract labeled cross-section pages into {label, bbox, line_to_part_bbox} structure for assembly grammar generation' },
-    { id: 205, bundle: 'G', lane: 6, start:  3.9, weeks: 0.5, priority: 'medium', status: 'open',   title: 'G.5 — Catalog indexer: ingest extracted assets into cache.jsonl with proper component_id (replaces 1,646 "unknown" HAL records); CLIP-embed each' },
+    { id: 202, bundle: 'G', lane: 6, start:  2.2, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.2 — SVG extractor: schematic pages → static/kb/<vendor>/svg/<chapter-page>.svg (design-intent reference + Opus visual context for H bundle)' },
+    { id: 203, bundle: 'G', lane: 6, start:  2.7, weeks: 0.5, priority: 'high',   status: 'open',   title: 'G.3 — Spec-table extractor: tables → static/kb/<vendor>/specs/<chapter>.json (DesignSpace-ready structured tubing/casing/packer dimensions)' },
+    { id: 204, bundle: 'G', lane: 6, start:  3.2, weeks: 0.7, priority: 'medium', status: 'open',   title: 'G.4 — Component-label graph: labeled cross-sections → {label, bbox, line_to_part_bbox}; feeds H assembly grammar' },
+    { id: 205, bundle: 'G', lane: 6, start:  3.9, weeks: 0.5, priority: 'medium', status: 'done',   title: 'G.5 — Catalog indexer: COMPLETE-BY-DELETION (chore 0cdd687, 2026-05-11) — 1,646 unknown records dropped; KB tables (H bundle) replace cache as vendor-data source of truth' },
     { id: 206, bundle: 'G', lane: 6, start:  4.4, weeks: 0.5, priority: 'medium', status: 'open',   title: 'G.6 — /cad/catalog/<vendor>/<chapter> browse UI: per-page viewer with toggle (raster/SVG/extracted-data overlay)' },
     { id: 207, bundle: 'G', lane: 6, start:  4.9, weeks: 0.5, priority: 'low',    status: 'open',   title: 'G.7 — Cross-reference packer model names (Perma-Series, Versa-Trieve, etc.) to authored cadtrain primitives — tag /author entries with vendor model when matched' },
+
+    // ───── H. Constrained Parametrization (designing not building) ─────
+    { id: 300, bundle: 'H', lane: 7, start:  5.0, weeks: 0.3, priority: 'high',   status: 'open',   title: 'H.0 — Static KB foundation: static/kb/api/ directory + first table (API 5CT tubing from pptx in Downloads)' },
+    { id: 301, bundle: 'H', lane: 7, start:  5.3, weeks: 0.4, priority: 'high',   status: 'open',   title: 'H.1 — Schema: DesignSpace + Generator + VariableDef in src/lib/authoring/schema.ts (backward-compat: variables optional)' },
+    { id: 302, bundle: 'H', lane: 7, start:  5.7, weeks: 0.4, priority: 'high',   status: 'open',   title: 'H.2 — Svelte-runes expression engine: compile JSON formulas → live $derived chains (Architecture A from the design discussion)' },
+    { id: 303, bundle: 'H', lane: 7, start:  6.1, weeks: 0.4, priority: 'high',   status: 'open',   title: 'H.3 — Pup joint as proving ground: hand-written DesignSpace + Generator; rendered output matches existing eue_pup_joint_275 byte-for-byte' },
+    { id: 304, bundle: 'H', lane: 7, start:  6.5, weeks: 0.5, priority: 'high',   status: 'open',   title: 'H.4 — Workbench tab "Variables" with Formula + Visual sub-tabs (table view + dependency graph)' },
+    { id: 305, bundle: 'H', lane: 7, start:  7.0, weeks: 0.5, priority: 'medium', status: 'open',   title: 'H.5 — Opus generator rewrite: picks coordinates in DesignSpace, doesn\'t write raw params; constraints satisfied by construction' },
+    { id: 306, bundle: 'H', lane: 7, start:  7.5, weeks: 0.5, priority: 'medium', status: 'open',   title: 'H.6 — Retrofit: migrate each of the 10 existing assemblies to a DesignSpace coordinate; verify visual identity pre/post' },
+    { id: 307, bundle: 'H', lane: 7, start:  8.0, weeks: 0.7, priority: 'medium', status: 'open',   title: 'H.7 — KB expansion: API 5CT casing + EUE/NUE/NC/IF/FH/REG/LTC thread spec tables (machine-extracted from API 5CT pptx + thread standards)' },
+    { id: 308, bundle: 'H', lane: 7, start:  8.7, weeks: 0.3, priority: 'low',    status: 'open',   title: 'H.8 — Library-wide variable propagation: change casing_size once → every assembly using it updates; per-assembly override mechanism' },
+    { id: 309, bundle: 'H', lane: 7, start:  9.0, weeks: 0.5, priority: 'low',    status: 'open',   title: 'H.9 — Opus design-reviewer: post-save soft warnings ("slip count inconsistent with packer rating", "OD exceeds casing drift"); badge in workbench' },
+    { id: 310, bundle: 'H', lane: 7, start:  9.5, weeks: 1.0, priority: 'medium', status: 'open',   title: 'H.10 — Vendor-PDF-to-DesignSpace: Opus reads a vendor catalog page (image) and emits a DesignSpace + Generator directly — the "do we need CLIP/RAG?" alternative path that keeps Bundle B shelved if it works' },
   ];
 
   // Bundle-relative codes (A.1, B.3, …) computed from index within bundle.
