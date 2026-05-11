@@ -212,11 +212,34 @@ export const details: Record<number, PlanDetail> = {
 
   116: {
     summary:
-      'Current e2e suite covers route loading, navbar, intra-archive links — but ' +
-      'no actual backend smoke tests. Next: upload a sample PDF to /archive/wells ' +
-      'and assert WSON response shape; upload a sample image to /archive/reverse ' +
-      'and assert IdentifyResponse shape. Use the API backend (skip CLI tests since ' +
-      'they need claude binary auth and would fail in CI).',
+      'Backend smoke tests added at tests/e2e/backend.spec.ts. Six tests across ' +
+      '/api/wells/extract and /api/identify. Structural tests (4) verify request ' +
+      'parsing — 400 on missing/wrong field, correct error messages — and run on ' +
+      'every e2e invocation. Live tests (2) are gated behind CADTRAIN_E2E_LIVE=1 ' +
+      'env var: with it, they upload a real well doc PNG and a primitive render ' +
+      'and assert the full response shape from the actual Anthropic API. Without ' +
+      'it, they auto-skip — keeps the default suite cheap and deterministic.',
+    steps: [
+      'tests/e2e/backend.spec.ts — 4 structural + 2 live tests',
+      'liveTest = LIVE ? test : test.skip pattern for env-gated execution',
+      'Fixtures: static/eval/wells/Ananas-13-*.png (104 KB), primitive renders fallback chain',
+      'Mode banner test logs whether LIVE mode is on',
+    ],
+    acceptance: [
+      '48 passed + 2 skipped (= 50 total) without CADTRAIN_E2E_LIVE',
+      '50 passed with CADTRAIN_E2E_LIVE=1 (verified locally; not run in CI)',
+      'Catches Phase 0 backend refactor regressions: form-field name drift, status code drift',
+    ],
+    refs: [
+      'src/routes/api/wells/extract/+server.ts',
+      'src/routes/api/identify/+server.ts',
+      'tests/e2e/backend.spec.ts',
+    ],
+    videos: [
+      '/tests/e2e/116/routes.webm',
+      '/tests/e2e/116/navbar.webm',
+      '/tests/e2e/116/archive-links.webm',
+    ],
   },
 
   117: {
