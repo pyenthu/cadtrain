@@ -93,8 +93,12 @@
 
 <T.Color args={['#ffffff']} attach="background" />
 <T.AmbientLight intensity={0.3} />
-<T.PointLight position={[1, -4, -2]} intensity={200} distance={50} />
-<T.PointLight position={[12, 8, 0]} intensity={120} distance={50} />
+<!-- Rotated 90° CCW around Z to match the camera rotation, keeping the
+     lighting consistent relative to the new viewing angle.
+     Same transform applied to camera: (x, y, z) → (y, -x, z).
+     Before: [1, -4, -2] and [12, 8, 0]. -->
+<T.PointLight position={[-4, -1, -2]} intensity={200} distance={50} />
+<T.PointLight position={[8, -12, 0]} intensity={120} distance={50} />
 
 {#if meshes.length > 0}
   {#key geoVersion + (showCutaway ? '_cut' : '_full')}
