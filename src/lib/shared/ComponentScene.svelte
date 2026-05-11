@@ -48,9 +48,12 @@
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
   const DEFAULT_ZOOM = 130;
 
-  // Auto-fit zoom: derive from the union of all part bounding boxes so a
-  // multi-part assembly (packer = 6" tall) gets zoomed out to fit, while
-  // a single primitive stays at the default crisp zoom.
+  // Auto-fit zoom: fit the bounding SPHERE (= half the diagonal across the
+  // bbox) into the viewport rather than just the longest axis. Why: when
+  // OrbitControls rotates the object, the diagonal of the bbox sweeps
+  // through the viewport. Fitting only the longest axis means a tall
+  // packer clips when rotated to ~45°. Sphere fitting guarantees the
+  // object stays in frame at every angle.
   function autoZoomFromMeshes(arr: { full: any; cutVC: any }[], fallback: number): number {
     if (arr.length === 0) return fallback;
     let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -65,9 +68,12 @@
       if (bb.min.y < minY) minY = bb.min.y; if (bb.max.y > maxY) maxY = bb.max.y;
       if (bb.min.z < minZ) minZ = bb.min.z; if (bb.max.z > maxZ) maxZ = bb.max.z;
     }
-    const maxExtent = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
-    if (!isFinite(maxExtent) || maxExtent <= 0) return fallback;
-    return Math.min(600 / maxExtent, fallback);
+    const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
+    const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
+    if (!isFinite(diagonal) || diagonal <= 0) return fallback;
+    // 600 was tuned for max-axis; bumped slightly to compensate for
+    // diagonal-fit giving a tighter view margin.
+    return Math.min(550 / diagonal, fallback);
   }
 
   let cameraPosition = $derived(cameraOverride?.position ?? DEFAULT_POSITION);
