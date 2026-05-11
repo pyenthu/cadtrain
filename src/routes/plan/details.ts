@@ -424,22 +424,46 @@ export const details: Record<number, PlanDetail> = {
 
   123: {
     summary:
-      'Pre-built GLB cache for /library — at view time, the library page loads ' +
-      "static GLB binaries (Three.js GLTFLoader) instead of spawning ManifoldCAD. " +
-      'Build pipeline: on /api/author/save, run buildAuthored on the server (Node ' +
-      'WASM), serialize to GLB, write to static/library/<id>.glb. Library cards ' +
-      "fetch their GLB on hover/click; cards never trigger CSG.\n\n" +
-      'Why: GLB load is just bytes → GPU upload, no WASM, no CSG, no heap pressure. ' +
-      "Mobile-safe by construction. CDN-cacheable. The trade-off is parametric " +
-      "editing — sliders need ManifoldCAD live, so /author still uses the WASM " +
-      'path; only /library benefits from the GLB cache.\n\n' +
+      'GLB-via-REST: move ALL ManifoldCAD work to the server (Node WASM) and let ' +
+      'the client be a pure GLTFLoader. Mobile never spawns WASM, never holds CSG ' +
+      'heap, never crashes — the constraint that drives F.122 just disappears.\n\n' +
+      'Two flows, both backed by the same content-addressed GLB cache:\n\n' +
+      '**1. Browse (/library) — saved-spec GLBs:**\n' +
+      ' - On /api/author/save, the server runs buildAuthored() server-side, ' +
+      'serializes to GLB, writes static/library/<id>.glb (or volume).\n' +
+      ' - Library cards: <img> thumbnail, then on click fetch /api/library/<id>.glb ' +
+      '→ Three.js GLTFLoader → GPU upload. No WASM in the page at all.\n\n' +
+      '**2. Edit (/author) — Apply-on-demand GLBs:**\n' +
+      ' - Slider changes are local (UI only, no rebuild).\n' +
+      ' - User clicks Apply → POST /api/author/build { spec } → server runs CSG, ' +
+      'caches by content hash (e.g. <sha256(spec)>.glb), returns the URL.\n' +
+      ' - Client GLTFLoads the URL just like the library path.\n' +
+      ' - Same params from a different user = HTTP 304 / browser cache hit, ' +
+      'zero new server work.\n\n' +
+      'Why this is the right architecture:\n' +
+      ' - Server heap is ~unbounded vs mobile Safari ~1GB cap → can use any segment ' +
+      'count, fuse any number of parts, no peak-memory dance\n' +
+      ' - GLBs are CDN-friendly, cacheable, ~1-5MB each, fast to serve\n' +
+      ' - Removes the multi-mesh trick from F.122 — server can fuse to one mesh ' +
+      "if that's better for a given assembly\n" +
+      ' - Decouples build complexity from device — same GLB renders identically ' +
+      'on iPhone and desktop\n\n' +
+      'Trade-offs:\n' +
+      ' - No live-slider preview in /author — Apply is explicit (could mitigate ' +
+      'with a 500ms-debounced auto-Apply once latency is measured)\n' +
+      ' - Apply round-trip ~200-800ms (Node CSG + GLB serialize + transfer) ' +
+      "vs instant local — fine for deliberate edits, less for jog-the-slider " +
+      'exploration\n' +
+      ' - First-render of an uncached spec pays full CSG cost; subsequent loads ' +
+      'are HTTP cache hits\n\n' +
       'Open design questions:\n' +
-      ' - Where does the build run? Same /api/author/save handler, or a separate ' +
-      'queue? Build of a 12-part assembly takes 3-10s, which is too slow inline.\n' +
-      ' - Cache invalidation: bumping primitive geometry (builder.ts) invalidates ' +
-      'every GLB. Add a builder-version hash to the filename?\n' +
-      ' - Storage: GLB files in static/ vs Railway volume? Probably volume since ' +
-      'they grow with the library.',
+      ' - Where does the build queue live? Inline in /api/author/build (simple, ' +
+      'blocks the request for 3-10s) or a job queue (BullMQ + Redis, async, but ' +
+      'adds infrastructure)?\n' +
+      ' - Cache invalidation: bumping builder.ts geometry invalidates every GLB. ' +
+      'Add a builder-version hash to the filename and let old ones expire.\n' +
+      ' - Storage: static/ for committed library GLBs, volume for Apply cache (it ' +
+      'grows unboundedly).',
   },
 
   124: {
