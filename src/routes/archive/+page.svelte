@@ -16,14 +16,6 @@
     </section>
 
     <section>
-      <h2>Authoring</h2>
-      <ul>
-        <li><a href="/archive/author">/archive/author</a> — manual composition editor + Claude tool-calling chat</li>
-        <li><a href="/archive/library">/archive/library</a> — browse + reload authored components</li>
-      </ul>
-    </section>
-
-    <section>
       <h2>Dedicated tool viewers</h2>
       <ul>
         <li><a href="/archive/tools/bottom-sub">/archive/tools/bottom-sub</a> — Bottom Sub (HAL10408)</li>

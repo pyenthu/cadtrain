@@ -8,8 +8,8 @@
       authoring tool) is preserved at
       <a href="/archive/components">/archive/components</a>,
       <a href="/archive/reverse">/archive/reverse</a>,
-      <a href="/archive/author">/archive/author</a>,
-      <a href="/archive/library">/archive/library</a>.
+      <a href="/author">/author</a>,
+      <a href="/library">/library</a>.
     </p>
 
     <p>

@@ -340,6 +340,62 @@ export const details: Record<number, PlanDetail> = {
     ],
   },
 
+  120: {
+    summary:
+      'Two mobile usability fixes after the user reported the /archive/components ' +
+      'page was unreadable on iPhone (4-column layout overlapping):\n\n' +
+      '1) **Responsive breakpoint at 900px.** Every multi-column archive page now ' +
+      'switches to flex-direction: column on phones/narrow tablets — sidebar / 3D ' +
+      'viewport / svg+png / params stack vertically with min-height: 380px on the ' +
+      '3D canvas so it has room to render.\n\n' +
+      '2) **Collapsible side panels.** Each side panel (parameters, metadata, parts/ops, ' +
+      'svg/png previews) gets a header toggle button. Click → panel collapses to a ' +
+      'thin 36px sliver with vertical-text title. Choice persists in localStorage ' +
+      '(`comp:showParams`, `author:showMeta`, etc) so the user\'s preference sticks ' +
+      'across reloads. Default = open on desktop, closed on phones.',
+    refs: [
+      'src/routes/archive/components/+page.svelte',
+      'src/routes/archive/author/+page.svelte (now src/routes/author/)',
+      'src/routes/archive/reverse/+page.svelte',
+      'src/routes/archive/tests/+page.svelte',
+      'src/routes/archive/tools/bottom-sub/+page.svelte',
+      'src/routes/archive/tools/ratch-latch/+page.svelte',
+    ],
+  },
+
+  121: {
+    summary:
+      'Author + Library promoted from /archive/* to top-level (/author and /library). ' +
+      'They\'re the active surface for working with generated 3D models — the library ' +
+      'lists every authored component, the author renders one in 3D + lets you tweak ' +
+      'parts, params, transforms, and CSG ops. They cross-reference each other (Library ' +
+      'links each card to /author?id=...; Author has a "Browse library" link back).\n\n' +
+      'Navbar restructured: Library + Author replace CAD as the primary CAD surface ' +
+      '(CAD stub still reachable at /cad but not in navbar). Six top-level links now: ' +
+      'Library / Author / Wells / Tests / Plan / Archive.\n\n' +
+      'Archive index updated — the Authoring section is gone since those routes left ' +
+      '/archive. e2e specs updated for new paths + nav count.',
+    steps: [
+      'git mv src/routes/archive/{author,library} → src/routes/{author,library}',
+      'sed all internal /archive/{author,library} references → /{author,library}',
+      'src/routes/+layout.svelte: navLinks adds Library + Author, drops CAD',
+      'src/routes/+page.svelte: home menu mirrors new navbar',
+      'tests/e2e/{routes,navbar,archive-links}.spec.ts: new paths + 6-link nav count',
+    ],
+    acceptance: [
+      '/library returns 200 and lists 10+ authored components',
+      '/author returns 200 with the editor (parts/ops sidebar + 3D viewport + meta panel)',
+      'Navbar shows: Library | Author | Wells | Tests | Plan | Archive',
+      'Library card click → /author?id=<id> renders that model in 3D',
+      'e2e green',
+    ],
+    videos: [
+      '/tests/e2e/121/routes.webm',
+      '/tests/e2e/121/navbar.webm',
+      '/tests/e2e/121/archive-links.webm',
+    ],
+  },
+
   // ───── G. Vendor catalog ingest ─────
 
   200: {

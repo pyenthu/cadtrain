@@ -3,7 +3,8 @@
   let { children } = $props();
 
   const navLinks = [
-    { href: '/cad', label: 'CAD' },
+    { href: '/library', label: 'Library' },
+    { href: '/author', label: 'Author' },
     { href: '/wells', label: 'Wells' },
     { href: '/archive/tests', label: 'Tests' },
     { href: '/plan', label: 'Plan' },

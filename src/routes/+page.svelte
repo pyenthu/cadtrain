@@ -1,7 +1,8 @@
 <div class="home">
   <div class="menu">
     <div class="menu-header">CAD Train</div>
-    <a href="/cad" class="menu-item">CAD <span class="hint">parametric components</span></a>
+    <a href="/library" class="menu-item">Library <span class="hint">generated 3D models</span></a>
+    <a href="/author" class="menu-item">Author <span class="hint">compose new from primitives</span></a>
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
     <a href="/archive/tests" class="menu-item">Tests <span class="hint">recordings + cache stats</span></a>
     <a href="/plan" class="menu-item">Plan <span class="hint">Gantt roadmap</span></a>

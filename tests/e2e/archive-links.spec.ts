@@ -16,10 +16,8 @@ const STALE_PATTERNS = [
   /\bhref="\/reverse\b/,
   /\bhref="\/training\b/,
   /\bhref="\/tests\b/,        // bare /tests — /archive/tests is fine
-  /\bhref="\/author\b/,
-  /\bhref="\/library\b/,
   /\bhref="\/tools\b/,
-  // /wells is OK — that's the new top-level stub.
+  // /wells, /author, /library are OK — those are now top-level stubs.
 ];
 
 const ARCHIVED_PAGES = [
@@ -30,8 +28,6 @@ const ARCHIVED_PAGES = [
   '/archive/tests',
   '/archive/tests/wells',
   '/archive/tests/components',
-  '/archive/author',
-  '/archive/library',
   '/archive/wells',
   '/archive/tools/bottom-sub',
   '/archive/tools/ratch-latch',
@@ -54,8 +50,6 @@ test('Archive index page lists all canonical archived routes', async ({ page }) 
     '/archive/components',
     '/archive/reverse',
     '/archive/training',
-    '/archive/author',
-    '/archive/library',
     '/archive/wells',
     '/archive/tests',
     '/archive/tests/wells',
@@ -73,12 +67,12 @@ test('archived Tests page links to /archive/tests/wells and /archive/tests/compo
   await expect(page.locator('main.content a[href="/archive/tests/components"]')).toBeVisible();
 });
 
-test('archived Library back-link points at /archive/author', async ({ page }) => {
-  await page.goto('/archive/library');
-  await expect(page.locator('main.content a[href="/archive/author"]').first()).toBeVisible();
+test('Library back-link points at /author', async ({ page }) => {
+  await page.goto('/library');
+  await expect(page.locator('main.content a[href="/author"]').first()).toBeVisible();
 });
 
-test('archived Author forward-link points at /archive/library', async ({ page }) => {
-  await page.goto('/archive/author');
-  await expect(page.locator('main.content a[href="/archive/library"]').first()).toBeVisible();
+test('Author forward-link points at /library', async ({ page }) => {
+  await page.goto('/author');
+  await expect(page.locator('main.content a[href="/library"]').first()).toBeVisible();
 });

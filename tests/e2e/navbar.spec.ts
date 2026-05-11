@@ -7,14 +7,15 @@
 import { test, expect } from '@playwright/test';
 
 const NAV = [
-  { href: '/cad', label: 'CAD' },
+  { href: '/library', label: 'Library' },
+  { href: '/author', label: 'Author' },
   { href: '/wells', label: 'Wells' },
   { href: '/archive/tests', label: 'Tests' },
   { href: '/plan', label: 'Plan' },
   { href: '/archive', label: 'Archive' },
 ] as const;
 
-test('navbar shows the five top-level links', async ({ page }) => {
+test('navbar shows the six top-level links', async ({ page }) => {
   await page.goto('/');
   const navbar = page.locator('nav.navbar');
   await expect(navbar).toBeVisible();
@@ -35,8 +36,11 @@ test('navbar Tests link points to /archive/tests', async ({ page }) => {
 });
 
 test('navbar highlights the active route', async ({ page }) => {
-  await page.goto('/cad');
-  await expect(page.locator('nav.navbar a.nav-item.active[href="/cad"]')).toBeVisible();
+  await page.goto('/library');
+  await expect(page.locator('nav.navbar a.nav-item.active[href="/library"]')).toBeVisible();
+
+  await page.goto('/author');
+  await expect(page.locator('nav.navbar a.nav-item.active[href="/author"]')).toBeVisible();
 
   await page.goto('/archive');
   await expect(page.locator('nav.navbar a.nav-item.active[href="/archive"]')).toBeVisible();

@@ -18,6 +18,20 @@
   let showCutaway = $state(true);
   let showEdges = $state(true);
   let params = $state(structuredClone(COMPONENTS[0].defaults));
+
+  // Panel collapse state. Persisted to localStorage so the user's preference
+  // sticks across reloads. Default: open on desktop, closed on phones since
+  // the 3D viewport needs the room.
+  let showSvg = $state(true);
+  let showParams = $state(true);
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const isPhone = window.matchMedia('(max-width: 600px)').matches;
+    showSvg = localStorage.getItem('comp:showSvg') === '1' || (!isPhone && localStorage.getItem('comp:showSvg') !== '0');
+    showParams = localStorage.getItem('comp:showParams') === '1' || (!isPhone && localStorage.getItem('comp:showParams') !== '0');
+  });
+  function toggleSvg() { showSvg = !showSvg; localStorage.setItem('comp:showSvg', showSvg ? '1' : '0'); }
+  function toggleParams() { showParams = !showParams; localStorage.setItem('comp:showParams', showParams ? '1' : '0'); }
   // Camera override sourced from ?cam={"position":[…],"up":[…],"zoom":n}
   // — used by scripts/gen_synthetic.ts to drive the synthetic data
   // pipeline through five distinct angles. Null = use the default
@@ -156,39 +170,50 @@
     {/if}
   </div>
 
-  <div class="svg-col">
-    <div class="svg-label">SVG (Vector)</div>
-    <div class="svg-box">
-      {#if exporting}
-        <div class="rendering">Rendering...</div>
-      {:else if svgHtml}
-        {@html svgHtml}
-      {/if}
-    </div>
-    <div class="svg-label" style="margin-top:8px">PNG (Raster)</div>
-    <div class="png-box">
-      {#if pngUrl}
-        <img src={pngUrl} alt="3D render" />
-      {/if}
-    </div>
+  <div class="svg-col" class:collapsed={!showSvg}>
+    <button class="panel-toggle" onclick={toggleSvg} aria-expanded={showSvg} title={showSvg ? 'Hide previews' : 'Show previews'}>
+      <span class="ph-title">Previews</span>
+      <span class="caret">{showSvg ? '▾' : '▸'}</span>
+    </button>
+    {#if showSvg}
+      <div class="svg-label">SVG (Vector)</div>
+      <div class="svg-box">
+        {#if exporting}
+          <div class="rendering">Rendering...</div>
+        {:else if svgHtml}
+          {@html svgHtml}
+        {/if}
+      </div>
+      <div class="svg-label" style="margin-top:8px">PNG (Raster)</div>
+      <div class="png-box">
+        {#if pngUrl}
+          <img src={pngUrl} alt="3D render" />
+        {/if}
+      </div>
+    {/if}
   </div>
 
-  <div class="params">
-    <div class="ph">Parameters</div>
-    <label class="chk"><input type="checkbox" bind:checked={showCutaway} /> Cross-Section</label>
-    <label class="chk"><input type="checkbox" bind:checked={showEdges} /> Edges</label>
-    <hr />
-    {#each Object.entries(comp.params) as [key, def]}
-      <div class="pr">
-        <span>{def.label}</span>
-        <input type="range" min={def.min} max={def.max} step={def.step} bind:value={params[key]} />
-        <input type="number" step={def.step} bind:value={params[key]} />
+  <div class="params" class:collapsed={!showParams}>
+    <button class="panel-toggle" onclick={toggleParams} aria-expanded={showParams} title={showParams ? 'Hide parameters' : 'Show parameters'}>
+      <span class="ph-title">Parameters</span>
+      <span class="caret">{showParams ? '▾' : '▸'}</span>
+    </button>
+    {#if showParams}
+      <label class="chk"><input type="checkbox" bind:checked={showCutaway} /> Cross-Section</label>
+      <label class="chk"><input type="checkbox" bind:checked={showEdges} /> Edges</label>
+      <hr />
+      {#each Object.entries(comp.params) as [key, def]}
+        <div class="pr">
+          <span>{def.label}</span>
+          <input type="range" min={def.min} max={def.max} step={def.step} bind:value={params[key]} />
+          <input type="number" step={def.step} bind:value={params[key]} />
+        </div>
+      {/each}
+      <hr />
+      <div class="derived">
+        {#if params.od && params.wall}<div>ID: {(params.od - 2 * params.wall).toFixed(2)}</div>{/if}
       </div>
-    {/each}
-    <hr />
-    <div class="derived">
-      {#if params.od && params.wall}<div>ID: {(params.od - 2 * params.wall).toFixed(2)}</div>{/if}
-    </div>
+    {/if}
   </div>
 </div>
 
@@ -214,6 +239,38 @@
   .ms { font-size: 10px; color: #888; font-weight: normal; }
   .params { width: 280px; min-width: 280px; background: #fafafa; border-left: 1px solid #ddd; padding: 10px; overflow-y: auto; }
   .ph { font: bold 13px Arial; margin-bottom: 8px; }
+
+  /* Collapsible panel toggle. The button is the section header — clicking
+     anywhere on it toggles. When the panel is collapsed (.collapsed) the
+     panel shrinks to a thin sliver showing only the toggle, giving the 3D
+     viewport more room. Double-up as the section title so we save vertical
+     space (no separate .ph header needed when toggle is present). */
+  .panel-toggle {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 8px; margin: -10px -10px 8px -10px;
+    background: #ececec; border: none; border-bottom: 1px solid #ddd;
+    cursor: pointer; font: bold 12px Arial; color: #333;
+  }
+  .panel-toggle:hover { background: #e0e0e0; }
+  .panel-toggle .ph-title { letter-spacing: 0.3px; }
+  .panel-toggle .caret { font-size: 11px; color: #666; }
+  .svg-col .panel-toggle { margin: -8px -8px 8px -8px; }
+
+  .params.collapsed,
+  .svg-col.collapsed {
+    width: 36px; min-width: 36px; padding: 0;
+    overflow: hidden;
+  }
+  .params.collapsed .panel-toggle,
+  .svg-col.collapsed .panel-toggle {
+    margin: 0; height: 100%; flex-direction: column; gap: 8px;
+    border-bottom: none; padding: 12px 4px;
+  }
+  .params.collapsed .panel-toggle .ph-title,
+  .svg-col.collapsed .panel-toggle .ph-title {
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  }
   .pr { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
   .pr span { width: 80px; font-size: 10px; color: #555; flex-shrink: 0; }
   .pr input[type="range"] { flex: 1; height: 4px; accent-color: #cc2222; }

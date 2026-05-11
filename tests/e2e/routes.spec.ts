@@ -12,7 +12,8 @@ import { test, expect } from '@playwright/test';
 
 const TOP_LEVEL = [
   { path: '/', heading: /CAD Train/i },
-  { path: '/cad', heading: /CAD/i },
+  { path: '/library', heading: /./ },
+  { path: '/author', heading: /./ },
   { path: '/wells', heading: /Wells/i },
   { path: '/archive', heading: /Archive/i },
   { path: '/plan', heading: /Plan/i },
@@ -25,8 +26,6 @@ const ARCHIVED = [
   '/archive/tests',
   '/archive/tests/wells',
   '/archive/tests/components',
-  '/archive/author',
-  '/archive/library',
   '/archive/wells',
   '/archive/tools/bottom-sub',
   '/archive/tools/ratch-latch',
@@ -37,10 +36,10 @@ const REMOVED_TOP_LEVEL = [
   '/reverse',
   '/training',
   '/tests',
-  '/author',
-  '/library',
   '/tools/bottom-sub',
   '/tools/ratch-latch',
+  // /author and /library used to be archived; promoted back to top-level
+  // when the user said "move author out of archive" — they're alive again.
 ];
 
 for (const route of TOP_LEVEL) {
@@ -53,6 +52,9 @@ for (const route of TOP_LEVEL) {
       // Home is the SVTC-style nav menu — no <h1>, just the .menu-header
       // ('CAD Train') + the route list.
       await expect(page.locator('.menu-header')).toContainText(route.heading);
+    } else if (route.path === '/author') {
+      // Author is an editor — no <h1>, the title lives in .vp-header.
+      await expect(page.locator('.vp-header').first()).toBeVisible();
     } else {
       await expect(page.locator('h1').first()).toContainText(route.heading);
     }
