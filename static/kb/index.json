@@ -10,7 +10,12 @@
       "categories": ["api", "casing", "tubing", "line-pipe", "connection", "grade", "make-up-torque"],
       "row_count": 299,
       "source_kind": "operator_inventory",
-      "extractor": "scripts/kb/build_casing_tubing_data.ts"
+      "extractor": "scripts/kb/build_casing_tubing_data.ts",
+      "default_columns": [
+        "type", "size_label", "weight_lbft", "supplier", "grade", "connection",
+        "connection_od_in", "wall_in", "pipe_id_in", "drift_in",
+        "pipe_yield_klbf", "mut_opti_ftlb"
+      ]
     }
   ]
 }

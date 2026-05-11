@@ -9,13 +9,14 @@ import { test, expect } from '@playwright/test';
 const NAV = [
   { href: '/library', label: 'Library' },
   { href: '/author', label: 'Author' },
+  { href: '/kb', label: 'KB' },
   { href: '/wells', label: 'Wells' },
   { href: '/archive/tests', label: 'Tests' },
   { href: '/plan', label: 'Plan' },
   { href: '/archive', label: 'Archive' },
 ] as const;
 
-test('navbar shows the six top-level links', async ({ page }) => {
+test('navbar shows the seven top-level links', async ({ page }) => {
   await page.goto('/');
   const navbar = page.locator('nav.navbar');
   await expect(navbar).toBeVisible();

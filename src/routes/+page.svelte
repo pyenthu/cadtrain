@@ -3,6 +3,7 @@
     <div class="menu-header">CAD Train</div>
     <a href="/library" class="menu-item">Library <span class="hint">generated 3D models</span></a>
     <a href="/author" class="menu-item">Author <span class="hint">compose new from primitives</span></a>
+    <a href="/kb" class="menu-item">KB <span class="hint">vendor + operator spec tables</span></a>
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
     <a href="/archive/tests" class="menu-item">Tests <span class="hint">recordings + cache stats</span></a>
     <a href="/plan" class="menu-item">Plan <span class="hint">Gantt roadmap</span></a>
