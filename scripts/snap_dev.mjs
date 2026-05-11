@@ -16,6 +16,12 @@ page.on('console', m => {
 const url = process.argv[2] || 'http://localhost:3333/';
 await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => errs.push('GOTO: ' + e.message));
 await page.waitForTimeout(parseInt(process.argv[3] || '8000', 10));
+// Optional 6th arg: a CSS selector to click before screenshotting
+const clickSelector = process.argv[6];
+if (clickSelector) {
+  await page.locator(clickSelector).click().catch(e => errs.push('CLICK: ' + e.message));
+  await page.waitForTimeout(500);
+}
 await page.screenshot({ path: '/tmp/cadtrain-snap.png', fullPage: true });
 console.log('URL:', url);
 console.log('Errors/warnings:', errs.length ? '\n  ' + errs.join('\n  ') : '(none)');

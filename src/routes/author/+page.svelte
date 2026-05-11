@@ -40,6 +40,17 @@
   function toggleLibrary() { showLibrary = !showLibrary; localStorage.setItem('author:showLibrary', showLibrary ? '1' : '0'); }
   function toggleEdit() { showEdit = !showEdit; localStorage.setItem('author:showEdit', showEdit ? '1' : '0'); }
 
+  // Right-panel tabs: 'params' (parts + ops) | 'meta' (id/name/desc/tags + save).
+  // Default to params since that's what gets touched most when iterating on a
+  // saved component; metadata only matters at create/save time.
+  let activeTab = $state<'params' | 'meta'>('params');
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = localStorage.getItem('author:activeTab');
+    if (saved === 'params' || saved === 'meta') activeTab = saved;
+  });
+  function setTab(t: 'params' | 'meta') { activeTab = t; localStorage.setItem('author:activeTab', t); }
+
   // Library list — sourced from /api/author/list. Click a card → loads
   // that spec into the workbench (replaces the old separate /library page).
   interface IndexEntry {
@@ -329,10 +340,28 @@
       <span class="caret">{showEdit ? '▸' : '◂'}</span>
     </button>
     {#if showEdit}
+      <div class="tab-bar" role="tablist">
+        <button
+          class="tab"
+          class:active={activeTab === 'params'}
+          role="tab"
+          aria-selected={activeTab === 'params'}
+          onclick={() => setTab('params')}
+        >Parameters <span class="tab-count">{spec.parts.length + spec.ops.length}</span></button>
+        <button
+          class="tab"
+          class:active={activeTab === 'meta'}
+          role="tab"
+          aria-selected={activeTab === 'meta'}
+          onclick={() => setTab('meta')}
+        >Metadata</button>
+      </div>
+
+      {#if activeTab === 'meta'}
       <div class="meta-fields">
         <label>ID<input type="text" bind:value={spec.id} placeholder="e.g. my_sub" /></label>
         <label>Name<input type="text" bind:value={spec.name} placeholder="e.g. My Bottom Sub" /></label>
-        <label>Description<textarea bind:value={spec.description} rows="2" placeholder="What is this component?"></textarea></label>
+        <label>Description<textarea bind:value={spec.description} rows="3" placeholder="What is this component?"></textarea></label>
         <label>Tags<input type="text" placeholder="comma,separated" oninput={(e) => {
           spec.tags = (e.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean);
         }} /></label>
@@ -342,9 +371,7 @@
         {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
         {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
       </div>
-
-      <hr class="meta-divider" />
-
+      {:else}
       <div class="sec">
         <div class="sec-h">Parts <button class="add" onclick={addPart}>+</button></div>
         {#if spec.parts.length === 0}
@@ -436,6 +463,7 @@
           </div>
         {/each}
       </div>
+      {/if}
     {/if}
   </div>
 
@@ -507,9 +535,30 @@
   .lib-meta { font: 10px Arial; color: #888; margin-bottom: 2px; }
   .lib-tags { font: 9px Arial; color: #aaa; }
 
-  /* Right panel section divider between Metadata (top) and Parts/Ops (bottom). */
+  /* Right panel: tab bar lets the user switch between Parameters (parts +
+     ops editor) and Metadata (id/name/desc/tags + save). Single-section
+     view at a time keeps the panel narrow + focused. */
   .meta-fields { display: flex; flex-direction: column; gap: 6px; }
-  .meta-divider { border: none; border-top: 1px solid #ddd; margin: 12px 0 8px; }
+  .tab-bar {
+    display: flex; gap: 2px; margin: -2px -10px 10px;
+    border-bottom: 1px solid #ddd; background: #f0f0f0; padding: 0 8px;
+  }
+  .tab {
+    flex: 1; padding: 8px 10px; border: none; background: transparent;
+    font: bold 11px Arial; color: #666; cursor: pointer; letter-spacing: 0.3px;
+    text-transform: uppercase; border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: #333; }
+  .tab.active {
+    color: #cc2222; border-bottom-color: #cc2222; background: #fafafa;
+  }
+  .tab-count {
+    display: inline-block; min-width: 16px; padding: 1px 5px;
+    background: #ddd; color: #555; border-radius: 8px;
+    font: bold 9px Arial; margin-left: 4px;
+  }
+  .tab.active .tab-count { background: #cc2222; color: white; }
 
   /* Collapse toggle. Header bar stays clickable; body hidden when collapsed.
      Collapsed sidebar/meta shrink to a thin sliver with a vertical-text title
