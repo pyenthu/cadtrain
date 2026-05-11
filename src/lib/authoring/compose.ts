@@ -131,19 +131,55 @@ export async function buildAuthored(spec: AuthoredComponent): Promise<AuthoredRe
     opResults.push({ id: op.out, prim: 'op', manifold: result });
   }
 
-  // Stage 3: assemble the render list — every part NOT consumed by an op,
-  // plus every op output. Each gets finalized with skipCenter=true so the
-  // user's transforms persist (otherwise each part re-centers to its own
-  // bbox midpoint and the assembly collapses to overlapping pieces at origin).
+  // Stage 3: assemble the render list. Two modes:
+  //
+  // FUSED (default — mirrors bottom-sub):
+  //   Union all unconsumed parts + op outputs into ONE manifold, finalize
+  //   once → one mesh, one finalize, one getMesh, one cutBox subtract.
+  //   Same speed profile as bottom-sub (which fuses housing parts the same
+  //   way). Works at 96 segments because peak heap is bounded by the
+  //   fused-manifold size during the union (~16k tris for a 10-part packer
+  //   = well within mobile budget).
+  //
+  // MULTI (fallback if FUSED OOMs on a specific assembly):
+  //   Each part finalized + rendered separately. Mobile-safe by guarantee
+  //   but ~3x more per-frame work. Toggle via spec.tags including 'no-fuse'
+  //   or by calling buildAuthored(spec, { fuse: false }).
+  const fuseAll = !spec.tags?.includes('no-fuse');
   const partResults: AuthoredPartResult[] = [];
-  for (const part of spec.parts) {
-    if (consumed.has(part.id)) continue;
-    const fin = finalizeManifold(pool[part.id], maxOD, true);
-    partResults.push({ id: part.id, prim: part.prim, full: fin.full, cutVC: fin.cutVC });
-  }
-  for (const op of opResults) {
-    const fin = finalizeManifold(op.manifold, maxOD, true);
-    partResults.push({ id: op.id, prim: op.prim, full: fin.full, cutVC: fin.cutVC });
+
+  if (fuseAll) {
+    // Collect every renderable manifold (transformed parts + op outputs)
+    // and union them. Bottom-sub does this on housing's 5+ cylinders.
+    const renderables: any[] = [];
+    for (const part of spec.parts) {
+      if (consumed.has(part.id)) continue;
+      renderables.push(pool[part.id]);
+    }
+    for (const op of opResults) renderables.push(op.manifold);
+
+    if (renderables.length === 0) {
+      // Should be impossible — caught by the parts.length check above
+      throw new Error('No renderable manifolds');
+    }
+
+    let fused = renderables[0];
+    for (let i = 1; i < renderables.length; i++) {
+      fused = fused.add(renderables[i]);
+    }
+
+    const fin = finalizeManifold(fused, maxOD, true);
+    partResults.push({ id: 'fused', prim: 'fused', full: fin.full, cutVC: fin.cutVC });
+  } else {
+    for (const part of spec.parts) {
+      if (consumed.has(part.id)) continue;
+      const fin = finalizeManifold(pool[part.id], maxOD, true);
+      partResults.push({ id: part.id, prim: part.prim, full: fin.full, cutVC: fin.cutVC });
+    }
+    for (const op of opResults) {
+      const fin = finalizeManifold(op.manifold, maxOD, true);
+      partResults.push({ id: op.id, prim: op.prim, full: fin.full, cutVC: fin.cutVC });
+    }
   }
 
   return { parts: partResults, ms: Date.now() - t0 };
