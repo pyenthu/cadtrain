@@ -40,16 +40,21 @@
   function toggleLibrary() { showLibrary = !showLibrary; localStorage.setItem('author:showLibrary', showLibrary ? '1' : '0'); }
   function toggleEdit() { showEdit = !showEdit; localStorage.setItem('author:showEdit', showEdit ? '1' : '0'); }
 
-  // Right-panel tabs: 'params' (parts + ops) | 'meta' (id/name/desc/tags + save).
-  // Default to params since that's what gets touched most when iterating on a
-  // saved component; metadata only matters at create/save time.
-  let activeTab = $state<'params' | 'meta'>('params');
+  // Right-panel tabs:
+  //   'params'  — parts + ops editor (the per-instance design)
+  //   'meta'    — id / name / description / tags + save
+  //   'library' — methodology surface: existing primitives + KB connection
+  //               coverage analysis. Where we work out what new primitives
+  //               are needed to cover the 56 pipe connection families in
+  //               static/kb/api/casing-tubing-data.json.
+  type TabId = 'params' | 'meta' | 'library';
+  let activeTab = $state<TabId>('params');
   $effect(() => {
     if (typeof window === 'undefined') return;
     const saved = localStorage.getItem('author:activeTab');
-    if (saved === 'params' || saved === 'meta') activeTab = saved;
+    if (saved === 'params' || saved === 'meta' || saved === 'library') activeTab = saved;
   });
-  function setTab(t: 'params' | 'meta') { activeTab = t; localStorage.setItem('author:activeTab', t); }
+  function setTab(t: TabId) { activeTab = t; localStorage.setItem('author:activeTab', t); }
 
   // Library list — sourced from /api/author/list. Click a card → loads
   // that spec into the workbench (replaces the old separate /library page).
@@ -107,6 +112,47 @@
   // boxes. Mounted as a normal HTML overlay (NOT via threlte's <HTML>) so it
   // anchors to the viewport's top-left, not the projected 3D origin.
   let SceneControls = $state<any>(null);
+
+  // Library-tab state: KB connection stats. Loaded lazily on first tab
+  // activation (the JSON is ~240 KB — fine to fetch but no point grabbing
+  // it if the user never opens the tab).
+  interface ConnCount { name: string; count: number; }
+  let kbStats = $state<{ totalRows: number; distinctConnections: number; topConnections: ConnCount[] }>({
+    totalRows: 0, distinctConnections: 0, topConnections: [],
+  });
+  let kbLoaded = $state(false);
+  let kbLoading = $state(false);
+  let kbError = $state<string | null>(null);
+
+  async function loadKbStats() {
+    if (kbLoaded || kbLoading) return;
+    kbLoading = true; kbError = null;
+    try {
+      const r = await fetch('/kb/api/casing-tubing-data.json', { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const data = await r.json();
+      const counts = new Map<string, number>();
+      for (const row of data.rows) {
+        const c = row.connection ?? '(unknown)';
+        counts.set(c, (counts.get(c) ?? 0) + 1);
+      }
+      kbStats = {
+        totalRows: data.rows.length,
+        distinctConnections: counts.size,
+        topConnections: [...counts].sort((a, b) => b[1] - a[1]).slice(0, 20)
+          .map(([name, count]) => ({ name, count })),
+      };
+      kbLoaded = true;
+    } catch (e: any) {
+      kbError = e?.message ?? String(e);
+    } finally {
+      kbLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (activeTab === 'library' && !kbLoaded) loadKbStats();
+  });
 
   // One-time mount work in onMount, NOT $effect. Was previously inside an
   // $effect that read `spec` (via setSpec(spec, ...)) AND wrote `spec = rec`
@@ -364,6 +410,13 @@
           aria-selected={activeTab === 'meta'}
           onclick={() => setTab('meta')}
         >Metadata</button>
+        <button
+          class="tab"
+          class:active={activeTab === 'library'}
+          role="tab"
+          aria-selected={activeTab === 'library'}
+          onclick={() => setTab('library')}
+        >Library</button>
       </div>
 
       {#if activeTab === 'meta'}
@@ -379,6 +432,50 @@
         </button>
         {#if saveError}<div class="save-msg err">{saveError}</div>{/if}
         {#if saveNotice}<div class="save-msg ok">{saveNotice}</div>{/if}
+      </div>
+      {:else if activeTab === 'library'}
+      <!-- Library tab — methodology surface for working out what primitives
+           are needed to cover the casing/tubing KB's 56 distinct connection
+           families. Two sections to start: what we have, what's in the KB.
+           Future: a coverage matrix mapping connection families → primitives.
+      -->
+      <div class="lib-tab">
+        <div class="sec">
+          <div class="sec-h">Existing primitives <span class="tab-count">{COMPONENTS.length}</span></div>
+          {#each COMPONENTS as c (c.id)}
+            <div class="prim-row">
+              <span class="prim-id">{c.id}</span>
+              <span class="prim-name">{c.name}</span>
+            </div>
+          {/each}
+        </div>
+        <div class="sec">
+          <div class="sec-h">KB connections <span class="muted">casing-tubing-data</span></div>
+          {#if kbLoading}
+            <div class="empty">Loading…</div>
+          {:else if kbError}
+            <div class="empty err-text">{kbError}</div>
+          {:else if !kbLoaded}
+            <div class="empty">—</div>
+          {:else}
+            <div class="sec-sub">{kbStats.totalRows} rows · {kbStats.distinctConnections} distinct connections · top {kbStats.topConnections.length}</div>
+            {#each kbStats.topConnections as c (c.name)}
+              <div class="conn-row">
+                <span class="conn-count">{c.count}</span>
+                <span class="conn-name">{c.name}</span>
+              </div>
+            {/each}
+          {/if}
+        </div>
+        <div class="sec methodology-note">
+          <div class="sec-h">Methodology — TBD</div>
+          <div class="empty">
+            Approach: collapse 56 connection names into a small set of visual
+            archetypes (premium tapered, torque-shoulder, API coupled, API
+            upset, line-pipe special). One primitive per archetype, KB rows
+            select instance dimensions. To work out next.
+          </div>
+        </div>
       </div>
       {:else}
       <div class="sec">
@@ -568,6 +665,20 @@
     font: bold 9px Arial; margin-left: 4px;
   }
   .tab.active .tab-count { background: #cc2222; color: white; }
+
+  /* Library tab — methodology surface (primitive catalog + KB coverage). */
+  .lib-tab { display: flex; flex-direction: column; gap: 14px; }
+  .lib-tab .sec { margin: 0; }
+  .lib-tab .sec-sub { font: 10px Arial; color: #888; margin-bottom: 6px; }
+  .lib-tab .muted { color: #aaa; font: 10px Arial; font-weight: normal; margin-left: 4px; }
+  .lib-tab .err-text { color: #cc2222; }
+  .lib-tab .prim-row { display: flex; gap: 8px; padding: 3px 0; align-items: baseline; }
+  .lib-tab .prim-id { font: 9px monospace; color: #777; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; min-width: 92px; }
+  .lib-tab .prim-name { font: 11px Arial; color: #333; }
+  .lib-tab .conn-row { display: flex; gap: 8px; padding: 3px 0; align-items: baseline; }
+  .lib-tab .conn-count { font: bold 11px monospace; color: #cc2222; min-width: 28px; text-align: right; }
+  .lib-tab .conn-name { font: 11px Arial; color: #333; }
+  .lib-tab .methodology-note .empty { font: 11px Arial; color: #777; line-height: 1.5; padding: 0; }
 
   /* Collapse toggle. Header bar stays clickable; body hidden when collapsed.
      Collapsed sidebar/meta shrink to a thin sliver with a vertical-text title
