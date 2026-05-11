@@ -208,6 +208,16 @@
     padding: 16px 10px;
     overflow-y: auto;
   }
+
+  @media (max-width: 900px) {
+    .layout { flex-direction: column-reverse; height: auto; min-height: 100%; overflow-y: auto; }
+    .content { padding: 16px; }
+    .navigator {
+      width: 100%; min-width: 0;
+      border-left: none; border-bottom: 1px solid #e0e0e0;
+      padding: 12px;
+    }
+  }
   .nav-head {
     display: flex;
     justify-content: space-between;

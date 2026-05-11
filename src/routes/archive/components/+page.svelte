@@ -222,4 +222,27 @@
   .chk input { width: 14px; height: 14px; }
   hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
   .derived { font: 11px monospace; color: #888; }
+
+  /* Below 900px (phones, narrow tablets) the four-column row is unreadable —
+     panels overlap each other (see screenshot). Stack vertically: sidebar →
+     viewport → svg/png → params. The viewport needs an explicit min-height
+     since flex:1 inside a column would otherwise be 0. */
+  @media (max-width: 900px) {
+    .comp-layout { flex-direction: column; height: auto; min-height: 100%; overflow-y: auto; }
+    .sidebar {
+      width: 100%; max-height: 180px; overflow-y: auto;
+      border-right: none; border-bottom: 1px solid #ddd;
+      display: flex; flex-wrap: wrap; gap: 2px; padding: 6px;
+    }
+    .cat { width: 100%; padding: 6px 4px 2px; }
+    .comp-btn { width: auto; flex: 0 1 auto; padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+    .viewport { width: 100%; min-height: 380px; flex-shrink: 0; }
+    .svg-col {
+      width: 100%; border-left: none; border-top: 1px solid #ddd;
+      flex-direction: row; align-items: flex-start; gap: 12px; padding: 12px;
+    }
+    .svg-col .svg-box, .svg-col .png-box { flex: 1; max-width: 50%; }
+    .svg-label { width: 100%; }
+    .params { width: 100%; min-width: 0; border-left: none; border-top: 1px solid #ddd; }
+  }
 </style>

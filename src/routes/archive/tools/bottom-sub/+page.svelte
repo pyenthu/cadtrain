@@ -59,4 +59,11 @@
   .panel-center { flex: 1; position: relative; }
   .panel-right { width: 25%; background: #fafafa; border-left: 1px solid #ddd; overflow-y: auto; }
   .cam { position: absolute; top: 8px; left: 8px; font: 11px monospace; color: #555; background: rgba(255,255,255,0.9); padding: 3px 8px; border-radius: 3px; }
+
+  @media (max-width: 900px) {
+    .tool-layout { flex-direction: column; height: auto; min-height: 100%; overflow-y: auto; }
+    .panel-left { width: 100%; max-height: 200px; border-right: none; border-bottom: 2px solid #ccc; }
+    .panel-center { width: 100%; min-height: 380px; flex-shrink: 0; }
+    .panel-right { width: 100%; border-left: none; border-top: 1px solid #ddd; }
+  }
 </style>

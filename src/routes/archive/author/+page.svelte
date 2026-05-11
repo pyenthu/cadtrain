@@ -368,4 +368,18 @@
   .save-msg.ok { background: #d1e7dd; color: #0f5132; }
   .library-link { font: 11px Arial; color: #cc2222; text-decoration: none; text-align: center; padding: 4px; }
   .library-link:hover { text-decoration: underline; }
+
+  /* Below 900px, stack: parts/ops sidebar → 3D viewport → metadata.
+     Sidebar gets a max-height so it doesn't push the 3D off-screen on phones. */
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; height: auto; min-height: 100%; overflow-y: auto; }
+    .sidebar {
+      width: 100%; min-width: 0; max-height: 280px; overflow-y: auto;
+      border-right: none; border-bottom: 1px solid #ddd;
+    }
+    .viewport { width: 100%; min-height: 380px; flex-shrink: 0; }
+    .meta {
+      width: 100%; min-width: 0; border-left: none; border-top: 1px solid #ddd;
+    }
+  }
 </style>

@@ -393,6 +393,13 @@
   .upload-col { background: #fafafa; border-right: 1px solid #ddd; }
   .viewer-col { background: #fff; display: flex; flex-direction: column; }
   .params-col { background: #fafafa; border-left: 1px solid #ddd; }
+
+  @media (max-width: 900px) {
+    .reverse { grid-template-columns: 1fr; height: auto; min-height: 100%; overflow-y: auto; }
+    .upload-col { border-right: none; border-bottom: 1px solid #ddd; }
+    .viewer-col { min-height: 380px; }
+    .params-col { border-left: none; border-top: 1px solid #ddd; }
+  }
   .section-header { font: bold 11px Arial; color: #666; text-transform: uppercase; letter-spacing: 1px; padding-bottom: 8px; border-bottom: 1px solid #ddd; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
   .ms { font-size: 9px; color: #888; font-weight: normal; text-transform: none; letter-spacing: 0; }
 
