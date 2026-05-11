@@ -66,7 +66,7 @@ export const ARCHETYPES: Record<Archetype, ArchetypeDef> = {
   },
   premium_integral: {
     id: 'premium_integral',
-    name: 'Premium Integral',
+    name: 'Tubulars',
     description: 'Integral pipe end with tapered metal-to-metal seal, thread engagement, and (optionally) a torque shoulder. No coupling needed; box on top, pin on bottom of every joint.',
     primitive_id: 'conn_premium_integral',
     genders: ['box', 'pin'],
