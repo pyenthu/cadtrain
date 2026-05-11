@@ -17,7 +17,7 @@ let M: any = null;
 // Touching the value affects every M.cylinder call until reset, so callers MUST
 // reset on completion (see compose.ts try/finally).
 export const CIRCULAR_SEGMENTS_DEFAULT = 192;
-export const CIRCULAR_SEGMENTS_COMPOSE = 96;  // compromise: ~half the geometry of default, visually nearly identical for assemblies
+export const CIRCULAR_SEGMENTS_COMPOSE = 96;  // 192 crashed mobile even fused; 96 is the sweet spot
 
 let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
 

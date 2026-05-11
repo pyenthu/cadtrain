@@ -113,17 +113,29 @@
     }
   }
 
-  let specKey = $derived(JSON.stringify(spec));
+  // Narrow the rebuild trigger to ONLY the build-affecting fields (parts +
+  // ops). Previously this watched JSON.stringify(spec) which fired on every
+  // metadata keystroke (Name, Description, Tags) AND on authoring_log
+  // pushes — each one a 1-3 second rebuild → page felt frozen "after
+  // loading". Geometry doesn't depend on metadata, so no rebuild needed.
+  let buildKey = $derived(JSON.stringify({ parts: spec.parts, ops: spec.ops }));
+
+  // Debounce slider drags. Without this, each oninput on a number/range
+  // input fires a rebuild — a slider drag = 50+ rebuilds queued. Coalesce
+  // to a single build per 200ms idle period.
+  let buildTimer: ReturnType<typeof setTimeout> | null = null;
+
   $effect(() => {
-    const _k = specKey;
+    const _k = buildKey;
     if (!ready) return;
     if (spec.parts.length === 0) {
       geo = null;
       buildError = null;
       return;
     }
-    const t0 = performance.now();
-    setTimeout(async () => {
+    if (buildTimer) clearTimeout(buildTimer);
+    buildTimer = setTimeout(async () => {
+      const t0 = performance.now();
       try {
         geo = await buildAuthored(spec);
         geoVersion++;
@@ -132,7 +144,7 @@
       } catch (e: any) {
         buildError = e?.message ?? String(e);
       }
-    }, 10);
+    }, 200);
   });
 
   function nextPartId(): string {
