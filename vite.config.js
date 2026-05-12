@@ -3,7 +3,32 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [sveltekit()],
-  server: { port: 3333 },
+  server: {
+    port: 3333,
+    // Exclude runtime-written data from Vite's file watcher so saving an
+    // authored part / training cache record / eval result doesn't trigger
+    // a full dev server restart. The symlink `static/training_data ->
+    // ../training_data` exposes these paths to the watcher by default.
+    //
+    // When persistence migrates to the Railway volume (`/data`), the
+    // ignored set should be updated to point at the volume mount root
+    // and dropped here for paths that are no longer written by the app
+    // at runtime. See task #18.
+    watch: {
+      ignored: [
+        '**/training_data/**',
+        '**/static/training_data/**',
+        '**/static/eval/**',
+        '**/static/tests/**',
+        '**/static/tmp/**',
+        '**/static/kb/**',
+        // The Railway volume in prod — harmless in dev; future-proofs the
+        // config so prod-style writes (when wired) don't fight the watcher
+        // on machines that mount /data locally for testing.
+        '/data/**',
+      ],
+    },
+  },
   optimizeDeps: {
     exclude: ['manifold-3d'],
   },

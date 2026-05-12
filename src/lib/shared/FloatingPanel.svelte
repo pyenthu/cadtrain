@@ -28,10 +28,17 @@
      *  ancestor) instead of fixed (viewport). Use when the popup should live
      *  inside a specific layout region — e.g. the tab body in /primitives. */
     containerRelative?: boolean;
+    /** If true, the panel renders as a static block element (no float, no
+     *  drag) so the parent can place it in a grid/flex column. Use with a
+     *  parent layout that explicitly carves out space for the dock. */
+    docked?: boolean;
+    /** Called when the user toggles dock mode via the header button. Pass
+     *  to opt in to the toggle button; omit to hide it. */
+    onToggleDock?: () => void;
     children: Snippet;
   }
 
-  let { title, visible, onClose, x = 80, y = 80, width = 'min(560px, 80vw)', maxHeight = '80vh', containerRelative = false, children }: Props = $props();
+  let { title, visible, onClose, x = 80, y = 80, width = 'min(560px, 80vw)', maxHeight = '80vh', containerRelative = false, docked = false, onToggleDock = undefined, children }: Props = $props();
 
   let posX = $state(x);
   let posY = $state(y);
@@ -82,18 +89,52 @@
     bind:this={rootEl}
     class="fp-root"
     class:dragging
-    class:contained={containerRelative}
-    style="left:{posX}px; top:{posY}px; width:{width}; max-height:{maxHeight};"
+    class:contained={containerRelative && !docked}
+    class:docked
+    style={docked ? '' : `left:${posX}px; top:${posY}px; width:${width}; max-height:${maxHeight};`}
   >
-    <div class="fp-hdr" role="presentation" onmousedown={startDrag}>
+    <div class="fp-hdr" role="presentation" onmousedown={docked ? undefined : startDrag}>
       <h3 class="fp-title">{title}</h3>
-      <button
-        class="fp-close"
-        onclick={(e) => { e.stopPropagation(); onClose(); }}
-        onmousedown={(e) => e.stopPropagation()}
-        aria-label="Close"
-        type="button"
-      >×</button>
+      <div class="fp-hdr-actions">
+        {#if onToggleDock}
+          <button
+            class="fp-dock"
+            onclick={(e) => { e.stopPropagation(); onToggleDock?.(); }}
+            onmousedown={(e) => e.stopPropagation()}
+            title={docked ? 'Undock (float)' : 'Dock to right'}
+            aria-label={docked ? 'Undock panel' : 'Dock panel to right'}
+            type="button"
+          >
+            {#if docked}
+              <!-- "Float / undock" — Word's pop-out glyph: a window with a small
+                   arrow lifting out from the corner. Drawn as two overlapping
+                   rectangles so the affordance reads as "lift this panel out". -->
+              <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true">
+                <rect x="1.5" y="3.5" width="8" height="7" rx="0.6"
+                      fill="none" stroke="currentColor" stroke-width="1"/>
+                <rect x="4.5" y="1.5" width="8" height="7" rx="0.6"
+                      fill="#fff" stroke="currentColor" stroke-width="1"/>
+              </svg>
+            {:else}
+              <!-- "Dock to right" — Word/Excel's task-pane icon: a rectangle
+                   with the right ~third filled to show a docked side panel. -->
+              <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true">
+                <rect x="1.5" y="2.5" width="11" height="9" rx="0.6"
+                      fill="none" stroke="currentColor" stroke-width="1"/>
+                <rect x="9" y="2.5" width="3.5" height="9"
+                      fill="currentColor" stroke="none"/>
+              </svg>
+            {/if}
+          </button>
+        {/if}
+        <button
+          class="fp-close"
+          onclick={(e) => { e.stopPropagation(); onClose(); }}
+          onmousedown={(e) => e.stopPropagation()}
+          aria-label="Close"
+          type="button"
+        >×</button>
+      </div>
     </div>
     <div class="fp-body">
       {@render children?.()}
@@ -109,6 +150,22 @@
   .fp-root.contained {
     position: absolute; z-index: 5;
   }
+  /* Docked mode — the panel becomes a static block. The PARENT layout is
+     responsible for carving out a column / row for it to occupy (e.g.
+     a grid with `grid-template-columns: ... <dock-w>`). No drag, no
+     positioning math, no shadow. */
+  .fp-root.docked {
+    position: static;
+    width: 100%;
+    height: 100%;
+    max-height: none !important;
+    border-radius: 0;
+    border: none;
+    border-left: 1px solid #d8d8de;
+    box-shadow: none;
+    z-index: auto;
+  }
+  .fp-root.docked .fp-hdr { cursor: default; }
   /* shared visual styling — both fixed and contained variants. */
   .fp-root {
     border: 1px solid #d8d8de;
@@ -128,13 +185,19 @@
   }
   .fp-root.dragging .fp-hdr { cursor: grabbing; }
   .fp-title { margin: 0; font: bold 12px Arial; color: #333; }
-  .fp-close {
+  .fp-hdr-actions {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .fp-close, .fp-dock {
     background: #fff; border: 1px solid #d8d8de; cursor: pointer;
     width: 20px; height: 20px;
     display: flex; align-items: center; justify-content: center;
-    border-radius: 3px; font-size: 14px; line-height: 1; color: #888;
+    border-radius: 3px; font-size: 12px; line-height: 1; color: #888;
   }
   .fp-close:hover { background: #fdecec; color: #cc2222; border-color: #cc2222; }
+  .fp-dock:hover  { background: #eef0fc; color: #3b3b8a; border-color: #3b3b8a; }
   .fp-body {
     flex: 1; min-height: 0;
     overflow-y: auto;

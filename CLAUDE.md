@@ -289,7 +289,11 @@ The reverse pipeline is the heart of the app. Three components work together:
 ## Key conventions
 
 ### Geometry
-- **Z-down** axis (matches drilling convention)
+- **Z-down** axis (matches drilling convention).
+  - **RULE**: `top` = LOWER z. `bottom` = HIGHER z. As z increases, you go down the hole.
+  - Translating a part by `mv(part, [0, 0, +N])` moves it DOWN (toward the bottom).
+  - When composing a box conn (upset flange at top, body below): cone at z=0..coneLen with the WIDE end at z=0, body translated to z ≥ coneLen.
+  - All runes primitives and helpers in `src/lib/components/runes/` + `manifold-helpers.ts` follow this. Any new primitive MUST follow it too.
 - **ManifoldCAD** circular segments: **192** for quality
 - **Vertex colors** classify faces: **red (#cc2222)** = outer body, **grey (#888888)** = bore/cut/internal
 - `buildComponent(id, params)` returns `{ full, cutVC, manifold }` where `cutVC` has the CSG cutaway applied

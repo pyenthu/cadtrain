@@ -94,6 +94,31 @@ const BASE_COMPONENTS: ComponentDef[] = [
     defaults: { od: 2.5, wall: 0.3, length: 2.0, threadCount: 10, threadDepth: 0.06, taper: 0 },
   },
 
+  // ── Anatomical (collared) pin primitive ──────────────────────────────────
+  // Realistic API EUE-style anatomy on the male end: body OD → taper
+  // transition → collar OD (where threads are cut). bodyStubLength=0 +
+  // taperHeight=0 + collarOD=od collapses to the bare threaded_pin shape.
+  {
+    id: "threaded_pin_collared",
+    name: "Threaded Pin (Collared)",
+    category: "basic",
+    description: "Male end with explicit collar (upset OD), taper transition, and optional flush body stub. External threads cut into the collar OD.",
+    tags: ["pin connection", "collared", "EUE", "upset", "collar", "anatomical", "API"],
+    parent: "threaded_pin",
+    params: {
+      od:             { label: "Body OD",       min: 1, max: 14, step: 0.05 },
+      wall:           { label: "Wall",          min: 0.1, max: 1, step: 0.05 },
+      collarOD:       { label: "Collar OD",     min: 1, max: 16, step: 0.05 },
+      taperHeight:    { label: "Taper Height",  min: 0, max: 2, step: 0.05 },
+      collarLength:   { label: "Collar Length", min: 0.3, max: 6, step: 0.05 },
+      bodyStubLength: { label: "Body Stub Length", min: 0, max: 2, step: 0.05 },
+      threadCount:    { label: "Threads",       min: 2, max: 40, step: 1 },
+      threadDepth:    { label: "Thread Depth",  min: 0.02, max: 0.15, step: 0.01 },
+      taper:          { label: "Thread Taper (1:N)", min: 0, max: 0.2, step: 0.005 },
+    },
+    defaults: { od: 2.875, wall: 0.217, collarOD: 3.668, taperHeight: 0.4, collarLength: 0.8, bodyStubLength: 0.0, threadCount: 8, threadDepth: 0.04, taper: 0.0625 },
+  },
+
   {
     id: "thread_if",
     name: "IF (Internal Flush)",

@@ -2,52 +2,24 @@
  * Component Builder — ManifoldCAD geometry for each primitive
  */
 
-import Module from 'manifold-3d';
 import * as THREE from 'three';
 import { COMPONENTS } from './library';
-
-let wasm: any = null;
-let M: any = null;
-
-// Default segment count for the components-viewer (single primitive at a time —
-// can afford 256 for crisp rendering). Reduced for compose.ts which builds
-// multi-part assemblies (10+ cylinders × CSG union → mobile WebKit OOMs at 256).
-//
-// CIRCULAR_SEGMENTS_DEFAULT — used when nothing overrides
-// CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via setCircularSegmentMode
-// Touching the value affects every M.cylinder call until reset, so callers MUST
-// reset on completion (see compose.ts try/finally).
-export const CIRCULAR_SEGMENTS_DEFAULT = 256;
-export const CIRCULAR_SEGMENTS_COMPOSE = 96;  // 192 crashed mobile even fused; 96 is the sweet spot
-
-let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
-
-export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
-  currentSegments = mode === 'compose' ? CIRCULAR_SEGMENTS_COMPOSE : CIRCULAR_SEGMENTS_DEFAULT;
-  if (wasm) wasm.setCircularSegments(currentSegments);
-}
-
-export async function initManifold() {
-  if (wasm) return;
-  wasm = await Module();
-  wasm.setup();
-  M = wasm.Manifold;
-  wasm.setCircularSegments(currentSegments);
-}
-
-function cyl(h: number, r1: number, r2?: number) { return M.cylinder(h, r1, r2 ?? r1, currentSegments); }
-function tube(outerR: number, innerR: number, h: number) { return cyl(h, outerR).subtract(cyl(h + 0.02, innerR)); }
-function mv(m: any, v: [number, number, number]) { return m.translate(v); }
-function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
+import { geomById, metaById, resolveDerived } from './runes';
+// Manifold runtime + small helpers live in their own module so per-primitive
+// runes files can import them without depending on builder.ts. Re-exported
+// here for back-compat with anything still importing them from this file.
+import { M, cyl, tube, mv, rot, getCutBox } from './manifold-helpers';
+export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
 
 // ═══ BUILDERS ═══
+//
+// Hand-written builders for legacy primitives. Runes-class primitives
+// (single-file `meta` + `geom` modules in ./runes/) are dispatched
+// through the RUNES_REGISTRY consult inside buildPrimitiveManifold below
+// — they are NOT mirrored here. Adding a new runes file makes it
+// renderable automatically; no entry in this map needed.
 
 export const builders: Record<string, (p: Record<string, number>) => any> = {
-
-  hollow_cylinder(p) {
-    const id = p.od - 2 * p.wall;
-    return tube(p.od / 2, id / 2, p.length);
-  },
 
   threaded_box(p) {
     // Optional 1:N taper on the bore (API SC/LC/BC = 1:16 ≈ 0.0625, where
@@ -88,6 +60,44 @@ export const builders: Record<string, (p: Record<string, number>) => any> = {
       const t = (i + 0.5) / p.threadCount;
       const tz = p.length * t;
       const localR = rStart - taper * p.length * t;
+      body = body.subtract(mv(tube(localR + 0.01, localR - p.threadDepth, 0.04), [0, 0, tz]));
+    }
+    return body;
+  },
+
+  // ── Collared pin: anatomical male end ────────────────────────────────────
+  // Same body-stub → taper → collar anatomy with threads cut into the OD.
+  threaded_pin_collared(p) {
+    const od = p.od;
+    const collarOD = p.collarOD;
+    const stubLen = p.bodyStubLength;
+    const taperLen = p.taperHeight;
+    const collarLen = p.collarLength;
+    const id = od - 2 * p.wall;
+
+    let body = M.cube([0.001, 0.001, 0.001], true);
+    if (stubLen > 0) {
+      body = body.add(mv(cyl(stubLen, od / 2), [0, 0, stubLen / 2]));
+    }
+    if (taperLen > 0) {
+      body = body.add(mv(cyl(taperLen, od / 2, collarOD / 2), [0, 0, stubLen + taperLen / 2]));
+    }
+
+    // Collar OD — optional 1:N thread taper shrinks the OD toward the tip.
+    const taper = p.taper ?? 0;
+    const collarStartZ = stubLen + taperLen;
+    const odStart = collarOD / 2;
+    const odEnd = collarOD / 2 - taper * collarLen;
+    body = body.add(mv(cyl(collarLen, odStart, odEnd), [0, 0, collarStartZ + collarLen / 2]));
+
+    // Single straight bore through the entire part.
+    body = body.subtract(mv(cyl(stubLen + taperLen + collarLen + 0.02, id / 2), [0, 0, (stubLen + taperLen + collarLen + 0.02) / 2 - 0.01]));
+
+    // Threads cut into the collar OD.
+    for (let i = 0; i < p.threadCount; i++) {
+      const t = (i + 0.5) / p.threadCount;
+      const tz = collarStartZ + collarLen * t;
+      const localR = odStart - taper * collarLen * t;
       body = body.subtract(mv(tube(localR + 0.01, localR - p.threadDepth, 0.04), [0, 0, tz]));
     }
     return body;
@@ -401,6 +411,17 @@ export interface ComponentResult {
  * `buildComponent` instead.
  */
 export function buildPrimitiveManifold(componentId: string, params: Record<string, number>): any {
+  // Runes registry takes precedence — single-file primitives in
+  // ./runes/<id>.ts are the source of truth for any id they define.
+  // Derived params (meta.derived) are computed and merged into the bag
+  // BEFORE geom runs, so the geom can read p.<derivedKey> naturally.
+  const runesGeom = geomById(componentId);
+  if (runesGeom) {
+    const meta = metaById(componentId);
+    const resolved = meta ? resolveDerived(meta, params) : params;
+    return runesGeom(resolved);
+  }
+
   let fn = builders[componentId];
   // Walk the parent chain — derived primitives (ComponentDef.parent) reuse
   // their base class's builder unless they register their own. Lets us spin
@@ -415,17 +436,6 @@ export function buildPrimitiveManifold(componentId: string, params: Record<strin
   }
   if (!fn) throw new Error(`Unknown component: ${componentId}`);
   return fn(params);
-}
-
-// Module-level cutaway box, lazily created once per session. The cube +
-// translate are tiny but they were previously rebuilt on every finalize
-// call — for multi-part assemblies that's N constructions per frame.
-let _cachedCutBox: any = null;
-function getCutBox(): any {
-  if (!_cachedCutBox && M) {
-    _cachedCutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
-  }
-  return _cachedCutBox;
 }
 
 /**

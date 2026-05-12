@@ -67,3 +67,6 @@ Thumbs.db
 # Environment
 .env
 .env.*
+
+# Claude Code session artifacts (per-session lock files etc.)
+.claude/

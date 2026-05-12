@@ -121,6 +121,32 @@ the entire composition library.
 All API box/pin variants generated through `VARIATION_SPECS` set
 `taper: 0.0625` in their defaults.
 
+## 7a. Connection anatomy (collared variants)
+
+`threaded_box_collared` and `threaded_pin_collared` carry the realistic
+API connection anatomy — explicit collar, taper transition, and an
+optional flush body stub. Stack (bottom → top):
+
+| Section | Length param | OD | Notes |
+|---|---|---|---|
+| Body stub (optional) | `bodyStubLength` | `od` | Flush with the parent composition's `hollow_cylinder` body. Set 0 for no stub. |
+| Taper transition | `taperHeight` | `od` → `collarOD` | Cone. Set 0 for an abrupt step. |
+| Collar | `collarLength` | `collarOD` | Straight cylinder where threads are cut. Internal threads for box, external for pin. |
+
+Total part length = `bodyStubLength + taperHeight + collarLength`.
+
+**Mating contract:** a box-collared connection couples with a pin-collared
+of the same family — every shared param (`od`, `collarOD`, `taperHeight`,
+`collarLength`, `threadCount`, `threadDepth`, `taper`, `wall`) must match
+for the pair to engage. The collared primitives share an identical schema
+on purpose so the mating check is parameter-equality.
+
+**Degenerate case:** when `collarOD == od` AND `taperHeight == 0` (and
+typically `bodyStubLength == 0`), the geometry collapses to a plain
+straight cylinder with threads — same as the bare `threaded_box` /
+`threaded_pin`. Both forms ship: bare for "minimal" use, collared for
+realistic anatomy.
+
 ## 8. Drill-pipe tool-joint marking scheme
 
 Per the API drill-pipe identification chart (KB:
