@@ -18,6 +18,19 @@
       ]
     },
     {
+      "id": "tubing-hanger",
+      "path": "/kb/api/tubing-hanger.json",
+      "title": "Tubing Hanger Spools & Couplings (Miracle Industries catalogue)",
+      "description": "Tubing-hanger spools (THS) sized by bottom-flange OD + top-flange OD + API 6A pressure class (2K → 15M), and tubing-hanger couplings (THC) by union-nut OD + tubing size (API EUE). Drives the tubing_hanger_spool primitive's flange / bore / prep parameters.",
+      "categories": ["api", "wellhead", "tubing-hanger", "spool", "flange", "coupling", "pressure-class"],
+      "row_count": 11,
+      "source_kind": "vendor_catalog",
+      "default_columns": [
+        "kind", "model", "bottom_flange_od_in", "bottom_flange_pressure_psi",
+        "top_flange_od_in", "top_flange_pressure_psi", "bore_in", "bottom_prep_in"
+      ]
+    },
+    {
       "id": "drill-pipe-identification",
       "path": "/kb/api/drill-pipe-identification.json",
       "title": "API Drill Pipe Tool-Joint Identification",
