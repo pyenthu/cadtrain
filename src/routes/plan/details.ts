@@ -99,6 +99,139 @@ export const details: Record<number, PlanDetail> = {
     ],
   },
 
+  // ───── I. 4-level hierarchy + composite generators ─────
+
+  400: {
+    summary:
+      'Restructured /primitives into a 4-tab sidebar matching the formal hierarchy ' +
+      '(Primitive / Composition / Component / Assembly) plus a 5th tab for KB browsing. ' +
+      'Each tab opens entries as in-tab Threlte canvas tabs in the main bar; the cards ' +
+      'grid is gone, navigation is sidebar-driven. Vertical tab rail on the left of the ' +
+      'sidebar with rotated wedge-shaped buttons; primary content area gets the full ' +
+      'remaining width. Camera/light defaults shared with /author via $lib/shared/scene-state.',
+    refs: ['docs/RULES.md', 'src/routes/primitives/+page.svelte'],
+  },
+
+  401: {
+    summary:
+      'Variation generator pattern in src/lib/components/library.ts. ComponentDef gains ' +
+      'an optional `parent: string` field; deriveVariation(spec) builds a child ' +
+      'ComponentDef that inherits the parent\'s param schema + builder geometry, only ' +
+      'overriding `defaults` and (optionally) per-param ranges. buildPrimitiveManifold ' +
+      'walks the parent chain to find a registered builder when the child has none. ' +
+      'New variants need ~8 lines, no builder code.',
+    acceptance: [
+      '6 SC/LC/BC box+pin variants generated from a 6-entry VARIATION_SPECS table',
+      'Each renders distinct geometry (different OD, length, thread density, taper)',
+      'Sidebar shows parent threaded_box / threaded_pin as 📁 folders with the count pill',
+    ],
+    refs: ['docs/RULES.md §3', 'src/lib/components/library.ts'],
+  },
+
+  402: {
+    summary:
+      'src/lib/components/rules/tubing.ts — first formalized composite generator. ' +
+      'TubingInputs (size, weight, grade, connection, length, tpi) → resolveTubing ' +
+      '(KB lookup against casing-tubing-data with formula fallback) → TubingDerived ' +
+      '(wall, pipe_id, connection_od, connection_length, thread_count, thread_taper, ' +
+      'mut_opti) → buildTubingSpec → AuthoredComponent with body + top_box + bot_pin. ' +
+      'Box-on-top / pin-on-bottom convention encoded.',
+    acceptance: [
+      'KB-anchored values lift wall/ID/coupling-OD/conn-length verbatim from KB rows',
+      'Formula fallback gives reasonable values when no KB row matches',
+      '4 standard tubing sizes (2-3/8, 2-7/8, 3-1/2, 4-1/2) generated through the rules',
+    ],
+    refs: ['docs/RULES.md §4', 'src/lib/components/rules/tubing.ts'],
+  },
+
+  403: {
+    summary:
+      'Sister rules file for drill pipe + new identification KB. KB has 8 marking rows ' +
+      'mapping (weight_class, grade) → (num_grooves, num_slots, groove_wide). New ' +
+      'primitive drill_pipe_tool_joint renders these as parametric grooves + slots on ' +
+      'the tong-area band. rules/drill_pipe.ts mirrors the tubing pipeline with ' +
+      'DrillPipeInputs and KB-driven marking resolution.',
+    acceptance: [
+      'KB at static/kb/api/drill-pipe-identification.json with all 8 marking combinations',
+      'Manifest entry in static/kb/index.json so the sidebar KB tab lists it automatically',
+      'drill_pipe_tool_joint primitive registered in library.ts + builder.ts',
+      'Both ends of a generated drill pipe joint carry the same identifying marks',
+    ],
+    refs: ['docs/RULES.md §8', 'src/lib/components/rules/drill_pipe.ts', 'static/kb/api/drill-pipe-identification.json'],
+  },
+
+  404: {
+    summary:
+      'KbTableViewer.svelte gains an optional `rowAction` prop (icon + title + onAction). ' +
+      'On the casing-tubing KB tab, every row now carries a ▶ button that invokes ' +
+      'generateTubingComponent with the row\'s (size, weight, grade, connection) and ' +
+      'opens the resulting joint as a composite tab in the main bar.',
+    refs: ['src/lib/shared/KbTableViewer.svelte', 'src/routes/primitives/+page.svelte'],
+  },
+
+  405: {
+    summary:
+      'Three new primitives synthesized from the Halliburton catalogs in ~/Downloads:' +
+      ' window_cutout (LatchRite pre-milled multilateral window), whipstock (deflector ' +
+      'wedge), sliding_sleeve (generic ICV mandrel — body + N axial ports + seal bores). ' +
+      'Plus drill_pipe_tool_joint with the parametric marking band. Each registered ' +
+      'in library.ts with full param schemas; renders inline like any other primitive.',
+    refs: [
+      'src/lib/components/builder.ts',
+      'src/lib/components/library.ts',
+      '~/Downloads/556242167-Intelligent-Completions-Catalog.pdf',
+      '~/Downloads/633400581-02-Multilateral-Technology-Catalog-pdf.pdf',
+    ],
+  },
+
+  408: {
+    summary:
+      'Bottom-sub and ratch-latch builders use a separate Manifold WASM init lifecycle ' +
+      'and nested AssemblyParams shapes that don\'t fit the flat ComponentDef record. ' +
+      'Two clean paths: (a) add a buildUnifiedManifold(flatParams) to each tool that ' +
+      'converts flat → nested + returns one manifold, then register them as builders; ' +
+      '(b) introduce a `tool` tab kind that mounts the existing Scene component ' +
+      'dynamically. (a) unifies the rendering path.',
+    refs: ['src/lib/tools/bottom-sub/builder.ts', 'src/lib/tools/ratch-latch/builder.ts'],
+  },
+
+  409: {
+    summary:
+      'Auto-list every (size, weight, grade) row in the casing-tubing KB as its own ' +
+      'composition entry under Compositions / Standard API tubing or casing. Sidebar ' +
+      'becomes the catalog itself; clicking generates the composite via the rules. ' +
+      'Reduces the hand-curated COMPONENTS_L3 list to just the catalog-inspired entries.',
+    refs: ['src/lib/components/rules/tubing.ts'],
+  },
+
+  410: {
+    summary:
+      'Multilateral catalog extractor — mirror of scripts/kb/build_casing_tubing_data.ts ' +
+      'for the 633400581 PDF. Output at static/kb/api/multilateral-junctions.json ' +
+      'covering pre-milled windows, latch couplings, whipstocks per TAML level. ' +
+      'Auto-listed as a 3rd KB tab entry once the JSON exists.',
+    refs: ['~/Downloads/633400581-02-Multilateral-Technology-Catalog-pdf.pdf'],
+  },
+
+  411: {
+    summary:
+      'Composition tabs are currently read-only (params baked into each part\'s spec). ' +
+      'Editable mode: the Params popup on a tubing/drill-pipe composite shows the input ' +
+      'fields (size, weight, grade, length, tpi); editing reruns the rules pipeline ' +
+      'and rebuilds the spec → live geometry update. Carries through the KB-anchored / ' +
+      'formula-derived flag so the user sees which dims are pinned.',
+    refs: ['src/lib/components/rules/tubing.ts', 'src/routes/primitives/+page.svelte'],
+  },
+
+  412: {
+    summary:
+      'thread_if / thread_fh / thread_nc currently each ship a hand-written builder. ' +
+      'Convert to AuthoredComponent specs (body + drill_pipe_tool_joint with the right ' +
+      'marking + flush-bore variant of threaded_pin). Drops three custom builders, ' +
+      'tightens the convention from §2.',
+    refs: ['docs/RULES.md §2 §9', 'src/lib/components/builder.ts'],
+  },
+
   // ───── B. Retrieval ─────
 
   26: {

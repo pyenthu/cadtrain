@@ -28,6 +28,7 @@
   import KbTableViewer from '$lib/shared/KbTableViewer.svelte';
   import { COMPONENTS_L3, type ComponentL3 } from '$lib/components/components-l3';
   import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/components/assemblies-l4';
+  import { generateTubingComponent, type TubingInputs, type Grade, type ConnectionType } from '$lib/components/rules/tubing';
   // Vite ?raw — bundles the file's text at build time so the client can show
   // the script that produces each primitive's geometry in-tab.
   import builderSource from '$lib/components/builder.ts?raw';
@@ -91,6 +92,8 @@
         'slips', 'j_latch', 'packer_element',
         // Catalog-inspired (Halliburton Intelligent Completions + Multilateral)
         'window_cutout', 'whipstock', 'sliding_sleeve',
+        // Drill pipe
+        'drill_pipe_tool_joint',
       ].includes(c.id),
     },
     {
@@ -404,6 +407,25 @@
     activeTabId = id;
   }
 
+  /** Generate a tubing composite from a casing-tubing KB row + open it as
+   *  a tab. Inputs come straight off the row; the rules in
+   *  src/lib/components/rules/tubing.ts handle KB lookup + geometry build.
+   *  Only TBG-type rows make sense here; for non-tubing rows we no-op. */
+  async function openTubingFromKbRow(row: Record<string, any>) {
+    if (row?.type !== 'TBG' && row?.type !== 'CSG') return;
+    const inputs: TubingInputs = {
+      size_in: Number(row.size_in),
+      weight_lbft: Number(row.weight_lbft),
+      grade: row.grade as Grade,
+      connection: (row.connection ?? 'EUE') as ConnectionType,
+    };
+    if (!Number.isFinite(inputs.size_in) || !Number.isFinite(inputs.weight_lbft)) return;
+    const id = `tbg_${row.size_label?.replace(/[^\d.]/g, '')}_${inputs.weight_lbft}_${inputs.grade}_${inputs.connection}`.toLowerCase();
+    const name = `${row.size_label} ${inputs.weight_lbft} lb/ft ${inputs.grade} ${inputs.connection}`;
+    const spec = await generateTubingComponent(id, name, inputs);
+    openComposite('comp', { id, name, spec });
+  }
+
   function openComposite(prefix: 'comp' | 'asm', entry: { id: string; name: string; spec?: any; route?: string }) {
     if ((entry as any).route) {
       // Legacy tool entry — punt to the existing viewer route.
@@ -534,9 +556,29 @@
   }
 
   let activeTab = $derived(openTabs.find((t) => t.id === activeTabId) ?? null);
-  let activeDef = $derived<ComponentDef | null>(
-    activeTab ? COMPONENTS.find((c) => c.id === activeTab.primId) ?? null : null,
-  );
+  /** activeDef provides the metadata the stage block uses to render the
+   *  header (name / id / category / description / tags). For 'primitive'
+   *  tabs it's the matching ComponentDef from COMPONENTS. For 'composite'
+   *  tabs (level-3 components or level-4 assemblies) we synthesize a
+   *  ComponentDef-shaped object from the AuthoredComponent spec so the
+   *  same render path covers both cases. KB tabs short-circuit before
+   *  this is read. */
+  let activeDef = $derived.by<ComponentDef | null>(() => {
+    if (!activeTab) return null;
+    if (activeTab.kind === 'composite' && activeTab.compositeSpec) {
+      const spec = activeTab.compositeSpec;
+      return {
+        id: spec.id,
+        name: spec.name,
+        category: 'composite',
+        description: spec.description ?? '',
+        tags: spec.tags ?? [],
+        params: {},
+        defaults: {},
+      } as ComponentDef;
+    }
+    return COMPONENTS.find((c) => c.id === activeTab.primId) ?? null;
+  });
   /** Source of the active primitive's builder function, sliced out of
    *  builder.ts at build time. Falls back to a friendly note if the slice
    *  couldn't find the function (e.g. inline arrow form that doesn't match
@@ -593,16 +635,20 @@
            Selected tab swaps the flat list shown to its right. -->
       <div class="sb-rail">
         {#each TREE as f (f.id)}
-          {@const items = itemsInFolder(f)}
+          {@const count = f.id === 'components' ? COMPONENTS_L3.filter((c) => c.tier === 3).length
+                       : f.id === 'compositions' ? itemsInFolder(f).length + COMPONENTS_L3.filter((c) => c.tier === 2).length
+                       : f.id === 'assemblies' ? ASSEMBLIES_L4.length
+                       : f.id === 'kb' ? kbList.length
+                       : itemsInFolder(f).length}
           <button
             class="sb-tab"
             class:active={sidebarTab === f.id}
             class:compound={f.compound}
             onclick={() => (sidebarTab = f.id)}
-            title="{f.name} ({items.length})"
+            title="{f.name} ({count})"
           >
             <span class="sb-tab-name">{f.name}</span>
-            <span class="sb-tab-count">{items.length}</span>
+            <span class="sb-tab-count">{count}</span>
           </button>
         {/each}
       </div>
@@ -671,7 +717,10 @@
       </div>
 
       {#if sidebarTab === 'components'}
-        {@const filt = COMPONENTS_L3.filter((c) => !filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase())))}
+        <!-- Level-3 Components — multi-PART physical items (HF-1 packer,
+             HS-ICV valve, Bottom Sub, Ratch-Latch). Filtered from
+             COMPONENTS_L3 by tier === 3. -->
+        {@const filt = COMPONENTS_L3.filter((c) => c.tier === 3 && (!filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))))}
         {@const groups = Array.from(new Set(filt.map((c) => c.group ?? 'Other')))}
         {#each groups as g (g)}
           <div class="sb-subhead">{g}</div>
@@ -777,6 +826,30 @@
           {#if leafItems.length === 0 && (f.sub ?? []).every((sf) => itemsInFolder(sf).filter(matchesFilter).length === 0)}
             <div class="sb-empty">No primitives match "{filter}".</div>
           {/if}
+
+          <!-- Compositions tab also lists tier=2 entries from COMPONENTS_L3
+               (tubing joints, LatchRite window, etc.) — single-part items
+               assembled from primitives, opened as composite tabs. -->
+          {#if f.id === 'compositions'}
+            {@const l2 = COMPONENTS_L3.filter((c) => c.tier === 2 && (!filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))))}
+            {@const l2groups = Array.from(new Set(l2.map((c) => c.group ?? 'Other')))}
+            {#each l2groups as g (g)}
+              <div class="sb-subhead">{g}</div>
+              <div class="sb-list">
+                {#each l2.filter((c) => (c.group ?? 'Other') === g) as c (c.id)}
+                  <button
+                    class="prim-link"
+                    class:active={activeTab?.id === `comp:${c.id}`}
+                    onclick={() => openComposite('comp', c)}
+                    title={c.description}
+                  >
+                    <span class="dot"></span>
+                    <span class="pl-name">{c.name}</span>
+                  </button>
+                {/each}
+              </div>
+            {/each}
+          {/if}
         {/if}
       {/each}
     </div>
@@ -873,22 +946,34 @@
     <!-- KB tab body — embedded table viewer. Skips the primitive editor. -->
     {#if activeTab && activeTab.kind === 'kb' && activeTab.kbId}
       <div class="tab-body kb-tab">
-        <KbTableViewer kbId={activeTab.kbId} />
+        <KbTableViewer
+          kbId={activeTab.kbId}
+          rowAction={activeTab.kbId === 'casing-tubing-data'
+            ? { icon: '▶', title: 'Preview as tubing component', onAction: openTubingFromKbRow }
+            : null}
+        />
       </div>
     {:else if activeTab && activeDef}
       {@const compound = isCompound(activeDef)}
       <div class="tab-body">
-        <!-- Left toolbar — primitive actions + popups for preview/script. -->
+        <!-- Left toolbar — primitive actions + popups for preview/script.
+             Composite tabs (level-3 components, level-4 assemblies) hide
+             Params + Reset since params are baked into each part's spec
+             and aren't editable from a single popup. -->
         <div class="toolbar">
-          <button class="tb-btn" type="button" class:on={showParams} onclick={() => (showParams = !showParams)} title="Toggle parameters popup">
-            <span class="tb-ic">⚙</span>
-          </button>
+          {#if activeTab.kind === 'primitive'}
+            <button class="tb-btn" type="button" class:on={showParams} onclick={() => (showParams = !showParams)} title="Toggle parameters popup">
+              <span class="tb-ic">⚙</span>
+            </button>
+          {/if}
           <button class="tb-btn" type="button" class:on={showScript} onclick={() => (showScript = !showScript)} title="Builder script">
             <span class="tb-ic">{'</>'}</span>
           </button>
-          <button class="tb-btn" type="button" onclick={() => resetParams(activeTab!)} title="Reset to defaults">
-            <span class="tb-ic">↺</span>
-          </button>
+          {#if activeTab.kind === 'primitive'}
+            <button class="tb-btn" type="button" onclick={() => resetParams(activeTab!)} title="Reset to defaults">
+              <span class="tb-ic">↺</span>
+            </button>
+          {/if}
           <button class="tb-btn" type="button" onclick={() => copyId(activeTab!)} title="Copy primitive id">
             <span class="tb-ic">⎘</span>
           </button>
@@ -937,13 +1022,15 @@
               <div class="stage-err">Build error: {buildError}</div>
             {:else}
               <div class="stage-loading">
-                <img
-                  class="stage-fallback"
-                  src={imgSrc(activeTab.primId)}
-                  alt={activeDef.name}
-                  loading="lazy"
-                  onerror={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
-                />
+                {#if activeTab.kind === 'primitive'}
+                  <img
+                    class="stage-fallback"
+                    src={imgSrc(activeTab.primId)}
+                    alt={activeDef.name}
+                    loading="lazy"
+                    onerror={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                  />
+                {/if}
                 <span class="stage-loading-text">{ready ? 'Building…' : 'Loading scene…'}</span>
               </div>
             {/if}
@@ -953,8 +1040,10 @@
             <label><input type="checkbox" bind:checked={showCutaway} /> Cross-section</label>
             <label><input type="checkbox" bind:checked={showEdges} /> Edges</label>
             <span class="stage-hint">
-              <button class="inline-btn" type="button" onclick={() => (showParams = true)}>Params</button>
-              ·
+              {#if activeTab.kind === 'primitive'}
+                <button class="inline-btn" type="button" onclick={() => (showParams = true)}>Params</button>
+                ·
+              {/if}
               <button class="inline-btn" type="button" onclick={() => (showScript = true)}>Script</button>
             </span>
           </div>
@@ -965,7 +1054,7 @@
            rather than to the viewport (which would overlap the sidebar). -->
       <FloatingPanel
         title="Params · {activeDef.name}"
-        visible={showParams}
+        visible={showParams && activeTab.kind === 'primitive'}
         onClose={() => (showParams = false)}
         containerRelative
         x={50} y={8}

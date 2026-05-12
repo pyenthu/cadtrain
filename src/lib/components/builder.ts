@@ -337,6 +337,39 @@ export const builders: Record<string, (p: Record<string, number>) => any> = {
     return body;
   },
 
+  // Drill-pipe tool joint — the upset OD section at one end of a drill
+  // pipe joint. Carries grade-identification markings: numGrooves
+  // circumferential grooves + numSlots short axial slots cut into the
+  // tong-area band. Per the API drill-pipe identification chart.
+  // Geometry: a hollow upset cylinder (toolJointOD > pipeOD); tong-area
+  // band is a fraction of the length where the marks live.
+  drill_pipe_tool_joint(p) {
+    const id = p.toolJointOD - 2 * p.wall;
+    let body = tube(p.toolJointOD / 2, id / 2, p.length);
+    // Tong-area band sits in the middle third of the joint length.
+    const bandStart = p.length * 0.35;
+    const bandEnd = p.length * 0.65;
+    const bandSpan = bandEnd - bandStart;
+    // Circumferential grooves — full-OD bands, depth = grooveDepth.
+    if (p.numGrooves > 0) {
+      const stepZ = bandSpan / (p.numGrooves + 1);
+      for (let i = 0; i < p.numGrooves; i++) {
+        const gz = bandStart + stepZ * (i + 1);
+        const gw = p.grooveWide ? p.grooveWidth * 2 : p.grooveWidth;
+        body = body.subtract(mv(tube(p.toolJointOD / 2 + 0.01, p.toolJointOD / 2 - p.grooveDepth, gw), [0, 0, gz - gw / 2]));
+      }
+    }
+    // Axial slots — short rectangular cuts oriented along the body axis,
+    // cut on the +Y face (visible from the front). One per numSlots, spaced
+    // around the band.
+    for (let i = 0; i < p.numSlots; i++) {
+      const sz = bandStart + bandSpan * (i + 0.5) / p.numSlots;
+      const slot = M.cube([p.slotWidth, p.toolJointOD * 1.2, p.slotLength], true);
+      body = body.subtract(mv(slot, [0, 0, sz]));
+    }
+    return body;
+  },
+
   packer_element(p) {
     // Stack of rings representing rubber elements
     let element = M.cube([0.001, 0.001, 0.001], true);

@@ -47,6 +47,7 @@
     { id: 'F', name: 'Meta + UX',              tint: '#ec4899', desc: 'this /plan route, navigation, documentation' },
     { id: 'G', name: 'Vendor catalog ingest',  tint: '#f59e0b', desc: 'Halliburton/Baker Hughes catalog PDFs → per-page assets → SVG schematics + spec-table JSON. Output now feeds bundle H (constrained parametrization), not cache.jsonl' },
     { id: 'H', name: 'Constrained parametrization', tint: '#7c3aed', desc: 'Designing not building: API/vendor KB tables → DesignSpace + Generator → derived params → Svelte-runes runtime. Replace freeform Opus param picking with coordinates in a constrained choice space.' },
+    { id: 'I', name: '4-level hierarchy + composite generators', tint: '#0ea5e9', desc: 'Primitive → Composition → Component → Assembly. /primitives sidebar tabs + per-tier registries + rules files (tubing, drill_pipe) that take a small input set and emit a complete AuthoredComponent. KB-anchored generation, parent/child specialization in library.ts, in-tab Threlte rendering for every tier.' },
   ];
 
   const tasks: Task[] = [
@@ -143,6 +144,21 @@
     { id: 308, bundle: 'H', lane: 7, start:  8.7, weeks: 0.3, priority: 'low',    status: 'open',   title: 'H.8 — Library-wide variable propagation: change casing_size once → every assembly using it updates; per-assembly override mechanism' },
     { id: 309, bundle: 'H', lane: 7, start:  9.0, weeks: 0.5, priority: 'low',    status: 'open',   title: 'H.9 — Opus design-reviewer: post-save soft warnings ("slip count inconsistent with packer rating", "OD exceeds casing drift"); badge in workbench' },
     { id: 310, bundle: 'H', lane: 7, start:  9.5, weeks: 1.0, priority: 'medium', status: 'open',   title: 'H.10 — Vendor-PDF-to-DesignSpace: Opus reads a vendor catalog page (image) and emits a DesignSpace + Generator directly — the "do we need CLIP/RAG?" alternative path that keeps Bundle B shelved if it works' },
+
+    // ───── I. 4-level hierarchy + composite generators ─────
+    { id: 400, bundle: 'I', lane: 8, start: 10.0, weeks: 0.4, priority: 'high',   status: 'done',   title: 'I.0 — /primitives sidebar restructure: 4 hierarchy tabs (Primitives / Compositions / Components / Assemblies) + KB tab; tab-strip-on-left, in-tab Threlte canvas + scene controls' },
+    { id: 401, bundle: 'I', lane: 8, start: 10.4, weeks: 0.3, priority: 'high',   status: 'done',   title: 'I.1 — Variation generator in library.ts: ComponentDef.parent + deriveVariation(spec) + buildPrimitiveManifold parent-chain fallback. SC/LC/BC box+pin variants generated from one spec table' },
+    { id: 402, bundle: 'I', lane: 8, start: 10.7, weeks: 0.4, priority: 'high',   status: 'done',   title: 'I.2 — Tubing rules file (src/lib/components/rules/tubing.ts): TubingInputs → resolveTubing (KB lookup + formula fallback) → buildTubingSpec → AuthoredComponent. Box on top, pin on bottom convention encoded' },
+    { id: 403, bundle: 'I', lane: 8, start: 11.1, weeks: 0.4, priority: 'high',   status: 'done',   title: 'I.3 — Drill-pipe identification KB (static/kb/api/drill-pipe-identification.json) + drill_pipe_tool_joint primitive (parametric tong-area marking) + rules/drill_pipe.ts mirroring the tubing pipeline' },
+    { id: 404, bundle: 'I', lane: 8, start: 11.5, weeks: 0.3, priority: 'high',   status: 'done',   title: 'I.4 — KB row → composite preview: optional rowAction prop on KbTableViewer; casing-tubing rows get a ▶ button → generateTubingComponent → opens as composite tab' },
+    { id: 405, bundle: 'I', lane: 8, start: 11.8, weeks: 0.3, priority: 'high',   status: 'done',   title: 'I.5 — Catalog-inspired primitives: window_cutout (LatchRite multilateral), whipstock, sliding_sleeve (HS-ICV / MCC-ICV pattern), drill_pipe_tool_joint' },
+    { id: 406, bundle: 'I', lane: 8, start: 12.1, weeks: 0.2, priority: 'medium', status: 'todo',   title: 'I.6 — Sample drill-pipe entries in Compositions tab using rules/drill_pipe.ts (5"/4-1/2"/3-1/2" × E75/X95/G105/S135)' },
+    { id: 407, bundle: 'I', lane: 8, start: 12.3, weeks: 0.2, priority: 'medium', status: 'todo',   title: 'I.7 — Drill-pipe KB row action: ▶ on each marking row → generateDrillPipeComponent → composite tab' },
+    { id: 408, bundle: 'I', lane: 8, start: 12.5, weeks: 0.5, priority: 'medium', status: 'open',   title: 'I.8 — Bottom-Sub + Ratch-Latch in-tab port: write buildUnifiedManifold(flatParams) wrappers in each tool dir; register as ComponentDef so they open in /primitives instead of bouncing to /archive/tools/*' },
+    { id: 409, bundle: 'I', lane: 8, start: 13.0, weeks: 0.4, priority: 'medium', status: 'open',   title: 'I.9 — Auto-list every KB tubing/casing row as a generated composition under "Standard API tubing/casing"; one entry per (size, weight, grade) row' },
+    { id: 410, bundle: 'I', lane: 8, start: 13.4, weeks: 0.7, priority: 'medium', status: 'open',   title: 'I.10 — Multilateral catalog extractor: 633400581 PDF → static/kb/api/multilateral-junctions.json; auto-listed as 3rd KB tab entry' },
+    { id: 411, bundle: 'I', lane: 8, start: 14.1, weeks: 0.5, priority: 'low',    status: 'open',   title: 'I.11 — Editable Composition tabs: Params popup on a tubing/drill-pipe composite shows the input fields (size, weight, grade, length); editing rebuilds the spec via the rules → live geometry' },
+    { id: 412, bundle: 'I', lane: 8, start: 14.6, weeks: 0.5, priority: 'low',    status: 'open',   title: 'I.12 — Decompose remaining compositions (thread_if/thread_fh/thread_nc) from custom builders into AuthoredComponent specs (body + drill_pipe_tool_joint with the right marking)' },
   ];
 
   // Bundle-relative codes (A.1, B.3, …) computed from index within bundle.

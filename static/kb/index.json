@@ -16,6 +16,18 @@
         "connection_od_in", "wall_in", "pipe_id_in", "drift_in",
         "pipe_yield_klbf", "mut_opti_ftlb"
       ]
+    },
+    {
+      "id": "drill-pipe-identification",
+      "path": "/kb/api/drill-pipe-identification.json",
+      "title": "API Drill Pipe Tool-Joint Identification",
+      "description": "Drill-pipe tool-joint marking scheme: combinations of grooves and slots on the tong-area band identify the grade (E75, X95, G105, S135, high-strength) and weight class (standard / heavy). Drives the drill_pipe_tool_joint primitive's marking parameters.",
+      "categories": ["api", "drill-pipe", "tool-joint", "identification", "grade", "marking"],
+      "row_count": 8,
+      "source_kind": "industry_chart",
+      "default_columns": [
+        "weight_class", "grade", "marking", "num_grooves", "num_slots", "yield_min_psi"
+      ]
     }
   ]
 }

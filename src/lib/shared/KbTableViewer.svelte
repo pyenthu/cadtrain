@@ -7,8 +7,13 @@
 
   interface Props {
     kbId: string;
+    /** Optional per-row action button. When provided, an extra column is
+     *  prepended showing the action's `icon` text; clicking calls
+     *  `onAction(row)`. The host route uses this on the casing-tubing KB to
+     *  preview a tubing component generated from the row's specs. */
+    rowAction?: { icon: string; title: string; onAction: (row: Record<string, any>) => void } | null;
   }
-  let { kbId }: Props = $props();
+  let { kbId, rowAction = null }: Props = $props();
 
   interface KbMeta {
     id: string;
@@ -139,6 +144,7 @@
       <table>
         <thead>
           <tr>
+            {#if rowAction}<th class="action-col"></th>{/if}
             {#each displayCols as c (c)}
               <th onclick={() => toggleSort(c)} class:active={sortCol === c}>
                 {colLabel(c)}
@@ -150,6 +156,11 @@
         <tbody>
           {#each processedRows as r, i (i)}
             <tr>
+              {#if rowAction}
+                <td class="action-col">
+                  <button class="row-action" type="button" title={rowAction.title} onclick={() => rowAction!.onAction(r)}>{rowAction.icon}</button>
+                </td>
+              {/if}
               {#each displayCols as c (c)}
                 <td class:num={typeof r[c] === 'number'} class:null={r[c] === null || r[c] === undefined}>
                   {fmt(r[c])}
@@ -207,6 +218,16 @@
   td.num { text-align: right; font-family: monospace; }
   td.null { color: #bbb; }
   tbody tr:hover { background: #fafafa; }
+  .action-col { width: 26px; padding: 0; text-align: center; }
+  .row-action {
+    background: #fff; border: 1px solid #d8d8de;
+    color: #cc2222; cursor: pointer;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    font: bold 12px Arial; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .row-action:hover { background: #cc2222; color: #fff; border-color: #cc2222; }
   .empty, .err {
     flex: 1; display: flex; align-items: center; justify-content: center;
     font: 12px Arial; color: #888;

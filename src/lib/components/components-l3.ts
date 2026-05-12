@@ -11,15 +11,34 @@
  *      route since those builders return multi-geometry results that
  *      don't fit the unified rendering path yet.
  *
- * Adding a new tubing joint = one entry. Adding a new tool = one entry +
- * the existing tool dir under src/lib/tools/.
+ * Convention — every joint / pipe component follows the same end-form
+ * convention so two of them stack into a string without orientation flips:
+ *
+ *   BOX (female) on TOP    — internal threads, OD = coupling/upset OD
+ *   PIN (male) on BOTTOM   — external threads, OD = body OD
+ *
+ * Drilling z-down convention: positive z is up, negative z is down.
+ * Use the helper in src/lib/components/rules/tubing.ts when generating
+ * tubing joints; it bakes this convention in.
  */
 
 import type { AuthoredComponent } from '$lib/authoring/schema';
+import { generateTubingComponentSync, type TubingInputs } from './rules/tubing';
+
+/** Hierarchy tier:
+ *    2 = Composition — single-part physical item assembled from primitives
+ *        and unioned into one piece (tubing joint, LatchRite window joint).
+ *    3 = Component   — multi-part physical item where each part is
+ *        independently installed or moves (HS-ICV valve, HF-1 packer,
+ *        Bottom Sub, Ratch-Latch). Renders as a unioned preview here, but
+ *        the conceptual model is multiple parts.
+ */
+export type Tier = 2 | 3;
 
 export interface ComponentL3Authored {
   kind: 'authored';
   id: string;
+  tier: Tier;
   name: string;
   description: string;
   tags: string[];
@@ -32,6 +51,7 @@ export interface ComponentL3Authored {
 export interface ComponentL3Tool {
   kind: 'tool';
   id: string;
+  tier: Tier;
   name: string;
   description: string;
   tags: string[];
@@ -44,59 +64,30 @@ export interface ComponentL3Tool {
 
 export type ComponentL3 = ComponentL3Authored | ComponentL3Tool;
 
-// ── Helper: build a simple 3-piece tubing joint spec ─────────────────────
-// body length is scaled to ~4 in for canvas readability; in reality these
-// are R-2 (~31 ft) joints. Box on top, pin on bottom (drilling convention,
-// matches /author's pipeJointTemplate).
+// ── Helper: tubing joint via the rules in src/lib/components/rules/tubing.ts ─
+// All geometry derivation lives in that one file; this helper just wraps
+// the rules output with the L3 metadata (name / tags / group). KB-anchored
+// values aren't available synchronously at module load — the formula
+// fallbacks are used here, which match the API spec for common sizes
+// closely enough that the visible difference vs KB-resolved is minimal.
+// The KB-resolved path runs from the casing-tubing-data row click flow.
 function tubingJoint(opts: {
   id: string;
   name: string;
   description: string;
   tags: string[];
-  bodyOD: number;
-  wall: number;
-  bodyLength?: number;
-  threadCount?: number;
   group?: string;
+  inputs: TubingInputs;
 }): ComponentL3Authored {
-  const { id, name, description, tags, group } = opts;
-  const bodyLength = opts.bodyLength ?? 4.0;
-  const threadCount = opts.threadCount ?? 5;
+  const spec = generateTubingComponentSync(opts.id, opts.name, opts.inputs);
+  // Override the auto-generated description with the catalog-flavored one
+  // the caller supplied (keeps the L3 catalog reading nicely in the sidebar).
+  spec.description = opts.description;
+  spec.tags = opts.tags;
   return {
     kind: 'authored',
-    id, name, description, tags, group,
-    spec: {
-      id, name, description, tags,
-      version: 1,
-      created: new Date('2026-05-12').toISOString(),
-      source: 'manual',
-      parts: [
-        // Body — hollow cylinder, centered.
-        {
-          id: 'body', kind: 'primitive', prim: 'hollow_cylinder',
-          params: { od: opts.bodyOD, wall: opts.wall, length: bodyLength },
-        },
-        // Top box — sits above body. EUE-style: slightly larger OD upset.
-        {
-          id: 'top_box', kind: 'primitive', prim: 'threaded_box',
-          params: {
-            od: opts.bodyOD * 1.18, wall: opts.wall + 0.05, length: 0.6,
-            threadCount, threadDepth: 0.04, taper: 0.0625,
-          },
-          transform: { tz: bodyLength },
-        },
-        // Bottom pin — sits below body. Same OD as body, tapered to nose.
-        {
-          id: 'bot_pin', kind: 'primitive', prim: 'threaded_pin',
-          params: {
-            od: opts.bodyOD, wall: opts.wall, length: 0.6,
-            threadCount, threadDepth: 0.04, taper: 0.0625,
-          },
-          transform: { tz: -0.6 },
-        },
-      ],
-      ops: [],  // implicit union of the 3 parts.
-    },
+    id: opts.id, name: opts.name, description: opts.description, tags: opts.tags, group: opts.group,
+    spec,
   };
 }
 
@@ -108,34 +99,38 @@ export const COMPONENTS_L3: ComponentL3[] = [
   tubingJoint({
     id: 'tubing_2_375_eue',
     name: '2-3/8" EUE Tubing Joint',
-    description: '2-3/8" OD tubing joint, J-55/L-80, EUE connection. Body + top box + bottom pin. Common production tubing in shallow wells.',
+    description: '2-3/8" OD tubing joint, J-55, EUE connection. Body + top box + bottom pin. Common production tubing in shallow wells.',
     tags: ['tubing', '2-3/8', 'EUE', 'API tubing', 'production tubing'],
+    tier: 2,
     group: 'Standard API tubing',
-    bodyOD: 2.375, wall: 0.190,
+    inputs: { size_in: 2.375, weight_lbft: 4.7, grade: 'J-55', connection: 'EUE' },
   }),
   tubingJoint({
     id: 'tubing_2_875_eue',
     name: '2-7/8" EUE Tubing Joint',
-    description: '2-7/8" OD tubing joint, J-55/L-80, EUE connection. Most common production tubing size.',
+    description: '2-7/8" OD tubing joint, J-55, EUE connection. Most common production tubing size.',
     tags: ['tubing', '2-7/8', 'EUE', 'API tubing', 'production tubing'],
+    tier: 2,
     group: 'Standard API tubing',
-    bodyOD: 2.875, wall: 0.217,
+    inputs: { size_in: 2.875, weight_lbft: 6.5, grade: 'J-55', connection: 'EUE' },
   }),
   tubingJoint({
     id: 'tubing_3_500_eue',
     name: '3-1/2" EUE Tubing Joint',
-    description: '3-1/2" OD tubing joint, J-55/L-80/N-80, EUE connection. High-rate gas wells, larger production strings.',
+    description: '3-1/2" OD tubing joint, J-55, EUE connection. High-rate gas wells, larger production strings.',
     tags: ['tubing', '3-1/2', 'EUE', 'API tubing', 'high rate'],
+    tier: 2,
     group: 'Standard API tubing',
-    bodyOD: 3.5, wall: 0.254, threadCount: 6,
+    inputs: { size_in: 3.5, weight_lbft: 9.3, grade: 'J-55', connection: 'EUE' },
   }),
   tubingJoint({
     id: 'tubing_4_500_lc',
     name: '4-1/2" LC Casing Joint',
     description: '4-1/2" OD casing joint, K-55/J-55/N-80, LC (Long Thread Coupled). Typical shallow casing string member.',
     tags: ['casing', '4-1/2', 'LC', 'long thread', 'API casing'],
+    tier: 2,
     group: 'Standard API casing',
-    bodyOD: 4.5, wall: 0.250, bodyLength: 4.5, threadCount: 8,
+    inputs: { size_in: 4.5, weight_lbft: 11.6, grade: 'J-55', connection: 'EUE' },
   }),
 
   // ── Catalog-inspired completions (Halliburton Intelligent Completions
@@ -146,6 +141,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: 'HS-ICV (Interval Control Valve)',
     description: 'Halliburton HS-ICV — high-pressure/high-temperature interval control valve. Modeled as a sliding-sleeve mandrel + bottom packer element. The eight-position flow trim is simplified to 4 ports.',
     tags: ['HS-ICV', 'ICV', 'interval control valve', 'HPHT', 'SmartWell', 'completion', 'Halliburton'],
+    tier: 3,
     group: 'Intelligent Completions (HAL catalog)',
     spec: {
       id: 'hs_icv_valve', name: 'HS-ICV Valve',
@@ -168,6 +164,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: 'HF-1 Production Packer',
     description: 'Halliburton HF-1 — single-string retrievable cased-hole packer with premium connections. Element + slips + mandrel; setting accomplished by tubing-applied pressure.',
     tags: ['HF-1', 'production packer', 'packer', 'retrievable', 'SmartWell', 'completion', 'Halliburton'],
+    tier: 3,
     group: 'Intelligent Completions (HAL catalog)',
     spec: {
       id: 'hf1_packer', name: 'HF-1 Packer',
@@ -199,6 +196,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: 'LatchRite Pre-Milled Window Joint',
     description: 'Halliburton LatchRite — TAML Level 4 multilateral junction component. Casing joint with a pre-milled axial window for lateral exit; latch coupling above orients the whipstock during construction.',
     tags: ['LatchRite', 'pre-milled window', 'multilateral', 'TAML', 'lateral', 'junction', 'Halliburton'],
+    tier: 2,
     group: 'Multilateral (HAL catalog)',
     spec: {
       id: 'latchrite_window', name: 'LatchRite Window',
@@ -225,6 +223,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     description: 'Halliburton bottom sub — housing + sleeve + slips. Parametric; opens in the legacy viewer with full param sliders.',
     tags: ['HAL', 'completion', 'bottom sub', 'HAL10408', 'sub'],
     route: '/archive/tools/bottom-sub',
+    tier: 3,
     group: 'Legacy parametric tools',
   },
   {
@@ -234,6 +233,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     description: 'Ratch-latch receiving head — body + mandrel + seals. Parametric assembly with retrievable lock profile.',
     tags: ['ratch latch', 'receiving head', 'completion', 'lock', 'seal'],
     route: '/archive/tools/ratch-latch',
+    tier: 3,
     group: 'Legacy parametric tools',
   },
 ];
