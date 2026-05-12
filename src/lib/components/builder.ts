@@ -476,7 +476,11 @@ export function buildComponent(componentId: string, params: Record<string, numbe
   const manifold = buildPrimitiveManifold(componentId, params);
   const maxOD = Math.max(params.od || 0, params.odTop || 0, params.odBottom || 0,
     params.odLarge || 0, params.slipOD || 0, params.odCompressed || 0, 3);
-  return finalizeManifold(manifold, maxOD);
+  // Runes-class primitives may opt out of the auto-Z-centering by
+  // declaring `skipCenter: true` on their meta. Legacy primitives
+  // never set this, so the default (centered) behavior is preserved.
+  const skipCenter = metaById(componentId)?.skipCenter === true;
+  return finalizeManifold(manifold, maxOD, skipCenter);
 }
 
 function manifoldToGeo(manifold: any): THREE.BufferGeometry {

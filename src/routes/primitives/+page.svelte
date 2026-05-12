@@ -27,6 +27,8 @@
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import KbTableViewer from '$lib/shared/KbTableViewer.svelte';
   import CodeEditor from '$lib/shared/CodeEditor.svelte';
+  import { formatTypescript } from '$lib/shared/format-ts';
+  import type { Completion } from '@codemirror/autocomplete';
   import MarkdownView from '$lib/shared/MarkdownView.svelte';
   import { COMPONENTS_L3, type ComponentL3 } from '$lib/components/components-l3';
   import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/components/assemblies-l4';
@@ -229,6 +231,26 @@
     saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
     /** Last save error message (when saveStatus === 'error'). */
     saveError?: string;
+    /** AI Refine — pending state from the AI Inspector tab. While the
+     *  user composes a prompt + waits for a Claude response + decides to
+     *  Accept/Reject, this lives per-tab so switching primitives doesn't
+     *  lose the in-flight conversation. `pending` is the proposed source
+     *  that hasn't been merged into sourceDraft yet (Accept moves it).
+     *  `instructionsDraft` is the editable mirror of the primitive's
+     *  <id>.md — the persistent "spec" that gets sent alongside every
+     *  prompt. null = unchanged from disk; string = dirty edits. */
+    ai?: {
+      prompt: string;
+      status: 'idle' | 'sending' | 'pending' | 'error';
+      pending?: string;
+      error?: string;
+      instructionsDraft?: string | null;
+      instructionsStatus?: 'idle' | 'saving' | 'saved' | 'error';
+      instructionsError?: string;
+      /** Last few prompt/response pairs in this session. UI-only — not
+       *  persisted across reloads. */
+      history: Array<{ prompt: string; ts: number; accepted?: boolean }>;
+    };
     /** Inline "add parameter" form state. Per-tab so opening the form on
      *  one tab doesn't bleed into another, and switching tabs preserves
      *  the half-filled draft. */
@@ -244,6 +266,31 @@
       label: string;
       error: string;
     };
+    /** Param-description editor — popup state. `drafts` holds the
+     *  edited description text per param key; submit splices each one
+     *  into the meta block's params entry. */
+    descForm?: {
+      open: boolean;
+      drafts: Record<string, string>;
+      error?: string;
+    };
+    /** Per-param edit popup — opens via the ✎ button on a specific
+     *  card. Holds the original key plus in-flight drafts for every
+     *  user-editable field on the param schema. All numeric fields
+     *  are strings here so the inputs can hold transient invalid
+     *  values during editing; submit parses + validates. */
+    paramEdit?: {
+      key: string;
+      name: string;
+      label: string;
+      desc: string;
+      unit: string;
+      defaultStr: string;
+      minStr: string;
+      maxStr: string;
+      stepStr: string;
+      error?: string;
+    } | null;
     /** Underlying primitive definition id (only set when kind === 'primitive'). */
     primId: string;
     /** KB id (only set when kind === 'kb'). */
@@ -566,6 +613,11 @@
   // Inspector defaults to OPEN + DOCKED so editing is in-flow on first
   // landing. Toggling either via the toolbar / dock button still works.
   let showInspector = $state(true);
+  /** Tab-level info popover — opens off the `i` icon next to the
+   *  stage title, shows the primitive's description (and a pointer to
+   *  the MD tab if a longer notes doc exists). Single shared bit since
+   *  only one tab is active at a time. */
+  let stageInfoOpen = $state(false);
   // Dock the Inspector as a vertical column on the right of the tab body.
   // When false, it's a draggable floating popup.
   let inspectorDocked = $state(true);
@@ -591,12 +643,12 @@
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
-  type InspectorTab = 'params' | 'svelte' | 'parts' | 'script' | 'md';
+  type InspectorTab = 'params' | 'svelte' | 'parts' | 'ai' | 'script' | 'md';
   // Default to Parts — it's the leftmost tab for runes primitives and the
   // module-library affordance is the most useful entry point. The snap-tab
   // effect below redirects to 'params' when the active tab is a legacy
   // primitive (no Parts tab there).
-  let inspectorTab = $state<InspectorTab>('parts');
+  let inspectorTab = $state<InspectorTab>('ai');
   /** Selected sub-tab inside the Params section. Tracks the `group` field
    *  of the displayed params. null = "show all". Resets per-tab via the
    *  $effect below when activeTab changes. */
@@ -644,28 +696,24 @@
     }
     newPrimForm.saving = true;
     newPrimForm.error = '';
-    const stub = `import { tube } from '../manifold-helpers';
+    // Blank-slate stub. The AI tab is the primary authoring surface for
+    // new primitives — describe what you want there, accept the proposal,
+    // and the params + geom land here. The placeholder geom renders a tiny
+    // marker shape so the 3D scene doesn't show an empty / error state on
+    // first open.
+    const stub = `import { cyl } from '../manifold-helpers';
 
 export const meta = {
   id: '${id}',
   name: '${name.replace(/'/g, "\\'")}',
   description: '',
   tags: [],
-  params: {
-    od:     { label: 'OD',     min: 0.5,  max: 6,  step: 0.1,  unit: 'in', default: 2.0 },
-    wall:   { label: 'Wall',   min: 0.05, max: 1,  step: 0.05, unit: 'in', default: 0.2 },
-    length: { label: 'Length', min: 0.5,  max: 15, step: 0.1,  unit: 'in', default: 4.0 },
-  },
-  validate: (p: Record<string, number>): string[] => {
-    const errs: string[] = [];
-    if (p.wall * 2 >= p.od) errs.push('wall too thick');
-    return errs;
-  },
+  params: {},
 } as const;
 
-export const geom = (p: Record<string, number>) => {
-  const id = p.od - 2 * p.wall;
-  return tube(p.od / 2, id / 2, p.length);
+export const geom = (_p: Record<string, number>) => {
+  // Empty primitive — open the AI tab and describe what this should be.
+  return cyl(0.1, 0.05, 0.05);
 };
 `;
     try {
@@ -719,6 +767,38 @@ export const geom = (p: Record<string, number>) => {
     return String(r);
   }
 
+  /** Build the hover tooltip text for a param's key chip. Multi-line
+   *  (the CSS uses `white-space: pre-line`). Skips repeating the
+   *  variable name (already visible as the chip itself) — surfaces the
+   *  human label, optional description, numeric range / step, default,
+   *  and whether this is an extra param the schema doesn't declare. */
+  function buildParamTip(_key: string, def: any, isExtra: boolean): string {
+    const lines: string[] = [];
+    const labelLine = def.unit ? `${def.label} (${def.unit})` : def.label;
+    lines.push(labelLine);
+    if (def.description) lines.push(def.description);
+    if (typeof def.min === 'number' && typeof def.max === 'number') {
+      const stepBit = typeof def.step === 'number' && def.step !== 1 ? `, step ${def.step}` : '';
+      lines.push(`Range: ${def.min} – ${def.max}${stepBit}`);
+    }
+    if (typeof def.default === 'number') lines.push(`Default: ${def.default}`);
+    if (def.type && def.type !== 'numeric') lines.push(`Type: ${def.type}`);
+    if (isExtra) lines.push('Extra param — not declared in the source schema (the * suffix marks this).');
+    return lines.join('\n');
+  }
+
+  /** Same idea for derived values. No min/max/step — they're computed,
+   *  not sliders. Surfaces the label, optional description, unit, and a
+   *  "computed" marker so the user understands it's read-only. */
+  function buildDerivedTip(_key: string, schema: any): string {
+    const lines: string[] = [];
+    const labelLine = schema.unit ? `${schema.label} (${schema.unit})` : schema.label;
+    lines.push(labelLine);
+    if (schema.description) lines.push(schema.description);
+    lines.push('Computed from other params · read-only');
+    return lines.join('\n');
+  }
+
   // ── Parts library — what the geom function can import + compose ─────────
   // The Inspector's Svelte tab renders this as a left rail. Each entry is a
   // module that exports a Manifold-returning function:
@@ -734,6 +814,50 @@ export const geom = (p: Record<string, number>) => {
   // JSDoc tag) automatically surfaces it here — no UI edits needed.
   const HELPERS = discoverHelpers();
 
+  /** Static suggestions surfaced in the SVELTE-tab editor's autocomplete.
+   *  Combined per-render with the active primitive's params + derived
+   *  keys (see buildEditorCompletions below). Helpers are sourced from
+   *  discoverHelpers() so the catalog stays in sync with the @part tags
+   *  in manifold-helpers.ts. Manifold methods are hand-listed — these
+   *  are runtime chains, not exported functions, so they don't show up
+   *  in any source file we could parse. */
+  const MANIFOLD_METHODS: Completion[] = [
+    { label: 'translate', type: 'method', detail: '([x,y,z])', info: 'Chainable translate — equivalent to mv(m, vec).' },
+    { label: 'rotate',    type: 'method', detail: '([rx,ry,rz])', info: 'Chainable rotate in degrees.' },
+    { label: 'add',       type: 'method', detail: '(other)',  info: 'Union (CSG) — merge two Manifolds.' },
+    { label: 'subtract',  type: 'method', detail: '(other)',  info: 'Difference — carve `other` out of this.' },
+    { label: 'intersect', type: 'method', detail: '(other)',  info: 'Intersection — keep only the overlap.' },
+    { label: 'scale',     type: 'method', detail: '([sx,sy,sz])' },
+    { label: 'mirror',    type: 'method', detail: '([x,y,z])' },
+    { label: 'warp',      type: 'method', detail: '(fn)' },
+  ];
+
+  const DSL_FUNCS: Completion[] = [
+    { label: 'defineGeom', type: 'function', detail: '(meta, build)', info: 'Sugar wrapper — bind meta and destructure params in build.' },
+  ];
+
+  function buildEditorCompletions(m: PrimitiveMeta): Completion[] {
+    const helpers: Completion[] = HELPERS.map((h) => ({
+      label: h.name,
+      type: 'function',
+      detail: `(${h.sig.slice(h.name.length + 1, -1)})`,
+      info: h.desc,
+    }));
+    const params: Completion[] = Object.entries(m.params).map(([k, schema]) => ({
+      label: k,
+      type: 'variable',
+      detail: `param · ${schema.unit ?? ''}`.trim(),
+      info: schema.label,
+    }));
+    const derived: Completion[] = Object.entries(m.derived ?? {}).map(([k, schema]) => ({
+      label: k,
+      type: 'variable',
+      detail: `derived · ${schema.unit ?? ''}`.trim(),
+      info: schema.label,
+    }));
+    return [...helpers, ...DSL_FUNCS, ...MANIFOLD_METHODS, ...params, ...derived];
+  }
+
   /** Insert a line into the geom function body, right before the closing
    *  `};`. Brace-walks the body so nested `{}` (object literals, arrow
    *  functions in params, etc.) don't fool us. Falls back to appending at
@@ -741,10 +865,38 @@ export const geom = (p: Record<string, number>) => {
    *  inserted line carries a `// + part:` marker so the user can grep for
    *  recently-added scaffolding and wire it into their return. */
   function insertIntoGeomBody(src: string, line: string): string {
-    const re = /export\s+const\s+geom\s*=\s*\([^)]*\)\s*=>\s*\{/;
-    const m = re.exec(src);
-    if (!m) return src.replace(/\s*$/, '') + `\n${line}\n`;
-    const open = m.index + m[0].length;
+    // Match BOTH shapes:
+    //   (1) legacy: `export const geom = (p: Record<string, number>) => {`
+    //   (2) DSL:    `export const geom = defineGeom(meta, (args) => {`
+    // For shape (2) we have to balanced-paren past `defineGeom(meta, (...)`
+    // so the arrow's `{` is the one we open the brace-walk against.
+    const dslRe = /export\s+const\s+geom\s*=\s*defineGeom\s*\(\s*meta\s*,\s*\(/;
+    const dm = dslRe.exec(src);
+    let open: number;
+    if (dm) {
+      // Skip the destructure parens.
+      let i = dm.index + dm[0].length;
+      let depth = 1;
+      while (i < src.length && depth > 0) {
+        const c = src[i];
+        if (c === '(') depth++;
+        else if (c === ')') { depth--; if (depth === 0) break; }
+        i++;
+      }
+      if (depth !== 0) return src.replace(/\s*$/, '') + `\n${line}\n`;
+      i++; // past `)`
+      while (i < src.length && /\s/.test(src[i])) i++;
+      if (src.slice(i, i + 2) !== '=>') return src.replace(/\s*$/, '') + `\n${line}\n`;
+      i += 2;
+      while (i < src.length && /\s/.test(src[i])) i++;
+      if (src[i] !== '{') return src.replace(/\s*$/, '') + `\n${line}\n`;
+      open = i + 1;
+    } else {
+      const re = /export\s+const\s+geom\s*=\s*\([^)]*\)\s*=>\s*\{/;
+      const m = re.exec(src);
+      if (!m) return src.replace(/\s*$/, '') + `\n${line}\n`;
+      open = m.index + m[0].length;
+    }
     let i = open;
     let depth = 1;
     let inS: '"' | "'" | '`' | null = null;
@@ -769,22 +921,21 @@ export const geom = (p: Record<string, number>) => {
   }
 
   /** Pick a starter call expression for a helper, smart-defaulting to the
-   *  active tab's params when the names line up. If the tab has `od`,
-   *  `wall`, `length` etc., we wire `p.od`, `(p.od - 2 * p.wall) / 2`,
-   *  `p.length` so the inserted line renders something meaningful right
-   *  away. Falls back to numeric literals when params don't match — the
-   *  user adjusts before composing. Signatures pinned to the actual
-   *  exports in manifold-helpers.ts (mv/rot take a vec3 array). */
+   *  active tab's params when the names line up. Emits BARE param names
+   *  (no `p.` prefix) because every runes file uses `defineGeom`'s
+   *  destructured args. Falls back to numeric literals when the named
+   *  params aren't present — the user adjusts before composing.
+   *  Signatures pinned to the actual exports in manifold-helpers.ts. */
   function defaultHelperCall(name: string, paramKeys: Set<string>): string {
     const has = (k: string) => paramKeys.has(k);
     switch (name) {
       case 'cyl':
         return has('length') && has('od')
-          ? `cyl(p.length, p.od / 2, p.od / 2)`
+          ? `cyl(length, od / 2, od / 2)`
           : `cyl(1, 0.5, 0.5)`;
       case 'tube':
         return has('od') && has('wall') && has('length')
-          ? `tube(p.od / 2, (p.od - 2 * p.wall) / 2, p.length)`
+          ? `tube(od / 2, (od - 2 * wall) / 2, length)`
           : `tube(0.75, 0.5, 1)`;
       case 'mv':  return `mv(part, [0, 0, 0])`;
       case 'rot': return `rot(part, [0, 0, 0])`;
@@ -928,6 +1079,180 @@ export const geom = (p: Record<string, number>) => {
     return out;
   }
 
+  /** Split a runes source file into a header (imports + meta block,
+   *  terminated by `} as const;`) and a body (everything from the next
+   *  `export const geom` onward). The SVELTE-tab UI renders each half
+   *  in its own CodeEditor so the meta block can collapse out of the
+   *  way while the user focuses on construction code.
+   *
+   *  Brace-walks the meta object so nested literals (params, derived,
+   *  validate) don't trip the split. Returns `{ header: src, body: '' }`
+   *  on parse failure — the caller can detect this and fall back to a
+   *  single editor without the user losing access to the file.
+   *
+   *  Stitching invariant: `header + body === src` (modulo the trailing
+   *  newline that separates them, which we keep on the header side). */
+  function splitRunesSource(src: string): { header: string; body: string; ok: boolean } {
+    const metaRe = /export\s+const\s+meta\s*=\s*\{/;
+    const m = metaRe.exec(src);
+    if (!m) return { header: src, body: '', ok: false };
+    // Brace-walk through the meta object to find its closing `}`.
+    let i = m.index + m[0].length;
+    let depth = 1;
+    let inS: '"' | "'" | '`' | null = null;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (inS) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inS) inS = null;
+      } else {
+        if (c === '"' || c === "'" || c === '`') inS = c as any;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+      }
+      i++;
+    }
+    if (depth !== 0) return { header: src, body: '', ok: false };
+    // Now consume ` as const;` (whitespace-tolerant) and the newline that
+    // follows. If `as const` isn't there we still split — it's only a
+    // convention, not a contract.
+    let j = i + 1;
+    const tail = src.slice(j);
+    const asConstMatch = tail.match(/^\s*as\s+const\s*;/);
+    if (asConstMatch) j += asConstMatch[0].length;
+    // Eat ONE trailing newline so the body starts cleanly.
+    if (src[j] === '\r') j++;
+    if (src[j] === '\n') j++;
+    return { header: src.slice(0, j), body: src.slice(j), ok: true };
+  }
+
+  /** Parse the `export const geom = defineGeom(meta, (args) => { body });`
+   *  block produced by `splitRunesSource` (i.e. the file's tail after
+   *  the meta export). Returns the destructure args (with outer parens)
+   *  and the construction body (the text BETWEEN the curly braces of
+   *  the arrow function).
+   *
+   *  Round-trip stable: stitching `defineGeom(meta, ${args} => {${body}});`
+   *  re-parses to the same args + body. The user edits only `body`
+   *  in the main editor; `args` displays read-only above.
+   *
+   *  Returns `ok: false` for files that don't match the defineGeom
+   *  shape (e.g. legacy `(p: Record<string, number>) => { … }` files).
+   *  The caller falls back to a single full-source editor in that
+   *  case so the user is never locked out. */
+  function splitGeomBody(rest: string): {
+    ok: boolean;
+    /** Everything in `rest` BEFORE the body — up to and INCLUDING the
+     *  opening `{` of the arrow function. Used as the trailing piece
+     *  of the collapsible header section. */
+    scaffold: string;
+    /** Read-only destructure args display, e.g. `({ od, wall, length })`. */
+    args: string;
+    /** Construction code BETWEEN the `{` and `}` of the geom function.
+     *  This is what the main body editor binds to. */
+    body: string;
+    /** Everything in `rest` AFTER the body — typically `});` + trailing
+     *  newline. Kept verbatim so save round-trips byte-stably. */
+    tail: string;
+  } {
+    const headRe = /defineGeom\s*\(\s*meta\s*,\s*/;
+    const m = headRe.exec(rest);
+    const fail = { ok: false as const, scaffold: rest, args: '', body: '', tail: '' };
+    if (!m) return fail;
+    let i = m.index + m[0].length;
+    if (rest[i] !== '(') return fail;
+    let depth = 1;
+    const argStart = i;
+    i++;
+    while (i < rest.length && depth > 0) {
+      const c = rest[i];
+      if (c === '(') depth++;
+      else if (c === ')') { depth--; if (depth === 0) break; }
+      i++;
+    }
+    if (depth !== 0) return fail;
+    const argsRaw = rest.slice(argStart, i + 1);
+    i++; // past `)`
+    while (i < rest.length && /\s/.test(rest[i])) i++;
+    if (rest.slice(i, i + 2) !== '=>') return fail;
+    i += 2;
+    while (i < rest.length && /\s/.test(rest[i])) i++;
+    if (rest[i] !== '{') return fail;
+    const bodyOpen = i;
+    depth = 1;
+    i++;
+    while (i < rest.length && depth > 0) {
+      const c = rest[i];
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) break; }
+      i++;
+    }
+    if (depth !== 0) return fail;
+    return {
+      ok: true,
+      scaffold: rest.slice(0, bodyOpen + 1),
+      args: argsRaw,
+      body: rest.slice(bodyOpen + 1, i),
+      tail: rest.slice(i),
+    };
+  }
+
+  /** Parse a runes source file into its three editable regions plus the
+   *  read-only args. Returns `ok: false` if any layer doesn't parse —
+   *  the SVELTE tab falls back to a single-editor view in that case. */
+  function splitRune(src: string): {
+    ok: boolean;
+    /** imports + `export const meta = {...} as const;` + the `export
+     *  const geom = defineGeom(meta, (args) => {` scaffold. Bound to
+     *  the collapsible header editor. */
+    header: string;
+    /** Read-only args text — e.g. `({ od, wall, length })`. */
+    args: string;
+    /** Construction body. Bound to the main body editor. */
+    body: string;
+    /** Closing `});` and trailing newline. Hidden, preserved verbatim
+     *  on save. */
+    tail: string;
+  } {
+    const outer = splitRunesSource(src);
+    if (!outer.ok) return { ok: false, header: src, args: '', body: '', tail: '' };
+    const inner = splitGeomBody(outer.body);
+    if (!inner.ok) return { ok: false, header: src, args: '', body: '', tail: '' };
+    return {
+      ok: true,
+      header: outer.header + inner.scaffold,
+      args: inner.args,
+      body: inner.body,
+      tail: inner.tail,
+    };
+  }
+
+  /** Rewrite `sourceDraft` after one of the section editors fires
+   *  onChange. The other two pieces (whichever the caller didn't edit)
+   *  are re-read from the current source so concurrent edits to the
+   *  header and body interleave correctly. */
+  function applyHeaderEdit(tab: Tab, nextHeader: string) {
+    const cur = tab.sourceDraft ?? tab.runesEntry?.source ?? '';
+    const split = splitRune(cur);
+    if (!split.ok) { tab.sourceDraft = nextHeader; return; }
+    tab.sourceDraft = nextHeader + split.body + split.tail;
+  }
+  function applyBodyEdit(tab: Tab, nextBody: string) {
+    const cur = tab.sourceDraft ?? tab.runesEntry?.source ?? '';
+    const split = splitRune(cur);
+    if (!split.ok) { tab.sourceDraft = nextBody; return; }
+    tab.sourceDraft = split.header + nextBody + split.tail;
+  }
+
+  /** Reassemble a runes file from its three logical parts. The header
+   *  is taken verbatim (the user owns formatting choices there); the
+   *  geom expression is emitted in a canonical shape so format-on-save
+   *  has a stable starting point. */
+  function stitchRunesSource(header: string, args: string, body: string): string {
+    const h = header.endsWith('\n') ? header : header + '\n';
+    return `${h}\nexport const geom = defineGeom(meta, ${args} => {${body}});\n`;
+  }
+
   /** Drop the import line for a runes primitive's geom. */
   function removeRunesImport(src: string, id: string): string {
     const importRe = new RegExp(`import\\s*\\{[^}]*\\bgeom as \\w+\\b[^}]*\\}\\s*from\\s*['"]\\.\\/${id}['"];?\\n?`);
@@ -1034,7 +1359,7 @@ export const geom = (p: Record<string, number>) => {
   $effect(() => {
     if (!activeTab) return;
     if (activeTab.kind === 'xml-primitive' && inspectorTab === 'script') inspectorTab = 'svelte';
-    if (activeTab.kind !== 'xml-primitive' && (inspectorTab === 'svelte' || inspectorTab === 'md' || inspectorTab === 'parts')) inspectorTab = 'params';
+    if (activeTab.kind !== 'xml-primitive' && (inspectorTab === 'svelte' || inspectorTab === 'md' || inspectorTab === 'parts' || inspectorTab === 'ai')) inspectorTab = 'params';
   });
   let showCutaway = $state(true);
   let showEdges = $state(true);
@@ -1082,16 +1407,51 @@ export const geom = (p: Record<string, number>) => {
     import('$lib/shared/SceneControls.svelte').then((m) => { SceneControls = m.default; });
     initManifold().then(() => { ready = true; });
     // Async-load the registry from /api/runes/list before deciding what
-    // to auto-open. box_conn is the active work-in-progress primitive —
-    // landing there saves a click every reload. Falls back to Tube if
-    // box_conn isn't installed.
+    // to auto-open. Priority:
+    //   1. Last primitive the user was editing this session (sessionStorage
+    //      — survives Vite HMR reloads triggered by /api/runes/save).
+    //   2. conn_box — active work-in-progress.
+    //   3. Tube — baseline fallback.
     await refreshRunesList();
     if (openTabs.length === 0) {
+      let lastId: string | null = null;
+      try { lastId = sessionStorage.getItem('runes:lastActiveId'); } catch { /* private mode etc. */ }
       const entry =
+        (lastId ? runesList.find((e) => e.meta.id === lastId) : undefined) ??
         runesList.find((e) => e.meta.id === 'conn_box') ??
         runesList.find((e) => e.meta.id === 'hollow_cylinder');
       if (entry) openRunes(entry);
     }
+    // Restore the last-used inspector sub-tab AFTER the primitive tab
+    // has been opened, so the openRunes default ('ai') doesn't win the
+    // race with our restore.
+    try {
+      const lastInsp = sessionStorage.getItem('runes:lastInspectorTab');
+      if (lastInsp && ['ai', 'parts', 'params', 'svelte', 'md', 'script'].includes(lastInsp)) {
+        inspectorTab = lastInsp as InspectorTab;
+      }
+    } catch {}
+  });
+
+  // Persist the active runes id so a Vite HMR reload (triggered by
+  // /api/runes/save) returns the user to the primitive they were editing,
+  // not the default landing. Cleared automatically if the user closes the
+  // tab (closeTab below) or navigates away.
+  $effect(() => {
+    if (!activeTab) return;
+    if (activeTab.kind === 'xml-primitive' && activeTab.runesEntry) {
+      try { sessionStorage.setItem('runes:lastActiveId', activeTab.runesEntry.meta.id); } catch {}
+    }
+  });
+  // Same idea for the inspector sub-tab — restoring just the active
+  // primitive but not which tab (AI / Parts / Params / Builder / MD)
+  // the user was on snaps them back to the default AI tab after every
+  // save. Persist on change; the onMount restore runs after the
+  // primitive tab opens so a stale value won't apply if the primitive
+  // doesn't support that inspector tab.
+  $effect(() => {
+    if (!inspectorTab) return;
+    try { sessionStorage.setItem('runes:lastInspectorTab', inspectorTab); } catch {}
   });
 
   /** Compose a minimal AuthoredComponent for the active tab so buildAuthored
@@ -1138,7 +1498,26 @@ export const geom = (p: Record<string, number>) => {
 
   async function saveRunesSource(tab: Tab): Promise<boolean> {
     if (tab.kind !== 'xml-primitive' || !tab.runesEntry) return false;
-    const next = tab.sourceDraft ?? tab.runesEntry.source;
+    // Splice every slider's current value into the meta as the new
+    // `default:` BEFORE formatting. paramsDirty() upstream gates the
+    // save bar, but the splice runs unconditionally here — slider
+    // values that happen to equal the existing default are no-ops.
+    let raw = tab.sourceDraft ?? tab.runesEntry.source;
+    for (const [k, def] of Object.entries(tab.runesEntry.meta.params)) {
+      const cur = tab.params[k];
+      if (cur === undefined) continue;
+      if (Math.round(cur * 1e6) === Math.round(def.default * 1e6)) continue;
+      const next = setParamDefault(raw, k, cur);
+      if (next != null) raw = next;
+    }
+    // Format-on-save. Prettier is lazy-loaded the first time this fires;
+    // failures fall back to the raw source (no save is blocked by a
+    // formatter error). When the result differs, sync sourceDraft so the
+    // editor re-renders with the formatted version BEFORE we POST — that
+    // way an HMR-triggered file reload doesn't show a stale unformatted
+    // buffer.
+    const next = await formatTypescript(raw);
+    if (next !== raw) tab.sourceDraft = next;
     tab.saveStatus = 'saving';
     tab.saveError = undefined;
     try {
@@ -1172,6 +1551,103 @@ export const geom = (p: Record<string, number>) => {
     tab.sourceDraft = null;
     tab.saveStatus = 'idle';
     tab.saveError = undefined;
+  }
+
+  // ── AI Refine — Claude-driven source edits ───────────────────────────────
+  // The AI Inspector tab is the entry point. The user types a goal; we send
+  // current source + prompt to /api/runes/refine which calls Claude with a
+  // system prompt encoding the runes file format + ManifoldCAD ops + Z-down.
+  // The response lands in tab.ai.pending; the user previews + Accepts (moves
+  // into sourceDraft, the Svelte tab takes over for final save) or Rejects.
+
+  /** Ensure the tab has an AI state initialized. Idempotent. */
+  function ensureAi(tab: Tab) {
+    if (!tab.ai) tab.ai = { prompt: '', status: 'idle', history: [] };
+    return tab.ai;
+  }
+
+  async function submitAiRefine(tab: Tab) {
+    if (tab.kind !== 'xml-primitive' || !tab.runesEntry) return;
+    const ai = ensureAi(tab);
+    const prompt = ai.prompt.trim();
+    if (!prompt) return;
+    ai.status = 'sending';
+    ai.error = undefined;
+    ai.pending = undefined;
+    const id = tab.runesEntry.meta.id;
+    const source = tab.sourceDraft ?? tab.runesEntry.source;
+    // Use the live edits of the instructions doc if dirty; otherwise the
+    // version that was loaded from disk.
+    const instructions = ai.instructionsDraft ?? tab.runesEntry.instructions ?? '';
+    try {
+      const r = await fetch('/api/runes/refine', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id, source, prompt, instructions }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok || !body?.ok) {
+        ai.status = 'error';
+        ai.error = body?.error ?? `${r.status} ${r.statusText}`;
+        return;
+      }
+      ai.pending = String(body.source);
+      ai.status = 'pending';
+      ai.history = [...ai.history, { prompt, ts: Date.now() }];
+    } catch (e: any) {
+      ai.status = 'error';
+      ai.error = e?.message ?? String(e);
+    }
+  }
+
+  /** Save the in-memory instructionsDraft back to disk as <id>.md. The
+   *  user's edits don't apply to the next refine until this is called —
+   *  we wire it to a Save button + an autosave-on-blur for ergonomics. */
+  async function saveInstructions(tab: Tab) {
+    if (tab.kind !== 'xml-primitive' || !tab.runesEntry) return;
+    const ai = ensureAi(tab);
+    const instructions = ai.instructionsDraft ?? '';
+    ai.instructionsStatus = 'saving';
+    ai.instructionsError = undefined;
+    try {
+      const r = await fetch('/api/runes/instructions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: tab.runesEntry.meta.id, instructions }),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        ai.instructionsStatus = 'error';
+        ai.instructionsError = `${r.status} — ${txt.slice(0, 160)}`;
+        return;
+      }
+      // Reflect the saved value back into runesEntry so the dirty flag clears.
+      if (tab.runesEntry) (tab.runesEntry as any).instructions = instructions;
+      ai.instructionsDraft = null;
+      ai.instructionsStatus = 'saved';
+      setTimeout(() => { if (ai.instructionsStatus === 'saved') ai.instructionsStatus = 'idle'; }, 1800);
+    } catch (e: any) {
+      ai.instructionsStatus = 'error';
+      ai.instructionsError = e?.message ?? String(e);
+    }
+  }
+
+  function acceptAiProposal(tab: Tab) {
+    if (!tab.ai?.pending) return;
+    tab.sourceDraft = tab.ai.pending;
+    if (tab.ai.history.length > 0) tab.ai.history[tab.ai.history.length - 1].accepted = true;
+    tab.ai.pending = undefined;
+    tab.ai.status = 'idle';
+    tab.ai.prompt = '';
+    // Switch to Svelte tab so the user can review + Save the result.
+    inspectorTab = 'svelte';
+  }
+
+  function rejectAiProposal(tab: Tab) {
+    if (!tab.ai) return;
+    if (tab.ai.history.length > 0) tab.ai.history[tab.ai.history.length - 1].accepted = false;
+    tab.ai.pending = undefined;
+    tab.ai.status = 'idle';
   }
 
   function resetParams(tab: Tab) {
@@ -1324,6 +1800,372 @@ export const geom = (p: Record<string, number>) => {
   }
   function closeParamForm(tab: Tab) {
     if (tab.paramForm) tab.paramForm.open = false;
+  }
+
+  /** Open the per-param description editor popup. Seeds the drafts
+   *  bag with the CURRENT description on each param so existing text
+   *  doesn't get wiped if the user only edits one. */
+  function openDescEdit(tab: Tab) {
+    if (!tab.runesEntry) return;
+    const drafts: Record<string, string> = {};
+    for (const [k, schema] of Object.entries(tab.runesEntry.meta.params)) {
+      drafts[k] = (schema as any).description ?? '';
+    }
+    tab.descForm = { open: true, drafts };
+  }
+  function closeDescEdit(tab: Tab) {
+    if (tab.descForm) tab.descForm.open = false;
+  }
+  async function submitDescEdit(tab: Tab) {
+    if (!tab.descForm || !tab.runesEntry) return;
+    const drafts = tab.descForm.drafts;
+    let src = tab.sourceDraft ?? tab.runesEntry.source;
+    for (const [key, desc] of Object.entries(drafts)) {
+      const next = setParamDescription(src, key, desc);
+      if (next == null) {
+        tab.descForm.error = `Couldn't splice description for "${key}" — meta block shape unexpected.`;
+        return;
+      }
+      src = next;
+    }
+    tab.sourceDraft = src;
+    tab.descForm.open = false;
+    tab.descForm.error = undefined;
+  }
+
+  /** Insert / replace / strip a top-level boolean flag on the meta
+   *  object literal. Used by the `skipCenter` checkbox in the Params
+   *  tab — toggles `skipCenter: true,` into or out of the meta block.
+   *  Inserts as the first field (immediately after the `{`) for
+   *  visibility. Returns null if the meta block can't be parsed. */
+  function setMetaFlag(src: string, flag: string, value: boolean): string | null {
+    const metaRe = /export\s+const\s+meta\s*=\s*\{/;
+    const m = metaRe.exec(src);
+    if (!m) return null;
+    const openIdx = m.index + m[0].length - 1;
+    let i = openIdx + 1;
+    let depth = 1;
+    let inS: '"' | "'" | '`' | null = null;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (inS) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inS) inS = null;
+      } else {
+        if (c === '"' || c === "'" || c === '`') inS = c as any;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+      }
+      i++;
+    }
+    if (depth !== 0) return null;
+    const body = src.slice(openIdx + 1, i);
+    const flagEsc = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Strip any existing top-level entry — line-aware to avoid leaving
+    // empty lines behind.
+    const stripped = body
+      .replace(new RegExp(`[ \\t]*\\n[ \\t]*${flagEsc}\\s*:\\s*(?:true|false)\\s*,?`, 'g'), '')
+      .replace(new RegExp(`\\b${flagEsc}\\s*:\\s*(?:true|false)\\s*,?\\s*`, 'g'), '');
+    if (!value) {
+      return src.slice(0, openIdx + 1) + stripped + src.slice(i);
+    }
+    const indentMatch = stripped.match(/^\s*\n([ \t]+)/);
+    const indent = indentMatch?.[1] ?? '  ';
+    const insertion = `\n${indent}${flag}: true,`;
+    return src.slice(0, openIdx + 1) + insertion + stripped + src.slice(i);
+  }
+
+  function setSkipCenter(tab: Tab, value: boolean) {
+    if (!tab.runesEntry) return;
+    const cur = tab.sourceDraft ?? tab.runesEntry.source;
+    const next = setMetaFlag(cur, 'skipCenter', value);
+    if (next == null) return;
+    tab.sourceDraft = next;
+  }
+
+  function openParamEdit(tab: Tab, key: string) {
+    if (!tab.runesEntry) return;
+    const schema = tab.runesEntry.meta.params[key] as any;
+    tab.paramEdit = {
+      key,
+      name: key,
+      label: schema?.label ?? '',
+      desc: schema?.description ?? '',
+      unit: schema?.unit ?? '',
+      defaultStr: String(schema?.default ?? ''),
+      minStr: String(schema?.min ?? ''),
+      maxStr: String(schema?.max ?? ''),
+      stepStr: String(schema?.step ?? ''),
+    };
+  }
+  function closeParamEdit(tab: Tab) {
+    tab.paramEdit = null;
+  }
+  function submitParamEdit(tab: Tab) {
+    if (!tab.paramEdit || !tab.runesEntry) return;
+    const pe = tab.paramEdit;
+    let src = tab.sourceDraft ?? tab.runesEntry.source;
+
+    // Rename path — confirm before refactoring references in geom body.
+    if (pe.name && pe.name !== pe.key) {
+      if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(pe.name)) {
+        tab.paramEdit = { ...pe, error: `"${pe.name}" is not a valid identifier.` };
+        return;
+      }
+      if (pe.name in tab.runesEntry.meta.params) {
+        tab.paramEdit = { ...pe, error: `"${pe.name}" already exists as a param.` };
+        return;
+      }
+      const ok = confirm(`Rename "${pe.key}" → "${pe.name}" and update all references in the geom body?`);
+      if (!ok) return;
+      const renamed = renameParamKey(src, pe.key, pe.name);
+      if (renamed == null) {
+        tab.paramEdit = { ...pe, error: `Couldn't rename — meta shape unexpected.` };
+        return;
+      }
+      src = renamed;
+      const cur = tab.params[pe.key];
+      const renamedBag: Record<string, number> = {};
+      for (const [k, v] of Object.entries(tab.params)) {
+        renamedBag[k === pe.key ? pe.name : k] = v;
+      }
+      tab.params = renamedBag;
+      if (cur !== undefined) tab.params[pe.name] = cur;
+    }
+    const finalKey = pe.name && pe.name !== pe.key ? pe.name : pe.key;
+
+    // Validate + splice each numeric field. Skip when blank or unchanged.
+    const numericFields: Array<{ field: 'default' | 'min' | 'max' | 'step'; str: string }> = [
+      { field: 'default', str: pe.defaultStr },
+      { field: 'min',     str: pe.minStr },
+      { field: 'max',     str: pe.maxStr },
+      { field: 'step',    str: pe.stepStr },
+    ];
+    for (const { field, str } of numericFields) {
+      if (!str.trim()) continue;
+      const v = Number(str);
+      if (!Number.isFinite(v)) {
+        tab.paramEdit = { ...pe, error: `"${field}" is not a valid number.` };
+        return;
+      }
+      const next = setParamField(src, finalKey, field, Math.round(v * 1e6) / 1e6);
+      if (next == null) {
+        tab.paramEdit = { ...pe, error: `Couldn't set ${field} for "${finalKey}".` };
+        return;
+      }
+      src = next;
+    }
+    // String fields.
+    const stringFields: Array<{ field: 'label' | 'unit' | 'description'; val: string }> = [
+      { field: 'label',       val: pe.label },
+      { field: 'unit',        val: pe.unit },
+      { field: 'description', val: pe.desc },
+    ];
+    for (const { field, val } of stringFields) {
+      const next = setParamField(src, finalKey, field, val);
+      if (next == null) {
+        tab.paramEdit = { ...pe, error: `Couldn't set ${field} for "${finalKey}".` };
+        return;
+      }
+      src = next;
+    }
+
+    // If user changed the default, sync the live slider value so the
+    // preview doesn't snap on next render due to bounds enforcement.
+    const newDefault = Number(pe.defaultStr);
+    if (Number.isFinite(newDefault) && tab.params[finalKey] === undefined) {
+      tab.params[finalKey] = newDefault;
+    }
+    tab.sourceDraft = src;
+    tab.paramEdit = null;
+  }
+
+  /** Rename a param key throughout a runes source file. Two-phase:
+   *  (1) replace the param's key declaration `oldName: {` with
+   *  `newName: {` (specific match so only the declaration changes),
+   *  (2) word-boundary replace `\boldName\b` across the whole source
+   *  to update references in the args destructure + geom body. Known
+   *  limitation: false positives if the old name appears inside a
+   *  string literal or comment elsewhere in the file (rare for param
+   *  names in this codebase). */
+  function renameParamKey(src: string, oldName: string, newName: string): string | null {
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(newName)) return null;
+    const esc = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Phase 1: param key declaration. Match the key followed by `:` then `{`.
+    const keyRe = new RegExp(`\\b${esc}(\\s*:\\s*\\{)`, 'g');
+    let next = src.replace(keyRe, `${newName}$1`);
+    // Phase 2: all standalone identifier uses. The Phase-1 replacement
+    // above already converted the declaration; this pass picks up the
+    // destructure + body references.
+    next = next.replace(new RegExp(`\\b${esc}\\b`, 'g'), newName);
+    return next;
+  }
+
+  /** Generic splicer: insert / replace one field on a specific param
+   *  entry's object literal. Handles string and numeric values. For
+   *  empty-string values on string fields, the field is REMOVED
+   *  rather than written as `''` — keeps the meta tidy. */
+  function setParamField(
+    src: string,
+    key: string,
+    field: string,
+    value: string | number,
+  ): string | null {
+    const paramsRe = /\bparams\s*:\s*\{/;
+    const pm = paramsRe.exec(src);
+    if (!pm) return null;
+    const entryRe = new RegExp(`(^|\\n)([ \\t]*)${key}\\s*:\\s*\\{`, 'm');
+    const em = entryRe.exec(src.slice(pm.index));
+    if (!em) return null;
+    const entryStart = pm.index + em.index + em[1].length;
+    const openBraceIdx = src.indexOf('{', entryStart);
+    if (openBraceIdx < 0) return null;
+    let i = openBraceIdx + 1;
+    let depth = 1;
+    let inS: '"' | "'" | '`' | null = null;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (inS) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inS) inS = null;
+      } else {
+        if (c === '"' || c === "'" || c === '`') inS = c as any;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+      }
+      i++;
+    }
+    if (depth !== 0) return null;
+    const body = src.slice(openBraceIdx + 1, i);
+    const isStr = typeof value === 'string';
+    const fieldEsc = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const strRe = new RegExp(`\\b${fieldEsc}\\s*:\\s*(['"])(?:\\\\.|(?!\\1).)*\\1\\s*,?\\s*`, 'g');
+    const numRe = new RegExp(`\\b${fieldEsc}\\s*:\\s*-?\\d+(?:\\.\\d+)?\\s*,?\\s*`, 'g');
+    const wipe = (b: string) => b.replace(strRe, '').replace(numRe, '');
+    if (isStr && !value) {
+      // Empty string → strip the field entirely.
+      const newBody = wipe(body).replace(/\s+,/g, ',').replace(/,\s*,/g, ',');
+      return src.slice(0, openBraceIdx + 1) + newBody + src.slice(i);
+    }
+    const stripped = wipe(body);
+    const literal = isStr
+      ? `${field}: '${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+      : `${field}: ${value}`;
+    // Insert as the first field — keeps ordering stable and predictable.
+    const indentMatch = stripped.match(/^\s*\n([ \t]+)/);
+    const indent = indentMatch?.[1] ?? ' ';
+    const insertion = stripped.includes('\n') ? `\n${indent}${literal},` : ` ${literal},`;
+    return src.slice(0, openBraceIdx + 1) + insertion + stripped + src.slice(i);
+  }
+
+  /** Replace the `default: <number>` field on a specific param entry
+   *  in the meta block. Used by Save to persist the current slider
+   *  value as the new schema default — so reopening the primitive
+   *  starts where the user left it. Returns null if the param entry
+   *  can't be located. */
+  function setParamDefault(src: string, key: string, value: number): string | null {
+    const paramsRe = /\bparams\s*:\s*\{/;
+    const pm = paramsRe.exec(src);
+    if (!pm) return null;
+    const entryRe = new RegExp(`(^|\\n)([ \\t]*)${key}\\s*:\\s*\\{`, 'm');
+    const em = entryRe.exec(src.slice(pm.index));
+    if (!em) return null;
+    const entryStart = pm.index + em.index + em[1].length;
+    const openBraceIdx = src.indexOf('{', entryStart);
+    if (openBraceIdx < 0) return null;
+    let i = openBraceIdx + 1;
+    let depth = 1;
+    let inS: '"' | "'" | '`' | null = null;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (inS) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inS) inS = null;
+      } else {
+        if (c === '"' || c === "'" || c === '`') inS = c as any;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+      }
+      i++;
+    }
+    if (depth !== 0) return null;
+    const body = src.slice(openBraceIdx + 1, i);
+    // Round to a sane number of decimals so 2.875 doesn't end up as
+    // 2.8750000004 after a couple of slider drags.
+    const v = Math.round(value * 1e6) / 1e6;
+    // Replace an existing `default: <num>` OR append.
+    const existing = /\bdefault\s*:\s*-?\d+(?:\.\d+)?/;
+    let newBody: string;
+    if (existing.test(body)) {
+      newBody = body.replace(existing, `default: ${v}`);
+    } else {
+      // Append before the closing brace, with a leading `, ` if there
+      // are other fields.
+      const trimmed = body.replace(/\s+$/, '');
+      newBody = trimmed.length > 0 ? `${trimmed}, default: ${v} ` : ` default: ${v} `;
+    }
+    return src.slice(0, openBraceIdx + 1) + newBody + src.slice(i);
+  }
+
+  /** Detect whether any slider value in this tab differs from its
+   *  schema default. Used to surface the global save bar even when
+   *  `sourceDraft` hasn't been touched — moving a slider should be a
+   *  savable action too. Only checks the keys that exist in the
+   *  schema (extra/draft params are handled elsewhere). */
+  function paramsDirty(tab: Tab): boolean {
+    if (!tab.runesEntry) return false;
+    const schema = tab.runesEntry.meta.params;
+    for (const [k, def] of Object.entries(schema)) {
+      const cur = tab.params[k];
+      if (cur === undefined) continue;
+      // Rounded compare — slider step can introduce float noise that
+      // would otherwise show "dirty" forever.
+      if (Math.round(cur * 1e6) !== Math.round(def.default * 1e6)) return true;
+    }
+    return false;
+  }
+
+  /** Insert or replace the `description: '...'` field on a specific
+   *  param entry inside the meta block. Returns the modified source,
+   *  or null if the param entry can't be located. Brace-walks the
+   *  per-param object so nested literals don't trip it. */
+  function setParamDescription(src: string, key: string, desc: string): string | null {
+    const paramsRe = /\bparams\s*:\s*\{/;
+    const pm = paramsRe.exec(src);
+    if (!pm) return null;
+    const entryRe = new RegExp(`(^|\\n)([ \\t]*)${key}\\s*:\\s*\\{`, 'm');
+    const em = entryRe.exec(src.slice(pm.index));
+    if (!em) return null;
+    const entryStart = pm.index + em.index + em[1].length;
+    const openBraceIdx = src.indexOf('{', entryStart);
+    if (openBraceIdx < 0) return null;
+    let i = openBraceIdx + 1;
+    let depth = 1;
+    let inS: '"' | "'" | '`' | null = null;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (inS) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inS) inS = null;
+      } else {
+        if (c === '"' || c === "'" || c === '`') inS = c as any;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+      }
+      i++;
+    }
+    if (depth !== 0) return null;
+    const body = src.slice(openBraceIdx + 1, i);
+    // Strip any existing description field (single OR double-quoted).
+    const stripped = body.replace(/\bdescription\s*:\s*(['"])(?:\\.|(?!\1).)*\1\s*,?\s*/g, '').replace(/^\s+/, ' ').replace(/\s+$/, ' ');
+    let newBody: string;
+    if (desc.trim()) {
+      const safe = desc.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      newBody = ` description: '${safe}',${stripped}`;
+    } else {
+      newBody = stripped;
+    }
+    return src.slice(0, openBraceIdx + 1) + newBody + src.slice(i);
   }
   /** Splice a new param entry into the `params: { ... }` block of a runes
    *  file's `meta` object literal. Returns the modified source or null if
@@ -1618,7 +2460,21 @@ export const geom = (p: Record<string, number>) => {
                 title={`Delete ${entry.meta.name}`}
                 aria-label={`Delete ${entry.meta.name}`}
                 onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
-              ></button>
+              >
+                <!-- Outlined trash icon. Stroked rectangle body with a
+                     lid + handle bar and two vertical contents lines.
+                     Inherits color from the button via currentColor. -->
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.25"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5"
+                  />
+                </svg>
+              </button>
             </div>
           {/each}
         </div>
@@ -1878,6 +2734,32 @@ export const geom = (p: Record<string, number>) => {
             <div class="stage-title">
               <h2 class="stage-name">{activeDef.name}</h2>
               <span class="stage-id">{activeDef.id}</span>
+              {#if activeDef.description || activeTab.runesEntry?.instructions}
+                <button
+                  class="stage-info-btn"
+                  class:active={stageInfoOpen}
+                  type="button"
+                  aria-label="About this primitive"
+                  title="About this primitive"
+                  onclick={() => (stageInfoOpen = !stageInfoOpen)}
+                >i</button>
+                {#if stageInfoOpen}
+                  <div class="stage-info-pop" role="dialog">
+                    <button
+                      class="stage-info-close"
+                      type="button"
+                      aria-label="Close"
+                      onclick={() => (stageInfoOpen = false)}
+                    >×</button>
+                    {#if activeDef.description}
+                      <p class="stage-info-desc">{activeDef.description}</p>
+                    {/if}
+                    {#if activeTab.runesEntry?.instructions}
+                      <p class="stage-info-more">Longer notes live in the <strong>📖 MD</strong> tab.</p>
+                    {/if}
+                  </div>
+                {/if}
+              {/if}
             </div>
             <div class="stage-badges">
               <span class="badge cat">{activeDef.category}</span>
@@ -1887,10 +2769,6 @@ export const geom = (p: Record<string, number>) => {
               {#if activeTab.kind === 'xml-primitive'}<span class="badge pipe">runes-class</span>{/if}
             </div>
           </header>
-
-          {#if activeDef.description}
-            <p class="stage-desc">{activeDef.description}</p>
-          {/if}
 
           <div class="stage-3d">
             {#if SceneComponent && geo}
@@ -1980,7 +2858,7 @@ export const geom = (p: Record<string, number>) => {
         docked={inspectorDocked}
         onToggleDock={() => (inspectorDocked = !inspectorDocked)}
         x={50} y={8}
-        width="min(680px, calc(100% - 80px))"
+        width="min(816px, calc(100% - 80px))"
         maxHeight="calc(100% - 16px)"
       >
         <!-- Tags pinned above the tab strip — always visible regardless of
@@ -1994,9 +2872,13 @@ export const geom = (p: Record<string, number>) => {
 
         <div class="insp-tabs">
           {#if activeTab.kind === 'xml-primitive'}
-            <!-- Runes primitives: tab order is Parts → Params → Svelte → MD.
-                 Parts is leftmost (and the default selection) so the
-                 module-library is the first thing the user sees on open. -->
+            <!-- Runes primitives: tab order is AI → Parts → Params → Svelte → MD.
+                 AI is leftmost (and the default selection) — the canonical
+                 entry point is "describe what you want", with everything
+                 else being downstream review of what the AI produces. -->
+            <button class="insp-tab insp-tab-ai" class:active={inspectorTab === 'ai'} type="button" onclick={() => (inspectorTab = 'ai')}>
+              <span class="ic">✦</span> AI
+            </button>
             <button class="insp-tab" class:active={inspectorTab === 'parts'} type="button" onclick={() => (inspectorTab = 'parts')}>
               <span class="ic">⊞</span> Parts
             </button>
@@ -2008,7 +2890,7 @@ export const geom = (p: Record<string, number>) => {
           {/if}
           {#if activeTab.kind === 'xml-primitive'}
             <button class="insp-tab" class:active={inspectorTab === 'svelte'} type="button" onclick={() => (inspectorTab = 'svelte')}>
-              <span class="ic">⚛</span> Svelte
+              <span class="ic">🛠</span> Builder
             </button>
             <button class="insp-tab" class:active={inspectorTab === 'md'} type="button" onclick={() => (inspectorTab = 'md')}>
               <span class="ic">📖</span> MD
@@ -2026,15 +2908,48 @@ export const geom = (p: Record<string, number>) => {
           {@const groups = paramGroupsOf(allDefs)}
           {@const showGroupTabs = groups.length > 1}
           {@const activeGroup = showGroupTabs ? (selectedParamGroup && groups.includes(selectedParamGroup) ? selectedParamGroup : groups[0]) : null}
-          <div class="ed-sec">
-            <div class="ed-sec-h">
-              Parameters <span class="muted">{Object.keys(activeTab.params).length}</span>
+          <div class="ed-sec compact">
+            <div class="ed-sec-h thin">
+              {#if activeTab.kind === 'xml-primitive'}
+                <label class="meta-flag" title="When checked, the renderer doesn't auto-center this primitive on Z — your translate(_, _, z) sticks.">
+                  <input
+                    type="checkbox"
+                    checked={activeTab.runesEntry?.meta.skipCenter === true}
+                    onchange={(e) => setSkipCenter(activeTab!, (e.currentTarget as HTMLInputElement).checked)}
+                  />
+                  <span>skip Z-center</span>
+                </label>
+              {/if}
+              <span class="muted">{Object.keys(activeTab.params).length}</span>
               {#if activeTab.kind === 'xml-primitive'}
                 <button class="add-param-plus" type="button" onclick={() => openParamForm(activeTab!)} title="Add a parameter">+</button>
               {:else if activeTab.draft}
                 <button class="row-add" type="button" onclick={() => addParam(activeTab!)} title="Add a draft parameter">+ param</button>
               {/if}
             </div>
+
+            {#if activeTab.descForm?.open}
+              {@const df = activeTab.descForm}
+              <div class="param-form">
+                <div class="pf-h">Edit descriptions <span class="muted">— shows on hover</span></div>
+                {#each Object.keys(df.drafts) as key (key)}
+                  <div class="pf-desc-row">
+                    <span class="pr-keyname">{key}</span>
+                    <input
+                      class="pf-in pf-desc-input"
+                      type="text"
+                      placeholder="What does this parameter control?"
+                      bind:value={df.drafts[key]}
+                    />
+                  </div>
+                {/each}
+                {#if df.error}<p class="pf-err">{df.error}</p>{/if}
+                <div class="pf-actions">
+                  <button class="save-btn" type="button" onclick={() => submitDescEdit(activeTab!)}>Apply</button>
+                  <button class="discard-btn" type="button" onclick={() => closeDescEdit(activeTab!)}>Cancel</button>
+                </div>
+              </div>
+            {/if}
 
             {#if activeTab.paramForm?.open}
               {@const f = activeTab.paramForm}
@@ -2098,14 +3013,106 @@ export const geom = (p: Record<string, number>) => {
               {#each Object.keys(activeTab.params).filter((k) => !showGroupTabs || (allDefs[k]?.group ?? '__default__') === activeGroup) as key (key)}
                 {@const def = paramDef(activeDef, key)}
                 {@const isExtra = !(key in activeDef.params)}
+                {@const tip = buildParamTip(key, def, isExtra)}
                 <div class="pr-card" class:extra={isExtra}>
-                  <span class="pr-lbl" title={def.label}>{def.label}{def.unit ? ` (${def.unit})` : ''}{isExtra ? '*' : ''}</span>
+                  <span class="pr-keyname" data-tip={tip}>{key}{isExtra ? '*' : ''}</span>
                   <input class="pr-range" type="range" min={def.min} max={def.max} step={def.step} bind:value={activeTab.params[key]} />
                   <input class="pr-num" type="number" step={def.step} bind:value={activeTab.params[key]} />
+                  {#if def.unit}<span class="pr-unit">{def.unit}</span>{/if}
+                  {#if activeTab.kind === 'xml-primitive' && key in (activeTab.runesEntry?.meta.params ?? {})}
+                    <button class="row-edit" type="button" onclick={() => openParamEdit(activeTab!, key)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
+                  {/if}
                   {#if activeTab.draft}
                     <button class="row-x" type="button" onclick={() => removeParam(activeTab!, key)} title="Remove parameter" aria-label="Remove parameter">×</button>
                   {/if}
                 </div>
+                {#if activeTab.paramEdit?.key === key}
+                  {@const pe = activeTab.paramEdit}
+                  {@const willRename = pe.name !== pe.key}
+                  <div class="pr-edit-pop">
+                    <div class="pr-edit-h">Edit <code>{key}</code></div>
+                    <div class="pr-edit-grid">
+                      <label class="pr-edit-lbl">Variable
+                        <input
+                          class="pf-in pr-edit-name"
+                          type="text"
+                          spellcheck="false"
+                          value={pe.name}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.name = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                      <label class="pr-edit-lbl">Label
+                        <input
+                          class="pf-in"
+                          type="text"
+                          value={pe.label}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.label = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                      <label class="pr-edit-lbl">Default
+                        <input
+                          class="pf-in"
+                          type="number"
+                          step="any"
+                          value={pe.defaultStr}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.defaultStr = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                      <label class="pr-edit-lbl">Unit
+                        <input
+                          class="pf-in"
+                          type="text"
+                          value={pe.unit}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.unit = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                      <label class="pr-edit-lbl">Min
+                        <input
+                          class="pf-in"
+                          type="number"
+                          step="any"
+                          value={pe.minStr}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.minStr = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                      <label class="pr-edit-lbl">Max
+                        <input
+                          class="pf-in"
+                          type="number"
+                          step="any"
+                          value={pe.maxStr}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.maxStr = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                      <label class="pr-edit-lbl">Step
+                        <input
+                          class="pf-in"
+                          type="number"
+                          step="any"
+                          value={pe.stepStr}
+                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.stepStr = (e.currentTarget as HTMLInputElement).value; }}
+                        />
+                      </label>
+                    </div>
+                    {#if willRename}
+                      <p class="pr-edit-warn">⚠ On Apply you'll be asked to confirm a rename of <code>{pe.key}</code> → <code>{pe.name}</code> across the geom body.</p>
+                    {/if}
+                    <label class="pr-edit-lbl pr-edit-desc-row">Description
+                      <input
+                        class="pf-in"
+                        type="text"
+                        placeholder="What does this parameter control?"
+                        value={pe.desc}
+                        oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.desc = (e.currentTarget as HTMLInputElement).value; }}
+                      />
+                    </label>
+                    {#if pe.error}<p class="pf-err">{pe.error}</p>{/if}
+                    <div class="pf-actions">
+                      <button class="save-btn" type="button" onclick={() => submitParamEdit(activeTab!)}>Apply</button>
+                      <button class="discard-btn" type="button" onclick={() => closeParamEdit(activeTab!)}>Cancel</button>
+                    </div>
+                  </div>
+                {/if}
               {/each}
             </div>
           </div>
@@ -2119,42 +3126,92 @@ export const geom = (p: Record<string, number>) => {
               </div>
               <div class="pr-grid">
                 {#each Object.entries(derivedMeta) as [key, schema] (key)}
-                  <div class="pr-card derived" title={`Computed: ${schema.label}`}>
-                    <span class="pr-lbl">{schema.label}{schema.unit ? ` (${schema.unit})` : ''}</span>
+                  <div class="pr-card derived">
+                    <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
                     <span class="pr-derived-spacer"></span>
                     <span class="pr-derived-val">{fmtDerived(resolved[key])}</span>
+                    {#if schema.unit}<span class="pr-unit">{schema.unit}</span>{/if}
                   </div>
                 {/each}
               </div>
             </div>
           {/if}
+
         {:else if inspectorTab === 'svelte' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
           {@const entry = activeTab.runesEntry}
           {@const m = entry.meta}
           {@const dirty = activeTab.sourceDraft != null && activeTab.sourceDraft !== entry.source}
-          {@const paramCount = Object.keys(m.params).length}
-          {@const validateErrs = m.validate ? m.validate(activeTab.params) : []}
-          <div class="anatomy svelte">
-            <span class="ana-chip kind">{m.id}</span>
-            <span class="ana-chip">params · {paramCount}</span>
-            {#if m.validate}
-              <span class="ana-chip" class:ok={validateErrs.length === 0} class:err={validateErrs.length > 0}>
-                {validateErrs.length === 0 ? 'validate ✓' : `validate ✗ (${validateErrs.length})`}
-              </span>
-            {/if}
-          </div>
           {@const editorSource = activeTab.sourceDraft ?? entry.source}
-          {@const defaultFolds = runesDefaultFolds(editorSource)}
-          <div class="editor-wrap">
-            <CodeEditor
-              value={editorSource}
-              lang="typescript"
-              variant="svelte"
-              readonly={false}
-              initialFold={defaultFolds}
-              onChange={(next) => { if (activeTab) activeTab.sourceDraft = next; }}
-            />
-          </div>
+          {@const split = splitRune(editorSource)}
+          {@const editorCompletions = buildEditorCompletions(m)}
+          {#if split.ok}
+            <!-- Section 1: imports + meta + geom scaffolding, collapsed
+                 by default. The user only expands this when they want to
+                 add/remove imports, tweak meta fields, or change the
+                 destructure args list. -->
+            <details class="meta-section">
+              <summary>
+                <span class="meta-summary-chev">▶</span>
+                <span class="meta-summary-title">imports · meta · signature</span>
+                <span class="meta-summary-sub">click to expand · {Object.keys(m.params).length} params{m.derived ? ` · ${Object.keys(m.derived).length} derived` : ''}</span>
+              </summary>
+              <div class="meta-editor-wrap">
+                <CodeEditor
+                  value={split.header}
+                  lang="typescript"
+                  variant="svelte"
+                  readonly={false}
+                  completions={editorCompletions}
+                  onChange={(next) => { if (activeTab) applyHeaderEdit(activeTab, next); }}
+                  onSave={() => { if (activeTab) saveRunesSource(activeTab); }}
+                />
+              </div>
+            </details>
+            <!-- Section 2: read-only destructure args. Mirrors what the
+                 collapsed signature line declares; updates automatically
+                 when the user edits the header above. -->
+            <div class="args-bar" title="Edit via the collapsible section above. These names are what the body can reference.">
+              <span class="args-prefix">args:</span>
+              <code class="args-code">{split.args} =&gt;</code>
+            </div>
+            <!-- Section 3: construction body. The main editor — the only
+                 place the user touches for normal work. Helpers / runes
+                 / current params / derived all available via autocomplete. -->
+            <div class="editor-wrap">
+              <CodeEditor
+                value={split.body}
+                lang="typescript"
+                variant="svelte"
+                readonly={false}
+                completions={editorCompletions}
+                onChange={(next) => { if (activeTab) applyBodyEdit(activeTab, next); }}
+                onSave={() => { if (activeTab) saveRunesSource(activeTab); }}
+              />
+            </div>
+          {:else}
+            <!-- Fallback: file doesn't match the defineGeom shape (legacy
+                 primitive, or temporarily broken syntax). Render the
+                 whole source in one editor so the user is never locked
+                 out — they can recover and on next render the split
+                 picks back up. -->
+            <div class="split-warn">
+              <span class="warn-icon">⚠</span>
+              <span>This file doesn't match the <code>defineGeom</code> shape — showing full source. Sectioned view resumes once the structure parses.</span>
+            </div>
+            {@const defaultFolds = runesDefaultFolds(editorSource)}
+            <div class="editor-wrap">
+              <CodeEditor
+                value={editorSource}
+                lang="typescript"
+                variant="svelte"
+                readonly={false}
+                initialFold={defaultFolds}
+                completions={editorCompletions}
+                onChange={(next) => { if (activeTab) activeTab.sourceDraft = next; }}
+                onSave={() => { if (activeTab) saveRunesSource(activeTab); }}
+              />
+            </div>
+          {/if}
           {#if buildError}
             {@const err = formatBuildError(buildError)}
             <!-- Inline error strip — surfaces the latest geom() exception
@@ -2175,21 +3232,7 @@ export const geom = (p: Record<string, number>) => {
               <button class="ed-err-clear" type="button" onclick={() => (buildError = null)} aria-label="Dismiss error">×</button>
             </div>
           {/if}
-          <div class="save-row">
-            <button class="save-btn" type="button" disabled={!dirty || activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
-              {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
-            </button>
-            <button class="discard-btn" type="button" disabled={!dirty} onclick={() => discardRunesDraft(activeTab!)}>Discard</button>
-            {#if activeTab.saveStatus === 'saved'}
-              <span class="save-status ok">Saved · Vite HMR will reload the page</span>
-            {:else if activeTab.saveStatus === 'error'}
-              <span class="save-status err">Error: {activeTab.saveError}</span>
-            {:else if dirty}
-              <span class="save-status muted">Unsaved changes</span>
-            {/if}
-          </div>
-          <p class="code-note">Source: <code>src/lib/components/runes/{m.id}.ts</code>.
-            Save writes the file; Vite HMR picks up the change and reloads with the new geometry.</p>
+          <p class="code-note">Source: <code>src/lib/components/runes/{m.id}.ts</code> · save via the bar below.</p>
         {:else if inspectorTab === 'script' && activeTab.kind !== 'xml-primitive'}
           <div class="ed-sec">
             <div class="ed-sec-h">
@@ -2224,16 +3267,9 @@ export const geom = (p: Record<string, number>) => {
           {@const usedCount = usedHelpers.length + usedRunes.length}
           {@const availableCount = availableHelpers.length + availableRunes.length}
           <div class="parts-pane">
-            <p class="parts-intro">
-              The physical objects this primitive composes — each card is a shape that yields a
-              Manifold (cyl/tube from the helpers, plus any other runes). Transforms like <code>mv</code>
-              and <code>rot</code> aren't here; write those directly in the Svelte code.
-              Click <strong>×</strong> to drop an import; click <strong>+ Add primitive</strong> for more.
-            </p>
-
             <div class="parts-group">
-              <div class="parts-h">
-                Primitives <span class="muted">in use · {usedCount}</span>
+              <div class="parts-h thin">
+                <span class="muted">in use · {usedCount}</span>
               </div>
               {#if usedCount === 0}
                 <div class="parts-empty">No primitives imported yet.</div>
@@ -2280,12 +3316,146 @@ export const geom = (p: Record<string, number>) => {
               {/if}
             </div>
           </div>
+        {:else if inspectorTab === 'ai' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
+          {@const ai = activeTab.ai ?? { prompt: '', status: 'idle', history: [] }}
+          {@const instOnDisk = activeTab.runesEntry.instructions ?? ''}
+          {@const instCurrent = ai.instructionsDraft ?? instOnDisk}
+          {@const instDirty = ai.instructionsDraft != null && ai.instructionsDraft !== instOnDisk}
+          <div class="ai-pane two-section">
+            <!-- ─── Section 1: Prompt ───────────────────────────────────────
+                 The immediate ask. Combined with the instructions doc below
+                 at refine-time → Claude returns updated source. -->
+            <div class="ai-sec">
+              <div class="ai-sec-h">
+                <span class="ai-sec-title">✦ Prompt</span>
+                <span class="ai-sec-sub">what change do you want now?</span>
+              </div>
+              <textarea
+                class="ai-prompt"
+                placeholder="e.g. add an internal torque shoulder at z = cone_length with width 0.25, and a 1/8 chamfer at the box top"
+                value={ai.prompt}
+                oninput={(e) => { ensureAi(activeTab!).prompt = (e.currentTarget as HTMLTextAreaElement).value; }}
+                disabled={ai.status === 'sending'}
+                rows="3"
+              ></textarea>
+              <div class="ai-actions">
+                <button
+                  class="ai-submit"
+                  type="button"
+                  disabled={ai.status === 'sending' || ai.status === 'pending' || ai.prompt.trim().length === 0}
+                  onclick={() => submitAiRefine(activeTab!)}
+                >
+                  {#if ai.status === 'sending'}Thinking…{:else}✦ Refine source{/if}
+                </button>
+                {#if ai.status === 'sending'}
+                  <span class="ai-status muted">Claude is editing the source…</span>
+                {:else if ai.status === 'error'}
+                  <span class="ai-status err">Error: {ai.error}</span>
+                {:else if ai.status === 'pending'}
+                  <span class="ai-status ok">Proposal ready — review below.</span>
+                {/if}
+              </div>
+
+              {#if ai.status === 'pending' && ai.pending}
+                <div class="ai-proposal">
+                  <div class="ai-proposal-h">
+                    <span>✦ Proposed source</span>
+                    <span class="muted">{(ai.pending.match(/\n/g)?.length ?? 0) + 1} lines</span>
+                  </div>
+                  <pre class="ai-proposal-body">{ai.pending}</pre>
+                  <div class="ai-proposal-actions">
+                    <button class="ai-accept" type="button" onclick={() => acceptAiProposal(activeTab!)}>
+                      Accept · open in Svelte tab
+                    </button>
+                    <button class="ai-reject" type="button" onclick={() => rejectAiProposal(activeTab!)}>
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              {/if}
+
+              {#if ai.history.length > 0}
+                <div class="ai-history">
+                  <div class="ai-history-h">History · {ai.history.length}</div>
+                  {#each [...ai.history].reverse() as h, i (i)}
+                    <div class="ai-history-row" class:accepted={h.accepted === true} class:rejected={h.accepted === false}>
+                      <span class="ai-history-mark">{h.accepted === true ? '✓' : h.accepted === false ? '✗' : '·'}</span>
+                      <span class="ai-history-prompt" title={h.prompt}>{h.prompt}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <!-- ─── Section 2: Instructions (slow-evolving spec) ────────────
+                 Per-primitive markdown doc — the persistent "what should
+                 this primitive be" context. Sent alongside every prompt so
+                 Claude produces predictable / consistent output. Saved to
+                 src/lib/components/runes/<id>.md. Will eventually feed a
+                 RAG index across primitives. -->
+            <div class="ai-sec">
+              <div class="ai-sec-h">
+                <span class="ai-sec-title">📋 Instructions <span class="muted">{activeTab.runesEntry.meta.id}.md</span></span>
+                <span class="ai-sec-sub">persistent spec — sent with every refine</span>
+              </div>
+              <textarea
+                class="ai-instructions"
+                placeholder="Describe the primitive's design intent: what real-world thing it represents, which standard it targets, conventions for params, how it should compose with others. Markdown is fine. Claude reads this on every refine to produce predictable output."
+                value={instCurrent}
+                oninput={(e) => { ensureAi(activeTab!).instructionsDraft = (e.currentTarget as HTMLTextAreaElement).value; }}
+                rows="10"
+              ></textarea>
+              <div class="ai-actions">
+                <button
+                  class="ai-save-inst"
+                  type="button"
+                  disabled={!instDirty || ai.instructionsStatus === 'saving'}
+                  onclick={() => saveInstructions(activeTab!)}
+                >
+                  {ai.instructionsStatus === 'saving' ? 'Saving…' : 'Save instructions'}
+                </button>
+                {#if instDirty}
+                  <span class="ai-status muted">Unsaved changes — apply on next refine.</span>
+                {:else if ai.instructionsStatus === 'saved'}
+                  <span class="ai-status ok">Saved.</span>
+                {:else if ai.instructionsStatus === 'error'}
+                  <span class="ai-status err">Save failed: {ai.instructionsError}</span>
+                {/if}
+              </div>
+            </div>
+          </div>
         {:else if inspectorTab === 'md' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
           {@const docs = generateMd(activeTab.runesEntry, activeTab.params)}
           <div class="md-wrap">
             <MarkdownView value={docs} />
           </div>
           <p class="code-note">Auto-generated from the primitive's <code>meta</code> — params, tags, validate state. Edit the runes file (Svelte tab) to update.</p>
+        {/if}
+
+        {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.runesEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.runesEntry.source}
+        {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
+        {#if srcDirty || pDirty}
+          <!-- Global save bar — visible on EVERY inspector tab the moment
+               sourceDraft diverges from disk OR any slider has been
+               moved away from its schema default. Deleting a part,
+               adding a part, toggling skip-Z, editing a description,
+               renaming a param, AND dragging sliders all surface this
+               affordance without forcing a tab switch. -->
+          <div class="save-row global-save">
+            <button class="save-btn" type="button" disabled={activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
+              {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
+            </button>
+            <button class="discard-btn" type="button" onclick={() => discardRunesDraft(activeTab!)}>Discard</button>
+            {#if activeTab.saveStatus === 'saved'}
+              <span class="save-status ok">Saved · HMR will reload</span>
+            {:else if activeTab.saveStatus === 'error'}
+              <span class="save-status err">Error: {activeTab.saveError}</span>
+            {:else}
+              <span class="save-status muted">
+                {pDirty && srcDirty ? 'Unsaved changes (source + params)' : pDirty ? 'Unsaved param defaults' : 'Unsaved changes'}
+              </span>
+            {/if}
+          </div>
         {/if}
       </FloatingPanel>
       </div>
@@ -2515,8 +3685,10 @@ export const geom = (p: Record<string, number>) => {
   .prim-link.compound { border-style: dashed; border-color: #e2c882; }
   .prim-link.compound.active { border-color: #cc2222; }
 
-  /* Runes-row container — wraps the prim-link + a hover-revealed delete
-     button. Hover the row, the × appears on the right. */
+  /* Runes-row container — wraps the prim-link + a persistent delete
+     button. The × is always visible (faded), goes red on hover, and the
+     server-side reference check refuses the delete when the primitive is
+     used by another authored component. */
   .prim-row {
     display: flex; align-items: center; gap: 2px;
     border-radius: 3px;
@@ -2525,17 +3697,19 @@ export const geom = (p: Record<string, number>) => {
   .prim-del {
     flex-shrink: 0;
     width: 18px; height: 18px;
-    display: none; align-items: center; justify-content: center;
-    background: transparent; border: none; cursor: pointer;
-    font: bold 12px Arial; line-height: 1; color: #aaa;
-    border-radius: 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fff;
+    border: 1px solid #777;
+    cursor: pointer;
+    font: bold 13px Arial; line-height: 1; color: #444;
+    border-radius: 5px;
     margin-right: 4px;
+    padding: 0;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
   }
-  .prim-del::before { content: '×'; }
-  .prim-row:hover .prim-del { display: inline-flex; }
-  .prim-del:hover { background: #fdecec; color: #cc2222; }
-  .prim-row.active .prim-del { color: rgba(255,255,255,0.7); display: inline-flex; }
-  .prim-row.active .prim-del:hover { background: rgba(255,255,255,0.2); color: #fff; }
+  .prim-del:hover { background: #fdecec; border-color: #cc2222; color: #cc2222; }
+  .prim-row.active .prim-del { background: rgba(255,255,255,0.9); border-color: rgba(255,255,255,0.95); color: #cc2222; }
+  .prim-row.active .prim-del:hover { background: #fff; border-color: #fff; color: #a01818; }
 
   /* Hover callout — anchored to the right of the sidebar, vertically
      aligned with the hovered item. Replaces the old cards grid: same
@@ -2744,10 +3918,64 @@ export const geom = (p: Record<string, number>) => {
     align-items: stretch;
   }
   .stage-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .stage-title { position: relative; display: flex; align-items: baseline; gap: 6px; }
   .stage-name { margin: 0; font-size: 20px; color: #cc2222; }
   .stage-id { font: 10px monospace; color: #888; }
   .stage-badges { display: flex; flex-wrap: wrap; gap: 4px; max-width: 280px; justify-content: flex-end; }
   .stage-desc { font: 12px Arial; color: #555; line-height: 1.5; margin: 8px 0 16px; max-width: 720px; }
+  /* Info icon next to the title — opens a small popover with the
+     primitive's description. Replaces the always-visible <p.stage-desc>;
+     the description is now off-screen by default to keep the page top
+     focused on the rendered shape. */
+  .stage-info-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px;
+    border: 1px solid #d8d4e8;
+    border-radius: 50%;
+    background: #fff;
+    color: #7c4dff;
+    font: 600 11px/1 'Times New Roman', serif;
+    font-style: italic;
+    cursor: pointer;
+    transition: background 100ms, color 100ms, transform 100ms;
+    align-self: center;
+    padding: 0;
+  }
+  .stage-info-btn:hover { background: #7c4dff; color: #fff; }
+  .stage-info-btn.active { background: #7c4dff; color: #fff; transform: scale(1.05); }
+  .stage-info-pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 50;
+    min-width: 280px;
+    max-width: 420px;
+    background: #fff;
+    border: 1px solid #d8d4e8;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(60, 40, 120, 0.15);
+    padding: 10px 14px 12px;
+  }
+  .stage-info-pop::before {
+    content: '';
+    position: absolute;
+    top: -6px; left: 14px;
+    width: 10px; height: 10px;
+    background: #fff;
+    border-left: 1px solid #d8d4e8;
+    border-top: 1px solid #d8d4e8;
+    transform: rotate(45deg);
+  }
+  .stage-info-desc { font: 13px Arial; color: #333; line-height: 1.5; margin: 0 24px 6px 0; }
+  .stage-info-more { font: 11px Arial; color: #777; margin: 6px 24px 0 0; }
+  .stage-info-close {
+    position: absolute; top: 4px; right: 6px;
+    width: 18px; height: 18px;
+    border: none; background: transparent;
+    color: #888; font: 16px/1 Arial; cursor: pointer;
+    padding: 0; line-height: 18px;
+  }
+  .stage-info-close:hover { color: #cc2222; }
   .stage-3d {
     flex: 1; min-height: 320px;
     background: #fff;
@@ -2870,6 +4098,18 @@ export const geom = (p: Record<string, number>) => {
     margin-top: 6px;
   }
   .pf-hint { font: 10px Arial; color: #888; font-style: italic; margin-left: 4px; }
+  /* Description-editor popup — one row per param: key chip + text input.
+     Shares the .param-form shell so styling stays consistent. */
+  .pf-h { font: 11px Arial; color: #444; margin-bottom: 6px; font-weight: 600; }
+  .pf-h .muted { color: #999; font-weight: 400; }
+  .pf-desc-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .pf-desc-input { width: 100%; min-width: 0; }
 
   /* Auto-flowing grid of param cards in the Inspector → Params tab. Each
      card has label · slider · number on a single row. We aim for 3 columns
@@ -2883,24 +4123,145 @@ export const geom = (p: Record<string, number>) => {
     padding: 4px 0 2px;
   }
   .pr-card {
-    /* Inline row inside each card: label · slider · number value (· × in
-       draft tabs). Slider stretches to fill remaining width; the number
-       input has a fixed width and no spinner arrows. */
+    /* Inline row inside each card:
+         var-key · slider · number · unit · ✎(runes) · ×(draft) */
     display: grid;
-    grid-template-columns: minmax(64px, max-content) 1fr 48px auto;
+    grid-template-columns: auto 1fr 44px auto auto auto;
     align-items: center;
-    gap: 6px;
-    padding: 5px 8px;
+    gap: 4px;
+    padding: 2px 6px;
     background: #fafafa;
     border: 1px solid #eaeaef;
-    border-radius: 4px;
+    border-radius: 3px;
     min-width: 0;
+  }
+  .ed-sec.compact { gap: 0; margin-bottom: 6px; }
+  .ed-sec-h.thin { font-size: 11px; padding: 2px 0; gap: 6px; align-items: center; }
+  .ed-sec.compact .pr-grid { gap: 3px 6px; padding: 2px 0 0; }
+  /* Per-row ✎ edit button — matches the × visually (same size + border
+     pattern) so the two affordances read as a pair. */
+  .row-edit {
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fff;
+    border: 1px solid #d8d4e8;
+    border-radius: 4px;
+    color: #7c4dff;
+    font: 11px/1 Arial;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+  }
+  .row-edit:hover { background: #f1edfa; color: #5a30e0; border-color: #7c4dff; }
+  /* skip-Z-center toggle — lives in the Params header next to `+`.
+     Small checkbox + caption, no chrome. */
+  .meta-flag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font: 10px Arial; color: #555;
+    cursor: pointer;
+    user-select: none;
+    margin-right: 8px;
+  }
+  .meta-flag input[type="checkbox"] {
+    width: 12px; height: 12px;
+    accent-color: #7c4dff;
+    margin: 0;
+  }
+  /* Per-param edit popover — appears below the card whose ✎ was
+     clicked. Spans the full grid row so it doesn't get squeezed by
+     the cards next to it; sits as a separate grid item via display:
+     contents-style positioning. */
+  .pr-edit-pop {
+    grid-column: 1 / -1;
+    background: #fdf6f6;
+    border: 1px solid #f0c8c8;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+  }
+  .pr-edit-h { font: 11px Arial; color: #444; margin-bottom: 6px; font-weight: 600; }
+  .pr-edit-h code { font: 11px ui-monospace, monospace; background: #fff; padding: 1px 5px; border-radius: 3px; border: 1px solid #e8d8d8; color: #7c4dff; }
+  .pr-edit-lbl { display: flex; flex-direction: column; gap: 3px; font: 10px Arial; color: #666; }
+  .pr-edit-lbl .pf-in { width: 100%; min-width: 0; }
+  .pr-edit-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; color: #7c4dff; }
+  /* 2-column grid for the param edit popup — keeps Variable / Label /
+     Default / Unit / Min / Max / Step compact. Description spans
+     full width on its own row. */
+  .pr-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px 8px;
+    margin-bottom: 6px;
+  }
+  .pr-edit-desc-row { margin-bottom: 6px; }
+  .pr-edit-warn {
+    font: 11px Arial; color: #a85b00; margin: 0 0 6px;
+    background: #fff7e8; border: 1px solid #f0d8a8; border-radius: 3px;
+    padding: 4px 8px; line-height: 1.4;
+  }
+  .pr-edit-warn code { font: 11px ui-monospace, monospace; background: #fff; padding: 1px 4px; border-radius: 3px; border: 1px solid #f0d8a8; color: #7c4dff; }
+  /* Variable-name chip — monospace, muted background, lets the user see
+     the identifier they'll type in the geom body. */
+  .pr-keyname {
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #7c4dff;
+    background: #f1edfa;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid #e2dcf2;
+    user-select: all;
   }
   .pr-lbl {
     font: 10px Arial; color: #555;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* Custom hover tooltips for [data-tip] — replaces the native
+     `title=` popup so the description appears instantly (no 1s delay)
+     and is readable (multi-line wrap, dark pill instead of pale OS
+     tooltip). Applied to .pr-keyname + .pr-lbl. */
+  [data-tip] {
+    position: relative;
+  }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 200;
+    background: #1f1f24;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font: 11px/1.45 Arial;
+    max-width: 300px;
+    width: max-content;
+    white-space: pre-line;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    pointer-events: none;
+  }
+  [data-tip]:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 10px;
+    z-index: 201;
+    width: 0; height: 0;
+    border: 4px solid transparent;
+    border-top-color: #1f1f24;
+    pointer-events: none;
+  }
   .pr-card.extra .pr-lbl { color: #1a5b8a; font-style: italic; }
+  /* Unit chip — tucked to the right of the number input. Small + muted
+     so it doesn't compete with the value. */
+  .pr-unit {
+    font: 10px Arial; color: #888;
+    background: #f3f3f7;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid #e2e2e8;
+    min-width: 18px;
+    text-align: center;
+  }
 
   /* Group sub-tabs inside the Params section. One tab per `group` value
      declared in the primitive's meta.params (e.g. box_conn → Body / Cone).
@@ -3042,6 +4403,133 @@ export const geom = (p: Record<string, number>) => {
   .part-desc { font: 10px Arial; color: #888; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .parts-empty { font: 11px Arial; color: #888; font-style: italic; padding: 6px 2px; }
 
+  /* ── AI Refine tab ────────────────────────────────────────────────────── */
+  .ai-pane { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 2px; }
+  .ai-pane.two-section { gap: 14px; }
+  .ai-sec { display: flex; flex-direction: column; gap: 6px; }
+  .ai-sec-h {
+    display: flex; align-items: baseline; gap: 8px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #e2dff0;
+  }
+  .ai-sec-title { font: bold 11px Arial; color: #3b3b8a; letter-spacing: 0.3px; }
+  .ai-sec-title .muted { font-weight: normal; color: #888; font-family: ui-monospace, monospace; font-size: 10px; margin-left: 4px; }
+  .ai-sec-sub { font: 10px Arial; color: #999; font-style: italic; }
+  .ai-instructions {
+    font: 12px ui-monospace, SFMono-Regular, monospace;
+    padding: 8px 10px;
+    border: 1px solid #d8d4e8; border-radius: 4px;
+    background: #fdfcff; color: #22223b;
+    resize: vertical;
+    min-height: 120px;
+  }
+  .ai-instructions:focus { outline: 2px solid #3b3b8a; outline-offset: -1px; }
+  .ai-save-inst {
+    background: #fff; color: #3b3b8a;
+    border: 1px solid #b8b4d8; border-radius: 4px;
+    cursor: pointer;
+    font: bold 11px Arial; padding: 5px 12px;
+  }
+  .ai-save-inst:hover:not(:disabled) { background: #f4f0fb; }
+  .ai-save-inst:disabled { color: #b8b4c8; border-color: #ddd; cursor: not-allowed; }
+  .ai-intro { font: 11px Arial; color: #555; margin: 0; line-height: 1.5; }
+  .ai-prompt {
+    font: 12px ui-monospace, SFMono-Regular, monospace;
+    padding: 8px 10px;
+    border: 1px solid #d8d4e8; border-radius: 4px;
+    background: #f5f3fb; color: #22223b;
+    resize: vertical;
+    min-height: 70px;
+  }
+  .ai-prompt:focus { outline: 2px solid #3b3b8a; outline-offset: -1px; }
+  .ai-actions { display: flex; align-items: center; gap: 10px; }
+  .ai-submit {
+    background: #3b3b8a; color: #fff;
+    border: 1px solid #2a2a6a; border-radius: 4px;
+    cursor: pointer;
+    font: bold 11px Arial; padding: 6px 14px;
+  }
+  .ai-submit:hover:not(:disabled) { background: #2a2a6a; }
+  .ai-submit:disabled { background: #b8b4c8; border-color: #b8b4c8; cursor: not-allowed; }
+  .ai-status { font: 11px Arial; }
+  .ai-status.muted { color: #888; font-style: italic; }
+  .ai-status.err   { color: #cc2222; }
+  .ai-status.ok    { color: #2a8a5a; font-weight: bold; }
+
+  /* Proposal preview — read-only pre block + Accept/Reject. */
+  .ai-proposal {
+    border: 1px solid #b8a8e0;
+    background: #f7f4ff;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .ai-proposal-h {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #ece5fa; color: #3b2b6a;
+    padding: 5px 10px;
+    font: bold 11px Arial;
+  }
+  .ai-proposal-h .muted { color: #7a6aa5; font-weight: normal; font-size: 10px; }
+  .ai-proposal-body {
+    margin: 0;
+    padding: 10px;
+    font: 11px ui-monospace, SFMono-Regular, monospace;
+    color: #22223b;
+    background: #fff;
+    max-height: 280px; overflow: auto;
+    white-space: pre;
+  }
+  .ai-proposal-actions {
+    display: flex; gap: 6px;
+    padding: 6px 10px;
+    background: #f7f4ff;
+    border-top: 1px solid #ddd5f0;
+  }
+  .ai-accept {
+    background: #2a8a5a; color: #fff;
+    border: 1px solid #1f6c45; border-radius: 4px;
+    cursor: pointer;
+    font: bold 11px Arial; padding: 5px 12px;
+  }
+  .ai-accept:hover { background: #1f6c45; }
+  .ai-reject {
+    background: #fff; color: #cc2222;
+    border: 1px solid #f0b3b9; border-radius: 4px;
+    cursor: pointer;
+    font: bold 11px Arial; padding: 5px 12px;
+  }
+  .ai-reject:hover { background: #fdecec; }
+
+  /* History — short list of past prompts with their accept/reject outcome. */
+  .ai-history {
+    border-top: 1px solid #e2e2e8;
+    margin-top: 4px; padding-top: 8px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .ai-history-h {
+    font: bold 10px Arial; color: #666;
+    letter-spacing: 0.4px; text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .ai-history-row {
+    display: flex; align-items: flex-start; gap: 6px;
+    font: 11px Arial; color: #555;
+    padding: 3px 0;
+  }
+  .ai-history-mark { flex-shrink: 0; width: 12px; text-align: center; color: #aaa; }
+  .ai-history-row.accepted .ai-history-mark { color: #2a8a5a; }
+  .ai-history-row.rejected .ai-history-mark { color: #cc2222; }
+  .ai-history-prompt {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+
+  /* AI tab label tint — the ✦ icon picks up the lavender palette so users
+     find it quickly in the strip. */
+  .insp-tab-ai .ic { color: #3b3b8a; }
+  .insp-tab-ai.active .ic { color: #fff; }
+
   /* Used-card variant — non-clickable label card with a small × in the
      corner to drop the import. Hover reveals the × to avoid clutter. */
   .part-card.used { position: relative; cursor: default; }
@@ -3176,6 +4664,81 @@ export const geom = (p: Record<string, number>) => {
     height: 320px;
     margin: 4px 0;
   }
+  /* Collapsible "imports + meta + signature" section above the body
+     editor. Closed by default so the user lands on construction code. */
+  .meta-section {
+    margin: 4px 0;
+    border: 1px solid #d8d4e8;
+    border-radius: 4px;
+    background: #f5f3fb;
+    overflow: hidden;
+  }
+  .meta-section > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #22223b;
+    user-select: none;
+  }
+  .meta-section > summary::-webkit-details-marker { display: none; }
+  .meta-summary-chev {
+    display: inline-block;
+    transition: transform 120ms;
+    color: #7c4dff;
+    font-size: 10px;
+    width: 12px;
+  }
+  .meta-section[open] > summary > .meta-summary-chev { transform: rotate(90deg); }
+  .meta-summary-title { font-weight: 600; }
+  .meta-summary-sub { color: #6a6a8a; font-size: 11px; }
+  .meta-editor-wrap {
+    height: 240px;
+    border-top: 1px solid #d8d4e8;
+  }
+  /* Read-only args bar — mirrors the destructure list the collapsed
+     header declares. Sticks above the main body editor as documentation
+     of what names are in scope. */
+  .args-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 0;
+    padding: 6px 10px;
+    background: #ebe7f5;
+    border: 1px solid #d8d4e8;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    font-size: 11px;
+  }
+  .args-prefix { color: #6a6a8a; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .args-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #3b3b8a;
+    background: transparent;
+  }
+  /* Tucks the body editor under the args bar — shared border, no gap. */
+  .args-bar + .editor-wrap { margin-top: -1px; }
+  .args-bar + .editor-wrap :global(.cm-host) { border-top-left-radius: 0; border-top-right-radius: 0; }
+  /* Fallback warning strip — shown when the file doesn't match the
+     defineGeom shape. Stays out of the way; doesn't lock the user out. */
+  .split-warn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    margin: 4px 0;
+    background: #fff4e0;
+    border: 1px solid #ffd08a;
+    border-radius: 4px;
+    color: #7a5a10;
+    font-size: 11px;
+  }
+  .split-warn .warn-icon { color: #c87000; }
+  .split-warn code { background: #fff; padding: 1px 4px; border-radius: 3px; }
   /* Structural strip above the editor — surfaces class anatomy or
      compile-output shape so the tab reads as a "thing" rather than
      just a wall of code. Two color schemes mirror the editor variants. */

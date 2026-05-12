@@ -184,9 +184,10 @@ test.describe.serial('runes primitives — API + create flow', () => {
     expect(ids).toContain(STUB_ID);
     const stub = list.find((e: any) => e.id === STUB_ID);
     expect(stub.name).toBe(STUB_NAME);
-    // Default params from the stub template (od / wall / length).
-    expect(stub.params.od).toBeTruthy();
-    expect(stub.params.wall).toBeTruthy();
-    expect(stub.params.length).toBeTruthy();
+    // Blank-slate stub: params object exists but is empty — the AI tab
+    // is the intended path for adding params + geom on a fresh primitive.
+    expect(stub.params).toBeTruthy();
+    expect(typeof stub.params).toBe('object');
+    expect(Object.keys(stub.params).length).toBe(0);
   });
 });

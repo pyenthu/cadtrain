@@ -36,6 +36,11 @@ export interface ParamSchema {
    *  "Parameters" section at the top. Order: groups appear in the order
    *  they first occur in the params record. */
   group?: string;
+  /** Optional longer-form description surfaced as a tooltip on the
+   *  Params tab when the user hovers the label. The label itself stays
+   *  short; the description is where you put the "why" or "what does
+   *  this control geometrically." */
+  description?: string;
 }
 
 /** Derived param — a read-only value computed from the user-set params.
@@ -61,16 +66,27 @@ export interface PrimitiveMeta {
   /** Read-only computed params. See DerivedSchema docstring. */
   derived?: Readonly<Record<string, DerivedSchema>>;
   validate?: (p: Record<string, number>) => string[];
+  /** Opt-out of the renderer's default Z-centering step in
+   *  `finalizeManifold`. When `true`, the geometry is rendered exactly
+   *  where the geom function places it (any `.translate(_, _, z)` you
+   *  apply sticks). When omitted or `false`, the final manifold's Z
+   *  midpoint is pulled to z=0 — the historic behavior, kept as default
+   *  so existing primitives don't visually shift. */
+  skipCenter?: boolean;
 }
 
 /** Geom function signature — pure (p) => Manifold. */
 export type GeomFn = (p: Record<string, number>) => any;
 
-/** Registry entry — meta + geom + raw source. */
+/** Registry entry — meta + geom + raw source + instructions doc. */
 export interface RunesEntry {
   meta: PrimitiveMeta;
   geom: GeomFn;
   source: string;
+  /** Optional instructions.md for this primitive — the slow-evolving
+   *  spec the AI refine endpoint reads alongside each prompt. Empty
+   *  string when no .md file exists yet. */
+  instructions: string;
 }
 
 // ── Build-time GEOM map ──────────────────────────────────────────────────
@@ -106,6 +122,8 @@ interface ApiEntry {
   params: Record<string, ParamSchema>;
   hasValidate: boolean;
   source: string;
+  /** Content of <id>.md if it exists, else empty string. */
+  instructions?: string;
 }
 
 /**
@@ -127,6 +145,7 @@ export async function loadRunesRegistry(fetchFn: typeof fetch = fetch): Promise<
     // response doesn't carry it. Pick it up from the build-time module
     // instead. (Same path the geom function takes.)
     const derived = mod?.meta?.derived;
+    const skipCenter = mod?.meta?.skipCenter === true;
     const meta: PrimitiveMeta = {
       id: api.id,
       name: api.name,
@@ -135,8 +154,9 @@ export async function loadRunesRegistry(fetchFn: typeof fetch = fetch): Promise<
       params: api.params,
       ...(validate ? { validate } : {}),
       ...(derived ? { derived } : {}),
+      ...(skipCenter ? { skipCenter: true } : {}),
     };
-    return { meta, geom, source: api.source };
+    return { meta, geom, source: api.source, instructions: api.instructions ?? '' };
   });
 }
 
@@ -158,7 +178,7 @@ export const RUNES_REGISTRY: RunesEntry[] = [];
 for (const [path, mod] of Object.entries(geomModules)) {
   if (path === './index.ts') continue;
   if (mod?.meta && typeof mod.geom === 'function') {
-    RUNES_REGISTRY.push({ meta: mod.meta, geom: mod.geom, source: '' });
+    RUNES_REGISTRY.push({ meta: mod.meta, geom: mod.geom, source: '', instructions: '' });
   }
 }
 
@@ -192,4 +212,39 @@ export function resolveDerived(
     try { out[k] = schema.from(out); } catch { /* leave unset */ }
   }
   return out;
+}
+
+/** Maps a meta's `params` + `derived` keys into a typed record of
+ *  numbers so the geom builder can destructure `({ od, wall, … })`
+ *  with TS inference instead of writing `p.od`, `p.wall`, … against
+ *  an untyped `Record<string, number>`. */
+type ParamsOf<M> =
+  (M extends { params: infer P } ? { [K in keyof P]: number } : Record<string, never>) &
+  (M extends { derived: infer D } ? { [K in keyof D]: number } : Record<string, never>);
+
+/**
+ * Sugar for the verbose `(p) => { const x = p.foo; … }` geom shape.
+ *
+ *   export const geom = defineGeom(meta, ({ od, wall, length }) => {
+ *     return tube(od/2, od/2 - wall, length);
+ *   });
+ *
+ * The first arg (`_meta`) is only present to bind the generic so the
+ * destructure is typed against the params + derived keys declared in
+ * `meta`. It is NOT read at runtime — the existing builder pipeline
+ * still calls `resolveDerived(meta, params)` before invoking geom, so
+ * derived values are already in the bag by the time `build` runs.
+ *
+ * Return type stays `GeomFn` so the loader (`import.meta.glob`) and
+ * the regex-based `/api/runes/list` parser see exactly the same
+ * `export const geom = …` shape they see today. No infrastructure
+ * changes required.
+ */
+export function defineGeom<
+  M extends { params: Record<string, ParamSchema>; derived?: Record<string, DerivedSchema> },
+>(
+  _meta: M,
+  build: (p: ParamsOf<M> & Record<string, number>) => any,
+): GeomFn {
+  return (p) => build(p as ParamsOf<M> & Record<string, number>);
 }

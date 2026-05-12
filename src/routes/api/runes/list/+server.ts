@@ -36,12 +36,19 @@ interface RunesListEntry {
   params: Record<string, unknown>;
   hasValidate: boolean;
   source: string;
+  /** Per-primitive AI instructions doc — content of `<id>.md` if present
+   *  next to `<id>.ts`. Sent alongside each /api/runes/refine prompt so
+   *  the model has the primitive's evolving spec in context. Empty
+   *  string when the .md file doesn't exist. */
+  instructions: string;
 }
 
 async function buildSignature(): Promise<string> {
-  const files = (await readdir(SRC_DIR)).filter(
-    (f) => f.endsWith('.ts') && f !== 'index.ts',
-  );
+  // Include both .ts and .md mtimes — editing the instructions doc for
+  // a primitive must invalidate the cached list so the new instructions
+  // are picked up on the next request.
+  const all = await readdir(SRC_DIR);
+  const files = all.filter((f) => (f.endsWith('.ts') || f.endsWith('.md')) && f !== 'index.ts');
   const parts: string[] = [];
   for (const f of files.sort()) {
     const s = await stat(join(SRC_DIR, f));
@@ -194,6 +201,11 @@ async function buildList(): Promise<RunesListEntry[]> {
     const id = unquoteString(pullField(body, 'id'));
     const name = unquoteString(pullField(body, 'name'));
     if (!id || !name) continue;
+    // Read the optional <id>.md alongside the .ts. Missing file = empty
+    // instructions; the AI tab will surface that as a "start writing"
+    // placeholder.
+    let instructions = '';
+    try { instructions = await readFile(join(SRC_DIR, `${id}.md`), 'utf8'); } catch { /* no .md */ }
     out.push({
       id,
       name,
@@ -202,6 +214,7 @@ async function buildList(): Promise<RunesListEntry[]> {
       params: parseParams(pullField(body, 'params')),
       hasValidate: /\bvalidate\s*:/.test(body),
       source,
+      instructions,
     });
   }
   // Stable alphabetical order so the sidebar doesn't reshuffle on refresh.
