@@ -18,6 +18,8 @@ export interface AssemblyL4 {
   name: string;
   description: string;
   tags: string[];
+  /** Sub-group label for sidebar grouping. */
+  group?: string;
   spec: AuthoredComponent;
 }
 
@@ -76,6 +78,7 @@ export const ASSEMBLIES_L4: AssemblyL4[] = [
     name: '2-3/8" EUE Tubing String (3 joints)',
     description: 'Short production string — three 2-3/8" EUE tubing joints stacked. Smallest viable demo of the stacking model; real strings are 50+ joints.',
     tags: ['production string', 'tubing string', '2-3/8', 'EUE'],
+    group: 'Generic strings',
     spec: {
       id: 'string_2375_3jt',
       name: '2-3/8" EUE Tubing String (3 joints)',
@@ -93,6 +96,7 @@ export const ASSEMBLIES_L4: AssemblyL4[] = [
     name: '2-7/8" Tubing + Packer Element',
     description: '2-7/8" EUE tubing joint on top of a packer element. Minimal completion: tubing → packer; in reality there would be a setting tool, slips, and a tail pipe below.',
     tags: ['completion', 'packer', '2-7/8', 'EUE', 'tubing'],
+    group: 'Generic strings',
     spec: {
       id: 'string_2875_packer_assembly',
       name: '2-7/8" Tubing + Packer',
@@ -119,6 +123,7 @@ export const ASSEMBLIES_L4: AssemblyL4[] = [
     name: '2-7/8" Completion (2 joints + slips + packer)',
     description: 'Slightly fuller completion: two tubing joints + slip assembly + packer. Demonstrates a level-4 assembly drawing on three different primitive types (cylinder, slips, packer).',
     tags: ['completion', 'packer', 'slips', '2-7/8', 'EUE', 'multi-element'],
+    group: 'Generic strings',
     spec: {
       id: 'string_2875_2jt_slips_packer',
       name: '2-7/8" Completion (2 jt + slips + packer)',
@@ -154,6 +159,7 @@ export const ASSEMBLIES_L4: AssemblyL4[] = [
     name: 'SmartWell 2-Zone Intelligent Completion',
     description: 'Simplified Halliburton SmartWell completion: top packer + HS-ICV (upper zone) + isolation packer + HS-ICV (lower zone) + bottom plug. Each ICV provides remote zonal control; packers isolate the two reservoir zones.',
     tags: ['SmartWell', 'intelligent completion', 'multi-zone', 'ICV', 'packer', 'Halliburton'],
+    group: 'Intelligent Completions (HAL catalog)',
     spec: {
       id: 'smartwell_2zone',
       name: 'SmartWell 2-Zone',
@@ -187,6 +193,7 @@ export const ASSEMBLIES_L4: AssemblyL4[] = [
     name: 'Multilateral Junction (Pre-Milled Window + Whipstock)',
     description: 'Halliburton LatchRite-style multilateral junction: pre-milled window casing joint with whipstock set inside, deflecting the lateral bit. Latch coupling above; tubing string continues up.',
     tags: ['multilateral', 'TAML', 'junction', 'LatchRite', 'whipstock', 'window', 'Halliburton'],
+    group: 'Multilateral (HAL catalog)',
     spec: {
       id: 'multilateral_junction',
       name: 'Multilateral Junction',

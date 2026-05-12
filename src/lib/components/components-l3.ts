@@ -23,6 +23,9 @@ export interface ComponentL3Authored {
   name: string;
   description: string;
   tags: string[];
+  /** Sub-group label so the sidebar can group related entries under
+   *  inline headers (e.g. "Standard tubing", "Intelligent Completions"). */
+  group?: string;
   spec: AuthoredComponent;
 }
 
@@ -32,6 +35,7 @@ export interface ComponentL3Tool {
   name: string;
   description: string;
   tags: string[];
+  group?: string;
   /** Route to mount the legacy tool viewer for now. */
   route: string;
   /** Optional preview image relative to /static. */
@@ -53,13 +57,14 @@ function tubingJoint(opts: {
   wall: number;
   bodyLength?: number;
   threadCount?: number;
+  group?: string;
 }): ComponentL3Authored {
-  const { id, name, description, tags } = opts;
+  const { id, name, description, tags, group } = opts;
   const bodyLength = opts.bodyLength ?? 4.0;
   const threadCount = opts.threadCount ?? 5;
   return {
     kind: 'authored',
-    id, name, description, tags,
+    id, name, description, tags, group,
     spec: {
       id, name, description, tags,
       version: 1,
@@ -105,6 +110,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: '2-3/8" EUE Tubing Joint',
     description: '2-3/8" OD tubing joint, J-55/L-80, EUE connection. Body + top box + bottom pin. Common production tubing in shallow wells.',
     tags: ['tubing', '2-3/8', 'EUE', 'API tubing', 'production tubing'],
+    group: 'Standard API tubing',
     bodyOD: 2.375, wall: 0.190,
   }),
   tubingJoint({
@@ -112,6 +118,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: '2-7/8" EUE Tubing Joint',
     description: '2-7/8" OD tubing joint, J-55/L-80, EUE connection. Most common production tubing size.',
     tags: ['tubing', '2-7/8', 'EUE', 'API tubing', 'production tubing'],
+    group: 'Standard API tubing',
     bodyOD: 2.875, wall: 0.217,
   }),
   tubingJoint({
@@ -119,6 +126,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: '3-1/2" EUE Tubing Joint',
     description: '3-1/2" OD tubing joint, J-55/L-80/N-80, EUE connection. High-rate gas wells, larger production strings.',
     tags: ['tubing', '3-1/2', 'EUE', 'API tubing', 'high rate'],
+    group: 'Standard API tubing',
     bodyOD: 3.5, wall: 0.254, threadCount: 6,
   }),
   tubingJoint({
@@ -126,6 +134,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: '4-1/2" LC Casing Joint',
     description: '4-1/2" OD casing joint, K-55/J-55/N-80, LC (Long Thread Coupled). Typical shallow casing string member.',
     tags: ['casing', '4-1/2', 'LC', 'long thread', 'API casing'],
+    group: 'Standard API casing',
     bodyOD: 4.5, wall: 0.250, bodyLength: 4.5, threadCount: 8,
   }),
 
@@ -137,6 +146,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: 'HS-ICV (Interval Control Valve)',
     description: 'Halliburton HS-ICV — high-pressure/high-temperature interval control valve. Modeled as a sliding-sleeve mandrel + bottom packer element. The eight-position flow trim is simplified to 4 ports.',
     tags: ['HS-ICV', 'ICV', 'interval control valve', 'HPHT', 'SmartWell', 'completion', 'Halliburton'],
+    group: 'Intelligent Completions (HAL catalog)',
     spec: {
       id: 'hs_icv_valve', name: 'HS-ICV Valve',
       description: 'HS-ICV with packer below', tags: ['HS-ICV', 'ICV'],
@@ -158,6 +168,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: 'HF-1 Production Packer',
     description: 'Halliburton HF-1 — single-string retrievable cased-hole packer with premium connections. Element + slips + mandrel; setting accomplished by tubing-applied pressure.',
     tags: ['HF-1', 'production packer', 'packer', 'retrievable', 'SmartWell', 'completion', 'Halliburton'],
+    group: 'Intelligent Completions (HAL catalog)',
     spec: {
       id: 'hf1_packer', name: 'HF-1 Packer',
       description: 'HF-1 production packer', tags: ['HF-1', 'packer'],
@@ -188,6 +199,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     name: 'LatchRite Pre-Milled Window Joint',
     description: 'Halliburton LatchRite — TAML Level 4 multilateral junction component. Casing joint with a pre-milled axial window for lateral exit; latch coupling above orients the whipstock during construction.',
     tags: ['LatchRite', 'pre-milled window', 'multilateral', 'TAML', 'lateral', 'junction', 'Halliburton'],
+    group: 'Multilateral (HAL catalog)',
     spec: {
       id: 'latchrite_window', name: 'LatchRite Window',
       description: 'Pre-milled window casing joint', tags: ['LatchRite', 'multilateral'],
@@ -213,6 +225,7 @@ export const COMPONENTS_L3: ComponentL3[] = [
     description: 'Halliburton bottom sub — housing + sleeve + slips. Parametric; opens in the legacy viewer with full param sliders.',
     tags: ['HAL', 'completion', 'bottom sub', 'HAL10408', 'sub'],
     route: '/archive/tools/bottom-sub',
+    group: 'Legacy parametric tools',
   },
   {
     kind: 'tool',
@@ -221,5 +234,6 @@ export const COMPONENTS_L3: ComponentL3[] = [
     description: 'Ratch-latch receiving head — body + mandrel + seals. Parametric assembly with retrievable lock profile.',
     tags: ['ratch latch', 'receiving head', 'completion', 'lock', 'seal'],
     route: '/archive/tools/ratch-latch',
+    group: 'Legacy parametric tools',
   },
 ];

@@ -671,35 +671,47 @@
       </div>
 
       {#if sidebarTab === 'components'}
-        <div class="sb-list">
-          {#each COMPONENTS_L3.filter((c) => !filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))) as c (c.id)}
-            <button
-              class="prim-link"
-              class:active={activeTab?.id === `comp:${c.id}`}
-              onclick={() => openComposite('comp', c)}
-              title={c.description}
-            >
-              <span class="dot" class:pipe={c.kind === 'tool'}></span>
-              <span class="pl-name">{c.name}</span>
-              {#if c.kind === 'tool'}<span class="prim-kid-count">tool</span>{/if}
-            </button>
-          {/each}
-        </div>
+        {@const filt = COMPONENTS_L3.filter((c) => !filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase())))}
+        {@const groups = Array.from(new Set(filt.map((c) => c.group ?? 'Other')))}
+        {#each groups as g (g)}
+          <div class="sb-subhead">{g}</div>
+          <div class="sb-list">
+            {#each filt.filter((c) => (c.group ?? 'Other') === g) as c (c.id)}
+              <button
+                class="prim-link"
+                class:active={activeTab?.id === `comp:${c.id}`}
+                onclick={() => openComposite('comp', c)}
+                title={c.description}
+              >
+                <span class="dot" class:pipe={c.kind === 'tool'}></span>
+                <span class="pl-name">{c.name}</span>
+                {#if c.kind === 'tool'}<span class="prim-kid-count">tool</span>{/if}
+              </button>
+            {/each}
+          </div>
+        {/each}
+        {#if filt.length === 0}<div class="sb-empty">No components match "{filter}".</div>{/if}
       {/if}
       {#if sidebarTab === 'assemblies'}
-        <div class="sb-list">
-          {#each ASSEMBLIES_L4.filter((a) => !filter || a.name.toLowerCase().includes(filter.toLowerCase()) || a.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))) as a (a.id)}
-            <button
-              class="prim-link"
-              class:active={activeTab?.id === `asm:${a.id}`}
-              onclick={() => openComposite('asm', a)}
-              title={a.description}
-            >
-              <span class="dot"></span>
-              <span class="pl-name">{a.name}</span>
-            </button>
-          {/each}
-        </div>
+        {@const filt = ASSEMBLIES_L4.filter((a) => !filter || a.name.toLowerCase().includes(filter.toLowerCase()) || a.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase())))}
+        {@const groups = Array.from(new Set(filt.map((a) => a.group ?? 'Other')))}
+        {#each groups as g (g)}
+          <div class="sb-subhead">{g}</div>
+          <div class="sb-list">
+            {#each filt.filter((a) => (a.group ?? 'Other') === g) as a (a.id)}
+              <button
+                class="prim-link"
+                class:active={activeTab?.id === `asm:${a.id}`}
+                onclick={() => openComposite('asm', a)}
+                title={a.description}
+              >
+                <span class="dot"></span>
+                <span class="pl-name">{a.name}</span>
+              </button>
+            {/each}
+          </div>
+        {/each}
+        {#if filt.length === 0}<div class="sb-empty">No assemblies match "{filter}".</div>{/if}
       {/if}
       {#if sidebarTab === 'kb'}
         <!-- KB list — driven by /kb/index.json. Each row is a card-link

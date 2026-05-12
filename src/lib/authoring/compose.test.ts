@@ -18,6 +18,9 @@ vi.mock('$lib/components/builder', () => {
   }));
   return {
     initManifold: vi.fn(async () => {}),
+    setCircularSegmentMode: vi.fn(() => {}),
+    CIRCULAR_SEGMENTS_DEFAULT: 256,
+    CIRCULAR_SEGMENTS_COMPOSE: 96,
     buildPrimitiveManifold: vi.fn((id: string, params: Record<string, number>) =>
       makeFakeManifold({ prim: id, params })
     ),
