@@ -164,15 +164,42 @@
   let liveCompletions: Completion[] = $state(completions);
   $effect(() => { liveCompletions = completions; });
 
-  /** Custom completion source. Reads liveCompletions lazily so prop
-   *  changes don't require recreating the editor state. CM6's default
-   *  JS completion fires alongside via javascriptLanguage.data.of. */
+  /** Custom completion source. Three context branches:
+   *    1. `p.<partial>`        → param + derived keys (filter type=variable),
+   *                              anchored after the dot so the completion
+   *                              replaces only the partial word, not the
+   *                              `p.` prefix.
+   *    2. `<anything-else>.x`  → Manifold methods (filter type=method) so
+   *                              chains like `bore.t<Tab>` autocomplete
+   *                              to `.translate`.
+   *    3. bare identifier      → everything (helpers, functions, params,
+   *                              derived, methods).
+   *  Reads liveCompletions lazily so prop changes don't require
+   *  recreating the editor state. */
   function makeUserSource() {
     return (context: CompletionContext) => {
       if (liveCompletions.length === 0) return null;
-      const word = context.matchBefore(/[\w$.]+/);
+      // 1. `p.<partial>` — params and derived
+      const pDot = context.matchBefore(/\bp\.\w*/);
+      if (pDot) {
+        const afterDot = pDot.from + 2;
+        const opts = liveCompletions.filter((c) => c.type === 'variable');
+        if (opts.length === 0) return null;
+        return { from: afterDot, options: opts, validFor: /^\w*$/ };
+      }
+      // 2. `<word>.<partial>` — Manifold chain methods
+      const anyDot = context.matchBefore(/\b\w+\.\w*/);
+      if (anyDot) {
+        const dotIdx = anyDot.text.indexOf('.');
+        const afterDot = anyDot.from + dotIdx + 1;
+        const opts = liveCompletions.filter((c) => c.type === 'method');
+        if (opts.length === 0) return null;
+        return { from: afterDot, options: opts, validFor: /^\w*$/ };
+      }
+      // 3. bare identifier — full catalog
+      const word = context.matchBefore(/[\w$]+/);
       if (!word || (word.from === word.to && !context.explicit)) return null;
-      return { from: word.from, options: liveCompletions, validFor: /^[\w$.]*$/ };
+      return { from: word.from, options: liveCompletions, validFor: /^\w*$/ };
     };
   }
 

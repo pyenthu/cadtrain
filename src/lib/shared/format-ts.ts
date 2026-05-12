@@ -54,3 +54,22 @@ export async function formatTypescript(source: string): Promise<string> {
     return source;
   }
 }
+
+/** Parse-check the source via Prettier's TS parser (cheap dry-run of
+ *  the same format() pipeline). Returns null when the parse succeeds,
+ *  or the error message when it doesn't — callers use this to refuse
+ *  a save before writing broken TS to disk, which would otherwise
+ *  trigger Vite's HMR error overlay over the whole page. */
+export async function checkTypescriptSyntax(source: string): Promise<string | null> {
+  try {
+    const { format, plugins } = await loadPrettier();
+    await format(source, { ...OPTIONS, plugins });
+    return null;
+  } catch (err: any) {
+    const raw = String(err?.message ?? err);
+    // Prettier prepends the parser name + a long stack — strip to the
+    // first meaningful line so it fits in the inline save-status row.
+    const firstLine = raw.split('\n').find((l) => l.trim().length > 0) ?? raw;
+    return firstLine.replace(/^SyntaxError:\s*/i, '').trim();
+  }
+}

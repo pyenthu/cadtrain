@@ -21,13 +21,13 @@
   import { WebGLRenderer } from 'three';
   import { onMount } from 'svelte';
   import { COMPONENTS, type ComponentDef } from '$lib/components/library';
-  import { initManifold } from '$lib/components/builder';
+  import { initManifold, setRenderZScale } from '$lib/components/builder';
   import { buildAuthored } from '$lib/authoring/compose';
   import { emptyAuthoredComponent, type AuthoredComponent } from '$lib/authoring/schema';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import KbTableViewer from '$lib/shared/KbTableViewer.svelte';
   import CodeEditor from '$lib/shared/CodeEditor.svelte';
-  import { formatTypescript } from '$lib/shared/format-ts';
+  import { formatTypescript, checkTypescriptSyntax } from '$lib/shared/format-ts';
   import type { Completion } from '@codemirror/autocomplete';
   import MarkdownView from '$lib/shared/MarkdownView.svelte';
   import { COMPONENTS_L3, type ComponentL3 } from '$lib/components/components-l3';
@@ -97,23 +97,8 @@
     // a runes-class list under this tab.
     {
       id: 'xml_primitive',
-      name: 'XML Primitive',
+      name: 'Basic',
       match: () => false,
-    },
-    {
-      id: 'primitives',
-      name: 'Primitives',
-      match: (c) => [
-        'hollow_cylinder', 'taper', 'shoulder',
-        'grooved_cylinder', 'slotted_cylinder', 'seal_bore',
-        'threaded_box', 'threaded_pin',
-        'threaded_pin_collared',
-        'slips', 'j_latch', 'packer_element',
-        // Catalog-inspired (Halliburton Intelligent Completions + Multilateral)
-        'window_cutout', 'whipstock', 'sliding_sleeve',
-        // Drill pipe
-        'drill_pipe_tool_joint',
-      ].includes(c.id),
     },
     {
       id: 'compositions',
@@ -316,6 +301,31 @@
    *  sidebar with a flat primitive list beneath. Defaults to XML Primitive
    *  (the new declarative pipeline) so it's the entry point on first load. */
   let sidebarTab = $state<string>('xml_primitive');
+  /** Top-level sidebar split — 'parts' shows the existing primitive
+   *  trees (Components / Compositions / Assemblies / KB / XML Primitive),
+   *  'operator' shows higher-level CAD operations (cut slots, extrude,
+   *  twist, roll, cut threads, …) that operate ON the active primitive's
+   *  geom body. Each operator click inserts a TODO marker for now;
+   *  real implementations land per-operator. */
+  let sidebarTopTab = $state<'parts' | 'operator'>('parts');
+
+  /** Operator catalog — the Operator tab's content. Each entry is a
+   *  named operation with a short description and the snippet that
+   *  gets spliced into the active geom body on click. Snippets are
+   *  intentionally `// TODO: …` lines; real builders come in future
+   *  PRs as each operator gets implemented. */
+  const OPERATORS = [
+    { id: 'cut-slot',    name: 'Cut slot',    glyph: '▭', desc: 'Subtract a rectangular slot from the body.',
+      snippet: '// TODO: cut slot — subtract a box from `body` at (x,y,z) with dims (w,h,d)' },
+    { id: 'extrude',     name: 'Extrude',     glyph: '⇡', desc: 'Sweep a 2D profile along an axis.',
+      snippet: '// TODO: extrude — take a CrossSection and extrude by `length`' },
+    { id: 'twist',       name: 'Twist',       glyph: '↻', desc: 'Rotate cross-sections progressively along Z.',
+      snippet: '// TODO: twist — apply progressive rotation along Z' },
+    { id: 'roll',        name: 'Roll',        glyph: '◐', desc: 'Cylindrical roll / bend along a path.',
+      snippet: '// TODO: roll — bend along a cylindrical path' },
+    { id: 'cut-threads', name: 'Cut threads', glyph: '⫯', desc: 'Cut a helical thread groove.',
+      snippet: '// TODO: cut threads — helical groove, pitch=… depth=…' },
+  ] as const;
   /** Free-text filter for the active tab's primitive list. Matches against
    *  name, id, and tag list — case-insensitive substring. Persists across
    *  sidebar-tab switches so a "thread" search remains as you bounce
@@ -702,6 +712,7 @@
     // marker shape so the 3D scene doesn't show an empty / error state on
     // first open.
     const stub = `import { cyl } from '../manifold-helpers';
+import { defineGeom } from '.';
 
 export const meta = {
   id: '${id}',
@@ -711,10 +722,10 @@ export const meta = {
   params: {},
 } as const;
 
-export const geom = (_p: Record<string, number>) => {
+export const geom = defineGeom(meta, (p) => {
   // Empty primitive — open the AI tab and describe what this should be.
   return cyl(0.1, 0.05, 0.05);
-};
+});
 `;
     try {
       const r = await fetch('/api/runes/save', {
@@ -1292,6 +1303,15 @@ export const geom = (_p: Record<string, number>) => {
   let partsAddHelperOpen = $state(false);
   let partsAddRunesOpen  = $state(false);
 
+  /** Splice an operator's TODO snippet into the active primitive's
+   *  geom body. Uses the same insertIntoGeomBody pipeline as the Parts
+   *  insertion so the snippet lands inside the defineGeom function. */
+  function insertOperatorSnippet(op: typeof OPERATORS[number]) {
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
+    activeTab.sourceDraft = insertIntoGeomBody(cur, op.snippet);
+  }
+
   function insertHelperSnippet(name: string) {
     if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
     const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
@@ -1471,11 +1491,19 @@ export const geom = (_p: Record<string, number>) => {
     return null;
   }
 
+  /** Page-wide render-time Z-scale. Compresses the Z axis at render
+   *  time so a long pipe joint stays recognisable next to its OD/wall.
+   *  Geom logic is unchanged — only the final mesh is squashed. Wired
+   *  through `setRenderZScale` in builder.ts; included in `buildKey`
+   *  so changing it triggers the same debounced rebuild as a slider. */
+  let renderZScale = $state(1.0);
+  $effect(() => { setRenderZScale(renderZScale); });
+
   let buildKey = $derived(
     activeTab && (activeTab.kind === 'primitive' || activeTab.kind === 'xml-primitive')
-      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params })
+      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params, z: renderZScale })
       : activeTab && activeTab.kind === 'composite'
-      ? `comp:${activeTab.id}`
+      ? `comp:${activeTab.id}:${renderZScale}`
       : '',
   );
   let buildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1509,6 +1537,17 @@ export const geom = (_p: Record<string, number>) => {
       if (Math.round(cur * 1e6) === Math.round(def.default * 1e6)) continue;
       const next = setParamDefault(raw, k, cur);
       if (next != null) raw = next;
+    }
+    // Syntax gate — refuse to write code that won't parse. Otherwise
+    // Vite's HMR overlay covers the whole page until the file is
+    // hand-fixed on disk. We use Prettier's parser as a cheap proxy
+    // for "will Vite's oxc parse this?" — they catch the same class
+    // of structural errors.
+    const syntaxErr = await checkTypescriptSyntax(raw);
+    if (syntaxErr) {
+      tab.saveStatus = 'error';
+      tab.saveError = `Syntax error — not saved: ${syntaxErr}`;
+      return false;
     }
     // Format-on-save. Prettier is lazy-loaded the first time this fires;
     // failures fall back to the raw source (no save is blocked by a
@@ -2224,11 +2263,42 @@ export const geom = (_p: Record<string, number>) => {
 
 <div class="layout">
   <aside class="sidebar" tabindex="0" onkeydown={onSidebarKey} style="width: {sidebarWidth}px">
-    <div class="sb-hdr">
-      <span class="sb-hdr-mark">◆</span>
-      <span class="sb-hdr-text">Components</span>
+    <!-- Top-level Parts / Operator split. Parts is the existing tree of
+         primitives; Operator is a catalog of CAD operations that
+         splice into the active geom body. -->
+    <div class="sb-toptabs">
+      <button
+        class="sb-toptab"
+        class:active={sidebarTopTab === 'parts'}
+        type="button"
+        onclick={() => (sidebarTopTab = 'parts')}
+      >Parts</button>
+      <button
+        class="sb-toptab"
+        class:active={sidebarTopTab === 'operator'}
+        type="button"
+        onclick={() => (sidebarTopTab = 'operator')}
+      >Operator</button>
     </div>
 
+    {#if sidebarTopTab === 'operator'}
+      <div class="sb-operator">
+        <p class="sb-op-intro">Click an operator to splice a stub into the active primitive's geom body. Implementations land per-operator.</p>
+        {#each OPERATORS as op (op.id)}
+          <button
+            class="sb-op-item"
+            type="button"
+            title={op.desc}
+            onclick={() => insertOperatorSnippet(op)}
+            disabled={!activeTab || activeTab.kind !== 'xml-primitive'}
+          >
+            <span class="sb-op-glyph">{op.glyph}</span>
+            <span class="sb-op-name">{op.name}</span>
+            <span class="sb-op-desc">{op.desc}</span>
+          </button>
+        {/each}
+      </div>
+    {:else}
     <div class="sb-split">
       <!-- Vertical tab rail on the left — one button per top-level group.
            Selected tab swaps the flat list shown to its right. -->
@@ -2521,6 +2591,7 @@ export const geom = (_p: Record<string, number>) => {
       {/each}
     </div>
     </div>
+    {/if}
   </aside>
 
   <!-- Drag handle — sits between the sidebar and the rest of the layout.
@@ -2717,6 +2788,20 @@ export const geom = (_p: Record<string, number>) => {
               {#if PIPE_PRIMS.has(activeDef.id)}<span class="badge pipe">pipe</span>{/if}
               {#if activeTab.draft}<span class="badge draft-tag">draft</span>{/if}
               {#if activeTab.kind === 'xml-primitive'}<span class="badge pipe">runes-class</span>{/if}
+              <!-- Render-time Z compression. Geom unchanged; only the
+                   final mesh is squashed so a long pipe joint stays
+                   recognisable against its OD/wall. -->
+              <label class="z-scale" title="Render-time Z multiplier — compresses long primitives without changing their geom logic.">
+                <span class="z-scale-lbl">Z×</span>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="1"
+                  step="0.05"
+                  bind:value={renderZScale}
+                />
+                <span class="z-scale-val">{renderZScale.toFixed(2)}</span>
+              </label>
             </div>
           </header>
 
@@ -3450,6 +3535,70 @@ export const geom = (_p: Record<string, number>) => {
     display: flex; align-items: center; gap: 10px;
     box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);
   }
+  /* Top-level Parts / Operator tab strip — sits at the very top of
+     the sidebar. Two equal-width buttons with an active underline. */
+  .sb-toptabs {
+    display: flex;
+    background: linear-gradient(135deg, #1f2329 0%, #2b2f36 55%, #3a3f47 100%);
+    border-bottom: 2px solid #cc2222;
+  }
+  .sb-toptab {
+    flex: 1;
+    padding: 12px 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.55);
+    border: none;
+    border-bottom: 3px solid transparent;
+    font: 700 12px Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: color 100ms, border-color 100ms, background 100ms;
+  }
+  .sb-toptab:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
+  .sb-toptab.active {
+    color: #fff;
+    border-bottom-color: #cc2222;
+  }
+  /* Operator pane — list of CAD operations. Each item shows a glyph,
+     the operator name, and a short description. Disabled when no
+     runes primitive is active (can't splice into nothing). */
+  .sb-operator {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    padding: 8px;
+    background: #fafafa;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .sb-op-intro {
+    font: 11px Arial; color: #666;
+    margin: 0 0 4px;
+    line-height: 1.4;
+  }
+  .sb-op-item {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 2px 6px;
+    padding: 8px 10px;
+    background: #fff;
+    border: 1px solid #e2e2e8;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 100ms, background 100ms;
+  }
+  .sb-op-item:hover { border-color: #cc2222; background: #fdf5f5; }
+  .sb-op-item:disabled { opacity: 0.5; cursor: not-allowed; background: #f2f2f5; }
+  .sb-op-glyph {
+    grid-row: 1 / 3;
+    font-size: 18px; line-height: 1;
+    color: #cc2222;
+    text-align: center;
+  }
+  .sb-op-name { font: 600 12px Arial; color: #222; }
+  .sb-op-desc { font: 10px Arial; color: #888; line-height: 1.3; }
   .sb-hdr-mark {
     color: #cc2222;
     font-size: 14px; line-height: 1;
@@ -3858,6 +4007,19 @@ export const geom = (_p: Record<string, number>) => {
     align-items: stretch;
   }
   .stage-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  /* Z-scale slider — tucked into the badges row. Inline so it doesn't
+     consume another row of vertical real estate above the 3D stage. */
+  .z-scale {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    background: #f5f3fb;
+    border: 1px solid #d8d4e8;
+    border-radius: 12px;
+    font: 10px Arial; color: #555;
+  }
+  .z-scale-lbl { font-weight: 600; color: #7c4dff; }
+  .z-scale input[type="range"] { width: 80px; height: 14px; accent-color: #7c4dff; }
+  .z-scale-val { font: 10px ui-monospace, monospace; color: #444; min-width: 28px; text-align: right; }
   .stage-title { position: relative; display: flex; align-items: baseline; gap: 6px; }
   .stage-name { margin: 0; font-size: 20px; color: #cc2222; }
   .stage-id { font: 10px monospace; color: #888; }

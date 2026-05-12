@@ -439,6 +439,23 @@ export function buildPrimitiveManifold(componentId: string, params: Record<strin
 }
 
 /**
+ * Render-time Z-scale multiplier. Downhole tools are typically modelled
+ * with lengths in feet or metres while OD/wall are in inches — at 1:1
+ * scale a 30 ft joint with a 2 in OD renders as a thin string. The
+ * multiplier compresses the Z axis at finalize time so proportions are
+ * still recognisable in the viewport. The geom function's logical Z
+ * values are unchanged; only the rendered geometry is squashed.
+ *
+ * Settable via `setRenderZScale` from the page-level UI slider. Read
+ * at every `finalizeManifold` invocation, so changing it rebuilds the
+ * scene for every active primitive in lock-step. Default is 1.0 (no
+ * compression).
+ */
+let _renderZScale = 1.0;
+export function setRenderZScale(v: number): void { _renderZScale = v; }
+export function getRenderZScale(): number { return _renderZScale; }
+
+/**
  * Apply the Y-axis half cutaway and convert to `full` + `cutVC` three.js
  * geometries. Shared between `buildComponent` and the composition
  * interpreter so both produce identical render output.
@@ -450,12 +467,17 @@ export function buildPrimitiveManifold(componentId: string, params: Record<strin
  * assemblies it didn't actually help (gaps between parts were
  * preserved; only the assembly midpoint moved). Callers that want
  * a centered render now translate explicitly inside their geom.
+ *
+ * The render-time Z-scale (see `setRenderZScale`) is applied last, so
+ * the cutaway box and the maxOD-keyed classification work in the
+ * geom's natural units.
  */
 export function finalizeManifold(manifold: any, maxOD: number): ComponentResult {
+  const scaled = _renderZScale === 1.0 ? manifold : manifold.scale([1, 1, _renderZScale]);
   return {
-    full: manifoldToGeo(manifold),
-    cutVC: manifoldToCutVC(manifold.subtract(getCutBox()), maxOD),
-    manifold,
+    full: manifoldToGeo(scaled),
+    cutVC: manifoldToCutVC(scaled.subtract(getCutBox()), maxOD),
+    manifold: scaled,
   };
 }
 

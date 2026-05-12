@@ -19,7 +19,7 @@ export const meta = {
   },
 } as const;
 
-export const geom = defineGeom(meta, ({ od, wall, length }) => {
-  const id = od - 2 * wall;
-  return tube(od / 2, id / 2, length).translate(0, 0, length / 2);
+export const geom = defineGeom(meta, (p) => {
+  const id = p.od - 2 * p.wall;
+  return tube(p.od / 2, id / 2, p.length);
 });

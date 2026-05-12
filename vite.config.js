@@ -5,6 +5,13 @@ export default defineConfig({
   plugins: [sveltekit()],
   server: {
     port: 3333,
+    // Suppress the full-page error overlay. Parse / build errors still
+    // appear in the dev-server console, but they don't blot out the
+    // /primitives UI so the user can navigate back to the Builder tab
+    // and fix the offending file. The save flow has its own client-side
+    // syntax check (checkTypescriptSyntax) that catches most cases
+    // before they ever hit disk; this is just the safety net.
+    hmr: { overlay: false },
     // Exclude runtime-written data from Vite's file watcher so saving an
     // authored part / training cache record / eval result doesn't trigger
     // a full dev server restart. The symlink `static/training_data ->

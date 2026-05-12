@@ -1,4 +1,4 @@
-import { cyl, mv } from '../manifold-helpers';
+import { cyl } from '../manifold-helpers';
 import { defineGeom } from '.';
 
 export const meta = {
@@ -9,9 +9,9 @@ export const meta = {
   tags: ['cone', 'taper', 'crossover', 'transition'],
   params: {
     od: { label: 'OD (bottom)', min: 0.5, max: 14, step: 0.05, unit: 'in', default: 2.875 },
-    odTop: { label: 'OD (top)', min: 0.5, max: 14, step: 0.05, unit: 'in', default: 2.0 },
-    wall: { label: 'Wall', min: 0.05, max: 1, step: 0.05, unit: 'in', default: 0.217 },
-    length: { unit: 'in', label: 'Length', step: 0.1, max: 20, min: 0.5, default: 1 },
+    odTop: { label: 'OD (top)', min: 0.5, max: 14, step: 0.05, unit: 'in', default: 3.5 },
+    wall: { label: 'Wall', min: 0.05, max: 1, step: 0.05, unit: 'in', default: 0.29 },
+    length: { label: 'Length', min: 0.5, max: 20, step: 0.1, unit: 'in', default: 1 },
   },
   validate: (p: Record<string, number>): string[] => {
     const errs: string[] = [];
@@ -22,17 +22,20 @@ export const meta = {
   },
 } as const;
 
-export const geom = defineGeom(meta, ({ od, odTop, wall, length }) => {
-  const id = od - 2 * wall;
-  const idTop = odTop - 2 * wall;
-  const outer = cyl(length, odTop / 2, od / 2);
+export const geom = defineGeom(meta, (p) => {
+  // Z-down: top (z=0) is narrow, bottom (z=length) is wide.
+  // cyl(h, r1, r2) puts r1 at z=0 and r2 at z=h (Manifold's uncentered default).
+  const outer = cyl(p.length, p.odTop / 2, p.od / 2);
+
+  // Bore — same taper inset by `wall`. Small overshoot at each end so
+  // the subtract reads as fully hollow under Manifold's CSG tolerance.
+  const id = p.od - 2 * p.wall;
+  const idTop = p.odTop - 2 * p.wall;
   const OS = 0.4;
-  const slope = (id - idTop) / 2 / length;
-  const innerH = length + 2 * OS;
-  const innerR1 = idTop / 2 - slope * OS;
-  const innerR2 = id / 2 + slope * OS;
-  const inner = mv(cyl(innerH, innerR1, innerR2), [0, 0, length / 2]);
-  return mv(outer, [0, 0, length / 2])
-    .subtract(inner)
-    .rotate(180, 0, 0);
+  const slope = (id - idTop) / 2 / p.length; // dr/dz, positive when bottom wider
+  const innerR1 = idTop / 2 - slope * OS; // bore radius at z=-OS
+  const innerR2 = id / 2 + slope * OS; // bore radius at z=length+OS
+  const inner = cyl(p.length + 2 * OS, innerR1, innerR2).translate(0, 0, -OS);
+
+  return outer.subtract(inner);
 });
