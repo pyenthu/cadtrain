@@ -23,7 +23,6 @@
  */
 
 import type { AuthoredComponent } from '$lib/authoring/schema';
-import { generateTubingComponentSync, type TubingInputs } from './rules/tubing';
 
 /** Hierarchy tier:
  *    2 = Composition — single-part physical item assembled from primitives
@@ -64,75 +63,9 @@ export interface ComponentL3Tool {
 
 export type ComponentL3 = ComponentL3Authored | ComponentL3Tool;
 
-// ── Helper: tubing joint via the rules in src/lib/components/rules/tubing.ts ─
-// All geometry derivation lives in that one file; this helper just wraps
-// the rules output with the L3 metadata (name / tags / group). KB-anchored
-// values aren't available synchronously at module load — the formula
-// fallbacks are used here, which match the API spec for common sizes
-// closely enough that the visible difference vs KB-resolved is minimal.
-// The KB-resolved path runs from the casing-tubing-data row click flow.
-function tubingJoint(opts: {
-  id: string;
-  name: string;
-  description: string;
-  tags: string[];
-  group?: string;
-  inputs: TubingInputs;
-}): ComponentL3Authored {
-  const spec = generateTubingComponentSync(opts.id, opts.name, opts.inputs);
-  // Override the auto-generated description with the catalog-flavored one
-  // the caller supplied (keeps the L3 catalog reading nicely in the sidebar).
-  spec.description = opts.description;
-  spec.tags = opts.tags;
-  return {
-    kind: 'authored',
-    id: opts.id, name: opts.name, description: opts.description, tags: opts.tags, group: opts.group,
-    spec,
-  };
-}
-
 // ── Components catalog ───────────────────────────────────────────────────
 
 export const COMPONENTS_L3: ComponentL3[] = [
-  // Tubing joints — 4 standard API sizes. Real connections coming from the
-  // KB (static/kb/api/casing-tubing-data.json); ODs match common EUE rows.
-  tubingJoint({
-    id: 'tubing_2_375_eue',
-    name: '2-3/8" EUE Tubing Joint',
-    description: '2-3/8" OD tubing joint, J-55, EUE connection. Body + top box + bottom pin. Common production tubing in shallow wells.',
-    tags: ['tubing', '2-3/8', 'EUE', 'API tubing', 'production tubing'],
-    tier: 2,
-    group: 'Standard API tubing',
-    inputs: { size_in: 2.375, weight_lbft: 4.7, grade: 'J-55', connection: 'EUE' },
-  }),
-  tubingJoint({
-    id: 'tubing_2_875_eue',
-    name: '2-7/8" EUE Tubing Joint',
-    description: '2-7/8" OD tubing joint, J-55, EUE connection. Most common production tubing size.',
-    tags: ['tubing', '2-7/8', 'EUE', 'API tubing', 'production tubing'],
-    tier: 2,
-    group: 'Standard API tubing',
-    inputs: { size_in: 2.875, weight_lbft: 6.5, grade: 'J-55', connection: 'EUE' },
-  }),
-  tubingJoint({
-    id: 'tubing_3_500_eue',
-    name: '3-1/2" EUE Tubing Joint',
-    description: '3-1/2" OD tubing joint, J-55, EUE connection. High-rate gas wells, larger production strings.',
-    tags: ['tubing', '3-1/2', 'EUE', 'API tubing', 'high rate'],
-    tier: 2,
-    group: 'Standard API tubing',
-    inputs: { size_in: 3.5, weight_lbft: 9.3, grade: 'J-55', connection: 'EUE' },
-  }),
-  tubingJoint({
-    id: 'tubing_4_500_lc',
-    name: '4-1/2" LC Casing Joint',
-    description: '4-1/2" OD casing joint, K-55/J-55/N-80, LC (Long Thread Coupled). Typical shallow casing string member.',
-    tags: ['casing', '4-1/2', 'LC', 'long thread', 'API casing'],
-    tier: 2,
-    group: 'Standard API casing',
-    inputs: { size_in: 4.5, weight_lbft: 11.6, grade: 'J-55', connection: 'EUE' },
-  }),
-
   // ── Catalog-inspired completions (Halliburton Intelligent Completions
   //    Catalog 2024 + Multilateral Technology Catalog) ──
   {
@@ -190,30 +123,6 @@ export const COMPONENTS_L3: ComponentL3[] = [
       ops: [],
     },
   },
-  {
-    kind: 'authored',
-    id: 'latchrite_window',
-    name: 'LatchRite Pre-Milled Window Joint',
-    description: 'Halliburton LatchRite — TAML Level 4 multilateral junction component. Casing joint with a pre-milled axial window for lateral exit; latch coupling above orients the whipstock during construction.',
-    tags: ['LatchRite', 'pre-milled window', 'multilateral', 'TAML', 'lateral', 'junction', 'Halliburton'],
-    tier: 2,
-    group: 'Multilateral (HAL catalog)',
-    spec: {
-      id: 'latchrite_window', name: 'LatchRite Window',
-      description: 'Pre-milled window casing joint', tags: ['LatchRite', 'multilateral'],
-      version: 1, created: new Date('2026-05-12').toISOString(), source: 'manual',
-      parts: [
-        { id: 'window_joint', kind: 'primitive', prim: 'window_cutout',
-          params: { od: 7.0, wall: 0.4, length: 5.0, windowWidth: 2.0, windowHeight: 3.0, windowOffset: 1.0 },
-          transform: { tz: 0 } },
-        { id: 'latch_coupling', kind: 'primitive', prim: 'grooved_cylinder',
-          params: { od: 8.0, wall: 0.5, length: 1.5, numGrooves: 4, grooveDepth: 0.06 },
-          transform: { tz: 5.0 } },
-      ],
-      ops: [],
-    },
-  },
-
   // Legacy parametric tools — link to existing /archive viewers until we
   // port their builders into the unified buildAuthored pipeline.
   {

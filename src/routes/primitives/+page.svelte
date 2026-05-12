@@ -101,16 +101,6 @@
       match: () => false,
     },
     {
-      id: 'compositions',
-      name: 'Compositions',
-      compound: true,
-      match: (c) => c.category === 'connection',
-      sub: [
-        { id: 'api_tubular',  name: 'API tubular',  compound: true, match: (c) => ['thread_eue', 'thread_ltc'].includes(c.id) },
-        { id: 'drill_string', name: 'Drill string', compound: true, match: (c) => ['thread_if', 'thread_fh', 'thread_nc'].includes(c.id) },
-      ],
-    },
-    {
       id: 'components',
       name: 'Components',
       match: () => false, // populated later — placeholder for level 3.
@@ -2305,7 +2295,6 @@ export const geom = defineGeom(meta, (p) => {
       <div class="sb-rail">
         {#each TREE as f (f.id)}
           {@const count = f.id === 'components' ? COMPONENTS_L3.filter((c) => c.tier === 3).length
-                       : f.id === 'compositions' ? itemsInFolder(f).length + COMPONENTS_L3.filter((c) => c.tier === 2).length
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
                        : f.id === 'kb' ? kbList.length
                        : f.id === 'xml_primitive' ? runesList.length
@@ -2564,29 +2553,6 @@ export const geom = defineGeom(meta, (p) => {
             <div class="sb-empty">No primitives match "{filter}".</div>
           {/if}
 
-          <!-- Compositions tab also lists tier=2 entries from COMPONENTS_L3
-               (tubing joints, LatchRite window, etc.) — single-part items
-               assembled from primitives, opened as composite tabs. -->
-          {#if f.id === 'compositions'}
-            {@const l2 = COMPONENTS_L3.filter((c) => c.tier === 2 && (!filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))))}
-            {@const l2groups = Array.from(new Set(l2.map((c) => c.group ?? 'Other')))}
-            {#each l2groups as g (g)}
-              <div class="sb-subhead">{g}</div>
-              <div class="sb-list">
-                {#each l2.filter((c) => (c.group ?? 'Other') === g) as c (c.id)}
-                  <button
-                    class="prim-link"
-                    class:active={activeTab?.id === `comp:${c.id}`}
-                    onclick={() => openComposite('comp', c)}
-                    title={c.description}
-                  >
-                    <span class="dot"></span>
-                    <span class="pl-name">{c.name}</span>
-                  </button>
-                {/each}
-              </div>
-            {/each}
-          {/if}
         {/if}
       {/each}
     </div>
