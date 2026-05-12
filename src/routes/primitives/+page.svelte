@@ -1833,56 +1833,6 @@ export const geom = (_p: Record<string, number>) => {
     tab.descForm.error = undefined;
   }
 
-  /** Insert / replace / strip a top-level boolean flag on the meta
-   *  object literal. Used by the `skipCenter` checkbox in the Params
-   *  tab — toggles `skipCenter: true,` into or out of the meta block.
-   *  Inserts as the first field (immediately after the `{`) for
-   *  visibility. Returns null if the meta block can't be parsed. */
-  function setMetaFlag(src: string, flag: string, value: boolean): string | null {
-    const metaRe = /export\s+const\s+meta\s*=\s*\{/;
-    const m = metaRe.exec(src);
-    if (!m) return null;
-    const openIdx = m.index + m[0].length - 1;
-    let i = openIdx + 1;
-    let depth = 1;
-    let inS: '"' | "'" | '`' | null = null;
-    while (i < src.length && depth > 0) {
-      const c = src[i];
-      if (inS) {
-        if (c === '\\') { i += 2; continue; }
-        if (c === inS) inS = null;
-      } else {
-        if (c === '"' || c === "'" || c === '`') inS = c as any;
-        else if (c === '{') depth++;
-        else if (c === '}') { depth--; if (depth === 0) break; }
-      }
-      i++;
-    }
-    if (depth !== 0) return null;
-    const body = src.slice(openIdx + 1, i);
-    const flagEsc = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Strip any existing top-level entry — line-aware to avoid leaving
-    // empty lines behind.
-    const stripped = body
-      .replace(new RegExp(`[ \\t]*\\n[ \\t]*${flagEsc}\\s*:\\s*(?:true|false)\\s*,?`, 'g'), '')
-      .replace(new RegExp(`\\b${flagEsc}\\s*:\\s*(?:true|false)\\s*,?\\s*`, 'g'), '');
-    if (!value) {
-      return src.slice(0, openIdx + 1) + stripped + src.slice(i);
-    }
-    const indentMatch = stripped.match(/^\s*\n([ \t]+)/);
-    const indent = indentMatch?.[1] ?? '  ';
-    const insertion = `\n${indent}${flag}: true,`;
-    return src.slice(0, openIdx + 1) + insertion + stripped + src.slice(i);
-  }
-
-  function setSkipCenter(tab: Tab, value: boolean) {
-    if (!tab.runesEntry) return;
-    const cur = tab.sourceDraft ?? tab.runesEntry.source;
-    const next = setMetaFlag(cur, 'skipCenter', value);
-    if (next == null) return;
-    tab.sourceDraft = next;
-  }
-
   function openParamEdit(tab: Tab, key: string) {
     if (!tab.runesEntry) return;
     const schema = tab.runesEntry.meta.params[key] as any;
@@ -2910,16 +2860,6 @@ export const geom = (_p: Record<string, number>) => {
           {@const activeGroup = showGroupTabs ? (selectedParamGroup && groups.includes(selectedParamGroup) ? selectedParamGroup : groups[0]) : null}
           <div class="ed-sec compact">
             <div class="ed-sec-h thin">
-              {#if activeTab.kind === 'xml-primitive'}
-                <label class="meta-flag" title="When checked, the renderer doesn't auto-center this primitive on Z — your translate(_, _, z) sticks.">
-                  <input
-                    type="checkbox"
-                    checked={activeTab.runesEntry?.meta.skipCenter === true}
-                    onchange={(e) => setSkipCenter(activeTab!, (e.currentTarget as HTMLInputElement).checked)}
-                  />
-                  <span>skip Z-center</span>
-                </label>
-              {/if}
               <span class="muted">{Object.keys(activeTab.params).length}</span>
               {#if activeTab.kind === 'xml-primitive'}
                 <button class="add-param-plus" type="button" onclick={() => openParamForm(activeTab!)} title="Add a parameter">+</button>

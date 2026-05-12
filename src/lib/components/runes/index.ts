@@ -66,13 +66,6 @@ export interface PrimitiveMeta {
   /** Read-only computed params. See DerivedSchema docstring. */
   derived?: Readonly<Record<string, DerivedSchema>>;
   validate?: (p: Record<string, number>) => string[];
-  /** Opt-out of the renderer's default Z-centering step in
-   *  `finalizeManifold`. When `true`, the geometry is rendered exactly
-   *  where the geom function places it (any `.translate(_, _, z)` you
-   *  apply sticks). When omitted or `false`, the final manifold's Z
-   *  midpoint is pulled to z=0 — the historic behavior, kept as default
-   *  so existing primitives don't visually shift. */
-  skipCenter?: boolean;
 }
 
 /** Geom function signature — pure (p) => Manifold. */
@@ -145,7 +138,6 @@ export async function loadRunesRegistry(fetchFn: typeof fetch = fetch): Promise<
     // response doesn't carry it. Pick it up from the build-time module
     // instead. (Same path the geom function takes.)
     const derived = mod?.meta?.derived;
-    const skipCenter = mod?.meta?.skipCenter === true;
     const meta: PrimitiveMeta = {
       id: api.id,
       name: api.name,
@@ -154,7 +146,6 @@ export async function loadRunesRegistry(fetchFn: typeof fetch = fetch): Promise<
       params: api.params,
       ...(validate ? { validate } : {}),
       ...(derived ? { derived } : {}),
-      ...(skipCenter ? { skipCenter: true } : {}),
     };
     return { meta, geom, source: api.source, instructions: api.instructions ?? '' };
   });

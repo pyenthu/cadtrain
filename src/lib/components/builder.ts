@@ -439,36 +439,23 @@ export function buildPrimitiveManifold(componentId: string, params: Record<strin
 }
 
 /**
- * Center a manifold vertically, apply the Y-axis half cutaway, and convert
- * to `full` + `cutVC` three.js geometries. Shared between `buildComponent`
- * and the composition interpreter so both produce identical render output.
+ * Apply the Y-axis half cutaway and convert to `full` + `cutVC` three.js
+ * geometries. Shared between `buildComponent` and the composition
+ * interpreter so both produce identical render output.
  *
- * `skipCenter=true`: don't re-center this manifold — caller has already
- * placed it via a transform and any further centering would destroy the
- * intended assembly geometry. Used by compose.ts which transforms each
- * part independently before finalize.
+ * No-op on positioning — the manifold is rendered exactly where the
+ * geom function places it. The legacy Z-centering step was removed
+ * (2026-05-13) because (a) it surprised users by silently undoing
+ * deliberate `translate(_, _, z)` calls, and (b) for multi-part
+ * assemblies it didn't actually help (gaps between parts were
+ * preserved; only the assembly midpoint moved). Callers that want
+ * a centered render now translate explicitly inside their geom.
  */
-export function finalizeManifold(manifold: any, maxOD: number, skipCenter = false): ComponentResult {
-  let centered: any;
-  if (skipCenter) {
-    centered = manifold;
-  } else {
-    const mesh = manifold.getMesh();
-    const vp = mesh.vertProperties as Float32Array;
-    const np = mesh.numProp;
-    let minZ = Infinity, maxZ = -Infinity;
-    for (let i = 0; i < vp.length / np; i++) {
-      const z = vp[i * np + 2];
-      if (z < minZ) minZ = z;
-      if (z > maxZ) maxZ = z;
-    }
-    centered = manifold.translate([0, 0, -(minZ + maxZ) / 2]);
-  }
-
+export function finalizeManifold(manifold: any, maxOD: number): ComponentResult {
   return {
-    full: manifoldToGeo(centered),
-    cutVC: manifoldToCutVC(centered.subtract(getCutBox()), maxOD),
-    manifold: centered,
+    full: manifoldToGeo(manifold),
+    cutVC: manifoldToCutVC(manifold.subtract(getCutBox()), maxOD),
+    manifold,
   };
 }
 
@@ -476,11 +463,7 @@ export function buildComponent(componentId: string, params: Record<string, numbe
   const manifold = buildPrimitiveManifold(componentId, params);
   const maxOD = Math.max(params.od || 0, params.odTop || 0, params.odBottom || 0,
     params.odLarge || 0, params.slipOD || 0, params.odCompressed || 0, 3);
-  // Runes-class primitives may opt out of the auto-Z-centering by
-  // declaring `skipCenter: true` on their meta. Legacy primitives
-  // never set this, so the default (centered) behavior is preserved.
-  const skipCenter = metaById(componentId)?.skipCenter === true;
-  return finalizeManifold(manifold, maxOD, skipCenter);
+  return finalizeManifold(manifold, maxOD);
 }
 
 function manifoldToGeo(manifold: any): THREE.BufferGeometry {
