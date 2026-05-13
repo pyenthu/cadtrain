@@ -39,7 +39,15 @@ function resolveRoot(): string {
   }
   if (env.APP_DATA_DIR && existsSync(env.APP_DATA_DIR)) return resolve(env.APP_DATA_DIR);
   if (existsSync('/app_data')) return '/app_data';
-  const dev = resolve(process.cwd(), '.dev-volume');
+  // Local-dev fallback: if `kb-sources/` is already populated at the
+  // project root (the gitignored kb-sources dir is the dev workflow), use
+  // the project root as the volume root so PDFs there work without
+  // having to symlink them into ./.dev-volume. Falls through to a
+  // dedicated `.dev-volume/` directory when the project doesn't have
+  // local kb-sources content yet (e.g. fresh clone).
+  const cwd = process.cwd();
+  if (existsSync(resolve(cwd, 'kb-sources'))) return cwd;
+  const dev = resolve(cwd, '.dev-volume');
   if (!existsSync(dev)) {
     try { mkdirSync(dev, { recursive: true }); } catch { /* read-only FS in tests */ }
   }

@@ -546,9 +546,11 @@
     url?: string;
     file?: string;
     kind?: string;
-    /** Family of the parent KB. */
+    /** Family of the source (drives sidebar grouping). */
     family: Family;
-    /** Title(s) of the KB(s) this source feeds. */
+    /** Title(s) of the KB(s) this source feeds (kept for backwards
+     *  compat with the per-row sub-line; populated empty for entries
+     *  loaded directly from the volume sidecar). */
     kbTitles: string[];
   }
   let kbList = $state<KbEntry[]>([]);
@@ -556,6 +558,10 @@
   let kbSources = $state<KbSource[]>([]);
   let kbSourcesError = $state<string | null>(null);
   onMount(async () => {
+    // KB list still comes from the bundled /kb/index.json — those are
+    // shipped tables and the list is small. Sources, on the other hand,
+    // come from the persistent volume via /api/kb/sources so PDFs
+    // uploaded after the deploy appear without rebuilds.
     try {
       const r = await fetch('/kb/index.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`${r.status}`);
@@ -569,44 +575,19 @@
     } catch (e: any) {
       kbListError = e?.message ?? String(e);
     }
-    // Now fetch each KB's full JSON once to extract source metadata.
-    // Files are small (<1MB each) so a parallel mount-time fetch is fine.
     try {
-      const sourcesMap = new Map<string, KbSource>();
-      await Promise.all(kbList.map(async (kb) => {
-        if (!kb.path) return;
-        try {
-          const r = await fetch(kb.path, { cache: 'no-cache' });
-          if (!r.ok) return;
-          const doc = await r.json();
-          const url: string | undefined = typeof doc.source_url === 'string' ? doc.source_url : undefined;
-          const file: string | undefined = typeof doc.source_file === 'string' ? doc.source_file : undefined;
-          // Some KBs (e.g. tubing-hanger.json) use `source_file` as a
-          // human label rather than a real path. Treat anything that
-          // doesn't start with "kb-sources/" or end in a recognised
-          // file extension as a label-only field, NOT a real file.
-          const isRealFile = !!file && (file.startsWith('kb-sources/') || /\.(pdf|json|csv|xlsx?|txt)$/i.test(file));
-          const key = url ?? (isRealFile ? file! : `${kb.id}:src`);
-          const existing = sourcesMap.get(key);
-          if (existing) {
-            if (!existing.kbTitles.includes(kb.title)) existing.kbTitles.push(kb.title);
-            return;
-          }
-          let label = url ? (() => { try { return new URL(url).host; } catch { return url; } })()
-                    : isRealFile ? file!.split('/').pop()!
-                    : (file ?? kb.title);
-          sourcesMap.set(key, {
-            key,
-            label,
-            url,
-            file: isRealFile ? file : undefined,
-            kind: kb.source_kind,
-            family: (kb.family ?? 'basic') as Family,
-            kbTitles: [kb.title],
-          });
-        } catch { /* skip on per-KB error */ }
+      const r = await fetch('/api/kb/sources', { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const data = await r.json();
+      kbSources = (data.sources ?? []).map((s: any) => ({
+        key: s.key,
+        label: s.label,
+        url: s.url,
+        file: s.file,
+        kind: s.kind,
+        family: (s.family ?? 'basic') as Family,
+        kbTitles: s.title ? [s.title] : [],
       }));
-      kbSources = [...sourcesMap.values()];
     } catch (e: any) {
       kbSourcesError = e?.message ?? String(e);
     }
