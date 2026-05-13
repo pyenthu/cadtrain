@@ -3805,7 +3805,7 @@ export const geom = defineGeom(meta, (p) => {
     /* Width is bound from script — defaults to 200px, drag the resizer
        to grow / shrink. flex-shrink: 0 keeps the inline width sticky. */
     width: 200px; flex-shrink: 0;
-    background: #f7f7f9;
+    background: #fcfcfd;
     /* Border now lives on the resizer so dragging feels continuous. */
     display: flex; flex-direction: column;
     overflow: hidden;
@@ -3940,13 +3940,13 @@ export const geom = defineGeom(meta, (p) => {
   .sb-rail::-webkit-scrollbar-track { background: transparent; }
   .sb-tab {
     background: #e6e6ec; border: 1px solid #d8d8de;
-    color: #666;
+    color: #333;
     cursor: pointer;
-    /* More vertical padding so the rotated label has breathing room at
-       the top and bottom of each wedge — previously the longer labels
-       (e.g. "XML Primitive") visually crowded the chevron edges. */
-    padding: 18px 1px;
-    width: 100%; min-height: 120px;
+    /* Content-driven height: a touch of padding around the rotated
+       label + count, no fixed min-height. Each wedge ends up as tall
+       as its label needs. */
+    padding: 10px 1px;
+    width: 100%;
     display: flex; flex-direction: column-reverse;
     align-items: center; justify-content: center; gap: 6px;
     /* Wedge: square left edge against rail, angled right edge pointing
@@ -3968,7 +3968,7 @@ export const geom = defineGeom(meta, (p) => {
   .sb-tab.compound .sb-tab-name { font-style: italic; }
   .sb-tab-count {
     writing-mode: vertical-rl; transform: rotate(180deg);
-    font: bold 9px monospace; color: #aaa;
+    font: bold 9px monospace; color: #555;
     background: #fff; border-radius: 6px;
     padding: 2px 2px;
     min-height: 14px; text-align: center;
@@ -4008,7 +4008,7 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-list { display: flex; flex-direction: column; gap: 1px; }
   .sb-subhead {
-    font: bold 9px Arial; color: #888;
+    font: bold 9px Arial; color: #555;
     text-transform: uppercase; letter-spacing: 0.5px;
     margin: 6px 0 2px; padding: 0 4px;
   }
@@ -4157,13 +4157,13 @@ export const geom = defineGeom(meta, (p) => {
   .prim-link {
     flex: 1; min-width: 0;
     background: transparent; border: 1px solid transparent;
-    cursor: pointer; font: 11px Arial; color: #555;
+    cursor: pointer; font: 11px Arial; color: #222;
     text-align: left;
     display: flex; align-items: center; gap: 6px;
     padding: 3px 8px;
     border-radius: 3px;
   }
-  .prim-link.child { font-size: 10px; color: #777; }
+  .prim-link.child { font-size: 10px; color: #444; }
   .prim-link.child .dot { background: #d8c878; }
   .prim-link.child.active { color: #fff; }
   .prim-link.child.active .dot { background: #fff; }
@@ -4238,7 +4238,7 @@ export const geom = defineGeom(meta, (p) => {
      Sources tab so the user knows which KB(s) a raw document feeds. */
   .pl-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .pl-stack .pl-name { flex: none; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pl-sub { font: 9px Arial; color: #999; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-sub { font: 9px Arial; color: #666; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .prim-link.active .pl-sub,
   .prim-link:hover .pl-sub { color: #ccc; }
   .prim-link.source-link { text-decoration: none; }
