@@ -47,9 +47,13 @@ export const FAMILIES: FamilyInfo[] = [
 ];
 
 export const FAMILY_BY_ID: Record<string, Family> = {
-  // Basic — pure shapes
+  // Basic — pure shapes + generic mechanism primitives that show up
+  // in many domains (packer element / slips / J-latch are reusable
+  // building blocks, not Packers-only — the user re-classified
+  // 2026-05-13).
   hollow_cylinder: 'basic', taper: 'basic', shoulder: 'basic', tapered_cone: 'basic',
   slotted_cylinder: 'basic', slotted_tube: 'basic', grooved_cylinder: 'basic', seal_bore: 'basic',
+  packer_element: 'basic', slips: 'basic', j_latch: 'basic',
   // Casing & Tubing
   thread_eue: 'casing_tubing', thread_ltc: 'casing_tubing',
   threaded_box: 'casing_tubing', threaded_pin: 'casing_tubing',
@@ -60,8 +64,6 @@ export const FAMILY_BY_ID: Record<string, Family> = {
   enhanced_box: 'drillstring', whipstock: 'drillstring',
   // Wellheads & Christmas Trees
   tubing_hanger_spool: 'wellhead_xt', tubing_hanger_coupling: 'wellhead_xt',
-  // Packers & Bridge Plugs
-  packer_element: 'packers_plugs', slips: 'packers_plugs', j_latch: 'packers_plugs',
   // Flow Control
   sliding_sleeve: 'flow_control',
 };

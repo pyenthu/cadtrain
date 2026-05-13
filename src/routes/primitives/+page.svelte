@@ -303,9 +303,30 @@
    *  localStorage via the helpers in $lib/cad/components/families.ts —
    *  initialized in onMount once `localStorage` is available. */
   let enabledFamilies = $state<Set<Family>>(new Set());
-  /** Filter popup visibility — anchored under the search row in the
+  /** Filter popup visibility — anchored to the Families button in the
    *  Components tab. */
   let familyFilterOpen = $state<boolean>(false);
+  /** Pixel coordinates for the FloatingPanel — set on open from the
+   *  button's bounding rect, à la SVTC's ScaleSpreadPopover. */
+  let familyFilterX = $state<number>(80);
+  let familyFilterY = $state<number>(80);
+  let familyFilterBtn: HTMLButtonElement | undefined = $state();
+
+  function toggleFamilyFilter() {
+    if (familyFilterOpen) { familyFilterOpen = false; return; }
+    if (familyFilterBtn) {
+      const r = familyFilterBtn.getBoundingClientRect();
+      familyFilterX = Math.round(r.right + 8);
+      familyFilterY = Math.round(r.top);
+    }
+    familyFilterOpen = true;
+  }
+  function setAllFamilies(on: boolean) {
+    const next = new Set<Family>();
+    if (on) for (const fam of FAMILIES) if (fam.id !== 'basic') next.add(fam.id);
+    enabledFamilies = next;
+    saveEnabledFamilies(next);
+  }
   /** Top-level sidebar split — 'parts' shows the existing primitive
    *  trees (Components / Compositions / Assemblies / KB / XML Primitive),
    *  'operator' shows higher-level CAD operations (cut slots, extrude,
@@ -2398,38 +2419,18 @@ export const geom = defineGeom(meta, (p) => {
              which families show. Filter state persists to localStorage
              under key 'cad:enabledFamilies'. -->
         <div class="family-filter-row">
-          <button class="family-filter-btn" type="button" onclick={() => (familyFilterOpen = !familyFilterOpen)} title="Filter families">
+          <button
+            bind:this={familyFilterBtn}
+            class="family-filter-btn"
+            class:open={familyFilterOpen}
+            type="button"
+            onclick={toggleFamilyFilter}
+            title="Filter families"
+          >
             <span class="ff-icon">⌕</span>
             <span class="ff-label">Families ({enabledFamilies.size}/{FAMILIES.length - 1})</span>
           </button>
         </div>
-        {#if familyFilterOpen}
-          <div class="family-popup">
-            <div class="fp-hdr">Show families <button class="fp-x" onclick={() => (familyFilterOpen = false)} aria-label="Close">×</button></div>
-            <div class="fp-grid">
-              {#each FAMILIES.filter((fam) => fam.id !== 'basic') as fam (fam.id)}
-                {@const inFamily = componentList.filter((r) => familyOf(r.meta.id) === fam.id).length}
-                <label class="family-card" class:enabled={enabledFamilies.has(fam.id)}>
-                  <input
-                    type="checkbox"
-                    checked={enabledFamilies.has(fam.id)}
-                    onchange={(e) => {
-                      const on = (e.currentTarget as HTMLInputElement).checked;
-                      const next = new Set(enabledFamilies);
-                      if (on) next.add(fam.id); else next.delete(fam.id);
-                      enabledFamilies = next;
-                      saveEnabledFamilies(next);
-                    }}
-                  />
-                  <div class="fc-body">
-                    <div class="fc-name">{fam.name} <span class="fc-count">{inFamily}</span></div>
-                    <div class="fc-desc">{fam.description}</div>
-                  </div>
-                </label>
-              {/each}
-            </div>
-          </div>
-        {/if}
         {@const filt = componentList.filter((r) => familyOf(r.meta.id) !== 'basic'
                                               && enabledFamilies.has(familyOf(r.meta.id))
                                               && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
@@ -2626,6 +2627,52 @@ export const geom = defineGeom(meta, (p) => {
     </div>
     {/if}
   </aside>
+
+  <!-- Family-filter FloatingPanel — anchored to the ⌕ Families button.
+       Same shape as SVTC's ScaleSpreadPopover: draggable header,
+       sectioned card body, footer with action buttons. -->
+  <FloatingPanel
+    title="Show families"
+    visible={familyFilterOpen}
+    onClose={() => (familyFilterOpen = false)}
+    x={familyFilterX}
+    y={familyFilterY}
+    width="420px"
+    maxHeight="auto"
+  >
+    {#snippet children()}
+      <div class="ff-body">
+        {#each FAMILIES.filter((fam) => fam.id !== 'basic') as fam (fam.id)}
+          {@const inFamily = componentList.filter((r) => familyOf(r.meta.id) === fam.id).length}
+          {@const on = enabledFamilies.has(fam.id)}
+          <label class="ff-section" class:enabled={on}>
+            <div class="ff-section-head">
+              <span class="ff-section-title">{fam.name}</span>
+              <span class="ff-section-meta">{inFamily} component{inFamily === 1 ? '' : 's'}</span>
+              <input
+                type="checkbox"
+                class="ff-toggle"
+                checked={on}
+                onchange={(e) => {
+                  const checked = (e.currentTarget as HTMLInputElement).checked;
+                  const next = new Set(enabledFamilies);
+                  if (checked) next.add(fam.id); else next.delete(fam.id);
+                  enabledFamilies = next;
+                  saveEnabledFamilies(next);
+                }}
+              />
+            </div>
+            <div class="ff-section-desc">{fam.description}</div>
+          </label>
+        {/each}
+        <div class="ff-foot">
+          <button class="ff-btn ff-btn-ghost" type="button" onclick={() => setAllFamilies(true)}>Select all</button>
+          <button class="ff-btn ff-btn-ghost" type="button" onclick={() => setAllFamilies(false)}>Unselect all</button>
+          <button class="ff-btn ff-btn-primary" type="button" onclick={() => (familyFilterOpen = false)}>Done</button>
+        </div>
+      </div>
+    {/snippet}
+  </FloatingPanel>
 
   <!-- Drag handle — sits between the sidebar and the rest of the layout.
        Mousedown anywhere on it starts a drag that resizes the sidebar. -->
@@ -3770,57 +3817,81 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-add:hover { background: #cc2222; color: #fff; }
 
-  /* Family filter — Components-tab popover that toggles which families
-     show in the grouped list below. Anchored under the search row. */
+  /* Family filter — toolbar button + FloatingPanel-hosted popup,
+     visual pattern borrowed from SVTC's ScaleSpreadPopover. */
   .family-filter-row { padding: 4px 0 6px; display: flex; }
   .family-filter-btn {
-    background: #fff; border: 1px solid #ddd; cursor: pointer;
-    color: #333; font: 9px Arial; letter-spacing: 0.3px;
-    padding: 3px 8px; border-radius: 11px;
     display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 10px;
+    border: 1px solid #d1d5db; border-radius: 5px;
+    background: #fff; color: #1f2937;
+    font: 11px ui-sans-serif, system-ui, sans-serif; line-height: 1;
+    cursor: pointer; white-space: nowrap;
   }
-  .family-filter-btn:hover { background: #f5f5f5; border-color: #cc2222; color: #cc2222; }
-  .family-filter-btn .ff-icon { font-size: 11px; line-height: 1; }
-  .family-filter-btn .ff-label { font-weight: 600; }
-  .family-popup {
-    background: #fff; border: 1px solid #ccc; border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    padding: 8px; margin: 0 0 8px;
+  .family-filter-btn:hover { background: #f3f4f6; }
+  .family-filter-btn.open { background: #fee2e2; border-color: #cc2222; color: #cc2222; }
+  .family-filter-btn .ff-icon { font-size: 12px; line-height: 1; }
+  .family-filter-btn .ff-label { font-weight: 500; }
+
+  /* Floating-panel body — sectioned cards with checkbox toggle, footer
+     with Select all / Unselect all / Done. */
+  .ff-body {
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+    font: 11px ui-sans-serif, system-ui, sans-serif;
+    color: #0f172a;
   }
-  .family-popup .fp-hdr {
-    display: flex; justify-content: space-between; align-items: center;
-    font: bold 9px Arial; letter-spacing: 0.5px; text-transform: uppercase;
-    color: #666; padding: 0 0 6px; border-bottom: 1px solid #eee; margin: 0 0 8px;
-  }
-  .family-popup .fp-x {
-    background: transparent; border: none; cursor: pointer;
-    color: #999; font: 14px Arial; line-height: 1; padding: 0 4px;
-  }
-  .family-popup .fp-x:hover { color: #cc2222; }
-  .family-popup .fp-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-  }
-  .family-card {
-    display: flex; gap: 6px; align-items: flex-start;
-    border: 1px solid #e5e5e5; border-radius: 4px; padding: 6px 8px;
-    cursor: pointer; background: #fafafa;
+  .ff-section {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 8px 10px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+    cursor: pointer;
     transition: background 0.1s, border-color 0.1s;
   }
-  .family-card:hover { border-color: #cc2222; }
-  .family-card.enabled { background: #fff; border-color: #cc2222; }
-  .family-card input[type="checkbox"] { margin: 2px 0 0; accent-color: #cc2222; cursor: pointer; }
-  .family-card .fc-body { flex: 1; min-width: 0; }
-  .family-card .fc-name { font: bold 10px Arial; color: #333; margin: 0 0 2px; }
-  .family-card .fc-name .fc-count {
-    display: inline-block; background: #eee; color: #555; border-radius: 8px;
-    padding: 0 6px; margin-left: 4px; font: 9px monospace;
+  .ff-section:hover { border-color: #cbd5e1; }
+  .ff-section.enabled {
+    background: #fff;
+    border-color: #cc2222;
+    box-shadow: 0 0 0 1px rgba(204,34,34,0.08);
   }
-  .family-card.enabled .fc-name .fc-count { background: #cc2222; color: #fff; }
-  .family-card .fc-desc {
-    font: 9px Arial; color: #777; line-height: 1.3;
-    overflow: hidden; text-overflow: ellipsis;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  .ff-section-head {
+    display: flex; align-items: center; gap: 8px;
   }
+  .ff-section-title {
+    flex: 1;
+    font: 600 12px ui-sans-serif, system-ui, sans-serif;
+    color: #1e293b; letter-spacing: 0.01em;
+  }
+  .ff-section-meta {
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #64748b;
+  }
+  .ff-toggle {
+    width: 14px; height: 14px;
+    accent-color: #cc2222; cursor: pointer; flex-shrink: 0;
+  }
+  .ff-section-desc {
+    font: 11px ui-sans-serif, system-ui, sans-serif;
+    color: #64748b; line-height: 1.4;
+  }
+  .ff-foot {
+    display: flex; align-items: center; gap: 6px;
+    padding-top: 6px; border-top: 1px solid #e2e8f0; margin-top: 2px;
+  }
+  .ff-btn {
+    height: 26px; padding: 0 12px; border-radius: 5px;
+    font: 11px ui-sans-serif, system-ui, sans-serif; line-height: 1;
+    cursor: pointer;
+  }
+  .ff-btn-ghost {
+    background: #fff; color: #475569; border: 1px solid #cbd5e1;
+  }
+  .ff-btn-ghost:hover { background: #f8fafc; color: #1e293b; }
+  .ff-btn-primary {
+    background: #cc2222; color: #fff; border: 1px solid #a01818;
+    font-weight: 500; margin-left: auto;
+  }
+  .ff-btn-primary:hover { background: #a01818; }
   /* Row wraps the caret + the clickable primitive button. Children indent
      via --depth so derived primitives nest under their parent. */
   .prim-row {
