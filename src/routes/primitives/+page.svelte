@@ -2716,7 +2716,10 @@ export const geom = defineGeom(meta, (p) => {
                     title={src.url}
                   >
                     <span class="dot"></span>
-                    <span class="pl-name">{src.label}</span>
+                    <span class="pl-stack">
+                      <span class="pl-name">{src.label}</span>
+                      <span class="pl-sub">{src.kbTitles.join(' · ')}</span>
+                    </span>
                     {#if src.kind}<span class="prim-kid-count source-kind">{src.kind.replace(/_/g, ' ')}</span>{/if}
                   </a>
                 {:else}
@@ -2725,8 +2728,15 @@ export const geom = defineGeom(meta, (p) => {
                     title={src.file ?? src.label}
                   >
                     <span class="dot"></span>
-                    <span class="pl-name">{src.label}</span>
-                    <span class="prim-kid-count source-kind">PDF · local</span>
+                    <span class="pl-stack">
+                      <span class="pl-name">{src.label}</span>
+                      <span class="pl-sub">{src.kbTitles.join(' · ')}</span>
+                    </span>
+                    {#if src.file}
+                      <span class="prim-kid-count source-kind">PDF · local</span>
+                    {:else if src.kind}
+                      <span class="prim-kid-count source-kind">{src.kind.replace(/_/g, ' ')}</span>
+                    {/if}
                   </div>
                 {/if}
               {/each}
@@ -4158,6 +4168,16 @@ export const geom = defineGeom(meta, (p) => {
   .cl-tags { display: flex; flex-wrap: wrap; gap: 3px; }
   .cl-tags .tag { font: 9px Arial; color: #555; background: #f0f0f0; padding: 2px 6px; border-radius: 9px; }
   .pl-name { flex: 1; }
+  /* Stack: source label on top, KB title sub-line beneath. Used by the
+     Sources tab so the user knows which KB(s) a raw document feeds. */
+  .pl-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .pl-stack .pl-name { flex: none; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-sub { font: 9px Arial; color: #999; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prim-link.active .pl-sub,
+  .prim-link:hover .pl-sub { color: #ccc; }
+  .prim-link.source-link { text-decoration: none; }
+  .prim-link.source-static { cursor: default; }
+  .prim-link.source-static:hover { background: transparent; color: #555; }
   .dot {
     width: 6px; height: 6px; border-radius: 50%;
     background: #cfcfd6; flex-shrink: 0;
