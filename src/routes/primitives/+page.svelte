@@ -118,19 +118,13 @@
       name: 'Assemblies',
       match: () => false, // deferred — placeholder for level 4.
     },
-    // Sources tab — raw underlying documents that feed the KB tables
-    // (vendor pages, operator-inventory PDFs, industry charts). Shows
-    // one row per unique source, grouped by the family of the KB(s)
-    // that source feeds. Rows with a source_url open in a new tab;
-    // rows with only a local source_file are non-clickable.
-    {
-      id: 'sources',
-      name: 'Sources',
-      match: () => false,
-    },
-    // KB tab — special: doesn't claim COMPONENTS entries. The sidebar
-    // renders a separate KB list under this tab (driven by /kb/index.json)
-    // and clicking a KB opens it as a 'kb'-kind main tab.
+    // KB tab — single rail entry housing two sub-tabs:
+    //   - Sources: raw documents that feed the structured KB tables
+    //     (vendor PDFs, operator inventory, industry charts, vendor URLs).
+    //     Listed via /api/kb/sources, which reads <volume>/kb-sources/.
+    //   - DB: the structured KB tables themselves, listed from
+    //     /kb/index.json. Clicking a row opens the table as a main tab.
+    // Sub-tab state lives in kbSubTab below; the rail count combines both.
     {
       id: 'kb',
       name: 'KB',
@@ -317,6 +311,11 @@
    *  sidebar with a flat primitive list beneath. Defaults to XML Primitive
    *  (the new declarative pipeline) so it's the entry point on first load. */
   let sidebarTab = $state<string>('basic');
+  /** Sub-tab inside the KB rail tab. Sources = raw vendor / catalogue
+   *  documents on the volume; DB = structured KB tables from
+   *  /kb/index.json. Default to Sources because that's the more common
+   *  drop-in flow now (upload PDF → appears immediately). */
+  let kbSubTab = $state<'sources' | 'db'>('sources');
   /** Which non-basic families show in the Components tab. Persisted to
    *  localStorage via the helpers in $lib/cad/components/families.ts —
    *  initialized in onMount once `localStorage` is available. */
@@ -2437,8 +2436,7 @@ export const geom = defineGeom(meta, (p) => {
           {@const count = f.id === 'basic' ? componentList.filter((r) => familyOf(r.meta.id) === 'basic').length
                        : f.id === 'components' ? componentList.filter((r) => familyOf(r.meta.id) !== 'basic' && enabledFamilies.has(familyOf(r.meta.id))).length
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
-                       : f.id === 'sources' ? kbSources.length
-                       : f.id === 'kb' ? kbList.length
+                       : f.id === 'kb' ? kbList.length + kbSources.length
                        : itemsInFolder(f).length}
           <button
             class="sb-tab"
@@ -2661,62 +2659,64 @@ export const geom = defineGeom(meta, (p) => {
         </div>
       {/if}
       {#if sidebarTab === 'kb'}
-        <!-- KB list — driven by /kb/index.json. Each row is a card-link
-             with the same prim-link styling; hover surfaces the rich
-             callout. Click opens the KB as a tab in the main tab bar.
-             Rows are grouped by component family (same vocabulary as the
-             Components tab) so that, e.g., the casing-tubing-data table
-             groups under "Casing & Tubing". -->
-        {#if kbListError}
-          <div class="sb-empty">{kbListError}</div>
-        {:else if kbList.length === 0}
-          <div class="sb-empty">No KBs registered.</div>
+        <!-- KB tab — Sources / DB sub-tab switcher. Sources lists raw
+             documents on the volume; DB lists the structured KB tables
+             from /kb/index.json. Same rail tab houses both, sub-tab
+             chooses what to render below. -->
+        <div class="sb-subtabs">
+          <button class="sb-subtab" class:active={kbSubTab === 'sources'} onclick={() => (kbSubTab = 'sources')} type="button">
+            Sources <span class="sb-subtab-count">{kbSources.length}</span>
+          </button>
+          <button class="sb-subtab" class:active={kbSubTab === 'db'} onclick={() => (kbSubTab = 'db')} type="button">
+            DB <span class="sb-subtab-count">{kbList.length}</span>
+          </button>
+        </div>
+        {#if kbSubTab === 'db'}
+          {#if kbListError}
+            <div class="sb-empty">{kbListError}</div>
+          {:else if kbList.length === 0}
+            <div class="sb-empty">No KBs registered.</div>
+          {:else}
+            {@const kfilt = kbList.filter((k) => !filter || k.title.toLowerCase().includes(filter.toLowerCase()) || (k.categories ?? []).some((c) => c.toLowerCase().includes(filter.toLowerCase())))}
+            {@const kgroups = FAMILIES.filter((fam) => kfilt.some((k) => (k.family ?? 'basic') === fam.id))}
+            {#each kgroups as fam (fam.id)}
+              <div class="sb-subhead">{fam.name}</div>
+              <div class="sb-list">
+                {#each kfilt.filter((k) => (k.family ?? 'basic') === fam.id) as kb (kb.id)}
+                  <button
+                    class="prim-link"
+                    class:active={activeTab?.id === `kb:${kb.id}`}
+                    onclick={() => openKb(kb)}
+                    onmouseenter={(e) => onHoverKb(kb.id, e)}
+                    onmouseleave={onLeaveKb}
+                    onfocus={(e) => onHoverKb(kb.id, e as unknown as MouseEvent)}
+                    onblur={onLeaveKb}
+                  >
+                    <span class="dot"></span>
+                    <span class="pl-name">{kb.title}</span>
+                    <span class="prim-kid-count">{kb.row_count.toLocaleString()}</span>
+                  </button>
+                {/each}
+              </div>
+            {/each}
+            {#if kfilt.length === 0}<div class="sb-empty">No KBs match "{filter}".</div>{/if}
+          {/if}
         {:else}
-          {@const kfilt = kbList.filter((k) => !filter || k.title.toLowerCase().includes(filter.toLowerCase()) || (k.categories ?? []).some((c) => c.toLowerCase().includes(filter.toLowerCase())))}
-          {@const kgroups = FAMILIES.filter((fam) => kfilt.some((k) => (k.family ?? 'basic') === fam.id))}
-          {#each kgroups as fam (fam.id)}
-            <div class="sb-subhead">{fam.name}</div>
-            <div class="sb-list">
-              {#each kfilt.filter((k) => (k.family ?? 'basic') === fam.id) as kb (kb.id)}
-                <button
-                  class="prim-link"
-                  class:active={activeTab?.id === `kb:${kb.id}`}
-                  onclick={() => openKb(kb)}
-                  onmouseenter={(e) => onHoverKb(kb.id, e)}
-                  onmouseleave={onLeaveKb}
-                  onfocus={(e) => onHoverKb(kb.id, e as unknown as MouseEvent)}
-                  onblur={onLeaveKb}
-                >
-                  <span class="dot"></span>
-                  <span class="pl-name">{kb.title}</span>
-                  <span class="prim-kid-count">{kb.row_count.toLocaleString()}</span>
-                </button>
-              {/each}
-            </div>
-          {/each}
-          {#if kfilt.length === 0}<div class="sb-empty">No KBs match "{filter}".</div>{/if}
-        {/if}
-      {/if}
-      {#if sidebarTab === 'sources'}
-        <!-- Sources — raw underlying documents that feed the KB tables.
-             Deduped across KBs, grouped by family of the parent KB.
-             Rows with a source_url open in a new tab; rows with only a
-             local source_file (gitignored PDFs in kb-sources/) render
-             as non-clickable since file:// can't be served. -->
-        {#if kbSourcesError}
-          <div class="sb-empty">{kbSourcesError}</div>
-        {:else if kbSources.length === 0}
-          <div class="sb-empty">No sources registered.</div>
-        {:else}
-          {@const sfilt = kbSources.filter((s) => !filter
-                                              || s.label.toLowerCase().includes(filter.toLowerCase())
-                                              || s.kbTitles.some((t) => t.toLowerCase().includes(filter.toLowerCase()))
-                                              || (s.kind ?? '').toLowerCase().includes(filter.toLowerCase()))}
-          {@const sgroups = FAMILIES.filter((fam) => sfilt.some((s) => s.family === fam.id))}
-          {#each sgroups as fam (fam.id)}
-            <div class="sb-subhead">{fam.name}</div>
-            <div class="sb-list">
-              {#each sfilt.filter((s) => s.family === fam.id) as src (src.key)}
+          <!-- kbSubTab === 'sources' — raw documents on the volume. -->
+          {#if kbSourcesError}
+            <div class="sb-empty">{kbSourcesError}</div>
+          {:else if kbSources.length === 0}
+            <div class="sb-empty">No sources registered.</div>
+          {:else}
+            {@const sfilt = kbSources.filter((s) => !filter
+                                                || s.label.toLowerCase().includes(filter.toLowerCase())
+                                                || s.kbTitles.some((t) => t.toLowerCase().includes(filter.toLowerCase()))
+                                                || (s.kind ?? '').toLowerCase().includes(filter.toLowerCase()))}
+            {@const sgroups = FAMILIES.filter((fam) => sfilt.some((s) => s.family === fam.id))}
+            {#each sgroups as fam (fam.id)}
+              <div class="sb-subhead">{fam.name}</div>
+              <div class="sb-list">
+                {#each sfilt.filter((s) => s.family === fam.id) as src (src.key)}
                 <button
                   class="prim-link source-link"
                   class:active={activeTab?.id === `src:${src.key}`}
@@ -2738,7 +2738,8 @@ export const geom = defineGeom(meta, (p) => {
               {/each}
             </div>
           {/each}
-          {#if sfilt.length === 0}<div class="sb-empty">No sources match "{filter}".</div>{/if}
+            {#if sfilt.length === 0}<div class="sb-empty">No sources match "{filter}".</div>{/if}
+          {/if}
         {/if}
       {/if}
       {#each TREE as f (f.id)}
@@ -4011,6 +4012,30 @@ export const geom = defineGeom(meta, (p) => {
     text-transform: uppercase; letter-spacing: 0.5px;
     margin: 6px 0 2px; padding: 0 4px;
   }
+  /* Sub-tabs inside a rail tab (e.g. KB → Sources | DB). Sits at the
+     top of the tab body, below the filter input. */
+  .sb-subtabs {
+    display: flex; gap: 4px;
+    margin: 2px 0 6px;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  .sb-subtab {
+    flex: 1; cursor: pointer;
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    color: #666; font: 10px Arial; letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 5px 8px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .sb-subtab:hover { color: #333; }
+  .sb-subtab.active {
+    color: #cc2222; border-bottom-color: #cc2222; font-weight: 600;
+  }
+  .sb-subtab-count {
+    display: inline-block; background: #eee; color: #555;
+    border-radius: 8px; padding: 0 6px; font: 9px monospace;
+  }
+  .sb-subtab.active .sb-subtab-count { background: #cc2222; color: #fff; }
   .sb-add {
     background: #fff; border: 1px dashed #cc2222; cursor: pointer;
     color: #cc2222;
