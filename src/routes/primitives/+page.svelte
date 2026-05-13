@@ -2535,15 +2535,12 @@ export const geom = defineGeom(meta, (p) => {
             class:open={familyFilterOpen}
             type="button"
             onclick={toggleFamilyFilter}
-            title={`Filter families (${enabledFamilies.size}/${FAMILIES.length - 1} on)`}
+            title="Filter families"
             aria-label="Filter families"
           >
-            <!-- Funnel glyph, more obviously a filter than the generic
-                 search icon. Active count rides as a small dot/badge. -->
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
               <path d="M2 3h12l-4.5 6v4l-3-1v-3L2 3z" fill="currentColor"/>
             </svg>
-            <span class="family-filter-dot">{enabledFamilies.size}</span>
           </button>
         {/if}
       </div>
@@ -4004,9 +4001,10 @@ export const geom = defineGeom(meta, (p) => {
   .sb-filter {
     position: relative;
     margin-bottom: 6px;
+    display: flex; align-items: center; gap: 4px;
   }
   .sb-filter input {
-    width: 100%;
+    flex: 1; min-width: 0;
     padding: 5px 22px 5px 8px;
     border: 1px solid #d8d8de; border-radius: 4px;
     background: #fff; color: #333;
@@ -4015,12 +4013,15 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-filter input:focus { outline: none; border-color: #cc2222; }
   .sb-filter-x {
-    position: absolute; top: 50%; right: 4px;
+    position: absolute; top: 50%; right: 32px;
     transform: translateY(-50%);
     background: transparent; border: none; cursor: pointer;
     color: #999; font: bold 14px Arial; line-height: 1;
     padding: 0 2px;
   }
+  /* When the family filter button isn't there (any tab other than
+     Parts) the X sits at the input's right edge as it always did. */
+  .sb-filter:not(:has(.family-filter-icon)) .sb-filter-x { right: 4px; }
   .sb-filter-x:hover { color: #cc2222; }
   .sb-empty {
     font: 10px Arial; color: #999;
@@ -4095,16 +4096,6 @@ export const geom = defineGeom(meta, (p) => {
   }
   .family-filter-icon:hover { background: #f3f4f6; color: #cc2222; border-color: #cc2222; }
   .family-filter-icon.open { background: #cc2222; color: #fff; border-color: #cc2222; }
-  .family-filter-dot {
-    position: absolute; top: -5px; right: -5px;
-    min-width: 14px; height: 14px; padding: 0 4px;
-    background: #cc2222; color: #fff;
-    font: bold 9px ui-monospace, SFMono-Regular, Menlo, monospace;
-    line-height: 14px; text-align: center;
-    border-radius: 7px;
-    border: 1px solid #fff;
-  }
-  .family-filter-icon.open .family-filter-dot { background: #fff; color: #cc2222; border-color: #cc2222; }
 
   /* Floating-panel body — top action bar + 2-column scrollable grid
      of family cards. Cap height at 60vh; vertical scroll inside the
