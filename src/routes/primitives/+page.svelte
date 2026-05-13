@@ -22,6 +22,7 @@
   import { onMount } from 'svelte';
   import { COMPONENTS, type ComponentDef } from '$lib/cad/library';
   import { initManifold, setRenderZScale } from '$lib/cad/builder';
+  import { scene } from '$lib/shared/scene-state.svelte';
   import { buildAuthored } from '$lib/authoring/compose';
   import { emptyAuthoredComponent, type AuthoredComponent } from '$lib/authoring/schema';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
@@ -110,7 +111,7 @@
     // which families are visible.
     {
       id: 'components',
-      name: 'Components',
+      name: 'Parts',
       match: () => false,
     },
     {
@@ -316,6 +317,19 @@
    *  /kb/index.json. Default to Sources because that's the more common
    *  drop-in flow now (upload PDF → appears immediately). */
   let kbSubTab = $state<'sources' | 'db'>('sources');
+  /** Collapsed family-group headers, keyed `<context>:<familyId>` so
+   *  collapsing "Drillstring" in Components doesn't also collapse it
+   *  in the KB tabs. State is in-memory only — refresh resets. */
+  let collapsedFamilies = $state<Set<string>>(new Set());
+  function toggleFamilyCollapse(ctx: string, familyId: string) {
+    const key = `${ctx}:${familyId}`;
+    const next = new Set(collapsedFamilies);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    collapsedFamilies = next;
+  }
+  function isFamilyCollapsed(ctx: string, familyId: string): boolean {
+    return collapsedFamilies.has(`${ctx}:${familyId}`);
+  }
   /** Which non-basic families show in the Components tab. Persisted to
    *  localStorage via the helpers in $lib/cad/components/families.ts —
    *  initialized in onMount once `localStorage` is available. */
@@ -1625,14 +1639,17 @@ export const geom = defineGeom(meta, (p) => {
    *  Geom logic is unchanged — only the final mesh is squashed. Wired
    *  through `setRenderZScale` in builder.ts; included in `buildKey`
    *  so changing it triggers the same debounced rebuild as a slider. */
-  let renderZScale = $state(1.0);
-  $effect(() => { setRenderZScale(renderZScale); });
+  // Z× compression now lives on shared scene state — the slider sits
+  // in the canvas SceneControls gear. Local effect keeps the builder
+  // in sync; the buildKey reads scene.zScale so the same scene state
+  // also drives debounced rebuilds.
+  $effect(() => { setRenderZScale(scene.zScale); });
 
   let buildKey = $derived(
     activeTab && (activeTab.kind === 'primitive' || activeTab.kind === 'xml-primitive')
-      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params, z: renderZScale })
+      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params, z: scene.zScale })
       : activeTab && activeTab.kind === 'composite'
-      ? `comp:${activeTab.id}:${renderZScale}`
+      ? `comp:${activeTab.id}:${scene.zScale}`
       : '',
   );
   let buildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2446,7 +2463,6 @@ export const geom = defineGeom(meta, (p) => {
             title="{f.name} ({count})"
           >
             <span class="sb-tab-name">{f.name}</span>
-            <span class="sb-tab-count">{count}</span>
           </button>
         {/each}
       </div>
@@ -2512,33 +2528,48 @@ export const geom = defineGeom(meta, (p) => {
         {#if filter}
           <button class="sb-filter-x" type="button" onclick={() => (filter = '')} aria-label="Clear filter">×</button>
         {/if}
+        {#if sidebarTab === 'components'}
+          <button
+            bind:this={familyFilterBtn}
+            class="family-filter-icon"
+            class:open={familyFilterOpen}
+            type="button"
+            onclick={toggleFamilyFilter}
+            title={`Filter families (${enabledFamilies.size}/${FAMILIES.length - 1} on)`}
+            aria-label="Filter families"
+          >
+            <!-- Funnel glyph, more obviously a filter than the generic
+                 search icon. Active count rides as a small dot/badge. -->
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M2 3h12l-4.5 6v4l-3-1v-3L2 3z" fill="currentColor"/>
+            </svg>
+            <span class="family-filter-dot">{enabledFamilies.size}</span>
+          </button>
+        {/if}
       </div>
 
       {#if sidebarTab === 'components'}
         <!-- Named single-file components, grouped by family. Family
              classification lives in $lib/cad/components/families.ts;
-             the filter popup (⌕ button next to the search row) controls
-             which families show. Filter state persists to localStorage
-             under key 'cad:enabledFamilies'. -->
-        <div class="family-filter-row">
-          <button
-            bind:this={familyFilterBtn}
-            class="family-filter-btn"
-            class:open={familyFilterOpen}
-            type="button"
-            onclick={toggleFamilyFilter}
-            title="Filter families"
-          >
-            <span class="ff-icon">⌕</span>
-            <span class="ff-label">Families ({enabledFamilies.size}/{FAMILIES.length - 1})</span>
-          </button>
-        </div>
+             the filter icon next to the search input opens the family
+             popup. Filter state persists to localStorage under
+             'cad:enabledFamilies'. -->
         {@const filt = componentList.filter((r) => familyOf(r.meta.id) !== 'basic'
                                               && enabledFamilies.has(familyOf(r.meta.id))
                                               && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
         {@const groups = FAMILIES.filter((fam) => fam.id !== 'basic' && enabledFamilies.has(fam.id) && filt.some((r) => familyOf(r.meta.id) === fam.id))}
         {#each groups as fam (fam.id)}
-          <div class="sb-subhead">{fam.name}</div>
+          {@const collapsed = isFamilyCollapsed('components', fam.id)}
+          <button
+            class="sb-subhead clickable"
+            class:collapsed
+            type="button"
+            onclick={() => toggleFamilyCollapse('components', fam.id)}
+          >
+            <span class="sb-chevron">▾</span>
+            {fam.name}
+          </button>
+          {#if !collapsed}
           <div class="sb-list">
             {#each filt.filter((r) => familyOf(r.meta.id) === fam.id) as entry (entry.meta.id)}
               <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
@@ -2565,6 +2596,7 @@ export const geom = defineGeom(meta, (p) => {
               </div>
             {/each}
           </div>
+          {/if}
         {/each}
         {#if filt.length === 0}<div class="sb-empty">No components in the enabled families. Try toggling more families in the filter, or clearing the search.</div>{/if}
       {/if}
@@ -3073,20 +3105,9 @@ export const geom = defineGeom(meta, (p) => {
               {#if PIPE_PRIMS.has(activeDef.id)}<span class="badge pipe">pipe</span>{/if}
               {#if activeTab.draft}<span class="badge draft-tag">draft</span>{/if}
               {#if activeTab.kind === 'xml-primitive'}<span class="badge pipe">component</span>{/if}
-              <!-- Render-time Z compression. Geom unchanged; only the
-                   final mesh is squashed so a long pipe joint stays
-                   recognisable against its OD/wall. -->
-              <label class="z-scale" title="Render-time Z multiplier — compresses long primitives without changing their geom logic.">
-                <span class="z-scale-lbl">Z×</span>
-                <input
-                  type="range"
-                  min="0.05"
-                  max="1"
-                  step="0.05"
-                  bind:value={renderZScale}
-                />
-                <span class="z-scale-val">{renderZScale.toFixed(2)}</span>
-              </label>
+              <!-- Z× compression slider now lives in the canvas-corner
+                   settings gear (SceneControls). Reading scene.zScale
+                   for the buildKey below. -->
             </div>
           </header>
 
@@ -4008,10 +4029,24 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-list { display: flex; flex-direction: column; gap: 1px; }
   .sb-subhead {
-    font: bold 9px Arial; color: #555;
+    font: bold 10px Arial; color: #333;
     text-transform: uppercase; letter-spacing: 0.5px;
     margin: 6px 0 2px; padding: 0 4px;
   }
+  /* Clickable family-group header — same look as .sb-subhead but with
+     a chevron + cursor that signals collapsibility. */
+  .sb-subhead.clickable {
+    cursor: pointer;
+    background: transparent; border: none; width: 100%;
+    text-align: left;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sb-subhead.clickable:hover { color: #cc2222; }
+  .sb-subhead .sb-chevron {
+    display: inline-block; width: 8px; font: 8px Arial;
+    color: #999; transition: transform 100ms;
+  }
+  .sb-subhead.collapsed .sb-chevron { transform: rotate(-90deg); }
   /* Sub-tabs inside a rail tab (e.g. KB → Sources | DB). Sits at the
      top of the tab body, below the filter input. */
   .sb-subtabs {
@@ -4046,21 +4081,30 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-add:hover { background: #cc2222; color: #fff; }
 
-  /* Family filter — toolbar button + FloatingPanel-hosted popup,
-     visual pattern borrowed from SVTC's ScaleSpreadPopover. */
-  .family-filter-row { padding: 4px 0 6px; display: flex; }
-  .family-filter-btn {
-    display: inline-flex; align-items: center; gap: 5px;
-    height: 24px; padding: 0 10px;
-    border: 1px solid #d1d5db; border-radius: 5px;
-    background: #fff; color: #1f2937;
-    font: 11px ui-sans-serif, system-ui, sans-serif; line-height: 1;
-    cursor: pointer; white-space: nowrap;
+  /* Family filter — small icon button in the .sb-filter row.
+     FloatingPanel popup pattern borrowed from SVTC's ScaleSpreadPopover. */
+  .family-filter-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: relative;
+    width: 24px; height: 22px;
+    margin-left: 2px;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    background: #fff; color: #555;
+    cursor: pointer; flex-shrink: 0;
+    transition: background 80ms, color 80ms, border-color 80ms;
   }
-  .family-filter-btn:hover { background: #f3f4f6; }
-  .family-filter-btn.open { background: #fee2e2; border-color: #cc2222; color: #cc2222; }
-  .family-filter-btn .ff-icon { font-size: 12px; line-height: 1; }
-  .family-filter-btn .ff-label { font-weight: 500; }
+  .family-filter-icon:hover { background: #f3f4f6; color: #cc2222; border-color: #cc2222; }
+  .family-filter-icon.open { background: #cc2222; color: #fff; border-color: #cc2222; }
+  .family-filter-dot {
+    position: absolute; top: -5px; right: -5px;
+    min-width: 14px; height: 14px; padding: 0 4px;
+    background: #cc2222; color: #fff;
+    font: bold 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 14px; text-align: center;
+    border-radius: 7px;
+    border: 1px solid #fff;
+  }
+  .family-filter-icon.open .family-filter-dot { background: #fff; color: #cc2222; border-color: #cc2222; }
 
   /* Floating-panel body — top action bar + 2-column scrollable grid
      of family cards. Cap height at 60vh; vertical scroll inside the
@@ -4190,19 +4234,25 @@ export const geom = defineGeom(meta, (p) => {
   .prim-row .prim-link { flex: 1; }
   .prim-del {
     flex-shrink: 0;
-    width: 18px; height: 18px;
+    width: 16px; height: 16px;
     display: inline-flex; align-items: center; justify-content: center;
     background: #fff;
     border: 1px solid #777;
     cursor: pointer;
-    font: bold 13px Arial; line-height: 1; color: #444;
-    border-radius: 5px;
+    font: bold 12px Arial; line-height: 1; color: #444;
+    border-radius: 4px;
     margin-right: 4px;
     padding: 0;
     transition: background 0.1s, color 0.1s, border-color 0.1s;
   }
   .prim-del:hover { background: #fdecec; border-color: #cc2222; color: #cc2222; }
+  /* SVG size scales with row state: idle row shows a smaller icon
+     (less visual weight in a long list), the active row gets the
+     full-sized icon. */
+  .prim-del svg { width: 11px; height: 11px; transition: width 80ms, height 80ms; }
+  .prim-del:hover svg { width: 13px; height: 13px; }
   .prim-row.active .prim-del { background: rgba(255,255,255,0.9); border-color: rgba(255,255,255,0.95); color: #cc2222; }
+  .prim-row.active .prim-del svg { width: 13px; height: 13px; }
   .prim-row.active .prim-del:hover { background: #fff; border-color: #fff; color: #a01818; }
 
   /* Hover callout — anchored to the right of the sidebar, vertically

@@ -62,6 +62,11 @@
       <span class="sv-sub">i</span>
       <input type="number" step="5" min={0} bind:value={scene.l2.i} />
     </div>
+    <div class="sv-row sv-row-wide">
+      <span class="sv-label">Z×</span>
+      <input class="sv-range" type="range" min="0.05" max="1" step="0.05" bind:value={scene.zScale} />
+      <input type="number" step="0.05" min={0.05} max={1} bind:value={scene.zScale} />
+    </div>
   </div>
 {/if}
 
@@ -108,6 +113,7 @@
   .sv-close { background: transparent; border: none; color: #ddd; font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
   .sv-close:hover { color: #fff; }
   .sv-row   { display: flex; align-items: center; gap: 4px; }
+  .sv-row-wide .sv-range { flex: 1; min-width: 0; accent-color: #cc2222; height: 14px; }
   .sv-label { width: 22px; opacity: 0.85; }
   .sv-sub   { width: 8px; text-align: center; opacity: 0.7; }
   .sv-panel input[type='number'] {

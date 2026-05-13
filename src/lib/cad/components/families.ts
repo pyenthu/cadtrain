@@ -39,7 +39,7 @@ export const FAMILIES: FamilyInfo[] = [
   { id: 'basic',                name: 'Basic',                       order: 0, description: 'Pure geometric building blocks — tube, taper, shoulder, cone, slotted, grooved, seal bore.' },
   { id: 'casing_tubing',        name: 'Casing & Tubing',             order: 1, description: 'Production-string members and their threaded connections (EUE, LTC, threaded box/pin).' },
   { id: 'drillstring',          name: 'Drillstring',                 order: 2, description: 'Drill pipe, tool joints, drill-collar connections (IF/FH/NC), kickoff tools.' },
-  { id: 'wellhead_xt',          name: 'Wellheads & Christmas Trees', order: 3, description: 'Casing-head spools, tubing hangers, master + wing valves, choke trees.' },
+  { id: 'wellhead_xt',          name: 'Wellhead & XMAS Trees',       order: 3, description: 'Casing-head spools, tubing hangers, master + wing valves, choke trees.' },
   { id: 'packers_plugs',        name: 'Packers & Bridge Plugs',      order: 4, description: 'Annular seals + zonal isolation hardware (elements, slips, locks).' },
   { id: 'fishing_intervention', name: 'Fishing & Intervention',      order: 5, description: 'Workover tools, fishing necks, GS pulling tools, jars.' },
   { id: 'artificial_lift',      name: 'Artificial Lift',             order: 6, description: 'Gas-lift mandrels, ESP, sucker-rod pumps, jet pumps.' },

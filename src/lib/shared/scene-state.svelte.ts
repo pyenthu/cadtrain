@@ -11,4 +11,9 @@ export const scene = $state({
   cam: { x: 0,  y:  5,  z:  0 },
   l1:  { x: 10, y: 10,  z:  0, i: 500 },
   l2:  { x: -40, y: 20, z:  0, i: 500 },
+  /** Render-time Z compression. 1.0 = geom as authored; smaller values
+   *  squash long primitives so they stay recognisable against their
+   *  OD/wall in the viewport. Read by builder.finalizeManifold via
+   *  the setRenderZScale getter. UI lives in the SceneControls gear. */
+  zScale: 1.0,
 });
