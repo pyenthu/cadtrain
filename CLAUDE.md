@@ -183,6 +183,14 @@ API routes were intentionally **not** moved to `/api/archive/*` — they're call
 | `/api/author/list` | GET — index of authored components; GET `?id=` for full record |
 | `/api/author/chat` | POST — Claude tool-calling chat |
 | `/api/wells/extract` | POST — PDF/image → WSON extraction. `WELLS_BACKEND=cli\|api` (default api). |
+| `/api/components/list` | GET — single-file CAD-component registry (one `*.ts` per component under `src/lib/cad/components/`). Powers the `/primitives` Parts + Basic tabs. |
+| `/api/components/save` | POST — write a new / updated component file. Dev: project tree. Prod: overlay under `$APP_DATA_DIR/components/`. |
+| `/api/components/refine` | POST — Claude-driven geom rewrite for one component (the AI Refine tab). |
+| `/api/components/delete` | POST — remove a component file (plus its `.glb` bake). |
+| `/api/components/instructions` | POST — write `<id>.md` instructions sidecar for a component. |
+| `/api/volume` | GET/PUT/DELETE/POST — generic CRUD against the persistent data volume rooted at `$APP_DATA_DIR`. Auth via `X-Volume-Token`; local dev can proxy to prod via `CADTRAIN_VOLUME_REMOTE_URL`. See Rule 13. |
+| `/api/kb/sources` | GET — lists `<volume>/kb-sources/*` + sidecar `_index.json` metadata. Powers the KB → Sources sub-tab. |
+| `/api/kb/source-pdf` | GET — streams a PDF from `<volume>/kb-sources/<name>.pdf` for the embedded viewer. Path-restricted; honours `maybeProxy()`. |
 
 ## Project layout
 
@@ -334,6 +342,16 @@ The reverse pipeline is the heart of the app. Three components work together:
 - Loops until convergence or max iterations
 
 ## Key conventions
+
+### Sidebar / `/primitives` UI (since 2026-05-13)
+
+- **Four rail tabs**: **Basic** (8 pure-shape components) · **Parts** (named real-world components, family-grouped) · **Assemblies** (level-4 stub) · **KB** (Sources + DB sub-tabs).
+- **Family classification** at `src/lib/cad/components/families.ts` — central `FAMILY_BY_ID` map → 8 families (Basic · Casing & Tubing · Drillstring · Wellhead & XMAS Trees · Packers & Bridge Plugs · Fishing & Intervention · Artificial Lift · Flow Control). Edit one file to reclassify; new components default to `basic` until added to the map.
+- **Family filter** (Parts tab only): funnel icon next to the search input → SVTC-style FloatingPanel popup with 2-column cards + Select all / Unselect all / Done. State persists in `localStorage` under `cad:enabledFamilies`.
+- **Collapsible family subheads** in the Parts list — click any family header to collapse its rows; state is in-memory only.
+- **KB sub-tabs**: KB rail tab holds two inside-tabs (`kbSubTab` state): **Sources** (raw documents from `<volume>/kb-sources/`, via `/api/kb/sources`) and **DB** (structured KB tables from `/kb/index.json`).
+- **Embedded source viewer**: clicking a Sources row opens a main tab with the document inline. PDFs use `<embed type="application/pdf">` (Chrome's PDF viewer; sandboxed iframes block it). URLs use `<iframe>` with no sandbox + header fallback link for hosts that refuse iframing.
+- **Z× compression slider** lives in the canvas SceneControls gear (not the stage header). Backing state is `scene.zScale` in `src/lib/shared/scene-state.svelte.ts`; the builder reads it via `setRenderZScale()`.
 
 ### Geometry
 - **Z-down** axis (matches drilling convention).
