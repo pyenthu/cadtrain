@@ -1,7 +1,7 @@
 /**
  * Runes registry — async, API-served.
  *
- * The LIST of available primitives comes from GET /api/runes/list at
+ * The LIST of available primitives comes from GET /api/components/list at
  * runtime. The geom FUNCTIONS are still imported via `import.meta.glob`
  * at build time, indexed by id, so geometry execution stays local to
  * the client bundle (no eval, no per-frame network round-trip during
@@ -63,7 +63,7 @@ export interface DerivedSchema {
   from: (p: Record<string, number>) => number;
 }
 
-/** Metadata exported by every runes file. */
+/** Metadata exported by every component file. */
 export interface PrimitiveMeta {
   id: string;
   name: string;
@@ -79,7 +79,7 @@ export interface PrimitiveMeta {
 export type GeomFn = (p: Record<string, number>) => any;
 
 /** Registry entry — meta + geom + raw source + instructions doc. */
-export interface RunesEntry {
+export interface ComponentEntry {
   meta: PrimitiveMeta;
   geom: GeomFn;
   source: string;
@@ -113,7 +113,7 @@ function missingGeom(id: string): GeomFn {
   };
 }
 
-// ── API list response shape (mirrors src/routes/api/runes/list) ───────────
+// ── API list response shape (mirrors src/routes/api/components/list) ───────────
 interface ApiEntry {
   id: string;
   name: string;
@@ -127,14 +127,14 @@ interface ApiEntry {
 }
 
 /**
- * Fetch the live registry from /api/runes/list and join each entry with
+ * Fetch the live registry from /api/components/list and join each entry with
  * its compiled geom from the build-time map. The validate() function is
  * recovered by re-importing the geom module (since validate is part of
  * meta and is not serializable across HTTP).
  */
-export async function loadRunesRegistry(fetchFn: typeof fetch = fetch): Promise<RunesEntry[]> {
-  const r = await fetchFn('/api/runes/list', { headers: { accept: 'application/json' } });
-  if (!r.ok) throw new Error(`/api/runes/list failed: ${r.status} ${r.statusText}`);
+export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Promise<ComponentEntry[]> {
+  const r = await fetchFn('/api/components/list', { headers: { accept: 'application/json' } });
+  if (!r.ok) throw new Error(`/api/components/list failed: ${r.status} ${r.statusText}`);
   const list = (await r.json()) as ApiEntry[];
 
   return list.map((api) => {
@@ -170,18 +170,18 @@ export function defaultsFor(meta: PrimitiveMeta): Record<string, number> {
  * `buildPrimitiveManifold` in builder.ts, which is called from the build
  * pipeline. Falls back to an empty array; the GEOM_BY_ID map is the
  * authoritative dispatch table for that synchronous path. Use
- * loadRunesRegistry for everything async / UI-driven.
+ * loadComponentRegistry for everything async / UI-driven.
  */
-export const RUNES_REGISTRY: RunesEntry[] = [];
+export const COMPONENT_REGISTRY: ComponentEntry[] = [];
 for (const [path, mod] of Object.entries(geomModules)) {
   if (path === './index.ts') continue;
   if (mod?.meta && typeof mod.geom === 'function') {
-    RUNES_REGISTRY.push({ meta: mod.meta, geom: mod.geom, source: '', instructions: '' });
+    COMPONENT_REGISTRY.push({ meta: mod.meta, geom: mod.geom, source: '', instructions: '' });
   }
 }
 
 /** Lookup a geom by id — used by buildPrimitiveManifold's synchronous
- *  dispatch. Async UI code should use loadRunesRegistry instead. */
+ *  dispatch. Async UI code should use loadComponentRegistry instead. */
 export function geomById(id: string): GeomFn | undefined {
   return GEOM_BY_ID.get(id);
 }
@@ -190,7 +190,7 @@ export function geomById(id: string): GeomFn | undefined {
  *  derived-param resolver so buildPrimitiveManifold can pre-compute
  *  derived values before invoking geom. */
 const META_BY_ID = new Map<string, PrimitiveMeta>();
-for (const entry of RUNES_REGISTRY) META_BY_ID.set(entry.meta.id, entry.meta);
+for (const entry of COMPONENT_REGISTRY) META_BY_ID.set(entry.meta.id, entry.meta);
 export function metaById(id: string): PrimitiveMeta | undefined {
   return META_BY_ID.get(id);
 }
@@ -234,7 +234,7 @@ type ParamsOf<M> =
  * derived values are already in the bag by the time `build` runs.
  *
  * Return type stays `GeomFn` so the loader (`import.meta.glob`) and
- * the regex-based `/api/runes/list` parser see exactly the same
+ * the regex-based `/api/components/list` parser see exactly the same
  * `export const geom = …` shape they see today. No infrastructure
  * changes required.
  */

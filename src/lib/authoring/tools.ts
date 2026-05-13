@@ -7,7 +7,7 @@
  * DO NOT import from server routes — this is browser-only.
  */
 
-import { COMPONENTS } from '$lib/components/library';
+import { COMPONENTS } from '$lib/cad/library';
 import type { AuthoredComponent, AuthoredPart, AuthoredOp } from './schema';
 
 let _spec: AuthoredComponent | null = null;

@@ -40,7 +40,7 @@ export interface ArchetypeDef {
   id: Archetype;
   name: string;
   description: string;
-  /** Primitive id registered in src/lib/components/library.ts (added in
+  /** Primitive id registered in src/lib/cad/library.ts (added in
    *  later phases — placeholder for now). */
   primitive_id: string;
   /** Connection-end gender(s) this archetype supports. All current

@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
    * Renders a Markdown string to HTML via `marked`. Used by the Inspector
-   * popup's MD tab to display auto-generated docs from runes-class specs.
+   * popup's MD tab to display auto-generated docs from component specs.
    *
    * Marked is configured for safe defaults — gfm + breaks, no raw HTML
    * passthrough — since the input is always content WE generate (see
-   * src/lib/components/runes/docs.ts), not user-supplied.
+   * src/lib/cad/components/docs.ts), not user-supplied.
    */
   import { marked } from 'marked';
 

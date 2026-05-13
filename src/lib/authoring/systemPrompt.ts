@@ -4,7 +4,7 @@
  * Pure data — safe to import from server routes.
  */
 
-import { COMPONENTS } from '$lib/components/library';
+import { COMPONENTS } from '$lib/cad/library';
 
 const CATALOG = COMPONENTS.map((c) => {
   const params = Object.entries(c.params)

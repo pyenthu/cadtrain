@@ -11,11 +11,11 @@
  * AuthoredPart is a discriminated union over three kinds of authored parts.
  * The `kind` tag distinguishes between:
  *
- *   - 'primitive'  — a generic primitive from src/lib/components/library.ts
+ *   - 'primitive'  — a generic primitive from src/lib/cad/library.ts
  *                    with a free-form `params` bag. This is the legacy shape.
  *   - 'connection' — a pipe-domain connection (box or pin) with archetype +
  *                    family + gender semantics; consumed by the
- *                    src/lib/components/pipe/* hierarchy.
+ *                    src/lib/cad/pipe/* hierarchy.
  *   - 'body'       — a pipe body (od, id, length) — the tubing/casing midsection
  *                    between two connections.
  *
@@ -45,7 +45,7 @@ export interface PrimitivePart extends BasePart {
    *  literals should set kind: 'primitive' explicitly to participate in
    *  discriminated-union narrowing. */
   kind?: 'primitive';
-  /** Primitive id from src/lib/components/library.ts COMPONENTS array. */
+  /** Primitive id from src/lib/cad/library.ts COMPONENTS array. */
   prim: string;
   /** Parameters for that primitive (shape depends on primitive). */
   params: Record<string, number>;
@@ -53,7 +53,7 @@ export interface PrimitivePart extends BasePart {
 
 export interface ConnectionPart extends BasePart {
   kind: 'connection';
-  /** Family id from FAMILIES in src/lib/components/pipe/families.ts
+  /** Family id from FAMILIES in src/lib/cad/pipe/families.ts
    *  (e.g. 'new_vam', 'eue', 'bc'). */
   family: string;
   gender: 'box' | 'pin';

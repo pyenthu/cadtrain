@@ -1,17 +1,17 @@
 /**
- * POST /api/runes/instructions
+ * POST /api/components/instructions
  *
- * Persist the AI instructions doc for a runes primitive — written to
- * src/lib/components/runes/<id>.md alongside the .ts. The AI Refine
- * endpoint reads this file (via the runes registry) and includes it in
+ * Persist the AI instructions doc for a single-file component — written to
+ * src/lib/cad/components/<id>.md alongside the .ts. The AI Refine
+ * endpoint reads this file (via the component registry) and includes it in
  * every Claude system prompt, so editing it is how the user "trains"
  * the AI's understanding of what this primitive should be.
  *
  * Body: { id, instructions }
  * Returns: { ok: true, path } on success.
  *
- * Mirrors /api/runes/save but writes the .md sibling rather than the
- * .ts source. Production overlay path is /data/runes/<id>.md (not yet
+ * Mirrors /api/components/save but writes the .md sibling rather than the
+ * .ts source. Production overlay path is /data/components/<id>.md (not yet
  * wired — same status as save.ts).
  */
 
@@ -20,11 +20,11 @@ import type { RequestHandler } from './$types';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { dev } from '$app/environment';
-import { RUNES_REGISTRY } from '$lib/components/runes';
+import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 
 const MAX_BYTES = 256 * 1024;
-const SRC_DIR = join(process.cwd(), 'src', 'lib', 'components', 'runes');
+const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json().catch(() => null);
@@ -34,8 +34,8 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(400, 'Missing id (string) or instructions (string).');
   }
   if (!/^[a-z][a-z0-9_]*$/.test(id)) throw error(400, `Invalid id "${id}"`);
-  if (!RUNES_REGISTRY.find((e) => e.meta.id === id)) {
-    throw error(400, `Unknown runes id "${id}" — not in registry.`);
+  if (!COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
+    throw error(400, `Unknown component id "${id}" — not in registry.`);
   }
   if (Buffer.byteLength(instructions, 'utf8') > MAX_BYTES) {
     throw error(413, `Instructions too large (> ${MAX_BYTES} bytes).`);

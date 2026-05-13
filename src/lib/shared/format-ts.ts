@@ -1,5 +1,5 @@
 /**
- * Lazy Prettier loader for the runes source editor.
+ * Lazy Prettier loader for the component source editor.
  *
  * Prettier + its TS + estree plugins sum to ~300KB gzipped — heavy
  * enough that we don't want it in the initial /primitives bundle.

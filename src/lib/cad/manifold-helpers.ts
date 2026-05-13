@@ -1,10 +1,10 @@
 /**
  * ManifoldCAD runtime + small geometry helpers.
  *
- * Lives in its own module so per-primitive runes files can import the
+ * Lives in its own module so per-primitive component files can import the
  * helpers without depending on (or cycling through) builder.ts. Each
  * primitive's geom() ends up reading just from here:
- *     import { cyl, tube, mv } from '$lib/components/manifold-helpers';
+ *     import { cyl, tube, mv } from '$lib/cad/manifold-helpers';
  *
  * The Manifold WASM is initialised once via initManifold(); after that,
  * cyl/tube/mv/rot use the live `M` reference. Callers MUST await

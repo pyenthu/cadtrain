@@ -1,6 +1,6 @@
 <script lang="ts">
   // Lightweight draggable floating panel — same idea as SVTC's
-  // src/lib/components/FloatingPanel/FloatingPanel.svelte, but tailwind-free
+  // src/lib/cad/FloatingPanel/FloatingPanel.svelte, but tailwind-free
   // and stripped down to what we need:
   //   - drag the header to move
   //   - X to close

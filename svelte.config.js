@@ -8,7 +8,7 @@ export default {
     adapter: adapter(),
     alias: {
       '$tools': 'src/lib/tools',
-      '$components': 'src/lib/components',
+      '$components': 'src/lib/cad',
       '$shared': 'src/lib/shared',
       '$viewer': 'src/lib/viewer',
     },

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Sidebar + tabbed-editor primitives browser, modeled on SVTC's tab system
-  // (src/lib/components/SimpleTabs/SimpleTabs.svelte + src/lib/tabs/tabs.svelte.js).
+  // (src/lib/cad/SimpleTabs/SimpleTabs.svelte + src/lib/tabs/tabs.svelte.js).
   //
   //   sidebar (left)  — folder tree of primitives. Click a primitive → opens
   //                     a tab. Click "+" next to a folder → opens a "new
@@ -20,8 +20,8 @@
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
   import { onMount } from 'svelte';
-  import { COMPONENTS, type ComponentDef } from '$lib/components/library';
-  import { initManifold, setRenderZScale } from '$lib/components/builder';
+  import { COMPONENTS, type ComponentDef } from '$lib/cad/library';
+  import { initManifold, setRenderZScale } from '$lib/cad/builder';
   import { buildAuthored } from '$lib/authoring/compose';
   import { emptyAuthoredComponent, type AuthoredComponent } from '$lib/authoring/schema';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
@@ -30,17 +30,17 @@
   import { formatTypescript, checkTypescriptSyntax } from '$lib/shared/format-ts';
   import type { Completion } from '@codemirror/autocomplete';
   import MarkdownView from '$lib/shared/MarkdownView.svelte';
-  import { COMPONENTS_L3, type ComponentL3 } from '$lib/components/components-l3';
-  import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/components/assemblies-l4';
-  import { generateTubingComponent, type TubingInputs, type Grade, type ConnectionType } from '$lib/components/rules/tubing';
+  import { COMPONENTS_L3, type ComponentL3 } from '$lib/cad/components-l3';
+  import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/cad/assemblies-l4';
+  import { generateTubingComponent, type TubingInputs, type Grade, type ConnectionType } from '$lib/cad/rules/tubing';
   // Vite ?raw — bundles the file's text at build time so the client can show
   // the script that produces each primitive's geometry in-tab.
-  import builderSource from '$lib/components/builder.ts?raw';
-  // NEW declarative pipeline — runes-class specs that compile to the same
+  import builderSource from '$lib/cad/builder.ts?raw';
+  // NEW declarative pipeline — component specs that compile to the same
   // imperative ManifoldCAD source as builder.ts. Lives in the XML Primitive
   // tab; kept separate from the legacy primitives until the swap is trusted.
-  import { loadRunesRegistry, defaultsFor, type RunesEntry, type DerivedSchema, type ParamSchema } from '$lib/components/runes';
-  import { discoverHelpers } from '$lib/components/manifold-helpers-meta';
+  import { loadComponentRegistry, defaultsFor, type ComponentEntry, type DerivedSchema, type ParamSchema } from '$lib/cad/components';
+  import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
 
   function createRenderer(canvas: HTMLCanvasElement) {
     return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -94,7 +94,7 @@
     // XML Primitive — the NEW declarative pipeline. Pinned to the top of
     // the rail so it's immediately reachable while the legacy primitives
     // are migrated. Doesn't claim COMPONENTS entries; the sidebar renders
-    // a runes-class list under this tab.
+    // a component list under this tab.
     {
       id: 'xml_primitive',
       name: 'Basic',
@@ -190,17 +190,17 @@
     /** What kind of content this tab hosts. Drives the tab-body render
      *  (primitive → live 3D scene + params popup; kb → table viewer;
      *  composite → multi-part geometry from a baked AuthoredComponent spec
-     *  with no param editing; xml-primitive → runes-class viewer that
+     *  with no param editing; xml-primitive → component viewer that
      *  shows the compiled imperative ManifoldCAD source). */
     kind: 'primitive' | 'kb' | 'composite' | 'xml-primitive';
     /** Baked AuthoredComponent spec for composite (level 3 / 4) tabs. */
     compositeSpec?: import('$lib/authoring/schema').AuthoredComponent;
     /** Runes-class entry (only set when kind === 'xml-primitive'). */
-    runesEntry?: RunesEntry;
-    /** In-memory edit buffer for the runes-class .ts source shown in the
-     *  Script popup → Svelte tab. Initialized from runesEntry.source on
+    componentEntry?: ComponentEntry;
+    /** In-memory edit buffer for the component .ts source shown in the
+     *  Script popup → Svelte tab. Initialized from componentEntry.source on
      *  open; mutated on every keystroke via CodeEditor.onChange. Cleared
-     *  on save. Null = unedited (editor renders runesEntry.source). */
+     *  on save. Null = unedited (editor renders componentEntry.source). */
     sourceDraft?: string | null;
     /** Save status for the Svelte source editor. UI-only feedback. */
     saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
@@ -501,7 +501,7 @@
 
   /** Generate a tubing composite from a casing-tubing KB row + open it as
    *  a tab. Inputs come straight off the row; the rules in
-   *  src/lib/components/rules/tubing.ts handle KB lookup + geometry build.
+   *  src/lib/cad/rules/tubing.ts handle KB lookup + geometry build.
    *  Only TBG-type rows make sense here; for non-tubing rows we no-op. */
   async function openTubingFromKbRow(row: Record<string, any>) {
     if (row?.type !== 'TBG' && row?.type !== 'CSG') return;
@@ -518,19 +518,19 @@
     openComposite('comp', { id, name, spec });
   }
 
-  function openRunes(entry: RunesEntry) {
+  function openRunes(entry: ComponentEntry) {
     const id = `xml:${entry.meta.id}`;
     if (openTabs.find((t) => t.id === id)) {
       activeTabId = id;
       return;
     }
-    // Seed params from the runes meta so the slider grid is populated.
-    // buildPrimitiveManifold consults RUNES_REGISTRY directly, so the
+    // Seed params from the component meta so the slider grid is populated.
+    // buildPrimitiveManifold consults COMPONENT_REGISTRY directly, so the
     // geometry pipeline picks up entry.geom by id without further wiring.
     const seed = defaultsFor(entry.meta);
     openTabs = [
       ...openTabs,
-      { id, kind: 'xml-primitive', runesEntry: entry, primId: entry.meta.id, label: entry.meta.name, params: seed, draft: false, vars: [] },
+      { id, kind: 'xml-primitive', componentEntry: entry, primId: entry.meta.id, label: entry.meta.name, params: seed, draft: false, vars: [] },
     ];
     activeTabId = id;
   }
@@ -644,7 +644,7 @@
     window.addEventListener('mouseup', onUp);
   }
   type InspectorTab = 'params' | 'svelte' | 'parts' | 'ai' | 'script' | 'md';
-  // Default to Parts — it's the leftmost tab for runes primitives and the
+  // Default to Parts — it's the leftmost tab for single-file components and the
   // module-library affordance is the most useful entry point. The snap-tab
   // effect below redirects to 'params' when the active tab is a legacy
   // primitive (no Parts tab there).
@@ -664,21 +664,21 @@
     }
     return groups;
   }
-  // Async runes registry — fetched from /api/runes/list. Replaces the
+  // Async component registry — fetched from /api/components/list. Replaces the
   // static `import.meta.glob` import so newly-created primitives appear
   // in the sidebar without a dev-server restart.
-  let runesList = $state<RunesEntry[]>([]);
-  let runesListError = $state<string | null>(null);
+  let componentList = $state<ComponentEntry[]>([]);
+  let componentListError = $state<string | null>(null);
   async function refreshRunesList() {
     try {
-      runesList = await loadRunesRegistry();
-      runesListError = null;
+      componentList = await loadComponentRegistry();
+      componentListError = null;
     } catch (e: any) {
-      runesListError = e?.message ?? String(e);
+      componentListError = e?.message ?? String(e);
     }
   }
 
-  // Sidebar "+ New primitive" form — creates a fresh runes file via the
+  // Sidebar "+ New primitive" form — creates a fresh component file via the
   // save endpoint with create:true. After success we re-fetch the list
   // (no page reload needed — the API picks up the new file immediately).
   let newPrimForm = $state<{ open: boolean; id: string; name: string; error: string; saving: boolean } | null>(null);
@@ -690,7 +690,7 @@
       newPrimForm.error = 'ID must start with a lowercase letter; only [a-z0-9_].';
       return;
     }
-    if (runesList.find((e) => e.meta.id === id)) {
+    if (componentList.find((e) => e.meta.id === id)) {
       newPrimForm.error = `"${id}" already exists.`;
       return;
     }
@@ -718,7 +718,7 @@ export const geom = defineGeom(meta, (p) => {
 });
 `;
     try {
-      const r = await fetch('/api/runes/save', {
+      const r = await fetch('/api/components/save', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id, source: stub, create: true }),
@@ -734,7 +734,7 @@ export const geom = defineGeom(meta, (p) => {
       // it as a tab.
       newPrimForm = null;
       await refreshRunesList();
-      const fresh = runesList.find((e) => e.meta.id === id);
+      const fresh = componentList.find((e) => e.meta.id === id);
       if (fresh) openRunes(fresh);
     } catch (e: any) {
       newPrimForm.error = e?.message ?? String(e);
@@ -743,7 +743,7 @@ export const geom = defineGeom(meta, (p) => {
   }
 
   // ── Derived-param helpers — UI-side resolution + display formatting ─────
-  // The same resolveDerived() logic ships in src/lib/components/runes/index.ts
+  // The same resolveDerived() logic ships in src/lib/cad/components/index.ts
   // (used by buildPrimitiveManifold before geom runs). We re-implement a
   // tolerant version here so the Params tab can show a value even when a
   // single from() throws (e.g. user dragged a slider into a transient
@@ -804,7 +804,7 @@ export const geom = defineGeom(meta, (p) => {
   // The Inspector's Svelte tab renders this as a left rail. Each entry is a
   // module that exports a Manifold-returning function:
   //   • Helpers from manifold-helpers (cyl, tube, mv, rot) — primitive Manifold ops.
-  //   • Other runes primitives — each `geom(p)` returns a Manifold, so they
+  //   • Other single-file components — each `geom(p)` returns a Manifold, so they
   //     compose via union/subtract/etc. inside a more complex part.
   //
   // Click an entry → snippet (import line at top + call at bottom) is
@@ -923,7 +923,7 @@ export const geom = defineGeom(meta, (p) => {
 
   /** Pick a starter call expression for a helper, smart-defaulting to the
    *  active tab's params when the names line up. Emits BARE param names
-   *  (no `p.` prefix) because every runes file uses `defineGeom`'s
+   *  (no `p.` prefix) because every component file uses `defineGeom`'s
    *  destructured args. Falls back to numeric literals when the named
    *  params aren't present — the user adjusts before composing.
    *  Signatures pinned to the actual exports in manifold-helpers.ts. */
@@ -965,11 +965,11 @@ export const geom = defineGeom(meta, (p) => {
     return insertIntoGeomBody(next, `const ${constName} = ${baseCall}; // + part: ${name}`);
   }
 
-  /** Add a runes-primitive import (`geom as <id>Geom`) + a starter call
+  /** Add a component import (`geom as <id>Geom`) + a starter call
    *  inside geom(). The call uses the imported primitive's defaults map
    *  so it renders something sensible the moment you wire it into the
    *  return. */
-  function snippetForRunes(src: string, entry: RunesEntry): string {
+  function snippetForRunes(src: string, entry: ComponentEntry): string {
     const id = entry.meta.id;
     const alias = id.replace(/_(\w)/g, (_, c) => c.toUpperCase()) + 'Geom';
     let next = src;
@@ -1024,8 +1024,8 @@ export const geom = defineGeom(meta, (p) => {
    *    matching `}`. Brace-walks to handle nested object literals (params,
    *    validate) cleanly.
    *
-   *  Returns [] for non-runes sources (no meta block found). */
-  function runesDefaultFolds(src: string): Array<{ from: number; to: number }> {
+   *  Returns [] for non-component sources (no meta block found). */
+  function componentDefaultFolds(src: string): Array<{ from: number; to: number }> {
     const out: Array<{ from: number; to: number }> = [];
 
     // Imports — find the run of consecutive `import ...;` lines at top.
@@ -1080,7 +1080,7 @@ export const geom = defineGeom(meta, (p) => {
     return out;
   }
 
-  /** Split a runes source file into a header (imports + meta block,
+  /** Split a component source file into a header (imports + meta block,
    *  terminated by `} as const;`) and a body (everything from the next
    *  `export const geom` onward). The SVELTE-tab UI renders each half
    *  in its own CodeEditor so the meta block can collapse out of the
@@ -1198,7 +1198,7 @@ export const geom = defineGeom(meta, (p) => {
     };
   }
 
-  /** Parse a runes source file into its three editable regions plus the
+  /** Parse a component source file into its three editable regions plus the
    *  read-only args. Returns `ok: false` if any layer doesn't parse —
    *  the SVELTE tab falls back to a single-editor view in that case. */
   function splitRune(src: string): {
@@ -1233,19 +1233,19 @@ export const geom = defineGeom(meta, (p) => {
    *  are re-read from the current source so concurrent edits to the
    *  header and body interleave correctly. */
   function applyHeaderEdit(tab: Tab, nextHeader: string) {
-    const cur = tab.sourceDraft ?? tab.runesEntry?.source ?? '';
+    const cur = tab.sourceDraft ?? tab.componentEntry?.source ?? '';
     const split = splitRune(cur);
     if (!split.ok) { tab.sourceDraft = nextHeader; return; }
     tab.sourceDraft = nextHeader + split.body + split.tail;
   }
   function applyBodyEdit(tab: Tab, nextBody: string) {
-    const cur = tab.sourceDraft ?? tab.runesEntry?.source ?? '';
+    const cur = tab.sourceDraft ?? tab.componentEntry?.source ?? '';
     const split = splitRune(cur);
     if (!split.ok) { tab.sourceDraft = nextBody; return; }
     tab.sourceDraft = split.header + nextBody + split.tail;
   }
 
-  /** Reassemble a runes file from its three logical parts. The header
+  /** Reassemble a component file from its three logical parts. The header
    *  is taken verbatim (the user owns formatting choices there); the
    *  geom expression is emitted in a canonical shape so format-on-save
    *  has a stable starting point. */
@@ -1254,36 +1254,36 @@ export const geom = defineGeom(meta, (p) => {
     return `${h}\nexport const geom = defineGeom(meta, ${args} => {${body}});\n`;
   }
 
-  /** Drop the import line for a runes primitive's geom. */
+  /** Drop the import line for a single-file component's geom. */
   function removeRunesImport(src: string, id: string): string {
     const importRe = new RegExp(`import\\s*\\{[^}]*\\bgeom as \\w+\\b[^}]*\\}\\s*from\\s*['"]\\.\\/${id}['"];?\\n?`);
     return src.replace(importRe, '');
   }
 
-  /** Parse the source and return which helpers / runes primitives are
+  /** Parse the source and return which helpers / single-file components are
    *  currently imported. The Parts tab renders ONLY these — the catalog
    *  (everything else available) sits behind an explicit "+ Add" picker.
    *  Encapsulation: each primitive surfaces just its own direct deps. */
-  function importedFromSource(src: string): { helpers: Set<string>; runes: Set<string> } {
+  function importedFromSource(src: string): { helpers: Set<string>; components: Set<string> } {
     const helpers = new Set<string>();
-    const runes = new Set<string>();
+    const components = new Set<string>();
     const helpersRe = /import\s*\{\s*([^}]*)\s*\}\s*from\s*['"]\.\.\/manifold-helpers['"];?/g;
     for (const m of src.matchAll(helpersRe)) {
       for (const n of m[1].split(',').map((s) => s.trim()).filter(Boolean)) helpers.add(n);
     }
-    const runesRe = /import\s*\{[^}]*\bgeom as \w+\b[^}]*\}\s*from\s*['"]\.\/([a-z][a-z0-9_]*)['"];?/g;
-    for (const m of src.matchAll(runesRe)) runes.add(m[1]);
-    return { helpers, runes };
+    const componentRe = /import\s*\{[^}]*\bgeom as \w+\b[^}]*\}\s*from\s*['"]\.\/([a-z][a-z0-9_]*)['"];?/g;
+    for (const m of src.matchAll(componentRe)) components.add(m[1]);
+    return { helpers, components };
   }
 
   function removeHelper(name: string) {
-    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
-    const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
     activeTab.sourceDraft = removeHelperImport(cur, name);
   }
   function removeRunes(id: string) {
-    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
-    const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
     activeTab.sourceDraft = removeRunesImport(cur, id);
   }
 
@@ -1297,32 +1297,32 @@ export const geom = defineGeom(meta, (p) => {
    *  geom body. Uses the same insertIntoGeomBody pipeline as the Parts
    *  insertion so the snippet lands inside the defineGeom function. */
   function insertOperatorSnippet(op: typeof OPERATORS[number]) {
-    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
-    const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
     activeTab.sourceDraft = insertIntoGeomBody(cur, op.snippet);
   }
 
   function insertHelperSnippet(name: string) {
-    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
-    const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
     const keys = new Set(Object.keys(activeTab.params));
     activeTab.sourceDraft = snippetForHelper(cur, name, keys);
   }
-  function insertRunesSnippet(entry: RunesEntry) {
-    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.runesEntry) return;
-    if (entry.meta.id === activeTab.runesEntry.meta.id) return; // can't import yourself
-    const cur = activeTab.sourceDraft ?? activeTab.runesEntry.source;
+  function insertRunesSnippet(entry: ComponentEntry) {
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    if (entry.meta.id === activeTab.componentEntry.meta.id) return; // can't import yourself
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
     activeTab.sourceDraft = snippetForRunes(cur, entry);
   }
 
-  // ── Delete a runes primitive ─────────────────────────────────────────────
-  // Calls DELETE /api/runes/delete which (a) refuses if the primitive is
+  // ── Delete a single-file component ─────────────────────────────────────────────
+  // Calls DELETE /api/components/delete which (a) refuses if the primitive is
   // referenced by any authored component (returns 409 + reference list),
   // (b) deletes the .ts source + .glb otherwise, (c) invalidates the
   // server-side list cache. On success we re-fetch the registry and close
   // any open tab for the deleted id. Any open Params/Svelte/MD popups for
   // that tab go with the tab.
-  async function deleteRunes(entry: RunesEntry) {
+  async function deleteRunes(entry: ComponentEntry) {
     const id = entry.meta.id;
     const name = entry.meta.name;
     const ok = window.confirm(
@@ -1331,7 +1331,7 @@ export const geom = defineGeom(meta, (p) => {
     );
     if (!ok) return;
     try {
-      const r = await fetch('/api/runes/delete', {
+      const r = await fetch('/api/components/delete', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -1416,41 +1416,41 @@ export const geom = defineGeom(meta, (p) => {
     import('$lib/shared/ComponentScene.svelte').then((m) => { SceneComponent = m.default; });
     import('$lib/shared/SceneControls.svelte').then((m) => { SceneControls = m.default; });
     initManifold().then(() => { ready = true; });
-    // Async-load the registry from /api/runes/list before deciding what
+    // Async-load the registry from /api/components/list before deciding what
     // to auto-open. Priority:
     //   1. Last primitive the user was editing this session (sessionStorage
-    //      — survives Vite HMR reloads triggered by /api/runes/save).
+    //      — survives Vite HMR reloads triggered by /api/components/save).
     //   2. conn_box — active work-in-progress.
     //   3. Tube — baseline fallback.
     await refreshRunesList();
     if (openTabs.length === 0) {
       let lastId: string | null = null;
-      try { lastId = sessionStorage.getItem('runes:lastActiveId'); } catch { /* private mode etc. */ }
+      try { lastId = sessionStorage.getItem('cad:lastActiveId'); } catch { /* private mode etc. */ }
       const entry =
-        (lastId ? runesList.find((e) => e.meta.id === lastId) : undefined) ??
-        runesList.find((e) => e.meta.id === 'conn_box') ??
-        runesList.find((e) => e.meta.id === 'hollow_cylinder');
+        (lastId ? componentList.find((e) => e.meta.id === lastId) : undefined) ??
+        componentList.find((e) => e.meta.id === 'conn_box') ??
+        componentList.find((e) => e.meta.id === 'hollow_cylinder');
       if (entry) openRunes(entry);
     }
     // Restore the last-used inspector sub-tab AFTER the primitive tab
     // has been opened, so the openRunes default ('ai') doesn't win the
     // race with our restore.
     try {
-      const lastInsp = sessionStorage.getItem('runes:lastInspectorTab');
+      const lastInsp = sessionStorage.getItem('cad:lastInspectorTab');
       if (lastInsp && ['ai', 'parts', 'params', 'svelte', 'md', 'script'].includes(lastInsp)) {
         inspectorTab = lastInsp as InspectorTab;
       }
     } catch {}
   });
 
-  // Persist the active runes id so a Vite HMR reload (triggered by
-  // /api/runes/save) returns the user to the primitive they were editing,
+  // Persist the active component id so a Vite HMR reload (triggered by
+  // /api/components/save) returns the user to the primitive they were editing,
   // not the default landing. Cleared automatically if the user closes the
   // tab (closeTab below) or navigates away.
   $effect(() => {
     if (!activeTab) return;
-    if (activeTab.kind === 'xml-primitive' && activeTab.runesEntry) {
-      try { sessionStorage.setItem('runes:lastActiveId', activeTab.runesEntry.meta.id); } catch {}
+    if (activeTab.kind === 'xml-primitive' && activeTab.componentEntry) {
+      try { sessionStorage.setItem('cad:lastActiveId', activeTab.componentEntry.meta.id); } catch {}
     }
   });
   // Same idea for the inspector sub-tab — restoring just the active
@@ -1461,7 +1461,7 @@ export const geom = defineGeom(meta, (p) => {
   // doesn't support that inspector tab.
   $effect(() => {
     if (!inspectorTab) return;
-    try { sessionStorage.setItem('runes:lastInspectorTab', inspectorTab); } catch {}
+    try { sessionStorage.setItem('cad:lastInspectorTab', inspectorTab); } catch {}
   });
 
   /** Compose a minimal AuthoredComponent for the active tab so buildAuthored
@@ -1515,13 +1515,13 @@ export const geom = defineGeom(meta, (p) => {
   });
 
   async function saveRunesSource(tab: Tab): Promise<boolean> {
-    if (tab.kind !== 'xml-primitive' || !tab.runesEntry) return false;
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return false;
     // Splice every slider's current value into the meta as the new
     // `default:` BEFORE formatting. paramsDirty() upstream gates the
     // save bar, but the splice runs unconditionally here — slider
     // values that happen to equal the existing default are no-ops.
-    let raw = tab.sourceDraft ?? tab.runesEntry.source;
-    for (const [k, def] of Object.entries(tab.runesEntry.meta.params)) {
+    let raw = tab.sourceDraft ?? tab.componentEntry.source;
+    for (const [k, def] of Object.entries(tab.componentEntry.meta.params)) {
       const cur = tab.params[k];
       if (cur === undefined) continue;
       if (Math.round(cur * 1e6) === Math.round(def.default * 1e6)) continue;
@@ -1550,10 +1550,10 @@ export const geom = defineGeom(meta, (p) => {
     tab.saveStatus = 'saving';
     tab.saveError = undefined;
     try {
-      const r = await fetch('/api/runes/save', {
+      const r = await fetch('/api/components/save', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: tab.runesEntry.meta.id, source: next }),
+        body: JSON.stringify({ id: tab.componentEntry.meta.id, source: next }),
       });
       if (!r.ok) {
         const txt = await r.text();
@@ -1565,8 +1565,8 @@ export const geom = defineGeom(meta, (p) => {
       // Re-fetch the registry from the API so the in-memory tab entry
       // matches what's now on disk. Then update the tab's reference.
       await refreshRunesList();
-      const fresh = runesList.find((e) => e.meta.id === tab.runesEntry!.meta.id);
-      if (fresh) tab.runesEntry = { ...fresh, source: next };
+      const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
+      if (fresh) tab.componentEntry = { ...fresh, source: next };
       tab.sourceDraft = null;
       return true;
     } catch (e: any) {
@@ -1584,8 +1584,8 @@ export const geom = defineGeom(meta, (p) => {
 
   // ── AI Refine — Claude-driven source edits ───────────────────────────────
   // The AI Inspector tab is the entry point. The user types a goal; we send
-  // current source + prompt to /api/runes/refine which calls Claude with a
-  // system prompt encoding the runes file format + ManifoldCAD ops + Z-down.
+  // current source + prompt to /api/components/refine which calls Claude with a
+  // system prompt encoding the component file format + ManifoldCAD ops + Z-down.
   // The response lands in tab.ai.pending; the user previews + Accepts (moves
   // into sourceDraft, the Svelte tab takes over for final save) or Rejects.
 
@@ -1596,20 +1596,20 @@ export const geom = defineGeom(meta, (p) => {
   }
 
   async function submitAiRefine(tab: Tab) {
-    if (tab.kind !== 'xml-primitive' || !tab.runesEntry) return;
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
     const ai = ensureAi(tab);
     const prompt = ai.prompt.trim();
     if (!prompt) return;
     ai.status = 'sending';
     ai.error = undefined;
     ai.pending = undefined;
-    const id = tab.runesEntry.meta.id;
-    const source = tab.sourceDraft ?? tab.runesEntry.source;
+    const id = tab.componentEntry.meta.id;
+    const source = tab.sourceDraft ?? tab.componentEntry.source;
     // Use the live edits of the instructions doc if dirty; otherwise the
     // version that was loaded from disk.
-    const instructions = ai.instructionsDraft ?? tab.runesEntry.instructions ?? '';
+    const instructions = ai.instructionsDraft ?? tab.componentEntry.instructions ?? '';
     try {
-      const r = await fetch('/api/runes/refine', {
+      const r = await fetch('/api/components/refine', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id, source, prompt, instructions }),
@@ -1633,16 +1633,16 @@ export const geom = defineGeom(meta, (p) => {
    *  user's edits don't apply to the next refine until this is called —
    *  we wire it to a Save button + an autosave-on-blur for ergonomics. */
   async function saveInstructions(tab: Tab) {
-    if (tab.kind !== 'xml-primitive' || !tab.runesEntry) return;
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
     const ai = ensureAi(tab);
     const instructions = ai.instructionsDraft ?? '';
     ai.instructionsStatus = 'saving';
     ai.instructionsError = undefined;
     try {
-      const r = await fetch('/api/runes/instructions', {
+      const r = await fetch('/api/components/instructions', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: tab.runesEntry.meta.id, instructions }),
+        body: JSON.stringify({ id: tab.componentEntry.meta.id, instructions }),
       });
       if (!r.ok) {
         const txt = await r.text();
@@ -1650,8 +1650,8 @@ export const geom = defineGeom(meta, (p) => {
         ai.instructionsError = `${r.status} — ${txt.slice(0, 160)}`;
         return;
       }
-      // Reflect the saved value back into runesEntry so the dirty flag clears.
-      if (tab.runesEntry) (tab.runesEntry as any).instructions = instructions;
+      // Reflect the saved value back into componentEntry so the dirty flag clears.
+      if (tab.componentEntry) (tab.componentEntry as any).instructions = instructions;
       ai.instructionsDraft = null;
       ai.instructionsStatus = 'saved';
       setTimeout(() => { if (ai.instructionsStatus === 'saved') ai.instructionsStatus = 'idle'; }, 1800);
@@ -1680,8 +1680,8 @@ export const geom = defineGeom(meta, (p) => {
   }
 
   function resetParams(tab: Tab) {
-    if (tab.kind === 'xml-primitive' && tab.runesEntry) {
-      tab.params = defaultsFor(tab.runesEntry.meta);
+    if (tab.kind === 'xml-primitive' && tab.componentEntry) {
+      tab.params = defaultsFor(tab.componentEntry.meta);
       return;
     }
     const def = COMPONENTS.find((c) => c.id === tab.primId);
@@ -1694,9 +1694,9 @@ export const geom = defineGeom(meta, (p) => {
 
   let activeTab = $derived(openTabs.find((t) => t.id === activeTabId) ?? null);
   /** True when the active tab is parameter-driven (regular primitive OR a
-   *  runes-class XML primitive). Both share the same toolbar / 3D scene /
+   *  component component). Both share the same toolbar / 3D scene /
    *  Params + Script popups; the only difference is what gets shown in
-   *  the Script popup (hand-written builder vs runes-compiled source). */
+   *  the Script popup (hand-written builder vs generated source). */
   let isParamTab = $derived(activeTab?.kind === 'primitive' || activeTab?.kind === 'xml-primitive');
   /** activeDef provides the metadata the stage block uses to render the
    *  header (name / id / category / description / tags). For 'primitive'
@@ -1719,9 +1719,9 @@ export const geom = defineGeom(meta, (p) => {
         defaults: {},
       } as ComponentDef;
     }
-    // XML primitive — synthesize a ComponentDef from the runes meta.
-    if (activeTab.kind === 'xml-primitive' && activeTab.runesEntry) {
-      const m = activeTab.runesEntry.meta;
+    // component — synthesize a ComponentDef from the component meta.
+    if (activeTab.kind === 'xml-primitive' && activeTab.componentEntry) {
+      const m = activeTab.componentEntry.meta;
       // ComponentDef.params expects { label, min, max, step, unit? } — our
       // PrimitiveMeta.params adds `default` (a superset). Cast through.
       return {
@@ -1742,15 +1742,15 @@ export const geom = defineGeom(meta, (p) => {
    *  the `<id>(p) {` shape extractBuilder expects). */
   let builderText = $derived.by<string>(() => {
     if (!activeTab) return '';
-    // XML primitive — runes file IS the source; the Inspector shows it in
+    // component — component file IS the source; the Inspector shows it in
     // the Svelte tab, so the Script tab is hidden for these. Keep the
     // builderText derive intact for legacy primitives.
     return extractBuilder(builderSource, activeTab.primId) ?? '// (no script — builder function not found in builder.ts)';
   });
 
-  /** Auto-generate a markdown block from a runes-file's meta. Used by the
-   *  Inspector's MD tab. Replaces the deleted runes/docs.ts. */
-  function generateMd(entry: RunesEntry, currentParams: Record<string, number>): string {
+  /** Auto-generate a markdown block from a component-file's meta. Used by the
+   *  Inspector's MD tab. Replaces the deleted cad/components/docs.ts. */
+  function generateMd(entry: ComponentEntry, currentParams: Record<string, number>): string {
     const m = entry.meta;
     const lines: string[] = [];
     lines.push(`# ${m.name}`);
@@ -1807,7 +1807,7 @@ export const geom = defineGeom(meta, (p) => {
     tab.params = { ...tab.params, [`new_${i}`]: 1 };
   }
 
-  // ── Param-form for adding a NEW parameter to a runes class ───────────────
+  // ── Param-form for adding a NEW parameter to a component schema ───────────────
   // Click the "+" next to the Parameters title to open the form. On submit
   // the new param is added to the tab's in-memory params (slider shows up
   // immediately) AND spliced into the tab's sourceDraft (the .ts source
@@ -1835,9 +1835,9 @@ export const geom = defineGeom(meta, (p) => {
    *  bag with the CURRENT description on each param so existing text
    *  doesn't get wiped if the user only edits one. */
   function openDescEdit(tab: Tab) {
-    if (!tab.runesEntry) return;
+    if (!tab.componentEntry) return;
     const drafts: Record<string, string> = {};
-    for (const [k, schema] of Object.entries(tab.runesEntry.meta.params)) {
+    for (const [k, schema] of Object.entries(tab.componentEntry.meta.params)) {
       drafts[k] = (schema as any).description ?? '';
     }
     tab.descForm = { open: true, drafts };
@@ -1846,9 +1846,9 @@ export const geom = defineGeom(meta, (p) => {
     if (tab.descForm) tab.descForm.open = false;
   }
   async function submitDescEdit(tab: Tab) {
-    if (!tab.descForm || !tab.runesEntry) return;
+    if (!tab.descForm || !tab.componentEntry) return;
     const drafts = tab.descForm.drafts;
-    let src = tab.sourceDraft ?? tab.runesEntry.source;
+    let src = tab.sourceDraft ?? tab.componentEntry.source;
     for (const [key, desc] of Object.entries(drafts)) {
       const next = setParamDescription(src, key, desc);
       if (next == null) {
@@ -1863,8 +1863,8 @@ export const geom = defineGeom(meta, (p) => {
   }
 
   function openParamEdit(tab: Tab, key: string) {
-    if (!tab.runesEntry) return;
-    const schema = tab.runesEntry.meta.params[key] as any;
+    if (!tab.componentEntry) return;
+    const schema = tab.componentEntry.meta.params[key] as any;
     tab.paramEdit = {
       key,
       name: key,
@@ -1881,9 +1881,9 @@ export const geom = defineGeom(meta, (p) => {
     tab.paramEdit = null;
   }
   function submitParamEdit(tab: Tab) {
-    if (!tab.paramEdit || !tab.runesEntry) return;
+    if (!tab.paramEdit || !tab.componentEntry) return;
     const pe = tab.paramEdit;
-    let src = tab.sourceDraft ?? tab.runesEntry.source;
+    let src = tab.sourceDraft ?? tab.componentEntry.source;
 
     // Rename path — confirm before refactoring references in geom body.
     if (pe.name && pe.name !== pe.key) {
@@ -1891,7 +1891,7 @@ export const geom = defineGeom(meta, (p) => {
         tab.paramEdit = { ...pe, error: `"${pe.name}" is not a valid identifier.` };
         return;
       }
-      if (pe.name in tab.runesEntry.meta.params) {
+      if (pe.name in tab.componentEntry.meta.params) {
         tab.paramEdit = { ...pe, error: `"${pe.name}" already exists as a param.` };
         return;
       }
@@ -1959,7 +1959,7 @@ export const geom = defineGeom(meta, (p) => {
     tab.paramEdit = null;
   }
 
-  /** Rename a param key throughout a runes source file. Two-phase:
+  /** Rename a param key throughout a component source file. Two-phase:
    *  (1) replace the param's key declaration `oldName: {` with
    *  `newName: {` (specific match so only the declaration changes),
    *  (2) word-boundary replace `\boldName\b` across the whole source
@@ -2092,8 +2092,8 @@ export const geom = defineGeom(meta, (p) => {
    *  savable action too. Only checks the keys that exist in the
    *  schema (extra/draft params are handled elsewhere). */
   function paramsDirty(tab: Tab): boolean {
-    if (!tab.runesEntry) return false;
-    const schema = tab.runesEntry.meta.params;
+    if (!tab.componentEntry) return false;
+    const schema = tab.componentEntry.meta.params;
     for (const [k, def] of Object.entries(schema)) {
       const cur = tab.params[k];
       if (cur === undefined) continue;
@@ -2146,7 +2146,7 @@ export const geom = defineGeom(meta, (p) => {
     }
     return src.slice(0, openBraceIdx + 1) + newBody + src.slice(i);
   }
-  /** Splice a new param entry into the `params: { ... }` block of a runes
+  /** Splice a new param entry into the `params: { ... }` block of a component
    *  file's `meta` object literal. Returns the modified source or null if
    *  the source shape doesn't match expectations. */
   function insertParamIntoSource(
@@ -2156,7 +2156,7 @@ export const geom = defineGeom(meta, (p) => {
     meta: { label: string; min: number; max: number; step: number; unit?: string; type?: string },
   ): string | null {
     // Locate the `params: {` opening within the `meta` literal. Tolerant
-    // of whitespace; matches the first occurrence (each runes file has one).
+    // of whitespace; matches the first occurrence (each component file has one).
     const paramsRe = /\bparams\s*:\s*\{/;
     const m = paramsRe.exec(src);
     if (!m) return null;
@@ -2186,7 +2186,7 @@ export const geom = defineGeom(meta, (p) => {
   }
 
   async function submitParamForm(tab: Tab) {
-    if (!tab.paramForm || !tab.runesEntry) return;
+    if (!tab.paramForm || !tab.componentEntry) return;
     const f = tab.paramForm;
     const name = f.name.trim();
     if (!/^[a-z][a-zA-Z0-9_]*$/.test(name)) {
@@ -2211,7 +2211,7 @@ export const geom = defineGeom(meta, (p) => {
     tab.params = { ...tab.params, [name]: def };
 
     // 2) Splice into source draft.
-    const current = tab.sourceDraft ?? tab.runesEntry.source;
+    const current = tab.sourceDraft ?? tab.componentEntry.source;
     const updated = insertParamIntoSource(current, name, def, {
       label: f.label.trim() || name,
       min:   minN,
@@ -2297,7 +2297,7 @@ export const geom = defineGeom(meta, (p) => {
           {@const count = f.id === 'components' ? COMPONENTS_L3.filter((c) => c.tier === 3).length
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
                        : f.id === 'kb' ? kbList.length
-                       : f.id === 'xml_primitive' ? runesList.length
+                       : f.id === 'xml_primitive' ? componentList.length
                        : itemsInFolder(f).length}
           <button
             class="sb-tab"
@@ -2422,9 +2422,9 @@ export const geom = defineGeom(meta, (p) => {
         {#if filt.length === 0}<div class="sb-empty">No assemblies match "{filter}".</div>{/if}
       {/if}
       {#if sidebarTab === 'xml_primitive'}
-        <!-- Single-file primitives — auto-discovered from src/lib/components/runes
+        <!-- Single-file primitives — auto-discovered from src/lib/cad/parts
              via import.meta.glob. The "+ New" button at the top creates a
-             new file via /api/runes/save (create:true). Vite HMR picks up
+             new file via /api/components/save (create:true). Vite HMR picks up
              the new file and adds it to the list automatically. -->
         <button
           class="sb-add"
@@ -2452,7 +2452,7 @@ export const geom = defineGeom(meta, (p) => {
         {/if}
 
         <div class="sb-list">
-          {#each runesList.filter((r) => !filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())) as entry (entry.meta.id)}
+          {#each componentList.filter((r) => !filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())) as entry (entry.meta.id)}
             <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
               <button
                 class="prim-link"
@@ -2684,7 +2684,7 @@ export const geom = defineGeom(meta, (p) => {
           <!-- Single Inspector toggle. Replaces the old four-button row
                (Params / Svelte / Script / MD) — the popup's internal tab
                strip handles navigation between views. Icon is the Svelte
-               atom for runes-class tabs; falls back to the script glyph
+               atom for component tabs; falls back to the script glyph
                for legacy primitives that have no Svelte source. -->
           <button
             class="tb-btn"
@@ -2721,7 +2721,7 @@ export const geom = defineGeom(meta, (p) => {
             <div class="stage-title">
               <h2 class="stage-name">{activeDef.name}</h2>
               <span class="stage-id">{activeDef.id}</span>
-              {#if activeDef.description || activeTab.runesEntry?.instructions}
+              {#if activeDef.description || activeTab.componentEntry?.instructions}
                 <button
                   class="stage-info-btn"
                   class:active={stageInfoOpen}
@@ -2741,7 +2741,7 @@ export const geom = defineGeom(meta, (p) => {
                     {#if activeDef.description}
                       <p class="stage-info-desc">{activeDef.description}</p>
                     {/if}
-                    {#if activeTab.runesEntry?.instructions}
+                    {#if activeTab.componentEntry?.instructions}
                       <p class="stage-info-more">Longer notes live in the <strong>📖 MD</strong> tab.</p>
                     {/if}
                   </div>
@@ -2753,7 +2753,7 @@ export const geom = defineGeom(meta, (p) => {
               {#if compound}<span class="badge compound-tag">compound — to be decomposed</span>{/if}
               {#if PIPE_PRIMS.has(activeDef.id)}<span class="badge pipe">pipe</span>{/if}
               {#if activeTab.draft}<span class="badge draft-tag">draft</span>{/if}
-              {#if activeTab.kind === 'xml-primitive'}<span class="badge pipe">runes-class</span>{/if}
+              {#if activeTab.kind === 'xml-primitive'}<span class="badge pipe">component</span>{/if}
               <!-- Render-time Z compression. Geom unchanged; only the
                    final mesh is squashed so a long pipe joint stays
                    recognisable against its OD/wall. -->
@@ -2905,7 +2905,7 @@ export const geom = defineGeom(meta, (p) => {
         </div>
 
         {#if inspectorTab === 'params' && isParamTab}
-          {@const allDefs = (activeTab.runesEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
+          {@const allDefs = (activeTab.componentEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
           {@const groups = paramGroupsOf(allDefs)}
           {@const showGroupTabs = groups.length > 1}
           {@const activeGroup = showGroupTabs ? (selectedParamGroup && groups.includes(selectedParamGroup) ? selectedParamGroup : groups[0]) : null}
@@ -3018,7 +3018,7 @@ export const geom = defineGeom(meta, (p) => {
                     <input class="pr-num" type="number" step={def.step} bind:value={activeTab.params[key]} />
                   {/if}
                   {#if def.unit}<span class="pr-unit">{def.unit}</span>{/if}
-                  {#if activeTab.kind === 'xml-primitive' && key in (activeTab.runesEntry?.meta.params ?? {})}
+                  {#if activeTab.kind === 'xml-primitive' && key in (activeTab.componentEntry?.meta.params ?? {})}
                     <button class="row-edit" type="button" onclick={() => openParamEdit(activeTab!, key)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
                   {/if}
                   {#if activeTab.draft}
@@ -3116,8 +3116,8 @@ export const geom = defineGeom(meta, (p) => {
             </div>
           </div>
 
-          {#if activeTab.kind === 'xml-primitive' && activeTab.runesEntry?.meta.derived}
-            {@const derivedMeta = activeTab.runesEntry.meta.derived}
+          {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry?.meta.derived}
+            {@const derivedMeta = activeTab.componentEntry.meta.derived}
             {@const resolved = resolveDerivedSafe(derivedMeta, activeTab.params)}
             <div class="ed-sec">
               <div class="ed-sec-h">
@@ -3136,8 +3136,8 @@ export const geom = defineGeom(meta, (p) => {
             </div>
           {/if}
 
-        {:else if inspectorTab === 'svelte' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
-          {@const entry = activeTab.runesEntry}
+        {:else if inspectorTab === 'svelte' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+          {@const entry = activeTab.componentEntry}
           {@const m = entry.meta}
           {@const dirty = activeTab.sourceDraft != null && activeTab.sourceDraft !== entry.source}
           {@const editorSource = activeTab.sourceDraft ?? entry.source}
@@ -3174,7 +3174,7 @@ export const geom = defineGeom(meta, (p) => {
               <code class="args-code">{split.args} =&gt;</code>
             </div>
             <!-- Section 3: construction body. The main editor — the only
-                 place the user touches for normal work. Helpers / runes
+                 place the user touches for normal work. Helpers / components
                  / current params / derived all available via autocomplete. -->
             <div class="editor-wrap">
               <CodeEditor
@@ -3197,7 +3197,7 @@ export const geom = defineGeom(meta, (p) => {
               <span class="warn-icon">⚠</span>
               <span>This file doesn't match the <code>defineGeom</code> shape — showing full source. Sectioned view resumes once the structure parses.</span>
             </div>
-            {@const defaultFolds = runesDefaultFolds(editorSource)}
+            {@const defaultFolds = componentDefaultFolds(editorSource)}
             <div class="editor-wrap">
               <CodeEditor
                 value={editorSource}
@@ -3231,7 +3231,7 @@ export const geom = defineGeom(meta, (p) => {
               <button class="ed-err-clear" type="button" onclick={() => (buildError = null)} aria-label="Dismiss error">×</button>
             </div>
           {/if}
-          <p class="code-note">Source: <code>src/lib/components/runes/{m.id}.ts</code> · save via the bar below.</p>
+          <p class="code-note">Source: <code>src/lib/cad/components/{m.id}.ts</code> · save via the bar below.</p>
         {:else if inspectorTab === 'script' && activeTab.kind !== 'xml-primitive'}
           <div class="ed-sec">
             <div class="ed-sec-h">
@@ -3255,16 +3255,16 @@ export const geom = defineGeom(meta, (p) => {
             <div class="editor-wrap"><CodeEditor value={builderText} lang="javascript" readonly /></div>
             <p class="code-note">Builder body is read-only — the project disallows dynamic eval (see CLAUDE.md).</p>
           </div>
-        {:else if inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
-          {@const selfId = activeTab.runesEntry.meta.id}
-          {@const curSrc = activeTab.sourceDraft ?? activeTab.runesEntry.source}
+        {:else if inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+          {@const selfId = activeTab.componentEntry.meta.id}
+          {@const curSrc = activeTab.sourceDraft ?? activeTab.componentEntry.source}
           {@const imported = importedFromSource(curSrc)}
           {@const usedHelpers = HELPERS.filter((h) => imported.helpers.has(h.name))}
-          {@const usedRunes = runesList.filter((r) => imported.runes.has(r.meta.id))}
+          {@const usedComponents = componentList.filter((r) => imported.components.has(r.meta.id))}
           {@const availableHelpers = HELPERS.filter((h) => !imported.helpers.has(h.name))}
-          {@const availableRunes = runesList.filter((r) => r.meta.id !== selfId && !imported.runes.has(r.meta.id))}
-          {@const usedCount = usedHelpers.length + usedRunes.length}
-          {@const availableCount = availableHelpers.length + availableRunes.length}
+          {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId && !imported.components.has(r.meta.id))}
+          {@const usedCount = usedHelpers.length + usedComponents.length}
+          {@const availableCount = availableHelpers.length + availableComponents.length}
           <div class="parts-pane">
             <div class="parts-group">
               <div class="parts-h thin">
@@ -3282,7 +3282,7 @@ export const geom = defineGeom(meta, (p) => {
                       <span class="part-desc">{h.desc}</span>
                     </div>
                   {/each}
-                  {#each usedRunes as p (`r:${p.meta.id}`)}
+                  {#each usedComponents as p (`r:${p.meta.id}`)}
                     <div class="part-card used" title={`Composed: ${p.meta.name}`}>
                       <button class="part-x" type="button" aria-label={`Remove ${p.meta.name}`} title={`Remove ${p.meta.name}`} onclick={() => removeRunes(p.meta.id)}>×</button>
                       <span class="part-name">{p.meta.name}</span>
@@ -3304,7 +3304,7 @@ export const geom = defineGeom(meta, (p) => {
                         <span class="part-sig">{h.sig}</span>
                       </button>
                     {/each}
-                    {#each availableRunes as p (`r:${p.meta.id}`)}
+                    {#each availableComponents as p (`r:${p.meta.id}`)}
                       <button class="part-pick" type="button" title={`Compose ${p.meta.name}`} onclick={() => { insertRunesSnippet(p); partsAddHelperOpen = false; }}>
                         <span class="part-name">{p.meta.name}</span>
                         <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
@@ -3315,9 +3315,9 @@ export const geom = defineGeom(meta, (p) => {
               {/if}
             </div>
           </div>
-        {:else if inspectorTab === 'ai' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
+        {:else if inspectorTab === 'ai' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
           {@const ai = activeTab.ai ?? { prompt: '', status: 'idle', history: [] }}
-          {@const instOnDisk = activeTab.runesEntry.instructions ?? ''}
+          {@const instOnDisk = activeTab.componentEntry.instructions ?? ''}
           {@const instCurrent = ai.instructionsDraft ?? instOnDisk}
           {@const instDirty = ai.instructionsDraft != null && ai.instructionsDraft !== instOnDisk}
           <div class="ai-pane two-section">
@@ -3390,11 +3390,11 @@ export const geom = defineGeom(meta, (p) => {
                  Per-primitive markdown doc — the persistent "what should
                  this primitive be" context. Sent alongside every prompt so
                  Claude produces predictable / consistent output. Saved to
-                 src/lib/components/runes/<id>.md. Will eventually feed a
+                 src/lib/cad/components/<id>.md. Will eventually feed a
                  RAG index across primitives. -->
             <div class="ai-sec">
               <div class="ai-sec-h">
-                <span class="ai-sec-title">📋 Instructions <span class="muted">{activeTab.runesEntry.meta.id}.md</span></span>
+                <span class="ai-sec-title">📋 Instructions <span class="muted">{activeTab.componentEntry.meta.id}.md</span></span>
                 <span class="ai-sec-sub">persistent spec — sent with every refine</span>
               </div>
               <textarea
@@ -3423,15 +3423,15 @@ export const geom = defineGeom(meta, (p) => {
               </div>
             </div>
           </div>
-        {:else if inspectorTab === 'md' && activeTab.kind === 'xml-primitive' && activeTab.runesEntry}
-          {@const docs = generateMd(activeTab.runesEntry, activeTab.params)}
+        {:else if inspectorTab === 'md' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+          {@const docs = generateMd(activeTab.componentEntry, activeTab.params)}
           <div class="md-wrap">
             <MarkdownView value={docs} />
           </div>
-          <p class="code-note">Auto-generated from the primitive's <code>meta</code> — params, tags, validate state. Edit the runes file (Svelte tab) to update.</p>
+          <p class="code-note">Auto-generated from the primitive's <code>meta</code> — params, tags, validate state. Edit the component file (Svelte tab) to update.</p>
         {/if}
 
-        {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.runesEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.runesEntry.source}
+        {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
         {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
         {#if srcDirty || pDirty}
           <!-- Global save bar — visible on EVERY inspector tab the moment
@@ -3536,7 +3536,7 @@ export const geom = defineGeom(meta, (p) => {
   }
   /* Operator pane — list of CAD operations. Each item shows a glyph,
      the operator name, and a short description. Disabled when no
-     runes primitive is active (can't splice into nothing). */
+     single-file component is active (can't splice into nothing). */
   .sb-operator {
     flex: 1; min-height: 0;
     overflow-y: auto;
@@ -4200,7 +4200,7 @@ export const geom = defineGeom(meta, (p) => {
   }
   .pr-card {
     /* Inline row inside each card:
-         var-key · slider · number · unit · ✎(runes) · ×(draft) */
+         var-key · slider · number · unit · ✎(component) · ×(draft) */
     display: grid;
     grid-template-columns: auto 1fr 44px auto auto auto;
     align-items: center;
@@ -4452,7 +4452,7 @@ export const geom = defineGeom(meta, (p) => {
   /* ── Parts tab — module-library browser ────────────────────────────────
      Shows two groups of clickable cards:
        • Helpers from manifold-helpers.ts (cyl, tube, mv, rot)
-       • Other runes primitives (each exports geom(p) → Manifold)
+       • Other single-file components (each exports geom(p) → Manifold)
      Click → snippetForHelper / snippetForRunes splices an import (and a
      hint comment) into the active tab's sourceDraft. Visible only on the
      Parts inspector tab; the Svelte editor still owns the actual code. */

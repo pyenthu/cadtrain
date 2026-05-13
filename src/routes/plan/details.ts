@@ -55,7 +55,7 @@ export const details: Record<number, PlanDetail> = {
     ],
     refs: [
       'src/routes/primitives/+page.svelte (Script popup)',
-      'src/lib/components/builder.ts (18 builder functions)',
+      'src/lib/cad/builder.ts (18 builder functions)',
     ],
   },
 
@@ -64,7 +64,7 @@ export const details: Record<number, PlanDetail> = {
       'Build a prompt-tuned Claude that turns natural-language primitive ' +
       'descriptions ("a tube with 8 evenly-spaced grooves around the OD, 0.05 in ' +
       'deep") into ManifoldCAD builder code in the shape of the functions already ' +
-      'in src/lib/components/builder.ts. Close cousin of task 9 — both want the ' +
+      'in src/lib/cad/builder.ts. Close cousin of task 9 — both want the ' +
       'human-readable side to drive code generation — but this entry skips the ' +
       'structured spec MD and goes free-text → code in one step. Useful for adding ' +
       'a "describe a new primitive" input next to the + button in /primitives.',
@@ -93,8 +93,8 @@ export const details: Record<number, PlanDetail> = {
         'end-to-end',
     ],
     refs: [
-      'src/lib/components/builder.ts (target shape — function bodies to emit)',
-      'src/lib/components/library.ts (target shape — ComponentDef to emit alongside)',
+      'src/lib/cad/builder.ts (target shape — function bodies to emit)',
+      'src/lib/cad/library.ts (target shape — ComponentDef to emit alongside)',
       'CLAUDE.md (no-dynamic-eval rule)',
     ],
   },
@@ -114,7 +114,7 @@ export const details: Record<number, PlanDetail> = {
 
   401: {
     summary:
-      'Variation generator pattern in src/lib/components/library.ts. ComponentDef gains ' +
+      'Variation generator pattern in src/lib/cad/library.ts. ComponentDef gains ' +
       'an optional `parent: string` field; deriveVariation(spec) builds a child ' +
       'ComponentDef that inherits the parent\'s param schema + builder geometry, only ' +
       'overriding `defaults` and (optionally) per-param ranges. buildPrimitiveManifold ' +
@@ -125,12 +125,12 @@ export const details: Record<number, PlanDetail> = {
       'Each renders distinct geometry (different OD, length, thread density, taper)',
       'Sidebar shows parent threaded_box / threaded_pin as 📁 folders with the count pill',
     ],
-    refs: ['docs/RULES.md §3', 'src/lib/components/library.ts'],
+    refs: ['docs/RULES.md §3', 'src/lib/cad/library.ts'],
   },
 
   402: {
     summary:
-      'src/lib/components/rules/tubing.ts — first formalized composite generator. ' +
+      'src/lib/cad/rules/tubing.ts — first formalized composite generator. ' +
       'TubingInputs (size, weight, grade, connection, length, tpi) → resolveTubing ' +
       '(KB lookup against casing-tubing-data with formula fallback) → TubingDerived ' +
       '(wall, pipe_id, connection_od, connection_length, thread_count, thread_taper, ' +
@@ -141,7 +141,7 @@ export const details: Record<number, PlanDetail> = {
       'Formula fallback gives reasonable values when no KB row matches',
       '4 standard tubing sizes (2-3/8, 2-7/8, 3-1/2, 4-1/2) generated through the rules',
     ],
-    refs: ['docs/RULES.md §4', 'src/lib/components/rules/tubing.ts'],
+    refs: ['docs/RULES.md §4', 'src/lib/cad/rules/tubing.ts'],
   },
 
   403: {
@@ -157,7 +157,7 @@ export const details: Record<number, PlanDetail> = {
       'drill_pipe_tool_joint primitive registered in library.ts + builder.ts',
       'Both ends of a generated drill pipe joint carry the same identifying marks',
     ],
-    refs: ['docs/RULES.md §8', 'src/lib/components/rules/drill_pipe.ts', 'static/kb/api/drill-pipe-identification.json'],
+    refs: ['docs/RULES.md §8', 'src/lib/cad/rules/drill_pipe.ts', 'static/kb/api/drill-pipe-identification.json'],
   },
 
   404: {
@@ -177,8 +177,8 @@ export const details: Record<number, PlanDetail> = {
       'Plus drill_pipe_tool_joint with the parametric marking band. Each registered ' +
       'in library.ts with full param schemas; renders inline like any other primitive.',
     refs: [
-      'src/lib/components/builder.ts',
-      'src/lib/components/library.ts',
+      'src/lib/cad/builder.ts',
+      'src/lib/cad/library.ts',
       '~/Downloads/556242167-Intelligent-Completions-Catalog.pdf',
       '~/Downloads/633400581-02-Multilateral-Technology-Catalog-pdf.pdf',
     ],
@@ -201,7 +201,7 @@ export const details: Record<number, PlanDetail> = {
       'composition entry under Compositions / Standard API tubing or casing. Sidebar ' +
       'becomes the catalog itself; clicking generates the composite via the rules. ' +
       'Reduces the hand-curated COMPONENTS_L3 list to just the catalog-inspired entries.',
-    refs: ['src/lib/components/rules/tubing.ts'],
+    refs: ['src/lib/cad/rules/tubing.ts'],
   },
 
   410: {
@@ -220,7 +220,7 @@ export const details: Record<number, PlanDetail> = {
       'fields (size, weight, grade, length, tpi); editing reruns the rules pipeline ' +
       'and rebuilds the spec → live geometry update. Carries through the KB-anchored / ' +
       'formula-derived flag so the user sees which dims are pinned.',
-    refs: ['src/lib/components/rules/tubing.ts', 'src/routes/primitives/+page.svelte'],
+    refs: ['src/lib/cad/rules/tubing.ts', 'src/routes/primitives/+page.svelte'],
   },
 
   412: {
@@ -229,7 +229,7 @@ export const details: Record<number, PlanDetail> = {
       'Convert to AuthoredComponent specs (body + drill_pipe_tool_joint with the right ' +
       'marking + flush-bore variant of threaded_pin). Drops three custom builders, ' +
       'tightens the convention from §2.',
-    refs: ['docs/RULES.md §2 §9', 'src/lib/components/builder.ts'],
+    refs: ['docs/RULES.md §2 §9', 'src/lib/cad/builder.ts'],
   },
 
   // ───── B. Retrieval ─────
@@ -460,7 +460,7 @@ export const details: Record<number, PlanDetail> = {
       'tests/results/playwright-output/ as artifacts (7-day retention) so a failed ' +
       'run on GitHub gives you the HTML report + WEBM videos to download.\n\n' +
       'Pre-existing failure: src/lib/authoring/compose.test.ts has an unrelated ' +
-      "module-resolution error ('$lib/components/builder' not found). Confirmed " +
+      "module-resolution error ('$lib/cad/builder' not found). Confirmed " +
       'pre-existing on main, unrelated to the restructure. Unit-test step is set to ' +
       'continue-on-error: true; revisit when authoring gets its own lib/ reorg.',
     steps: [
@@ -757,7 +757,7 @@ export const details: Record<number, PlanDetail> = {
       'them if the catalog reveals real-world values outside our assumed bounds).',
     acceptance: [
       'p.6 (Wireline-Set Perma-Series specs) → 50+ rows of JSON',
-      'Spec ranges fed back to src/lib/components/library.ts param min/max if needed',
+      'Spec ranges fed back to src/lib/cad/library.ts param min/max if needed',
     ],
   },
 

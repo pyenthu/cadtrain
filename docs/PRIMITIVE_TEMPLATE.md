@@ -1,13 +1,13 @@
 # Per-primitive `.md` template
 
-Each runes primitive at `src/lib/components/runes/<id>.ts` SHOULD have a
+Each runes primitive at `src/lib/cad/parts/<id>.ts` SHOULD have a
 sibling `<id>.md` next to it. The AI-Refine endpoint loads this file as
 the slow-evolving spec for the primitive (sent alongside every refinement
 prompt), and any future Claude session reads it before touching the geom
 so the same primitive doesn't regress to first-principles each visit.
 
-Strong example: `src/lib/components/runes/conn_box.md`. Sparse example
-that needs filling: `src/lib/components/runes/enhanced_box.md`.
+Strong example: `src/lib/cad/parts/conn_box.md`. Sparse example
+that needs filling: `src/lib/cad/parts/enhanced_box.md`.
 
 ## Template — copy this into `<id>.md` and fill in
 
@@ -101,5 +101,5 @@ future session can pick them up cold.
 ## File-on-disk note
 
 The AI-Refine endpoint reads `<id>.md` via the runes API
-(`/api/runes/list` surfaces `instructions: <md content>`). Editing the
+(`/api/components/list` surfaces `instructions: <md content>`). Editing the
 .md and saving is enough — no rebuild needed.

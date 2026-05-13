@@ -30,7 +30,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
-import { COMPONENTS } from '../src/lib/components/library';
+import { COMPONENTS } from '../src/lib/cad/library';
 import type { AuthoredComponent, AuthoredPart, AuthoredOp } from '../src/lib/authoring/schema';
 import { buildClaudeCliArgs, spawnClaudeCli, parseCliEnvelope } from '../src/lib/shared/claude-cli';
 

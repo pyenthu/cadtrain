@@ -1,9 +1,9 @@
 /**
- * DELETE /api/runes/delete
+ * DELETE /api/components/delete
  *
- * Removes a runes primitive: deletes the .ts source under
- * src/lib/components/runes/ and the matching baked .glb under
- * static/runes/. Refuses if any authored component in
+ * Removes a single-file component: deletes the .ts source under
+ * src/lib/cad/components/ and the matching baked .glb under
+ * static/components/. Refuses if any authored component in
  * training_data/authored_cache.jsonl references the primitive by id —
  * deleting it would silently break those compositions on next render.
  *
@@ -22,11 +22,11 @@ import type { RequestHandler } from './$types';
 import { unlink, readFile, access } from 'fs/promises';
 import { join } from 'path';
 import { dev } from '$app/environment';
-import { RUNES_REGISTRY } from '$lib/components/runes';
+import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 
-const SRC_DIR = join(process.cwd(), 'src', 'lib', 'components', 'runes');
-const STATIC_DIR = join(process.cwd(), 'static', 'runes');
+const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
+const STATIC_DIR = join(process.cwd(), 'static', 'components');
 const AUTHORED_PATH = join(process.cwd(), 'training_data', 'authored_cache.jsonl');
 
 interface AuthoredReference {
@@ -93,8 +93,8 @@ export const DELETE: RequestHandler = async ({ request }) => {
   // registry is the source of truth for what's installed; if the user is
   // trying to delete something that doesn't exist there, either the file
   // was already removed or the id was typo'd — surface as a 400.
-  if (!RUNES_REGISTRY.find((e) => e.meta.id === id)) {
-    throw error(400, `Unknown runes id "${id}" — not in registry.`);
+  if (!COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
+    throw error(400, `Unknown component id "${id}" — not in registry.`);
   }
 
   // Reference check: scan authored_cache.jsonl for any composition that

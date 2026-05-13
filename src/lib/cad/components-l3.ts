@@ -18,7 +18,7 @@
  *   PIN (male) on BOTTOM   — external threads, OD = body OD
  *
  * Drilling z-down convention: positive z is up, negative z is down.
- * Use the helper in src/lib/components/rules/tubing.ts when generating
+ * Use the helper in src/lib/cad/rules/tubing.ts when generating
  * tubing joints; it bakes this convention in.
  */
 

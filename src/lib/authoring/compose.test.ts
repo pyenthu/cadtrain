@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock BEFORE importing compose so the mocked module wins.
-vi.mock('$lib/components/builder', () => {
+vi.mock('$lib/cad/builder', () => {
   const finalizeMock = vi.fn((m: any, _maxOD: number) => ({
     full: 'FULL_GEO',
     cutVC: 'CUTVC_GEO',
@@ -32,7 +32,7 @@ import { buildAuthored } from './compose';
 import {
   buildPrimitiveManifold,
   finalizeManifold,
-} from '$lib/components/builder';
+} from '$lib/cad/builder';
 import type { AuthoredComponent } from './schema';
 
 /**

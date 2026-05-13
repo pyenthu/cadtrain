@@ -1,6 +1,6 @@
 /**
  * E2E test for the runes primitives flow:
- *   - /api/runes/list returns the expected baseline (Tube + Tapered Cone)
+ *   - /api/components/list returns the expected baseline (Tube + Tapered Cone)
  *   - /primitives lands on the XML Primitive sidebar tab with Tube auto-opened
  *   - "+ New primitive" creates a fresh stub WITHOUT a page reload
  *   - The newly-created entry appears in the sidebar + auto-opens
@@ -32,8 +32,8 @@ test.describe.serial('runes primitives — API + create flow', () => {
     await unlink(join(STATIC_GLB_DIR, `${STUB_ID}.glb`)).catch(() => {});
   });
 
-  test('GET /api/runes/list returns the baseline registry', async ({ request }) => {
-    const r = await request.get('/api/runes/list');
+  test('GET /api/components/list returns the baseline registry', async ({ request }) => {
+    const r = await request.get('/api/components/list');
     expect(r.status()).toBe(200);
     const list = await r.json();
     expect(Array.isArray(list)).toBe(true);
@@ -99,7 +99,7 @@ test.describe.serial('runes primitives — API + create flow', () => {
     await page.getByPlaceholder(/e\.g\. gear_box/i).fill(STUB_ID);
     await page.getByPlaceholder(/Display name/i).fill(STUB_NAME);
 
-    // Sniff the network: the create flow should hit /api/runes/save,
+    // Sniff the network: the create flow should hit /api/components/save,
     // NOT trigger a navigation (no reload). We assert no full-page reload
     // happens by tracking page lifecycle.
     let didReload = false;
@@ -112,13 +112,13 @@ test.describe.serial('runes primitives — API + create flow', () => {
     });
     didReload = false; // Reset after the initial navigation.
 
-    const saveResponse = page.waitForResponse((r) => r.url().includes('/api/runes/save') && r.status() === 200);
+    const saveResponse = page.waitForResponse((r) => r.url().includes('/api/components/save') && r.status() === 200);
     // The create flow does save → refreshList → openRunes; wait for both
     // the save and the subsequent list re-fetch before asserting on the
     // stage. (Without this the stage-name assertion races the openRunes
     // call.)
     const listResponseAfterSave = page.waitForResponse(
-      (r) => r.url().includes('/api/runes/list') && r.status() === 200,
+      (r) => r.url().includes('/api/components/list') && r.status() === 200,
     );
     await page.getByRole('button', { name: /^Create$/i }).click();
     const resp = await saveResponse;
@@ -148,13 +148,13 @@ test.describe.serial('runes primitives — API + create flow', () => {
     // re-bundles; that race is documented in the save endpoint and is
     // acceptable behavior — the bake fires on the next save once the
     // registry has caught up.
-    const r = await request.get(`/api/runes/list`);
+    const r = await request.get(`/api/components/list`);
     const list = await r.json();
     const tube = list.find((e: any) => e.id === 'hollow_cylinder');
     expect(tube).toBeTruthy();
     // Re-save Tube with its own source — triggers the bake codepath
     // without changing anything on disk.
-    const save = await request.post(`/api/runes/save`, {
+    const save = await request.post(`/api/components/save`, {
       data: { id: 'hollow_cylinder', source: tube.source },
     });
     expect(save.status()).toBe(200);
@@ -176,8 +176,8 @@ test.describe.serial('runes primitives — API + create flow', () => {
     expect(magic).toBe('glTF');
   });
 
-  test('/api/runes/list reflects the newly-created stub', async ({ request }) => {
-    const r = await request.get('/api/runes/list');
+  test('/api/components/list reflects the newly-created stub', async ({ request }) => {
+    const r = await request.get('/api/components/list');
     expect(r.status()).toBe(200);
     const list = await r.json();
     const ids = list.map((e: any) => e.id);

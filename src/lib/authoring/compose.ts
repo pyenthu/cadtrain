@@ -18,7 +18,7 @@ import {
   initManifold,
   setCircularSegmentMode,
   type ComponentResult,
-} from '$lib/components/builder';
+} from '$lib/cad/builder';
 import type { AuthoredComponent, AuthoredPart, AuthoredOp } from './schema';
 
 /**

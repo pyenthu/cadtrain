@@ -1,8 +1,8 @@
 /**
- * GET /api/runes/list
+ * GET /api/components/list
  *
- * Returns the current registry of runes primitives. Replaces the
- * build-time `import.meta.glob` discovery in src/lib/components/runes/
+ * Returns the current registry of single-file components. Replaces the
+ * build-time `import.meta.glob` discovery in src/lib/cad/components/
  * — that pattern doesn't pick up brand-new files in a long-running
  * dev session, and won't work at all when primitives eventually live
  * outside the source tree (Railway volume; task #18).
@@ -16,7 +16,7 @@
  * per slider drag).
  *
  * Cache: small in-memory cache keyed by file mtime. Invalidated by
- * /api/runes/save (writes call invalidateRunesListCache). ETag header
+ * /api/components/save (writes call invalidateRunesListCache). ETag header
  * lets the browser short-circuit unchanged responses.
  */
 
@@ -26,9 +26,9 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { getCachedList, setCachedList } from './cache';
 
-const SRC_DIR = join(process.cwd(), 'src', 'lib', 'components', 'runes');
+const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
 
-interface RunesListEntry {
+interface ComponentListEntry {
   id: string;
   name: string;
   description?: string;
@@ -37,7 +37,7 @@ interface RunesListEntry {
   hasValidate: boolean;
   source: string;
   /** Per-primitive AI instructions doc — content of `<id>.md` if present
-   *  next to `<id>.ts`. Sent alongside each /api/runes/refine prompt so
+   *  next to `<id>.ts`. Sent alongside each /api/components/refine prompt so
    *  the model has the primitive's evolving spec in context. Empty
    *  string when the .md file doesn't exist. */
   instructions: string;
@@ -59,7 +59,7 @@ async function buildSignature(): Promise<string> {
 
 // ── Source-text meta extractor ───────────────────────────────────────────
 //
-// The runes files have a well-controlled format (see hollow_cylinder.ts
+// The component files have a well-controlled format (see hollow_cylinder.ts
 // for the canonical shape). We extract the `meta` object via brace-walk
 // + targeted regexes — no dynamic import, no eval. This:
 //   - works for any file the API can READ (codebase, /data volume, S3 sync)
@@ -194,11 +194,11 @@ function parseParams(v: string | null): Record<string, Record<string, unknown>> 
   return out;
 }
 
-async function buildList(): Promise<RunesListEntry[]> {
+async function buildList(): Promise<ComponentListEntry[]> {
   const files = (await readdir(SRC_DIR)).filter(
     (f) => f.endsWith('.ts') && f !== 'index.ts',
   );
-  const out: RunesListEntry[] = [];
+  const out: ComponentListEntry[] = [];
   for (const f of files) {
     const path = join(SRC_DIR, f);
     let source = '';
@@ -234,7 +234,7 @@ export const GET: RequestHandler = async ({ request }) => {
   try {
     signature = await buildSignature();
   } catch (e: any) {
-    throw error(500, `Failed to scan runes directory: ${e?.message ?? e}`);
+    throw error(500, `Failed to scan components directory: ${e?.message ?? e}`);
   }
 
   // Serve from cache when nothing has changed.
@@ -243,16 +243,16 @@ export const GET: RequestHandler = async ({ request }) => {
     if (request.headers.get('if-none-match') === signature) {
       return new Response(null, { status: 304, headers: { etag: signature } });
     }
-    return json(cached.payload as RunesListEntry[], {
+    return json(cached.payload as ComponentListEntry[], {
       headers: { etag: signature, 'cache-control': 'no-cache' },
     });
   }
 
-  let payload: RunesListEntry[];
+  let payload: ComponentListEntry[];
   try {
     payload = await buildList();
   } catch (e: any) {
-    throw error(500, `Failed to build runes list: ${e?.message ?? e}`);
+    throw error(500, `Failed to build components list: ${e?.message ?? e}`);
   }
 
   setCachedList({ signature, payload });

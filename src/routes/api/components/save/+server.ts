@@ -1,18 +1,18 @@
 /**
- * POST /api/runes/save
+ * POST /api/components/save
  *
- * Persist an edited runes-class .ts source file from the in-browser editor
+ * Persist an edited component .ts source file from the in-browser editor
  * (Script popup → Svelte tab → editable CodeMirror) back to disk.
  *
- * In dev: writes directly to `src/lib/components/runes/<id>.ts` so Vite
+ * In dev: writes directly to `src/lib/cad/components/<id>.ts` so Vite
  * HMR picks up the change and the page hot-reloads with the new geometry.
- * In production: writes to `/data/runes/<id>.ts` (Railway volume) — the
- * runes registry is expected to consult that overlay first (separate task,
+ * In production: writes to `/data/components/<id>.ts` (Railway volume) — the
+ * component registry is expected to consult that overlay first (separate task,
  * not yet wired). For now production saves no-op with a 503 so we don't
  * mutate baked-in source on a deploy.
  *
  * Safety:
- *   - id must match a known entry in the runes registry (whitelist; no
+ *   - id must match a known entry in the component registry (whitelist; no
  *     arbitrary file writes).
  *   - source must be reasonably small (< 256KB) — guards against accidental
  *     paste of a giant blob.
@@ -25,7 +25,7 @@ import type { RequestHandler } from './$types';
 import { writeFile, mkdir, access } from 'fs/promises';
 import { join } from 'path';
 import { dev } from '$app/environment';
-import { RUNES_REGISTRY, defaultsFor, geomById } from '$lib/components/runes';
+import { COMPONENT_REGISTRY, defaultsFor, geomById } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 import { bakeGlb } from '$lib/server/manifold-bake';
 
@@ -33,7 +33,7 @@ import { bakeGlb } from '$lib/server/manifold-bake';
  *  out of the raw source text. Used by the save endpoint to bake a GLB
  *  with the same defaults the file declares, without dynamic-importing
  *  the .ts file (which Bun's runtime parser rejects when invoked via a
- *  cache-bust query). Mirrors the parsing logic in /api/runes/list. */
+ *  cache-bust query). Mirrors the parsing logic in /api/components/list. */
 function extractDefaultsFromSource(src: string): Record<string, number> {
   const m = /params\s*:\s*\{/.exec(src);
   if (!m) return {};
@@ -59,8 +59,8 @@ function extractDefaultsFromSource(src: string): Record<string, number> {
 }
 
 const MAX_BYTES = 256 * 1024;
-const SRC_DIR = join(process.cwd(), 'src', 'lib', 'components', 'runes');
-const VOLUME_DIR = '/data/runes';
+const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
+const VOLUME_DIR = '/data/components';
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json().catch(() => null);
@@ -80,12 +80,12 @@ export const POST: RequestHandler = async ({ request }) => {
   if (!isCreate) {
     // Update mode — id MUST already be in the registry. Protects against
     // accidental writes to brand-new files via the update path.
-    if (!RUNES_REGISTRY.find((e) => e.meta.id === id)) {
-      throw error(400, `Unknown runes id "${id}" — not in registry. Pass create:true to create a new primitive.`);
+    if (!COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
+      throw error(400, `Unknown component id "${id}" — not in registry. Pass create:true to create a new primitive.`);
     }
   } else {
     // Create mode — id MUST NOT already exist (don't clobber).
-    if (RUNES_REGISTRY.find((e) => e.meta.id === id)) {
+    if (COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
       throw error(409, `Primitive "${id}" already exists — drop create:true to update it.`);
     }
   }
@@ -95,7 +95,7 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   if (!dev) {
-    // Production overlay path is /data/runes/<id>.ts. The runes registry
+    // Production overlay path is /data/components/<id>.ts. The component registry
     // doesn't yet consult this overlay at runtime, so saving in prod
     // would silently no-op from the user's perspective. Refuse for now.
     return json({
@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(500, `Write failed: ${e?.message ?? e}`);
   }
 
-  // Drop the cached /api/runes/list payload so the next list request
+  // Drop the cached /api/components/list payload so the next list request
   // re-scans and reflects the new/edited file.
   invalidateRunesListCache();
 
@@ -132,11 +132,11 @@ export const POST: RequestHandler = async ({ request }) => {
   let geom = geomById(id);
   // Brand-new primitives won't be in the build-time registry yet (Vite
   // hasn't re-evaluated the glob). Wait briefly for the file watcher to
-  // invalidate the runes index, then re-import to pick up the new entry.
+  // invalidate the components index, then re-import to pick up the new entry.
   if (!geom) {
     await new Promise((r) => setTimeout(r, 300));
     try {
-      const fresh: any = await import(/* @vite-ignore */ `$lib/components/runes?refresh=${Date.now()}`);
+      const fresh: any = await import(/* @vite-ignore */ `$lib/cad/components?refresh=${Date.now()}`);
       geom = fresh?.geomById?.(id);
     } catch {}
   }

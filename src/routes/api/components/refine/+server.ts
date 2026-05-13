@@ -1,10 +1,10 @@
 /**
- * POST /api/runes/refine
+ * POST /api/components/refine
  *
- * Claude-driven source refinement for a runes-class primitive. The user
+ * Claude-driven source refinement for a component primitive. The user
  * types a goal ("make the upset taper 18° per API standard, add a torque
  * shoulder at z=cone_length"); we send the CURRENT source + that prompt
- * to Claude with a system prompt encoding the runes format + project
+ * to Claude with a system prompt encoding the component format + project
  * conventions; Claude returns the edited source as a single ```typescript
  * code block; we extract it and return as JSON.
  *
@@ -22,19 +22,19 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { createAnthropicClient } from '$lib/shared/anthropic-api';
 import { checkRateLimit } from '$lib/rate_limit';
-import { RUNES_REGISTRY } from '$lib/components/runes';
+import { COMPONENT_REGISTRY } from '$lib/cad/components';
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_PROMPT_BYTES = 4 * 1024;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
-/** Build the system prompt — explains the runes file format, the
+/** Build the system prompt — explains the component file format, the
  *  ManifoldCAD ops the geom can use, the Z-down rule, and the strict
  *  output contract (one fenced TS code block, nothing else). Includes
- *  the OTHER runes primitives' meta as a compact catalog so the model
+ *  the OTHER single-file components' meta as a compact catalog so the model
  *  can suggest composing them. */
 function buildSystemPrompt(currentId: string): string {
-  const otherPrims = RUNES_REGISTRY.filter((e) => e.meta.id !== currentId).map((e) => {
+  const otherPrims = COMPONENT_REGISTRY.filter((e) => e.meta.id !== currentId).map((e) => {
     const params = Object.keys(e.meta.params).join(', ');
     return `  - ${e.meta.id} (${e.meta.name}): geom({ ${params} })`;
   }).join('\n');
@@ -42,7 +42,7 @@ function buildSystemPrompt(currentId: string): string {
   return `You edit single-file ManifoldCAD primitives for a downhole CAD app.
 
 # File format
-Each primitive lives in src/lib/components/runes/<id>.ts and exports two things:
+Each primitive lives in src/lib/cad/components/<id>.ts and exports two things:
 
 \`\`\`typescript
 import { cyl, tube, mv, rot } from '../manifold-helpers';
@@ -74,7 +74,7 @@ export const geom = (p: Record<string, number>) => {
 - \`mv(part, [x, y, z])\` → translate.
 - \`rot(part, [x, y, z])\` → rotate (degrees).
 - Manifold methods: \`.add(other)\` (union), \`.subtract(other)\`, \`.intersect(other)\`.
-- Imports must come from '../manifold-helpers' or another runes file './<id>'.
+- Imports must come from '../manifold-helpers' or another component file './<id>'.
 
 # Z-down convention (RULE)
 - top = LOWER z. bottom = HIGHER z. As z increases, you go DOWN the hole.
@@ -114,7 +114,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const ip = getClientAddress();
   // 6 refines per minute per IP. checkRateLimit returns true when below
   // the cap, false when over — invert for the throw.
-  if (!checkRateLimit(`${ip}:runes-refine`, 6, 60_000)) {
+  if (!checkRateLimit(`${ip}:components-refine`, 6, 60_000)) {
     throw error(429, 'Too many refine requests — try again in a minute.');
   }
 

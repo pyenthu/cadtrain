@@ -16,8 +16,8 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
 11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits (typo fixes, comment changes, single-style tweaks).
 12. **Each logical plan step gets a recorded e2e run.** When completing a `/plan` task (anything with a numeric ID in `src/routes/plan/+page.svelte`), run the e2e suite, harvest the WEBM recordings to `static/tests/e2e/<task-id>/`, and add a `video` field to the `details.ts` entry pointing at the recording. The Gantt detail popup auto-renders the video. Use `bun run record:task <id>` (script wraps `bun run test:e2e` + the harvest step). For docs-only or trivial tasks, mark `recorded: false` in the details entry instead of skipping silently.
-13. **Compounding context for drawings — primitives + assembly recipes.** Before generating a new runes primitive or composing a multi-part assembly, check the catalog so you build on prior work instead of starting from first principles:
-    - **Per-primitive specs**: `src/lib/components/runes/<id>.md` — each runes primitive should have a sibling `.md` documenting what real-world component it models, vocabulary, validation, derived params. Template: `docs/PRIMITIVE_TEMPLATE.md`. Strong example: `src/lib/components/runes/conn_box.md`.
+13. **Compounding context for drawings — components + assembly recipes.** Before generating a new single-file component or composing a multi-part assembly, check the catalog so you build on prior work instead of starting from first principles:
+    - **Per-component specs**: `src/lib/cad/components/<id>.md` — each single-file component should have a sibling `.md` documenting what real-world part it models, vocabulary, validation, derived params. Template: `docs/PRIMITIVE_TEMPLATE.md`. Strong example: `src/lib/cad/components/conn_box.md`.
     - **Multi-primitive assembly recipes**: `docs/assemblies/<name>.md` — when the user asks for a named real-world assembly ("tubing hanger spool stack", "Christmas tree", "production packer"), check here first. Index + when-to-write rules: `docs/assemblies/README.md`. Template: `docs/assemblies/_TEMPLATE.md`. First worked example: `docs/assemblies/tubing_hanger_spool_stack.md`.
     - **When you build a new assembly or rename a primitive's vocabulary, write/update the corresponding `.md` BEFORE committing** — that's the only durable handoff to future sessions. Conversation memory evaporates; these files don't.
 
@@ -297,7 +297,7 @@ The reverse pipeline is the heart of the app. Three components work together:
   - **RULE**: `top` = LOWER z. `bottom` = HIGHER z. As z increases, you go down the hole.
   - Translating a part by `mv(part, [0, 0, +N])` moves it DOWN (toward the bottom).
   - When composing a box conn (upset flange at top, body below): cone at z=0..coneLen with the WIDE end at z=0, body translated to z ≥ coneLen.
-  - All runes primitives and helpers in `src/lib/components/runes/` + `manifold-helpers.ts` follow this. Any new primitive MUST follow it too.
+  - All components and helpers in `src/lib/cad/components/` + `manifold-helpers.ts` follow this. Any new component MUST follow it too.
 - **ManifoldCAD** circular segments: **192** for quality
 - **Vertex colors** classify faces: **red (#cc2222)** = outer body, **grey (#888888)** = bore/cut/internal
 - `buildComponent(id, params)` returns `{ full, cutVC, manifold }` where `cutVC` has the CSG cutaway applied
@@ -309,7 +309,7 @@ The reverse pipeline is the heart of the app. Three components work together:
 - Shared `ComponentScene.svelte` for consistency between components, reverse, and dedicated tool viewers
 
 ### SVG export
-- `src/lib/components/exporter.ts` uses `three-svg-renderer`
+- `src/lib/cad/exporter.ts` uses `three-svg-renderer`
 - Uses **OrthographicCamera** (type-cast as `any` since three-svg-renderer types only accept PerspectiveCamera, but the underlying `Vector3.project()` works with both)
 - Geometry split by vertex color into two meshes (red + grey) because FillPass reads material color, not per-face vertex colors
 - Passes: `FillPass` (polygons) + `VisibleChainPass` (edges)
@@ -533,7 +533,7 @@ new components from the 18 primitives, with Claude as an on-demand assistant.
 - **Never** add Python to the production container — the `/api/refine` endpoint uses pure-TS image diff (`src/lib/training/image_diff.ts`). Python `vlm/compare_images.py` is kept only for CLI usage.
 - **Node 22.2.0** is too old for Vite 8 — use `bun --bun run vite dev` locally if you see the warning, or use Node ≥ 22.12
 - Running multiple Vite servers on different ports at once will conflict — **the main SvelteKit app on port 3333 supersedes all legacy viewers** — the `src/routes/` and `src/lib/` paths are the authoritative source
-- When adding a new component to `src/lib/components/library.ts`, also add a builder function in `src/lib/components/builder.ts` — they're matched by `component.id`
+- When adding a new component to `src/lib/cad/library.ts`, also add a builder function in `src/lib/cad/builder.ts` — they're matched by `component.id`
 - Training data under `training_data/cache.jsonl` should be committed when it grows meaningfully — it's the app's learned memory
 
 ## Related directories

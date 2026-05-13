@@ -1,5 +1,5 @@
 /**
- * Shared in-memory cache for the runes registry. Lives in its own module
+ * Shared in-memory cache for the component registry. Lives in its own module
  * because SvelteKit's +server.ts files can't export arbitrary helpers
  * (only HTTP-method handlers and a fixed set of config exports).
  *

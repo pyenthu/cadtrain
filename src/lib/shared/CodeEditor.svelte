@@ -64,7 +64,7 @@
      *  Manifold methods, the current meta's params/derived keys, etc. */
     completions?: Completion[];
     /** Ranges to fold immediately after the editor mounts. Used by the
-     *  Inspector to collapse the imports + meta blocks of a runes file. */
+     *  Inspector to collapse the imports + meta blocks of a component file. */
     initialFold?: Array<{ from: number; to: number }>;
   } = $props();
 

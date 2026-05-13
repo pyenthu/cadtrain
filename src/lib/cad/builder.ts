@@ -4,19 +4,19 @@
 
 import * as THREE from 'three';
 import { COMPONENTS } from './library';
-import { geomById, metaById, resolveDerived } from './runes';
+import { geomById, metaById, resolveDerived } from './components';
 // Manifold runtime + small helpers live in their own module so per-primitive
-// runes files can import them without depending on builder.ts. Re-exported
+// component files can import them without depending on builder.ts. Re-exported
 // here for back-compat with anything still importing them from this file.
 import { M, cyl, tube, mv, rot, getCutBox } from './manifold-helpers';
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
 
 // ═══ BUILDERS ═══
 //
-// Hand-written builders for legacy primitives. Runes-class primitives
-// (single-file `meta` + `geom` modules in ./runes/) are dispatched
-// through the RUNES_REGISTRY consult inside buildPrimitiveManifold below
-// — they are NOT mirrored here. Adding a new runes file makes it
+// Hand-written builders for legacy primitives. Single-file components
+// (`meta` + `geom` modules in ./components/) are dispatched
+// through the COMPONENT_REGISTRY consult inside buildPrimitiveManifold below
+// — they are NOT mirrored here. Adding a new component file makes it
 // renderable automatically; no entry in this map needed.
 
 export const builders: Record<string, (p: Record<string, number>) => any> = {
@@ -412,14 +412,14 @@ export interface ComponentResult {
  */
 export function buildPrimitiveManifold(componentId: string, params: Record<string, number>): any {
   // Runes registry takes precedence — single-file primitives in
-  // ./runes/<id>.ts are the source of truth for any id they define.
+  // ./components/<id>.ts are the source of truth for any id they define.
   // Derived params (meta.derived) are computed and merged into the bag
   // BEFORE geom runs, so the geom can read p.<derivedKey> naturally.
-  const runesGeom = geomById(componentId);
-  if (runesGeom) {
+  const componentGeom = geomById(componentId);
+  if (componentGeom) {
     const meta = metaById(componentId);
     const resolved = meta ? resolveDerived(meta, params) : params;
-    return runesGeom(resolved);
+    return componentGeom(resolved);
   }
 
   let fn = builders[componentId];

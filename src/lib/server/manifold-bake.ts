@@ -2,9 +2,9 @@
  * Server-side GLB bake. Initializes ManifoldCAD WASM in Node, runs a
  * primitive's geom() with default params, converts the resulting mesh
  * into a glTF Document via @gltf-transform/core, writes the .glb to
- * static/runes/<id>.glb.
+ * static/components/<id>.glb.
  *
- * The endpoint at /runes/<id>.glb then serves the file as a static
+ * The endpoint at /components/<id>.glb then serves the file as a static
  * asset — zero server compute per request after the bake.
  *
  * The Manifold WASM init is cached at module scope; first bake pays the
@@ -17,12 +17,12 @@ import { Document, NodeIO } from '@gltf-transform/core';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 // Critical: use the shared init from manifold-helpers so the SAME `M`
-// reference that the runes geom functions (cyl, tube, mv) close over
+// reference that the component geom functions (cyl, tube, mv) close over
 // gets populated. A second-init (private to this module) would leave
 // the helpers' M as null and the geom would throw when called.
-import { initManifold } from '../components/manifold-helpers';
+import { initManifold } from '../cad/manifold-helpers';
 
-const STATIC_DIR = join(process.cwd(), 'static', 'runes');
+const STATIC_DIR = join(process.cwd(), 'static', 'components');
 
 /**
  * Convert a Manifold instance's mesh data into a binary glTF Document
