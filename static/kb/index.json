@@ -43,6 +43,16 @@
       "source_kind": "industry_chart"
     },
     {
+      "id": "bha-reference",
+      "path": "/kb/api/bha-reference.json",
+      "title": "Bottom-Hole Assembly (BHA) Reference",
+      "description": "Drill-string assembly patterns and component sizing — pendulum / fulcrum / packed-hole BHAs, stabilizer placement, drill-collar selection, build/drop/hold tendencies. Stub KB: rows[] not yet extracted from the underlying PDF (kb-sources/bha-reference.pdf).",
+      "categories": ["drillstring", "BHA", "bottom-hole assembly", "drill collar", "stabilizer", "directional"],
+      "family": "drillstring",
+      "row_count": 0,
+      "source_kind": "industry_chart"
+    },
+    {
       "id": "drill-pipe-identification",
       "path": "/kb/api/drill-pipe-identification.json",
       "title": "API Drill Pipe Tool-Joint Identification",

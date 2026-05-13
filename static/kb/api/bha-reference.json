@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "extracted_at": "2026-05-13",
+  "source_file": "kb-sources/bha-reference.pdf",
+  "description": "Bottom-Hole Assembly (BHA) reference — drill-string assembly patterns, stabilizer placement rules, BHA types (pendulum, fulcrum, packed-hole), and component sizing tables. Stub KB: rows[] not yet extracted from the underlying PDF. Eventual rows will index BHA archetype name → component list + spacing rules + intended hole behaviour (build, drop, hold).",
+  "row_count": 0,
+  "rows": []
+}
