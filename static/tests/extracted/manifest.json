@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-05-13T19:48:24.345Z",
+  "items": [
+    {
+      "id": "casing_joint_threaded",
+      "name": "Casing Joint (Threaded)",
+      "family": "casing_tubing",
+      "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+      "source_page": 1,
+      "brief_description": "Parametrized hollow cylindrical pipe section with threaded box/pin ends — defined by OD, wall thickness, ID, drift diameter, joint length, and connection geometry (connection OD, length, threads-per-inch).",
+      "iters_done": 1,
+      "final_verdict": "MATCH",
+      "url": "/tests/extracted/casing_joint_threaded/"
+    },
+    {
+      "id": "tubing_joint_threaded",
+      "name": "Tubing Joint (Threaded)",
+      "family": "casing_tubing",
+      "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+      "source_page": 4,
+      "brief_description": "Smaller-diameter parametrized hollow cylinder (1.9\"–4.5\" OD) with threaded ends for production strings — parametrized by OD, wall, ID, drift, R-2 range joint length, and connection (EUE/premium) geometry.",
+      "iters_done": 1,
+      "final_verdict": "MATCH",
+      "url": "/tests/extracted/tubing_joint_threaded/"
+    }
+  ]
+}

@@ -502,6 +502,56 @@
     }
   }
 
+  // Extraction-results manifest from the overnight_extract.ts pipeline.
+  // Auto-loaded from /tests/extracted/manifest.json at mount; renders
+  // as a header section above the manual links in the Test rail tab.
+  interface ExtractionResult {
+    id: string;
+    name: string;
+    family?: string;
+    source_pdf: string;
+    source_page?: number | string;
+    brief_description: string;
+    iters_done: number;
+    final_verdict: 'MATCH' | 'INCOMPLETE' | 'ERROR';
+    error?: string;
+    url: string;
+  }
+  let extractionResults = $state<ExtractionResult[]>([]);
+  let extractionLoadedAt = $state<string | null>(null);
+
+  async function loadExtractionManifest() {
+    try {
+      const r = await fetch('/tests/extracted/manifest.json', { cache: 'no-store' });
+      if (!r.ok) return;
+      const payload = await r.json();
+      if (Array.isArray(payload?.items)) {
+        extractionResults = payload.items as ExtractionResult[];
+        extractionLoadedAt = payload.generated_at ?? null;
+      }
+    } catch { /* no manifest yet — silent */ }
+  }
+
+  function openExtraction(entry: ExtractionResult) {
+    // Open the generated final.ts in an embedded viewer tab. Reuses the
+    // 'source' kind plumbing — same iframe shell, same dismissal.
+    const id = `ex:${entry.id}`;
+    if (openTabs.find((t) => t.id === id)) {
+      activeTabId = id;
+      return;
+    }
+    openTabs = [
+      ...openTabs,
+      {
+        id, kind: 'source', primId: '', label: entry.name,
+        sourceUrl: `/tests/extracted/${entry.id}/final.ts`,
+        sourceLabel: entry.name,
+        params: {}, draft: false, vars: [],
+      },
+    ];
+    activeTabId = id;
+  }
+
   function openTestLink(link: TestLink) {
     // Reuse the existing source-tab plumbing — same iframe shell, same
     // tab kind. id is namespaced 'tl:' so it doesn't collide with the
@@ -1726,6 +1776,7 @@ export const geom = defineGeom(meta, (p) => {
     enabledFamilies = loadEnabledFamilies();
     enabledLevels = loadEnabledLevels();
     testLinks = loadTestLinks();
+    loadExtractionManifest();
     // Async-load the registry from /api/components/list before deciding what
     // to auto-open. Priority:
     //   1. Last primitive the user was editing this session (sessionStorage
@@ -2993,13 +3044,57 @@ export const geom = defineGeom(meta, (p) => {
         </div>
       {/if}
       {#if sidebarTab === 'test'}
-        <!-- Test tab — link scratchpad. Paste URLs to source documents
-             you want to revisit (vendor catalog pages, KB-source PDFs,
-             reference articles). Click a row to open the link in an
-             embedded viewer tab; trash icon removes the row.
-             Persistence is localStorage so it survives page reloads
-             but doesn't sync across browsers. -->
+        <!-- Test tab — TWO sections stacked: (1) extraction results
+             from the overnight_extract.ts pipeline, loaded from
+             /tests/extracted/manifest.json; (2) manual paste-and-click
+             link scratchpad, persisted to localStorage. Both kinds of
+             entries are clickable and openable in the source-tab
+             iframe viewer. -->
         <div class="sb-test">
+          {#if extractionResults.length > 0}
+            <div class="sb-test-sec">
+              <div class="sb-test-sec-h">
+                <span class="sb-test-sec-title">Extraction Results</span>
+                <button
+                  class="sb-test-refresh"
+                  type="button"
+                  title="Reload manifest"
+                  onclick={loadExtractionManifest}
+                >↻ {extractionResults.length}</button>
+              </div>
+              {#if extractionLoadedAt}
+                <div class="sb-test-sec-meta">Updated {new Date(extractionLoadedAt).toLocaleTimeString()}</div>
+              {/if}
+              <div class="sb-list">
+                {#each extractionResults as r (r.id)}
+                  <div class="prim-row" class:active={activeTab?.id === `ex:${r.id}`}>
+                    <button
+                      class="prim-link"
+                      class:active={activeTab?.id === `ex:${r.id}`}
+                      type="button"
+                      onclick={() => openExtraction(r)}
+                      title={r.brief_description}
+                    >
+                      <span class="dot" class:verdict-match={r.final_verdict === 'MATCH'} class:verdict-error={r.final_verdict === 'ERROR'} class:verdict-incomplete={r.final_verdict === 'INCOMPLETE'}></span>
+                      <span class="pl-stack">
+                        <span class="pl-name">{r.name}</span>
+                        <span class="pl-sub">{r.source_pdf}{r.source_page ? ` · p.${r.source_page}` : ''} · {r.iters_done} iter{r.iters_done !== 1 ? 's' : ''}</span>
+                      </span>
+                      {#if r.final_verdict === 'MATCH'}
+                        <span class="prim-kid-count verdict-match-chip">✓</span>
+                      {:else if r.final_verdict === 'ERROR'}
+                        <span class="prim-kid-count verdict-error-chip">✗</span>
+                      {:else}
+                        <span class="prim-kid-count">·</span>
+                      {/if}
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <div class="sb-test-sec">
+            <div class="sb-test-sec-h"><span class="sb-test-sec-title">Manual Links</span></div>
           <form class="sb-test-add" onsubmit={(e) => { e.preventDefault(); addTestLink(); }}>
             <input
               class="sb-test-input"
@@ -3046,6 +3141,7 @@ export const geom = defineGeom(meta, (p) => {
               {/each}
             </div>
           {/if}
+          </div>
         </div>
       {/if}
     </div>
@@ -4267,6 +4363,25 @@ export const geom = defineGeom(meta, (p) => {
     font: 10px Arial; color: #cc2222;
     padding: 2px 4px;
   }
+  .sb-test-sec { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
+  .sb-test-sec + .sb-test-sec { border-top: 1px solid #ececec; padding-top: 8px; }
+  .sb-test-sec-h { display: flex; justify-content: space-between; align-items: center; }
+  .sb-test-sec-title {
+    font: 700 9px Arial; color: #888;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .sb-test-sec-meta { font: 9px Arial; color: #aaa; padding: 0 2px; }
+  .sb-test-refresh {
+    font: 600 10px Arial; color: #666;
+    background: #f0f0f0; border: 1px solid #d0d0d8; border-radius: 3px;
+    padding: 2px 7px; cursor: pointer;
+  }
+  .sb-test-refresh:hover { background: #e6e6e8; color: #222; }
+  .dot.verdict-match { background: #16a34a; }
+  .dot.verdict-error { background: #cc2222; }
+  .dot.verdict-incomplete { background: #d4d4d4; }
+  .verdict-match-chip { color: #16a34a; font-weight: 700; }
+  .verdict-error-chip { color: #cc2222; font-weight: 700; }
   .sb-hdr-mark {
     color: #cc2222;
     font-size: 14px; line-height: 1;

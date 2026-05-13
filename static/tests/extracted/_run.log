@@ -1,0 +1,13 @@
+[2026-05-13T19:45:56.475Z] overnight_extract started. target=2, per_pdf=2, no_refine=true, resume=false
+[2026-05-13T19:45:56.477Z] found 4 PDFs in kb-sources/
+[2026-05-13T19:45:56.477Z] enumerate: 825214624-Casing-and-Tubing-Data-2019-01.pdf (target 2)
+[2026-05-13T19:46:14.920Z]   got 2 candidates from 825214624-Casing-and-Tubing-Data-2019-01.pdf (18441ms)
+[2026-05-13T19:46:14.920Z] total candidates: 2
+[2026-05-13T19:46:14.920Z] after dedup: 2
+[2026-05-13T19:46:14.920Z] after resume-skip: 2 candidates to process
+[2026-05-13T19:46:14.932Z] catalog context: 50823 chars (50823 bytes)
+[2026-05-13T19:46:14.932Z] [1/2] casing_joint_threaded (Casing Joint (Threaded))
+[2026-05-13T19:46:42.921Z]   done: verdict=MATCH, iters=1, 27989ms
+[2026-05-13T19:46:42.922Z] [2/2] tubing_joint_threaded (Tubing Joint (Threaded))
+[2026-05-13T19:48:24.346Z]   done: verdict=MATCH, iters=1, 101424ms
+[2026-05-13T19:48:24.346Z] overnight_extract complete. 2 entries in manifest.

@@ -1,0 +1,17 @@
+{
+  "cand": {
+    "id": "casing_joint_threaded",
+    "name": "Casing Joint (Threaded)",
+    "family": "casing_tubing",
+    "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+    "source_page": 1,
+    "brief_description": "Parametrized hollow cylindrical pipe section with threaded box/pin ends — defined by OD, wall thickness, ID, drift diameter, joint length, and connection geometry (connection OD, length, threads-per-inch)."
+  },
+  "iterations": [
+    {
+      "iter": 0,
+      "action": "generate",
+      "length": 4371
+    }
+  ]
+}
