@@ -532,24 +532,59 @@
     } catch { /* no manifest yet — silent */ }
   }
 
-  function openExtraction(entry: ExtractionResult) {
-    // Open the generated final.ts in an embedded viewer tab. Reuses the
-    // 'source' kind plumbing — same iframe shell, same dismissal.
-    const id = `ex:${entry.id}`;
-    if (openTabs.find((t) => t.id === id)) {
-      activeTabId = id;
+  /** Status badge per extraction result while it's being promoted to
+   *  a real primitive. The Test-tab rendering surfaces the in-flight
+   *  state (`…`) and the post-save state (`●` when in the registry). */
+  let extractionPromoteStatus = $state<Record<string, 'idle' | 'promoting' | 'error'>>({});
+  let extractionPromoteError = $state<Record<string, string>>({});
+
+  /** Kept around for backward-compat with any earlier callers that
+   *  expected source-iframe behavior; new UI calls
+   *  promoteAndOpenExtraction. Inline preview can come back if needed. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function _openExtractionInlinePreview(_entry: ExtractionResult) { /* unused */ }
+
+  /** Promote an extracted .ts to a real primitive: fetch the file,
+   *  POST it to /api/components/save, refresh the registry, then open
+   *  it as a regular xml-primitive tab. The user sees the full
+   *  /primitives UI — stage Render + Picture sub-tabs, params strip,
+   *  AI Refine, etc. */
+  async function promoteAndOpenExtraction(entry: ExtractionResult) {
+    extractionPromoteError = { ...extractionPromoteError, [entry.id]: '' };
+    // Fast path: if the registry already has it, just open.
+    const existing = componentList.find((c) => c.meta.id === entry.id);
+    if (existing) {
+      openRunes(existing);
       return;
     }
-    openTabs = [
-      ...openTabs,
-      {
-        id, kind: 'source', primId: '', label: entry.name,
-        sourceUrl: `/tests/extracted/${entry.id}/final.ts`,
-        sourceLabel: entry.name,
-        params: {}, draft: false, vars: [],
-      },
-    ];
-    activeTabId = id;
+    extractionPromoteStatus = { ...extractionPromoteStatus, [entry.id]: 'promoting' };
+    try {
+      const srcRes = await fetch(`/tests/extracted/${entry.id}/final.ts`);
+      if (!srcRes.ok) throw new Error(`fetch final.ts failed: ${srcRes.status}`);
+      const source = await srcRes.text();
+      const saveRes = await fetch('/api/components/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: entry.id, source, create: true }),
+      });
+      if (!saveRes.ok && saveRes.status !== 409) {
+        const text = await saveRes.text().catch(() => '');
+        throw new Error(`save failed: ${saveRes.status} ${text.slice(0, 200)}`);
+      }
+      // 409 means the id ALREADY exists in the registry (likely from a
+      // prior promote in this session) — treat as success and open it.
+      // Brief wait for Vite HMR to rebundle the new entry, then reload
+      // the registry. Tightening this is a polish task.
+      await new Promise((r) => setTimeout(r, 800));
+      componentList = await loadComponentRegistry();
+      const fresh = componentList.find((c) => c.meta.id === entry.id);
+      if (!fresh) throw new Error(`saved but not in registry — Vite still rebundling. Refresh the page.`);
+      extractionPromoteStatus = { ...extractionPromoteStatus, [entry.id]: 'idle' };
+      openRunes(fresh);
+    } catch (e: any) {
+      extractionPromoteStatus = { ...extractionPromoteStatus, [entry.id]: 'error' };
+      extractionPromoteError = { ...extractionPromoteError, [entry.id]: e?.message ?? String(e) };
+    }
   }
 
   function openTestLink(link: TestLink) {
@@ -3067,20 +3102,29 @@ export const geom = defineGeom(meta, (p) => {
               {/if}
               <div class="sb-list">
                 {#each extractionResults as r (r.id)}
-                  <div class="prim-row" class:active={activeTab?.id === `ex:${r.id}`}>
+                  {@const inRegistry = componentList.some((c) => c.meta.id === r.id)}
+                  {@const status = extractionPromoteStatus[r.id] ?? 'idle'}
+                  <div class="prim-row" class:active={activeTab?.primId === r.id}>
                     <button
                       class="prim-link"
-                      class:active={activeTab?.id === `ex:${r.id}`}
+                      class:active={activeTab?.primId === r.id}
                       type="button"
-                      onclick={() => openExtraction(r)}
-                      title={r.brief_description}
+                      disabled={status === 'promoting'}
+                      onclick={() => promoteAndOpenExtraction(r)}
+                      title={`${r.brief_description}\n\nClick to create as a part — saves to src/lib/cad/components/${r.id}.ts and opens it with the full editor + canvas.`}
                     >
                       <span class="dot" class:verdict-match={r.final_verdict === 'MATCH'} class:verdict-error={r.final_verdict === 'ERROR'} class:verdict-incomplete={r.final_verdict === 'INCOMPLETE'}></span>
                       <span class="pl-stack">
-                        <span class="pl-name">{r.name}</span>
+                        <span class="pl-name">{r.name}{inRegistry ? ' ◉' : ''}</span>
                         <span class="pl-sub">{r.source_pdf}{r.source_page ? ` · p.${r.source_page}` : ''} · {r.iters_done} iter{r.iters_done !== 1 ? 's' : ''}</span>
                       </span>
-                      {#if r.final_verdict === 'MATCH'}
+                      {#if status === 'promoting'}
+                        <span class="prim-kid-count">…</span>
+                      {:else if status === 'error'}
+                        <span class="prim-kid-count verdict-error-chip" title={extractionPromoteError[r.id] ?? ''}>!</span>
+                      {:else if inRegistry}
+                        <span class="prim-kid-count verdict-match-chip" title="In registry — click to open">●</span>
+                      {:else if r.final_verdict === 'MATCH'}
                         <span class="prim-kid-count verdict-match-chip">✓</span>
                       {:else if r.final_verdict === 'ERROR'}
                         <span class="prim-kid-count verdict-error-chip">✗</span>
