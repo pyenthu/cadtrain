@@ -30,6 +30,13 @@ export interface ParamSchema {
   default: number;
   unit?: string;
   type?: 'numeric' | 'shape' | 'thread' | 'custom' | string;
+  /** Optional discrete-choice lookup. When present, the Inspector renders
+   *  the param as a `<select>` of the keys, and writes the corresponding
+   *  numeric value into the params bag (which geom still reads as
+   *  `p.<key>`). Useful for enums like top/bottom, on/off, north/south
+   *  that semantically are a small fixed set but need a numeric handle
+   *  in the geom builder. */
+  choices?: Record<string, number>;
   /** Optional UI grouping. Params with the same `group` render as one
    *  section in the Inspector's Params tab, with the group name as the
    *  section header. Params without a `group` render in a default

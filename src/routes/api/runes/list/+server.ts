@@ -169,13 +169,20 @@ function parseParams(v: string | null): Record<string, Record<string, unknown>> 
     const name = km[1];
     const inner = km[2];
     const rec: Record<string, unknown> = {};
-    // Each subfield is `key: literal` separated by commas. We just need
-    // numeric / string literals — no nesting expected at this level.
-    for (const fm of inner.matchAll(/(\w+)\s*:\s*('[^']*'|"[^"]*"|`[^`]*`|-?\d+(?:\.\d+)?(?:e-?\d+)?|true|false)/g)) {
+    // Each subfield is `key: literal` separated by commas. Most are
+    // numeric / string / bool — but a `choices: { ... }` nested object
+    // is also supported (used for lookup-style discrete params).
+    for (const fm of inner.matchAll(/(\w+)\s*:\s*(\{[^}]*\}|'[^']*'|"[^"]*"|`[^`]*`|-?\d+(?:\.\d+)?(?:e-?\d+)?|true|false)/g)) {
       const k = fm[1];
       const raw = fm[2];
       let val: unknown;
-      if (raw.startsWith("'") || raw.startsWith('"') || raw.startsWith('`')) {
+      if (raw.startsWith('{')) {
+        const obj: Record<string, number> = {};
+        for (const om of raw.matchAll(/(\w+)\s*:\s*(-?\d+(?:\.\d+)?)/g)) {
+          obj[om[1]] = Number(om[2]);
+        }
+        val = obj;
+      } else if (raw.startsWith("'") || raw.startsWith('"') || raw.startsWith('`')) {
         val = raw.slice(1, -1);
       } else if (raw === 'true') val = true;
       else if (raw === 'false') val = false;

@@ -3007,8 +3007,16 @@ export const geom = defineGeom(meta, (p) => {
                 {@const tip = buildParamTip(key, def, isExtra)}
                 <div class="pr-card" class:extra={isExtra}>
                   <span class="pr-keyname" data-tip={tip}>{key}{isExtra ? '*' : ''}</span>
-                  <input class="pr-range" type="range" min={def.min} max={def.max} step={def.step} bind:value={activeTab.params[key]} />
-                  <input class="pr-num" type="number" step={def.step} bind:value={activeTab.params[key]} />
+                  {#if def.choices && Object.keys(def.choices).length}
+                    <select class="pr-choice" bind:value={activeTab.params[key]}>
+                      {#each Object.entries(def.choices) as [name, val] (name)}
+                        <option value={val}>{name}</option>
+                      {/each}
+                    </select>
+                  {:else}
+                    <input class="pr-range" type="range" min={def.min} max={def.max} step={def.step} bind:value={activeTab.params[key]} />
+                    <input class="pr-num" type="number" step={def.step} bind:value={activeTab.params[key]} />
+                  {/if}
                   {#if def.unit}<span class="pr-unit">{def.unit}</span>{/if}
                   {#if activeTab.kind === 'xml-primitive' && key in (activeTab.runesEntry?.meta.params ?? {})}
                     <button class="row-edit" type="button" onclick={() => openParamEdit(activeTab!, key)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
@@ -4404,6 +4412,13 @@ export const geom = defineGeom(meta, (p) => {
     min-width: 0;
   }
   .pr-range { accent-color: #cc2222; height: 3px; min-width: 0; width: 100%; }
+  .pr-choice {
+    font: 10px monospace;
+    padding: 1px 3px; border: 1px solid #ddd; border-radius: 3px;
+    background: #fff; cursor: pointer;
+    grid-column: span 2;
+    width: 100%; min-width: 0;
+  }
   .pr.extra .lbl { color: #1a5b8a; font-style: italic; }
   .row-add {
     margin-left: auto;
