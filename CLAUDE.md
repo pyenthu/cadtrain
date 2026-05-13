@@ -16,10 +16,10 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
 11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits (typo fixes, comment changes, single-style tweaks).
 12. **Each logical plan step gets a recorded e2e run.** When completing a `/plan` task (anything with a numeric ID in `src/routes/plan/+page.svelte`), run the e2e suite, harvest the WEBM recordings to `static/tests/e2e/<task-id>/`, and add a `video` field to the `details.ts` entry pointing at the recording. The Gantt detail popup auto-renders the video. Use `bun run record:task <id>` (script wraps `bun run test:e2e` + the harvest step). For docs-only or trivial tasks, mark `recorded: false` in the details entry instead of skipping silently.
-13. **Persistent data volume.** All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; in local dev, falls back to `./.dev-volume/`). Sub-paths in use:
+13. **Persistent data volume.** Production URL: **`https://cadtrain.up.railway.app`** (NOT `.com` — Railway uses `.up.railway.app`). All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; in local dev, falls back to `./.dev-volume/`). Sub-paths in use:
     - `$APP_DATA_DIR/training_data/cache.jsonl` — RAG cache for /api/identify
     - `$APP_DATA_DIR/training_data/authored_cache.jsonl` — authored-components cache
-    - `$APP_DATA_DIR/components/<id>.ts` — production overlay for /api/components/save (loader still being wired)
+    - `$APP_DATA_DIR/components/<id>.ts` + `<id>.md` — runtime overlay for /api/components/save and /api/components/instructions. The list endpoint merges bundle + volume, volume wins on id collision (see commit `469b730`).
     - `$APP_DATA_DIR/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
     
     **Root resolution** (in `src/lib/server/volume.ts`): `CADTRAIN_VOLUME_ROOT` → `RAILWAY_VOLUME_MOUNT_PATH` → `APP_DATA_DIR` → `/app_data` → `./.dev-volume`. New endpoints that need persistent storage MUST call `volumePath(rel)` from that module and call `maybeProxy(request, url)` first.
@@ -105,7 +105,17 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
     - **Multi-primitive assembly recipes**: `docs/assemblies/<name>.md` — when the user asks for a named real-world assembly ("tubing hanger spool stack", "Christmas tree", "production packer"), check here first. Index + when-to-write rules: `docs/assemblies/README.md`. Template: `docs/assemblies/_TEMPLATE.md`. First worked example: `docs/assemblies/tubing_hanger_spool_stack.md`.
     - **When you build a new assembly or rename a primitive's vocabulary, write/update the corresponding `.md` BEFORE committing** — that's the only durable handoff to future sessions. Conversation memory evaporates; these files don't.
 
-15. **Sidebar entry classification — two-axis (tab → group → entry).** The `/primitives` sidebar uses a consistent classification pattern for every tab that lists components. New components are placed by editing ONE central map; the UI auto-groups, filters, and collapses based on that map.
+15. **Never write user-pasted secrets to disk; refuse, advise rotation, redirect to secure-entry.** When the user pastes a credential into chat (API key, token, password, private key) — treat it as already exposed. Do NOT write it to `.env`, `.env.local`, scripts, commits, or any other file — even gitignored ones, because conversation history retains the value. Do NOT echo it back in tool calls (Bash, Edit, Write) — that leaks it into transcript logs.
+
+    **Correct response**:
+    - Flag the exposure: "that key is now in the transcript — rotate it."
+    - Direct the user to the canonical secure-entry channel:
+      - Local: they edit `.env` / `.env.local` themselves.
+      - Railway: Variables tab in the service dashboard.
+      - Anthropic API keys: https://console.anthropic.com/settings/keys.
+    - Offer to set up structure (env var name, file location) without ever touching the value.
+
+16. **Sidebar entry classification — two-axis (tab → group → entry).** The `/primitives` sidebar uses a consistent classification pattern for every tab that lists components. New components are placed by editing ONE central map; the UI auto-groups, filters, and collapses based on that map.
 
     **Pattern**:
     - **Tab** (rail entry) = top-level scope. Currently: Basic / Parts / Assemblies / KB / Operator.
