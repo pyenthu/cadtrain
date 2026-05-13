@@ -131,6 +131,15 @@
       name: 'KB',
       match: () => false,
     },
+    // Operator — higher-level CAD operations (cut slots, extrude, twist,
+    // roll, cut threads) that splice into the active primitive's geom
+    // body. Was a separate dark top-strip toggle previously; folded into
+    // the rail so the visual real estate doesn't cover the canvas title.
+    {
+      id: 'operator',
+      name: 'Operator',
+      match: () => false,
+    },
   ];
 
   function itemsInFolder(folder: Folder): typeof COMPONENTS {
@@ -374,14 +383,6 @@
     document.addEventListener('mousedown', onDown, true);
     return { destroy() { document.removeEventListener('mousedown', onDown, true); } };
   }
-  /** Top-level sidebar split — 'parts' shows the existing primitive
-   *  trees (Components / Compositions / Assemblies / KB / XML Primitive),
-   *  'operator' shows higher-level CAD operations (cut slots, extrude,
-   *  twist, roll, cut threads, …) that operate ON the active primitive's
-   *  geom body. Each operator click inserts a TODO marker for now;
-   *  real implementations land per-operator. */
-  let sidebarTopTab = $state<'parts' | 'operator'>('parts');
-
   /** Operator catalog — the Operator tab's content. Each entry is a
    *  named operation with a short description and the snippet that
    *  gets spliced into the active geom body on click. Snippets are
@@ -2409,42 +2410,10 @@ export const geom = defineGeom(meta, (p) => {
 
 <div class="layout">
   <aside class="sidebar" tabindex="0" onkeydown={onSidebarKey} style="width: {sidebarWidth}px">
-    <!-- Top-level Parts / Operator split. Parts is the existing tree of
-         primitives; Operator is a catalog of CAD operations that
-         splice into the active geom body. -->
-    <div class="sb-toptabs">
-      <button
-        class="sb-toptab"
-        class:active={sidebarTopTab === 'parts'}
-        type="button"
-        onclick={() => (sidebarTopTab = 'parts')}
-      >Parts</button>
-      <button
-        class="sb-toptab"
-        class:active={sidebarTopTab === 'operator'}
-        type="button"
-        onclick={() => (sidebarTopTab = 'operator')}
-      >Operator</button>
+    <div class="sb-hdr">
+      <span class="sb-hdr-mark">◆</span>
+      <span class="sb-hdr-text">Primitives</span>
     </div>
-
-    {#if sidebarTopTab === 'operator'}
-      <div class="sb-operator">
-        <p class="sb-op-intro">Click an operator to splice a stub into the active primitive's geom body. Implementations land per-operator.</p>
-        {#each OPERATORS as op (op.id)}
-          <button
-            class="sb-op-item"
-            type="button"
-            title={op.desc}
-            onclick={() => insertOperatorSnippet(op)}
-            disabled={!activeTab || activeTab.kind !== 'xml-primitive'}
-          >
-            <span class="sb-op-glyph">{op.glyph}</span>
-            <span class="sb-op-name">{op.name}</span>
-            <span class="sb-op-desc">{op.desc}</span>
-          </button>
-        {/each}
-      </div>
-    {:else}
     <div class="sb-split">
       <!-- Vertical tab rail on the left — one button per top-level group.
            Selected tab swaps the flat list shown to its right. -->
@@ -2454,6 +2423,7 @@ export const geom = defineGeom(meta, (p) => {
                        : f.id === 'components' ? componentList.filter((r) => familyOf(r.meta.id) !== 'basic' && enabledFamilies.has(familyOf(r.meta.id))).length
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
                        : f.id === 'kb' ? kbList.length + kbSources.length
+                       : f.id === 'operator' ? OPERATORS.length
                        : itemsInFolder(f).length}
           <button
             class="sb-tab"
@@ -2810,9 +2780,27 @@ export const geom = defineGeom(meta, (p) => {
 
         {/if}
       {/each}
+
+      {#if sidebarTab === 'operator'}
+        <div class="sb-operator">
+          <p class="sb-op-intro">Click an operator to splice a stub into the active primitive's geom body. Implementations land per-operator.</p>
+          {#each OPERATORS as op (op.id)}
+            <button
+              class="sb-op-item"
+              type="button"
+              title={op.desc}
+              onclick={() => insertOperatorSnippet(op)}
+              disabled={!activeTab || activeTab.kind !== 'xml-primitive'}
+            >
+              <span class="sb-op-glyph">{op.glyph}</span>
+              <span class="sb-op-name">{op.name}</span>
+              <span class="sb-op-desc">{op.desc}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
     </div>
-    {/if}
   </aside>
 
   <!-- Family-filter FloatingPanel — anchored to the ⌕ Families button.
@@ -3845,31 +3833,6 @@ export const geom = defineGeom(meta, (p) => {
     border-bottom: 2px solid #cc2222;
     display: flex; align-items: center; gap: 10px;
     box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);
-  }
-  /* Top-level Parts / Operator tab strip — sits at the very top of
-     the sidebar. Two equal-width buttons with an active underline. */
-  .sb-toptabs {
-    display: flex;
-    background: linear-gradient(135deg, #1f2329 0%, #2b2f36 55%, #3a3f47 100%);
-    border-bottom: 2px solid #cc2222;
-  }
-  .sb-toptab {
-    flex: 1;
-    padding: 12px 6px;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.55);
-    border: none;
-    border-bottom: 3px solid transparent;
-    font: 700 12px Arial, sans-serif;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    cursor: pointer;
-    transition: color 100ms, border-color 100ms, background 100ms;
-  }
-  .sb-toptab:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
-  .sb-toptab.active {
-    color: #fff;
-    border-bottom-color: #cc2222;
   }
   /* Operator pane — list of CAD operations. Each item shows a glyph,
      the operator name, and a short description. Disabled when no
