@@ -458,6 +458,50 @@
     testLinks = next;
     saveTestLinks(next);
   }
+  // Stage sub-tab: Render = 3D canvas, Picture = per-primitive
+  // reference image used to author/refine the part. Image lives on the
+  // volume at <volume>/components/<id>.source.png, served via
+  // /api/volume?path=components/<id>.source.png. Defaults to 'render'
+  // on every primitive switch (don't strand the user in an empty
+  // Picture tab when they navigate around).
+  let stageTab = $state<'render' | 'picture'>('render');
+  /** Track whether the active primitive's source image actually exists.
+   *  Set true when <img> loads; set false on error (404 / missing).
+   *  Reset to null on tab switch (loading state).  */
+  let pictureLoadStatus = $state<'loading' | 'present' | 'missing'>('loading');
+  let pictureUploadStatus = $state<'idle' | 'uploading' | 'error'>('idle');
+  let pictureUploadError = $state<string>('');
+
+  /** Per-primitive picture URL. Stable for a given id; the <img> tag
+   *  re-fetches whenever the id changes. Cache-busts on upload by
+   *  appending a timestamp param after a successful POST. */
+  let pictureCacheKey = $state<number>(0);
+  function pictureUrlFor(primId: string): string {
+    return `/api/volume?path=${encodeURIComponent(`components/${primId}.source.png`)}${pictureCacheKey ? `&v=${pictureCacheKey}` : ''}`;
+  }
+
+  /** PUT a new source picture for the active primitive. Used by the
+   *  upload <input>/drop-zone in the empty-state Picture pane. */
+  async function uploadPicture(primId: string, file: File) {
+    pictureUploadStatus = 'uploading';
+    pictureUploadError = '';
+    try {
+      const buf = await file.arrayBuffer();
+      const r = await fetch(`/api/volume?path=${encodeURIComponent(`components/${primId}.source.png`)}`, {
+        method: 'PUT',
+        body: buf,
+        headers: { 'content-type': file.type || 'image/png' },
+      });
+      if (!r.ok) throw new Error(`upload failed: ${r.status}`);
+      pictureCacheKey = Date.now();
+      pictureLoadStatus = 'loading';
+      pictureUploadStatus = 'idle';
+    } catch (e: any) {
+      pictureUploadStatus = 'error';
+      pictureUploadError = e?.message ?? String(e);
+    }
+  }
+
   function openTestLink(link: TestLink) {
     // Reuse the existing source-tab plumbing — same iframe shell, same
     // tab kind. id is namespaced 'tl:' so it doesn't collide with the
@@ -3348,6 +3392,66 @@ export const geom = defineGeom(meta, (p) => {
             </div>
           </header>
 
+          <!-- Stage sub-tabs: Render = the 3D canvas, Picture = per-
+               primitive reference image stored on the volume at
+               <volume>/components/<id>.source.png. The Picture tab is
+               the upstream of the "generate from picture" workflow:
+               the user attaches the source crop, then Claude vision
+               reads it to build / refine the .ts. -->
+          <div class="stage-subtabs">
+            <button
+              class="stage-subtab"
+              class:active={stageTab === 'render'}
+              type="button"
+              onclick={() => (stageTab = 'render')}
+            >Render</button>
+            <button
+              class="stage-subtab"
+              class:active={stageTab === 'picture'}
+              type="button"
+              onclick={() => { stageTab = 'picture'; pictureLoadStatus = 'loading'; }}
+            >Picture</button>
+          </div>
+
+          {#if stageTab === 'picture'}
+            <div class="stage-picture">
+              {#key activeTab.primId}
+                {#if pictureLoadStatus !== 'missing'}
+                  <img
+                    class="stage-picture-img"
+                    class:hidden={pictureLoadStatus !== 'present'}
+                    src={pictureUrlFor(activeTab.primId)}
+                    alt={`Reference picture for ${activeDef.name}`}
+                    onload={() => (pictureLoadStatus = 'present')}
+                    onerror={() => (pictureLoadStatus = 'missing')}
+                  />
+                {/if}
+                {#if pictureLoadStatus === 'missing'}
+                  <div class="stage-picture-empty">
+                    <p class="stage-picture-empty-title">No reference picture for <code>{activeDef.id}</code>.</p>
+                    <p class="stage-picture-empty-hint">Attach the catalog/spec crop that was used to author this primitive — Claude reads it during AI Refine so the geometry tracks the source.</p>
+                    <label class="stage-picture-upload" class:disabled={pictureUploadStatus === 'uploading'}>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onchange={(e) => {
+                          const f = (e.currentTarget as HTMLInputElement).files?.[0];
+                          if (f) uploadPicture(activeTab!.primId, f);
+                        }}
+                      />
+                      {pictureUploadStatus === 'uploading' ? 'Uploading…' : 'Upload picture'}
+                    </label>
+                    {#if pictureUploadStatus === 'error'}
+                      <p class="stage-picture-err">{pictureUploadError}</p>
+                    {/if}
+                    <p class="stage-picture-hint">
+                      Or PUT it via <code>/api/volume?path=components/{activeDef.id}.source.png</code>.
+                    </p>
+                  </div>
+                {/if}
+              {/key}
+            </div>
+          {:else}
           <div class="stage-3d">
             {#if SceneComponent && geo}
               <Canvas {createRenderer}>
@@ -3391,6 +3495,7 @@ export const geom = defineGeom(meta, (p) => {
               </div>
             {/if}
           </div>
+          {/if}
 
           <div class="stage-controls">
             <label><input type="checkbox" bind:checked={showCutaway} /> Cross-section</label>
@@ -4824,6 +4929,59 @@ export const geom = defineGeom(meta, (p) => {
     padding: 0; line-height: 18px;
   }
   .stage-info-close:hover { color: #cc2222; }
+  /* Stage sub-tabs: Render | Picture. Slim strip directly under the
+     header. Visual rhythm matches the KB sub-tabs inside the rail. */
+  .stage-subtabs {
+    display: flex; gap: 4px;
+    border-bottom: 1px solid #e2e2e8;
+    margin-bottom: 6px;
+  }
+  .stage-subtab {
+    padding: 4px 14px;
+    font: 600 10px Arial; color: #888;
+    text-transform: uppercase; letter-spacing: 0.8px;
+    background: transparent;
+    border: none; border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 100ms, border-color 100ms;
+  }
+  .stage-subtab:hover { color: #333; }
+  .stage-subtab.active { color: #cc2222; border-bottom-color: #cc2222; }
+
+  .stage-picture {
+    flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #fafafa;
+    border: 1px solid #ececec;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .stage-picture-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .stage-picture-img.hidden { display: none; }
+  .stage-picture-empty {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 24px; max-width: 480px; text-align: center;
+    color: #555;
+  }
+  .stage-picture-empty-title { font: 13px Arial; margin: 0; color: #222; }
+  .stage-picture-empty-title code { font: 12px monospace; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
+  .stage-picture-empty-hint { font: 11px Arial; margin: 0; line-height: 1.5; }
+  .stage-picture-hint { font: 10px Arial; margin: 0; color: #888; }
+  .stage-picture-hint code { font: 10px monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
+  .stage-picture-upload {
+    display: inline-block;
+    padding: 6px 14px;
+    font: 600 11px Arial; color: #fff;
+    background: #cc2222;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .stage-picture-upload:hover { background: #a91d1d; }
+  .stage-picture-upload.disabled { background: #d99595; cursor: not-allowed; }
+  .stage-picture-upload input { display: none; }
+  .stage-picture-err { font: 10px Arial; color: #cc2222; margin: 0; }
+
   .stage-3d {
     flex: 1; min-height: 320px;
     background: #fff;
