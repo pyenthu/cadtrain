@@ -729,7 +729,7 @@
   // Resizable sidebar — drag the right edge to grow/shrink. Default
   // 200px (down from 260) since the lists are short and the stage
   // wants the room.
-  let sidebarWidth = $state(200);
+  let sidebarWidth = $state(240);
   let sidebarDragging = $state(false);
   function startSidebarDrag(e: MouseEvent) {
     e.preventDefault();

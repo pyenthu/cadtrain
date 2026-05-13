@@ -47,7 +47,7 @@
   // Default camera convention: camera on -Y looking at origin, UP = -Z
   // (Z-down drilling convention — well axis stays vertical on screen).
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
-  const DEFAULT_ZOOM = 130;
+  const DEFAULT_ZOOM = 104;
 
   // Auto-fit zoom: fit the bounding SPHERE (= the diagonal across the bbox)
   // into the viewport so a tall packer doesn't clip when rotated.
@@ -68,7 +68,7 @@
     const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
     const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
     if (!isFinite(diagonal) || diagonal <= 0) return fallback;
-    return Math.min(350 / diagonal, fallback);
+    return Math.min(280 / diagonal, fallback);
   }
 
   let cameraPosition = $derived<[number, number, number]>(
