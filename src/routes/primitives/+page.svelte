@@ -3966,7 +3966,7 @@ export const geom = defineGeom(meta, (p) => {
     /* Content-driven height: a touch of padding around the rotated
        label + count, no fixed min-height. Each wedge ends up as tall
        as its label needs. */
-    padding: 9px 3px;
+    padding: 9px 2px;
     width: 100%;
     display: flex; flex-direction: column-reverse;
     align-items: center; justify-content: center; gap: 3px;
