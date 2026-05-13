@@ -33,6 +33,16 @@
       ]
     },
     {
+      "id": "drill-pipe-specs",
+      "path": "/kb/api/drill-pipe-specs.json",
+      "title": "API Drill Pipe Specifications (full table)",
+      "description": "Per-grade dimensional and strength data for API drill pipe — OD, wall, nominal weight, grade (E75/X95/G105/S135), tool-joint OD/ID, drift, torsional yield, make-up torque. Stub KB: rows[] not yet extracted from the underlying PDF (kb-sources/api-drill-pipe-specs.pdf).",
+      "categories": ["api", "drill-pipe", "spec", "grade", "tool-joint", "torque"],
+      "family": "drillstring",
+      "row_count": 0,
+      "source_kind": "industry_chart"
+    },
+    {
       "id": "drill-pipe-identification",
       "path": "/kb/api/drill-pipe-identification.json",
       "title": "API Drill Pipe Tool-Joint Identification",

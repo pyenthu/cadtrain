@@ -210,7 +210,15 @@
      *  composite → multi-part geometry from a baked AuthoredComponent spec
      *  with no param editing; xml-primitive → component viewer that
      *  shows the compiled imperative ManifoldCAD source). */
-    kind: 'primitive' | 'kb' | 'composite' | 'xml-primitive';
+    kind: 'primitive' | 'kb' | 'composite' | 'xml-primitive' | 'source';
+    /** Embedded-viewer state for kind === 'source'. The Sources sidebar
+     *  row click sets these; the main tab body renders an <iframe>
+     *  pointing at either a public URL or the /api/kb/source-pdf
+     *  endpoint for local PDFs. */
+    sourceUrl?: string;
+    sourceFile?: string;
+    sourceLabel?: string;
+    sourceKind?: string;
     /** Baked AuthoredComponent spec for composite (level 3 / 4) tabs. */
     compositeSpec?: import('$lib/authoring/schema').AuthoredComponent;
     /** Runes-class entry (only set when kind === 'xml-primitive'). */
@@ -624,6 +632,27 @@
     openTabs = [
       ...openTabs,
       { id, kind: 'kb', primId: '', kbId: kb.id, label: kb.title, params: {}, draft: false, vars: [] },
+    ];
+    activeTabId = id;
+  }
+
+  /** Open a Sources row as a main tab with an embedded document viewer.
+   *  URL → iframe the URL directly; local PDF → iframe via the
+   *  /api/kb/source-pdf endpoint. Multiple distinct sources can have
+   *  the same display label, so the tab id uses the dedup key. */
+  function openSource(src: KbSource) {
+    const id = `src:${src.key}`;
+    if (openTabs.find((t) => t.id === id)) {
+      activeTabId = id;
+      return;
+    }
+    openTabs = [
+      ...openTabs,
+      {
+        id, kind: 'source', primId: '', label: src.label,
+        sourceUrl: src.url, sourceFile: src.file, sourceLabel: src.label, sourceKind: src.kind,
+        params: {}, draft: false, vars: [],
+      },
     ];
     activeTabId = id;
   }
@@ -1629,7 +1658,7 @@ export const geom = defineGeom(meta, (p) => {
   let buildTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     const _k = buildKey;
-    if (!ready || !activeTab || activeTab.kind === 'kb') { geo = null; buildError = null; return; }
+    if (!ready || !activeTab || activeTab.kind === 'kb' || activeTab.kind === 'source') { geo = null; buildError = null; return; }
     if (buildTimer) clearTimeout(buildTimer);
     buildTimer = setTimeout(async () => {
       const spec = activeSpec();
@@ -2707,38 +2736,24 @@ export const geom = defineGeom(meta, (p) => {
             <div class="sb-subhead">{fam.name}</div>
             <div class="sb-list">
               {#each sfilt.filter((s) => s.family === fam.id) as src (src.key)}
-                {#if src.url}
-                  <a
-                    class="prim-link source-link"
-                    href={src.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={src.url}
-                  >
-                    <span class="dot"></span>
-                    <span class="pl-stack">
-                      <span class="pl-name">{src.label}</span>
-                      <span class="pl-sub">{src.kbTitles.join(' · ')}</span>
-                    </span>
-                    {#if src.kind}<span class="prim-kid-count source-kind">{src.kind.replace(/_/g, ' ')}</span>{/if}
-                  </a>
-                {:else}
-                  <div
-                    class="prim-link source-static"
-                    title={src.file ?? src.label}
-                  >
-                    <span class="dot"></span>
-                    <span class="pl-stack">
-                      <span class="pl-name">{src.label}</span>
-                      <span class="pl-sub">{src.kbTitles.join(' · ')}</span>
-                    </span>
-                    {#if src.file}
-                      <span class="prim-kid-count source-kind">PDF · local</span>
-                    {:else if src.kind}
-                      <span class="prim-kid-count source-kind">{src.kind.replace(/_/g, ' ')}</span>
-                    {/if}
-                  </div>
-                {/if}
+                <button
+                  class="prim-link source-link"
+                  class:active={activeTab?.id === `src:${src.key}`}
+                  type="button"
+                  onclick={() => openSource(src)}
+                  title={src.url ?? src.file ?? src.label}
+                >
+                  <span class="dot"></span>
+                  <span class="pl-stack">
+                    <span class="pl-name">{src.label}</span>
+                    <span class="pl-sub">{src.kbTitles.join(' · ')}</span>
+                  </span>
+                  {#if src.file && !src.url}
+                    <span class="prim-kid-count source-kind">PDF</span>
+                  {:else if src.kind}
+                    <span class="prim-kid-count source-kind">{src.kind.replace(/_/g, ' ')}</span>
+                  {/if}
+                </button>
               {/each}
             </div>
           {/each}
@@ -2944,6 +2959,35 @@ export const geom = defineGeom(meta, (p) => {
             ? { icon: '▶', title: 'Preview as tubing component', onAction: openTubingFromKbRow }
             : null}
         />
+      </div>
+    {:else if activeTab && activeTab.kind === 'source'}
+      <!-- Source tab body — embedded document viewer. URLs render in an
+           <iframe>; local PDFs go through /api/kb/source-pdf which
+           streams from kb-sources/. Web pages may refuse to iframe
+           (X-Frame-Options / CSP frame-ancestors); the fallback link
+           in the header bar lets the user open externally. -->
+      {@const isPdf = !activeTab.sourceUrl && !!activeTab.sourceFile}
+      {@const viewerSrc = activeTab.sourceUrl ?? (activeTab.sourceFile ? `/api/kb/source-pdf?path=${encodeURIComponent(activeTab.sourceFile)}` : '')}
+      <div class="tab-body source-tab">
+        <div class="source-hdr">
+          <span class="source-hdr-label">{activeTab.sourceLabel ?? activeTab.label}</span>
+          {#if activeTab.sourceKind}<span class="source-hdr-kind">{activeTab.sourceKind.replace(/_/g, ' ')}</span>{/if}
+          {#if isPdf}<span class="source-hdr-kind">local PDF</span>{/if}
+          {#if activeTab.sourceUrl}
+            <a class="source-hdr-ext" href={activeTab.sourceUrl} target="_blank" rel="noopener noreferrer">Open externally ↗</a>
+          {/if}
+        </div>
+        {#if viewerSrc}
+          <iframe
+            class="source-iframe"
+            src={viewerSrc}
+            title={activeTab.sourceLabel ?? activeTab.label}
+            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        {:else}
+          <div class="source-empty">No URL or local file available for this source.</div>
+        {/if}
       </div>
     {:else if activeTab && activeDef}
       {@const compound = isCompound(activeDef)}
@@ -4176,8 +4220,7 @@ export const geom = defineGeom(meta, (p) => {
   .prim-link.active .pl-sub,
   .prim-link:hover .pl-sub { color: #ccc; }
   .prim-link.source-link { text-decoration: none; }
-  .prim-link.source-static { cursor: default; }
-  .prim-link.source-static:hover { background: transparent; color: #555; }
+  .prim-link.source-link.active { background: #cc2222; color: #fff; }
   .dot {
     width: 6px; height: 6px; border-radius: 50%;
     background: #cfcfd6; flex-shrink: 0;
@@ -4272,6 +4315,45 @@ export const geom = defineGeom(meta, (p) => {
   .dock-resize:hover { background: rgba(204, 34, 34, 0.18); }
   .tab-body.resizing-dock .dock-resize { background: rgba(204, 34, 34, 0.32); }
   .tab-body.kb-tab { grid-template-columns: 1fr; }
+
+  /* Source tab — header strip with label + kind badge + "Open externally"
+     link, then a full-height iframe for the document body. The iframe
+     fills the rest of the tab body via flex:1. */
+  .tab-body.source-tab {
+    grid-template-columns: 1fr;
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .source-hdr {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+    background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+    font: 12px ui-sans-serif, system-ui, sans-serif;
+    color: #1e293b;
+    flex-shrink: 0;
+  }
+  .source-hdr-label { font-weight: 600; }
+  .source-hdr-kind {
+    background: #e2e8f0; color: #475569;
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 2px 7px; border-radius: 10px;
+    text-transform: lowercase; letter-spacing: 0.02em;
+  }
+  .source-hdr-ext {
+    margin-left: auto;
+    color: #cc2222; font-weight: 500; text-decoration: none;
+  }
+  .source-hdr-ext:hover { text-decoration: underline; }
+  .source-iframe {
+    flex: 1 1 auto;
+    width: 100%; min-height: 0;
+    border: 0; background: #fff;
+  }
+  .source-empty {
+    flex: 1 1 auto;
+    display: flex; align-items: center; justify-content: center;
+    color: #64748b; font: 12px ui-sans-serif, system-ui, sans-serif;
+  }
   .tab-body.xml-tab {
     grid-template-columns: 1fr;
     padding: 18px 24px 24px;
