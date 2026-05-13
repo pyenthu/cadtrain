@@ -8,6 +8,7 @@
       "title": "Casing, Tubing & Line-Pipe Operational Inventory (2019)",
       "description": "Per-pipe operator inventory: 9CAT id, type (LP/CSG/TBG), nominal size, weight, supplier, grade, connection, OD, wall, ID, drift, burst, collapse, pipe + joint yield strengths, make-up torque (min/opti/max), color bands. 299 rows covering 25 line pipe + 235 casing + 39 tubing.",
       "categories": ["api", "casing", "tubing", "line-pipe", "connection", "grade", "make-up-torque"],
+      "family": "casing_tubing",
       "row_count": 299,
       "source_kind": "operator_inventory",
       "extractor": "scripts/kb/build_casing_tubing_data.ts",
@@ -23,6 +24,7 @@
       "title": "Tubing Hanger Spools & Couplings (Miracle Industries catalogue)",
       "description": "Tubing-hanger spools (THS) sized by bottom-flange OD + top-flange OD + API 6A pressure class (2K → 15M), and tubing-hanger couplings (THC) by union-nut OD + tubing size (API EUE). Drives the tubing_hanger_spool primitive's flange / bore / prep parameters.",
       "categories": ["api", "wellhead", "tubing-hanger", "spool", "flange", "coupling", "pressure-class"],
+      "family": "wellhead_xt",
       "row_count": 11,
       "source_kind": "vendor_catalog",
       "default_columns": [
@@ -36,6 +38,7 @@
       "title": "API Drill Pipe Tool-Joint Identification",
       "description": "Drill-pipe tool-joint marking scheme: combinations of grooves and slots on the tong-area band identify the grade (E75, X95, G105, S135, high-strength) and weight class (standard / heavy). Drives the drill_pipe_tool_joint primitive's marking parameters.",
       "categories": ["api", "drill-pipe", "tool-joint", "identification", "grade", "marking"],
+      "family": "drillstring",
       "row_count": 8,
       "source_kind": "industry_chart",
       "default_columns": [

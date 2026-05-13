@@ -118,6 +118,16 @@
       name: 'Assemblies',
       match: () => false, // deferred — placeholder for level 4.
     },
+    // Sources tab — raw underlying documents that feed the KB tables
+    // (vendor pages, operator-inventory PDFs, industry charts). Shows
+    // one row per unique source, grouped by the family of the KB(s)
+    // that source feeds. Rows with a source_url open in a new tab;
+    // rows with only a local source_file are non-clickable.
+    {
+      id: 'sources',
+      name: 'Sources',
+      match: () => false,
+    },
     // KB tab — special: doesn't claim COMPONENTS entries. The sidebar
     // renders a separate KB list under this tab (driven by /kb/index.json)
     // and clicking a KB opens it as a 'kb'-kind main tab.
@@ -327,6 +337,22 @@
     enabledFamilies = next;
     saveEnabledFamilies(next);
   }
+
+  /** Click-outside Svelte action. Mounts a document-level listener that
+   *  fires `cb()` on any mousedown outside `node`. Used by the family
+   *  filter popup so a click anywhere else dismisses it — except the
+   *  anchor button itself (it has its own toggle handler). */
+  function clickOutside(node: HTMLElement, cb: () => void) {
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (node.contains(t)) return;
+      if (familyFilterBtn && familyFilterBtn.contains(t)) return;
+      cb();
+    }
+    document.addEventListener('mousedown', onDown, true);
+    return { destroy() { document.removeEventListener('mousedown', onDown, true); } };
+  }
   /** Top-level sidebar split — 'parts' shows the existing primitive
    *  trees (Components / Compositions / Assemblies / KB / XML Primitive),
    *  'operator' shows higher-level CAD operations (cut slots, extrude,
@@ -494,9 +520,33 @@
     row_count: number;
     source_kind?: string;
     categories?: string[];
+    /** Component-family classification (same vocabulary the Components tab
+     *  uses). Set in /kb/index.json. Unknown values default to 'basic' so
+     *  un-classified KBs are still visible. */
+    family?: Family;
+    /** Path to the KB JSON (used to fetch source metadata at mount time). */
+    path?: string;
+  }
+  /** A source document underlying one or more KB entries. The Sources tab
+   *  shows one row per unique source (deduped across KBs); families come
+   *  from the KB(s) it feeds. */
+  interface KbSource {
+    /** Stable key: url if present, otherwise file path. */
+    key: string;
+    /** Human-facing label. Falls back to URL host or filename. */
+    label: string;
+    url?: string;
+    file?: string;
+    kind?: string;
+    /** Family of the parent KB. */
+    family: Family;
+    /** Title(s) of the KB(s) this source feeds. */
+    kbTitles: string[];
   }
   let kbList = $state<KbEntry[]>([]);
   let kbListError = $state<string | null>(null);
+  let kbSources = $state<KbSource[]>([]);
+  let kbSourcesError = $state<string | null>(null);
   onMount(async () => {
     try {
       const r = await fetch('/kb/index.json', { cache: 'no-cache' });
@@ -505,9 +555,52 @@
       kbList = (data.kbs ?? []).map((k: any) => ({
         id: k.id, title: k.title, description: k.description, row_count: k.row_count,
         source_kind: k.source_kind, categories: k.categories ?? [],
+        family: (k.family ?? 'basic') as Family,
+        path: k.path,
       }));
     } catch (e: any) {
       kbListError = e?.message ?? String(e);
+    }
+    // Now fetch each KB's full JSON once to extract source metadata.
+    // Files are small (<1MB each) so a parallel mount-time fetch is fine.
+    try {
+      const sourcesMap = new Map<string, KbSource>();
+      await Promise.all(kbList.map(async (kb) => {
+        if (!kb.path) return;
+        try {
+          const r = await fetch(kb.path, { cache: 'no-cache' });
+          if (!r.ok) return;
+          const doc = await r.json();
+          const url: string | undefined = typeof doc.source_url === 'string' ? doc.source_url : undefined;
+          const file: string | undefined = typeof doc.source_file === 'string' ? doc.source_file : undefined;
+          // Some KBs (e.g. tubing-hanger.json) use `source_file` as a
+          // human label rather than a real path. Treat anything that
+          // doesn't start with "kb-sources/" or end in a recognised
+          // file extension as a label-only field, NOT a real file.
+          const isRealFile = !!file && (file.startsWith('kb-sources/') || /\.(pdf|json|csv|xlsx?|txt)$/i.test(file));
+          const key = url ?? (isRealFile ? file! : `${kb.id}:src`);
+          const existing = sourcesMap.get(key);
+          if (existing) {
+            if (!existing.kbTitles.includes(kb.title)) existing.kbTitles.push(kb.title);
+            return;
+          }
+          let label = url ? (() => { try { return new URL(url).host; } catch { return url; } })()
+                    : isRealFile ? file!.split('/').pop()!
+                    : (file ?? kb.title);
+          sourcesMap.set(key, {
+            key,
+            label,
+            url,
+            file: isRealFile ? file : undefined,
+            kind: kb.source_kind,
+            family: (kb.family ?? 'basic') as Family,
+            kbTitles: [kb.title],
+          });
+        } catch { /* skip on per-KB error */ }
+      }));
+      kbSources = [...sourcesMap.values()];
+    } catch (e: any) {
+      kbSourcesError = e?.message ?? String(e);
     }
   });
   // KB-specific hover state — shows a card-style callout (title /
@@ -2334,6 +2427,7 @@ export const geom = defineGeom(meta, (p) => {
           {@const count = f.id === 'basic' ? componentList.filter((r) => familyOf(r.meta.id) === 'basic').length
                        : f.id === 'components' ? componentList.filter((r) => familyOf(r.meta.id) !== 'basic' && enabledFamilies.has(familyOf(r.meta.id))).length
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
+                       : f.id === 'sources' ? kbSources.length
                        : f.id === 'kb' ? kbList.length
                        : itemsInFolder(f).length}
           <button
@@ -2559,29 +2653,86 @@ export const geom = defineGeom(meta, (p) => {
       {#if sidebarTab === 'kb'}
         <!-- KB list — driven by /kb/index.json. Each row is a card-link
              with the same prim-link styling; hover surfaces the rich
-             callout. Click opens the KB as a tab in the main tab bar. -->
+             callout. Click opens the KB as a tab in the main tab bar.
+             Rows are grouped by component family (same vocabulary as the
+             Components tab) so that, e.g., the casing-tubing-data table
+             groups under "Casing & Tubing". -->
         {#if kbListError}
           <div class="sb-empty">{kbListError}</div>
         {:else if kbList.length === 0}
           <div class="sb-empty">No KBs registered.</div>
         {:else}
-          <div class="sb-list">
-            {#each kbList.filter((k) => !filter || k.title.toLowerCase().includes(filter.toLowerCase()) || (k.categories ?? []).some((c) => c.toLowerCase().includes(filter.toLowerCase()))) as kb (kb.id)}
-              <button
-                class="prim-link"
-                class:active={activeTab?.id === `kb:${kb.id}`}
-                onclick={() => openKb(kb)}
-                onmouseenter={(e) => onHoverKb(kb.id, e)}
-                onmouseleave={onLeaveKb}
-                onfocus={(e) => onHoverKb(kb.id, e as unknown as MouseEvent)}
-                onblur={onLeaveKb}
-              >
-                <span class="dot"></span>
-                <span class="pl-name">{kb.title}</span>
-                <span class="prim-kid-count">{kb.row_count.toLocaleString()}</span>
-              </button>
-            {/each}
-          </div>
+          {@const kfilt = kbList.filter((k) => !filter || k.title.toLowerCase().includes(filter.toLowerCase()) || (k.categories ?? []).some((c) => c.toLowerCase().includes(filter.toLowerCase())))}
+          {@const kgroups = FAMILIES.filter((fam) => kfilt.some((k) => (k.family ?? 'basic') === fam.id))}
+          {#each kgroups as fam (fam.id)}
+            <div class="sb-subhead">{fam.name}</div>
+            <div class="sb-list">
+              {#each kfilt.filter((k) => (k.family ?? 'basic') === fam.id) as kb (kb.id)}
+                <button
+                  class="prim-link"
+                  class:active={activeTab?.id === `kb:${kb.id}`}
+                  onclick={() => openKb(kb)}
+                  onmouseenter={(e) => onHoverKb(kb.id, e)}
+                  onmouseleave={onLeaveKb}
+                  onfocus={(e) => onHoverKb(kb.id, e as unknown as MouseEvent)}
+                  onblur={onLeaveKb}
+                >
+                  <span class="dot"></span>
+                  <span class="pl-name">{kb.title}</span>
+                  <span class="prim-kid-count">{kb.row_count.toLocaleString()}</span>
+                </button>
+              {/each}
+            </div>
+          {/each}
+          {#if kfilt.length === 0}<div class="sb-empty">No KBs match "{filter}".</div>{/if}
+        {/if}
+      {/if}
+      {#if sidebarTab === 'sources'}
+        <!-- Sources — raw underlying documents that feed the KB tables.
+             Deduped across KBs, grouped by family of the parent KB.
+             Rows with a source_url open in a new tab; rows with only a
+             local source_file (gitignored PDFs in kb-sources/) render
+             as non-clickable since file:// can't be served. -->
+        {#if kbSourcesError}
+          <div class="sb-empty">{kbSourcesError}</div>
+        {:else if kbSources.length === 0}
+          <div class="sb-empty">No sources registered.</div>
+        {:else}
+          {@const sfilt = kbSources.filter((s) => !filter
+                                              || s.label.toLowerCase().includes(filter.toLowerCase())
+                                              || s.kbTitles.some((t) => t.toLowerCase().includes(filter.toLowerCase()))
+                                              || (s.kind ?? '').toLowerCase().includes(filter.toLowerCase()))}
+          {@const sgroups = FAMILIES.filter((fam) => sfilt.some((s) => s.family === fam.id))}
+          {#each sgroups as fam (fam.id)}
+            <div class="sb-subhead">{fam.name}</div>
+            <div class="sb-list">
+              {#each sfilt.filter((s) => s.family === fam.id) as src (src.key)}
+                {#if src.url}
+                  <a
+                    class="prim-link source-link"
+                    href={src.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={src.url}
+                  >
+                    <span class="dot"></span>
+                    <span class="pl-name">{src.label}</span>
+                    {#if src.kind}<span class="prim-kid-count source-kind">{src.kind.replace(/_/g, ' ')}</span>{/if}
+                  </a>
+                {:else}
+                  <div
+                    class="prim-link source-static"
+                    title={src.file ?? src.label}
+                  >
+                    <span class="dot"></span>
+                    <span class="pl-name">{src.label}</span>
+                    <span class="prim-kid-count source-kind">PDF · local</span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+          {/each}
+          {#if sfilt.length === 0}<div class="sb-empty">No sources match "{filter}".</div>{/if}
         {/if}
       {/if}
       {#each TREE as f (f.id)}
@@ -2637,38 +2788,40 @@ export const geom = defineGeom(meta, (p) => {
     onClose={() => (familyFilterOpen = false)}
     x={familyFilterX}
     y={familyFilterY}
-    width="420px"
-    maxHeight="auto"
+    width="540px"
+    maxHeight="60vh"
   >
     {#snippet children()}
-      <div class="ff-body">
-        {#each FAMILIES.filter((fam) => fam.id !== 'basic') as fam (fam.id)}
-          {@const inFamily = componentList.filter((r) => familyOf(r.meta.id) === fam.id).length}
-          {@const on = enabledFamilies.has(fam.id)}
-          <label class="ff-section" class:enabled={on}>
-            <div class="ff-section-head">
-              <span class="ff-section-title">{fam.name}</span>
-              <span class="ff-section-meta">{inFamily} component{inFamily === 1 ? '' : 's'}</span>
-              <input
-                type="checkbox"
-                class="ff-toggle"
-                checked={on}
-                onchange={(e) => {
-                  const checked = (e.currentTarget as HTMLInputElement).checked;
-                  const next = new Set(enabledFamilies);
-                  if (checked) next.add(fam.id); else next.delete(fam.id);
-                  enabledFamilies = next;
-                  saveEnabledFamilies(next);
-                }}
-              />
-            </div>
-            <div class="ff-section-desc">{fam.description}</div>
-          </label>
-        {/each}
-        <div class="ff-foot">
+      <div class="ff-body" use:clickOutside={() => (familyFilterOpen = false)}>
+        <div class="ff-head">
           <button class="ff-btn ff-btn-ghost" type="button" onclick={() => setAllFamilies(true)}>Select all</button>
           <button class="ff-btn ff-btn-ghost" type="button" onclick={() => setAllFamilies(false)}>Unselect all</button>
           <button class="ff-btn ff-btn-primary" type="button" onclick={() => (familyFilterOpen = false)}>Done</button>
+        </div>
+        <div class="ff-grid">
+          {#each FAMILIES.filter((fam) => fam.id !== 'basic') as fam (fam.id)}
+            {@const inFamily = componentList.filter((r) => familyOf(r.meta.id) === fam.id).length}
+            {@const on = enabledFamilies.has(fam.id)}
+            <label class="ff-section" class:enabled={on}>
+              <div class="ff-section-head">
+                <span class="ff-section-title">{fam.name}</span>
+                <span class="ff-section-meta">{inFamily}</span>
+                <input
+                  type="checkbox"
+                  class="ff-toggle"
+                  checked={on}
+                  onchange={(e) => {
+                    const checked = (e.currentTarget as HTMLInputElement).checked;
+                    const next = new Set(enabledFamilies);
+                    if (checked) next.add(fam.id); else next.delete(fam.id);
+                    enabledFamilies = next;
+                    saveEnabledFamilies(next);
+                  }}
+                />
+              </div>
+              <div class="ff-section-desc">{fam.description}</div>
+            </label>
+          {/each}
         </div>
       </div>
     {/snippet}
@@ -3833,20 +3986,35 @@ export const geom = defineGeom(meta, (p) => {
   .family-filter-btn .ff-icon { font-size: 12px; line-height: 1; }
   .family-filter-btn .ff-label { font-weight: 500; }
 
-  /* Floating-panel body — sectioned cards with checkbox toggle, footer
-     with Select all / Unselect all / Done. */
+  /* Floating-panel body — top action bar + 2-column scrollable grid
+     of family cards. Cap height at 60vh; vertical scroll inside the
+     panel when the cards overflow. */
   .ff-body {
-    padding: 10px 12px;
-    display: flex; flex-direction: column; gap: 8px;
+    display: flex; flex-direction: column;
+    max-height: 60vh; min-height: 0;
     font: 11px ui-sans-serif, system-ui, sans-serif;
     color: #0f172a;
   }
+  .ff-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+  }
+  .ff-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    padding: 10px 12px;
+    overflow-y: auto;
+    min-height: 0;
+  }
   .ff-section {
     display: flex; flex-direction: column; gap: 4px;
-    padding: 8px 10px;
+    padding: 7px 9px;
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
     cursor: pointer;
     transition: background 0.1s, border-color 0.1s;
+    min-width: 0;
   }
   .ff-section:hover { border-color: #cbd5e1; }
   .ff-section.enabled {
@@ -3855,31 +4023,28 @@ export const geom = defineGeom(meta, (p) => {
     box-shadow: 0 0 0 1px rgba(204,34,34,0.08);
   }
   .ff-section-head {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 6px;
   }
   .ff-section-title {
-    flex: 1;
-    font: 600 12px ui-sans-serif, system-ui, sans-serif;
+    flex: 1; min-width: 0;
+    font: 600 11px ui-sans-serif, system-ui, sans-serif;
     color: #1e293b; letter-spacing: 0.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ff-section-meta {
     font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #64748b;
   }
   .ff-toggle {
-    width: 14px; height: 14px;
+    width: 13px; height: 13px;
     accent-color: #cc2222; cursor: pointer; flex-shrink: 0;
   }
   .ff-section-desc {
-    font: 11px ui-sans-serif, system-ui, sans-serif;
-    color: #64748b; line-height: 1.4;
-  }
-  .ff-foot {
-    display: flex; align-items: center; gap: 6px;
-    padding-top: 6px; border-top: 1px solid #e2e8f0; margin-top: 2px;
+    font: 10px ui-sans-serif, system-ui, sans-serif;
+    color: #64748b; line-height: 1.35;
   }
   .ff-btn {
-    height: 26px; padding: 0 12px; border-radius: 5px;
+    height: 24px; padding: 0 10px; border-radius: 4px;
     font: 11px ui-sans-serif, system-ui, sans-serif; line-height: 1;
     cursor: pointer;
   }
