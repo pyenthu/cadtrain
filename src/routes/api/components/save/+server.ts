@@ -28,6 +28,7 @@ import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY, defaultsFor, geomById } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 import { bakeGlb } from '$lib/server/manifold-bake';
+import { volumePath } from '$lib/server/volume';
 
 /** Tiny default-params extractor — pulls each `params.<name>.default`
  *  out of the raw source text. Used by the save endpoint to bake a GLB
@@ -60,7 +61,9 @@ function extractDefaultsFromSource(src: string): Record<string, number> {
 
 const MAX_BYTES = 256 * 1024;
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
-const VOLUME_DIR = '/data/components';
+// Production overlay lives on the Railway volume now (was hardcoded
+// `/data/components` — single-volume consolidation 2026-05-13).
+const VOLUME_DIR = volumePath('components');
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json().catch(() => null);

@@ -16,7 +16,50 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
 11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits (typo fixes, comment changes, single-style tweaks).
 12. **Each logical plan step gets a recorded e2e run.** When completing a `/plan` task (anything with a numeric ID in `src/routes/plan/+page.svelte`), run the e2e suite, harvest the WEBM recordings to `static/tests/e2e/<task-id>/`, and add a `video` field to the `details.ts` entry pointing at the recording. The Gantt detail popup auto-renders the video. Use `bun run record:task <id>` (script wraps `bun run test:e2e` + the harvest step). For docs-only or trivial tasks, mark `recorded: false` in the details entry instead of skipping silently.
-13. **Compounding context for drawings — components + assembly recipes.** Before generating a new single-file component or composing a multi-part assembly, check the catalog so you build on prior work instead of starting from first principles:
+13. **Persistent data volume.** All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; in local dev, falls back to `./.dev-volume/`). Sub-paths in use:
+    - `$APP_DATA_DIR/training_data/cache.jsonl` — RAG cache for /api/identify
+    - `$APP_DATA_DIR/training_data/authored_cache.jsonl` — authored-components cache
+    - `$APP_DATA_DIR/components/<id>.ts` — production overlay for /api/components/save (loader still being wired)
+    - `$APP_DATA_DIR/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
+    
+    **Root resolution** (in `src/lib/server/volume.ts`): `CADTRAIN_VOLUME_ROOT` → `RAILWAY_VOLUME_MOUNT_PATH` → `APP_DATA_DIR` → `/app_data` → `./.dev-volume`. New endpoints that need persistent storage MUST call `volumePath(rel)` from that module and call `maybeProxy(request, url)` first.
+    
+    **Local dev → prod volume**: set in `.env.local` (see `.env.local.example`):
+    ```
+    CADTRAIN_VOLUME_REMOTE_URL=https://<service>.up.railway.app
+    CADTRAIN_VOLUME_TOKEN=<openssl rand -hex 32 — same value on Railway>
+    ```
+    Then every `bun dev` call to `/api/volume` or `/api/kb/source-pdf` proxies to prod with `X-Volume-Token`. Single source of truth — the PDF you upload from your laptop appears immediately on the live site, and the cache record the live site wrote is visible to your local instance.
+    
+    **Auth model**: `CADTRAIN_VOLUME_TOKEN` on prod gates cross-origin requests. Same-origin browser sessions (the /primitives Sources tab clicking through to /api/kb/source-pdf on the production frontend) are trusted without explicit token plumbing. When the env var is unset locally, the endpoint is open.
+    
+    **Transfer commands** (run from local against prod):
+    ```sh
+    # Upload a file
+    curl -X PUT \
+      -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+      --data-binary @local-bha.pdf \
+      "https://<svc>.up.railway.app/api/volume?path=kb-sources/bha-reference.pdf"
+    
+    # Download a file
+    curl -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+      "https://<svc>.up.railway.app/api/volume?path=kb-sources/bha-reference.pdf" \
+      -o local-bha.pdf
+    
+    # List a directory (returns JSON tree, depth 1)
+    curl -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+      "https://<svc>.up.railway.app/api/volume?path=kb-sources"
+    
+    # Delete a file
+    curl -X DELETE -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+      "https://<svc>.up.railway.app/api/volume?path=kb-sources/old.pdf"
+    
+    # Create a subdirectory
+    curl -X POST -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+      "https://<svc>.up.railway.app/api/volume?path=archive&action=mkdir"
+    ```
+
+14. **Compounding context for drawings — components + assembly recipes.** Before generating a new single-file component or composing a multi-part assembly, check the catalog so you build on prior work instead of starting from first principles:
     - **Per-component specs**: `src/lib/cad/components/<id>.md` — each single-file component should have a sibling `.md` documenting what real-world part it models, vocabulary, validation, derived params. Template: `docs/PRIMITIVE_TEMPLATE.md`. Strong example: `src/lib/cad/components/conn_box.md`.
     - **Multi-primitive assembly recipes**: `docs/assemblies/<name>.md` — when the user asks for a named real-world assembly ("tubing hanger spool stack", "Christmas tree", "production packer"), check here first. Index + when-to-write rules: `docs/assemblies/README.md`. Template: `docs/assemblies/_TEMPLATE.md`. First worked example: `docs/assemblies/tubing_hanger_spool_stack.md`.
     - **When you build a new assembly or rename a primitive's vocabulary, write/update the corresponding `.md` BEFORE committing** — that's the only durable handoff to future sessions. Conversation memory evaporates; these files don't.

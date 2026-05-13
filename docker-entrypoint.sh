@@ -1,11 +1,40 @@
 #!/bin/sh
-# CAD Train entrypoint — handle cache volume mount then start server.
+# CAD Train entrypoint — set up the persistent volume then start the server.
+#
+# Single-volume model (2026-05-13): everything persistent lives under
+# $APP_DATA_DIR (default /app_data on Railway). The Dockerfile-baked image
+# ships seed copies of training_data/{cache,authored_cache}.jsonl; on
+# first run we copy them into the volume if not already present, then
+# symlink the in-image paths to the volume so the running code sees the
+# canonical files.
+#
+# Legacy $CACHE_VOLUME (/data) is honored too for now so an existing
+# Railway deploy with the old volume keeps working until the user
+# migrates. New deploys should attach a volume at /app_data and leave
+# $CACHE_VOLUME unset.
 
 set -e
 
-# If CACHE_VOLUME is mounted, symlink both caches so user additions persist
-# across deploys. Each cache is seeded from the baked image on first run.
-if [ -n "$CACHE_VOLUME" ] && [ -d "$CACHE_VOLUME" ]; then
+# ─── New canonical path: $APP_DATA_DIR ────────────────────────────────────────
+if [ -n "$APP_DATA_DIR" ] && [ -d "$APP_DATA_DIR" ]; then
+  # Make sure every well-known subdir exists so the API handlers don't
+  # ENOENT before they've ever written anything.
+  mkdir -p "$APP_DATA_DIR/training_data" "$APP_DATA_DIR/components" "$APP_DATA_DIR/kb-sources"
+
+  # Seed the training caches from the baked image on first run (volume
+  # is empty). Subsequent runs find files already there and skip.
+  for name in cache.jsonl authored_cache.jsonl; do
+    if [ ! -f "$APP_DATA_DIR/training_data/$name" ] && [ -f "training_data/$name" ]; then
+      echo "[entrypoint] First run: seeding $name into $APP_DATA_DIR/training_data/"
+      cp "training_data/$name" "$APP_DATA_DIR/training_data/$name"
+    fi
+    rm -f "training_data/$name"
+    ln -s "$APP_DATA_DIR/training_data/$name" "training_data/$name"
+  done
+  echo "[entrypoint] Volume linked: $APP_DATA_DIR (training_data, components, kb-sources)"
+
+# ─── Legacy: $CACHE_VOLUME (kept for backward compat) ──────────────────────────
+elif [ -n "$CACHE_VOLUME" ] && [ -d "$CACHE_VOLUME" ]; then
   for name in cache.jsonl authored_cache.jsonl; do
     if [ ! -f "$CACHE_VOLUME/$name" ] && [ -f "training_data/$name" ]; then
       echo "[entrypoint] First run: seeding volume with baked $name"
@@ -14,7 +43,7 @@ if [ -n "$CACHE_VOLUME" ] && [ -d "$CACHE_VOLUME" ]; then
     rm -f "training_data/$name"
     ln -s "$CACHE_VOLUME/$name" "training_data/$name"
   done
-  echo "[entrypoint] Caches linked to $CACHE_VOLUME/{cache,authored_cache}.jsonl"
+  echo "[entrypoint] (legacy) Caches linked to $CACHE_VOLUME — consider migrating to APP_DATA_DIR"
 fi
 
 echo "[entrypoint] Starting SvelteKit server on $HOST:$PORT"

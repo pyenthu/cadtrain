@@ -20,6 +20,7 @@ RUN bun install --production
 
 ENV NODE_ENV=production
 ENV CACHE_VOLUME=/data
+ENV APP_DATA_DIR=/app_data
 ENV HOST=0.0.0.0
 EXPOSE 3000
 

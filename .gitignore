@@ -67,6 +67,11 @@ Thumbs.db
 # Environment
 .env
 .env.*
+!.env.local.example
+
+# Local-dev persistent-volume root. Used when no CADTRAIN_VOLUME_ROOT /
+# CADTRAIN_VOLUME_REMOTE_URL / Railway-mounted /app_data is configured.
+.dev-volume/
 
 # Claude Code session artifacts (per-session lock files etc.)
 .claude/
