@@ -103,3 +103,73 @@ export function saveEnabledFamilies(enabled: Set<Family>): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...enabled]));
   } catch { /* private mode etc. */ }
 }
+
+// ─── Basic-tab complexity levels ──────────────────────────────────────────
+//
+// Inside the Basic tab (family='basic') we further classify primitives by
+// complexity LEVEL so the user can transition from atomic shapes up to
+// composite features. The filter UX mirrors the Family filter on the
+// Parts tab — same funnel button, same FloatingPanel popup, same
+// localStorage persistence — just operates on a different axis.
+//
+// Levels are scoped to family='basic' only. Components in other
+// families don't have a level and aren't displayed in the Basic tab.
+
+export type Level = 1 | 2;
+
+export interface LevelInfo {
+  id: Level;
+  name: string;
+  description: string;
+  /** Sort order in the popup + Basic-tab group headers. */
+  order: number;
+}
+
+export const LEVELS: LevelInfo[] = [
+  { id: 1, name: 'Level 1 — Atomic shapes', order: 0, description: 'Pure geometry: tube, taper, shoulder, tapered cone. No internal features.' },
+  { id: 2, name: 'Level 2 — With features', order: 1, description: 'Atomic shape + a feature pattern: slots, grooves, wickers, J-slots, elastomer rings.' },
+];
+
+/** Per-component complexity level within the Basic family. Components
+ *  not in this map (or not family='basic') default to level 1. Edit
+ *  this map to reclassify; no per-file annotation needed. */
+export const LEVEL_BY_ID: Record<string, Level> = {
+  // Level 1 — pure geometric primitives, no internal features
+  hollow_cylinder: 1, taper: 1, shoulder: 1, tapered_cone: 1,
+  // Level 2 — atomic shape augmented with a feature pattern
+  slotted_cylinder: 2, slotted_tube: 2, grooved_cylinder: 2, seal_bore: 2,
+  packer_element: 2, slips: 2, j_latch: 2,
+};
+
+/** Level for a component id. Unknown ids default to 1. */
+export function levelOf(componentId: string): Level {
+  return LEVEL_BY_ID[componentId] ?? 1;
+}
+
+/** Default set for the level filter: every level enabled. */
+export function defaultEnabledLevels(): Set<Level> {
+  return new Set(LEVELS.map((l) => l.id));
+}
+
+const LEVEL_STORAGE_KEY = 'cad:enabledBasicLevels';
+
+/** Read the persisted enabled-levels set from localStorage. Falls
+ *  back to defaults on any read/parse error. */
+export function loadEnabledLevels(): Set<Level> {
+  try {
+    const raw = localStorage.getItem(LEVEL_STORAGE_KEY);
+    if (!raw) return defaultEnabledLevels();
+    const arr = JSON.parse(raw) as number[];
+    return new Set(arr.filter((n): n is Level => LEVELS.some((l) => l.id === n)));
+  } catch {
+    return defaultEnabledLevels();
+  }
+}
+
+/** Persist the enabled-levels set to localStorage. Silently ignores
+ *  failures (the in-memory state remains authoritative for the session). */
+export function saveEnabledLevels(enabled: Set<Level>): void {
+  try {
+    localStorage.setItem(LEVEL_STORAGE_KEY, JSON.stringify([...enabled]));
+  } catch { /* private mode etc. */ }
+}

@@ -41,7 +41,8 @@
   // imperative ManifoldCAD source as builder.ts. Lives in the XML Primitive
   // tab; kept separate from the legacy primitives until the swap is trusted.
   import { loadComponentRegistry, defaultsFor, type ComponentEntry, type DerivedSchema, type ParamSchema } from '$lib/cad/components';
-  import { FAMILIES, FAMILY_BY_ID, familyOf, loadEnabledFamilies, saveEnabledFamilies, type Family } from '$lib/cad/components/families';
+  import { FAMILIES, FAMILY_BY_ID, familyOf, loadEnabledFamilies, saveEnabledFamilies, type Family,
+           LEVELS, levelOf, loadEnabledLevels, saveEnabledLevels, type Level } from '$lib/cad/components/families';
   import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
 
   function createRenderer(canvas: HTMLCanvasElement) {
@@ -366,6 +367,31 @@
     if (on) for (const fam of FAMILIES) if (fam.id !== 'basic') next.add(fam.id);
     enabledFamilies = next;
     saveEnabledFamilies(next);
+  }
+
+  // Parallel state for the Basic-tab Level filter — same shape as the
+  // Family filter on Parts, just operates on Level (1|2) instead of
+  // Family. See $lib/cad/components/families.ts LEVELS.
+  let enabledLevels = $state<Set<Level>>(new Set());
+  let levelFilterOpen = $state<boolean>(false);
+  let levelFilterX = $state<number>(80);
+  let levelFilterY = $state<number>(80);
+  let levelFilterBtn: HTMLButtonElement | undefined = $state();
+
+  function toggleLevelFilter() {
+    if (levelFilterOpen) { levelFilterOpen = false; return; }
+    if (levelFilterBtn) {
+      const r = levelFilterBtn.getBoundingClientRect();
+      levelFilterX = Math.round(r.right + 8);
+      levelFilterY = Math.round(r.top);
+    }
+    levelFilterOpen = true;
+  }
+  function setAllLevels(on: boolean) {
+    const next = new Set<Level>();
+    if (on) for (const l of LEVELS) next.add(l.id);
+    enabledLevels = next;
+    saveEnabledLevels(next);
   }
 
   /** Click-outside Svelte action. Mounts a document-level listener that
@@ -1570,6 +1596,7 @@ export const geom = defineGeom(meta, (p) => {
     import('$lib/shared/SceneControls.svelte').then((m) => { SceneControls = m.default; });
     initManifold().then(() => { ready = true; });
     enabledFamilies = loadEnabledFamilies();
+    enabledLevels = loadEnabledLevels();
     // Async-load the registry from /api/components/list before deciding what
     // to auto-open. Priority:
     //   1. Last primitive the user was editing this session (sessionStorage
@@ -2512,6 +2539,20 @@ export const geom = defineGeom(meta, (p) => {
               <path d="M2 3h12l-4.5 6v4l-3-1v-3L2 3z" fill="currentColor"/>
             </svg>
           </button>
+        {:else if sidebarTab === 'basic'}
+          <button
+            bind:this={levelFilterBtn}
+            class="family-filter-icon"
+            class:open={levelFilterOpen}
+            type="button"
+            onclick={toggleLevelFilter}
+            title="Filter by level"
+            aria-label="Filter by level"
+          >
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M2 3h12l-4.5 6v4l-3-1v-3L2 3z" fill="currentColor"/>
+            </svg>
+          </button>
         {/if}
       </div>
 
@@ -2620,42 +2661,64 @@ export const geom = defineGeom(meta, (p) => {
           </div>
         {/if}
 
-        <div class="sb-list">
-          {#each componentList.filter((r) => familyOf(r.meta.id) === 'basic' && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase()))) as entry (entry.meta.id)}
-            <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
-              <button
-                class="prim-link"
-                class:active={activeTab?.id === `xml:${entry.meta.id}`}
-                onclick={() => openRunes(entry)}
-                title={entry.meta.name}
-              >
-                <span class="dot"></span>
-                <span class="pl-name">{entry.meta.name}</span>
-              </button>
-              <button
-                class="prim-del"
-                type="button"
-                title={`Delete ${entry.meta.name}`}
-                aria-label={`Delete ${entry.meta.name}`}
-                onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
-              >
-                <!-- Outlined trash icon. Stroked rectangle body with a
-                     lid + handle bar and two vertical contents lines.
-                     Inherits color from the button via currentColor. -->
-                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                  <path
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.25"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5"
-                  />
-                </svg>
-              </button>
-            </div>
-          {/each}
-        </div>
+        <!-- Basic-tab list grouped by complexity level. Mirrors the
+             family-grouped Parts tab: collapsible headers, level filter
+             popup anchored to the funnel button. Level classification
+             lives in $lib/cad/components/families.ts (LEVEL_BY_ID).
+             Filter state persists to localStorage under
+             'cad:enabledBasicLevels'. -->
+        {@const bfilt = componentList.filter((r) => familyOf(r.meta.id) === 'basic'
+                                                && enabledLevels.has(levelOf(r.meta.id))
+                                                && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
+        {@const bgroups = LEVELS.filter((lv) => enabledLevels.has(lv.id) && bfilt.some((r) => levelOf(r.meta.id) === lv.id))}
+        {#each bgroups as lv (lv.id)}
+          {@const collapsed = isFamilyCollapsed('basic', String(lv.id))}
+          <button
+            class="sb-subhead clickable"
+            class:collapsed
+            type="button"
+            onclick={() => toggleFamilyCollapse('basic', String(lv.id))}
+          >
+            <span class="sb-chevron">▾</span>
+            {lv.name}
+          </button>
+          {#if !collapsed}
+          <div class="sb-list">
+            {#each bfilt.filter((r) => levelOf(r.meta.id) === lv.id) as entry (entry.meta.id)}
+              <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
+                <button
+                  class="prim-link"
+                  class:active={activeTab?.id === `xml:${entry.meta.id}`}
+                  onclick={() => openRunes(entry)}
+                  title={entry.meta.name}
+                >
+                  <span class="dot"></span>
+                  <span class="pl-name">{entry.meta.name}</span>
+                </button>
+                <button
+                  class="prim-del"
+                  type="button"
+                  title={`Delete ${entry.meta.name}`}
+                  aria-label={`Delete ${entry.meta.name}`}
+                  onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                    <path
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.25"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5"
+                    />
+                  </svg>
+                </button>
+              </div>
+            {/each}
+          </div>
+          {/if}
+        {/each}
+        {#if bfilt.length === 0}<div class="sb-empty">No primitives in the enabled levels. Try toggling more levels in the filter, or clearing the search.</div>{/if}
       {/if}
       {#if sidebarTab === 'kb'}
         <!-- KB tab — Sources / DB sub-tab switcher. Sources lists raw
@@ -2844,6 +2907,53 @@ export const geom = defineGeom(meta, (p) => {
                 />
               </div>
               <div class="ff-section-desc">{fam.description}</div>
+            </label>
+          {/each}
+        </div>
+      </div>
+    {/snippet}
+  </FloatingPanel>
+
+  <!-- Level-filter FloatingPanel — Basic-tab counterpart of the family
+       filter. Same shape; LEVELS instead of FAMILIES. -->
+  <FloatingPanel
+    title="Show levels"
+    visible={levelFilterOpen}
+    onClose={() => (levelFilterOpen = false)}
+    x={levelFilterX}
+    y={levelFilterY}
+    width="540px"
+    maxHeight="60vh"
+  >
+    {#snippet children()}
+      <div class="ff-body" use:clickOutside={() => (levelFilterOpen = false)}>
+        <div class="ff-head">
+          <button class="ff-btn ff-btn-ghost" type="button" onclick={() => setAllLevels(true)}>Select all</button>
+          <button class="ff-btn ff-btn-ghost" type="button" onclick={() => setAllLevels(false)}>Unselect all</button>
+          <button class="ff-btn ff-btn-primary" type="button" onclick={() => (levelFilterOpen = false)}>Done</button>
+        </div>
+        <div class="ff-grid">
+          {#each LEVELS as lv (lv.id)}
+            {@const inLevel = componentList.filter((r) => familyOf(r.meta.id) === 'basic' && levelOf(r.meta.id) === lv.id).length}
+            {@const on = enabledLevels.has(lv.id)}
+            <label class="ff-section" class:enabled={on}>
+              <div class="ff-section-head">
+                <span class="ff-section-title">{lv.name}</span>
+                <span class="ff-section-meta">{inLevel}</span>
+                <input
+                  type="checkbox"
+                  class="ff-toggle"
+                  checked={on}
+                  onchange={(e) => {
+                    const checked = (e.currentTarget as HTMLInputElement).checked;
+                    const next = new Set(enabledLevels);
+                    if (checked) next.add(lv.id); else next.delete(lv.id);
+                    enabledLevels = next;
+                    saveEnabledLevels(next);
+                  }}
+                />
+              </div>
+              <div class="ff-section-desc">{lv.description}</div>
             </label>
           {/each}
         </div>

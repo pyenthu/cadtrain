@@ -64,6 +64,28 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
     - **Multi-primitive assembly recipes**: `docs/assemblies/<name>.md` — when the user asks for a named real-world assembly ("tubing hanger spool stack", "Christmas tree", "production packer"), check here first. Index + when-to-write rules: `docs/assemblies/README.md`. Template: `docs/assemblies/_TEMPLATE.md`. First worked example: `docs/assemblies/tubing_hanger_spool_stack.md`.
     - **When you build a new assembly or rename a primitive's vocabulary, write/update the corresponding `.md` BEFORE committing** — that's the only durable handoff to future sessions. Conversation memory evaporates; these files don't.
 
+15. **Sidebar entry classification — two-axis (tab → group → entry).** The `/primitives` sidebar uses a consistent classification pattern for every tab that lists components. New components are placed by editing ONE central map; the UI auto-groups, filters, and collapses based on that map.
+
+    **Pattern**:
+    - **Tab** (rail entry) = top-level scope. Currently: Basic / Parts / Assemblies / KB / Operator.
+    - **Group** = secondary classification axis specific to the tab. Parts groups by **Family** (8 families: casing_tubing, drillstring, wellhead_xt, etc). Basic groups by **Level** (1 = atomic shapes, 2 = with features). KB-DB groups by **Family**. Adding more axes for future tabs follows the same shape.
+    - **Entry** = the actual component / KB row / source / operator.
+
+    **Source of truth — one central map per axis** in `src/lib/cad/components/families.ts`:
+    - `FAMILY_BY_ID: Record<string, Family>` — family per component id
+    - `LEVEL_BY_ID: Record<string, Level>` — level per basic-family component id
+
+    When you add a new component, edit only this map; the sidebar auto-discovers the file via `import.meta.glob` and renders it in the appropriate group. Components missing from a map fall back to a safe default (`familyOf` returns `'basic'`, `levelOf` returns `1`) so the entry stays visible until classified — no silent disappearance.
+
+    **UI contract** (mirror this when adding a new group axis):
+    - **Funnel filter button** inline with the sidebar search input, shown only when the active tab uses this axis (`{#if sidebarTab === 'components'}` / `{#if sidebarTab === 'basic'}`).
+    - **FloatingPanel popup** anchored to the funnel via `getBoundingClientRect`. 2-column card grid, Select-all / Unselect-all / Done action row pinned at the top, click-outside-to-close.
+    - **Persistent filter state** via localStorage. One key per axis: `cad:enabledFamilies`, `cad:enabledBasicLevels`. Load in `onMount`; save on every toggle.
+    - **Collapsible group headers** in the list. State in `collapsedFamilies` (a Set keyed by `<ctx>:<groupId>`). The ctx string (`'components'`, `'basic'`, …) namespaces collapse state per tab so the same group id across tabs doesn't collide.
+    - **Default state** in the helper: `defaultEnabledFamilies()` (every non-basic family on), `defaultEnabledLevels()` (every level on).
+
+    **Don't**: hard-code a `family` or `level` field per component file; per-file annotations drift, the central map doesn't. Don't introduce a new axis without a corresponding `<map>_BY_ID` in `families.ts`.
+
 ## Open TODOs (out-of-scope findings)
 
 - **Default-param primitive renders collapse for pHash AND CLIP.**
