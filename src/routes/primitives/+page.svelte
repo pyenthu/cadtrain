@@ -40,6 +40,7 @@
   // imperative ManifoldCAD source as builder.ts. Lives in the XML Primitive
   // tab; kept separate from the legacy primitives until the swap is trusted.
   import { loadComponentRegistry, defaultsFor, type ComponentEntry, type DerivedSchema, type ParamSchema } from '$lib/cad/components';
+  import { FAMILIES, FAMILY_BY_ID, familyOf, loadEnabledFamilies, saveEnabledFamilies, type Family } from '$lib/cad/components/families';
   import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
 
   function createRenderer(canvas: HTMLCanvasElement) {
@@ -95,15 +96,22 @@
     // the rail so it's immediately reachable while the legacy primitives
     // are migrated. Doesn't claim COMPONENTS entries; the sidebar renders
     // a component list under this tab.
+    // Basic — pure geometric building blocks. Restricted to component
+    // ids whose family is 'basic' in $lib/cad/components/families.ts.
     {
-      id: 'xml_primitive',
+      id: 'basic',
       name: 'Basic',
       match: () => false,
     },
+    // Components — named real-world parts, grouped by family
+    // (Casing & Tubing, Drillstring, Wellheads & Christmas Trees,
+    // Packers & Bridge Plugs, Fishing & Intervention, Artificial Lift,
+    // Flow Control). The filter popup next to the search bar controls
+    // which families are visible.
     {
       id: 'components',
       name: 'Components',
-      match: () => false, // populated later — placeholder for level 3.
+      match: () => false,
     },
     {
       id: 'assemblies',
@@ -290,7 +298,14 @@
    *  collapsible folder tree — now a tab strip across the top of the
    *  sidebar with a flat primitive list beneath. Defaults to XML Primitive
    *  (the new declarative pipeline) so it's the entry point on first load. */
-  let sidebarTab = $state<string>('xml_primitive');
+  let sidebarTab = $state<string>('basic');
+  /** Which non-basic families show in the Components tab. Persisted to
+   *  localStorage via the helpers in $lib/cad/components/families.ts —
+   *  initialized in onMount once `localStorage` is available. */
+  let enabledFamilies = $state<Set<Family>>(new Set());
+  /** Filter popup visibility — anchored under the search row in the
+   *  Components tab. */
+  let familyFilterOpen = $state<boolean>(false);
   /** Top-level sidebar split — 'parts' shows the existing primitive
    *  trees (Components / Compositions / Assemblies / KB / XML Primitive),
    *  'operator' shows higher-level CAD operations (cut slots, extrude,
@@ -1416,6 +1431,7 @@ export const geom = defineGeom(meta, (p) => {
     import('$lib/shared/ComponentScene.svelte').then((m) => { SceneComponent = m.default; });
     import('$lib/shared/SceneControls.svelte').then((m) => { SceneControls = m.default; });
     initManifold().then(() => { ready = true; });
+    enabledFamilies = loadEnabledFamilies();
     // Async-load the registry from /api/components/list before deciding what
     // to auto-open. Priority:
     //   1. Last primitive the user was editing this session (sessionStorage
@@ -2294,10 +2310,10 @@ export const geom = defineGeom(meta, (p) => {
            Selected tab swaps the flat list shown to its right. -->
       <div class="sb-rail">
         {#each TREE as f (f.id)}
-          {@const count = f.id === 'components' ? COMPONENTS_L3.filter((c) => c.tier === 3).length
+          {@const count = f.id === 'basic' ? componentList.filter((r) => familyOf(r.meta.id) === 'basic').length
+                       : f.id === 'components' ? componentList.filter((r) => familyOf(r.meta.id) !== 'basic' && enabledFamilies.has(familyOf(r.meta.id))).length
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
                        : f.id === 'kb' ? kbList.length
-                       : f.id === 'xml_primitive' ? componentList.length
                        : itemsInFolder(f).length}
           <button
             class="sb-tab"
@@ -2376,29 +2392,78 @@ export const geom = defineGeom(meta, (p) => {
       </div>
 
       {#if sidebarTab === 'components'}
-        <!-- Level-3 Components — multi-PART physical items (HF-1 packer,
-             HS-ICV valve, Bottom Sub, Ratch-Latch). Filtered from
-             COMPONENTS_L3 by tier === 3. -->
-        {@const filt = COMPONENTS_L3.filter((c) => c.tier === 3 && (!filter || c.name.toLowerCase().includes(filter.toLowerCase()) || c.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase()))))}
-        {@const groups = Array.from(new Set(filt.map((c) => c.group ?? 'Other')))}
-        {#each groups as g (g)}
-          <div class="sb-subhead">{g}</div>
+        <!-- Named single-file components, grouped by family. Family
+             classification lives in $lib/cad/components/families.ts;
+             the filter popup (⌕ button next to the search row) controls
+             which families show. Filter state persists to localStorage
+             under key 'cad:enabledFamilies'. -->
+        <div class="family-filter-row">
+          <button class="family-filter-btn" type="button" onclick={() => (familyFilterOpen = !familyFilterOpen)} title="Filter families">
+            <span class="ff-icon">⌕</span>
+            <span class="ff-label">Families ({enabledFamilies.size}/{FAMILIES.length - 1})</span>
+          </button>
+        </div>
+        {#if familyFilterOpen}
+          <div class="family-popup">
+            <div class="fp-hdr">Show families <button class="fp-x" onclick={() => (familyFilterOpen = false)} aria-label="Close">×</button></div>
+            <div class="fp-grid">
+              {#each FAMILIES.filter((fam) => fam.id !== 'basic') as fam (fam.id)}
+                {@const inFamily = componentList.filter((r) => familyOf(r.meta.id) === fam.id).length}
+                <label class="family-card" class:enabled={enabledFamilies.has(fam.id)}>
+                  <input
+                    type="checkbox"
+                    checked={enabledFamilies.has(fam.id)}
+                    onchange={(e) => {
+                      const on = (e.currentTarget as HTMLInputElement).checked;
+                      const next = new Set(enabledFamilies);
+                      if (on) next.add(fam.id); else next.delete(fam.id);
+                      enabledFamilies = next;
+                      saveEnabledFamilies(next);
+                    }}
+                  />
+                  <div class="fc-body">
+                    <div class="fc-name">{fam.name} <span class="fc-count">{inFamily}</span></div>
+                    <div class="fc-desc">{fam.description}</div>
+                  </div>
+                </label>
+              {/each}
+            </div>
+          </div>
+        {/if}
+        {@const filt = componentList.filter((r) => familyOf(r.meta.id) !== 'basic'
+                                              && enabledFamilies.has(familyOf(r.meta.id))
+                                              && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
+        {@const groups = FAMILIES.filter((fam) => fam.id !== 'basic' && enabledFamilies.has(fam.id) && filt.some((r) => familyOf(r.meta.id) === fam.id))}
+        {#each groups as fam (fam.id)}
+          <div class="sb-subhead">{fam.name}</div>
           <div class="sb-list">
-            {#each filt.filter((c) => (c.group ?? 'Other') === g) as c (c.id)}
-              <button
-                class="prim-link"
-                class:active={activeTab?.id === `comp:${c.id}`}
-                onclick={() => openComposite('comp', c)}
-                title={c.description}
-              >
-                <span class="dot" class:pipe={c.kind === 'tool'}></span>
-                <span class="pl-name">{c.name}</span>
-                {#if c.kind === 'tool'}<span class="prim-kid-count">tool</span>{/if}
-              </button>
+            {#each filt.filter((r) => familyOf(r.meta.id) === fam.id) as entry (entry.meta.id)}
+              <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
+                <button
+                  class="prim-link"
+                  class:active={activeTab?.id === `xml:${entry.meta.id}`}
+                  onclick={() => openRunes(entry)}
+                  title={entry.meta.name}
+                >
+                  <span class="dot"></span>
+                  <span class="pl-name">{entry.meta.name}</span>
+                </button>
+                <button
+                  class="prim-del"
+                  type="button"
+                  title={`Delete ${entry.meta.name}`}
+                  aria-label={`Delete ${entry.meta.name}`}
+                  onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5" />
+                  </svg>
+                </button>
+              </div>
             {/each}
           </div>
         {/each}
-        {#if filt.length === 0}<div class="sb-empty">No components match "{filter}".</div>{/if}
+        {#if filt.length === 0}<div class="sb-empty">No components in the enabled families. Try toggling more families in the filter, or clearing the search.</div>{/if}
       {/if}
       {#if sidebarTab === 'assemblies'}
         {@const filt = ASSEMBLIES_L4.filter((a) => !filter || a.name.toLowerCase().includes(filter.toLowerCase()) || a.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase())))}
@@ -2421,11 +2486,13 @@ export const geom = defineGeom(meta, (p) => {
         {/each}
         {#if filt.length === 0}<div class="sb-empty">No assemblies match "{filter}".</div>{/if}
       {/if}
-      {#if sidebarTab === 'xml_primitive'}
-        <!-- Single-file primitives — auto-discovered from src/lib/cad/parts
-             via import.meta.glob. The "+ New" button at the top creates a
-             new file via /api/components/save (create:true). Vite HMR picks up
-             the new file and adds it to the list automatically. -->
+      {#if sidebarTab === 'basic'}
+        <!-- Basic — pure geometric building blocks (familyOf === 'basic').
+             Auto-discovered from src/lib/cad/components/ via import.meta.glob.
+             The "+ New" button at the top creates a new file via
+             /api/components/save (create:true). Vite HMR picks up the new
+             file and adds it to the list automatically. Named real-world
+             components live in the Components tab, not here. -->
         <button
           class="sb-add"
           type="button"
@@ -2452,7 +2519,7 @@ export const geom = defineGeom(meta, (p) => {
         {/if}
 
         <div class="sb-list">
-          {#each componentList.filter((r) => !filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())) as entry (entry.meta.id)}
+          {#each componentList.filter((r) => familyOf(r.meta.id) === 'basic' && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase()))) as entry (entry.meta.id)}
             <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
               <button
                 class="prim-link"
@@ -2517,7 +2584,7 @@ export const geom = defineGeom(meta, (p) => {
         {/if}
       {/if}
       {#each TREE as f (f.id)}
-        {#if f.id === sidebarTab && f.id !== 'kb' && f.id !== 'components' && f.id !== 'assemblies' && f.id !== 'xml_primitive'}
+        {#if f.id === sidebarTab && f.id !== 'kb' && f.id !== 'components' && f.id !== 'assemblies' && f.id !== 'basic'}
           {@const items = itemsInFolder(f).filter(matchesFilter)}
           {@const subClaims = (f.sub ?? []).flatMap((sf) => itemsInFolder(sf))}
           {@const leafItems = items.filter((c) => !subClaims.includes(c) && isTopLevel(c, items))}
@@ -3702,6 +3769,58 @@ export const geom = defineGeom(meta, (p) => {
     text-align: center;
   }
   .sb-add:hover { background: #cc2222; color: #fff; }
+
+  /* Family filter — Components-tab popover that toggles which families
+     show in the grouped list below. Anchored under the search row. */
+  .family-filter-row { padding: 4px 0 6px; display: flex; }
+  .family-filter-btn {
+    background: #fff; border: 1px solid #ddd; cursor: pointer;
+    color: #333; font: 9px Arial; letter-spacing: 0.3px;
+    padding: 3px 8px; border-radius: 11px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .family-filter-btn:hover { background: #f5f5f5; border-color: #cc2222; color: #cc2222; }
+  .family-filter-btn .ff-icon { font-size: 11px; line-height: 1; }
+  .family-filter-btn .ff-label { font-weight: 600; }
+  .family-popup {
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    padding: 8px; margin: 0 0 8px;
+  }
+  .family-popup .fp-hdr {
+    display: flex; justify-content: space-between; align-items: center;
+    font: bold 9px Arial; letter-spacing: 0.5px; text-transform: uppercase;
+    color: #666; padding: 0 0 6px; border-bottom: 1px solid #eee; margin: 0 0 8px;
+  }
+  .family-popup .fp-x {
+    background: transparent; border: none; cursor: pointer;
+    color: #999; font: 14px Arial; line-height: 1; padding: 0 4px;
+  }
+  .family-popup .fp-x:hover { color: #cc2222; }
+  .family-popup .fp-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .family-card {
+    display: flex; gap: 6px; align-items: flex-start;
+    border: 1px solid #e5e5e5; border-radius: 4px; padding: 6px 8px;
+    cursor: pointer; background: #fafafa;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .family-card:hover { border-color: #cc2222; }
+  .family-card.enabled { background: #fff; border-color: #cc2222; }
+  .family-card input[type="checkbox"] { margin: 2px 0 0; accent-color: #cc2222; cursor: pointer; }
+  .family-card .fc-body { flex: 1; min-width: 0; }
+  .family-card .fc-name { font: bold 10px Arial; color: #333; margin: 0 0 2px; }
+  .family-card .fc-name .fc-count {
+    display: inline-block; background: #eee; color: #555; border-radius: 8px;
+    padding: 0 6px; margin-left: 4px; font: 9px monospace;
+  }
+  .family-card.enabled .fc-name .fc-count { background: #cc2222; color: #fff; }
+  .family-card .fc-desc {
+    font: 9px Arial; color: #777; line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
   /* Row wraps the caret + the clickable primitive button. Children indent
      via --depth so derived primitives nest under their parent. */
   .prim-row {
