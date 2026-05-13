@@ -7,7 +7,7 @@ export const meta = {
   description: 'Segmented gripping ring with sawtooth profile.',
   tags: ['slip', 'grip', 'anchor', 'hold-down', 'drag block'],
   params: {
-    slipOD: { label: 'Slip OD', min: 1, max: 6, step: 0.1, unit: 'in', default: 2.8 },
+    slipOD: { label: 'Slip OD', min: 1, max: 6, step: 0.1, unit: 'in', default: 2.4 },
     bodyOD: { label: 'Body OD (inner)', min: 0.5, max: 4, step: 0.1, unit: 'in', default: 2.0 },
     height: { label: 'Height', min: 0.5, max: 4, step: 0.1, unit: 'in', default: 2.0 },
     numSectors: { label: 'Sectors', min: 2, max: 8, step: 1, unit: '', default: 6 },
