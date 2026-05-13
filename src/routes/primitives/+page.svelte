@@ -2942,11 +2942,17 @@ export const geom = defineGeom(meta, (p) => {
         />
       </div>
     {:else if activeTab && activeTab.kind === 'source'}
-      <!-- Source tab body — embedded document viewer. URLs render in an
-           <iframe>; local PDFs go through /api/kb/source-pdf which
-           streams from kb-sources/. Web pages may refuse to iframe
-           (X-Frame-Options / CSP frame-ancestors); the fallback link
-           in the header bar lets the user open externally. -->
+      <!-- Source tab body — embedded document viewer.
+           - Local PDFs use <embed type="application/pdf"> (Chrome's
+             built-in PDF viewer; <iframe sandbox=...> blocks it).
+           - URLs render in <iframe> with no sandbox (most sites that
+             refuse iframing do so via X-Frame-Options / CSP — sandbox
+             doesn't change that, and dropping it lets pages that DO
+             allow embedding work normally; the "Open externally"
+             header link is the fallback).
+           - Both elements are keyed by activeTab.id via the #key
+             block so switching source tabs fully remounts the viewer
+             instead of reusing a stale, failed-load element. -->
       {@const isPdf = !activeTab.sourceUrl && !!activeTab.sourceFile}
       {@const viewerSrc = activeTab.sourceUrl ?? (activeTab.sourceFile ? `/api/kb/source-pdf?path=${encodeURIComponent(activeTab.sourceFile)}` : '')}
       <div class="tab-body source-tab">
@@ -2959,13 +2965,23 @@ export const geom = defineGeom(meta, (p) => {
           {/if}
         </div>
         {#if viewerSrc}
-          <iframe
-            class="source-iframe"
-            src={viewerSrc}
-            title={activeTab.sourceLabel ?? activeTab.label}
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-            referrerpolicy="no-referrer"
-          ></iframe>
+          {#key activeTab.id}
+            {#if isPdf}
+              <embed
+                class="source-iframe"
+                type="application/pdf"
+                src={viewerSrc}
+                title={activeTab.sourceLabel ?? activeTab.label}
+              />
+            {:else}
+              <iframe
+                class="source-iframe"
+                src={viewerSrc}
+                title={activeTab.sourceLabel ?? activeTab.label}
+                referrerpolicy="no-referrer"
+              ></iframe>
+            {/if}
+          {/key}
         {:else}
           <div class="source-empty">No URL or local file available for this source.</div>
         {/if}
