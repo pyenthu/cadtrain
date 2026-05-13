@@ -59,6 +59,40 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
       "https://<svc>.up.railway.app/api/volume?path=archive&action=mkdir"
     ```
 
+    **Verification — Playwright volume spec** (`tests/e2e/volume.spec.ts`):
+    end-to-end PUT/GET/DELETE round-trip + `/api/kb/sources` listing.
+    Three modes, each gated by env vars so the spec runs cleanly in any
+    configuration:
+    ```sh
+    # Mode 1 — dev only, exercises ./.dev-volume/ locally:
+    bun run test:volume
+
+    # Mode 2 — dev proxying to prod (proves the proxy path is live):
+    CADTRAIN_VOLUME_REMOTE_URL=https://<svc>.up.railway.app \
+    CADTRAIN_VOLUME_TOKEN=<token> \
+      bun run test:volume
+
+    # Mode 3 — direct prod assertions + cross-instance visibility
+    #          (dev writes via proxy → prod reads it back natively):
+    CADTRAIN_VOLUME_REMOTE_URL=https://<svc>.up.railway.app \
+    CADTRAIN_VOLUME_TOKEN=<token> \
+    PROD_VOLUME_URL=https://<svc>.up.railway.app \
+    PROD_VOLUME_TOKEN=<token> \
+      bun run test:volume
+    ```
+
+    **One-time Railway-side setup** (do this before Mode 2/3 can work):
+    1. Railway dashboard → service → Variables → attach a volume mounted
+       at `/app_data` (suggested 5 GB).
+    2. Add `CADTRAIN_VOLUME_TOKEN=<openssl rand -hex 32>` as a service
+       variable. Same value goes into your local `.env.local`.
+    3. Trigger a redeploy. Watch the Railway dashboard's Deployments tab
+       for build + container start; healthcheck hits `/api/cache/stats`
+       and must return 200.
+    4. Optional: seed the prod volume with the dev `kb-sources/` PDFs via
+       the curl commands above, or by running Mode 3 of the test suite
+       (the test writes to `archive/playwright-…` and cleans up).
+
 14. **Compounding context for drawings — components + assembly recipes.** Before generating a new single-file component or composing a multi-part assembly, check the catalog so you build on prior work instead of starting from first principles:
     - **Per-component specs**: `src/lib/cad/components/<id>.md` — each single-file component should have a sibling `.md` documenting what real-world part it models, vocabulary, validation, derived params. Template: `docs/PRIMITIVE_TEMPLATE.md`. Strong example: `src/lib/cad/components/conn_box.md`.
     - **Multi-primitive assembly recipes**: `docs/assemblies/<name>.md` — when the user asks for a named real-world assembly ("tubing hanger spool stack", "Christmas tree", "production packer"), check here first. Index + when-to-write rules: `docs/assemblies/README.md`. Template: `docs/assemblies/_TEMPLATE.md`. First worked example: `docs/assemblies/tubing_hanger_spool_stack.md`.
