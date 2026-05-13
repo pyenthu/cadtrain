@@ -84,7 +84,14 @@ test.describe('Volume CRUD — direct production', () => {
   test('PUT then GET round-trip on prod returns identical bytes', async () => {
     const ctx = await pwRequest.newContext({
       baseURL: PROD_URL,
-      extraHTTPHeaders: { 'X-Volume-Token': PROD_TOKEN! },
+      extraHTTPHeaders: {
+        'X-Volume-Token': PROD_TOKEN!,
+        // SvelteKit CSRF guard rejects PUT/POST/PATCH/DELETE without a
+        // matching Origin header. Set it explicitly here — the
+        // Playwright `request` context doesn't add one automatically
+        // for non-browser HTTP calls.
+        Origin: PROD_URL!,
+      },
     });
     try {
       const path = testPath();
@@ -111,7 +118,14 @@ test.describe('Volume CRUD — direct production', () => {
   test('Prod /api/kb/sources returns a list', async () => {
     const ctx = await pwRequest.newContext({
       baseURL: PROD_URL,
-      extraHTTPHeaders: { 'X-Volume-Token': PROD_TOKEN! },
+      extraHTTPHeaders: {
+        'X-Volume-Token': PROD_TOKEN!,
+        // SvelteKit CSRF guard rejects PUT/POST/PATCH/DELETE without a
+        // matching Origin header. Set it explicitly here — the
+        // Playwright `request` context doesn't add one automatically
+        // for non-browser HTTP calls.
+        Origin: PROD_URL!,
+      },
     });
     try {
       const r = await ctx.get('/api/kb/sources');

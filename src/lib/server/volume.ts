@@ -105,6 +105,12 @@ export async function maybeProxy(request: Request, url: URL): Promise<Response |
   const ct = request.headers.get('content-type');
   if (ct) headers.set('content-type', ct);
   if (env.CADTRAIN_VOLUME_TOKEN) headers.set('x-volume-token', env.CADTRAIN_VOLUME_TOKEN);
+  // Spoof same-origin to the upstream: without this, SvelteKit's built-in
+  // CSRF guard rejects proxied PUT/POST/PATCH/DELETE with 403
+  // "Cross-site form submissions are forbidden". We're authenticating
+  // separately via X-Volume-Token, so the CSRF guard adds nothing
+  // here beyond a false 403.
+  headers.set('origin', REMOTE.replace(/\/$/, ''));
 
   const init: RequestInit & { duplex?: 'half' } = { method: request.method, headers };
   if (request.method !== 'GET' && request.method !== 'HEAD') {

@@ -35,8 +35,11 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
     
     **Transfer commands** (run from local against prod):
     ```sh
-    # Upload a file
+    # Upload a file. NOTE: Origin header is required to satisfy
+    # SvelteKit's built-in CSRF guard (cross-site PUT/POST/PATCH
+    # without matching Origin are 403'd before any auth runs).
     curl -X PUT \
+      -H "Origin: https://<svc>.up.railway.app" \
       -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
       --data-binary @local-bha.pdf \
       "https://<svc>.up.railway.app/api/volume?path=kb-sources/bha-reference.pdf"
@@ -50,12 +53,16 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
     curl -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
       "https://<svc>.up.railway.app/api/volume?path=kb-sources"
     
-    # Delete a file
-    curl -X DELETE -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+    # Delete a file (Origin required — same CSRF gate)
+    curl -X DELETE \
+      -H "Origin: https://<svc>.up.railway.app" \
+      -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
       "https://<svc>.up.railway.app/api/volume?path=kb-sources/old.pdf"
     
-    # Create a subdirectory
-    curl -X POST -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
+    # Create a subdirectory (Origin required — same CSRF gate)
+    curl -X POST \
+      -H "Origin: https://<svc>.up.railway.app" \
+      -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
       "https://<svc>.up.railway.app/api/volume?path=archive&action=mkdir"
     ```
 
