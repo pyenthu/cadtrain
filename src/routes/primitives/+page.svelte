@@ -3966,10 +3966,10 @@ export const geom = defineGeom(meta, (p) => {
     /* Content-driven height: a touch of padding around the rotated
        label + count, no fixed min-height. Each wedge ends up as tall
        as its label needs. */
-    padding: 4px 1px;
+    padding: 5px 3px;
     width: 100%;
     display: flex; flex-direction: column-reverse;
-    align-items: center; justify-content: center; gap: 4px;
+    align-items: center; justify-content: center; gap: 3px;
     /* Wedge: square left edge against rail, angled right edge pointing
        outward toward the list when active. */
     clip-path: polygon(0 8px, 100% 0, 100% 100%, 0 calc(100% - 8px));
@@ -3983,7 +3983,7 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-tab-name {
     writing-mode: vertical-rl; transform: rotate(180deg);
-    font: bold 10px Arial; letter-spacing: 1.5px; text-transform: uppercase;
+    font: bold 9px Arial; letter-spacing: 0.8px; text-transform: uppercase;
     white-space: nowrap;
   }
   .sb-tab.compound .sb-tab-name { font-style: italic; }
