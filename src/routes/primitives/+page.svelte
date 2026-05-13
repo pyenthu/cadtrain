@@ -141,6 +141,16 @@
       name: 'Operator',
       match: () => false,
     },
+    // Test — scratch pad for source-document URLs. Paste a link, hit
+    // Add, click it later to open in a viewer tab. State persists in
+    // localStorage under 'cad:testLinks'. Used during authoring flows
+    // when the user (or Claude) needs to revisit a vendor page or PDF
+    // multiple times while extracting parts from the docs.
+    {
+      id: 'test',
+      name: 'Test',
+      match: () => false,
+    },
   ];
 
   function itemsInFolder(folder: Folder): typeof COMPONENTS {
@@ -392,6 +402,80 @@
     if (on) for (const l of LEVELS) next.add(l.id);
     enabledLevels = next;
     saveEnabledLevels(next);
+  }
+
+  // Test rail tab — link scratchpad. Each link has a stable id (used for
+  // dedup + delete), a URL, and optional human-readable label. State
+  // persists to localStorage as 'cad:testLinks'.
+  interface TestLink {
+    id: string;
+    url: string;
+    label?: string;
+    addedAt: number;
+  }
+  const TEST_LINKS_KEY = 'cad:testLinks';
+  let testLinks = $state<TestLink[]>([]);
+  let testInput = $state('');
+  let testInputError = $state('');
+
+  function loadTestLinks(): TestLink[] {
+    try {
+      const raw = localStorage.getItem(TEST_LINKS_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((x) => x && typeof x.url === 'string');
+    } catch { return []; }
+  }
+  function saveTestLinks(links: TestLink[]) {
+    try { localStorage.setItem(TEST_LINKS_KEY, JSON.stringify(links)); }
+    catch { /* private mode etc. */ }
+  }
+  function addTestLink() {
+    const raw = testInput.trim();
+    if (!raw) return;
+    // Sanity-check it parses as a URL. Reject otherwise — surface the
+    // error inline rather than silently dropping the input.
+    try { new URL(raw); }
+    catch { testInputError = 'Not a valid URL'; return; }
+    if (testLinks.some((l) => l.url === raw)) {
+      testInputError = 'Already in the list';
+      return;
+    }
+    let label: string | undefined;
+    try {
+      const u = new URL(raw);
+      label = u.hostname.replace(/^www\./, '') + u.pathname.replace(/\/$/, '');
+    } catch { /* fallthrough */ }
+    const next = [...testLinks, { id: `tl_${Date.now()}`, url: raw, label, addedAt: Date.now() }];
+    testLinks = next;
+    saveTestLinks(next);
+    testInput = '';
+    testInputError = '';
+  }
+  function deleteTestLink(id: string) {
+    const next = testLinks.filter((l) => l.id !== id);
+    testLinks = next;
+    saveTestLinks(next);
+  }
+  function openTestLink(link: TestLink) {
+    // Reuse the existing source-tab plumbing — same iframe shell, same
+    // tab kind. id is namespaced 'tl:' so it doesn't collide with the
+    // 'src:' tabs from the Sources sub-tab.
+    const id = `tl:${link.id}`;
+    if (openTabs.find((t) => t.id === id)) {
+      activeTabId = id;
+      return;
+    }
+    openTabs = [
+      ...openTabs,
+      {
+        id, kind: 'source', primId: '', label: link.label ?? link.url,
+        sourceUrl: link.url, sourceLabel: link.label ?? link.url,
+        params: {}, draft: false, vars: [],
+      },
+    ];
+    activeTabId = id;
   }
 
   /** Click-outside Svelte action. Mounts a document-level listener that
@@ -1597,6 +1681,7 @@ export const geom = defineGeom(meta, (p) => {
     initManifold().then(() => { ready = true; });
     enabledFamilies = loadEnabledFamilies();
     enabledLevels = loadEnabledLevels();
+    testLinks = loadTestLinks();
     // Async-load the registry from /api/components/list before deciding what
     // to auto-open. Priority:
     //   1. Last primitive the user was editing this session (sessionStorage
@@ -2451,6 +2536,7 @@ export const geom = defineGeom(meta, (p) => {
                        : f.id === 'assemblies' ? ASSEMBLIES_L4.length
                        : f.id === 'kb' ? kbList.length + kbSources.length
                        : f.id === 'operator' ? OPERATORS.length
+                       : f.id === 'test' ? testLinks.length
                        : itemsInFolder(f).length}
           <button
             class="sb-tab"
@@ -2860,6 +2946,62 @@ export const geom = defineGeom(meta, (p) => {
               <span class="sb-op-desc">{op.desc}</span>
             </button>
           {/each}
+        </div>
+      {/if}
+      {#if sidebarTab === 'test'}
+        <!-- Test tab — link scratchpad. Paste URLs to source documents
+             you want to revisit (vendor catalog pages, KB-source PDFs,
+             reference articles). Click a row to open the link in an
+             embedded viewer tab; trash icon removes the row.
+             Persistence is localStorage so it survives page reloads
+             but doesn't sync across browsers. -->
+        <div class="sb-test">
+          <form class="sb-test-add" onsubmit={(e) => { e.preventDefault(); addTestLink(); }}>
+            <input
+              class="sb-test-input"
+              type="url"
+              placeholder="Paste URL and press Enter"
+              bind:value={testInput}
+              oninput={() => (testInputError = '')}
+              aria-label="New test link URL"
+            />
+            <button class="sb-test-add-btn" type="submit" disabled={!testInput.trim()}>Add</button>
+          </form>
+          {#if testInputError}
+            <div class="sb-test-err">{testInputError}</div>
+          {/if}
+          {#if testLinks.length === 0}
+            <div class="sb-empty">Paste a URL above to start a list. Useful for vendor catalog pages or KB-source PDFs you'll revisit while authoring.</div>
+          {:else}
+            <div class="sb-list">
+              {#each testLinks as link (link.id)}
+                <div class="prim-row" class:active={activeTab?.id === `tl:${link.id}`}>
+                  <button
+                    class="prim-link"
+                    class:active={activeTab?.id === `tl:${link.id}`}
+                    type="button"
+                    onclick={() => openTestLink(link)}
+                    title={link.url}
+                  >
+                    <span class="dot"></span>
+                    <span class="pl-name">{link.label ?? link.url}</span>
+                  </button>
+                  <button
+                    class="prim-del"
+                    type="button"
+                    title="Delete this link"
+                    aria-label={`Delete ${link.label ?? link.url}`}
+                    onclick={(e) => { e.stopPropagation(); deleteTestLink(link.id); }}
+                  >
+                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"
+                        d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5" />
+                    </svg>
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -3983,6 +4125,43 @@ export const geom = defineGeom(meta, (p) => {
   }
   .sb-op-name { font: 600 12px Arial; color: #222; }
   .sb-op-desc { font: 10px Arial; color: #888; line-height: 1.3; }
+
+  /* Test tab — link scratchpad. Same visual rhythm as the Parts/Basic
+     lists; only chrome difference is the URL paste row pinned at top. */
+  .sb-test {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    padding: 8px;
+    background: #fcfcfd;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .sb-test-add {
+    display: flex; gap: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #ececec;
+  }
+  .sb-test-input {
+    flex: 1; min-width: 0;
+    padding: 5px 7px;
+    font: 11px Arial; color: #222;
+    background: #fff;
+    border: 1px solid #d0d0d8;
+    border-radius: 3px;
+  }
+  .sb-test-input:focus { outline: none; border-color: #cc2222; }
+  .sb-test-add-btn {
+    padding: 5px 10px;
+    font: 600 10px Arial; color: #fff;
+    background: #cc2222;
+    border: none; border-radius: 3px;
+    cursor: pointer;
+  }
+  .sb-test-add-btn:hover:not(:disabled) { background: #a91d1d; }
+  .sb-test-add-btn:disabled { background: #d99595; cursor: not-allowed; }
+  .sb-test-err {
+    font: 10px Arial; color: #cc2222;
+    padding: 2px 4px;
+  }
   .sb-hdr-mark {
     color: #cc2222;
     font-size: 14px; line-height: 1;
