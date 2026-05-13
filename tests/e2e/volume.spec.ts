@@ -138,6 +138,77 @@ test.describe('Volume CRUD — direct production', () => {
     }
   });
 
+  test('Components overlay: list returns origin field and includes volume entries', async () => {
+    const ctx = await pwRequest.newContext({
+      baseURL: PROD_URL,
+      extraHTTPHeaders: { 'X-Volume-Token': PROD_TOKEN!, Origin: PROD_URL! },
+    });
+    try {
+      const r = await ctx.get('/api/components/list');
+      expect(r.status(), 'list must return 200').toBe(200);
+      const items = await r.json();
+      expect(Array.isArray(items), 'list payload must be an array').toBe(true);
+      expect(items.length, 'bundled baseline must be present (>= 11 basic)').toBeGreaterThan(10);
+      for (const e of items) {
+        expect(e).toHaveProperty('id');
+        expect(e).toHaveProperty('origin');
+        expect(['bundle', 'volume'].includes(e.origin), `origin must be bundle|volume (got ${e.origin})`).toBe(true);
+        expect(typeof e.hasGeom).toBe('boolean');
+      }
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  test('Components save: write new primitive to volume, list surfaces it as origin=volume', async () => {
+    const ctx = await pwRequest.newContext({
+      baseURL: PROD_URL,
+      extraHTTPHeaders: { 'X-Volume-Token': PROD_TOKEN!, Origin: PROD_URL! },
+    });
+    try {
+      const id = `pw_probe_${Date.now()}`;
+      const source = `// Playwright-generated probe primitive — safe to delete.
+import { tube } from '../manifold-helpers';
+import { defineGeom } from '.';
+export const meta = {
+  id: '${id}',
+  name: 'Playwright Probe',
+  description: 'Volume-overlay round-trip probe.',
+  tags: ['probe'],
+  params: {
+    od: { label: 'OD', min: 1, max: 5, step: 0.1, unit: 'in', default: 2 },
+    length: { label: 'Length', min: 1, max: 8, step: 0.1, unit: 'in', default: 3 },
+  },
+} as const;
+export const geom = defineGeom(meta, (p) => tube(p.od/2, p.od/2 - 0.2, p.length));
+`;
+
+      // Create — should write to <volume>/components/<id>.ts
+      const save = await ctx.post('/api/components/save', {
+        data: { id, source, create: true },
+      });
+      expect(save.status(), 'save must return 200').toBe(200);
+      const saveBody = await save.json();
+      expect(saveBody.ok, 'save body.ok must be true').toBe(true);
+
+      try {
+        // List should now include the new id with origin=volume and hasGeom=false
+        // (no bundle entry for this brand-new id).
+        const r = await ctx.get('/api/components/list');
+        const items = await r.json();
+        const found = items.find((e: any) => e.id === id);
+        expect(found, `${id} must appear in list after save`).toBeTruthy();
+        expect(found.origin).toBe('volume');
+        expect(found.hasGeom, 'brand-new volume-only id has no bundled geom').toBe(false);
+      } finally {
+        // Cleanup: DELETE returns ok even when GLB doesn't exist.
+        await ctx.delete('/api/components/delete', { data: { id } });
+      }
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
   test('Cross-instance visibility: dev write is visible to prod read', async ({ request, baseURL }) => {
     // Only meaningful if the dev server is itself proxying to the same prod.
     // Otherwise this test would write to local .dev-volume and try to read

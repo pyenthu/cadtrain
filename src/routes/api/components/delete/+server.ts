@@ -20,12 +20,15 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { unlink, readFile, access } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
+import { volumePath, maybeProxy, checkVolumeAuth } from '$lib/server/volume';
 
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
+const VOLUME_DIR = volumePath('components');
 const STATIC_DIR = join(process.cwd(), 'static', 'components');
 const AUTHORED_PATH = join(process.cwd(), 'training_data', 'authored_cache.jsonl');
 
@@ -73,7 +76,12 @@ async function findAuthoredReferences(primId: string): Promise<AuthoredReference
   return refs;
 }
 
-export const DELETE: RequestHandler = async ({ request }) => {
+export const DELETE: RequestHandler = async ({ request, url }) => {
+  // Forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set in env.
+  const proxied = await maybeProxy(request, url);
+  if (proxied) return proxied;
+  checkVolumeAuth(request, url);
+
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
   const { id } = body as { id?: unknown };
@@ -82,18 +90,32 @@ export const DELETE: RequestHandler = async ({ request }) => {
     throw error(400, `Invalid id format "${id}"`);
   }
 
-  if (!dev) {
-    return json({
-      ok: false,
-      reason: 'Production overlay loader not wired yet — delete disabled.',
-    }, { status: 503 });
+  // Decide which target dir holds the file. In prod we ONLY delete from
+  // the volume overlay — never the bundle (the bundle is read-only at
+  // runtime and a delete request against a bundle-only id is a 400). In
+  // dev we delete from src/ as before. When a volume overlay exists in
+  // prod, the delete removes the overlay and the bundle entry "comes
+  // back" automatically on the next list request.
+  const targetDir = dev ? SRC_DIR : VOLUME_DIR;
+  const tsPath = join(targetDir, `${id}.ts`);
+  const mdPath = join(targetDir, `${id}.md`);
+
+  if (!dev && !existsSync(tsPath)) {
+    // No volume overlay for this id. Either it's a bundle-only baseline
+    // (refuse — that's a deploy-time action, not a runtime delete) or
+    // the id is unknown entirely.
+    if (COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
+      return json({
+        ok: false,
+        reason: `"${id}" is a bundled baseline component — delete it from src/lib/cad/components and redeploy. Runtime delete only removes volume overlays.`,
+      }, { status: 400 });
+    }
+    throw error(400, `Unknown component id "${id}" — no overlay and not in bundle.`);
   }
 
-  // Defense: refuse if id isn't currently in the build-time registry. The
-  // registry is the source of truth for what's installed; if the user is
-  // trying to delete something that doesn't exist there, either the file
-  // was already removed or the id was typo'd — surface as a 400.
-  if (!COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
+  // In dev: id must be in the build-time registry (Vite has it). In prod:
+  // we already checked the overlay exists above, so accept that path.
+  if (dev && !COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
     throw error(400, `Unknown component id "${id}" — not in registry.`);
   }
 
@@ -108,9 +130,9 @@ export const DELETE: RequestHandler = async ({ request }) => {
     }, { status: 409 });
   }
 
-  const tsPath = join(SRC_DIR, `${id}.ts`);
   const glbPath = join(STATIC_DIR, `${id}.glb`);
   let tsRemoved = false;
+  let mdRemoved = false;
   let glbRemoved = false;
   try {
     await unlink(tsPath);
@@ -118,6 +140,12 @@ export const DELETE: RequestHandler = async ({ request }) => {
   } catch (e: any) {
     if (e?.code !== 'ENOENT') throw error(500, `Failed to delete source: ${e?.message ?? e}`);
   }
+  // .md sibling — only delete from the same dir we just deleted the .ts
+  // from. Missing .md is fine.
+  try {
+    await unlink(mdPath);
+    mdRemoved = true;
+  } catch { /* no .md or already gone — fine */ }
   try {
     await unlink(glbPath);
     glbRemoved = true;
@@ -132,6 +160,6 @@ export const DELETE: RequestHandler = async ({ request }) => {
 
   return json({
     ok: true,
-    removed: { ts: tsRemoved, glb: glbRemoved },
+    removed: { ts: tsRemoved, md: mdRemoved, glb: glbRemoved },
   });
 };

@@ -4,16 +4,28 @@
  * Persist an edited component .ts source file from the in-browser editor
  * (Script popup → Svelte tab → editable CodeMirror) back to disk.
  *
- * In dev: writes directly to `src/lib/cad/components/<id>.ts` so Vite
- * HMR picks up the change and the page hot-reloads with the new geometry.
- * In production: writes to `/data/components/<id>.ts` (Railway volume) — the
- * component registry is expected to consult that overlay first (separate task,
- * not yet wired). For now production saves no-op with a 503 so we don't
- * mutate baked-in source on a deploy.
+ * Two write paths, picked by environment:
+ *
+ *   - **Dev**: writes to `src/lib/cad/components/<id>.ts` so Vite HMR
+ *     picks up the change and the page hot-reloads with the new geometry.
+ *     Commit the file to make the edit permanent.
+ *   - **Prod**: writes to `<volume>/components/<id>.ts` (per
+ *     `volumePath('components')` — Railway `/app_data/components/<id>.ts`).
+ *     /api/components/list merges the volume overlay over the bundle
+ *     entries (volume wins on id collision), so the saved file appears
+ *     in the next list request. Brand-new ids without a bundled geom
+ *     get `hasGeom: false` on the list response until a bundle rebuild;
+ *     existing-id overlays inherit the bundled geom immediately.
+ *
+ * Cross-instance proxy: when CADTRAIN_VOLUME_REMOTE_URL is set in the
+ * caller's env (typically a developer's .env.local), the call forwards
+ * to prod with X-Volume-Token, so dev "saves to prod" through a single
+ * keystroke. Auth on the prod side uses checkVolumeAuth — same-origin
+ * browser traffic is trusted, cross-origin needs the token.
  *
  * Safety:
  *   - id must match a known entry in the component registry (whitelist; no
- *     arbitrary file writes).
+ *     arbitrary file writes) UNLESS create:true is passed.
  *   - source must be reasonably small (< 256KB) — guards against accidental
  *     paste of a giant blob.
  *   - the on-disk path is rebuilt from a sanitized id, never trusted from
@@ -28,7 +40,7 @@ import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY, defaultsFor, geomById } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 import { bakeGlb } from '$lib/server/manifold-bake';
-import { volumePath } from '$lib/server/volume';
+import { volumePath, maybeProxy, checkVolumeAuth, ensureDir } from '$lib/server/volume';
 
 /** Tiny default-params extractor — pulls each `params.<name>.default`
  *  out of the raw source text. Used by the save endpoint to bake a GLB
@@ -61,11 +73,21 @@ function extractDefaultsFromSource(src: string): Record<string, number> {
 
 const MAX_BYTES = 256 * 1024;
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
-// Production overlay lives on the Railway volume now (was hardcoded
-// `/data/components` — single-volume consolidation 2026-05-13).
 const VOLUME_DIR = volumePath('components');
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, url }) => {
+  // Cross-instance proxy. When CADTRAIN_VOLUME_REMOTE_URL is set in
+  // .env.local, forward the save to prod. Token + Origin go on with
+  // maybeProxy so prod's CSRF + auth checks pass.
+  const proxied = await maybeProxy(request, url);
+  if (proxied) return proxied;
+
+  // Auth on the receiving side. Same-origin browser sessions hitting
+  // this prod endpoint are trusted without a token; cross-origin
+  // callers (curl, the dev proxy) need X-Volume-Token. Unset locally
+  // → endpoint open.
+  checkVolumeAuth(request, url);
+
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
@@ -97,20 +119,20 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(413, `Source too large (> ${MAX_BYTES} bytes)`);
   }
 
-  if (!dev) {
-    // Production overlay path is /data/components/<id>.ts. The component registry
-    // doesn't yet consult this overlay at runtime, so saving in prod
-    // would silently no-op from the user's perspective. Refuse for now.
-    return json({
-      ok: false,
-      reason: 'Production overlay loader not wired yet — saving disabled. Edit the source file locally and deploy.',
-      path: join(VOLUME_DIR, `${id}.ts`),
-    }, { status: 503 });
-  }
-
-  const path = join(SRC_DIR, `${id}.ts`);
+  // Pick the write destination:
+  //   - dev: src/lib/cad/components — Vite HMR sees the change, the page
+  //     hot-reloads with the new geom. Commit to make permanent.
+  //   - prod: $APP_DATA_DIR/components — the volume overlay. Persists
+  //     across redeploys; the next /api/components/list merges it over
+  //     the bundle (volume wins on id collision).
+  const targetDir = dev ? SRC_DIR : VOLUME_DIR;
+  const path = join(targetDir, `${id}.ts`);
   try {
-    await mkdir(SRC_DIR, { recursive: true });
+    if (dev) {
+      await mkdir(targetDir, { recursive: true });
+    } else {
+      ensureDir('components'); // volumePath-relative, idempotent
+    }
     await writeFile(path, source, 'utf8');
   } catch (e: any) {
     throw error(500, `Write failed: ${e?.message ?? e}`);

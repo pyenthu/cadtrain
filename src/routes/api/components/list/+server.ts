@@ -1,32 +1,51 @@
 /**
  * GET /api/components/list
  *
- * Returns the current registry of single-file components. Replaces the
- * build-time `import.meta.glob` discovery in src/lib/cad/components/
- * — that pattern doesn't pick up brand-new files in a long-running
- * dev session, and won't work at all when primitives eventually live
- * outside the source tree (Railway volume; task #18).
+ * Returns the current registry of single-file components. Two read
+ * sources merged at request time:
+ *
+ *   1. **Bundle** — `src/lib/cad/components/<id>.ts` shipped via the
+ *      runtime image. Provides the 26 baseline primitives. Read-only at
+ *      runtime — saves never modify these files in production (writes go
+ *      to the volume; see (2)).
+ *   2. **Volume** — `<volume>/components/<id>.ts` (volumePath('components')).
+ *      Writable. Saves from /api/components/save land here in prod;
+ *      sidecar .md files from /api/components/instructions also live
+ *      here. Volume wins on id collision, so a saved overlay shadows
+ *      the bundle file at runtime.
  *
  * Each entry carries the metadata needed by the sidebar + Inspector
  * (id / name / params / validate? presence) plus the raw .ts source
  * text for the Inspector's Svelte tab. The geom function itself is
  * NOT serialized — it's still imported statically by the registry
- * loader and joined to the API response by id, so geometry execution
- * stays local to the client bundle (no eval, no network round-trip
- * per slider drag).
+ * loader (build-time `import.meta.glob`) and joined to the API
+ * response by id, so geometry execution stays local to the client
+ * bundle (no eval, no network round-trip per slider drag).
  *
- * Cache: small in-memory cache keyed by file mtime. Invalidated by
- * /api/components/save (writes call invalidateRunesListCache). ETag header
- * lets the browser short-circuit unchanged responses.
+ * A volume-only entry (no bundled .ts) appears in the list with
+ * `origin: 'volume'` and `hasGeom: false` — the UI surfaces it as
+ * "needs bundle rebuild" so the user knows clicking it won't render
+ * geometry yet.
+ *
+ * Cross-instance proxy: when CADTRAIN_VOLUME_REMOTE_URL is set, the
+ * call forwards to that host and returns its response. Local dev can
+ * see prod's volume-saved components without setting up any local
+ * data.
+ *
+ * Cache: small in-memory cache keyed by file mtime across BOTH dirs.
+ * Invalidated by save / instructions / delete on write.
  */
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readdir, readFile, stat } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { getCachedList, setCachedList } from './cache';
+import { maybeProxy, volumePath } from '$lib/server/volume';
 
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
+const VOLUME_DIR = volumePath('components');
 
 interface ComponentListEntry {
   id: string;
@@ -41,20 +60,45 @@ interface ComponentListEntry {
    *  the model has the primitive's evolving spec in context. Empty
    *  string when the .md file doesn't exist. */
   instructions: string;
+  /** Where this entry was read from. 'bundle' = src/lib/cad/components
+   *  in the shipped image. 'volume' = $APP_DATA_DIR/components, written
+   *  by /api/components/save in prod. A 'volume' entry might not have
+   *  bundled geom yet — see hasGeom. */
+  origin: 'bundle' | 'volume';
+  /** True when the build-time component registry has a compiled geom
+   *  function for this id. Always true for 'bundle' entries; for
+   *  'volume' entries, true only when the id collides with a bundled
+   *  primitive (the overlay shadows the bundle source but reuses its
+   *  geom). false means "needs bundle rebuild to render". */
+  hasGeom: boolean;
+}
+
+async function dirSig(dir: string): Promise<string> {
+  // Snapshot a directory's relevant files + mtimes for cache invalidation.
+  // Missing dir is fine — returns empty string, contributes nothing.
+  if (!existsSync(dir)) return '';
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return '';
+  }
+  const files = entries.filter((f) => (f.endsWith('.ts') || f.endsWith('.md')) && f !== 'index.ts');
+  const parts: string[] = [];
+  for (const f of files.sort()) {
+    try {
+      const s = await stat(join(dir, f));
+      parts.push(`${f}:${s.mtimeMs}`);
+    } catch { /* file disappeared between readdir and stat — skip */ }
+  }
+  return parts.join('|');
 }
 
 async function buildSignature(): Promise<string> {
-  // Include both .ts and .md mtimes — editing the instructions doc for
-  // a primitive must invalidate the cached list so the new instructions
-  // are picked up on the next request.
-  const all = await readdir(SRC_DIR);
-  const files = all.filter((f) => (f.endsWith('.ts') || f.endsWith('.md')) && f !== 'index.ts');
-  const parts: string[] = [];
-  for (const f of files.sort()) {
-    const s = await stat(join(SRC_DIR, f));
-    parts.push(`${f}:${s.mtimeMs}`);
-  }
-  return parts.join('|');
+  // Cover both read sources so cache invalidation reflects either side.
+  const a = await dirSig(SRC_DIR);
+  const b = await dirSig(VOLUME_DIR);
+  return `bundle:${a}|volume:${b}`;
 }
 
 // ── Source-text meta extractor ───────────────────────────────────────────
@@ -194,42 +238,91 @@ function parseParams(v: string | null): Record<string, Record<string, unknown>> 
   return out;
 }
 
-async function buildList(): Promise<ComponentListEntry[]> {
-  const files = (await readdir(SRC_DIR)).filter(
-    (f) => f.endsWith('.ts') && f !== 'index.ts',
-  );
+/** Read a single component file (and its .md sibling, if present) into
+ *  a ComponentListEntry. Returns null when the source can't be parsed
+ *  as a valid component (missing meta block, missing id, etc). */
+async function readComponentFile(
+  dir: string,
+  filename: string,
+  origin: 'bundle' | 'volume',
+  bundledIds: Set<string>,
+): Promise<ComponentListEntry | null> {
+  const path = join(dir, filename);
+  let source = '';
+  try { source = await readFile(path, 'utf8'); } catch { return null; }
+  const body = extractMetaBody(source);
+  if (!body) return null;
+  const id = unquoteString(pullField(body, 'id'));
+  const name = unquoteString(pullField(body, 'name'));
+  if (!id || !name) return null;
+  // Read the .md sibling from the SAME directory the .ts came from —
+  // volume .md sits next to volume .ts, bundle .md sits next to bundle .ts.
+  let instructions = '';
+  try { instructions = await readFile(join(dir, `${id}.md`), 'utf8'); } catch { /* no .md */ }
+  // A volume entry has bundled geom only when the id ALSO exists in the
+  // build-time bundle (i.e. the overlay shadows a known primitive's source
+  // but reuses its compiled geom function). Brand-new volume-only ids
+  // have no geom until the bundle rebuilds.
+  const hasGeom = origin === 'bundle' || bundledIds.has(id);
+  return {
+    id,
+    name,
+    description: unquoteString(pullField(body, 'description')) ?? '',
+    tags: parseTagsArray(pullField(body, 'tags')),
+    params: parseParams(pullField(body, 'params')),
+    hasValidate: /\bvalidate\s*:/.test(body),
+    source,
+    instructions,
+    origin,
+    hasGeom,
+  };
+}
+
+async function readDir(dir: string, origin: 'bundle' | 'volume', bundledIds: Set<string>): Promise<ComponentListEntry[]> {
+  if (!existsSync(dir)) return [];
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const files = entries.filter((f) => f.endsWith('.ts') && f !== 'index.ts');
   const out: ComponentListEntry[] = [];
   for (const f of files) {
-    const path = join(SRC_DIR, f);
-    let source = '';
-    try { source = await readFile(path, 'utf8'); } catch { continue; }
-    const body = extractMetaBody(source);
-    if (!body) continue;
-    const id = unquoteString(pullField(body, 'id'));
-    const name = unquoteString(pullField(body, 'name'));
-    if (!id || !name) continue;
-    // Read the optional <id>.md alongside the .ts. Missing file = empty
-    // instructions; the AI tab will surface that as a "start writing"
-    // placeholder.
-    let instructions = '';
-    try { instructions = await readFile(join(SRC_DIR, `${id}.md`), 'utf8'); } catch { /* no .md */ }
-    out.push({
-      id,
-      name,
-      description: unquoteString(pullField(body, 'description')) ?? '',
-      tags: parseTagsArray(pullField(body, 'tags')),
-      params: parseParams(pullField(body, 'params')),
-      hasValidate: /\bvalidate\s*:/.test(body),
-      source,
-      instructions,
-    });
+    const rec = await readComponentFile(dir, f, origin, bundledIds);
+    if (rec) out.push(rec);
   }
-  // Stable alphabetical order so the sidebar doesn't reshuffle on refresh.
-  out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
 
-export const GET: RequestHandler = async ({ request }) => {
+async function buildList(): Promise<ComponentListEntry[]> {
+  // First pass — discover which ids the bundle ships. Used by the second
+  // pass to decide whether a volume entry has compiled geom available.
+  // A volume entry shadowing a bundle id inherits the bundle's geom; a
+  // volume-only entry needs a bundle rebuild before it can render.
+  const bundleFirst = await readDir(SRC_DIR, 'bundle', new Set());
+  const bundledIds = new Set(bundleFirst.map((e) => e.id));
+
+  // Second pass — re-read bundle (so hasGeom is true) plus the volume
+  // overlay. Volume wins on id collision, so we Map-merge with volume
+  // last.
+  const merged = new Map<string, ComponentListEntry>();
+  const bundle = await readDir(SRC_DIR, 'bundle', bundledIds);
+  for (const e of bundle) merged.set(e.id, e);
+  const volume = await readDir(VOLUME_DIR, 'volume', bundledIds);
+  for (const e of volume) merged.set(e.id, e);
+
+  // Stable alphabetical order so the sidebar doesn't reshuffle on refresh.
+  return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export const GET: RequestHandler = async ({ request, url }) => {
+  // Cross-instance proxy: when CADTRAIN_VOLUME_REMOTE_URL is set, forward
+  // to that host so dev sees prod's merged list (including volume
+  // overlays) instead of just the local bundle.
+  const proxied = await maybeProxy(request, url);
+  if (proxied) return proxied;
+
   let signature: string;
   try {
     signature = await buildSignature();
