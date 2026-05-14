@@ -15,12 +15,17 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 9. When asked to review or audit, use Explore subagents for read-only exploration. Don't modify files during exploration.
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
 11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits (typo fixes, comment changes, single-style tweaks).
-12. **Each logical plan step gets a recorded e2e run.** When completing a `/plan` task (anything with a numeric ID in `src/routes/plan/+page.svelte`), run the e2e suite, harvest the WEBM recordings to `static/tests/e2e/<task-id>/`, and add a `video` field to the `details.ts` entry pointing at the recording. The Gantt detail popup auto-renders the video. Use `bun run record:task <id>` (script wraps `bun run test:e2e` + the harvest step). For docs-only or trivial tasks, mark `recorded: false` in the details entry instead of skipping silently.
+12. **Each logical plan step gets a recorded e2e run.** When completing a `/plan` task (anything with a numeric ID in `src/routes/plan/+page.svelte`), run the e2e suite, harvest the WEBM recordings to `<volume>/test-recordings/e2e/<task-id>/`, and add a `video` field to the `details.ts` entry pointing at the recording (`/api/volume?path=test-recordings/e2e/<task-id>/<spec>.webm`). The Gantt detail popup auto-renders the video. Use `bun run record:task <id>` (script wraps `bun run test:e2e` + the harvest step). For docs-only or trivial tasks, mark `recorded: false` in the details entry instead of skipping silently.
 13. **Persistent data volume.** Production URL: **`https://cadtrain.up.railway.app`** (NOT `.com` — Railway uses `.up.railway.app`). All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; in local dev, falls back to `./.dev-volume/`). Sub-paths in use:
     - `$APP_DATA_DIR/training_data/cache.jsonl` — RAG cache for /api/identify
     - `$APP_DATA_DIR/training_data/authored_cache.jsonl` — authored-components cache
     - `$APP_DATA_DIR/components/<id>.ts` + `<id>.md` — runtime overlay for /api/components/save and /api/components/instructions. The list endpoint merges bundle + volume, volume wins on id collision (see commit `469b730`).
     - `$APP_DATA_DIR/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
+    - `$APP_DATA_DIR/kb/index.json` + `kb/api/*.json` — structured KB tables; fetched via `/api/volume?path=kb/...` by the KB DB sub-tab + `rules/{tubing,drill_pipe}.ts`. Re-extracted by `scripts/kb/*.ts` then re-uploaded.
+    - `$APP_DATA_DIR/figures/` — `scripts/extract_figures.ts` PDF-page renders + `gallery.json` (Test tab figure gallery)
+    - `$APP_DATA_DIR/test-recordings/` — Playwright WEBMs + `e2e/<task>/` videos + `manifest.json` (`/archive/tests` + `/plan` popups)
+    - `$APP_DATA_DIR/eval/` — `wells/` + `components/` recognition eval fixtures, fetched via `/api/volume?path=eval/...` by the `/archive/tests/{wells,components}` viewers
+    - **Nothing data/test-related lives in `static/` or git anymore** — `static/` holds only build output (`components/*.glb`, gitignored). The volume CRUD endpoint serves all of the above; the `/volume` route is a browser/file-manager for it.
     
     **Root resolution** (in `src/lib/server/volume.ts`): `CADTRAIN_VOLUME_ROOT` → `RAILWAY_VOLUME_MOUNT_PATH` → `APP_DATA_DIR` → `/app_data` → `./.dev-volume`. New endpoints that need persistent storage MUST call `volumePath(rel)` from that module and call `maybeProxy(request, url)` first.
     
@@ -338,15 +343,20 @@ src/
 
 static/
 ├── training_data -> ../training_data # symlink so images are URL-accessible
-├── tests/                            # Playwright WEBM recordings + manifest.json
-├── eval/                             # Persisted eval datasets viewed at /tests/wells + /tests/components
-│   ├── wells/                        # 8 cases × 2 backends × 3 models extracted JSON + 7 truth WSON + index.json
-│   └── components/                   # 18 primitives × CLI/Opus extraction + summary index.json
-├── kb/                               # Knowledge base for Bundle H constrained parametrization
-│   ├── index.json                    # KB manifest (one entry per JSON KB file)
-│   └── api/
-│       └── casing-tubing-data.json   # 299 rows · LP/CSG/TBG operational specs (OD, wall, ID, drift, yield, MUT)
-└── tmp/                              # Generated test frames + rag.gif
+└── components/                       # Baked .glb meshes — gitignored, regenerable build output
+# (static/ holds ONLY build output now — all data/test/sample dirs moved to the volume)
+
+# Persistent volume ($APP_DATA_DIR — local dev: repo root when kb-sources/
+# is present, else ./.dev-volume; Railway: /app_data). NOTHING here is in
+# git; everything is served to the app via /api/volume. See Rule 13.
+<volume>/
+├── figures/                          # extract_figures.ts PDF-page renders + gallery.json (Test tab)
+├── test-recordings/                  # Playwright WEBMs + e2e/<task>/ videos + manifest.json
+├── kb/                               # KB tables — index.json + api/*.json (moved from static/kb/)
+├── kb-sources/                       # Vendor/operator reference PDFs + _index.json sidecar
+├── eval/                             # Eval datasets — wells/ + components/ recognition fixtures (was static/eval/)
+├── components/                       # runtime component overlay (<id>.ts + <id>.md)
+└── training_data/                    # cache.jsonl + authored_cache.jsonl (live writes)
 
 training_data/
 ├── cache.jsonl                       # Persistent RAG cache (seeded 122 records, grows with use)
@@ -358,11 +368,12 @@ training_data/
 │   └── training.json                 # [{component_id, params, image}, ...]
 └── reference/                         # Thread spec data etc
 
-kb-sources/                            # Vendor/operator PDFs feeding scripts/kb/ extractors. GITIGNORED — outputs in static/kb/ ARE committed, raw inputs are not (license-uncertain).
+kb-sources/                            # Local copy of vendor/operator PDFs feeding scripts/kb/ extractors. GITIGNORED. The canonical copy lives on the volume (<volume>/kb-sources/) — served by /api/kb/source-pdf; both the PDFs AND the extracted kb/ tables are volume data, not committed.
 
 scripts/
+├── _volume.ts                        # volumeRoot()/volumePath() for standalone scripts (mirrors src/lib/server/volume.ts)
 ├── kb/
-│   └── build_casing_tubing_data.ts   # Re-extractor: kb-sources/*.pdf → static/kb/api/casing-tubing-data.json
+│   └── build_casing_tubing_data.ts   # Re-extractor: kb-sources/*.pdf → <volume>/kb/api/casing-tubing-data.json (re-upload to prod after)
 └── seed_cache.ts                     # Populate cache.jsonl from prim_* training data
 
 vlm/                                   # CLI-only utilities (NOT shipped to production)
@@ -422,7 +433,7 @@ The reverse pipeline is the heart of the app. Three components work together:
 - **Family classification** at `src/lib/cad/components/families.ts` — central `FAMILY_BY_ID` map → 8 families (Basic · Casing & Tubing · Drillstring · Wellhead & XMAS Trees · Packers & Bridge Plugs · Fishing & Intervention · Artificial Lift · Flow Control). Edit one file to reclassify; new components default to `basic` until added to the map.
 - **Family filter** (Parts tab only): funnel icon next to the search input → SVTC-style FloatingPanel popup with 2-column cards + Select all / Unselect all / Done. State persists in `localStorage` under `cad:enabledFamilies`.
 - **Collapsible family subheads** in the Parts list — click any family header to collapse its rows; state is in-memory only.
-- **KB sub-tabs**: KB rail tab holds two inside-tabs (`kbSubTab` state): **Sources** (raw documents from `<volume>/kb-sources/`, via `/api/kb/sources`) and **DB** (structured KB tables from `/kb/index.json`).
+- **KB sub-tabs**: KB rail tab holds two inside-tabs (`kbSubTab` state): **Sources** (raw documents from `<volume>/kb-sources/`, via `/api/kb/sources`) and **DB** (structured KB tables from `<volume>/kb/index.json`, via `/api/volume?path=kb/index.json`).
 - **Embedded source viewer**: clicking a Sources row opens a main tab with the document inline. PDFs use `<embed type="application/pdf">` (Chrome's PDF viewer; sandboxed iframes block it). URLs use `<iframe>` with no sandbox + header fallback link for hosts that refuse iframing.
 - **Z× compression slider** lives in the canvas SceneControls gear (not the stage header). Backing state is `scene.zScale` in `src/lib/shared/scene-state.svelte.ts`; the builder reads it via `setRenderZScale()`.
 
@@ -536,7 +547,7 @@ When prompting the user about testing (per Rule 11), default the suggestion to *
 
 ### Legacy test scripts (pre-restructure, kept for reference)
 
-- `tests/test_rag_with_gif.py` — Python Playwright; drives `/reverse` (now `/archive/reverse`) and saves frames → `static/tmp/rag.gif`
+- `tests/test_rag_with_gif.py` — Python Playwright; drives `/reverse` (now `/archive/reverse`). Legacy — its old `static/tmp/` output was removed when test/data artifacts moved off `static/`.
 - `tests/visual_components_eval.mjs` — node script that walks the 18 primitives via the components viewer and screenshots each
 - `tests/test_*_smoke.py`, `tests/test_*_real.py` — Python smoke + real-world tests
 

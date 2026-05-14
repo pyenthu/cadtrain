@@ -2,7 +2,8 @@
  * harvest_e2e_videos.ts
  *
  * Wraps `bun run test:e2e` and copies the resulting Playwright videos
- * to a stable, plan-task-keyed location under static/tests/e2e/<task>/.
+ * to a stable, plan-task-keyed location on the persistent VOLUME under
+ * <volume>/test-recordings/e2e/<task>/ (not static/, not git).
  * Implements the harvest half of CLAUDE.md Rule 12.
  *
  * Usage:
@@ -11,10 +12,10 @@
  *   bun run scripts/harvest_e2e_videos.ts --task 116 --spec routes  # only routes.spec.ts videos
  *
  * Output (one WEBM per spec file under playwright-output):
- *   static/tests/e2e/<task>/routes.webm
- *   static/tests/e2e/<task>/navbar.webm
- *   static/tests/e2e/<task>/archive-links.webm
- *   static/tests/e2e/<task>/manifest.json   { task, run_at, files: [...] }
+ *   <volume>/test-recordings/e2e/<task>/routes.webm
+ *   <volume>/test-recordings/e2e/<task>/navbar.webm
+ *   <volume>/test-recordings/e2e/<task>/archive-links.webm
+ *   <volume>/test-recordings/e2e/<task>/manifest.json   { task, run_at, files: [...] }
  *
  * The manifest is what the /plan Gantt popup reads (via the `video`
  * field in details.ts). One canonical WEBM per spec keeps the popup
@@ -37,9 +38,11 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join, basename } from 'node:path';
 import { parseArgs } from 'node:util';
+import { volumePath } from './_volume';
 
 const PWO_DIR = 'tests/results/playwright-output';
-const OUT_ROOT = 'static/tests/e2e';
+// Recordings live on the volume — regenerable data, not source/git.
+const OUT_ROOT = volumePath('test-recordings/e2e');
 
 interface VideoFile {
   spec: string;        // e.g., 'routes', 'navbar', 'archive-links', 'backend'
@@ -179,7 +182,7 @@ async function main() {
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   console.log(`  ✓  manifest.json`);
   console.log(`\n✓  Harvested ${manifest.files.length} videos for plan task ${taskId}`);
-  console.log(`   View at: /tests/e2e/${taskId}/<spec>.webm`);
+  console.log(`   View at: /api/volume?path=test-recordings/e2e/${taskId}/<spec>.webm`);
   console.log(`   Add a 'video' field to details.ts[${taskId}] pointing at one of these to surface in the Gantt popup.`);
 }
 

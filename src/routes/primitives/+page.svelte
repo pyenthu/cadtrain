@@ -238,6 +238,15 @@
     compositeSpec?: import('$lib/authoring/schema').AuthoredComponent;
     /** Runes-class entry (only set when kind === 'xml-primitive'). */
     componentEntry?: ComponentEntry;
+    /** Explicit reference-picture URL override. Set when a tab is opened
+     *  from a Test-tab figure (the extract-N.png under /tests/figures/);
+     *  the Picture stage tab uses this instead of the volume lookup. */
+    pictureUrl?: string;
+    /** True for a figure-draft: a blank component shell with a picture
+     *  but no geometry yet. The build pipeline is skipped and the Render
+     *  stage shows an "not constructed yet" empty-state instead of an
+     *  error. Cleared once the component is actually constructed. */
+    unconstructed?: boolean;
     /** In-memory edit buffer for the component .ts source shown in the
      *  Script popup → Svelte tab. Initialized from componentEntry.source on
      *  open; mutated on every keystroke via CodeEditor.onChange. Cleared
@@ -534,6 +543,127 @@
         extractionLoadedAt = payload.generated_at ?? null;
       }
     } catch { /* no manifest yet — silent */ }
+  }
+
+  // Picture-first figure gallery. `scripts/extract_figures.ts` renders
+  // every page of the figure-rich kb-source PDFs to numbered PNGs on the
+  // VOLUME (<volume>/figures/, served via /api/volume — not static/, not
+  // git). The Test tab shows the thumbnails as a numbered grid — the
+  // user curates ("extract 7") and then the generate pipeline runs on
+  // that specific figure.
+  interface FigureItem {
+    n: number;
+    id: string;        // "extract-N"
+    pdf: string;
+    page: number;
+    file: string;      // volume-relative: figures/extract-N.png
+    thumb: string;     // volume-relative: figures/extract-N.thumb.png
+  }
+  /** Browser URL for a volume-relative path, via the /api/volume CRUD. */
+  function volumeUrl(rel: string): string {
+    return `/api/volume?path=${encodeURIComponent(rel)}`;
+  }
+  let figures = $state<FigureItem[]>([]);
+  let figuresLoadedAt = $state<string | null>(null);
+  /** Per-figure delete status — surfaces an in-flight spinner on the
+   *  cell and disables the button so a double-click can't double-delete. */
+  let figureDeleting = $state<Record<string, boolean>>({});
+
+  /** Permanently delete a figure: unlink the PNG + thumbnail from the
+   *  volume via the /api/volume CRUD, then rewrite gallery.json without
+   *  it. Real delete — the files are gone from disk (re-runnable only by
+   *  re-executing scripts/extract_figures.ts). */
+  async function deleteFigure(fig: FigureItem) {
+    if (figureDeleting[fig.id]) return;
+    figureDeleting = { ...figureDeleting, [fig.id]: true };
+    try {
+      await fetch(volumeUrl(fig.file), { method: 'DELETE' });
+      await fetch(volumeUrl(fig.thumb), { method: 'DELETE' });
+      // Rewrite gallery.json without this figure so a reload stays consistent.
+      const next = figures.filter((f) => f.id !== fig.id);
+      await fetch(volumeUrl('figures/gallery.json'), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ generated_at: figuresLoadedAt ?? new Date().toISOString(), items: next }),
+      });
+      figures = next;
+      // If the deleted figure's draft tab is open, leave it — the user
+      // may still be working on it; only the gallery entry is gone.
+    } catch {
+      /* leave the figure in place on failure — a reload will resync */
+    } finally {
+      const { [fig.id]: _, ...rest } = figureDeleting;
+      figureDeleting = rest;
+    }
+  }
+
+  async function loadFiguresGallery() {
+    try {
+      const r = await fetch(volumeUrl('figures/gallery.json'), { cache: 'no-store' });
+      if (!r.ok) return;
+      const payload = await r.json();
+      if (Array.isArray(payload?.items)) {
+        figures = payload.items as FigureItem[];
+        figuresLoadedAt = payload.generated_at ?? null;
+      }
+    } catch { /* no gallery yet — silent */ }
+  }
+
+  /** Stub .ts source for a freshly-opened figure draft — a blank
+   *  component skeleton. The Inspector's Svelte tab shows this; the
+   *  user (or the AI Refine tab) fills in the geometry from the figure
+   *  on the Picture tab. Mirrors the shape overnight_extract.ts emits. */
+  function draftStubSource(draftId: string, figureId: string): string {
+    return `import { tube, cyl, mv, rot, M } from '../manifold-helpers';
+import { defineGeom } from '.';
+
+export const meta = {
+  id: '${draftId}',
+  name: '${figureId}',
+  description: '',
+  tags: ['draft'],
+  params: {},
+} as const;
+
+// Not constructed yet — the reference figure is on the Picture tab.
+// Describe the part in the AI Refine tab, or write the geom by hand.
+export const geom = defineGeom(meta, (_p) => cyl(1, 1));
+`;
+  }
+
+  /** Open a gallery figure as a BLANK component-builder draft: the full
+   *  xml-primitive UI (Render + Picture stage tabs, Inspector) backed by
+   *  a synthetic empty ComponentEntry. The Picture tab shows the
+   *  extract-N.png; the Render tab shows an "not constructed yet"
+   *  empty-state because there's no geometry yet. This is the figure
+   *  "as a component, before it's been constructed". */
+  function openFigureAsDraft(fig: FigureItem) {
+    const draftId = fig.id.replace(/-/g, '_'); // extract-7 → extract_7
+    const id = `draft:${draftId}`;
+    if (openTabs.find((t) => t.id === id)) {
+      activeTabId = id;
+      stageTab = 'picture';
+      pictureLoadStatus = 'loading';
+      return;
+    }
+    const entry: ComponentEntry = {
+      meta: { id: draftId, name: fig.id, description: '', tags: ['draft'], params: {} },
+      // Never invoked — the build effect short-circuits on `unconstructed`.
+      geom: () => { throw new Error('figure draft has no geometry yet'); },
+      source: draftStubSource(draftId, fig.id),
+      instructions: '',
+    };
+    openTabs = [
+      ...openTabs,
+      {
+        id, kind: 'xml-primitive', componentEntry: entry, primId: draftId,
+        label: fig.id, params: {}, draft: true, vars: [],
+        pictureUrl: volumeUrl(fig.file), unconstructed: true,
+      },
+    ];
+    activeTabId = id;
+    stageTab = 'picture';
+    pictureLoadStatus = 'loading';
   }
 
   /** Status badge per extraction result while it's being promoted to
@@ -836,7 +966,7 @@
     // come from the persistent volume via /api/kb/sources so PDFs
     // uploaded after the deploy appear without rebuilds.
     try {
-      const r = await fetch('/kb/index.json', { cache: 'no-cache' });
+      const r = await fetch('/api/volume?path=kb/index.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`${r.status}`);
       const data = await r.json();
       kbList = (data.kbs ?? []).map((k: any) => ({
@@ -1832,6 +1962,7 @@ export const geom = defineGeom(meta, (p) => {
     enabledLevels = loadEnabledLevels();
     testLinks = loadTestLinks();
     loadExtractionManifest();
+    loadFiguresGallery();
     // Async-load the registry from /api/components/list before deciding what
     // to auto-open. Priority:
     //   1. Last primitive the user was editing this session (sessionStorage
@@ -1919,6 +2050,10 @@ export const geom = defineGeom(meta, (p) => {
   $effect(() => {
     const _k = buildKey;
     if (!ready || !activeTab || activeTab.kind === 'kb' || activeTab.kind === 'source') { geo = null; buildError = null; return; }
+    // Figure drafts have no geometry yet — skip the build entirely so the
+    // Render stage shows a clean "not constructed" empty-state rather than
+    // a missing-geom error.
+    if (activeTab.unconstructed) { geo = null; buildError = null; return; }
     if (buildTimer) clearTimeout(buildTimer);
     buildTimer = setTimeout(async () => {
       const spec = activeSpec();
@@ -3099,13 +3234,61 @@ export const geom = defineGeom(meta, (p) => {
         </div>
       {/if}
       {#if sidebarTab === 'test'}
-        <!-- Test tab — TWO sections stacked: (1) extraction results
-             from the overnight_extract.ts pipeline, loaded from
-             /tests/extracted/manifest.json; (2) manual paste-and-click
-             link scratchpad, persisted to localStorage. Both kinds of
-             entries are clickable and openable in the source-tab
-             iframe viewer. -->
+        <!-- Test tab — THREE sections stacked: (1) the numbered figure
+             gallery from scripts/extract_figures.ts (curate "extract N"
+             before generating); (2) extraction results from the
+             overnight_extract.ts pipeline; (3) manual paste-and-click
+             link scratchpad, persisted to localStorage. All entries are
+             clickable and open in the source-tab viewer. -->
         <div class="sb-test">
+          {#if figures.length > 0}
+            <div class="sb-test-sec">
+              <div class="sb-test-sec-h">
+                <span class="sb-test-sec-title">Figures</span>
+                <button
+                  class="sb-test-refresh"
+                  type="button"
+                  title="Reload gallery"
+                  onclick={loadFiguresGallery}
+                >↻ {figures.length}</button>
+              </div>
+              {#if figuresLoadedAt}
+                <div class="sb-test-sec-meta">Extracted {new Date(figuresLoadedAt).toLocaleDateString()}</div>
+              {/if}
+              {#if figures.length === 0}
+                <div class="sb-empty">No figures yet. Run <code>bun run extract:figures</code> to populate the gallery.</div>
+              {:else}
+                <div class="sb-fig-grid">
+                  {#each figures as fig (fig.id)}
+                    <div
+                      class="sb-fig-cell"
+                      class:active={activeTab?.id === `draft:${fig.id.replace(/-/g, '_')}`}
+                      class:deleting={figureDeleting[fig.id]}
+                    >
+                      <button
+                        class="sb-fig-open"
+                        type="button"
+                        onclick={() => openFigureAsDraft(fig)}
+                        title={`${fig.id} — ${fig.pdf} p.${fig.page}\nClick to open as a blank component (Render + Picture + Inspector).`}
+                      >
+                        <img class="sb-fig-thumb" src={volumeUrl(fig.thumb)} alt={fig.id} loading="lazy" />
+                        <span class="sb-fig-n">{fig.n}</span>
+                        <span class="sb-fig-cap">{fig.pdf.replace(/\.pdf$/, '')} · p.{fig.page}</span>
+                      </button>
+                      <button
+                        class="sb-fig-del"
+                        type="button"
+                        disabled={figureDeleting[fig.id]}
+                        title="Delete this figure from the volume (permanent)"
+                        aria-label={`Delete ${fig.id}`}
+                        onclick={(e) => { e.stopPropagation(); deleteFigure(fig); }}
+                      >{figureDeleting[fig.id] ? '…' : '✕'}</button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
           {#if extractionResults.length > 0}
             <div class="sb-test-sec">
               <div class="sb-test-sec-h">
@@ -3429,18 +3612,24 @@ export const geom = defineGeom(meta, (p) => {
              instead of reusing a stale, failed-load element. -->
       {@const isPdf = !activeTab.sourceUrl && !!activeTab.sourceFile}
       {@const viewerSrc = activeTab.sourceUrl ?? (activeTab.sourceFile ? `/api/kb/source-pdf?path=${encodeURIComponent(activeTab.sourceFile)}` : '')}
+      {@const isImage = /\.(png|jpe?g|webp|gif)$/i.test(viewerSrc)}
       <div class="tab-body source-tab">
         <div class="source-hdr">
           <span class="source-hdr-label">{activeTab.sourceLabel ?? activeTab.label}</span>
           {#if activeTab.sourceKind}<span class="source-hdr-kind">{activeTab.sourceKind.replace(/_/g, ' ')}</span>{/if}
           {#if isPdf}<span class="source-hdr-kind">local PDF</span>{/if}
+          {#if isImage}<span class="source-hdr-kind">figure</span>{/if}
           {#if activeTab.sourceUrl}
             <a class="source-hdr-ext" href={activeTab.sourceUrl} target="_blank" rel="noopener noreferrer">Open externally ↗</a>
           {/if}
         </div>
         {#if viewerSrc}
           {#key activeTab.id}
-            {#if isPdf}
+            {#if isImage}
+              <div class="source-img-wrap">
+                <img class="source-img" src={viewerSrc} alt={activeTab.sourceLabel ?? activeTab.label} />
+              </div>
+            {:else if isPdf}
               <embed
                 class="source-iframe"
                 type="application/pdf"
@@ -3575,12 +3764,12 @@ export const geom = defineGeom(meta, (p) => {
 
           {#if stageTab === 'picture'}
             <div class="stage-picture">
-              {#key activeTab.primId}
+              {#key activeTab.id}
                 {#if pictureLoadStatus !== 'missing'}
                   <img
                     class="stage-picture-img"
                     class:hidden={pictureLoadStatus !== 'present'}
-                    src={pictureUrlFor(activeTab.primId)}
+                    src={activeTab.pictureUrl ?? pictureUrlFor(activeTab.primId)}
                     alt={`Reference picture for ${activeDef.name}`}
                     onload={() => (pictureLoadStatus = 'present')}
                     onerror={() => (pictureLoadStatus = 'missing')}
@@ -3632,6 +3821,23 @@ export const geom = defineGeom(meta, (p) => {
                   geometry stale — see editor
                 </div>
               {/if}
+            {:else if activeTab.unconstructed}
+              <!-- Figure draft — a blank component shell. No geometry
+                   yet; the source figure is one click away on the
+                   Picture tab. -->
+              <div class="stage-blank">
+                <div class="stage-blank-icon">◳</div>
+                <p class="stage-blank-title">Not constructed yet</p>
+                <p class="stage-blank-hint">
+                  This is a blank component built from <code>{activeDef.id}</code>.
+                  The reference figure is on the <button class="inline-btn" type="button" onclick={() => { stageTab = 'picture'; pictureLoadStatus = 'loading'; }}>Picture</button> tab.
+                </p>
+                <p class="stage-blank-hint">
+                  Construct it with the <button class="inline-btn" type="button" onclick={() => openInspector('ai')}>AI Refine</button>
+                  tab, or write the geometry by hand in the
+                  <button class="inline-btn" type="button" onclick={() => openInspector('svelte')}>Svelte</button> tab.
+                </p>
+              </div>
             {:else}
               <div class="stage-loading">
                 {#if isParamTab}
@@ -4435,6 +4641,57 @@ export const geom = defineGeom(meta, (p) => {
     text-transform: uppercase; letter-spacing: 1px;
   }
   .sb-test-sec-meta { font: 9px Arial; color: #aaa; padding: 0 2px; }
+  /* Figure gallery — numbered thumbnail grid. Two columns; each cell is
+     a thumbnail + its global number badge + a pdf·page caption. */
+  .sb-fig-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    padding: 2px;
+  }
+  .sb-fig-cell {
+    position: relative;
+    background: #fff; border: 1px solid #dcdce2; border-radius: 4px;
+    overflow: hidden;
+  }
+  .sb-fig-cell:hover { border-color: #9aa; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+  .sb-fig-cell.active { border-color: #4a72c4; box-shadow: 0 0 0 1px #4a72c4; }
+  .sb-fig-open {
+    position: relative; display: flex; flex-direction: column;
+    gap: 2px; padding: 0; cursor: pointer; width: 100%;
+    background: none; border: none; text-align: left;
+  }
+  /* Delete chip — top-right corner, appears on cell hover. */
+  .sb-fig-del {
+    position: absolute; top: 3px; right: 3px; z-index: 2;
+    width: 18px; height: 18px; padding: 0; line-height: 1;
+    font: 700 10px Arial; color: #fff; cursor: pointer;
+    background: rgba(20,20,28,0.78); border: none; border-radius: 3px;
+    opacity: 0; transition: opacity 0.1s;
+  }
+  .sb-fig-cell:hover .sb-fig-del { opacity: 1; }
+  .sb-fig-del:hover { background: #c4392f; }
+  .sb-fig-del:disabled { cursor: default; background: rgba(20,20,28,0.5); }
+  .sb-fig-cell.deleting { opacity: 0.5; pointer-events: none; }
+  .sb-fig-thumb {
+    width: 100%; height: 88px; object-fit: cover; object-position: top;
+    display: block; background: #f4f4f6;
+  }
+  .sb-fig-n {
+    position: absolute; top: 3px; left: 3px;
+    font: 700 10px Arial; color: #fff;
+    background: rgba(20,20,28,0.78); border-radius: 3px;
+    padding: 1px 5px; pointer-events: none;
+  }
+  .sb-fig-cap {
+    font: 9px Arial; color: #777; padding: 2px 4px 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Source-tab image viewer — used for figure page renders. */
+  .source-img-wrap {
+    flex: 1; min-height: 0; overflow: auto;
+    background: #525659; display: flex; align-items: flex-start;
+    justify-content: center; padding: 16px;
+  }
+  .source-img { max-width: 100%; height: auto; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
   .sb-test-refresh {
     font: 600 10px Arial; color: #666;
     background: #f0f0f0; border: 1px solid #d0d0d8; border-radius: 3px;
@@ -5178,6 +5435,21 @@ export const geom = defineGeom(meta, (p) => {
   }
   .stage-loading-text { font: 11px Arial; color: #999; letter-spacing: 0.5px; text-transform: uppercase; }
   .stage-fallback { max-width: 60%; max-height: 60%; object-fit: contain; opacity: 0.65; }
+  /* Figure-draft empty-state — shown on the Render tab when a component
+     has a picture but no geometry yet. */
+  .stage-blank {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; padding: 32px; text-align: center;
+    background: repeating-linear-gradient(45deg, #fafafa, #fafafa 10px, #f4f4f6 10px, #f4f4f6 20px);
+  }
+  .stage-blank-icon { font-size: 40px; color: #c4c4cc; line-height: 1; }
+  .stage-blank-title {
+    font: 700 12px Arial; color: #777; margin: 0;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .stage-blank-hint { font: 11px Arial; color: #888; margin: 0; line-height: 1.6; max-width: 380px; }
+  .stage-blank-hint code { font: 11px monospace; background: #ececf0; padding: 1px 5px; border-radius: 3px; color: #555; }
   /* Small persistent chip pinned in the stage corner when a geom() error
      prevents the rebuild but a previous good mesh is still on screen.
      Mostly a wayfinder — the full error message lives in the editor's

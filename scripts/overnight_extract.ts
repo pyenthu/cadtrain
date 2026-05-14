@@ -1,47 +1,53 @@
 #!/usr/bin/env bun
 /**
- * Overnight primitive extraction — runs Claude Opus CLI against the
- * kb-sources/*.pdf catalogs to:
+ * Figure → primitive extraction — runs Claude Opus CLI against the
+ * numbered figure gallery produced by scripts/extract_figures.ts.
  *
- *   1. Enumerate ~100 candidate primitives across the catalogs
- *   2. For each candidate, run a 5-iter generate + critique loop
- *   3. Save artifacts to static/tests/extracted/<id>/ + update manifest
+ * Picture-first workflow:
+ *   1. `bun run scripts/extract_figures.ts` renders PDF pages to
+ *      <volume>/figures/extract-N.png + gallery.json (run FIRST).
+ *   2. The user curates in the /primitives Test tab and picks figures
+ *      by number ("extract 7").
+ *   3. This script takes those figure numbers, and for each one runs a
+ *      generate + 5-iter critique loop against the figure IMAGE, saving
+ *      artifacts to static/tests/extracted/<primitive-id>/ + manifest.
  *
- * The Test tab in /primitives auto-loads the manifest on mount so the
- * user wakes up to a clickable list of candidates with their final .ts
- * and the iteration history.
+ * The Test tab auto-loads the manifest on mount so each generated
+ * candidate is a clickable row with its final .ts and iteration history;
+ * the existing promote flow turns it into a real primitive.
  *
  * Subscription-billed via claude.ai OAuth (NOT API key). Each call is
  * a `claude --print --output-format json --model opus` subprocess.
  *
- * Designed to be resilient: failure of any single Claude call records
- * the failure in the item's notes.json and moves to the next item.
- * Manifest is updated after each item completes — partial progress is
- * visible if the script is interrupted.
- *
  * Run with:
- *   bun run scripts/overnight_extract.ts            # default 100 target
- *   bun run scripts/overnight_extract.ts --max 10   # smoke-test budget
- *   bun run scripts/overnight_extract.ts --no-refine # skip iter 1-4
+ *   bun run scripts/overnight_extract.ts --figure 7        # one figure
+ *   bun run scripts/overnight_extract.ts --figures 1,4,9   # explicit list
+ *   bun run scripts/overnight_extract.ts --range 1-10      # inclusive range
+ *   bun run scripts/overnight_extract.ts                   # ALL gallery figures
+ *   bun run scripts/overnight_extract.ts --range 1-20 --batch 5   # 5 then exit
+ *   bun run scripts/overnight_extract.ts --resume --batch 5       # next batch
+ *   bun run scripts/overnight_extract.ts --range 1-5 --no-refine  # single-shot
  */
 
 import { spawn } from 'node:child_process';
-import { readFile, writeFile, mkdir, readdir, stat, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { resolve, join, dirname, basename } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readdir } from 'node:fs/promises';
+import { volumePath } from './_volume';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const OUT_DIR = resolve(REPO, 'static/tests/extracted');
-const KB_SOURCES = resolve(REPO, 'kb-sources');
+// The figure gallery lives on the volume (not static/, not git).
+const FIGURES_DIR = volumePath('figures');
+const GALLERY = join(FIGURES_DIR, 'gallery.json');
 const COMPONENTS_DIR = resolve(REPO, 'src/lib/cad/components');
 const LOG_FILE = resolve(OUT_DIR, '_run.log');
 const MANIFEST = resolve(OUT_DIR, 'manifest.json');
 
 const MODEL = 'opus';
-const DEFAULT_TARGET = 100;
-const DEFAULT_ITEMS_PER_PDF = 25;
 const MAX_ITERS = 5;
 const CALL_TIMEOUT_MS = 5 * 60_000;
 
@@ -52,14 +58,29 @@ function arg(k: string, def?: string): string | undefined {
   const i = argv.indexOf(k);
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : def;
 }
-const TARGET = Number(arg('--max', String(DEFAULT_TARGET)));
-const ITEMS_PER_PDF = Number(arg('--per-pdf', String(DEFAULT_ITEMS_PER_PDF)));
 const NO_REFINE = flag('--no-refine');
 const RESUME = flag('--resume');
-/** Process at most this many candidates this run, then exit cleanly.
+/** Process at most this many figures this run, then exit cleanly.
  *  0 = no cap. Pairs with --resume for human-in-the-loop batching:
  *  run a batch, review it, re-run for the next. */
 const BATCH = Number(arg('--batch', '0'));
+
+/** Parse the figure selector flags into a sorted list of figure numbers.
+ *  --figure N | --figures 1,4,9 | --range 1-10. Empty = ALL gallery
+ *  figures (the resume path overrides this anyway). */
+function parseFigureSelector(): number[] {
+  const nums = new Set<number>();
+  const single = arg('--figure');
+  if (single) nums.add(Number(single));
+  const list = arg('--figures');
+  if (list) for (const t of list.split(',')) { const n = Number(t.trim()); if (Number.isFinite(n)) nums.add(n); }
+  const range = arg('--range');
+  if (range) {
+    const m = /^(\d+)-(\d+)$/.exec(range.trim());
+    if (m) { for (let n = Number(m[1]); n <= Number(m[2]); n++) nums.add(n); }
+  }
+  return [...nums].sort((a, b) => a - b);
+}
 
 // ─── Logging ──────────────────────────────────────────────────────────
 async function log(msg: string) {
@@ -93,8 +114,7 @@ function spawnOnce(opts: {
     timeout: CALL_TIMEOUT_MS,
     env: { ...process.env, NO_COLOR: '1' },
     // Close stdin — the CLI otherwise waits 3s for stdin data and
-    // emits a noisy warning. Inheriting an empty pipe was the source
-    // of the "no stdin data received" noise in the first run.
+    // emits a noisy warning.
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
@@ -109,11 +129,8 @@ function spawnOnce(opts: {
 
 /**
  * Inspect the --output-format json envelope for an API-level error that
- * exitCode alone misses. The first run's failures all had exitCode 1
- * but the real signal was `is_error:true, api_error_status:400,
- * result:"Credit balance is too low"` INSIDE the JSON. Returns the
- * api_error_status (number) when the envelope reports an error, else
- * null.
+ * exitCode alone misses (`is_error:true, api_error_status:400,
+ * result:"Credit balance is too low"` INSIDE the JSON).
  */
 function envelopeApiError(stdout: string): { status: number | string; message: string } | null {
   try {
@@ -130,11 +147,8 @@ function envelopeApiError(stdout: string): { status: number | string; message: s
 
 /**
  * Call Claude with automatic retry+backoff on transient API errors
- * (429 rate limit, 400 "Credit balance is too low", 5xx). A genuine
- * non-retryable failure (bad prompt, etc.) throws after the first
- * attempt. Credit-exhaustion is treated as RETRYABLE because the
- * Pro/Max session window refills — sleeping through it is better
- * than burning the whole candidate list into ERROR in 5 seconds.
+ * (429 rate limit, 400 "Credit balance is too low", 5xx). Credit
+ * exhaustion is RETRYABLE — the session window refills.
  */
 async function callClaude(opts: {
   systemPrompt: string;
@@ -147,7 +161,7 @@ async function callClaude(opts: {
     const retryable =
       apiErr != null &&
       (apiErr.status === 429 ||
-        apiErr.status === 400 || // includes "Credit balance is too low"
+        apiErr.status === 400 ||
         (typeof apiErr.status === 'number' && apiErr.status >= 500) ||
         /credit balance|rate limit|overloaded/i.test(apiErr.message));
     if (apiErr && retryable && attempt < RETRYABLE_BACKOFF_MS.length) {
@@ -157,38 +171,11 @@ async function callClaude(opts: {
       continue;
     }
     if (apiErr) {
-      // Non-retryable, or out of retries — surface as a hard failure so
-      // the caller records ERROR and moves on.
       return { ...r, exitCode: r.exitCode === 0 ? 1 : r.exitCode };
     }
     return r;
   }
-  // Unreachable, but TS wants a return.
   throw new Error('callClaude: exhausted retries');
-}
-
-/**
- * Render one page of a PDF to a PNG via poppler's pdftoppm. The
- * Picture tab in /primitives shows this alongside the generated geom
- * so the user can eyeball the source figure vs. the interpretation
- * and modify the .ts to close the gap. Returns the output path on
- * success, null on failure (missing tool, bad page, etc.).
- */
-async function renderSourcePage(
-  pdfPath: string, page: number | string | undefined, outPath: string,
-): Promise<string | null> {
-  const pageNum = Number(page);
-  if (!Number.isFinite(pageNum) || pageNum < 1) return null;
-  const outPrefix = outPath.replace(/\.png$/, '');
-  return new Promise((res) => {
-    // -singlefile drops the page-number suffix → exactly <outPrefix>.png
-    const proc = spawn('pdftoppm', [
-      '-png', '-f', String(pageNum), '-l', String(pageNum),
-      '-r', '150', '-singlefile', pdfPath, outPrefix,
-    ], { timeout: 60_000, stdio: ['ignore', 'ignore', 'pipe'] });
-    proc.on('exit', (c) => res(c === 0 ? outPath : null));
-    proc.on('error', () => res(null));
-  });
 }
 
 function parseEnvelope(stdout: string): string {
@@ -201,19 +188,49 @@ function parseEnvelope(stdout: string): string {
   return raw;
 }
 
-function stripJsonFence(s: string): string {
-  // Match the FIRST ```(json)? block — content between the opening fence
-  // and the matching closing fence. Resilient to extra prose around.
-  const m = /```(?:json)?\s*\n([\s\S]*?)\n```/.exec(s);
-  return m ? m[1].trim() : s.trim();
-}
-
 function stripTsFence(s: string): string {
   const m = /```(?:typescript|ts)?\s*\n([\s\S]*?)\n```/.exec(s);
   return m ? m[1].trim() : s.trim();
 }
 
-// ─── Catalog context — the 26 existing primitives as compact ref ──────
+/** Pull meta.id / meta.name out of a generated .ts so the manifest +
+ *  output dir use the primitive's real id rather than the figure number. */
+function parseMeta(ts: string): { id: string | null; name: string | null } {
+  const idM = /\bid:\s*['"]([a-z][a-z0-9_]*)['"]/.exec(ts);
+  const nameM = /\bname:\s*['"]([^'"]+)['"]/.exec(ts);
+  return { id: idM ? idM[1] : null, name: nameM ? nameM[1] : null };
+}
+
+// ─── Gallery ──────────────────────────────────────────────────────────
+interface FigureItem {
+  n: number;
+  id: string;        // "extract-N"
+  pdf: string;
+  page: number;
+  file: string;      // volume-relative: figures/extract-N.png
+  thumb: string;     // volume-relative: figures/extract-N.thumb.png
+}
+
+async function loadGallery(): Promise<FigureItem[]> {
+  if (!existsSync(GALLERY)) {
+    throw new Error(`gallery.json not found at ${GALLERY} — run scripts/extract_figures.ts first`);
+  }
+  const payload = JSON.parse(await readFile(GALLERY, 'utf8'));
+  if (!Array.isArray(payload?.items)) throw new Error('gallery.json has no items array');
+  return payload.items as FigureItem[];
+}
+
+/** Absolute path to a figure's full-res page render on the volume. */
+function figurePath(fig: FigureItem): string {
+  return volumePath(fig.file);
+}
+
+/** Browser-facing URL for a figure (served through the volume CRUD). */
+function figureUrl(fig: FigureItem): string {
+  return `/api/volume?path=${encodeURIComponent(fig.file)}`;
+}
+
+// ─── Catalog context — the existing primitives as compact ref ─────────
 async function loadCatalogContext(): Promise<string> {
   const files = (await readdir(COMPONENTS_DIR)).filter(
     (f) => f.endsWith('.ts') && f !== 'index.ts' && f !== 'families.ts',
@@ -226,72 +243,8 @@ async function loadCatalogContext(): Promise<string> {
   return blocks.join('\n\n');
 }
 
-// ─── Phase 1 — enumerate candidates per PDF ───────────────────────────
-interface Candidate {
-  id: string;
-  name: string;
-  family?: string;
-  source_pdf: string;
-  source_page?: number | string;
-  brief_description: string;
-}
-
-const ENUMERATE_SYSTEM = `You enumerate parametric-primitive candidates from a petroleum-engineering catalog PDF.
-
-Output: a single fenced \`\`\`json code block, no prose before or after, containing an array of objects with this exact shape:
-
-[
-  {
-    "id": "snake_case_id",
-    "name": "Human Display Name",
-    "family": "casing_tubing | drillstring | wellhead_xt | packers_plugs | fishing_intervention | artificial_lift | flow_control | basic",
-    "source_page": 12,
-    "brief_description": "One sentence covering geometry + role."
-  }
-]
-
-Pick distinct, geometrically distinguishable items. Skip pure tables of dimensions for the same primitive — list it ONCE with a note that it's parametrized. Skip text-only sections. Aim for the COUNT requested by the user.`;
-
-async function enumeratePdf(pdfPath: string, count: number): Promise<Candidate[]> {
-  await log(`enumerate: ${basename(pdfPath)} (target ${count})`);
-  const userPrompt = `Read the PDF at this path: ${pdfPath}
-
-List up to ${count} distinct geometric primitives that could be modeled as parametric CAD parts. Return a JSON array as specified.`;
-  const r = await callClaude({
-    systemPrompt: ENUMERATE_SYSTEM,
-    userPrompt,
-    addDir: dirname(pdfPath),
-  });
-  if (r.exitCode !== 0) {
-    await log(`  FAILED exitCode=${r.exitCode} stderr=${r.stderr.slice(0, 300)}`);
-    return [];
-  }
-  let text: string;
-  try { text = parseEnvelope(r.stdout); }
-  catch (e) { await log(`  envelope parse failed: ${e}`); return []; }
-  const jsonStr = stripJsonFence(text);
-  let arr: any;
-  try { arr = JSON.parse(jsonStr); }
-  catch (e) { await log(`  json parse failed: ${e}. raw: ${jsonStr.slice(0, 200)}`); return []; }
-  if (!Array.isArray(arr)) { await log(`  enumerate didn't return array`); return []; }
-  const out: Candidate[] = [];
-  for (const it of arr) {
-    if (!it?.id || !it?.name || !it?.brief_description) continue;
-    out.push({
-      id: String(it.id),
-      name: String(it.name),
-      family: it.family ? String(it.family) : undefined,
-      source_pdf: basename(pdfPath),
-      source_page: it.source_page,
-      brief_description: String(it.brief_description),
-    });
-  }
-  await log(`  got ${out.length} candidates from ${basename(pdfPath)} (${r.durationMs}ms)`);
-  return out;
-}
-
-// ─── Phase 2 — iterate per candidate ──────────────────────────────────
-const GENERATE_SYSTEM = `You write single-file ManifoldCAD primitives for cadtrain.
+// ─── Generate + critique ──────────────────────────────────────────────
+const GENERATE_SYSTEM = `You write single-file ManifoldCAD primitives for cadtrain from a figure image.
 
 # File format
 Each primitive lives at src/lib/cad/components/<id>.ts and exports:
@@ -301,7 +254,7 @@ import { tube, cyl, mv, rot, M } from '../manifold-helpers';
 import { defineGeom } from '.';
 
 export const meta = {
-  id: '<id>',
+  id: '<snake_case_id>',
   name: '<Display Name>',
   description: '<one line>',
   tags: ['...'],
@@ -316,48 +269,49 @@ export const geom = defineGeom(meta, (p) => {
 \`\`\`
 
 # Rules
+- Pick a clear snake_case \`id\` and human \`name\` that describe the part in the figure.
 - **Z-down**: top = LOWER z, bottom = HIGHER z. mv(part, [0,0,+N]) moves DOWN.
 - Helpers: tube(outerR, innerR, length), cyl(h, r1, r2?), mv(part, [x,y,z]), rot(part, [x,y,z]), M.cube([x,y,z], center?).
 - Manifold ops: .add() / .subtract() / .intersect().
 - Imports only from '../manifold-helpers' or another './<id>'.
-- Keep param defaults realistic for the implied API spec.
+- Keep param defaults realistic for the implied spec.
 
 # Output contract
 Respond with the COMPLETE .ts file as a single fenced \`\`\`typescript code block. No prose. No diff.`;
 
-const CRITIQUE_SYSTEM = `You critique a ManifoldCAD primitive .ts against the source PDF figure it was meant to model.
+const CRITIQUE_SYSTEM = `You critique a ManifoldCAD primitive .ts against the source figure image it was meant to model.
 
-Look at the PDF figure (the user will tell you which page and item). Look at the .ts they wrote. Decide:
-- If the GEOMETRY in the .ts faithfully captures the figure (correct OD/wall/length-like proportions, correct features, correct Z-down orientation): respond with EXACTLY the single word \`MATCH\` and nothing else.
+Look at the figure image. Look at the .ts. Decide:
+- If the GEOMETRY in the .ts faithfully captures the figure (correct proportions, correct features, correct Z-down orientation): respond with EXACTLY the single word \`MATCH\` and nothing else.
 - Otherwise: respond with the CORRECTED complete \`<id>.ts\` as a single fenced \`\`\`typescript code block. No prose.`;
 
-async function generateInitial(cand: Candidate, pdfPath: string, catalog: string): Promise<string> {
-  const userPrompt = `Read the source PDF at: ${pdfPath}
-Look at the item on page ${cand.source_page ?? '(see description)'}: "${cand.name}".
-Description: ${cand.brief_description}
+async function generateFromFigure(fig: FigureItem, catalog: string): Promise<string> {
+  const imgPath = figurePath(fig);
+  const userPrompt = `Look at the figure image at this absolute path: ${imgPath}
+This is page ${fig.page} of ${fig.pdf} (figure "${fig.id}").
 
-Catalog of 26 existing primitives (for reference shapes and helpers usage):
+Catalog of existing primitives (for reference shapes and helpers usage):
 
 ${catalog}
 
-Write the complete <id>.ts file for id="${cand.id}".`;
+Identify the part shown and write the complete <id>.ts file modeling it as a parametric primitive.`;
   const r = await callClaude({
     systemPrompt: GENERATE_SYSTEM,
     userPrompt,
-    addDir: dirname(pdfPath),
+    addDir: FIGURES_DIR,
   });
   if (r.exitCode !== 0) throw new Error(`generate exit ${r.exitCode}: ${r.stderr.slice(0, 200)}`);
-  const text = parseEnvelope(r.stdout);
-  return stripTsFence(text);
+  return stripTsFence(parseEnvelope(r.stdout));
 }
 
 async function critiqueAndRefine(
-  cand: Candidate, pdfPath: string, currentTs: string, iter: number,
+  fig: FigureItem, currentTs: string, iter: number,
 ): Promise<{ verdict: 'MATCH' | 'REFINE'; nextTs?: string; raw: string }> {
-  const userPrompt = `Read the source PDF at: ${pdfPath}
-Re-examine the figure on page ${cand.source_page ?? '(see description)'}: "${cand.name}".
+  const imgPath = figurePath(fig);
+  const userPrompt = `Look at the figure image at this absolute path: ${imgPath}
+This is page ${fig.page} of ${fig.pdf} (figure "${fig.id}").
 
-Here is the current ${cand.id}.ts (iteration ${iter}):
+Here is the current .ts (iteration ${iter}):
 
 \`\`\`typescript
 ${currentTs}
@@ -367,7 +321,7 @@ Does the geometry described in this .ts faithfully match the figure? Respond MAT
   const r = await callClaude({
     systemPrompt: CRITIQUE_SYSTEM,
     userPrompt,
-    addDir: dirname(pdfPath),
+    addDir: FIGURES_DIR,
   });
   if (r.exitCode !== 0) throw new Error(`critique exit ${r.exitCode}: ${r.stderr.slice(0, 200)}`);
   const text = parseEnvelope(r.stdout);
@@ -377,20 +331,21 @@ Does the geometry described in this .ts faithfully match the figure? Respond MAT
 
 // ─── Manifest ─────────────────────────────────────────────────────────
 interface ManifestEntry {
-  id: string;
+  id: string;            // primitive id — also the output dir name
   name: string;
   family?: string;
   source_pdf: string;
   source_page?: number | string;
+  /** The gallery figure this was generated from ("extract-N"). */
+  source_figure: string;
   brief_description: string;
   iters_done: number;
   final_verdict: 'MATCH' | 'INCOMPLETE' | 'ERROR';
   error?: string;
-  url: string; // points to the per-item dir
-  /** Rendered source PDF page — the original figure the .ts was
-   *  interpreted from. Static URL; absent when the render failed or
-   *  the source_page was unknown. */
-  source_image?: string;
+  url: string;           // points to the per-item dir
+  /** The figure page render — shown in the Test tab + copied into the
+   *  volume as <id>.source.png on promote. */
+  source_image: string;
 }
 
 async function saveManifest(items: ManifestEntry[]) {
@@ -399,39 +354,47 @@ async function saveManifest(items: ManifestEntry[]) {
   await rename(tmp, MANIFEST);
 }
 
-async function processCandidate(cand: Candidate, catalog: string): Promise<ManifestEntry> {
-  const pdfPath = resolve(KB_SOURCES, cand.source_pdf);
-  const itemDir = join(OUT_DIR, cand.id);
-  await mkdir(itemDir, { recursive: true });
-  const notes: any = { cand, iterations: [] };
+/** An INCOMPLETE placeholder entry for a figure not yet processed. */
+function incompleteEntry(fig: FigureItem): ManifestEntry {
+  return {
+    id: fig.id, // figure id stands in until generation produces a real one
+    name: fig.id,
+    source_pdf: fig.pdf,
+    source_page: fig.page,
+    source_figure: fig.id,
+    brief_description: `Figure ${fig.id} — ${fig.pdf} p.${fig.page} (not yet generated)`,
+    iters_done: 0,
+    final_verdict: 'INCOMPLETE',
+    url: `/tests/extracted/${fig.id}/`,
+    source_image: figureUrl(fig),
+  };
+}
+
+async function processFigure(fig: FigureItem, catalog: string): Promise<ManifestEntry> {
+  const notes: any = { figure: fig, iterations: [] };
   let final_verdict: ManifestEntry['final_verdict'] = 'INCOMPLETE';
   let iters = 0;
 
-  // Render the source PDF page FIRST — independent of the LLM steps,
-  // so even an ERROR item still gets its original figure for review.
-  const srcImgPath = join(itemDir, 'source-page.png');
-  const rendered = await renderSourcePage(pdfPath, cand.source_page, srcImgPath);
-  const source_image = rendered ? `/tests/extracted/${cand.id}/source-page.png` : undefined;
-  if (!rendered) {
-    await log(`  source-page render skipped/failed (page=${cand.source_page})`);
-  }
-
-  const baseEntry = {
-    id: cand.id, name: cand.name, family: cand.family,
-    source_pdf: cand.source_pdf, source_page: cand.source_page,
-    brief_description: cand.brief_description,
-    url: `/tests/extracted/${cand.id}/`,
-    ...(source_image ? { source_image } : {}),
-  };
-
   try {
-    let ts = await generateInitial(cand, pdfPath, catalog);
+    // Generate first — the .ts carries meta.id/name, which we parse to
+    // name the output dir and the manifest entry.
+    let ts = await generateFromFigure(fig, catalog);
+    const meta = parseMeta(ts);
+    let primId = meta.id ?? fig.id.replace(/-/g, '_');
+    // Avoid clobbering an existing dir from a different figure.
+    if (existsSync(join(OUT_DIR, primId)) && primId !== fig.id) {
+      primId = `${primId}_${fig.n}`;
+    }
+    const itemDir = join(OUT_DIR, primId);
+    await mkdir(itemDir, { recursive: true });
+
     await writeFile(join(itemDir, 'iter-0.ts'), ts);
     notes.iterations.push({ iter: 0, action: 'generate', length: ts.length });
     iters = 1;
+
     if (!NO_REFINE) {
       for (let i = 1; i <= MAX_ITERS - 1; i++) {
-        const r = await critiqueAndRefine(cand, pdfPath, ts, i);
+        const r = await critiqueAndRefine(fig, ts, i);
         notes.iterations.push({ iter: i, verdict: r.verdict, raw_head: r.raw.slice(0, 200) });
         if (r.verdict === 'MATCH') { final_verdict = 'MATCH'; break; }
         if (r.nextTs && r.nextTs !== ts) {
@@ -444,25 +407,47 @@ async function processCandidate(cand: Candidate, catalog: string): Promise<Manif
         notes.note = 'reached MAX_ITERS without MATCH';
       }
     } else {
-      final_verdict = 'MATCH'; // skip refine — treat single-shot as done
+      final_verdict = 'MATCH'; // single-shot — treat as done
     }
+
     await writeFile(join(itemDir, 'final.ts'), ts);
     await writeFile(join(itemDir, 'notes.json'), JSON.stringify(notes, null, 2));
+
+    const finalMeta = parseMeta(ts);
+    return {
+      id: primId,
+      name: finalMeta.name ?? meta.name ?? primId,
+      family: undefined,
+      source_pdf: fig.pdf,
+      source_page: fig.page,
+      source_figure: fig.id,
+      brief_description: finalMeta.name ? `${finalMeta.name} — from ${fig.id}` : `Generated from ${fig.id}`,
+      iters_done: iters,
+      final_verdict,
+      url: `/tests/extracted/${primId}/`,
+      source_image: figureUrl(fig),
+    };
   } catch (e: any) {
-    final_verdict = 'ERROR';
-    notes.error = e?.message ?? String(e);
-    await writeFile(join(itemDir, 'notes.json'), JSON.stringify(notes, null, 2));
-    return { ...baseEntry, iters_done: iters, final_verdict, error: notes.error };
+    const err = e?.message ?? String(e);
+    const errDir = join(OUT_DIR, fig.id);
+    await mkdir(errDir, { recursive: true });
+    notes.error = err;
+    await writeFile(join(errDir, 'notes.json'), JSON.stringify(notes, null, 2));
+    return { ...incompleteEntry(fig), iters_done: iters, final_verdict: 'ERROR', error: err };
   }
-  return { ...baseEntry, iters_done: iters, final_verdict };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
-  await log(`overnight_extract started. target=${TARGET}, per_pdf=${ITEMS_PER_PDF}, no_refine=${NO_REFINE}, resume=${RESUME}`);
+  await log(`overnight_extract started. no_refine=${NO_REFINE}, resume=${RESUME}, batch=${BATCH}`);
 
-  // Resume support — load existing manifest if present.
+  const gallery = await loadGallery();
+  await log(`gallery: ${gallery.length} figures available`);
+  const byNumber = new Map(gallery.map((f) => [f.n, f]));
+  const byFigureId = new Map(gallery.map((f) => [f.id, f]));
+
+  // Resume — load existing manifest if present.
   let prior: ManifestEntry[] = [];
   if (RESUME && existsSync(MANIFEST)) {
     try {
@@ -472,117 +457,82 @@ async function main() {
     } catch {}
   }
 
-  // Phase 1 — enumerate. When resuming with a prior manifest, the
-  // candidate list is reconstructed from that manifest (it carries
-  // id/name/family/source_pdf/source_page/brief_description — exactly
-  // the Candidate shape). This skips 4 PDF-enumeration calls AND keeps
-  // ids stable across runs, so the retry-set matches cleanly.
-  let candidates: Candidate[] = [];
+  // Figure work-set. On resume, reconstruct from the manifest's
+  // source_figure field (retry ERROR/INCOMPLETE, skip MATCH). Otherwise
+  // use the --figure/--figures/--range selector; empty selector = all.
+  let figures: FigureItem[] = [];
   if (RESUME && prior.length > 0) {
-    candidates = prior.map((p) => ({
-      id: p.id, name: p.name, family: p.family,
-      source_pdf: p.source_pdf, source_page: p.source_page,
-      brief_description: p.brief_description,
-    }));
-    await log(`resume: reconstructed ${candidates.length} candidates from manifest (skipping enumeration)`);
+    const matchFigIds = new Set(
+      prior.filter((p) => p.final_verdict === 'MATCH').map((p) => p.source_figure),
+    );
+    const wantFigIds = [...new Set(prior.map((p) => p.source_figure))];
+    figures = wantFigIds
+      .filter((fid) => !matchFigIds.has(fid))
+      .map((fid) => byFigureId.get(fid))
+      .filter((f): f is FigureItem => !!f);
+    await log(`resume: ${figures.length} figures to retry (${matchFigIds.size} already MATCH)`);
   } else {
-    const pdfs = (await readdir(KB_SOURCES))
-      .filter((f) => f.toLowerCase().endsWith('.pdf'))
-      .map((f) => join(KB_SOURCES, f));
-    await log(`found ${pdfs.length} PDFs in kb-sources/`);
-    for (const pdf of pdfs) {
-      const remaining = TARGET - candidates.length;
-      if (remaining <= 0) break;
-      const want = Math.min(ITEMS_PER_PDF, remaining);
-      const found = await enumeratePdf(pdf, want);
-      candidates = candidates.concat(found);
+    const sel = parseFigureSelector();
+    if (sel.length === 0) {
+      figures = gallery;
+      await log(`no selector — processing ALL ${figures.length} gallery figures`);
+    } else {
+      figures = sel.map((n) => byNumber.get(n)).filter((f): f is FigureItem => !!f);
+      const missing = sel.filter((n) => !byNumber.has(n));
+      if (missing.length) await log(`WARN: figures not in gallery: ${missing.join(', ')}`);
+      await log(`selector: ${figures.length} figures (${sel.join(', ')})`);
     }
-    await log(`total candidates: ${candidates.length}`);
   }
 
-  // De-dup by id
-  const seen = new Set<string>();
-  candidates = candidates.filter((c) => {
-    if (seen.has(c.id)) return false;
-    seen.add(c.id);
-    return true;
-  });
-  await log(`after dedup: ${candidates.length}`);
-
-  // Resume: skip only items that already SUCCEEDED (final_verdict MATCH).
-  // ERROR and INCOMPLETE items are retried — a prior failure was often
-  // a transient credit/rate blip, not a bad candidate. Keep the prior
-  // MATCH entries in `completed` so the manifest doesn't lose them.
-  const doneIds = new Set(
-    prior.filter((p) => p.final_verdict === 'MATCH').map((p) => p.id),
-  );
-  let todo = candidates.filter((c) => !doneIds.has(c.id));
-  const retrying = todo.filter((c) => prior.some((p) => p.id === c.id)).length;
-  await log(`after resume-skip: ${todo.length} to process (${doneIds.size} already MATCH, ${retrying} retrying prior ERROR/INCOMPLETE)`);
-
-  // Batch cap — process only the next BATCH items this run, then exit.
-  // `pending` (the items beyond the batch) stay INCOMPLETE in the
-  // manifest so the Test tab still shows them; a follow-up --resume run
-  // picks them up. Lets the user review each batch before continuing.
-  const totalTodo = todo.length;
-  let pending: Candidate[] = [];
-  if (BATCH > 0 && todo.length > BATCH) {
-    pending = todo.slice(BATCH);
-    todo = todo.slice(0, BATCH);
-    await log(`batch mode: processing ${todo.length} of ${totalTodo} remaining (${pending.length} stay INCOMPLETE for next run)`);
+  if (figures.length === 0) {
+    await log('nothing to do — no figures selected.');
+    return;
   }
 
-  // Catalog context for the generate step (shared across all items)
+  // Batch cap — process only the next BATCH figures, rest stay
+  // INCOMPLETE for a follow-up --resume run.
+  let todo = figures;
+  let pending: FigureItem[] = [];
+  if (BATCH > 0 && figures.length > BATCH) {
+    pending = figures.slice(BATCH);
+    todo = figures.slice(0, BATCH);
+    await log(`batch mode: processing ${todo.length} of ${figures.length} (${pending.length} stay INCOMPLETE)`);
+  }
+
   const catalog = await loadCatalogContext();
   await log(`catalog context: ${catalog.length} chars`);
 
-  // Helper — an INCOMPLETE manifest entry from a bare Candidate.
-  const incompleteEntry = (c: Candidate): ManifestEntry => ({
-    id: c.id, name: c.name, family: c.family,
-    source_pdf: c.source_pdf, source_page: c.source_page,
-    brief_description: c.brief_description,
-    iters_done: 0, final_verdict: 'INCOMPLETE',
-    url: `/tests/extracted/${c.id}/`,
-  });
-
-  // Prior MATCH entries are preserved across runs. `pendingEntries` are
-  // the beyond-the-batch items, always carried so they don't vanish
-  // from the Test tab between batches.
+  // Prior MATCH entries are preserved. pendingEntries keep beyond-batch
+  // figures visible in the Test tab between batches.
   const priorMatch = prior.filter((p) => p.final_verdict === 'MATCH');
-  const pendingEntries = pending.map(incompleteEntry);
+  const matchFigIds = new Set(priorMatch.map((p) => p.source_figure));
+  const pendingEntries = pending
+    .filter((f) => !matchFigIds.has(f.id))
+    .map(incompleteEntry);
 
-  // Persist enumeration immediately so the user sees the full list:
-  // prior MATCH + this batch (INCOMPLETE until processed) + pending.
+  // Persist the full picture immediately: prior MATCH + this batch
+  // (INCOMPLETE until processed) + pending.
   await saveManifest([
     ...priorMatch,
     ...todo.map(incompleteEntry),
     ...pendingEntries,
   ]);
 
-  // Phase 2 — process each in the batch. `completed` seeds with prior
-  // MATCH only; every saveManifest call re-appends the not-yet-reached
-  // batch items + pendingEntries so the manifest is always the full
-  // picture.
   const completed: ManifestEntry[] = [...priorMatch];
   let idx = 0;
-  for (const cand of todo) {
+  for (const fig of todo) {
     idx++;
-    await log(`[${idx}/${todo.length}] ${cand.id} (${cand.name})`);
+    await log(`[${idx}/${todo.length}] ${fig.id} (${fig.pdf} p.${fig.page})`);
     const t0 = Date.now();
     let entry: ManifestEntry;
     try {
-      entry = await processCandidate(cand, catalog);
-      await log(`  done: verdict=${entry.final_verdict}, iters=${entry.iters_done}, ${Date.now() - t0}ms`);
+      entry = await processFigure(fig, catalog);
+      await log(`  done: id=${entry.id} verdict=${entry.final_verdict}, iters=${entry.iters_done}, ${Date.now() - t0}ms`);
     } catch (e: any) {
       await log(`  FAILED: ${e?.message ?? e}`);
-      entry = {
-        ...incompleteEntry(cand),
-        final_verdict: 'ERROR',
-        error: e?.message ?? String(e),
-      };
+      entry = { ...incompleteEntry(fig), final_verdict: 'ERROR', error: e?.message ?? String(e) };
     }
     completed.push(entry);
-    // Not-yet-reached batch items stay INCOMPLETE alongside pending.
     const remainingBatch = todo.slice(idx).map(incompleteEntry);
     await saveManifest([...completed, ...remainingBatch, ...pendingEntries]);
   }

@@ -32,7 +32,7 @@
 
   async function loadManifest() {
     try {
-      const r = await fetch('/eval/components/index.json', { cache: 'no-cache' });
+      const r = await fetch('/api/volume?path=eval/components/index.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`index.json ${r.status}`);
       manifest = await r.json();
       if (manifest && manifest.rows.length && !selectedDirname) {

@@ -37,7 +37,7 @@
 
   onMount(async () => {
     try {
-      const indexRes = await fetch('/kb/index.json', { cache: 'no-cache' });
+      const indexRes = await fetch('/api/volume?path=kb/index.json', { cache: 'no-cache' });
       if (!indexRes.ok) throw new Error(`index: ${indexRes.status}`);
       const index = await indexRes.json();
       const m = index.kbs?.find((k: KbMeta) => k.id === kbId);

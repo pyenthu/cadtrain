@@ -29,6 +29,12 @@ ENV NODE_ENV=production
 ENV CACHE_VOLUME=/data
 ENV APP_DATA_DIR=/app_data
 ENV HOST=0.0.0.0
+# adapter-node caps request bodies at 512K by default — too small for
+# /api/volume PUT uploads (PDFs, WEBMs, figure renders). Raise it so the
+# volume CRUD can take real files. Override per-service on Railway if a
+# tighter cap is wanted. NOTE: a Railway service variable of the same
+# name takes precedence over this line.
+ENV BODY_SIZE_LIMIT=64M
 EXPOSE 3000
 
 CMD ["./docker-entrypoint.sh"]

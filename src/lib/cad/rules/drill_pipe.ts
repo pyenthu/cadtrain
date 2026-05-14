@@ -58,7 +58,7 @@ interface MarkingRow {
 let markingCache: MarkingRow[] | null = null;
 async function loadMarkingRows(): Promise<MarkingRow[]> {
   if (markingCache) return markingCache;
-  const r = await fetch('/kb/api/drill-pipe-identification.json', { cache: 'no-cache' });
+  const r = await fetch('/api/volume?path=kb/api/drill-pipe-identification.json', { cache: 'no-cache' });
   if (!r.ok) throw new Error(`drill-pipe KB load failed: ${r.status}`);
   const data = await r.json();
   markingCache = data.rows as MarkingRow[];

@@ -18,7 +18,7 @@
 
   async function loadManifest() {
     try {
-      const r = await fetch('/tests/manifest.json', { cache: 'no-cache' });
+      const r = await fetch('/api/volume?path=test-recordings/manifest.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`manifest.json ${r.status}`);
       const data = await r.json();
       tests = data.tests ?? [];
@@ -101,7 +101,7 @@
         </div>
       </section>
     {:else if !loadError}
-      <div class="empty">No tests in manifest. Add an entry to <code>static/tests/manifest.json</code>.</div>
+      <div class="empty">No tests in manifest. Add an entry to <code>&lt;volume&gt;/test-recordings/manifest.json</code>.</div>
     {/if}
 
     <section class="stats-section">

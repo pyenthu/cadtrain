@@ -22,6 +22,7 @@
     {
       label: 'Meta',
       items: [
+        { href: '/volume',        label: 'Volume' },
         { href: '/archive/tests', label: 'Tests' },
         { href: '/plan',          label: 'Plan' },
         { href: '/archive',       label: 'Archive' },

@@ -19,12 +19,35 @@
 import { json, error } from '@sveltejs/kit';
 import { promises as fsp, createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative, extname } from 'node:path';
 import type { RequestHandler } from './$types';
 import { VOLUME_ROOT, safeVolumePath, checkVolumeAuth, maybeProxy } from '$lib/server/volume';
 
 interface FileNode  { name: string; type: 'file'; id: string; size: number | null }
 interface DirNode   { name: string; type: 'dir';  id: string; children: Record<string, FileNode | DirNode> }
+
+/** Best-effort content type by extension. The volume serves arbitrary
+ *  files; for the common image/json/pdf cases we set a real type so
+ *  <img> tags and fetch().json() work without byte-sniffing. Everything
+ *  else falls back to application/octet-stream. */
+const TYPE_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.webm': 'video/webm',
+  '.mp4': 'video/mp4',
+  '.ts': 'text/plain; charset=utf-8',
+};
+function contentTypeFor(path: string): string {
+  return TYPE_BY_EXT[extname(path).toLowerCase()] ?? 'application/octet-stream';
+}
 
 async function buildNode(absPath: string, name: string, depth = 0, maxDepth = 1): Promise<DirNode> {
   const relPath = relative(VOLUME_ROOT, absPath) || '';
@@ -80,7 +103,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
     const rangeHeader = request.headers.get('range');
     const total = stat.size;
     const headers: Record<string, string> = {
-      'Content-Type': 'application/octet-stream',
+      'Content-Type': contentTypeFor(abs),
       'Cache-Control': 'private, max-age=60',
       'Accept-Ranges': 'bytes',
     };

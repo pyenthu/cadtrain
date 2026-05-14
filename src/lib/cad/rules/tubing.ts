@@ -65,7 +65,7 @@ interface KbRow {
 let kbRowsCache: KbRow[] | null = null;
 async function loadKbRows(): Promise<KbRow[]> {
   if (kbRowsCache) return kbRowsCache;
-  const r = await fetch('/kb/api/casing-tubing-data.json', { cache: 'no-cache' });
+  const r = await fetch('/api/volume?path=kb/api/casing-tubing-data.json', { cache: 'no-cache' });
   if (!r.ok) throw new Error(`KB load failed: ${r.status}`);
   const data = await r.json();
   kbRowsCache = data.rows as KbRow[];

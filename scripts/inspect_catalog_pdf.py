@@ -19,7 +19,7 @@ Halliburton's COMPLETIONS_TOOLS_DIAG chapters; tune in the THRESHOLDS
 dict if a different vendor's PDFs misclassify.
 
 Usage:
-  python3 scripts/inspect_catalog_pdf.py static/eval/catalog/halliburton/06_Packers.pdf
+  python3 scripts/inspect_catalog_pdf.py <volume>/eval/catalog/halliburton/06_Packers.pdf
   python3 scripts/inspect_catalog_pdf.py path/to/file.pdf --out custom.json
 """
 from __future__ import annotations

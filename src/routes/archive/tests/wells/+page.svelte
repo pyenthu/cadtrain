@@ -48,7 +48,7 @@
 
   async function loadManifest() {
     try {
-      const r = await fetch('/eval/wells/index.json', { cache: 'no-cache' });
+      const r = await fetch('/api/volume?path=eval/wells/index.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`index.json ${r.status}`);
       manifest = await r.json();
       if (manifest && manifest.cases.length && !selectedId) {

@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "extracted_at": "2026-05-13",
-  "source_file": "kb-sources/api-drill-pipe-specs.pdf",
-  "description": "API drill-pipe specifications — extraction TODO. Stub KB entry so the underlying PDF surfaces in the Sources sidebar and can be opened in the embedded PDF viewer for review. Once the table extraction lands, populate rows[] with per-grade dimensional/strength data (OD, wall, nominal weight, grade E75/X95/G105/S135, tool-joint OD/ID, drift, torsional yield, MUT).",
-  "row_count": 0,
-  "rows": []
-}

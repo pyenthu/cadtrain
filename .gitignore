@@ -73,5 +73,30 @@ Thumbs.db
 # CADTRAIN_VOLUME_REMOTE_URL / Railway-mounted /app_data is configured.
 .dev-volume/
 
+# Figure gallery — regenerable extraction artifacts written to the
+# volume by scripts/extract_figures.ts. When the project root IS the
+# volume root (local-dev with kb-sources/ present) they land in
+# ./figures/; on Railway they live under /app_data/figures/. Either
+# way they're data, not source — never committed.
+/figures/
+
+# Test recordings — Playwright WEBMs + per-task e2e videos, written to
+# the volume by scripts/harvest_e2e_videos.ts. Served via /api/volume;
+# referenced by /archive/tests + the /plan Gantt popups. Regenerable
+# data, not source.
+/test-recordings/
+
+# KB tables — structured knowledge-base JSON, on the volume now (was
+# static/kb/, committed). Served via /api/volume?path=kb/...; the
+# extractor scripts/kb/*.ts write here. Local dev: ./kb/; Railway:
+# /app_data/kb/. Re-extract + re-upload rather than commit.
+/kb/
+
+# Eval datasets — wells + components recognition fixtures (was
+# static/eval/, committed). On the volume now; served via
+# /api/volume?path=eval/... to the /archive/tests/{wells,components}
+# viewers. Local dev: ./eval/; Railway: /app_data/eval/.
+/eval/
+
 # Claude Code session artifacts (per-session lock files etc.)
 .claude/
