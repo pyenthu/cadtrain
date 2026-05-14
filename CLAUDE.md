@@ -71,6 +71,15 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
       "https://<svc>.up.railway.app/api/volume?path=archive&action=mkdir"
     ```
 
+    **Upload ceilings (two separate limits).** (1) adapter-node
+    `BODY_SIZE_LIMIT` — the Dockerfile sets `64M`; a Railway service
+    variable of the same name overrides it. (2) Railway's edge request
+    timeout — an upload whose wall-clock time exceeds it 502s
+    ("Application failed to respond") regardless of body size. On a slow
+    uplink, files ≳10–15 MB can't complete an `/api/volume` PUT and need
+    a manual transfer (Railway shell / volume mount). Small/medium files
+    (≤~10 MB) go through fine.
+
     **Verification — Playwright volume spec** (`tests/e2e/volume.spec.ts`):
     end-to-end PUT/GET/DELETE round-trip + `/api/kb/sources` listing.
     Three modes, each gated by env vars so the spec runs cleanly in any
