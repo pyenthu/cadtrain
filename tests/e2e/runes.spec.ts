@@ -1,35 +1,35 @@
 /**
- * E2E test for the runes primitives flow:
+ * E2E test for the components primitives flow:
  *   - /api/components/list returns the expected baseline (Tube + Tapered Cone)
  *   - /primitives lands on the XML Primitive sidebar tab with Tube auto-opened
- *   - "+ New primitive" creates a fresh stub WITHOUT a page reload
- *   - The newly-created entry appears in the sidebar + auto-opens
- *   - The save endpoint bakes a .glb file served at /runes/<id>.glb
+ *   - "+ New primitive" creates a fresh stub WITHOUT a page reload — the
+ *     stub lands in the sidebar's Test tab (the library holding pen)
+ *   - The newly-created entry appears in Test + auto-opens as a tab
  *
- * Test artifact: each run creates a uniquely-named primitive (timestamp-
- * suffixed id) and cleans up the .ts source + .glb in afterAll so the
- * source tree doesn't accumulate. The cleanup is best-effort — if the
- * test crashes, leftover files are easy to spot (prefix `e2e_stub_`).
+ * Test artifact: each run creates a uniquely-named part (timestamp-
+ * suffixed id). `create: true` writes it to `library/test/<id>/` — a
+ * directory. afterAll rm -rf's that directory so leftover stubs don't
+ * pile up in the Test tab (they all share the name "E2E Stub").
  */
 
 import { test, expect } from '@playwright/test';
-import { unlink } from 'fs/promises';
+import { rm } from 'fs/promises';
 import { join } from 'path';
 
 const ROOT = process.cwd();
-const RUNES_DIR = join(ROOT, 'src', 'lib', 'components', 'runes');
-const STATIC_GLB_DIR = join(ROOT, 'static', 'runes');
+// A newly created part lands in the volume library's `test` category as
+// a directory: `library/test/<id>/`. In local-dev the volume root is the
+// project root (kb-sources/ is present), so it's ./library/test/<id>/.
+const LIBRARY_TEST_DIR = join(ROOT, 'library', 'test');
 
 // Unique id per run keeps tests isolated even if the previous one crashed.
 const STUB_ID = `e2e_stub_${Date.now()}`;
 const STUB_NAME = 'E2E Stub';
 
-test.describe.serial('runes primitives — API + create flow', () => {
+test.describe.serial('components primitives — API + create flow', () => {
   test.afterAll(async () => {
-    // Best-effort cleanup. The save endpoint writes <id>.ts and the bake
-    // writes <id>.glb; remove both so we don't pollute the source tree.
-    await unlink(join(RUNES_DIR, `${STUB_ID}.ts`)).catch(() => {});
-    await unlink(join(STATIC_GLB_DIR, `${STUB_ID}.glb`)).catch(() => {});
+    // Best-effort cleanup — remove the whole part directory.
+    await rm(join(LIBRARY_TEST_DIR, STUB_ID), { recursive: true, force: true }).catch(() => {});
   });
 
   test('GET /api/components/list returns the baseline registry', async ({ request }) => {

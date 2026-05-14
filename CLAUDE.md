@@ -19,7 +19,7 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 13. **Persistent data volume.** Production URL: **`https://cadtrain.up.railway.app`** (NOT `.com` — Railway uses `.up.railway.app`). All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; in local dev, falls back to `./.dev-volume/`). Sub-paths in use:
     - `$APP_DATA_DIR/training_data/cache.jsonl` — RAG cache for /api/identify
     - `$APP_DATA_DIR/training_data/authored_cache.jsonl` — authored-components cache
-    - `$APP_DATA_DIR/components/<id>.ts` + `<id>.md` — runtime overlay for /api/components/save and /api/components/instructions. The list endpoint merges bundle + volume, volume wins on id collision (see commit `469b730`). **`/api/components/*` do NOT proxy** (unlike `/api/volume` + `/api/kb/*`): component source is git-tracked project *code*, so in dev it writes to the local `src/` tree (Vite HMR + commit); the volume overlay is populated only by saves made ON the prod site. Proxying these strands new components on the volume where the build-time `import.meta.glob` can't load their geom.
+    - `$APP_DATA_DIR/library/<category>/<id>/` — the component **library**. Each part is a self-contained directory (`component.ts`, `picture.png`, `mesh.glb`, `instructions.md`, `prompts.json`, `meta.json`); the directory's LOCATION (`test` | `basic` | `parts` | `assemblies`) IS its sidebar category. See `src/lib/server/library.ts` (`resolvePart`). **No `/api/components/*` proxy** — the whole family (`save`/`list`/`geom`/`delete`/`move`/`instructions`/`prompts`/`picture`) is dev-local, operating on the LOCAL library, so they all agree on one store. See Rules 17 + 18.
     - `$APP_DATA_DIR/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
     - `$APP_DATA_DIR/kb/index.json` + `kb/api/*.json` — structured KB tables; fetched via `/api/volume?path=kb/...` by the KB DB sub-tab + `rules/{tubing,drill_pipe}.ts`. Re-extracted by `scripts/kb/*.ts` then re-uploaded.
     - `$APP_DATA_DIR/figures/` — `scripts/extract_figures.ts` PDF-page renders + `gallery.json` (Test tab figure gallery)
@@ -151,6 +151,26 @@ Parametric 3D CAD pipeline for downhole tool components, built as a **SvelteKit*
 
     **Don't**: hard-code a `family` or `level` field per component file; per-file annotations drift, the central map doesn't. Don't introduce a new axis without a corresponding `<map>_BY_ID` in `families.ts`.
 
+17. **Components render two ways, picked per-entry by `renderMode` on the `/api/components/list` response:**
+    - **`renderMode: 'client'`** — a **bundle** primitive: its `.ts` is in `src/lib/cad/components/` at build time, so Vite's `import.meta.glob` compiled its `geom`. The `/primitives` build `$effect` runs it directly via `buildAuthored()` — instant, no round-trip. The 26 baseline primitives.
+    - **`renderMode: 'server'`** — a **library part**: its `component.ts` lives in `$APP_DATA_DIR/library/<category>/<id>/` and was never seen by the build-time glob. The build `$effect` POSTs `{ id, params, zScale }` to `/api/components/geom`; the server reads + transpiles + sandbox-executes it (`src/lib/server/component-loader.ts` → `loadVolumeComponent` → `resolvePart`), runs ManifoldCAD in Node, and returns serialized `{ full, cutVC }` mesh-JSON which the client rehydrates via `src/lib/cad/mesh-serial.ts`.
+
+    **Why**: this is the picture → AI → `.ts` → volume workflow. New (figure-trained / AI-authored) components are *data on the volume*, NOT git-tracked `src/` code — they never need a bundle rebuild to render.
+
+    **Security** (`component-loader.ts` — a volume `.ts` is untrusted): `parseImports` allowlists ONLY `'../manifold-helpers'`, `'.'`, `'./<sibling-id>'`; strips all import lines; denylist-scans the body for `require(` / `process` / `import(` / `eval(` etc. Execution is `new Function` (host realm — keeps `Manifold` class identity; `node:vm`'s separate realm would break it) with only the manifold helpers + `defineGeom` + resolved sibling deps in scope.
+
+    **Concurrency**: `M` / circular-segment mode / render Z-scale are process-wide mutable globals — `/api/components/geom` serializes every WASM build through a promise-chain mutex. Results are LRU-cached (cap 200) by `<id>|<paramsJson>|<zScale>`; a save invalidates the component's entries.
+
+    **`new Function` exception**: this is the ONE place `new Function` is allowed (vs the authoring interpreter's "no eval" rule). Authored components are JSON recipes run by a fixed interpreter; volume components are authored `.ts` code that must execute — hence the sandbox + allowlist + denylist instead.
+
+18. **The library — directory-per-part, location = category.** A part is a self-contained directory; **its location IS its classification**. No central index, no metadata map that can drift. `src/lib/server/library.ts` is the resolver layer (`resolvePart`, `listLibraryParts`, `categoryDir`, `partDirIn`).
+    - **Layout**: `<volume>/library/<category>/<id>/` where category ∈ `test | basic | parts | assemblies`. Files in each part dir: `component.ts` (the geom source), `picture.png` (reference figure), `mesh.glb` (bake cache), `instructions.md` (the AI spec), `prompts.json` (AI prompt history), `meta.json` (the FINE axis — `family` for Parts, `level` for Basic; distinct from the `export const meta` inside component.ts).
+    - **Flow: create → test → review → move → category.** `/api/components/save` with `create: true` writes a new part into `library/test/<id>/` (the holding pen). Updates write back into the part's current category dir — editing never moves a part. The 26 bundle primitives in `src/` are still edited in `src/` in dev.
+    - A library part is `origin: '<category>'`, `renderMode: 'server'`. The **Test rail tab** is the holding area — it shows the raw figure gallery + `origin: 'test'` parts ("in progress"); a part stays there until the user hits **Move**.
+    - **`/api/components/move`** (the "Move" button) does an atomic `rename` of the whole part directory `library/<from>/<id>/` → `library/<to>/<id>/` — picture, glb, md, prompts all travel — then writes `meta.json` with the family/level.
+    - **Sidebar placement**: `entryRailTab` / `entryFamily` / `entryLevel` in `+page.svelte` — `origin` IS the tab for library parts; bundle parts fall back to the `families.ts` central maps (Rule 16).
+    - `/library/` is gitignored — runtime data, not source.
+
 ## Open TODOs (out-of-scope findings)
 
 - **Default-param primitive renders collapse for pHash AND CLIP.**
@@ -275,6 +295,10 @@ API routes were intentionally **not** moved to `/api/archive/*` — they're call
 | `/api/components/refine` | POST — Claude-driven geom rewrite for one component (the AI Refine tab). |
 | `/api/components/delete` | POST — remove a component file (plus its `.glb` bake). |
 | `/api/components/instructions` | POST — write `<id>.md` instructions sidecar for a component. |
+| `/api/components/geom` | POST `{ id, params, zScale? }` — server-side geometry render for a **library part**. Transpiles + sandbox-executes `library/<cat>/<id>/component.ts` (ManifoldCAD runs in Node), returns serialized `{ full, cutVC }` mesh-JSON. NOT proxied — dev-local like the rest. Bundle primitives render client-side and never hit this. See Rule 17. |
+| `/api/components/move` | POST `{ id, category, family?, level? }` — promote a Test-tab part into a category: atomic `rename` of the whole part directory + writes its `meta.json`. See Rule 18. |
+| `/api/components/prompts` | GET/PUT `?id=<id>` — per-component AI prompt history, stored at `library/<cat>/<id>/prompts.json`. Backs the AI inspector tab's History sub-tab. |
+| `/api/components/picture` | GET `?id=<id>` — streams a library part's `picture.png` (the reference figure). Dev-local; the list endpoint emits this URL as each part's `picture`. |
 | `/api/volume` | GET/PUT/DELETE/POST — generic CRUD against the persistent data volume rooted at `$APP_DATA_DIR`. Auth via `X-Volume-Token`; local dev can proxy to prod via `CADTRAIN_VOLUME_REMOTE_URL`. See Rule 13. |
 | `/api/kb/sources` | GET — lists `<volume>/kb-sources/*` + sidecar `_index.json` metadata. Powers the KB → Sources sub-tab. |
 | `/api/kb/source-pdf` | GET — streams a PDF from `<volume>/kb-sources/<name>.pdf` for the embedded viewer. Path-restricted; honours `maybeProxy()`. |

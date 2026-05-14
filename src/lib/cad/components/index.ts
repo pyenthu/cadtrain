@@ -78,6 +78,10 @@ export interface PrimitiveMeta {
 /** Geom function signature — pure (p) => Manifold. */
 export type GeomFn = (p: Record<string, number>) => any;
 
+/** Library category — which `<volume>/library/<category>/` directory a
+ *  part lives in. The directory location IS the classification. */
+export type LibraryCategory = 'test' | 'basic' | 'parts' | 'assemblies';
+
 /** Registry entry — meta + geom + raw source + instructions doc. */
 export interface ComponentEntry {
   meta: PrimitiveMeta;
@@ -87,6 +91,26 @@ export interface ComponentEntry {
    *  spec the AI refine endpoint reads alongside each prompt. Empty
    *  string when no .md file exists yet. */
   instructions: string;
+  /** Where the source was read from:
+   *   - 'bundle' — build-time `src/lib/cad/components/` tree.
+   *   - a LibraryCategory — the `<volume>/library/<category>/<id>/`
+   *     directory the part currently sits in (its location IS its
+   *     classification). Defaults to 'bundle' for the synchronous
+   *     COMPONENT_REGISTRY (glob-only) path. */
+  origin: 'bundle' | LibraryCategory;
+  /** How geometry is obtained:
+   *   - 'client' — `geom` is a real compiled function; run it directly.
+   *   - 'server' — a library part; `geom` is a placeholder that throws.
+   *     The page POSTs to /api/components/geom instead. */
+  renderMode: 'client' | 'server';
+  /** Fine classification axis from a library part's `meta.json` —
+   *  `family` for Parts, `level` for Basic. Absent for bundle entries
+   *  (they use the central families.ts map) and uncategorized parts. */
+  family?: string;
+  level?: number;
+  /** Volume-relative path to the part's `picture.png` (serve via
+   *  /api/volume). Absent for bundle entries / pictureless parts. */
+  picture?: string;
 }
 
 // ── Build-time GEOM map ──────────────────────────────────────────────────
@@ -113,6 +137,17 @@ function missingGeom(id: string): GeomFn {
   };
 }
 
+/** Placeholder geom for a `renderMode: 'server'` entry. The page branches
+ *  on renderMode and never calls this — but if some code path does, it
+ *  fails loudly instead of silently rendering nothing. */
+function serverRenderGeom(id: string): GeomFn {
+  return () => {
+    throw new Error(
+      `Component "${id}" renders server-side — POST to /api/components/geom instead of calling geom() directly.`,
+    );
+  };
+}
+
 // ── API list response shape (mirrors src/routes/api/components/list) ───────────
 interface ApiEntry {
   id: string;
@@ -122,8 +157,13 @@ interface ApiEntry {
   params: Record<string, ParamSchema>;
   hasValidate: boolean;
   source: string;
-  /** Content of <id>.md if it exists, else empty string. */
+  /** Content of the .md sidecar if it exists, else empty string. */
   instructions?: string;
+  origin?: 'bundle' | LibraryCategory;
+  renderMode?: 'client' | 'server';
+  family?: string;
+  level?: number;
+  picture?: string;
 }
 
 /**
@@ -139,7 +179,18 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
 
   return list.map((api) => {
     const mod = geomModules[`./${api.id}.ts`];
-    const geom = (mod?.geom as GeomFn | undefined) ?? GEOM_BY_ID.get(api.id) ?? missingGeom(api.id);
+    const origin = api.origin ?? 'bundle';
+    // renderMode comes from the API; fall back to 'client' when the
+    // build-time glob actually has a compiled geom for this id.
+    const renderMode: 'client' | 'server' =
+      api.renderMode ?? (GEOM_BY_ID.has(api.id) ? 'client' : 'server');
+    // 'server' entries render via /api/components/geom — the page never
+    // calls geom() on them, so wire a loud placeholder. 'client' entries
+    // use the compiled glob geom (or missingGeom if the bundle is stale).
+    const geom: GeomFn =
+      renderMode === 'server'
+        ? serverRenderGeom(api.id)
+        : (mod?.geom as GeomFn | undefined) ?? GEOM_BY_ID.get(api.id) ?? missingGeom(api.id);
     const validate = api.hasValidate ? mod?.meta?.validate : undefined;
     // `derived` is a record of functions — not serializable, so the API
     // response doesn't carry it. Pick it up from the build-time module
@@ -154,7 +205,17 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
       ...(validate ? { validate } : {}),
       ...(derived ? { derived } : {}),
     };
-    return { meta, geom, source: api.source, instructions: api.instructions ?? '' };
+    return {
+      meta,
+      geom,
+      source: api.source,
+      instructions: api.instructions ?? '',
+      origin,
+      renderMode,
+      ...(api.family ? { family: api.family } : {}),
+      ...(api.level != null ? { level: api.level } : {}),
+      ...(api.picture ? { picture: api.picture } : {}),
+    };
   });
 }
 
@@ -176,7 +237,14 @@ export const COMPONENT_REGISTRY: ComponentEntry[] = [];
 for (const [path, mod] of Object.entries(geomModules)) {
   if (path === './index.ts') continue;
   if (mod?.meta && typeof mod.geom === 'function') {
-    COMPONENT_REGISTRY.push({ meta: mod.meta, geom: mod.geom, source: '', instructions: '' });
+    COMPONENT_REGISTRY.push({
+      meta: mod.meta,
+      geom: mod.geom,
+      source: '',
+      instructions: '',
+      origin: 'bundle',
+      renderMode: 'client',
+    });
   }
 }
 

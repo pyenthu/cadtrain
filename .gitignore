@@ -98,5 +98,14 @@ Thumbs.db
 # viewers. Local dev: ./eval/; Railway: /app_data/eval/.
 /eval/
 
+# Library — volume-resident component store. Each part is a directory
+# under library/<category>/<id>/ (component.ts, picture.png, mesh.glb,
+# instructions.md, prompts.json, meta.json). Categories: test / basic /
+# parts / assemblies. Runtime CAD data, NOT source — rendered server-side
+# via /api/components/geom. The 26 baseline primitives that ARE source
+# stay under src/lib/cad/components/. See `src/lib/server/library.ts`.
+# Local dev: ./library/ ; Railway: /app_data/library/.
+/library/
+
 # Claude Code session artifacts (per-session lock files etc.)
 .claude/

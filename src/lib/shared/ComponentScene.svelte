@@ -44,38 +44,22 @@
     return [];
   });
 
-  // Default camera convention: camera on -Y looking at origin, UP = -Z
+  // Default camera convention: camera on +Y looking at origin, UP = -Z
   // (Z-down drilling convention — well axis stays vertical on screen).
+  // Perspective camera + OrbitControls: rotate to inspect, scroll to
+  // dolly in/out. Distance (not an ortho `zoom`) sets apparent size.
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
-  const DEFAULT_ZOOM = 104;
-
-  // Auto-fit zoom: fit the bounding SPHERE (= the diagonal across the bbox)
-  // into the viewport so a tall packer doesn't clip when rotated.
-  function autoZoomFromMeshes(arr: { full: any; cutVC: any }[], fallback: number): number {
-    if (arr.length === 0) return fallback;
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    for (const m of arr) {
-      const g = m.cutVC ?? m.full;
-      if (!g) continue;
-      if (!g.boundingBox) g.computeBoundingBox?.();
-      const bb = g.boundingBox;
-      if (!bb) continue;
-      if (bb.min.x < minX) minX = bb.min.x; if (bb.max.x > maxX) maxX = bb.max.x;
-      if (bb.min.y < minY) minY = bb.min.y; if (bb.max.y > maxY) maxY = bb.max.y;
-      if (bb.min.z < minZ) minZ = bb.min.z; if (bb.max.z > maxZ) maxZ = bb.max.z;
-    }
-    const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
-    const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
-    if (!isFinite(diagonal) || diagonal <= 0) return fallback;
-    return Math.min(280 / diagonal, fallback);
-  }
+  const DEFAULT_FOV = 45;
 
   let cameraPosition = $derived<[number, number, number]>(
     cameraOverride?.position ?? [scene.cam.x, scene.cam.y, scene.cam.z]
   );
   let cameraUp = $derived(cameraOverride?.up ?? DEFAULT_UP);
-  let cameraZoom = $derived(cameraOverride?.zoom ?? autoZoomFromMeshes(meshes, DEFAULT_ZOOM));
+  // `zoom` on a PerspectiveCamera is a plain multiplier (default 1) —
+  // honoured only when a caller passes an explicit cameraOverride.zoom
+  // (the dedicated tool viewers); otherwise OrbitControls dolly handles
+  // framing.
+  let cameraZoom = $derived(cameraOverride?.zoom ?? 1);
 
   let light1Pos = $derived<[number, number, number]>([scene.l1.x, scene.l1.y, scene.l1.z]);
   let light2Pos = $derived<[number, number, number]>([scene.l2.x, scene.l2.y, scene.l2.z]);
@@ -108,9 +92,9 @@
   const AX_R   = 0.08;
 </script>
 
-<T.OrthographicCamera makeDefault position={cameraPosition} zoom={cameraZoom} up={cameraUp}>
-  <OrbitControls bind:ref={controls} enableDamping />
-</T.OrthographicCamera>
+<T.PerspectiveCamera makeDefault position={cameraPosition} fov={DEFAULT_FOV} zoom={cameraZoom} up={cameraUp}>
+  <OrbitControls bind:ref={controls} enableDamping enableZoom enableRotate enablePan />
+</T.PerspectiveCamera>
 
 <T.Color args={['#ffffff']} attach="background" />
 <T.AmbientLight intensity={0.3} />

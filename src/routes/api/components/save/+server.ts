@@ -1,55 +1,49 @@
 /**
  * POST /api/components/save
  *
- * Persist an edited component .ts source file from the in-browser editor
- * (Script popup → Svelte tab → editable CodeMirror) back to disk.
+ * Persist an edited component source from the in-browser editor back to
+ * disk. Two write destinations, picked by where the component lives:
  *
- * Two write paths, picked by environment:
+ *   - **Library** (`<volume>/library/<category>/<id>/component.ts`) —
+ *     every NEWLY created component (`create: true`) lands in the `test`
+ *     category (the holding pen). Updates to a part already in the
+ *     library are written back into its current category directory —
+ *     editing never moves a part between categories (that's
+ *     /api/components/move). See `library.ts` for the directory model.
+ *   - **Bundle src/** (`src/lib/cad/components/<id>.ts`) — only when
+ *     UPDATING one of the 26 baseline primitives in DEV. Vite HMR picks
+ *     it up. (In prod a bundle primitive has no on-disk src file, so an
+ *     edit there creates a library `test/` part instead.)
  *
- *   - **Dev**: writes to `src/lib/cad/components/<id>.ts` so Vite HMR
- *     picks up the change and the page hot-reloads with the new geometry.
- *     Commit the file to make the edit permanent.
- *   - **Prod**: writes to `<volume>/components/<id>.ts` (per
- *     `volumePath('components')` — Railway `/app_data/components/<id>.ts`).
- *     /api/components/list merges the volume overlay over the bundle
- *     entries (volume wins on id collision), so the saved file appears
- *     in the next list request. Brand-new ids without a bundled geom
- *     get `hasGeom: false` on the list response until a bundle rebuild;
- *     existing-id overlays inherit the bundled geom immediately.
- *
- * NOT proxied: unlike /api/volume + /api/kb/*, this endpoint does NOT
- * forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set. Component .ts
- * source is git-tracked project code, not volume data — in dev it must
- * land in the local src/ tree so Vite HMR picks it up and the file can
- * be committed. Proxying would strand a new component on the prod
- * volume overlay, where the build-time import.meta.glob can't load its
- * geom (the page would show "Unknown component"). The volume overlay is
- * populated only by saves made ON the prod site itself (same-origin).
+ * NOT proxied — authoring is dev-local. Only /api/components/geom proxies.
  *
  * Safety:
- *   - id must match a known entry in the component registry (whitelist; no
- *     arbitrary file writes) UNLESS create:true is passed.
- *   - source must be reasonably small (< 256KB) — guards against accidental
- *     paste of a giant blob.
- *   - the on-disk path is rebuilt from a sanitized id, never trusted from
- *     the request body verbatim.
+ *   - create mode: id must NOT already exist anywhere (no clobber).
+ *   - update mode: id MUST already exist somewhere (no arbitrary writes).
+ *   - source must be reasonably small (< 256KB).
+ *   - the on-disk path is rebuilt from a sanitized id.
  */
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { writeFile, mkdir, access } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { dev } from '$app/environment';
-import { COMPONENT_REGISTRY, defaultsFor, geomById } from '$lib/cad/components';
+import { COMPONENT_REGISTRY, geomById } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 import { bakeGlb } from '$lib/server/manifold-bake';
-import { volumePath, checkVolumeAuth, ensureDir } from '$lib/server/volume';
+import { initManifold } from '$lib/cad/manifold-helpers';
+import {
+  loadVolumeComponent,
+  invalidateVolumeComponent,
+} from '$lib/server/component-loader';
+import { resolvePart, partDirIn, ensureLibrary, PART_FILES } from '$lib/server/library';
+import { checkVolumeAuth } from '$lib/server/volume';
 
-/** Tiny default-params extractor — pulls each `params.<name>.default`
- *  out of the raw source text. Used by the save endpoint to bake a GLB
- *  with the same defaults the file declares, without dynamic-importing
- *  the .ts file (which Bun's runtime parser rejects when invoked via a
- *  cache-bust query). Mirrors the parsing logic in /api/components/list. */
+/** Pulls each `params.<name>.default` out of the raw source text — used
+ *  to bake a GLB with the file's declared defaults without dynamic-
+ *  importing the .ts. Mirrors the parser in /api/components/list. */
 function extractDefaultsFromSource(src: string): Record<string, number> {
   const m = /params\s*:\s*\{/.exec(src);
   if (!m) return {};
@@ -66,24 +60,17 @@ function extractDefaultsFromSource(src: string): Record<string, number> {
   const body = src.slice(m.index + m[0].length, i);
   const out: Record<string, number> = {};
   for (const entry of body.matchAll(/(\w+)\s*:\s*\{([^}]+)\}/g)) {
-    const name = entry[1];
-    const inner = entry[2];
-    const dm = /\bdefault\s*:\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)/.exec(inner);
-    if (dm) out[name] = Number(dm[1]);
+    const dm = /\bdefault\s*:\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)/.exec(entry[2]);
+    if (dm) out[entry[1]] = Number(dm[1]);
   }
   return out;
 }
 
 const MAX_BYTES = 256 * 1024;
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
-const VOLUME_DIR = volumePath('components');
 
 export const POST: RequestHandler = async ({ request, url }) => {
-  // Deliberately NOT proxied — see the file header. Component source is
-  // dev-local project code; in dev it writes to src/, on prod it writes
-  // the volume overlay (same-origin). Same-origin browser sessions are
-  // trusted by checkVolumeAuth without a token; unset token locally
-  // → endpoint open.
+  // Deliberately NOT proxied — see the file header.
   checkVolumeAuth(request, url);
 
   const body = await request.json().catch(() => null);
@@ -94,90 +81,115 @@ export const POST: RequestHandler = async ({ request, url }) => {
   if (typeof id !== 'string' || typeof source !== 'string') {
     throw error(400, 'Missing id (string) or source (string)');
   }
-  // Defense in depth — strict id format BEFORE any path composition.
   if (!/^[a-z][a-z0-9_]*$/.test(id)) {
     throw error(400, `Invalid id format "${id}" — must start with a lowercase letter, only [a-z0-9_]`);
   }
-
-  const isCreate = create === true;
-  if (!isCreate) {
-    // Update mode — id MUST already be in the registry. Protects against
-    // accidental writes to brand-new files via the update path.
-    if (!COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
-      throw error(400, `Unknown component id "${id}" — not in registry. Pass create:true to create a new primitive.`);
-    }
-  } else {
-    // Create mode — id MUST NOT already exist (don't clobber).
-    if (COMPONENT_REGISTRY.find((e) => e.meta.id === id)) {
-      throw error(409, `Primitive "${id}" already exists — drop create:true to update it.`);
-    }
-  }
-
   if (Buffer.byteLength(source, 'utf8') > MAX_BYTES) {
     throw error(413, `Source too large (> ${MAX_BYTES} bytes)`);
   }
 
-  // Pick the write destination:
-  //   - dev: src/lib/cad/components — Vite HMR sees the change, the page
-  //     hot-reloads with the new geom. Commit to make permanent.
-  //   - prod: $APP_DATA_DIR/components — the volume overlay. Persists
-  //     across redeploys; the next /api/components/list merges it over
-  //     the bundle (volume wins on id collision).
-  const targetDir = dev ? SRC_DIR : VOLUME_DIR;
-  const path = join(targetDir, `${id}.ts`);
+  const isCreate = create === true;
+
+  // Where does this id currently live?
+  const libraryPart = await resolvePart(id);
+  const srcPath = join(SRC_DIR, `${id}.ts`);
+  const inSrc = existsSync(srcPath);
+  const inBundle = COMPONENT_REGISTRY.some((e) => e.meta.id === id);
+  const exists = !!libraryPart || inSrc || inBundle;
+
+  if (isCreate && exists) {
+    const where = libraryPart ? `library/${libraryPart.category}` : inSrc ? 'src/' : 'bundle';
+    throw error(409, `Component "${id}" already exists (${where}) — drop create:true to update it.`);
+  }
+  if (!isCreate && !exists) {
+    throw error(400, `Unknown component id "${id}" — doesn't exist anywhere. Pass create:true to create it.`);
+  }
+
+  // Pick the write destination.
+  //   - create               → library/test/<id>/component.ts (holding pen)
+  //   - update library part   → its current <category>/<id>/component.ts
+  //   - update bundle in dev  → src/lib/cad/components/<id>.ts (HMR)
+  //   - update bundle in prod → library/test/<id>/component.ts (new library part)
+  let targetPath: string;
+  let wroteToLibrary: boolean;
+  if (libraryPart) {
+    targetPath = libraryPart.componentPath;
+    wroteToLibrary = true;
+  } else if (!isCreate && inSrc && dev) {
+    targetPath = srcPath;
+    wroteToLibrary = false;
+  } else {
+    // create, or a prod-side bundle edit → a fresh library/test part.
+    await ensureLibrary();
+    const dir = await partDirIn('test', id);
+    await mkdir(dir, { recursive: true });
+    targetPath = join(dir, PART_FILES.component);
+    wroteToLibrary = true;
+  }
+
   try {
-    if (dev) {
-      await mkdir(targetDir, { recursive: true });
-    } else {
-      ensureDir('components'); // volumePath-relative, idempotent
-    }
-    await writeFile(path, source, 'utf8');
+    if (!wroteToLibrary) await mkdir(SRC_DIR, { recursive: true });
+    await writeFile(targetPath, source, 'utf8');
   } catch (e: any) {
     throw error(500, `Write failed: ${e?.message ?? e}`);
   }
 
-  // Drop the cached /api/components/list payload so the next list request
-  // re-scans and reflects the new/edited file.
   invalidateRunesListCache();
 
-  // Bake the default-params GLB so the client can use it for fast
-  // first-paint. Non-fatal: a bake failure doesn't roll back the source
-  // write — surface the error in the response payload so the UI can
-  // flag it without losing the user's edits.
-  //
-  // Geom comes from the build-time registry (geomById). For brand-new
-  // primitives the geom won't be in the registry until Vite re-bundles;
-  // in that case the bake is skipped with a clear note. Defaults are
-  // parsed from the source text we just wrote (no dynamic import needed
-  // — Bun's runtime parser chokes on TS type annotations when imported
-  // with a cache-bust query).
+  // Geometry verification + optional GLB bake.
+  //   - src/ write: the file lands in the build-time glob once Vite
+  //     re-evaluates; geomById may lag — wait briefly, re-import, bake.
+  //   - library write: the part renders server-side via /api/components/
+  //     geom; verify it transpiles + executes through loadVolumeComponent
+  //     (the exact path the geom endpoint takes). The bake is best-effort.
+  // Non-fatal either way — surfaced in the response, never rolls back.
   let bakeReport: { ok: boolean; bytes?: number; error?: string; deferred?: boolean } = { ok: false };
-  let geom = geomById(id);
-  // Brand-new primitives won't be in the build-time registry yet (Vite
-  // hasn't re-evaluated the glob). Wait briefly for the file watcher to
-  // invalidate the components index, then re-import to pick up the new entry.
-  if (!geom) {
-    await new Promise((r) => setTimeout(r, 300));
-    try {
-      const fresh: any = await import(/* @vite-ignore */ `$lib/cad/components?refresh=${Date.now()}`);
-      geom = fresh?.geomById?.(id);
-    } catch {}
-  }
-  if (!geom) {
-    bakeReport = {
-      ok: false,
-      deferred: true,
-      error: 'geom not in registry yet — Vite still bundling. Refresh the page and re-save to trigger the bake.',
-    };
+
+  if (!wroteToLibrary) {
+    let geom = geomById(id);
+    if (!geom) {
+      await new Promise((r) => setTimeout(r, 300));
+      try {
+        const fresh: any = await import(/* @vite-ignore */ `$lib/cad/components?refresh=${Date.now()}`);
+        geom = fresh?.geomById?.(id);
+      } catch {}
+    }
+    if (!geom) {
+      bakeReport = {
+        ok: false,
+        deferred: true,
+        error: 'geom not in registry yet — Vite still bundling. Refresh the page and re-save to trigger the bake.',
+      };
+    } else {
+      try {
+        const r = await bakeGlb(id, geom, extractDefaultsFromSource(source));
+        bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
+      } catch (e: any) {
+        bakeReport = { ok: false, error: e?.message ?? String(e) };
+      }
+    }
   } else {
+    invalidateVolumeComponent(id);
     try {
-      const defaults = extractDefaultsFromSource(source);
-      const r = await bakeGlb(id, geom, defaults);
-      bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
+      await initManifold();
+      const loaded = await loadVolumeComponent(id);
+      try {
+        const r = await bakeGlb(id, loaded.geom, extractDefaultsFromSource(source));
+        bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
+      } catch (e: any) {
+        bakeReport = { ok: false, error: e?.message ?? String(e) };
+      }
     } catch (e: any) {
-      bakeReport = { ok: false, error: e?.message ?? String(e) };
+      bakeReport = { ok: false, error: `library part failed to load: ${e?.message ?? e}` };
     }
   }
 
-  return json({ ok: true, path, glb: bakeReport });
+  // A freshly-created part (or a prod bundle edit) is now in library/test.
+  const resolved = wroteToLibrary ? await resolvePart(id) : null;
+  return json({
+    ok: true,
+    path: targetPath,
+    origin: resolved ? resolved.category : 'bundle',
+    glb: bakeReport,
+  });
 };

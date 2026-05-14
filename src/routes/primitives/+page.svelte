@@ -24,6 +24,7 @@
   import { initManifold, setRenderZScale } from '$lib/cad/builder';
   import { scene } from '$lib/shared/scene-state.svelte';
   import { buildAuthored } from '$lib/authoring/compose';
+  import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { emptyAuthoredComponent, type AuthoredComponent } from '$lib/authoring/schema';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import KbTableViewer from '$lib/shared/KbTableViewer.svelte';
@@ -141,11 +142,12 @@
       name: 'Operator',
       match: () => false,
     },
-    // Test — scratch pad for source-document URLs. Paste a link, hit
-    // Add, click it later to open in a viewer tab. State persists in
-    // localStorage under 'cad:testLinks'. Used during authoring flows
-    // when the user (or Claude) needs to revisit a vendor page or PDF
-    // multiple times while extracting parts from the docs.
+    // Test — the holding area. Two things live here: the numbered
+    // figure gallery (raw PDF-page renders from extract_figures.ts), and
+    // figure-derived components-in-progress (library/test/<id>/ — they
+    // render normally but aren't classified into Basic/Parts/Assemblies
+    // until the user hits Move). Also keeps the manual source-link
+    // scratch pad. A part stays in Test until explicitly moved.
     {
       id: 'test',
       name: 'Test',
@@ -652,6 +654,9 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
       geom: () => { throw new Error('figure draft has no geometry yet'); },
       source: draftStubSource(draftId, fig.id),
       instructions: '',
+      // A figure draft becomes a library/test part on first save.
+      origin: 'test',
+      renderMode: 'server',
     };
     openTabs = [
       ...openTabs,
@@ -1070,11 +1075,17 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
     // buildPrimitiveManifold consults COMPONENT_REGISTRY directly, so the
     // geometry pipeline picks up entry.geom by id without further wiring.
     const seed = defaultsFor(entry.meta);
-    openTabs = [
-      ...openTabs,
-      { id, kind: 'xml-primitive', componentEntry: entry, primId: entry.meta.id, label: entry.meta.name, params: seed, draft: false, vars: [] },
-    ];
+    const tab: Tab = { id, kind: 'xml-primitive', componentEntry: entry, primId: entry.meta.id, label: entry.meta.name, params: seed, draft: false, vars: [] };
+    // A library part carries a ready picture URL in `entry.picture`
+    // (the dev-local /api/components/picture endpoint). Wire it onto the
+    // tab so the Picture stage tab shows it — the picture travels with
+    // the part across categories.
+    if (entry.picture) tab.pictureUrl = entry.picture;
+    openTabs = [...openTabs, tab];
     activeTabId = id;
+    // Pull the persisted prompt history so the AI tab's History sub-tab
+    // shows past refines for this component, not just this session's.
+    loadPromptHistory(tab);
   }
 
   function openComposite(prefix: 'comp' | 'asm', entry: { id: string; name: string; spec?: any; route?: string }) {
@@ -1185,12 +1196,19 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
-  type InspectorTab = 'params' | 'svelte' | 'parts' | 'ai' | 'script' | 'md';
+  type InspectorTab = 'params' | 'svelte' | 'parts' | 'ai' | 'script';
   // Default to Parts — it's the leftmost tab for single-file components and the
   // module-library affordance is the most useful entry point. The snap-tab
   // effect below redirects to 'params' when the active tab is a legacy
   // primitive (no Parts tab there).
   let inspectorTab = $state<InspectorTab>('ai');
+  /** Sub-tab inside the AI inspector tab's prompt area: the live Prompt
+   *  input vs. the persisted History of past refines. */
+  let aiSubTab = $state<'prompt' | 'history'>('prompt');
+  /** Instructions section view — `edit` shows the raw textarea, `preview`
+   *  renders the markdown. Defaults to preview so the spec reads nicely;
+   *  the user flips to edit to change it. */
+  let instructionsView = $state<'edit' | 'preview'>('preview');
   /** Selected sub-tab inside the Params section. Tracks the `group` field
    *  of the displayed params. null = "show all". Resets per-tab via the
    *  $effect below when activeTab changes. */
@@ -1217,6 +1235,78 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
       componentListError = null;
     } catch (e: any) {
       componentListError = e?.message ?? String(e);
+    }
+  }
+
+  // ── Entry classification ─────────────────────────────────────────────────
+  // A component's sidebar placement comes from `origin`:
+  //   - 'bundle' — one of the 26 baseline primitives; classified by the
+  //     central families.ts maps (FAMILY_BY_ID / LEVEL_BY_ID).
+  //   - 'test' | 'basic' | 'parts' | 'assemblies' — a library part; the
+  //     origin IS the rail tab (its directory location IS its category).
+  //     family/level come from the part's meta.json.
+  function entryFamily(e: ComponentEntry): Family {
+    if (e.family) return e.family as Family;
+    return familyOf(e.meta.id);
+  }
+  function entryLevel(e: ComponentEntry): Level {
+    if (e.level) return e.level as Level;
+    return levelOf(e.meta.id);
+  }
+  /** Which rail tab an entry belongs in. */
+  function entryRailTab(e: ComponentEntry): 'test' | 'basic' | 'components' | 'assemblies' {
+    if (e.origin === 'test') return 'test';
+    if (e.origin === 'basic') return 'basic';
+    if (e.origin === 'parts') return 'components';
+    if (e.origin === 'assemblies') return 'assemblies';
+    // bundle — classify via families.ts.
+    return familyOf(e.meta.id) === 'basic' ? 'basic' : 'components';
+  }
+
+  // ── Move (promote a Test-tab part into a category) ───────────────────────
+  // The Move button on a Test-tab row opens this inline form; on confirm it
+  // calls /api/components/move, which atomically renames the part's whole
+  // directory into the target category dir + writes its meta.json.
+  let moveForm = $state<{
+    id: string;
+    category: 'basic' | 'parts' | 'assemblies';
+    family: Family;
+    level: Level;
+    error: string;
+    moving: boolean;
+  } | null>(null);
+
+  function openMoveForm(id: string) {
+    moveForm = moveForm?.id === id
+      ? null
+      : { id, category: 'parts', family: 'casing_tubing', level: 1, error: '', moving: false };
+  }
+
+  async function submitMove() {
+    if (!moveForm) return;
+    moveForm.error = '';
+    moveForm.moving = true;
+    const payload: Record<string, unknown> = { id: moveForm.id, category: moveForm.category };
+    if (moveForm.category === 'parts') payload.family = moveForm.family;
+    if (moveForm.category === 'basic') payload.level = moveForm.level;
+    try {
+      const r = await fetch('/api/components/move', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        moveForm.error = `${r.status} — ${txt.slice(0, 160)}`;
+        moveForm.moving = false;
+        return;
+      }
+      // Refresh so the part leaves Test and shows up in its new tab.
+      await refreshRunesList();
+      moveForm = null;
+    } catch (e: any) {
+      moveForm.error = e?.message ?? String(e);
+      moveForm.moving = false;
     }
   }
 
@@ -1271,11 +1361,13 @@ export const geom = defineGeom(meta, (p) => {
         newPrimForm.saving = false;
         return;
       }
-      // Success — re-fetch the registry from the API so the new entry
-      // shows up in the sidebar without a page reload. Then auto-open
-      // it as a tab.
+      // Success — the new part lands in library/test (the holding pen),
+      // not directly in a category. Re-fetch the registry, switch the
+      // sidebar to the Test tab so the user sees where it went, and
+      // auto-open it as a tab.
       newPrimForm = null;
       await refreshRunesList();
+      sidebarTab = 'test';
       const fresh = componentList.find((e) => e.meta.id === id);
       if (fresh) openRunes(fresh);
     } catch (e: any) {
@@ -1911,7 +2003,7 @@ export const geom = defineGeom(meta, (p) => {
   $effect(() => {
     if (!activeTab) return;
     if (activeTab.kind === 'xml-primitive' && inspectorTab === 'script') inspectorTab = 'svelte';
-    if (activeTab.kind !== 'xml-primitive' && (inspectorTab === 'svelte' || inspectorTab === 'md' || inspectorTab === 'parts' || inspectorTab === 'ai')) inspectorTab = 'params';
+    if (activeTab.kind !== 'xml-primitive' && (inspectorTab === 'svelte' || inspectorTab === 'parts' || inspectorTab === 'ai')) inspectorTab = 'params';
   });
   let showCutaway = $state(true);
   let showEdges = $state(true);
@@ -1984,7 +2076,7 @@ export const geom = defineGeom(meta, (p) => {
     // race with our restore.
     try {
       const lastInsp = sessionStorage.getItem('cad:lastInspectorTab');
-      if (lastInsp && ['ai', 'parts', 'params', 'svelte', 'md', 'script'].includes(lastInsp)) {
+      if (lastInsp && ['ai', 'parts', 'params', 'svelte', 'script'].includes(lastInsp)) {
         inspectorTab = lastInsp as InspectorTab;
       }
     } catch {}
@@ -2056,6 +2148,41 @@ export const geom = defineGeom(meta, (p) => {
     if (activeTab.unconstructed) { geo = null; buildError = null; return; }
     if (buildTimer) clearTimeout(buildTimer);
     buildTimer = setTimeout(async () => {
+      // Server-render path: a volume-only component (renderMode 'server')
+      // has no compiled geom in this bundle — its .ts lives on the volume.
+      // POST params to /api/components/geom; the server transpiles +
+      // executes the .ts and returns serialized { full, cutVC }, which we
+      // rehydrate into the same shape buildAuthored produces.
+      const entry =
+        activeTab && activeTab.kind === 'xml-primitive' ? activeTab.componentEntry : undefined;
+      if (entry && entry.renderMode === 'server') {
+        try {
+          const r = await fetch('/api/components/geom', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              id: entry.meta.id,
+              params: { ...activeTab!.params },
+              zScale: scene.zScale,
+            }),
+          });
+          if (!r.ok) {
+            const txt = await r.text().catch(() => '');
+            throw new Error(`geom ${r.status} — ${txt.slice(0, 160)}`);
+          }
+          const payload = await r.json();
+          geo = deserializeComponentResult(payload);
+          geoVersion++;
+          buildError =
+            Array.isArray(payload.validationErrors) && payload.validationErrors.length
+              ? payload.validationErrors.join('; ')
+              : null;
+        } catch (e: any) {
+          buildError = e?.message ?? String(e);
+        }
+        return;
+      }
+      // Client-render path — compiled geom is in the build-time bundle.
       const spec = activeSpec();
       if (!spec) return;
       try {
@@ -2104,7 +2231,7 @@ export const geom = defineGeom(meta, (p) => {
     tab.saveStatus = 'saving';
     tab.saveError = undefined;
     // A figure-draft (or any id not yet in the registry) is a brand-new
-    // file — the save endpoint requires `create: true` for those. An
+    // part — the save endpoint requires `create: true` for those. An
     // existing component saves without it.
     const isNew = !componentList.some((e) => e.meta.id === tab.componentEntry!.meta.id);
     try {
@@ -2121,23 +2248,18 @@ export const geom = defineGeom(meta, (p) => {
       }
       tab.saveStatus = 'saved';
       tab.sourceDraft = null;
-      // A brand-new component file isn't in the build-time
-      // `import.meta.glob` until Vite re-evaluates it — and an *eager*
-      // glob only reliably picks up a NEW file on a full page reload,
-      // not via HMR. So for a freshly-created component, reload the
-      // page: the `cad:lastActiveId` sessionStorage restore reopens this
-      // exact tab on mount, now fully registered + rendering. (An
-      // existing-component save just needs the API refresh below.)
-      if (isNew) {
-        await new Promise((res) => setTimeout(res, 500)); // let the write settle
-        window.location.reload();
-        return true;
-      }
-      // Re-fetch the registry from the API so the in-memory tab entry
-      // matches what's now on disk. Then update the tab's reference.
+      // Re-fetch the registry so the in-memory tab entry matches disk.
       await refreshRunesList();
       const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
       if (fresh) tab.componentEntry = { ...fresh, source: next };
+      if (isNew) {
+        // A brand-new part is now a library/test directory — it renders
+        // server-side via /api/components/geom, NO page reload needed
+        // (the old eager-glob reload hack is gone). Clear `unconstructed`
+        // so the build effect picks it up, and show where it landed.
+        tab.unconstructed = false;
+        sidebarTab = 'test';
+      }
       return true;
     } catch (e: any) {
       tab.saveStatus = 'error';
@@ -2163,6 +2285,51 @@ export const geom = defineGeom(meta, (p) => {
   function ensureAi(tab: Tab) {
     if (!tab.ai) tab.ai = { prompt: '', status: 'idle', history: [] };
     return tab.ai;
+  }
+
+  /** Format a history timestamp compactly for the History sub-tab. */
+  function formatHistoryTs(ts: number): string {
+    try {
+      return new Date(ts).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+    } catch { return ''; }
+  }
+
+  /** Load this component's persisted prompt history (from the volume,
+   *  via /api/components/prompts) into tab.ai.history. Best-effort — a
+   *  missing/failed fetch leaves the in-memory history untouched. */
+  async function loadPromptHistory(tab: Tab) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    const id = tab.componentEntry.meta.id;
+    try {
+      const r = await fetch(`/api/components/prompts?id=${encodeURIComponent(id)}`);
+      if (!r.ok) return;
+      const body = await r.json();
+      if (Array.isArray(body?.history)) ensureAi(tab).history = body.history;
+    } catch { /* offline / endpoint error — keep whatever's in memory */ }
+  }
+
+  /** Persist tab.ai.history back to the volume. Fire-and-forget — a
+   *  failed write just means the History sub-tab won't survive a reload. */
+  async function savePromptHistory(tab: Tab) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    const id = tab.componentEntry.meta.id;
+    const history = tab.ai?.history ?? [];
+    try {
+      await fetch(`/api/components/prompts?id=${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ history }),
+      });
+    } catch { /* best-effort */ }
+  }
+
+  /** Load a past prompt back into the input + switch to the Prompt sub-tab. */
+  function reuseHistoryPrompt(h: { prompt: string }) {
+    if (!activeTab) return;
+    ensureAi(activeTab).prompt = h.prompt;
+    aiSubTab = 'prompt';
   }
 
   async function submitAiRefine(tab: Tab) {
@@ -2193,6 +2360,7 @@ export const geom = defineGeom(meta, (p) => {
       ai.pending = String(body.source);
       ai.status = 'pending';
       ai.history = [...ai.history, { prompt, ts: Date.now() }];
+      savePromptHistory(tab);
     } catch (e: any) {
       ai.status = 'error';
       ai.error = e?.message ?? String(e);
@@ -2238,6 +2406,7 @@ export const geom = defineGeom(meta, (p) => {
     tab.ai.pending = undefined;
     tab.ai.status = 'idle';
     tab.ai.prompt = '';
+    savePromptHistory(tab);
     // Switch to Svelte tab so the user can review + Save the result.
     inspectorTab = 'svelte';
   }
@@ -2247,6 +2416,7 @@ export const geom = defineGeom(meta, (p) => {
     if (tab.ai.history.length > 0) tab.ai.history[tab.ai.history.length - 1].accepted = false;
     tab.ai.pending = undefined;
     tab.ai.status = 'idle';
+    savePromptHistory(tab);
   }
 
   function resetParams(tab: Tab) {
@@ -2317,39 +2487,6 @@ export const geom = defineGeom(meta, (p) => {
     // builderText derive intact for legacy primitives.
     return extractBuilder(builderSource, activeTab.primId) ?? '// (no script — builder function not found in builder.ts)';
   });
-
-  /** Auto-generate a markdown block from a component-file's meta. Used by the
-   *  Inspector's MD tab. Replaces the deleted cad/components/docs.ts. */
-  function generateMd(entry: ComponentEntry, currentParams: Record<string, number>): string {
-    const m = entry.meta;
-    const lines: string[] = [];
-    lines.push(`# ${m.name}`);
-    lines.push('');
-    if (m.description) { lines.push(m.description); lines.push(''); }
-    lines.push(`**id:** \`${m.id}\``);
-    lines.push('');
-    lines.push('## Parameters');
-    lines.push('');
-    lines.push('| Name | Default | Range | Step | Unit | Label |');
-    lines.push('|---|---|---|---|---|---|');
-    for (const [k, v] of Object.entries(m.params)) {
-      lines.push(`| \`${k}\` | ${v.default} | ${v.min} – ${v.max} | ${v.step} | ${v.unit ?? ''} | ${v.label} |`);
-    }
-    if (m.tags && m.tags.length) {
-      lines.push('');
-      lines.push('## Tags');
-      lines.push('');
-      lines.push(m.tags.map((t) => `\`${t}\``).join(' · '));
-    }
-    if (m.validate) {
-      const errs = m.validate(currentParams);
-      lines.push('');
-      lines.push('## Constraints');
-      lines.push('');
-      lines.push(`\`validate(p)\` — ${errs.length === 0 ? 'currently passes ✓' : `currently fails: ${errs.join('; ')}`}`);
-    }
-    return lines.join('\n');
-  }
 
   // ── Draft-only param add/remove ──────────────────────────────────────────
   // Adds a "draft param" row to a draft tab's params. The change is purely
@@ -2832,12 +2969,12 @@ export const geom = defineGeom(meta, (p) => {
            Selected tab swaps the flat list shown to its right. -->
       <div class="sb-rail">
         {#each TREE as f (f.id)}
-          {@const count = f.id === 'basic' ? componentList.filter((r) => familyOf(r.meta.id) === 'basic').length
-                       : f.id === 'components' ? componentList.filter((r) => familyOf(r.meta.id) !== 'basic' && enabledFamilies.has(familyOf(r.meta.id))).length
-                       : f.id === 'assemblies' ? ASSEMBLIES_L4.length
+          {@const count = f.id === 'basic' ? componentList.filter((r) => entryRailTab(r) === 'basic').length
+                       : f.id === 'components' ? componentList.filter((r) => entryRailTab(r) === 'components' && enabledFamilies.has(entryFamily(r))).length
+                       : f.id === 'assemblies' ? ASSEMBLIES_L4.length + componentList.filter((r) => entryRailTab(r) === 'assemblies').length
                        : f.id === 'kb' ? kbList.length + kbSources.length
                        : f.id === 'operator' ? OPERATORS.length
-                       : f.id === 'test' ? testLinks.length
+                       : f.id === 'test' ? figures.length + componentList.filter((r) => r.origin === 'test').length
                        : itemsInFolder(f).length}
           <button
             class="sb-tab"
@@ -2899,6 +3036,82 @@ export const geom = defineGeom(meta, (p) => {
       {/if}
     {/snippet}
 
+    {#snippet runesRow(entry: ComponentEntry, staged: boolean)}
+      <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
+        <button
+          class="prim-link"
+          class:active={activeTab?.id === `xml:${entry.meta.id}`}
+          onclick={() => openRunes(entry)}
+          title={entry.meta.name}
+        >
+          <span class="dot"></span>
+          <span class="pl-name">{entry.meta.name}</span>
+        </button>
+        {#if staged}
+          <button
+            class="prim-post"
+            type="button"
+            title={`Move ${entry.meta.name} into a category`}
+            onclick={(e) => { e.stopPropagation(); openMoveForm(entry.meta.id); }}
+          >Move</button>
+        {/if}
+        <button
+          class="prim-del"
+          type="button"
+          title={`Delete ${entry.meta.name}`}
+          aria-label={`Delete ${entry.meta.name}`}
+          onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
+        >
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5" />
+          </svg>
+        </button>
+      </div>
+      {#if staged && moveForm?.id === entry.meta.id}
+        <!-- Inline Move form — pick the destination category + group, then
+             /api/components/move atomically renames the part's directory. -->
+        <div class="post-form">
+          <div class="pf-row">
+            <label>Category
+              <select class="pf-in" bind:value={moveForm.category}>
+                <option value="parts">Parts</option>
+                <option value="basic">Basic</option>
+                <option value="assemblies">Assemblies</option>
+              </select>
+            </label>
+          </div>
+          {#if moveForm.category === 'parts'}
+            <div class="pf-row">
+              <label>Family
+                <select class="pf-in" bind:value={moveForm.family}>
+                  {#each FAMILIES.filter((f) => f.id !== 'basic') as fam (fam.id)}
+                    <option value={fam.id}>{fam.name}</option>
+                  {/each}
+                </select>
+              </label>
+            </div>
+          {:else if moveForm.category === 'basic'}
+            <div class="pf-row">
+              <label>Level
+                <select class="pf-in" bind:value={moveForm.level}>
+                  {#each LEVELS as lv (lv.id)}
+                    <option value={lv.id}>{lv.name}</option>
+                  {/each}
+                </select>
+              </label>
+            </div>
+          {/if}
+          {#if moveForm.error}<p class="pf-err">{moveForm.error}</p>{/if}
+          <div class="pf-actions">
+            <button class="save-btn" type="button" disabled={moveForm.moving} onclick={submitMove}>
+              {moveForm.moving ? 'Moving…' : 'Move'}
+            </button>
+            <button class="discard-btn" type="button" onclick={() => (moveForm = null)}>Cancel</button>
+          </div>
+        </div>
+      {/if}
+    {/snippet}
+
     <div class="sb-body">
       <!-- Filter — substring match across name, id, tags. Cheap to scale to
            many primitives; the list re-renders client-side. -->
@@ -2949,10 +3162,10 @@ export const geom = defineGeom(meta, (p) => {
              the filter icon next to the search input opens the family
              popup. Filter state persists to localStorage under
              'cad:enabledFamilies'. -->
-        {@const filt = componentList.filter((r) => familyOf(r.meta.id) !== 'basic'
-                                              && enabledFamilies.has(familyOf(r.meta.id))
+        {@const filt = componentList.filter((r) => entryRailTab(r) === 'components'
+                                              && enabledFamilies.has(entryFamily(r))
                                               && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
-        {@const groups = FAMILIES.filter((fam) => fam.id !== 'basic' && enabledFamilies.has(fam.id) && filt.some((r) => familyOf(r.meta.id) === fam.id))}
+        {@const groups = FAMILIES.filter((fam) => fam.id !== 'basic' && enabledFamilies.has(fam.id) && filt.some((r) => entryFamily(r) === fam.id))}
         {#each groups as fam (fam.id)}
           {@const collapsed = isFamilyCollapsed('components', fam.id)}
           <button
@@ -2966,29 +3179,8 @@ export const geom = defineGeom(meta, (p) => {
           </button>
           {#if !collapsed}
           <div class="sb-list">
-            {#each filt.filter((r) => familyOf(r.meta.id) === fam.id) as entry (entry.meta.id)}
-              <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
-                <button
-                  class="prim-link"
-                  class:active={activeTab?.id === `xml:${entry.meta.id}`}
-                  onclick={() => openRunes(entry)}
-                  title={entry.meta.name}
-                >
-                  <span class="dot"></span>
-                  <span class="pl-name">{entry.meta.name}</span>
-                </button>
-                <button
-                  class="prim-del"
-                  type="button"
-                  title={`Delete ${entry.meta.name}`}
-                  aria-label={`Delete ${entry.meta.name}`}
-                  onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
-                >
-                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                    <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5" />
-                  </svg>
-                </button>
-              </div>
+            {#each filt.filter((r) => entryFamily(r) === fam.id) as entry (entry.meta.id)}
+              {@render runesRow(entry, false)}
             {/each}
           </div>
           {/if}
@@ -2998,6 +3190,17 @@ export const geom = defineGeom(meta, (p) => {
       {#if sidebarTab === 'assemblies'}
         {@const filt = ASSEMBLIES_L4.filter((a) => !filter || a.name.toLowerCase().includes(filter.toLowerCase()) || a.tags.some((t) => t.toLowerCase().includes(filter.toLowerCase())))}
         {@const groups = Array.from(new Set(filt.map((a) => a.group ?? 'Other')))}
+        {@const postedAsm = componentList.filter((r) => entryRailTab(r) === 'assemblies'
+                                                   && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
+        {#if postedAsm.length > 0}
+          <!-- Posted volume components classified as assemblies. -->
+          <div class="sb-subhead">Posted</div>
+          <div class="sb-list">
+            {#each postedAsm as entry (entry.meta.id)}
+              {@render runesRow(entry, false)}
+            {/each}
+          </div>
+        {/if}
         {#each groups as g (g)}
           <div class="sb-subhead">{g}</div>
           <div class="sb-list">
@@ -3014,7 +3217,7 @@ export const geom = defineGeom(meta, (p) => {
             {/each}
           </div>
         {/each}
-        {#if filt.length === 0}<div class="sb-empty">No assemblies match "{filter}".</div>{/if}
+        {#if filt.length === 0 && postedAsm.length === 0}<div class="sb-empty">No assemblies match "{filter}".</div>{/if}
       {/if}
       {#if sidebarTab === 'basic'}
         <!-- Basic — pure geometric building blocks (familyOf === 'basic').
@@ -3054,10 +3257,10 @@ export const geom = defineGeom(meta, (p) => {
              lives in $lib/cad/components/families.ts (LEVEL_BY_ID).
              Filter state persists to localStorage under
              'cad:enabledBasicLevels'. -->
-        {@const bfilt = componentList.filter((r) => familyOf(r.meta.id) === 'basic'
-                                                && enabledLevels.has(levelOf(r.meta.id))
+        {@const bfilt = componentList.filter((r) => entryRailTab(r) === 'basic'
+                                                && enabledLevels.has(entryLevel(r))
                                                 && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
-        {@const bgroups = LEVELS.filter((lv) => enabledLevels.has(lv.id) && bfilt.some((r) => levelOf(r.meta.id) === lv.id))}
+        {@const bgroups = LEVELS.filter((lv) => enabledLevels.has(lv.id) && bfilt.some((r) => entryLevel(r) === lv.id))}
         {#each bgroups as lv (lv.id)}
           {@const collapsed = isFamilyCollapsed('basic', String(lv.id))}
           <button
@@ -3071,36 +3274,8 @@ export const geom = defineGeom(meta, (p) => {
           </button>
           {#if !collapsed}
           <div class="sb-list">
-            {#each bfilt.filter((r) => levelOf(r.meta.id) === lv.id) as entry (entry.meta.id)}
-              <div class="prim-row" class:active={activeTab?.id === `xml:${entry.meta.id}`}>
-                <button
-                  class="prim-link"
-                  class:active={activeTab?.id === `xml:${entry.meta.id}`}
-                  onclick={() => openRunes(entry)}
-                  title={entry.meta.name}
-                >
-                  <span class="dot"></span>
-                  <span class="pl-name">{entry.meta.name}</span>
-                </button>
-                <button
-                  class="prim-del"
-                  type="button"
-                  title={`Delete ${entry.meta.name}`}
-                  aria-label={`Delete ${entry.meta.name}`}
-                  onclick={(e) => { e.stopPropagation(); deleteRunes(entry); }}
-                >
-                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                    <path
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.25"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M3 4.5 H13 M6.5 4.5 V3.25 a0.75 0.75 0 0 1 0.75 -0.75 h1.5 a0.75 0.75 0 0 1 0.75 0.75 V4.5 M4.25 4.5 L5 13 a1 1 0 0 0 1 0.9 h4 a1 1 0 0 0 1 -0.9 L11.75 4.5 M6.75 7 V11.5 M9.25 7 V11.5"
-                    />
-                  </svg>
-                </button>
-              </div>
+            {#each bfilt.filter((r) => entryLevel(r) === lv.id) as entry (entry.meta.id)}
+              {@render runesRow(entry, false)}
             {/each}
           </div>
           {/if}
@@ -3192,7 +3367,7 @@ export const geom = defineGeom(meta, (p) => {
         {/if}
       {/if}
       {#each TREE as f (f.id)}
-        {#if f.id === sidebarTab && f.id !== 'kb' && f.id !== 'components' && f.id !== 'assemblies' && f.id !== 'basic'}
+        {#if f.id === sidebarTab && f.id !== 'kb' && f.id !== 'components' && f.id !== 'assemblies' && f.id !== 'basic' && f.id !== 'test'}
           {@const items = itemsInFolder(f).filter(matchesFilter)}
           {@const subClaims = (f.sub ?? []).flatMap((sf) => itemsInFolder(sf))}
           {@const leafItems = items.filter((c) => !subClaims.includes(c) && isTopLevel(c, items))}
@@ -3250,14 +3425,30 @@ export const geom = defineGeom(meta, (p) => {
         </div>
       {/if}
       {#if sidebarTab === 'test'}
-        <!-- Test tab — THREE sections stacked: (1) the numbered figure
-             gallery from scripts/extract_figures.ts (curate "extract N"
-             before generating); (2) extraction results from the
-             overnight_extract.ts pipeline; (3) manual paste-and-click
-             link scratchpad, persisted to localStorage. All entries are
-             clickable and open in the source-tab viewer. -->
+        <!-- Test tab — the holding area. Sections stacked: (1) parts
+             in progress — library/test/<id>/ components, built from a
+             figure, awaiting Move into a category; (2) the numbered raw
+             figure gallery from scripts/extract_figures.ts (a figure
+             already turned into a part drops out of this grid); (3)
+             extraction-pipeline results; (4) the manual link scratchpad.
+             A part stays in Test until the user explicitly Moves it. -->
+        {@const testParts = componentList.filter((r) => r.origin === 'test'
+          && (!filter || r.meta.name.toLowerCase().includes(filter.toLowerCase()) || r.meta.id.toLowerCase().includes(filter.toLowerCase())))}
+        {@const startedIds = new Set(componentList.map((r) => r.meta.id))}
+        {@const rawFigures = figures.filter((f) => !startedIds.has(f.id.replace(/-/g, '_')))}
         <div class="sb-test">
-          {#if figures.length > 0}
+          {#if testParts.length > 0}
+            <div class="sb-test-sec">
+              <div class="sb-test-sec-h"><span class="sb-test-sec-title">In progress</span></div>
+              <div class="sb-test-sec-meta">Built from a figure — review, then <strong>Move</strong> to a category.</div>
+              <div class="sb-list">
+                {#each testParts as entry (entry.meta.id)}
+                  {@render runesRow(entry, true)}
+                {/each}
+              </div>
+            </div>
+          {/if}
+          {#if rawFigures.length > 0}
             <div class="sb-test-sec">
               <div class="sb-test-sec-h">
                 <span class="sb-test-sec-title">Figures</span>
@@ -3266,16 +3457,13 @@ export const geom = defineGeom(meta, (p) => {
                   type="button"
                   title="Reload gallery"
                   onclick={loadFiguresGallery}
-                >↻ {figures.length}</button>
+                >↻ {rawFigures.length}</button>
               </div>
               {#if figuresLoadedAt}
                 <div class="sb-test-sec-meta">Extracted {new Date(figuresLoadedAt).toLocaleDateString()}</div>
               {/if}
-              {#if figures.length === 0}
-                <div class="sb-empty">No figures yet. Run <code>bun run extract:figures</code> to populate the gallery.</div>
-              {:else}
                 <div class="sb-fig-grid">
-                  {#each figures as fig (fig.id)}
+                  {#each rawFigures as fig (fig.id)}
                     <div
                       class="sb-fig-cell"
                       class:active={activeTab?.id === `draft:${fig.id.replace(/-/g, '_')}`}
@@ -3302,7 +3490,6 @@ export const geom = defineGeom(meta, (p) => {
                     </div>
                   {/each}
                 </div>
-              {/if}
             </div>
           {/if}
           {#if extractionResults.length > 0}
@@ -3432,7 +3619,7 @@ export const geom = defineGeom(meta, (p) => {
         </div>
         <div class="ff-grid">
           {#each FAMILIES.filter((fam) => fam.id !== 'basic') as fam (fam.id)}
-            {@const inFamily = componentList.filter((r) => familyOf(r.meta.id) === fam.id).length}
+            {@const inFamily = componentList.filter((r) => entryRailTab(r) === 'components' && entryFamily(r) === fam.id).length}
             {@const on = enabledFamilies.has(fam.id)}
             <label class="ff-section" class:enabled={on}>
               <div class="ff-section-head">
@@ -3479,7 +3666,7 @@ export const geom = defineGeom(meta, (p) => {
         </div>
         <div class="ff-grid">
           {#each LEVELS as lv (lv.id)}
-            {@const inLevel = componentList.filter((r) => familyOf(r.meta.id) === 'basic' && levelOf(r.meta.id) === lv.id).length}
+            {@const inLevel = componentList.filter((r) => entryRailTab(r) === 'basic' && entryLevel(r) === lv.id).length}
             {@const on = enabledLevels.has(lv.id)}
             <label class="ff-section" class:enabled={on}>
               <div class="ff-section-head">
@@ -3888,9 +4075,6 @@ export const geom = defineGeom(meta, (p) => {
                 ·
               {/if}
               <button class="inline-btn" type="button" onclick={() => openInspector('script')}>Script</button>
-              {#if activeTab.kind === 'xml-primitive'}
-                · <button class="inline-btn" type="button" onclick={() => openInspector('md')}>Docs</button>
-              {/if}
             </span>
           </div>
         </div>
@@ -3937,7 +4121,7 @@ export const geom = defineGeom(meta, (p) => {
 
         <div class="insp-tabs">
           {#if activeTab.kind === 'xml-primitive'}
-            <!-- Runes primitives: tab order is AI → Parts → Params → Svelte → MD.
+            <!-- Runes primitives: tab order is AI → Parts → Params → Builder.
                  AI is leftmost (and the default selection) — the canonical
                  entry point is "describe what you want", with everything
                  else being downstream review of what the AI produces. -->
@@ -3956,9 +4140,6 @@ export const geom = defineGeom(meta, (p) => {
           {#if activeTab.kind === 'xml-primitive'}
             <button class="insp-tab" class:active={inspectorTab === 'svelte'} type="button" onclick={() => (inspectorTab = 'svelte')}>
               <span class="ic">🛠</span> Builder
-            </button>
-            <button class="insp-tab" class:active={inspectorTab === 'md'} type="button" onclick={() => (inspectorTab = 'md')}>
-              <span class="ic">📖</span> MD
             </button>
           {:else}
             <!-- Legacy primitives: Script tab extracts from builder.ts. -->
@@ -4385,68 +4566,98 @@ export const geom = defineGeom(meta, (p) => {
           {@const instCurrent = ai.instructionsDraft ?? instOnDisk}
           {@const instDirty = ai.instructionsDraft != null && ai.instructionsDraft !== instOnDisk}
           <div class="ai-pane two-section">
-            <!-- ─── Section 1: Prompt ───────────────────────────────────────
-                 The immediate ask. Combined with the instructions doc below
-                 at refine-time → Claude returns updated source. -->
+            <!-- ─── Section 1: Prompt + History sub-tabs ────────────────────
+                 Prompt = the immediate ask (combined with the instructions
+                 doc below at refine-time). History = the persisted trail of
+                 past refines for this component, loaded from the volume via
+                 /api/components/prompts. -->
             <div class="ai-sec">
               <div class="ai-sec-h">
                 <span class="ai-sec-title">✦ Prompt</span>
-                <span class="ai-sec-sub">what change do you want now?</span>
-              </div>
-              <textarea
-                class="ai-prompt"
-                placeholder="e.g. add an internal torque shoulder at z = cone_length with width 0.25, and a 1/8 chamfer at the box top"
-                value={ai.prompt}
-                oninput={(e) => { ensureAi(activeTab!).prompt = (e.currentTarget as HTMLTextAreaElement).value; }}
-                disabled={ai.status === 'sending'}
-                rows="3"
-              ></textarea>
-              <div class="ai-actions">
-                <button
-                  class="ai-submit"
-                  type="button"
-                  disabled={ai.status === 'sending' || ai.status === 'pending' || ai.prompt.trim().length === 0}
-                  onclick={() => submitAiRefine(activeTab!)}
-                >
-                  {#if ai.status === 'sending'}Thinking…{:else}✦ Refine source{/if}
-                </button>
-                {#if ai.status === 'sending'}
-                  <span class="ai-status muted">Claude is editing the source…</span>
-                {:else if ai.status === 'error'}
-                  <span class="ai-status err">Error: {ai.error}</span>
-                {:else if ai.status === 'pending'}
-                  <span class="ai-status ok">Proposal ready — review below.</span>
-                {/if}
-              </div>
-
-              {#if ai.status === 'pending' && ai.pending}
-                <div class="ai-proposal">
-                  <div class="ai-proposal-h">
-                    <span>✦ Proposed source</span>
-                    <span class="muted">{(ai.pending.match(/\n/g)?.length ?? 0) + 1} lines</span>
-                  </div>
-                  <pre class="ai-proposal-body">{ai.pending}</pre>
-                  <div class="ai-proposal-actions">
-                    <button class="ai-accept" type="button" onclick={() => acceptAiProposal(activeTab!)}>
-                      Accept · open in Svelte tab
-                    </button>
-                    <button class="ai-reject" type="button" onclick={() => rejectAiProposal(activeTab!)}>
-                      Reject
-                    </button>
-                  </div>
+                <div class="inst-view-toggle">
+                  <button
+                    class="inst-view-btn"
+                    class:active={aiSubTab === 'prompt'}
+                    type="button"
+                    onclick={() => (aiSubTab = 'prompt')}
+                  >Prompt</button>
+                  <button
+                    class="inst-view-btn"
+                    class:active={aiSubTab === 'history'}
+                    type="button"
+                    onclick={() => (aiSubTab = 'history')}
+                  >History{#if ai.history.length} · {ai.history.length}{/if}</button>
                 </div>
-              {/if}
+              </div>
 
-              {#if ai.history.length > 0}
-                <div class="ai-history">
-                  <div class="ai-history-h">History · {ai.history.length}</div>
-                  {#each [...ai.history].reverse() as h, i (i)}
-                    <div class="ai-history-row" class:accepted={h.accepted === true} class:rejected={h.accepted === false}>
-                      <span class="ai-history-mark">{h.accepted === true ? '✓' : h.accepted === false ? '✗' : '·'}</span>
-                      <span class="ai-history-prompt" title={h.prompt}>{h.prompt}</span>
+              {#if aiSubTab === 'prompt'}
+                <textarea
+                  class="ai-prompt"
+                  placeholder="e.g. add an internal torque shoulder at z = cone_length with width 0.25, and a 1/8 chamfer at the box top"
+                  value={ai.prompt}
+                  oninput={(e) => { ensureAi(activeTab!).prompt = (e.currentTarget as HTMLTextAreaElement).value; }}
+                  disabled={ai.status === 'sending'}
+                  rows="3"
+                ></textarea>
+                <div class="ai-actions">
+                  <button
+                    class="ai-submit"
+                    type="button"
+                    disabled={ai.status === 'sending' || ai.status === 'pending' || ai.prompt.trim().length === 0}
+                    onclick={() => submitAiRefine(activeTab!)}
+                  >
+                    {#if ai.status === 'sending'}Thinking…{:else}✦ Refine source{/if}
+                  </button>
+                  {#if ai.status === 'sending'}
+                    <span class="ai-status muted">Claude is editing the source…</span>
+                  {:else if ai.status === 'error'}
+                    <span class="ai-status err">Error: {ai.error}</span>
+                  {:else if ai.status === 'pending'}
+                    <span class="ai-status ok">Proposal ready — review below.</span>
+                  {/if}
+                </div>
+
+                {#if ai.status === 'pending' && ai.pending}
+                  <div class="ai-proposal">
+                    <div class="ai-proposal-h">
+                      <span>✦ Proposed source</span>
+                      <span class="muted">{(ai.pending.match(/\n/g)?.length ?? 0) + 1} lines</span>
                     </div>
-                  {/each}
-                </div>
+                    <pre class="ai-proposal-body">{ai.pending}</pre>
+                    <div class="ai-proposal-actions">
+                      <button class="ai-accept" type="button" onclick={() => acceptAiProposal(activeTab!)}>
+                        Accept · open in Svelte tab
+                      </button>
+                      <button class="ai-reject" type="button" onclick={() => rejectAiProposal(activeTab!)}>
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                {/if}
+              {:else}
+                <!-- History sub-tab — persisted across reloads. Click a row
+                     to load that prompt back into the input. -->
+                {#if ai.history.length > 0}
+                  <div class="ai-history full">
+                    {#each [...ai.history].reverse() as h, i (i)}
+                      <div class="ai-history-row" class:accepted={h.accepted === true} class:rejected={h.accepted === false}>
+                        <span class="ai-history-mark">{h.accepted === true ? '✓' : h.accepted === false ? '✗' : '·'}</span>
+                        <button
+                          class="ai-history-prompt"
+                          type="button"
+                          title="Load this prompt back into the input"
+                          onclick={() => reuseHistoryPrompt(h)}
+                        >{h.prompt}</button>
+                        <span class="ai-history-ts">{formatHistoryTs(h.ts)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="ai-instructions-empty">
+                    No refines yet for this component — switch to <strong>Prompt</strong>
+                    and ask Claude for a change.
+                  </div>
+                {/if}
               {/if}
             </div>
 
@@ -4454,20 +4665,48 @@ export const geom = defineGeom(meta, (p) => {
                  Per-primitive markdown doc — the persistent "what should
                  this primitive be" context. Sent alongside every prompt so
                  Claude produces predictable / consistent output. Saved to
-                 src/lib/cad/components/<id>.md. Will eventually feed a
-                 RAG index across primitives. -->
+                 the component's <id>.md. Preview renders the markdown;
+                 Edit exposes the raw textarea. (The old auto-generated
+                 "MD" inspector tab was removed — the instructions ARE
+                 the markdown doc now.) -->
             <div class="ai-sec">
               <div class="ai-sec-h">
                 <span class="ai-sec-title">📋 Instructions <span class="muted">{activeTab.componentEntry.meta.id}.md</span></span>
-                <span class="ai-sec-sub">persistent spec — sent with every refine</span>
+                <div class="inst-view-toggle">
+                  <button
+                    class="inst-view-btn"
+                    class:active={instructionsView === 'preview'}
+                    type="button"
+                    onclick={() => (instructionsView = 'preview')}
+                  >Preview</button>
+                  <button
+                    class="inst-view-btn"
+                    class:active={instructionsView === 'edit'}
+                    type="button"
+                    onclick={() => (instructionsView = 'edit')}
+                  >Edit</button>
+                </div>
               </div>
-              <textarea
-                class="ai-instructions"
-                placeholder="Describe the primitive's design intent: what real-world thing it represents, which standard it targets, conventions for params, how it should compose with others. Markdown is fine. Claude reads this on every refine to produce predictable output."
-                value={instCurrent}
-                oninput={(e) => { ensureAi(activeTab!).instructionsDraft = (e.currentTarget as HTMLTextAreaElement).value; }}
-                rows="10"
-              ></textarea>
+              {#if instructionsView === 'preview'}
+                {#if instCurrent.trim()}
+                  <div class="ai-instructions-preview">
+                    <MarkdownView value={instCurrent} />
+                  </div>
+                {:else}
+                  <div class="ai-instructions-empty">
+                    No instructions yet — click <strong>Edit</strong> to write the
+                    persistent spec (sent to Claude with every refine).
+                  </div>
+                {/if}
+              {:else}
+                <textarea
+                  class="ai-instructions"
+                  placeholder="Describe the primitive's design intent: what real-world thing it represents, which standard it targets, conventions for params, how it should compose with others. Markdown is fine. Claude reads this on every refine to produce predictable output."
+                  value={instCurrent}
+                  oninput={(e) => { ensureAi(activeTab!).instructionsDraft = (e.currentTarget as HTMLTextAreaElement).value; }}
+                  rows="10"
+                ></textarea>
+              {/if}
               <div class="ai-actions">
                 <button
                   class="ai-save-inst"
@@ -4487,12 +4726,6 @@ export const geom = defineGeom(meta, (p) => {
               </div>
             </div>
           </div>
-        {:else if inspectorTab === 'md' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
-          {@const docs = generateMd(activeTab.componentEntry, activeTab.params)}
-          <div class="md-wrap">
-            <MarkdownView value={docs} />
-          </div>
-          <p class="code-note">Auto-generated from the primitive's <code>meta</code> — params, tags, validate state. Edit the component file (Svelte tab) to update.</p>
         {/if}
 
         {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
@@ -5537,6 +5770,25 @@ export const geom = defineGeom(meta, (p) => {
     border: 1px solid #f0c8c8;
     border-radius: 4px;
   }
+  /* Move form — inline under a Test-tab "in progress" row. Reuses the
+     .pf-* shell, tinted neutral (a promote action, not destructive). */
+  .post-form {
+    margin: 2px 0 8px 18px;
+    padding: 8px 10px;
+    background: #f4f6f8;
+    border: 1px solid #d4dde4;
+    border-radius: 4px;
+  }
+  /* Move button on a Test-tab row — sits left of the delete button. */
+  .prim-post {
+    flex-shrink: 0;
+    font: 600 10px Arial;
+    padding: 2px 8px;
+    border: 1px solid #3b6e9c;
+    background: #3b6e9c; color: #fff;
+    border-radius: 3px; cursor: pointer;
+  }
+  .prim-post:hover { background: #2f5a82; border-color: #2f5a82; }
   .pf-row {
     display: flex;
     flex-wrap: wrap;
@@ -6003,6 +6255,18 @@ export const geom = defineGeom(meta, (p) => {
     flex: 1; min-width: 0;
     overflow: hidden; text-overflow: ellipsis;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    /* button reset — the row is click-to-reload */
+    border: none; background: none; padding: 0; margin: 0;
+    font: 11px Arial; color: #555; text-align: left; cursor: pointer;
+  }
+  .ai-history-prompt:hover { color: #18181b; text-decoration: underline; }
+  .ai-history-ts {
+    flex-shrink: 0; font: 10px Arial; color: #a1a1aa; white-space: nowrap;
+  }
+  /* History sub-tab — full-height scrollable list (vs the old inline strip). */
+  .ai-history.full {
+    border-top: none; margin-top: 0; padding-top: 0;
+    max-height: 320px; overflow-y: auto;
   }
 
   /* AI tab label tint — the ✦ icon picks up the lavender palette so users
@@ -6104,7 +6368,21 @@ export const geom = defineGeom(meta, (p) => {
     border-bottom-color: #cc2222;
   }
   .insp-tab .ic { font-size: 13px; opacity: 0.85; }
-  .md-wrap { height: 360px; }
+  /* Instructions section — markdown preview / edit toggle. */
+  .inst-view-toggle { display: inline-flex; gap: 2px; margin-left: auto; }
+  .inst-view-btn {
+    font-size: 10px; padding: 2px 8px; border: 1px solid #d4d4d8;
+    background: #fff; color: #52525b; cursor: pointer; border-radius: 3px;
+  }
+  .inst-view-btn.active { background: #18181b; color: #fafafa; border-color: #18181b; }
+  .ai-instructions-preview {
+    border: 1px solid #e4e4e7; border-radius: 4px; padding: 8px 12px;
+    max-height: 320px; overflow-y: auto; background: #fcfcfd;
+  }
+  .ai-instructions-empty {
+    border: 1px dashed #d4d4d8; border-radius: 4px; padding: 14px;
+    font-size: 11px; color: #71717a; background: #fafafa;
+  }
   /* Legacy script-tabs kept for any callers that still use it; the
      consolidated Inspector uses .insp-tabs above. */
   .script-tabs {

@@ -1,40 +1,32 @@
 /**
  * GET /api/components/list
  *
- * Returns the current registry of single-file components. Two read
- * sources merged at request time:
+ * Returns the current registry of single-file components from two sources:
  *
- *   1. **Bundle** — `src/lib/cad/components/<id>.ts` shipped via the
- *      runtime image. Provides the 26 baseline primitives. Read-only at
- *      runtime — saves never modify these files in production (writes go
- *      to the volume; see (2)).
- *   2. **Volume** — `<volume>/components/<id>.ts` (volumePath('components')).
- *      Writable. Saves from /api/components/save land here in prod;
- *      sidecar .md files from /api/components/instructions also live
- *      here. Volume wins on id collision, so a saved overlay shadows
- *      the bundle file at runtime.
+ *   1. **Bundle** — `src/lib/cad/components/<id>.ts` shipped in the
+ *      runtime image. The 26 baseline primitives. `origin: 'bundle'`,
+ *      `renderMode: 'client'` — Vite's `import.meta.glob` compiled their
+ *      geom, so the client runs it directly. Classified by families.ts.
+ *   2. **Library** — `<volume>/library/<category>/<id>/component.ts`.
+ *      Each part is a self-contained directory (see `library.ts`); its
+ *      LOCATION is its category. `origin` IS the category
+ *      (`test` | `basic` | `parts` | `assemblies`), `renderMode:
+ *      'server'` — rendered via /api/components/geom. `family` / `level`
+ *      come from the part's `meta.json`; `picture` points at its
+ *      `picture.png` if present.
  *
- * Each entry carries the metadata needed by the sidebar + Inspector
- * (id / name / params / validate? presence) plus the raw .ts source
- * text for the Inspector's Svelte tab. The geom function itself is
- * NOT serialized — it's still imported statically by the registry
- * loader (build-time `import.meta.glob`) and joined to the API
- * response by id, so geometry execution stays local to the client
- * bundle (no eval, no network round-trip per slider drag).
+ * On id collision, the library part wins (it's the live authored copy).
  *
- * A volume-only entry (no bundled .ts) appears in the list with
- * `origin: 'volume'` and `hasGeom: false` — the UI surfaces it as
- * "needs bundle rebuild" so the user knows clicking it won't render
- * geometry yet.
+ * Each entry carries the metadata the sidebar + Inspector need (id /
+ * name / params / validate? presence) plus the raw `component.ts`
+ * source for the Inspector's editor.
  *
- * NOT proxied: unlike /api/volume + /api/kb/*, this endpoint does not
- * forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set. The dev app
- * renders components from its build-time import.meta.glob over the
- * LOCAL src/ tree, so the list has to reflect what's renderable HERE.
- * All /api/components/* endpoints are dev-local for this reason.
+ * NOT proxied — authoring is dev-local. Only /api/components/geom (a
+ * data read) proxies.
  *
- * Cache: small in-memory cache keyed by file mtime across BOTH dirs.
- * Invalidated by save / instructions / delete on write.
+ * Cache: small in-memory cache keyed by an mtime signature across the
+ * bundle dir + every library part. Invalidated by save / instructions /
+ * delete / move on write.
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -43,10 +35,13 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getCachedList, setCachedList } from './cache';
-import { volumePath } from '$lib/server/volume';
+import {
+  listLibraryParts,
+  type LibraryCategory,
+  type ResolvedPart,
+} from '$lib/server/library';
 
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
-const VOLUME_DIR = volumePath('components');
 
 interface ComponentListEntry {
   id: string;
@@ -56,31 +51,41 @@ interface ComponentListEntry {
   params: Record<string, unknown>;
   hasValidate: boolean;
   source: string;
-  /** Per-primitive AI instructions doc — content of `<id>.md` if present
-   *  next to `<id>.ts`. Sent alongside each /api/components/refine prompt so
-   *  the model has the primitive's evolving spec in context. Empty
-   *  string when the .md file doesn't exist. */
+  /** Per-component AI instructions doc — content of the `.md` sidecar
+   *  (`instructions.md` for a library part, `<id>.md` for a bundle
+   *  primitive). Sent with each /api/components/refine prompt. Empty
+   *  when absent. */
   instructions: string;
-  /** Where this entry was read from. 'bundle' = src/lib/cad/components
-   *  in the shipped image. 'volume' = $APP_DATA_DIR/components, written
-   *  by /api/components/save in prod. A 'volume' entry might not have
-   *  bundled geom yet — see hasGeom. */
-  origin: 'bundle' | 'volume';
-  /** True when the build-time component registry has a compiled geom
-   *  function for this id. Always true for 'bundle' entries; for
-   *  'volume' entries, true only when the id collides with a bundled
-   *  primitive (the overlay shadows the bundle source but reuses its
-   *  geom). false means "needs bundle rebuild to render". */
+  /** Where this entry was read from:
+   *   - 'bundle' — src/lib/cad/components in the shipped image.
+   *   - 'test' | 'basic' | 'parts' | 'assemblies' — the library
+   *     category directory the part currently sits in. */
+  origin: 'bundle' | LibraryCategory;
+  /** Fine classification axis, from a library part's `meta.json`.
+   *  `family` for Parts, `level` for Basic. Absent for bundle entries
+   *  (they use families.ts) and uncategorized library parts. */
+  family?: string;
+  level?: number;
+  /** Ready-to-use URL for the part's `picture.png` — the dev-local
+   *  `/api/components/picture?id=<id>` endpoint. Absent for bundle
+   *  entries and library parts with no picture. */
+  picture?: string;
+  /** True when a compiled geom for this id is in the build-time bundle
+   *  (always true for `origin: 'bundle'`). false → renders server-side
+   *  via /api/components/geom. */
   hasGeom: boolean;
+  /** How the client obtains geometry: 'client' runs the compiled geom
+   *  directly; 'server' POSTs to /api/components/geom. */
+  renderMode: 'client' | 'server';
 }
 
-async function dirSig(dir: string): Promise<string> {
-  // Snapshot a directory's relevant files + mtimes for cache invalidation.
-  // Missing dir is fine — returns empty string, contributes nothing.
-  if (!existsSync(dir)) return '';
+// ── Cache signature ──────────────────────────────────────────────────────────
+
+async function bundleSig(): Promise<string> {
+  if (!existsSync(SRC_DIR)) return '';
   let entries: string[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(SRC_DIR);
   } catch {
     return '';
   }
@@ -88,28 +93,31 @@ async function dirSig(dir: string): Promise<string> {
   const parts: string[] = [];
   for (const f of files.sort()) {
     try {
-      const s = await stat(join(dir, f));
+      const s = await stat(join(SRC_DIR, f));
       parts.push(`${f}:${s.mtimeMs}`);
-    } catch { /* file disappeared between readdir and stat — skip */ }
+    } catch { /* file vanished between readdir + stat — skip */ }
   }
   return parts.join('|');
 }
 
-async function buildSignature(): Promise<string> {
-  // Cover both read sources so cache invalidation reflects either side.
-  const a = await dirSig(SRC_DIR);
-  const b = await dirSig(VOLUME_DIR);
-  return `bundle:${a}|volume:${b}`;
+async function librarySig(parts: ResolvedPart[]): Promise<string> {
+  const out: string[] = [];
+  for (const p of parts) {
+    let cm = 0;
+    let mm = 0;
+    try { cm = (await stat(p.componentPath)).mtimeMs; } catch { /* gone — skip mtime */ }
+    try { mm = (await stat(join(p.dir, 'meta.json'))).mtimeMs; } catch { /* no meta.json */ }
+    out.push(`${p.category}/${p.id}:${cm}:${mm}:${p.hasPicture ? 'P' : ''}${p.hasInstructions ? 'M' : ''}`);
+  }
+  return out.join('|');
 }
 
-// ── Source-text meta extractor ───────────────────────────────────────────
+// ── Source-text meta extractor ───────────────────────────────────────────────
 //
-// The component files have a well-controlled format (see hollow_cylinder.ts
-// for the canonical shape). We extract the `meta` object via brace-walk
-// + targeted regexes — no dynamic import, no eval. This:
-//   - works for any file the API can READ (codebase, /data volume, S3 sync)
-//   - sidesteps TS-vs-JS parsing concerns at runtime
-//   - keeps the list endpoint fast (regex on small source files)
+// Component files have a well-controlled format (see hollow_cylinder.ts for
+// the canonical shape). We extract `meta` via brace-walk + targeted regexes
+// — no dynamic import, no eval. Works for any file the API can READ and
+// sidesteps TS-vs-JS runtime parsing.
 
 /** Find the body of `export const meta = { ... }` — returns the inside
  *  (between the outermost braces) or null if not present. */
@@ -129,16 +137,12 @@ function extractMetaBody(src: string): string | null {
   return null;
 }
 
-/** Pull a top-level field's raw value from inside the meta body. Walks
- *  the body forward, skipping nested braces/brackets/strings to find a
- *  field at depth 0. Returns the trimmed value text, or null. */
+/** Pull a top-level field's raw value from inside the meta body. */
 function pullField(body: string, field: string): string | null {
   const head = new RegExp(`(^|,|\\{|\\n)\\s*${field}\\s*:\\s*`);
   const m = head.exec(body);
   if (!m) return null;
   const start = m.index + m[0].length;
-  // Walk forward to the next top-level comma or end of body, balancing
-  // quotes/braces/brackets/parens.
   let i = start;
   let depth = 0;
   let inS: '"' | "'" | '`' | null = null;
@@ -173,10 +177,7 @@ function parseTagsArray(v: string | null): string[] {
   return [...m[1].matchAll(/['"`]([^'"`]+)['"`]/g)].map((mm) => mm[1]);
 }
 
-/** Parse the params object's body (the text between the outermost
- *  `{ ... }` of the params: { ... } block). Each entry is one line:
- *    name: { label: '...', min: N, max: N, step: N, unit: '...', default: N, type: '...' },
- *  Walks brace depth so nested objects don't confuse the comma split. */
+/** Parse the params object's body. */
 function parseParams(v: string | null): Record<string, Record<string, unknown>> {
   if (!v) return {};
   const m = /^\{([\s\S]*)\}$/.exec(v.trim());
@@ -184,7 +185,6 @@ function parseParams(v: string | null): Record<string, Record<string, unknown>> 
   const body = m[1];
   const out: Record<string, Record<string, unknown>> = {};
 
-  // Tokenize entries by walking brace depth.
   const entries: string[] = [];
   let i = 0, start = 0, depth = 0;
   let inS: '"' | "'" | '`' | null = null;
@@ -214,9 +214,6 @@ function parseParams(v: string | null): Record<string, Record<string, unknown>> 
     const name = km[1];
     const inner = km[2];
     const rec: Record<string, unknown> = {};
-    // Each subfield is `key: literal` separated by commas. Most are
-    // numeric / string / bool — but a `choices: { ... }` nested object
-    // is also supported (used for lookup-style discrete params).
     for (const fm of inner.matchAll(/(\w+)\s*:\s*(\{[^}]*\}|'[^']*'|"[^"]*"|`[^`]*`|-?\d+(?:\.\d+)?(?:e-?\d+)?|true|false)/g)) {
       const k = fm[1];
       const raw = fm[2];
@@ -239,32 +236,25 @@ function parseParams(v: string | null): Record<string, Record<string, unknown>> 
   return out;
 }
 
-/** Read a single component file (and its .md sibling, if present) into
- *  a ComponentListEntry. Returns null when the source can't be parsed
- *  as a valid component (missing meta block, missing id, etc). */
-async function readComponentFile(
-  dir: string,
-  filename: string,
-  origin: 'bundle' | 'volume',
-  bundledIds: Set<string>,
-): Promise<ComponentListEntry | null> {
-  const path = join(dir, filename);
-  let source = '';
-  try { source = await readFile(path, 'utf8'); } catch { return null; }
+/** Parsed component-source fields shared by bundle + library entries. */
+interface ParsedComponent {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  params: Record<string, unknown>;
+  hasValidate: boolean;
+}
+
+/** Parse a `component.ts` / `<id>.ts` source string into its meta fields.
+ *  Returns null when the source isn't a valid component (no meta block,
+ *  missing id/name). */
+function parseComponentSource(source: string): ParsedComponent | null {
   const body = extractMetaBody(source);
   if (!body) return null;
   const id = unquoteString(pullField(body, 'id'));
   const name = unquoteString(pullField(body, 'name'));
   if (!id || !name) return null;
-  // Read the .md sibling from the SAME directory the .ts came from —
-  // volume .md sits next to volume .ts, bundle .md sits next to bundle .ts.
-  let instructions = '';
-  try { instructions = await readFile(join(dir, `${id}.md`), 'utf8'); } catch { /* no .md */ }
-  // A volume entry has bundled geom only when the id ALSO exists in the
-  // build-time bundle (i.e. the overlay shadows a known primitive's source
-  // but reuses its compiled geom function). Brand-new volume-only ids
-  // have no geom until the bundle rebuilds.
-  const hasGeom = origin === 'bundle' || bundledIds.has(id);
   return {
     id,
     name,
@@ -272,66 +262,99 @@ async function readComponentFile(
     tags: parseTagsArray(pullField(body, 'tags')),
     params: parseParams(pullField(body, 'params')),
     hasValidate: /\bvalidate\s*:/.test(body),
-    source,
-    instructions,
-    origin,
-    hasGeom,
   };
 }
 
-async function readDir(dir: string, origin: 'bundle' | 'volume', bundledIds: Set<string>): Promise<ComponentListEntry[]> {
-  if (!existsSync(dir)) return [];
+// ── Read sources ─────────────────────────────────────────────────────────────
+
+async function readBundleEntries(): Promise<ComponentListEntry[]> {
+  if (!existsSync(SRC_DIR)) return [];
   let entries: string[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(SRC_DIR);
   } catch {
     return [];
   }
-  const files = entries.filter((f) => f.endsWith('.ts') && f !== 'index.ts');
   const out: ComponentListEntry[] = [];
-  for (const f of files) {
-    const rec = await readComponentFile(dir, f, origin, bundledIds);
-    if (rec) out.push(rec);
+  for (const f of entries.filter((f) => f.endsWith('.ts') && f !== 'index.ts')) {
+    let source = '';
+    try { source = await readFile(join(SRC_DIR, f), 'utf8'); } catch { continue; }
+    const parsed = parseComponentSource(source);
+    if (!parsed) continue;
+    let instructions = '';
+    try { instructions = await readFile(join(SRC_DIR, `${parsed.id}.md`), 'utf8'); } catch { /* no .md */ }
+    out.push({
+      id: parsed.id,
+      name: parsed.name,
+      description: parsed.description,
+      tags: parsed.tags,
+      params: parsed.params,
+      hasValidate: parsed.hasValidate,
+      source,
+      instructions,
+      origin: 'bundle',
+      hasGeom: true,
+      renderMode: 'client',
+    });
   }
   return out;
 }
 
-async function buildList(): Promise<ComponentListEntry[]> {
-  // First pass — discover which ids the bundle ships. Used by the second
-  // pass to decide whether a volume entry has compiled geom available.
-  // A volume entry shadowing a bundle id inherits the bundle's geom; a
-  // volume-only entry needs a bundle rebuild before it can render.
-  const bundleFirst = await readDir(SRC_DIR, 'bundle', new Set());
-  const bundledIds = new Set(bundleFirst.map((e) => e.id));
+async function readLibraryEntries(): Promise<ComponentListEntry[]> {
+  const parts = await listLibraryParts();
+  const out: ComponentListEntry[] = [];
+  for (const part of parts) {
+    let source = '';
+    try { source = await readFile(part.componentPath, 'utf8'); } catch { continue; }
+    const parsed = parseComponentSource(source);
+    if (!parsed) continue;
+    let instructions = '';
+    if (part.hasInstructions) {
+      try { instructions = await readFile(join(part.dir, 'instructions.md'), 'utf8'); } catch { /* race */ }
+    }
+    out.push({
+      id: parsed.id,
+      name: parsed.name,
+      description: parsed.description,
+      tags: parsed.tags,
+      params: parsed.params,
+      hasValidate: parsed.hasValidate,
+      source,
+      instructions,
+      origin: part.category,
+      ...(part.meta.family ? { family: part.meta.family } : {}),
+      ...(part.meta.level != null ? { level: part.meta.level } : {}),
+      ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(parsed.id)}` } : {}),
+      hasGeom: false,
+      renderMode: 'server',
+    });
+  }
+  return out;
+}
 
-  // Second pass — re-read bundle (so hasGeom is true) plus the volume
-  // overlay. Volume wins on id collision, so we Map-merge with volume
-  // last.
+async function buildList(parts: ResolvedPart[]): Promise<ComponentListEntry[]> {
+  // Merge bundle + library. Library wins on id collision — it's the live
+  // authored copy; a bundle primitive of the same id is the stale baseline.
   const merged = new Map<string, ComponentListEntry>();
-  const bundle = await readDir(SRC_DIR, 'bundle', bundledIds);
-  for (const e of bundle) merged.set(e.id, e);
-  const volume = await readDir(VOLUME_DIR, 'volume', bundledIds);
-  for (const e of volume) merged.set(e.id, e);
-
-  // Stable alphabetical order so the sidebar doesn't reshuffle on refresh.
+  for (const e of await readBundleEntries()) merged.set(e.id, e);
+  for (const e of await readLibraryEntries()) merged.set(e.id, e);
+  // `parts` is unused here directly — it's resolved once in GET and reused
+  // for the signature; readLibraryEntries re-lists, which is fine (cached).
+  void parts;
   return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export const GET: RequestHandler = async ({ request }) => {
-  // NOT proxied. The local dev app renders components from its
-  // build-time import.meta.glob over the LOCAL src/ tree — so the list
-  // must reflect what's actually renderable here (local bundle + local
-  // volume overlay), not prod's. Proxying made the UI show prod-only
-  // components the local app can't render ("Unknown component"). All
-  // /api/components/* endpoints are dev-local for the same reason.
+  // NOT proxied — authoring is dev-local (see file header).
   let signature: string;
+  let parts: ResolvedPart[];
   try {
-    signature = await buildSignature();
+    parts = await listLibraryParts();
+    signature = `bundle:${await bundleSig()}|lib:${await librarySig(parts)}`;
   } catch (e: any) {
-    throw error(500, `Failed to scan components directory: ${e?.message ?? e}`);
+    throw error(500, `Failed to scan component sources: ${e?.message ?? e}`);
   }
 
-  // Serve from cache when nothing has changed.
   const cached = getCachedList();
   if (cached && cached.signature === signature) {
     if (request.headers.get('if-none-match') === signature) {
@@ -344,7 +367,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
   let payload: ComponentListEntry[];
   try {
-    payload = await buildList();
+    payload = await buildList(parts);
   } catch (e: any) {
     throw error(500, `Failed to build components list: ${e?.message ?? e}`);
   }
