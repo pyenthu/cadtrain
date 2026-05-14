@@ -26,9 +26,9 @@
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, copyFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY, geomById } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
@@ -39,7 +39,7 @@ import {
   invalidateVolumeComponent,
 } from '$lib/server/component-loader';
 import { resolvePart, partDirIn, ensureLibrary, PART_FILES } from '$lib/server/library';
-import { checkVolumeAuth } from '$lib/server/volume';
+import { checkVolumeAuth, safeVolumePath } from '$lib/server/volume';
 
 /** Pulls each `params.<name>.default` out of the raw source text — used
  *  to bake a GLB with the file's declared defaults without dynamic-
@@ -76,7 +76,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create } = body as { id?: unknown; source?: unknown; create?: unknown };
+  const { id, source, create, picture } = body as {
+    id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
+  };
 
   if (typeof id !== 'string' || typeof source !== 'string') {
     throw error(400, 'Missing id (string) or source (string)');
@@ -132,6 +134,21 @@ export const POST: RequestHandler = async ({ request, url }) => {
     await writeFile(targetPath, source, 'utf8');
   } catch (e: any) {
     throw error(500, `Write failed: ${e?.message ?? e}`);
+  }
+
+  // Figure-draft first save: copy the source figure into the new part
+  // directory as `picture.png` so the picture travels with the part.
+  // Best-effort + path-restricted to figures/ — a bad/missing figure
+  // never fails the save.
+  if (wroteToLibrary && typeof picture === 'string' && picture) {
+    if (/^figures\/[^/]+\.png$/.test(picture)) {
+      try {
+        const src = safeVolumePath(picture);
+        if (existsSync(src)) {
+          await copyFile(src, join(dirname(targetPath), PART_FILES.picture));
+        }
+      } catch { /* picture copy is best-effort */ }
+    }
   }
 
   invalidateRunesListCache();

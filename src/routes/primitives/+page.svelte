@@ -241,9 +241,16 @@
     /** Runes-class entry (only set when kind === 'xml-primitive'). */
     componentEntry?: ComponentEntry;
     /** Explicit reference-picture URL override. Set when a tab is opened
-     *  from a Test-tab figure (the extract-N.png under /tests/figures/);
-     *  the Picture stage tab uses this instead of the volume lookup. */
+     *  from a Test-tab figure (the extract-N.png under <volume>/figures/)
+     *  or from a library part's picture.png; the Picture stage tab uses
+     *  this instead of the volume lookup. */
     pictureUrl?: string;
+    /** Volume-relative path of the source FIGURE for a figure-draft
+     *  (e.g. `figures/extract-50.png`). On first save it's passed to
+     *  /api/components/save so the server copies it into the new part
+     *  directory as `picture.png` — the picture then travels with the
+     *  part. Unset for non-figure tabs. */
+    figureFile?: string;
     /** True for a figure-draft: a blank component shell with a picture
      *  but no geometry yet. The build pipeline is skipped and the Render
      *  stage shows an "not constructed yet" empty-state instead of an
@@ -663,7 +670,7 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
       {
         id, kind: 'xml-primitive', componentEntry: entry, primId: draftId,
         label: fig.id, params: {}, draft: true, vars: [],
-        pictureUrl: volumeUrl(fig.file), unconstructed: true,
+        pictureUrl: volumeUrl(fig.file), figureFile: fig.file, unconstructed: true,
       },
     ];
     activeTabId = id;
@@ -2249,7 +2256,15 @@ export const geom = defineGeom(meta, (p) => {
       const r = await fetch('/api/components/save', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: tab.componentEntry.meta.id, source: next, ...(isNew ? { create: true } : {}) }),
+        // On first save of a figure-draft, hand the server the source
+        // figure path so it copies it into the new part directory as
+        // picture.png — the picture then travels with the part.
+        body: JSON.stringify({
+          id: tab.componentEntry.meta.id,
+          source: next,
+          ...(isNew ? { create: true } : {}),
+          ...(isNew && tab.figureFile ? { picture: tab.figureFile } : {}),
+        }),
       });
       if (!r.ok) {
         const txt = await r.text();
