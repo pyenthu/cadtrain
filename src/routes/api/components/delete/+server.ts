@@ -25,7 +25,7 @@ import { join } from 'path';
 import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
-import { volumePath, maybeProxy, checkVolumeAuth } from '$lib/server/volume';
+import { volumePath, checkVolumeAuth } from '$lib/server/volume';
 
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
 const VOLUME_DIR = volumePath('components');
@@ -77,9 +77,9 @@ async function findAuthoredReferences(primId: string): Promise<AuthoredReference
 }
 
 export const DELETE: RequestHandler = async ({ request, url }) => {
-  // Forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set in env.
-  const proxied = await maybeProxy(request, url);
-  if (proxied) return proxied;
+  // NOT proxied — component source is dev-local project code (see
+  // /api/components/save header). Dev deletes from src/, prod from the
+  // volume overlay (same-origin).
   checkVolumeAuth(request, url);
 
   const body = await request.json().catch(() => null);

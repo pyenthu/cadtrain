@@ -27,10 +27,11 @@
  * "needs bundle rebuild" so the user knows clicking it won't render
  * geometry yet.
  *
- * Cross-instance proxy: when CADTRAIN_VOLUME_REMOTE_URL is set, the
- * call forwards to that host and returns its response. Local dev can
- * see prod's volume-saved components without setting up any local
- * data.
+ * NOT proxied: unlike /api/volume + /api/kb/*, this endpoint does not
+ * forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set. The dev app
+ * renders components from its build-time import.meta.glob over the
+ * LOCAL src/ tree, so the list has to reflect what's renderable HERE.
+ * All /api/components/* endpoints are dev-local for this reason.
  *
  * Cache: small in-memory cache keyed by file mtime across BOTH dirs.
  * Invalidated by save / instructions / delete on write.
@@ -42,7 +43,7 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getCachedList, setCachedList } from './cache';
-import { maybeProxy, volumePath } from '$lib/server/volume';
+import { volumePath } from '$lib/server/volume';
 
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
 const VOLUME_DIR = volumePath('components');
@@ -316,13 +317,13 @@ async function buildList(): Promise<ComponentListEntry[]> {
   return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export const GET: RequestHandler = async ({ request, url }) => {
-  // Cross-instance proxy: when CADTRAIN_VOLUME_REMOTE_URL is set, forward
-  // to that host so dev sees prod's merged list (including volume
-  // overlays) instead of just the local bundle.
-  const proxied = await maybeProxy(request, url);
-  if (proxied) return proxied;
-
+export const GET: RequestHandler = async ({ request }) => {
+  // NOT proxied. The local dev app renders components from its
+  // build-time import.meta.glob over the LOCAL src/ tree — so the list
+  // must reflect what's actually renderable here (local bundle + local
+  // volume overlay), not prod's. Proxying made the UI show prod-only
+  // components the local app can't render ("Unknown component"). All
+  // /api/components/* endpoints are dev-local for the same reason.
   let signature: string;
   try {
     signature = await buildSignature();

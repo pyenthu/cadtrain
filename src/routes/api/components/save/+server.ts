@@ -17,11 +17,14 @@
  *     get `hasGeom: false` on the list response until a bundle rebuild;
  *     existing-id overlays inherit the bundled geom immediately.
  *
- * Cross-instance proxy: when CADTRAIN_VOLUME_REMOTE_URL is set in the
- * caller's env (typically a developer's .env.local), the call forwards
- * to prod with X-Volume-Token, so dev "saves to prod" through a single
- * keystroke. Auth on the prod side uses checkVolumeAuth — same-origin
- * browser traffic is trusted, cross-origin needs the token.
+ * NOT proxied: unlike /api/volume + /api/kb/*, this endpoint does NOT
+ * forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set. Component .ts
+ * source is git-tracked project code, not volume data — in dev it must
+ * land in the local src/ tree so Vite HMR picks it up and the file can
+ * be committed. Proxying would strand a new component on the prod
+ * volume overlay, where the build-time import.meta.glob can't load its
+ * geom (the page would show "Unknown component"). The volume overlay is
+ * populated only by saves made ON the prod site itself (same-origin).
  *
  * Safety:
  *   - id must match a known entry in the component registry (whitelist; no
@@ -40,7 +43,7 @@ import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY, defaultsFor, geomById } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
 import { bakeGlb } from '$lib/server/manifold-bake';
-import { volumePath, maybeProxy, checkVolumeAuth, ensureDir } from '$lib/server/volume';
+import { volumePath, checkVolumeAuth, ensureDir } from '$lib/server/volume';
 
 /** Tiny default-params extractor — pulls each `params.<name>.default`
  *  out of the raw source text. Used by the save endpoint to bake a GLB
@@ -76,15 +79,10 @@ const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
 const VOLUME_DIR = volumePath('components');
 
 export const POST: RequestHandler = async ({ request, url }) => {
-  // Cross-instance proxy. When CADTRAIN_VOLUME_REMOTE_URL is set in
-  // .env.local, forward the save to prod. Token + Origin go on with
-  // maybeProxy so prod's CSRF + auth checks pass.
-  const proxied = await maybeProxy(request, url);
-  if (proxied) return proxied;
-
-  // Auth on the receiving side. Same-origin browser sessions hitting
-  // this prod endpoint are trusted without a token; cross-origin
-  // callers (curl, the dev proxy) need X-Volume-Token. Unset locally
+  // Deliberately NOT proxied — see the file header. Component source is
+  // dev-local project code; in dev it writes to src/, on prod it writes
+  // the volume overlay (same-origin). Same-origin browser sessions are
+  // trusted by checkVolumeAuth without a token; unset token locally
   // → endpoint open.
   checkVolumeAuth(request, url);
 

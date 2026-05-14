@@ -22,16 +22,17 @@ import { join } from 'path';
 import { dev } from '$app/environment';
 import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { invalidateRunesListCache } from '../list/cache';
-import { volumePath, maybeProxy, checkVolumeAuth, ensureDir } from '$lib/server/volume';
+import { volumePath, checkVolumeAuth, ensureDir } from '$lib/server/volume';
 
 const MAX_BYTES = 256 * 1024;
 const SRC_DIR = join(process.cwd(), 'src', 'lib', 'cad', 'components');
 const VOLUME_DIR = volumePath('components');
 
 export const POST: RequestHandler = async ({ request, url }) => {
-  // Forward to prod when CADTRAIN_VOLUME_REMOTE_URL is set in env.
-  const proxied = await maybeProxy(request, url);
-  if (proxied) return proxied;
+  // NOT proxied — like /api/components/save, the <id>.md sidecar is
+  // dev-local project code. In dev it writes to src/, on prod the
+  // volume overlay (same-origin). Proxying would strand it off the
+  // local tree.
   checkVolumeAuth(request, url);
 
   const body = await request.json().catch(() => null);

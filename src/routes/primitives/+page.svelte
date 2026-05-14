@@ -2103,11 +2103,15 @@ export const geom = defineGeom(meta, (p) => {
     if (next !== raw) tab.sourceDraft = next;
     tab.saveStatus = 'saving';
     tab.saveError = undefined;
+    // A figure-draft (or any id not yet in the registry) is a brand-new
+    // file — the save endpoint requires `create: true` for those. An
+    // existing component saves without it.
+    const isNew = !componentList.some((e) => e.meta.id === tab.componentEntry!.meta.id);
     try {
       const r = await fetch('/api/components/save', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: tab.componentEntry.meta.id, source: next }),
+        body: JSON.stringify({ id: tab.componentEntry.meta.id, source: next, ...(isNew ? { create: true } : {}) }),
       });
       if (!r.ok) {
         const txt = await r.text();
@@ -2116,12 +2120,24 @@ export const geom = defineGeom(meta, (p) => {
         return false;
       }
       tab.saveStatus = 'saved';
+      tab.sourceDraft = null;
+      // A brand-new component file isn't in the build-time
+      // `import.meta.glob` until Vite re-evaluates it — and an *eager*
+      // glob only reliably picks up a NEW file on a full page reload,
+      // not via HMR. So for a freshly-created component, reload the
+      // page: the `cad:lastActiveId` sessionStorage restore reopens this
+      // exact tab on mount, now fully registered + rendering. (An
+      // existing-component save just needs the API refresh below.)
+      if (isNew) {
+        await new Promise((res) => setTimeout(res, 500)); // let the write settle
+        window.location.reload();
+        return true;
+      }
       // Re-fetch the registry from the API so the in-memory tab entry
       // matches what's now on disk. Then update the tab's reference.
       await refreshRunesList();
       const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
       if (fresh) tab.componentEntry = { ...fresh, source: next };
-      tab.sourceDraft = null;
       return true;
     } catch (e: any) {
       tab.saveStatus = 'error';
