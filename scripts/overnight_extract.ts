@@ -167,6 +167,30 @@ async function callClaude(opts: {
   throw new Error('callClaude: exhausted retries');
 }
 
+/**
+ * Render one page of a PDF to a PNG via poppler's pdftoppm. The
+ * Picture tab in /primitives shows this alongside the generated geom
+ * so the user can eyeball the source figure vs. the interpretation
+ * and modify the .ts to close the gap. Returns the output path on
+ * success, null on failure (missing tool, bad page, etc.).
+ */
+async function renderSourcePage(
+  pdfPath: string, page: number | string | undefined, outPath: string,
+): Promise<string | null> {
+  const pageNum = Number(page);
+  if (!Number.isFinite(pageNum) || pageNum < 1) return null;
+  const outPrefix = outPath.replace(/\.png$/, '');
+  return new Promise((res) => {
+    // -singlefile drops the page-number suffix → exactly <outPrefix>.png
+    const proc = spawn('pdftoppm', [
+      '-png', '-f', String(pageNum), '-l', String(pageNum),
+      '-r', '150', '-singlefile', pdfPath, outPrefix,
+    ], { timeout: 60_000, stdio: ['ignore', 'ignore', 'pipe'] });
+    proc.on('exit', (c) => res(c === 0 ? outPath : null));
+    proc.on('error', () => res(null));
+  });
+}
+
 function parseEnvelope(stdout: string): string {
   const env = JSON.parse(stdout);
   if (env?.is_error === true) {
@@ -363,6 +387,10 @@ interface ManifestEntry {
   final_verdict: 'MATCH' | 'INCOMPLETE' | 'ERROR';
   error?: string;
   url: string; // points to the per-item dir
+  /** Rendered source PDF page — the original figure the .ts was
+   *  interpreted from. Static URL; absent when the render failed or
+   *  the source_page was unknown. */
+  source_image?: string;
 }
 
 async function saveManifest(items: ManifestEntry[]) {
@@ -378,6 +406,24 @@ async function processCandidate(cand: Candidate, catalog: string): Promise<Manif
   const notes: any = { cand, iterations: [] };
   let final_verdict: ManifestEntry['final_verdict'] = 'INCOMPLETE';
   let iters = 0;
+
+  // Render the source PDF page FIRST — independent of the LLM steps,
+  // so even an ERROR item still gets its original figure for review.
+  const srcImgPath = join(itemDir, 'source-page.png');
+  const rendered = await renderSourcePage(pdfPath, cand.source_page, srcImgPath);
+  const source_image = rendered ? `/tests/extracted/${cand.id}/source-page.png` : undefined;
+  if (!rendered) {
+    await log(`  source-page render skipped/failed (page=${cand.source_page})`);
+  }
+
+  const baseEntry = {
+    id: cand.id, name: cand.name, family: cand.family,
+    source_pdf: cand.source_pdf, source_page: cand.source_page,
+    brief_description: cand.brief_description,
+    url: `/tests/extracted/${cand.id}/`,
+    ...(source_image ? { source_image } : {}),
+  };
+
   try {
     let ts = await generateInitial(cand, pdfPath, catalog);
     await writeFile(join(itemDir, 'iter-0.ts'), ts);
@@ -406,21 +452,9 @@ async function processCandidate(cand: Candidate, catalog: string): Promise<Manif
     final_verdict = 'ERROR';
     notes.error = e?.message ?? String(e);
     await writeFile(join(itemDir, 'notes.json'), JSON.stringify(notes, null, 2));
-    return {
-      id: cand.id, name: cand.name, family: cand.family,
-      source_pdf: cand.source_pdf, source_page: cand.source_page,
-      brief_description: cand.brief_description,
-      iters_done: iters, final_verdict, error: notes.error,
-      url: `/tests/extracted/${cand.id}/`,
-    };
+    return { ...baseEntry, iters_done: iters, final_verdict, error: notes.error };
   }
-  return {
-    id: cand.id, name: cand.name, family: cand.family,
-    source_pdf: cand.source_pdf, source_page: cand.source_page,
-    brief_description: cand.brief_description,
-    iters_done: iters, final_verdict,
-    url: `/tests/extracted/${cand.id}/`,
-  };
+  return { ...baseEntry, iters_done: iters, final_verdict };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────

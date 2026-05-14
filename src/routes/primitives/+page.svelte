@@ -516,6 +516,10 @@
     final_verdict: 'MATCH' | 'INCOMPLETE' | 'ERROR';
     error?: string;
     url: string;
+    /** Rendered source PDF page — the original figure the .ts was
+     *  interpreted from. Copied into the volume on promote so the
+     *  stage Picture tab shows it next to the 3D render. */
+    source_image?: string;
   }
   let extractionResults = $state<ExtractionResult[]>([]);
   let extractionLoadedAt = $state<string | null>(null);
@@ -570,6 +574,22 @@
       if (!saveRes.ok && saveRes.status !== 409) {
         const text = await saveRes.text().catch(() => '');
         throw new Error(`save failed: ${saveRes.status} ${text.slice(0, 200)}`);
+      }
+      // Copy the source figure into the volume as components/<id>.source.png
+      // so the stage Picture tab shows the original PDF page next to the
+      // 3D render. Non-fatal — a missing figure just leaves Picture empty.
+      if (entry.source_image) {
+        try {
+          const imgRes = await fetch(entry.source_image);
+          if (imgRes.ok) {
+            const blob = await imgRes.blob();
+            await fetch(`/api/volume?path=${encodeURIComponent(`components/${entry.id}.source.png`)}`, {
+              method: 'PUT',
+              body: blob,
+              headers: { 'content-type': 'image/png' },
+            });
+          }
+        } catch { /* figure copy is best-effort */ }
       }
       // 409 means the id ALREADY exists in the registry (likely from a
       // prior promote in this session) — treat as success and open it.

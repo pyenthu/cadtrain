@@ -10,7 +10,8 @@
       "brief_description": "Parametrized hollow cylindrical pipe section with threaded box/pin ends — defined by OD, wall thickness, ID, drift diameter, joint length, and connection geometry (connection OD, length, threads-per-inch).",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/casing_joint_threaded/"
+      "url": "/tests/extracted/casing_joint_threaded/",
+      "source_image": "/tests/extracted/casing_joint_threaded/source-page.png"
     },
     {
       "id": "tubing_joint_threaded",
@@ -21,7 +22,8 @@
       "brief_description": "Smaller-diameter parametrized hollow cylinder (1.9\"–4.5\" OD) with threaded ends for production strings — parametrized by OD, wall, ID, drift, R-2 range joint length, and connection (EUE/premium) geometry.",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/tubing_joint_threaded/"
+      "url": "/tests/extracted/tubing_joint_threaded/",
+      "source_image": "/tests/extracted/tubing_joint_threaded/source-page.png"
     },
     {
       "id": "casing_joint",
@@ -32,7 +34,8 @@
       "brief_description": "Long thick-walled hollow cylinder with threaded ends, parametrized by OD, wall thickness, joint length (R-3 range) and connection type.",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/casing_joint/"
+      "url": "/tests/extracted/casing_joint/",
+      "source_image": "/tests/extracted/casing_joint/source-page.png"
     },
     {
       "id": "tubing_joint",
@@ -43,7 +46,8 @@
       "brief_description": "Smaller-OD hollow cylinder for production flow, parametrized by OD, wall thickness, joint length (R-2 range) and connection type.",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/tubing_joint/"
+      "url": "/tests/extracted/tubing_joint/",
+      "source_image": "/tests/extracted/tubing_joint/source-page.png"
     },
     {
       "id": "liner_pipe",
@@ -54,7 +58,8 @@
       "brief_description": "Large-OD thin-wall hollow cylinder used as conductor or surface liner, parametrized identically to casing but with shorter typical joint length.",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/liner_pipe/"
+      "url": "/tests/extracted/liner_pipe/",
+      "source_image": "/tests/extracted/liner_pipe/source-page.png"
     },
     {
       "id": "plain_end_pipe",
@@ -65,7 +70,8 @@
       "brief_description": "Hollow cylinder with square-cut, unthreaded ends ready for field welding; parametrized by OD, ID, and length.",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/plain_end_pipe/"
+      "url": "/tests/extracted/plain_end_pipe/",
+      "source_image": "/tests/extracted/plain_end_pipe/source-page.png"
     },
     {
       "id": "pipe_coupling",
@@ -76,7 +82,8 @@
       "brief_description": "Short thick-walled sleeve with internal threads on both ends used to join two pipe pin ends; parametrized by coupling OD, length, and thread form.",
       "iters_done": 1,
       "final_verdict": "MATCH",
-      "url": "/tests/extracted/pipe_coupling/"
+      "url": "/tests/extracted/pipe_coupling/",
+      "source_image": "/tests/extracted/pipe_coupling/source-page.png"
     },
     {
       "id": "pin_thread_end",
