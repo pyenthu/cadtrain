@@ -247,7 +247,7 @@ async function loadCatalogContext(): Promise<string> {
 const GENERATE_SYSTEM = `You write single-file ManifoldCAD primitives for cadtrain from a figure image.
 
 # File format
-Each primitive lives at src/lib/cad/components/<id>.ts and exports:
+Each primitive is a part directory's component.ts and exports:
 
 \`\`\`ts
 import { tube, cyl, mv, rot, M } from '../manifold-helpers';
@@ -275,6 +275,9 @@ export const geom = defineGeom(meta, (p) => {
 - Manifold ops: .add() / .subtract() / .intersect().
 - Imports only from '../manifold-helpers' or another './<id>'.
 - Keep param defaults realistic for the implied spec.
+- ALWAYS wrap geom in \`defineGeom(meta, (p) => { … })\` exactly as shown — the
+  in-app editor's sectioned view parses that shape. Do NOT emit the raw
+  \`export const geom = (p) => { … }\` form.
 
 # Output contract
 Respond with the COMPLETE .ts file as a single fenced \`\`\`typescript code block. No prose. No diff.`;
@@ -283,7 +286,13 @@ const CRITIQUE_SYSTEM = `You critique a ManifoldCAD primitive .ts against the so
 
 Look at the figure image. Look at the .ts. Decide:
 - If the GEOMETRY in the .ts faithfully captures the figure (correct proportions, correct features, correct Z-down orientation): respond with EXACTLY the single word \`MATCH\` and nothing else.
-- Otherwise: respond with the CORRECTED complete \`<id>.ts\` as a single fenced \`\`\`typescript code block. No prose.`;
+- Otherwise: respond with the CORRECTED complete \`<id>.ts\` as a single fenced \`\`\`typescript code block. No prose.
+
+When you emit a correction, KEEP the file's structure: imports from
+'../manifold-helpers' + '.', \`export const meta = { … } as const;\`, and
+geom wrapped as \`export const geom = defineGeom(meta, (p) => { … });\`.
+Never strip the \`defineGeom\` wrapper — the in-app editor's sectioned
+view depends on it.`;
 
 async function generateFromFigure(fig: FigureItem, catalog: string): Promise<string> {
   const imgPath = figurePath(fig);

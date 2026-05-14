@@ -1771,10 +1771,14 @@ export const geom = defineGeom(meta, (p) => {
    *  re-parses to the same args + body. The user edits only `body`
    *  in the main editor; `args` displays read-only above.
    *
-   *  Returns `ok: false` for files that don't match the defineGeom
-   *  shape (e.g. legacy `(p: Record<string, number>) => { … }` files).
-   *  The caller falls back to a single full-source editor in that
-   *  case so the user is never locked out. */
+   *  Recognises BOTH geom shapes:
+   *    - `export const geom = defineGeom(meta, (args) => { … });`
+   *    - `export const geom = (args) => { … };`  (raw form, e.g. what
+   *      the figure-extraction pipeline emits)
+   *  Both render identically — `defineGeom` is just typing sugar — so
+   *  the sectioned editor works for either. `ok: false` only when the
+   *  geom export can't be found at all (broken syntax); the caller then
+   *  falls back to a single full-source editor. */
   function splitGeomBody(rest: string): {
     ok: boolean;
     /** Everything in `rest` BEFORE the body — up to and INCLUDING the
@@ -1790,9 +1794,16 @@ export const geom = defineGeom(meta, (p) => {
      *  newline. Kept verbatim so save round-trips byte-stably. */
     tail: string;
   } {
-    const headRe = /defineGeom\s*\(\s*meta\s*,\s*/;
-    const m = headRe.exec(rest);
     const fail = { ok: false as const, scaffold: rest, args: '', body: '', tail: '' };
+    // Two accepted head shapes — try the defineGeom wrapper first, then
+    // the raw `export const geom = (args) => …` form. Either way `i`
+    // ends up pointing at the `(` of the arrow-function args, and the
+    // args/body/tail parsing below is identical. `tail` is captured
+    // verbatim, so the `});` (wrapped) vs `};` (raw) difference is
+    // preserved automatically on save.
+    const defineGeomRe = /defineGeom\s*\(\s*meta\s*,\s*/;
+    const rawGeomRe = /export\s+const\s+geom\s*(?::[^=]+)?=\s*/;
+    const m = defineGeomRe.exec(rest) ?? rawGeomRe.exec(rest);
     if (!m) return fail;
     let i = m.index + m[0].length;
     if (rest[i] !== '(') return fail;
