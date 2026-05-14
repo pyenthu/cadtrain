@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "pipe_threaded_end",
+    "name": "Threaded Pipe End (Pin)",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 3,
+    "brief_description": "External-thread pin end machined onto a pipe joint; tapered helical thread on OD with engaged thread length L and pitch p_t."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

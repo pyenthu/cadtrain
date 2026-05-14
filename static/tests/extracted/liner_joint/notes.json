@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "liner_joint",
+    "name": "Liner Joint",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 2,
+    "brief_description": "Casing-style pipe joint that does not return to surface, hung from a parent casing string via a liner hanger at its top."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

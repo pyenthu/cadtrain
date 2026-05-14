@@ -11,3 +11,235 @@
 [2026-05-13T19:46:42.922Z] [2/2] tubing_joint_threaded (Tubing Joint (Threaded))
 [2026-05-13T19:48:24.346Z]   done: verdict=MATCH, iters=1, 101424ms
 [2026-05-13T19:48:24.346Z] overnight_extract complete. 2 entries in manifest.
+[2026-05-13T19:50:53.632Z] overnight_extract started. target=100, per_pdf=30, no_refine=false, resume=true
+[2026-05-13T19:50:53.633Z] resume: 2 existing entries loaded
+[2026-05-13T19:50:53.633Z] found 4 PDFs in kb-sources/
+[2026-05-13T19:50:53.633Z] enumerate: 825214624-Casing-and-Tubing-Data-2019-01.pdf (target 30)
+[2026-05-13T19:51:48.516Z]   got 17 candidates from 825214624-Casing-and-Tubing-Data-2019-01.pdf (54883ms)
+[2026-05-13T19:51:48.516Z] enumerate: 374248291-Casing-and-Tubing.pdf (target 30)
+[2026-05-13T19:52:36.525Z]   got 25 candidates from 374248291-Casing-and-Tubing.pdf (48009ms)
+[2026-05-13T19:52:36.526Z] enumerate: bha-reference.pdf (target 30)
+[2026-05-13T19:54:29.018Z]   got 28 candidates from bha-reference.pdf (112491ms)
+[2026-05-13T19:54:29.018Z] enumerate: api-drill-pipe-specs.pdf (target 30)
+[2026-05-13T19:55:48.871Z]   got 24 candidates from api-drill-pipe-specs.pdf (79852ms)
+[2026-05-13T19:55:48.871Z] total candidates: 94
+[2026-05-13T19:55:48.871Z] after dedup: 92
+[2026-05-13T19:55:48.871Z] after resume-skip: 92 candidates to process
+[2026-05-13T19:55:48.885Z] catalog context: 59406 chars (59406 bytes)
+[2026-05-13T19:55:48.885Z] [1/92] casing_joint (Casing Joint)
+[2026-05-13T19:55:53.803Z]   done: verdict=ERROR, iters=0, 4918ms
+[2026-05-13T19:55:53.803Z] [2/92] tubing_joint (Tubing Joint)
+[2026-05-13T19:55:58.350Z]   done: verdict=ERROR, iters=0, 4547ms
+[2026-05-13T19:55:58.350Z] [3/92] liner_pipe (Liner Pipe (LP))
+[2026-05-13T19:56:02.904Z]   done: verdict=ERROR, iters=0, 4554ms
+[2026-05-13T19:56:02.904Z] [4/92] plain_end_pipe (Plain-End Pipe)
+[2026-05-13T19:56:07.625Z]   done: verdict=ERROR, iters=0, 4721ms
+[2026-05-13T19:56:07.625Z] [5/92] pipe_coupling (Threaded Coupling (Collar))
+[2026-05-13T19:56:12.160Z]   done: verdict=ERROR, iters=0, 4535ms
+[2026-05-13T19:56:12.160Z] [6/92] pin_thread_end (Pin-End Thread)
+[2026-05-13T19:56:16.690Z]   done: verdict=ERROR, iters=0, 4530ms
+[2026-05-13T19:56:16.690Z] [7/92] box_thread_end (Box-End Thread)
+[2026-05-13T19:56:21.344Z]   done: verdict=ERROR, iters=0, 4654ms
+[2026-05-13T19:56:21.344Z] [8/92] buttress_thread_profile (Buttress Thread (BC))
+[2026-05-13T19:56:25.893Z]   done: verdict=ERROR, iters=0, 4549ms
+[2026-05-13T19:56:25.893Z] [9/92] api_round_thread_profile (API Round Thread (LC/SC))
+[2026-05-13T19:56:30.479Z]   done: verdict=ERROR, iters=0, 4586ms
+[2026-05-13T19:56:30.479Z] [10/92] premium_metal_seal_connection (Premium Metal-to-Metal Connection)
+[2026-05-13T19:56:35.073Z]   done: verdict=ERROR, iters=0, 4594ms
+[2026-05-13T19:56:35.073Z] [11/92] eue_upset (External Upset End (EUE))
+[2026-05-13T19:56:39.996Z]   done: verdict=ERROR, iters=0, 4923ms
+[2026-05-13T19:56:39.996Z] [12/92] nue_flush_joint (Non-Upset End (NUE))
+[2026-05-13T19:56:45.567Z]   done: verdict=ERROR, iters=0, 5571ms
+[2026-05-13T19:56:45.567Z] [13/92] integral_flush_joint (Integral Flush Joint)
+[2026-05-13T19:56:49.794Z]   done: verdict=ERROR, iters=0, 4227ms
+[2026-05-13T19:56:49.795Z] [14/92] slip_joint (Slip Joint)
+[2026-05-13T19:56:54.405Z]   done: verdict=ERROR, iters=0, 4610ms
+[2026-05-13T19:56:54.405Z] [15/92] drift_mandrel (Drift Mandrel)
+[2026-05-13T19:56:59.031Z]   done: verdict=ERROR, iters=0, 4626ms
+[2026-05-13T19:56:59.032Z] [16/92] color_band_marker (Color Identification Band)
+[2026-05-13T19:57:03.565Z]   done: verdict=ERROR, iters=0, 4533ms
+[2026-05-13T19:57:03.565Z] [17/92] thread_taper_cone (Thread Taper Cone)
+[2026-05-13T19:57:08.338Z]   done: verdict=ERROR, iters=0, 4773ms
+[2026-05-13T19:57:08.338Z] [18/92] conductor_casing_joint (Conductor Casing Joint)
+[2026-05-13T19:57:12.955Z]   done: verdict=ERROR, iters=0, 4617ms
+[2026-05-13T19:57:12.955Z] [19/92] surface_casing_joint (Surface Casing Joint)
+[2026-05-13T19:57:17.560Z]   done: verdict=ERROR, iters=0, 4605ms
+[2026-05-13T19:57:17.560Z] [20/92] intermediate_casing_joint (Intermediate Casing Joint)
+[2026-05-13T19:57:22.092Z]   done: verdict=ERROR, iters=0, 4532ms
+[2026-05-13T19:57:22.092Z] [21/92] production_casing_joint (Production Casing Joint)
+[2026-05-13T19:57:26.608Z]   done: verdict=ERROR, iters=0, 4516ms
+[2026-05-13T19:57:26.609Z] [22/92] liner_joint (Liner Joint)
+[2026-05-13T19:57:31.328Z]   done: verdict=ERROR, iters=0, 4719ms
+[2026-05-13T19:57:31.329Z] [23/92] liner_tieback_joint (Liner Tieback Joint)
+[2026-05-13T19:57:35.838Z]   done: verdict=ERROR, iters=0, 4509ms
+[2026-05-13T19:57:35.838Z] [24/92] pipe_plain_end (Plain-End Pipe Body)
+[2026-05-13T19:57:40.415Z]   done: verdict=ERROR, iters=0, 4577ms
+[2026-05-13T19:57:40.415Z] [25/92] pipe_threaded_end (Threaded Pipe End (Pin))
+[2026-05-13T19:57:44.948Z]   done: verdict=ERROR, iters=0, 4533ms
+[2026-05-13T19:57:44.948Z] [26/92] api_coupling (API Coupling Sleeve)
+[2026-05-13T19:57:49.477Z]   done: verdict=ERROR, iters=0, 4529ms
+[2026-05-13T19:57:49.477Z] [27/92] round_thread_short (API Short Round Thread (STC))
+[2026-05-13T19:57:54.014Z]   done: verdict=ERROR, iters=0, 4537ms
+[2026-05-13T19:57:54.014Z] [28/92] round_thread_long (API Long Round Thread (LTC))
+[2026-05-13T19:57:58.631Z]   done: verdict=ERROR, iters=0, 4617ms
+[2026-05-13T19:57:58.631Z] [29/92] buttress_thread (API Buttress Thread (BTC))
+[2026-05-13T19:58:03.187Z]   done: verdict=ERROR, iters=0, 4556ms
+[2026-05-13T19:58:03.187Z] [30/92] extreme_line_thread (Extreme-Line Trapezoidal Thread)
+[2026-05-13T19:58:07.731Z]   done: verdict=ERROR, iters=0, 4544ms
+[2026-05-13T19:58:07.731Z] [31/92] extreme_line_connection (Extreme-Line Integral Connection)
+[2026-05-13T19:58:12.304Z]   done: verdict=ERROR, iters=0, 4572ms
+[2026-05-13T19:58:12.304Z] [32/92] premium_connection (Proprietary Premium Connection)
+[2026-05-13T19:58:16.887Z]   done: verdict=ERROR, iters=0, 4583ms
+[2026-05-13T19:58:16.887Z] [33/92] metal_to_metal_seal (Metal-to-Metal Seal Land)
+[2026-05-13T19:58:21.445Z]   done: verdict=ERROR, iters=0, 4558ms
+[2026-05-13T19:58:21.445Z] [34/92] torque_shoulder (Torque Shoulder)
+[2026-05-13T19:58:25.996Z]   done: verdict=ERROR, iters=0, 4551ms
+[2026-05-13T19:58:25.996Z] [35/92] resilient_seal_ring (Resilient Seal Ring Groove)
+[2026-05-13T19:58:30.577Z]   done: verdict=ERROR, iters=0, 4581ms
+[2026-05-13T19:58:30.577Z] [36/92] upset_end (External Upset End)
+[2026-05-13T19:58:35.244Z]   done: verdict=ERROR, iters=0, 4667ms
+[2026-05-13T19:58:35.245Z] [37/92] casing_shoe (Casing Shoe (Bottom Joint))
+[2026-05-13T19:58:40.003Z]   done: verdict=ERROR, iters=0, 4758ms
+[2026-05-13T19:58:40.003Z] [38/92] liner_hanger (Liner Hanger Body)
+[2026-05-13T19:58:44.561Z]   done: verdict=ERROR, iters=0, 4558ms
+[2026-05-13T19:58:44.561Z] [39/92] casing_collar (Casing Collar (Coupling Recess))
+[2026-05-13T19:58:49.120Z]   done: verdict=ERROR, iters=0, 4559ms
+[2026-05-13T19:58:49.121Z] [40/92] tubing_pup_joint (Tubing Pup Joint)
+[2026-05-13T19:58:53.856Z]   done: verdict=ERROR, iters=0, 4735ms
+[2026-05-13T19:58:53.857Z] [41/92] roller_cone_bit (Roller Cone (Tri-Cone) Drill Bit)
+[2026-05-13T19:58:58.598Z]   done: verdict=ERROR, iters=0, 4741ms
+[2026-05-13T19:58:58.598Z] [42/92] pdc_fixed_head_bit (PDC Fixed-Head Bit)
+[2026-05-13T19:59:03.262Z]   done: verdict=ERROR, iters=0, 4664ms
+[2026-05-13T19:59:03.262Z] [43/92] drill_collar_slick (Slick Drill Collar)
+[2026-05-13T19:59:07.852Z]   done: verdict=ERROR, iters=0, 4590ms
+[2026-05-13T19:59:07.852Z] [44/92] drill_collar_spiral (Spiral Drill Collar)
+[2026-05-13T19:59:14.386Z]   done: verdict=ERROR, iters=0, 6534ms
+[2026-05-13T19:59:14.386Z] [45/92] drill_collar_square (Square Drill Collar)
+[2026-05-13T19:59:18.999Z]   done: verdict=ERROR, iters=0, 4613ms
+[2026-05-13T19:59:18.999Z] [46/92] pony_collar (Pony Collar (Short Drill Collar))
+[2026-05-13T19:59:23.827Z]   done: verdict=ERROR, iters=0, 4828ms
+[2026-05-13T19:59:23.827Z] [47/92] hevi_wate_drill_pipe (Hevi-Wate Drill Pipe)
+[2026-05-13T19:59:28.440Z]   done: verdict=ERROR, iters=0, 4612ms
+[2026-05-13T19:59:28.440Z] [48/92] spiral_wate_drill_pipe (Spiral-Wate Drill Pipe)
+[2026-05-13T19:59:33.056Z]   done: verdict=ERROR, iters=0, 4615ms
+[2026-05-13T19:59:33.056Z] [49/92] drill_pipe_joint (Drill Pipe Joint)
+[2026-05-13T19:59:37.816Z]   done: verdict=ERROR, iters=0, 4760ms
+[2026-05-13T19:59:37.816Z] [50/92] drill_pipe_upset (Drill Pipe Upset Transition (IU/EU/IEU))
+[2026-05-13T19:59:42.383Z]   done: verdict=ERROR, iters=0, 4567ms
+[2026-05-13T19:59:42.383Z] [51/92] tool_joint_box_pin (Tool Joint Box/Pin Connection)
+[2026-05-13T19:59:50.570Z]   done: verdict=ERROR, iters=0, 8187ms
+[2026-05-13T19:59:50.571Z] [52/92] hydra_jar (Hydraulic Drilling Jar)
+[2026-05-13T19:59:55.323Z]   done: verdict=ERROR, iters=0, 4752ms
+[2026-05-13T19:59:55.323Z] [53/92] integral_blade_stabilizer (Integral Blade Stabilizer (IBS))
+[2026-05-13T19:59:59.876Z]   done: verdict=ERROR, iters=0, 4553ms
+[2026-05-13T19:59:59.876Z] [54/92] welded_blade_stabilizer (Welded-Blade Stabilizer)
+[2026-05-13T20:00:04.658Z]   done: verdict=ERROR, iters=0, 4782ms
+[2026-05-13T20:00:04.658Z] [55/92] sleeve_stabilizer (Replaceable-Sleeve Stabilizer)
+[2026-05-13T20:00:09.203Z]   done: verdict=ERROR, iters=0, 4545ms
+[2026-05-13T20:00:09.203Z] [56/92] shrunk_on_sleeve_stabilizer (Shrunk-On Sleeve Stabilizer)
+[2026-05-13T20:00:13.805Z]   done: verdict=ERROR, iters=0, 4601ms
+[2026-05-13T20:00:13.805Z] [57/92] dei_stabilizer (DEI (Diamond Enhanced Insert) Stabilizer)
+[2026-05-13T20:00:18.382Z]   done: verdict=ERROR, iters=0, 4577ms
+[2026-05-13T20:00:18.382Z] [58/92] double_diamond_combo_tool (Double Diamond Combo Tool)
+[2026-05-13T20:00:23.333Z]   done: verdict=ERROR, iters=0, 4950ms
+[2026-05-13T20:00:23.334Z] [59/92] three_point_reamer (Three-Point Roller Reamer)
+[2026-05-13T20:00:27.936Z]   done: verdict=ERROR, iters=0, 4602ms
+[2026-05-13T20:00:27.936Z] [60/92] six_point_reamer (Six-Point Roller Reamer)
+[2026-05-13T20:00:32.493Z]   done: verdict=ERROR, iters=0, 4556ms
+[2026-05-13T20:00:32.493Z] [61/92] dei_reamer (DEI Spiral-Body Reamer)
+[2026-05-13T20:00:37.069Z]   done: verdict=ERROR, iters=0, 4576ms
+[2026-05-13T20:00:37.069Z] [62/92] dog_sub (DOG Sub (Near-Bit Diamond Sub))
+[2026-05-13T20:00:41.657Z]   done: verdict=ERROR, iters=0, 4588ms
+[2026-05-13T20:00:41.658Z] [63/92] reamer_roller_cutter (Reamer Roller Cutter (KSX/RSX/DEX))
+[2026-05-13T20:00:46.455Z]   done: verdict=ERROR, iters=0, 4797ms
+[2026-05-13T20:00:46.455Z] [64/92] mud_motor_power_section (Mud Motor Power Section)
+[2026-05-13T20:00:50.989Z]   done: verdict=ERROR, iters=0, 4534ms
+[2026-05-13T20:00:50.989Z] [65/92] bit_sub (Bit Sub (Box × Box))
+[2026-05-13T20:00:55.556Z]   done: verdict=ERROR, iters=0, 4567ms
+[2026-05-13T20:00:55.556Z] [66/92] crossover_sub (Crossover Sub (Box × Pin))
+[2026-05-13T20:01:00.109Z]   done: verdict=ERROR, iters=0, 4553ms
+[2026-05-13T20:01:00.109Z] [67/92] dual_od_sub (Dual-OD Reduced-Section Sub)
+[2026-05-13T20:01:04.663Z]   done: verdict=ERROR, iters=0, 4553ms
+[2026-05-13T20:01:04.664Z] [68/92] top_drive_saver_sub (Top Drive Saver Sub (Pin × Pin))
+[2026-05-13T20:01:09.258Z]   done: verdict=ERROR, iters=0, 4594ms
+[2026-05-13T20:01:09.258Z] [69/92] drill_pipe_body (Drill Pipe Body (Seamless Tube))
+[2026-05-13T20:01:13.914Z]   done: verdict=ERROR, iters=0, 4656ms
+[2026-05-13T20:01:13.914Z] [70/92] pipe_internal_upset_end (Internal Upset (IU) Pipe End)
+[2026-05-13T20:01:18.612Z]   done: verdict=ERROR, iters=0, 4698ms
+[2026-05-13T20:01:18.612Z] [71/92] pipe_external_upset_end (External Upset (EU) Pipe End)
+[2026-05-13T20:01:23.165Z]   done: verdict=ERROR, iters=0, 4553ms
+[2026-05-13T20:01:23.165Z] [72/92] pipe_internal_external_upset_end (Internal-External Upset (IEU) Pipe End)
+[2026-05-13T20:01:28.053Z]   done: verdict=ERROR, iters=0, 4888ms
+[2026-05-13T20:01:28.053Z] [73/92] upset_transition_cone_35deg (35° Upset Transition Cone)
+[2026-05-13T20:01:32.583Z]   done: verdict=ERROR, iters=0, 4530ms
+[2026-05-13T20:01:32.584Z] [74/92] upset_transition_cone_18deg (18° Internal Upset Transition)
+[2026-05-13T20:01:37.303Z]   done: verdict=ERROR, iters=0, 4719ms
+[2026-05-13T20:01:37.303Z] [75/92] friction_weld_zone (Friction-Welded Joint Zone)
+[2026-05-13T20:01:41.866Z]   done: verdict=ERROR, iters=0, 4563ms
+[2026-05-13T20:01:41.866Z] [76/92] tool_joint_pin (Tool Joint Pin (Male End))
+[2026-05-13T20:01:46.473Z]   done: verdict=ERROR, iters=0, 4607ms
+[2026-05-13T20:01:46.473Z] [77/92] tool_joint_box (Tool Joint Box (Female End))
+[2026-05-13T20:01:51.009Z]   done: verdict=ERROR, iters=0, 4536ms
+[2026-05-13T20:01:51.009Z] [78/92] tool_joint_body_cylinder (Tool Joint Body Cylinder)
+[2026-05-13T20:01:55.569Z]   done: verdict=ERROR, iters=0, 4560ms
+[2026-05-13T20:01:55.569Z] [79/92] tool_joint_elevator_upset_shoulder (Elevator Upset Shoulder (DE))
+[2026-05-13T20:02:00.167Z]   done: verdict=ERROR, iters=0, 4598ms
+[2026-05-13T20:02:00.167Z] [80/92] tool_joint_18deg_back_taper (18° Box Back-Taper)
+[2026-05-13T20:02:04.744Z]   done: verdict=ERROR, iters=0, 4577ms
+[2026-05-13T20:02:04.744Z] [81/92] tool_joint_box_90deg_shoulder (Box with 90° Square Shoulder)
+[2026-05-13T20:02:09.361Z]   done: verdict=ERROR, iters=0, 4617ms
+[2026-05-13T20:02:09.361Z] [82/92] hard_banding_ring (Hardbanding Wear Ring)
+[2026-05-13T20:02:14.076Z]   done: verdict=ERROR, iters=0, 4715ms
+[2026-05-13T20:02:14.076Z] [83/92] tong_space_band (Tong Space Band)
+[2026-05-13T20:02:18.784Z]   done: verdict=ERROR, iters=0, 4708ms
+[2026-05-13T20:02:18.784Z] [84/92] nc_numbered_connection (NC Numbered Rotary Connection)
+[2026-05-13T20:02:25.602Z]   done: verdict=ERROR, iters=0, 6817ms
+[2026-05-13T20:02:25.602Z] [85/92] internal_flush_connection (Internal Flush (IF) Connection)
+[2026-05-13T20:02:30.218Z]   done: verdict=ERROR, iters=0, 4616ms
+[2026-05-13T20:02:30.218Z] [86/92] full_hole_connection (Full Hole (FH) Connection)
+[2026-05-13T20:02:34.836Z]   done: verdict=ERROR, iters=0, 4618ms
+[2026-05-13T20:02:34.836Z] [87/92] pin_nose_lead_chamfer (Pin Nose Lead-In Chamfer)
+[2026-05-13T20:02:39.504Z]   done: verdict=ERROR, iters=0, 4667ms
+[2026-05-13T20:02:39.504Z] [88/92] box_counterbore (Box Counterbore at Shoulder)
+[2026-05-13T20:02:46.630Z]   done: verdict=ERROR, iters=0, 7126ms
+[2026-05-13T20:02:46.630Z] [89/92] drill_pipe_complete_joint (Complete Drill Pipe Joint Assembly)
+[2026-05-13T20:02:51.179Z]   done: verdict=ERROR, iters=0, 4549ms
+[2026-05-13T20:02:51.179Z] [90/92] internal_coating_layer (Internal Coating Film)
+[2026-05-13T20:02:55.723Z]   done: verdict=ERROR, iters=0, 4544ms
+[2026-05-13T20:02:55.723Z] [91/92] die_stamp_marking_panel (Die-Stamped Marking Panel)
+[2026-05-13T20:03:00.286Z]   done: verdict=ERROR, iters=0, 4562ms
+[2026-05-13T20:03:00.287Z] [92/92] thread_relief_groove (Thread Relief Groove)
+[2026-05-13T20:03:04.854Z]   done: verdict=ERROR, iters=0, 4567ms
+[2026-05-13T20:03:04.854Z] overnight_extract complete. 94 entries in manifest.
+[2026-05-14T06:16:06.409Z] overnight_extract started. target=100, per_pdf=30, no_refine=false, resume=true
+[2026-05-14T06:16:06.411Z] resume: 94 existing entries loaded
+[2026-05-14T06:16:06.411Z] resume: reconstructed 94 candidates from manifest (skipping enumeration)
+[2026-05-14T06:16:06.411Z] after dedup: 94
+[2026-05-14T06:16:06.411Z] after resume-skip: 92 to process (2 already MATCH, 92 retrying prior ERROR/INCOMPLETE)
+[2026-05-14T06:16:06.421Z] catalog context: 59406 chars (59406 bytes)
+[2026-05-14T06:16:06.422Z] [1/92] casing_joint (Casing Joint)
+[2026-05-14T06:20:06.692Z] overnight_extract started. target=100, per_pdf=30, no_refine=false, resume=true
+[2026-05-14T06:20:06.692Z] resume: 94 existing entries loaded
+[2026-05-14T06:20:06.693Z] resume: reconstructed 94 candidates from manifest (skipping enumeration)
+[2026-05-14T06:20:06.693Z] after dedup: 94
+[2026-05-14T06:20:06.693Z] after resume-skip: 92 to process (2 already MATCH, 92 retrying prior ERROR/INCOMPLETE)
+[2026-05-14T06:20:06.703Z] catalog context: 59406 chars (59406 bytes)
+[2026-05-14T06:20:06.704Z] [1/92] casing_joint (Casing Joint)
+[2026-05-14T06:23:32.870Z] overnight_extract started. target=100, per_pdf=30, no_refine=false, resume=true
+[2026-05-14T06:23:32.871Z] resume: 94 existing entries loaded
+[2026-05-14T06:23:32.871Z] resume: reconstructed 94 candidates from manifest (skipping enumeration)
+[2026-05-14T06:23:32.871Z] after dedup: 94
+[2026-05-14T06:23:32.871Z] after resume-skip: 92 to process (2 already MATCH, 92 retrying prior ERROR/INCOMPLETE)
+[2026-05-14T06:23:32.871Z] batch mode: processing 5 of 92 remaining (87 stay INCOMPLETE for next run)
+[2026-05-14T06:23:32.876Z] catalog context: 59406 chars
+[2026-05-14T06:23:32.877Z] [1/5] casing_joint (Casing Joint)
+[2026-05-14T06:25:07.203Z]   done: verdict=MATCH, iters=1, 94326ms
+[2026-05-14T06:25:07.204Z] [2/5] tubing_joint (Tubing Joint)
+[2026-05-14T06:26:45.952Z]   done: verdict=MATCH, iters=1, 98748ms
+[2026-05-14T06:26:45.953Z] [3/5] liner_pipe (Liner Pipe (LP))
+[2026-05-14T06:27:35.676Z]   done: verdict=MATCH, iters=1, 49723ms
+[2026-05-14T06:27:35.677Z] [4/5] plain_end_pipe (Plain-End Pipe)
+[2026-05-14T06:28:21.212Z]   done: verdict=MATCH, iters=1, 45535ms
+[2026-05-14T06:28:21.213Z] [5/5] pipe_coupling (Threaded Coupling (Collar))
+[2026-05-14T06:30:13.528Z]   done: verdict=MATCH, iters=1, 112315ms
+[2026-05-14T06:30:13.529Z] run complete. processed 5 this batch (7 total MATCH). 87 still pending.

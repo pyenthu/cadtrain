@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "upset_end",
+    "name": "External Upset End",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 4,
+    "brief_description": "Local OD increase forged onto pipe end (typical for tubing EUE and extreme-line casing) to provide material for thread cutting without losing wall."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

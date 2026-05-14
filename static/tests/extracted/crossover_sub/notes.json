@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "crossover_sub",
+    "name": "Crossover Sub (Box × Pin)",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 71,
+    "brief_description": "Adapter with one box end and one pin end of differing thread profiles; may be straight or reduced-section."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

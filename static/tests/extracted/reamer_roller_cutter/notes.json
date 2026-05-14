@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "reamer_roller_cutter",
+    "name": "Reamer Roller Cutter (KSX/RSX/DEX)",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 60,
+    "brief_description": "Dumbbell-shaped cutter: central inserted cylinder bounded by two larger flange wheels; insert pattern parametrized."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

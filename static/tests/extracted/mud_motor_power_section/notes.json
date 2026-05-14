@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "mud_motor_power_section",
+    "name": "Mud Motor Power Section",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 44,
+    "brief_description": "Long slim housing containing a helical lobed rotor inside an elastomer stator — parametrized by lobe count and stage length."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

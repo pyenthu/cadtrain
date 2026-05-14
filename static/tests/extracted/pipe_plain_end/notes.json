@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "pipe_plain_end",
+    "name": "Plain-End Pipe Body",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 4,
+    "brief_description": "Generic hollow cylinder of length L, OD D, ID d with no end preparation — the canonical pipe-body primitive (cross-section area A_p = π/4(D²−d²))."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

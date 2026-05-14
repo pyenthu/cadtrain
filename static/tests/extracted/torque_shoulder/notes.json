@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "torque_shoulder",
+    "name": "Torque Shoulder",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 4,
+    "brief_description": "Annular radial shoulder at the nose of a pin or behind a box that stops rotation at proper makeup and sets a defined contact stress."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

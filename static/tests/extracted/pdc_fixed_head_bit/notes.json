@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "pdc_fixed_head_bit",
+    "name": "PDC Fixed-Head Bit",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 17,
+    "brief_description": "Single-piece matrix/steel crown with radial blades carrying PDC button cutters and a pin connection on top."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "production_casing_joint",
+    "name": "Production Casing Joint",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 2,
+    "brief_description": "Smaller-OD casing pipe run across the pay zone to contain production pressures and isolate the formation around the tubing."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

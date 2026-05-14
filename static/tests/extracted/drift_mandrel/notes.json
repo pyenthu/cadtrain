@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "drift_mandrel",
+    "name": "Drift Mandrel",
+    "family": "casing_tubing",
+    "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+    "source_page": 1,
+    "brief_description": "Solid cylinder used as an ID gauge to verify a pipe's drift diameter along its length; parametrized by drift OD and gauge length."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

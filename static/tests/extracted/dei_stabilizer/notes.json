@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "dei_stabilizer",
+    "name": "DEI (Diamond Enhanced Insert) Stabilizer",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 54,
+    "brief_description": "Integral spiral-blade stabilizer with rows of diamond-enhanced cylindrical inserts embedded in the blade leading edges."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "spiral_wate_drill_pipe",
+    "name": "Spiral-Wate Drill Pipe",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 18,
+    "brief_description": "Hevi-Wate variant with helical grooves cut into the tube body in place of (or beside) the center wear pad."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

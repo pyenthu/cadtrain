@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "die_stamp_marking_panel",
+    "name": "Die-Stamped Marking Panel",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 28,
+    "brief_description": "Rectangular flat or shallow-engraved patch on the tool joint OD carrying logo, drawing no., heat code, and connection type — geometric shape is a small embossed/recessed planar zone."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

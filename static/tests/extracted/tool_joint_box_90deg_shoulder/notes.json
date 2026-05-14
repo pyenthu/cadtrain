@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "tool_joint_box_90deg_shoulder",
+    "name": "Box with 90° Square Shoulder",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 5,
+    "brief_description": "Optional variant where the box back is a flat 90° shoulder instead of an 18° cone — a simple annular face perpendicular to the axis."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

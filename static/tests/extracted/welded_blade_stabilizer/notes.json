@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "welded_blade_stabilizer",
+    "name": "Welded-Blade Stabilizer",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 53,
+    "brief_description": "Mandrel with three straight or spiral blades welded onto its outside; geometry parametrized by blade twist and length."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

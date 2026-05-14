@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "dog_sub",
+    "name": "DOG Sub (Near-Bit Diamond Sub)",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 61,
+    "brief_description": "Short stout sub with longitudinal rows of knobby stud inserts wrapping the OD, threaded directly above the bit."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "internal_flush_connection",
+    "name": "Internal Flush (IF) Connection",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 4,
+    "brief_description": "Rotary connection whose pin ID matches the drill-pipe bore so the joined string is hydraulically flush — geometry is a tapered threaded pin/box with no internal step."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

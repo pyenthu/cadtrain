@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "casing_collar",
+    "name": "Casing Collar (Coupling Recess)",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 3,
+    "brief_description": "External thick band at every joint where the coupling sits, used by collar locator tools — parametrized by OD bump height and band length."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

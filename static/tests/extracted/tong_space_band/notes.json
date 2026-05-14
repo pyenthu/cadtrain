@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "tong_space_band",
+    "name": "Tong Space Band",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 5,
+    "brief_description": "Plain cylindrical zone (LPB on pin, LB on box) on the tool joint reserved for tong jaw bite — a parametric length of the unembellished tool-joint OD."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

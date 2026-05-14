@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "friction_weld_zone",
+    "name": "Friction-Welded Joint Zone",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 5,
+    "brief_description": "Short cylindrical section at upset OD where the pipe upset and tool joint are friction-welded together, typically modelled as a small flash/bead ring around the seam."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

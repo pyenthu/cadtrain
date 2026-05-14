@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "tool_joint_18deg_back_taper",
+    "name": "18° Box Back-Taper",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 5,
+    "brief_description": "External 18°±2° conical taper at the rear of the box that blends the full tool-joint OD down to the elevator-upset OD, reducing stress concentration at the weld."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

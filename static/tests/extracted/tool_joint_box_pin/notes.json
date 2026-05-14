@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "tool_joint_box_pin",
+    "name": "Tool Joint Box/Pin Connection",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 73,
+    "brief_description": "Tapered threaded shoulder pair — external pin nose mating into internal box, sized by API NC/IF/FH numbered connection."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

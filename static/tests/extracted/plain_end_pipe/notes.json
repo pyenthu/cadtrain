@@ -1,0 +1,22 @@
+{
+  "cand": {
+    "id": "plain_end_pipe",
+    "name": "Plain-End Pipe",
+    "family": "casing_tubing",
+    "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+    "source_page": 1,
+    "brief_description": "Hollow cylinder with square-cut, unthreaded ends ready for field welding; parametrized by OD, ID, and length."
+  },
+  "iterations": [
+    {
+      "iter": 0,
+      "action": "generate",
+      "length": 1602
+    },
+    {
+      "iter": 1,
+      "verdict": "MATCH",
+      "raw_head": "MATCH"
+    }
+  ]
+}

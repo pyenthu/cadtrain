@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "box_thread_end",
+    "name": "Box-End Thread",
+    "family": "casing_tubing",
+    "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+    "source_page": 1,
+    "brief_description": "Internal tapered female thread inside a coupling or upset; parametrized by taper, thread per inch, and depth."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "hevi_wate_drill_pipe",
+    "name": "Hevi-Wate Drill Pipe",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 18,
+    "brief_description": "Thick-wall drill pipe with extended tool joints and a center wear-pad (donut) upset midway along the tube."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

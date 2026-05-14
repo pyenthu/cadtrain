@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "hydra_jar",
+    "name": "Hydraulic Drilling Jar",
+    "family": "fishing_intervention",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 18,
+    "brief_description": "Slim cylindrical body with a sliding mandrel/anvil section and external striking shoulder for delivering up/down impacts."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

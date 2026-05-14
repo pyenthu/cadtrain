@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "double_diamond_combo_tool",
+    "name": "Double Diamond Combo Tool",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 54,
+    "brief_description": "Near-bit stabilizer with two axially stacked sets of three spiraled diamond-studded blades on a single mandrel."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

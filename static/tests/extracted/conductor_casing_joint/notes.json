@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "conductor_casing_joint",
+    "name": "Conductor Casing Joint",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 1,
+    "brief_description": "Large-OD short thick-wall pipe section (drive pipe / marine conductor) set first below the structural casing to protect near-surface formations."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

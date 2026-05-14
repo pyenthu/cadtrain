@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "premium_metal_seal_connection",
+    "name": "Premium Metal-to-Metal Connection",
+    "family": "casing_tubing",
+    "source_pdf": "825214624-Casing-and-Tubing-Data-2019-01.pdf",
+    "source_page": 1,
+    "brief_description": "Pin/box geometry combining a hooked thread, internal torque shoulder, and conical metal-to-metal seal (VAM TOP, XLC-S, Tenaris Blue); parametrized by seal angle and shoulder offset."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

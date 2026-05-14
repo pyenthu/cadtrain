@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "pin_nose_lead_chamfer",
+    "name": "Pin Nose Lead-In Chamfer",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 5,
+    "brief_description": "Small conical chamfer at the very tip of the pin (ahead of the first full thread) that protects the lead thread during stab-in — a short truncated cone on the pin nose."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

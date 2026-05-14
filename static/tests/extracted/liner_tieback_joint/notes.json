@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "liner_tieback_joint",
+    "name": "Liner Tieback Joint",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 2,
+    "brief_description": "Cylindrical casing joint that ties an installed liner top back to the wellhead for full-length pressure integrity."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

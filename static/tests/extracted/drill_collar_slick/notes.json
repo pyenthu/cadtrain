@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "drill_collar_slick",
+    "name": "Slick Drill Collar",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 18,
+    "brief_description": "Thick-wall heavy cylinder of constant OD with bore through center, pin on one end and box on the other."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

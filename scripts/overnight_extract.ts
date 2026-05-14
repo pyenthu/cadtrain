@@ -56,6 +56,10 @@ const TARGET = Number(arg('--max', String(DEFAULT_TARGET)));
 const ITEMS_PER_PDF = Number(arg('--per-pdf', String(DEFAULT_ITEMS_PER_PDF)));
 const NO_REFINE = flag('--no-refine');
 const RESUME = flag('--resume');
+/** Process at most this many candidates this run, then exit cleanly.
+ *  0 = no cap. Pairs with --resume for human-in-the-loop batching:
+ *  run a batch, review it, re-run for the next. */
+const BATCH = Number(arg('--batch', '0'));
 
 // ─── Logging ──────────────────────────────────────────────────────────
 async function log(msg: string) {
@@ -67,7 +71,9 @@ async function log(msg: string) {
 // ─── Claude CLI wrapper ───────────────────────────────────────────────
 interface CliResult { stdout: string; stderr: string; exitCode: number; durationMs: number; }
 
-async function callClaude(opts: {
+const RETRYABLE_BACKOFF_MS = [60_000, 120_000, 240_000, 480_000];
+
+function spawnOnce(opts: {
   systemPrompt: string;
   userPrompt: string;
   addDir: string;
@@ -86,20 +92,86 @@ async function callClaude(opts: {
   const proc = spawn('claude', args, {
     timeout: CALL_TIMEOUT_MS,
     env: { ...process.env, NO_COLOR: '1' },
+    // Close stdin — the CLI otherwise waits 3s for stdin data and
+    // emits a noisy warning. Inheriting an empty pipe was the source
+    // of the "no stdin data received" noise in the first run.
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
   proc.stdout.on('data', (d) => (stdout += String(d)));
   proc.stderr.on('data', (d) => (stderr += String(d)));
-  const exitCode = await new Promise<number>((res, rej) => {
-    proc.on('exit', (c) => res(c ?? -1));
+  return new Promise<CliResult>((res, rej) => {
+    proc.on('exit', (c) => res({ stdout, stderr, exitCode: c ?? -1, durationMs: Date.now() - t0 }));
     proc.on('error', rej);
   });
-  return { stdout, stderr, exitCode, durationMs: Date.now() - t0 };
+}
+
+/**
+ * Inspect the --output-format json envelope for an API-level error that
+ * exitCode alone misses. The first run's failures all had exitCode 1
+ * but the real signal was `is_error:true, api_error_status:400,
+ * result:"Credit balance is too low"` INSIDE the JSON. Returns the
+ * api_error_status (number) when the envelope reports an error, else
+ * null.
+ */
+function envelopeApiError(stdout: string): { status: number | string; message: string } | null {
+  try {
+    const env = JSON.parse(stdout);
+    if (env?.is_error === true || env?.api_error_status) {
+      return {
+        status: env.api_error_status ?? 'unknown',
+        message: String(env.result ?? env.subtype ?? 'API error'),
+      };
+    }
+  } catch { /* non-JSON — handled by parseEnvelope downstream */ }
+  return null;
+}
+
+/**
+ * Call Claude with automatic retry+backoff on transient API errors
+ * (429 rate limit, 400 "Credit balance is too low", 5xx). A genuine
+ * non-retryable failure (bad prompt, etc.) throws after the first
+ * attempt. Credit-exhaustion is treated as RETRYABLE because the
+ * Pro/Max session window refills — sleeping through it is better
+ * than burning the whole candidate list into ERROR in 5 seconds.
+ */
+async function callClaude(opts: {
+  systemPrompt: string;
+  userPrompt: string;
+  addDir: string;
+}): Promise<CliResult> {
+  for (let attempt = 0; attempt <= RETRYABLE_BACKOFF_MS.length; attempt++) {
+    const r = await spawnOnce(opts);
+    const apiErr = envelopeApiError(r.stdout);
+    const retryable =
+      apiErr != null &&
+      (apiErr.status === 429 ||
+        apiErr.status === 400 || // includes "Credit balance is too low"
+        (typeof apiErr.status === 'number' && apiErr.status >= 500) ||
+        /credit balance|rate limit|overloaded/i.test(apiErr.message));
+    if (apiErr && retryable && attempt < RETRYABLE_BACKOFF_MS.length) {
+      const wait = RETRYABLE_BACKOFF_MS[attempt];
+      await log(`  API error (${apiErr.status}: ${apiErr.message.slice(0, 80)}) — backoff ${wait / 1000}s, attempt ${attempt + 1}`);
+      await new Promise((res) => setTimeout(res, wait));
+      continue;
+    }
+    if (apiErr) {
+      // Non-retryable, or out of retries — surface as a hard failure so
+      // the caller records ERROR and moves on.
+      return { ...r, exitCode: r.exitCode === 0 ? 1 : r.exitCode };
+    }
+    return r;
+  }
+  // Unreachable, but TS wants a return.
+  throw new Error('callClaude: exhausted retries');
 }
 
 function parseEnvelope(stdout: string): string {
   const env = JSON.parse(stdout);
+  if (env?.is_error === true) {
+    throw new Error(`API error envelope: ${String(env.result ?? env.subtype ?? '').slice(0, 200)}`);
+  }
   const raw = String(env.result ?? '').trim();
   if (!raw) throw new Error(`empty result from CLI envelope: ${stdout.slice(0, 200)}`);
   return raw;
@@ -366,21 +438,33 @@ async function main() {
     } catch {}
   }
 
-  // Phase 1 — enumerate
-  const pdfs = (await readdir(KB_SOURCES))
-    .filter((f) => f.toLowerCase().endsWith('.pdf'))
-    .map((f) => join(KB_SOURCES, f));
-  await log(`found ${pdfs.length} PDFs in kb-sources/`);
-
+  // Phase 1 — enumerate. When resuming with a prior manifest, the
+  // candidate list is reconstructed from that manifest (it carries
+  // id/name/family/source_pdf/source_page/brief_description — exactly
+  // the Candidate shape). This skips 4 PDF-enumeration calls AND keeps
+  // ids stable across runs, so the retry-set matches cleanly.
   let candidates: Candidate[] = [];
-  for (const pdf of pdfs) {
-    const remaining = TARGET - candidates.length;
-    if (remaining <= 0) break;
-    const want = Math.min(ITEMS_PER_PDF, remaining);
-    const found = await enumeratePdf(pdf, want);
-    candidates = candidates.concat(found);
+  if (RESUME && prior.length > 0) {
+    candidates = prior.map((p) => ({
+      id: p.id, name: p.name, family: p.family,
+      source_pdf: p.source_pdf, source_page: p.source_page,
+      brief_description: p.brief_description,
+    }));
+    await log(`resume: reconstructed ${candidates.length} candidates from manifest (skipping enumeration)`);
+  } else {
+    const pdfs = (await readdir(KB_SOURCES))
+      .filter((f) => f.toLowerCase().endsWith('.pdf'))
+      .map((f) => join(KB_SOURCES, f));
+    await log(`found ${pdfs.length} PDFs in kb-sources/`);
+    for (const pdf of pdfs) {
+      const remaining = TARGET - candidates.length;
+      if (remaining <= 0) break;
+      const want = Math.min(ITEMS_PER_PDF, remaining);
+      const found = await enumeratePdf(pdf, want);
+      candidates = candidates.concat(found);
+    }
+    await log(`total candidates: ${candidates.length}`);
   }
-  await log(`total candidates: ${candidates.length}`);
 
   // De-dup by id
   const seen = new Set<string>();
@@ -391,55 +475,86 @@ async function main() {
   });
   await log(`after dedup: ${candidates.length}`);
 
-  // Skip already-processed when resuming
-  const priorIds = new Set(prior.map((p) => p.id));
-  const todo = candidates.filter((c) => !priorIds.has(c.id));
-  await log(`after resume-skip: ${todo.length} candidates to process`);
+  // Resume: skip only items that already SUCCEEDED (final_verdict MATCH).
+  // ERROR and INCOMPLETE items are retried — a prior failure was often
+  // a transient credit/rate blip, not a bad candidate. Keep the prior
+  // MATCH entries in `completed` so the manifest doesn't lose them.
+  const doneIds = new Set(
+    prior.filter((p) => p.final_verdict === 'MATCH').map((p) => p.id),
+  );
+  let todo = candidates.filter((c) => !doneIds.has(c.id));
+  const retrying = todo.filter((c) => prior.some((p) => p.id === c.id)).length;
+  await log(`after resume-skip: ${todo.length} to process (${doneIds.size} already MATCH, ${retrying} retrying prior ERROR/INCOMPLETE)`);
+
+  // Batch cap — process only the next BATCH items this run, then exit.
+  // `pending` (the items beyond the batch) stay INCOMPLETE in the
+  // manifest so the Test tab still shows them; a follow-up --resume run
+  // picks them up. Lets the user review each batch before continuing.
+  const totalTodo = todo.length;
+  let pending: Candidate[] = [];
+  if (BATCH > 0 && todo.length > BATCH) {
+    pending = todo.slice(BATCH);
+    todo = todo.slice(0, BATCH);
+    await log(`batch mode: processing ${todo.length} of ${totalTodo} remaining (${pending.length} stay INCOMPLETE for next run)`);
+  }
 
   // Catalog context for the generate step (shared across all items)
   const catalog = await loadCatalogContext();
-  await log(`catalog context: ${catalog.length} chars (${Object.keys(catalog).length} bytes)`);
+  await log(`catalog context: ${catalog.length} chars`);
 
-  // Persist enumeration so the user can already see progress
-  const initialManifest: ManifestEntry[] = [
-    ...prior,
-    ...todo.map((c) => ({
-      id: c.id, name: c.name, family: c.family,
-      source_pdf: c.source_pdf, source_page: c.source_page,
-      brief_description: c.brief_description,
-      iters_done: 0, final_verdict: 'INCOMPLETE' as const,
-      url: `/tests/extracted/${c.id}/`,
-    })),
-  ];
-  await saveManifest(initialManifest);
+  // Helper — an INCOMPLETE manifest entry from a bare Candidate.
+  const incompleteEntry = (c: Candidate): ManifestEntry => ({
+    id: c.id, name: c.name, family: c.family,
+    source_pdf: c.source_pdf, source_page: c.source_page,
+    brief_description: c.brief_description,
+    iters_done: 0, final_verdict: 'INCOMPLETE',
+    url: `/tests/extracted/${c.id}/`,
+  });
 
-  // Phase 2 — process each
-  const completed: ManifestEntry[] = [...prior];
+  // Prior MATCH entries are preserved across runs. `pendingEntries` are
+  // the beyond-the-batch items, always carried so they don't vanish
+  // from the Test tab between batches.
+  const priorMatch = prior.filter((p) => p.final_verdict === 'MATCH');
+  const pendingEntries = pending.map(incompleteEntry);
+
+  // Persist enumeration immediately so the user sees the full list:
+  // prior MATCH + this batch (INCOMPLETE until processed) + pending.
+  await saveManifest([
+    ...priorMatch,
+    ...todo.map(incompleteEntry),
+    ...pendingEntries,
+  ]);
+
+  // Phase 2 — process each in the batch. `completed` seeds with prior
+  // MATCH only; every saveManifest call re-appends the not-yet-reached
+  // batch items + pendingEntries so the manifest is always the full
+  // picture.
+  const completed: ManifestEntry[] = [...priorMatch];
   let idx = 0;
   for (const cand of todo) {
     idx++;
     await log(`[${idx}/${todo.length}] ${cand.id} (${cand.name})`);
     const t0 = Date.now();
+    let entry: ManifestEntry;
     try {
-      const entry = await processCandidate(cand, catalog);
-      completed.push(entry);
-      await saveManifest(completed);
+      entry = await processCandidate(cand, catalog);
       await log(`  done: verdict=${entry.final_verdict}, iters=${entry.iters_done}, ${Date.now() - t0}ms`);
     } catch (e: any) {
       await log(`  FAILED: ${e?.message ?? e}`);
-      completed.push({
-        id: cand.id, name: cand.name, family: cand.family,
-        source_pdf: cand.source_pdf, source_page: cand.source_page,
-        brief_description: cand.brief_description,
-        iters_done: 0, final_verdict: 'ERROR',
+      entry = {
+        ...incompleteEntry(cand),
+        final_verdict: 'ERROR',
         error: e?.message ?? String(e),
-        url: `/tests/extracted/${cand.id}/`,
-      });
-      await saveManifest(completed);
+      };
     }
+    completed.push(entry);
+    // Not-yet-reached batch items stay INCOMPLETE alongside pending.
+    const remainingBatch = todo.slice(idx).map(incompleteEntry);
+    await saveManifest([...completed, ...remainingBatch, ...pendingEntries]);
   }
 
-  await log(`overnight_extract complete. ${completed.length} entries in manifest.`);
+  const matched = completed.filter((c) => c.final_verdict === 'MATCH').length;
+  await log(`run complete. processed ${todo.length} this batch (${matched} total MATCH). ${pending.length} still pending.`);
 }
 
 main().catch(async (e) => {

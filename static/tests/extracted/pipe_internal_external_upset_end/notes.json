@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "pipe_internal_external_upset_end",
+    "name": "Internal-External Upset (IEU) Pipe End",
+    "family": "drillstring",
+    "source_pdf": "api-drill-pipe-specs.pdf",
+    "source_page": 5,
+    "brief_description": "Combined upset that simultaneously expands the OD outward and thickens the wall inward at the pipe end, joining the body to the tool joint with both an external and internal transition cone."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

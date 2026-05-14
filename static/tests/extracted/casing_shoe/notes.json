@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "casing_shoe",
+    "name": "Casing Shoe (Bottom Joint)",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 2,
+    "brief_description": "Bottom-of-string joint with rounded/tapered nose used to guide casing into the hole and protect the bottom thread during running; parametrized nose radius + length."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

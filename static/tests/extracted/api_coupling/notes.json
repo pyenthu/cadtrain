@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "api_coupling",
+    "name": "API Coupling Sleeve",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 3,
+    "brief_description": "Short thick-wall internally-threaded sleeve (OD W, root-of-thread bore d1) that joins two pipe pins; parametrized for round, buttress, or extreme-line threads."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "round_thread_short",
+    "name": "API Short Round Thread (STC)",
+    "family": "casing_tubing",
+    "source_pdf": "374248291-Casing-and-Tubing.pdf",
+    "source_page": 3,
+    "brief_description": "Symmetric V-form 8-tpi rounded thread cut on a short taper — short coupling form of the API round-thread connection."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}

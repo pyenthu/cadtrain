@@ -1,0 +1,12 @@
+{
+  "cand": {
+    "id": "dei_reamer",
+    "name": "DEI Spiral-Body Reamer",
+    "family": "drillstring",
+    "source_pdf": "bha-reference.pdf",
+    "source_page": 61,
+    "brief_description": "Solid spiral-bladed body with tapered ends and rows of diamond-enhanced inserts — no moving cutters."
+  },
+  "iterations": [],
+  "error": "generate exit 1: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n"
+}
