@@ -1363,7 +1363,6 @@ export const meta = {
 } as const;
 
 export const geom = defineGeom(meta, (p) => {
-  // Empty primitive — open the AI tab and describe what this should be.
   throw new Error('Not constructed yet — describe geometry in the AI tab or write the body yourself.');
 });
 `;
@@ -2052,6 +2051,8 @@ export const geom = defineGeom(meta, (p) => {
   $effect(() => {
     if (!activeTab) return;
     if (activeTab.kind === 'xml-primitive' && inspectorTab === 'script') inspectorTab = 'svelte';
+    // xml-primitive folds Params into Parts (param accordion lives inside).
+    if (activeTab.kind === 'xml-primitive' && inspectorTab === 'params') inspectorTab = 'parts';
     if (activeTab.kind !== 'xml-primitive' && (inspectorTab === 'svelte' || inspectorTab === 'parts' || inspectorTab === 'ai')) inspectorTab = 'params';
   });
 
@@ -2155,6 +2156,78 @@ export const geom = defineGeom(meta, (p) => {
     if (!inspectorTab) return;
     try { sessionStorage.setItem('cad:lastInspectorTab', inspectorTab); } catch {}
   });
+
+  /** Mouse-drag-to-scrub action for number inputs. Replaces the
+   *  slider — pointerdown + horizontal drag scrubs the value; release
+   *  without dragging behaves as a normal click (focus → keyboard
+   *  edit). A small move threshold (3 px) separates click from drag so
+   *  text-edit isn't accidentally dismissed.
+   *
+   *  Sensitivity adapts to step size: small steps (< 0.1) need fine
+   *  drag (2 px per step); large steps (>= 1) scrub one step per px.
+   *  Values snap to the schema's step and clamp to min/max. */
+  type DragNumParams = {
+    step: number; min?: number; max?: number;
+    get: () => number; set: (v: number) => void;
+  };
+  function dragNumber(node: HTMLInputElement, params: DragNumParams) {
+    let p = params;
+    let pending = false;
+    let dragging = false;
+    let startX = 0;
+    let startVal = 0;
+    const THRESHOLD = 3;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      pending = true;
+      dragging = false;
+      startX = e.clientX;
+      startVal = p.get();
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!pending) return;
+      const dx = e.clientX - startX;
+      if (!dragging && Math.abs(dx) < THRESHOLD) return;
+      if (!dragging) {
+        dragging = true;
+        try { node.setPointerCapture(e.pointerId); } catch {}
+        document.body.classList.add('dragnum-active');
+        node.blur();
+      }
+      const step = p.step || 1;
+      const pxPerStep = step < 0.1 ? 2 : step < 1 ? 1.5 : 1;
+      let v = startVal + (dx / pxPerStep) * step;
+      if (p.min !== undefined) v = Math.max(p.min, v);
+      if (p.max !== undefined) v = Math.min(p.max, v);
+      v = Math.round(v / step) * step;
+      const decimals = step < 0.01 ? 4 : step < 0.1 ? 3 : step < 1 ? 2 : 0;
+      v = parseFloat(v.toFixed(decimals));
+      p.set(v);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!pending) return;
+      pending = false;
+      if (dragging) {
+        dragging = false;
+        try { node.releasePointerCapture(e.pointerId); } catch {}
+        document.body.classList.remove('dragnum-active');
+        e.preventDefault();
+      }
+    };
+    node.addEventListener('pointerdown', onDown);
+    node.addEventListener('pointermove', onMove);
+    node.addEventListener('pointerup', onUp);
+    node.addEventListener('pointercancel', onUp);
+    return {
+      update(next: DragNumParams) { p = next; },
+      destroy() {
+        node.removeEventListener('pointerdown', onDown);
+        node.removeEventListener('pointermove', onMove);
+        node.removeEventListener('pointerup', onUp);
+        node.removeEventListener('pointercancel', onUp);
+      },
+    };
+  }
 
   /** Compose a minimal AuthoredComponent for the active tab so buildAuthored
    *  can construct + finalize the geometry. Single part, no ops. */
@@ -4200,18 +4273,19 @@ export const geom = defineGeom(meta, (p) => {
 
         <div class="insp-tabs">
           {#if activeTab.kind === 'xml-primitive'}
-            <!-- Runes primitives: tab order is AI → Parts → Params → Builder.
-                 AI is leftmost (and the default selection) — the canonical
-                 entry point is "describe what you want", with everything
-                 else being downstream review of what the AI produces. -->
+            <!-- Runes primitives: tab order is AI → Parts → Builder.
+                 The former Params tab is folded into Parts — each param
+                 group renders as a collapsible accordion section inside
+                 the Parts view. AI is leftmost (and the default selection). -->
             <button class="insp-tab insp-tab-ai" class:active={inspectorTab === 'ai'} type="button" onclick={() => (inspectorTab = 'ai')}>
               <span class="ic">✦</span> AI
             </button>
             <button class="insp-tab" class:active={inspectorTab === 'parts'} type="button" onclick={() => (inspectorTab = 'parts')}>
               <span class="ic">⊞</span> Parts
             </button>
-          {/if}
-          {#if isParamTab}
+          {:else if isParamTab}
+            <!-- Legacy primitives keep the standalone Params tab — they
+                 have no Parts axis (single ComponentDef, no helpers). -->
             <button class="insp-tab" class:active={inspectorTab === 'params'} type="button" onclick={() => (inspectorTab = 'params')}>
               <span class="ic">⚙</span> Params
             </button>
@@ -4228,7 +4302,7 @@ export const geom = defineGeom(meta, (p) => {
           {/if}
         </div>
 
-        {#if inspectorTab === 'params' && isParamTab}
+        {#if (inspectorTab === 'params' && isParamTab && activeTab.kind !== 'xml-primitive') || (inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry)}
           {@const allDefs = (activeTab.componentEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
           {@const groups = paramGroupsOf(allDefs)}
           {@const accordion = groups.length > 1}
@@ -4340,8 +4414,22 @@ export const geom = defineGeom(meta, (p) => {
                       {/each}
                     </select>
                   {:else}
-                    <input class="pr-range" type="range" min={def.min} max={def.max} step={def.step} bind:value={activeTab.params[key]} />
-                    <input class="pr-num" type="number" step={def.step} bind:value={activeTab.params[key]} />
+                    <input
+                      class="pr-num drag"
+                      type="number"
+                      step={def.step}
+                      min={def.min}
+                      max={def.max}
+                      bind:value={activeTab.params[key]}
+                      use:dragNumber={{
+                        step: def.step ?? 1,
+                        min: def.min,
+                        max: def.max,
+                        get: () => activeTab.params[key] ?? 0,
+                        set: (v) => { activeTab!.params[key] = v; },
+                      }}
+                      title="Click to type · drag horizontally to scrub"
+                    />
                   {/if}
                   {#if def.unit}<span class="pr-unit">{def.unit}</span>{/if}
                   {#if activeTab.kind === 'xml-primitive' && key in (activeTab.componentEntry?.meta.params ?? {})}
@@ -4464,6 +4552,90 @@ export const geom = defineGeom(meta, (p) => {
             </div>
           {/if}
 
+          <!-- Imports list + "+ Add primitive" picker (was the standalone
+               Parts tab content before the merge). Sits below the param
+               accordion so the slider grid is the dominant surface — the
+               imports list and Add button are secondary chrome. -->
+          {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+            {@const selfId = activeTab.componentEntry.meta.id}
+            {@const curSrc = activeTab.sourceDraft ?? activeTab.componentEntry.source}
+            {@const imported = importedFromSource(curSrc)}
+            {@const usedHelpers = HELPERS.filter((h) => imported.helpers.has(h.name))}
+            {@const usedComponents = componentList.filter((r) => imported.components.has(r.meta.id))}
+            {@const availableHelpers = HELPERS.filter((h) => !imported.helpers.has(h.name))}
+            {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId && !imported.components.has(r.meta.id))}
+            {@const usedCount = usedHelpers.length + usedComponents.length}
+            {@const availableCount = availableHelpers.length + availableComponents.length}
+            <div class="parts-pane">
+              <div class="parts-group">
+                <div class="parts-h thin">
+                  <span class="muted">in use · {usedCount}</span>
+                </div>
+                {#if usedCount === 0}
+                  <div class="parts-empty">No primitives imported yet.</div>
+                {:else}
+                  <div class="parts-grid">
+                    {#each usedHelpers as h (`h:${h.name}`)}
+                      <div class="part-card used" title={h.desc}>
+                        <button class="part-x" type="button" aria-label={`Remove ${h.name}`} title={`Remove ${h.name}`} onclick={() => removeHelper(h.name)}>×</button>
+                        <span class="part-name">{h.name}</span>
+                        <span class="part-sig">{h.sig}</span>
+                        <span class="part-desc">{h.desc}</span>
+                      </div>
+                    {/each}
+                    {#each usedComponents as p (`r:${p.meta.id}`)}
+                      <div class="part-card used" title={`Composed: ${p.meta.name}`}>
+                        <button class="part-x" type="button" aria-label={`Remove ${p.meta.name}`} title={`Remove ${p.meta.name}`} onclick={() => removeRunes(p.meta.id)}>×</button>
+                        <span class="part-name">{p.meta.name}</span>
+                        <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
+                        <span class="part-desc">{p.meta.description ?? ''}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+                {#if availableCount > 0}
+                  <button class="parts-add-btn" type="button" onclick={() => (partsAddHelperOpen = !partsAddHelperOpen)}>
+                    {partsAddHelperOpen ? '− Hide catalog' : '+ Add primitive'}
+                  </button>
+                  {#if partsAddHelperOpen}
+                    {@const q = partsSearch.trim().toLowerCase()}
+                    {@const filteredHelpers = q
+                      ? availableHelpers.filter((h) => `${h.name} ${h.sig} ${h.desc}`.toLowerCase().includes(q))
+                      : availableHelpers}
+                    {@const filteredComponents = q
+                      ? availableComponents.filter((p) => `${p.meta.name} ${p.meta.id} ${p.meta.description ?? ''}`.toLowerCase().includes(q))
+                      : availableComponents}
+                    <div class="parts-picker">
+                      <input
+                        bind:this={partsSearchEl}
+                        bind:value={partsSearch}
+                        class="pf-in parts-picker-search"
+                        type="text"
+                        placeholder="Filter…"
+                        aria-label="Filter primitives"
+                      />
+                      {#each filteredHelpers as h (`h:${h.name}`)}
+                        <button class="part-pick" type="button" title={h.desc} onclick={() => { insertHelperSnippet(h.name); partsAddHelperOpen = false; }}>
+                          <span class="part-name">{h.name}</span>
+                          <span class="part-sig">{h.sig}</span>
+                        </button>
+                      {/each}
+                      {#each filteredComponents as p (`r:${p.meta.id}`)}
+                        <button class="part-pick" type="button" title={`Compose ${p.meta.name}`} onclick={() => { insertRunesSnippet(p); partsAddHelperOpen = false; }}>
+                          <span class="part-name">{p.meta.name}</span>
+                          <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
+                        </button>
+                      {/each}
+                      {#if q && filteredHelpers.length + filteredComponents.length === 0}
+                        <div class="parts-picker-empty">No matches for "{partsSearch}"</div>
+                      {/if}
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            </div>
+          {/if}
+
         {:else if inspectorTab === 'svelte' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
           {@const entry = activeTab.componentEntry}
           {@const m = entry.meta}
@@ -4582,84 +4754,6 @@ export const geom = defineGeom(meta, (p) => {
             <div class="ed-sec-h">Builder script</div>
             <div class="editor-wrap"><CodeEditor value={builderText} lang="javascript" readonly /></div>
             <p class="code-note">Builder body is read-only — the project disallows dynamic eval (see CLAUDE.md).</p>
-          </div>
-        {:else if inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
-          {@const selfId = activeTab.componentEntry.meta.id}
-          {@const curSrc = activeTab.sourceDraft ?? activeTab.componentEntry.source}
-          {@const imported = importedFromSource(curSrc)}
-          {@const usedHelpers = HELPERS.filter((h) => imported.helpers.has(h.name))}
-          {@const usedComponents = componentList.filter((r) => imported.components.has(r.meta.id))}
-          {@const availableHelpers = HELPERS.filter((h) => !imported.helpers.has(h.name))}
-          {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId && !imported.components.has(r.meta.id))}
-          {@const usedCount = usedHelpers.length + usedComponents.length}
-          {@const availableCount = availableHelpers.length + availableComponents.length}
-          <div class="parts-pane">
-            <div class="parts-group">
-              <div class="parts-h thin">
-                <span class="muted">in use · {usedCount}</span>
-              </div>
-              {#if usedCount === 0}
-                <div class="parts-empty">No primitives imported yet.</div>
-              {:else}
-                <div class="parts-grid">
-                  {#each usedHelpers as h (`h:${h.name}`)}
-                    <div class="part-card used" title={h.desc}>
-                      <button class="part-x" type="button" aria-label={`Remove ${h.name}`} title={`Remove ${h.name}`} onclick={() => removeHelper(h.name)}>×</button>
-                      <span class="part-name">{h.name}</span>
-                      <span class="part-sig">{h.sig}</span>
-                      <span class="part-desc">{h.desc}</span>
-                    </div>
-                  {/each}
-                  {#each usedComponents as p (`r:${p.meta.id}`)}
-                    <div class="part-card used" title={`Composed: ${p.meta.name}`}>
-                      <button class="part-x" type="button" aria-label={`Remove ${p.meta.name}`} title={`Remove ${p.meta.name}`} onclick={() => removeRunes(p.meta.id)}>×</button>
-                      <span class="part-name">{p.meta.name}</span>
-                      <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
-                      <span class="part-desc">{p.meta.description ?? ''}</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-              {#if availableCount > 0}
-                <button class="parts-add-btn" type="button" onclick={() => (partsAddHelperOpen = !partsAddHelperOpen)}>
-                  {partsAddHelperOpen ? '− Hide catalog' : '+ Add primitive'}
-                </button>
-                {#if partsAddHelperOpen}
-                  {@const q = partsSearch.trim().toLowerCase()}
-                  {@const filteredHelpers = q
-                    ? availableHelpers.filter((h) => `${h.name} ${h.sig} ${h.desc}`.toLowerCase().includes(q))
-                    : availableHelpers}
-                  {@const filteredComponents = q
-                    ? availableComponents.filter((p) => `${p.meta.name} ${p.meta.id} ${p.meta.description ?? ''}`.toLowerCase().includes(q))
-                    : availableComponents}
-                  <div class="parts-picker">
-                    <input
-                      bind:this={partsSearchEl}
-                      bind:value={partsSearch}
-                      class="pf-in parts-picker-search"
-                      type="text"
-                      placeholder="Filter…"
-                      aria-label="Filter primitives"
-                    />
-                    {#each filteredHelpers as h (`h:${h.name}`)}
-                      <button class="part-pick" type="button" title={h.desc} onclick={() => { insertHelperSnippet(h.name); partsAddHelperOpen = false; }}>
-                        <span class="part-name">{h.name}</span>
-                        <span class="part-sig">{h.sig}</span>
-                      </button>
-                    {/each}
-                    {#each filteredComponents as p (`r:${p.meta.id}`)}
-                      <button class="part-pick" type="button" title={`Compose ${p.meta.name}`} onclick={() => { insertRunesSnippet(p); partsAddHelperOpen = false; }}>
-                        <span class="part-name">{p.meta.name}</span>
-                        <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
-                      </button>
-                    {/each}
-                    {#if q && filteredHelpers.length + filteredComponents.length === 0}
-                      <div class="parts-picker-empty">No matches for "{partsSearch}"</div>
-                    {/if}
-                  </div>
-                {/if}
-              {/if}
-            </div>
           </div>
         {:else if inspectorTab === 'ai' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
           {@const ai = activeTab.ai ?? { prompt: '', status: 'idle', history: [] }}
@@ -6167,7 +6261,20 @@ export const geom = defineGeom(meta, (p) => {
     width: 100%;
     min-width: 0;
   }
-  .pr-range { accent-color: #cc2222; height: 3px; min-width: 0; width: 100%; }
+  /* Drag-to-scrub variant: bigger hit-area + ew-resize cursor so the
+     drag affordance is discoverable. Slider was retired in favour of
+     pointer-drag on this input — saves a row and lets the user still
+     click + type the number. */
+  .pr-num.drag {
+    cursor: ew-resize;
+    padding: 3px 6px;
+    font-size: 11px;
+    background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+  }
+  .pr-num.drag:hover { border-color: #cc2222; }
+  .pr-num.drag:focus { cursor: text; background: #fff; }
+  :global(body.dragnum-active) { cursor: ew-resize !important; user-select: none; }
+  :global(body.dragnum-active *) { cursor: ew-resize !important; }
   .pr-choice {
     font: 10px monospace;
     padding: 1px 3px; border: 1px solid #ddd; border-radius: 3px;

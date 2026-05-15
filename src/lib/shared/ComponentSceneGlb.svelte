@@ -17,6 +17,28 @@
   let loadError = $state<string | null>(null);
   let loading = $state(false);
 
+  // The bake writes ONLY positions to the GLB (see manifold-bake.ts) —
+  // no normals, no colors, no material. GLTFLoader would default to a
+  // white MeshStandardMaterial with flat auto-computed normals, which
+  // reads as "no colors / no material" on the canvas. Override every
+  // mesh with the project's red MeshPhongMaterial and compute smooth
+  // normals so shading matches the live Render tab (cutaway off).
+  function dressGltfScene(root: THREE.Object3D) {
+    root.traverse((obj: any) => {
+      if (!obj.isMesh) return;
+      const g = obj.geometry as THREE.BufferGeometry;
+      if (!g.attributes.normal) g.computeVertexNormals();
+      // Dispose the auto-created default material to avoid the leak.
+      if (obj.material && (obj.material as any).dispose) (obj.material as any).dispose();
+      obj.material = new THREE.MeshPhongMaterial({
+        color: '#cc2222',
+        specular: '#ffffff',
+        shininess: 300,
+        side: THREE.DoubleSide,
+      });
+    });
+  }
+
   // Reload on every URL change. Aborts in-flight loads by ignoring stale
   // resolves via the captured `myUrl` token.
   $effect(() => {
@@ -29,6 +51,7 @@
       myUrl,
       (gltf) => {
         if (myUrl !== url) return;
+        dressGltfScene(gltf.scene);
         loaded = gltf.scene;
         loading = false;
       },
