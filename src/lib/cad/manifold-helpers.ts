@@ -55,15 +55,24 @@ export function empty(): any {
  *  defineGeom body: `defineGeom(meta, (p, geom) => { geom.add(...); })`.
  *  Each .add(part) unions in place and returns `this` so calls chain.
  *  Eliminates the `let geom = empty(); ...; return geom;` boilerplate
- *  from the source — the framework owns the accumulator + final return. */
+ *  from the source — the framework owns the accumulator + final return.
+ *
+ *  Lazy-init: `current` starts null and the FIRST add/subtract takes the
+ *  part directly. Subsequent calls union/subtract against it. Avoids the
+ *  degenerate-empty-cube path which doesn't carry a `.union` method in
+ *  every Manifold build. */
 export class GeomAcc {
-  current: any;
-  constructor() { this.current = empty(); }
+  current: any = null;
   add(part: any): this {
-    this.current = this.current.union(part);
+    this.current = this.current ? this.current.union(part) : part;
     return this;
   }
   subtract(part: any): this {
+    if (!this.current) {
+      // Subtracting from nothing yields nothing — keep current null so
+      // the next add() seeds from a real part.
+      return this;
+    }
     this.current = this.current.subtract(part);
     return this;
   }

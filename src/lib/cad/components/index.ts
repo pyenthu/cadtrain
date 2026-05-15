@@ -21,7 +21,7 @@
  * Vite has rebundled.
  */
 
-import { GeomAcc } from '../manifold-helpers';
+import { GeomAcc, empty } from '../manifold-helpers';
 
 /** Param schema entry — what each primitive declares per parameter. */
 export interface ParamSchema {
@@ -330,7 +330,9 @@ export function defineGeom<
     if (build.length >= 2) {
       const acc = new GeomAcc();
       (build as (p: any, geom: any) => void)(params, acc);
-      return acc.current;
+      // Empty body or all-subtract — fall back to the degenerate
+      // empty-cube seed so the bake doesn't fail with undefined.
+      return acc.current ?? empty();
     }
     return (build as (p: any) => any)(params);
   };
