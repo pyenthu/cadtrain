@@ -2168,6 +2168,41 @@ export const geom = defineGeom(meta, (p, geom) => {
     activeTab.sourceDraft = removeRunesImport(cur, id);
   }
 
+  /** Remove a single instance: drops both the `const A = …(…);` line and
+   *  its `geom.add(A);` follower. If that was the last reference to the
+   *  helper, also strip the helper from the manifold-helpers import. */
+  function removeInstance(instance: string) {
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+    const insts = parsePartInstances(cur);
+    const target = insts.find((i) => i.instance === instance);
+    if (!target) return;
+    // Walk back to start-of-line for `const X = …(`
+    let lineStart = target.callStart;
+    while (lineStart > 0 && cur[lineStart - 1] !== '\n') lineStart--;
+    // Forward to end of the const stmt (`;` + newline)
+    let constEnd = target.callEnd + 1; // skip `)`
+    while (constEnd < cur.length && cur[constEnd] !== '\n') constEnd++;
+    if (cur[constEnd] === '\n') constEnd++;
+    // Find + strip the `geom.add(<instance>);` line that follows.
+    const addRe = new RegExp(`^[ \\t]*geom\\.add\\(\\s*${instance}\\s*\\)\\s*;?[ \\t]*\\n?`, 'm');
+    const rest = cur.slice(constEnd);
+    const addMatch = addRe.exec(rest);
+    let next: string;
+    if (addMatch) {
+      const addStart = constEnd + addMatch.index;
+      const addEnd = addStart + addMatch[0].length;
+      next = cur.slice(0, lineStart) + cur.slice(addEnd);
+    } else {
+      next = cur.slice(0, lineStart) + cur.slice(constEnd);
+    }
+    // If the helper has no surviving callers, drop its import too.
+    const remaining = parsePartInstances(next);
+    const stillUsed = remaining.some((i) => i.callName === target.callName);
+    if (!stillUsed) next = removeHelperImport(next, target.callName);
+    activeTab.sourceDraft = next;
+  }
+
   // Toggle the "+ Add" picker per section in the Parts tab. We keep these
   // at module scope rather than per-tab — picker open-state is cheap UI
   // chrome, doesn't need to survive tab switches.
@@ -4528,21 +4563,37 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const isXml = activeTab.kind === 'xml-primitive' && !!activeTab.componentEntry}
           {@const curSrc = isXml ? (activeTab.sourceDraft ?? activeTab.componentEntry!.source) : ''}
           {@const imported = isXml ? importedFromSource(curSrc) : { helpers: new Set<string>(), components: new Set<string>() }}
+          {@const instances = isXml && curSrc ? parsePartInstances(curSrc) : []}
           {@const partGroups = isXml ? [
-            ...HELPERS.filter((h) => imported.helpers.has(h.name)).map((h) => ({ key: h.name.toLowerCase(), name: h.name, sig: h.sig, removeKind: 'helper' as const, removeId: h.name })),
-            ...componentList.filter((r) => imported.components.has(r.meta.id)).map((p) => ({ key: p.meta.name.toLowerCase(), name: p.meta.name, sig: `geom(${Object.keys(p.meta.params).join(', ')})`, removeKind: 'component' as const, removeId: p.meta.id })),
+            // One accordion entry per INSTANCE (strict-grammar GUI). The
+            // helper-level grouping is implied by the instance's callName;
+            // a tube and a cyl in the same component each get their own
+            // row with header `A = tube(…)`, `B = cyl(…)`.
+            ...instances
+              .filter((i) => HELPERS.some((h) => h.name === i.callName))
+              .map((i) => ({
+                key: `inst:${i.instance}`,
+                name: i.instance,
+                sig: `= ${i.callName}(…)`,
+                removeKind: 'instance' as const,
+                removeId: i.instance,
+                instance: i,
+              })),
+            // Components stay grouped per component-id (the legacy shape).
+            // Per-instance component breakdown can land once components
+            // join the strict-grammar parser.
+            ...componentList.filter((r) => imported.components.has(r.meta.id)).map((p) => ({ key: p.meta.name.toLowerCase(), name: p.meta.name, sig: `geom(${Object.keys(p.meta.params).join(', ')})`, removeKind: 'component' as const, removeId: p.meta.id, instance: undefined })),
           ] : []}
           {@const paramKeys = Object.keys(activeTab.params)}
           {@const matchedSet = new Set(partGroups.map((p) => p.key))}
-          {@const instances = isXml && curSrc ? parsePartInstances(curSrc) : []}
           {@const orphanKeys = paramKeys.filter((k) => !matchedSet.has((allDefs[k]?.group ?? '').toLowerCase()))}
           {@const useParts = isXml && partGroups.length > 0}
           {@const groups = useParts
             ? [
-                ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId })),
-                ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'General', sig: '', removeKind: null as null, removeId: '' }] : []),
+                ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
+                ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'General', sig: '', removeKind: null as null, removeId: '', instance: undefined }] : []),
               ]
-            : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'General' : g, sig: '', removeKind: null as null, removeId: '' }))}
+            : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'General' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
             <div class="ed-sec-h thin">
@@ -4643,13 +4694,13 @@ export const geom = defineGeom(meta, (p, geom) => {
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   <span class="pg-acc-count">{groupKeys.length}</span>
-                  {#if g.removeKind === 'helper'}
+                  {#if g.removeKind === 'instance'}
                     <button
                       class="pg-acc-x"
                       type="button"
                       title={`Remove ${g.name}`}
                       aria-label={`Remove ${g.name}`}
-                      onclick={(e) => { e.stopPropagation(); removeHelper(g.removeId); }}
+                      onclick={(e) => { e.stopPropagation(); removeInstance(g.removeId); }}
                     >×</button>
                   {:else if g.removeKind === 'component'}
                     <button
@@ -4663,64 +4714,52 @@ export const geom = defineGeom(meta, (p, geom) => {
                 </button>
               {/if}
               {#if !collapsed}
-              <!-- Per-instance Props rows (strict-grammar GUI). Every
-                   `const A = tube(0.5, 0.4, 4); geom.add(A);` pair shows
-                   up here as one block titled by the instance name with
-                   the helper's typed props rendered inline. Each prop is
-                   currently a literal number input — editing it writes
-                   the new value back into the source. Param-link via
-                   dropdown is the next iteration. -->
-              {@const helperMeta = HELPERS.find((h) => h.name === g.name)}
-              {@const ourInstances = helperMeta ? instances.filter((i) => i.callName === g.name) : []}
-              {#if ourInstances.length > 0 && helperMeta}
-                <div class="pi-list">
-                  {#each ourInstances as inst (inst.instance)}
-                    <div class="pi-card">
-                      <div class="pi-head">
-                        <span class="pi-name">{inst.instance}</span>
-                        <span class="pi-call">= {g.name}(…)</span>
+              <!-- Per-instance Props grid (strict-grammar GUI). The
+                   accordion entry IS the instance — the body just renders
+                   one `pr-card` per typed prop. Each literal arg is a
+                   number input (with drag-to-scrub); a `paramRef`
+                   renders as a read-only `p.<name>` chip. -->
+              {@const inst = g.instance}
+              {@const helperMeta = inst ? HELPERS.find((h) => h.name === inst.callName) : null}
+              {#if inst && helperMeta}
+                <div class="pr-grid">
+                  {#each helperMeta.props as prop, idx (prop.name)}
+                    {@const arg = inst.args[idx]}
+                    <div class="pr-card">
+                      <div class="pr-card-head">
+                        <span class="pr-keyname">{prop.name}</span>
+                        {#if prop.optional}<span class="pr-unit-inline">opt</span>{/if}
                       </div>
-                      <div class="pr-grid">
-                        {#each helperMeta.props as prop, idx (prop.name)}
-                          {@const arg = inst.args[idx]}
-                          <div class="pr-card">
-                            <div class="pr-card-head">
-                              <span class="pr-keyname">{prop.name}</span>
-                              {#if prop.optional}<span class="pr-unit-inline">opt</span>{/if}
-                            </div>
-                            {#if arg && arg.kind === 'literal'}
-                              <input
-                                class="pr-num drag"
-                                type="number"
-                                step="0.05"
-                                value={arg.value}
-                                onchange={(e) => {
-                                  const v = Number((e.currentTarget as HTMLInputElement).value);
-                                  if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
-                                  const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
-                                  const next = setInstanceArg(cur, inst.instance, idx, String(v));
-                                  if (next != null) activeTab.sourceDraft = next;
-                                }}
-                                use:dragNumber={{
-                                  step: 0.05,
-                                  get: () => arg.value,
-                                  set: (v) => {
-                                    if (!activeTab?.componentEntry) return;
-                                    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
-                                    const next = setInstanceArg(cur, inst.instance, idx, String(v));
-                                    if (next != null) activeTab.sourceDraft = next;
-                                  },
-                                }}
-                                title="Click to type · drag horizontally to scrub"
-                              />
-                            {:else if arg && arg.kind === 'paramRef'}
-                              <span class="pi-paramref">p.{arg.name}</span>
-                            {:else}
-                              <span class="pi-raw">{arg?.raw ?? '—'}</span>
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
+                      {#if arg && arg.kind === 'literal'}
+                        <input
+                          class="pr-num drag"
+                          type="number"
+                          step="0.05"
+                          value={arg.value}
+                          onchange={(e) => {
+                            const v = Number((e.currentTarget as HTMLInputElement).value);
+                            if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
+                            const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                            const next = setInstanceArg(cur, inst.instance, idx, String(v));
+                            if (next != null) activeTab.sourceDraft = next;
+                          }}
+                          use:dragNumber={{
+                            step: 0.05,
+                            get: () => arg.value,
+                            set: (v) => {
+                              if (!activeTab?.componentEntry) return;
+                              const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                              const next = setInstanceArg(cur, inst.instance, idx, String(v));
+                              if (next != null) activeTab.sourceDraft = next;
+                            },
+                          }}
+                          title="Click to type · drag horizontally to scrub"
+                        />
+                      {:else if arg && arg.kind === 'paramRef'}
+                        <span class="pi-paramref">p.{arg.name}</span>
+                      {:else}
+                        <span class="pi-raw">{arg?.raw ?? '—'}</span>
+                      {/if}
                     </div>
                   {/each}
                 </div>
@@ -4728,7 +4767,7 @@ export const geom = defineGeom(meta, (p, geom) => {
               <!-- Grid of param cards. Each card has label · slider · number
                    inline. Empty hint when a part has no params bound via
                    the `group` field. -->
-              {#if groupKeys.length === 0 && useParts && g.key !== '__general__' && ourInstances.length === 0}
+              {#if groupKeys.length === 0 && useParts && g.key !== '__general__' && !g.instance}
                 <div class="pg-acc-empty">
                   No params bound to <code>{g.name}</code>. Add <code>group: '{g.name}'</code> to a param schema to show it here.
                 </div>
