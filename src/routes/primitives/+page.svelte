@@ -2001,11 +2001,22 @@ export const geom = defineGeom(meta, (p, geom) => {
     return insertIntoGeomBody(next, `const ${instName} = ${baseCall};\n  geom.add(${instName});`);
   }
 
-  /** Add a component import (`geom as <id>Geom`) + a two-line instance
-   *  block. The call uses the imported primitive's declared defaults. */
+  /** Add a component import (`geom as <name>Geom`) + a two-line
+   *  instance block. The alias is derived from the component's display
+   *  NAME (so importing Tube reads `import { geom as TubeGeom } from
+   *  './hollow_cylinder';` — friendlier than the id-derived
+   *  `hollowCylinderGeom`). Falls back to the id-camelCase when the
+   *  name has non-identifier chars. The call uses the imported
+   *  primitive's declared defaults. */
   function snippetForRunes(src: string, entry: ComponentEntry): string {
     const id = entry.meta.id;
-    const alias = id.replace(/_(\w)/g, (_, c) => c.toUpperCase()) + 'Geom';
+    const name = entry.meta.name ?? id;
+    // Strip non-identifier chars, then uppercase the first letter; if
+    // the result is empty (purely symbolic name), fall back to id.
+    const sanitized = name.replace(/[^A-Za-z0-9]/g, '');
+    const idCamel = id.replace(/_(\w)/g, (_, c) => c.toUpperCase());
+    const aliasRoot = /^[A-Za-z]/.test(sanitized) ? sanitized : idCamel;
+    const alias = aliasRoot.charAt(0).toUpperCase() + aliasRoot.slice(1) + 'Geom';
     let next = src;
     const importRe = new RegExp(`import\\s*\\{[^}]*\\bgeom as ${alias}\\b[^}]*\\}\\s*from\\s*['"]\\.\\/${id}['"];?`);
     if (!importRe.test(next)) {
@@ -5041,6 +5052,13 @@ export const geom = defineGeom(meta, (p, geom) => {
           {/if}
         </div>
 
+        <!-- Dirty-state booleans hoisted here so the Builder tab can
+             render its own save bar at the top while the same flags
+             also gate the (currently empty) bottom region. -->
+        {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
+        {@const applyDirty = activeTab.kind === 'xml-primitive' && ((activeTab.sourceDraft != null && activeTab.sourceDraft !== (activeTab.lastAppliedSource ?? null)) || activeTab.inputPending === true)}
+        {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
+
         {#if (inspectorTab === 'params' && isParamTab && activeTab.kind !== 'xml-primitive') || (inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry)}
           {@const allDefs = (activeTab.componentEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
           <!-- xml-primitive: groups = the in-use HELPERS + COMPOSED COMPONENTS;
@@ -5514,6 +5532,42 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const editorSource = activeTab.sourceDraft ?? entry.source}
           {@const split = splitRune(editorSource)}
           {@const editorCompletions = buildEditorCompletions(m)}
+          {#if srcDirty || pDirty || applyDirty}
+            <!-- Save bar at the TOP of the Builder tab — Apply preview /
+                 Save to disk / Discard. The same buttons used to sit
+                 at the bottom of every inspector tab; surfacing them
+                 here makes the affordance immediately visible when
+                 the user is editing the source. -->
+            <div class="save-row global-save save-row-top">
+              {#if applyDirty}
+                <button
+                  class="save-btn apply-btn"
+                  type="button"
+                  onmousedown={() => {
+                    const el = document.activeElement;
+                    if (el instanceof HTMLInputElement && el.type === 'number') {
+                      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+                    }
+                  }}
+                  onclick={() => applyDraft(activeTab!)}
+                  title="Apply the change to the canvas (no disk write)"
+                >Apply</button>
+              {/if}
+              <button class="save-btn" type="button" disabled={activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
+                {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
+              </button>
+              <button class="discard-btn" type="button" onclick={() => discardRunesDraft(activeTab!)}>Discard</button>
+              {#if activeTab.saveStatus === 'saved'}
+                <span class="save-status ok">Saved · HMR will reload</span>
+              {:else if activeTab.saveStatus === 'error'}
+                <span class="save-status err">Error: {activeTab.saveError}</span>
+              {:else}
+                <span class="save-status muted">
+                  {pDirty && srcDirty ? 'Unsaved changes (source + params)' : pDirty ? 'Unsaved param defaults' : 'Unsaved changes'}
+                </span>
+              {/if}
+            </div>
+          {/if}
           {#if split.ok}
             <!-- Section 1: imports + meta + geom scaffolding, collapsed
                  by default. The user only expands this when they want to
@@ -5791,56 +5845,6 @@ export const geom = defineGeom(meta, (p, geom) => {
           </div>
         {/if}
 
-        {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
-        {@const applyDirty = activeTab.kind === 'xml-primitive' && ((activeTab.sourceDraft != null && activeTab.sourceDraft !== (activeTab.lastAppliedSource ?? null)) || activeTab.inputPending === true)}
-        {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
-        {#if srcDirty || pDirty || applyDirty}
-          <!-- Global save bar — visible on EVERY inspector tab the moment
-               sourceDraft diverges from disk OR any slider has been
-               moved away from its schema default. Deleting a part,
-               adding a part, toggling skip-Z, editing a description,
-               renaming a param, AND dragging sliders all surface this
-               affordance without forcing a tab switch. -->
-          <div class="save-row global-save">
-            {#if applyDirty}
-              <!-- Apply — round-trips the in-flight sourceDraft to
-                   /api/components/geom (with `source:` inline) and
-                   updates the canvas WITHOUT touching disk. Hides
-                   once the current draft has been applied; reappears
-                   on the next change. Save to disk does both: writes
-                   the file and re-bakes the GLB.
-                   onmousedown fires BEFORE the focused input blurs —
-                   if there's typed-but-uncommitted text in a number
-                   input, dispatch a synthetic Enter so the input's
-                   keydown handler commits it before applyDraft runs. -->
-              <button
-                class="save-btn apply-btn"
-                type="button"
-                onmousedown={() => {
-                  const el = document.activeElement;
-                  if (el instanceof HTMLInputElement && el.type === 'number') {
-                    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-                  }
-                }}
-                onclick={() => applyDraft(activeTab!)}
-                title="Apply the change to the canvas (no disk write)"
-              >Apply</button>
-            {/if}
-            <button class="save-btn" type="button" disabled={activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
-              {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
-            </button>
-            <button class="discard-btn" type="button" onclick={() => discardRunesDraft(activeTab!)}>Discard</button>
-            {#if activeTab.saveStatus === 'saved'}
-              <span class="save-status ok">Saved · HMR will reload</span>
-            {:else if activeTab.saveStatus === 'error'}
-              <span class="save-status err">Error: {activeTab.saveError}</span>
-            {:else}
-              <span class="save-status muted">
-                {pDirty && srcDirty ? 'Unsaved changes (source + params)' : pDirty ? 'Unsaved param defaults' : 'Unsaved changes'}
-              </span>
-            {/if}
-          </div>
-        {/if}
       </FloatingPanel>
       </div>
     {:else}
@@ -7911,6 +7915,15 @@ export const geom = defineGeom(meta, (p, geom) => {
     align-items: center;
     gap: 8px;
     margin-top: 8px;
+  }
+  /* Save-row variant at the TOP of the Builder tab — drop the top
+     margin and add a divider below so it reads as a sticky toolbar
+     above the code editor rather than something appended at the end. */
+  .save-row.save-row-top {
+    margin-top: 0;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #ececf2;
   }
   .save-btn, .discard-btn {
     font: bold 11px Arial;
