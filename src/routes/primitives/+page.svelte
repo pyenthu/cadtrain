@@ -1251,7 +1251,7 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
   // module-library affordance is the most useful entry point. The snap-tab
   // effect below redirects to 'params' when the active tab is a legacy
   // primitive (no Parts tab there).
-  let inspectorTab = $state<InspectorTab>('ai');
+  let inspectorTab = $state<InspectorTab>('parts');
   /** Sub-tab inside the AI inspector tab's prompt area: the live Prompt
    *  input vs. the persisted History of past refines. */
   let aiSubTab = $state<'prompt' | 'history'>('prompt');
@@ -2410,15 +2410,12 @@ export const geom = defineGeom(meta, (p, geom) => {
         componentList.find((e) => e.meta.id === 'hollow_cylinder');
       if (entry) openRunes(entry);
     }
-    // Restore the last-used inspector sub-tab AFTER the primitive tab
-    // has been opened, so the openRunes default ('ai') doesn't win the
-    // race with our restore.
-    try {
-      const lastInsp = sessionStorage.getItem('cad:lastInspectorTab');
-      if (lastInsp && ['ai', 'parts', 'params', 'svelte', 'script'].includes(lastInsp)) {
-        inspectorTab = lastInsp as InspectorTab;
-      }
-    } catch {}
+    // Refresh defaults to the Parts tab — that's where the strict-
+    // grammar GUI builder lives. Previously we restored the last-used
+    // inspector tab from sessionStorage, but the user wants a
+    // consistent landing spot after a hard refresh: it's always Parts
+    // (which auto-switches to Params for non-primitive tabs via the
+    // guard in openInspector / setActiveTab).
   });
 
   // Persist the active component id so a Vite HMR reload (triggered by
@@ -2431,16 +2428,10 @@ export const geom = defineGeom(meta, (p, geom) => {
       try { sessionStorage.setItem('cad:lastActiveId', activeTab.componentEntry.meta.id); } catch {}
     }
   });
-  // Same idea for the inspector sub-tab — restoring just the active
-  // primitive but not which tab (AI / Parts / Params / Builder / MD)
-  // the user was on snaps them back to the default AI tab after every
-  // save. Persist on change; the onMount restore runs after the
-  // primitive tab opens so a stale value won't apply if the primitive
-  // doesn't support that inspector tab.
-  $effect(() => {
-    if (!inspectorTab) return;
-    try { sessionStorage.setItem('cad:lastInspectorTab', inspectorTab); } catch {}
-  });
+  // Inspector sub-tab is no longer persisted across reloads — every
+  // refresh lands on Parts (see onMount above). The non-primitive
+  // guard handles transient tabs (KB, library) auto-switching to
+  // 'params' / 'svelte' as appropriate.
 
   /** Mouse-drag-to-scrub action for number inputs. Replaces the
    *  slider — pointerdown + horizontal drag scrubs the value; release
@@ -5017,10 +5008,20 @@ export const geom = defineGeom(meta, (p, geom) => {
                         <span class="pr-keyname">{prop.name}</span>
                         {#if prop.optional}<span class="pr-unit-inline">opt</span>{/if}
                       </div>
-                      <!-- Value cell: input/chip on the left, ƒ on the
-                           right opens the formula editor. Single row so
-                           the affordance stays in-cell. -->
+                      <!-- Value cell: ƒ on the LEFT (always-visible
+                           formula entry point), then the value indicator
+                           on the right. Formula args show a compact
+                           "fx" badge — full expression on hover-tooltip
+                           via title=. -->
                       <div class="pr-val">
+                        <button
+                          class="pr-fx"
+                          class:active={arg && arg.kind !== 'literal'}
+                          type="button"
+                          title={arg && arg.kind !== 'literal' ? `Formula: ${arg.raw}` : 'Edit as formula'}
+                          aria-label="Edit as formula"
+                          onclick={(e) => openFormulaEdit(activeTab!, inst.instance, idx, e)}
+                        >ƒ</button>
                         {#if arg && arg.kind === 'literal'}
                           <input
                             class="pr-num drag"
@@ -5047,17 +5048,12 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Click to type · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-paramref">p.{arg.name}</span>
+                          <span class="pi-fx-badge" title={`p.${arg.name}`}>fx</span>
+                        {:else if arg}
+                          <span class="pi-fx-badge" title={arg.raw}>fx</span>
                         {:else}
-                          <span class="pi-raw" title={arg?.raw}>{arg?.raw ?? '—'}</span>
+                          <span class="pi-fx-badge muted" title="not set">—</span>
                         {/if}
-                        <button
-                          class="pr-fx"
-                          type="button"
-                          title="Edit as formula"
-                          aria-label="Edit as formula"
-                          onclick={(e) => openFormulaEdit(activeTab!, inst.instance, idx, e)}
-                        >ƒ</button>
                       </div>
                     </div>
                   {/each}
@@ -6748,6 +6744,22 @@ export const geom = defineGeom(meta, (p, geom) => {
     line-height: 1;
   }
   .pr-fx:hover { background: #f0eafe; border-color: #7c4dff; }
+  .pr-fx.active { background: #f0eafe; border-color: #7c4dff; color: #7c4dff; }
+  /* Compact "fx" badge — replaces the inline raw expression text. The
+     full formula is on the title attr (hover tooltip). Stays narrow
+     so the cell remains tidy regardless of expression length. */
+  .pi-fx-badge {
+    flex: 1; min-width: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    font: italic 11px 'Times New Roman', serif;
+    color: #7c4dff;
+    background: #f5f0ff;
+    border: 1px solid #d8c8f0;
+    border-radius: 3px;
+    padding: 0 6px;
+    cursor: help;
+  }
+  .pi-fx-badge.muted { color: #aaa; background: #fafafa; border-color: #e2e2e8; font-style: normal; }
 
   /* Formula popup — small body with a single-line input + a filtered
      candidate list below. */
