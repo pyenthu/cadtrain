@@ -17,34 +17,28 @@
   let loadError = $state<string | null>(null);
   let loading = $state(false);
 
-  // The bake writes ONLY positions to the GLB (see manifold-bake.ts) —
-  // no normals, no colors, no material. Override every mesh with the
-  // project's red MeshPhongMaterial.
+  // GLTFLoader applies a default material; we override every mesh with
+  // a flat-shaded MeshPhongMaterial so the GLB visually matches the
+  // live Render tab.
   //
-  // `flatShading: true` is critical: ManifoldCAD outputs a faceted mesh
-  // (hard edges between triangles), and `computeVertexNormals()` would
-  // smear them by averaging — producing the streaky highlights + blurred
-  // edges the user observed. Flat shading derives one normal per face
-  // in the fragment shader, which both removes the need to compute /
-  // store normals AND gives proper faceted look on a primitive that's
-  // already tessellated for it.
-  //
-  // Specular shininess is dialled WAY down vs the live Render tab (300)
-  // because flat shading + a strong specular highlight on a bare-position
-  // mesh produces giant white blotches across each face. The live render
-  // gets away with shininess=300 because it has proper smoothed-then-cut
-  // normals from finalizeManifold; the GLB doesn't.
+  // - `flatShading: true` derives one normal per face in the shader —
+  //   matches the faceted look of ManifoldCAD output and avoids the
+  //   streaky highlights smooth normals produce on hard edges.
+  // - If the GLB carries vertex colors (the post-2026-05-15 bake encodes
+  //   the red-outer / grey-bore classification from manifoldToCutVC into
+  //   COLOR_0), we set vertexColors: true and leave the material colour
+  //   white so the per-vertex values pass through unchanged. Older
+  //   colourless bakes fall through to the plain project red.
   function dressGltfScene(root: THREE.Object3D) {
     root.traverse((obj: any) => {
       if (!obj.isMesh) return;
-      // Dispose the auto-created default material to avoid the leak.
       if (obj.material && (obj.material as any).dispose) (obj.material as any).dispose();
-      // Discard any auto-computed smooth normals — flat shading derives
-      // per-face normals from positions, which is what we want.
       const g = obj.geometry as THREE.BufferGeometry;
       if (g.attributes.normal) g.deleteAttribute('normal');
+      const hasColor = !!g.attributes.color;
       obj.material = new THREE.MeshPhongMaterial({
-        color: '#cc2222',
+        color: hasColor ? '#ffffff' : '#cc2222',
+        vertexColors: hasColor,
         specular: '#222222',
         shininess: 30,
         flatShading: true,

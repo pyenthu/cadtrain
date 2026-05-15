@@ -4505,7 +4505,18 @@ export const geom = defineGeom(meta, (p) => {
                 {@const isExtra = !(key in activeDef.params)}
                 {@const tip = buildParamTip(key, def, isExtra)}
                 <div class="pr-card" class:extra={isExtra}>
-                  <span class="pr-keyname" data-tip={tip}>{key}{isExtra ? '*' : ''}</span>
+                  <!-- Top row: label · unit · row buttons. Stays compact;
+                       the drag-number lives below at full width. -->
+                  <div class="pr-card-head">
+                    <span class="pr-keyname" data-tip={tip}>{key}{isExtra ? '*' : ''}</span>
+                    {#if def.unit}<span class="pr-unit-inline">({def.unit})</span>{/if}
+                    {#if activeTab.kind === 'xml-primitive' && key in (activeTab.componentEntry?.meta.params ?? {})}
+                      <button class="row-edit" type="button" onclick={() => openParamEdit(activeTab!, key)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
+                    {/if}
+                    {#if activeTab.draft}
+                      <button class="row-x" type="button" onclick={() => removeParam(activeTab!, key)} title="Remove parameter" aria-label="Remove parameter">×</button>
+                    {/if}
+                  </div>
                   {#if def.choices && Object.keys(def.choices).length}
                     <select class="pr-choice" bind:value={activeTab.params[key]}>
                       {#each Object.entries(def.choices) as [name, val] (name)}
@@ -4529,13 +4540,6 @@ export const geom = defineGeom(meta, (p) => {
                       }}
                       title="Click to type · drag horizontally to scrub"
                     />
-                  {/if}
-                  {#if def.unit}<span class="pr-unit">{def.unit}</span>{/if}
-                  {#if activeTab.kind === 'xml-primitive' && key in (activeTab.componentEntry?.meta.params ?? {})}
-                    <button class="row-edit" type="button" onclick={() => openParamEdit(activeTab!, key)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
-                  {/if}
-                  {#if activeTab.draft}
-                    <button class="row-x" type="button" onclick={() => removeParam(activeTab!, key)} title="Remove parameter" aria-label="Remove parameter">×</button>
                   {/if}
                 </div>
                 {#if activeTab.paramEdit?.key === key}
@@ -4641,10 +4645,11 @@ export const geom = defineGeom(meta, (p) => {
               <div class="pr-grid">
                 {#each Object.entries(derivedMeta) as [key, schema] (key)}
                   <div class="pr-card derived">
-                    <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
-                    <span class="pr-derived-spacer"></span>
+                    <div class="pr-card-head">
+                      <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
+                      {#if schema.unit}<span class="pr-unit-inline">({schema.unit})</span>{/if}
+                    </div>
                     <span class="pr-derived-val">{fmtDerived(resolved[key])}</span>
-                    {#if schema.unit}<span class="pr-unit">{schema.unit}</span>{/if}
                   </div>
                 {/each}
               </div>
@@ -6140,24 +6145,39 @@ export const geom = defineGeom(meta, (p) => {
      at a comfortable inspector width, but if the panel narrows below
      ~3 × min-card the rows wrap to fewer columns instead of squishing the
      slider/value into unreadable widths. */
+  /* 4-column grid at typical inspector widths; auto-fit drops to fewer
+     columns when the panel narrows. min-card width keeps a usable
+     drag-input + label-row footprint. */
   .pr-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 8px 10px;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 6px;
     padding: 4px 0 2px;
   }
+  /* Card stacks vertically: header row (label · unit · buttons) on top,
+     value control (drag-number / choice select / derived readout)
+     below at full card width. */
   .pr-card {
-    /* Inline row inside each card:
-         var-key · slider · number · unit · ✎(component) · ×(draft) */
-    display: grid;
-    grid-template-columns: auto 1fr 44px auto auto auto;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 6px;
     background: #fafafa;
     border: 1px solid #eaeaef;
     border-radius: 3px;
     min-width: 0;
+  }
+  .pr-card-head {
+    display: flex; align-items: center; gap: 4px;
+    min-width: 0;
+  }
+  .pr-card-head .pr-keyname {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pr-unit-inline {
+    font: 10px Arial; color: #888;
+    flex-shrink: 0;
   }
   .ed-sec.compact { gap: 0; margin-bottom: 6px; }
   .ed-sec-h.thin { font-size: 11px; padding: 2px 0; gap: 6px; align-items: center; }
@@ -6275,17 +6295,6 @@ export const geom = defineGeom(meta, (p) => {
     pointer-events: none;
   }
   .pr-card.extra .pr-lbl { color: #1a5b8a; font-style: italic; }
-  /* Unit chip — tucked to the right of the number input. Small + muted
-     so it doesn't compete with the value. */
-  .pr-unit {
-    font: 10px Arial; color: #888;
-    background: #f3f3f7;
-    padding: 1px 4px;
-    border-radius: 3px;
-    border: 1px solid #e2e2e8;
-    min-width: 18px;
-    text-align: center;
-  }
 
   /* Param-group accordion headers inside the Params section. One header
      per `group` value declared in the primitive's meta.params (e.g.
@@ -6324,12 +6333,14 @@ export const geom = defineGeom(meta, (p) => {
     border-color: #d8cde6;
   }
   .pr-card.derived .pr-lbl { color: #5b4a8e; }
-  .pr-derived-spacer { } /* takes the 1fr slot from the grid template */
   .pr-derived-val {
     font: 11px monospace;
     color: #3b2b6a;
     text-align: right;
-    min-width: 48px;
+    padding: 3px 6px;
+    border: 1px dashed #d8cde6;
+    border-radius: 3px;
+    background: #fbf9ff;
   }
   /* Strip the up/down spinner arrows from number inputs in the Params
      grid — they crowd the value and aren't needed when there's a slider
