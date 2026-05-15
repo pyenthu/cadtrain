@@ -4574,7 +4574,7 @@ export const geom = defineGeom(meta, (p, geom) => {
               .map((i) => ({
                 key: `inst:${i.instance}`,
                 name: i.instance,
-                sig: `= ${i.callName}(…)`,
+                sig: `:${i.callName}`,
                 removeKind: 'instance' as const,
                 removeId: i.instance,
                 instance: i,
@@ -4590,8 +4590,8 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const useParts = isXml && partGroups.length > 0}
           {@const groups = useParts
             ? [
-                ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
                 ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'General', sig: '', removeKind: null as null, removeId: '', instance: undefined }] : []),
+                ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
               ]
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'General' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
@@ -4693,7 +4693,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                   <span class="pg-acc-chev">{collapsed ? '▸' : '▾'}</span>
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
-                  <span class="pg-acc-count">{groupKeys.length}</span>
+                  {#if !g.instance}<span class="pg-acc-count">{groupKeys.length}</span>{/if}
                   {#if g.removeKind === 'instance'}
                     <button
                       class="pg-acc-x"
@@ -6445,8 +6445,8 @@ export const geom = defineGeom(meta, (p, geom) => {
   .pr-card {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    padding: 4px 6px;
+    gap: 2px;
+    padding: 3px 5px;
     background: #fafafa;
     border: 1px solid #eaeaef;
     border-radius: 3px;
@@ -6585,17 +6585,21 @@ export const geom = defineGeom(meta, (p, geom) => {
      per `group` value declared in the primitive's meta.params (e.g.
      box_conn → Body / Cone). Click toggles the group's grid open/closed. */
   .pg-acc-head {
-    display: flex; align-items: center; gap: 6px; width: 100%;
+    display: flex; align-items: center; gap: 5px; width: 100%;
     background: #f3f3f7;
     border: 1px solid #e2e2e8;
-    border-radius: 4px;
+    border-radius: 3px;
     cursor: pointer;
     font: 11px Arial; color: #555;
-    padding: 5px 8px;
-    margin: 6px 0 4px;
+    padding: 2px 6px;
+    margin: 2px 0 1px;
     text-align: left;
+    min-height: 22px;
   }
-  .pg-acc-head:first-of-type { margin-top: 2px; }
+  .pg-acc-head:first-of-type { margin-top: 0; }
+  /* For instance rows the title is `A` and sig is `:tube`. Render them
+     tight together (no gap) so the colon reads as one token. */
+  .pg-acc-head .pg-acc-title + .pg-acc-sig { margin-left: -5px; }
   .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
   .pg-acc-head.collapsed { background: #fafafa; }
   .pg-acc-chev { font-size: 9px; color: #999; width: 10px; flex-shrink: 0; }
