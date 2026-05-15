@@ -2054,8 +2054,6 @@ export const geom = defineGeom(meta, (p) => {
     if (activeTab.kind === 'xml-primitive' && inspectorTab === 'script') inspectorTab = 'svelte';
     if (activeTab.kind !== 'xml-primitive' && (inspectorTab === 'svelte' || inspectorTab === 'parts' || inspectorTab === 'ai')) inspectorTab = 'params';
   });
-  let showCutaway = $state(true);
-  let showEdges = $state(true);
 
   // ── Live Threlte scene state ─────────────────────────────────────────────
   // Mirrors /author's pattern: lazy-import ComponentScene to keep the
@@ -4101,7 +4099,7 @@ export const geom = defineGeom(meta, (p) => {
             {#if SceneComponent && geo}
               <Canvas {createRenderer}>
                 {@const Scene = SceneComponent}
-                <Scene {geo} {geoVersion} {showCutaway} {showEdges} />
+                <Scene {geo} {geoVersion} showCutaway={scene.showCutaway} showEdges={scene.showEdges} />
               </Canvas>
               {#if SceneControls}
                 {@const Controls = SceneControls}
@@ -4158,18 +4156,6 @@ export const geom = defineGeom(meta, (p) => {
             {/if}
           </div>
           {/if}
-
-          <div class="stage-controls">
-            <label><input type="checkbox" bind:checked={showCutaway} /> Cross-section</label>
-            <label><input type="checkbox" bind:checked={showEdges} /> Edges</label>
-            <span class="stage-hint">
-              {#if isParamTab}
-                <button class="inline-btn" type="button" onclick={() => openInspector('params')}>Params</button>
-                ·
-              {/if}
-              <button class="inline-btn" type="button" onclick={() => openInspector('script')}>Script</button>
-            </span>
-          </div>
         </div>
 
       <!-- Floating popups — params + builder script. Nested INSIDE
@@ -5843,14 +5829,6 @@ export const geom = defineGeom(meta, (p) => {
     pointer-events: auto;
   }
   .stage-glb-hint code { font: 10px ui-monospace, monospace; color: #333; }
-  .stage-controls {
-    display: flex; align-items: center; gap: 14px;
-    margin: 8px 0 0;
-    font: 11px Arial; color: #555;
-  }
-  .stage-controls label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-  .stage-controls input[type="checkbox"] { accent-color: #cc2222; }
-  .stage-hint { margin-left: auto; color: #888; font: 11px Arial; }
   .inline-btn {
     background: transparent; border: none; padding: 0;
     color: #cc2222; cursor: pointer; text-decoration: underline;

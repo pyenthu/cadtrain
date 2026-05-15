@@ -67,6 +67,16 @@
       <input class="sv-range" type="range" min="0.05" max="1" step="0.05" bind:value={scene.zScale} />
       <input type="number" step="0.05" min={0.05} max={1} bind:value={scene.zScale} />
     </div>
+    <div class="sv-row sv-row-toggles">
+      <label class="sv-check">
+        <input type="checkbox" bind:checked={scene.showCutaway} />
+        Cross-section
+      </label>
+      <label class="sv-check">
+        <input type="checkbox" bind:checked={scene.showEdges} />
+        Edges
+      </label>
+    </div>
   </div>
 {/if}
 
@@ -114,6 +124,9 @@
   .sv-close:hover { color: #fff; }
   .sv-row   { display: flex; align-items: center; gap: 4px; }
   .sv-row-wide .sv-range { flex: 1; min-width: 0; accent-color: #cc2222; height: 14px; }
+  .sv-row-toggles { gap: 14px; margin-top: 2px; }
+  .sv-check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .sv-check input[type='checkbox'] { accent-color: #cc2222; cursor: pointer; }
   .sv-label { width: 22px; opacity: 0.85; }
   .sv-sub   { width: 8px; text-align: center; opacity: 0.7; }
   .sv-panel input[type='number'] {

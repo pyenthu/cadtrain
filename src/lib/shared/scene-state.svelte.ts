@@ -16,4 +16,11 @@ export const scene = $state({
    *  OD/wall in the viewport. Read by builder.finalizeManifold via
    *  the setRenderZScale getter. UI lives in the SceneControls gear. */
   zScale: 1.0,
+  /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
+   *  renders (per-vertex RGB: red outer / grey bore). When false, the
+   *  solid `full` mesh renders in flat red. UI in SceneControls. */
+  showCutaway: true,
+  /** Black edge overlay on the mesh, drawn at a 20° threshold. UI in
+   *  SceneControls. */
+  showEdges: true,
 });
