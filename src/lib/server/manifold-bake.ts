@@ -25,27 +25,27 @@ import { initManifold, getCutBox } from '../cad/manifold-helpers';
 const STATIC_DIR = join(process.cwd(), 'static', 'components');
 
 /**
- * Convert a Manifold mesh into a binary glTF Document with per-vertex
- * colors that match the live cutaway view (red outer surface · grey
- * bore + cut interior). Port of the per-triangle classification in
- * builder.ts → manifoldToCutVC.
+ * Convert a Manifold mesh into a binary glTF Document.
  *
- * The geometry is emitted non-indexed (one set of three vertices per
- * triangle) because the colors are per-FACE, not per-vertex — sharing
- * vertices between triangles would average their colors. A baseColor
- * factor of white + vertexColors-enabled glTF material lets the colors
- * drive the appearance unchanged through three.js's MeshStandardMaterial
- * default; the client further overrides to MeshPhongMaterial flat-shaded.
+ * - `coloured: false` (full bake) emits a tight INDEXED primitive with
+ *   POSITION + indices only — the smallest representation. The client
+ *   renders it as solid red (matches the live cutaway-off view). This
+ *   is ~3× smaller than the non-indexed equivalent.
+ * - `coloured: true` (cut bake) emits NON-INDEXED positions + per-face
+ *   COLOR_0, running the same red-outer / grey-bore classification
+ *   builder.ts → manifoldToCutVC uses. Non-indexed because per-face
+ *   colours need per-triangle vertices (sharing would average across
+ *   the red→grey seam).
  */
-function manifoldToGltf(manifold: any, maxOD: number): Document {
+function manifoldToGltf(manifold: any, maxOD: number, coloured: boolean): Document {
   const mesh = manifold.getMesh();
   const numProp = mesh.numProp ?? 3;
   const verts = mesh.vertProperties as Float32Array;
   const tris  = mesh.triVerts     as Uint32Array;
-  const nt = tris.length / 3;
-
-  // De-interleave to a positions-only view we can index by vertex.
   const nv = verts.length / numProp;
+
+  // De-interleave to a positions-only view we can either upload directly
+  // (indexed path) or scatter per-triangle (non-indexed path).
   const vpos = new Float32Array(nv * 3);
   for (let i = 0; i < nv; i++) {
     vpos[i * 3 + 0] = verts[i * numProp + 0];
@@ -53,6 +53,26 @@ function manifoldToGltf(manifold: any, maxOD: number): Document {
     vpos[i * 3 + 2] = verts[i * numProp + 2];
   }
 
+  const doc = new Document();
+  const buf = doc.createBuffer();
+
+  if (!coloured) {
+    // INDEXED, positions only — smallest representation. Client renders
+    // it as solid red. Saves ~3× over the non-indexed path.
+    const positionAcc = doc.createAccessor().setType('VEC3').setArray(vpos).setBuffer(buf);
+    const indexAcc    = doc.createAccessor().setType('SCALAR').setArray(tris).setBuffer(buf);
+    const prim = doc.createPrimitive()
+      .setAttribute('POSITION', positionAcc)
+      .setIndices(indexAcc);
+    const meshNode = doc.createMesh().addPrimitive(prim);
+    const node = doc.createNode().setMesh(meshNode);
+    doc.createScene().addChild(node);
+    return doc;
+  }
+
+  // NON-INDEXED, per-face colours. Same red-outer / grey-bore
+  // classification builder.ts → manifoldToCutVC uses.
+  const nt = tris.length / 3;
   const positions = new Float32Array(nt * 9);
   const colors    = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
@@ -60,14 +80,12 @@ function manifoldToGltf(manifold: any, maxOD: number): Document {
     const ax = vpos[a * 3], ay = vpos[a * 3 + 1], az = vpos[a * 3 + 2];
     const bx = vpos[b * 3], by = vpos[b * 3 + 1], bz = vpos[b * 3 + 2];
     const cx = vpos[c * 3], cy = vpos[c * 3 + 1], cz = vpos[c * 3 + 2];
-    // Triangle normal via cross of edges.
     const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
     const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
     const nx = e1y * e2z - e1z * e2y;
     const ny = e1z * e2x - e1x * e2z;
     const nz = e1x * e2y - e1y * e2x;
     const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-    // Classification — mirrors builder.ts manifoldToCutVC exactly.
     const mx = (ax + bx + cx) / 3, my = (ay + by + cy) / 3;
     const centroidR = Math.sqrt(mx * mx + my * my);
     const radialDot = centroidR > 0.01 ? (nx * mx + ny * my) / (centroidR * nLen) : 0;
@@ -89,17 +107,11 @@ function manifoldToGltf(manifold: any, maxOD: number): Document {
     colors[idx + 3] = r; colors[idx + 4] = g; colors[idx + 5] = b2;
     colors[idx + 6] = r; colors[idx + 7] = g; colors[idx + 8] = b2;
   }
-
-  const doc = new Document();
-  const buf = doc.createBuffer();
   const positionAcc = doc.createAccessor().setType('VEC3').setArray(positions).setBuffer(buf);
   const colorAcc    = doc.createAccessor().setType('VEC3').setArray(colors).setBuffer(buf);
   const prim = doc.createPrimitive()
     .setAttribute('POSITION', positionAcc)
     .setAttribute('COLOR_0',  colorAcc);
-  // White base + vertex colors pass through unchanged. Matte (no metal,
-  // full roughness) so per-face flat shading the client applies later
-  // reads correctly.
   const mat = doc.createMaterial()
     .setBaseColorFactor([1, 1, 1, 1])
     .setMetallicFactor(0)
@@ -158,16 +170,18 @@ export async function bakeGlb(
     await mkdir(STATIC_DIR, { recursive: true });
     const io = new NodeIO();
     const maxOD = pickMaxOD(defaults);
-    // 1. Full mesh.
-    const doc = manifoldToGltf(manifold, maxOD);
+    // 1. Full mesh — indexed, positions only. Smallest format; the
+    //    client paints it solid red.
+    const doc = manifoldToGltf(manifold, maxOD, false);
     const glb = await io.writeBinary(doc);
     const path = join(STATIC_DIR, `${id}.glb`);
     await writeFile(path, glb);
     const result: BakeResult = { ok: true, path, bytes: glb.byteLength };
-    // 2. Half-sectioned mesh — best effort.
+    // 2. Half-sectioned mesh — non-indexed with per-face colours so the
+    //    grey bore reads against the red outer. Best effort.
     try {
       const cutManifold = manifold.subtract(getCutBox());
-      const cutDoc = manifoldToGltf(cutManifold, maxOD);
+      const cutDoc = manifoldToGltf(cutManifold, maxOD, true);
       const cutGlb = await io.writeBinary(cutDoc);
       const cutPath = join(STATIC_DIR, `${id}.cut.glb`);
       await writeFile(cutPath, cutGlb);
