@@ -6676,7 +6676,7 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .ed-sec.compact { gap: 0; margin-bottom: 6px; }
   .ed-sec-h.thin { font-size: 11px; padding: 2px 0; gap: 6px; align-items: center; }
-  .ed-sec.compact .pr-grid { gap: 2px; padding: 2px 0 0; }
+  .ed-sec.compact .pr-grid { gap: 1px; padding: 1px 0 0; }
   /* Per-row ✎ edit button — matches the × visually (same size + border
      pattern) so the two affordances read as a pair. */
   .row-edit {
@@ -6888,11 +6888,11 @@ export const geom = defineGeom(meta, (p, geom) => {
      single visual container so each instance / section reads as one
      unit when stacked. The header sits flush with the wrapper edges. */
   .pg-acc-wrap {
-    border: 1.75px solid #e2e2e8;
+    border: 2px solid #e2e2e8;
     border-radius: 4px;
     background: #fff;
-    padding: 2px 6px 4px;
-    margin: 4px 0;
+    padding: 1px 4px 2px;
+    margin: 3px 0;
   }
   .pg-acc-wrap.instance { border-color: #f0c8c8; background: #fff8f8; }
   .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 2px 2px; }
