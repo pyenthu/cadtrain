@@ -273,6 +273,12 @@
      *  Apply — `applyDirty = sourceDraft != null && sourceDraft !==
      *  lastAppliedSource`. */
     lastAppliedSource?: string | null;
+    /** True while the user has typed into a number input but hasn't
+     *  pressed Enter yet — the DOM holds a pending value that hasn't
+     *  been committed to params / sourceDraft. The Apply button uses
+     *  this to stay visible during typing; its mousedown handler
+     *  synthesises an Enter to commit before applying. */
+    inputPending?: boolean;
     /** Save status for the Svelte source editor. UI-only feedback. */
     saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
     /** Last save error message (when saveStatus === 'error'). */
@@ -2702,6 +2708,7 @@ export const geom = defineGeom(meta, (p, geom) => {
       tab.saveStatus = 'saved';
       tab.sourceDraft = null;
       tab.lastAppliedSource = null;
+      tab.inputPending = false;
       // Re-fetch the registry so the in-memory tab entry matches disk.
       await refreshRunesList();
       const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
@@ -2725,6 +2732,7 @@ export const geom = defineGeom(meta, (p, geom) => {
   function discardRunesDraft(tab: Tab) {
     tab.sourceDraft = null;
     tab.lastAppliedSource = null;
+    tab.inputPending = false;
     tab.appliedAt = Date.now(); // force a rebuild from disk source
     tab.saveStatus = 'idle';
     tab.saveError = undefined;
@@ -5116,6 +5124,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                             type="number"
                             step="0.05"
                             value={arg.value}
+                            oninput={() => { if (activeTab) activeTab.inputPending = true; }}
                             onkeydown={(e) => {
                               // Enter-only commit (same rule as the
                               // top-level params inputs). Esc reverts.
@@ -5125,8 +5134,10 @@ export const geom = defineGeom(meta, (p, geom) => {
                                 const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                                 const next = setInstanceArg(cur, inst.instance, idx, String(v));
                                 if (next != null) activeTab.sourceDraft = next;
+                                activeTab.inputPending = false;
                               } else if (e.key === 'Escape') {
                                 (e.currentTarget as HTMLInputElement).value = String(arg.value);
+                                if (activeTab) activeTab.inputPending = false;
                               }
                             }}
                             use:dragNumber={{
@@ -5197,6 +5208,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       min={def.min}
                       max={def.max}
                       value={activeTab.params[key]}
+                      oninput={() => { if (activeTab) activeTab.inputPending = true; }}
                       onkeydown={(e) => {
                         // Enter-only commit — typing alone does NOT
                         // mutate activeTab.params[key], so the build
@@ -5207,8 +5219,10 @@ export const geom = defineGeom(meta, (p, geom) => {
                         if (e.key === 'Enter') {
                           const v = Number((e.currentTarget as HTMLInputElement).value);
                           if (Number.isFinite(v)) activeTab!.params[key] = v;
+                          if (activeTab) activeTab.inputPending = false;
                         } else if (e.key === 'Escape') {
                           (e.currentTarget as HTMLInputElement).value = String(activeTab!.params[key] ?? '');
+                          if (activeTab) activeTab.inputPending = false;
                         }
                       }}
                       use:dragNumber={{
@@ -5341,13 +5355,10 @@ export const geom = defineGeom(meta, (p, geom) => {
                 />
               </div>
             </details>
-            <!-- Section 2: read-only destructure args. Mirrors what the
-                 collapsed signature line declares; updates automatically
-                 when the user edits the header above. -->
-            <div class="args-bar" title="Edit via the collapsible section above. These names are what the body can reference.">
-              <span class="args-prefix">args:</span>
-              <code class="args-code">{split.args} =&gt;</code>
-            </div>
+            <!-- Args banner removed — the `(p, geom) =>` shape is
+                 understood from the body convention; surfacing it
+                 above was redundant. Available via the collapsed
+                 imports+meta+signature section if the user needs it. -->
             <!-- Section 3: construction body. The main editor — the only
                  place the user touches for normal work. Helpers / components
                  / current params / derived all available via autocomplete. -->
@@ -5599,9 +5610,9 @@ export const geom = defineGeom(meta, (p, geom) => {
         {/if}
 
         {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
-        {@const applyDirty = activeTab.kind === 'xml-primitive' && activeTab.sourceDraft != null && activeTab.sourceDraft !== (activeTab.lastAppliedSource ?? null)}
+        {@const applyDirty = activeTab.kind === 'xml-primitive' && ((activeTab.sourceDraft != null && activeTab.sourceDraft !== (activeTab.lastAppliedSource ?? null)) || activeTab.inputPending === true)}
         {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
-        {#if srcDirty || pDirty}
+        {#if srcDirty || pDirty || applyDirty}
           <!-- Global save bar — visible on EVERY inspector tab the moment
                sourceDraft diverges from disk OR any slider has been
                moved away from its schema default. Deleting a part,
@@ -5615,10 +5626,20 @@ export const geom = defineGeom(meta, (p, geom) => {
                    updates the canvas WITHOUT touching disk. Hides
                    once the current draft has been applied; reappears
                    on the next change. Save to disk does both: writes
-                   the file and re-bakes the GLB. -->
+                   the file and re-bakes the GLB.
+                   onmousedown fires BEFORE the focused input blurs —
+                   if there's typed-but-uncommitted text in a number
+                   input, dispatch a synthetic Enter so the input's
+                   keydown handler commits it before applyDraft runs. -->
               <button
                 class="save-btn apply-btn"
                 type="button"
+                onmousedown={() => {
+                  const el = document.activeElement;
+                  if (el instanceof HTMLInputElement && el.type === 'number') {
+                    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+                  }
+                }}
                 onclick={() => applyDraft(activeTab!)}
                 title="Apply the change to the canvas (no disk write)"
               >Apply</button>
