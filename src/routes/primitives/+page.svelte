@@ -5061,9 +5061,13 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Click to type · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-fx-badge" data-tip={`p.${arg.name}`}>p.{arg.name}</span>
+                          <span class="pi-fx-wrap" data-tip={`p.${arg.name}`}>
+                            <span class="pi-fx-badge">p.{arg.name}</span>
+                          </span>
                         {:else if arg}
-                          <span class="pi-fx-badge" data-tip={arg.raw}>{arg.raw}</span>
+                          <span class="pi-fx-wrap" data-tip={arg.raw}>
+                            <span class="pi-fx-badge">{arg.raw}</span>
+                          </span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
                         {/if}
@@ -6761,11 +6765,16 @@ export const geom = defineGeom(meta, (p, geom) => {
   .pr-fx:hover { background: #f0eafe; border-color: #7c4dff; }
   .pr-fx.active { background: #f0eafe; border-color: #7c4dff; color: #7c4dff; }
   /* Formula display — sits in the value slot when the arg isn't a
-     literal. Matches the regular input's visual weight (white bg,
-     neutral border) and stays on one line — overflow clips with an
-     ellipsis. Full expression on hover via [data-tip]. */
-  .pi-fx-badge {
+     literal. Two-level structure so the hover tooltip survives:
+     .pi-fx-wrap is the [data-tip] target and has NO overflow:hidden
+     (otherwise the ::after popover would be clipped); the .pi-fx-badge
+     inside is the actual chip with the border + ellipse. */
+  .pi-fx-wrap {
     flex: 1; min-width: 0;
+    display: block;
+    position: relative;
+  }
+  .pi-fx-badge {
     display: block;
     font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #444;
@@ -6776,9 +6785,8 @@ export const geom = defineGeom(meta, (p, geom) => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    cursor: help;
   }
-  .pi-fx-badge.muted { color: #aaa; }
+  .pi-fx-badge.muted { color: #aaa; flex: 1; min-width: 0; }
 
   /* Formula popup — small body with a single-line input + a filtered
      candidate list below. */
