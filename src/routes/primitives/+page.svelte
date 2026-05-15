@@ -4964,7 +4964,21 @@ export const geom = defineGeom(meta, (p, geom) => {
                   <span class="pg-acc-chev">{collapsed ? '▸' : '▾'}</span>
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
-                  {#if !g.instance}<span class="pg-acc-count">{groupKeys.length}</span>{/if}
+                  {#if !g.instance && activeTab.kind === 'xml-primitive'}
+                    <!-- Per-section `+` — opens the param-add inline
+                         form so the user can add another property to
+                         this primitive. Replaced the static count
+                         badge that used to live here. -->
+                    <button
+                      class="pg-acc-plus"
+                      type="button"
+                      title="Add a property"
+                      aria-label="Add a property"
+                      onclick={(e) => { e.stopPropagation(); openParamForm(activeTab!); }}
+                    >+</button>
+                  {:else if !g.instance}
+                    <span class="pg-acc-count">{groupKeys.length}</span>
+                  {/if}
                   {#if g.removeKind === 'instance' || g.removeKind === 'component'}
                     <button
                       class="pg-acc-x"
@@ -6671,7 +6685,7 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .ed-sec.compact { gap: 0; margin-bottom: 6px; }
   .ed-sec-h.thin { font-size: 11px; padding: 2px 0; gap: 6px; align-items: center; }
-  .ed-sec.compact .pr-grid { gap: 1px; padding: 1px 0 0; }
+  .ed-sec.compact .pr-grid { gap: 1px; padding: 0; }
   /* Per-row ✎ edit button — matches the × visually (same size + border
      pattern) so the two affordances read as a pair. */
   .row-edit {
@@ -6887,8 +6901,9 @@ export const geom = defineGeom(meta, (p, geom) => {
     border-radius: 4px;
     background: #fff;
     padding: 1px 4px 2px;
-    margin: 3px 0;
+    margin: 1px 0;
   }
+  .pg-acc-wrap:first-of-type { margin-top: 0; }
   .pg-acc-wrap.instance { border-color: #f0c8c8; background: #fff8f8; }
   .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 2px 2px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
@@ -6923,6 +6938,19 @@ export const geom = defineGeom(meta, (p, geom) => {
     min-width: 16px;
     text-align: center;
   }
+  /* Per-section `+` button — sits where the prop-count badge used
+     to be on non-instance accordion headers, opens the param-add
+     inline form below the title. Small + neutral so it doesn't
+     fight the dominant bottom-of-section round-red `+`. */
+  .pg-acc-plus {
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fff; color: #888;
+    border: 1px solid #e2e2e8; border-radius: 3px;
+    font: bold 12px Arial; line-height: 1;
+    cursor: pointer;
+  }
+  .pg-acc-plus:hover { background: #fdecec; color: #cc2222; border-color: #f0c8c8; }
   .pg-acc-sig {
     font: 10px ui-monospace, monospace; color: #888;
     flex: 0 1 auto;
