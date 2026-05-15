@@ -59,15 +59,13 @@ test.describe.serial('components primitives — API + create flow', () => {
     await expect(page.locator('.sidebar').getByRole('button', { name: 'Tube', exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.sidebar').getByRole('button', { name: 'Tapered Cone', exact: true })).toBeVisible();
 
-    // Landing tab auto-opens — currently box_conn when present, falling
-    // back to Tube otherwise. Either is acceptable for this smoke test:
-    // we just want SOME landing tab to be active with a recognizable
-    // stage-name. (See the box_conn / Tube specs below for the exact
+    // Landing tab auto-opens — any baseline entry is fine for this smoke
+    // test; we only care that SOME tab is active with a non-empty
+    // stage-name. (The Tapered Cone spec below covers the exact-name
     // landing assertion.)
     await expect(page.locator('.stage-name')).toBeVisible({ timeout: 10_000 });
     const stageName = (await page.locator('.stage-name').textContent()) ?? '';
-    expect(stageName, `stage-name should land on a baseline runes entry, got "${stageName}"`)
-      .toMatch(/Tube|Tapered Cone|box_conn/);
+    expect(stageName.trim(), 'stage-name should be non-empty').not.toBe('');
 
     expect(errors, 'should not throw runtime errors').toEqual([]);
   });
@@ -163,13 +161,13 @@ test.describe.serial('components primitives — API + create flow', () => {
     expect(body.glb?.ok, `bake should succeed: ${body.glb?.error}`).toBe(true);
 
     // GLB is served as a static asset.
-    const head = await request.head(`/runes/hollow_cylinder.glb`);
+    const head = await request.head(`/components/hollow_cylinder.glb`);
     expect(head.status(), 'GLB should be served as a static asset').toBe(200);
     const ct = head.headers()['content-type'] ?? '';
     expect(ct.toLowerCase()).toContain('gltf');
 
     // Body is a valid GLB — first 4 bytes are "glTF".
-    const get = await request.get(`/runes/hollow_cylinder.glb`);
+    const get = await request.get(`/components/hollow_cylinder.glb`);
     const buf = await get.body();
     expect(buf.byteLength).toBeGreaterThan(100);
     const magic = buf.subarray(0, 4).toString('ascii');
