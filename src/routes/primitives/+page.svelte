@@ -3060,6 +3060,38 @@ export const geom = defineGeom(meta, (p, geom) => {
     }
     return out;
   }
+
+  /** Snapshot-resolve a typeahead candidate to an expression that's
+   *  valid at runtime. `p.<name>` is left alone (the geom body's `p`
+   *  is the params object). `<inst>.<prop>` substitutes the named
+   *  instance's current raw arg text — wrapped in parens so precedence
+   *  is preserved when it lands inside a larger expression.
+   *
+   *  This is a SNAPSHOT — editing A's outerR later doesn't update
+   *  earlier B-formulas that referenced it. The user re-edits B's
+   *  formula to re-snapshot. Live cascade would require a metadata
+   *  layer; we may add that once a real workflow demands it. */
+  function resolveCandidate(tab: Tab, cand: string, excludeInstance: string): string {
+    const m = /^([A-Z][A-Z0-9]*)\.(\w+)$/.exec(cand);
+    if (!m) return cand;
+    const [, inst, prop] = m;
+    if (inst === excludeInstance) return cand;
+    const cur = tab.sourceDraft ?? tab.componentEntry?.source ?? '';
+    const insts = parsePartInstances(cur);
+    const target = insts.find((i) => i.instance === inst);
+    if (!target) return cand;
+    const meta = HELPERS.find((h) => h.name === target.callName);
+    if (!meta) return cand;
+    const idx = meta.props.findIndex((p) => p.name === prop);
+    if (idx < 0) return cand;
+    const arg = target.args[idx];
+    if (!arg?.raw) return cand;
+    // Parenthesise compound expressions so substitution composes
+    // safely; literals + simple param refs stay bare.
+    return arg.kind === 'literal' || arg.kind === 'paramRef'
+      ? arg.raw
+      : `(${arg.raw})`;
+  }
   function submitParamEdit(tab: Tab) {
     if (!tab.paramEdit || !tab.componentEntry) return;
     const pe = tab.paramEdit;
@@ -4306,17 +4338,20 @@ export const geom = defineGeom(meta, (p, geom) => {
           {#if filtered.length > 0}
             <ul class="fx-list">
               {#each filtered.slice(0, 10) as cand (cand)}
+                {@const resolved = resolveCandidate(activeTab, cand, fe.instance)}
+                {@const isInter = cand !== resolved}
                 <li>
                   <button
                     class="fx-cand"
                     type="button"
+                    title={isInter ? `Inserts: ${resolved}` : undefined}
                     onclick={() => {
                       if (!activeTab?.formulaEdit) return;
-                      const r = replaceWordAtCaret(activeTab.formulaEdit.raw, activeTab.formulaEdit.caret, cand);
+                      const r = replaceWordAtCaret(activeTab.formulaEdit.raw, activeTab.formulaEdit.caret, resolved);
                       activeTab.formulaEdit.raw = r.text;
                       activeTab.formulaEdit.caret = r.caret;
                     }}
-                  >{cand}</button>
+                  >{cand}{#if isInter}<span class="fx-resolved"> → {resolved}</span>{/if}</button>
                 </li>
               {/each}
             </ul>
@@ -6739,6 +6774,7 @@ export const geom = defineGeom(meta, (p, geom) => {
     cursor: pointer;
   }
   .fx-cand:hover { background: #f3f0fc; color: #7c4dff; }
+  .fx-resolved { color: #888; font-style: italic; }
   /* Variable-name chip — monospace, muted background, lets the user see
      the identifier they'll type in the geom body. */
   .pr-keyname {
