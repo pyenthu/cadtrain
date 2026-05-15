@@ -49,8 +49,10 @@ import { finalizeManifold, setRenderZScale, getRenderZScale } from '$lib/cad/bui
 import {
   loadVolumeComponent,
   loadGeomFromSource,
+  parseImports,
   getGeomResult,
   setGeomResult,
+  type LoadedComponent,
 } from '$lib/server/component-loader';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import type { PrimitiveMeta } from '$lib/cad/components';
@@ -136,16 +138,28 @@ export const POST: RequestHandler = async ({ request, url }) => {
   if (inlineSource) {
     try {
       // Inline-source path: same sandbox as loadVolumeComponent. Sibling
-      // dep resolution falls back to the volume loader for any
-      // `./<id>` import — the in-flight source can still reference
-      // other library parts.
+      // deps are pre-resolved here (mirroring loadVolumeComponent's
+      // pre-scan) so the synchronous resolveDep callback handed to
+      // loadGeomFromSource always has the modules ready.
+      const { deps: inlineDeps } = parseImports(inlineSource);
+      const inlineResolved = new Map<string, LoadedComponent>();
+      for (const { depId } of inlineDeps) {
+        if (inlineResolved.has(depId)) continue;
+        const bundledGeom = geomById(depId);
+        if (bundledGeom) {
+          const bundledMeta = metaById(depId);
+          if (!bundledMeta) {
+            throw new Error(`Bundled dep "${depId}" has a geom but no meta.`);
+          }
+          inlineResolved.set(depId, { meta: bundledMeta, geom: bundledGeom });
+        } else {
+          inlineResolved.set(depId, await loadVolumeComponent(depId));
+        }
+      }
       const loaded = loadGeomFromSource(inlineSource, (depId) => {
-        // Resolve sibling deps via the volume loader synchronously when
-        // already cached; otherwise the request fails with a clear
-        // message rather than hanging.
-        throw new Error(
-          `Inline preview can't resolve sibling dep "${depId}" yet — save the component first or remove the cross-import.`,
-        );
+        const dep = inlineResolved.get(depId);
+        if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
+        return dep;
       });
       meta = loaded.meta;
       geom = loaded.geom;

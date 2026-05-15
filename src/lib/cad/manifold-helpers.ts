@@ -64,7 +64,19 @@ export function empty(): any {
 export class GeomAcc {
   current: any = null;
   add(part: any): this {
-    this.current = this.current ? this.current.union(part) : part;
+    if (this.current) {
+      if (typeof this.current.union !== 'function') {
+        throw new Error(
+          `GeomAcc.add: current accumulator value lacks a .union method ` +
+            `(got ${typeof this.current}${this.current?.constructor?.name ? ` ${this.current.constructor.name}` : ''}). ` +
+            `Likely an earlier add() received something that isn't a Manifold — ` +
+            `make sure the imported component's geom() returns a Manifold (not undefined, not the accumulator itself).`,
+        );
+      }
+      this.current = this.current.union(part);
+    } else {
+      this.current = part;
+    }
     return this;
   }
   subtract(part: any): this {
@@ -72,6 +84,12 @@ export class GeomAcc {
       // Subtracting from nothing yields nothing — keep current null so
       // the next add() seeds from a real part.
       return this;
+    }
+    if (typeof this.current.subtract !== 'function') {
+      throw new Error(
+        `GeomAcc.subtract: current accumulator value lacks a .subtract method ` +
+          `(got ${typeof this.current}${this.current?.constructor?.name ? ` ${this.current.constructor.name}` : ''}).`,
+      );
     }
     this.current = this.current.subtract(part);
     return this;
