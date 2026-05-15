@@ -9,8 +9,66 @@
 // Normals aren't recomputed for the warped position (cheap, but lighting
 // reads "as if unwarped"). Acceptable for a temporary visual demo.
 
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { scene } from './scene-state.svelte';
+
+/** Iteratively split every triangle whose z-extent exceeds `maxZSpan`
+ *  into 4 sub-triangles (midpoint split). The warp shader displaces
+ *  vertices, so without enough z-samples a tall cylinder's side wall
+ *  (2 z-levels) just tilts linearly instead of curving — this gives
+ *  the shader real intermediate vertices to bend through.
+ *
+ *  Cached by source geometry uuid to avoid re-paying the cost. Result
+ *  is non-indexed so per-face colours survive. */
+const subdivCache = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+export function subdivideAlongZ(geo: THREE.BufferGeometry, maxZSpan = 0.2): THREE.BufferGeometry {
+  const hit = subdivCache.get(geo);
+  if (hit) return hit;
+  const src = geo.index ? geo.toNonIndexed() : geo;
+  const posAttr = src.getAttribute('position') as THREE.BufferAttribute;
+  const colAttr = src.getAttribute('color') as THREE.BufferAttribute | undefined;
+  let positions: number[] = Array.from(posAttr.array);
+  let colors: number[] | undefined = colAttr ? Array.from(colAttr.array) : undefined;
+  for (let iter = 0; iter < 6; iter++) {
+    let changed = false;
+    const np: number[] = [];
+    const nc: number[] | undefined = colors ? [] : undefined;
+    for (let i = 0; i < positions.length; i += 9) {
+      const az = positions[i + 2], bz = positions[i + 5], cz = positions[i + 8];
+      const ext = Math.max(az, bz, cz) - Math.min(az, bz, cz);
+      if (ext > maxZSpan) {
+        const ax = positions[i],     ay = positions[i + 1];
+        const bx = positions[i + 3], by = positions[i + 4];
+        const cx = positions[i + 6], cy = positions[i + 7];
+        const mabx = (ax + bx) / 2, maby = (ay + by) / 2, mabz = (az + bz) / 2;
+        const mbcx = (bx + cx) / 2, mbcy = (by + cy) / 2, mbcz = (bz + cz) / 2;
+        const macx = (ax + cx) / 2, macy = (ay + cy) / 2, macz = (az + cz) / 2;
+        np.push(
+          ax,  ay,  az,  mabx, maby, mabz, macx, macy, macz,
+          mabx, maby, mabz, bx,  by,  bz,  mbcx, mbcy, mbcz,
+          macx, macy, macz, mbcx, mbcy, mbcz, cx,  cy,  cz,
+          mabx, maby, mabz, mbcx, mbcy, mbcz, macx, macy, macz,
+        );
+        if (nc) {
+          const r = colors![i], g = colors![i + 1], b = colors![i + 2];
+          for (let k = 0; k < 12; k++) nc.push(r, g, b);
+        }
+        changed = true;
+      } else {
+        for (let k = 0; k < 9; k++) np.push(positions[i + k]);
+        if (nc) for (let k = 0; k < 9; k++) nc.push(colors![i + k]);
+      }
+    }
+    positions = np;
+    colors = nc;
+    if (!changed) break;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  if (colors) out.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+  subdivCache.set(geo, out);
+  return out;
+}
 
 // Track every shader we've patched so the slider $effect below can
 // rewrite uniforms on each one when scene.warp* changes.

@@ -5,7 +5,7 @@
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
   // TEMP warp experiment — remove with scene.warp* + warp.ts
-  import { attachWarpShader } from '$lib/shared/warp';
+  import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
 
   // Mirrors ComponentScene.svelte's camera / light / axis chrome, but the
   // rendered body is a static GLB loaded from a URL. Used by the /primitives
@@ -46,10 +46,25 @@
         flatShading: true,
         side: THREE.DoubleSide,
       });
-      // TEMP warp experiment
+      // TEMP warp experiment — pre-subdivide so the shader has enough
+      // z-samples to bend the mesh. Stash both original + subdivided so
+      // the warp-toggle effect can swap without re-loading the GLB.
       attachWarpShader(obj.material);
+      obj.userData.warpOriginalGeo = g;
+      obj.userData.warpSubdividedGeo = subdivideAlongZ(g);
     });
   }
+
+  // TEMP warp experiment — swap mesh.geometry to the subdivided variant
+  // when warp turns on, back to the original when it turns off.
+  $effect(() => {
+    const active = scene.warpAmp > 0;
+    if (!loaded) return;
+    loaded.traverse((obj: any) => {
+      if (!obj.isMesh || !obj.userData.warpOriginalGeo) return;
+      obj.geometry = active ? obj.userData.warpSubdividedGeo : obj.userData.warpOriginalGeo;
+    });
+  });
 
   // Reload on every URL change. Aborts in-flight loads by ignoring stale
   // resolves via the captured `myUrl` token. If the .cut.glb variant 404s

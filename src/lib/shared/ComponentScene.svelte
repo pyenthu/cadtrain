@@ -4,7 +4,7 @@
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
   // TEMP warp experiment — remove with scene.warp* + warp.ts
-  import { attachWarpShader } from '$lib/shared/warp';
+  import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
 
   type CameraOverride = {
     position?: [number, number, number];
@@ -121,8 +121,14 @@
 {#if meshes.length > 0}
   {#key geoVersion + (showCutaway ? '_cut' : '_full')}
     {#each meshes as m (m.key)}
+      <!-- TEMP warp experiment: when warp is active, swap to a
+           z-subdivided geometry so the vertex shader has enough samples
+           along Z to actually curve. WeakMap-cached so a single
+           subdivision per source geo, regardless of slider drags. -->
+      {@const cutGeo  = scene.warpAmp > 0 ? subdivideAlongZ(m.cutVC) : m.cutVC}
+      {@const fullGeo = scene.warpAmp > 0 ? subdivideAlongZ(m.full)  : m.full}
       {#if showCutaway}
-        <T.Mesh geometry={m.cutVC}>
+        <T.Mesh geometry={cutGeo}>
           <T.MeshPhongMaterial
             vertexColors specular="#ffffff" shininess={300} side={THREE.DoubleSide}
             oncreate={(mat) => attachWarpShader(mat)}
@@ -134,7 +140,7 @@
           {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {:else}
-        <T.Mesh geometry={m.full}>
+        <T.Mesh geometry={fullGeo}>
           <T.MeshPhongMaterial
             color="#cc2222" specular="#ffffff" shininess={300} side={THREE.DoubleSide}
             oncreate={(mat) => attachWarpShader(mat)}
