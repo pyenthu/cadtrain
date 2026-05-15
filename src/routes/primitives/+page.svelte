@@ -1668,19 +1668,39 @@ export const geom = defineGeom(meta, (p, geom) => {
     | { kind: 'paramRef'; raw: string; name: string }
     | { kind: 'unknown'; raw: string };
 
-  /** One instance line parsed out of the body: `const A = tube(0.5, 0.4, 4);`
-   *  followed by `geom.add(A);`. Args are positional and matched against
-   *  the helper's typed props by index. */
+  /** One instance line parsed out of the body. Two shapes:
+   *  - Helper: `const A = tube(0.5, 0.4, 4);` → positional `args[]`
+   *    matched against `helperMeta.props` by index.
+   *  - Component: `const B = hollowCylinderGeom({ od, wall, length });`
+   *    → keyed `argsObj` matched against the imported component's
+   *    `meta.params` by key. Both kinds end with `geom.add(<name>);`. */
   interface PartInstance {
     /** const name on the LHS — `A`, `B`, … */
     instance: string;
-    /** Function being called — `tube`, `cyl`, or a component alias. */
+    /** Function being called — `tube`, `cyl` (helper), or
+     *  `hollowCylinderGeom` (component alias). */
     callName: string;
+    /** Which shape the args are in. */
+    kind: 'helper' | 'component' | 'unknown';
+    /** Positional args for helper calls. Empty for component calls. */
     args: PartArg[];
+    /** Keyed args for component calls (key → raw value). Undefined for
+     *  helper calls. */
+    argsObj?: Record<string, PartArg>;
     /** Byte offset where the const declaration starts (for surgical edits). */
     callStart: number;
     /** Byte offset of the closing `)` of the call. */
     callEnd: number;
+  }
+
+  /** Build the alias → component-id map from the source's imports.
+   *  `import { geom as hollowCylinderGeom } from './hollow_cylinder';`
+   *  → `{ hollowCylinderGeom: 'hollow_cylinder' }`. */
+  function componentAliases(src: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    const re = /import\s*\{[^}]*\bgeom\s+as\s+(\w+)\b[^}]*\}\s*from\s*['"]\.\/([a-z][a-z0-9_]*)['"]/g;
+    for (const m of src.matchAll(re)) out[m[1]] = m[2];
+    return out;
   }
 
   /** Parse every `const X = name(args); geom.add(X);` pair out of the
@@ -1688,6 +1708,7 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  Returns instances in source order. */
   function parsePartInstances(src: string): PartInstance[] {
     const out: PartInstance[] = [];
+    const aliases = componentAliases(src);
     const constRe = /\bconst\s+([A-Z][A-Z0-9]*)\s*=\s*(\w+)\s*\(/g;
     for (const m of src.matchAll(constRe)) {
       const instance = m[1];
@@ -1715,7 +1736,56 @@ export const geom = defineGeom(meta, (p, geom) => {
       const addRe = new RegExp(`geom\\.add\\(\\s*${instance}\\s*\\)\\s*;`);
       if (!addRe.test(src.slice(callEnd))) continue;
       const argText = src.slice(m.index! + m[0].length, callEnd);
-      out.push({ instance, callName, args: parsePartArgs(argText), callStart, callEnd });
+      const isHelper = HELPERS.some((h) => h.name === callName);
+      const isComponent = !isHelper && callName in aliases;
+      if (isComponent) {
+        out.push({
+          instance,
+          callName,
+          kind: 'component',
+          args: [],
+          argsObj: parseObjectArgs(argText),
+          callStart,
+          callEnd,
+        });
+      } else {
+        out.push({
+          instance,
+          callName,
+          kind: isHelper ? 'helper' : 'unknown',
+          args: parsePartArgs(argText),
+          callStart,
+          callEnd,
+        });
+      }
+    }
+    return out;
+  }
+
+  /** Parse a `{ key: value, key2: value2 }` argText into key → PartArg.
+   *  Tolerates whitespace; ignores any unparseable segment. The braces
+   *  must be the outermost shape — call sites only invoke this for
+   *  component calls (whose args are always object literals). */
+  function parseObjectArgs(argText: string): Record<string, PartArg> {
+    const out: Record<string, PartArg> = {};
+    const t = argText.trim();
+    if (!t.startsWith('{') || !t.endsWith('}')) return out;
+    const inner = t.slice(1, -1);
+    const segs = splitTopLevel(inner);
+    for (const raw of segs) {
+      const seg = raw.trim();
+      // Match `<key>: <value>` — value can be anything; capture greedy.
+      const km = /^(\w+)\s*:\s*([\s\S]+)$/.exec(seg);
+      if (!km) continue;
+      const key = km[1];
+      const valText = km[2].trim();
+      if (/^-?\d+(\.\d+)?$/.test(valText)) {
+        out[key] = { kind: 'literal', raw: valText, value: Number(valText) };
+      } else {
+        const pm = /^p\.(\w+)$/.exec(valText);
+        if (pm) out[key] = { kind: 'paramRef', raw: valText, name: pm[1] };
+        else out[key] = { kind: 'unknown', raw: valText };
+      }
     }
     return out;
   }
@@ -1777,6 +1847,40 @@ export const geom = defineGeom(meta, (p, geom) => {
     const segs = splitTopLevel(argText);
     segs[argIdx] = ` ${newRaw}`;
     return src.slice(0, callOpenIdx + 1) + segs.join(',') + src.slice(inst.callEnd);
+  }
+
+  /** Rewrite (or insert) a key in the object-literal arg of a
+   *  component-instance call. Mirrors `setInstanceArg` but for the
+   *  `{ key: value, … }` shape — used by the per-component Props rows
+   *  that surface inside the parent component's accordion. */
+  function setInstanceObjectArg(src: string, instance: string, key: string, newRaw: string): string | null {
+    const insts = parsePartInstances(src);
+    const inst = insts.find((p) => p.instance === instance);
+    if (!inst || inst.kind !== 'component') return null;
+    const callOpenIdx = src.indexOf('(', inst.callStart);
+    if (callOpenIdx < 0) return null;
+    const argText = src.slice(callOpenIdx + 1, inst.callEnd);
+    const trimmed = argText.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+    // Index into the original (with leading whitespace) so we can patch
+    // the inner content while preserving surrounding indentation.
+    const openBrace = argText.indexOf('{');
+    const closeBrace = argText.lastIndexOf('}');
+    const inner = argText.slice(openBrace + 1, closeBrace);
+    const segs = splitTopLevel(inner);
+    let replaced = false;
+    const updated = segs.map((raw) => {
+      const km = /^(\s*)(\w+)(\s*):(\s*)([\s\S]+)$/.exec(raw);
+      if (!km) return raw;
+      if (km[2] !== key) return raw;
+      replaced = true;
+      return `${km[1]}${km[2]}${km[3]}:${km[4]}${newRaw}`;
+    });
+    if (!replaced) updated.push(` ${key}: ${newRaw}`);
+    const newInner = updated.join(',');
+    const newArgText =
+      argText.slice(0, openBrace + 1) + newInner + argText.slice(closeBrace);
+    return src.slice(0, callOpenIdx + 1) + newArgText + src.slice(inst.callEnd);
   }
 
   /** Find the next unused single-letter instance name (A, B, …, Z, AA, AB,
@@ -4949,26 +5053,34 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const curSrc = isXml ? (activeTab.sourceDraft ?? activeTab.componentEntry!.source) : ''}
           {@const imported = isXml ? importedFromSource(curSrc) : { helpers: new Set<string>(), components: new Set<string>() }}
           {@const instances = isXml && curSrc ? parsePartInstances(curSrc) : []}
-          {@const partGroups = isXml ? [
-            // One accordion entry per INSTANCE (strict-grammar GUI). The
-            // helper-level grouping is implied by the instance's callName;
-            // a tube and a cyl in the same component each get their own
-            // row with header `A = tube(…)`, `B = cyl(…)`.
-            ...instances
-              .filter((i) => HELPERS.some((h) => h.name === i.callName))
-              .map((i) => ({
+          {@const compAliasMap = isXml && curSrc ? componentAliases(curSrc) : {}}
+          {@const partGroups = isXml ? instances.map((i) => {
+            // One accordion entry per INSTANCE — helpers AND components.
+            // Helper instance: header `A:tube`, props matched by index
+            // against helperMeta.props. Component instance: header
+            // `B:hollow_cylinder`, props matched by KEY against the
+            // imported component's meta.params (via the alias map).
+            if (i.kind === 'component') {
+              const compId = compAliasMap[i.callName];
+              const compEntry = componentList.find((r) => r.meta.id === compId);
+              return {
                 key: `inst:${i.instance}`,
                 name: i.instance,
-                sig: `:${i.callName}`,
+                sig: `:${compEntry?.meta.name ?? compId ?? i.callName}`,
                 removeKind: 'instance' as const,
                 removeId: i.instance,
                 instance: i,
-              })),
-            // Components stay grouped per component-id (the legacy shape).
-            // Per-instance component breakdown can land once components
-            // join the strict-grammar parser.
-            ...componentList.filter((r) => imported.components.has(r.meta.id)).map((p) => ({ key: p.meta.name.toLowerCase(), name: p.meta.name, sig: `geom(${Object.keys(p.meta.params).join(', ')})`, removeKind: 'component' as const, removeId: p.meta.id, instance: undefined })),
-          ] : []}
+              };
+            }
+            return {
+              key: `inst:${i.instance}`,
+              name: i.instance,
+              sig: `:${i.callName}`,
+              removeKind: 'instance' as const,
+              removeId: i.instance,
+              instance: i,
+            };
+          }) : []}
           {@const paramKeys = Object.keys(activeTab.params)}
           {@const matchedSet = new Set(partGroups.map((p) => p.key))}
           {@const orphanKeys = paramKeys.filter((k) => !matchedSet.has((allDefs[k]?.group ?? '').toLowerCase()))}
@@ -5094,8 +5206,72 @@ export const geom = defineGeom(meta, (p, geom) => {
                    number input (with drag-to-scrub); a `paramRef`
                    renders as a read-only `p.<name>` chip. -->
               {@const inst = g.instance}
-              {@const helperMeta = inst ? HELPERS.find((h) => h.name === inst.callName) : null}
-              {#if inst && helperMeta}
+              {@const helperMeta = inst && inst.kind === 'helper' ? HELPERS.find((h) => h.name === inst.callName) : null}
+              {@const compEntry2 = inst && inst.kind === 'component'
+                ? componentList.find((r) => r.meta.id === compAliasMap[inst.callName])
+                : null}
+              {#if inst && compEntry2}
+                <!-- Component instance: iterate the IMPORTED component's
+                     declared meta.params and look up the object-literal
+                     arg by key (not by index). Editing rewrites the
+                     `{ key: value, … }` block inside the call. -->
+                <div class="pr-grid">
+                  {#each Object.entries(compEntry2.meta.params) as [key, schema] (key)}
+                    {@const arg = inst.argsObj?.[key]}
+                    <div class="pr-card">
+                      <div class="pr-card-head">
+                        <span class="pr-keyname">{key}</span>
+                        {#if (schema as any)?.unit}<span class="pr-unit-inline">({(schema as any).unit})</span>{/if}
+                      </div>
+                      <div class="pr-val">
+                        {#if arg && arg.kind === 'literal'}
+                          <input
+                            class="pr-num drag"
+                            type="number"
+                            step={(schema as any)?.step ?? 0.05}
+                            value={arg.value}
+                            oninput={() => { if (activeTab) activeTab.inputPending = true; }}
+                            onkeydown={(e) => {
+                              if (e.key === 'Enter') {
+                                const v = Number((e.currentTarget as HTMLInputElement).value);
+                                if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
+                                const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                                const next = setInstanceObjectArg(cur, inst.instance, key, String(v));
+                                if (next != null) activeTab.sourceDraft = next;
+                                activeTab.inputPending = false;
+                              } else if (e.key === 'Escape') {
+                                (e.currentTarget as HTMLInputElement).value = String(arg.value);
+                                if (activeTab) activeTab.inputPending = false;
+                              }
+                            }}
+                            use:dragNumber={{
+                              step: (schema as any)?.step ?? 0.05,
+                              get: () => arg.value,
+                              set: (v) => {
+                                if (!activeTab?.componentEntry) return;
+                                const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                                const next = setInstanceObjectArg(cur, inst.instance, key, String(v));
+                                if (next != null) activeTab.sourceDraft = next;
+                              },
+                            }}
+                            title="Type then Enter to commit · drag horizontally to scrub"
+                          />
+                        {:else if arg && arg.kind === 'paramRef'}
+                          <span class="pi-fx-wrap" data-tip={`p.${arg.name}`}>
+                            <span class="pi-fx-badge">p.{arg.name}</span>
+                          </span>
+                        {:else if arg}
+                          <span class="pi-fx-wrap" data-tip={arg.raw}>
+                            <span class="pi-fx-badge">{arg.raw}</span>
+                          </span>
+                        {:else}
+                          <span class="pi-fx-badge muted">—</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {:else if inst && helperMeta}
                 <div class="pr-grid">
                   {#each helperMeta.props as prop, idx (prop.name)}
                     {@const arg = inst.args[idx]}
