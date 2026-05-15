@@ -6938,19 +6938,19 @@ export const geom = defineGeom(meta, (p, geom) => {
     min-width: 16px;
     text-align: center;
   }
-  /* Per-section `+` button — sits where the prop-count badge used
-     to be on non-instance accordion headers, opens the param-add
-     inline form below the title. Small + neutral so it doesn't
-     fight the dominant bottom-of-section round-red `+`. */
+  /* Per-section `+` button — round red icon button, matches the
+     bottom-of-section .parts-add-plus visual. Sits where the
+     prop-count badge used to be on the Properties accordion. */
   .pg-acc-plus {
     width: 18px; height: 18px;
     display: inline-flex; align-items: center; justify-content: center;
-    background: #fff; color: #888;
-    border: 1px solid #e2e2e8; border-radius: 3px;
-    font: bold 12px Arial; line-height: 1;
+    background: #cc2222; color: #fff;
+    border: none; border-radius: 50%;
+    font: bold 11px Arial; line-height: 1;
     cursor: pointer;
+    transition: background 100ms, transform 100ms;
   }
-  .pg-acc-plus:hover { background: #fdecec; color: #cc2222; border-color: #f0c8c8; }
+  .pg-acc-plus:hover { background: #aa1818; transform: scale(1.06); }
   .pg-acc-sig {
     font: 10px ui-monospace, monospace; color: #888;
     flex: 0 1 auto;
