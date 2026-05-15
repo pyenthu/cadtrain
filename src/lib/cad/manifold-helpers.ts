@@ -21,49 +21,75 @@ export const CIRCULAR_SEGMENTS_DEFAULT = 256;
 export const CIRCULAR_SEGMENTS_COMPOSE = 96;
 
 // Global WASM/Module singleton — Vite SSR + the bundle's
-// `import.meta.glob` for `src/lib/cad/components/*.ts` can produce
-// SEPARATE module instances of this file at runtime. Each instance has
-// its OWN `wasm` / `M` module-level binding, so a Manifold built in one
-// instance has a different prototype chain than a Manifold built in the
-// other → `A.union(B)` throws "union is not a function" with both
-// constructors named "Manifold". Stash the wasm + M on globalThis so
-// every duplicate manifold-helpers module reads the same heap.
+// `import.meta.glob` for `src/lib/cad/components/*.ts` produce SEPARATE
+// module instances of this file at runtime. The bundled components
+// close over their instance's `M` binding directly; if that instance's
+// `initManifold` never runs, the binding stays null. Even worse: when
+// each instance's initManifold runs independently, every instance ends
+// up with its own wasm Module and its own Manifold class — Manifolds
+// from instance A can't `.union()` Manifolds from instance B even
+// though both classes are named "Manifold".
+//
+// Fix: stash wasm + M on globalThis and expose `M` here as a Proxy that
+// always reads from the singleton at access time. Every duplicate
+// manifold-helpers module's `M` import now refers to the same backing
+// object via the Proxy, so all generated Manifolds share one Module +
+// one prototype chain.
 const G = globalThis as any;
 G.__cadtrain_manifold__ ??= { wasm: null, M: null };
 
-let wasm: any = G.__cadtrain_manifold__.wasm;
-export let M: any = G.__cadtrain_manifold__.M;
 let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
+
+/** Live-read Proxy for the Manifold class. `M.cube(...)`, `M.cylinder(...)`
+ *  etc. always reach into the shared singleton — works even if THIS
+ *  module instance never ran initManifold (a sibling instance did). */
+export const M: any = new Proxy(
+  // The target is a no-op object — all access is intercepted by the
+  // `get` trap.
+  Object.create(null),
+  {
+    get(_target, prop) {
+      const m = G.__cadtrain_manifold__.M;
+      if (!m) return undefined;
+      const v = m[prop];
+      // Bind so static methods (`M.cube`) keep their `this`.
+      return typeof v === 'function' ? v.bind(m) : v;
+    },
+    has(_target, prop) {
+      const m = G.__cadtrain_manifold__.M;
+      return !!m && prop in m;
+    },
+  },
+);
 
 export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
   currentSegments = mode === 'compose' ? CIRCULAR_SEGMENTS_COMPOSE : CIRCULAR_SEGMENTS_DEFAULT;
-  if (wasm) wasm.setCircularSegments(currentSegments);
+  const w = G.__cadtrain_manifold__.wasm;
+  if (w) w.setCircularSegments(currentSegments);
 }
 
 export async function initManifold() {
-  // If another module instance already initialised the wasm, pull its
-  // wasm + M into our bindings and we're done.
+  // If a sibling module instance already initialised the wasm, just
+  // reapply this instance's segment count to the shared wasm and bail.
   if (G.__cadtrain_manifold__.wasm) {
-    wasm = G.__cadtrain_manifold__.wasm;
-    M = G.__cadtrain_manifold__.M;
-    wasm.setCircularSegments(currentSegments);
+    G.__cadtrain_manifold__.wasm.setCircularSegments(currentSegments);
     return;
   }
-  wasm = await Module();
+  const wasm = await Module();
   wasm.setup();
-  M = wasm.Manifold;
+  const m = wasm.Manifold;
   // Sugar alias: `geom.add(part)` reads more naturally than
   // `geom.union(part)` in the parts-tab snippet output. Same semantics —
   // boolean union. Idempotent — only patches if .add isn't already a
   // method (future Manifold versions may add their own).
-  if (M?.prototype && !M.prototype.add) {
-    M.prototype.add = function (this: any, other: any) { return this.union(other); };
+  if (m?.prototype && !m.prototype.add) {
+    m.prototype.add = function (this: any, other: any) { return this.union(other); };
   }
   wasm.setCircularSegments(currentSegments);
-  // Publish so any duplicate manifold-helpers module instance picks up
-  // the same wasm + M next time initManifold() runs there.
+  // Publish — every other manifold-helpers instance's M Proxy now
+  // resolves through this shared singleton.
   G.__cadtrain_manifold__.wasm = wasm;
-  G.__cadtrain_manifold__.M = M;
+  G.__cadtrain_manifold__.M = m;
 }
 
 /** @part Empty seed — a zero-volume Manifold suitable as the initial
@@ -138,7 +164,9 @@ export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
  *  builds don't reconstruct the same cube on every part. */
 let _cachedCutBox: any = null;
 export function getCutBox(): any {
-  if (!_cachedCutBox && M) {
+  // Check the singleton directly — `M` is a Proxy and `if (M)` would
+  // always be truthy even when the underlying wasm hasn't initialised.
+  if (!_cachedCutBox && G.__cadtrain_manifold__.M) {
     _cachedCutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
   }
   return _cachedCutBox;
