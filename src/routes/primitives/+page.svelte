@@ -382,6 +382,12 @@
   let familyFilterY = $state<number>(80);
   let familyFilterBtn: HTMLButtonElement | undefined = $state();
 
+  /** Coords for the per-param Edit popup. Anchored to the ✎ button on
+   *  open via getBoundingClientRect (SVTC-style FloatingPanel). One
+   *  shared popup — at most one param edit is open at a time. */
+  let paramEditX = $state<number>(80);
+  let paramEditY = $state<number>(80);
+
   function toggleFamilyFilter() {
     if (familyFilterOpen) { familyFilterOpen = false; return; }
     if (familyFilterBtn) {
@@ -2950,7 +2956,7 @@ export const geom = defineGeom(meta, (p, geom) => {
     tab.descForm.error = undefined;
   }
 
-  function openParamEdit(tab: Tab, key: string) {
+  function openParamEdit(tab: Tab, key: string, ev?: MouseEvent) {
     if (!tab.componentEntry) return;
     const schema = tab.componentEntry.meta.params[key] as any;
     tab.paramEdit = {
@@ -2965,6 +2971,13 @@ export const geom = defineGeom(meta, (p, geom) => {
       maxStr: String(schema?.max ?? ''),
       stepStr: String(schema?.step ?? ''),
     };
+    // Anchor the FloatingPanel next to the clicked ✎ button.
+    const btn = ev?.currentTarget as HTMLElement | undefined;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      paramEditX = Math.round(r.right + 6);
+      paramEditY = Math.round(r.top - 4);
+    }
   }
   function closeParamEdit(tab: Tab) {
     tab.paramEdit = null;
@@ -4078,6 +4091,87 @@ export const geom = defineGeom(meta, (p, geom) => {
     {/snippet}
   </FloatingPanel>
 
+  <!-- Per-param Edit popup — anchored to the ✎ button on open. Single
+       instance reused for whichever param is being edited (at most one
+       open at a time). SVTC-style: click-outside closes, draggable
+       header, Apply/Cancel pinned in the footer. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && activeTab.paramEdit}
+    {@const pe = activeTab.paramEdit}
+    {@const willRename = pe.name !== pe.key}
+    {@const ce = activeTab.componentEntry}
+    {@const curSrc = (activeTab.sourceDraft ?? ce?.source ?? '')}
+    {@const peImported = importedFromSource(curSrc)}
+    {@const pePartGroups = [
+      ...HELPERS.filter((h) => peImported.helpers.has(h.name)).map((h) => ({ key: h.name.toLowerCase(), name: h.name })),
+      ...componentList.filter((r) => peImported.components.has(r.meta.id)).map((p) => ({ key: p.meta.name.toLowerCase(), name: p.meta.name })),
+    ]}
+    <FloatingPanel
+      title={`Edit ${pe.key}`}
+      visible={true}
+      onClose={() => closeParamEdit(activeTab!)}
+      x={paramEditX}
+      y={paramEditY}
+      width="380px"
+      maxHeight="70vh"
+    >
+      {#snippet children()}
+        <div class="pe-body" use:clickOutside={() => activeTab && closeParamEdit(activeTab)}>
+          <div class="pr-edit-grid">
+            <label class="pr-edit-lbl">Variable
+              <input class="pf-in pr-edit-name" type="text" spellcheck="false" value={pe.name}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.name = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="pr-edit-lbl">Label
+              <input class="pf-in" type="text" value={pe.label}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.label = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="pr-edit-lbl">Default
+              <input class="pf-in" type="number" step="any" value={pe.defaultStr}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.defaultStr = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="pr-edit-lbl">Unit
+              <input class="pf-in" type="text" value={pe.unit}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.unit = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="pr-edit-lbl">Min
+              <input class="pf-in" type="number" step="any" value={pe.minStr}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.minStr = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="pr-edit-lbl">Max
+              <input class="pf-in" type="number" step="any" value={pe.maxStr}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.maxStr = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="pr-edit-lbl">Step
+              <input class="pf-in" type="number" step="any" value={pe.stepStr}
+                oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.stepStr = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+          </div>
+          {#if willRename}
+            <p class="pr-edit-warn">⚠ Apply will refactor <code>{pe.key}</code> → <code>{pe.name}</code> across the geom body.</p>
+          {/if}
+          <label class="pr-edit-lbl pr-edit-desc-row">Description
+            <input class="pf-in" type="text" placeholder="What does this parameter control?" value={pe.desc}
+              oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.desc = (e.currentTarget as HTMLInputElement).value; }} />
+          </label>
+          <label class="pr-edit-lbl pr-edit-desc-row">Part
+            <select class="pf-in" value={pe.group}
+              onchange={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.group = (e.currentTarget as HTMLSelectElement).value; }}>
+              <option value="">(General — no part)</option>
+              {#each pePartGroups as p (p.key)}
+                <option value={p.name}>{p.name}</option>
+              {/each}
+            </select>
+          </label>
+          {#if pe.error}<p class="pf-err">{pe.error}</p>{/if}
+          <div class="pf-actions">
+            <button class="save-btn" type="button" onclick={() => submitParamEdit(activeTab!)}>Apply</button>
+            <button class="discard-btn" type="button" onclick={() => closeParamEdit(activeTab!)}>Cancel</button>
+          </div>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
   <!-- Drag handle — sits between the sidebar and the rest of the layout.
        Mousedown anywhere on it starts a drag that resizes the sidebar. -->
   <div
@@ -4784,7 +4878,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                     <span class="pr-keyname" data-tip={tip}>{key}{isExtra ? '*' : ''}</span>
                     {#if def.unit}<span class="pr-unit-inline">({def.unit})</span>{/if}
                     {#if activeTab.kind === 'xml-primitive' && key in (activeTab.componentEntry?.meta.params ?? {})}
-                      <button class="row-edit" type="button" onclick={() => openParamEdit(activeTab!, key)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
+                      <button class="row-edit" type="button" onclick={(e) => openParamEdit(activeTab!, key, e)} title="Edit this parameter" aria-label="Edit parameter">✎</button>
                     {/if}
                     {#if activeTab.draft}
                       <button class="row-x" type="button" onclick={() => removeParam(activeTab!, key)} title="Remove parameter" aria-label="Remove parameter">×</button>
@@ -4815,110 +4909,6 @@ export const geom = defineGeom(meta, (p, geom) => {
                     />
                   {/if}
                 </div>
-                {#if activeTab.paramEdit?.key === key}
-                  {@const pe = activeTab.paramEdit}
-                  {@const willRename = pe.name !== pe.key}
-                  <div class="pr-edit-pop">
-                    <div class="pr-edit-h">Edit <code>{key}</code></div>
-                    <div class="pr-edit-grid">
-                      <label class="pr-edit-lbl">Variable
-                        <input
-                          class="pf-in pr-edit-name"
-                          type="text"
-                          spellcheck="false"
-                          value={pe.name}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.name = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                      <label class="pr-edit-lbl">Label
-                        <input
-                          class="pf-in"
-                          type="text"
-                          value={pe.label}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.label = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                      <label class="pr-edit-lbl">Default
-                        <input
-                          class="pf-in"
-                          type="number"
-                          step="any"
-                          value={pe.defaultStr}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.defaultStr = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                      <label class="pr-edit-lbl">Unit
-                        <input
-                          class="pf-in"
-                          type="text"
-                          value={pe.unit}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.unit = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                      <label class="pr-edit-lbl">Min
-                        <input
-                          class="pf-in"
-                          type="number"
-                          step="any"
-                          value={pe.minStr}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.minStr = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                      <label class="pr-edit-lbl">Max
-                        <input
-                          class="pf-in"
-                          type="number"
-                          step="any"
-                          value={pe.maxStr}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.maxStr = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                      <label class="pr-edit-lbl">Step
-                        <input
-                          class="pf-in"
-                          type="number"
-                          step="any"
-                          value={pe.stepStr}
-                          oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.stepStr = (e.currentTarget as HTMLInputElement).value; }}
-                        />
-                      </label>
-                    </div>
-                    {#if willRename}
-                      <p class="pr-edit-warn">⚠ On Apply you'll be asked to confirm a rename of <code>{pe.key}</code> → <code>{pe.name}</code> across the geom body.</p>
-                    {/if}
-                    <label class="pr-edit-lbl pr-edit-desc-row">Description
-                      <input
-                        class="pf-in"
-                        type="text"
-                        placeholder="What does this parameter control?"
-                        value={pe.desc}
-                        oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.desc = (e.currentTarget as HTMLInputElement).value; }}
-                      />
-                    </label>
-                    <!-- Part selector — drives which accordion bar this
-                         param nests under. Sets schema.group; empty
-                         string strips the field (param returns to
-                         General). Options drawn from partGroups so only
-                         currently-imported parts appear. -->
-                    <label class="pr-edit-lbl pr-edit-desc-row">Part
-                      <select
-                        class="pf-in"
-                        value={pe.group}
-                        onchange={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.group = (e.currentTarget as HTMLSelectElement).value; }}
-                      >
-                        <option value="">(General — no part)</option>
-                        {#each partGroups as p (p.key)}
-                          <option value={p.name}>{p.name}</option>
-                        {/each}
-                      </select>
-                    </label>
-                    {#if pe.error}<p class="pf-err">{pe.error}</p>{/if}
-                    <div class="pf-actions">
-                      <button class="save-btn" type="button" onclick={() => submitParamEdit(activeTab!)}>Apply</button>
-                      <button class="discard-btn" type="button" onclick={() => closeParamEdit(activeTab!)}>Cancel</button>
-                    </div>
-                  </div>
-                {/if}
                 {/each}
               </div>
               {/if}
@@ -6529,6 +6519,10 @@ export const geom = defineGeom(meta, (p, geom) => {
     padding: 4px 8px; line-height: 1.4;
   }
   .pr-edit-warn code { font: 11px ui-monospace, monospace; background: #fff; padding: 1px 4px; border-radius: 3px; border: 1px solid #f0d8a8; color: #7c4dff; }
+  /* Body of the per-param Edit FloatingPanel — same padding rhythm as
+     the family-filter ff-body. The grid + warn rows above carry their
+     own spacing; we just give the popup some breathing room. */
+  .pe-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
   /* Variable-name chip — monospace, muted background, lets the user see
      the identifier they'll type in the geom body. */
   .pr-keyname {
