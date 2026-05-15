@@ -41,8 +41,8 @@
       obj.material = new THREE.MeshPhongMaterial({
         color: hasColor ? '#ffffff' : '#cc2222',
         vertexColors: hasColor,
-        specular: '#222222',
-        shininess: 30,
+        specular: '#666666',
+        shininess: 120,
         flatShading: true,
         side: THREE.DoubleSide,
       });
