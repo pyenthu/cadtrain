@@ -7094,16 +7094,21 @@ export const geom = defineGeom(meta, (p, geom) => {
     max-width: 50%;
   }
   .pg-acc-x {
-    width: 16px; height: 16px;
+    margin-left: auto;
+    width: 20px; height: 20px;
     display: inline-flex; align-items: center; justify-content: center;
-    background: transparent; color: #888;
-    border: 1px solid transparent;
+    background: #fff; color: #888;
+    border: 1px solid #e2e2e8;
     border-radius: 3px;
     cursor: pointer;
     font: 12px Arial; line-height: 1;
     flex-shrink: 0;
   }
-  .pg-acc-x:hover { color: #cc2222; border-color: #f0c8c8; background: #fff; }
+  .pg-acc-x:hover { color: #cc2222; border-color: #cc2222; background: #fdecec; }
+  /* Instance rows: tint the trash darker red since the surrounding
+     header is already red — neutral grey blends in. */
+  .pg-acc-head.instance .pg-acc-x { color: #cc2222; border-color: #f0c8c8; }
+  .pg-acc-head.instance .pg-acc-x:hover { color: #fff; background: #cc2222; border-color: #cc2222; }
   .pg-acc-empty {
     font: 10px Arial; color: #888; font-style: italic;
     padding: 6px 8px;
