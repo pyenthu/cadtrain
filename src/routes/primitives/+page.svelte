@@ -4923,7 +4923,12 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const paramKeys = Object.keys(activeTab.params)}
           {@const matchedSet = new Set(partGroups.map((p) => p.key))}
           {@const orphanKeys = paramKeys.filter((k) => !matchedSet.has((allDefs[k]?.group ?? '').toLowerCase()))}
-          {@const useParts = isXml && partGroups.length > 0}
+          <!-- For xml-primitives, always use the structured Properties +
+               partGroups layout — even when there are zero instances yet,
+               the Properties accordion still needs to render so the
+               round-red `+` is reachable. Legacy primitives stick with
+               paramGroupsOf clustering. -->
+          {@const useParts = isXml}
           {@const groups = useParts
             ? [
                 ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined }] : []),
