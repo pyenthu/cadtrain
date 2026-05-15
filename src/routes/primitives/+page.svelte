@@ -6892,13 +6892,17 @@ export const geom = defineGeom(meta, (p, geom) => {
      single visual container so each instance / section reads as one
      unit when stacked. The header sits flush with the wrapper edges. */
   .pg-acc-wrap {
-    border: 2px solid #e2e2e8;
+    border: 3px solid #d4d4dc;
     border-radius: 4px;
     background: #fff;
     padding: 1px 4px 2px;
     margin: 1px 0;
   }
   .pg-acc-wrap:first-of-type { margin-top: 0; }
+  /* Instance wraps keep the 2px border (still red-tinted) — the
+     Properties wrap above gets the heavier outline since it's the
+     section header for the primitive itself. */
+  .pg-acc-wrap.instance { border-width: 2px; }
   .pg-acc-wrap.instance { border-color: #f0c8c8; background: #fff8f8; }
   .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 2px 2px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
