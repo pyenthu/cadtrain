@@ -5048,9 +5048,9 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Click to type · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-fx-badge" data-fx-tip={`p.${arg.name}`}>p.{arg.name}</span>
+                          <span class="pi-fx-badge" title={`p.${arg.name}`}>?</span>
                         {:else if arg}
-                          <span class="pi-fx-badge" data-fx-tip={arg.raw}>{arg.raw}</span>
+                          <span class="pi-fx-badge" title={arg.raw}>?</span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
                         {/if}
@@ -6745,60 +6745,21 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .pr-fx:hover { background: #f0eafe; border-color: #7c4dff; }
   .pr-fx.active { background: #f0eafe; border-color: #7c4dff; color: #7c4dff; }
-  /* Formula display — sits in the value slot when the arg isn't a
-     literal. Looks like the regular number input (same border, bg,
-     height) so the row stays visually consistent. The formula text
-     stays on one line — overflow is clipped with an ellipsis and the
-     full expression appears in the hover tooltip below. */
+  /* Formula indicator — small question-mark chip in the value slot
+     when the arg isn't a literal. Width-tight so the row stays calm;
+     hover uses the native title= tooltip to show the full expression. */
   .pi-fx-badge {
-    flex: 1; min-width: 0;
-    display: block;
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #1a5b8a;
+    flex: 0 0 auto;
+    width: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font: 11px Arial;
+    color: #888;
     background: #fff;
     border: 1px solid #d8d8de;
     border-radius: 3px;
-    padding: 2px 6px;
     cursor: help;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    position: relative;
   }
   .pi-fx-badge.muted { color: #aaa; }
-
-  /* Rich tooltip for formula badges — bigger, bolder, monospace, with
-     the "ƒ" sigil + the expression on a darker pill so it stands out
-     from generic [data-tip] popovers. */
-  [data-fx-tip] { position: relative; }
-  [data-fx-tip]:hover::after {
-    content: 'ƒ  ' attr(data-fx-tip);
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 0;
-    z-index: 250;
-    background: linear-gradient(135deg, #2a1f4a 0%, #1f1f3a 100%);
-    color: #fff;
-    padding: 8px 14px;
-    border-radius: 6px;
-    border: 1px solid #4a3a8a;
-    font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.28), 0 0 0 1px rgba(124,77,255,0.15);
-    pointer-events: none;
-  }
-  [data-fx-tip]:hover::before {
-    content: '';
-    position: absolute;
-    bottom: calc(100% + 2px);
-    left: 14px;
-    z-index: 251;
-    width: 0; height: 0;
-    border: 6px solid transparent;
-    border-top-color: #2a1f4a;
-    pointer-events: none;
-  }
 
   /* Formula popup — small body with a single-line input + a filtered
      candidate list below. */
