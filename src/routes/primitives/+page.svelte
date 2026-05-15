@@ -5116,12 +5116,18 @@ export const geom = defineGeom(meta, (p, geom) => {
                             type="number"
                             step="0.05"
                             value={arg.value}
-                            onchange={(e) => {
-                              const v = Number((e.currentTarget as HTMLInputElement).value);
-                              if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
-                              const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
-                              const next = setInstanceArg(cur, inst.instance, idx, String(v));
-                              if (next != null) activeTab.sourceDraft = next;
+                            onkeydown={(e) => {
+                              // Enter-only commit (same rule as the
+                              // top-level params inputs). Esc reverts.
+                              if (e.key === 'Enter') {
+                                const v = Number((e.currentTarget as HTMLInputElement).value);
+                                if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
+                                const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                                const next = setInstanceArg(cur, inst.instance, idx, String(v));
+                                if (next != null) activeTab.sourceDraft = next;
+                              } else if (e.key === 'Escape') {
+                                (e.currentTarget as HTMLInputElement).value = String(arg.value);
+                              }
                             }}
                             use:dragNumber={{
                               step: 0.05,
@@ -5133,7 +5139,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                                 if (next != null) activeTab.sourceDraft = next;
                               },
                             }}
-                            title="Click to type · drag horizontally to scrub"
+                            title="Type then Enter to commit · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
                           <span class="pi-fx-wrap" data-tip={`p.${arg.name}`}>
@@ -5190,7 +5196,21 @@ export const geom = defineGeom(meta, (p, geom) => {
                       step={def.step}
                       min={def.min}
                       max={def.max}
-                      bind:value={activeTab.params[key]}
+                      value={activeTab.params[key]}
+                      onkeydown={(e) => {
+                        // Enter-only commit — typing alone does NOT
+                        // mutate activeTab.params[key], so the build
+                        // $effect isn't re-firing on every keystroke.
+                        // Drag-scrub still commits continuously via
+                        // dragNumber.set (deliberate gesture). Esc
+                        // reverts the DOM value to the bound param.
+                        if (e.key === 'Enter') {
+                          const v = Number((e.currentTarget as HTMLInputElement).value);
+                          if (Number.isFinite(v)) activeTab!.params[key] = v;
+                        } else if (e.key === 'Escape') {
+                          (e.currentTarget as HTMLInputElement).value = String(activeTab!.params[key] ?? '');
+                        }
+                      }}
                       use:dragNumber={{
                         step: def.step ?? 1,
                         min: def.min,
@@ -5198,7 +5218,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                         get: () => activeTab.params[key] ?? 0,
                         set: (v) => { activeTab!.params[key] = v; },
                       }}
-                      title="Click to type · drag horizontally to scrub"
+                      title="Type then Enter to commit · drag horizontally to scrub"
                     />
                   {/if}
                 </div>
