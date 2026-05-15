@@ -4868,10 +4868,10 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const useParts = isXml && partGroups.length > 0}
           {@const groups = useParts
             ? [
-                ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'General', sig: '', removeKind: null as null, removeId: '', instance: undefined }] : []),
+                ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined }] : []),
                 ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
               ]
-            : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'General' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
+            : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
             <div class="ed-sec-h thin">
@@ -4961,10 +4961,12 @@ export const geom = defineGeom(meta, (p, geom) => {
                     : paramKeys.filter((k) => (allDefs[k]?.group ?? '').toLowerCase() === g.key))
                 : paramKeys.filter((k) => (allDefs[k]?.group ?? '__default__') === g.key)}
               {@const collapsed = accordion && isParamGroupCollapsed(activeTab.id, g.key)}
+              <div class="pg-acc-wrap" class:instance={!!g.instance}>
               {#if accordion}
                 <button
                   class="pg-acc-head"
                   class:collapsed
+                  class:instance={!!g.instance}
                   type="button"
                   onclick={() => toggleParamGroupCollapse(activeTab!.id, g.key)}
                 >
@@ -4972,22 +4974,33 @@ export const geom = defineGeom(meta, (p, geom) => {
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   {#if !g.instance}<span class="pg-acc-count">{groupKeys.length}</span>{/if}
-                  {#if g.removeKind === 'instance'}
+                  {#if g.removeKind === 'instance' || g.removeKind === 'component'}
                     <button
                       class="pg-acc-x"
                       type="button"
                       title={`Remove ${g.name}`}
                       aria-label={`Remove ${g.name}`}
-                      onclick={(e) => { e.stopPropagation(); removeInstance(g.removeId); }}
-                    >×</button>
-                  {:else if g.removeKind === 'component'}
-                    <button
-                      class="pg-acc-x"
-                      type="button"
-                      title={`Remove ${g.name}`}
-                      aria-label={`Remove ${g.name}`}
-                      onclick={(e) => { e.stopPropagation(); removeRunes(g.removeId); }}
-                    >×</button>
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        if (g.removeKind === 'instance') removeInstance(g.removeId);
+                        else removeRunes(g.removeId);
+                      }}
+                    >
+                      <!-- Trash-can icon: rectangle body + lid + handle.
+                           14×14 viewBox, currentColor for hover tinting. -->
+                      <svg viewBox="0 0 14 14" width="11" height="11" aria-hidden="true">
+                        <rect x="3.5" y="4.5" width="7" height="8" rx="0.8"
+                              fill="none" stroke="currentColor" stroke-width="1.2"/>
+                        <line x1="2" y1="3.5" x2="12" y2="3.5"
+                              stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <path d="M5.5 3.5 V2.5 a0.6 0.6 0 0 1 0.6 -0.6 h1.8 a0.6 0.6 0 0 1 0.6 0.6 V3.5"
+                              fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                        <line x1="6" y1="6.5" x2="6" y2="10.5"
+                              stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+                        <line x1="8" y1="6.5" x2="8" y2="10.5"
+                              stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+                      </svg>
+                    </button>
                   {/if}
                 </button>
               {/if}
@@ -5048,9 +5061,9 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Click to type · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-fx-badge" data-tip={`p.${arg.name}`}>?</span>
+                          <span class="pi-fx-badge" data-tip={`p.${arg.name}`}>p.{arg.name}</span>
                         {:else if arg}
-                          <span class="pi-fx-badge" data-tip={arg.raw}>?</span>
+                          <span class="pi-fx-badge" data-tip={arg.raw}>{arg.raw}</span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
                         {/if}
@@ -5113,6 +5126,8 @@ export const geom = defineGeom(meta, (p, geom) => {
                 {/each}
               </div>
               {/if}
+              </div>
+              <!--/.pg-acc-wrap-->
             {/each}
           </div>
 
@@ -6745,18 +6760,22 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .pr-fx:hover { background: #f0eafe; border-color: #7c4dff; }
   .pr-fx.active { background: #f0eafe; border-color: #7c4dff; color: #7c4dff; }
-  /* Formula indicator — small question-mark chip in the value slot
-     when the arg isn't a literal. Width-tight so the row stays calm;
-     hover uses the native title= tooltip to show the full expression. */
+  /* Formula display — sits in the value slot when the arg isn't a
+     literal. Matches the regular input's visual weight (white bg,
+     neutral border) and stays on one line — overflow clips with an
+     ellipsis. Full expression on hover via [data-tip]. */
   .pi-fx-badge {
-    flex: 0 0 auto;
-    width: 18px;
-    display: inline-flex; align-items: center; justify-content: center;
-    font: 11px Arial;
-    color: #888;
+    flex: 1; min-width: 0;
+    display: block;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #444;
     background: #fff;
     border: 1px solid #d8d8de;
     border-radius: 3px;
+    padding: 2px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: help;
   }
   .pi-fx-badge.muted { color: #aaa; }
@@ -6787,15 +6806,16 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .fx-cand:hover { background: #f3f0fc; color: #7c4dff; }
   .fx-resolved { color: #888; font-style: italic; }
-  /* Variable-name chip — monospace, muted background, lets the user see
-     the identifier they'll type in the geom body. */
+  /* Variable-name chip — monospace label naming the prop / param the
+     row controls. Bumped up + darkened for readability — the previous
+     light purple at 10px was hard to read at a glance. */
   .pr-keyname {
-    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #7c4dff;
+    font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #2a1f4a;
     background: #f1edfa;
-    padding: 1px 5px;
+    padding: 1px 6px;
     border-radius: 3px;
-    border: 1px solid #e2dcf2;
+    border: 1px solid #d8ccef;
     user-select: all;
   }
   .pr-lbl {
@@ -6813,30 +6833,28 @@ export const geom = defineGeom(meta, (p, geom) => {
   [data-tip]:hover::after {
     content: attr(data-tip);
     position: absolute;
-    bottom: calc(100% + 8px);
+    bottom: calc(100% + 6px);
     left: 0;
     z-index: 200;
     background: #1a1a2e;
     color: #fff;
-    padding: 8px 12px;
-    border-radius: 5px;
-    border: 1px solid #3a3a52;
-    font: 600 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: 0.01em;
-    max-width: 360px;
+    padding: 5px 9px;
+    border-radius: 4px;
+    font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-width: 320px;
     width: max-content;
     white-space: pre-line;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.32), 0 0 0 1px rgba(124,77,255,0.18);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.24), 0 0 0 1px rgba(124,77,255,0.15);
     pointer-events: none;
   }
   [data-tip]:hover::before {
     content: '';
     position: absolute;
-    bottom: calc(100% + 2px);
-    left: 12px;
+    bottom: 100%;
+    left: 10px;
     z-index: 201;
     width: 0; height: 0;
-    border: 6px solid transparent;
+    border: 5px solid transparent;
     border-top-color: #1a1a2e;
     pointer-events: none;
   }
@@ -6858,9 +6876,36 @@ export const geom = defineGeom(meta, (p, geom) => {
     min-height: 22px;
   }
   .pg-acc-head:first-of-type { margin-top: 0; }
+  /* Outlined wrapper — groups the header + its body content into a
+     single visual container so each instance / section reads as one
+     unit when stacked. The header sits flush with the wrapper edges. */
+  .pg-acc-wrap {
+    border: 1px solid #e2e2e8;
+    border-radius: 4px;
+    background: #fff;
+    padding: 2px 6px 4px;
+    margin: 4px 0;
+  }
+  .pg-acc-wrap.instance { border-color: #f0c8c8; background: #fff8f8; }
+  .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 2px 2px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
-     tight together (no gap) so the colon reads as one token. */
+     tight together (no gap) so the colon reads as one token, and
+     don't let the title flex-grow — it should hug `:tube` on the
+     left, not push it to the far right. Bold red so the instance
+     reads as the dominant label. */
   .pg-acc-head .pg-acc-title + .pg-acc-sig { margin-left: -5px; }
+  .pg-acc-head.instance .pg-acc-title { flex: 0 0 auto; }
+  .pg-acc-head.instance .pg-acc-title,
+  .pg-acc-head.instance .pg-acc-sig {
+    font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cc2222;
+  }
+  /* Properties (non-instance) header — bigger, bolder so it leads
+     the section. The previous 11px Arial was too quiet. */
+  .pg-acc-head:not(.instance) .pg-acc-title {
+    font: bold 13px Arial;
+    color: #333;
+  }
   .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
   .pg-acc-head.collapsed { background: #fafafa; }
   .pg-acc-chev { font-size: 9px; color: #999; width: 10px; flex-shrink: 0; }
