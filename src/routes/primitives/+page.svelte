@@ -326,6 +326,15 @@
       stepStr: string;
       error?: string;
     } | null;
+    /** Per-arg formula editor — opens via the ƒ button inside an
+     *  instance-prop cell. Holds the in-flight expression text + a
+     *  cursor index used by the typeahead to compute the word-at-caret. */
+    formulaEdit?: {
+      instance: string;
+      argIdx: number;
+      raw: string;
+      caret: number;
+    } | null;
     /** Underlying primitive definition id (only set when kind === 'primitive'). */
     primId: string;
     /** KB id (only set when kind === 'kb'). */
@@ -387,6 +396,29 @@
    *  shared popup — at most one param edit is open at a time. */
   let paramEditX = $state<number>(80);
   let paramEditY = $state<number>(80);
+
+  /** Coords for the per-arg Formula popup. Anchored to the ƒ button. */
+  let formulaEditX = $state<number>(80);
+  let formulaEditY = $state<number>(80);
+
+  /** Compute the identifier the user is currently typing — the
+   *  contiguous run of `[A-Za-z0-9._]` ending at the caret. Returns the
+   *  empty string when the caret sits after whitespace or punctuation. */
+  function wordAtCaret(text: string, caret: number): { word: string; start: number } {
+    const re = /[A-Za-z0-9._]/;
+    let i = caret;
+    while (i > 0 && re.test(text[i - 1])) i--;
+    return { word: text.slice(i, caret), start: i };
+  }
+
+  /** Replace the word at `caret` with `replacement` (no surrounding
+   *  spaces). Returns the new text + the new caret position (end of the
+   *  inserted token). */
+  function replaceWordAtCaret(text: string, caret: number, replacement: string): { text: string; caret: number } {
+    const w = wordAtCaret(text, caret);
+    const next = text.slice(0, w.start) + replacement + text.slice(caret);
+    return { text: next, caret: w.start + replacement.length };
+  }
 
   function toggleFamilyFilter() {
     if (familyFilterOpen) { familyFilterOpen = false; return; }
@@ -2982,6 +3014,52 @@ export const geom = defineGeom(meta, (p, geom) => {
   function closeParamEdit(tab: Tab) {
     tab.paramEdit = null;
   }
+
+  /** Open the per-arg formula popup. Pre-fills the textarea with the
+   *  current raw arg so the user can edit a formula already in place. */
+  function openFormulaEdit(tab: Tab, instance: string, argIdx: number, ev?: MouseEvent) {
+    if (!tab.componentEntry) return;
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const insts = parsePartInstances(cur);
+    const inst = insts.find((i) => i.instance === instance);
+    if (!inst) return;
+    const arg = inst.args[argIdx];
+    const raw = arg?.raw ?? '';
+    tab.formulaEdit = { instance, argIdx, raw, caret: raw.length };
+    const btn = ev?.currentTarget as HTMLElement | undefined;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      formulaEditX = Math.round(r.right + 6);
+      formulaEditY = Math.round(r.top - 4);
+    }
+  }
+  function closeFormulaEdit(tab: Tab) { tab.formulaEdit = null; }
+  function applyFormulaEdit(tab: Tab) {
+    if (!tab.formulaEdit || !tab.componentEntry) return;
+    const fe = tab.formulaEdit;
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const next = setInstanceArg(cur, fe.instance, fe.argIdx, fe.raw.trim());
+    if (next != null) tab.sourceDraft = next;
+    tab.formulaEdit = null;
+  }
+
+  /** Identifiers in scope for the typeahead, given the current geom
+   *  source. Returns top-level params as `p.<name>` plus other
+   *  instances' typed props as `<inst>.<prop>`. The caller filters by
+   *  the word-at-caret. */
+  function formulaCandidates(tab: Tab, excludeInstance: string): string[] {
+    const out: string[] = [];
+    for (const k of Object.keys(tab.params)) out.push(`p.${k}`);
+    const cur = tab.sourceDraft ?? tab.componentEntry?.source ?? '';
+    const insts = parsePartInstances(cur);
+    for (const i of insts) {
+      if (i.instance === excludeInstance) continue;
+      const meta = HELPERS.find((h) => h.name === i.callName);
+      if (!meta) continue;
+      for (const p of meta.props) out.push(`${i.instance}.${p.name}`);
+    }
+    return out;
+  }
   function submitParamEdit(tab: Tab) {
     if (!tab.paramEdit || !tab.componentEntry) return;
     const pe = tab.paramEdit;
@@ -4172,6 +4250,86 @@ export const geom = defineGeom(meta, (p, geom) => {
     </FloatingPanel>
   {/if}
 
+  <!-- Per-arg Formula popup — opened by the ƒ in an instance-prop cell.
+       Mini script editor: a single-line text input + a typeahead list
+       filtered by the word at the caret. Click a suggestion to splice
+       it in at the caret; Apply writes the raw expression back into the
+       source. The text is emitted verbatim — `p.<param>` works at
+       runtime, arithmetic works (`p.od / 2`), inter-instance refs like
+       `A.outerR` are documentation-only for now. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && activeTab.formulaEdit}
+    {@const fe = activeTab.formulaEdit}
+    {@const wac = wordAtCaret(fe.raw, fe.caret)}
+    {@const cands = formulaCandidates(activeTab, fe.instance)}
+    {@const filtered = wac.word
+      ? cands.filter((c) => c.toLowerCase().includes(wac.word.toLowerCase()))
+      : cands}
+    <FloatingPanel
+      title="Formula"
+      visible={true}
+      onClose={() => closeFormulaEdit(activeTab!)}
+      x={formulaEditX}
+      y={formulaEditY}
+      width="320px"
+      maxHeight="60vh"
+    >
+      {#snippet children()}
+        <div class="fx-body" use:clickOutside={() => activeTab && closeFormulaEdit(activeTab)}>
+          <input
+            class="fx-input"
+            type="text"
+            placeholder="e.g. p.od / 2"
+            spellcheck="false"
+            autocomplete="off"
+            value={fe.raw}
+            oninput={(e) => {
+              if (!activeTab?.formulaEdit) return;
+              const el = e.currentTarget as HTMLInputElement;
+              activeTab.formulaEdit.raw = el.value;
+              activeTab.formulaEdit.caret = el.selectionStart ?? el.value.length;
+            }}
+            onkeyup={(e) => {
+              if (!activeTab?.formulaEdit) return;
+              const el = e.currentTarget as HTMLInputElement;
+              activeTab.formulaEdit.caret = el.selectionStart ?? el.value.length;
+            }}
+            onclick={(e) => {
+              if (!activeTab?.formulaEdit) return;
+              const el = e.currentTarget as HTMLInputElement;
+              activeTab.formulaEdit.caret = el.selectionStart ?? el.value.length;
+            }}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); applyFormulaEdit(activeTab!); }
+              if (e.key === 'Escape') { e.preventDefault(); closeFormulaEdit(activeTab!); }
+            }}
+          />
+          {#if filtered.length > 0}
+            <ul class="fx-list">
+              {#each filtered.slice(0, 10) as cand (cand)}
+                <li>
+                  <button
+                    class="fx-cand"
+                    type="button"
+                    onclick={() => {
+                      if (!activeTab?.formulaEdit) return;
+                      const r = replaceWordAtCaret(activeTab.formulaEdit.raw, activeTab.formulaEdit.caret, cand);
+                      activeTab.formulaEdit.raw = r.text;
+                      activeTab.formulaEdit.caret = r.caret;
+                    }}
+                  >{cand}</button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="pf-actions">
+            <button class="save-btn" type="button" onclick={() => applyFormulaEdit(activeTab!)}>Apply</button>
+            <button class="discard-btn" type="button" onclick={() => closeFormulaEdit(activeTab!)}>Cancel</button>
+          </div>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
   <!-- Drag handle — sits between the sidebar and the rest of the layout.
        Mousedown anywhere on it starts a drag that resizes the sidebar. -->
   <div
@@ -4824,36 +4982,48 @@ export const geom = defineGeom(meta, (p, geom) => {
                         <span class="pr-keyname">{prop.name}</span>
                         {#if prop.optional}<span class="pr-unit-inline">opt</span>{/if}
                       </div>
-                      {#if arg && arg.kind === 'literal'}
-                        <input
-                          class="pr-num drag"
-                          type="number"
-                          step="0.05"
-                          value={arg.value}
-                          onchange={(e) => {
-                            const v = Number((e.currentTarget as HTMLInputElement).value);
-                            if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
-                            const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
-                            const next = setInstanceArg(cur, inst.instance, idx, String(v));
-                            if (next != null) activeTab.sourceDraft = next;
-                          }}
-                          use:dragNumber={{
-                            step: 0.05,
-                            get: () => arg.value,
-                            set: (v) => {
-                              if (!activeTab?.componentEntry) return;
+                      <!-- Value cell: input/chip on the left, ƒ on the
+                           right opens the formula editor. Single row so
+                           the affordance stays in-cell. -->
+                      <div class="pr-val">
+                        {#if arg && arg.kind === 'literal'}
+                          <input
+                            class="pr-num drag"
+                            type="number"
+                            step="0.05"
+                            value={arg.value}
+                            onchange={(e) => {
+                              const v = Number((e.currentTarget as HTMLInputElement).value);
+                              if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
                               const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                               const next = setInstanceArg(cur, inst.instance, idx, String(v));
                               if (next != null) activeTab.sourceDraft = next;
-                            },
-                          }}
-                          title="Click to type · drag horizontally to scrub"
-                        />
-                      {:else if arg && arg.kind === 'paramRef'}
-                        <span class="pi-paramref">p.{arg.name}</span>
-                      {:else}
-                        <span class="pi-raw">{arg?.raw ?? '—'}</span>
-                      {/if}
+                            }}
+                            use:dragNumber={{
+                              step: 0.05,
+                              get: () => arg.value,
+                              set: (v) => {
+                                if (!activeTab?.componentEntry) return;
+                                const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                                const next = setInstanceArg(cur, inst.instance, idx, String(v));
+                                if (next != null) activeTab.sourceDraft = next;
+                              },
+                            }}
+                            title="Click to type · drag horizontally to scrub"
+                          />
+                        {:else if arg && arg.kind === 'paramRef'}
+                          <span class="pi-paramref">p.{arg.name}</span>
+                        {:else}
+                          <span class="pi-raw" title={arg?.raw}>{arg?.raw ?? '—'}</span>
+                        {/if}
+                        <button
+                          class="pr-fx"
+                          type="button"
+                          title="Edit as formula"
+                          aria-label="Edit as formula"
+                          onclick={(e) => openFormulaEdit(activeTab!, inst.instance, idx, e)}
+                        >ƒ</button>
+                      </div>
                     </div>
                   {/each}
                 </div>
@@ -6523,6 +6693,52 @@ export const geom = defineGeom(meta, (p, geom) => {
      the family-filter ff-body. The grid + warn rows above carry their
      own spacing; we just give the popup some breathing room. */
   .pe-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+
+  /* Instance-prop value cell: input/chip + inline ƒ button. The ƒ
+     opens the formula editor; tight gap keeps the cell compact. */
+  .pr-val { display: flex; align-items: stretch; gap: 3px; min-width: 0; }
+  .pr-val > .pr-num,
+  .pr-val > .pi-paramref,
+  .pr-val > .pi-raw { flex: 1; min-width: 0; }
+  .pr-fx {
+    flex-shrink: 0;
+    width: 18px;
+    background: #fafafa;
+    border: 1px solid #eaeaef;
+    border-radius: 3px;
+    color: #7c4dff;
+    cursor: pointer;
+    font: italic bold 11px 'Times New Roman', serif;
+    padding: 0;
+    line-height: 1;
+  }
+  .pr-fx:hover { background: #f0eafe; border-color: #7c4dff; }
+
+  /* Formula popup — small body with a single-line input + a filtered
+     candidate list below. */
+  .fx-body { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; }
+  .fx-input {
+    width: 100%; box-sizing: border-box;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 4px 6px;
+    border: 1px solid #d8d8de;
+    border-radius: 3px;
+  }
+  .fx-input:focus { outline: none; border-color: #7c4dff; }
+  .fx-list {
+    list-style: none; margin: 0; padding: 0;
+    max-height: 200px; overflow-y: auto;
+    border: 1px solid #eaeaef; border-radius: 3px;
+    background: #fff;
+  }
+  .fx-cand {
+    width: 100%; text-align: left;
+    background: transparent; border: 0;
+    padding: 3px 8px;
+    font: 11px ui-monospace, monospace; color: #444;
+    cursor: pointer;
+  }
+  .fx-cand:hover { background: #f3f0fc; color: #7c4dff; }
   /* Variable-name chip — monospace, muted background, lets the user see
      the identifier they'll type in the geom body. */
   .pr-keyname {
