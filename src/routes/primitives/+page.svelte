@@ -349,7 +349,10 @@
      *  cursor index used by the typeahead to compute the word-at-caret. */
     formulaEdit?: {
       instance: string;
-      argIdx: number;
+      /** Set for HELPER instance edits — positional arg index. */
+      argIdx?: number;
+      /** Set for COMPONENT instance edits — keyed by param name. */
+      argKey?: string;
       raw: string;
       caret: number;
     } | null;
@@ -3182,17 +3185,31 @@ export const geom = defineGeom(meta, (p, geom) => {
     tab.paramEdit = null;
   }
 
-  /** Open the per-arg formula popup. Pre-fills the textarea with the
-   *  current raw arg so the user can edit a formula already in place. */
-  function openFormulaEdit(tab: Tab, instance: string, argIdx: number, ev?: MouseEvent) {
+  /** Open the per-arg formula popup. Two flavours per the instance
+   *  kind: a positional `argIdx` for helper-instance args, or a string
+   *  `argKey` for component-instance object-literal args. */
+  function openFormulaEdit(
+    tab: Tab,
+    instance: string,
+    locator: { argIdx: number } | { argKey: string },
+    ev?: MouseEvent,
+  ) {
     if (!tab.componentEntry) return;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
     const insts = parsePartInstances(cur);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return;
-    const arg = inst.args[argIdx];
+    const arg =
+      'argIdx' in locator
+        ? inst.args[locator.argIdx]
+        : inst.argsObj?.[locator.argKey];
     const raw = arg?.raw ?? '';
-    tab.formulaEdit = { instance, argIdx, raw, caret: raw.length };
+    tab.formulaEdit = {
+      instance,
+      ...('argIdx' in locator ? { argIdx: locator.argIdx } : { argKey: locator.argKey }),
+      raw,
+      caret: raw.length,
+    };
     const btn = ev?.currentTarget as HTMLElement | undefined;
     if (btn) {
       const r = btn.getBoundingClientRect();
@@ -3205,7 +3222,10 @@ export const geom = defineGeom(meta, (p, geom) => {
     if (!tab.formulaEdit || !tab.componentEntry) return;
     const fe = tab.formulaEdit;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
-    const next = setInstanceArg(cur, fe.instance, fe.argIdx, fe.raw.trim());
+    const next =
+      typeof fe.argKey === 'string'
+        ? setInstanceObjectArg(cur, fe.instance, fe.argKey, fe.raw.trim())
+        : setInstanceArg(cur, fe.instance, fe.argIdx!, fe.raw.trim());
     if (next != null) tab.sourceDraft = next;
     tab.formulaEdit = null;
   }
@@ -5110,7 +5130,11 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const useParts = isXml}
           {@const groups = useParts
             ? [
-                ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined }] : []),
+                // Properties section is ALWAYS surfaced for xml-
+                // primitives so the round-red `+` to add the first
+                // property is reachable even on a fresh stub with
+                // zero params yet.
+                { key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined },
                 ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
               ]
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
@@ -5242,6 +5266,14 @@ export const geom = defineGeom(meta, (p, geom) => {
                         {#if (schema as any)?.unit}<span class="pr-unit-inline">({(schema as any).unit})</span>{/if}
                       </div>
                       <div class="pr-val">
+                        <button
+                          class="pr-fx"
+                          class:active={arg && arg.kind !== 'literal'}
+                          type="button"
+                          title={arg && arg.kind !== 'literal' ? `Formula: ${arg.raw}` : 'Edit as formula'}
+                          aria-label="Edit as formula"
+                          onclick={(e) => openFormulaEdit(activeTab!, inst.instance, { argKey: key }, e)}
+                        >ƒ</button>
                         {#if arg && arg.kind === 'literal'}
                           <input
                             class="pr-num drag"
@@ -5310,7 +5342,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                           type="button"
                           title={arg && arg.kind !== 'literal' ? `Formula: ${arg.raw}` : 'Edit as formula'}
                           aria-label="Edit as formula"
-                          onclick={(e) => openFormulaEdit(activeTab!, inst.instance, idx, e)}
+                          onclick={(e) => openFormulaEdit(activeTab!, inst.instance, { argIdx: idx }, e)}
                         >ƒ</button>
                         {#if arg && arg.kind === 'literal'}
                           <input
