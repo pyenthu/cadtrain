@@ -482,7 +482,7 @@
   // /api/volume?path=components/<id>.source.png. Defaults to 'render'
   // on every primitive switch (don't strand the user in an empty
   // Picture tab when they navigate around).
-  let stageTab = $state<'render' | 'picture'>('render');
+  let stageTab = $state<'render' | 'picture' | 'glb'>('render');
   /** Track whether the active primitive's source image actually exists.
    *  Set true when <img> loads; set false on error (404 / missing).
    *  Reset to null on tab switch (loading state).  */
@@ -1216,10 +1216,19 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
    *  renders the markdown. Defaults to preview so the spec reads nicely;
    *  the user flips to edit to change it. */
   let instructionsView = $state<'edit' | 'preview'>('preview');
-  /** Selected sub-tab inside the Params section. Tracks the `group` field
-   *  of the displayed params. null = "show all". Resets per-tab via the
-   *  $effect below when activeTab changes. */
-  let selectedParamGroup = $state<string | null>(null);
+  /** Collapsed param-group accordion headers, keyed `<tabId>:<group>` so
+   *  collapse state is per-tab. In-memory only — refresh resets. Params
+   *  with a `group` field render as collapsible accordion sections. */
+  let collapsedParamGroups = $state<Set<string>>(new Set());
+  function toggleParamGroupCollapse(tabId: string, group: string) {
+    const key = `${tabId}:${group}`;
+    const next = new Set(collapsedParamGroups);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    collapsedParamGroups = next;
+  }
+  function isParamGroupCollapsed(tabId: string, group: string): boolean {
+    return collapsedParamGroups.has(`${tabId}:${group}`);
+  }
 
   /** Ordered unique groups present in a params record. Params without a
    *  `group` field bucket into '__default__'. */
@@ -1337,11 +1346,13 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
     newPrimForm.error = '';
     // Blank-slate stub. The AI tab is the primary authoring surface for
     // new primitives — describe what you want there, accept the proposal,
-    // and the params + geom land here. The placeholder geom renders a tiny
-    // marker shape so the 3D scene doesn't show an empty / error state on
-    // first open.
-    const stub = `import { cyl } from '../manifold-helpers';
-import { defineGeom } from '.';
+    // and the params + geom land here. NO placeholder shape — the stage
+    // shows the "Not constructed yet" empty-state via the tab's
+    // `unconstructed` flag set below (mirrors the figure-draft flow).
+    // The geom body throws if it ever runs before real geometry replaces
+    // it, so the user can't accidentally save the stub and see a stray
+    // cylinder.
+    const stub = `import { defineGeom } from '.';
 
 export const meta = {
   id: '${id}',
@@ -1353,7 +1364,7 @@ export const meta = {
 
 export const geom = defineGeom(meta, (p) => {
   // Empty primitive — open the AI tab and describe what this should be.
-  return cyl(0.1, 0.05, 0.05);
+  throw new Error('Not constructed yet — describe geometry in the AI tab or write the body yourself.');
 });
 `;
     try {
@@ -1376,7 +1387,14 @@ export const geom = defineGeom(meta, (p) => {
       await refreshRunesList();
       sidebarTab = 'test';
       const fresh = componentList.find((e) => e.meta.id === id);
-      if (fresh) openRunes(fresh);
+      if (fresh) {
+        openRunes(fresh);
+        // Brand-new stub has no geometry yet — show the empty-state
+        // instead of letting the build $effect run a throwing geom.
+        // Cleared on first save (see saveRunesSource).
+        const tab = openTabs.find((t) => t.id === `xml:${fresh.meta.id}`);
+        if (tab) tab.unconstructed = true;
+      }
     } catch (e: any) {
       newPrimForm.error = e?.message ?? String(e);
       newPrimForm.saving = false;
@@ -1944,6 +1962,19 @@ export const geom = defineGeom(meta, (p) => {
   // chrome, doesn't need to survive tab switches.
   let partsAddHelperOpen = $state(false);
   let partsAddRunesOpen  = $state(false);
+  // Search filter for the "+ Add primitive" picker. Reset every time the
+  // picker closes so reopening starts fresh. Focus moves to this input on
+  // open (see effect below) so the user can start typing immediately.
+  let partsSearch = $state('');
+  let partsSearchEl = $state<HTMLInputElement | null>(null);
+  $effect(() => {
+    if (partsAddHelperOpen) {
+      // schedule focus after the input is mounted in the DOM
+      requestAnimationFrame(() => partsSearchEl?.focus());
+    } else {
+      partsSearch = '';
+    }
+  });
 
   /** Splice an operator's TODO snippet into the active primitive's
    *  geom body. Uses the same insertIntoGeomBody pipeline as the Parts
@@ -2037,6 +2068,11 @@ export const geom = defineGeom(meta, (p) => {
    *  module-level reactive state in $lib/shared/scene-state.svelte.ts, so
    *  edits here persist to /author and vice versa within a session. */
   let SceneControls = $state<any>(null);
+  /** Lazy-loaded GLB scene — same camera/light/axes chrome as
+   *  ComponentScene but renders a static .glb instead of the live geom.
+   *  Powers the stage's GLB sub-tab; shows what `bakeGlb` wrote to
+   *  static/components/<id>.glb on the last save. */
+  let SceneGlbComponent = $state<any>(null);
   let ready = $state(false);
   let geo = $state<any>(null);
   let geoVersion = $state(0);
@@ -2067,6 +2103,7 @@ export const geom = defineGeom(meta, (p) => {
   onMount(async () => {
     import('$lib/shared/ComponentScene.svelte').then((m) => { SceneComponent = m.default; });
     import('$lib/shared/SceneControls.svelte').then((m) => { SceneControls = m.default; });
+    import('$lib/shared/ComponentSceneGlb.svelte').then((m) => { SceneGlbComponent = m.default; });
     initManifold().then(() => { ready = true; });
     enabledFamilies = loadEnabledFamilies();
     enabledLevels = loadEnabledLevels();
@@ -3989,6 +4026,12 @@ export const geom = defineGeom(meta, (p) => {
               type="button"
               onclick={() => { stageTab = 'picture'; pictureLoadStatus = 'loading'; }}
             >Picture</button>
+            <button
+              class="stage-subtab"
+              class:active={stageTab === 'glb'}
+              type="button"
+              onclick={() => (stageTab = 'glb')}
+            >GLB</button>
           </div>
 
           {#if stageTab === 'picture'}
@@ -4028,6 +4071,30 @@ export const geom = defineGeom(meta, (p) => {
                   </div>
                 {/if}
               {/key}
+            </div>
+          {:else if stageTab === 'glb'}
+            <!-- GLB stage — renders the static .glb that bakeGlb() wrote
+                 to static/components/<id>.glb on the last save. Useful for
+                 confirming the baked artifact matches the live mesh, and
+                 for downstream consumers that should be driven off the
+                 cached binary instead of the live ManifoldCAD eval. -->
+            <div class="stage-3d">
+              {#if SceneGlbComponent}
+                {@const GlbScene = SceneGlbComponent}
+                {@const glbUrl = `/components/${activeDef.id}.glb`}
+                <Canvas {createRenderer}>
+                  <GlbScene url={glbUrl} />
+                </Canvas>
+                {#if SceneControls}
+                  {@const Controls = SceneControls}
+                  <Controls />
+                {/if}
+                <div class="stage-glb-hint" title={glbUrl}>
+                  served from <code>{glbUrl}</code>
+                </div>
+              {:else}
+                <div class="stage-loading"><span class="stage-loading-text">Loading scene…</span></div>
+              {/if}
             </div>
           {:else}
           <div class="stage-3d">
@@ -4178,8 +4245,7 @@ export const geom = defineGeom(meta, (p) => {
         {#if inspectorTab === 'params' && isParamTab}
           {@const allDefs = (activeTab.componentEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
           {@const groups = paramGroupsOf(allDefs)}
-          {@const showGroupTabs = groups.length > 1}
-          {@const activeGroup = showGroupTabs ? (selectedParamGroup && groups.includes(selectedParamGroup) ? selectedParamGroup : groups[0]) : null}
+          {@const accordion = groups.length > 1}
           <div class="ed-sec compact">
             <div class="ed-sec-h thin">
               <span class="muted">{Object.keys(activeTab.params).length}</span>
@@ -4249,30 +4315,33 @@ export const geom = defineGeom(meta, (p) => {
                 </div>
               </div>
             {/if}
-            <!-- Param-group sub-tabs. When the primitive's params declare a
-                 `group` field (e.g. box_conn → "Body" / "Cone"), we render
-                 each group as its own tab inside this section. When ALL
-                 params share the same group (or no group is set), no tab
-                 strip renders — the grid behaves as before. allDefs /
-                 groups / activeGroup are hoisted to the parent {#if} above
-                 (Svelte 5 requires {@const} as direct child of a block). -->
-            {#if showGroupTabs}
-              <div class="pg-tabs">
-                {#each groups as g (g)}
-                  <button
-                    class="pg-tab"
-                    class:active={activeGroup === g}
-                    type="button"
-                    onclick={() => (selectedParamGroup = g)}
-                  >{g === '__default__' ? 'General' : g}</button>
-                {/each}
-              </div>
-            {/if}
-            <!-- Grid of param cards. Each card has label · slider · number
-                 inline. When group-tabs are active, only the params matching
-                 the selected group render. -->
-            <div class="pr-grid">
-              {#each Object.keys(activeTab.params).filter((k) => !showGroupTabs || (allDefs[k]?.group ?? '__default__') === activeGroup) as key (key)}
+            <!-- Param-group accordion. When the primitive's params declare a
+                 `group` field (e.g. box_conn → "Body" / "Cone"), each group
+                 renders as a collapsible accordion section. When ALL params
+                 share the same group (or no group is set), no headers render
+                 — a single flat grid. allDefs / groups / accordion are
+                 hoisted to the parent {#if} above (Svelte 5 requires
+                 {@const} as direct child of a block). -->
+            {#each groups as g (g)}
+              {@const groupKeys = Object.keys(activeTab.params).filter((k) => (allDefs[k]?.group ?? '__default__') === g)}
+              {@const collapsed = accordion && isParamGroupCollapsed(activeTab.id, g)}
+              {#if accordion}
+                <button
+                  class="pg-acc-head"
+                  class:collapsed
+                  type="button"
+                  onclick={() => toggleParamGroupCollapse(activeTab!.id, g)}
+                >
+                  <span class="pg-acc-chev">{collapsed ? '▸' : '▾'}</span>
+                  <span class="pg-acc-title">{g === '__default__' ? 'General' : g}</span>
+                  <span class="pg-acc-count">{groupKeys.length}</span>
+                </button>
+              {/if}
+              {#if !collapsed}
+              <!-- Grid of param cards. Each card has label · slider · number
+                   inline. -->
+              <div class="pr-grid">
+                {#each groupKeys as key (key)}
                 {@const def = paramDef(activeDef, key)}
                 {@const isExtra = !(key in activeDef.params)}
                 {@const tip = buildParamTip(key, def, isExtra)}
@@ -4383,8 +4452,10 @@ export const geom = defineGeom(meta, (p) => {
                     </div>
                   </div>
                 {/if}
-              {/each}
-            </div>
+                {/each}
+              </div>
+              {/if}
+            {/each}
           </div>
 
           {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry?.meta.derived}
@@ -4568,19 +4639,37 @@ export const geom = defineGeom(meta, (p) => {
                   {partsAddHelperOpen ? '− Hide catalog' : '+ Add primitive'}
                 </button>
                 {#if partsAddHelperOpen}
+                  {@const q = partsSearch.trim().toLowerCase()}
+                  {@const filteredHelpers = q
+                    ? availableHelpers.filter((h) => `${h.name} ${h.sig} ${h.desc}`.toLowerCase().includes(q))
+                    : availableHelpers}
+                  {@const filteredComponents = q
+                    ? availableComponents.filter((p) => `${p.meta.name} ${p.meta.id} ${p.meta.description ?? ''}`.toLowerCase().includes(q))
+                    : availableComponents}
                   <div class="parts-picker">
-                    {#each availableHelpers as h (`h:${h.name}`)}
+                    <input
+                      bind:this={partsSearchEl}
+                      bind:value={partsSearch}
+                      class="pf-in parts-picker-search"
+                      type="text"
+                      placeholder="Filter…"
+                      aria-label="Filter primitives"
+                    />
+                    {#each filteredHelpers as h (`h:${h.name}`)}
                       <button class="part-pick" type="button" title={h.desc} onclick={() => { insertHelperSnippet(h.name); partsAddHelperOpen = false; }}>
                         <span class="part-name">{h.name}</span>
                         <span class="part-sig">{h.sig}</span>
                       </button>
                     {/each}
-                    {#each availableComponents as p (`r:${p.meta.id}`)}
+                    {#each filteredComponents as p (`r:${p.meta.id}`)}
                       <button class="part-pick" type="button" title={`Compose ${p.meta.name}`} onclick={() => { insertRunesSnippet(p); partsAddHelperOpen = false; }}>
                         <span class="part-name">{p.meta.name}</span>
                         <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
                       </button>
                     {/each}
+                    {#if q && filteredHelpers.length + filteredComponents.length === 0}
+                      <div class="parts-picker-empty">No matches for "{partsSearch}"</div>
+                    {/if}
                   </div>
                 {/if}
               {/if}
@@ -5741,6 +5830,19 @@ export const geom = defineGeom(meta, (p) => {
     cursor: help;
   }
   .stage-stale-icon { font-size: 11px; }
+  /* GLB stage corner chip — mirrors .stage-stale chrome, neutral grey
+     palette since it's informational (the URL the GLB was served from)
+     rather than a warning. */
+  .stage-glb-hint {
+    position: absolute; bottom: 8px; left: 8px;
+    background: #f3f3f7; color: #555;
+    border: 1px solid #e2e2e8; border-radius: 4px;
+    padding: 3px 8px;
+    font: 10px Arial; line-height: 1.3;
+    z-index: 5;
+    pointer-events: auto;
+  }
+  .stage-glb-hint code { font: 10px ui-monospace, monospace; color: #333; }
   .stage-controls {
     display: flex; align-items: center; gap: 14px;
     margin: 8px 0 0;
@@ -6014,33 +6116,34 @@ export const geom = defineGeom(meta, (p) => {
     text-align: center;
   }
 
-  /* Group sub-tabs inside the Params section. One tab per `group` value
-     declared in the primitive's meta.params (e.g. box_conn → Body / Cone).
-     Click selects which group's params render in the grid below. */
-  .pg-tabs {
-    display: flex; gap: 2px;
-    border-bottom: 1px solid #d8d8e0;
-    margin: 4px 0 8px;
-    overflow-x: auto;
-  }
-  .pg-tab {
-    flex-shrink: 0;
-    background: transparent;
-    border: 1px solid transparent;
-    border-bottom: none;
+  /* Param-group accordion headers inside the Params section. One header
+     per `group` value declared in the primitive's meta.params (e.g.
+     box_conn → Body / Cone). Click toggles the group's grid open/closed. */
+  .pg-acc-head {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    background: #f3f3f7;
+    border: 1px solid #e2e2e8;
+    border-radius: 4px;
     cursor: pointer;
-    font: 11px Arial; color: #777;
-    padding: 4px 12px 5px;
-    border-radius: 4px 4px 0 0;
-    margin-bottom: -1px;
+    font: 11px Arial; color: #555;
+    padding: 5px 8px;
+    margin: 6px 0 4px;
+    text-align: left;
   }
-  .pg-tab:hover { color: #cc2222; background: #fafafa; }
-  .pg-tab.active {
+  .pg-acc-head:first-of-type { margin-top: 2px; }
+  .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
+  .pg-acc-head.collapsed { background: #fafafa; }
+  .pg-acc-chev { font-size: 9px; color: #999; width: 10px; flex-shrink: 0; }
+  .pg-acc-head:hover .pg-acc-chev { color: #cc2222; }
+  .pg-acc-title { font-weight: bold; flex: 1; }
+  .pg-acc-count {
+    font: 10px Arial; color: #888;
     background: #fff;
-    border-color: #d8d8e0;
-    border-bottom-color: #fff;
-    color: #cc2222;
-    font-weight: bold;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid #e2e2e8;
+    min-width: 16px;
+    text-align: center;
   }
   /* Derived param — read-only computed value, no slider. Tinted to read
      as "output", not "input". The spacer keeps the value visually
@@ -6350,6 +6453,15 @@ export const geom = defineGeom(meta, (p) => {
     display: flex; flex-direction: column; gap: 1px;
   }
   .part-pick:hover { background: #f1ecfb; border-color: #b8a8e0; }
+  /* Filter input pinned at the top of the picker grid — spans every
+     column so the search box always reads as a single bar regardless of
+     how many primitive cards fit per row. */
+  .parts-picker-search { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
+  .parts-picker-empty {
+    grid-column: 1 / -1;
+    font: 10px Arial; color: #888; font-style: italic;
+    padding: 4px 2px;
+  }
   /* Inspector popup — single panel with a tab strip across the top.
      Replaces the previous separate Params + Script popups so only one
      floating panel is visible per tab. */
