@@ -20,8 +20,19 @@ import Module from 'manifold-3d';
 export const CIRCULAR_SEGMENTS_DEFAULT = 256;
 export const CIRCULAR_SEGMENTS_COMPOSE = 96;
 
-let wasm: any = null;
-export let M: any = null;
+// Global WASM/Module singleton — Vite SSR + the bundle's
+// `import.meta.glob` for `src/lib/cad/components/*.ts` can produce
+// SEPARATE module instances of this file at runtime. Each instance has
+// its OWN `wasm` / `M` module-level binding, so a Manifold built in one
+// instance has a different prototype chain than a Manifold built in the
+// other → `A.union(B)` throws "union is not a function" with both
+// constructors named "Manifold". Stash the wasm + M on globalThis so
+// every duplicate manifold-helpers module reads the same heap.
+const G = globalThis as any;
+G.__cadtrain_manifold__ ??= { wasm: null, M: null };
+
+let wasm: any = G.__cadtrain_manifold__.wasm;
+export let M: any = G.__cadtrain_manifold__.M;
 let currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
 
 export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
@@ -30,7 +41,14 @@ export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
 }
 
 export async function initManifold() {
-  if (wasm) return;
+  // If another module instance already initialised the wasm, pull its
+  // wasm + M into our bindings and we're done.
+  if (G.__cadtrain_manifold__.wasm) {
+    wasm = G.__cadtrain_manifold__.wasm;
+    M = G.__cadtrain_manifold__.M;
+    wasm.setCircularSegments(currentSegments);
+    return;
+  }
   wasm = await Module();
   wasm.setup();
   M = wasm.Manifold;
@@ -42,6 +60,10 @@ export async function initManifold() {
     M.prototype.add = function (this: any, other: any) { return this.union(other); };
   }
   wasm.setCircularSegments(currentSegments);
+  // Publish so any duplicate manifold-helpers module instance picks up
+  // the same wasm + M next time initManifold() runs there.
+  G.__cadtrain_manifold__.wasm = wasm;
+  G.__cadtrain_manifold__.M = M;
 }
 
 /** @part Empty seed — a zero-volume Manifold suitable as the initial
