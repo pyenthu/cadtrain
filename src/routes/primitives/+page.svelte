@@ -401,6 +401,11 @@
   let formulaEditX = $state<number>(80);
   let formulaEditY = $state<number>(80);
 
+  /** Coords for the per-section "Add property" popup. Anchored to the
+   *  round-red `+` in the Properties accordion header. */
+  let paramFormX = $state<number>(80);
+  let paramFormY = $state<number>(80);
+
   /** Compute the identifier the user is currently typing — the
    *  contiguous run of `[A-Za-z0-9._]` ending at the caret. Returns the
    *  empty string when the caret sits after whitespace or punctuation. */
@@ -2930,7 +2935,7 @@ export const geom = defineGeom(meta, (p, geom) => {
   // immediately) AND spliced into the tab's sourceDraft (the .ts source
   // shown in the Svelte tab editor) so the user can review + save to disk.
   // The save flow is the same one the editor already uses.
-  function openParamForm(tab: Tab) {
+  function openParamForm(tab: Tab, ev?: MouseEvent) {
     tab.paramForm = {
       open: true,
       name: '',
@@ -2943,6 +2948,13 @@ export const geom = defineGeom(meta, (p, geom) => {
       label: '',
       error: '',
     };
+    // Anchor the FloatingPanel next to the round-red `+` that opened it.
+    const btn = ev?.currentTarget as HTMLElement | undefined;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      paramFormX = Math.round(r.right + 6);
+      paramFormY = Math.round(r.top - 4);
+    }
   }
   function closeParamForm(tab: Tab) {
     if (tab.paramForm) tab.paramForm.open = false;
@@ -4356,6 +4368,57 @@ export const geom = defineGeom(meta, (p, geom) => {
     </FloatingPanel>
   {/if}
 
+  <!-- Add-property popup — anchored to the round-red `+` on the
+       Properties accordion header. Same SVTC-style FloatingPanel as
+       the per-param ✎ + per-arg ƒ popups. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && activeTab.paramForm?.open}
+    {@const f = activeTab.paramForm}
+    <FloatingPanel
+      title="Add property"
+      visible={true}
+      onClose={() => closeParamForm(activeTab!)}
+      x={paramFormX}
+      y={paramFormY}
+      width="380px"
+      maxHeight="70vh"
+    >
+      {#snippet children()}
+        <div class="pe-body" use:clickOutside={() => activeTab && closeParamForm(activeTab)}>
+          <div class="pf-row">
+            <label>Name<input class="pf-in" type="text" placeholder="e.g. threadCount" bind:value={f.name} /></label>
+            <label>Label<input class="pf-in" type="text" placeholder="display label" bind:value={f.label} /></label>
+          </div>
+          <div class="pf-row">
+            <label>Type
+              <select class="pf-in" bind:value={f.type}>
+                <option value="numeric">numeric</option>
+                <option value="shape">shape (round / flat)</option>
+                <option value="thread">thread (API / NPT / …)</option>
+                <option value="custom">custom</option>
+              </select>
+            </label>
+            <label>Unit<input class="pf-in" type="text" placeholder="in, mm, lb…" bind:value={f.unit} /></label>
+            <label>Default<input class="pf-in" type="number" bind:value={f.defaultValue} /></label>
+          </div>
+          {#if f.type === 'numeric'}
+            <div class="pf-row">
+              <label>Min<input class="pf-in" type="number" bind:value={f.min} /></label>
+              <label>Max<input class="pf-in" type="number" bind:value={f.max} /></label>
+              <label>Step<input class="pf-in" type="number" bind:value={f.step} /></label>
+            </div>
+          {:else}
+            <p class="pf-note">Non-numeric types are stored as metadata for now; their default value still drives the slider until type-specific controls land.</p>
+          {/if}
+          {#if f.error}<p class="pf-err">{f.error}</p>{/if}
+          <div class="pf-actions">
+            <button class="save-btn" type="button" onclick={() => submitParamForm(activeTab!)}>Add</button>
+            <button class="discard-btn" type="button" onclick={() => closeParamForm(activeTab!)}>Cancel</button>
+          </div>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
   <!-- Drag handle — sits between the sidebar and the rest of the layout.
        Mousedown anywhere on it starts a drag that resizes the sidebar. -->
   <div
@@ -4897,42 +4960,8 @@ export const geom = defineGeom(meta, (p, geom) => {
               </div>
             {/if}
 
-            {#if activeTab.paramForm?.open}
-              {@const f = activeTab.paramForm}
-              <div class="param-form">
-                <div class="pf-row">
-                  <label>Name<input class="pf-in" type="text" placeholder="e.g. threadCount" bind:value={f.name} /></label>
-                  <label>Label<input class="pf-in" type="text" placeholder="display label" bind:value={f.label} /></label>
-                </div>
-                <div class="pf-row">
-                  <label>Type
-                    <select class="pf-in" bind:value={f.type}>
-                      <option value="numeric">numeric</option>
-                      <option value="shape">shape (round / flat)</option>
-                      <option value="thread">thread (API / NPT / …)</option>
-                      <option value="custom">custom</option>
-                    </select>
-                  </label>
-                  <label>Unit<input class="pf-in" type="text" placeholder="in, mm, lb…" bind:value={f.unit} /></label>
-                  <label>Default<input class="pf-in" type="number" bind:value={f.defaultValue} /></label>
-                </div>
-                {#if f.type === 'numeric'}
-                  <div class="pf-row">
-                    <label>Min<input class="pf-in" type="number" bind:value={f.min} /></label>
-                    <label>Max<input class="pf-in" type="number" bind:value={f.max} /></label>
-                    <label>Step<input class="pf-in" type="number" bind:value={f.step} /></label>
-                  </div>
-                {:else}
-                  <p class="pf-note">Non-numeric types are stored as metadata for now; their default value still drives the slider until type-specific controls land.</p>
-                {/if}
-                {#if f.error}<p class="pf-err">{f.error}</p>{/if}
-                <div class="pf-actions">
-                  <button class="save-btn" type="button" onclick={() => submitParamForm(activeTab!)}>Add</button>
-                  <button class="discard-btn" type="button" onclick={() => closeParamForm(activeTab!)}>Cancel</button>
-                  <span class="pf-hint">Adds to this tab and to the source draft. Save in the Svelte tab to persist.</span>
-                </div>
-              </div>
-            {/if}
+            <!-- Add-property form moved out of the inspector body into a
+                 FloatingPanel anchored to the round-red `+` (see below). -->
             <!-- Param-group accordion. When the primitive's params declare a
                  `group` field (e.g. box_conn → "Body" / "Cone"), each group
                  renders as a collapsible accordion section. When ALL params
@@ -4969,7 +4998,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       type="button"
                       title="Add a property"
                       aria-label="Add a property"
-                      onclick={(e) => { e.stopPropagation(); openParamForm(activeTab!); }}
+                      onclick={(e) => { e.stopPropagation(); openParamForm(activeTab!, e); }}
                     >+</button>
                   {:else if !g.instance}
                     <span class="pg-acc-count">{groupKeys.length}</span>
