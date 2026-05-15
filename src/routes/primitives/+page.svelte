@@ -4790,14 +4790,9 @@ export const geom = defineGeom(meta, (p, geom) => {
         width="min(816px, calc(100% - 80px))"
         maxHeight="calc(100% - 16px)"
       >
-        <!-- Tags pinned above the tab strip — always visible regardless of
-             which inspector tab is active, so the primitive's classification
-             stays in view while editing params / source / docs. -->
-        {#if activeDef.tags?.length}
-          <div class="insp-tags">
-            {#each activeDef.tags as t}<span class="tag">{t}</span>{/each}
-          </div>
-        {/if}
+        <!-- Tags row removed — was decorative chrome that ate vertical
+             space above the tab strip. Classification is still
+             accessible via the AI tab's metadata view. -->
 
         <div class="insp-tabs">
           {#if activeTab.kind === 'xml-primitive'}
