@@ -6676,7 +6676,7 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .ed-sec.compact { gap: 0; margin-bottom: 6px; }
   .ed-sec-h.thin { font-size: 11px; padding: 2px 0; gap: 6px; align-items: center; }
-  .ed-sec.compact .pr-grid { gap: 3px 6px; padding: 2px 0 0; }
+  .ed-sec.compact .pr-grid { gap: 2px; padding: 2px 0 0; }
   /* Per-row ✎ edit button — matches the × visually (same size + border
      pattern) so the two affordances read as a pair. */
   .row-edit {
