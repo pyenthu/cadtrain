@@ -319,6 +319,7 @@
       label: string;
       desc: string;
       unit: string;
+      group: string;        // which part-accordion bar to nest under
       defaultStr: string;
       minStr: string;
       maxStr: string;
@@ -2804,6 +2805,7 @@ export const geom = defineGeom(meta, (p) => {
       label: schema?.label ?? '',
       desc: schema?.description ?? '',
       unit: schema?.unit ?? '',
+      group: schema?.group ?? '',
       defaultStr: String(schema?.default ?? ''),
       minStr: String(schema?.min ?? ''),
       maxStr: String(schema?.max ?? ''),
@@ -2867,11 +2869,14 @@ export const geom = defineGeom(meta, (p) => {
       }
       src = next;
     }
-    // String fields.
-    const stringFields: Array<{ field: 'label' | 'unit' | 'description'; val: string }> = [
+    // String fields. Empty `group` strips the field entirely (param
+    // returns to the General accordion); a non-empty value puts it
+    // under the matching part bar.
+    const stringFields: Array<{ field: 'label' | 'unit' | 'description' | 'group'; val: string }> = [
       { field: 'label',       val: pe.label },
       { field: 'unit',        val: pe.unit },
       { field: 'description', val: pe.desc },
+      { field: 'group',       val: pe.group },
     ];
     for (const { field, val } of stringFields) {
       const next = setParamField(src, finalKey, field, val);
@@ -4668,6 +4673,23 @@ export const geom = defineGeom(meta, (p) => {
                         value={pe.desc}
                         oninput={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.desc = (e.currentTarget as HTMLInputElement).value; }}
                       />
+                    </label>
+                    <!-- Part selector — drives which accordion bar this
+                         param nests under. Sets schema.group; empty
+                         string strips the field (param returns to
+                         General). Options drawn from partGroups so only
+                         currently-imported parts appear. -->
+                    <label class="pr-edit-lbl pr-edit-desc-row">Part
+                      <select
+                        class="pf-in"
+                        value={pe.group}
+                        onchange={(e) => { if (activeTab?.paramEdit) activeTab.paramEdit.group = (e.currentTarget as HTMLSelectElement).value; }}
+                      >
+                        <option value="">(General — no part)</option>
+                        {#each partGroups as p (p.key)}
+                          <option value={p.name}>{p.name}</option>
+                        {/each}
+                      </select>
                     </label>
                     {#if pe.error}<p class="pf-err">{pe.error}</p>{/if}
                     <div class="pf-actions">
