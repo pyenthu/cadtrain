@@ -188,4 +188,47 @@ test.describe.serial('components primitives — API + create flow', () => {
     expect(typeof stub.params).toBe('object');
     expect(Object.keys(stub.params).length).toBe(0);
   });
+
+  test('inline-preview composes two bundled siblings (GeomAcc + static M.union)', async ({ request }) => {
+    // Exercise the bug we just fixed: a NEW-style (p, geom) => body
+    // that imports TWO bundle primitives and calls geom.add on each.
+    // Single-add worked via the lazy-init early-return; the two-add
+    // case is the one that previously threw
+    // "GeomAcc.add: current accumulator value lacks a .union method".
+    //
+    // We POST inline source to /api/components/geom — this is the
+    // exact path the inspector's Apply button uses. Success = the
+    // endpoint returns serialized full + cutVC mesh JSON.
+    const inlineSource = `
+import { geom as hollowCylinderGeom } from './hollow_cylinder';
+import { geom as taperedConeGeom } from './tapered_cone';
+import { defineGeom } from '.';
+
+export const meta = {
+  id: 'two_part_compose_test',
+  name: 'Two-Part Compose Test',
+  description: '',
+  tags: [],
+  params: {},
+} as const;
+
+export const geom = defineGeom(meta, (_p, geom) => {
+  const A = hollowCylinderGeom({ od: 2.875, wall: 0.375, length: 1 });
+  geom.add(A);
+  const B = taperedConeGeom({ od: 2.875, odTop: 3.5, wall: 0.29, length: 1 });
+  geom.add(B);
+});
+`;
+    const r = await request.post('/api/components/geom', {
+      data: {
+        id: 'two_part_compose_test',
+        params: {},
+        source: inlineSource,
+      },
+    });
+    expect(r.status(), `geom 500/400 means union path is still broken; body: ${await r.text().catch(() => '?')}`).toBe(200);
+    const body = await r.json();
+    expect(body.full, 'full mesh present').toBeTruthy();
+    expect(body.full.positions?.length, 'positions are non-empty').toBeGreaterThan(0);
+  });
 });

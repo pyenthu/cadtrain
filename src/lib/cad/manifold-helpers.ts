@@ -78,13 +78,6 @@ export async function initManifold() {
   const wasm = await Module();
   wasm.setup();
   const m = wasm.Manifold;
-  // Sugar alias: `geom.add(part)` reads more naturally than
-  // `geom.union(part)` in the parts-tab snippet output. Same semantics —
-  // boolean union. Idempotent — only patches if .add isn't already a
-  // method (future Manifold versions may add their own).
-  if (m?.prototype && !m.prototype.add) {
-    m.prototype.add = function (this: any, other: any) { return this.union(other); };
-  }
   wasm.setCircularSegments(currentSegments);
   // Publish — every other manifold-helpers instance's M Proxy now
   // resolves through this shared singleton.
@@ -112,33 +105,18 @@ export function empty(): any {
 export class GeomAcc {
   current: any = null;
   add(part: any): this {
-    if (this.current) {
-      if (typeof this.current.union !== 'function') {
-        throw new Error(
-          `GeomAcc.add: current accumulator value lacks a .union method ` +
-            `(got ${typeof this.current}${this.current?.constructor?.name ? ` ${this.current.constructor.name}` : ''}). ` +
-            `Likely an earlier add() received something that isn't a Manifold — ` +
-            `make sure the imported component's geom() returns a Manifold (not undefined, not the accumulator itself).`,
-        );
-      }
-      this.current = this.current.union(part);
-    } else {
-      this.current = part;
-    }
+    // `union` is a STATIC method on Manifold (`M.union(a, b)`), not an
+    // instance method — so we always go through the class, never call
+    // `this.current.union(part)`. The first add just assigns (no boolean
+    // op needed yet); every subsequent add unions via the class.
+    if (this.current) this.current = M.union(this.current, part);
+    else this.current = part;
     return this;
   }
   subtract(part: any): this {
-    if (!this.current) {
-      // Subtracting from nothing yields nothing — keep current null so
-      // the next add() seeds from a real part.
-      return this;
-    }
-    if (typeof this.current.subtract !== 'function') {
-      throw new Error(
-        `GeomAcc.subtract: current accumulator value lacks a .subtract method ` +
-          `(got ${typeof this.current}${this.current?.constructor?.name ? ` ${this.current.constructor.name}` : ''}).`,
-      );
-    }
+    if (!this.current) return this;
+    // `subtract` IS an instance method on Manifold (`a.subtract(b)`),
+    // so use it directly.
     this.current = this.current.subtract(part);
     return this;
   }
