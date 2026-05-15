@@ -11,13 +11,21 @@ export const meta = {
     wall: { label: 'Wall', min: 0.1, max: 1, step: 0.05, unit: 'in', default: 0.3 },
     length: { label: 'Length', min: 0.5, max: 6, step: 0.1, unit: 'in', default: 2.0 },
     threadCount: { label: 'Threads', min: 2, max: 40, step: 1, unit: '', default: 10 },
-    threadDepth: { label: 'Thread Depth', min: 0.02, max: 0.15, step: 0.01, unit: 'in', default: 0.06 },
+    threadDepth: {
+      label: 'Thread Depth',
+      min: 0.02,
+      max: 0.15,
+      step: 0.01,
+      unit: 'in',
+      default: 0.06,
+    },
     taper: { label: 'Taper (per length)', min: 0, max: 0.2, step: 0.005, unit: '', default: 0 },
   },
 } as const;
 
 export const geom = defineGeom(meta, (p) => {
   const taper = p.taper ?? 0;
+
   const id = p.od - 2 * p.wall;
   const rStart = p.od / 2;
   const rEnd = p.od / 2 - taper * p.length;
