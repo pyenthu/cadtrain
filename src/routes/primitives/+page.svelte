@@ -267,6 +267,12 @@
      *  sourceDraft, so without this trigger the canvas wouldn't refresh
      *  until disk save. */
     appliedAt?: number;
+    /** Snapshot of the source most recently sent to the canvas via
+     *  Apply (or the disk source after a discard). Used to hide the
+     *  Apply button until the user makes a NEW change since the last
+     *  Apply — `applyDirty = sourceDraft != null && sourceDraft !==
+     *  lastAppliedSource`. */
+    lastAppliedSource?: string | null;
     /** Save status for the Svelte source editor. UI-only feedback. */
     saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
     /** Last save error message (when saveStatus === 'error'). */
@@ -2210,9 +2216,13 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  disk. Bumps `appliedAt` on the active tab — the build $effect
    *  re-fetches geometry from /api/components/geom with `source:
    *  sourceDraft` so the user sees the change live. The Save button
-   *  (separate) writes the same source to disk + rebakes the GLB. */
+   *  (separate) writes the same source to disk + rebakes the GLB.
+   *
+   *  Snapshots sourceDraft into `lastAppliedSource` so the Apply
+   *  button hides until the user makes a fresh change. */
   function applyDraft(tab: Tab) {
     if (!tab.sourceDraft) return;
+    tab.lastAppliedSource = tab.sourceDraft;
     tab.appliedAt = Date.now();
   }
 
@@ -2691,6 +2701,7 @@ export const geom = defineGeom(meta, (p, geom) => {
       }
       tab.saveStatus = 'saved';
       tab.sourceDraft = null;
+      tab.lastAppliedSource = null;
       // Re-fetch the registry so the in-memory tab entry matches disk.
       await refreshRunesList();
       const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
@@ -2713,6 +2724,8 @@ export const geom = defineGeom(meta, (p, geom) => {
 
   function discardRunesDraft(tab: Tab) {
     tab.sourceDraft = null;
+    tab.lastAppliedSource = null;
+    tab.appliedAt = Date.now(); // force a rebuild from disk source
     tab.saveStatus = 'idle';
     tab.saveError = undefined;
   }
@@ -5566,6 +5579,7 @@ export const geom = defineGeom(meta, (p, geom) => {
         {/if}
 
         {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
+        {@const applyDirty = activeTab.kind === 'xml-primitive' && activeTab.sourceDraft != null && activeTab.sourceDraft !== (activeTab.lastAppliedSource ?? null)}
         {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
         {#if srcDirty || pDirty}
           <!-- Global save bar — visible on EVERY inspector tab the moment
@@ -5575,11 +5589,13 @@ export const geom = defineGeom(meta, (p, geom) => {
                renaming a param, AND dragging sliders all surface this
                affordance without forcing a tab switch. -->
           <div class="save-row global-save">
-            {#if srcDirty}
+            {#if applyDirty}
               <!-- Apply — round-trips the in-flight sourceDraft to
                    /api/components/geom (with `source:` inline) and
-                   updates the canvas WITHOUT touching disk. Save to
-                   disk does both: writes the file and re-bakes the GLB. -->
+                   updates the canvas WITHOUT touching disk. Hides
+                   once the current draft has been applied; reappears
+                   on the next change. Save to disk does both: writes
+                   the file and re-bakes the GLB. -->
               <button
                 class="save-btn apply-btn"
                 type="button"
