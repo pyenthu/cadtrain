@@ -3115,11 +3115,20 @@ export const geom = defineGeom(meta, (p, geom) => {
       label: '',
       error: '',
     };
-    // Anchor the FloatingPanel next to the round-red `+` that opened it.
+    // Anchor the FloatingPanel next to the round-red `+` that opened
+    // it — prefer right of the button, but flip to the left when it
+    // would overflow the viewport (Properties section sits on the
+    // right inspector, so right-anchor goes off-screen).
     const btn = ev?.currentTarget as HTMLElement | undefined;
     if (btn) {
       const r = btn.getBoundingClientRect();
-      paramFormX = Math.round(r.right + 6);
+      const popupW = 380; // matches the FloatingPanel width attr below
+      const gap = 6;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const wouldOverflow = r.right + gap + popupW > vw - 8;
+      paramFormX = wouldOverflow
+        ? Math.max(8, Math.round(r.left - gap - popupW))
+        : Math.round(r.right + gap);
       paramFormY = Math.round(r.top - 4);
     }
   }
@@ -3173,11 +3182,18 @@ export const geom = defineGeom(meta, (p, geom) => {
       maxStr: String(schema?.max ?? ''),
       stepStr: String(schema?.step ?? ''),
     };
-    // Anchor the FloatingPanel next to the clicked ✎ button.
+    // Anchor next to the ✎ button — flip to the left of the button
+    // when the right-side anchor would push the popup off-screen.
     const btn = ev?.currentTarget as HTMLElement | undefined;
     if (btn) {
       const r = btn.getBoundingClientRect();
-      paramEditX = Math.round(r.right + 6);
+      const popupW = 380;
+      const gap = 6;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const wouldOverflow = r.right + gap + popupW > vw - 8;
+      paramEditX = wouldOverflow
+        ? Math.max(8, Math.round(r.left - gap - popupW))
+        : Math.round(r.right + gap);
       paramEditY = Math.round(r.top - 4);
     }
   }
@@ -3213,7 +3229,13 @@ export const geom = defineGeom(meta, (p, geom) => {
     const btn = ev?.currentTarget as HTMLElement | undefined;
     if (btn) {
       const r = btn.getBoundingClientRect();
-      formulaEditX = Math.round(r.right + 6);
+      const popupW = 320; // matches the formula FloatingPanel width
+      const gap = 6;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const wouldOverflow = r.right + gap + popupW > vw - 8;
+      formulaEditX = wouldOverflow
+        ? Math.max(8, Math.round(r.left - gap - popupW))
+        : Math.round(r.right + gap);
       formulaEditY = Math.round(r.top - 4);
     }
   }
