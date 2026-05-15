@@ -4398,8 +4398,30 @@ export const geom = defineGeom(meta, (p) => {
 
         {#if (inspectorTab === 'params' && isParamTab && activeTab.kind !== 'xml-primitive') || (inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry)}
           {@const allDefs = (activeTab.componentEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
-          {@const groups = paramGroupsOf(allDefs)}
-          {@const accordion = groups.length > 1}
+          <!-- xml-primitive: groups = the in-use HELPERS + COMPOSED COMPONENTS;
+               each is one accordion bar, content = params whose `group` field
+               matches the part name (case-insensitive). Params with no
+               matching part collapse into a trailing General section.
+               Legacy primitives keep the simple param-group derivation
+               (group field clustering) since they have no parts axis. -->
+          {@const isXml = activeTab.kind === 'xml-primitive' && !!activeTab.componentEntry}
+          {@const curSrc = isXml ? (activeTab.sourceDraft ?? activeTab.componentEntry!.source) : ''}
+          {@const imported = isXml ? importedFromSource(curSrc) : { helpers: new Set<string>(), components: new Set<string>() }}
+          {@const partGroups = isXml ? [
+            ...HELPERS.filter((h) => imported.helpers.has(h.name)).map((h) => ({ key: h.name.toLowerCase(), name: h.name, sig: h.sig, removeKind: 'helper' as const, removeId: h.name })),
+            ...componentList.filter((r) => imported.components.has(r.meta.id)).map((p) => ({ key: p.meta.name.toLowerCase(), name: p.meta.name, sig: `geom(${Object.keys(p.meta.params).join(', ')})`, removeKind: 'component' as const, removeId: p.meta.id })),
+          ] : []}
+          {@const paramKeys = Object.keys(activeTab.params)}
+          {@const matchedSet = new Set(partGroups.map((p) => p.key))}
+          {@const orphanKeys = paramKeys.filter((k) => !matchedSet.has((allDefs[k]?.group ?? '').toLowerCase()))}
+          {@const useParts = isXml && partGroups.length > 0}
+          {@const groups = useParts
+            ? [
+                ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId })),
+                ...(orphanKeys.length > 0 ? [{ key: '__general__', name: 'General', sig: '', removeKind: null as null, removeId: '' }] : []),
+              ]
+            : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'General' : g, sig: '', removeKind: null as null, removeId: '' }))}
+          {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
             <div class="ed-sec-h thin">
               <span class="muted">{Object.keys(activeTab.params).length}</span>
@@ -4481,24 +4503,52 @@ export const geom = defineGeom(meta, (p) => {
                  — a single flat grid. allDefs / groups / accordion are
                  hoisted to the parent {#if} above (Svelte 5 requires
                  {@const} as direct child of a block). -->
-            {#each groups as g (g)}
-              {@const groupKeys = Object.keys(activeTab.params).filter((k) => (allDefs[k]?.group ?? '__default__') === g)}
-              {@const collapsed = accordion && isParamGroupCollapsed(activeTab.id, g)}
+            {#each groups as g (g.key)}
+              {@const groupKeys = useParts
+                ? (g.key === '__general__'
+                    ? orphanKeys
+                    : paramKeys.filter((k) => (allDefs[k]?.group ?? '').toLowerCase() === g.key))
+                : paramKeys.filter((k) => (allDefs[k]?.group ?? '__default__') === g.key)}
+              {@const collapsed = accordion && isParamGroupCollapsed(activeTab.id, g.key)}
               {#if accordion}
                 <button
                   class="pg-acc-head"
                   class:collapsed
                   type="button"
-                  onclick={() => toggleParamGroupCollapse(activeTab!.id, g)}
+                  onclick={() => toggleParamGroupCollapse(activeTab!.id, g.key)}
                 >
                   <span class="pg-acc-chev">{collapsed ? '▸' : '▾'}</span>
-                  <span class="pg-acc-title">{g === '__default__' ? 'General' : g}</span>
+                  <span class="pg-acc-title">{g.name}</span>
+                  {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   <span class="pg-acc-count">{groupKeys.length}</span>
+                  {#if g.removeKind === 'helper'}
+                    <button
+                      class="pg-acc-x"
+                      type="button"
+                      title={`Remove ${g.name}`}
+                      aria-label={`Remove ${g.name}`}
+                      onclick={(e) => { e.stopPropagation(); removeHelper(g.removeId); }}
+                    >×</button>
+                  {:else if g.removeKind === 'component'}
+                    <button
+                      class="pg-acc-x"
+                      type="button"
+                      title={`Remove ${g.name}`}
+                      aria-label={`Remove ${g.name}`}
+                      onclick={(e) => { e.stopPropagation(); removeRunes(g.removeId); }}
+                    >×</button>
+                  {/if}
                 </button>
               {/if}
               {#if !collapsed}
               <!-- Grid of param cards. Each card has label · slider · number
-                   inline. -->
+                   inline. Empty hint when a part has no params bound via
+                   the `group` field. -->
+              {#if groupKeys.length === 0 && useParts && g.key !== '__general__'}
+                <div class="pg-acc-empty">
+                  No params bound to <code>{g.name}</code>. Add <code>group: '{g.name}'</code> to a param schema to show it here.
+                </div>
+              {/if}
               <div class="pr-grid">
                 {#each groupKeys as key (key)}
                 {@const def = paramDef(activeDef, key)}
@@ -4660,84 +4710,56 @@ export const geom = defineGeom(meta, (p) => {
                Parts tab content before the merge). Sits below the param
                accordion so the slider grid is the dominant surface — the
                imports list and Add button are secondary chrome. -->
+          <!-- "+ Add primitive" picker. Each used part is already visible
+               above as an accordion bar with its own × remove button, so
+               the duplicate in-use list is gone — only the add affordance
+               remains here. -->
           {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
-            {@const selfId = activeTab.componentEntry.meta.id}
-            {@const curSrc = activeTab.sourceDraft ?? activeTab.componentEntry.source}
-            {@const imported = importedFromSource(curSrc)}
-            {@const usedHelpers = HELPERS.filter((h) => imported.helpers.has(h.name))}
-            {@const usedComponents = componentList.filter((r) => imported.components.has(r.meta.id))}
+            {@const selfId2 = activeTab.componentEntry.meta.id}
             {@const availableHelpers = HELPERS.filter((h) => !imported.helpers.has(h.name))}
-            {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId && !imported.components.has(r.meta.id))}
-            {@const usedCount = usedHelpers.length + usedComponents.length}
+            {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId2 && !imported.components.has(r.meta.id))}
             {@const availableCount = availableHelpers.length + availableComponents.length}
-            <div class="parts-pane">
-              <div class="parts-group">
-                <div class="parts-h thin">
-                  <span class="muted">in use · {usedCount}</span>
-                </div>
-                {#if usedCount === 0}
-                  <div class="parts-empty">No primitives imported yet.</div>
-                {:else}
-                  <div class="parts-grid">
-                    {#each usedHelpers as h (`h:${h.name}`)}
-                      <div class="part-card used" title={h.desc}>
-                        <button class="part-x" type="button" aria-label={`Remove ${h.name}`} title={`Remove ${h.name}`} onclick={() => removeHelper(h.name)}>×</button>
+            {#if availableCount > 0}
+              <div class="parts-pane parts-add-only">
+                <button class="parts-add-btn" type="button" onclick={() => (partsAddHelperOpen = !partsAddHelperOpen)}>
+                  {partsAddHelperOpen ? '− Hide catalog' : '+ Add primitive'}
+                </button>
+                {#if partsAddHelperOpen}
+                  {@const q = partsSearch.trim().toLowerCase()}
+                  {@const filteredHelpers = q
+                    ? availableHelpers.filter((h) => `${h.name} ${h.sig} ${h.desc}`.toLowerCase().includes(q))
+                    : availableHelpers}
+                  {@const filteredComponents = q
+                    ? availableComponents.filter((p) => `${p.meta.name} ${p.meta.id} ${p.meta.description ?? ''}`.toLowerCase().includes(q))
+                    : availableComponents}
+                  <div class="parts-picker">
+                    <input
+                      bind:this={partsSearchEl}
+                      bind:value={partsSearch}
+                      class="pf-in parts-picker-search"
+                      type="text"
+                      placeholder="Filter…"
+                      aria-label="Filter primitives"
+                    />
+                    {#each filteredHelpers as h (`h:${h.name}`)}
+                      <button class="part-pick" type="button" title={h.desc} onclick={() => { insertHelperSnippet(h.name); partsAddHelperOpen = false; }}>
                         <span class="part-name">{h.name}</span>
                         <span class="part-sig">{h.sig}</span>
-                        <span class="part-desc">{h.desc}</span>
-                      </div>
+                      </button>
                     {/each}
-                    {#each usedComponents as p (`r:${p.meta.id}`)}
-                      <div class="part-card used" title={`Composed: ${p.meta.name}`}>
-                        <button class="part-x" type="button" aria-label={`Remove ${p.meta.name}`} title={`Remove ${p.meta.name}`} onclick={() => removeRunes(p.meta.id)}>×</button>
+                    {#each filteredComponents as p (`r:${p.meta.id}`)}
+                      <button class="part-pick" type="button" title={`Compose ${p.meta.name}`} onclick={() => { insertRunesSnippet(p); partsAddHelperOpen = false; }}>
                         <span class="part-name">{p.meta.name}</span>
                         <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
-                        <span class="part-desc">{p.meta.description ?? ''}</span>
-                      </div>
+                      </button>
                     {/each}
+                    {#if q && filteredHelpers.length + filteredComponents.length === 0}
+                      <div class="parts-picker-empty">No matches for "{partsSearch}"</div>
+                    {/if}
                   </div>
                 {/if}
-                {#if availableCount > 0}
-                  <button class="parts-add-btn" type="button" onclick={() => (partsAddHelperOpen = !partsAddHelperOpen)}>
-                    {partsAddHelperOpen ? '− Hide catalog' : '+ Add primitive'}
-                  </button>
-                  {#if partsAddHelperOpen}
-                    {@const q = partsSearch.trim().toLowerCase()}
-                    {@const filteredHelpers = q
-                      ? availableHelpers.filter((h) => `${h.name} ${h.sig} ${h.desc}`.toLowerCase().includes(q))
-                      : availableHelpers}
-                    {@const filteredComponents = q
-                      ? availableComponents.filter((p) => `${p.meta.name} ${p.meta.id} ${p.meta.description ?? ''}`.toLowerCase().includes(q))
-                      : availableComponents}
-                    <div class="parts-picker">
-                      <input
-                        bind:this={partsSearchEl}
-                        bind:value={partsSearch}
-                        class="pf-in parts-picker-search"
-                        type="text"
-                        placeholder="Filter…"
-                        aria-label="Filter primitives"
-                      />
-                      {#each filteredHelpers as h (`h:${h.name}`)}
-                        <button class="part-pick" type="button" title={h.desc} onclick={() => { insertHelperSnippet(h.name); partsAddHelperOpen = false; }}>
-                          <span class="part-name">{h.name}</span>
-                          <span class="part-sig">{h.sig}</span>
-                        </button>
-                      {/each}
-                      {#each filteredComponents as p (`r:${p.meta.id}`)}
-                        <button class="part-pick" type="button" title={`Compose ${p.meta.name}`} onclick={() => { insertRunesSnippet(p); partsAddHelperOpen = false; }}>
-                          <span class="part-name">{p.meta.name}</span>
-                          <span class="part-sig">geom({Object.keys(p.meta.params).join(', ')})</span>
-                        </button>
-                      {/each}
-                      {#if q && filteredHelpers.length + filteredComponents.length === 0}
-                        <div class="parts-picker-empty">No matches for "{partsSearch}"</div>
-                      {/if}
-                    </div>
-                  {/if}
-                {/if}
               </div>
-            </div>
+            {/if}
           {/if}
 
         {:else if inspectorTab === 'svelte' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
@@ -6325,6 +6347,32 @@ export const geom = defineGeom(meta, (p) => {
     min-width: 16px;
     text-align: center;
   }
+  .pg-acc-sig {
+    font: 10px ui-monospace, monospace; color: #888;
+    flex: 0 1 auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 50%;
+  }
+  .pg-acc-x {
+    width: 16px; height: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: #888;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    font: 12px Arial; line-height: 1;
+    flex-shrink: 0;
+  }
+  .pg-acc-x:hover { color: #cc2222; border-color: #f0c8c8; background: #fff; }
+  .pg-acc-empty {
+    font: 10px Arial; color: #888; font-style: italic;
+    padding: 6px 8px;
+    background: #fafafa;
+    border: 1px dashed #e2e2e8;
+    border-radius: 3px;
+    margin: 2px 0 4px;
+  }
+  .pg-acc-empty code { font: 10px ui-monospace, monospace; color: #555; background: #fff; padding: 0 3px; border-radius: 2px; }
   /* Derived param — read-only computed value, no slider. Tinted to read
      as "output", not "input". The spacer keeps the value visually
      aligned with the number column of the input cards above. */

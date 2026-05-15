@@ -30,5 +30,6 @@ export const geom = defineGeom(meta, (p) => {
     hSlot = hSlot.rotate([0, 0, angle]);
     body = body.subtract(hSlot);
   }
+
   return body;
 });
