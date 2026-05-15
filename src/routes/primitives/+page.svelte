@@ -4240,7 +4240,13 @@ export const geom = defineGeom(meta, (p) => {
             <div class="stage-3d">
               {#if SceneGlbComponent}
                 {@const GlbScene = SceneGlbComponent}
-                {@const glbUrl = `/components/${activeDef.id}.glb`}
+                <!-- Two GLB variants are baked on each save: <id>.glb (full)
+                     and <id>.cut.glb (half-sectioned via the same cut box
+                     finalizeManifold uses for the live cutaway). The
+                     SceneControls toggle picks which one we load. -->
+                {@const glbUrl = scene.showCutaway
+                  ? `/components/${activeDef.id}.cut.glb`
+                  : `/components/${activeDef.id}.glb`}
                 <Canvas {createRenderer}>
                   <GlbScene url={glbUrl} />
                 </Canvas>

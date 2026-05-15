@@ -20,7 +20,7 @@ import { join } from 'path';
 // reference that the component geom functions (cyl, tube, mv) close over
 // gets populated. A second-init (private to this module) would leave
 // the helpers' M as null and the geom would throw when called.
-import { initManifold } from '../cad/manifold-helpers';
+import { initManifold, getCutBox } from '../cad/manifold-helpers';
 
 const STATIC_DIR = join(process.cwd(), 'static', 'components');
 
@@ -78,15 +78,18 @@ export interface BakeResult {
   ok: boolean;
   path?: string;
   bytes?: number;
+  cutPath?: string;
+  cutBytes?: number;
   error?: string;
 }
 
 /**
- * Bake `<id>.glb` for a primitive. `geom` runs with `defaults`; the
- * Manifold result is serialized to glTF binary and written to disk.
- * Returns { ok: false, error } on any failure — non-fatal; the save
- * endpoint surfaces the error in its response so the client can flag
- * but the source-write itself is preserved.
+ * Bake `<id>.glb` (full mesh) AND `<id>.cut.glb` (half-sectioned via
+ * the shared getCutBox() — same cut the live cutaway view applies in
+ * finalizeManifold). Two separate files keep the static-asset path
+ * simple: the GLB stage tab loads one or the other based on the
+ * cutaway toggle. Cut bake failure is logged but doesn't fail the
+ * whole bake — the full GLB stays the primary deliverable.
  */
 export async function bakeGlb(
   id: string,
@@ -102,13 +105,28 @@ export async function bakeGlb(
     if (!manifold || typeof manifold.getMesh !== 'function') {
       return { ok: false, error: 'geom() did not return a Manifold instance' };
     }
-    const doc = manifoldToGltf(manifold);
-    const io = new NodeIO();
-    const glb = await io.writeBinary(doc);
     await mkdir(STATIC_DIR, { recursive: true });
+    const io = new NodeIO();
+    // 1. Full mesh.
+    const doc = manifoldToGltf(manifold);
+    const glb = await io.writeBinary(doc);
     const path = join(STATIC_DIR, `${id}.glb`);
     await writeFile(path, glb);
-    return { ok: true, path, bytes: glb.byteLength };
+    const result: BakeResult = { ok: true, path, bytes: glb.byteLength };
+    // 2. Half-sectioned mesh — best effort.
+    try {
+      const cutManifold = manifold.subtract(getCutBox());
+      const cutDoc = manifoldToGltf(cutManifold);
+      const cutGlb = await io.writeBinary(cutDoc);
+      const cutPath = join(STATIC_DIR, `${id}.cut.glb`);
+      await writeFile(cutPath, cutGlb);
+      result.cutPath = cutPath;
+      result.cutBytes = cutGlb.byteLength;
+    } catch {
+      // Cut bake failed (component might already be open / one-sided);
+      // the full GLB remains available.
+    }
+    return result;
   } catch (e: any) {
     return { ok: false, error: e?.message ?? String(e) };
   }

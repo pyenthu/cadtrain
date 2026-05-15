@@ -54,28 +54,38 @@
   }
 
   // Reload on every URL change. Aborts in-flight loads by ignoring stale
-  // resolves via the captured `myUrl` token.
+  // resolves via the captured `myUrl` token. If the .cut.glb variant 404s
+  // (e.g., older component baked before cut-GLB landed), fall back to the
+  // full .glb so the user still gets *something* when cutaway is toggled
+  // on — the alternative is an unsightly error chip.
   $effect(() => {
     const myUrl = url;
     if (!myUrl) { loaded = null; loadError = null; loading = false; return; }
     loading = true;
     loadError = null;
     const loader = new GLTFLoader();
-    loader.load(
-      myUrl,
-      (gltf) => {
-        if (myUrl !== url) return;
-        dressGltfScene(gltf.scene);
-        loaded = gltf.scene;
-        loading = false;
-      },
-      undefined,
-      (err: any) => {
-        if (myUrl !== url) return;
-        loadError = err?.message ?? String(err);
-        loading = false;
-      },
-    );
+    const tryLoad = (u: string, allowFallback: boolean) => {
+      loader.load(
+        u,
+        (gltf) => {
+          if (myUrl !== url) return;
+          dressGltfScene(gltf.scene);
+          loaded = gltf.scene;
+          loading = false;
+        },
+        undefined,
+        (err: any) => {
+          if (myUrl !== url) return;
+          if (allowFallback && u.endsWith('.cut.glb')) {
+            tryLoad(u.replace(/\.cut\.glb$/, '.glb'), false);
+            return;
+          }
+          loadError = err?.message ?? String(err);
+          loading = false;
+        },
+      );
+    };
+    tryLoad(myUrl, true);
   });
 
   // Same defaults as ComponentScene: perspective on +Y, up = -Z (Z-down).
