@@ -21,10 +21,17 @@ export const geom = defineGeom(meta, (p) => {
   const idLarge = p.odLarge - 2 * p.wall;
   let body = tube(p.odSmall / 2, idSmall / 2, p.smallLength);
   if (p.taperH > 0.01) {
-    body = body.add(mv(cyl(p.taperH, p.odSmall / 2, p.odLarge / 2).subtract(
-      cyl(p.taperH + 0.02, idSmall / 2, idLarge / 2)
-    ), [0, 0, p.smallLength]));
-    body = body.add(mv(tube(p.odLarge / 2, idLarge / 2, p.largeLength), [0, 0, p.smallLength + p.taperH]));
+    body = body.add(
+      mv(
+        cyl(p.taperH, p.odSmall / 2, p.odLarge / 2).subtract(
+          cyl(p.taperH + 0.02, idSmall / 2, idLarge / 2),
+        ),
+        [0, 0, p.smallLength],
+      ),
+    );
+    body = body.add(
+      mv(tube(p.odLarge / 2, idLarge / 2, p.largeLength), [0, 0, p.smallLength + p.taperH]),
+    );
   } else {
     body = body.add(mv(tube(p.odLarge / 2, idLarge / 2, p.largeLength), [0, 0, p.smallLength]));
   }
