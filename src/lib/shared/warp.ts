@@ -12,46 +12,79 @@
 import * as THREE from 'three';
 import { scene } from './scene-state.svelte';
 
-/** Iteratively split every triangle whose z-extent exceeds `maxZSpan`
- *  into 4 sub-triangles (midpoint split). The warp shader displaces
- *  vertices, so without enough z-samples a tall cylinder's side wall
- *  (2 z-levels) just tilts linearly instead of curving — this gives
- *  the shader real intermediate vertices to bend through.
- *
- *  Cached by source geometry uuid to avoid re-paying the cost. Result
- *  is non-indexed so per-face colours survive. */
+/** Edge-split tessellation. For each triangle whose z-extent exceeds
+ *  maxZSpan, split the LONGEST edge in half — yields 2 sub-triangles,
+ *  not 4. That's O(log) splits per triangle for a given threshold and
+ *  keeps the vertex count from exploding (a tall side-wall triangle
+ *  on a 256-segment cylinder produced ~1024× the original count with
+ *  midpoint-quadrant splitting, which silently overwhelmed three.js).
+ *  Adds normals so MeshPhongMaterial actually shades correctly.
+ *  Cached by source geometry. */
 const subdivCache = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
-export function subdivideAlongZ(geo: THREE.BufferGeometry, maxZSpan = 0.2): THREE.BufferGeometry {
+export function subdivideAlongZ(geo: THREE.BufferGeometry, maxZSpan = 0.25): THREE.BufferGeometry {
   const hit = subdivCache.get(geo);
   if (hit) return hit;
   const src = geo.index ? geo.toNonIndexed() : geo;
   const posAttr = src.getAttribute('position') as THREE.BufferAttribute;
   const colAttr = src.getAttribute('color') as THREE.BufferAttribute | undefined;
-  let positions: number[] = Array.from(posAttr.array);
-  let colors: number[] | undefined = colAttr ? Array.from(colAttr.array) : undefined;
-  for (let iter = 0; iter < 6; iter++) {
+  // Read via the attribute API to handle interleaved buffers safely —
+  // GLTFLoader packs POSITION + COLOR into one InterleavedBuffer, so
+  // .array.length is the full interleaved view, not just one attribute.
+  const vc = posAttr.count;
+  let positions: number[] = new Array(vc * 3);
+  for (let v = 0; v < vc; v++) {
+    positions[v * 3]     = posAttr.getX(v);
+    positions[v * 3 + 1] = posAttr.getY(v);
+    positions[v * 3 + 2] = posAttr.getZ(v);
+  }
+  let colors: number[] | undefined;
+  if (colAttr) {
+    colors = new Array(vc * 3);
+    for (let v = 0; v < vc; v++) {
+      colors[v * 3]     = colAttr.getX(v);
+      colors[v * 3 + 1] = colAttr.getY(v);
+      colors[v * 3 + 2] = colAttr.getZ(v);
+    }
+  }
+  const MAX_VERTS = 600_000;
+  for (let iter = 0; iter < 10; iter++) {
     let changed = false;
     const np: number[] = [];
     const nc: number[] | undefined = colors ? [] : undefined;
     for (let i = 0; i < positions.length; i += 9) {
-      const az = positions[i + 2], bz = positions[i + 5], cz = positions[i + 8];
+      const ax = positions[i],     ay = positions[i + 1], az = positions[i + 2];
+      const bx = positions[i + 3], by = positions[i + 4], bz = positions[i + 5];
+      const cx = positions[i + 6], cy = positions[i + 7], cz = positions[i + 8];
       const ext = Math.max(az, bz, cz) - Math.min(az, bz, cz);
       if (ext > maxZSpan) {
-        const ax = positions[i],     ay = positions[i + 1];
-        const bx = positions[i + 3], by = positions[i + 4];
-        const cx = positions[i + 6], cy = positions[i + 7];
-        const mabx = (ax + bx) / 2, maby = (ay + by) / 2, mabz = (az + bz) / 2;
-        const mbcx = (bx + cx) / 2, mbcy = (by + cy) / 2, mbcz = (bz + cz) / 2;
-        const macx = (ax + cx) / 2, macy = (ay + cy) / 2, macz = (az + cz) / 2;
+        // Pick the edge with the largest z-delta — that's the one
+        // worth halving so the warp shader gets a new z-sample.
+        const dab = Math.abs(bz - az);
+        const dbc = Math.abs(cz - bz);
+        const dca = Math.abs(az - cz);
+        let p1x, p1y, p1z, p2x, p2y, p2z, p3x, p3y, p3z;
+        let q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        if (dab >= dbc && dab >= dca) {
+          // Split edge ab. Two triangles: (a, mab, c) and (mab, b, c).
+          const mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+          p1x = ax; p1y = ay; p1z = az; p2x = mx; p2y = my; p2z = mz; p3x = cx; p3y = cy; p3z = cz;
+          q1x = mx; q1y = my; q1z = mz; q2x = bx; q2y = by; q2z = bz; q3x = cx; q3y = cy; q3z = cz;
+        } else if (dbc >= dca) {
+          const mx = (bx + cx) / 2, my = (by + cy) / 2, mz = (bz + cz) / 2;
+          p1x = ax; p1y = ay; p1z = az; p2x = bx; p2y = by; p2z = bz; p3x = mx; p3y = my; p3z = mz;
+          q1x = ax; q1y = ay; q1z = az; q2x = mx; q2y = my; q2z = mz; q3x = cx; q3y = cy; q3z = cz;
+        } else {
+          const mx = (cx + ax) / 2, my = (cy + ay) / 2, mz = (cz + az) / 2;
+          p1x = ax; p1y = ay; p1z = az; p2x = bx; p2y = by; p2z = bz; p3x = mx; p3y = my; p3z = mz;
+          q1x = mx; q1y = my; q1z = mz; q2x = bx; q2y = by; q2z = bz; q3x = cx; q3y = cy; q3z = cz;
+        }
         np.push(
-          ax,  ay,  az,  mabx, maby, mabz, macx, macy, macz,
-          mabx, maby, mabz, bx,  by,  bz,  mbcx, mbcy, mbcz,
-          macx, macy, macz, mbcx, mbcy, mbcz, cx,  cy,  cz,
-          mabx, maby, mabz, mbcx, mbcy, mbcz, macx, macy, macz,
+          p1x, p1y, p1z, p2x, p2y, p2z, p3x, p3y, p3z,
+          q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z,
         );
         if (nc) {
           const r = colors![i], g = colors![i + 1], b = colors![i + 2];
-          for (let k = 0; k < 12; k++) nc.push(r, g, b);
+          for (let k = 0; k < 6; k++) nc.push(r, g, b);
         }
         changed = true;
       } else {
@@ -62,10 +95,14 @@ export function subdivideAlongZ(geo: THREE.BufferGeometry, maxZSpan = 0.2): THRE
     positions = np;
     colors = nc;
     if (!changed) break;
+    if (positions.length / 3 > MAX_VERTS) break; // safety bound
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
   if (colors) out.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+  // Phong shading without normals renders as black on most drivers —
+  // this was the regression that made the warp "stop working".
+  out.computeVertexNormals();
   subdivCache.set(geo, out);
   return out;
 }
