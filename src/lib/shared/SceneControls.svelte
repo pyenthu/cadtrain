@@ -80,13 +80,16 @@
     <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
          row + scene.warp* fields + warp.ts to retire the feature. -->
     <div class="sv-row sv-warp">
-      <span class="sv-label">Warp</span>
-      <label class="sv-warp-radio"><input type="radio" name="warpAxis" value="x" bind:group={scene.warpAxis} />X</label>
-      <label class="sv-warp-radio"><input type="radio" name="warpAxis" value="y" bind:group={scene.warpAxis} />Y</label>
+      <label class="sv-check sv-warp-master">
+        <input type="checkbox" bind:checked={scene.warpEnabled} />
+        Warp
+      </label>
+      <label class="sv-warp-radio" class:dim={!scene.warpEnabled}><input type="radio" name="warpAxis" value="x" bind:group={scene.warpAxis} disabled={!scene.warpEnabled} />X</label>
+      <label class="sv-warp-radio" class:dim={!scene.warpEnabled}><input type="radio" name="warpAxis" value="y" bind:group={scene.warpAxis} disabled={!scene.warpEnabled} />Y</label>
       <span class="sv-sub">a</span>
-      <input type="number" step="0.05" min={0} max={2} bind:value={scene.warpAmp} />
+      <input type="number" step="0.05" min={0} max={2} bind:value={scene.warpAmp} disabled={!scene.warpEnabled} />
       <span class="sv-sub">ƒ</span>
-      <input type="number" step="0.1" min={0} max={4} bind:value={scene.warpFreq} />
+      <input type="number" step="0.1" min={0} max={4} bind:value={scene.warpFreq} disabled={!scene.warpEnabled} />
     </div>
   </div>
 {/if}
@@ -142,6 +145,9 @@
   .sv-warp { gap: 4px; flex-wrap: wrap; }
   .sv-warp-radio { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
   .sv-warp-radio input[type='radio'] { accent-color: #cc2222; cursor: pointer; }
+  .sv-warp-radio.dim { opacity: 0.4; }
+  .sv-warp-master { margin-right: 4px; }
+  .sv-panel input[type='number']:disabled { opacity: 0.35; cursor: not-allowed; }
   .sv-label { width: 22px; opacity: 0.85; }
   .sv-sub   { width: 8px; text-align: center; opacity: 0.7; }
   .sv-panel input[type='number'] {

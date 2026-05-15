@@ -121,12 +121,12 @@
 {#if meshes.length > 0}
   {#key geoVersion + (showCutaway ? '_cut' : '_full')}
     {#each meshes as m (m.key)}
-      <!-- TEMP warp experiment: when warp is active, swap to a
+      <!-- TEMP warp experiment: when warp is enabled, swap to a
            z-subdivided geometry so the vertex shader has enough samples
            along Z to actually curve. WeakMap-cached so a single
            subdivision per source geo, regardless of slider drags. -->
-      {@const cutGeo  = scene.warpAmp > 0 ? subdivideAlongZ(m.cutVC) : m.cutVC}
-      {@const fullGeo = scene.warpAmp > 0 ? subdivideAlongZ(m.full)  : m.full}
+      {@const cutGeo  = scene.warpEnabled ? subdivideAlongZ(m.cutVC) : m.cutVC}
+      {@const fullGeo = scene.warpEnabled ? subdivideAlongZ(m.full)  : m.full}
       {#if showCutaway}
         <T.Mesh geometry={cutGeo}>
           <T.MeshPhongMaterial

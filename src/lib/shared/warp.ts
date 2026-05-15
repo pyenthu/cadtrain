@@ -149,8 +149,11 @@ export function attachWarpShader(material: THREE.MeshPhongMaterial): void {
 if (typeof window !== 'undefined') {
   const tick = () => {
     const axis = scene.warpAxis === 'y' ? 1 : 0;
+    // Master toggle: when warpEnabled is false the shader sees amp=0,
+    // so the user's amp/freq values are preserved for re-enable.
+    const amp = scene.warpEnabled ? scene.warpAmp : 0;
     for (const shader of patchedShaders) {
-      if (shader.uniforms.uWarpAmp)  shader.uniforms.uWarpAmp.value  = scene.warpAmp;
+      if (shader.uniforms.uWarpAmp)  shader.uniforms.uWarpAmp.value  = amp;
       if (shader.uniforms.uWarpFreq) shader.uniforms.uWarpFreq.value = scene.warpFreq;
       if (shader.uniforms.uWarpAxis) shader.uniforms.uWarpAxis.value = axis;
     }

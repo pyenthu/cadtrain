@@ -58,7 +58,7 @@
   // TEMP warp experiment — swap mesh.geometry to the subdivided variant
   // when warp turns on, back to the original when it turns off.
   $effect(() => {
-    const active = scene.warpAmp > 0;
+    const active = scene.warpEnabled;
     if (!loaded) return;
     loaded.traverse((obj: any) => {
       if (!obj.isMesh || !obj.userData.warpOriginalGeo) return;

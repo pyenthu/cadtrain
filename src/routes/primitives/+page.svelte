@@ -482,7 +482,11 @@
   // /api/volume?path=components/<id>.source.png. Defaults to 'render'
   // on every primitive switch (don't strand the user in an empty
   // Picture tab when they navigate around).
-  let stageTab = $state<'render' | 'picture' | 'glb'>('render');
+  let stageTab = $state<'picture' | '3d'>('3d');
+  // Inside the 3D stage, toggle between the live ManifoldCAD mesh
+  // (rebuilt on every param drag) and the static baked GLB. Same
+  // SceneControls, same camera, just different geometry source.
+  let stageView = $state<'mesh' | 'glb'>('mesh');
   /** Track whether the active primitive's source image actually exists.
    *  Set true when <img> loads; set false on error (404 / missing).
    *  Reset to null on tab switch (loading state).  */
@@ -4175,22 +4179,16 @@ export const geom = defineGeom(meta, (p) => {
           <div class="stage-subtabs">
             <button
               class="stage-subtab"
-              class:active={stageTab === 'render'}
+              class:active={stageTab === '3d'}
               type="button"
-              onclick={() => (stageTab = 'render')}
-            >Render</button>
+              onclick={() => (stageTab = '3d')}
+            >3D</button>
             <button
               class="stage-subtab"
               class:active={stageTab === 'picture'}
               type="button"
               onclick={() => { stageTab = 'picture'; pictureLoadStatus = 'loading'; }}
             >Picture</button>
-            <button
-              class="stage-subtab"
-              class:active={stageTab === 'glb'}
-              type="button"
-              onclick={() => (stageTab = 'glb')}
-            >GLB</button>
           </div>
 
           {#if stageTab === 'picture'}
@@ -4231,19 +4229,21 @@ export const geom = defineGeom(meta, (p) => {
                 {/if}
               {/key}
             </div>
-          {:else if stageTab === 'glb'}
-            <!-- GLB stage — renders the static .glb that bakeGlb() wrote
-                 to static/components/<id>.glb on the last save. Useful for
-                 confirming the baked artifact matches the live mesh, and
-                 for downstream consumers that should be driven off the
-                 cached binary instead of the live ManifoldCAD eval. -->
-            <div class="stage-3d">
+          {:else}
+          <!-- 3D stage — toggle picks the geometry source. Mesh = live
+               ManifoldCAD rebuild on every param drag; GLB = the static
+               file bakeGlb() wrote on last save (loads <id>.cut.glb or
+               <id>.glb depending on scene.showCutaway). Both run inside
+               the same Canvas with the same SceneControls. -->
+          <div class="stage-3d">
+            <!-- Inner toggle pill — mesh / glb selector. -->
+            <div class="stage-view-toggle">
+              <button class="stage-view-btn" class:active={stageView === 'mesh'} type="button" onclick={() => (stageView = 'mesh')}>Mesh</button>
+              <button class="stage-view-btn" class:active={stageView === 'glb'} type="button" onclick={() => (stageView = 'glb')}>GLB</button>
+            </div>
+            {#if stageView === 'glb'}
               {#if SceneGlbComponent}
                 {@const GlbScene = SceneGlbComponent}
-                <!-- Two GLB variants are baked on each save: <id>.glb (full)
-                     and <id>.cut.glb (half-sectioned via the same cut box
-                     finalizeManifold uses for the live cutaway). The
-                     SceneControls toggle picks which one we load. -->
                 {@const glbUrl = scene.showCutaway
                   ? `/components/${activeDef.id}.cut.glb`
                   : `/components/${activeDef.id}.glb`}
@@ -4260,10 +4260,7 @@ export const geom = defineGeom(meta, (p) => {
               {:else}
                 <div class="stage-loading"><span class="stage-loading-text">Loading scene…</span></div>
               {/if}
-            </div>
-          {:else}
-          <div class="stage-3d">
-            {#if SceneComponent && geo}
+            {:else if SceneComponent && geo}
               <Canvas {createRenderer}>
                 {@const Scene = SceneComponent}
                 <Scene {geo} {geoVersion} showCutaway={scene.showCutaway} showEdges={scene.showEdges} />
@@ -6036,6 +6033,29 @@ export const geom = defineGeom(meta, (p) => {
     cursor: help;
   }
   .stage-stale-icon { font-size: 11px; }
+  /* Mesh / GLB toggle pill — pinned to the top-left of the 3D stage.
+     Two segments share a single rounded container; active segment has
+     the project red. */
+  .stage-view-toggle {
+    position: absolute; top: 8px; left: 8px;
+    z-index: 5;
+    display: inline-flex;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    overflow: hidden;
+    user-select: none;
+  }
+  .stage-view-btn {
+    background: transparent; color: #ddd;
+    border: none;
+    padding: 4px 10px;
+    font: 10px Arial; letter-spacing: 0.4px; text-transform: uppercase;
+    cursor: pointer;
+    transition: background 80ms, color 80ms;
+  }
+  .stage-view-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+  .stage-view-btn.active { background: #cc2222; color: #fff; }
   /* GLB stage corner chip — mirrors .stage-stale chrome, neutral grey
      palette since it's informational (the URL the GLB was served from)
      rather than a warning. */

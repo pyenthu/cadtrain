@@ -24,7 +24,8 @@ export const scene = $state({
    *  SceneControls. */
   showEdges: true,
   // TEMP warp experiment — remove with attachWarpShader plumbing
-  warpAmp: 0,       // 0 = off; magnitude in geom units
-  warpFreq: 1,      // cycles per unit Z
+  warpEnabled: false, // master on/off — false keeps shader uniform at 0
+  warpAmp: 0.3,       // magnitude in geom units when enabled
+  warpFreq: 1.5,      // cycles per unit Z
   warpAxis: 'x' as 'x' | 'y',
 });
