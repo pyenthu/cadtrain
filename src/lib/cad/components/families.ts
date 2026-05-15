@@ -126,17 +126,19 @@ export interface LevelInfo {
 }
 
 export const LEVELS: LevelInfo[] = [
-  { id: 1, name: 'Level 1 — Atomic shapes', order: 0, description: 'Pure geometry: tube, taper, shoulder, tapered cone. No internal features.' },
-  { id: 2, name: 'Level 2 — With features', order: 1, description: 'Atomic shape + a feature pattern: slots, grooves, wickers, J-slots, elastomer rings.' },
+  { id: 1, name: 'Level 1 — Atomic shapes', order: 0, description: 'Pure geometry: tube. No transitions or internal features.' },
+  { id: 2, name: 'Level 2 — With features', order: 1, description: 'Atomic shape + a feature: taper, shoulder, tapered cone (transitions); slots, grooves, J-slots, elastomer rings.' },
 ];
 
 /** Per-component complexity level within the Basic family. Components
  *  not in this map (or not family='basic') default to level 1. Edit
  *  this map to reclassify; no per-file annotation needed. */
 export const LEVEL_BY_ID: Record<string, Level> = {
-  // Level 1 — pure geometric primitives, no internal features
-  hollow_cylinder: 1, taper: 1, shoulder: 1, tapered_cone: 1,
-  // Level 2 — atomic shape augmented with a feature pattern
+  // Level 1 — pure geometric primitive (tube)
+  hollow_cylinder: 1,
+  // Level 2 — shape with a feature: transitions (taper/shoulder/cone)
+  // or feature patterns (slots, grooves, elastomers, latches)
+  taper: 2, shoulder: 2, tapered_cone: 2,
   slotted_cylinder: 2, slotted_tube: 2, grooved_cylinder: 2, seal_bore: 2,
   packer_element: 2, slips: 2, j_latch: 2,
 };
