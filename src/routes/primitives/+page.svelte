@@ -1278,6 +1278,12 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
   // effect below redirects to 'params' when the active tab is a legacy
   // primitive (no Parts tab there).
   let inspectorTab = $state<InspectorTab>('parts');
+
+  /** Sub-tab within the Parts inspector — toggles the top section
+   *  between top-level Properties (params) and Formulae (derived
+   *  params / computed formulas). Instances render below regardless. */
+  type PartsSubTab = 'properties' | 'formulae';
+  let partsSubTab = $state<PartsSubTab>('properties');
   /** Sub-tab inside the AI inspector tab's prompt area: the live Prompt
    *  input vs. the persisted History of past refines. */
   let aiSubTab = $state<'prompt' | 'history'>('prompt');
@@ -5152,21 +5158,37 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const useParts = isXml}
           {@const groups = useParts
             ? [
-                // Properties section is ALWAYS surfaced for xml-
-                // primitives so the round-red `+` to add the first
-                // property is reachable even on a fresh stub with
-                // zero params yet.
-                { key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined },
+                // Properties accordion entry — only when the Properties
+                // sub-tab is active. The Formulae sub-tab renders its
+                // own block below instead.
+                ...(partsSubTab === 'properties'
+                  ? [{ key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined }]
+                  : []),
                 ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
               ]
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
-            <!-- Top header row removed — the prop-count badge + small
-                 inline `+` were redundant once the round-red `+` at the
-                 bottom became the dominant add affordance. Draft-param
-                 add for non-primitive tabs is still surfaced via the
-                 per-param ✎ popup. -->
+            <!-- Accordion toolbar — two segmented buttons toggle the top
+                 section between Properties (top-level params) and
+                 Formulae (derived/computed params). Instances render
+                 below regardless of which sub-tab is active. -->
+            {#if isXml}
+              <div class="parts-subtabs">
+                <button
+                  class="parts-subtab"
+                  class:active={partsSubTab === 'properties'}
+                  type="button"
+                  onclick={() => (partsSubTab = 'properties')}
+                >Properties</button>
+                <button
+                  class="parts-subtab"
+                  class:active={partsSubTab === 'formulae'}
+                  type="button"
+                  onclick={() => (partsSubTab = 'formulae')}
+                >Formulae</button>
+              </div>
+            {/if}
             {#if activeTab.descForm?.open}
               {@const df = activeTab.descForm}
               <div class="param-form">
@@ -5492,25 +5514,32 @@ export const geom = defineGeom(meta, (p, geom) => {
             {/each}
           </div>
 
-          {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry?.meta.derived}
-            {@const derivedMeta = activeTab.componentEntry.meta.derived}
-            {@const resolved = resolveDerivedSafe(derivedMeta, activeTab.params)}
-            <div class="ed-sec">
-              <div class="ed-sec-h">
-                Derived <span class="muted">{Object.keys(derivedMeta).length} · read-only</span>
-              </div>
-              <div class="pr-grid">
-                {#each Object.entries(derivedMeta) as [key, schema] (key)}
-                  <div class="pr-card derived">
-                    <div class="pr-card-head">
-                      <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
-                      {#if schema.unit}<span class="pr-unit-inline">({schema.unit})</span>{/if}
+          <!-- Formulae sub-tab body — derived/computed params from
+               meta.derived. Read-only for now; an "Add formula" flow
+               is a future iteration (would author derived entries
+               from the GUI rather than editing the source). -->
+          {#if activeTab.kind === 'xml-primitive' && partsSubTab === 'formulae'}
+            {@const derivedMeta = activeTab.componentEntry?.meta.derived}
+            {#if derivedMeta && Object.keys(derivedMeta).length > 0}
+              {@const resolved = resolveDerivedSafe(derivedMeta, activeTab.params)}
+              <div class="ed-sec">
+                <div class="pr-grid">
+                  {#each Object.entries(derivedMeta) as [key, schema] (key)}
+                    <div class="pr-card derived">
+                      <div class="pr-card-head">
+                        <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
+                        {#if schema.unit}<span class="pr-unit-inline">({schema.unit})</span>{/if}
+                      </div>
+                      <span class="pr-derived-val">{fmtDerived(resolved[key])}</span>
                     </div>
-                    <span class="pr-derived-val">{fmtDerived(resolved[key])}</span>
-                  </div>
-                {/each}
+                  {/each}
+                </div>
               </div>
-            </div>
+            {:else}
+              <div class="pg-acc-empty">
+                No formulas yet. Derived parameters (e.g. <code>id = od - 2 * wall</code>) can be authored in the Builder; a GUI add-formula flow is on the way.
+              </div>
+            {/if}
           {/if}
 
           <!-- Imports list + "+ Add primitive" picker (was the standalone
@@ -7308,6 +7337,35 @@ export const geom = defineGeom(meta, (p, geom) => {
     min-width: 16px;
     text-align: center;
   }
+  /* Sub-tab toolbar inside the Parts inspector. Two segmented
+     buttons (Properties / Formulae) — tight, compact, sits above
+     the accordion stack as a header strip. */
+  .parts-subtabs {
+    display: flex;
+    gap: 2px;
+    margin: 0 0 4px;
+    padding: 2px;
+    background: #ececf2;
+    border-radius: 4px;
+  }
+  .parts-subtab {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 4px 8px;
+    font: bold 11px Arial;
+    color: #666;
+    cursor: pointer;
+    transition: background 100ms, color 100ms;
+  }
+  .parts-subtab:hover { color: #cc2222; }
+  .parts-subtab.active {
+    background: #fff;
+    color: #cc2222;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+
   /* Per-section `+` button — round red icon button, matches the
      bottom-of-section .parts-add-plus visual. Sits where the
      prop-count badge used to be on the Properties accordion. */
