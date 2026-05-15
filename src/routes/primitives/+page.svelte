@@ -261,6 +261,12 @@
      *  open; mutated on every keystroke via CodeEditor.onChange. Cleared
      *  on save. Null = unedited (editor renders componentEntry.source). */
     sourceDraft?: string | null;
+    /** Timestamp of the last Apply click — bumped to force the build
+     *  $effect to re-fetch geometry from the sourceDraft even when
+     *  params didn't change. Editing an instance-arg lands only in
+     *  sourceDraft, so without this trigger the canvas wouldn't refresh
+     *  until disk save. */
+    appliedAt?: number;
     /** Save status for the Svelte source editor. UI-only feedback. */
     saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
     /** Last save error message (when saveStatus === 'error'). */
@@ -2200,6 +2206,16 @@ export const geom = defineGeom(meta, (p, geom) => {
     return { helpers, components };
   }
 
+  /** Apply the in-flight sourceDraft to the canvas WITHOUT writing to
+   *  disk. Bumps `appliedAt` on the active tab — the build $effect
+   *  re-fetches geometry from /api/components/geom with `source:
+   *  sourceDraft` so the user sees the change live. The Save button
+   *  (separate) writes the same source to disk + rebakes the GLB. */
+  function applyDraft(tab: Tab) {
+    if (!tab.sourceDraft) return;
+    tab.appliedAt = Date.now();
+  }
+
   function removeHelper(name: string) {
     if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
     const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
@@ -2538,9 +2554,12 @@ export const geom = defineGeom(meta, (p, geom) => {
   // also drives debounced rebuilds.
   $effect(() => { setRenderZScale(scene.zScale); });
 
+  // Build key includes activeTab.appliedAt so explicit "Apply" clicks
+  // can force a rebuild even when params didn't change (the case for
+  // instance-arg edits that live in sourceDraft only).
   let buildKey = $derived(
     activeTab && (activeTab.kind === 'primitive' || activeTab.kind === 'xml-primitive')
-      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params, z: scene.zScale })
+      ? JSON.stringify({ id: activeTab.primId, p: activeTab.params, z: scene.zScale, a: activeTab.appliedAt ?? 0 })
       : activeTab && activeTab.kind === 'composite'
       ? `comp:${activeTab.id}:${scene.zScale}`
       : '',
@@ -2562,7 +2581,15 @@ export const geom = defineGeom(meta, (p, geom) => {
       // rehydrate into the same shape buildAuthored produces.
       const entry =
         activeTab && activeTab.kind === 'xml-primitive' ? activeTab.componentEntry : undefined;
-      if (entry && entry.renderMode === 'server') {
+      // When the user has an in-flight sourceDraft, force the server
+      // path even for bundle primitives — the compiled client geom is
+      // the OLD source and won't reflect the draft. Passing `source` in
+      // the POST tells the endpoint to transpile + execute the inline
+      // source instead of loading from disk.
+      const draft =
+        activeTab && activeTab.kind === 'xml-primitive' ? activeTab.sourceDraft : null;
+      const useServerPath = entry && (entry.renderMode === 'server' || !!draft);
+      if (entry && useServerPath) {
         try {
           const r = await fetch('/api/components/geom', {
             method: 'POST',
@@ -2571,6 +2598,7 @@ export const geom = defineGeom(meta, (p, geom) => {
               id: entry.meta.id,
               params: { ...activeTab!.params },
               zScale: scene.zScale,
+              ...(draft ? { source: draft } : {}),
             }),
           });
           if (!r.ok) {
@@ -5547,6 +5575,18 @@ export const geom = defineGeom(meta, (p, geom) => {
                renaming a param, AND dragging sliders all surface this
                affordance without forcing a tab switch. -->
           <div class="save-row global-save">
+            {#if srcDirty}
+              <!-- Apply — round-trips the in-flight sourceDraft to
+                   /api/components/geom (with `source:` inline) and
+                   updates the canvas WITHOUT touching disk. Save to
+                   disk does both: writes the file and re-bakes the GLB. -->
+              <button
+                class="save-btn apply-btn"
+                type="button"
+                onclick={() => applyDraft(activeTab!)}
+                title="Apply the change to the canvas (no disk write)"
+              >Apply</button>
+            {/if}
             <button class="save-btn" type="button" disabled={activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
               {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
             </button>
@@ -7638,6 +7678,11 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .save-btn { background: #cc2222; color: #fff; border-color: #cc2222; }
   .save-btn:hover:not(:disabled) { background: #aa1818; }
+  /* Apply — distinguishable from "Save to disk" so the user
+     understands one round-trips without persisting, the other
+     persists. Same shape; cooler colour. */
+  .save-btn.apply-btn { background: #1a5b8a; border-color: #1a5b8a; }
+  .save-btn.apply-btn:hover:not(:disabled) { background: #144a72; }
   .save-btn:disabled, .discard-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .discard-btn { background: #fff; color: #666; }
   .discard-btn:hover:not(:disabled) { background: #f3f3f7; color: #cc2222; }

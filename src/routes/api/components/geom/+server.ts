@@ -46,7 +46,12 @@ import { checkVolumeAuth } from '$lib/server/volume';
 import { initManifold } from '$lib/cad/manifold-helpers';
 import { geomById, metaById, resolveDerived } from '$lib/cad/components';
 import { finalizeManifold, setRenderZScale, getRenderZScale } from '$lib/cad/builder';
-import { loadVolumeComponent, getGeomResult, setGeomResult } from '$lib/server/component-loader';
+import {
+  loadVolumeComponent,
+  loadGeomFromSource,
+  getGeomResult,
+  setGeomResult,
+} from '$lib/server/component-loader';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import type { PrimitiveMeta } from '$lib/cad/components';
 
@@ -94,10 +99,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
-  const { id, params, zScale } = body as {
+  const { id, params, zScale, source } = body as {
     id?: unknown;
     params?: unknown;
     zScale?: unknown;
+    source?: unknown;
   };
   if (typeof id !== 'string' || !/^[a-z][a-z0-9_]*$/.test(id)) {
     throw error(400, `Invalid or missing component id "${String(id)}"`);
@@ -107,11 +113,19 @@ export const POST: RequestHandler = async ({ request, url }) => {
   }
   const paramBag = params as Record<string, number>;
   const z = typeof zScale === 'number' && isFinite(zScale) && zScale > 0 ? zScale : 1;
+  const inlineSource = typeof source === 'string' && source.trim().length > 0 ? source : null;
 
+  // When the client sends an inline `source` (the in-flight `sourceDraft`
+  // from the GUI's Apply button), bypass the disk-load + LRU cache and
+  // transpile/execute the supplied source instead. Lets the user preview
+  // edits without persisting to disk; mirrors the same sandbox as the
+  // volume-loader path.
   const cacheKey = `${id}|${stableParamsJson(paramBag)}|${z}`;
-  const cached = getGeomResult(cacheKey);
-  if (cached !== undefined) {
-    return json(cached, { headers: { 'x-cache': 'hit' } });
+  if (!inlineSource) {
+    const cached = getGeomResult(cacheKey);
+    if (cached !== undefined) {
+      return json(cached, { headers: { 'x-cache': 'hit' } });
+    }
   }
 
   await initManifold();
@@ -119,17 +133,38 @@ export const POST: RequestHandler = async ({ request, url }) => {
   // Resolve the component — bundle fast path, else volume loader.
   let meta: PrimitiveMeta | undefined;
   let geom: ((p: Record<string, number>) => any) | undefined;
-  const bundleGeom = geomById(id);
-  if (bundleGeom) {
-    meta = metaById(id);
-    geom = bundleGeom;
-  } else {
+  if (inlineSource) {
     try {
-      const loaded = await loadVolumeComponent(id);
+      // Inline-source path: same sandbox as loadVolumeComponent. Sibling
+      // dep resolution falls back to the volume loader for any
+      // `./<id>` import — the in-flight source can still reference
+      // other library parts.
+      const loaded = loadGeomFromSource(inlineSource, (depId) => {
+        // Resolve sibling deps via the volume loader synchronously when
+        // already cached; otherwise the request fails with a clear
+        // message rather than hanging.
+        throw new Error(
+          `Inline preview can't resolve sibling dep "${depId}" yet — save the component first or remove the cross-import.`,
+        );
+      });
       meta = loaded.meta;
       geom = loaded.geom;
     } catch (e: any) {
-      throw error(400, `Could not load component "${id}": ${e?.message ?? e}`);
+      throw error(400, `Inline preview failed for "${id}": ${e?.message ?? e}`);
+    }
+  } else {
+    const bundleGeom = geomById(id);
+    if (bundleGeom) {
+      meta = metaById(id);
+      geom = bundleGeom;
+    } else {
+      try {
+        const loaded = await loadVolumeComponent(id);
+        meta = loaded.meta;
+        geom = loaded.geom;
+      } catch (e: any) {
+        throw error(400, `Could not load component "${id}": ${e?.message ?? e}`);
+      }
     }
   }
   if (!geom) throw error(404, `Component "${id}" has no geom.`);
@@ -162,6 +197,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
   }
 
   const payload = { id, full: serialized.full, cutVC: serialized.cutVC, validationErrors };
-  setGeomResult(cacheKey, payload);
-  return json(payload, { headers: { 'x-cache': 'miss' } });
+  if (!inlineSource) setGeomResult(cacheKey, payload);
+  return json(payload, {
+    headers: { 'x-cache': inlineSource ? 'preview' : 'miss' },
+  });
 };
