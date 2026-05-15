@@ -45,11 +45,28 @@ export async function initManifold() {
 }
 
 /** @part Empty seed — a zero-volume Manifold suitable as the initial
- *  accumulator for the parts-tab pattern (`let geom = empty();
- *  geom = geom.add(firstPart); ...`). Implementation: a degenerate cube
- *  at the origin. */
+ *  accumulator for the parts-tab pattern. Implementation: a degenerate
+ *  cube at the origin. */
 export function empty(): any {
   return M.cube([0, 0, 0], true);
+}
+
+/** Mutable Manifold accumulator passed as the 2nd arg to the new-form
+ *  defineGeom body: `defineGeom(meta, (p, geom) => { geom.add(...); })`.
+ *  Each .add(part) unions in place and returns `this` so calls chain.
+ *  Eliminates the `let geom = empty(); ...; return geom;` boilerplate
+ *  from the source — the framework owns the accumulator + final return. */
+export class GeomAcc {
+  current: any;
+  constructor() { this.current = empty(); }
+  add(part: any): this {
+    this.current = this.current.union(part);
+    return this;
+  }
+  subtract(part: any): this {
+    this.current = this.current.subtract(part);
+    return this;
+  }
 }
 
 /** @part Z-up cylinder/cone — height h, bottom radius r1, top radius r2 (defaults to r1). */

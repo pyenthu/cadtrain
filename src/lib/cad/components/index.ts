@@ -21,6 +21,8 @@
  * Vite has rebundled.
  */
 
+import { GeomAcc } from '../manifold-helpers';
+
 /** Param schema entry — what each primitive declares per parameter. */
 export interface ParamSchema {
   label: string;
@@ -310,7 +312,26 @@ export function defineGeom<
   M extends { params: Record<string, ParamSchema>; derived?: Record<string, DerivedSchema> },
 >(
   _meta: M,
-  build: (p: ParamsOf<M> & Record<string, number>) => any,
+  build:
+    | ((p: ParamsOf<M> & Record<string, number>) => any)
+    | ((p: ParamsOf<M> & Record<string, number>, geom: any) => void),
 ): GeomFn {
-  return (p) => build(p as ParamsOf<M> & Record<string, number>);
+  // Two-shape dispatch:
+  //  • LEGACY  `(p) => Manifold`             — body returns the final geom.
+  //  • NEW GUI `(p, geom: GeomAcc) => void`  — body mutates a passed-in
+  //    accumulator via geom.add(part). Eliminates the
+  //    `let geom = empty(); ...; return geom;` boilerplate so the source is
+  //    pure structure (suitable for round-tripping through the GUI builder).
+  // Arity is the discriminator. The user must have awaited initManifold()
+  // before any geom() runs (existing contract), so GeomAcc's constructor
+  // can safely call M.cube() at that point.
+  return (p) => {
+    const params = p as ParamsOf<M> & Record<string, number>;
+    if (build.length >= 2) {
+      const acc = new GeomAcc();
+      (build as (p: any, geom: any) => void)(params, acc);
+      return acc.current;
+    }
+    return (build as (p: any) => any)(params);
+  };
 }
