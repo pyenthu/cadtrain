@@ -23,4 +23,8 @@ export const scene = $state({
   /** Black edge overlay on the mesh, drawn at a 20° threshold. UI in
    *  SceneControls. */
   showEdges: true,
+  // TEMP warp experiment — remove with attachWarpShader plumbing
+  warpAmp: 0,       // 0 = off; magnitude in geom units
+  warpFreq: 1,      // cycles per unit Z
+  warpAxis: 'x' as 'x' | 'y',
 });

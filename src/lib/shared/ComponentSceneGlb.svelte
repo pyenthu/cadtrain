@@ -4,6 +4,8 @@
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
+  // TEMP warp experiment — remove with scene.warp* + warp.ts
+  import { attachWarpShader } from '$lib/shared/warp';
 
   // Mirrors ComponentScene.svelte's camera / light / axis chrome, but the
   // rendered body is a static GLB loaded from a URL. Used by the /primitives
@@ -44,6 +46,8 @@
         flatShading: true,
         side: THREE.DoubleSide,
       });
+      // TEMP warp experiment
+      attachWarpShader(obj.material);
     });
   }
 

@@ -3,6 +3,8 @@
   import { OrbitControls, Edges } from '@threlte/extras';
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
+  // TEMP warp experiment — remove with scene.warp* + warp.ts
+  import { attachWarpShader } from '$lib/shared/warp';
 
   type CameraOverride = {
     position?: [number, number, number];
@@ -121,7 +123,10 @@
     {#each meshes as m (m.key)}
       {#if showCutaway}
         <T.Mesh geometry={m.cutVC}>
-          <T.MeshPhongMaterial vertexColors specular="#ffffff" shininess={300} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial
+            vertexColors specular="#ffffff" shininess={300} side={THREE.DoubleSide}
+            oncreate={(mat) => attachWarpShader(mat)}
+          />
           <!-- Skip Edges overlay for multi-part assemblies: 10 EdgesGeometry
                passes (one per mesh) tank mobile interaction frame rate. The
                edges look messy on assemblies anyway since each part's outline
@@ -130,7 +135,10 @@
         </T.Mesh>
       {:else}
         <T.Mesh geometry={m.full}>
-          <T.MeshPhongMaterial color="#cc2222" specular="#ffffff" shininess={300} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial
+            color="#cc2222" specular="#ffffff" shininess={300} side={THREE.DoubleSide}
+            oncreate={(mat) => attachWarpShader(mat)}
+          />
           {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {/if}
