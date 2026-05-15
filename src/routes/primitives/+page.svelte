@@ -1599,6 +1599,125 @@ export const geom = defineGeom(meta, (p, geom) => {
     return `${name}(${args.join(', ')})`;
   }
 
+  /** A single positional argument inside an instance call. The strict-
+   *  grammar GUI only allows two shapes; anything else falls into
+   *  `unknown` so the UI can still display the raw text. */
+  type PartArg =
+    | { kind: 'literal'; raw: string; value: number }
+    | { kind: 'paramRef'; raw: string; name: string }
+    | { kind: 'unknown'; raw: string };
+
+  /** One instance line parsed out of the body: `const A = tube(0.5, 0.4, 4);`
+   *  followed by `geom.add(A);`. Args are positional and matched against
+   *  the helper's typed props by index. */
+  interface PartInstance {
+    /** const name on the LHS — `A`, `B`, … */
+    instance: string;
+    /** Function being called — `tube`, `cyl`, or a component alias. */
+    callName: string;
+    args: PartArg[];
+    /** Byte offset where the const declaration starts (for surgical edits). */
+    callStart: number;
+    /** Byte offset of the closing `)` of the call. */
+    callEnd: number;
+  }
+
+  /** Parse every `const X = name(args); geom.add(X);` pair out of the
+   *  geom body. Tolerates extra whitespace; ignores any other code shape.
+   *  Returns instances in source order. */
+  function parsePartInstances(src: string): PartInstance[] {
+    const out: PartInstance[] = [];
+    const constRe = /\bconst\s+([A-Z][A-Z0-9]*)\s*=\s*(\w+)\s*\(/g;
+    for (const m of src.matchAll(constRe)) {
+      const instance = m[1];
+      const callName = m[2];
+      const callStart = m.index!;
+      // Find matching closing paren — walk with paren depth.
+      let i = m.index! + m[0].length;
+      let depth = 1;
+      let inS: '"' | "'" | '`' | null = null;
+      while (i < src.length && depth > 0) {
+        const c = src[i];
+        if (inS) {
+          if (c === '\\') { i += 2; continue; }
+          if (c === inS) inS = null;
+        } else {
+          if (c === '"' || c === "'" || c === '`') inS = c as any;
+          else if (c === '(') depth++;
+          else if (c === ')') { depth--; if (depth === 0) break; }
+        }
+        i++;
+      }
+      if (depth !== 0) continue;
+      const callEnd = i;
+      // Require a matching `geom.add(<instance>);` somewhere after this.
+      const addRe = new RegExp(`geom\\.add\\(\\s*${instance}\\s*\\)\\s*;`);
+      if (!addRe.test(src.slice(callEnd))) continue;
+      const argText = src.slice(m.index! + m[0].length, callEnd);
+      out.push({ instance, callName, args: parsePartArgs(argText), callStart, callEnd });
+    }
+    return out;
+  }
+
+  /** Split a positional-args string by top-level commas, then classify
+   *  each segment as a literal number, a param ref (`p.<name>`), or
+   *  unknown (anything else — preserved as raw text). */
+  function parsePartArgs(argText: string): PartArg[] {
+    const segs = splitTopLevel(argText);
+    return segs.map((raw): PartArg => {
+      const t = raw.trim();
+      if (/^-?\d+(\.\d+)?$/.test(t)) return { kind: 'literal', raw: t, value: Number(t) };
+      const pm = /^p\.(\w+)$/.exec(t);
+      if (pm) return { kind: 'paramRef', raw: t, name: pm[1] };
+      return { kind: 'unknown', raw: t };
+    });
+  }
+
+  /** Comma-split that respects nested parens / braces / strings — the
+   *  helper args may contain expressions like `[0, 0, p.length]` once
+   *  transforms come back in (`mv(part, [0,0,0])`). */
+  function splitTopLevel(s: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    let inS: '"' | "'" | '`' | null = null;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (inS) {
+        if (c === '\\') { i++; continue; }
+        if (c === inS) inS = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') { inS = c as any; continue; }
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+      else if (c === ',' && depth === 0) {
+        out.push(s.slice(start, i));
+        start = i + 1;
+      }
+    }
+    const tail = s.slice(start).trim();
+    if (tail) out.push(s.slice(start));
+    return out;
+  }
+
+  /** Rewrite a single positional arg of an instance call. Used by the
+   *  inline number input in the per-instance Props row. Returns the new
+   *  source or `null` if the instance / arg can't be found. */
+  function setInstanceArg(src: string, instance: string, argIdx: number, newRaw: string): string | null {
+    const insts = parsePartInstances(src);
+    const inst = insts.find((p) => p.instance === instance);
+    if (!inst) return null;
+    if (argIdx < 0 || argIdx >= inst.args.length) return null;
+    // Slice out the raw `( <args> )` text and replace just the one arg.
+    const callOpenIdx = src.indexOf('(', inst.callStart);
+    if (callOpenIdx < 0) return null;
+    const argText = src.slice(callOpenIdx + 1, inst.callEnd);
+    const segs = splitTopLevel(argText);
+    segs[argIdx] = ` ${newRaw}`;
+    return src.slice(0, callOpenIdx + 1) + segs.join(',') + src.slice(inst.callEnd);
+  }
+
   /** Find the next unused single-letter instance name (A, B, …, Z, AA, AB,
    *  …). Scans the source for existing `const <NAME>` declarations to
    *  avoid collisions. */
@@ -4415,6 +4534,7 @@ export const geom = defineGeom(meta, (p, geom) => {
           ] : []}
           {@const paramKeys = Object.keys(activeTab.params)}
           {@const matchedSet = new Set(partGroups.map((p) => p.key))}
+          {@const instances = isXml && curSrc ? parsePartInstances(curSrc) : []}
           {@const orphanKeys = paramKeys.filter((k) => !matchedSet.has((allDefs[k]?.group ?? '').toLowerCase()))}
           {@const useParts = isXml && partGroups.length > 0}
           {@const groups = useParts
@@ -4543,10 +4663,72 @@ export const geom = defineGeom(meta, (p, geom) => {
                 </button>
               {/if}
               {#if !collapsed}
+              <!-- Per-instance Props rows (strict-grammar GUI). Every
+                   `const A = tube(0.5, 0.4, 4); geom.add(A);` pair shows
+                   up here as one block titled by the instance name with
+                   the helper's typed props rendered inline. Each prop is
+                   currently a literal number input — editing it writes
+                   the new value back into the source. Param-link via
+                   dropdown is the next iteration. -->
+              {@const helperMeta = HELPERS.find((h) => h.name === g.name)}
+              {@const ourInstances = helperMeta ? instances.filter((i) => i.callName === g.name) : []}
+              {#if ourInstances.length > 0 && helperMeta}
+                <div class="pi-list">
+                  {#each ourInstances as inst (inst.instance)}
+                    <div class="pi-card">
+                      <div class="pi-head">
+                        <span class="pi-name">{inst.instance}</span>
+                        <span class="pi-call">= {g.name}(…)</span>
+                      </div>
+                      <div class="pr-grid">
+                        {#each helperMeta.props as prop, idx (prop.name)}
+                          {@const arg = inst.args[idx]}
+                          <div class="pr-card">
+                            <div class="pr-card-head">
+                              <span class="pr-keyname">{prop.name}</span>
+                              {#if prop.optional}<span class="pr-unit-inline">opt</span>{/if}
+                            </div>
+                            {#if arg && arg.kind === 'literal'}
+                              <input
+                                class="pr-num drag"
+                                type="number"
+                                step="0.05"
+                                value={arg.value}
+                                onchange={(e) => {
+                                  const v = Number((e.currentTarget as HTMLInputElement).value);
+                                  if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
+                                  const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                                  const next = setInstanceArg(cur, inst.instance, idx, String(v));
+                                  if (next != null) activeTab.sourceDraft = next;
+                                }}
+                                use:dragNumber={{
+                                  step: 0.05,
+                                  get: () => arg.value,
+                                  set: (v) => {
+                                    if (!activeTab?.componentEntry) return;
+                                    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                                    const next = setInstanceArg(cur, inst.instance, idx, String(v));
+                                    if (next != null) activeTab.sourceDraft = next;
+                                  },
+                                }}
+                                title="Click to type · drag horizontally to scrub"
+                              />
+                            {:else if arg && arg.kind === 'paramRef'}
+                              <span class="pi-paramref">p.{arg.name}</span>
+                            {:else}
+                              <span class="pi-raw">{arg?.raw ?? '—'}</span>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
               <!-- Grid of param cards. Each card has label · slider · number
                    inline. Empty hint when a part has no params bound via
                    the `group` field. -->
-              {#if groupKeys.length === 0 && useParts && g.key !== '__general__'}
+              {#if groupKeys.length === 0 && useParts && g.key !== '__general__' && ourInstances.length === 0}
                 <div class="pg-acc-empty">
                   No params bound to <code>{g.name}</code>. Add <code>group: '{g.name}'</code> to a param schema to show it here.
                 </div>
@@ -6415,6 +6597,42 @@ export const geom = defineGeom(meta, (p, geom) => {
     margin: 2px 0 4px;
   }
   .pg-acc-empty code { font: 10px ui-monospace, monospace; color: #555; background: #fff; padding: 0 3px; border-radius: 2px; }
+  /* Per-instance Props block — one per `const X = call(...); geom.add(X);`
+     pair in the body. The Props grid below it reuses the existing
+     stacked card layout. */
+  .pi-list { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 6px; }
+  .pi-card {
+    border: 1px solid #e8e8ee;
+    border-radius: 4px;
+    padding: 4px 6px 6px;
+    background: #fcfcfd;
+  }
+  .pi-head {
+    display: flex; align-items: baseline; gap: 6px;
+    font: 11px Arial; color: #555;
+    margin-bottom: 4px;
+  }
+  .pi-name {
+    font: bold 11px ui-monospace, monospace; color: #cc2222;
+    background: #fff; border: 1px solid #f0d5d5; border-radius: 3px;
+    padding: 0 5px;
+  }
+  .pi-call { font: 10px ui-monospace, monospace; color: #999; }
+  /* Param-ref binding — appears when a prop was edited to link to a
+     primitive-level param. Visual distinct from the literal input so the
+     user sees at a glance that the value is bound, not a number. */
+  .pi-paramref {
+    font: 11px ui-monospace, monospace; color: #1a5b8a;
+    background: #eef4fa; border: 1px solid #c5d8e8; border-radius: 3px;
+    padding: 2px 6px;
+    text-align: center;
+  }
+  .pi-raw {
+    font: 10px ui-monospace, monospace; color: #888;
+    background: #fafafa; border: 1px dashed #ddd; border-radius: 3px;
+    padding: 2px 6px;
+    text-align: center;
+  }
   /* Derived param — read-only computed value, no slider. Tinted to read
      as "output", not "input". The spacer keeps the value visually
      aligned with the number column of the input cards above. */
