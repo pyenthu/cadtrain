@@ -5048,9 +5048,9 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Click to type · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-fx-badge" title={`p.${arg.name}`}>?</span>
+                          <span class="pi-fx-badge" data-tip={`p.${arg.name}`}>?</span>
                         {:else if arg}
-                          <span class="pi-fx-badge" title={arg.raw}>?</span>
+                          <span class="pi-fx-badge" data-tip={arg.raw}>?</span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
                         {/if}
@@ -6803,38 +6803,41 @@ export const geom = defineGeom(meta, (p, geom) => {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* Custom hover tooltips for [data-tip] — replaces the native
-     `title=` popup so the description appears instantly (no 1s delay)
-     and is readable (multi-line wrap, dark pill instead of pale OS
-     tooltip). Applied to .pr-keyname + .pr-lbl. */
+     `title=` popup so the description appears INSTANTLY (no OS
+     ~1s delay) and reads as a deliberate UI element rather than a
+     pale system popup. Used by param keynames, the formula `?`
+     badge, and any other span with data-tip. */
   [data-tip] {
     position: relative;
   }
   [data-tip]:hover::after {
     content: attr(data-tip);
     position: absolute;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + 8px);
     left: 0;
     z-index: 200;
-    background: #1f1f24;
+    background: #1a1a2e;
     color: #fff;
-    padding: 6px 10px;
-    border-radius: 4px;
-    font: 11px/1.45 Arial;
-    max-width: 300px;
+    padding: 8px 12px;
+    border-radius: 5px;
+    border: 1px solid #3a3a52;
+    font: 600 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.01em;
+    max-width: 360px;
     width: max-content;
     white-space: pre-line;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.32), 0 0 0 1px rgba(124,77,255,0.18);
     pointer-events: none;
   }
   [data-tip]:hover::before {
     content: '';
     position: absolute;
-    bottom: 100%;
-    left: 10px;
+    bottom: calc(100% + 2px);
+    left: 12px;
     z-index: 201;
     width: 0; height: 0;
-    border: 4px solid transparent;
-    border-top-color: #1f1f24;
+    border: 6px solid transparent;
+    border-top-color: #1a1a2e;
     pointer-events: none;
   }
   .pr-card.extra .pr-lbl { color: #1a5b8a; font-style: italic; }
