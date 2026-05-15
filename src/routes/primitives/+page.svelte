@@ -5275,8 +5275,14 @@ export const geom = defineGeom(meta, (p, geom) => {
                remains here. -->
           {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
             {@const selfId2 = activeTab.componentEntry.meta.id}
-            {@const availableHelpers = HELPERS.filter((h) => !imported.helpers.has(h.name))}
-            {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId2 && !imported.components.has(r.meta.id))}
+            <!-- The catalog used to hide already-imported helpers /
+                 components — fine for the old "one instance per helper"
+                 model, but the strict-grammar GUI emits an INSTANCE
+                 per click (tube → A, then tube → B, …), so the user
+                 needs the helper available even when it's already in
+                 the imports list. Only self-import is still excluded. -->
+            {@const availableHelpers = HELPERS}
+            {@const availableComponents = componentList.filter((r) => r.meta.id !== selfId2)}
             {@const availableCount = availableHelpers.length + availableComponents.length}
             {#if availableCount > 0}
               <div class="parts-pane parts-add-only">
