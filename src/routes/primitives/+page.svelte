@@ -4874,20 +4874,11 @@ export const geom = defineGeom(meta, (p, geom) => {
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
-            <div class="ed-sec-h thin">
-              <span class="muted">{Object.keys(activeTab.params).length}</span>
-              {#if activeTab.kind === 'xml-primitive'}
-                <!-- The `+` in this header opens the parts picker (geom
-                     ops live here, not param schema). Param-add is a
-                     secondary affordance available in the per-param row
-                     edit popup; the AI tab is the primary way new params
-                     enter a primitive anyway. -->
-                <button class="add-param-plus" type="button" onclick={() => { partsAddHelperOpen = true; }} title="Add a part">+</button>
-              {:else if activeTab.draft}
-                <button class="row-add" type="button" onclick={() => addParam(activeTab!)} title="Add a draft parameter">+ param</button>
-              {/if}
-            </div>
-
+            <!-- Top header row removed — the prop-count badge + small
+                 inline `+` were redundant once the round-red `+` at the
+                 bottom became the dominant add affordance. Draft-param
+                 add for non-primitive tabs is still surfaced via the
+                 per-param ✎ popup. -->
             {#if activeTab.descForm?.open}
               {@const df = activeTab.descForm}
               <div class="param-form">
@@ -5171,9 +5162,13 @@ export const geom = defineGeom(meta, (p, geom) => {
             {@const availableCount = availableHelpers.length + availableComponents.length}
             {#if availableCount > 0}
               <div class="parts-pane parts-add-only">
-                <button class="parts-add-btn" type="button" onclick={() => (partsAddHelperOpen = !partsAddHelperOpen)}>
-                  {partsAddHelperOpen ? '− Hide catalog' : '+ Add primitive'}
-                </button>
+                <button
+                  class="parts-add-plus"
+                  type="button"
+                  title={partsAddHelperOpen ? 'Hide catalog' : 'Add a part'}
+                  aria-label={partsAddHelperOpen ? 'Hide catalog' : 'Add a part'}
+                  onclick={() => (partsAddHelperOpen = !partsAddHelperOpen)}
+                >{partsAddHelperOpen ? '−' : '+'}</button>
                 {#if partsAddHelperOpen}
                   {@const q = partsSearch.trim().toLowerCase()}
                   {@const filteredHelpers = q
@@ -7094,7 +7089,7 @@ export const geom = defineGeom(meta, (p, geom) => {
      Click → snippetForHelper / snippetForRunes splices an import (and a
      hint comment) into the active tab's sourceDraft. Visible only on the
      Parts inspector tab; the Svelte editor still owns the actual code. */
-  .parts-pane { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 2px; }
+  .parts-pane { display: flex; flex-direction: column; gap: 4px; padding: 1px 0 2px; }
   .parts-intro { font: 11px Arial; color: #555; margin: 0; line-height: 1.5; }
   .parts-intro code { font: 10px monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 3px; color: #444; }
   .parts-group { display: flex; flex-direction: column; gap: 6px; }
@@ -7278,18 +7273,23 @@ export const geom = defineGeom(meta, (p, geom) => {
   .part-card.used:hover .part-x { display: inline-flex; }
   .part-x:hover { background: #fdecec; color: #cc2222; }
 
-  /* "+ Add helper / + Add primitive" toggle — same look as the other small
-     in-pane action buttons. Sits on its own row below the used-cards grid. */
-  .parts-add-btn {
+  /* "+ Add part" toggle at the bottom of the Parts section — round
+     red plus, same look as the .add-param-plus in the section
+     header. Centred below the accordion stack so it reads as the
+     dominant add affordance. */
+  .parts-add-plus {
     align-self: flex-start;
-    background: #fff;
-    border: 1px dashed #c8c8d0; border-radius: 4px;
-    padding: 3px 10px;
-    font: 11px Arial; color: #555;
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #cc2222; color: #fff; border: none;
+    border-radius: 50%;
+    font: bold 11px Arial;
+    line-height: 1;
     cursor: pointer;
-    margin-top: 2px;
+    margin-top: 1px;
+    transition: background 100ms, transform 100ms;
   }
-  .parts-add-btn:hover { background: #f4f0fb; border-color: #b8a8e0; color: #1a5b8a; }
+  .parts-add-plus:hover { background: #aa1818; transform: scale(1.06); }
 
   /* Catalog picker — appears below the "+ Add" button, lists what's NOT
      yet imported. Click an entry to splice the import + auto-close picker. */
