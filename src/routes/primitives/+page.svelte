@@ -6888,7 +6888,7 @@ export const geom = defineGeom(meta, (p, geom) => {
      single visual container so each instance / section reads as one
      unit when stacked. The header sits flush with the wrapper edges. */
   .pg-acc-wrap {
-    border: 1px solid #e2e2e8;
+    border: 1.25px solid #e2e2e8;
     border-radius: 4px;
     background: #fff;
     padding: 2px 6px 4px;
