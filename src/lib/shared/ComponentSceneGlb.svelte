@@ -18,22 +18,36 @@
   let loading = $state(false);
 
   // The bake writes ONLY positions to the GLB (see manifold-bake.ts) —
-  // no normals, no colors, no material. GLTFLoader would default to a
-  // white MeshStandardMaterial with flat auto-computed normals, which
-  // reads as "no colors / no material" on the canvas. Override every
-  // mesh with the project's red MeshPhongMaterial and compute smooth
-  // normals so shading matches the live Render tab (cutaway off).
+  // no normals, no colors, no material. Override every mesh with the
+  // project's red MeshPhongMaterial.
+  //
+  // `flatShading: true` is critical: ManifoldCAD outputs a faceted mesh
+  // (hard edges between triangles), and `computeVertexNormals()` would
+  // smear them by averaging — producing the streaky highlights + blurred
+  // edges the user observed. Flat shading derives one normal per face
+  // in the fragment shader, which both removes the need to compute /
+  // store normals AND gives proper faceted look on a primitive that's
+  // already tessellated for it.
+  //
+  // Specular shininess is dialled WAY down vs the live Render tab (300)
+  // because flat shading + a strong specular highlight on a bare-position
+  // mesh produces giant white blotches across each face. The live render
+  // gets away with shininess=300 because it has proper smoothed-then-cut
+  // normals from finalizeManifold; the GLB doesn't.
   function dressGltfScene(root: THREE.Object3D) {
     root.traverse((obj: any) => {
       if (!obj.isMesh) return;
-      const g = obj.geometry as THREE.BufferGeometry;
-      if (!g.attributes.normal) g.computeVertexNormals();
       // Dispose the auto-created default material to avoid the leak.
       if (obj.material && (obj.material as any).dispose) (obj.material as any).dispose();
+      // Discard any auto-computed smooth normals — flat shading derives
+      // per-face normals from positions, which is what we want.
+      const g = obj.geometry as THREE.BufferGeometry;
+      if (g.attributes.normal) g.deleteAttribute('normal');
       obj.material = new THREE.MeshPhongMaterial({
         color: '#cc2222',
-        specular: '#ffffff',
-        shininess: 300,
+        specular: '#222222',
+        shininess: 30,
+        flatShading: true,
         side: THREE.DoubleSide,
       });
     });

@@ -34,7 +34,22 @@ export async function initManifold() {
   wasm = await Module();
   wasm.setup();
   M = wasm.Manifold;
+  // Sugar alias: `geom.add(part)` reads more naturally than
+  // `geom.union(part)` in the parts-tab snippet output. Same semantics —
+  // boolean union. Idempotent — only patches if .add isn't already a
+  // method (future Manifold versions may add their own).
+  if (M?.prototype && !M.prototype.add) {
+    M.prototype.add = function (this: any, other: any) { return this.union(other); };
+  }
   wasm.setCircularSegments(currentSegments);
+}
+
+/** @part Empty seed — a zero-volume Manifold suitable as the initial
+ *  accumulator for the parts-tab pattern (`let geom = empty();
+ *  geom = geom.add(firstPart); ...`). Implementation: a degenerate cube
+ *  at the origin. */
+export function empty(): any {
+  return M.cube([0, 0, 0], true);
 }
 
 /** @part Z-up cylinder/cone — height h, bottom radius r1, top radius r2 (defaults to r1). */

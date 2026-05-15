@@ -1352,7 +1352,8 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
     // The geom body throws if it ever runs before real geometry replaces
     // it, so the user can't accidentally save the stub and see a stray
     // cylinder.
-    const stub = `import { defineGeom } from '.';
+    const stub = `import { empty } from '../manifold-helpers';
+import { defineGeom } from '.';
 
 export const meta = {
   id: '${id}',
@@ -1362,8 +1363,12 @@ export const meta = {
   params: {},
 } as const;
 
+// geom is built and rendered automatically. Each part added from the
+// Parts tab appends to the \`geom\` accumulator below — no need to
+// declare or return geom yourself, just keep adding lines.
 export const geom = defineGeom(meta, (p) => {
-  throw new Error('Not constructed yet — describe geometry in the AI tab or write the body yourself.');
+  let geom = empty();
+  return geom;
 });
 `;
     try {
@@ -1602,9 +1607,82 @@ export const geom = defineGeom(meta, (p) => {
     }
   }
 
-  /** Add a manifold-helpers import + a starter call inside geom().
-   *  Idempotent on the import; the call line is appended every click so
-   *  the user can stamp out multiple instances if needed. */
+  /** Ensure the geom body has the accumulator scaffold:
+   *    let geom = empty();
+   *    ...
+   *    return geom;
+   *  - Strips a "Not constructed yet" throw if present (fresh stub).
+   *  - Imports `empty` from manifold-helpers (used as the seed).
+   *  - Adds the init line if missing.
+   *  - Adds the return if missing.
+   *  Idempotent: re-running on a properly scaffolded body is a no-op. */
+  function ensureGeomScaffold(src: string): string {
+    let next = src;
+    // 1. Drop the stub throw if present (one statement, replace with nothing).
+    next = next.replace(
+      /\s*throw new Error\('Not constructed yet[^']*'\);\s*/,
+      '\n  ',
+    );
+    // 2. Make sure `empty` is imported from manifold-helpers.
+    const importRe = /import\s*\{\s*([^}]*)\s*\}\s*from\s*['"]\.\.\/manifold-helpers['"];?/;
+    const im = importRe.exec(next);
+    if (im) {
+      const names = im[1].split(',').map((s) => s.trim()).filter(Boolean);
+      if (!names.includes('empty')) {
+        names.push('empty');
+        next = next.slice(0, im.index) + `import { ${names.join(', ')} } from '../manifold-helpers';` + next.slice(im.index + im[0].length);
+      }
+    } else {
+      next = `import { empty } from '../manifold-helpers';\n` + next;
+    }
+    // 3. Insert `let geom = empty();` at the top of the body if missing.
+    if (!/\b(let|const|var)\s+geom\s*=/.test(next)) {
+      next = insertAtGeomBodyTop(next, 'let geom = empty();');
+    }
+    // 4. Ensure `return geom;` is the last statement in the body.
+    if (!/\breturn\s+geom\b/.test(next)) {
+      next = insertIntoGeomBody(next, 'return geom;');
+    }
+    return next;
+  }
+
+  /** Insert `line` at the TOP of the geom body (right after the opening
+   *  brace), indented two spaces. Mirrors insertIntoGeomBody but for the
+   *  prologue. */
+  function insertAtGeomBodyTop(src: string, line: string): string {
+    const dslRe = /export\s+const\s+geom\s*=\s*defineGeom\s*\(\s*meta\s*,\s*\(/;
+    const dm = dslRe.exec(src);
+    let open: number;
+    if (dm) {
+      let i = dm.index + dm[0].length;
+      let depth = 1;
+      while (i < src.length && depth > 0) {
+        const c = src[i];
+        if (c === '(') depth++;
+        else if (c === ')') { depth--; if (depth === 0) break; }
+        i++;
+      }
+      if (depth !== 0) return src;
+      i++;
+      while (i < src.length && /\s/.test(src[i])) i++;
+      if (src.slice(i, i + 2) !== '=>') return src;
+      i += 2;
+      while (i < src.length && /\s/.test(src[i])) i++;
+      if (src[i] !== '{') return src;
+      open = i + 1;
+    } else {
+      const re = /export\s+const\s+geom\s*=\s*\([^)]*\)\s*=>\s*\{/;
+      const m = re.exec(src);
+      if (!m) return src;
+      open = m.index + m[0].length;
+    }
+    // Insert right after `{` with a leading newline.
+    return src.slice(0, open) + `\n  ${line}` + src.slice(open);
+  }
+
+  /** Add a manifold-helpers import + a `geom = geom.add(...)` accumulator
+   *  line inside the body. The body's init (`let geom = empty();`) and
+   *  return are auto-scaffolded by ensureGeomScaffold if missing. */
   function snippetForHelper(src: string, name: string, paramKeys: Set<string>): string {
     let next = src;
     const importRe = /import\s*\{\s*([^}]*)\s*\}\s*from\s*['"]\.\.\/manifold-helpers['"];?/;
@@ -1618,15 +1696,13 @@ export const geom = defineGeom(meta, (p) => {
     } else {
       next = `import { ${name} } from '../manifold-helpers';\n` + next;
     }
+    next = ensureGeomScaffold(next);
     const baseCall = defaultHelperCall(name, paramKeys);
-    const constName = uniqueConstName(next, name);
-    return insertIntoGeomBody(next, `const ${constName} = ${baseCall}; // + part: ${name}`);
+    return insertBeforeReturnGeom(next, `geom = geom.add(${baseCall}); // + part: ${name}`);
   }
 
-  /** Add a component import (`geom as <id>Geom`) + a starter call
-   *  inside geom(). The call uses the imported primitive's defaults map
-   *  so it renders something sensible the moment you wire it into the
-   *  return. */
+  /** Add a component import (`geom as <id>Geom`) + a `geom.add(...)` line
+   *  that uses the imported primitive's defaults. */
   function snippetForRunes(src: string, entry: ComponentEntry): string {
     const id = entry.meta.id;
     const alias = id.replace(/_(\w)/g, (_, c) => c.toUpperCase()) + 'Geom';
@@ -1635,11 +1711,23 @@ export const geom = defineGeom(meta, (p) => {
     if (!importRe.test(next)) {
       next = `import { geom as ${alias} } from './${id}';\n` + next;
     }
+    next = ensureGeomScaffold(next);
     const defaults = Object.entries(entry.meta.params)
       .map(([k, v]: [string, any]) => `${k}: ${v?.default ?? 0}`)
       .join(', ');
-    const constName = uniqueConstName(next, id);
-    return insertIntoGeomBody(next, `const ${constName} = ${alias}({ ${defaults} }); // + part: ${entry.meta.name}`);
+    return insertBeforeReturnGeom(next, `geom = geom.add(${alias}({ ${defaults} })); // + part: ${entry.meta.name}`);
+  }
+
+  /** Insert `line` immediately BEFORE the `return geom;` statement in
+   *  the body. Falls back to insertIntoGeomBody (before closing brace)
+   *  if no return-geom is found. */
+  function insertBeforeReturnGeom(src: string, line: string): string {
+    const re = /(\s*)return\s+geom\s*;/;
+    const m = re.exec(src);
+    if (!m) return insertIntoGeomBody(src, line);
+    const idx = m.index;
+    const indent = (m[1].match(/[ \t]+$/)?.[0]) ?? '  ';
+    return src.slice(0, idx) + `\n${indent}${line}` + src.slice(idx);
   }
 
   /** Pick a const name that doesn't collide with anything already declared
@@ -4310,7 +4398,12 @@ export const geom = defineGeom(meta, (p) => {
             <div class="ed-sec-h thin">
               <span class="muted">{Object.keys(activeTab.params).length}</span>
               {#if activeTab.kind === 'xml-primitive'}
-                <button class="add-param-plus" type="button" onclick={() => openParamForm(activeTab!)} title="Add a parameter">+</button>
+                <!-- The `+` in this header opens the parts picker (geom
+                     ops live here, not param schema). Param-add is a
+                     secondary affordance available in the per-param row
+                     edit popup; the AI tab is the primary way new params
+                     enter a primitive anyway. -->
+                <button class="add-param-plus" type="button" onclick={() => { partsAddHelperOpen = true; }} title="Add a part">+</button>
               {:else if activeTab.draft}
                 <button class="row-add" type="button" onclick={() => addParam(activeTab!)} title="Add a draft parameter">+ param</button>
               {/if}
