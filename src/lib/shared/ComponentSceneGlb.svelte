@@ -130,5 +130,10 @@
 </T.Mesh>
 
 {#if loaded}
-  <T is={loaded} />
+  <!-- Apply the shared Z-scale to the loaded GLB at render time.
+       The live Render rebuilds geometry with setRenderZScale baked in;
+       a static GLB can't do that, so we mirror the same compression
+       visually by scaling the loaded Object3D along Z. The Z-down
+       convention means this still squashes the well-axis length. -->
+  <T is={loaded} scale.z={scene.zScale} />
 {/if}
