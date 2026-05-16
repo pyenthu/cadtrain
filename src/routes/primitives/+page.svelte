@@ -346,13 +346,19 @@
     } | null;
     /** Per-arg formula editor — opens via the ƒ button inside an
      *  instance-prop cell. Holds the in-flight expression text + a
-     *  cursor index used by the typeahead to compute the word-at-caret. */
+     *  cursor index used by the typeahead to compute the word-at-caret.
+     *  Three flavours by locator: helper-arg (argIdx), component-arg
+     *  (argKey), and chain-transform-axis (txTIdx + txAxis). */
     formulaEdit?: {
       instance: string;
       /** Set for HELPER instance edits — positional arg index. */
       argIdx?: number;
       /** Set for COMPONENT instance edits — keyed by param name. */
       argKey?: string;
+      /** Set for chain-transform-axis edits — transform index. */
+      txTIdx?: number;
+      /** Set for chain-transform-axis edits — 0|1|2 for X|Y|Z. */
+      txAxis?: 0 | 1 | 2;
       raw: string;
       caret: number;
     } | null;
@@ -436,11 +442,23 @@
   let txAddSearch = $state<string>('');
 
   /** State for the per-chip vec3 edit popup. Anchored to the clicked
-   *  chip; holds the target instance + transform index + current
-   *  in-flight axis values. */
-  let txEditOpen = $state<{ instance: string; tIdx: number; x: number; y: number; z: number } | null>(null);
+   *  chip; holds the target instance + transform index + the three
+   *  axis values as RAW EXPRESSION STRINGS — a clean number renders
+   *  as a drag-scrub input, anything else renders as a badge with
+   *  the ƒ button surfacing the formula popup. */
+  let txEditOpen = $state<{ instance: string; tIdx: number; op: string; xRaw: string; yRaw: string; zRaw: string } | null>(null);
   let txEditX = $state<number>(80);
   let txEditY = $state<number>(80);
+  /** Which axis input inside the chain-op popup currently has focus.
+   *  Drives the INLINE typeahead row (no separate sub-popup) — keeps
+   *  the chain-op popup self-contained instead of stacking two
+   *  panels for one transform edit. */
+  let txFocusedAxis = $state<0 | 1 | 2 | null>(null);
+  let txFocusedCaret = $state<number>(0);
+  /** Active axis tab (X|Y|Z) inside the chain-op popup. One axis
+   *  visible at a time gives the expression input the full popup
+   *  width instead of cramming three side-by-side. */
+  let txEditTab = $state<0 | 1 | 2>(0);
 
   /** Compute the identifier the user is currently typing — the
    *  contiguous run of `[A-Za-z0-9._]` ending at the caret. Returns the
@@ -1262,6 +1280,93 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
    *  the MD tab if a longer notes doc exists). Single shared bit since
    *  only one tab is active at a time. */
   let stageInfoOpen = $state(false);
+  /** When non-null, the stage header's display name swaps to an
+   *  inline text input. Editing the name rewrites `meta.name` in
+   *  the active xml-primitive's source — directory + id are
+   *  untouched (they're the stable identity). */
+  let stageNameEdit = $state<string | null>(null);
+  /** When non-null, the stage header's id slug swaps to an inline
+   *  text input. Committing renames the directory on disk
+   *  (`library/<cat>/<oldId>/` → `library/<cat>/<newId>/`),
+   *  rewrites meta.id, and updates `from './<oldId>'` imports in
+   *  every other library part. Bundle primitives (git-tracked
+   *  src/) are refused by the endpoint. */
+  let stageIdEdit = $state<string | null>(null);
+  let stageRenamePending = $state(false);
+  let stageRenameError = $state<string | null>(null);
+  /** Svelte action: focus + select on mount. Used by the stage-name
+   *  edit input so the user can immediately type to overwrite. */
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+    node.select();
+  }
+
+  /** Commit a display-name edit. Rewrites `meta.name` in the
+   *  source, applies it to the canvas, AND re-creates the tab's
+   *  componentEntry — `activeDef.name` is derived from
+   *  `componentEntry.meta.name`, so the registry entry needs a
+   *  fresh REFERENCE for the $derived to re-fire. Without this,
+   *  the source updates but the H2 keeps showing the old name. */
+  function commitNameRename(tab: Tab, newName: string) {
+    if (!newName || tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    if (newName === tab.componentEntry.meta.name) return;
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const next = setMetaName(cur, newName);
+    if (next == null || next === cur) return;
+    tab.sourceDraft = next;
+    tab.label = newName;
+    tab.componentEntry = {
+      ...tab.componentEntry,
+      meta: { ...tab.componentEntry.meta, name: newName },
+      source: tab.componentEntry.source,
+    };
+    applyDraft(tab);
+  }
+
+  /** POST /api/components/rename + reconcile in-memory state. The
+   *  server handles directory rename, meta.id rewrite, and cross-ref
+   *  updates in other library parts; on success we re-fetch the
+   *  registry and point the active tab at the renamed entry. */
+  async function renamePartId(tab: Tab, newId: string): Promise<boolean> {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return false;
+    const oldId = tab.componentEntry.meta.id;
+    if (oldId === newId) return true;
+    if (!/^[a-z][a-z0-9_]*$/.test(newId)) {
+      stageRenameError = `Invalid id "${newId}" — lowercase letters, digits, underscores; must start with a letter.`;
+      return false;
+    }
+    stageRenamePending = true;
+    stageRenameError = null;
+    try {
+      const r = await fetch('/api/components/rename', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldId, newId }),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        stageRenameError = `${r.status} — ${txt.slice(0, 200)}`;
+        return false;
+      }
+      // Re-fetch the registry, then re-bind the tab to the new entry.
+      await refreshRunesList();
+      const fresh = componentList.find((e) => e.meta.id === newId);
+      if (fresh) {
+        tab.componentEntry = fresh;
+        tab.primId = newId;
+        tab.label = fresh.meta.name ?? newId;
+        tab.sourceDraft = null;
+        tab.lastAppliedSource = null;
+        tab.appliedAt = Date.now();
+      }
+      return true;
+    } catch (e: any) {
+      stageRenameError = e?.message ?? String(e);
+      return false;
+    } finally {
+      stageRenamePending = false;
+    }
+  }
   // Dock the Inspector as a vertical column on the right of the tab body.
   // When false, it's a draggable floating popup.
   let inspectorDocked = $state(true);
@@ -2033,38 +2138,32 @@ export const geom = defineGeom(meta, (p, geom) => {
   /** Read the current vec3 axis values from the transform at `tIdx`.
    *  Returns `[x, y, z]` parsed as numbers, with NaN for any axis we
    *  can't parse (formula / expression). Used to seed the edit popup. */
-  function readTransformVec3(inst: PartInstance, tIdx: number): [number, number, number] {
+  /** Pull the three vec3 axis values out of the transform as RAW
+   *  expression strings (literals like `4.5` AND formulas like
+   *  `p.bodyLen / 2` or `A.outerR` pass through unchanged). */
+  function readTransformVec3Raw(inst: PartInstance, tIdx: number): [string, string, string] {
     const t = inst.transforms[tIdx];
-    if (!t) return [0, 0, 0];
-    // Args[0] is the vec3 literal — `[x, y, z]`. Strip brackets, split.
+    if (!t) return ['0', '0', '0'];
     const raw = t.args[0]?.raw?.trim() ?? '';
     const inner = raw.replace(/^\[/, '').replace(/\]$/, '');
     const parts = splitTopLevel(inner).map((s) => s.trim());
-    const n = (s: string) => {
-      const v = Number(s);
-      return Number.isFinite(v) ? v : NaN;
-    };
-    return [n(parts[0] ?? '0'), n(parts[1] ?? '0'), n(parts[2] ?? '0')];
+    return [parts[0] || '0', parts[1] || '0', parts[2] || '0'];
   }
 
-  /** Rewrite the vec3 arg of the transform at `tIdx`. Emits a fresh
-   *  `[x, y, z]` literal — any prior formula expressions in the vec3
-   *  are flattened to literal numbers (acceptable for the v1 popup;
-   *  formula-per-axis is a later iteration). */
-  function setTransformVec3(src: string, instance: string, tIdx: number, vec: [number, number, number]): string | null {
+  /** Rewrite the vec3 arg of the transform at `tIdx`. Each axis is a
+   *  raw expression string — literals (`4.5`) AND formulas
+   *  (`p.bodyLen / 2`, `A.outerR`) pass through unchanged. */
+  function setTransformVec3(src: string, instance: string, tIdx: number, vec: [string, string, string]): string | null {
     const insts = parsePartInstances(src);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return null;
     const t = inst.transforms[tIdx];
     if (!t) return null;
-    // Find the `(` after the op name and patch just the args region
-    // BEYOND the implicit first-part-arg.
     const opOpenIdx = src.indexOf('(', t.callStart);
     if (opOpenIdx < 0) return null;
     const argText = src.slice(opOpenIdx + 1, t.callEnd);
     const segs = splitTopLevel(argText);
     if (segs.length < 1) return null;
-    // segs[0] = instance name, segs[1] = vec3. Replace segs[1].
     const newVec = `[${vec[0]}, ${vec[1]}, ${vec[2]}]`;
     if (segs.length >= 2) {
       segs[1] = ` ${newVec}`;
@@ -2575,42 +2674,51 @@ export const geom = defineGeom(meta, (p, geom) => {
     txAddOpen = null;
   }
 
-  /** Open the per-chip vec3 edit popup. Pre-seeds x/y/z from the
-   *  transform's current vec3 literal. */
+  /** Open the per-chip vec3 edit popup. Pre-seeds x/y/z RAW
+   *  EXPRESSIONS from the transform's current vec3 literal. */
   function openTxEdit(tab: Tab, instance: string, tIdx: number, ev: MouseEvent) {
     if (!tab.componentEntry) return;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
     const insts = parsePartInstances(cur);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return;
-    const [x, y, z] = readTransformVec3(inst, tIdx);
-    txEditOpen = {
-      instance,
-      tIdx,
-      x: Number.isFinite(x) ? x : 0,
-      y: Number.isFinite(y) ? y : 0,
-      z: Number.isFinite(z) ? z : 0,
-    };
+    const [xRaw, yRaw, zRaw] = readTransformVec3Raw(inst, tIdx);
+    const op = inst.transforms[tIdx]?.op ?? 'mv';
+    txEditOpen = { instance, tIdx, op, xRaw, yRaw, zRaw };
+    txEditTab = 0;
     const btn = ev.currentTarget as HTMLElement;
     const r = btn.getBoundingClientRect();
-    const popupW = 240;
+    const popupW = 280;
+    const popupH = 220;
     const gap = 6;
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const wouldOverflow = r.right + gap + popupW > vw - 8;
-    txEditX = wouldOverflow
-      ? Math.max(8, Math.round(r.left - gap - popupW))
-      : Math.round(r.right + gap);
-    txEditY = Math.round(r.bottom + gap);
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    // Align left edge with the chip, clamp into the viewport.
+    txEditX = Math.max(8, Math.min(Math.round(r.left), vw - popupW - 8));
+    // Below by default; flip above if the popup would overflow the
+    // viewport bottom. Both branches clamp to a small top margin.
+    const wouldOverflowBottom = r.bottom + gap + popupH > vh - 8;
+    txEditY = wouldOverflowBottom
+      ? Math.max(8, Math.round(r.top - gap - popupH))
+      : Math.round(r.bottom + gap);
   }
-  function closeTxEdit() { txEditOpen = null; }
-  /** Write the in-flight x/y/z back into the source. Used by Enter on
-   *  any axis input AND by the Apply button. */
+  function closeTxEdit() { txEditOpen = null; txFocusedAxis = null; }
+  /** Write the in-flight x/y/z back into the source AND push the
+   *  resulting sourceDraft to the canvas. Used by Enter on any axis
+   *  input, by horizontal-drag scrub on those inputs, and by the
+   *  operator-popup Apply button. The applyDraft tail-call mirrors
+   *  the global Apply semantics — every commit point in the
+   *  inspector should refresh the canvas live so the user sees
+   *  geometry move as they type/drag. */
   function commitTxEdit(tab: Tab) {
     if (!txEditOpen || !tab.componentEntry) return;
     const fe = txEditOpen;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
-    const next = setTransformVec3(cur, fe.instance, fe.tIdx, [fe.x, fe.y, fe.z]);
-    if (next != null) tab.sourceDraft = next;
+    const next = setTransformVec3(cur, fe.instance, fe.tIdx, [fe.xRaw, fe.yRaw, fe.zRaw]);
+    if (next != null) {
+      tab.sourceDraft = next;
+      applyDraft(tab);
+    }
   }
 
   /** Apply the in-flight sourceDraft to the canvas WITHOUT writing to
@@ -3108,6 +3216,13 @@ export const geom = defineGeom(meta, (p, geom) => {
       await refreshRunesList();
       const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
       if (fresh) tab.componentEntry = { ...fresh, source: next };
+      // Force the build effect to re-fire with the new entry.source.
+      // buildKey doesn't include the source string (it'd be churn-y),
+      // so without this bump the mesh stays at whatever the LAST
+      // Apply produced — fine for params edits, stale for structural
+      // source edits that came in through save without an intermediate
+      // Apply.
+      tab.appliedAt = Date.now();
       if (isNew) {
         // A brand-new part is now a library/test directory — it renders
         // server-side via /api/components/geom, NO page reload needed
@@ -3478,13 +3593,14 @@ export const geom = defineGeom(meta, (p, geom) => {
     tab.paramEdit = null;
   }
 
-  /** Open the per-arg formula popup. Two flavours per the instance
-   *  kind: a positional `argIdx` for helper-instance args, or a string
-   *  `argKey` for component-instance object-literal args. */
+  /** Open the per-arg formula popup. Three locator flavours: helper
+   *  positional `argIdx`, component object `argKey`, or chain
+   *  transform axis `{ txTIdx, txAxis }`. The popup body is the same
+   *  typeahead+input — the commit path branches on the locator. */
   function openFormulaEdit(
     tab: Tab,
     instance: string,
-    locator: { argIdx: number } | { argKey: string },
+    locator: { argIdx: number } | { argKey: string } | { txTIdx: number; txAxis: 0 | 1 | 2 },
     ev?: MouseEvent,
   ) {
     if (!tab.componentEntry) return;
@@ -3492,21 +3608,32 @@ export const geom = defineGeom(meta, (p, geom) => {
     const insts = parsePartInstances(cur);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return;
-    const arg =
-      'argIdx' in locator
-        ? inst.args[locator.argIdx]
-        : inst.argsObj?.[locator.argKey];
-    const raw = arg?.raw ?? '';
+    let raw = '';
+    if ('argIdx' in locator) {
+      raw = inst.args[locator.argIdx]?.raw ?? '';
+    } else if ('argKey' in locator) {
+      raw = inst.argsObj?.[locator.argKey]?.raw ?? '';
+    } else {
+      // Chain transform axis — pull from the live txEditOpen state if
+      // it's the same target, else re-parse the transform's vec3.
+      if (txEditOpen && txEditOpen.instance === instance && txEditOpen.tIdx === locator.txTIdx) {
+        raw = [txEditOpen.xRaw, txEditOpen.yRaw, txEditOpen.zRaw][locator.txAxis] ?? '0';
+      } else {
+        raw = readTransformVec3Raw(inst, locator.txTIdx)[locator.txAxis] ?? '0';
+      }
+    }
     tab.formulaEdit = {
       instance,
-      ...('argIdx' in locator ? { argIdx: locator.argIdx } : { argKey: locator.argKey }),
+      ...('argIdx' in locator ? { argIdx: locator.argIdx } : {}),
+      ...('argKey' in locator ? { argKey: locator.argKey } : {}),
+      ...('txTIdx' in locator ? { txTIdx: locator.txTIdx, txAxis: locator.txAxis } : {}),
       raw,
       caret: raw.length,
     };
     const btn = ev?.currentTarget as HTMLElement | undefined;
     if (btn) {
       const r = btn.getBoundingClientRect();
-      const popupW = 320; // matches the formula FloatingPanel width
+      const popupW = 320;
       const gap = 6;
       const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
       const wouldOverflow = r.right + gap + popupW > vw - 8;
@@ -3521,62 +3648,76 @@ export const geom = defineGeom(meta, (p, geom) => {
     if (!tab.formulaEdit || !tab.componentEntry) return;
     const fe = tab.formulaEdit;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
-    const next =
-      typeof fe.argKey === 'string'
-        ? setInstanceObjectArg(cur, fe.instance, fe.argKey, fe.raw.trim())
-        : setInstanceArg(cur, fe.instance, fe.argIdx!, fe.raw.trim());
-    if (next != null) tab.sourceDraft = next;
+    const trimmed = fe.raw.trim() || '0';
+    let next: string | null = null;
+    if (fe.txTIdx != null && fe.txAxis != null) {
+      // Chain-transform-axis: update the popup's in-flight state AND
+      // patch source. Keeps the chain op popup's inputs in sync with
+      // what just got written.
+      if (txEditOpen && txEditOpen.instance === fe.instance && txEditOpen.tIdx === fe.txTIdx) {
+        if (fe.txAxis === 0) txEditOpen.xRaw = trimmed;
+        else if (fe.txAxis === 1) txEditOpen.yRaw = trimmed;
+        else txEditOpen.zRaw = trimmed;
+        next = setTransformVec3(cur, fe.instance, fe.txTIdx, [txEditOpen.xRaw, txEditOpen.yRaw, txEditOpen.zRaw]);
+      }
+    } else if (typeof fe.argKey === 'string') {
+      next = setInstanceObjectArg(cur, fe.instance, fe.argKey, trimmed);
+    } else if (typeof fe.argIdx === 'number') {
+      next = setInstanceArg(cur, fe.instance, fe.argIdx, trimmed);
+    }
+    if (next != null && next !== cur) {
+      tab.sourceDraft = next;
+      applyDraft(tab);
+    }
     tab.formulaEdit = null;
   }
 
   /** Identifiers in scope for the typeahead, given the current geom
-   *  source. Returns top-level params as `p.<name>` plus other
-   *  instances' typed props as `<inst>.<prop>`. The caller filters by
-   *  the word-at-caret. */
-  function formulaCandidates(tab: Tab, excludeInstance: string): string[] {
+   *  source. Returns:
+   *    - top-level params:        `p.<name>`
+   *    - top-level derived keys:  `p.<derived>` (if meta.derived exists)
+   *    - EVERY part instance's props as `<inst>.<prop>` — covers
+   *      helper instances (cyl/tube args via HELPERS.props) AND
+   *      component instances (e.g. `B = hollowCylinderGeom({ od, wall })`
+   *      → suggests `B.od`, `B.wall`).
+   *  The `excludeInstance` is informational — we still surface its
+   *  props in the list (a part can validly self-reference via ratios)
+   *  but resolveCandidate refuses to snapshot a self-ref to avoid
+   *  infinite recursion. The caller filters by word-at-caret. */
+  function formulaCandidates(tab: Tab, _excludeInstance: string): string[] {
     const out: string[] = [];
     for (const k of Object.keys(tab.params)) out.push(`p.${k}`);
-    const cur = tab.sourceDraft ?? tab.componentEntry?.source ?? '';
+    const entry = tab.componentEntry;
+    if (entry?.meta && (entry.meta as any).derived) {
+      for (const dk of Object.keys((entry.meta as any).derived)) out.push(`p.${dk}`);
+    }
+    const cur = tab.sourceDraft ?? entry?.source ?? '';
     const insts = parsePartInstances(cur);
+    const aliases = componentAliases(cur);
     for (const i of insts) {
-      if (i.instance === excludeInstance) continue;
-      const meta = HELPERS.find((h) => h.name === i.callName);
-      if (!meta) continue;
-      for (const p of meta.props) out.push(`${i.instance}.${p.name}`);
+      if (i.kind === 'component') {
+        const compId = aliases[i.callName];
+        const compEntry = componentList.find((r) => r.meta.id === compId);
+        if (!compEntry) continue;
+        for (const pk of Object.keys(compEntry.meta.params)) out.push(`${i.instance}.${pk}`);
+      } else {
+        const meta = HELPERS.find((h) => h.name === i.callName);
+        if (!meta) continue;
+        for (const p of meta.props) out.push(`${i.instance}.${p.name}`);
+      }
     }
     return out;
   }
 
-  /** Snapshot-resolve a typeahead candidate to an expression that's
-   *  valid at runtime. `p.<name>` is left alone (the geom body's `p`
-   *  is the params object). `<inst>.<prop>` substitutes the named
-   *  instance's current raw arg text — wrapped in parens so precedence
-   *  is preserved when it lands inside a larger expression.
-   *
-   *  This is a SNAPSHOT — editing A's outerR later doesn't update
-   *  earlier B-formulas that referenced it. The user re-edits B's
-   *  formula to re-snapshot. Live cascade would require a metadata
-   *  layer; we may add that once a real workflow demands it. */
-  function resolveCandidate(tab: Tab, cand: string, excludeInstance: string): string {
-    const m = /^([A-Z][A-Z0-9]*)\.(\w+)$/.exec(cand);
-    if (!m) return cand;
-    const [, inst, prop] = m;
-    if (inst === excludeInstance) return cand;
-    const cur = tab.sourceDraft ?? tab.componentEntry?.source ?? '';
-    const insts = parsePartInstances(cur);
-    const target = insts.find((i) => i.instance === inst);
-    if (!target) return cand;
-    const meta = HELPERS.find((h) => h.name === target.callName);
-    if (!meta) return cand;
-    const idx = meta.props.findIndex((p) => p.name === prop);
-    if (idx < 0) return cand;
-    const arg = target.args[idx];
-    if (!arg?.raw) return cand;
-    // Parenthesise compound expressions so substitution composes
-    // safely; literals + simple param refs stay bare.
-    return arg.kind === 'literal' || arg.kind === 'paramRef'
-      ? arg.raw
-      : `(${arg.raw})`;
+  /** Resolve a typeahead candidate to the expression that gets
+   *  written to source. Now the identity — `A.length` stays as
+   *  `A.length` in source; the loader (component-loader.ts)
+   *  substitutes references to literal values at execution time
+   *  via `expandInstancePropRefs`, so the cascade is LIVE: edit
+   *  A's length and dependent formulas pick up the new value on
+   *  the next preview / save. */
+  function resolveCandidate(_tab: Tab, cand: string, _excludeInstance: string): string {
+    return cand;
   }
   function submitParamEdit(tab: Tab) {
     if (!tab.paramEdit || !tab.componentEntry) return;
@@ -3743,6 +3884,24 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  value as the new schema default — so reopening the primitive
    *  starts where the user left it. Returns null if the param entry
    *  can't be located. */
+  /** Rewrite the top-level `name: '...'` field inside the `export
+   *  const meta = { ... }` block. The directory + id are untouched —
+   *  this is purely the display label that shows in tabs, sidebar,
+   *  and the stage header. */
+  function setMetaName(src: string, newName: string): string | null {
+    const metaRe = /\bexport\s+const\s+meta\s*=\s*\{/;
+    const mm = metaRe.exec(src);
+    if (!mm) return null;
+    const rel = src.slice(mm.index);
+    const nameRe = /\bname\s*:\s*(['"])([^'"]*)\1/;
+    const nm = nameRe.exec(rel);
+    if (!nm) return null;
+    const start = mm.index + nm.index;
+    const end = start + nm[0].length;
+    const escaped = newName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return src.slice(0, start) + `name: '${escaped}'` + src.slice(end);
+  }
+
   function setParamDefault(src: string, key: string, value: number): string | null {
     const paramsRe = /\bparams\s*:\s*\{/;
     const pm = paramsRe.exec(src);
@@ -4965,50 +5124,158 @@ export const geom = defineGeom(meta, (p, geom) => {
       onClose={closeTxEdit}
       x={txEditX}
       y={txEditY}
-      width="240px"
-      maxHeight="40vh"
+      width="280px"
+      maxHeight="50vh"
     >
       {#snippet children()}
+        {@const activeAxisRawKey = txEditTab === 0 ? 'xRaw' : txEditTab === 1 ? 'yRaw' : 'zRaw'}
+        {@const activeAxisRaw = (fe as any)[activeAxisRawKey] as string}
+        {@const wac = wordAtCaret(activeAxisRaw, txFocusedCaret)}
+        {@const cands = formulaCandidates(activeTab, fe.instance)}
+        {@const filtered = wac.word
+          ? cands.filter((c) => c.toLowerCase().includes(wac.word.toLowerCase()))
+          : cands}
         <div class="tx-edit-body" use:clickOutside={closeTxEdit}>
-          <div class="tx-edit-grid">
-            {#each ['x', 'y', 'z'] as axis (axis)}
-              <label class="tx-edit-axis">
-                <span class="tx-edit-label">{axis.toUpperCase()}</span>
-                <input
-                  class="pr-num drag"
-                  type="number"
-                  step="0.1"
-                  value={(fe as any)[axis]}
-                  oninput={() => { if (activeTab) activeTab.inputPending = true; }}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') {
-                      const v = Number((e.currentTarget as HTMLInputElement).value);
-                      if (Number.isFinite(v) && txEditOpen) {
-                        (txEditOpen as any)[axis] = v;
-                        commitTxEdit(activeTab!);
-                        if (activeTab) activeTab.inputPending = false;
-                      }
-                    } else if (e.key === 'Escape') {
-                      (e.currentTarget as HTMLInputElement).value = String((fe as any)[axis]);
-                      if (activeTab) activeTab.inputPending = false;
+          <!-- Function signature — just the operator call shape with
+               unbound axis placeholders. Identifies which transform
+               the user is editing; the per-axis tabs + input below
+               drive the actual values. -->
+          <div class="tx-fn-preview" title={CHAIN_OPERATORS.find((o) => o.name === fe.op)?.desc ?? fe.op}>
+            <span class="tx-fn-name">{fe.op}</span>
+            <span>(</span>
+            <span class="tx-fn-inst">{fe.instance}</span>
+            <span>, [x, y, z])</span>
+          </div>
+          <!-- Axis tabs — one visible at a time so the expression
+               input gets the full popup width. Just the axis letter;
+               the live preview above already surfaces each axis's
+               current value. -->
+          <div class="tx-tab-strip">
+            {#each [['X', 0], ['Y', 1], ['Z', 2]] as [label, idx] (idx)}
+              <button
+                class="tx-tab"
+                class:active={txEditTab === idx}
+                type="button"
+                onclick={() => {
+                  txEditTab = idx as 0 | 1 | 2;
+                  setTimeout(() => {
+                    const el = document.querySelector('.tx-edit-input') as HTMLInputElement | null;
+                    if (el) {
+                      el.focus();
+                      el.setSelectionRange(el.value.length, el.value.length);
+                      txFocusedCaret = el.value.length;
                     }
-                  }}
-                  use:dragNumber={{
-                    step: 0.1,
-                    get: () => (fe as any)[axis],
-                    set: (v) => {
-                      if (!txEditOpen) return;
-                      (txEditOpen as any)[axis] = v;
-                      commitTxEdit(activeTab!);
-                    },
-                  }}
-                  title="Type then Enter to commit · drag horizontally to scrub"
-                />
-              </label>
+                  }, 0);
+                }}
+              >
+                <span class="tx-tab-label">{label}</span>
+              </button>
             {/each}
           </div>
+          <input
+            class="tx-edit-input"
+            type="text"
+            value={activeAxisRaw}
+            placeholder="0"
+            spellcheck="false"
+            autocomplete="off"
+            title="Type a number or expression (e.g. p.bodyOD / 2, A.outerR)"
+            onfocus={(e) => {
+              txFocusedAxis = txEditTab;
+              const el = e.currentTarget as HTMLInputElement;
+              txFocusedCaret = el.selectionStart ?? el.value.length;
+            }}
+            oninput={(e) => {
+              const el = e.currentTarget as HTMLInputElement;
+              if (txEditOpen) (txEditOpen as any)[activeAxisRawKey] = el.value;
+              txFocusedCaret = el.selectionStart ?? el.value.length;
+              if (activeTab) activeTab.inputPending = true;
+            }}
+            onclick={(e) => {
+              const el = e.currentTarget as HTMLInputElement;
+              txFocusedCaret = el.selectionStart ?? el.value.length;
+            }}
+            onkeyup={(e) => {
+              const el = e.currentTarget as HTMLInputElement;
+              txFocusedCaret = el.selectionStart ?? el.value.length;
+            }}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitTxEdit(activeTab!);
+                if (activeTab) activeTab.inputPending = false;
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeTxEdit();
+              } else if (e.key === 'Tab') {
+                // Tab cycles X → Y → Z → X within the popup.
+                e.preventDefault();
+                commitTxEdit(activeTab!);
+                txEditTab = (((txEditTab + (e.shiftKey ? 2 : 1)) % 3) as 0 | 1 | 2);
+                setTimeout(() => {
+                  const el = document.querySelector('.tx-edit-input') as HTMLInputElement | null;
+                  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+                }, 0);
+              }
+            }}
+            onblur={(e) => {
+              const el = e.target as HTMLInputElement;
+              setTimeout(() => {
+                if (document.activeElement === el) return;
+                commitTxEdit(activeTab!);
+                if (activeTab) activeTab.inputPending = false;
+                const next = document.activeElement;
+                if (!(next instanceof HTMLElement) || !next.closest('.tx-edit-body')) {
+                  txFocusedAxis = null;
+                }
+              }, 120);
+            }}
+          />
+          {#if filtered.length > 0}
+            <ul class="tx-fx-list">
+              {#each filtered.slice(0, 8) as cand (cand)}
+                {@const resolved = resolveCandidate(activeTab, cand, fe.instance)}
+                {@const isInter = cand !== resolved}
+                <li>
+                  <button
+                    class="fx-cand"
+                    type="button"
+                    title={isInter ? `Inserts: ${resolved}` : undefined}
+                    onmousedown={(e) => {
+                      e.preventDefault();
+                      const cell = document.querySelector('.tx-edit-input') as HTMLInputElement | null;
+                      if (!cell) return;
+                      const r = replaceWordAtCaret(cell.value, cell.selectionStart ?? cell.value.length, resolved);
+                      cell.value = r.text;
+                      cell.setSelectionRange(r.caret, r.caret);
+                      if (txEditOpen) (txEditOpen as any)[activeAxisRawKey] = r.text;
+                      txFocusedCaret = r.caret;
+                      cell.focus();
+                    }}
+                  >{cand}{#if isInter}<span class="fx-resolved"> → {resolved}</span>{/if}</button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
           <div class="pf-actions">
-            <button class="save-btn" type="button" onclick={() => { commitTxEdit(activeTab!); closeTxEdit(); }}>Apply</button>
+            <button
+              class="save-btn"
+              type="button"
+              onmousedown={() => {
+                // Flush any typed-but-uncommitted axis input — its
+                // value lives in the DOM until oninput fires, which
+                // it has if any keystroke happened. The Enter synth
+                // is a belt-and-braces for IME / paste edge cases.
+                const el = document.activeElement;
+                if (el instanceof HTMLInputElement && (el.type === 'number' || el.type === 'text')) {
+                  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+                }
+              }}
+              onclick={() => {
+                commitTxEdit(activeTab!);
+                closeTxEdit();
+              }}
+            >Apply</button>
             <button class="discard-btn" type="button" onclick={closeTxEdit}>Close</button>
           </div>
         </div>
@@ -5220,8 +5487,76 @@ export const geom = defineGeom(meta, (p, geom) => {
         <div class="stage">
           <header class="stage-hdr">
             <div class="stage-title">
-              <h2 class="stage-name">{activeDef.name}</h2>
-              <span class="stage-id">{activeDef.id}</span>
+              {#if stageNameEdit !== null && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+                <input
+                  class="stage-name stage-name-edit"
+                  type="text"
+                  bind:value={stageNameEdit}
+                  placeholder="Display name"
+                  spellcheck="false"
+                  autocomplete="off"
+                  use:focusOnMount
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitNameRename(activeTab!, stageNameEdit?.trim() ?? '');
+                      stageNameEdit = null;
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      stageNameEdit = null;
+                    }
+                  }}
+                  onblur={() => {
+                    commitNameRename(activeTab!, stageNameEdit?.trim() ?? '');
+                    stageNameEdit = null;
+                  }}
+                />
+              {:else if activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+                <h2
+                  class="stage-name stage-name-clickable"
+                  title="Click to rename · directory ({activeDef.id}) stays unchanged"
+                  onclick={() => (stageNameEdit = activeDef.name)}
+                >{activeDef.name}</h2>
+              {:else}
+                <h2 class="stage-name">{activeDef.name}</h2>
+              {/if}
+              {#if stageIdEdit !== null && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+                <input
+                  class="stage-id stage-id-edit"
+                  type="text"
+                  bind:value={stageIdEdit}
+                  placeholder="snake_case id"
+                  spellcheck="false"
+                  autocomplete="off"
+                  disabled={stageRenamePending}
+                  use:focusOnMount
+                  onkeydown={async (e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const v = (stageIdEdit ?? '').trim();
+                      if (v && activeTab) {
+                        const ok = await renamePartId(activeTab, v);
+                        if (ok) stageIdEdit = null;
+                      }
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      stageIdEdit = null;
+                      stageRenameError = null;
+                    }
+                  }}
+                />
+                {#if stageRenameError}
+                  <span class="stage-id-err" title={stageRenameError}>!</span>
+                {/if}
+              {:else if activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+                <span
+                  class="stage-id stage-id-clickable"
+                  title="Click to rename the directory — also rewrites meta.id and `from './{activeDef.id}'` imports in every other library part"
+                  onclick={() => { stageIdEdit = activeDef.id; stageRenameError = null; }}
+                >{activeDef.id}</span>
+              {:else}
+                <span class="stage-id">{activeDef.id}</span>
+              {/if}
               {#if activeDef.description || activeTab.componentEntry?.instructions}
                 <button
                   class="stage-info-btn"
@@ -5450,15 +5785,22 @@ export const geom = defineGeom(meta, (p, geom) => {
 
         <div class="insp-tabs">
           {#if activeTab.kind === 'xml-primitive'}
-            <!-- Runes primitives: tab order is AI → Parts → Builder.
-                 The former Params tab is folded into Parts — each param
-                 group renders as a collapsible accordion section inside
-                 the Parts view. AI is leftmost (and the default selection). -->
-            <button class="insp-tab insp-tab-ai" class:active={inspectorTab === 'ai'} type="button" onclick={() => (inspectorTab = 'ai')}>
-              <span class="ic">✦</span> AI
+            <!-- Runes primitives — tab order: ⚙ → Parts → Builder → AI.
+                 Settings (⚙) is the leftmost anchor — generic per-tab
+                 config lives here. Parts is the day-to-day editor.
+                 Builder is the raw-source escape hatch. AI sits at
+                 the right. -->
+            <button class="insp-tab insp-tab-settings" class:active={inspectorTab === 'settings'} type="button" onclick={() => (inspectorTab = 'settings')} title="Part Settings" aria-label="Part Settings">
+              <span class="ic">⚙</span>
             </button>
             <button class="insp-tab" class:active={inspectorTab === 'parts'} type="button" onclick={() => (inspectorTab = 'parts')}>
               <span class="ic">⊞</span> Parts
+            </button>
+            <button class="insp-tab" class:active={inspectorTab === 'svelte'} type="button" onclick={() => (inspectorTab = 'svelte')}>
+              <span class="ic">🛠</span> Builder
+            </button>
+            <button class="insp-tab insp-tab-ai" class:active={inspectorTab === 'ai'} type="button" onclick={() => (inspectorTab = 'ai')}>
+              <span class="ic">✦</span> AI
             </button>
           {:else if isParamTab}
             <!-- Legacy primitives keep the standalone Params tab — they
@@ -5466,12 +5808,6 @@ export const geom = defineGeom(meta, (p, geom) => {
             <button class="insp-tab" class:active={inspectorTab === 'params'} type="button" onclick={() => (inspectorTab = 'params')}>
               <span class="ic">⚙</span> Params
             </button>
-          {/if}
-          {#if activeTab.kind === 'xml-primitive'}
-            <button class="insp-tab" class:active={inspectorTab === 'svelte'} type="button" onclick={() => (inspectorTab = 'svelte')}>
-              <span class="ic">🛠</span> Builder
-            </button>
-          {:else}
             <!-- Legacy primitives: Script tab extracts from builder.ts. -->
             <button class="insp-tab" class:active={inspectorTab === 'script'} type="button" onclick={() => (inspectorTab = 'script')}>
               <span class="ic">{'</>'}</span> Script
@@ -5479,12 +5815,50 @@ export const geom = defineGeom(meta, (p, geom) => {
           {/if}
         </div>
 
-        <!-- Dirty-state booleans hoisted here so the Builder tab can
-             render its own save bar at the top while the same flags
-             also gate the (currently empty) bottom region. -->
+        <!-- Dirty-state booleans hoisted ABOVE the tab branches so the
+             save bar renders in BOTH Parts and Builder — any edit (a
+             prop input in Parts, a chain-popup commit, a source edit
+             in Builder) surfaces the same Apply / Save to disk /
+             Discard row at the top. -->
         {@const srcDirty = activeTab.kind === 'xml-primitive' && activeTab.componentEntry && activeTab.sourceDraft != null && activeTab.sourceDraft !== activeTab.componentEntry.source}
         {@const applyDirty = activeTab.kind === 'xml-primitive' && ((activeTab.sourceDraft != null && activeTab.sourceDraft !== (activeTab.lastAppliedSource ?? null)) || activeTab.inputPending === true)}
         {@const pDirty = activeTab.kind === 'xml-primitive' && paramsDirty(activeTab)}
+
+        {#if activeTab.kind === 'xml-primitive' && (srcDirty || pDirty || applyDirty)}
+          <!-- Global save bar — sits ABOVE the tab strip's body so it's
+               visible whether the user is in Parts (prop edits, chain
+               popups) or Builder (direct source edits). Apply preview /
+               Save to disk / Discard. -->
+          <div class="save-row global-save save-row-top">
+            {#if applyDirty}
+              <button
+                class="save-btn apply-btn"
+                type="button"
+                onmousedown={() => {
+                  const el = document.activeElement;
+                  if (el instanceof HTMLInputElement && el.type === 'number') {
+                    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+                  }
+                }}
+                onclick={() => applyDraft(activeTab!)}
+                title="Apply the change to the canvas (no disk write)"
+              >Apply</button>
+            {/if}
+            <button class="save-btn" type="button" disabled={activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
+              {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
+            </button>
+            <button class="discard-btn" type="button" onclick={() => discardRunesDraft(activeTab!)}>Discard</button>
+            {#if activeTab.saveStatus === 'saved'}
+              <span class="save-status ok">Saved · HMR will reload</span>
+            {:else if activeTab.saveStatus === 'error'}
+              <span class="save-status err">Error: {activeTab.saveError}</span>
+            {:else}
+              <span class="save-status muted">
+                {pDirty && srcDirty ? 'Unsaved changes (source + params)' : pDirty ? 'Unsaved param defaults' : 'Unsaved changes'}
+              </span>
+            {/if}
+          </div>
+        {/if}
 
         {#if (inspectorTab === 'params' && isParamTab && activeTab.kind !== 'xml-primitive') || (inspectorTab === 'parts' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry)}
           {@const allDefs = (activeTab.componentEntry?.meta.params ?? activeDef.params) as Readonly<Record<string, ParamSchema & { group?: string }>>}
@@ -5729,7 +6103,10 @@ export const geom = defineGeom(meta, (p, geom) => {
                           if (!activeTab?.componentEntry) return;
                           const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                           const next = removeTransform(cur, inst.instance, ti);
-                          if (next != null) activeTab.sourceDraft = next;
+                          if (next != null) {
+                            activeTab.sourceDraft = next;
+                            applyDraft(activeTab);
+                          }
                         }}
                       >×</button>
                     </span>
@@ -5773,12 +6150,17 @@ export const geom = defineGeom(meta, (p, geom) => {
                             value={arg.value}
                             oninput={() => { if (activeTab) activeTab.inputPending = true; }}
                             onkeydown={(e) => {
+                              // Enter commits AND refreshes the canvas
+                              // (auto-apply). Esc reverts.
                               if (e.key === 'Enter') {
                                 const v = Number((e.currentTarget as HTMLInputElement).value);
                                 if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
                                 const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                                 const next = setInstanceObjectArg(cur, inst.instance, key, String(v));
-                                if (next != null) activeTab.sourceDraft = next;
+                                if (next != null) {
+                                  activeTab.sourceDraft = next;
+                                  applyDraft(activeTab);
+                                }
                                 activeTab.inputPending = false;
                               } else if (e.key === 'Escape') {
                                 (e.currentTarget as HTMLInputElement).value = String(arg.value);
@@ -5792,7 +6174,10 @@ export const geom = defineGeom(meta, (p, geom) => {
                                 if (!activeTab?.componentEntry) return;
                                 const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                                 const next = setInstanceObjectArg(cur, inst.instance, key, String(v));
-                                if (next != null) activeTab.sourceDraft = next;
+                                if (next != null) {
+                                  activeTab.sourceDraft = next;
+                                  applyDraft(activeTab);
+                                }
                               },
                             }}
                             title="Type then Enter to commit · drag horizontally to scrub"
@@ -5843,14 +6228,18 @@ export const geom = defineGeom(meta, (p, geom) => {
                             value={arg.value}
                             oninput={() => { if (activeTab) activeTab.inputPending = true; }}
                             onkeydown={(e) => {
-                              // Enter-only commit (same rule as the
-                              // top-level params inputs). Esc reverts.
+                              // Enter commits AND refreshes the canvas
+                              // (auto-apply). Esc reverts. Same flow
+                              // as commitTxEdit + applyDraft.
                               if (e.key === 'Enter') {
                                 const v = Number((e.currentTarget as HTMLInputElement).value);
                                 if (!Number.isFinite(v) || !activeTab?.componentEntry) return;
                                 const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                                 const next = setInstanceArg(cur, inst.instance, idx, String(v));
-                                if (next != null) activeTab.sourceDraft = next;
+                                if (next != null) {
+                                  activeTab.sourceDraft = next;
+                                  applyDraft(activeTab);
+                                }
                                 activeTab.inputPending = false;
                               } else if (e.key === 'Escape') {
                                 (e.currentTarget as HTMLInputElement).value = String(arg.value);
@@ -5864,7 +6253,10 @@ export const geom = defineGeom(meta, (p, geom) => {
                                 if (!activeTab?.componentEntry) return;
                                 const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
                                 const next = setInstanceArg(cur, inst.instance, idx, String(v));
-                                if (next != null) activeTab.sourceDraft = next;
+                                if (next != null) {
+                                  activeTab.sourceDraft = next;
+                                  applyDraft(activeTab);
+                                }
                               },
                             }}
                             title="Type then Enter to commit · drag horizontally to scrub"
@@ -6055,42 +6447,6 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const editorSource = activeTab.sourceDraft ?? entry.source}
           {@const split = splitRune(editorSource)}
           {@const editorCompletions = buildEditorCompletions(m)}
-          {#if srcDirty || pDirty || applyDirty}
-            <!-- Save bar at the TOP of the Builder tab — Apply preview /
-                 Save to disk / Discard. The same buttons used to sit
-                 at the bottom of every inspector tab; surfacing them
-                 here makes the affordance immediately visible when
-                 the user is editing the source. -->
-            <div class="save-row global-save save-row-top">
-              {#if applyDirty}
-                <button
-                  class="save-btn apply-btn"
-                  type="button"
-                  onmousedown={() => {
-                    const el = document.activeElement;
-                    if (el instanceof HTMLInputElement && el.type === 'number') {
-                      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-                    }
-                  }}
-                  onclick={() => applyDraft(activeTab!)}
-                  title="Apply the change to the canvas (no disk write)"
-                >Apply</button>
-              {/if}
-              <button class="save-btn" type="button" disabled={activeTab.saveStatus === 'saving'} onclick={() => saveRunesSource(activeTab!)}>
-                {activeTab.saveStatus === 'saving' ? 'Saving…' : 'Save to disk'}
-              </button>
-              <button class="discard-btn" type="button" onclick={() => discardRunesDraft(activeTab!)}>Discard</button>
-              {#if activeTab.saveStatus === 'saved'}
-                <span class="save-status ok">Saved · HMR will reload</span>
-              {:else if activeTab.saveStatus === 'error'}
-                <span class="save-status err">Error: {activeTab.saveError}</span>
-              {:else}
-                <span class="save-status muted">
-                  {pDirty && srcDirty ? 'Unsaved changes (source + params)' : pDirty ? 'Unsaved param defaults' : 'Unsaved changes'}
-                </span>
-              {/if}
-            </div>
-          {/if}
           {#if split.ok}
             <!-- Section 1: imports + meta + geom scaffolding, collapsed
                  by default. The user only expands this when they want to
@@ -6365,6 +6721,61 @@ export const geom = defineGeom(meta, (p, geom) => {
                 {/if}
               </div>
             </div>
+          </div>
+        {:else if inspectorTab === 'settings' && activeTab.kind === 'xml-primitive' && activeTab.componentEntry}
+          <!-- Generic per-tab settings. Display name + id rename live
+               here as the canonical home (the stage-header click is a
+               shortcut). Both edits route through the same commit
+               helpers as the inline gestures — name → sourceDraft +
+               save bar; id → /api/components/rename (server-side
+               directory move + cross-ref update). -->
+          {@const m = activeTab.componentEntry.meta}
+          <div class="settings-body">
+            <!-- Display name + directory id on one row — labels are
+                 self-explanatory, no hint text. Name commits via
+                 setMetaName (save-bar surfaces); id calls the rename
+                 endpoint (server-side dir move + cross-ref update). -->
+            <div class="settings-pair">
+              <label class="settings-cell">
+                <span class="settings-label">Name</span>
+                <input
+                  class="settings-input"
+                  type="text"
+                  value={m.name}
+                  placeholder="Display name"
+                  spellcheck="false"
+                  autocomplete="off"
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitNameRename(activeTab!, (e.currentTarget as HTMLInputElement).value.trim());
+                    }
+                  }}
+                  onblur={(e) => commitNameRename(activeTab!, (e.currentTarget as HTMLInputElement).value.trim())}
+                />
+              </label>
+              <label class="settings-cell">
+                <span class="settings-label">Id</span>
+                <input
+                  class="settings-input mono"
+                  type="text"
+                  value={m.id}
+                  placeholder="snake_case"
+                  spellcheck="false"
+                  autocomplete="off"
+                  disabled={stageRenamePending}
+                  onkeydown={async (e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const v = (e.currentTarget as HTMLInputElement).value.trim();
+                      if (v && v !== m.id) await renamePartId(activeTab!, v);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {#if stageRenamePending}<span class="settings-status muted">Renaming…</span>{/if}
+            {#if stageRenameError}<span class="settings-status err" title={stageRenameError}>{stageRenameError.slice(0, 120)}</span>{/if}
           </div>
         {/if}
 
@@ -7152,12 +7563,12 @@ export const geom = defineGeom(meta, (p, geom) => {
      dominant element; params + script live in floating popups. */
   .stage {
     overflow-y: auto;
-    padding: 20px 28px 32px;
+    padding: 8px 12px 12px;
     min-width: 0;
     display: flex; flex-direction: column;
     align-items: stretch;
   }
-  .stage-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .stage-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
   /* Z-scale slider — tucked into the badges row. Inline so it doesn't
      consume another row of vertical real estate above the 3D stage. */
   .z-scale {
@@ -7173,7 +7584,47 @@ export const geom = defineGeom(meta, (p, geom) => {
   .z-scale-val { font: 10px ui-monospace, monospace; color: #444; min-width: 28px; text-align: right; }
   .stage-title { position: relative; display: flex; align-items: baseline; gap: 6px; }
   .stage-name { margin: 0; font-size: 20px; color: #cc2222; }
+  /* Click-to-rename affordance on xml-primitive stage headers.
+     Subtle hover underline + pointer cursor — the directory/id
+     stays unchanged; only meta.name is rewritten. */
+  .stage-name-clickable { cursor: text; }
+  .stage-name-clickable:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
+  /* Inline edit input — matches the h2's font so the layout
+     doesn't reflow when toggling between display + edit. */
+  .stage-name-edit {
+    font: bold 20px Arial;
+    color: #cc2222;
+    background: #fff;
+    border: 1px solid #cc2222;
+    border-radius: 3px;
+    padding: 1px 6px;
+    margin: 0;
+    min-width: 160px;
+  }
+  .stage-name-edit:focus { outline: none; }
   .stage-id { font: 10px monospace; color: #888; }
+  /* Click-to-rename affordance on xml-primitive id slug. Tooltip
+     surfaces the cross-file effect (directory + meta.id + imports). */
+  .stage-id-clickable { cursor: text; }
+  .stage-id-clickable:hover { color: #7c4dff; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .stage-id-edit {
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #444;
+    background: #fff;
+    border: 1px solid #7c4dff;
+    border-radius: 3px;
+    padding: 1px 5px;
+    min-width: 120px;
+  }
+  .stage-id-edit:focus { outline: none; }
+  .stage-id-edit:disabled { background: #f5f3fb; color: #888; }
+  .stage-id-err {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; margin-left: 4px;
+    background: #fff7e8; color: #a85b00;
+    border: 1px solid #f0d8a8; border-radius: 50%;
+    font: bold 10px Arial; cursor: help;
+  }
   .stage-badges { display: flex; flex-wrap: wrap; gap: 4px; max-width: 280px; justify-content: flex-end; }
   .stage-desc { font: 12px Arial; color: #555; line-height: 1.5; margin: 8px 0 16px; max-width: 720px; }
   /* Info icon next to the title — opens a small popover with the
@@ -7909,12 +8360,68 @@ export const geom = defineGeom(meta, (p, geom) => {
   /* Per-chip vec3 edit popup. Three small input cells in a row,
      each labelled X/Y/Z above the input. */
   .tx-edit-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
-  .tx-edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .tx-edit-axis { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .tx-edit-label {
+  /* Live preview of the transform call. Mirrors what gets written
+     to source on Apply — the active axis is highlighted so the
+     user can locate the value they're editing inside the wider
+     expression. */
+  .tx-fn-preview {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #444;
+    background: #fafafa;
+    border: 1px solid #eaeaef;
+    border-radius: 3px;
+    padding: 4px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tx-fn-name { color: #7c4dff; font-weight: bold; }
+  .tx-fn-inst { color: #cc2222; font-weight: bold; }
+  /* Axis tab strip — one tab per axis (X/Y/Z); the active tab
+     drives which axis the single input below is editing. Each tab
+     shows a small preview of its raw value so the user can see at
+     a glance which axes are non-default. */
+  .tx-tab-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  }
+  .tx-tab {
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 6px;
+    background: #fafafa;
+    border: 1px solid #eaeaef;
+    border-radius: 4px;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .tx-tab:hover { background: #f3f0fc; border-color: #c8b8ff; }
+  .tx-tab.active {
+    background: #fff; border-color: #7c4dff;
+  }
+  .tx-tab-label {
     font: bold 11px Arial;
     color: #cc2222;
-    text-align: center;
+  }
+  /* Single Excel-style text input for the active axis. Accepts a
+     literal (`4.5`) OR an expression (`p.bodyOD`, `A.outerR`). */
+  .tx-edit-input {
+    width: 100%; box-sizing: border-box;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #444;
+    background: #fff;
+    border: 1px solid #d8d8de;
+    border-radius: 3px;
+    padding: 2px 6px;
+    height: 22px;
+  }
+  .tx-edit-input:focus { outline: none; border-color: #7c4dff; }
+  /* Inline typeahead — sits INSIDE the chain-op popup (no sub-popup).
+     Cap height so a long candidate list scrolls within the popup
+     rather than blowing it out vertically. */
+  .tx-fx-list {
+    list-style: none; margin: 0; padding: 2px;
+    max-height: 160px; overflow-y: auto;
+    border: 1px solid #eaeaef; border-radius: 3px;
+    background: #fff;
   }
 
   /* Per-section `+` button — round red icon button, matches the
@@ -8269,6 +8776,34 @@ export const geom = defineGeom(meta, (p, geom) => {
      find it quickly in the strip. */
   .insp-tab-ai .ic { color: #3b3b8a; }
   .insp-tab-ai.active .ic { color: #fff; }
+  /* Settings tab — gear-only at the leftmost slot. Tight padding +
+     darker, bolder gear so the affordance reads at a glance. Active
+     state mirrors the other tabs (red text + red underline, no
+     filled bg) so the icon stays visible. */
+  .insp-tab-settings { padding: 2px 4px; margin-right: 2px; gap: 0; }
+  .insp-tab-settings .ic { color: #111; font-size: 22px; line-height: 1; font-weight: 700; opacity: 1; }
+  .insp-tab-settings:hover .ic { color: #cc2222; }
+  .insp-tab-settings.active .ic { color: #cc2222; }
+
+  /* Settings tab body — Name + Id side-by-side, no hint text. */
+  .settings-body { padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 4px; }
+  .settings-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .settings-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .settings-label { font: bold 11px Arial; color: #333; }
+  .settings-input {
+    width: 100%; box-sizing: border-box;
+    font: 12px Arial; color: #333;
+    background: #fff;
+    border: 1px solid #d8d8de;
+    border-radius: 3px;
+    padding: 4px 6px;
+  }
+  .settings-input.mono { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .settings-input:focus { outline: none; border-color: #7c4dff; }
+  .settings-input:disabled { background: #f5f3fb; color: #888; }
+  .settings-status { font: 11px Arial; }
+  .settings-status.muted { color: #888; }
+  .settings-status.err { color: #cc2222; }
 
   /* Used-card variant — non-clickable label card with a small × in the
      corner to drop the import. Hover reveals the × to avoid clutter. */

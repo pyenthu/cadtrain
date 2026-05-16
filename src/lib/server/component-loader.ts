@@ -38,6 +38,146 @@ import {
 } from '../cad/manifold-helpers';
 import { defineGeom, geomById, metaById } from '../cad/components';
 import type { GeomFn, PrimitiveMeta } from '../cad/components';
+import { discoverHelpers } from '../cad/manifold-helpers-meta';
+
+const HELPER_PROP_NAMES: Map<string, string[]> = new Map(
+  discoverHelpers().map((h) => [h.name, h.props.map((p) => p.name)]),
+);
+
+/** Walk balanced parens starting at `i` (which points at the char AFTER
+ *  the opening `(`). Returns the index of the matching `)`, or -1.
+ *  Mirrors the client-side helper in src/routes/primitives/+page.svelte. */
+function findMatchingParen(src: string, i: number): number {
+  let depth = 1;
+  let inS: '"' | "'" | '`' | null = null;
+  while (i < src.length && depth > 0) {
+    const c = src[i];
+    if (inS) {
+      if (c === '\\') { i += 2; continue; }
+      if (c === inS) inS = null;
+    } else {
+      if (c === '"' || c === "'" || c === '`') inS = c as '"' | "'" | '`';
+      else if (c === '(') depth++;
+      else if (c === ')') { depth--; if (depth === 0) return i; }
+    }
+    i++;
+  }
+  return -1;
+}
+
+/** Split a comma-separated arg list, respecting brackets / parens /
+ *  strings. Returns the segments WITHOUT the separating commas. */
+function splitTopLevel(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let buf = '';
+  let inS: '"' | "'" | '`' | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inS) {
+      if (c === '\\') { buf += c + (s[i + 1] ?? ''); i++; continue; }
+      if (c === inS) inS = null;
+      buf += c;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { inS = c as '"' | "'" | '`'; buf += c; continue; }
+    if (c === '(' || c === '[' || c === '{') { depth++; buf += c; continue; }
+    if (c === ')' || c === ']' || c === '}') { depth--; buf += c; continue; }
+    if (c === ',' && depth === 0) { out.push(buf); buf = ''; continue; }
+    buf += c;
+  }
+  if (buf.trim() !== '' || out.length > 0) out.push(buf);
+  return out;
+}
+
+/** Replace every `<INST>.<prop>` reference in `src` with the raw arg
+ *  value taken from the matching base declaration. Lets the user
+ *  write live cross-instance refs in the editor (e.g.
+ *  `B = mv(B, [A.length, 0, 0])`) without needing to snapshot at
+ *  edit-time — A's current `length` value is inlined here, so the
+ *  cascade is automatic on every re-execute.
+ *
+ *  Resolution rules:
+ *    - helper instance (`A = tube(0.5, 0.4, 4)`): positional args are
+ *      mapped to HELPER prop names from manifold-helpers-meta. So
+ *      `A.h` → `4`.
+ *    - component instance (`B = hollowCylinderGeom({ od: 4.5, ... })`):
+ *      object-literal keys taken from the imported component's
+ *      `meta.params`. So `B.od` → `4.5`.
+ *  Unresolved refs (unknown instance, unknown prop) pass through
+ *  unchanged — the WASM execution will throw a useful TypeError. */
+function expandInstancePropRefs(
+  src: string,
+  deps: ParsedImports['deps'],
+  resolveDep: DepResolver,
+): string {
+  // Map: import-alias (e.g. `hollowCylinderGeom`) → the imported
+  // component's meta.params keys.
+  const aliasParamKeys = new Map<string, Set<string>>();
+  for (const { depId, specs } of deps) {
+    let mod: LoadedComponent | undefined;
+    try { mod = resolveDep(depId); } catch { continue; }
+    const params = (mod?.meta as Record<string, unknown> | undefined)?.['params'];
+    if (!params || typeof params !== 'object') continue;
+    const keys = new Set(Object.keys(params as Record<string, unknown>));
+    for (const s of specs) {
+      // Only the `geom` import is relevant — that's the call-site name
+      // users write in the body. Other exports (e.g. `meta`) don't
+      // bind callable params.
+      if (s.imported === 'geom') aliasParamKeys.set(s.local, keys);
+    }
+  }
+
+  // Parse every base declaration: `(let|const) X = call(args)`.
+  // Build instance → { propName: rawValue }.
+  const propMap = new Map<string, Record<string, string>>();
+  const baseRe = /\b(?:let|const)\s+([A-Z][A-Z0-9]*)\s*=\s*(\w+)\s*\(/g;
+  for (const m of src.matchAll(baseRe)) {
+    const inst = m[1];
+    const callName = m[2];
+    const argStart = m.index! + m[0].length;
+    const argEnd = findMatchingParen(src, argStart);
+    if (argEnd < 0) continue;
+    const argText = src.slice(argStart, argEnd);
+    const componentKeys = aliasParamKeys.get(callName);
+    const props: Record<string, string> = {};
+    if (componentKeys) {
+      // Component call — parse `{ key: value, … }`.
+      const trimmed = argText.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const inner = trimmed.slice(1, -1);
+        for (const seg of splitTopLevel(inner)) {
+          const colon = seg.indexOf(':');
+          if (colon < 0) continue;
+          const k = seg.slice(0, colon).trim();
+          const v = seg.slice(colon + 1).trim();
+          if (k && componentKeys.has(k)) props[k] = v;
+        }
+      }
+    } else {
+      // Helper call — positional args mapped to HELPER prop names.
+      const positional = splitTopLevel(argText);
+      const propNames = HELPER_PROP_NAMES.get(callName) ?? [];
+      for (let i = 0; i < Math.min(positional.length, propNames.length); i++) {
+        const v = positional[i].trim();
+        if (v) props[propNames[i]] = v;
+      }
+    }
+    if (Object.keys(props).length > 0) propMap.set(inst, props);
+  }
+
+  if (propMap.size === 0) return src;
+
+  return src.replace(/\b([A-Z][A-Z0-9]*)\.([a-z][a-zA-Z0-9_]*)\b/g, (full, inst, prop) => {
+    const props = propMap.get(inst);
+    const v = props?.[prop];
+    if (v == null) return full;
+    // Wrap compound expressions in parens so substitution preserves
+    // precedence inside larger expressions (`A.length / 2` stays
+    // sane even if A.length itself is `p.bodyOD - 1`).
+    return /^-?\d+(\.\d+)?$/.test(v) || /^[a-zA-Z_$][a-zA-Z0-9_$.]*$/.test(v) ? v : `(${v})`;
+  });
+}
 
 export interface LoadedComponent {
   meta: PrimitiveMeta;
@@ -169,8 +309,15 @@ export function loadGeomFromSource(
   resolveDep: DepResolver,
 ): LoadedComponent {
   const { stripped, deps } = parseImports(src);
+  // Substitute `<INST>.<prop>` cross-instance references (e.g.
+  // `B = mv(B, [A.length, 0, 0])`) BEFORE transpile — the executed
+  // JS sees the concrete numeric value where the user wrote a
+  // part-prop reference. Source-on-disk preserves the reference
+  // text, so the substitution re-runs on every load and the
+  // cascade stays live.
+  const expanded = expandInstancePropRefs(stripped, deps, resolveDep);
 
-  const { code } = transformSync(stripped, {
+  const { code } = transformSync(expanded, {
     loader: 'ts',
     format: 'cjs',
     target: 'node22',
