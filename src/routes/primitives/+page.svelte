@@ -1818,7 +1818,12 @@ export const geom = defineGeom(meta, (p, geom) => {
         const rm = reassignRe.exec(src);
         if (!rm) break;
         const op = rm[1];
-        const opCallStart = rm.index;
+        // rm.index points to the start of the `\s*` prefix — could be
+        // on the previous line's trailing newline. Skip ahead to the
+        // actual `<instance>` so callStart's later walk-back lands on
+        // the right line and removeTransform only drops THIS line.
+        let opCallStart = rm.index;
+        while (opCallStart < src.length && /\s/.test(src[opCallStart])) opCallStart++;
         // Find the `(` after the op name and its matching `)`.
         const opOpenIdx = src.indexOf('(', opCallStart);
         if (opOpenIdx < 0) break;

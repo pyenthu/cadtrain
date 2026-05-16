@@ -189,6 +189,41 @@ test.describe.serial('components primitives — API + create flow', () => {
     expect(Object.keys(stub.params).length).toBe(0);
   });
 
+  test('chain: removing a transform only drops THAT line — base + geom.add survive', async ({ request }) => {
+    // Reproduces the bug where the chain regex's leading `\s*` made
+    // t.callStart point to the previous line's newline, so the walk-
+    // back in removeTransform crossed the line boundary and wiped
+    // the base declaration along with the transform. The inline-
+    // preview test below is the contract: a source with a chain
+    // entry of `A = mv(A, [0,0,0]); A = rot(A, [0,0,0]); geom.add(A);`
+    // must build cleanly even after the parser walks it.
+    const inlineSource = `
+import { tube, mv, rot } from '../manifold-helpers';
+import { defineGeom } from '.';
+
+export const meta = {
+  id: 'chain_parser_test',
+  name: 'Chain Parser Test',
+  description: '',
+  tags: [],
+  params: {},
+} as const;
+
+export const geom = defineGeom(meta, (_p, geom) => {
+  let A = tube(0.5, 0.4, 4);
+  A = mv(A, [0, 0, 0]);
+  A = rot(A, [0, 0, 0]);
+  geom.add(A);
+});
+`;
+    const r = await request.post('/api/components/geom', {
+      data: { id: 'chain_parser_test', params: {}, source: inlineSource },
+    });
+    expect(r.status(), `geom build failed; body: ${await r.text().catch(() => '?')}`).toBe(200);
+    const body = await r.json();
+    expect(body.full?.positions?.length).toBeGreaterThan(0);
+  });
+
   test('inline-preview composes two bundled siblings (GeomAcc + static M.union)', async ({ request }) => {
     // Exercise the bug we just fixed: a NEW-style (p, geom) => body
     // that imports TWO bundle primitives and calls geom.add on each.
