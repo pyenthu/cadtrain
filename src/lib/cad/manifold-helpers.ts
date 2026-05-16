@@ -130,12 +130,9 @@ export function cyl(h: number, r1: number, r2?: number) {
 export function tube(outerR: number, innerR: number, h: number) {
   return cyl(h, outerR).subtract(cyl(h + 0.02, innerR));
 }
-/** Translate a Manifold by a vec3. NOT a physical object — transform op,
- *  so it's intentionally NOT @part-tagged and stays out of the Parts
- *  catalog. The user writes `mv(...)` calls themselves in the geom body. */
+/** @op Translate — shift the part by [x, y, z]. */
 export function mv(m: any, v: [number, number, number]) { return m.translate(v); }
-/** Rotate a Manifold by a vec3 of degrees (xyz). NOT a physical object —
- *  transform op, not @part-tagged. */
+/** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
 /** Used by the cutaway view in finalizeManifold. Cached so multi-part

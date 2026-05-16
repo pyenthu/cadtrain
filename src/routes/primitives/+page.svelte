@@ -44,7 +44,7 @@
   import { loadComponentRegistry, defaultsFor, type ComponentEntry, type DerivedSchema, type ParamSchema } from '$lib/cad/components';
   import { FAMILIES, FAMILY_BY_ID, familyOf, loadEnabledFamilies, saveEnabledFamilies, type Family,
            LEVELS, levelOf, loadEnabledLevels, saveEnabledLevels, type Level } from '$lib/cad/components/families';
-  import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
+  import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
 
   function createRenderer(canvas: HTMLCanvasElement) {
     return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -1557,6 +1557,10 @@ export const geom = defineGeom(meta, (p, geom) => {
   // manifold-helpers.ts. Adding a new helper (with the `/** @part … */`
   // JSDoc tag) automatically surfaces it here — no UI edits needed.
   const HELPERS = discoverHelpers();
+  // Renamed to CHAIN_OPERATORS to avoid colliding with the legacy
+  // stub OPERATORS catalog above — these are the @op-tagged
+  // manifold-helpers (mv, rot, …) used in the per-instance chain UI.
+  const CHAIN_OPERATORS = discoverOperators();
 
   /** Static suggestions surfaced in the SVELTE-tab editor's autocomplete.
    *  Combined per-render with the active primitive's params + derived
@@ -1685,13 +1689,17 @@ export const geom = defineGeom(meta, (p, geom) => {
     | { kind: 'unknown'; raw: string };
 
   /** One instance line parsed out of the body. Two shapes:
-   *  - Helper: `const A = tube(0.5, 0.4, 4);` → positional `args[]`
+   *  - Helper: `let A = tube(0.5, 0.4, 4);` → positional `args[]`
    *    matched against `helperMeta.props` by index.
-   *  - Component: `const B = hollowCylinderGeom({ od, wall, length });`
+   *  - Component: `let B = hollowCylinderGeom({ od, wall, length });`
    *    → keyed `argsObj` matched against the imported component's
-   *    `meta.params` by key. Both kinds end with `geom.add(<name>);`. */
+   *    `meta.params` by key.
+   *  Either may be followed by zero or more `A = op(A, ...);`
+   *  sequential reassignments (Grasshopper-style chain of post-effects),
+   *  captured in `transforms[]` in source order. The instance ends
+   *  with `geom.add(<name>);`. */
   interface PartInstance {
-    /** const name on the LHS — `A`, `B`, … */
+    /** const/let name on the LHS — `A`, `B`, … */
     instance: string;
     /** Function being called — `tube`, `cyl` (helper), or
      *  `hollowCylinderGeom` (component alias). */
@@ -1703,9 +1711,28 @@ export const geom = defineGeom(meta, (p, geom) => {
     /** Keyed args for component calls (key → raw value). Undefined for
      *  helper calls. */
     argsObj?: Record<string, PartArg>;
-    /** Byte offset where the const declaration starts (for surgical edits). */
+    /** Sequential post-effects applied to the instance. Empty when
+     *  there's no chain yet. */
+    transforms: Transform[];
+    /** Byte offset where the const/let declaration starts (for
+     *  surgical edits of the base call). */
     callStart: number;
-    /** Byte offset of the closing `)` of the call. */
+    /** Byte offset of the closing `)` of the base call. */
+    callEnd: number;
+  }
+
+  /** One operator in an instance's chain, parsed from a
+   *  `<instance> = <op>(<instance>, <args...>);` reassignment. */
+  interface Transform {
+    /** Operator function name — `mv`, `rot`, `warp`, … */
+    op: string;
+    /** Positional args BEYOND the implicit first part arg. For mv/rot
+     *  it's a single vec3 literal like `[0, 0, 1]` parsed as one
+     *  PartArg of kind 'unknown'. */
+    args: PartArg[];
+    /** Byte offset where this reassignment statement starts. */
+    callStart: number;
+    /** Byte offset of the closing `)` of this op call. */
     callEnd: number;
   }
 
@@ -1719,39 +1746,88 @@ export const geom = defineGeom(meta, (p, geom) => {
     return out;
   }
 
-  /** Parse every `const X = name(args); geom.add(X);` pair out of the
-   *  geom body. Tolerates extra whitespace; ignores any other code shape.
-   *  Returns instances in source order. */
+  /** Walk balanced parens starting at `i` (which points at the char
+   *  AFTER the opening `(`). Returns the index of the matching `)`,
+   *  or -1 if unbalanced. Respects nested parens + strings. */
+  function findMatchingParen(src: string, i: number): number {
+    let depth = 1;
+    let inS: '"' | "'" | '`' | null = null;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (inS) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inS) inS = null;
+      } else {
+        if (c === '"' || c === "'" || c === '`') inS = c as any;
+        else if (c === '(') depth++;
+        else if (c === ')') { depth--; if (depth === 0) return i; }
+      }
+      i++;
+    }
+    return -1;
+  }
+
+  /** Parse every `(let|const) X = name(args); [X = op(X, ...);]*
+   *  geom.add(X);` chain out of the geom body. Tolerates extra
+   *  whitespace; ignores any other code shape. Returns instances in
+   *  source order. */
   function parsePartInstances(src: string): PartInstance[] {
     const out: PartInstance[] = [];
     const aliases = componentAliases(src);
-    const constRe = /\bconst\s+([A-Z][A-Z0-9]*)\s*=\s*(\w+)\s*\(/g;
-    for (const m of src.matchAll(constRe)) {
+    // Base-call regex — accepts `const` OR `let` so old sources keep
+    // parsing while new chained ones use `let` for reassignment.
+    const baseRe = /\b(?:const|let)\s+([A-Z][A-Z0-9]*)\s*=\s*(\w+)\s*\(/g;
+    for (const m of src.matchAll(baseRe)) {
       const instance = m[1];
       const callName = m[2];
       const callStart = m.index!;
-      // Find matching closing paren — walk with paren depth.
-      let i = m.index! + m[0].length;
-      let depth = 1;
-      let inS: '"' | "'" | '`' | null = null;
-      while (i < src.length && depth > 0) {
-        const c = src[i];
-        if (inS) {
-          if (c === '\\') { i += 2; continue; }
-          if (c === inS) inS = null;
-        } else {
-          if (c === '"' || c === "'" || c === '`') inS = c as any;
-          else if (c === '(') depth++;
-          else if (c === ')') { depth--; if (depth === 0) break; }
-        }
-        i++;
+      const argStart = m.index! + m[0].length;
+      const callEnd = findMatchingParen(src, argStart);
+      if (callEnd < 0) continue;
+      // Walk forward through any `<instance> = <op>(<instance>, ...);`
+      // reassignment lines until we hit `geom.add(<instance>);`.
+      const transforms: Transform[] = [];
+      // Regex anchored at the start of the search region — must come
+      // immediately after optional whitespace/newline + the previous
+      // statement terminator.
+      const reassignRe = new RegExp(
+        `\\s*${instance}\\s*=\\s*(\\w+)\\s*\\(\\s*${instance}\\s*(?:,|\\))`,
+        'y',
+      );
+      let cursor = callEnd + 1;
+      // Skip the trailing `;` of the base statement.
+      while (cursor < src.length && src[cursor] !== ';') cursor++;
+      if (src[cursor] === ';') cursor++;
+      while (cursor < src.length) {
+        reassignRe.lastIndex = cursor;
+        const rm = reassignRe.exec(src);
+        if (!rm) break;
+        const op = rm[1];
+        const opCallStart = rm.index;
+        // Find the `(` after the op name and its matching `)`.
+        const opOpenIdx = src.indexOf('(', opCallStart);
+        if (opOpenIdx < 0) break;
+        const opCloseIdx = findMatchingParen(src, opOpenIdx + 1);
+        if (opCloseIdx < 0) break;
+        // Args after the implicit first part arg.
+        const opArgText = src.slice(opOpenIdx + 1, opCloseIdx);
+        const opSegs = splitTopLevel(opArgText).map((s) => s.trim()).filter(Boolean);
+        // Drop the first segment (it's the instance name we matched).
+        const restRaw = opSegs.slice(1).join(', ');
+        transforms.push({
+          op,
+          args: restRaw ? parsePartArgs(restRaw) : [],
+          callStart: opCallStart,
+          callEnd: opCloseIdx,
+        });
+        cursor = opCloseIdx + 1;
+        while (cursor < src.length && src[cursor] !== ';') cursor++;
+        if (src[cursor] === ';') cursor++;
       }
-      if (depth !== 0) continue;
-      const callEnd = i;
-      // Require a matching `geom.add(<instance>);` somewhere after this.
-      const addRe = new RegExp(`geom\\.add\\(\\s*${instance}\\s*\\)\\s*;`);
-      if (!addRe.test(src.slice(callEnd))) continue;
-      const argText = src.slice(m.index! + m[0].length, callEnd);
+      // Require a matching `geom.add(<instance>);` after the chain.
+      const addRe = new RegExp(`^\\s*geom\\.add\\(\\s*${instance}\\s*\\)\\s*;`);
+      if (!addRe.test(src.slice(cursor))) continue;
+      const argText = src.slice(argStart, callEnd);
       const isHelper = HELPERS.some((h) => h.name === callName);
       const isComponent = !isHelper && callName in aliases;
       if (isComponent) {
@@ -1761,6 +1837,7 @@ export const geom = defineGeom(meta, (p, geom) => {
           kind: 'component',
           args: [],
           argsObj: parseObjectArgs(argText),
+          transforms,
           callStart,
           callEnd,
         });
@@ -1770,6 +1847,7 @@ export const geom = defineGeom(meta, (p, geom) => {
           callName,
           kind: isHelper ? 'helper' : 'unknown',
           args: parsePartArgs(argText),
+          transforms,
           callStart,
           callEnd,
         });

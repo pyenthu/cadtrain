@@ -40,6 +40,27 @@ export interface HelperMeta {
   props: HelperProp[];
 }
 
+/** A transformation OPERATOR — a function that wraps a Manifold and
+ *  returns a Manifold. First arg is the part (implicit in the GUI's
+ *  chain UI); `props` below describes the SECOND arg's shape (the
+ *  configuration: vec3 for mv/rot, scalar for warp, etc.). Tagged
+ *  with `@op` in the helpers source. */
+export interface OperatorMeta {
+  /** Identifier as exported, e.g. `mv`, `rot`. */
+  name: string;
+  /** Display label for the chain chip — e.g. `Translate`, `Rotate`. */
+  label: string;
+  /** Description from the `@op` JSDoc tag. */
+  desc: string;
+  /** Configuration prop. For mv/rot it's a vec3 → emitted as
+   *  `[x, y, z]` triple of number inputs. */
+  prop: {
+    kind: 'vec3';
+    /** Per-axis defaults (`[0, 0, 0]` for both translate and rotate). */
+    defaults: [number, number, number];
+  };
+}
+
 /** Per-helper concrete defaults. TypeScript signatures don't carry default
  *  values for non-optional parameters, so we keep them here. Pick values
  *  that render to a reasonable shape on a fresh add. */
@@ -88,5 +109,39 @@ export function discoverHelpers(): HelperMeta[] {
     });
   }
   cache = out;
+  return out;
+}
+
+// ── Operator discovery (@op-tagged helpers) ──────────────────────────────────
+
+/** Same shape as PART_RE but anchored on the `@op` tag. */
+const OP_RE = /\/\*\*\s*@op\s+([^*]+?)\s*\*\/\s*export\s+function\s+(\w+)\s*\(([^)]*)\)/g;
+
+/** Display labels keyed by operator function name. Falls back to a
+ *  Title-cased version of the name when unmapped. */
+const OPERATOR_LABELS: Record<string, string> = {
+  mv: 'Translate',
+  rot: 'Rotate',
+};
+
+let operatorCache: OperatorMeta[] | null = null;
+
+export function discoverOperators(): OperatorMeta[] {
+  if (operatorCache) return operatorCache;
+  const out: OperatorMeta[] = [];
+  for (const m of helpersSrc.matchAll(OP_RE)) {
+    const desc = m[1].replace(/\s+/g, ' ').trim();
+    const name = m[2];
+    out.push({
+      name,
+      label: OPERATOR_LABELS[name] ?? (name.charAt(0).toUpperCase() + name.slice(1)),
+      desc,
+      // Every @op-tagged helper today takes (part, vec3). When we add
+      // scalar operators (warp amplitude, twist degrees) the prop
+      // shape will need a discriminator — extend this when we get there.
+      prop: { kind: 'vec3', defaults: [0, 0, 0] },
+    });
+  }
+  operatorCache = out;
   return out;
 }
