@@ -1279,11 +1279,18 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
   // primitive (no Parts tab there).
   let inspectorTab = $state<InspectorTab>('parts');
 
-  /** Sub-tab within the Parts inspector — toggles the top section
-   *  between top-level Properties (params) and Formulae (derived
-   *  params / computed formulas). Instances render below regardless. */
-  type PartsSubTab = 'properties' | 'formulae';
-  let partsSubTab = $state<PartsSubTab>('properties');
+  /** Per-instance view toggle — each `A:Tube` accordion shows either
+   *  Properties (the typed prop grid, default) or Transformation
+   *  (tx/ty/tz + rx/ry/rz inputs that wrap the instance with mv/rot
+   *  at the call site). Keyed by `<tabId>:<instance>`. */
+  type InstanceView = 'properties' | 'transformation';
+  let instanceViews = $state<Record<string, InstanceView>>({});
+  function instanceViewOf(tabId: string, inst: string): InstanceView {
+    return instanceViews[`${tabId}:${inst}`] ?? 'properties';
+  }
+  function setInstanceView(tabId: string, inst: string, v: InstanceView): void {
+    instanceViews = { ...instanceViews, [`${tabId}:${inst}`]: v };
+  }
   /** Sub-tab inside the AI inspector tab's prompt area: the live Prompt
    *  input vs. the persisted History of past refines. */
   let aiSubTab = $state<'prompt' | 'history'>('prompt');
@@ -5158,37 +5165,16 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const useParts = isXml}
           {@const groups = useParts
             ? [
-                // Properties accordion entry — only when the Properties
-                // sub-tab is active. The Formulae sub-tab renders its
-                // own block below instead.
-                ...(partsSubTab === 'properties'
-                  ? [{ key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined }]
-                  : []),
+                // Properties section is ALWAYS surfaced for xml-
+                // primitives so the round-red `+` to add the first
+                // property is reachable even on a fresh stub with
+                // zero params yet.
+                { key: '__general__', name: 'Properties', sig: '', removeKind: null as null, removeId: '', instance: undefined },
                 ...partGroups.map((p) => ({ key: p.key, name: p.name, sig: p.sig, removeKind: p.removeKind, removeId: p.removeId, instance: p.instance })),
               ]
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
-            <!-- Accordion toolbar — two segmented buttons toggle the top
-                 section between Properties (top-level params) and
-                 Formulae (derived/computed params). Instances render
-                 below regardless of which sub-tab is active. -->
-            {#if isXml}
-              <div class="parts-subtabs">
-                <button
-                  class="parts-subtab"
-                  class:active={partsSubTab === 'properties'}
-                  type="button"
-                  onclick={() => (partsSubTab = 'properties')}
-                >Properties</button>
-                <button
-                  class="parts-subtab"
-                  class:active={partsSubTab === 'formulae'}
-                  type="button"
-                  onclick={() => (partsSubTab = 'formulae')}
-                >Formulae</button>
-              </div>
-            {/if}
             {#if activeTab.descForm?.open}
               {@const df = activeTab.descForm}
               <div class="param-form">
@@ -5240,6 +5226,44 @@ export const geom = defineGeom(meta, (p, geom) => {
                   <span class="pg-acc-chev">{collapsed ? '▸' : '▾'}</span>
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
+                  {#if g.instance}
+                    <!-- Per-instance view toggle. Two icon-buttons —
+                         Properties (settings ⚙ default) and
+                         Transformation (operators like translate /
+                         rotate / threading / warp / twist applied to
+                         this instance). Click swaps the body below. -->
+                    {@const view = instanceViewOf(activeTab.id, g.instance.instance)}
+                    <button
+                      class="pg-acc-iv"
+                      class:active={view === 'properties'}
+                      type="button"
+                      title="Properties"
+                      aria-label="Properties view"
+                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'properties'); }}
+                    >
+                      <!-- Settings gear icon. -->
+                      <svg viewBox="0 0 14 14" width="11" height="11" aria-hidden="true">
+                        <circle cx="7" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                        <path d="M7 1 v2 M7 11 v2 M1 7 h2 M11 7 h2 M2.8 2.8 l1.4 1.4 M9.8 9.8 l1.4 1.4 M2.8 11.2 l1.4 -1.4 M9.8 4.2 l1.4 -1.4"
+                              stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                    <button
+                      class="pg-acc-iv"
+                      class:active={view === 'transformation'}
+                      type="button"
+                      title="Transformation"
+                      aria-label="Transformation view"
+                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'transformation'); }}
+                    >
+                      <!-- Transformation icon — diagonal double arrows
+                           suggesting move / rotate / warp ops. -->
+                      <svg viewBox="0 0 14 14" width="11" height="11" aria-hidden="true">
+                        <path d="M2 7 h10 M9 4 l3 3 -3 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 12 v-10 M4 9 l3 3 3 -3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  {/if}
                   {#if !g.instance && activeTab.kind === 'xml-primitive'}
                     <!-- Per-section `+` — opens the param-add inline
                          form so the user can add another property to
@@ -5292,11 +5316,26 @@ export const geom = defineGeom(meta, (p, geom) => {
                    number input (with drag-to-scrub); a `paramRef`
                    renders as a read-only `p.<name>` chip. -->
               {@const inst = g.instance}
+              {@const instView = inst ? instanceViewOf(activeTab.id, inst.instance) : 'properties'}
               {@const helperMeta = inst && inst.kind === 'helper' ? HELPERS.find((h) => h.name === inst.callName) : null}
               {@const compEntry2 = inst && inst.kind === 'component'
                 ? componentList.find((r) => r.meta.id === compAliasMap[inst.callName])
                 : null}
-              {#if inst && compEntry2}
+              {#if inst && instView === 'transformation'}
+                <!-- Transformation view — operators applied to this
+                     instance (translate, rotate, threading, warp,
+                     twist, …). Visual stubs for now; each will write
+                     a wrap call (`mv(A, [...])` etc.) around the
+                     existing geom.add when wired. -->
+                <div class="tx-grid">
+                  <button class="tx-op" type="button" disabled title="Translate (mv)">↔ Translate</button>
+                  <button class="tx-op" type="button" disabled title="Rotate (rot)">↻ Rotate</button>
+                  <button class="tx-op" type="button" disabled title="Threading">⌗ Threading</button>
+                  <button class="tx-op" type="button" disabled title="Warp">∿ Warp</button>
+                  <button class="tx-op" type="button" disabled title="Twist">⟲ Twist</button>
+                </div>
+                <p class="tx-hint">Operators not wired yet — UI placeholder. Each will wrap the instance's <code>geom.add(...)</code> with the matching call (e.g. <code>mv(A, [0,0,1])</code>).</p>
+              {:else if inst && compEntry2}
                 <!-- Component instance: iterate the IMPORTED component's
                      declared meta.params and look up the object-literal
                      arg by key (not by index). Editing rewrites the
@@ -5514,32 +5553,25 @@ export const geom = defineGeom(meta, (p, geom) => {
             {/each}
           </div>
 
-          <!-- Formulae sub-tab body — derived/computed params from
-               meta.derived. Read-only for now; an "Add formula" flow
-               is a future iteration (would author derived entries
-               from the GUI rather than editing the source). -->
-          {#if activeTab.kind === 'xml-primitive' && partsSubTab === 'formulae'}
-            {@const derivedMeta = activeTab.componentEntry?.meta.derived}
-            {#if derivedMeta && Object.keys(derivedMeta).length > 0}
-              {@const resolved = resolveDerivedSafe(derivedMeta, activeTab.params)}
-              <div class="ed-sec">
-                <div class="pr-grid">
-                  {#each Object.entries(derivedMeta) as [key, schema] (key)}
-                    <div class="pr-card derived">
-                      <div class="pr-card-head">
-                        <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
-                        {#if schema.unit}<span class="pr-unit-inline">({schema.unit})</span>{/if}
-                      </div>
-                      <span class="pr-derived-val">{fmtDerived(resolved[key])}</span>
+          {#if activeTab.kind === 'xml-primitive' && activeTab.componentEntry?.meta.derived}
+            {@const derivedMeta = activeTab.componentEntry.meta.derived}
+            {@const resolved = resolveDerivedSafe(derivedMeta, activeTab.params)}
+            <div class="ed-sec">
+              <div class="ed-sec-h">
+                Derived <span class="muted">{Object.keys(derivedMeta).length} · read-only</span>
+              </div>
+              <div class="pr-grid">
+                {#each Object.entries(derivedMeta) as [key, schema] (key)}
+                  <div class="pr-card derived">
+                    <div class="pr-card-head">
+                      <span class="pr-keyname" data-tip={buildDerivedTip(key, schema)}>{key}</span>
+                      {#if schema.unit}<span class="pr-unit-inline">({schema.unit})</span>{/if}
                     </div>
-                  {/each}
-                </div>
+                    <span class="pr-derived-val">{fmtDerived(resolved[key])}</span>
+                  </div>
+                {/each}
               </div>
-            {:else}
-              <div class="pg-acc-empty">
-                No formulas yet. Derived parameters (e.g. <code>id = od - 2 * wall</code>) can be authored in the Builder; a GUI add-formula flow is on the way.
-              </div>
-            {/if}
+            </div>
           {/if}
 
           <!-- Imports list + "+ Add primitive" picker (was the standalone
@@ -7337,33 +7369,52 @@ export const geom = defineGeom(meta, (p, geom) => {
     min-width: 16px;
     text-align: center;
   }
-  /* Sub-tab toolbar inside the Parts inspector. Two segmented
-     buttons (Properties / Formulae) — tight, compact, sits above
-     the accordion stack as a header strip. */
-  .parts-subtabs {
-    display: flex;
-    gap: 2px;
-    margin: 0 0 4px;
-    padding: 2px;
-    background: #ececf2;
-    border-radius: 4px;
-  }
-  .parts-subtab {
-    flex: 1;
-    background: transparent;
-    border: 0;
+  /* Per-instance view toggle — settings (Properties) + transform
+     icons inside the instance accordion header. Small, square,
+     tight border; active state mirrors the trash button styling. */
+  .pg-acc-iv {
+    width: 20px; height: 20px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fff; color: #888;
+    border: 1px solid #e2e2e8;
     border-radius: 3px;
-    padding: 4px 8px;
-    font: bold 11px Arial;
-    color: #666;
     cursor: pointer;
-    transition: background 100ms, color 100ms;
+    flex-shrink: 0;
+    padding: 0;
   }
-  .parts-subtab:hover { color: #cc2222; }
-  .parts-subtab.active {
-    background: #fff;
-    color: #cc2222;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  .pg-acc-iv:hover { color: #cc2222; border-color: #f0c8c8; }
+  .pg-acc-iv.active { background: #fdecec; color: #cc2222; border-color: #cc2222; }
+  .pg-acc-head.instance .pg-acc-iv.active {
+    background: #cc2222; color: #fff; border-color: #cc2222;
+  }
+
+  /* Transformation view body — placeholder grid of operator buttons.
+     Disabled for now (visual hint of what's coming). */
+  .tx-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 4px;
+    padding: 2px 0;
+  }
+  .tx-op {
+    background: #fafafa;
+    border: 1px dashed #d8d8de;
+    border-radius: 3px;
+    padding: 5px 8px;
+    font: 11px Arial;
+    color: #777;
+    cursor: not-allowed;
+    text-align: left;
+  }
+  .tx-op:disabled { opacity: 0.7; }
+  .tx-hint {
+    font: 10px Arial; color: #888; font-style: italic;
+    margin: 4px 0 0;
+  }
+  .tx-hint code {
+    font: 10px ui-monospace, monospace; color: #555;
+    background: #fff; padding: 0 3px; border-radius: 2px;
+    border: 1px solid #eee;
   }
 
   /* Per-section `+` button — round red icon button, matches the
