@@ -110,6 +110,12 @@ export interface ComponentEntry {
    *  (they use the central families.ts map) and uncategorized parts. */
   family?: string;
   level?: number;
+  /** Assembly-level toggle from a library part's `meta.json`. When
+   *  true (default in the inspector), every `+ Add` part insertion
+   *  auto-emits a `mv` transform stacking the new part below the
+   *  previous one (Z-down: positive z = below). Absent for bundle
+   *  entries — they default to true at the UI layer. */
+  autoTranslate?: boolean;
   /** Volume-relative path to the part's `picture.png` (serve via
    *  /api/volume). Absent for bundle entries / pictureless parts. */
   picture?: string;
@@ -165,6 +171,7 @@ interface ApiEntry {
   renderMode?: 'client' | 'server';
   family?: string;
   level?: number;
+  autoTranslate?: boolean;
   picture?: string;
 }
 
@@ -216,6 +223,7 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
       renderMode,
       ...(api.family ? { family: api.family } : {}),
       ...(api.level != null ? { level: api.level } : {}),
+      ...(api.autoTranslate != null ? { autoTranslate: api.autoTranslate } : {}),
       ...(api.picture ? { picture: api.picture } : {}),
     };
   });

@@ -12,6 +12,7 @@ export const meta = {
     odTop: { label: 'OD (top)', min: 0.5, max: 14, step: 0.05, unit: 'in', default: 3.5 },
     wall: { label: 'Wall', min: 0.05, max: 1, step: 0.05, unit: 'in', default: 0.29 },
     length: { label: 'Length', min: 0.5, max: 20, step: 0.1, unit: 'in', default: 1 },
+    top: { label: 'Top', min: -100, max: 20000, step: 1, default: 0, unit: 'ft' },
   },
   validate: (p: Record<string, number>): string[] => {
     const errs: string[] = [];

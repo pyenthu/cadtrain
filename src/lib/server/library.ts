@@ -55,6 +55,12 @@ export const PART_FILES = {
 export interface PartMeta {
   family?: string;
   level?: number;
+  /** Assembly-level toggle: when true (default), the inspector
+   *  auto-inserts a `mv` transform on every newly-added part so it
+   *  stacks below the previous one (Z-down: positive z = below).
+   *  Inserted snippet uses live cross-instance refs like
+   *  `B = mv(B, [0, 0, A.top + A.length])`. */
+  autoTranslate?: boolean;
 }
 
 export interface ResolvedPart {
@@ -110,6 +116,7 @@ async function readPartMeta(dir: string): Promise<PartMeta> {
     const out: PartMeta = {};
     if (typeof parsed.family === 'string') out.family = parsed.family;
     if (typeof parsed.level === 'number') out.level = parsed.level;
+    if (typeof parsed.autoTranslate === 'boolean') out.autoTranslate = parsed.autoTranslate;
     return out;
   } catch {
     return {};

@@ -168,15 +168,29 @@ function expandInstancePropRefs(
 
   if (propMap.size === 0) return src;
 
-  return src.replace(/\b([A-Z][A-Z0-9]*)\.([a-z][a-zA-Z0-9_]*)\b/g, (full, inst, prop) => {
-    const props = propMap.get(inst);
-    const v = props?.[prop];
-    if (v == null) return full;
-    // Wrap compound expressions in parens so substitution preserves
-    // precedence inside larger expressions (`A.length / 2` stays
-    // sane even if A.length itself is `p.bodyOD - 1`).
-    return /^-?\d+(\.\d+)?$/.test(v) || /^[a-zA-Z_$][a-zA-Z0-9_$.]*$/.test(v) ? v : `(${v})`;
-  });
+  // Multi-pass substitution to a fixpoint. A single .replace pass only
+  // resolves direct refs — chained ones like `E.top = D.top + D.length`
+  // need a second pass over the SUBSTITUTED text (the first pass writes
+  // `D.top + D.length` into the mv expression, the second resolves it
+  // to `0 + 5`). Capped to avoid runaway on circular refs (the regex
+  // can't detect them, but the iteration count will).
+  const re = /\b([A-Z][A-Z0-9]*)\.([a-z][a-zA-Z0-9_]*)\b/g;
+  const substitute = (s: string) =>
+    s.replace(re, (full, inst, prop) => {
+      const v = propMap.get(inst)?.[prop];
+      if (v == null) return full;
+      // Wrap compound expressions in parens so substitution preserves
+      // precedence inside larger expressions (`A.length / 2` stays
+      // sane even if A.length itself is `p.bodyOD - 1`).
+      return /^-?\d+(\.\d+)?$/.test(v) || /^[a-zA-Z_$][a-zA-Z0-9_$.]*$/.test(v) ? v : `(${v})`;
+    });
+  let cur = src;
+  for (let i = 0; i < 8; i++) {
+    const next = substitute(cur);
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur;
 }
 
 export interface LoadedComponent {
@@ -314,7 +328,7 @@ export function loadGeomFromSource(
   // JS sees the concrete numeric value where the user wrote a
   // part-prop reference. Source-on-disk preserves the reference
   // text, so the substitution re-runs on every load and the
-  // cascade stays live.
+  // cascade stays live across saves.
   const expanded = expandInstancePropRefs(stripped, deps, resolveDep);
 
   const { code } = transformSync(expanded, {

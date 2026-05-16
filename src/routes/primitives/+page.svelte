@@ -1323,6 +1323,42 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
     applyDraft(tab);
   }
 
+  /** Persist a Settings-tab change to a library part's `meta.json`
+   *  (autoTranslate, future flags). Re-uses `/api/components/move`
+   *  which already writes meta.json — it preserves the current
+   *  category and just stamps the new flag. On success we re-bind
+   *  the tab's componentEntry so isAutoTranslateOn() picks up the
+   *  new value immediately without waiting for refreshRunesList. */
+  async function commitAutoTranslate(tab: Tab, value: boolean) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    const id = tab.componentEntry.meta.id;
+    const category = tab.componentEntry.origin;
+    // Bundle entries don't have a meta.json — refuse silently
+    // (the checkbox should already be disabled in the UI).
+    if (category === 'bundle') return;
+    try {
+      const r = await fetch('/api/components/move', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          category,
+          autoTranslate: value,
+          // Forward the existing fine-axis tag so the move endpoint's
+          // category-specific validation passes (Parts requires family,
+          // Basic requires level — without forwarding it'd reject).
+          ...(tab.componentEntry.family ? { family: tab.componentEntry.family } : {}),
+          ...(tab.componentEntry.level != null ? { level: tab.componentEntry.level } : {}),
+        }),
+      });
+      if (!r.ok) return;
+      tab.componentEntry = { ...tab.componentEntry, autoTranslate: value };
+      await refreshRunesList();
+    } catch {
+      // Best-effort; the UI checkbox will revert on next refresh if persistence failed.
+    }
+  }
+
   /** POST /api/components/rename + reconcile in-memory state. The
    *  server handles directory rename, meta.id rewrite, and cross-ref
    *  updates in other library parts; on success we re-fetch the
@@ -2287,26 +2323,172 @@ export const geom = defineGeom(meta, (p, geom) => {
     return src.slice(0, open) + `\n  ${line}` + src.slice(open);
   }
 
+  /** Ensure the manifold-helpers import line includes every name in
+   *  `names`. Used by both helper insertion and auto-translate
+   *  (which needs `mv` even when adding a tube). */
+  function ensureManifoldHelpersImports(src: string, names: string[]): string {
+    const importRe = /import\s*\{\s*([^}]*)\s*\}\s*from\s*['"]\.\.\/manifold-helpers['"];?/;
+    const m = importRe.exec(src);
+    if (m) {
+      const existing = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+      const merged = Array.from(new Set([...existing, ...names]));
+      if (merged.length === existing.length) return src;
+      return src.slice(0, m.index) + `import { ${merged.join(', ')} } from '../manifold-helpers';` + src.slice(m.index + m[0].length);
+    }
+    return `import { ${names.join(', ')} } from '../manifold-helpers';\n` + src;
+  }
+
+  /** Inspect a part-instance's call to figure out which prop names it
+   *  carries for "where am I" (top) and "how long am I" (length / h
+   *  on helpers). Used by the auto-translate flow to pick the right
+   *  identifiers when chaining. */
+  function instanceTopLenProps(inst: PartInstance, src: string): { topProp: string | null; lenProp: string | null } {
+    if (inst.kind === 'component') {
+      const aliases = componentAliases(src);
+      const compId = aliases[inst.callName];
+      const compEntry = componentList.find((r) => r.meta.id === compId);
+      const params = (compEntry?.meta.params ?? {}) as Record<string, unknown>;
+      return {
+        topProp: 'top' in params ? 'top' : null,
+        lenProp: 'length' in params ? 'length' : null,
+      };
+    }
+    const meta = HELPERS.find((h) => h.name === inst.callName);
+    return {
+      topProp: null,
+      lenProp: meta?.props.some((p) => p.name === 'h') ? 'h' : null,
+    };
+  }
+
+  /** Build the auto-translate vec3 for a given target instance. When
+   *  the target carries a `top` prop, emits `[0, 0, <ME>.top]` —
+   *  short, self-referential, and recalculate-friendly (just update
+   *  ME's top arg, the mv expression doesn't need to change). When
+   *  the target has no top prop (helpers), falls back to inlining
+   *  `PREV.top + PREV.length` so the math still works. */
+  function autoTranslateVecForTarget(target: PartInstance, prev: PartInstance, src: string): [string, string, string] | null {
+    const me = instanceTopLenProps(target, src);
+    if (me.topProp) return ['0', '0', `${target.instance}.${me.topProp}`];
+    const prevP = instanceTopLenProps(prev, src);
+    if (!prevP.lenProp) return null;
+    const lenExpr = `${prev.instance}.${prevP.lenProp}`;
+    const zExpr = prevP.topProp ? `${prev.instance}.${prevP.topProp} + ${lenExpr}` : lenExpr;
+    return ['0', '0', zExpr];
+  }
+
+  /** Build the canonical `top` value expression for a NON-FIRST
+   *  instance: `PREV.top + PREV.length` (or just `PREV.length` if
+   *  PREV has no top). Used to set ME's `top` arg on add + recalc. */
+  function autoTopExprFor(prev: PartInstance, src: string): string | null {
+    const p = instanceTopLenProps(prev, src);
+    if (!p.lenProp) return null;
+    const lenExpr = `${prev.instance}.${p.lenProp}`;
+    return p.topProp ? `${prev.instance}.${p.topProp} + ${lenExpr}` : lenExpr;
+  }
+
+  /** Build the auto-translate `mv` line for a newly-added part,
+   *  stacking it below the LAST existing instance (Z-down: positive z
+   *  = below). When `newHasTop` is true the line uses `<NEW>.top` so
+   *  the user can override per-instance by editing that one arg;
+   *  otherwise the line inlines `PREV.top + PREV.length`. Returns
+   *  null when there's no usable predecessor. */
+  function autoTranslateLineFor(src: string, newInst: string, newHasTop: boolean): string | null {
+    const insts = parsePartInstances(src);
+    if (insts.length === 0) return null;
+    const prev = insts[insts.length - 1];
+    if (newHasTop) {
+      return `${newInst} = mv(${newInst}, [0, 0, ${newInst}.top]);`;
+    }
+    const expr = autoTopExprFor(prev, src);
+    if (!expr) return null;
+    return `${newInst} = mv(${newInst}, [0, 0, ${expr}]);`;
+  }
+
+  /** Walk every instance from the SECOND onward and ensure each one
+   *  carries an `mv` transform stacking it below its predecessor.
+   *  - If the instance already has an `mv` transform, its vec3 is
+   *    overwritten with the canonical auto-translate value.
+   *  - If none exists, a fresh `mv` is appended via addTransform.
+   *  The first instance is the anchor — left alone.
+   *
+   *  Bound to the Settings tab's "Recalculate" button. Useful after
+   *  re-ordering parts manually in Builder, or when the user wants to
+   *  re-snap stale formula references to the current chain shape. */
+  function recalculateChain(tab: Tab) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    let src = tab.sourceDraft ?? tab.componentEntry.source;
+    let touched = false;
+    // Re-parse on every iteration — earlier writes shift later
+    // instance offsets, so cached PartInstance objects would be stale.
+    for (let i = 1; ; i++) {
+      const insts = parsePartInstances(src);
+      if (i >= insts.length) break;
+      const cur = insts[i];
+      const prev = insts[i - 1];
+      const meProps = instanceTopLenProps(cur, src);
+      // Step 1: set ME's `top` arg to PREV.top + PREV.length (only
+      // applies to component instances that declared a top param).
+      if (meProps.topProp && cur.kind === 'component') {
+        const topExpr = autoTopExprFor(prev, src);
+        if (topExpr) {
+          const next = setInstanceObjectArg(src, cur.instance, meProps.topProp, topExpr);
+          if (next && next !== src) { src = next; touched = true; }
+        }
+      }
+      // Step 2: ensure ME has an mv transform. The vec is `<ME>.top`
+      // when ME has its own top, else inline PREV.top + PREV.length.
+      const vec = autoTranslateVecForTarget(cur, prev, src);
+      if (!vec) continue;
+      const reparsed = parsePartInstances(src);
+      const curAfter = reparsed.find((p) => p.instance === cur.instance);
+      const mvIdx = curAfter?.transforms.findIndex((t) => t.op === 'mv') ?? -1;
+      if (mvIdx >= 0) {
+        const next = setTransformVec3(src, cur.instance, mvIdx, vec);
+        if (next && next !== src) { src = next; touched = true; }
+      } else {
+        const next = addTransform(src, cur.instance, 'mv', `[${vec.join(', ')}]`);
+        if (next && next !== src) { src = next; touched = true; }
+      }
+    }
+    if (touched) {
+      // Make sure `mv` is in the helpers import — addTransform doesn't
+      // touch imports, and a freshly-spliced mv on a component-only
+      // primitive would otherwise refer to an unimported symbol.
+      src = ensureManifoldHelpersImports(src, ['mv']);
+      tab.sourceDraft = src;
+      applyDraft(tab);
+    }
+  }
+
+  /** True when the active xml-primitive's autoTranslate setting is on.
+   *  Defaults to true when the field is absent — the user opted out
+   *  by explicitly setting false in the Settings tab. */
+  function isAutoTranslateOn(): boolean {
+    if (activeTab?.kind !== 'xml-primitive' || !activeTab.componentEntry) return false;
+    return activeTab.componentEntry.autoTranslate !== false;
+  }
+
   /** Add a manifold-helpers import + a two-line instance block at the
    *  bottom of the geom body. Strict grammar — every arg starts as a
-   *  numeric literal; the user later edits a prop to link a param. */
+   *  numeric literal; the user later edits a prop to link a param.
+   *  When autoTranslate is on AND there's a predecessor instance with
+   *  a usable length, a third line is spliced: `NEW = mv(NEW, [0, 0,
+   *  PREV.top + PREV.length])` and the new instance is declared
+   *  `let` so the reassignment parses. */
   function snippetForHelper(src: string, name: string, _paramKeys: Set<string>): string {
     let next = src;
-    const importRe = /import\s*\{\s*([^}]*)\s*\}\s*from\s*['"]\.\.\/manifold-helpers['"];?/;
-    const m = importRe.exec(next);
-    if (m) {
-      const names = m[1].split(',').map((s) => s.trim()).filter(Boolean);
-      if (!names.includes(name)) {
-        names.push(name);
-        next = next.slice(0, m.index) + `import { ${names.join(', ')} } from '../manifold-helpers';` + next.slice(m.index + m[0].length);
-      }
-    } else {
-      next = `import { ${name} } from '../manifold-helpers';\n` + next;
-    }
+    const wantImports = isAutoTranslateOn() ? [name, 'mv'] : [name];
+    next = ensureManifoldHelpersImports(next, wantImports);
     next = ensureGeomScaffold(next);
     const baseCall = defaultHelperCall(name, _paramKeys);
     const instName = uniqueInstanceName(next);
-    return insertIntoGeomBody(next, `const ${instName} = ${baseCall};\n  geom.add(${instName});`);
+    // Helpers (cyl, tube) don't carry a `top` param — fall back to
+    // inlining PREV.top + PREV.length in the mv line.
+    const autoLine = isAutoTranslateOn() ? autoTranslateLineFor(next, instName, false) : null;
+    const block = autoLine
+      ? `let ${instName} = ${baseCall};\n  ${autoLine}\n  geom.add(${instName});`
+      : `const ${instName} = ${baseCall};\n  geom.add(${instName});`;
+    return insertIntoGeomBody(next, block);
   }
 
   /** Add a component import (`geom as <name>Geom`) + a two-line
@@ -2330,12 +2512,31 @@ export const geom = defineGeom(meta, (p, geom) => {
     if (!importRe.test(next)) {
       next = `import { geom as ${alias} } from './${id}';\n` + next;
     }
+    // Auto-translate adds an `mv` call → ensure mv is imported.
+    if (isAutoTranslateOn()) next = ensureManifoldHelpersImports(next, ['mv']);
     next = ensureGeomScaffold(next);
-    const defaults = Object.entries(entry.meta.params)
-      .map(([k, v]: [string, any]) => `${k}: ${v?.default ?? 0}`)
+    const params = entry.meta.params as Record<string, any>;
+    const hasTop = 'top' in params;
+    // When the imported part has a `top` param AND auto-translate is
+    // on AND there's a predecessor, seed `top` with the canonical
+    // `PREV.top + PREV.length` expression instead of the default `0`.
+    // The mv line then reads `<ME>.top`, keeping the formula short
+    // and easy to override per-instance by editing this one arg.
+    const insts = parsePartInstances(next);
+    const prev = insts.length > 0 ? insts[insts.length - 1] : null;
+    const seedTop = hasTop && isAutoTranslateOn() && prev ? autoTopExprFor(prev, next) : null;
+    const defaults = Object.entries(params)
+      .map(([k, v]: [string, any]) => {
+        if (k === 'top' && seedTop) return `${k}: ${seedTop}`;
+        return `${k}: ${v?.default ?? 0}`;
+      })
       .join(', ');
     const instName = uniqueInstanceName(next);
-    return insertIntoGeomBody(next, `const ${instName} = ${alias}({ ${defaults} });\n  geom.add(${instName});`);
+    const autoLine = isAutoTranslateOn() ? autoTranslateLineFor(next, instName, hasTop) : null;
+    const block = autoLine
+      ? `let ${instName} = ${alias}({ ${defaults} });\n  ${autoLine}\n  geom.add(${instName});`
+      : `const ${instName} = ${alias}({ ${defaults} });\n  geom.add(${instName});`;
+    return insertIntoGeomBody(next, block);
   }
 
   /** Pick a const name that doesn't collide with anything already declared
@@ -6776,6 +6977,34 @@ export const geom = defineGeom(meta, (p, geom) => {
             </div>
             {#if stageRenamePending}<span class="settings-status muted">Renaming…</span>{/if}
             {#if stageRenameError}<span class="settings-status err" title={stageRenameError}>{stageRenameError.slice(0, 120)}</span>{/if}
+
+            <!-- Assembly-level toggles. The default is "on" — the user
+                 unchecks to opt out so adding a part doesn't auto-stack.
+                 Bundle entries can't persist meta.json so the toggle is
+                 disabled with a hint tooltip there. -->
+            <label class="settings-toggle">
+              <input
+                type="checkbox"
+                checked={activeTab.componentEntry.autoTranslate !== false}
+                disabled={activeTab.componentEntry.origin === 'bundle'}
+                title={activeTab.componentEntry.origin === 'bundle'
+                  ? 'Bundle parts (src/) can\'t carry meta.json — toggle is library-only.'
+                  : 'When on, each newly-added part is auto-translated below the previous one via mv([0, 0, PREV.top + PREV.length]).'}
+                onchange={(e) => commitAutoTranslate(activeTab!, (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>Auto-translate new parts (stack below previous)</span>
+            </label>
+
+            <!-- One-shot: walk the chain and re-snap every non-first
+                 instance's mv vec3 to the canonical
+                 [0, 0, PREV.top + PREV.length] expression. Overwrites
+                 an existing mv if present; appends one otherwise. -->
+            <button
+              class="settings-btn"
+              type="button"
+              title="Walk every part after the first and snap its mv translate to [0, 0, PREV.top + PREV.length]. Useful after manual reordering or formula drift."
+              onclick={() => recalculateChain(activeTab!)}
+            >Recalculate chain offsets</button>
           </div>
         {/if}
 
@@ -8804,6 +9033,26 @@ export const geom = defineGeom(meta, (p, geom) => {
   .settings-status { font: 11px Arial; }
   .settings-status.muted { color: #888; }
   .settings-status.err { color: #cc2222; }
+  .settings-toggle {
+    display: flex; align-items: center; gap: 6px;
+    font: 11px Arial; color: #333;
+    margin-top: 4px;
+    cursor: pointer;
+  }
+  .settings-toggle input[type="checkbox"] { accent-color: #cc2222; }
+  .settings-toggle input:disabled + span { color: #aaa; }
+  .settings-btn {
+    align-self: flex-start;
+    font: 11px Arial; color: #fff;
+    background: #cc2222;
+    border: 1px solid #cc2222;
+    border-radius: 3px;
+    padding: 4px 10px;
+    cursor: pointer;
+    margin-top: 2px;
+  }
+  .settings-btn:hover { background: #b81f1f; border-color: #b81f1f; }
+  .settings-btn:disabled { background: #ddd; border-color: #ccc; color: #888; cursor: not-allowed; }
 
   /* Used-card variant — non-clickable label card with a small × in the
      corner to drop the import. Hover reveals the × to avoid clutter. */

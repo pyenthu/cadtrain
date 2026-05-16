@@ -42,11 +42,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
-  const { id, category, family, level } = body as {
+  const { id, category, family, level, autoTranslate } = body as {
     id?: unknown;
     category?: unknown;
     family?: unknown;
     level?: unknown;
+    autoTranslate?: unknown;
   };
 
   if (typeof id !== 'string' || !/^[a-z][a-z0-9_]*$/.test(id)) {
@@ -62,8 +63,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
     // Same category — treat as a meta-only update (re-tag family/level).
   }
 
-  // Build the meta.json the moved part should carry.
-  const meta: PartMeta = {};
+  // Build the meta.json the moved part should carry. Preserves any
+  // existing fields (e.g. autoTranslate) the caller didn't update so
+  // a category-only move doesn't drop assembly-level config.
+  const meta: PartMeta = { ...part.meta };
   if (category === 'parts') {
     if (typeof family !== 'string' || !family) throw error(400, 'category "parts" requires a family');
     meta.family = family;
@@ -73,6 +76,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     meta.level = lv;
   }
   // (test / assemblies carry no fine-axis tag.)
+  if (typeof autoTranslate === 'boolean') meta.autoTranslate = autoTranslate;
 
   await ensureLibrary();
   const targetDir = await partDirIn(category, id);

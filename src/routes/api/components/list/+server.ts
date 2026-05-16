@@ -66,6 +66,11 @@ interface ComponentListEntry {
    *  (they use families.ts) and uncategorized library parts. */
   family?: string;
   level?: number;
+  /** Assembly-level toggle from a library part's `meta.json`. When
+   *  true (default), the inspector auto-inserts a `mv` transform on
+   *  every newly-added part so it stacks below the previous one.
+   *  Absent for bundle entries. */
+  autoTranslate?: boolean;
   /** Ready-to-use URL for the part's `picture.png` — the dev-local
    *  `/api/components/picture?id=<id>` endpoint. Absent for bundle
    *  entries and library parts with no picture. */
@@ -324,6 +329,7 @@ async function readLibraryEntries(): Promise<ComponentListEntry[]> {
       origin: part.category,
       ...(part.meta.family ? { family: part.meta.family } : {}),
       ...(part.meta.level != null ? { level: part.meta.level } : {}),
+      ...(part.meta.autoTranslate != null ? { autoTranslate: part.meta.autoTranslate } : {}),
       ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(parsed.id)}` } : {}),
       hasGeom: false,
       renderMode: 'server',
