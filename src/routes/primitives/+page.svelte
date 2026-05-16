@@ -427,6 +427,21 @@
   let paramFormX = $state<number>(80);
   let paramFormY = $state<number>(80);
 
+  /** State for the per-instance "Add transform" popover. Anchored to
+   *  the trailing `+` in the chain strip; holds the target instance
+   *  name + the popover coords. */
+  let txAddOpen = $state<{ instance: string } | null>(null);
+  let txAddX = $state<number>(80);
+  let txAddY = $state<number>(80);
+  let txAddSearch = $state<string>('');
+
+  /** State for the per-chip vec3 edit popup. Anchored to the clicked
+   *  chip; holds the target instance + transform index + current
+   *  in-flight axis values. */
+  let txEditOpen = $state<{ instance: string; tIdx: number; x: number; y: number; z: number } | null>(null);
+  let txEditX = $state<number>(80);
+  let txEditY = $state<number>(80);
+
   /** Compute the identifier the user is currently typing — the
    *  contiguous run of `[A-Za-z0-9._]` ending at the caret. Returns the
    *  empty string when the caret sits after whitespace or punctuation. */
@@ -1977,12 +1992,107 @@ export const geom = defineGeom(meta, (p, geom) => {
     return src.slice(0, callOpenIdx + 1) + newArgText + src.slice(inst.callEnd);
   }
 
+  /** Switch the base declaration `const A = …` → `let A = …` so the
+   *  GUI can splice subsequent `A = op(A, …);` reassignments. Idempotent
+   *  — if it's already `let`, returns the source unchanged. */
+  function promoteConstToLet(src: string, instance: string): string {
+    const re = new RegExp(`\\bconst(\\s+${instance}\\s*=)`);
+    const m = re.exec(src);
+    if (!m) return src;
+    return src.slice(0, m.index) + 'let' + m[1] + src.slice(m.index + m[0].length);
+  }
+
+  /** Splice a new transform line `<instance> = <op>(<instance>, …);`
+   *  immediately before the matching `geom.add(<instance>);`. Promotes
+   *  the base const to let if needed. */
+  function addTransform(src: string, instance: string, op: string, defaultArgsRaw: string): string | null {
+    const insts = parsePartInstances(src);
+    const inst = insts.find((i) => i.instance === instance);
+    if (!inst) return null;
+    // Locate the `geom.add(<instance>);` that terminates the chain.
+    const addRe = new RegExp(`\\bgeom\\.add\\(\\s*${instance}\\s*\\)\\s*;`);
+    const am = addRe.exec(src);
+    if (!am) return null;
+    // Walk back to the start of the geom.add line so we can match its
+    // leading indent for the new transform line.
+    let lineStart = am.index;
+    while (lineStart > 0 && src[lineStart - 1] !== '\n') lineStart--;
+    const indent = src.slice(lineStart, am.index);
+    const argsTail = defaultArgsRaw ? `, ${defaultArgsRaw}` : '';
+    const line = `${indent}${instance} = ${op}(${instance}${argsTail});\n`;
+    let next = src.slice(0, lineStart) + line + src.slice(lineStart);
+    next = promoteConstToLet(next, instance);
+    return next;
+  }
+
+  /** Read the current vec3 axis values from the transform at `tIdx`.
+   *  Returns `[x, y, z]` parsed as numbers, with NaN for any axis we
+   *  can't parse (formula / expression). Used to seed the edit popup. */
+  function readTransformVec3(inst: PartInstance, tIdx: number): [number, number, number] {
+    const t = inst.transforms[tIdx];
+    if (!t) return [0, 0, 0];
+    // Args[0] is the vec3 literal — `[x, y, z]`. Strip brackets, split.
+    const raw = t.args[0]?.raw?.trim() ?? '';
+    const inner = raw.replace(/^\[/, '').replace(/\]$/, '');
+    const parts = splitTopLevel(inner).map((s) => s.trim());
+    const n = (s: string) => {
+      const v = Number(s);
+      return Number.isFinite(v) ? v : NaN;
+    };
+    return [n(parts[0] ?? '0'), n(parts[1] ?? '0'), n(parts[2] ?? '0')];
+  }
+
+  /** Rewrite the vec3 arg of the transform at `tIdx`. Emits a fresh
+   *  `[x, y, z]` literal — any prior formula expressions in the vec3
+   *  are flattened to literal numbers (acceptable for the v1 popup;
+   *  formula-per-axis is a later iteration). */
+  function setTransformVec3(src: string, instance: string, tIdx: number, vec: [number, number, number]): string | null {
+    const insts = parsePartInstances(src);
+    const inst = insts.find((i) => i.instance === instance);
+    if (!inst) return null;
+    const t = inst.transforms[tIdx];
+    if (!t) return null;
+    // Find the `(` after the op name and patch just the args region
+    // BEYOND the implicit first-part-arg.
+    const opOpenIdx = src.indexOf('(', t.callStart);
+    if (opOpenIdx < 0) return null;
+    const argText = src.slice(opOpenIdx + 1, t.callEnd);
+    const segs = splitTopLevel(argText);
+    if (segs.length < 1) return null;
+    // segs[0] = instance name, segs[1] = vec3. Replace segs[1].
+    const newVec = `[${vec[0]}, ${vec[1]}, ${vec[2]}]`;
+    if (segs.length >= 2) {
+      segs[1] = ` ${newVec}`;
+    } else {
+      segs.push(` ${newVec}`);
+    }
+    return src.slice(0, opOpenIdx + 1) + segs.join(',') + src.slice(t.callEnd);
+  }
+
+  /** Drop the transform at `tIdx` (0 = first chip after the base).
+   *  Removes the whole `<instance> = <op>(<instance>, …);` line. */
+  function removeTransform(src: string, instance: string, tIdx: number): string | null {
+    const insts = parsePartInstances(src);
+    const inst = insts.find((i) => i.instance === instance);
+    if (!inst) return null;
+    const t = inst.transforms[tIdx];
+    if (!t) return null;
+    // Walk back to start-of-line for the transform statement.
+    let lineStart = t.callStart;
+    while (lineStart > 0 && src[lineStart - 1] !== '\n') lineStart--;
+    // Walk forward past the `)` + `;` + newline.
+    let lineEnd = t.callEnd + 1;
+    while (lineEnd < src.length && src[lineEnd] !== '\n') lineEnd++;
+    if (src[lineEnd] === '\n') lineEnd++;
+    return src.slice(0, lineStart) + src.slice(lineEnd);
+  }
+
   /** Find the next unused single-letter instance name (A, B, …, Z, AA, AB,
-   *  …). Scans the source for existing `const <NAME>` declarations to
-   *  avoid collisions. */
+   *  …). Scans the source for existing `const|let <NAME>` declarations
+   *  to avoid collisions. */
   function uniqueInstanceName(src: string): string {
     const used = new Set<string>();
-    for (const m of src.matchAll(/\bconst\s+([A-Z][A-Z0-9]*)\s*=/g)) used.add(m[1]);
+    for (const m of src.matchAll(/\b(?:const|let)\s+([A-Z][A-Z0-9]*)\s*=/g)) used.add(m[1]);
     for (let i = 0; i < 26 * 27; i++) {
       const a = i < 26 ? '' : String.fromCharCode(65 + Math.floor(i / 26) - 1);
       const b = String.fromCharCode(65 + (i % 26));
@@ -2425,6 +2535,77 @@ export const geom = defineGeom(meta, (p, geom) => {
     const componentRe = /import\s*\{[^}]*\bgeom as \w+\b[^}]*\}\s*from\s*['"]\.\/([a-z][a-z0-9_]*)['"];?/g;
     for (const m of src.matchAll(componentRe)) components.add(m[1]);
     return { helpers, components };
+  }
+
+  /** Open the chain "Add transform" popover. Anchored to the `+`
+   *  button that fired it; flip to the left of the trigger when the
+   *  right-side anchor would overflow the viewport. */
+  function openTxAdd(instance: string, ev: MouseEvent) {
+    const btn = ev.currentTarget as HTMLElement;
+    const r = btn.getBoundingClientRect();
+    const popupW = 280;
+    const gap = 6;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const wouldOverflow = r.right + gap + popupW > vw - 8;
+    txAddX = wouldOverflow
+      ? Math.max(8, Math.round(r.left - gap - popupW))
+      : Math.round(r.right + gap);
+    txAddY = Math.round(r.top - 4);
+    txAddSearch = '';
+    txAddOpen = { instance };
+  }
+  function closeTxAdd() { txAddOpen = null; }
+  /** Splice an op into the chain + update sourceDraft. The user still
+   *  needs to press Apply (or Save) to push to the canvas. */
+  function applyAddTransform(tab: Tab, instance: string, op: string) {
+    if (!tab.componentEntry) return;
+    const opMeta = CHAIN_OPERATORS.find((o) => o.name === op);
+    const defaultArgs =
+      opMeta?.prop.kind === 'vec3'
+        ? `[${opMeta.prop.defaults.join(', ')}]`
+        : '';
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const next = addTransform(cur, instance, op, defaultArgs);
+    if (next != null) tab.sourceDraft = next;
+    txAddOpen = null;
+  }
+
+  /** Open the per-chip vec3 edit popup. Pre-seeds x/y/z from the
+   *  transform's current vec3 literal. */
+  function openTxEdit(tab: Tab, instance: string, tIdx: number, ev: MouseEvent) {
+    if (!tab.componentEntry) return;
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const insts = parsePartInstances(cur);
+    const inst = insts.find((i) => i.instance === instance);
+    if (!inst) return;
+    const [x, y, z] = readTransformVec3(inst, tIdx);
+    txEditOpen = {
+      instance,
+      tIdx,
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+      z: Number.isFinite(z) ? z : 0,
+    };
+    const btn = ev.currentTarget as HTMLElement;
+    const r = btn.getBoundingClientRect();
+    const popupW = 240;
+    const gap = 6;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const wouldOverflow = r.right + gap + popupW > vw - 8;
+    txEditX = wouldOverflow
+      ? Math.max(8, Math.round(r.left - gap - popupW))
+      : Math.round(r.right + gap);
+    txEditY = Math.round(r.bottom + gap);
+  }
+  function closeTxEdit() { txEditOpen = null; }
+  /** Write the in-flight x/y/z back into the source. Used by Enter on
+   *  any axis input AND by the Apply button. */
+  function commitTxEdit(tab: Tab) {
+    if (!txEditOpen || !tab.componentEntry) return;
+    const fe = txEditOpen;
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const next = setTransformVec3(cur, fe.instance, fe.tIdx, [fe.x, fe.y, fe.z]);
+    if (next != null) tab.sourceDraft = next;
   }
 
   /** Apply the in-flight sourceDraft to the canvas WITHOUT writing to
@@ -4716,16 +4897,124 @@ export const geom = defineGeom(meta, (p, geom) => {
     </FloatingPanel>
   {/if}
 
-  <!-- Drag handle — sits between the sidebar and the rest of the layout.
-       Mousedown anywhere on it starts a drag that resizes the sidebar. -->
-  <div
-    class="sidebar-resizer"
-    class:dragging={sidebarDragging}
-    role="separator"
-    aria-orientation="vertical"
-    aria-label="Resize sidebar"
-    onmousedown={startSidebarDrag}
-  ></div>
+  <!-- Per-instance "Add transform" popover. Opens from the trailing
+       `+` chip in the chain strip. Search input + list of operators
+       (mv, rot today; warp / twist when they land). Click an entry
+       to splice it into the chain via applyAddTransform. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && txAddOpen}
+    {@const targetInst = txAddOpen.instance}
+    {@const q = txAddSearch.trim().toLowerCase()}
+    {@const filtered = q
+      ? CHAIN_OPERATORS.filter((o) => `${o.name} ${o.label} ${o.desc}`.toLowerCase().includes(q))
+      : CHAIN_OPERATORS}
+    <FloatingPanel
+      title={`Add transform to ${targetInst}`}
+      visible={true}
+      onClose={closeTxAdd}
+      x={txAddX}
+      y={txAddY}
+      width="280px"
+      maxHeight="60vh"
+    >
+      {#snippet children()}
+        <div class="tx-add-body" use:clickOutside={closeTxAdd}>
+          <input
+            class="pf-in"
+            type="text"
+            placeholder="Filter operators…"
+            bind:value={txAddSearch}
+            autocomplete="off"
+          />
+          <ul class="tx-add-list">
+            {#each filtered as op (op.name)}
+              <li>
+                <button
+                  class="tx-add-item"
+                  type="button"
+                  onclick={() => applyAddTransform(activeTab!, targetInst, op.name)}
+                >
+                  <span class="tx-add-name">{op.label}</span>
+                  <span class="tx-add-fn">{op.name}</span>
+                  <span class="tx-add-desc">{op.desc}</span>
+                </button>
+              </li>
+            {/each}
+            {#if filtered.length === 0}
+              <li class="tx-add-empty">No operators match "{txAddSearch}".</li>
+            {/if}
+          </ul>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
+  <!-- Per-chip vec3 edit popup. Anchored to the clicked chain chip.
+       Three drag-scrub number inputs (X, Y, Z) — Enter commits to
+       sourceDraft, then the user clicks Apply (or saves) to push to
+       the canvas. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && txEditOpen}
+    {@const fe = txEditOpen}
+    <FloatingPanel
+      title={`Edit ${fe.instance} · ${fe.tIdx + 1}`}
+      visible={true}
+      onClose={closeTxEdit}
+      x={txEditX}
+      y={txEditY}
+      width="240px"
+      maxHeight="40vh"
+    >
+      {#snippet children()}
+        <div class="tx-edit-body" use:clickOutside={closeTxEdit}>
+          <div class="tx-edit-grid">
+            {#each ['x', 'y', 'z'] as axis (axis)}
+              <label class="tx-edit-axis">
+                <span class="tx-edit-label">{axis.toUpperCase()}</span>
+                <input
+                  class="pr-num drag"
+                  type="number"
+                  step="0.1"
+                  value={(fe as any)[axis]}
+                  oninput={() => { if (activeTab) activeTab.inputPending = true; }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') {
+                      const v = Number((e.currentTarget as HTMLInputElement).value);
+                      if (Number.isFinite(v) && txEditOpen) {
+                        (txEditOpen as any)[axis] = v;
+                        commitTxEdit(activeTab!);
+                        if (activeTab) activeTab.inputPending = false;
+                      }
+                    } else if (e.key === 'Escape') {
+                      (e.currentTarget as HTMLInputElement).value = String((fe as any)[axis]);
+                      if (activeTab) activeTab.inputPending = false;
+                    }
+                  }}
+                  use:dragNumber={{
+                    step: 0.1,
+                    get: () => (fe as any)[axis],
+                    set: (v) => {
+                      if (!txEditOpen) return;
+                      (txEditOpen as any)[axis] = v;
+                      commitTxEdit(activeTab!);
+                    },
+                  }}
+                  title="Type then Enter to commit · drag horizontally to scrub"
+                />
+              </label>
+            {/each}
+          </div>
+          <div class="pf-actions">
+            <button class="save-btn" type="button" onclick={() => { commitTxEdit(activeTab!); closeTxEdit(); }}>Apply</button>
+            <button class="discard-btn" type="button" onclick={closeTxEdit}>Close</button>
+          </div>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
+  <!-- Per-instance "Add transform" popover. Opens from the trailing
+       `+` chip in the chain strip. Search input + list of operators
+       (mv, rot today; warp / twist when they land). Click an entry
+       to splice it into the chain via applyAddTransform. -->
 
   <!-- Hover callout — replaces the old cards grid. Pops out to the right
        of the sidebar when an item is hovered/focused; shows the same
@@ -5400,19 +5689,55 @@ export const geom = defineGeom(meta, (p, geom) => {
                 ? componentList.find((r) => r.meta.id === compAliasMap[inst.callName])
                 : null}
               {#if inst && instView === 'transformation'}
-                <!-- Transformation view — operators applied to this
-                     instance (translate, rotate, threading, warp,
-                     twist, …). Visual stubs for now; each will write
-                     a wrap call (`mv(A, [...])` etc.) around the
-                     existing geom.add when wired. -->
-                <div class="tx-grid">
-                  <button class="tx-op" type="button" disabled title="Translate (mv)">↔ Translate</button>
-                  <button class="tx-op" type="button" disabled title="Rotate (rot)">↻ Rotate</button>
-                  <button class="tx-op" type="button" disabled title="Threading">⌗ Threading</button>
-                  <button class="tx-op" type="button" disabled title="Warp">∿ Warp</button>
-                  <button class="tx-op" type="button" disabled title="Twist">⟲ Twist</button>
+                <!-- Transformation view — Grasshopper-style chip chain.
+                     Renders inst.transforms[] left-to-right with arrows
+                     between chips. Trailing round-red `+` is the
+                     add-operator entry point (slice 3). Each chip will
+                     open an edit popup with x/y/z inputs (slice 4).
+                     For now the chips are read-only — clicking is a
+                     no-op until slice 4 lands. -->
+                <div class="ch-strip">
+                  <span class="ch-base" title="Base shape">{inst.instance}</span>
+                  {#each inst.transforms as t, ti (ti)}
+                    {@const opMeta = CHAIN_OPERATORS.find((o) => o.name === t.op)}
+                    <span class="ch-arrow">→</span>
+                    <span class="ch-chip-wrap">
+                      <button
+                        class="ch-chip"
+                        type="button"
+                        title={opMeta?.desc ?? t.op}
+                        aria-label={`Edit ${opMeta?.label ?? t.op}`}
+                        onclick={(e) => openTxEdit(activeTab!, inst.instance, ti, e)}
+                      >
+                        <span class="ch-chip-label">{opMeta?.label ?? t.op}</span>
+                        {#if t.args.length > 0}
+                          <span class="ch-chip-args">{t.args.map((a) => a.raw).join(' ')}</span>
+                        {/if}
+                      </button>
+                      <button
+                        class="ch-chip-x"
+                        type="button"
+                        title={`Remove ${opMeta?.label ?? t.op}`}
+                        aria-label={`Remove ${opMeta?.label ?? t.op}`}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          if (!activeTab?.componentEntry) return;
+                          const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+                          const next = removeTransform(cur, inst.instance, ti);
+                          if (next != null) activeTab.sourceDraft = next;
+                        }}
+                      >×</button>
+                    </span>
+                  {/each}
+                  <span class="ch-arrow">→</span>
+                  <button
+                    class="ch-add"
+                    type="button"
+                    title="Add operator"
+                    aria-label="Add operator"
+                    onclick={(e) => openTxAdd(inst.instance, e)}
+                  >+</button>
                 </div>
-                <p class="tx-hint">Operators not wired yet — UI placeholder. Each will wrap the instance's <code>geom.add(...)</code> with the matching call (e.g. <code>mv(A, [0,0,1])</code>).</p>
               {:else if inst && compEntry2}
                 <!-- Component instance: iterate the IMPORTED component's
                      declared meta.params and look up the object-literal
@@ -7466,33 +7791,125 @@ export const geom = defineGeom(meta, (p, geom) => {
     background: #cc2222; color: #fff; border-color: #cc2222;
   }
 
-  /* Transformation view body — placeholder grid of operator buttons.
-     Disabled for now (visual hint of what's coming). */
-  .tx-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  /* Transformation chain strip — Grasshopper-style horizontal chip
+     chain rendering `inst.transforms[]`. Left-anchored, scrolls
+     horizontally on overflow. Base label (instance name) → op chip
+     → arrow → op chip → arrow → `+` add chip. */
+  .ch-strip {
+    display: flex;
+    align-items: center;
     gap: 4px;
-    padding: 2px 0;
+    padding: 4px 0 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
-  .tx-op {
-    background: #fafafa;
-    border: 1px dashed #d8d8de;
-    border-radius: 3px;
-    padding: 5px 8px;
+  .ch-strip::-webkit-scrollbar { height: 6px; }
+  .ch-strip::-webkit-scrollbar-thumb { background: #d0d0d8; border-radius: 3px; }
+  .ch-base {
+    flex-shrink: 0;
+    font: bold 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cc2222;
+    background: #fff8f8;
+    border: 1.5px solid #f0c8c8;
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+  .ch-arrow {
+    flex-shrink: 0;
+    color: #888;
+    font: bold 14px Arial;
+    line-height: 1;
+  }
+  .ch-chip-wrap {
+    flex-shrink: 0;
+    position: relative;
+    display: inline-flex;
+  }
+  .ch-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #fff;
+    border: 1.5px solid #c8c8d0;
+    border-radius: 4px;
+    padding: 3px 8px;
     font: 11px Arial;
-    color: #777;
-    cursor: not-allowed;
-    text-align: left;
+    color: #444;
+    cursor: pointer;
+    transition: background 100ms, border-color 100ms;
   }
-  .tx-op:disabled { opacity: 0.7; }
-  .tx-hint {
-    font: 10px Arial; color: #888; font-style: italic;
-    margin: 4px 0 0;
+  .ch-chip:hover { background: #f4f0fb; border-color: #7c4dff; color: #7c4dff; }
+  /* Hover-reveal trash on the chip — overlays the top-right corner.
+     Hidden by default; pops in when the wrap is hovered. */
+  .ch-chip-x {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 16px; height: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #cc2222; color: #fff;
+    border: 1.5px solid #fff;
+    border-radius: 50%;
+    font: bold 10px Arial; line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 100ms, transform 100ms;
+    padding: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   }
-  .tx-hint code {
-    font: 10px ui-monospace, monospace; color: #555;
-    background: #fff; padding: 0 3px; border-radius: 2px;
-    border: 1px solid #eee;
+  .ch-chip-wrap:hover .ch-chip-x { opacity: 1; }
+  .ch-chip-x:hover { background: #aa1818; transform: scale(1.1); }
+  .ch-chip-label { font-weight: bold; }
+  .ch-chip-args {
+    font: 10px ui-monospace, monospace;
+    color: #888;
+    border-left: 1px solid #e2e2e8;
+    padding-left: 4px;
+  }
+  .ch-add {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #cc2222; color: #fff;
+    border: none; border-radius: 50%;
+    font: bold 14px Arial; line-height: 1;
+    cursor: pointer;
+    transition: background 100ms, transform 100ms;
+  }
+  .ch-add:hover:not(:disabled) { background: #aa1818; transform: scale(1.06); }
+  .ch-add:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Add-transform popover body — input on top, list of operator
+     items below. Click an item to splice + close. */
+  .tx-add-body { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; }
+  .tx-add-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+  .tx-add-item {
+    width: 100%; text-align: left;
+    background: #fff; border: 1px solid #e2e2e8; border-radius: 3px;
+    padding: 5px 8px;
+    margin-bottom: 2px;
+    font: 11px Arial; color: #444;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .tx-add-item:hover { background: #f4f0fb; border-color: #7c4dff; }
+  .tx-add-name { font-weight: bold; color: #1a5b8a; }
+  .tx-add-fn { font: 10px ui-monospace, monospace; color: #888; }
+  .tx-add-desc { font: 10px Arial; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tx-add-empty { font: 11px Arial; color: #888; padding: 8px; text-align: center; }
+
+  /* Per-chip vec3 edit popup. Three small input cells in a row,
+     each labelled X/Y/Z above the input. */
+  .tx-edit-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .tx-edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tx-edit-axis { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tx-edit-label {
+    font: bold 11px Arial;
+    color: #cc2222;
+    text-align: center;
   }
 
   /* Per-section `+` button — round red icon button, matches the
