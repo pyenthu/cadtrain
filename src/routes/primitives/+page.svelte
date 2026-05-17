@@ -3256,6 +3256,50 @@ export const geom = defineGeom(meta, (p, geom) => {
     };
   }
 
+  /** Portal-style tooltip — for elements inside `overflow: auto/hidden`
+   *  containers (e.g. `.pg-acc-body`) where the CSS `[data-tip] ::after`
+   *  pseudo gets clipped. Mounts a body-level <div> on hover, positions
+   *  it from the node's bounding rect. Styled like `[data-tip]` so the
+   *  visual reads identically. */
+  function floatingTip(node: HTMLElement, text: string | undefined | null) {
+    let current: string | undefined | null = text;
+    let tipEl: HTMLDivElement | null = null;
+    function show() {
+      if (!current) return;
+      if (tipEl) return;
+      const r = node.getBoundingClientRect();
+      tipEl = document.createElement('div');
+      tipEl.className = 'floating-tip';
+      tipEl.textContent = current;
+      document.body.appendChild(tipEl);
+      const tr = tipEl.getBoundingClientRect();
+      let top = r.top - tr.height - 8;
+      let left = r.left;
+      if (top < 4) top = r.bottom + 8;
+      if (left + tr.width > window.innerWidth - 4) {
+        left = window.innerWidth - tr.width - 4;
+      }
+      tipEl.style.top = `${top}px`;
+      tipEl.style.left = `${left}px`;
+    }
+    function hide() {
+      if (tipEl) { tipEl.remove(); tipEl = null; }
+    }
+    node.addEventListener('mouseenter', show);
+    node.addEventListener('mouseleave', hide);
+    return {
+      update(next: string | undefined | null) {
+        current = next;
+        if (tipEl) tipEl.textContent = current ?? '';
+      },
+      destroy() {
+        hide();
+        node.removeEventListener('mouseenter', show);
+        node.removeEventListener('mouseleave', hide);
+      },
+    };
+  }
+
   /** Compose a minimal AuthoredComponent for the active tab so buildAuthored
    *  can construct + finalize the geometry. Single part, no ops. */
   function activeSpec(): AuthoredComponent | null {
@@ -6403,11 +6447,11 @@ export const geom = defineGeom(meta, (p, geom) => {
                           />
                         {:else if arg && arg.kind === 'paramRef'}
                           <span class="pi-fx-wrap">
-                            <span class="pi-fx-badge" title={`p.${arg.name}`}>p.{arg.name}</span>
+                            <span class="pi-fx-badge" use:floatingTip={`p.${arg.name}`}>p.{arg.name}</span>
                           </span>
                         {:else if arg}
                           <span class="pi-fx-wrap">
-                            <span class="pi-fx-badge" title={arg.raw}>{arg.raw}</span>
+                            <span class="pi-fx-badge" use:floatingTip={arg.raw}>{arg.raw}</span>
                           </span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
@@ -6482,11 +6526,11 @@ export const geom = defineGeom(meta, (p, geom) => {
                           />
                         {:else if arg && arg.kind === 'paramRef'}
                           <span class="pi-fx-wrap">
-                            <span class="pi-fx-badge" title={`p.${arg.name}`}>p.{arg.name}</span>
+                            <span class="pi-fx-badge" use:floatingTip={`p.${arg.name}`}>p.{arg.name}</span>
                           </span>
                         {:else if arg}
                           <span class="pi-fx-wrap">
-                            <span class="pi-fx-badge" title={arg.raw}>{arg.raw}</span>
+                            <span class="pi-fx-badge" use:floatingTip={arg.raw}>{arg.raw}</span>
                           </span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
@@ -8419,6 +8463,24 @@ export const geom = defineGeom(meta, (p, geom) => {
     width: 0; height: 0;
     border: 5px solid transparent;
     border-top-color: #1a1a2e;
+    pointer-events: none;
+  }
+  /* Body-portaled tooltip — for elements inside overflow:auto containers
+     where the [data-tip] ::after pseudo gets clipped. Mounted by the
+     `floatingTip` action with inline top/left. Matches [data-tip]
+     styling (dark, instant) so the visual reads identical. */
+  :global(.floating-tip) {
+    position: fixed;
+    z-index: 2000;
+    background: #1a1a2e;
+    color: #fff;
+    padding: 5px 9px;
+    border-radius: 4px;
+    font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-width: 320px;
+    width: max-content;
+    white-space: pre-line;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.24), 0 0 0 1px rgba(124,77,255,0.15);
     pointer-events: none;
   }
   .pr-card.extra .pr-lbl { color: #1a5b8a; font-style: italic; }
