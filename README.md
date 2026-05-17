@@ -123,5 +123,4 @@ scripts/
 training_data/
 ├── cache.jsonl       # Persistent training index (committed)
 └── prim_*/           # Source training data per primitive component
-vlm/                  # Python CLI tools (refine.py, compare.py) — dev only
 ```
