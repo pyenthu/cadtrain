@@ -32,6 +32,7 @@
   import { formatTypescript, checkTypescriptSyntax } from '$lib/shared/format-ts';
   import type { Completion } from '@codemirror/autocomplete';
   import MarkdownView from '$lib/shared/MarkdownView.svelte';
+  import { colorForInstance } from '$lib/shared/instance-colors';
   import { COMPONENTS_L3, type ComponentL3 } from '$lib/cad/components-l3';
   import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/cad/assemblies-l4';
   import { generateTubingComponent, type TubingInputs, type Grade, type ConnectionType } from '$lib/cad/rules/tubing';
@@ -6215,7 +6216,14 @@ export const geom = defineGeom(meta, (p, geom) => {
                     : paramKeys.filter((k) => (allDefs[k]?.group ?? '').toLowerCase() === g.key))
                 : paramKeys.filter((k) => (allDefs[k]?.group ?? '__default__') === g.key)}
               {@const collapsed = accordion && isParamGroupCollapsed(activeTab.id, g.key)}
-              <div class="pg-acc-wrap" class:instance={!!g.instance}>
+              {@const instColor = g.instance
+                ? colorForInstance(g.instance.instance, activeTab.componentEntry?.instanceColors?.[g.instance.instance])
+                : null}
+              <div
+                class="pg-acc-wrap"
+                class:instance={!!g.instance}
+                style={instColor ? `--inst-color: ${instColor};` : ''}
+              >
               {#if accordion}
                 <button
                   class="pg-acc-head"
@@ -8530,6 +8538,15 @@ export const geom = defineGeom(meta, (p, geom) => {
      section header for the primitive itself. */
   .pg-acc-wrap.instance { border-width: 2px; }
   .pg-acc-wrap.instance { border-color: #f0c8c8; background: #fff8f8; }
+  /* Per-instance colour stripe (Phase A — UI only). Each instance row
+     gets a 4px coloured left border using --inst-color, set inline by
+     the template via colorForInstance(). When unset (a non-instance
+     wrap, or before A3's swatch picker writes meta.instanceColors), we
+     fall back to the existing #f0c8c8 pink. */
+  .pg-acc-wrap.instance {
+    border-left-width: 4px;
+    border-left-color: var(--inst-color, #f0c8c8);
+  }
   .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 0 1px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
      tight together (no gap) so the colon reads as one token, and
