@@ -444,10 +444,9 @@
 
   /** State for the per-instance CSG op-picker popup. Anchored to the
    *  leftmost op-icon button on each instance accordion head (+ / − / ∩).
-   *  Persists into `meta.instanceOps[<inst>]` via setInstanceOp. Unset
-   *  instances default to 'add' so the existing union semantics are
-   *  preserved. Library parts only — bundle primitives render
-   *  client-side and aren't affected. */
+   *  After the grammar-split refactor the op lives in the composition
+   *  source itself — setInstanceOp rewrites `geom.add(X)` to
+   *  `geom.subtract(X)` / `geom.intersect(X)` in sourceDraft. */
   let opPickerOpen = $state<{ instance: string } | null>(null);
   let opPickerX = $state<number>(80);
   let opPickerY = $state<number>(80);
@@ -1799,6 +1798,31 @@ export const geom = defineGeom(meta, (p, geom) => {
     return [...helpers, ...DSL_FUNCS, ...MANIFOLD_METHODS, ...params, ...derived];
   }
 
+  /** Insert lines into the INITIALIZATION section of the geom body —
+   *  ABOVE the first `geom.<add|subtract|intersect>(...)` call (the
+   *  composition boundary, per the split-grammar refactor). When no
+   *  composition call exists yet, falls through to `insertIntoGeomBody`
+   *  and inserts before the closing `}`. The two-call split keeps every
+   *  `let|const X = ...` declaration in front of every `geom.add(X)`
+   *  call so the loader's `enforceSplitGrammar` gate stays satisfied.
+   *
+   *  Indents to 2 spaces (geom-body convention). Multi-line input is
+   *  inserted as separate lines, each indented. */
+  function insertIntoInitSection(src: string, lines: string): string {
+    const opRe = /\bgeom\s*\.\s*(?:add|subtract|intersect)\s*\(/;
+    const firstOp = opRe.exec(src);
+    if (!firstOp) return insertIntoGeomBody(src, lines);
+    // Walk back to the start of the first geom.<op>() line so the
+    // insert lands ABOVE it (preserving the user's empty-line padding).
+    let lineStart = firstOp.index;
+    while (lineStart > 0 && src[lineStart - 1] !== '\n') lineStart--;
+    const block = lines
+      .split('\n')
+      .map((l) => (l.length > 0 ? `  ${l}` : l))
+      .join('\n');
+    return src.slice(0, lineStart) + block + '\n' + src.slice(lineStart);
+  }
+
   /** Insert a line into the geom function body, right before the closing
    *  `};`. Brace-walks the body so nested `{}` (object literals, arrow
    *  functions in params, etc.) don't fool us. Falls back to appending at
@@ -1912,6 +1936,17 @@ export const geom = defineGeom(meta, (p, geom) => {
     callStart: number;
     /** Byte offset of the closing `)` of the base call. */
     callEnd: number;
+    /** CSG op from the composition section — the per-instance
+     *  `geom.add(X)` / `geom.subtract(X)` / `geom.intersect(X)` call.
+     *  Used by the inspector's op-picker to display + rewrite the op.
+     *  Always present (instances without a comp call are dropped during
+     *  parse). */
+    op: 'add' | 'subtract' | 'intersect';
+    /** Byte offset where the `geom.<op>(X)` call starts. */
+    opCallStart: number;
+    /** Byte offset just past the trailing `;` (or `)` when no `;`) of
+     *  the `geom.<op>(X)` call. */
+    opCallEnd: number;
   }
 
   /** One operator in an instance's chain, parsed from a
@@ -1960,13 +1995,49 @@ export const geom = defineGeom(meta, (p, geom) => {
     return -1;
   }
 
-  /** Parse every `(let|const) X = name(args); [X = op(X, ...);]*
-   *  geom.add(X);` chain out of the geom body. Tolerates extra
-   *  whitespace; ignores any other code shape. Returns instances in
-   *  source order. */
+  /** Parse every `(let|const) X = name(args); [X = op(X, ...);]*` init
+   *  chain out of the geom body, paired with its `geom.<op>(X);` call
+   *  in the composition section. Returns instances in source order
+   *  (init-section order, which mirrors the inspector accordion).
+   *
+   *  Tolerates BOTH layouts:
+   *    - SPLIT (the grammar this codebase moved to): every `let X = ...`
+   *      decl comes first; every `geom.add(X)` / `geom.subtract(X)` /
+   *      `geom.intersect(X)` comes after the last decl.
+   *    - INTERLEAVED (legacy): `let X = ...; geom.add(X);` per pair.
+   *      Still parses — the loader rejects this layout at execute time,
+   *      but the inspector keeps showing it so the user can re-author.
+   *
+   *  Instances without a matching `geom.<op>(X)` call anywhere in the
+   *  source are dropped — they're declared dead code.
+   *
+   *  Composition lookup is by instance name across the full source;
+   *  the `op` (add/subtract/intersect) is stored on the PartInstance
+   *  so the inspector's per-row op-picker can rewrite it in place. */
   function parsePartInstances(src: string): PartInstance[] {
     const out: PartInstance[] = [];
     const aliases = componentAliases(src);
+    // Pre-scan composition calls: instance → { op, callStart, callEnd }
+    // of the matching `geom.<op>(<instance>);` line. We look the first
+    // hit only — an instance composed twice is malformed and we use
+    // whichever comes first (the inspector will surface it as a single
+    // row; the loader will execute both calls).
+    const compByInst = new Map<
+      string,
+      { op: 'add' | 'subtract' | 'intersect'; opCallStart: number; opCallEnd: number }
+    >();
+    const compRe = /\bgeom\s*\.\s*(add|subtract|intersect)\s*\(\s*([A-Z][A-Z0-9]*)\s*\)\s*;?/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = compRe.exec(src)) !== null) {
+      const op = cm[1] as 'add' | 'subtract' | 'intersect';
+      const inst = cm[2];
+      if (compByInst.has(inst)) continue;
+      compByInst.set(inst, {
+        op,
+        opCallStart: cm.index,
+        opCallEnd: cm.index + cm[0].length,
+      });
+    }
     // Base-call regex — accepts `const` OR `let` so old sources keep
     // parsing while new chained ones use `let` for reassignment.
     const baseRe = /\b(?:const|let)\s+([A-Z][A-Z0-9]*)\s*=\s*(\w+)\s*\(/g;
@@ -1978,17 +2049,13 @@ export const geom = defineGeom(meta, (p, geom) => {
       const callEnd = findMatchingParen(src, argStart);
       if (callEnd < 0) continue;
       // Walk forward through any `<instance> = <op>(<instance>, ...);`
-      // reassignment lines until we hit `geom.add(<instance>);`.
+      // reassignment lines that immediately follow the base decl.
       const transforms: Transform[] = [];
-      // Regex anchored at the start of the search region — must come
-      // immediately after optional whitespace/newline + the previous
-      // statement terminator.
       const reassignRe = new RegExp(
         `\\s*${instance}\\s*=\\s*(\\w+)\\s*\\(\\s*${instance}\\s*(?:,|\\))`,
         'y',
       );
       let cursor = callEnd + 1;
-      // Skip the trailing `;` of the base statement.
       while (cursor < src.length && src[cursor] !== ';') cursor++;
       if (src[cursor] === ';') cursor++;
       while (cursor < src.length) {
@@ -1996,21 +2063,14 @@ export const geom = defineGeom(meta, (p, geom) => {
         const rm = reassignRe.exec(src);
         if (!rm) break;
         const op = rm[1];
-        // rm.index points to the start of the `\s*` prefix — could be
-        // on the previous line's trailing newline. Skip ahead to the
-        // actual `<instance>` so callStart's later walk-back lands on
-        // the right line and removeTransform only drops THIS line.
         let opCallStart = rm.index;
         while (opCallStart < src.length && /\s/.test(src[opCallStart])) opCallStart++;
-        // Find the `(` after the op name and its matching `)`.
         const opOpenIdx = src.indexOf('(', opCallStart);
         if (opOpenIdx < 0) break;
         const opCloseIdx = findMatchingParen(src, opOpenIdx + 1);
         if (opCloseIdx < 0) break;
-        // Args after the implicit first part arg.
         const opArgText = src.slice(opOpenIdx + 1, opCloseIdx);
         const opSegs = splitTopLevel(opArgText).map((s) => s.trim()).filter(Boolean);
-        // Drop the first segment (it's the instance name we matched).
         const restRaw = opSegs.slice(1).join(', ');
         transforms.push({
           op,
@@ -2022,32 +2082,36 @@ export const geom = defineGeom(meta, (p, geom) => {
         while (cursor < src.length && src[cursor] !== ';') cursor++;
         if (src[cursor] === ';') cursor++;
       }
-      // Require a matching `geom.add(<instance>);` after the chain.
-      const addRe = new RegExp(`^\\s*geom\\.add\\(\\s*${instance}\\s*\\)\\s*;`);
-      if (!addRe.test(src.slice(cursor))) continue;
+      // Require a matching `geom.<op>(<instance>);` anywhere later in
+      // the source (split-grammar layout — the comp call may be many
+      // lines below the decl, after every other decl).
+      const comp = compByInst.get(instance);
+      if (!comp) continue;
       const argText = src.slice(argStart, callEnd);
       const isHelper = HELPERS.some((h) => h.name === callName);
       const isComponent = !isHelper && callName in aliases;
+      const base = {
+        instance,
+        callName,
+        transforms,
+        callStart,
+        callEnd,
+        op: comp.op,
+        opCallStart: comp.opCallStart,
+        opCallEnd: comp.opCallEnd,
+      };
       if (isComponent) {
         out.push({
-          instance,
-          callName,
+          ...base,
           kind: 'component',
           args: [],
           argsObj: parseObjectArgs(argText),
-          transforms,
-          callStart,
-          callEnd,
         });
       } else {
         out.push({
-          instance,
-          callName,
+          ...base,
           kind: isHelper ? 'helper' : 'unknown',
           args: parsePartArgs(argText),
-          transforms,
-          callStart,
-          callEnd,
         });
       }
     }
@@ -2515,64 +2579,104 @@ export const geom = defineGeom(meta, (p, geom) => {
   // them at the chosen insertion point. Re-parse after each splice — the
   // pure-text move would otherwise drift PartInstance offsets stale.
 
-  /** Find the [start, end) char range of an instance's full source
-   *  block — base call line, all transform lines, and the geom.add()
-   *  closer, with leading line-start whitespace and the trailing
-   *  newline included so the slab can be lifted+spliced as a unit.
-   *  Returns null if the geom.add() line can't be located (shouldn't
-   *  happen for parsed instances, but defensively bail to avoid
-   *  mangling the source). */
-  function instanceBlockRange(src: string, inst: PartInstance): { start: number; end: number } | null {
-    // Walk back from the base call to the start of its line (preserve
-    // indent on the first line of the slab so it lands re-indented at
-    // the destination).
-    let start = inst.callStart;
-    while (start > 0 && src[start - 1] !== '\n') start--;
-    // Anchor the end search at the LAST transform's closing paren if
-    // any, else the base call's closing paren — the geom.add() must
-    // appear after that.
+  /** Find the [start, end) ranges for an instance's TWO source slabs:
+   *  - INIT slab: base `let|const X = ...` line + every chained
+   *    transform line (`X = mv(X, …);`, …). Leading line-start
+   *    whitespace included; trailing newline included.
+   *  - COMP slab: the matching `geom.<op>(X);` line (anywhere later in
+   *    the source). Leading line-start whitespace included; trailing
+   *    newline included.
+   *
+   *  Returns null if either slab can't be located (shouldn't happen
+   *  for parsed instances since parse drops orphans, but defensively
+   *  bail to avoid mangling the source). */
+  function instanceBlockRange(
+    src: string,
+    inst: PartInstance,
+  ): { init: { start: number; end: number }; comp: { start: number; end: number } } | null {
+    // INIT — walk back from base callStart to start-of-line; forward
+    // to end of the LAST transform's `;`+newline (or base if no
+    // transforms). Stops BEFORE any geom.<op> line — the comp slab is
+    // separate.
+    let initStart = inst.callStart;
+    while (initStart > 0 && src[initStart - 1] !== '\n') initStart--;
     const lastTransform = inst.transforms[inst.transforms.length - 1];
-    const afterChain = lastTransform ? lastTransform.callEnd + 1 : inst.callEnd + 1;
-    const addRe = new RegExp(`\\bgeom\\.add\\(\\s*${inst.instance}\\s*\\)\\s*;?[ \\t]*\\n?`);
-    const slice = src.slice(afterChain);
-    const m = addRe.exec(slice);
-    if (!m) return null;
-    let end = afterChain + m.index + m[0].length;
-    // If the regex didn't swallow a trailing newline (last line of
-    // file), bump past it manually so the slab carries its own line
-    // terminator.
-    if (end < src.length && src[end - 1] !== '\n' && src[end] === '\n') end++;
-    return { start, end };
+    const initBoundary = lastTransform ? lastTransform.callEnd + 1 : inst.callEnd + 1;
+    let initEnd = initBoundary;
+    // Skip trailing `;` of the boundary statement.
+    while (initEnd < src.length && /[ \t]/.test(src[initEnd])) initEnd++;
+    if (src[initEnd] === ';') initEnd++;
+    while (initEnd < src.length && /[ \t]/.test(src[initEnd])) initEnd++;
+    if (src[initEnd] === '\n') initEnd++;
+
+    // COMP — walk back from opCallStart to start-of-line; forward to
+    // include trailing newline.
+    let compStart = inst.opCallStart;
+    while (compStart > 0 && src[compStart - 1] !== '\n') compStart--;
+    let compEnd = inst.opCallEnd;
+    while (compEnd < src.length && /[ \t]/.test(src[compEnd])) compEnd++;
+    if (src[compEnd] === '\n') compEnd++;
+
+    return { init: { start: initStart, end: initEnd }, comp: { start: compStart, end: compEnd } };
   }
 
-  /** Reorder instance blocks in `src`: take `fromInst`'s slab and drop
-   *  it `position` (`'before'`|`'after'`) the `toInst` slab. Returns the
-   *  rewritten source, or null if either instance can't be located or
-   *  the move is a no-op. */
+  /** Splice one (start, end) slab out and re-insert at a new offset.
+   *  Helper for two-range reorder — extracts the source-without-slab
+   *  pattern so init + comp moves share one code path. */
+  function spliceSlab(
+    src: string,
+    src0: number,
+    src1: number,
+    dst: number,
+  ): { next: string; nextDst: number } {
+    if (dst >= src0 && dst <= src1) {
+      // Splice point inside the slab — degenerate no-op.
+      return { next: src, nextDst: dst };
+    }
+    const slab = src.slice(src0, src1);
+    const without = src.slice(0, src0) + src.slice(src1);
+    const lifted = src1 - src0;
+    const shifted = dst > src0 ? dst - lifted : dst;
+    const next = without.slice(0, shifted) + slab + without.slice(shifted);
+    return { next, nextDst: shifted };
+  }
+
+  /** Reorder an instance: move `fromInst`'s INIT slab (decl + chain)
+   *  AND its COMP slab (the geom.<op> line) so they sit `position`
+   *  (`'before'`|`'after'`) the `toInst` slabs. Both slabs move so
+   *  init order matches comp order — the inspector accordion uses
+   *  init order, and we want the executed composition to mirror that.
+   *  Returns the rewritten source, or null if either instance can't
+   *  be located or the move is a no-op. */
   function reorderInstancesInSource(src: string, fromInst: string, toInst: string, position: 'before' | 'after'): string | null {
     if (fromInst === toInst) return null;
     const insts = parsePartInstances(src);
     const from = insts.find((p) => p.instance === fromInst);
     const to = insts.find((p) => p.instance === toInst);
     if (!from || !to) return null;
-    const fromRange = instanceBlockRange(src, from);
-    const toRange = instanceBlockRange(src, to);
-    if (!fromRange || !toRange) return null;
-    // Lift the moving slab text first, then compute the splice point on
-    // the source MINUS the lifted slab (offsets in toRange need to be
-    // adjusted accordingly if it was after the lift point).
-    const slab = src.slice(fromRange.start, fromRange.end);
-    const without = src.slice(0, fromRange.start) + src.slice(fromRange.end);
-    const lifted = fromRange.end - fromRange.start;
-    // Shift the destination range when the lifted slab was earlier in
-    // the file than the destination.
-    const dstStart = toRange.start > fromRange.start ? toRange.start - lifted : toRange.start;
-    const dstEnd = toRange.end > fromRange.start ? toRange.end - lifted : toRange.end;
-    const splicePoint = position === 'before' ? dstStart : dstEnd;
-    // No-op when the slab would land back where it came from (e.g.
-    // dragging immediately to the slot it already occupies).
-    if (splicePoint === fromRange.start) return null;
-    return without.slice(0, splicePoint) + slab + without.slice(splicePoint);
+    const fromRanges = instanceBlockRange(src, from);
+    const toRanges = instanceBlockRange(src, to);
+    if (!fromRanges || !toRanges) return null;
+    // Move INIT slab first. Reparsing after each move keeps offsets
+    // honest — the comp slab moves after the init slab has already
+    // shifted everything below it.
+    const initDst = position === 'before' ? toRanges.init.start : toRanges.init.end;
+    if (initDst === fromRanges.init.start) return null;
+    const initMove = spliceSlab(src, fromRanges.init.start, fromRanges.init.end, initDst);
+    if (initMove.next === src) return null;
+    let next = initMove.next;
+    // Re-resolve comp ranges in the post-init-move source.
+    const reparsed = parsePartInstances(next);
+    const fromAfter = reparsed.find((p) => p.instance === fromInst);
+    const toAfter = reparsed.find((p) => p.instance === toInst);
+    if (!fromAfter || !toAfter) return next; // init moved but comp lookup failed — return as-is
+    const fromCompAfter = instanceBlockRange(next, fromAfter)?.comp;
+    const toCompAfter = instanceBlockRange(next, toAfter)?.comp;
+    if (!fromCompAfter || !toCompAfter) return next;
+    const compDst = position === 'before' ? toCompAfter.start : toCompAfter.end;
+    if (compDst === fromCompAfter.start) return next;
+    const compMove = spliceSlab(next, fromCompAfter.start, fromCompAfter.end, compDst);
+    return compMove.next;
   }
 
   // Drag state — module-scoped Svelte 5 runes so the head template can
@@ -2664,10 +2768,14 @@ export const geom = defineGeom(meta, (p, geom) => {
     // Helpers (cyl, tube) don't carry a `top` param — fall back to
     // inlining PREV.top + PREV.length in the mv line.
     const autoLine = isAutoTranslateOn() ? autoTranslateLineFor(next, instName, false) : null;
-    const block = autoLine
-      ? `let ${instName} = ${baseCall};\n  ${autoLine}\n  geom.add(${instName});`
-      : `const ${instName} = ${baseCall};\n  geom.add(${instName});`;
-    return insertIntoGeomBody(next, block);
+    // Split-grammar emit: every declaration + reassignment lands in the
+    // INIT section (above all geom.* calls); the geom.add lands in the
+    // COMP section (below every decl).
+    const initBlock = autoLine
+      ? `let ${instName} = ${baseCall};\n${autoLine}`
+      : `const ${instName} = ${baseCall};`;
+    next = insertIntoInitSection(next, initBlock);
+    return insertIntoGeomBody(next, `geom.add(${instName});`);
   }
 
   /** Add a component import (`geom as <name>Geom`) + a two-line
@@ -2712,10 +2820,12 @@ export const geom = defineGeom(meta, (p, geom) => {
       .join(', ');
     const instName = uniqueInstanceName(next);
     const autoLine = isAutoTranslateOn() ? autoTranslateLineFor(next, instName, hasTop) : null;
-    const block = autoLine
-      ? `let ${instName} = ${alias}({ ${defaults} });\n  ${autoLine}\n  geom.add(${instName});`
-      : `const ${instName} = ${alias}({ ${defaults} });\n  geom.add(${instName});`;
-    return insertIntoGeomBody(next, block);
+    // Split-grammar emit — see snippetForHelper for the rationale.
+    const initBlock = autoLine
+      ? `let ${instName} = ${alias}({ ${defaults} });\n${autoLine}`
+      : `const ${instName} = ${alias}({ ${defaults} });`;
+    next = insertIntoInitSection(next, initBlock);
+    return insertIntoGeomBody(next, `geom.add(${instName});`);
   }
 
   /** Pick a const name that doesn't collide with anything already declared
@@ -3632,7 +3742,6 @@ export const geom = defineGeom(meta, (p, geom) => {
     const id = tab.componentEntry.meta.id;
     const source = draft ?? tab.componentEntry.source;
     const paramsSnap = { ...params };
-    const instanceOps = tab.componentEntry.instanceOps;
     const instanceTopMode = tab.componentEntry.instanceTopMode;
     const instanceTopOffset = tab.componentEntry.instanceTopOffset;
 
@@ -3647,7 +3756,6 @@ export const geom = defineGeom(meta, (p, geom) => {
             params: paramsSnap,
             source,
             cut,
-            ...(instanceOps ? { instanceOps } : {}),
             ...(instanceTopMode ? { instanceTopMode } : {}),
             ...(instanceTopOffset ? { instanceTopOffset } : {}),
           }),
@@ -4269,45 +4377,49 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  Library-part-only (renderMode === 'server'). Bundle primitives
    *  render client-side from the static .ts and have no meta.json —
    *  the icon hides itself for those (see template). */
-  async function setInstanceOp(
+  /** Rewrite a single `geom.<op>(<instance>)` call to the new op,
+   *  in-place. The CSG op lives in the composition source after the
+   *  grammar-split refactor (no more meta.instanceOps). Returns the
+   *  rewritten source, or null when the instance has no matching call
+   *  in the comp section. */
+  function setInstanceOpInSource(
+    src: string,
+    instance: string,
+    op: 'add' | 'subtract' | 'intersect',
+  ): string | null {
+    const insts = parsePartInstances(src);
+    const inst = insts.find((i) => i.instance === instance);
+    if (!inst) return null;
+    if (inst.op === op) return src; // already there
+    // Replace just the op token between `geom.` and `(`. Rebuild from
+    // the original call slice so any whitespace the user inserted is
+    // preserved.
+    const call = src.slice(inst.opCallStart, inst.opCallEnd);
+    const next = call.replace(
+      /\bgeom\s*\.\s*(?:add|subtract|intersect)\s*\(/,
+      `geom.${op}(`,
+    );
+    if (next === call) return null;
+    return src.slice(0, inst.opCallStart) + next + src.slice(inst.opCallEnd);
+  }
+
+  /** Switch an instance's CSG op (add / subtract / intersect). After
+   *  the grammar-split refactor the op lives in the composition source
+   *  itself (`geom.add(X)` / `geom.subtract(X)` / `geom.intersect(X)`)
+   *  — not in `meta.instanceOps`. So we mutate sourceDraft directly and
+   *  let the existing Apply / Save plumbing carry it forward. The build
+   *  $effect re-fetches geometry from the in-flight source via Apply. */
+  function setInstanceOp(
     tab: Tab,
     instance: string,
     op: 'add' | 'subtract' | 'intersect',
   ) {
     if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
-    if (tab.componentEntry.renderMode !== 'server') return;
-    const prev = tab.componentEntry.instanceOps ?? {};
-    const next: Record<string, 'add' | 'subtract' | 'intersect'> = { ...prev };
-    // 'add' is the default; storing it is harmless but we drop it to
-    // keep meta.json minimal (matches the swatch-Reset behaviour).
-    if (op === 'add') delete next[instance];
-    else next[instance] = op;
-    tab.componentEntry = { ...tab.componentEntry, instanceOps: next };
-    try {
-      const r = await fetch('/api/components/save', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          id: tab.componentEntry.meta.id,
-          source: tab.componentEntry.source,
-          instanceOps: next,
-        }),
-      });
-      if (!r.ok) {
-        await refreshRunesList();
-        const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
-        if (fresh) tab.componentEntry = { ...fresh, source: tab.componentEntry.source };
-      } else {
-        // The loader-side op rewrite changes the executed geom for a
-        // library part (renderMode === 'server'). Bump appliedAt so the
-        // build $effect re-POSTs to /api/components/geom and the canvas
-        // reflects the new op without the user having to also press
-        // Apply on a stale draft.
-        tab.appliedAt = Date.now();
-      }
-    } catch {
-      await refreshRunesList();
-    }
+    const cur = tab.sourceDraft ?? tab.componentEntry.source;
+    const next = setInstanceOpInSource(cur, instance, op);
+    if (next == null || next === cur) return;
+    tab.sourceDraft = next;
+    applyDraft(tab);
   }
 
   /** Persist per-instance placement (mode + optional offset for
@@ -5786,14 +5898,15 @@ export const geom = defineGeom(meta, (p, geom) => {
 
   <!-- Per-instance CSG-op popup. Anchored to the leftmost op-icon
        button on the instance accordion head. Three icon cards — +, −,
-       ∩ — pick which one applies and close the popup. Persists via
-       setInstanceOp → /api/components/save with the `instanceOps`
-       body field (loader rewrites geom.add → geom.subtract /
-       geom.intersect at execute time). Library parts only — bundle
-       primitives don't surface this control. -->
+       ∩ — pick which one applies and close the popup. After the
+       grammar-split refactor the op lives in the composition source
+       (`geom.add(X)` / `geom.subtract(X)` / `geom.intersect(X)`):
+       setInstanceOp mutates sourceDraft + auto-applies. Save persists
+       the source as usual. -->
   {#if activeTab && activeTab.kind === 'xml-primitive' && opPickerOpen}
     {@const opi = opPickerOpen.instance}
-    {@const opCurrent = (activeTab.componentEntry?.instanceOps?.[opi] ?? 'add') as 'add' | 'subtract' | 'intersect'}
+    {@const _opSrc = activeTab.sourceDraft ?? activeTab.componentEntry?.source ?? ''}
+    {@const opCurrent = (parsePartInstances(_opSrc).find((i) => i.instance === opi)?.op ?? 'add') as 'add' | 'subtract' | 'intersect'}
     <FloatingPanel
       title={`Op: ${opi}`}
       visible={true}
@@ -6901,11 +7014,17 @@ export const geom = defineGeom(meta, (p, geom) => {
                        here = visual order (flex-row, no `order:` hacks). -->
                   {#if g.instance && activeTab.componentEntry?.renderMode === 'server'}
                     <!-- Per-instance CSG-op icon. Click opens a 3-cell
-                         FloatingPanel with +, −, ∩. Library parts only —
-                         bundle primitives render client-side and have no
-                         meta.json to persist into; hiding the control
-                         there keeps the surface honest. -->
-                    {@const opCur = (activeTab.componentEntry.instanceOps?.[g.instance.instance] ?? 'add') as 'add' | 'subtract' | 'intersect'}
+                         FloatingPanel with +, −, ∩. After the
+                         grammar-split refactor the op is read directly
+                         from the parsed PartInstance's `op` field (which
+                         comes from the `geom.add(X)` / `geom.subtract(X)`
+                         / `geom.intersect(X)` call in the composition
+                         section). Library parts only — bundle primitives
+                         render client-side; the same control still
+                         works (it edits source), so we could expose it
+                         there too, but for now we mirror the legacy
+                         server-only surface. -->
+                    {@const opCur = g.instance.op}
                     {@const opGlyph = opCur === 'subtract' ? '−' : opCur === 'intersect' ? '∩' : '+'}
                     {@const opTitle = opCur === 'subtract' ? 'Subtract (cut)' : opCur === 'intersect' ? 'Intersect (overlap)' : 'Add (union)'}
                     <button
