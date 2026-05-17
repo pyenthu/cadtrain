@@ -6477,14 +6477,19 @@ export const geom = defineGeom(meta, (p, geom) => {
                 >
                   <!-- Chevron removed — open/close state is evident from the body. -->
 
+                  <!-- LEFT CLUSTER for instance heads — every per-instance
+                       affordance (CSG op, colour swatch, Properties /
+                       Transformation view toggle) sits BEFORE the title
+                       so the controls read as one unit on the left and
+                       the title `A:tube` is free to centre between them
+                       and the trash icon on the right. Source order
+                       here = visual order (flex-row, no `order:` hacks). -->
                   {#if g.instance && activeTab.componentEntry?.renderMode === 'server'}
-                    <!-- Per-instance CSG-op icon. Leftmost child of the
-                         head row so it reads as the "what does this
-                         instance do" tag for the rest of the row.
-                         Click opens a 3-cell FloatingPanel with +, −, ∩.
-                         Library parts only — bundle primitives render
-                         client-side and have no meta.json to persist into;
-                         hiding the control there keeps the surface honest. -->
+                    <!-- Per-instance CSG-op icon. Click opens a 3-cell
+                         FloatingPanel with +, −, ∩. Library parts only —
+                         bundle primitives render client-side and have no
+                         meta.json to persist into; hiding the control
+                         there keeps the surface honest. -->
                     {@const opCur = (activeTab.componentEntry.instanceOps?.[g.instance.instance] ?? 'add') as 'add' | 'subtract' | 'intersect'}
                     {@const opGlyph = opCur === 'subtract' ? '−' : opCur === 'intersect' ? '∩' : '+'}
                     {@const opTitle = opCur === 'subtract' ? 'Subtract (cut)' : opCur === 'intersect' ? 'Intersect (overlap)' : 'Add (union)'}
@@ -6500,9 +6505,6 @@ export const geom = defineGeom(meta, (p, geom) => {
                       onclick={(e) => { e.stopPropagation(); openOpPicker(g.instance!.instance, e); }}
                     >{opGlyph}</button>
                   {/if}
-
-                  <span class="pg-acc-title">{g.name}</span>
-                  {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   {#if g.instance}
                     <!-- Per-instance colour swatch. Click opens a
                          FloatingPanel with the 12-stop palette + Reset.
@@ -6553,6 +6555,9 @@ export const geom = defineGeom(meta, (p, geom) => {
                       </svg>
                     </button>
                   {/if}
+
+                  <span class="pg-acc-title">{g.name}</span>
+                  {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   {#if !g.instance && activeTab.kind === 'xml-primitive'}
                     <!-- Per-section `+` — opens the param-add inline
                          form so the user can add another property to
@@ -8927,23 +8932,23 @@ export const geom = defineGeom(meta, (p, geom) => {
   .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 0 1px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
      tight together (no gap) so the colon reads as one token, and
-     don't let the title flex-grow — it should hug `:tube` on the
-     left, not push it to the far right. Bold red so the instance
-     reads as the dominant label.
-     CENTERED layout: `margin-left:auto` on the title pushes
-     everything before it (op icon) to the far left; `margin-right:auto`
+     don't let the title flex-grow. Bold red so the instance reads as
+     the dominant label.
+     CENTERED layout: the LEFT cluster (op / swatch / ⚙ / ↳) and the
+     RIGHT cluster (trash) sit at the edges; `margin-left:auto` on the
+     title pushes it away from the left cluster, `margin-right:auto`
      on the trailing sibling (sig if present, else title) pushes the
-     right-side cluster (swatch / ⚙ / ↳ / trash) to the far right. The
-     title+sig pair sits in the centre of the head bar regardless of
-     instance name length. */
+     trash to the far right. The title+sig pair sits in the centre of
+     the head bar regardless of instance name length or how many left-
+     cluster icons render. */
   .pg-acc-head .pg-acc-title + .pg-acc-sig { margin-left: -5px; }
   .pg-acc-head.instance .pg-acc-title { flex: 0 0 auto; margin-left: auto; }
   /* If a sig is present it's the rightmost member of the title token —
-     give IT the right-auto margin so swatch/⚙/↳ get pushed to the end. */
+     give IT the right-auto margin so the trash gets pushed to the end. */
   .pg-acc-head.instance .pg-acc-sig { margin-right: auto; }
-  /* When the head has no sig (rare for instances, normal everywhere
-     else), the title itself is the trailing token. The `:has` rule
-     transfers the right-margin to the title in that case. */
+  /* When the head has no sig, the title itself is the trailing token.
+     The `:has` rule transfers the right-margin to the title in that
+     case so the centring still works. */
   .pg-acc-head.instance:not(:has(.pg-acc-sig)) .pg-acc-title { margin-right: auto; }
   .pg-acc-head.instance .pg-acc-title,
   .pg-acc-head.instance .pg-acc-sig {
