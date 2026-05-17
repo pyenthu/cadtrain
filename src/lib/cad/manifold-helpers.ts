@@ -131,13 +131,13 @@ export class GeomAcc {
   }
 }
 
-/** @part Z-up cylinder/cone — height h, bottom radius r1, top radius r2 (defaults to r1). */
-export function cyl(h: number, r1: number, r2?: number) {
-  return M.cylinder(h, r1, r2 ?? r1, currentSegments);
+/** @part Z-up cylinder/cone — length (Z extent), bottom radius r1, top radius r2 (defaults to r1). */
+export function cyl(length: number, r1: number, r2?: number) {
+  return M.cylinder(length, r1, r2 ?? r1, currentSegments);
 }
-/** @part Hollow Z-up tube — outerR, innerR, height. */
-export function tube(outerR: number, innerR: number, h: number) {
-  return cyl(h, outerR).subtract(cyl(h + 0.02, innerR));
+/** @part Hollow Z-up tube — outerR, innerR, length (Z extent). */
+export function tube(outerR: number, innerR: number, length: number) {
+  return cyl(length, outerR).subtract(cyl(length + 0.02, innerR));
 }
 /** @op Translate — shift the part by [x, y, z]. */
 export function mv(m: any, v: [number, number, number]) { return m.translate(v); }

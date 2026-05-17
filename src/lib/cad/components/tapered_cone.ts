@@ -25,7 +25,7 @@ export const meta = {
 
 export const geom = defineGeom(meta, (p) => {
   // Z-down: top (z=0) is narrow, bottom (z=length) is wide.
-  // cyl(h, r1, r2) puts r1 at z=0 and r2 at z=h (Manifold's uncentered default).
+  // cyl(length, r1, r2) puts r1 at z=0 and r2 at z=length (Manifold's uncentered default).
   const outer = cyl(p.length, p.odTop / 2, p.od / 2);
 
   // Bore — same taper inset by `wall`. Small overshoot at each end so

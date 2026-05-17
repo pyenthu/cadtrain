@@ -2455,6 +2455,11 @@ export const geom = defineGeom(meta, (p, geom) => {
     if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
     let src = tab.sourceDraft ?? tab.componentEntry.source;
     let touched = false;
+    // Per-instance placement mode (stack/overlay/origin) — if a row is
+    // pinned to its own origin or overlay-with-offset, skip the stack
+    // rewrite for it (the loader's applyInstanceTopMode pass takes over
+    // there). Defaults to 'stack' when the map is absent.
+    const topModes = tab.componentEntry.instanceTopMode ?? {};
     // Re-parse on every iteration — earlier writes shift later
     // instance offsets, so cached PartInstance objects would be stale.
     for (let i = 1; ; i++) {
@@ -2462,6 +2467,8 @@ export const geom = defineGeom(meta, (p, geom) => {
       if (i >= insts.length) break;
       const cur = insts[i];
       const prev = insts[i - 1];
+      const mode = topModes[cur.instance] ?? 'stack';
+      if (mode !== 'stack') continue;
       const meProps = instanceTopLenProps(cur, src);
       // Step 1: set ME's `top` arg to PREV.top + PREV.length (only
       // applies to component instances that declared a top param).
@@ -2495,6 +2502,141 @@ export const geom = defineGeom(meta, (p, geom) => {
       tab.sourceDraft = src;
       applyDraft(tab);
     }
+  }
+
+  // ── Drag-to-reorder instance accordion rows ──────────────────────────
+  // Each instance's source footprint is THREE adjacent slabs:
+  //   (1) the `let|const X = call(...);` base statement line
+  //   (2) zero or more `X = op(X, ...);` reassignment lines (the chain
+  //       captured in parseTransforms — mv, rot, warp, …)
+  //   (3) the terminating `geom.add(X);` line
+  // To reorder rows we lift slabs (1..3) as a single block of full
+  // lines (leading whitespace + trailing newline included) and re-splice
+  // them at the chosen insertion point. Re-parse after each splice — the
+  // pure-text move would otherwise drift PartInstance offsets stale.
+
+  /** Find the [start, end) char range of an instance's full source
+   *  block — base call line, all transform lines, and the geom.add()
+   *  closer, with leading line-start whitespace and the trailing
+   *  newline included so the slab can be lifted+spliced as a unit.
+   *  Returns null if the geom.add() line can't be located (shouldn't
+   *  happen for parsed instances, but defensively bail to avoid
+   *  mangling the source). */
+  function instanceBlockRange(src: string, inst: PartInstance): { start: number; end: number } | null {
+    // Walk back from the base call to the start of its line (preserve
+    // indent on the first line of the slab so it lands re-indented at
+    // the destination).
+    let start = inst.callStart;
+    while (start > 0 && src[start - 1] !== '\n') start--;
+    // Anchor the end search at the LAST transform's closing paren if
+    // any, else the base call's closing paren — the geom.add() must
+    // appear after that.
+    const lastTransform = inst.transforms[inst.transforms.length - 1];
+    const afterChain = lastTransform ? lastTransform.callEnd + 1 : inst.callEnd + 1;
+    const addRe = new RegExp(`\\bgeom\\.add\\(\\s*${inst.instance}\\s*\\)\\s*;?[ \\t]*\\n?`);
+    const slice = src.slice(afterChain);
+    const m = addRe.exec(slice);
+    if (!m) return null;
+    let end = afterChain + m.index + m[0].length;
+    // If the regex didn't swallow a trailing newline (last line of
+    // file), bump past it manually so the slab carries its own line
+    // terminator.
+    if (end < src.length && src[end - 1] !== '\n' && src[end] === '\n') end++;
+    return { start, end };
+  }
+
+  /** Reorder instance blocks in `src`: take `fromInst`'s slab and drop
+   *  it `position` (`'before'`|`'after'`) the `toInst` slab. Returns the
+   *  rewritten source, or null if either instance can't be located or
+   *  the move is a no-op. */
+  function reorderInstancesInSource(src: string, fromInst: string, toInst: string, position: 'before' | 'after'): string | null {
+    if (fromInst === toInst) return null;
+    const insts = parsePartInstances(src);
+    const from = insts.find((p) => p.instance === fromInst);
+    const to = insts.find((p) => p.instance === toInst);
+    if (!from || !to) return null;
+    const fromRange = instanceBlockRange(src, from);
+    const toRange = instanceBlockRange(src, to);
+    if (!fromRange || !toRange) return null;
+    // Lift the moving slab text first, then compute the splice point on
+    // the source MINUS the lifted slab (offsets in toRange need to be
+    // adjusted accordingly if it was after the lift point).
+    const slab = src.slice(fromRange.start, fromRange.end);
+    const without = src.slice(0, fromRange.start) + src.slice(fromRange.end);
+    const lifted = fromRange.end - fromRange.start;
+    // Shift the destination range when the lifted slab was earlier in
+    // the file than the destination.
+    const dstStart = toRange.start > fromRange.start ? toRange.start - lifted : toRange.start;
+    const dstEnd = toRange.end > fromRange.start ? toRange.end - lifted : toRange.end;
+    const splicePoint = position === 'before' ? dstStart : dstEnd;
+    // No-op when the slab would land back where it came from (e.g.
+    // dragging immediately to the slot it already occupies).
+    if (splicePoint === fromRange.start) return null;
+    return without.slice(0, splicePoint) + slab + without.slice(splicePoint);
+  }
+
+  // Drag state — module-scoped Svelte 5 runes so the head template can
+  // read them. `dragInstance` is the instance currently being dragged;
+  // `dropTarget` + `dropPosition` mark the current visual insertion line.
+  let dragInstance = $state<string | null>(null);
+  let dropTarget = $state<string | null>(null);
+  let dropPosition = $state<'before' | 'after' | null>(null);
+
+  /** Apply a drag-to-reorder onto the active tab's sourceDraft, then
+   *  auto-fire the chain-recalc so the mv/top exprs catch up to the new
+   *  order. Mutates sourceDraft only — does NOT auto-save (the orange
+   *  save bar is the user's commit gesture). */
+  function reorderInstance(fromInst: string, toInst: string, position: 'before' | 'after') {
+    if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
+    const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+    const next = reorderInstancesInSource(cur, fromInst, toInst, position);
+    if (!next) {
+      console.warn('[reorder] could not reorder', fromInst, '→', toInst, position, '— source shape unrecognized');
+      return;
+    }
+    activeTab.sourceDraft = next;
+    // Re-snap every non-first instance's top/mv to the canonical chain
+    // expression so the new physical order matches the rendered order.
+    // recalculateChain calls applyDraft() at the end so the canvas
+    // refreshes automatically.
+    recalculateChain(activeTab);
+  }
+
+  function onInstanceDragStart(e: DragEvent, instance: string) {
+    if (!e.dataTransfer) return;
+    dragInstance = instance;
+    e.dataTransfer.effectAllowed = 'move';
+    // Some browsers refuse to fire dragover without setData.
+    try { e.dataTransfer.setData('text/plain', instance); } catch {}
+  }
+
+  function onInstanceDragOver(e: DragEvent, instance: string) {
+    if (!dragInstance || dragInstance === instance) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    // Decide before/after based on which half of the target row the
+    // pointer is over — feels more natural than always-before.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const pos: 'before' | 'after' = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    dropTarget = instance;
+    dropPosition = pos;
+  }
+
+  function onInstanceDrop(e: DragEvent, instance: string) {
+    e.preventDefault();
+    const from = dragInstance;
+    const pos = dropPosition;
+    dragInstance = null;
+    dropTarget = null;
+    dropPosition = null;
+    if (!from || from === instance || !pos) return;
+    reorderInstance(from, instance, pos);
+  }
+
+  function onInstanceDragEnd() {
+    dragInstance = null;
+    dropTarget = null;
+    dropPosition = null;
   }
 
   /** True when the active xml-primitive's autoTranslate setting is on.
@@ -3140,6 +3282,22 @@ export const geom = defineGeom(meta, (p, geom) => {
   let geoVersion = $state(0);
   let buildError = $state<string | null>(null);
 
+  /** Live-preview GLB url for the stage GLB tab. When the user has
+   *  unsaved sourceDraft or dirty params on a library part, an effect
+   *  POSTs the in-flight source + params + meta to
+   *  `/api/components/bake-preview`, the response Blob becomes an
+   *  object URL, and the GLB tab renders from THAT url instead of
+   *  the static `/api/components/glb` endpoint. Cleared (and the
+   *  object URL revoked) whenever the part returns to clean state. */
+  let livePreviewGlbUrl = $state<string | null>(null);
+  let livePreviewBakeTimer: ReturnType<typeof setTimeout> | null = null;
+  function revokeLivePreviewGlb() {
+    if (livePreviewGlbUrl) {
+      URL.revokeObjectURL(livePreviewGlbUrl);
+      livePreviewGlbUrl = null;
+    }
+  }
+
   /** Pretty-print a buildError for the inline strip. Manifold ops stringify
    *  the bad argument with `.toString()` when type-checking fails — for
    *  functions that yields the entire source body, swamping the strip and
@@ -3429,6 +3587,86 @@ export const geom = defineGeom(meta, (p, geom) => {
         buildError = e?.message ?? String(e);
       }
     }, 200);
+  });
+
+  // Live-GLB effect — only fires when the GLB stage tab is showing a
+  // library part with unsaved changes (sourceDraft != null OR params
+  // diverged from their declared defaults). POSTs the in-flight state
+  // to /api/components/bake-preview and pipes the returned GLB bytes
+  // through an object URL. When the part is clean (or the user is on
+  // the Mesh tab), the URL is revoked and the GLB tab falls back to
+  // the static /api/components/glb endpoint that serves the last
+  // baked file from disk. Debounced (180ms) to match the cadence of
+  // the build effect above — the bake is heavier than the mesh
+  // serialize, so we don't bake on every keystroke.
+  $effect(() => {
+    const tab = activeTab;
+    if (!tab || tab.kind !== 'xml-primitive' || !tab.componentEntry) {
+      revokeLivePreviewGlb();
+      return;
+    }
+    if (tab.componentEntry.renderMode !== 'server') {
+      revokeLivePreviewGlb();
+      return;
+    }
+    if (stageView !== 'glb') {
+      // Keep the URL around so flipping back to GLB feels instant —
+      // but only if it's still valid for the current dirty state.
+      // Simpler: just revoke when leaving the tab; the next visit
+      // re-bakes if still dirty.
+      revokeLivePreviewGlb();
+      return;
+    }
+    // Establish reactive deps explicitly so $effect tracks them.
+    const draft = tab.sourceDraft;
+    const params = tab.params;
+    const appliedAt = tab.appliedAt ?? 0;
+    void appliedAt; // tracked, used by buildKey too
+    const cut = scene.showCutaway;
+    const isDirty = draft != null || paramsDirty(tab);
+    if (!isDirty) {
+      revokeLivePreviewGlb();
+      return;
+    }
+
+    const id = tab.componentEntry.meta.id;
+    const source = draft ?? tab.componentEntry.source;
+    const paramsSnap = { ...params };
+    const instanceOps = tab.componentEntry.instanceOps;
+    const instanceTopMode = tab.componentEntry.instanceTopMode;
+    const instanceTopOffset = tab.componentEntry.instanceTopOffset;
+
+    if (livePreviewBakeTimer) clearTimeout(livePreviewBakeTimer);
+    livePreviewBakeTimer = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/components/bake-preview', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            id,
+            params: paramsSnap,
+            source,
+            cut,
+            ...(instanceOps ? { instanceOps } : {}),
+            ...(instanceTopMode ? { instanceTopMode } : {}),
+            ...(instanceTopOffset ? { instanceTopOffset } : {}),
+          }),
+        });
+        if (!r.ok) {
+          // Bake failed — leave the previous URL in place so the GLB
+          // tab keeps showing the last good state. The build effect
+          // logs the mesh failure separately, so the user already
+          // sees an error indication.
+          return;
+        }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        revokeLivePreviewGlb();
+        livePreviewGlbUrl = url;
+      } catch {
+        // Network / parse error — same fallthrough.
+      }
+    }, 180);
   });
 
   async function saveRunesSource(tab: Tab): Promise<boolean> {
@@ -6311,16 +6549,23 @@ export const geom = defineGeom(meta, (p, geom) => {
                 {@const isLibrary = activeTab?.kind === 'xml-primitive'
                   && activeTab.componentEntry?.renderMode === 'server'}
                 {@const bundleName = scene.showCutaway ? `${activeDef.id}.cut.glb` : `${activeDef.id}.glb`}
-                <!-- Library parts: serve from the dev-local
-                     /api/components/glb endpoint (reads the baked
-                     mesh.glb from the part directory). Bundle
-                     primitives still live under /components/<id>.glb
-                     (vite-served static asset). Cache-busted on
-                     appliedAt so a fresh save invalidates the load. -->
+                <!-- URL selection:
+                     1) livePreviewGlbUrl — set by the live-bake $effect
+                        when the user has unsaved sourceDraft / dirty
+                        params on a library part. An object URL pointing
+                        at the in-memory bake from /api/components/
+                        bake-preview. Takes precedence so the GLB tab
+                        tracks unsaved edits.
+                     2) Static /api/components/glb — library part, clean
+                        state. Streams the last baked mesh.glb from the
+                        part directory. Cache-busted on appliedAt.
+                     3) /components/<id>.glb — bundle primitives, vite-
+                        served static asset. -->
                 {@const stamp = activeTab?.appliedAt ?? 0}
-                {@const glbUrl = isLibrary
-                  ? `/api/components/glb?id=${encodeURIComponent(activeDef.id)}${scene.showCutaway ? '&cut=1' : ''}&t=${stamp}`
-                  : `/components/${bundleName}?t=${stamp}`}
+                {@const glbUrl = livePreviewGlbUrl
+                  ?? (isLibrary
+                    ? `/api/components/glb?id=${encodeURIComponent(activeDef.id)}${scene.showCutaway ? '&cut=1' : ''}&t=${stamp}`
+                    : `/components/${bundleName}?t=${stamp}`)}
                 <Canvas {createRenderer}>
                   <GlbScene url={glbUrl} />
                 </Canvas>
@@ -6551,6 +6796,10 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const paramKeys = Object.keys(activeTab.params)}
           {@const matchedSet = new Set(partGroups.map((p) => p.key))}
           {@const orphanKeys = paramKeys.filter((k) => !matchedSet.has((allDefs[k]?.group ?? '').toLowerCase()))}
+          <!-- Drag-to-reorder is only meaningful when there are at least
+               two instance rows. Below that, the head renders un-draggable
+               and no insertion-line CSS triggers. -->
+          {@const canDragInstances = partGroups.length >= 2}
           <!-- For xml-primitives, always use the structured Properties +
                partGroups layout — even when there are zero instances yet,
                the Properties accordion still needs to render so the
@@ -6614,7 +6863,24 @@ export const geom = defineGeom(meta, (p, geom) => {
               <div
                 class="pg-acc-wrap"
                 class:instance={!!g.instance}
+                class:dragging={!!g.instance && dragInstance === g.instance.instance}
+                class:drop-before={!!g.instance && dropTarget === g.instance.instance && dropPosition === 'before'}
+                class:drop-after={!!g.instance && dropTarget === g.instance.instance && dropPosition === 'after'}
                 style={instColor ? `--inst-color: ${instColor};` : ''}
+                draggable={!!g.instance && canDragInstances}
+                ondragstart={g.instance && canDragInstances ? (e) => onInstanceDragStart(e, g.instance!.instance) : undefined}
+                ondragover={g.instance && canDragInstances ? (e) => onInstanceDragOver(e, g.instance!.instance) : undefined}
+                ondrop={g.instance && canDragInstances ? (e) => onInstanceDrop(e, g.instance!.instance) : undefined}
+                ondragend={g.instance && canDragInstances ? onInstanceDragEnd : undefined}
+                ondragleave={g.instance && canDragInstances ? (e) => {
+                  // Only clear when leaving the wrap entirely — children
+                  // (head button, body div) re-fire dragleave/enter as
+                  // the pointer crosses sub-elements.
+                  const rel = e.relatedTarget as Node | null;
+                  if (!rel || !(e.currentTarget as HTMLElement).contains(rel)) {
+                    if (dropTarget === g.instance!.instance) { dropTarget = null; dropPosition = null; }
+                  }
+                } : undefined}
               >
               {#if accordion}
                 <button
@@ -7064,10 +7330,11 @@ export const geom = defineGeom(meta, (p, geom) => {
                 </div>
               {/if}
               <div class="pr-grid">
-                {#each groupKeys as key (key)}
+                {#each groupKeys as key, i (key)}
                 {@const def = paramDef(activeDef, key)}
                 {@const isExtra = !(key in activeDef.params)}
                 {@const tip = buildParamTip(key, def, isExtra)}
+                {@const showAddTrailing = i === groupKeys.length - 1 && !g.instance && activeTab.kind === 'xml-primitive'}
                 <div class="pr-card" class:extra={isExtra}>
                   <!-- Top row: label · unit · row buttons. Stays compact;
                        the drag-number lives below at full width. -->
@@ -7121,6 +7388,21 @@ export const geom = defineGeom(meta, (p, geom) => {
                       }}
                       title="Type then Enter to commit · drag horizontally to scrub"
                     />
+                  {/if}
+                  {#if showAddTrailing}
+                    <!-- Inline + on the LAST param row. Same flow as the
+                         head-bar pg-acc-plus (opens the openParamForm
+                         popup) — gives the user a fast-add target right
+                         where the eye finishes scanning the list, so
+                         adding a property that other parts will
+                         reference (`p.<name>`) is a one-click affordance. -->
+                    <button
+                      class="pr-add-trailing"
+                      type="button"
+                      use:floatingTip={"Add a parameter"}
+                      aria-label="Add a parameter"
+                      onclick={(e) => { e.stopPropagation(); openParamForm(activeTab!, e); }}
+                    >+</button>
                   {/if}
                 </div>
                 {/each}
@@ -9194,6 +9476,21 @@ export const geom = defineGeom(meta, (p, geom) => {
     border-left-width: 4px;
     border-left-color: var(--inst-color, #f0c8c8);
   }
+  /* Drag-to-reorder visuals. The wrap is the draggable surface for
+     instance rows; the head button reads as the grab handle (its cursor
+     hints at the gesture). The .dragging row dims while in flight so
+     the user can focus on the drop target; .drop-before / .drop-after
+     paint a thick red insertion line on the relevant edge of the
+     target row. */
+  .pg-acc-wrap.instance[draggable="true"] > .pg-acc-head.instance {
+    cursor: grab;
+  }
+  .pg-acc-wrap.instance[draggable="true"] > .pg-acc-head.instance:active {
+    cursor: grabbing;
+  }
+  .pg-acc-wrap.instance.dragging { opacity: 0.45; }
+  .pg-acc-wrap.instance.drop-before { box-shadow: 0 -3px 0 0 #cc2222; }
+  .pg-acc-wrap.instance.drop-after  { box-shadow: 0  3px 0 0 #cc2222; }
   .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 0 1px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
      tight together (no gap) so the colon reads as one token, and
@@ -9535,6 +9832,22 @@ export const geom = defineGeom(meta, (p, geom) => {
     transition: background 100ms, transform 100ms;
   }
   .pg-acc-plus:hover { background: #aa1818; transform: scale(1.06); }
+  /* Inline trailing + on the last param row — same visual language
+     as .pg-acc-plus (round red icon) but smaller and aligned with
+     the input. Lets the user add a parameter without scrolling back
+     up to the head-bar `+`. */
+  .pr-add-trailing {
+    width: 16px; height: 16px;
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #cc2222; color: #fff;
+    border: none; border-radius: 50%;
+    font: bold 11px Arial; line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: background 100ms, transform 100ms;
+  }
+  .pr-add-trailing:hover { background: #aa1818; transform: scale(1.08); }
   .pg-acc-sig {
     font: 10px ui-monospace, monospace; color: #888;
     flex: 0 1 auto;

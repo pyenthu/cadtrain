@@ -65,7 +65,7 @@ at top).
 
 ## Geometry contract for AI refinement
 
-- `cyl(h, r1, r2)` is the only helper that produces a true tapered
+- `cyl(length, r1, r2)` is the only helper that produces a true tapered
   cylinder — substituting two stacked cylinders breaks the SVG outline
   export, which relies on a single continuous edge.
 - Don't remove the `OS` overshoot — it prevents hair-thin closing

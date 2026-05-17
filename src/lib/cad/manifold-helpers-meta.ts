@@ -66,8 +66,8 @@ export interface OperatorMeta {
  *  that render to a reasonable shape on a fresh add. */
 const HELPER_DEFAULTS: Record<string, Record<string, number>> = {
   empty: {},
-  cyl:   { h: 1.0,   r1: 0.5, r2: 0.5 },
-  tube:  { outerR: 0.5, innerR: 0.4, h: 4.0 },
+  cyl:   { length: 1.0,   r1: 0.5, r2: 0.5 },
+  tube:  { outerR: 0.5, innerR: 0.4, length: 4.0 },
 };
 
 /** Regex: a JSDoc block carrying `@part <desc>`, immediately followed by

@@ -51,7 +51,7 @@ treat the slider direction as physical *odTop is the upper face*).
 
 ## Geometry contract for AI refinement
 
-- `cyl(h, r1, r2)` (NOT two stacked tubes) — `cyl` is the only helper
+- `cyl(length, r1, r2)` (NOT two stacked tubes) — `cyl` is the only helper
   that draws a true tapered cylinder; replacing it with discrete
   segments breaks the SVG outline export.
 - Bore overshoot stays at `0.4"` total (`OS = 0.4` in the file) — see

@@ -23,30 +23,46 @@ import { env } from '$env/dynamic/private';
 import { createAnthropicClient } from '$lib/shared/anthropic-api';
 import { checkRateLimit } from '$lib/rate_limit';
 import { COMPONENT_REGISTRY } from '$lib/cad/components';
+import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_PROMPT_BYTES = 4 * 1024;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
-/** Build the system prompt — explains the component file format, the
- *  ManifoldCAD ops the geom can use, the Z-down rule, and the strict
- *  output contract (one fenced TS code block, nothing else). Includes
- *  the OTHER single-file components' meta as a compact catalog so the model
- *  can suggest composing them. */
+/** Format a helper-meta entry as one prompt line, e.g.
+ *  `- cyl(length, r1, r2?)  — Z-up cylinder/cone (r2 defaults to r1).` */
+function helperLine(h: { name: string; sig: string; desc: string; props: { name: string; optional: boolean }[] }): string {
+  const argList = h.props.map((p) => `${p.name}${p.optional ? '?' : ''}`).join(', ');
+  return `- \`${h.name}(${argList})\`  — ${h.desc}`;
+}
+
+/** Build the system prompt — pulled DYNAMICALLY from the helpers source
+ *  so a rename (e.g. cyl's `h` → `length`) flows through automatically
+ *  and the model can never be told a stale signature. Documents the
+ *  current accumulator-form authoring grammar (defineGeom + `geom.add(...)`),
+ *  the cross-instance ref + top-model conventions the loader expects,
+ *  and the runtime-managed meta fields the AI must NOT touch. */
 function buildSystemPrompt(currentId: string): string {
+  const helpers = discoverHelpers();
+  const operators = discoverOperators();
+  const helperLines = helpers.map(helperLine).join('\n');
+  const operatorLines = operators.map(helperLine).join('\n');
+
   const otherPrims = COMPONENT_REGISTRY.filter((e) => e.meta.id !== currentId).map((e) => {
     const params = Object.keys(e.meta.params).join(', ');
-    return `  - ${e.meta.id} (${e.meta.name}): geom({ ${params} })`;
+    return `  - ${e.meta.id} (${e.meta.name}): ${e.meta.id}Geom({ ${params} })`;
   }).join('\n');
 
   return `You edit single-file ManifoldCAD primitives for a downhole CAD app.
 
 # File format
-Each primitive lives in src/lib/cad/components/<id>.ts and exports two things:
+Each primitive exports \`meta\` (schema + display) and \`geom\` (the build).
+\`geom\` uses the ACCUMULATOR FORM via \`defineGeom\` — additive, no return:
 
 \`\`\`typescript
 import { cyl, tube, mv, rot } from '../manifold-helpers';
-// optional: import { geom as <otherId>Geom } from './<otherId>';
+import { defineGeom } from '.';
+// optional: import { geom as <OtherId>Geom } from './<other-id>';
 
 export const meta = {
   id: '<id>',
@@ -54,8 +70,8 @@ export const meta = {
   description: '...',
   tags: ['...'],
   params: {
-    paramName: { group?: 'GroupName', label: '...', min: N, max: N, step: N, unit: 'in', default: N },
-    // ...
+    paramName: { label: '...', min: N, max: N, step: N, unit: 'in', default: N },
+    // optional: group: 'GroupName' (clusters params in the inspector)
   },
   derived: {  // optional — computed from sliders, merged into geom's p
     derivedName: { label: '...', unit: '...', from: (p) => <expr> },
@@ -63,40 +79,75 @@ export const meta = {
   validate: (p) => string[],  // optional
 } as const;
 
-export const geom = (p: Record<string, number>) => {
-  // returns a Manifold via cyl()/tube()/.add()/.subtract()/.intersect()/mv()/rot()
-};
+// Accumulator form. \`geom\` is supplied empty by the framework; add parts
+// onto it. No \`let geom = ...\`, no \`return\`. Each part declared as a
+// \`let|const X = call(args);\` line, then folded in with \`geom.add(X)\`.
+export const geom = defineGeom(meta, (p, geom) => {
+  let A = cyl(p.length, p.od / 2, p.od / 2);
+  geom.add(A);
+  let B = tube(p.od / 2, (p.od / 2) - p.wall, p.length);
+  B = mv(B, [0, 0, A.top + A.length]);  // stack B below A (see top-model)
+  geom.add(B);
+});
 \`\`\`
 
-# ManifoldCAD operations available
-- \`cyl(h, r1, r2?)\` → Z-up cylinder/cone (r2 defaults to r1).
-- \`tube(outerR, innerR, h)\` → hollow tube.
-- \`mv(part, [x, y, z])\` → translate.
-- \`rot(part, [x, y, z])\` → rotate (degrees).
-- Manifold methods: \`.add(other)\` (union), \`.subtract(other)\`, \`.intersect(other)\`.
-- Imports must come from '../manifold-helpers' or another component file './<id>'.
+# Available helpers (parts — produce Manifolds)
+${helperLines}
 
-# Z-down convention (RULE)
+# Available operators (transformations on Manifolds)
+${operatorLines}
+
+Manifold methods: \`.add(other)\` (union), \`.subtract(other)\`, \`.intersect(other)\`.
+Imports allowed ONLY from \`'../manifold-helpers'\`, \`'.'\` (for defineGeom),
+and \`'./<sibling-id>'\` (to compose another bundle primitive).
+
+# Z-down convention (PROJECT RULE)
 - top = LOWER z. bottom = HIGHER z. As z increases, you go DOWN the hole.
 - \`mv(part, [0, 0, +N])\` moves the part toward the bottom.
-- An upset flange at the top sits at z=0; the body translates to z ≥ flange_length.
+- A box-conn upset flange at the top sits at z=0; the body translates to z ≥ coneLen.
 
-# Other primitives available to compose (import as \`geom as <id>Geom\`)
-${otherPrims || '  (none other than the current one)'}
+# Cross-instance refs + the top model (loader rewrites these at execute time)
+Each \`let|const X = call(...)\` declaration becomes a named instance. You can
+reference an instance's args by prop name in a later instance's args:
+
+  let A = TubeGeom({ od: 2, wall: 0.3, length: 5, top: 0 });
+  let B = TubeGeom({ od: 2, wall: 0.3, length: 3, top: A.top + A.length });
+  B = mv(B, [0, 0, B.top]);
+
+The loader walks declarations in source order; \`A.top\` / \`A.length\` resolve
+to A's call-arg values, and \`B.top + B.length\` cascades through. Stays as
+text on disk so editing A's length live-updates B automatically.
+
+Helpers (cyl, tube) have NO \`top\` param — they're pure shapes. To stack
+a helper, inline the arithmetic: \`mv(B, [0, 0, PREV.top + PREV.length])\`.
+Components that DO declare \`top\` in meta.params get the auto-stack pattern.
+
+# Other component primitives available (compose with \`import { geom as <Id>Geom } from './<id>'\`)
+${otherPrims || '  (none in the registry yet)'}
+
+# Meta fields the LOADER manages — do NOT touch
+The volume part's \`meta.json\` carries: \`family\`, \`level\`, \`autoTranslate\`,
+\`instanceColors\`, \`instanceOps\`, \`instanceTopMode\`, \`instanceTopOffset\`.
+These live OUTSIDE the \`.ts\` file (in a sibling \`meta.json\`). Never emit
+them in the \`.ts\` export. Never reference them from geom logic — they're
+applied by the loader (e.g. instanceTopMode rewrites the \`top:\` arg before
+prop-ref expansion).
 
 # Derived params
 If a value is purely computed from sliders, declare it in \`meta.derived\` so
 it shows read-only in the UI and is automatically present on \`p\` in geom().
 Don't recompute the same value with literals — promote it to derived.
 
-# Output contract
+# Output contract (strict)
 Respond with the COMPLETE updated file as a single fenced \`\`\`typescript code block.
 - No prose before or after the block. No diff. No explanation.
-- Preserve all existing imports and exports unless explicitly being asked to change them.
-- Keep the existing \`meta.id\` unchanged.
-- Add comments sparingly — only where the geometry intent isn't obvious from names.
-- Use the param names that already exist; introduce new ones only when the request requires them.
-- Always close braces and semicolons cleanly.
+- Preserve all existing imports unless the edit removes a referenced symbol.
+- Keep \`meta.id\` unchanged.
+- Use param names that already exist; introduce new ones only when needed.
+- If you remove an instance, remove EVERY reference to it elsewhere in geom
+  (most common bug: deleting \`let B = …\` but leaving \`B.length\` in a sibling).
+- Add comments sparingly — only where geometry intent isn't obvious from names.
+- Always close braces and semicolons cleanly. Parse-clean TypeScript only.
 `;
 }
 

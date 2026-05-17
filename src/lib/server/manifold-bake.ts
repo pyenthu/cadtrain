@@ -169,34 +169,70 @@ export async function bakeGlb(
     return { ok: false, error: `Invalid id "${id}"` };
   }
   try {
+    const bytes = await buildGlbBytes(geom, defaults);
+    if (!bytes.ok) return { ok: false, error: bytes.error };
+    const targetDir = outDir ?? STATIC_DIR;
+    const fullName = outDir ? 'mesh.glb' : `${id}.glb`;
+    const cutName = outDir ? 'mesh.cut.glb' : `${id}.cut.glb`;
+    await mkdir(targetDir, { recursive: true });
+    const path = join(targetDir, fullName);
+    await writeFile(path, bytes.full);
+    const result: BakeResult = { ok: true, path, bytes: bytes.full.byteLength };
+    if (bytes.cut) {
+      try {
+        const cutPath = join(targetDir, cutName);
+        await writeFile(cutPath, bytes.cut);
+        result.cutPath = cutPath;
+        result.cutBytes = bytes.cut.byteLength;
+      } catch {
+        // Cut write failed but the full GLB stayed.
+      }
+    }
+    return result;
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? String(e) };
+  }
+}
+
+/** In-memory bake: run `geom(defaults)`, serialize to GLB, return the
+ *  bytes for both the full mesh and the half-sectioned cut variant.
+ *  Used by `/api/components/bake-preview` to stream a live GLB for
+ *  unsaved sourceDraft / dirty params without touching disk. Cut
+ *  failure is best-effort — `cut` may be undefined while `full` is
+ *  populated (matches the on-disk bake's behaviour: full is the
+ *  primary deliverable, cut is the nice-to-have). */
+export interface GlbBytes {
+  ok: true;
+  full: Uint8Array;
+  cut?: Uint8Array;
+}
+export interface GlbBytesError {
+  ok: false;
+  error: string;
+}
+export async function buildGlbBytes(
+  geom: (p: Record<string, number>) => any,
+  defaults: Record<string, number>,
+): Promise<GlbBytes | GlbBytesError> {
+  try {
     await initManifold();
     const manifold = geom(defaults);
     if (!manifold || typeof manifold.getMesh !== 'function') {
       return { ok: false, error: 'geom() did not return a Manifold instance' };
     }
-    const targetDir = outDir ?? STATIC_DIR;
-    const fullName = outDir ? 'mesh.glb' : `${id}.glb`;
-    const cutName = outDir ? 'mesh.cut.glb' : `${id}.cut.glb`;
-    await mkdir(targetDir, { recursive: true });
     const io = new NodeIO();
     const maxOD = pickMaxOD(defaults);
     // 1. Full mesh — indexed, positions only. Smallest format; the
     //    client paints it solid red.
     const doc = manifoldToGltf(manifold, maxOD, false);
-    const glb = await io.writeBinary(doc);
-    const path = join(targetDir, fullName);
-    await writeFile(path, glb);
-    const result: BakeResult = { ok: true, path, bytes: glb.byteLength };
+    const full = await io.writeBinary(doc);
+    const result: GlbBytes = { ok: true, full };
     // 2. Half-sectioned mesh — non-indexed with per-face colours so the
     //    grey bore reads against the red outer. Best effort.
     try {
       const cutManifold = manifold.subtract(getCutBox());
       const cutDoc = manifoldToGltf(cutManifold, maxOD, true);
-      const cutGlb = await io.writeBinary(cutDoc);
-      const cutPath = join(targetDir, cutName);
-      await writeFile(cutPath, cutGlb);
-      result.cutPath = cutPath;
-      result.cutBytes = cutGlb.byteLength;
+      result.cut = await io.writeBinary(cutDoc);
     } catch {
       // Cut bake failed (component might already be open / one-sided);
       // the full GLB remains available.

@@ -23,6 +23,13 @@ export interface PlanDetail {
    */
   video?: string;
   videos?: string[];
+  /**
+   * Explicit "no recording expected" marker for docs-only or trivial
+   * tasks where Rule 12's per-step e2e recording doesn't apply. Lets a
+   * future reader distinguish "deliberately not recorded" from
+   * "recording owed but missing".
+   */
+  recorded?: boolean;
 }
 
 export const details: Record<number, PlanDetail> = {
@@ -802,5 +809,121 @@ export const details: Record<number, PlanDetail> = {
       '(e.g., authored "perma_lach_pls" → tagged "Halliburton PLS Mechanical-Set Double ' +
       'Grip"). Enables vendor-aware retrieval ("show me everything we have authored ' +
       'for HAL Versa-Trieve") and seeds the spatial-grammar work in B.x.',
+  },
+
+  // ───── J. /primitives polish — AI refine enforcement (4 levels) ─────
+
+  511: {
+    summary:
+      'AI refine — Level 1: dynamic prompt from discoverHelpers.\n\n' +
+      'Background: /api/components/refine was shipping a stale system prompt ' +
+      '(documented `cyl(h, r1, r2)` instead of the current `cyl(length, r1, r2)`, ' +
+      'taught the old `(p) => return manifold` single-return shape instead of the ' +
+      'accumulator-form `defineGeom(meta, (p, geom) => { ...; geom.add(X); })`, ' +
+      'and never mentioned cross-instance refs or the top-model stacking pattern). ' +
+      'A bad refine would then crash WASM with "memory access out of bounds" only ' +
+      'when the user hit Accept and the inspector tried to bake the proposed source.\n\n' +
+      'L1 fix: `buildSystemPrompt` now pulls helper signatures from ' +
+      '`discoverHelpers()` / `discoverOperators()` instead of hardcoded strings, so ' +
+      'renames like cyl(h) → cyl(length) flow through automatically. The prompt now ' +
+      'teaches the accumulator-form grammar, cross-instance refs (A.length, ' +
+      'PREV.top), the top-model stacking pattern (top: PREV.top + PREV.length + ' +
+      'mv(ME, [0, 0, ME.top])), and tells the AI explicitly NOT to touch the ' +
+      'loader-managed meta fields (instanceColors, instanceOps, instanceTopMode, ' +
+      'instanceTopOffset).',
+    acceptance: [
+      'System prompt contains only dynamically-discovered helper signatures (no hardcoded strings)',
+      'Refines on conn_dp_box-style sources produce parse-clean output that uses the accumulator form',
+      'Prompt explicitly warns the AI off the loader-managed meta fields',
+    ],
+    refs: [
+      'src/routes/api/components/refine/+server.ts (buildSystemPrompt)',
+      'src/lib/cad/manifold-helpers.ts (discoverHelpers / discoverOperators source)',
+    ],
+    recorded: false,
+  },
+
+  512: {
+    summary:
+      'AI refine — Level 2: post-generation validation in the refine endpoint.\n\n' +
+      'After Claude returns, run these gates BEFORE shipping the proposal back to ' +
+      'the client:\n\n' +
+      '(a) **Imports allowlist** — only `\'../manifold-helpers\'`, `\'.\'`, ' +
+      '`\'./<sibling-id>\'`. Mirror parseImports() in component-loader.ts.\n' +
+      '(b) **Denylist scan** — reject `require(` / `process` / `import(` / ' +
+      '`eval(` / `Function(` in the body. Mirror the loader denylist.\n' +
+      '(c) **Undefined-instance detection** — for every `<INST>.<prop>` in the geom ' +
+      'body, verify `<INST>` was declared earlier as `let|const <INST> = call(...)`. ' +
+      'This is the most common AI failure mode: removing an instance but leaving its ' +
+      '.length / .top reference behind.\n' +
+      '(d) **Syntax check** — via `checkTypescriptSyntax` (already exists in the ' +
+      'client; expose for server use or recreate via Prettier).\n' +
+      '(e) **Optional live-bake** — call `buildGlbBytes` to verify it produces ' +
+      'geometry. Cheap gate against malformed accumulator chains.\n\n' +
+      'On any failure, retry ONCE with the validation errors fed back in the user ' +
+      'message. After 2 failures, return `{ ok: false, error, validationFailures: ' +
+      'string[] }` and surface it in the inspector UI.',
+    acceptance: [
+      'A proposal that references a non-existent instance is rejected by the endpoint with a clear error, NOT returned to the user with a "memory access out of bounds" later',
+      'Unit test covers the undefined-instance case',
+      'Disallowed imports / denylisted globals trigger validation failure with the offending line',
+      'Endpoint retries once with validation feedback before giving up',
+    ],
+    refs: [
+      'src/routes/api/components/refine/+server.ts',
+      'src/lib/server/component-loader.ts (mirror parseImports + denylist)',
+      'src/lib/server/refine-validate.ts (new — proposed location)',
+    ],
+    recorded: false,
+  },
+
+  513: {
+    summary:
+      'AI refine — Level 3: live-bake gate on the Accept button.\n\n' +
+      'In the inspector AI tab (in src/routes/primitives/+page.svelte), when an AI ' +
+      'proposal arrives, fire a bake-preview against the proposed source + current ' +
+      'params. Render a small status pill next to the Accept button:\n\n' +
+      ' - ✓ "Builds (X positions)" — green\n' +
+      ' - ✗ "Bake failed: <message>" — red, Accept disabled\n\n' +
+      'Grey out Accept when bake fails — force the user to either retry or reject ' +
+      'rather than accept code that won\'t render. The bake-preview endpoint already ' +
+      'exists (added this session): POST /api/components/bake-preview with ' +
+      '{ id, source, params } returns GLB bytes or 4xx with a message.',
+    acceptance: [
+      'A proposal that the AI returns but bake-preview rejects shows the user a red status pill; Accept is disabled',
+      'A working proposal shows green and Accept is enabled',
+      'No backend changes — purely a UI gate on top of the existing bake-preview endpoint',
+    ],
+    refs: [
+      'src/routes/primitives/+page.svelte (AI inspector tab + Accept button)',
+      'src/routes/api/components/bake-preview/+server.ts (existing endpoint)',
+    ],
+    recorded: false,
+  },
+
+  514: {
+    summary:
+      'AI refine — Level 4: assembly-aware refine prompt.\n\n' +
+      'When the AI refines a COMPOSITION (a part that imports multiple sibling ' +
+      'components), include the relevant recipe docs from docs/assemblies/ in the ' +
+      'system prompt:\n\n' +
+      ' - docs/assemblies/README.md — the recipe-writing rules.\n' +
+      ' - Each matching <assembly>.md — matching is by mentioning the assembly name ' +
+      'in the part\'s meta.name or by the part importing a known recipe\'s ' +
+      'primitives.\n\n' +
+      'Today nothing in src/ reads docs/assemblies/ (grep-verified) — the AI is ' +
+      'blind to existing assembly conventions and re-invents them every refine.',
+    acceptance: [
+      'A refine on a known assembly (e.g. tubing_hanger_spool_stack) loads its .md into the prompt',
+      'The AI\'s proposal respects the stack diagram + key dimensions documented in the recipe',
+      'README.md rules (e.g. "list components top-down with z offsets") are visible in the system message',
+    ],
+    refs: [
+      'src/routes/api/components/refine/+server.ts (buildSystemPrompt — extend with assembly glob)',
+      'docs/assemblies/README.md',
+      'docs/assemblies/_TEMPLATE.md',
+      'docs/assemblies/tubing_hanger_spool_stack.md (first worked example)',
+    ],
+    recorded: false,
   },
 };
