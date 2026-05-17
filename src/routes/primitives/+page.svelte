@@ -8427,16 +8427,16 @@ export const geom = defineGeom(meta, (p, geom) => {
      per `group` value declared in the primitive's meta.params (e.g.
      box_conn → Body / Cone). Click toggles the group's grid open/closed. */
   .pg-acc-head {
-    display: flex; align-items: center; gap: 5px; width: 100%;
+    display: flex; align-items: center; gap: 3px; width: 100%;
     background: #f3f3f7;
     border: 1px solid #e2e2e8;
     border-radius: 3px;
     cursor: pointer;
     font: 11px Arial; color: #555;
-    padding: 2px 6px;
+    padding: 1px 4px;
     margin: 2px 0 1px;
     text-align: left;
-    min-height: 22px;
+    min-height: 18px;
   }
   .pg-acc-head:first-of-type { margin-top: 0; }
   /* Outlined wrapper — groups the header + its body content into a
@@ -8446,8 +8446,8 @@ export const geom = defineGeom(meta, (p, geom) => {
     border: 3px solid #d4d4dc;
     border-radius: 4px;
     background: #fff;
-    padding: 1px 4px 2px;
-    margin: 1px 0;
+    padding: 0 3px 1px;
+    margin: 0 0 1px;
   }
   /* Accordion body — caps tall instance/properties accordions so they
      scroll within themselves rather than push the rest of the chain
@@ -8468,7 +8468,7 @@ export const geom = defineGeom(meta, (p, geom) => {
      section header for the primitive itself. */
   .pg-acc-wrap.instance { border-width: 2px; }
   .pg-acc-wrap.instance { border-color: #f0c8c8; background: #fff8f8; }
-  .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 2px 2px; }
+  .pg-acc-wrap > .pg-acc-head { background: transparent; border: 0; margin: 0; padding: 0 1px; }
   /* For instance rows the title is `A` and sig is `:tube`. Render them
      tight together (no gap) so the colon reads as one token, and
      don't let the title flex-grow — it should hug `:tube` on the
@@ -8503,19 +8503,19 @@ export const geom = defineGeom(meta, (p, geom) => {
      icons inside the instance accordion header. Small, square,
      tight border; active state mirrors the trash button styling. */
   .pg-acc-iv {
-    width: 20px; height: 20px;
+    width: 18px; height: 18px;
     display: inline-flex; align-items: center; justify-content: center;
-    background: #fff; color: #888;
-    border: 1px solid #e2e2e8;
+    background: transparent; color: #888;
+    border: none;
     border-radius: 3px;
     cursor: pointer;
     flex-shrink: 0;
     padding: 0;
   }
-  .pg-acc-iv:hover { color: #cc2222; border-color: #f0c8c8; }
-  .pg-acc-iv.active { background: #fdecec; color: #cc2222; border-color: #cc2222; }
+  .pg-acc-iv:hover { color: #cc2222; background: #fdecec; }
+  .pg-acc-iv.active { background: #fdecec; color: #cc2222; }
   .pg-acc-head.instance .pg-acc-iv.active {
-    background: #cc2222; color: #fff; border-color: #cc2222;
+    background: #cc2222; color: #fff;
   }
 
   /* Transformation chain strip — Grasshopper-style horizontal chip
@@ -8716,20 +8716,20 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .pg-acc-x {
     margin-left: auto;
-    width: 20px; height: 20px;
+    width: 18px; height: 18px;
     display: inline-flex; align-items: center; justify-content: center;
-    background: #fff; color: #888;
-    border: 1px solid #e2e2e8;
+    background: transparent; color: #888;
+    border: none;
     border-radius: 3px;
     cursor: pointer;
     font: 12px Arial; line-height: 1;
     flex-shrink: 0;
   }
-  .pg-acc-x:hover { color: #cc2222; border-color: #cc2222; background: #fdecec; }
+  .pg-acc-x:hover { color: #cc2222; background: #fdecec; }
   /* Instance rows: tint the trash darker red since the surrounding
      header is already red — neutral grey blends in. */
-  .pg-acc-head.instance .pg-acc-x { color: #cc2222; border-color: #f0c8c8; }
-  .pg-acc-head.instance .pg-acc-x:hover { color: #fff; background: #cc2222; border-color: #cc2222; }
+  .pg-acc-head.instance .pg-acc-x { color: #cc2222; }
+  .pg-acc-head.instance .pg-acc-x:hover { color: #fff; background: #cc2222; }
   .pg-acc-empty {
     font: 10px Arial; color: #888; font-style: italic;
     padding: 6px 8px;
