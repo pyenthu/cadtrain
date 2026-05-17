@@ -156,11 +156,34 @@ export const POST: RequestHandler = async ({ request, url }) => {
           inlineResolved.set(depId, await loadVolumeComponent(depId));
         }
       }
-      const loaded = loadGeomFromSource(inlineSource, (depId) => {
-        const dep = inlineResolved.get(depId);
-        if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
-        return dep;
-      });
+      // Post-grammar-split: .ts has no `export const meta`. Pull the
+      // part's JSON meta so the loader's `defineGeom(meta, fn)` resolves
+      // and we get the schema needed for resolveDerived + validate.
+      let injected: PrimitiveMeta | undefined;
+      try {
+        const { resolvePart } = await import('$lib/server/library');
+        const part = await resolvePart(id);
+        if (part?.meta.id && part.meta.name && part.meta.params) {
+          injected = {
+            id: part.meta.id,
+            name: part.meta.name,
+            description: part.meta.description,
+            tags: part.meta.tags,
+            params: part.meta.params as Record<string, any>,
+          };
+        }
+      } catch { /* part may not exist yet — that's OK */ }
+      const loaded = loadGeomFromSource(
+        inlineSource,
+        (depId) => {
+          const dep = inlineResolved.get(depId);
+          if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
+          return dep;
+        },
+        undefined,
+        undefined,
+        injected,
+      );
       meta = loaded.meta;
       geom = loaded.geom;
     } catch (e: any) {

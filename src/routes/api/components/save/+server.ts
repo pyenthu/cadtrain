@@ -76,8 +76,14 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create, picture, instanceColors, instanceTopMode, instanceTopOffset } = body as {
+  const { id, source, create, picture, meta: bodyMeta, instanceColors, instanceTopMode, instanceTopOffset } = body as {
     id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
+    /** Identity + schema (post-grammar-split): the canonical home for
+     *  `id` / `name` / `description` / `tags` / `params`. When present,
+     *  written to meta.json alongside the classification fields below.
+     *  The .ts source then carries only the geom function. Optional —
+     *  pre-migration parts can keep their inline `export const meta`. */
+    meta?: unknown;
     instanceColors?: unknown;
     instanceTopMode?: unknown;
     instanceTopOffset?: unknown;
@@ -210,6 +216,41 @@ export const POST: RequestHandler = async ({ request, url }) => {
     } catch { /* meta write is best-effort */ }
   }
 
+  // Identity + schema → meta.json (post-grammar-split refactor). Accepts
+  // `{ id?, name?, description?, tags?, params? }`. Only library writes
+  // get a meta.json — bundle src/ edits skip this entirely. Best-effort:
+  // a bad meta-write doesn't roll back the source save.
+  if (wroteToLibrary && bodyMeta && typeof bodyMeta === 'object' && !Array.isArray(bodyMeta)) {
+    const bm = bodyMeta as Record<string, unknown>;
+    const cleaned: Record<string, unknown> = {};
+    if (typeof bm.id === 'string' && /^[a-z][a-z0-9_]*$/.test(bm.id)) cleaned.id = bm.id;
+    if (typeof bm.name === 'string') cleaned.name = bm.name;
+    if (typeof bm.description === 'string') cleaned.description = bm.description;
+    if (Array.isArray(bm.tags)) {
+      const tags: string[] = [];
+      for (const t of bm.tags) if (typeof t === 'string') tags.push(t);
+      if (tags.length > 0) cleaned.tags = tags;
+    }
+    if (bm.params && typeof bm.params === 'object' && !Array.isArray(bm.params)) {
+      const params: Record<string, Record<string, unknown>> = {};
+      for (const [k, v] of Object.entries(bm.params as Record<string, unknown>)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          params[k] = v as Record<string, unknown>;
+        }
+      }
+      if (Object.keys(params).length > 0) cleaned.params = params;
+    }
+    if (Object.keys(cleaned).length > 0) {
+      try {
+        const partDir = dirname(targetPath);
+        const metaPath = join(partDir, PART_FILES.meta);
+        const existing = await resolvePart(id);
+        const prevMeta = existing?.meta ?? {};
+        await writeFile(metaPath, JSON.stringify({ ...prevMeta, ...cleaned }, null, 2), 'utf8');
+      } catch { /* meta write is best-effort */ }
+    }
+  }
+
   invalidateRunesListCache();
 
   // Geometry verification + optional GLB bake.
@@ -255,7 +296,23 @@ export const POST: RequestHandler = async ({ request, url }) => {
         // self-contained). Pass the part's dir as outDir so bakeGlb
         // writes there instead of the bundle STATIC_DIR (which is
         // for src/-tracked bundle primitives only).
-        const r = await bakeGlb(id, loaded.geom, extractDefaultsFromSource(source), dirname(targetPath));
+        // Defaults preference order: loaded.meta.params (authoritative —
+        // covers both inline-meta and JSON-meta parts) → fall back to
+        // the source-regex extractor for safety. Post-grammar-split
+        // parts have no `params:` block in source, so the loader-resolved
+        // meta is the only correct source.
+        const loadedDefaults: Record<string, number> = {};
+        const lm: any = loaded.meta;
+        if (lm?.params && typeof lm.params === 'object') {
+          for (const [k, v] of Object.entries(lm.params as Record<string, any>)) {
+            const d = v?.default;
+            if (typeof d === 'number' && Number.isFinite(d)) loadedDefaults[k] = d;
+          }
+        }
+        const defaults = Object.keys(loadedDefaults).length > 0
+          ? loadedDefaults
+          : extractDefaultsFromSource(source);
+        const r = await bakeGlb(id, loaded.geom, defaults, dirname(targetPath));
         bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
       } catch (e: any) {
         bakeReport = { ok: false, error: e?.message ?? String(e) };

@@ -50,9 +50,44 @@ export const PART_FILES = {
   meta: 'meta.json',
 } as const;
 
-/** Library-side classification metadata — the FINE axis within a tab.
- *  Distinct from the component's own `meta` export in component.ts. */
+/** Library-side metadata — lives in `meta.json` inside the part dir.
+ *
+ *  Two roles:
+ *    1. **Identity + schema** (`id` / `name` / `description` / `tags` /
+ *       `params`) — what used to live as `export const meta = {...}`
+ *       inside `component.ts`. After the grammar-split refactor, the
+ *       authoritative copy is here (JSON) so the inspector can edit
+ *       the param schema without parsing TS and the AI authoring path
+ *       can emit one JSON file instead of a TS file with embedded
+ *       schemas. The component.ts source then contains only the geom
+ *       function. The loader injects this JSON into the source as
+ *       `const meta = {...}` so the existing `defineGeom(meta, fn)`
+ *       call still resolves.
+ *    2. **Fine classification + assembly toggles** (`family` / `level` /
+ *       `autoTranslate` / `instanceColors` / `instanceTopMode` /
+ *       `instanceTopOffset`) — properties of the part within a sidebar
+ *       tab, separate from its geom. Lives here because moving a part
+ *       between categories must keep these intact.
+ *
+ *  Backward compat: parts that still hold an inline `export const meta`
+ *  in their .ts work unchanged — the loader prefers JSON meta when
+ *  present and falls back to the source export otherwise. */
 export interface PartMeta {
+  /** Component id — must match the directory name. Optional in the
+   *  JSON because pre-migration parts keep it in the .ts source. */
+  id?: string;
+  /** Human-readable display name. */
+  name?: string;
+  /** Free-form description shown in the inspector header. */
+  description?: string;
+  /** Tags array — used by search + RAG. */
+  tags?: string[];
+  /** Param schema — record of `{ label, min, max, step, default, unit?, … }`.
+   *  Mirrors `ParamSchema` from src/lib/cad/components/index.ts but kept
+   *  as `Record<string, unknown>` here because the server doesn't need
+   *  the full typed shape — it just round-trips the JSON to the loader
+   *  and the inspector. */
+  params?: Record<string, Record<string, unknown>>;
   family?: string;
   level?: number;
   /** Assembly-level toggle: when true (default), the inspector
@@ -138,6 +173,27 @@ async function readPartMeta(dir: string): Promise<PartMeta> {
     const parsed = JSON.parse(await readFile(p, 'utf8'));
     if (!parsed || typeof parsed !== 'object') return {};
     const out: PartMeta = {};
+    // Identity + schema (post-split-grammar — the canonical home for these).
+    if (typeof parsed.id === 'string' && /^[a-z][a-z0-9_]*$/.test(parsed.id)) {
+      out.id = parsed.id;
+    }
+    if (typeof parsed.name === 'string') out.name = parsed.name;
+    if (typeof parsed.description === 'string') out.description = parsed.description;
+    if (Array.isArray(parsed.tags)) {
+      const tags: string[] = [];
+      for (const t of parsed.tags) if (typeof t === 'string') tags.push(t);
+      if (tags.length > 0) out.tags = tags;
+    }
+    if (parsed.params && typeof parsed.params === 'object' && !Array.isArray(parsed.params)) {
+      const params: Record<string, Record<string, unknown>> = {};
+      for (const [k, v] of Object.entries(parsed.params)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          params[k] = v as Record<string, unknown>;
+        }
+      }
+      if (Object.keys(params).length > 0) out.params = params;
+    }
+    // Fine classification + assembly toggles.
     if (typeof parsed.family === 'string') out.family = parsed.family;
     if (typeof parsed.level === 'number') out.level = parsed.level;
     if (typeof parsed.autoTranslate === 'boolean') out.autoTranslate = parsed.autoTranslate;

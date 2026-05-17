@@ -124,6 +124,25 @@ export const POST: RequestHandler = async ({ request, url }) => {
           inlineResolved.set(depId, await loadVolumeComponent(depId));
         }
       }
+      // Post-grammar-split: the .ts source carries no `export const
+      // meta`, only a geom function. When previewing the inline source
+      // for a part that exists on disk, pull the part's meta from its
+      // meta.json so the loader's `defineGeom(meta, fn)` resolves and
+      // the returned meta has the schema the renderer needs.
+      let injected: PrimitiveMeta | undefined;
+      try {
+        const { resolvePart } = await import('$lib/server/library');
+        const part = await resolvePart(id);
+        if (part?.meta.id && part.meta.name && part.meta.params) {
+          injected = {
+            id: part.meta.id,
+            name: part.meta.name,
+            description: part.meta.description,
+            tags: part.meta.tags,
+            params: part.meta.params as Record<string, any>,
+          };
+        }
+      } catch { /* part may not exist yet (new-part draft) — that's OK */ }
       const loaded = loadGeomFromSource(
         inlineSource,
         (depId) => {
@@ -133,6 +152,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
         },
         modes,
         offsets,
+        injected,
       );
       meta = loaded.meta;
       geom = loaded.geom;

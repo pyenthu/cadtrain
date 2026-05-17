@@ -323,19 +323,34 @@ async function readLibraryEntries(): Promise<ComponentListEntry[]> {
   for (const part of parts) {
     let source = '';
     try { source = await readFile(part.componentPath, 'utf8'); } catch { continue; }
-    const parsed = parseComponentSource(source);
-    if (!parsed) continue;
+    // Identity + schema preference order (post-grammar-split refactor):
+    //   1. meta.json's `id` / `name` / `params` — authoritative when
+    //      present (the post-migration shape, written by /api/components/
+    //      save). Stable across edits since it doesn't need TS parsing.
+    //   2. Inline `export const meta = {...}` parsed from the source —
+    //      pre-migration parts keep working.
+    // We always *also* parse the source for `hasValidate` (validate is a
+    // function and can't live in JSON; it stays in the .ts when needed).
+    const parsedSource = parseComponentSource(source);
+    const jm = part.meta;
+    const id = jm.id ?? parsedSource?.id;
+    const name = jm.name ?? parsedSource?.name;
+    if (!id || !name) continue;
+    const description = jm.description ?? parsedSource?.description ?? '';
+    const tags = jm.tags ?? parsedSource?.tags ?? [];
+    const params = jm.params ?? parsedSource?.params ?? {};
+    const hasValidate = parsedSource?.hasValidate ?? false;
     let instructions = '';
     if (part.hasInstructions) {
       try { instructions = await readFile(join(part.dir, 'instructions.md'), 'utf8'); } catch { /* race */ }
     }
     out.push({
-      id: parsed.id,
-      name: parsed.name,
-      description: parsed.description,
-      tags: parsed.tags,
-      params: parsed.params,
-      hasValidate: parsed.hasValidate,
+      id,
+      name,
+      description,
+      tags,
+      params,
+      hasValidate,
       source,
       instructions,
       origin: part.category,

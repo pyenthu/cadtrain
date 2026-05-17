@@ -455,12 +455,23 @@ function applyInstanceTopMode(
  * instance's `top:` arg before prop-ref expansion so the placement
  * picker semantics (stack below / overlay-with-offset / at origin)
  * cascade through to the mv translate via the normal expansion path.
+ *
+ * `injectedMeta` (optional) — when the caller has identity/schema meta
+ * available from a sidecar (library parts after the meta-to-JSON
+ * migration), pass it here. The loader prepends
+ * `const meta = <JSON>; exports.meta = meta;` so the existing
+ * `defineGeom(meta, fn)` call resolves AND the returned LoadedComponent
+ * has authoritative meta from JSON. Sources that still hold an inline
+ * `export const meta = {...}` continue to work — that export will
+ * overwrite the prepended one. When the source has no inline export
+ * AND no injectedMeta is supplied, the load fails (no `result.meta`).
  */
 export function loadGeomFromSource(
   src: string,
   resolveDep: DepResolver,
   instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>,
   instanceTopOffset?: Record<string, number>,
+  injectedMeta?: PrimitiveMeta,
 ): LoadedComponent {
   const { stripped, deps } = parseImports(src);
   // Grammar gate — strict split-init/composition layout. CSG op now
@@ -483,7 +494,22 @@ export function loadGeomFromSource(
   // cascade stays live across saves.
   const expanded = expandInstancePropRefs(withTop, deps, resolveDep);
 
-  const { code } = transformSync(expanded, {
+  // Prepend the JSON meta (if any) as a local `const meta` + an
+  // `exports.meta` so:
+  //  - the user's `defineGeom(meta, fn)` call resolves whether or not
+  //    the source itself has an inline `export const meta`.
+  //  - if the source has NO inline `export const meta` (the post-
+  //    migration shape), the module still exposes one for the loader
+  //    to read back.
+  //  - if the source DOES have an inline `export const meta`, the
+  //    inline export overwrites the prepended one (the inline write
+  //    happens later in execution order). Inline meta still wins, so
+  //    pre-migration parts keep their current behaviour.
+  // JSON.stringify is safe — PartMeta is JSON-clean by construction.
+  const prefix = injectedMeta
+    ? `const meta = ${JSON.stringify(injectedMeta)};\nexports.meta = meta;\n`
+    : '';
+  const { code } = transformSync(prefix + expanded, {
     loader: 'ts',
     format: 'cjs',
     target: 'node22',
@@ -605,18 +631,30 @@ export async function loadVolumeComponent(
   } catch {
     throw new Error(`Library part "${id}" component.ts unreadable at ${path}.`);
   }
-  // Cache key folds in placement (top mode + offset) so toggling
-  // either flips the executed geom on the next /api/components/geom
-  // call without needing the user to also edit the source. The CSG
-  // op lives in the source itself now (see split-grammar plan) so
-  // it's part of `src` already and doesn't need its own sig.
+  // Cache key folds in placement (top mode + offset) and the
+  // injected JSON meta so toggling any of those flips the executed geom
+  // on the next /api/components/geom call without the user having to
+  // also edit the source. The CSG op lives in the source itself now
+  // (see split-grammar plan) so it's part of `src` already and
+  // doesn't need its own sig. NUL byte separator avoids any
+  // ambiguity between fields.
   const topModeSig = part.meta.instanceTopMode
     ? JSON.stringify(Object.entries(part.meta.instanceTopMode).sort())
     : '';
   const topOffSig = part.meta.instanceTopOffset
     ? JSON.stringify(Object.entries(part.meta.instanceTopOffset).sort())
     : '';
-  const hash = sha(`${src} ${topModeSig} ${topOffSig}`);
+  const injectedMetaSig =
+    part.meta.id && part.meta.params
+      ? JSON.stringify({
+          id: part.meta.id,
+          name: part.meta.name,
+          description: part.meta.description,
+          tags: part.meta.tags,
+          params: part.meta.params,
+        })
+      : '';
+  const hash = sha(`${src} ${topModeSig} ${topOffSig} ${injectedMetaSig}`);
   const cached = volumeCache.get(id);
   if (cached && cached.sourceHash === hash) return cached.loaded;
 
@@ -639,6 +677,23 @@ export async function loadVolumeComponent(
     }
   }
 
+  // Hand the JSON meta to the loader when meta.json carries identity +
+  // schema (the post-grammar-split shape). The loader prepends it as a
+  // `const meta = ...` so the existing `defineGeom(meta, fn)` reference
+  // resolves and the returned LoadedComponent.meta is authoritative.
+  // Pre-migration parts (no `id` / `params` in JSON) get undefined and
+  // the loader falls back to the inline `export const meta` in the .ts.
+  const injectedMeta: PrimitiveMeta | undefined =
+    part.meta.id && part.meta.name && part.meta.params
+      ? {
+          id: part.meta.id,
+          name: part.meta.name,
+          description: part.meta.description,
+          tags: part.meta.tags,
+          params: part.meta.params as Record<string, any>,
+        }
+      : undefined;
+
   const loaded = loadGeomFromSource(
     src,
     (depId) => {
@@ -648,6 +703,7 @@ export async function loadVolumeComponent(
     },
     part.meta.instanceTopMode,
     part.meta.instanceTopOffset,
+    injectedMeta,
   );
 
   volumeCache.set(id, { sourceHash: hash, loaded });
