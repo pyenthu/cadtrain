@@ -116,6 +116,12 @@ export interface ComponentEntry {
    *  previous one (Z-down: positive z = below). Absent for bundle
    *  entries — they default to true at the UI layer. */
   autoTranslate?: boolean;
+  /** Per-instance viewer colours from a library part's `meta.json`,
+   *  keyed by instance name (`A`, `B`, ...). Phase A: inspector surfaces
+   *  a swatch + left-border stripe; scene + GLB unchanged. Unset
+   *  entries fall back to a hash-by-name palette default at the UI
+   *  layer. Absent for bundle entries. */
+  instanceColors?: Record<string, string>;
   /** Volume-relative path to the part's `picture.png` (serve via
    *  /api/volume). Absent for bundle entries / pictureless parts. */
   picture?: string;
@@ -172,6 +178,7 @@ interface ApiEntry {
   family?: string;
   level?: number;
   autoTranslate?: boolean;
+  instanceColors?: Record<string, string>;
   picture?: string;
 }
 
@@ -224,6 +231,7 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
       ...(api.family ? { family: api.family } : {}),
       ...(api.level != null ? { level: api.level } : {}),
       ...(api.autoTranslate != null ? { autoTranslate: api.autoTranslate } : {}),
+      ...(api.instanceColors ? { instanceColors: api.instanceColors } : {}),
       ...(api.picture ? { picture: api.picture } : {}),
     };
   });

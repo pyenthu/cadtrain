@@ -61,6 +61,14 @@ export interface PartMeta {
    *  Inserted snippet uses live cross-instance refs like
    *  `B = mv(B, [0, 0, A.top + A.length])`. */
   autoTranslate?: boolean;
+  /** Per-instance viewer colours, keyed by instance name (`A`, `B`, ...).
+   *  Hex strings (`#3b82f6`). Phase A is UI only — inspector surfaces a
+   *  swatch + left-border stripe; scene + GLB still render the existing
+   *  red-outer / grey-bore convention. Phase B will tint the actual
+   *  geometry per instance via a GeomAcc segment refactor. Absent
+   *  entries fall back to a hash-by-name palette default at the UI
+   *  layer so unset instances still get a distinct colour. */
+  instanceColors?: Record<string, string>;
 }
 
 export interface ResolvedPart {
@@ -117,6 +125,13 @@ async function readPartMeta(dir: string): Promise<PartMeta> {
     if (typeof parsed.family === 'string') out.family = parsed.family;
     if (typeof parsed.level === 'number') out.level = parsed.level;
     if (typeof parsed.autoTranslate === 'boolean') out.autoTranslate = parsed.autoTranslate;
+    if (parsed.instanceColors && typeof parsed.instanceColors === 'object') {
+      const colors: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed.instanceColors)) {
+        if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) colors[k] = v;
+      }
+      if (Object.keys(colors).length > 0) out.instanceColors = colors;
+    }
     return out;
   } catch {
     return {};

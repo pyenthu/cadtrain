@@ -76,8 +76,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create, picture } = body as {
+  const { id, source, create, picture, instanceColors } = body as {
     id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
+    instanceColors?: unknown;
   };
 
   if (typeof id !== 'string' || typeof source !== 'string') {
@@ -149,6 +150,26 @@ export const POST: RequestHandler = async ({ request, url }) => {
         }
       } catch { /* picture copy is best-effort */ }
     }
+  }
+
+  // Per-instance viewer colours (Phase A). When the inspector swatch
+  // sets `instanceColors`, merge into the part's existing meta.json so
+  // family / level / autoTranslate stay intact. Only library writes carry
+  // a meta.json — bundle src/ edits skip this. Best-effort: a bad
+  // meta-write doesn't roll back the source save.
+  if (wroteToLibrary && instanceColors && typeof instanceColors === 'object') {
+    const colors: Record<string, string> = {};
+    for (const [k, v] of Object.entries(instanceColors as Record<string, unknown>)) {
+      if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) colors[k] = v;
+    }
+    try {
+      const partDir = dirname(targetPath);
+      const metaPath = join(partDir, PART_FILES.meta);
+      const existing = await resolvePart(id);
+      const prevMeta = existing?.meta ?? {};
+      const merged = { ...prevMeta, instanceColors: colors };
+      await writeFile(metaPath, JSON.stringify(merged, null, 2), 'utf8');
+    } catch { /* meta write is best-effort */ }
   }
 
   invalidateRunesListCache();
