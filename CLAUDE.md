@@ -111,6 +111,26 @@ files (auto-loaded when working in that subtree):
 
 17. **Components render two ways**, picked per-entry by `renderMode` on the `/api/components/list` response: `'client'` (bundle primitive in `src/lib/cad/components/`, compiled by Vite) or `'server'` (library part in `<volume>/library/`, transpiled + sandbox-executed via `/api/components/geom`). The picture → AI → `.ts` → volume workflow uses `'server'`. Full security + concurrency detail (the `new Function` sandbox, `expandInstancePropRefs` fixpoint loop, LRU cache invalidation, per-instance viewer colour) lives in `src/lib/cad/CLAUDE.md`.
 
+    **Split init/composition grammar (post-refactor, plan: `~/.claude/plans/grammar-split-init-compose.md`).** Library parts authored after the refactor obey two hard rules the loader enforces (`enforceSplitGrammar`):
+    - **Identity + schema (`id`, `name`, `description`, `tags`, `params`) live in `meta.json`**, not in `component.ts`. The loader prepends `export const meta = <JSON>;` so the user's `defineGeom(meta, fn)` reference resolves; the source file holds only the geom function. Pre-migration parts that still carry an inline `export const meta = {...}` continue to work (inline wins via the back-compat fallback).
+    - **Body is partitioned**: every `let|const X = call(...)` declaration (and any chained `X = mv(X, …)` reassignment) appears BEFORE every `geom.add(X)` / `geom.subtract(X)` / `geom.intersect(X)` call. The CSG op lives in the source itself — there is no `meta.instanceOps`. The loader rejects interleaved layouts with a clear line number; `enforceSplitGrammar` strips comments first so `// geom.add(X)` in docs doesn't false-trigger.
+
+    Worked example (`library/<cat>/<id>/component.ts`):
+    ```ts
+    import { geom as TubeGeom } from './hollow_cylinder';
+    import { defineGeom } from '.';
+    export const geom = defineGeom(meta, (p, geom) => {
+      // INIT
+      let A = TubeGeom({ od: p.dp_od, wall: p.wall_thk, length: p.body_len, top: 0 });
+      let B = TubeGeom({ od: p.tj_od,  wall: p.wall_thk, length: p.tj_len, top: A.top + A.length });
+      // COMP
+      geom.add(A);
+      geom.subtract(B);
+    });
+    ```
+
+    AI refine endpoint (`/api/components/refine`) teaches this layout in its system prompt + post-validates the output (split-grammar gate, esbuild parse, undefined-instance scan, 1-shot retry on failure).
+
 18. **The library — directory-per-part, location = category.** A part is a self-contained directory under `<volume>/library/<category>/<id>/`. **Its location IS its classification.** No central index, no metadata map that can drift. `src/lib/server/library.ts` is the resolver (`resolvePart`, `listLibraryParts`, `categoryDir`, `partDirIn`). Flow: create → test → review → move → category. `/api/components/save` with `create: true` writes to `library/test/<id>/`; updates write back into the part's current category dir; `/api/components/move` does an atomic `rename` to promote. `/library/` is gitignored.
 
 ## Open TODOs (out-of-scope findings)

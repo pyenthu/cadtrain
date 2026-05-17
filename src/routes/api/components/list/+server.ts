@@ -321,6 +321,45 @@ async function readLibraryEntries(): Promise<ComponentListEntry[]> {
   const parts = await listLibraryParts();
   const out: ComponentListEntry[] = [];
   for (const part of parts) {
+    // JSON-recipe parts (Phase 1 of the JSON pivot): all of identity +
+    // schema lives in `part.json`'s `meta` block. No source parsing,
+    // no meta.json sidecar. Source field is the raw JSON (the Builder
+    // tab can display it pretty-printed for now; future inspector
+    // renders a form instead).
+    if (part.hasRecipe) {
+      let raw = '';
+      try { raw = await readFile(part.recipePath, 'utf8'); } catch { continue; }
+      let recipe: any;
+      try { recipe = JSON.parse(raw); } catch { continue; }
+      const rm = recipe?.meta ?? {};
+      if (!rm.id || !rm.name || !rm.params) continue;
+      let instructions = '';
+      if (part.hasInstructions) {
+        try { instructions = await readFile(join(part.dir, 'instructions.md'), 'utf8'); } catch { /* race */ }
+      }
+      out.push({
+        id: rm.id,
+        name: rm.name,
+        description: rm.description ?? '',
+        tags: rm.tags ?? [],
+        params: rm.params,
+        hasValidate: false,
+        source: raw,
+        instructions,
+        origin: part.category,
+        ...(rm.family ? { family: rm.family } : {}),
+        ...(rm.level != null ? { level: rm.level } : {}),
+        ...(rm.autoTranslate != null ? { autoTranslate: rm.autoTranslate } : {}),
+        ...(rm.instanceColors ? { instanceColors: rm.instanceColors } : {}),
+        ...(rm.instanceTopMode ? { instanceTopMode: rm.instanceTopMode } : {}),
+        ...(rm.instanceTopOffset ? { instanceTopOffset: rm.instanceTopOffset } : {}),
+        ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(rm.id)}` } : {}),
+        hasGeom: false,
+        renderMode: 'server',
+      });
+      continue;
+    }
+
     let source = '';
     try { source = await readFile(part.componentPath, 'utf8'); } catch { continue; }
     // Identity + schema preference order (post-grammar-split refactor):

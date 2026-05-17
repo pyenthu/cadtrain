@@ -683,6 +683,12 @@ export async function loadVolumeComponent(
   if (!part) {
     throw new Error(`Library part "${id}" not found in any category.`);
   }
+  // JSON-recipe shape (Phase 1 of the JSON pivot) — `part.json` wins
+  // over `component.ts` when both exist. The recipe carries its own
+  // meta; no esbuild, no sandbox, no grammar regex.
+  if (part.hasRecipe) {
+    return loadVolumeRecipe(id, part.recipePath, seen);
+  }
   const path = part.componentPath;
   let src: string;
   try {
@@ -765,6 +771,124 @@ export async function loadVolumeComponent(
     injectedMeta,
   );
 
+  volumeCache.set(id, { sourceHash: hash, loaded });
+  return loaded;
+}
+
+// ── JSON-recipe loader ───────────────────────────────────────────────────────
+// Phase 1 of the JSON pivot. When a library part has a `part.json`,
+// the loader runs the recipe interpreter instead of executing
+// `component.ts`. Same return shape (`{ meta, geom }`) so the geom
+// endpoint doesn't need to know the difference; the difference is the
+// authoring surface, not the runtime contract.
+
+async function loadVolumeRecipe(
+  id: string,
+  recipePath: string,
+  seen: Set<string>,
+): Promise<LoadedComponent> {
+  let raw: string;
+  try {
+    raw = await readFile(recipePath, 'utf8');
+  } catch {
+    throw new Error(`Library part "${id}" part.json unreadable at ${recipePath}.`);
+  }
+  const hash = sha(`recipe:${raw}`);
+  const cached = volumeCache.get(id);
+  if (cached && cached.sourceHash === hash) return cached.loaded;
+
+  // Lazy import — keeps part-recipe out of the unit-test cold path.
+  const { buildRecipe } = await import('./part-recipe');
+  const { discoverHelpers, discoverOperators } = await import('../cad/manifold-helpers-meta');
+  const { cyl: cylFn, tube: tubeFn, mv: mvFn, rot: rotFn } = await import('../cad/manifold-helpers');
+
+  let recipe: import('./part-recipe').PartRecipe;
+  try {
+    recipe = JSON.parse(raw);
+  } catch (e: any) {
+    throw new Error(`Library part "${id}" part.json is not valid JSON: ${e?.message ?? e}`);
+  }
+  if (!recipe?.meta?.id || !recipe.meta?.name || !recipe.meta?.params) {
+    throw new Error(`Library part "${id}" part.json missing meta.id / meta.name / meta.params.`);
+  }
+  if (!Array.isArray(recipe.instances) || !Array.isArray(recipe.composition)) {
+    throw new Error(`Library part "${id}" part.json missing instances or composition arrays.`);
+  }
+
+  // Resolve every dep ahead of time so the interpreter's resolveDep
+  // callback can stay synchronous. Deps come from two sources:
+  //   - helper names from manifold-helpers-meta (cyl, tube, mv, rot)
+  //   - sibling component ids (any other library part or bundle prim)
+  const helperMeta = discoverHelpers();
+  const operatorMeta = discoverOperators();
+  const helperByName = new Map(helperMeta.map((h) => [h.name, h]));
+  const operatorByName = new Map(operatorMeta.map((o) => [o.name, o]));
+  // Map helper name to the runtime callable. Only the 4 wired in here
+  // are reachable; new helpers need an entry below.
+  const helperRuntime: Record<string, (args: any) => any> = {
+    cyl: (a: any[]) => cylFn(a[0], a[1], a[2]),
+    tube: (a: any[]) => tubeFn(a[0], a[1], a[2]),
+    mv: (a: any[]) => mvFn(a[0], a[1]),
+    rot: (a: any[]) => rotFn(a[0], a[1]),
+  };
+
+  // Sibling component deps — same recurse + cycle-guard shape as
+  // loadVolumeComponent's .ts path. Bundle primitives win the lookup
+  // first (fast path), volume parts fall through to the recursive load.
+  const componentByCall = new Map<string, { meta: any; geom: any }>();
+  for (const inst of recipe.instances) {
+    const name = inst.call;
+    if (helperByName.has(name) || operatorByName.has(name)) continue;
+    if (componentByCall.has(name)) continue;
+    const bundledGeom = geomById(name);
+    if (bundledGeom) {
+      const bundledMeta = metaById(name);
+      if (!bundledMeta) throw new Error(`Bundled dep "${name}" has a geom but no meta.`);
+      componentByCall.set(name, { meta: bundledMeta, geom: bundledGeom });
+    } else {
+      componentByCall.set(name, await loadVolumeComponent(name, seen));
+    }
+  }
+
+  const resolveDep = (callName: string) => {
+    const helper = helperByName.get(callName);
+    if (helper) {
+      const fn = helperRuntime[callName];
+      if (!fn) throw new Error(`Helper "${callName}" has no runtime wiring`);
+      return {
+        kind: 'helper' as const,
+        propNames: helper.props.map((p) => p.name),
+        build: fn,
+      };
+    }
+    const op = operatorByName.get(callName);
+    if (op) {
+      const fn = helperRuntime[callName];
+      if (!fn) throw new Error(`Operator "${callName}" has no runtime wiring`);
+      return {
+        kind: 'helper' as const,
+        propNames: op.props.map((p) => p.name),
+        build: fn,
+      };
+    }
+    const comp = componentByCall.get(callName);
+    if (!comp) throw new Error(`Unknown call "${callName}" — not a helper, operator, or known component`);
+    return {
+      kind: 'component' as const,
+      propNames: Object.keys(comp.meta.params ?? {}),
+      build: (args: Record<string, number>) => comp.geom(args),
+    };
+  };
+
+  const meta: PrimitiveMeta = {
+    id: recipe.meta.id,
+    name: recipe.meta.name,
+    description: recipe.meta.description,
+    tags: recipe.meta.tags,
+    params: recipe.meta.params as any,
+  };
+  const geom: GeomFn = (p) => buildRecipe(recipe, p, resolveDep);
+  const loaded: LoadedComponent = { meta, geom };
   volumeCache.set(id, { sourceHash: hash, loaded });
   return loaded;
 }

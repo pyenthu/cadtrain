@@ -43,6 +43,12 @@ export function isLibraryCategory(v: unknown): v is LibraryCategory {
 /** Canonical file names inside a part directory. */
 export const PART_FILES = {
   component: 'component.ts',
+  /** JSON recipe — the new shape (Phase 1 of the JSON pivot). When
+   *  present, the loader uses this instead of `component.ts`. The
+   *  recipe carries both the meta (id, name, params, family, …) and
+   *  the geom structure (instances + composition). See
+   *  `src/lib/server/part-recipe.ts`. */
+  recipe: 'part.json',
   picture: 'picture.png',
   mesh: 'mesh.glb',
   instructions: 'instructions.md',
@@ -127,8 +133,16 @@ export interface ResolvedPart {
   category: LibraryCategory;
   /** Absolute path to the part directory. */
   dir: string;
-  /** Absolute path to component.ts (guaranteed to exist). */
+  /** Absolute path to component.ts. May not exist when the part is
+   *  authored as a JSON recipe instead. Check `hasRecipe` first. */
   componentPath: string;
+  /** Absolute path to part.json (the JSON-recipe authoring shape). */
+  recipePath: string;
+  /** True when the part is authored as a JSON recipe (`part.json`).
+   *  When true, the loader interprets that file instead of executing
+   *  `component.ts`. A part may have BOTH a recipe and a .ts during
+   *  migration; the recipe wins. */
+  hasRecipe: boolean;
   hasPicture: boolean;
   hasGlb: boolean;
   hasInstructions: boolean;
@@ -225,11 +239,14 @@ async function readPartMeta(dir: string): Promise<PartMeta> {
 }
 
 async function buildResolved(id: string, cat: LibraryCategory, dir: string): Promise<ResolvedPart> {
+  const recipePath = join(dir, PART_FILES.recipe);
   return {
     id,
     category: cat,
     dir,
     componentPath: join(dir, PART_FILES.component),
+    recipePath,
+    hasRecipe: existsSync(recipePath),
     hasPicture: existsSync(join(dir, PART_FILES.picture)),
     hasGlb: existsSync(join(dir, PART_FILES.mesh)),
     hasInstructions: existsSync(join(dir, PART_FILES.instructions)),
@@ -239,13 +256,14 @@ async function buildResolved(id: string, cat: LibraryCategory, dir: string): Pro
 }
 
 /** Find a part's directory across all 4 categories. A part is defined
- *  by the presence of `component.ts`. Returns null if the id isn't a
- *  library part (it may still be a bundle primitive). */
+ *  by the presence of either `part.json` (the JSON recipe — new shape)
+ *  OR `component.ts` (legacy .ts shape). Returns null if the id isn't
+ *  a library part (it may still be a bundle primitive). */
 export async function resolvePart(id: string): Promise<ResolvedPart | null> {
   if (!ID_RE.test(id)) return null;
   for (const cat of LIBRARY_CATEGORIES) {
     const dir = await partDirIn(cat, id);
-    if (existsSync(join(dir, PART_FILES.component))) {
+    if (existsSync(join(dir, PART_FILES.recipe)) || existsSync(join(dir, PART_FILES.component))) {
       return buildResolved(id, cat, dir);
     }
   }
@@ -267,7 +285,7 @@ export async function listLibraryParts(): Promise<ResolvedPart[]> {
     for (const id of entries) {
       if (!ID_RE.test(id)) continue;
       const partDir = join(dir, id);
-      if (!existsSync(join(partDir, PART_FILES.component))) continue;
+      if (!existsSync(join(partDir, PART_FILES.recipe)) && !existsSync(join(partDir, PART_FILES.component))) continue;
       out.push(await buildResolved(id, cat, partDir));
     }
   }
