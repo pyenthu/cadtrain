@@ -76,8 +76,13 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create, picture, meta: bodyMeta, instanceColors, instanceTopMode, instanceTopOffset } = body as {
+  const { id, source, recipe, create, picture, meta: bodyMeta, instanceColors, instanceTopMode, instanceTopOffset } = body as {
     id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
+    /** JSON-recipe authoring shape (Phase 2 of the JSON pivot). When
+     *  present, the endpoint writes `part.json` instead of
+     *  `component.ts` and bakes the GLB via the recipe interpreter.
+     *  Exactly one of `source` or `recipe` must be supplied. */
+    recipe?: unknown;
     /** Identity + schema (post-grammar-split): the canonical home for
      *  `id` / `name` / `description` / `tags` / `params`. When present,
      *  written to meta.json alongside the classification fields below.
@@ -89,13 +94,24 @@ export const POST: RequestHandler = async ({ request, url }) => {
     instanceTopOffset?: unknown;
   };
 
-  if (typeof id !== 'string' || typeof source !== 'string') {
-    throw error(400, 'Missing id (string) or source (string)');
+  if (typeof id !== 'string') {
+    throw error(400, 'Missing id (string)');
   }
   if (!/^[a-z][a-z0-9_]*$/.test(id)) {
     throw error(400, `Invalid id format "${id}" — must start with a lowercase letter, only [a-z0-9_]`);
   }
-  if (Buffer.byteLength(source, 'utf8') > MAX_BYTES) {
+  // Exactly one of `source` or `recipe` must be supplied. Recipe is the
+  // post-pivot authoring shape; source is the legacy .ts path kept for
+  // back-compat. Body validation is split per branch below.
+  const hasSource = typeof source === 'string';
+  const hasRecipe = recipe && typeof recipe === 'object';
+  if (!hasSource && !hasRecipe) {
+    throw error(400, 'Missing source (string) or recipe (object)');
+  }
+  if (hasSource && hasRecipe) {
+    throw error(400, 'Supply exactly one of source (string) or recipe (object)');
+  }
+  if (hasSource && Buffer.byteLength(source as string, 'utf8') > MAX_BYTES) {
     throw error(413, `Source too large (> ${MAX_BYTES} bytes)`);
   }
 
@@ -116,14 +132,25 @@ export const POST: RequestHandler = async ({ request, url }) => {
     throw error(400, `Unknown component id "${id}" — doesn't exist anywhere. Pass create:true to create it.`);
   }
 
-  // Pick the write destination.
-  //   - create               → library/test/<id>/component.ts (holding pen)
-  //   - update library part   → its current <category>/<id>/component.ts
-  //   - update bundle in dev  → src/lib/cad/components/<id>.ts (HMR)
-  //   - update bundle in prod → library/test/<id>/component.ts (new library part)
+  // Pick the write destination + filename:
+  //   recipe path  → library/<cat>/<id>/part.json (JSON pivot)
+  //   source path:
+  //     - update library part   → its current <category>/<id>/component.ts
+  //     - update bundle in dev  → src/lib/cad/components/<id>.ts (HMR)
+  //     - create or prod bundle edit → library/test/<id>/component.ts
   let targetPath: string;
   let wroteToLibrary: boolean;
-  if (libraryPart) {
+  if (hasRecipe) {
+    // Recipe path always writes to library/<cat>/<id>/part.json. When
+    // updating, write back into the part's current category dir;
+    // otherwise land in library/test (the holding pen).
+    await ensureLibrary();
+    const cat = libraryPart ? libraryPart.category : 'test';
+    const dir = libraryPart ? libraryPart.dir : await partDirIn(cat, id);
+    await mkdir(dir, { recursive: true });
+    targetPath = join(dir, PART_FILES.recipe);
+    wroteToLibrary = true;
+  } else if (libraryPart) {
     targetPath = libraryPart.componentPath;
     wroteToLibrary = true;
   } else if (!isCreate && inSrc && dev) {
@@ -140,8 +167,39 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
   try {
     if (!wroteToLibrary) await mkdir(SRC_DIR, { recursive: true });
-    await writeFile(targetPath, source, 'utf8');
+    if (hasRecipe) {
+      // Light validation — required fields. Full structural check
+      // happens inside the interpreter on bake.
+      const r = recipe as any;
+      if (!r.meta || typeof r.meta !== 'object') {
+        throw error(400, 'recipe.meta is required');
+      }
+      if (r.meta.id !== id) {
+        throw error(400, `recipe.meta.id "${r.meta.id}" must equal body id "${id}"`);
+      }
+      if (typeof r.meta.name !== 'string' || !r.meta.name) {
+        throw error(400, 'recipe.meta.name is required (string)');
+      }
+      if (!r.meta.params || typeof r.meta.params !== 'object') {
+        throw error(400, 'recipe.meta.params is required (object)');
+      }
+      if (!Array.isArray(r.instances)) {
+        throw error(400, 'recipe.instances is required (array)');
+      }
+      if (!Array.isArray(r.composition)) {
+        throw error(400, 'recipe.composition is required (array)');
+      }
+      const recipeJson = JSON.stringify(recipe, null, 2);
+      if (Buffer.byteLength(recipeJson, 'utf8') > MAX_BYTES) {
+        throw error(413, `Recipe too large (> ${MAX_BYTES} bytes)`);
+      }
+      await writeFile(targetPath, recipeJson, 'utf8');
+    } else {
+      await writeFile(targetPath, source as string, 'utf8');
+    }
   } catch (e: any) {
+    // Re-throw SvelteKit errors with their status; wrap raw fs errors as 500.
+    if (e && typeof e === 'object' && 'status' in e) throw e;
     throw error(500, `Write failed: ${e?.message ?? e}`);
   }
 
@@ -279,7 +337,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       };
     } else {
       try {
-        const r = await bakeGlb(id, geom, extractDefaultsFromSource(source));
+        const r = await bakeGlb(id, geom, extractDefaultsFromSource(source as string));
         bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
       } catch (e: any) {
         bakeReport = { ok: false, error: e?.message ?? String(e) };
@@ -311,7 +369,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
         }
         const defaults = Object.keys(loadedDefaults).length > 0
           ? loadedDefaults
-          : extractDefaultsFromSource(source);
+          : (hasSource ? extractDefaultsFromSource(source as string) : {});
         const r = await bakeGlb(id, loaded.geom, defaults, dirname(targetPath));
         bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
       } catch (e: any) {
