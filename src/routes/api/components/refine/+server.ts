@@ -24,7 +24,7 @@ import { createAnthropicClient } from '$lib/shared/anthropic-api';
 import { checkRateLimit } from '$lib/rate_limit';
 import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
-import { parseImports } from '$lib/server/component-loader';
+import { parseImports, stripCommentsForScan } from '$lib/server/component-loader';
 import { transformSync } from 'esbuild';
 import { readFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -272,16 +272,17 @@ function validateRefinedSource(src: string): { ok: true } | { ok: false; retryHi
     return { ok: false, retryHint: `Import / sandbox check failed: ${e?.message ?? e}` };
   }
   // Layer 2: split-grammar gate. Same shape as enforceSplitGrammar in
-  // the loader — keeping them locally aligned avoids the cross-module
-  // export dance.
+  // the loader — comments stripped before scan so a `// geom.add(X)`
+  // doc line doesn't false-trigger.
+  const scan = stripCommentsForScan(stripped);
   const opRe = /\bgeom\s*\.\s*(add|subtract|intersect)\s*\(/;
-  const firstOp = opRe.exec(stripped);
+  const firstOp = opRe.exec(scan);
   if (firstOp) {
     const declAfterRe = /\b(?:let|const)\s+[A-Z][A-Z0-9]*\s*=\s*[A-Za-z_][\w]*\s*\(/g;
     declAfterRe.lastIndex = firstOp.index;
-    const stray = declAfterRe.exec(stripped);
+    const stray = declAfterRe.exec(scan);
     if (stray) {
-      const lineNo = stripped.slice(0, stray.index).split('\n').length;
+      const lineNo = scan.slice(0, stray.index).split('\n').length;
       return {
         ok: false,
         retryHint:
@@ -297,13 +298,14 @@ function validateRefinedSource(src: string): { ok: true } | { ok: false; retryHi
   } catch (e: any) {
     return { ok: false, retryHint: `TypeScript parse failed: ${e?.message ?? e}` };
   }
-  // Layer 4: undefined-instance scan.
+  // Layer 4: undefined-instance scan. Same comment-strip — a doc line
+  // like `// see B.length` shouldn't false-trigger an undefined-B error.
   const declared = new Set<string>();
   const declRe = /\b(?:let|const)\s+([A-Z][A-Z0-9]*)\s*=/g;
-  for (const m of stripped.matchAll(declRe)) declared.add(m[1]);
+  for (const m of scan.matchAll(declRe)) declared.add(m[1]);
   const refRe = /\b([A-Z][A-Z0-9]*)\.([a-z][a-zA-Z0-9_]*)\b/g;
   const seen = new Set<string>();
-  for (const m of stripped.matchAll(refRe)) {
+  for (const m of scan.matchAll(refRe)) {
     const inst = m[1];
     if (declared.has(inst) || seen.has(inst)) continue;
     seen.add(inst);

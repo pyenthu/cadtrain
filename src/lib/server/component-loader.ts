@@ -329,23 +329,73 @@ export type DepResolver = (depId: string) => LoadedComponent;
  *  itself (no more `meta.instanceOps` rewrite) — `geom.add(X)` /
  *  `geom.subtract(X)` / `geom.intersect(X)` are read verbatim. */
 function enforceSplitGrammar(src: string): void {
+  // Strip comments BEFORE the grammar scan. Otherwise a `//` line or
+  // `/* */` block that mentions `geom.add(X)` as documentation text
+  // (e.g. an examples comment in a re-authored file) would be flagged
+  // as the first composition call, and every real `let X = …` decl
+  // would land "after" it.
+  const scan = stripCommentsForScan(src);
   // First geom.<op>(...) call — the boundary between init and composition.
   const opRe = /\bgeom\s*\.\s*(add|subtract|intersect)\s*\(/;
-  const firstOp = opRe.exec(src);
+  const firstOp = opRe.exec(scan);
   if (!firstOp) return; // No composition at all — vacuously valid (single-instance, etc.)
   const boundary = firstOp.index;
   // After the boundary, no `let|const X = …` decls are allowed.
   const declAfterRe = /\b(?:let|const)\s+[A-Z][A-Z0-9]*\s*=\s*[A-Za-z_][\w]*\s*\(/g;
   declAfterRe.lastIndex = boundary;
-  const stray = declAfterRe.exec(src);
+  const stray = declAfterRe.exec(scan);
   if (stray) {
-    const lineNo = src.slice(0, stray.index).split('\n').length;
+    const lineNo = scan.slice(0, stray.index).split('\n').length;
     throw new Error(
       `Grammar violation on line ${lineNo}: instance declaration "${stray[0]}" appears AFTER the first geom.${firstOp[1]}(...) call. ` +
         `Move every \`let|const X = …\` declaration into the INITIALIZATION section (above all geom.add/subtract/intersect calls). ` +
         `See ~/.claude/plans/grammar-split-init-compose.md.`,
     );
   }
+}
+
+// Replace every `//` line-comment and slash-star block-comment with
+// same-length runs of spaces. Preserves line + column offsets so the
+// grammar enforcer's line-number arithmetic still points at the
+// original source. Strings are NOT scanned for comment markers
+// (the grammar regex doesn't look inside strings, so a `geom.add`
+// appearing in a template literal won't false-trigger anyway).
+// Exported so the /api/components/refine validator can share the
+// same comment-stripping shape as the loader's grammar gate.
+export function stripCommentsForScan(src: string): string {
+  let out = '';
+  let i = 0;
+  let inS: '"' | "'" | '`' | null = null;
+  while (i < src.length) {
+    const c = src[i];
+    const n = src[i + 1];
+    if (inS) {
+      if (c === '\\') { out += c + (src[i + 1] ?? ''); i += 2; continue; }
+      if (c === inS) inS = null;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { inS = c as any; out += c; i++; continue; }
+    if (c === '/' && n === '/') {
+      // Line comment — replace until newline (keep the newline).
+      while (i < src.length && src[i] !== '\n') { out += ' '; i++; }
+      continue;
+    }
+    if (c === '/' && n === '*') {
+      // Block comment — replace until `*/`, preserving newlines.
+      out += '  '; i += 2;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) {
+        out += src[i] === '\n' ? '\n' : ' ';
+        i++;
+      }
+      if (i < src.length) { out += '  '; i += 2; }
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
 }
 
 /** Walk from `start` inside an arg-object literal to the index that ends
@@ -510,7 +560,11 @@ export function loadGeomFromSource(
   // pre-migration parts).
   //
   // JSON.stringify is safe — PartMeta is JSON-clean by construction.
-  const hasInlineMeta = /\bexport\s+const\s+meta\s*=/.test(expanded);
+  // Strip comments before the inline-meta sniff — otherwise a doc line
+  // like `// the loader prepends \`export const meta = {...}\`` would
+  // false-trigger and we'd skip the JSON prepend, leaving `meta`
+  // undefined in the user's `defineGeom(meta, fn)` call.
+  const hasInlineMeta = /\bexport\s+const\s+meta\s*=/.test(stripCommentsForScan(expanded));
   const prefix = injectedMeta && !hasInlineMeta
     ? `export const meta = ${JSON.stringify(injectedMeta)};\n`
     : '';
