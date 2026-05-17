@@ -76,10 +76,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create, picture, instanceColors, instanceOps, instanceTopMode, instanceTopOffset } = body as {
+  const { id, source, create, picture, instanceColors, instanceTopMode, instanceTopOffset } = body as {
     id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
     instanceColors?: unknown;
-    instanceOps?: unknown;
     instanceTopMode?: unknown;
     instanceTopOffset?: unknown;
   };
@@ -175,29 +174,13 @@ export const POST: RequestHandler = async ({ request, url }) => {
     } catch { /* meta write is best-effort */ }
   }
 
-  // Per-instance CSG ops. When the inspector op-cycle popup sets
-  // `instanceOps`, merge into meta.json the same way as instanceColors —
-  // keeps every other meta field intact. Validates each value against
-  // the union `'add' | 'subtract' | 'intersect'` so a bad payload can't
-  // poison the meta file.
-  if (wroteToLibrary && instanceOps && typeof instanceOps === 'object') {
-    const ops: Record<string, 'add' | 'subtract' | 'intersect'> = {};
-    for (const [k, v] of Object.entries(instanceOps as Record<string, unknown>)) {
-      if (v === 'add' || v === 'subtract' || v === 'intersect') ops[k] = v;
-    }
-    try {
-      const partDir = dirname(targetPath);
-      const metaPath = join(partDir, PART_FILES.meta);
-      const existing = await resolvePart(id);
-      const prevMeta = existing?.meta ?? {};
-      const merged = { ...prevMeta, instanceOps: ops };
-      await writeFile(metaPath, JSON.stringify(merged, null, 2), 'utf8');
-    } catch { /* meta write is best-effort */ }
-  }
+  // (Removed: per-instance CSG ops used to merge into meta.instanceOps
+  // here. After the grammar-split refactor, the CSG op lives in the
+  // composition-section source text — `geom.add(X)` / `geom.subtract(X)`
+  // / `geom.intersect(X)` — and is part of the source write above.)
 
   // Per-instance placement (mode + offset). The settings drawer commits
-  // either field on its own or both together; merge into meta.json the
-  // same way as instanceOps. Modes outside the union are dropped silently
+  // either field on its own or both together. Modes outside the union are dropped silently
   // so a bad payload can't poison the meta file; non-finite offsets are
   // dropped too (the loader treats absent overlay offsets as 0 anyway).
   const hasMode = instanceTopMode && typeof instanceTopMode === 'object';

@@ -69,18 +69,6 @@ export interface PartMeta {
    *  entries fall back to a hash-by-name palette default at the UI
    *  layer so unset instances still get a distinct colour. */
   instanceColors?: Record<string, string>;
-  /** Per-instance CSG op, keyed by instance name (`A`, `B`, ...).
-   *  Controls how an instance is folded into the running accumulator
-   *  in a `(p, geom) =>` accumulator-form geom body:
-   *    - 'add'       — `geom.add(<inst>)`       (union, the default)
-   *    - 'subtract'  — `geom.subtract(<inst>)`  (cut out of the prior accumulator)
-   *    - 'intersect' — `geom.intersect(<inst>)` (keep only the overlap)
-   *  The component source on disk still emits `geom.add(<inst>);` —
-   *  the loader rewrites the call name at execute time based on this
-   *  map (see `component-loader.ts`). Absent entries default to 'add'
-   *  so the existing union semantics stay intact. Library parts only —
-   *  bundle primitives don't carry meta.json. */
-  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
   /** Per-instance placement mode, keyed by instance name (`A`, `B`, ...).
    *  Picks how the loader rewrites this instance's `top:` arg:
    *    - 'stack'   — `top: PREV.top + PREV.length`   (default — append
@@ -159,13 +147,6 @@ async function readPartMeta(dir: string): Promise<PartMeta> {
         if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) colors[k] = v;
       }
       if (Object.keys(colors).length > 0) out.instanceColors = colors;
-    }
-    if (parsed.instanceOps && typeof parsed.instanceOps === 'object') {
-      const ops: Record<string, 'add' | 'subtract' | 'intersect'> = {};
-      for (const [k, v] of Object.entries(parsed.instanceOps)) {
-        if (v === 'add' || v === 'subtract' || v === 'intersect') ops[k] = v;
-      }
-      if (Object.keys(ops).length > 0) out.instanceOps = ops;
     }
     if (parsed.instanceTopMode && typeof parsed.instanceTopMode === 'object') {
       const modes: Record<string, 'stack' | 'overlay' | 'origin'> = {};

@@ -15,7 +15,6 @@
  *     params:            Record<string, number>,  // slider values
  *     source?:           string,                  // sourceDraft; if omitted, read from disk
  *     cut?:              boolean,                 // true → return the half-sectioned variant
- *     instanceOps?:      Record<string, 'add'|'subtract'|'intersect'>,
  *     instanceTopMode?:  Record<string, 'stack'|'overlay'|'origin'>,
  *     instanceTopOffset?: Record<string, number>,
  *   }
@@ -80,12 +79,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, params, source, cut, instanceOps, instanceTopMode, instanceTopOffset } = body as {
+  const { id, params, source, cut, instanceTopMode, instanceTopOffset } = body as {
     id?: unknown;
     params?: unknown;
     source?: unknown;
     cut?: unknown;
-    instanceOps?: unknown;
     instanceTopMode?: unknown;
     instanceTopOffset?: unknown;
   };
@@ -99,7 +97,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const paramBag = params as Record<string, number>;
   const wantCut = cut === true;
   const inlineSource = typeof source === 'string' && source.trim().length > 0 ? source : null;
-  const ops = isStringRecord<'add' | 'subtract' | 'intersect'>(instanceOps, ['add', 'subtract', 'intersect']);
   const modes = isStringRecord<'stack' | 'overlay' | 'origin'>(instanceTopMode, ['stack', 'overlay', 'origin']);
   const offsets = isNumberRecord(instanceTopOffset);
 
@@ -134,7 +131,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
           if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
           return dep;
         },
-        ops,
         modes,
         offsets,
       );

@@ -313,26 +313,39 @@ function parseSpecifiers(named: string): ImportSpec[] {
 /** resolveDep(depId) → the module object exporting `meta` / `geom`. */
 export type DepResolver = (depId: string) => LoadedComponent;
 
-/** Rewrite every `geom.add(<inst>);` call to the configured op
- *  (`geom.subtract(<inst>);` or `geom.intersect(<inst>);`) per the
- *  caller-supplied `instanceOps` map. Unset instances are left as-is
- *  (default 'add'). Source-on-disk preserves the `geom.add(...)`
- *  shape so the GUI's add/remove/move logic — which pattern-matches
- *  on `geom.add(<inst>);` lines — keeps working unchanged. */
-function applyInstanceOps(
-  src: string,
-  instanceOps: Record<string, 'add' | 'subtract' | 'intersect'> | undefined,
-): string {
-  if (!instanceOps || Object.keys(instanceOps).length === 0) return src;
-  return src.replace(
-    /\bgeom\s*\.\s*add\s*\(\s*([A-Z][A-Z0-9]*)\s*\)/g,
-    (full, inst) => {
-      const op = instanceOps[inst];
-      if (op === 'subtract') return `geom.subtract(${inst})`;
-      if (op === 'intersect') return `geom.intersect(${inst})`;
-      return full;
-    },
-  );
+/** Enforce the split-init/composition grammar (~/.claude/plans/
+ *  grammar-split-init-compose.md). The body of `defineGeom(meta, (p,
+ *  geom) => { … })` MUST be partitioned into an INITIALIZATION region
+ *  (every `let|const X = call(...)` declaration + any `X = mv(X, …)`
+ *  reassignments) followed by a COMPOSITION region (every
+ *  `geom.add|subtract|intersect(X)` call). The boundary is the FIRST
+ *  `geom.<op>(...)` line: any `let|const` declaration AFTER that line
+ *  is a violation, and any `geom.<op>` call BEFORE the first one is
+ *  trivially fine.
+ *
+ *  Throws with a clear message naming the offending line so the AI
+ *  refine endpoint, the inspector, and library-on-disk parts all hit
+ *  the same gate. The CSG op now lives in the composition source text
+ *  itself (no more `meta.instanceOps` rewrite) — `geom.add(X)` /
+ *  `geom.subtract(X)` / `geom.intersect(X)` are read verbatim. */
+function enforceSplitGrammar(src: string): void {
+  // First geom.<op>(...) call — the boundary between init and composition.
+  const opRe = /\bgeom\s*\.\s*(add|subtract|intersect)\s*\(/;
+  const firstOp = opRe.exec(src);
+  if (!firstOp) return; // No composition at all — vacuously valid (single-instance, etc.)
+  const boundary = firstOp.index;
+  // After the boundary, no `let|const X = …` decls are allowed.
+  const declAfterRe = /\b(?:let|const)\s+[A-Z][A-Z0-9]*\s*=\s*[A-Za-z_][\w]*\s*\(/g;
+  declAfterRe.lastIndex = boundary;
+  const stray = declAfterRe.exec(src);
+  if (stray) {
+    const lineNo = src.slice(0, stray.index).split('\n').length;
+    throw new Error(
+      `Grammar violation on line ${lineNo}: instance declaration "${stray[0]}" appears AFTER the first geom.${firstOp[1]}(...) call. ` +
+        `Move every \`let|const X = …\` declaration into the INITIALIZATION section (above all geom.add/subtract/intersect calls). ` +
+        `See ~/.claude/plans/grammar-split-init-compose.md.`,
+    );
+  }
 }
 
 /** Walk from `start` inside an arg-object literal to the index that ends
@@ -433,9 +446,10 @@ function applyInstanceTopMode(
  * host-realm function, returning `{ meta, geom }`. `resolveDep` supplies
  * sibling-component modules for composition imports.
  *
- * `instanceOps` (optional) rewrites `geom.add(<inst>);` calls to
- * `geom.subtract(...)` / `geom.intersect(...)` per the part's
- * meta.instanceOps map. Unset instances stay as `geom.add` (default).
+ * The source MUST follow the split-init/composition grammar — see
+ * ~/.claude/plans/grammar-split-init-compose.md. The CSG op lives in
+ * the source itself (`geom.add` / `geom.subtract` / `geom.intersect`);
+ * there's no `instanceOps` rewrite at execute time.
  *
  * `instanceTopMode` + `instanceTopOffset` (optional) rewrite each
  * instance's `top:` arg before prop-ref expansion so the placement
@@ -445,11 +459,15 @@ function applyInstanceTopMode(
 export function loadGeomFromSource(
   src: string,
   resolveDep: DepResolver,
-  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>,
   instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>,
   instanceTopOffset?: Record<string, number>,
 ): LoadedComponent {
   const { stripped, deps } = parseImports(src);
+  // Grammar gate — strict split-init/composition layout. CSG op now
+  // lives in the source itself (`geom.add` / `geom.subtract` /
+  // `geom.intersect`) so this is the single point where bad layouts
+  // get rejected before they can crash WASM with a cryptic error.
+  enforceSplitGrammar(stripped);
   // Per-instance placement rewrite — rewrites each `top:` arg per the
   // mode (+ optional offset). MUST run before expandInstancePropRefs so
   // the new `PREV.top + PREV.length` (etc.) gets substituted to literals
@@ -464,13 +482,8 @@ export function loadGeomFromSource(
   // text, so the substitution re-runs on every load and the
   // cascade stays live across saves.
   const expanded = expandInstancePropRefs(withTop, deps, resolveDep);
-  // Per-instance CSG op rewrite — flips `geom.add(<inst>);` to
-  // `geom.subtract(...)` / `geom.intersect(...)` based on the part's
-  // meta.instanceOps. The source on disk stays additive; the
-  // semantics layer on top of it at execute time.
-  const withOps = applyInstanceOps(expanded, instanceOps);
 
-  const { code } = transformSync(withOps, {
+  const { code } = transformSync(expanded, {
     loader: 'ts',
     format: 'cjs',
     target: 'node22',
@@ -592,20 +605,18 @@ export async function loadVolumeComponent(
   } catch {
     throw new Error(`Library part "${id}" component.ts unreadable at ${path}.`);
   }
-  // Cache key folds in instanceOps + placement so toggling any of them
-  // flips the executed geom on the next /api/components/geom call
-  // without needing the user to also edit the source. (Save endpoint
-  // also calls invalidate, so this is belt + suspenders.)
-  const opsSig = part.meta.instanceOps
-    ? JSON.stringify(Object.entries(part.meta.instanceOps).sort())
-    : '';
+  // Cache key folds in placement (top mode + offset) so toggling
+  // either flips the executed geom on the next /api/components/geom
+  // call without needing the user to also edit the source. The CSG
+  // op lives in the source itself now (see split-grammar plan) so
+  // it's part of `src` already and doesn't need its own sig.
   const topModeSig = part.meta.instanceTopMode
     ? JSON.stringify(Object.entries(part.meta.instanceTopMode).sort())
     : '';
   const topOffSig = part.meta.instanceTopOffset
     ? JSON.stringify(Object.entries(part.meta.instanceTopOffset).sort())
     : '';
-  const hash = sha(`${src} ${opsSig} ${topModeSig} ${topOffSig}`);
+  const hash = sha(`${src} ${topModeSig} ${topOffSig}`);
   const cached = volumeCache.get(id);
   if (cached && cached.sourceHash === hash) return cached.loaded;
 
@@ -635,7 +646,6 @@ export async function loadVolumeComponent(
       if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
       return dep;
     },
-    part.meta.instanceOps,
     part.meta.instanceTopMode,
     part.meta.instanceTopOffset,
   );

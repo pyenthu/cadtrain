@@ -122,12 +122,6 @@ export interface ComponentEntry {
    *  entries fall back to a hash-by-name palette default at the UI
    *  layer. Absent for bundle entries. */
   instanceColors?: Record<string, string>;
-  /** Per-instance CSG op from a library part's `meta.json`, keyed by
-   *  instance name (`A`, `B`, ...). 'add' | 'subtract' | 'intersect';
-   *  the loader rewrites `geom.add(<inst>);` at execute time per this
-   *  map. Unset entries default to 'add'. Absent for bundle entries
-   *  (they always render client-side). */
-  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
   /** Per-instance placement mode from `meta.json`, keyed by instance
    *  name. 'stack' (default) | 'overlay' | 'origin'. */
   instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>;
@@ -190,7 +184,6 @@ interface ApiEntry {
   level?: number;
   autoTranslate?: boolean;
   instanceColors?: Record<string, string>;
-  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
   instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>;
   instanceTopOffset?: Record<string, number>;
   picture?: string;
@@ -246,7 +239,6 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
       ...(api.level != null ? { level: api.level } : {}),
       ...(api.autoTranslate != null ? { autoTranslate: api.autoTranslate } : {}),
       ...(api.instanceColors ? { instanceColors: api.instanceColors } : {}),
-      ...(api.instanceOps ? { instanceOps: api.instanceOps } : {}),
       ...(api.instanceTopMode ? { instanceTopMode: api.instanceTopMode } : {}),
       ...(api.instanceTopOffset ? { instanceTopOffset: api.instanceTopOffset } : {}),
       ...(api.picture ? { picture: api.picture } : {}),
