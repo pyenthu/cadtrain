@@ -32,7 +32,7 @@
   import { formatTypescript, checkTypescriptSyntax } from '$lib/shared/format-ts';
   import type { Completion } from '@codemirror/autocomplete';
   import MarkdownView from '$lib/shared/MarkdownView.svelte';
-  import { colorForInstance } from '$lib/shared/instance-colors';
+  import { colorForInstance, INSTANCE_PALETTE } from '$lib/shared/instance-colors';
   import { COMPONENTS_L3, type ComponentL3 } from '$lib/cad/components-l3';
   import { ASSEMBLIES_L4, type AssemblyL4 } from '$lib/cad/assemblies-l4';
   import { generateTubingComponent, type TubingInputs, type Grade, type ConnectionType } from '$lib/cad/rules/tubing';
@@ -433,6 +433,14 @@
    *  round-red `+` in the Properties accordion header. */
   let paramFormX = $state<number>(80);
   let paramFormY = $state<number>(80);
+
+  /** State for the per-instance colour-picker popup. Anchored to the
+   *  swatch button in the accordion head; holds the target instance
+   *  name so the picker writes back to meta.instanceColors[instance]
+   *  on apply. Phase A — UI only, scene unchanged. */
+  let colorPickerOpen = $state<{ instance: string } | null>(null);
+  let colorPickerX = $state<number>(80);
+  let colorPickerY = $state<number>(80);
 
   /** State for the per-instance "Add transform" popover. Anchored to
    *  the trailing `+` in the chain strip; holds the target instance
@@ -3900,6 +3908,62 @@ export const geom = defineGeom(meta, (p, geom) => {
     }
   }
   function closeFormulaEdit(tab: Tab) { tab.formulaEdit = null; }
+
+  /** Open the per-instance colour-picker. Anchors the popup to the
+   *  swatch button via its bounding rect; flips left when too close to
+   *  the right edge (same logic as openFormulaEdit). */
+  function openColorPicker(instance: string, ev: MouseEvent) {
+    colorPickerOpen = { instance };
+    const btn = ev.currentTarget as HTMLElement | undefined;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      const popupW = 200;
+      const gap = 6;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const wouldOverflow = r.right + gap + popupW > vw - 8;
+      colorPickerX = wouldOverflow
+        ? Math.max(8, Math.round(r.left - gap - popupW))
+        : Math.round(r.right + gap);
+      colorPickerY = Math.round(r.top - 4);
+    }
+  }
+  function closeColorPicker() { colorPickerOpen = null; }
+
+  /** Write a colour override (or null to reset to hash default) for a
+   *  given instance. POSTs to /api/components/save with `instanceColors`
+   *  + the current COMMITTED source (not sourceDraft) so an in-flight
+   *  inspector edit doesn't get committed alongside the colour change.
+   *  Updates the in-memory entry optimistically so the border stripe
+   *  refreshes immediately. */
+  async function setInstanceColor(tab: Tab, instance: string, color: string | null) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    const prev = tab.componentEntry.instanceColors ?? {};
+    const next: Record<string, string> = { ...prev };
+    if (color === null) delete next[instance];
+    else next[instance] = color;
+    // Optimistic update — the left border + swatch refresh before the
+    // network round-trip. On failure we re-fetch and the truth wins.
+    tab.componentEntry = { ...tab.componentEntry, instanceColors: next };
+    try {
+      const r = await fetch('/api/components/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: tab.componentEntry.meta.id,
+          source: tab.componentEntry.source,
+          instanceColors: next,
+        }),
+      });
+      if (!r.ok) {
+        // Roll back via registry refresh — disk is the truth.
+        await refreshRunesList();
+        const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
+        if (fresh) tab.componentEntry = { ...fresh, source: tab.componentEntry.source };
+      }
+    } catch {
+      await refreshRunesList();
+    }
+  }
   function applyFormulaEdit(tab: Tab) {
     if (!tab.formulaEdit || !tab.componentEntry) return;
     const fe = tab.formulaEdit;
@@ -5266,6 +5330,54 @@ export const geom = defineGeom(meta, (p, geom) => {
     </FloatingPanel>
   {/if}
 
+  <!-- Per-instance colour-picker popup. Anchored to the swatch button
+       in the accordion head; renders the 12-stop palette as a grid and
+       a Reset button (clears the override, falls back to the hash-by-
+       name default). Persists via setInstanceColor → /api/components/
+       save with the `instanceColors` body field (slice A1 plumbing). -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && colorPickerOpen}
+    {@const cpi = colorPickerOpen.instance}
+    {@const cpCurrent = activeTab.componentEntry?.instanceColors?.[cpi]}
+    <FloatingPanel
+      title={`Colour: ${cpi}`}
+      visible={true}
+      onClose={closeColorPicker}
+      x={colorPickerX}
+      y={colorPickerY}
+      width="200px"
+      maxHeight="auto"
+    >
+      {#snippet children()}
+        <div class="cp-body" use:clickOutside={closeColorPicker}>
+          <div class="cp-grid">
+            {#each INSTANCE_PALETTE as hex (hex)}
+              <button
+                class="cp-cell"
+                class:active={cpCurrent === hex}
+                type="button"
+                title={hex}
+                aria-label={hex}
+                style={`background: ${hex};`}
+                onclick={async () => {
+                  await setInstanceColor(activeTab!, cpi, hex);
+                  closeColorPicker();
+                }}
+              ></button>
+            {/each}
+          </div>
+          <button
+            class="cp-reset"
+            type="button"
+            onclick={async () => {
+              await setInstanceColor(activeTab!, cpi, null);
+              closeColorPicker();
+            }}
+          >Reset to default</button>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
   <!-- Add-property popup — anchored to the round-red `+` on the
        Properties accordion header. Same SVTC-style FloatingPanel as
        the per-param ✎ + per-arg ƒ popups. -->
@@ -6237,6 +6349,18 @@ export const geom = defineGeom(meta, (p, geom) => {
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   {#if g.instance}
+                    <!-- Per-instance colour swatch. Click opens a
+                         FloatingPanel with the 12-stop palette + Reset.
+                         The fill mirrors the left-border stripe so the
+                         swatch IS the affordance for "this colour". -->
+                    <button
+                      class="pg-acc-swatch"
+                      type="button"
+                      title={`Colour for ${g.instance.instance}`}
+                      aria-label={`Colour for ${g.instance.instance}`}
+                      style={instColor ? `background: ${instColor};` : ''}
+                      onclick={(e) => { e.stopPropagation(); openColorPicker(g.instance!.instance, e); }}
+                    ></button>
                     <!-- Per-instance view toggle. Two icon-buttons —
                          Properties (settings ⚙ default) and
                          Transformation (operators like translate /
@@ -8398,6 +8522,38 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .pi-fx-badge.muted { color: #aaa; flex: 1; min-width: 0; }
 
+  /* Per-instance colour-picker popup — 12-stop palette as a 4×3 grid +
+     a Reset button. The active swatch gets a thick dark outline so the
+     current selection is obvious. */
+  .cp-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .cp-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .cp-cell {
+    width: 100%; aspect-ratio: 1 / 1;
+    border: 1px solid rgba(0,0,0,0.18);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 80ms;
+  }
+  .cp-cell:hover { transform: scale(1.08); }
+  .cp-cell.active {
+    border: 2px solid #1a1a2e;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+  }
+  .cp-reset {
+    font: 11px Arial; color: #555;
+    background: #f3f3f7;
+    border: 1px solid #d8d8de;
+    border-radius: 3px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .cp-reset:hover { background: #ececf2; color: #cc2222; border-color: #cc2222; }
+
   /* Formula popup — small body with a single-line input + a filtered
      candidate list below. */
   .fx-body { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -8581,6 +8737,21 @@ export const geom = defineGeom(meta, (p, geom) => {
   /* Per-instance view toggle — settings (Properties) + transform
      icons inside the instance accordion header. Small, square,
      tight border; active state mirrors the trash button styling. */
+  /* Per-instance colour swatch — small filled square in the accordion
+     head. Click opens the picker popup. Inline `background` set from
+     --inst-color (or the override) so this is always in sync with the
+     left-border stripe. */
+  .pg-acc-swatch {
+    width: 14px; height: 14px;
+    flex-shrink: 0;
+    background: var(--inst-color, #cccccc);
+    border: 1px solid rgba(0,0,0,0.18);
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 80ms;
+  }
+  .pg-acc-swatch:hover { transform: scale(1.12); border-color: #333; }
   .pg-acc-iv {
     width: 18px; height: 18px;
     display: inline-flex; align-items: center; justify-content: center;
