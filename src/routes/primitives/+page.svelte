@@ -6406,8 +6406,8 @@ export const geom = defineGeom(meta, (p, geom) => {
                             <span class="pi-fx-badge" title={`p.${arg.name}`}>p.{arg.name}</span>
                           </span>
                         {:else if arg}
-                          <span class="pi-fx-wrap" title={arg.raw}>
-                            <span class="pi-fx-badge">{arg.raw}</span>
+                          <span class="pi-fx-wrap">
+                            <span class="pi-fx-badge" title={arg.raw}>{arg.raw}</span>
                           </span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
@@ -6485,8 +6485,8 @@ export const geom = defineGeom(meta, (p, geom) => {
                             <span class="pi-fx-badge" title={`p.${arg.name}`}>p.{arg.name}</span>
                           </span>
                         {:else if arg}
-                          <span class="pi-fx-wrap" title={arg.raw}>
-                            <span class="pi-fx-badge">{arg.raw}</span>
+                          <span class="pi-fx-wrap">
+                            <span class="pi-fx-badge" title={arg.raw}>{arg.raw}</span>
                           </span>
                         {:else}
                           <span class="pi-fx-badge muted">—</span>
