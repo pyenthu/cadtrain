@@ -1467,6 +1467,16 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
   function isParamGroupCollapsed(tabId: string, group: string): boolean {
     return collapsedParamGroups.has(`${tabId}:${group}`);
   }
+  /** Force-expand an accordion group. No-op if already expanded.
+   *  Used by the ⚙ / ↳ icons on the head — clicking those signals
+   *  intent to edit, so collapsed → open IS the expected outcome. */
+  function expandParamGroup(tabId: string, group: string) {
+    const key = `${tabId}:${group}`;
+    if (!collapsedParamGroups.has(key)) return;
+    const next = new Set(collapsedParamGroups);
+    next.delete(key);
+    collapsedParamGroups = next;
+  }
 
   /** Ordered unique groups present in a params record. Params without a
    *  `group` field bucket into '__default__'. */
@@ -6170,7 +6180,8 @@ export const geom = defineGeom(meta, (p, geom) => {
                   type="button"
                   onclick={() => toggleParamGroupCollapse(activeTab!.id, g.key)}
                 >
-                  <span class="pg-acc-chev">{collapsed ? '▸' : '▾'}</span>
+                  <!-- Chevron removed — open/close state is evident from the body. -->
+
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
                   {#if g.instance}
@@ -6186,7 +6197,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       type="button"
                       title="Properties"
                       aria-label="Properties view"
-                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'properties'); }}
+                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'properties'); expandParamGroup(activeTab!.id, g.key); }}
                     >
                       <!-- Settings gear icon. -->
                       <svg viewBox="0 0 14 14" width="11" height="11" aria-hidden="true">
@@ -6201,7 +6212,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       type="button"
                       title="Transformation"
                       aria-label="Transformation view"
-                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'transformation'); }}
+                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'transformation'); expandParamGroup(activeTab!.id, g.key); }}
                     >
                       <!-- Transformation icon — diagonal double arrows
                            suggesting move / rotate / warp ops. -->
@@ -6268,6 +6279,13 @@ export const geom = defineGeom(meta, (p, geom) => {
               {@const compEntry2 = inst && inst.kind === 'component'
                 ? componentList.find((r) => r.meta.id === compAliasMap[inst.callName])
                 : null}
+              <!-- Body wrapper — caps an over-long accordion's height
+                   so a part with many props (or a Properties section
+                   with many top-level params) scrolls within itself
+                   instead of pushing every other accordion off-screen.
+                   The HEAD (above) stays visible so the user can keep
+                   the rest of the chain in view. -->
+              <div class="pg-acc-body">
               {#if inst && instView === 'transformation'}
                 <!-- Transformation view — Grasshopper-style chip chain.
                      Renders inst.transforms[] left-to-right with arrows
@@ -6384,11 +6402,11 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Type then Enter to commit · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-fx-wrap" data-tip={`p.${arg.name}`}>
-                            <span class="pi-fx-badge">p.{arg.name}</span>
+                          <span class="pi-fx-wrap">
+                            <span class="pi-fx-badge" title={`p.${arg.name}`}>p.{arg.name}</span>
                           </span>
                         {:else if arg}
-                          <span class="pi-fx-wrap" data-tip={arg.raw}>
+                          <span class="pi-fx-wrap" title={arg.raw}>
                             <span class="pi-fx-badge">{arg.raw}</span>
                           </span>
                         {:else}
@@ -6463,11 +6481,11 @@ export const geom = defineGeom(meta, (p, geom) => {
                             title="Type then Enter to commit · drag horizontally to scrub"
                           />
                         {:else if arg && arg.kind === 'paramRef'}
-                          <span class="pi-fx-wrap" data-tip={`p.${arg.name}`}>
-                            <span class="pi-fx-badge">p.{arg.name}</span>
+                          <span class="pi-fx-wrap">
+                            <span class="pi-fx-badge" title={`p.${arg.name}`}>p.{arg.name}</span>
                           </span>
                         {:else if arg}
-                          <span class="pi-fx-wrap" data-tip={arg.raw}>
+                          <span class="pi-fx-wrap" title={arg.raw}>
                             <span class="pi-fx-badge">{arg.raw}</span>
                           </span>
                         {:else}
@@ -6548,6 +6566,8 @@ export const geom = defineGeom(meta, (p, geom) => {
                 </div>
                 {/each}
               </div>
+              </div>
+              <!--/.pg-acc-body-->
               {/if}
               </div>
               <!--/.pg-acc-wrap-->
@@ -8169,34 +8189,42 @@ export const geom = defineGeom(meta, (p, geom) => {
      drag-input + label-row footprint. */
   .pr-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 6px;
-    padding: 4px 0 2px;
+    /* Cards are now single-row (label · unit · input · ƒ) so each
+       needs ~200px to read comfortably; auto-fit still wraps to a
+       single column on narrow inspectors. */
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 4px;
+    padding: 2px 0;
   }
   /* Card stacks vertically: header row (label · unit · buttons) on top,
      value control (drag-number / choice select / derived readout)
      below at full card width. */
+  /* Inline single-row prop card — label (unit) · input · ƒ. Halves the
+     vertical footprint of every grid (was 2 rows: head over value).
+     `display: contents` on the head spreads its children into the
+     same flex line as the value cell. */
   .pr-card {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 3px 5px;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 5px;
     background: #fafafa;
     border: 1px solid #eaeaef;
     border-radius: 3px;
     min-width: 0;
   }
   .pr-card-head {
-    display: flex; align-items: center; gap: 4px;
-    min-width: 0;
+    display: contents;
   }
   .pr-card-head .pr-keyname {
-    flex: 1; min-width: 0;
+    flex: 0 0 auto;
+    max-width: 50%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .pr-unit-inline {
-    font: 10px Arial; color: #888;
+    font: 10px Arial; color: #222;
     flex-shrink: 0;
+    margin-right: 2px;
   }
   .ed-sec.compact { gap: 0; margin-bottom: 6px; }
   .ed-sec-h.thin { font-size: 11px; padding: 2px 0; gap: 6px; align-items: center; }
@@ -8270,10 +8298,16 @@ export const geom = defineGeom(meta, (p, geom) => {
 
   /* Instance-prop value cell: input/chip + inline ƒ button. The ƒ
      opens the formula editor; tight gap keeps the cell compact. */
-  .pr-val { display: flex; align-items: stretch; gap: 3px; min-width: 0; }
+  /* .pr-val is now a contents container so its input + ƒ button
+     join the flex flow of the parent .pr-card. ƒ pushed to the
+     RIGHT via `order` — input takes the middle, ƒ trails. */
+  .pr-val { display: contents; }
   .pr-val > .pr-num,
   .pr-val > .pi-paramref,
-  .pr-val > .pi-raw { flex: 1; min-width: 0; }
+  .pr-val > .pi-raw,
+  .pr-val > .pi-fx-wrap,
+  .pr-val > .pi-fx-badge { flex: 1; min-width: 0; order: 1; }
+  .pr-val > .pr-fx { order: 2; }
   .pr-fx {
     flex-shrink: 0;
     width: 18px;
@@ -8344,10 +8378,7 @@ export const geom = defineGeom(meta, (p, geom) => {
   .pr-keyname {
     font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #2a1f4a;
-    background: #f1edfa;
-    padding: 1px 6px;
-    border-radius: 3px;
-    border: 1px solid #d8ccef;
+    padding: 1px 2px;
     user-select: all;
   }
   .pr-lbl {
@@ -8418,6 +8449,19 @@ export const geom = defineGeom(meta, (p, geom) => {
     padding: 1px 4px 2px;
     margin: 1px 0;
   }
+  /* Accordion body — caps tall instance/properties accordions so they
+     scroll within themselves rather than push the rest of the chain
+     off-screen. Sized for ~5-6 prop rows; user can tweak the value
+     here or rip the cap out by deleting `max-height`. White background
+     overrides the head's pink tint so the content area reads cleanly
+     (the head bar still carries the part color). */
+  .pg-acc-body {
+    max-height: 220px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #fff;
+    border-radius: 3px;
+  }
   .pg-acc-wrap:first-of-type { margin-top: 0; }
   /* Instance wraps keep the 2px border (still red-tinted) — the
      Properties wrap above gets the heavier outline since it's the
@@ -8445,8 +8489,6 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
   .pg-acc-head.collapsed { background: #fafafa; }
-  .pg-acc-chev { font-size: 9px; color: #999; width: 10px; flex-shrink: 0; }
-  .pg-acc-head:hover .pg-acc-chev { color: #cc2222; }
   .pg-acc-title { font-weight: bold; flex: 1; }
   .pg-acc-count {
     font: 10px Arial; color: #888;

@@ -144,11 +144,15 @@
 
 <style>
   .fp-root {
-    position: fixed; z-index: 50;
+    /* z-index high enough to clear in-page chrome (accordion title
+       bars at default stacking, sticky inspector header etc.). The
+       formula / inspector popups need to FLOAT above everything but
+       other modals. */
+    position: fixed; z-index: 1000;
     background: #fff;
   }
   .fp-root.contained {
-    position: absolute; z-index: 5;
+    position: absolute; z-index: 100;
   }
   /* Docked mode — the panel becomes a static block. The PARENT layout is
      responsible for carving out a column / row for it to occupy (e.g.
