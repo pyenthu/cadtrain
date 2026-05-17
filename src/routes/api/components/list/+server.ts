@@ -360,7 +360,7 @@ async function readLibraryEntries(): Promise<ComponentListEntry[]> {
       ...(part.meta.instanceColors ? { instanceColors: part.meta.instanceColors } : {}),
       ...(part.meta.instanceTopMode ? { instanceTopMode: part.meta.instanceTopMode } : {}),
       ...(part.meta.instanceTopOffset ? { instanceTopOffset: part.meta.instanceTopOffset } : {}),
-      ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(parsed.id)}` } : {}),
+      ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(id)}` } : {}),
       hasGeom: false,
       renderMode: 'server',
     });
