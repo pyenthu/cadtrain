@@ -120,6 +120,15 @@ export class GeomAcc {
     this.current = this.current.subtract(part);
     return this;
   }
+  intersect(part: any): this {
+    // No prior accumulator → intersecting against nothing yields nothing.
+    // We seed with the part directly so the user can put an `intersect`
+    // first (rare but well-defined). Subsequent calls intersect through
+    // the Manifold instance method `a.intersect(b)`.
+    if (!this.current) this.current = part;
+    else this.current = this.current.intersect(part);
+    return this;
+  }
 }
 
 /** @part Z-up cylinder/cone — height h, bottom radius r1, top radius r2 (defaults to r1). */

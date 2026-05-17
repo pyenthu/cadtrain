@@ -76,9 +76,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create, picture, instanceColors } = body as {
+  const { id, source, create, picture, instanceColors, instanceOps } = body as {
     id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
     instanceColors?: unknown;
+    instanceOps?: unknown;
   };
 
   if (typeof id !== 'string' || typeof source !== 'string') {
@@ -168,6 +169,26 @@ export const POST: RequestHandler = async ({ request, url }) => {
       const existing = await resolvePart(id);
       const prevMeta = existing?.meta ?? {};
       const merged = { ...prevMeta, instanceColors: colors };
+      await writeFile(metaPath, JSON.stringify(merged, null, 2), 'utf8');
+    } catch { /* meta write is best-effort */ }
+  }
+
+  // Per-instance CSG ops. When the inspector op-cycle popup sets
+  // `instanceOps`, merge into meta.json the same way as instanceColors —
+  // keeps every other meta field intact. Validates each value against
+  // the union `'add' | 'subtract' | 'intersect'` so a bad payload can't
+  // poison the meta file.
+  if (wroteToLibrary && instanceOps && typeof instanceOps === 'object') {
+    const ops: Record<string, 'add' | 'subtract' | 'intersect'> = {};
+    for (const [k, v] of Object.entries(instanceOps as Record<string, unknown>)) {
+      if (v === 'add' || v === 'subtract' || v === 'intersect') ops[k] = v;
+    }
+    try {
+      const partDir = dirname(targetPath);
+      const metaPath = join(partDir, PART_FILES.meta);
+      const existing = await resolvePart(id);
+      const prevMeta = existing?.meta ?? {};
+      const merged = { ...prevMeta, instanceOps: ops };
       await writeFile(metaPath, JSON.stringify(merged, null, 2), 'utf8');
     } catch { /* meta write is best-effort */ }
   }

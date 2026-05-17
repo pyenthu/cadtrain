@@ -442,6 +442,16 @@
   let colorPickerX = $state<number>(80);
   let colorPickerY = $state<number>(80);
 
+  /** State for the per-instance CSG op-picker popup. Anchored to the
+   *  leftmost op-icon button on each instance accordion head (+ / − / ∩).
+   *  Persists into `meta.instanceOps[<inst>]` via setInstanceOp. Unset
+   *  instances default to 'add' so the existing union semantics are
+   *  preserved. Library parts only — bundle primitives render
+   *  client-side and aren't affected. */
+  let opPickerOpen = $state<{ instance: string } | null>(null);
+  let opPickerX = $state<number>(80);
+  let opPickerY = $state<number>(80);
+
   /** State for the per-instance "Add transform" popover. Anchored to
    *  the trailing `+` in the chain strip; holds the target instance
    *  name + the popover coords. */
@@ -3964,6 +3974,79 @@ export const geom = defineGeom(meta, (p, geom) => {
       await refreshRunesList();
     }
   }
+
+  /** Open the per-instance CSG-op picker. Anchors the popup to the
+   *  leftmost op-icon button on the accordion head via its bounding
+   *  rect; flips left when too close to the viewport edge. Mirrors
+   *  openColorPicker's geometry. */
+  function openOpPicker(instance: string, ev: MouseEvent) {
+    opPickerOpen = { instance };
+    const btn = ev.currentTarget as HTMLElement | null;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      const popupW = 200;
+      const gap = 6;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const wouldOverflow = r.right + gap + popupW > vw - 8;
+      opPickerX = wouldOverflow
+        ? Math.max(8, Math.round(r.left - gap - popupW))
+        : Math.round(r.right + gap);
+      opPickerY = Math.round(r.top - 4);
+    }
+  }
+  function closeOpPicker() { opPickerOpen = null; }
+
+  /** Write a CSG-op selection for a given instance into the part's
+   *  meta.json. POSTs the COMMITTED source (not sourceDraft) — same
+   *  rule as setInstanceColor — so an in-flight inspector edit doesn't
+   *  get committed alongside the op change. Updates the in-memory
+   *  entry optimistically so the icon refreshes immediately; on
+   *  failure we re-fetch and disk wins.
+   *
+   *  Library-part-only (renderMode === 'server'). Bundle primitives
+   *  render client-side from the static .ts and have no meta.json —
+   *  the icon hides itself for those (see template). */
+  async function setInstanceOp(
+    tab: Tab,
+    instance: string,
+    op: 'add' | 'subtract' | 'intersect',
+  ) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    if (tab.componentEntry.renderMode !== 'server') return;
+    const prev = tab.componentEntry.instanceOps ?? {};
+    const next: Record<string, 'add' | 'subtract' | 'intersect'> = { ...prev };
+    // 'add' is the default; storing it is harmless but we drop it to
+    // keep meta.json minimal (matches the swatch-Reset behaviour).
+    if (op === 'add') delete next[instance];
+    else next[instance] = op;
+    tab.componentEntry = { ...tab.componentEntry, instanceOps: next };
+    try {
+      const r = await fetch('/api/components/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: tab.componentEntry.meta.id,
+          source: tab.componentEntry.source,
+          instanceOps: next,
+        }),
+      });
+      if (!r.ok) {
+        await refreshRunesList();
+        const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
+        if (fresh) tab.componentEntry = { ...fresh, source: tab.componentEntry.source };
+      } else {
+        // The loader-side op rewrite changes the executed geom for a
+        // library part (renderMode === 'server'). Bump appliedAt so the
+        // build $effect re-POSTs to /api/components/geom and the canvas
+        // reflects the new op without the user having to also press
+        // Apply on a stale draft.
+        tab.appliedAt = Date.now();
+      }
+    } catch {
+      await refreshRunesList();
+    }
+  }
+
   function applyFormulaEdit(tab: Tab) {
     if (!tab.formulaEdit || !tab.componentEntry) return;
     const fe = tab.formulaEdit;
@@ -5378,6 +5461,54 @@ export const geom = defineGeom(meta, (p, geom) => {
     </FloatingPanel>
   {/if}
 
+  <!-- Per-instance CSG-op popup. Anchored to the leftmost op-icon
+       button on the instance accordion head. Three icon cards — +, −,
+       ∩ — pick which one applies and close the popup. Persists via
+       setInstanceOp → /api/components/save with the `instanceOps`
+       body field (loader rewrites geom.add → geom.subtract /
+       geom.intersect at execute time). Library parts only — bundle
+       primitives don't surface this control. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && opPickerOpen}
+    {@const opi = opPickerOpen.instance}
+    {@const opCurrent = (activeTab.componentEntry?.instanceOps?.[opi] ?? 'add') as 'add' | 'subtract' | 'intersect'}
+    <FloatingPanel
+      title={`Op: ${opi}`}
+      visible={true}
+      onClose={closeOpPicker}
+      x={opPickerX}
+      y={opPickerY}
+      width="200px"
+      maxHeight="auto"
+    >
+      {#snippet children()}
+        <div class="op-body" use:clickOutside={closeOpPicker}>
+          <div class="op-grid">
+            {#each [
+              { op: 'add', glyph: '+', label: 'Add (union)' },
+              { op: 'subtract', glyph: '−', label: 'Subtract (cut)' },
+              { op: 'intersect', glyph: '∩', label: 'Intersect (overlap)' },
+            ] as { op, glyph, label } (op)}
+              <button
+                class="op-cell"
+                class:active={opCurrent === op}
+                type="button"
+                title={label}
+                aria-label={label}
+                onclick={async () => {
+                  await setInstanceOp(activeTab!, opi, op as 'add' | 'subtract' | 'intersect');
+                  closeOpPicker();
+                }}
+              >
+                <span class="op-glyph">{glyph}</span>
+                <span class="op-label">{label}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
   <!-- Add-property popup — anchored to the round-red `+` on the
        Properties accordion header. Same SVTC-style FloatingPanel as
        the per-param ✎ + per-arg ƒ popups. -->
@@ -6345,6 +6476,30 @@ export const geom = defineGeom(meta, (p, geom) => {
                   onclick={() => toggleParamGroupCollapse(activeTab!.id, g.key)}
                 >
                   <!-- Chevron removed — open/close state is evident from the body. -->
+
+                  {#if g.instance && activeTab.componentEntry?.renderMode === 'server'}
+                    <!-- Per-instance CSG-op icon. Leftmost child of the
+                         head row so it reads as the "what does this
+                         instance do" tag for the rest of the row.
+                         Click opens a 3-cell FloatingPanel with +, −, ∩.
+                         Library parts only — bundle primitives render
+                         client-side and have no meta.json to persist into;
+                         hiding the control there keeps the surface honest. -->
+                    {@const opCur = (activeTab.componentEntry.instanceOps?.[g.instance.instance] ?? 'add') as 'add' | 'subtract' | 'intersect'}
+                    {@const opGlyph = opCur === 'subtract' ? '−' : opCur === 'intersect' ? '∩' : '+'}
+                    {@const opTitle = opCur === 'subtract' ? 'Subtract (cut)' : opCur === 'intersect' ? 'Intersect (overlap)' : 'Add (union)'}
+                    <button
+                      class="pg-acc-op"
+                      class:op-subtract={opCur === 'subtract'}
+                      class:op-intersect={opCur === 'intersect'}
+                      data-op={opCur}
+                      data-instance={g.instance.instance}
+                      type="button"
+                      title={`Op: ${opTitle}`}
+                      aria-label={`CSG op for ${g.instance.instance}`}
+                      onclick={(e) => { e.stopPropagation(); openOpPicker(g.instance!.instance, e); }}
+                    >{opGlyph}</button>
+                  {/if}
 
                   <span class="pg-acc-title">{g.name}</span>
                   {#if g.sig}<span class="pg-acc-sig">{g.sig}</span>{/if}
@@ -8554,6 +8709,72 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   .cp-reset:hover { background: #ececf2; color: #cc2222; border-color: #cc2222; }
 
+  /* CSG-op picker popup — three-cell vertical list, one row per op.
+     Each cell shows the glyph (+ / − / ∩) plus a short text label so
+     the meaning is unambiguous even though the icon is the primary
+     affordance. The active op gets a thick dark outline + soft halo
+     same as cp-cell.active to keep parity. */
+  .op-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .op-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .op-cell {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%;
+    background: #f7f7fa;
+    border: 1px solid #d8d8de;
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font: 11px Arial; color: #333;
+    text-align: left;
+  }
+  .op-cell:hover { background: #ececf2; color: #cc2222; border-color: #cc2222; }
+  .op-cell.active {
+    background: #fff;
+    border: 2px solid #1a1a2e;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+  }
+  .op-glyph {
+    font: bold 16px ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 1; width: 14px; text-align: center;
+    color: #444;
+  }
+  .op-cell.active .op-glyph { color: #1a1a2e; }
+  .op-label { flex: 1; }
+
+  /* Per-instance CSG-op tag — leftmost child of an instance accordion
+     head. Reads as a tiny "this instance does X" tag for the row.
+     Default + (add) renders neutral; subtract / intersect get distinct
+     accent colours so a row that's not the default union is visible
+     at a glance. */
+  .pg-acc-op {
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #f3f3f7;
+    border: 1px solid #cfcfd6;
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 0;
+    font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 1;
+    color: #555;
+    transition: transform 80ms, background 80ms;
+  }
+  .pg-acc-op:hover { transform: scale(1.12); border-color: #333; color: #1a1a2e; }
+  /* Subtract = blue accent so an instance being CUT from the assembly
+     reads as a "negative space" indicator. */
+  .pg-acc-op.op-subtract {
+    background: #e6efff; border-color: #6b8fd8; color: #1c4fa8;
+  }
+  /* Intersect = purple/violet — it's the rarest op, so make it pop. */
+  .pg-acc-op.op-intersect {
+    background: #efe6ff; border-color: #a48fd8; color: #6b3fd8;
+  }
+
   /* Formula popup — small body with a single-line input + a filtered
      candidate list below. */
   .fx-body { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -8708,22 +8929,43 @@ export const geom = defineGeom(meta, (p, geom) => {
      tight together (no gap) so the colon reads as one token, and
      don't let the title flex-grow — it should hug `:tube` on the
      left, not push it to the far right. Bold red so the instance
-     reads as the dominant label. */
+     reads as the dominant label.
+     CENTERED layout: `margin-left:auto` on the title pushes
+     everything before it (op icon) to the far left; `margin-right:auto`
+     on the trailing sibling (sig if present, else title) pushes the
+     right-side cluster (swatch / ⚙ / ↳ / trash) to the far right. The
+     title+sig pair sits in the centre of the head bar regardless of
+     instance name length. */
   .pg-acc-head .pg-acc-title + .pg-acc-sig { margin-left: -5px; }
-  .pg-acc-head.instance .pg-acc-title { flex: 0 0 auto; }
+  .pg-acc-head.instance .pg-acc-title { flex: 0 0 auto; margin-left: auto; }
+  /* If a sig is present it's the rightmost member of the title token —
+     give IT the right-auto margin so swatch/⚙/↳ get pushed to the end. */
+  .pg-acc-head.instance .pg-acc-sig { margin-right: auto; }
+  /* When the head has no sig (rare for instances, normal everywhere
+     else), the title itself is the trailing token. The `:has` rule
+     transfers the right-margin to the title in that case. */
+  .pg-acc-head.instance:not(:has(.pg-acc-sig)) .pg-acc-title { margin-right: auto; }
   .pg-acc-head.instance .pg-acc-title,
   .pg-acc-head.instance .pg-acc-sig {
     font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #cc2222;
   }
   /* Properties (non-instance) header — bigger, bolder so it leads
-     the section. The previous 11px Arial was too quiet. */
+     the section. The previous 11px Arial was too quiet. Same centering
+     pattern: title gets symmetric auto margins so it sits dead-centre
+     between the left edge (no icons there for non-instance heads) and
+     the right-side `+` / count / trash. */
   .pg-acc-head:not(.instance) .pg-acc-title {
     font: bold 13px Arial;
     color: #333;
+    flex: 0 0 auto;
+    margin-left: auto;
+    margin-right: auto;
   }
   .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
   .pg-acc-head.collapsed { background: #fafafa; }
+  /* Default rule kept for any non-accordion / legacy uses of the
+     class; instance/non-instance overrides above win in the inspector. */
   .pg-acc-title { font-weight: bold; flex: 1; }
   .pg-acc-count {
     font: 10px Arial; color: #888;

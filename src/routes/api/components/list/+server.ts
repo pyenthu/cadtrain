@@ -77,6 +77,12 @@ interface ComponentListEntry {
    *  instances fall back to a hash-by-name palette default at the UI
    *  layer. Absent for bundle entries. */
   instanceColors?: Record<string, string>;
+  /** Per-instance CSG op from a library part's `meta.json`, keyed by
+   *  instance name (`A`, `B`, ...). 'add' | 'subtract' | 'intersect'.
+   *  Used by the loader to rewrite `geom.add(<inst>);` at execute time.
+   *  Unset entries default to 'add'. Absent for bundle entries (they
+   *  always render client-side from the static .ts). */
+  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
   /** Ready-to-use URL for the part's `picture.png` — the dev-local
    *  `/api/components/picture?id=<id>` endpoint. Absent for bundle
    *  entries and library parts with no picture. */
@@ -337,6 +343,7 @@ async function readLibraryEntries(): Promise<ComponentListEntry[]> {
       ...(part.meta.level != null ? { level: part.meta.level } : {}),
       ...(part.meta.autoTranslate != null ? { autoTranslate: part.meta.autoTranslate } : {}),
       ...(part.meta.instanceColors ? { instanceColors: part.meta.instanceColors } : {}),
+      ...(part.meta.instanceOps ? { instanceOps: part.meta.instanceOps } : {}),
       ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(parsed.id)}` } : {}),
       hasGeom: false,
       renderMode: 'server',

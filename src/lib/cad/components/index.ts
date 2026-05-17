@@ -122,6 +122,12 @@ export interface ComponentEntry {
    *  entries fall back to a hash-by-name palette default at the UI
    *  layer. Absent for bundle entries. */
   instanceColors?: Record<string, string>;
+  /** Per-instance CSG op from a library part's `meta.json`, keyed by
+   *  instance name (`A`, `B`, ...). 'add' | 'subtract' | 'intersect';
+   *  the loader rewrites `geom.add(<inst>);` at execute time per this
+   *  map. Unset entries default to 'add'. Absent for bundle entries
+   *  (they always render client-side). */
+  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
   /** Volume-relative path to the part's `picture.png` (serve via
    *  /api/volume). Absent for bundle entries / pictureless parts. */
   picture?: string;
@@ -179,6 +185,7 @@ interface ApiEntry {
   level?: number;
   autoTranslate?: boolean;
   instanceColors?: Record<string, string>;
+  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
   picture?: string;
 }
 
@@ -232,6 +239,7 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
       ...(api.level != null ? { level: api.level } : {}),
       ...(api.autoTranslate != null ? { autoTranslate: api.autoTranslate } : {}),
       ...(api.instanceColors ? { instanceColors: api.instanceColors } : {}),
+      ...(api.instanceOps ? { instanceOps: api.instanceOps } : {}),
       ...(api.picture ? { picture: api.picture } : {}),
     };
   });

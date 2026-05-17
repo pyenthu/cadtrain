@@ -313,14 +313,41 @@ function parseSpecifiers(named: string): ImportSpec[] {
 /** resolveDep(depId) → the module object exporting `meta` / `geom`. */
 export type DepResolver = (depId: string) => LoadedComponent;
 
+/** Rewrite every `geom.add(<inst>);` call to the configured op
+ *  (`geom.subtract(<inst>);` or `geom.intersect(<inst>);`) per the
+ *  caller-supplied `instanceOps` map. Unset instances are left as-is
+ *  (default 'add'). Source-on-disk preserves the `geom.add(...)`
+ *  shape so the GUI's add/remove/move logic — which pattern-matches
+ *  on `geom.add(<inst>);` lines — keeps working unchanged. */
+function applyInstanceOps(
+  src: string,
+  instanceOps: Record<string, 'add' | 'subtract' | 'intersect'> | undefined,
+): string {
+  if (!instanceOps || Object.keys(instanceOps).length === 0) return src;
+  return src.replace(
+    /\bgeom\s*\.\s*add\s*\(\s*([A-Z][A-Z0-9]*)\s*\)/g,
+    (full, inst) => {
+      const op = instanceOps[inst];
+      if (op === 'subtract') return `geom.subtract(${inst})`;
+      if (op === 'intersect') return `geom.intersect(${inst})`;
+      return full;
+    },
+  );
+}
+
 /**
  * Transpile a component `.ts` source string and execute it in a sandboxed
  * host-realm function, returning `{ meta, geom }`. `resolveDep` supplies
  * sibling-component modules for composition imports.
+ *
+ * `instanceOps` (optional) rewrites `geom.add(<inst>);` calls to
+ * `geom.subtract(...)` / `geom.intersect(...)` per the part's
+ * meta.instanceOps map. Unset instances stay as `geom.add` (default).
  */
 export function loadGeomFromSource(
   src: string,
   resolveDep: DepResolver,
+  instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>,
 ): LoadedComponent {
   const { stripped, deps } = parseImports(src);
   // Substitute `<INST>.<prop>` cross-instance references (e.g.
@@ -330,8 +357,13 @@ export function loadGeomFromSource(
   // text, so the substitution re-runs on every load and the
   // cascade stays live across saves.
   const expanded = expandInstancePropRefs(stripped, deps, resolveDep);
+  // Per-instance CSG op rewrite — flips `geom.add(<inst>);` to
+  // `geom.subtract(...)` / `geom.intersect(...)` based on the part's
+  // meta.instanceOps. The source on disk stays additive; the
+  // semantics layer on top of it at execute time.
+  const withOps = applyInstanceOps(expanded, instanceOps);
 
-  const { code } = transformSync(expanded, {
+  const { code } = transformSync(withOps, {
     loader: 'ts',
     format: 'cjs',
     target: 'node22',
@@ -453,7 +485,14 @@ export async function loadVolumeComponent(
   } catch {
     throw new Error(`Library part "${id}" component.ts unreadable at ${path}.`);
   }
-  const hash = sha(src);
+  // Cache key folds in instanceOps so toggling an op flips the executed
+  // geom on the next /api/components/geom call without needing the user
+  // to also edit the source. (Save endpoint also calls invalidate, so
+  // this is belt + suspenders.)
+  const opsSig = part.meta.instanceOps
+    ? JSON.stringify(Object.entries(part.meta.instanceOps).sort())
+    : '';
+  const hash = sha(`${src} ${opsSig}`);
   const cached = volumeCache.get(id);
   if (cached && cached.sourceHash === hash) return cached.loaded;
 
@@ -476,11 +515,15 @@ export async function loadVolumeComponent(
     }
   }
 
-  const loaded = loadGeomFromSource(src, (depId) => {
-    const dep = resolved.get(depId);
-    if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
-    return dep;
-  });
+  const loaded = loadGeomFromSource(
+    src,
+    (depId) => {
+      const dep = resolved.get(depId);
+      if (!dep) throw new Error(`Unresolved composition dep "${depId}".`);
+      return dep;
+    },
+    part.meta.instanceOps,
+  );
 
   volumeCache.set(id, { sourceHash: hash, loaded });
   return loaded;
