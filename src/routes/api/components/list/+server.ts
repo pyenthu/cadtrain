@@ -83,6 +83,12 @@ interface ComponentListEntry {
    *  Unset entries default to 'add'. Absent for bundle entries (they
    *  always render client-side from the static .ts). */
   instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
+  /** Per-instance placement mode from `meta.json`, keyed by instance
+   *  name (`A`, `B`, ...). 'stack' (default) | 'overlay' | 'origin'.
+   *  Used by the loader to rewrite the `top:` arg per instance. */
+  instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>;
+  /** Offset for instances in 'overlay' mode. Number, part units. */
+  instanceTopOffset?: Record<string, number>;
   /** Ready-to-use URL for the part's `picture.png` — the dev-local
    *  `/api/components/picture?id=<id>` endpoint. Absent for bundle
    *  entries and library parts with no picture. */
@@ -344,6 +350,8 @@ async function readLibraryEntries(): Promise<ComponentListEntry[]> {
       ...(part.meta.autoTranslate != null ? { autoTranslate: part.meta.autoTranslate } : {}),
       ...(part.meta.instanceColors ? { instanceColors: part.meta.instanceColors } : {}),
       ...(part.meta.instanceOps ? { instanceOps: part.meta.instanceOps } : {}),
+      ...(part.meta.instanceTopMode ? { instanceTopMode: part.meta.instanceTopMode } : {}),
+      ...(part.meta.instanceTopOffset ? { instanceTopOffset: part.meta.instanceTopOffset } : {}),
       ...(part.hasPicture ? { picture: `/api/components/picture?id=${encodeURIComponent(parsed.id)}` } : {}),
       hasGeom: false,
       renderMode: 'server',

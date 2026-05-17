@@ -128,6 +128,11 @@ export interface ComponentEntry {
    *  map. Unset entries default to 'add'. Absent for bundle entries
    *  (they always render client-side). */
   instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
+  /** Per-instance placement mode from `meta.json`, keyed by instance
+   *  name. 'stack' (default) | 'overlay' | 'origin'. */
+  instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>;
+  /** Per-instance overlay offset (number, part units). */
+  instanceTopOffset?: Record<string, number>;
   /** Volume-relative path to the part's `picture.png` (serve via
    *  /api/volume). Absent for bundle entries / pictureless parts. */
   picture?: string;
@@ -186,6 +191,8 @@ interface ApiEntry {
   autoTranslate?: boolean;
   instanceColors?: Record<string, string>;
   instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
+  instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>;
+  instanceTopOffset?: Record<string, number>;
   picture?: string;
 }
 
@@ -240,6 +247,8 @@ export async function loadComponentRegistry(fetchFn: typeof fetch = fetch): Prom
       ...(api.autoTranslate != null ? { autoTranslate: api.autoTranslate } : {}),
       ...(api.instanceColors ? { instanceColors: api.instanceColors } : {}),
       ...(api.instanceOps ? { instanceOps: api.instanceOps } : {}),
+      ...(api.instanceTopMode ? { instanceTopMode: api.instanceTopMode } : {}),
+      ...(api.instanceTopOffset ? { instanceTopOffset: api.instanceTopOffset } : {}),
       ...(api.picture ? { picture: api.picture } : {}),
     };
   });

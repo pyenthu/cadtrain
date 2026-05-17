@@ -152,11 +152,18 @@ export interface BakeResult {
  * simple: the GLB stage tab loads one or the other based on the
  * cutaway toggle. Cut bake failure is logged but doesn't fail the
  * whole bake — the full GLB stays the primary deliverable.
+ *
+ * `outDir` (optional): override the output directory and bake to
+ *   `<outDir>/mesh.glb` + `<outDir>/mesh.cut.glb` instead of the
+ *   default `<STATIC_DIR>/<id>.glb` + `<STATIC_DIR>/<id>.cut.glb`.
+ *   Used for library parts so the GLB lives inside the part directory
+ *   (per the directory-per-part contract in CLAUDE.md Rule 18).
  */
 export async function bakeGlb(
   id: string,
   geom: (p: Record<string, number>) => any,
   defaults: Record<string, number>,
+  outDir?: string,
 ): Promise<BakeResult> {
   if (!/^[a-z][a-z0-9_]*$/.test(id)) {
     return { ok: false, error: `Invalid id "${id}"` };
@@ -167,14 +174,17 @@ export async function bakeGlb(
     if (!manifold || typeof manifold.getMesh !== 'function') {
       return { ok: false, error: 'geom() did not return a Manifold instance' };
     }
-    await mkdir(STATIC_DIR, { recursive: true });
+    const targetDir = outDir ?? STATIC_DIR;
+    const fullName = outDir ? 'mesh.glb' : `${id}.glb`;
+    const cutName = outDir ? 'mesh.cut.glb' : `${id}.cut.glb`;
+    await mkdir(targetDir, { recursive: true });
     const io = new NodeIO();
     const maxOD = pickMaxOD(defaults);
     // 1. Full mesh — indexed, positions only. Smallest format; the
     //    client paints it solid red.
     const doc = manifoldToGltf(manifold, maxOD, false);
     const glb = await io.writeBinary(doc);
-    const path = join(STATIC_DIR, `${id}.glb`);
+    const path = join(targetDir, fullName);
     await writeFile(path, glb);
     const result: BakeResult = { ok: true, path, bytes: glb.byteLength };
     // 2. Half-sectioned mesh — non-indexed with per-face colours so the
@@ -183,7 +193,7 @@ export async function bakeGlb(
       const cutManifold = manifold.subtract(getCutBox());
       const cutDoc = manifoldToGltf(cutManifold, maxOD, true);
       const cutGlb = await io.writeBinary(cutDoc);
-      const cutPath = join(STATIC_DIR, `${id}.cut.glb`);
+      const cutPath = join(targetDir, cutName);
       await writeFile(cutPath, cutGlb);
       result.cutPath = cutPath;
       result.cutBytes = cutGlb.byteLength;

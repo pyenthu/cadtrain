@@ -452,6 +452,14 @@
   let opPickerX = $state<number>(80);
   let opPickerY = $state<number>(80);
 
+  /** State for the per-instance placement picker popup. Anchored to the
+   *  single placement-mode button in the Settings view; click opens a
+   *  vertical 3-cell FloatingPanel listing Stack / Overlay / Origin
+   *  with a short description per option. Mirrors opPickerOpen. */
+  let placementPickerOpen = $state<{ instance: string } | null>(null);
+  let placementPickerX = $state<number>(80);
+  let placementPickerY = $state<number>(80);
+
   /** State for the per-instance "Add transform" popover. Anchored to
    *  the trailing `+` in the chain strip; holds the target instance
    *  name + the popover coords. */
@@ -1458,7 +1466,7 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
    *  Properties (the typed prop grid, default) or Transformation
    *  (tx/ty/tz + rx/ry/rz inputs that wrap the instance with mv/rot
    *  at the call site). Keyed by `<tabId>:<instance>`. */
-  type InstanceView = 'properties' | 'transformation';
+  type InstanceView = 'properties' | 'transformation' | 'settings';
   let instanceViews = $state<Record<string, InstanceView>>({});
   function instanceViewOf(tabId: string, inst: string): InstanceView {
     return instanceViews[`${tabId}:${inst}`] ?? 'properties';
@@ -3996,6 +4004,23 @@ export const geom = defineGeom(meta, (p, geom) => {
   }
   function closeOpPicker() { opPickerOpen = null; }
 
+  function openPlacementPicker(instance: string, ev: MouseEvent) {
+    placementPickerOpen = { instance };
+    const btn = ev.currentTarget as HTMLElement | null;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      const popupW = 280;
+      const gap = 6;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+      const wouldOverflow = r.right + gap + popupW > vw - 8;
+      placementPickerX = wouldOverflow
+        ? Math.max(8, Math.round(r.left - gap - popupW))
+        : Math.round(r.right + gap);
+      placementPickerY = Math.round(r.top - 4);
+    }
+  }
+  function closePlacementPicker() { placementPickerOpen = null; }
+
   /** Write a CSG-op selection for a given instance into the part's
    *  meta.json. POSTs the COMMITTED source (not sourceDraft) — same
    *  rule as setInstanceColor — so an in-flight inspector edit doesn't
@@ -4040,6 +4065,71 @@ export const geom = defineGeom(meta, (p, geom) => {
         // build $effect re-POSTs to /api/components/geom and the canvas
         // reflects the new op without the user having to also press
         // Apply on a stale draft.
+        tab.appliedAt = Date.now();
+      }
+    } catch {
+      await refreshRunesList();
+    }
+  }
+
+  /** Persist per-instance placement (mode + optional offset for
+   *  'overlay') into meta.json. Mirrors setInstanceOp: optimistic update
+   *  on the in-memory entry, POST the COMMITTED source (not
+   *  sourceDraft) so an in-flight inspector edit isn't committed
+   *  alongside, bump appliedAt on success so the canvas re-renders
+   *  from the new placement without the user pressing Apply.
+   *
+   *  `mode === null` clears the per-instance setting (revert to the
+   *  default 'stack' behaviour). For 'overlay', `offset` is honoured;
+   *  for other modes the stored offset is dropped to keep meta.json
+   *  minimal. */
+  async function setInstancePlacement(
+    tab: Tab,
+    instance: string,
+    mode: 'stack' | 'overlay' | 'origin' | null,
+    offset?: number,
+  ) {
+    if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
+    if (tab.componentEntry.renderMode !== 'server') return;
+    const prevModes = tab.componentEntry.instanceTopMode ?? {};
+    const prevOffs = tab.componentEntry.instanceTopOffset ?? {};
+    const nextModes: Record<string, 'stack' | 'overlay' | 'origin'> = { ...prevModes };
+    const nextOffs: Record<string, number> = { ...prevOffs };
+    if (mode === null) {
+      delete nextModes[instance];
+      delete nextOffs[instance];
+    } else {
+      nextModes[instance] = mode;
+      if (mode === 'overlay') {
+        if (offset != null && Number.isFinite(offset)) nextOffs[instance] = offset;
+        // If switching to overlay without an explicit offset, keep
+        // whatever value was previously stored (lets the user click
+        // through stack→overlay→stack without losing the offset).
+      } else {
+        delete nextOffs[instance];
+      }
+    }
+    tab.componentEntry = {
+      ...tab.componentEntry,
+      instanceTopMode: nextModes,
+      instanceTopOffset: nextOffs,
+    };
+    try {
+      const r = await fetch('/api/components/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: tab.componentEntry.meta.id,
+          source: tab.componentEntry.source,
+          instanceTopMode: nextModes,
+          instanceTopOffset: nextOffs,
+        }),
+      });
+      if (!r.ok) {
+        await refreshRunesList();
+        const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
+        if (fresh) tab.componentEntry = { ...fresh, source: tab.componentEntry.source };
+      } else {
         tab.appliedAt = Date.now();
       }
     } catch {
@@ -4489,16 +4579,11 @@ export const geom = defineGeom(meta, (p, geom) => {
     }
     tab.sourceDraft = updated;
 
-    // 3) Auto-save to disk so the new param persists across reloads —
-    // people miss the manual Save button in the Svelte tab. Errors
-    // surface on the form so the user sees what happened.
-    const ok = await saveRunesSource(tab);
-    if (!ok) {
-      f.error = `Splice succeeded but save failed: ${tab.saveError ?? 'unknown'}. Open the Svelte tab to retry.`;
-      return;
-    }
-
-    // 4) Close + reset.
+    // 3) Close + reset. We deliberately do NOT auto-save here — the
+    // sourceDraft mutation surfaces the orange "unsaved changes" bar
+    // so the user reviews + clicks Apply/Save consciously. (Earlier
+    // versions auto-saved immediately, but that hid the dirty state
+    // and made the add-property flow feel like nothing happened.)
     f.open = false;
     f.error = '';
     f.name = '';
@@ -5509,6 +5594,60 @@ export const geom = defineGeom(meta, (p, geom) => {
     </FloatingPanel>
   {/if}
 
+  <!-- Per-instance Placement picker popup — anchored to the single
+       placement-mode button in the Settings view. Three vertical
+       cells; each cell shows glyph + label + a one-line description
+       of what the mode does at the loader level. Library parts
+       only — bundle primitives don't surface this control. -->
+  {#if activeTab && activeTab.kind === 'xml-primitive' && placementPickerOpen}
+    {@const ppi = placementPickerOpen.instance}
+    {@const ppCurrent = (activeTab.componentEntry?.instanceTopMode?.[ppi] ?? 'stack') as 'stack' | 'overlay' | 'origin'}
+    {@const ppOff = activeTab.componentEntry?.instanceTopOffset?.[ppi] ?? 0}
+    <FloatingPanel
+      title={`Placement: ${ppi}`}
+      visible={true}
+      onClose={closePlacementPicker}
+      x={placementPickerX}
+      y={placementPickerY}
+      width="280px"
+      maxHeight="auto"
+    >
+      {#snippet children()}
+        <div class="pp-body" use:clickOutside={closePlacementPicker}>
+          <div class="pp-list">
+            {#each [
+              { mode: 'stack', glyph: '↓', label: 'Stack', desc: 'Append below previous part — top = PREV.top + PREV.length' },
+              { mode: 'overlay', glyph: '⇄', label: 'Overlay', desc: 'Nest inside previous part — top = PREV.top + offset' },
+              { mode: 'origin', glyph: '⤴', label: 'Origin', desc: 'Reset to top of assembly — top = 0' },
+            ] as { mode, glyph, label, desc } (mode)}
+              <button
+                class="pp-cell"
+                class:active={ppCurrent === mode}
+                type="button"
+                aria-label={label}
+                onclick={async () => {
+                  await setInstancePlacement(
+                    activeTab!,
+                    ppi,
+                    mode as 'stack' | 'overlay' | 'origin',
+                    mode === 'overlay' ? ppOff : undefined,
+                  );
+                  closePlacementPicker();
+                }}
+              >
+                <span class="pp-glyph">{glyph}</span>
+                <span class="pp-text">
+                  <span class="pp-label">{label}</span>
+                  <span class="pp-desc">{desc}</span>
+                </span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/snippet}
+    </FloatingPanel>
+  {/if}
+
   <!-- Add-property popup — anchored to the round-red `+` on the
        Properties accordion header. Same SVTC-style FloatingPanel as
        the per-param ✎ + per-arg ƒ popups. -->
@@ -6169,9 +6308,19 @@ export const geom = defineGeom(meta, (p, geom) => {
             {#if stageView === 'glb'}
               {#if SceneGlbComponent}
                 {@const GlbScene = SceneGlbComponent}
-                {@const glbUrl = scene.showCutaway
-                  ? `/components/${activeDef.id}.cut.glb`
-                  : `/components/${activeDef.id}.glb`}
+                {@const isLibrary = activeTab?.kind === 'xml-primitive'
+                  && activeTab.componentEntry?.renderMode === 'server'}
+                {@const bundleName = scene.showCutaway ? `${activeDef.id}.cut.glb` : `${activeDef.id}.glb`}
+                <!-- Library parts: serve from the dev-local
+                     /api/components/glb endpoint (reads the baked
+                     mesh.glb from the part directory). Bundle
+                     primitives still live under /components/<id>.glb
+                     (vite-served static asset). Cache-busted on
+                     appliedAt so a fresh save invalidates the load. -->
+                {@const stamp = activeTab?.appliedAt ?? 0}
+                {@const glbUrl = isLibrary
+                  ? `/api/components/glb?id=${encodeURIComponent(activeDef.id)}${scene.showCutaway ? '&cut=1' : ''}&t=${stamp}`
+                  : `/components/${bundleName}?t=${stamp}`}
                 <Canvas {createRenderer}>
                   <GlbScene url={glbUrl} />
                 </Canvas>
@@ -6500,24 +6649,42 @@ export const geom = defineGeom(meta, (p, geom) => {
                       data-op={opCur}
                       data-instance={g.instance.instance}
                       type="button"
-                      title={`Op: ${opTitle}`}
+                      use:floatingTip={`Op: ${opTitle}`}
                       aria-label={`CSG op for ${g.instance.instance}`}
                       onclick={(e) => { e.stopPropagation(); openOpPicker(g.instance!.instance, e); }}
                     >{opGlyph}</button>
                   {/if}
                   {#if g.instance}
-                    <!-- Per-instance colour swatch. Click opens a
-                         FloatingPanel with the 12-stop palette + Reset.
-                         The fill mirrors the left-border stripe so the
-                         swatch IS the affordance for "this colour". -->
+                    <!-- Per-instance Settings view toggle. Third sibling
+                         of the Properties (⚙) + Transformation (↳)
+                         buttons — clicking switches the body to render
+                         the settings panel (colour + placement picker)
+                         in place of the props grid / chain chips.
+                         The swatch USED to live in the head; it's now
+                         inside the settings view so the head stays
+                         minimal. -->
+                    {@const isSettingsView = instanceViewOf(activeTab.id, g.instance.instance) === 'settings'}
                     <button
-                      class="pg-acc-swatch"
+                      class="pg-acc-settings"
+                      class:active={isSettingsView}
                       type="button"
-                      title={`Colour for ${g.instance.instance}`}
-                      aria-label={`Colour for ${g.instance.instance}`}
-                      style={instColor ? `background: ${instColor};` : ''}
-                      onclick={(e) => { e.stopPropagation(); openColorPicker(g.instance!.instance, e); }}
-                    ></button>
+                      use:floatingTip={"Settings (colour + placement)"}
+                      aria-label={`Settings view for ${g.instance.instance}`}
+                      aria-pressed={isSettingsView}
+                      onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'settings'); expandParamGroup(activeTab!.id, g.key); }}
+                    >
+                      <!-- Sliders icon — three horizontal rails with
+                           draggable handles. Distinct from the gear used
+                           by Properties view; reads as "configure". -->
+                      <svg viewBox="0 0 14 14" width="11" height="11" aria-hidden="true">
+                        <line x1="2" y1="3.5" x2="12" y2="3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <line x1="2" y1="10.5" x2="12" y2="10.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <circle cx="5" cy="3.5" r="1.3" fill="#fff" stroke="currentColor" stroke-width="1.2"/>
+                        <circle cx="9" cy="7" r="1.3" fill="#fff" stroke="currentColor" stroke-width="1.2"/>
+                        <circle cx="4" cy="10.5" r="1.3" fill="#fff" stroke="currentColor" stroke-width="1.2"/>
+                      </svg>
+                    </button>
                     <!-- Per-instance view toggle. Two icon-buttons —
                          Properties (settings ⚙ default) and
                          Transformation (operators like translate /
@@ -6528,7 +6695,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       class="pg-acc-iv"
                       class:active={view === 'properties'}
                       type="button"
-                      title="Properties"
+                      use:floatingTip={"Properties"}
                       aria-label="Properties view"
                       onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'properties'); expandParamGroup(activeTab!.id, g.key); }}
                     >
@@ -6543,7 +6710,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       class="pg-acc-iv"
                       class:active={view === 'transformation'}
                       type="button"
-                      title="Transformation"
+                      use:floatingTip={"Transformation"}
                       aria-label="Transformation view"
                       onclick={(e) => { e.stopPropagation(); setInstanceView(activeTab!.id, g.instance!.instance, 'transformation'); expandParamGroup(activeTab!.id, g.key); }}
                     >
@@ -6566,7 +6733,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                     <button
                       class="pg-acc-plus"
                       type="button"
-                      title="Add a property"
+                      use:floatingTip={"Add a property"}
                       aria-label="Add a property"
                       onclick={(e) => { e.stopPropagation(); openParamForm(activeTab!, e); }}
                     >+</button>
@@ -6577,7 +6744,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                     <button
                       class="pg-acc-x"
                       type="button"
-                      title={`Remove ${g.name}`}
+                      use:floatingTip={`Remove ${g.name}`}
                       aria-label={`Remove ${g.name}`}
                       onclick={(e) => {
                         e.stopPropagation();
@@ -6622,7 +6789,63 @@ export const geom = defineGeom(meta, (p, geom) => {
                    The HEAD (above) stays visible so the user can keep
                    the rest of the chain in view. -->
               <div class="pg-acc-body">
-              {#if inst && instView === 'transformation'}
+              {#if inst && instView === 'settings' && activeTab.componentEntry?.renderMode === 'server'}
+                <!-- Settings view — mutually exclusive with Properties +
+                     Transformation. Holds the colour swatch (relocated
+                     from the head) + the placement-mode picker (stack /
+                     overlay-with-offset / origin). Library parts only —
+                     the placement picker rewrites the loader's `top:`
+                     arg, which only the volume loader honours. -->
+                {@const sInst = inst.instance}
+                {@const sColor = activeTab.componentEntry.instanceColors?.[sInst] ?? colorForInstance(sInst)}
+                {@const sMode = (activeTab.componentEntry.instanceTopMode?.[sInst] ?? 'stack') as 'stack' | 'overlay' | 'origin'}
+                {@const sOff = activeTab.componentEntry.instanceTopOffset?.[sInst] ?? 0}
+                {@const sModeMeta = sMode === 'overlay'
+                  ? { glyph: '⇄', label: 'Overlay' }
+                  : sMode === 'origin'
+                    ? { glyph: '⤴', label: 'Origin' }
+                    : { glyph: '↓', label: 'Stack' }}
+                <div class="pg-acc-settings-view">
+                  <!-- Single inline row: swatch + placement button +
+                       (overlay only) offset input. No labels — each
+                       control carries its own tooltip. -->
+                  <div class="pg-acc-settings-row">
+                    <button
+                      class="pg-acc-swatch in-drawer"
+                      type="button"
+                      use:floatingTip={`Colour for ${sInst}`}
+                      aria-label={`Colour for ${sInst}`}
+                      style={`background: ${sColor};`}
+                      onclick={(e) => { e.stopPropagation(); openColorPicker(sInst, e); }}
+                    ></button>
+                    <button
+                      class="pg-acc-pm active"
+                      type="button"
+                      use:floatingTip={"Placement (click to change)"}
+                      aria-label="Placement"
+                      onclick={(e) => { e.stopPropagation(); openPlacementPicker(sInst, e); }}
+                    >{sModeMeta.glyph} {sModeMeta.label}</button>
+                    {#if sMode === 'overlay'}
+                      <input
+                        class="pg-acc-pm-off"
+                        type="number"
+                        step="0.1"
+                        value={sOff}
+                        placeholder="offset"
+                        aria-label="Overlay offset"
+                        use:floatingTip={"Distance from PREV.top (Enter to apply)"}
+                        onkeydown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const n = Number((e.currentTarget as HTMLInputElement).value);
+                            if (Number.isFinite(n)) setInstancePlacement(activeTab!, sInst, 'overlay', n);
+                          }
+                        }}
+                      />
+                    {/if}
+                  </div>
+                </div>
+              {:else if inst && instView === 'transformation'}
                 <!-- Transformation view — Grasshopper-style chip chain.
                      Renders inst.transforms[] left-to-right with arrows
                      between chips. Trailing round-red `+` is the
@@ -8750,6 +8973,46 @@ export const geom = defineGeom(meta, (p, geom) => {
   .op-cell.active .op-glyph { color: #1a1a2e; }
   .op-label { flex: 1; }
 
+  /* Placement picker popup — vertical list of 3 cells (Stack /
+     Overlay / Origin). Each cell: glyph + label + one-line desc
+     under the label, so the user can pick by skimming descriptions
+     rather than guessing from a glyph. */
+  .pp-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .pp-list { display: flex; flex-direction: column; gap: 4px; }
+  .pp-cell {
+    display: flex; align-items: flex-start; gap: 10px;
+    width: 100%;
+    background: #f7f7fa;
+    border: 1px solid #d8d8de;
+    border-radius: 4px;
+    padding: 7px 10px;
+    cursor: pointer;
+    font: 11px Arial; color: #333;
+    text-align: left;
+  }
+  .pp-cell:hover { background: #ececf2; color: #cc2222; border-color: #cc2222; }
+  .pp-cell.active {
+    background: #fff;
+    border: 2px solid #1a1a2e;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+    padding: 6px 9px; /* compensate for 2px border so size stays stable */
+  }
+  .pp-glyph {
+    font: bold 16px ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 1.2; width: 14px; text-align: center;
+    color: #444;
+    flex-shrink: 0;
+  }
+  .pp-cell.active .pp-glyph { color: #1a1a2e; }
+  .pp-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .pp-label { font-weight: 600; color: #1a1a2e; }
+  .pp-desc {
+    font-size: 10.5px;
+    color: #666;
+    line-height: 1.3;
+  }
+  .pp-cell:hover .pp-desc { color: #555; }
+
   /* Per-instance CSG-op tag — leftmost child of an instance accordion
      head. Reads as a tiny "this instance does X" tag for the row.
      Default + (add) renders neutral; subtract / intersect get distinct
@@ -8833,15 +9096,15 @@ export const geom = defineGeom(meta, (p, geom) => {
     bottom: calc(100% + 6px);
     left: 0;
     z-index: 200;
-    background: #1a1a2e;
+    background: #000;
     color: #fff;
-    padding: 5px 9px;
-    border-radius: 4px;
-    font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
     max-width: 320px;
     width: max-content;
     white-space: pre-line;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.24), 0 0 0 1px rgba(124,77,255,0.15);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
     pointer-events: none;
   }
   [data-tip]:hover::before {
@@ -8852,25 +9115,27 @@ export const geom = defineGeom(meta, (p, geom) => {
     z-index: 201;
     width: 0; height: 0;
     border: 5px solid transparent;
-    border-top-color: #1a1a2e;
+    border-top-color: #000;
     pointer-events: none;
   }
   /* Body-portaled tooltip — for elements inside overflow:auto containers
-     where the [data-tip] ::after pseudo gets clipped. Mounted by the
-     `floatingTip` action with inline top/left. Matches [data-tip]
-     styling (dark, instant) so the visual reads identical. */
+     where the [data-tip] ::after pseudo gets clipped, AND for the
+     accordion head toolbar buttons (where native `title=` would
+     introduce the OS ~1s hover delay). Mounted by the `floatingTip`
+     action with inline top/left. Matches [data-tip] styling (solid
+     black, white text, instant) so the visual reads identical. */
   :global(.floating-tip) {
     position: fixed;
     z-index: 2000;
-    background: #1a1a2e;
+    background: #000;
     color: #fff;
-    padding: 5px 9px;
-    border-radius: 4px;
-    font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
     max-width: 320px;
     width: max-content;
     white-space: pre-line;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.24), 0 0 0 1px rgba(124,77,255,0.15);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
     pointer-events: none;
   }
   .pr-card.extra .pr-lbl { color: #1a5b8a; font-style: italic; }
@@ -9014,6 +9279,71 @@ export const geom = defineGeom(meta, (p, geom) => {
   .pg-acc-head.instance .pg-acc-iv.active {
     background: #cc2222; color: #fff;
   }
+  /* Settings button — sliders icon. Same metrics as .pg-acc-iv so the
+     three icons in the left cluster (≡ ⚙ ↳) read as one toolbar. The
+     `.active` state fires when the inline drawer below is open so the
+     user can see at a glance which instance's drawer is showing. */
+  .pg-acc-settings {
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: #888;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .pg-acc-settings:hover { color: #cc2222; background: #fdecec; }
+  .pg-acc-settings.active { background: #cc2222; color: #fff; }
+
+  /* Per-instance Settings view — rendered as a body view branch (third
+     sibling of Properties + Transformation). Two rows stacked: Colour,
+     Placement. No own border — inherits the .pg-acc-body padding so
+     it sits flush inside the accordion just like the props grid does. */
+  .pg-acc-settings-view {
+    display: flex; flex-direction: column;
+    gap: 8px;
+    padding: 6px 4px 4px;
+  }
+  .pg-acc-settings-row {
+    display: flex; align-items: center;
+    gap: 8px;
+    font: 11px Arial; color: #555;
+  }
+  .pg-acc-swatch.in-drawer {
+    width: 18px; height: 18px;
+    border-radius: 3px;
+  }
+  /* Placement picker — 3 mode buttons; the overlay row also reveals a
+     compact offset input when overlay is the active mode. Active mode
+     gets the red-on-white treatment to match the rest of the inspector. */
+  .pg-acc-placement {
+    display: flex; align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .pg-acc-pm {
+    display: inline-flex; align-items: center;
+    background: #fff; color: #555;
+    border: 1px solid #d9d9e2;
+    border-radius: 3px;
+    padding: 2px 7px;
+    font: 11px Arial;
+    cursor: pointer;
+  }
+  .pg-acc-pm:hover { color: #cc2222; border-color: #cc2222; background: #fdecec; }
+  .pg-acc-pm.active {
+    background: #cc2222; color: #fff; border-color: #cc2222;
+  }
+  .pg-acc-pm-off {
+    width: 60px;
+    padding: 1px 5px;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid #d9d9e2;
+    border-radius: 3px;
+    background: #fff; color: #333;
+  }
+  .pg-acc-pm-off:focus { outline: none; border-color: #cc2222; }
 
   /* Transformation chain strip — Grasshopper-style horizontal chip
      chain rendering `inst.transforms[]`. Left-anchored, scrolls

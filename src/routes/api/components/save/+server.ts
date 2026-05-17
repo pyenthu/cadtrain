@@ -76,10 +76,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, source, create, picture, instanceColors, instanceOps } = body as {
+  const { id, source, create, picture, instanceColors, instanceOps, instanceTopMode, instanceTopOffset } = body as {
     id?: unknown; source?: unknown; create?: unknown; picture?: unknown;
     instanceColors?: unknown;
     instanceOps?: unknown;
+    instanceTopMode?: unknown;
+    instanceTopOffset?: unknown;
   };
 
   if (typeof id !== 'string' || typeof source !== 'string') {
@@ -193,6 +195,38 @@ export const POST: RequestHandler = async ({ request, url }) => {
     } catch { /* meta write is best-effort */ }
   }
 
+  // Per-instance placement (mode + offset). The settings drawer commits
+  // either field on its own or both together; merge into meta.json the
+  // same way as instanceOps. Modes outside the union are dropped silently
+  // so a bad payload can't poison the meta file; non-finite offsets are
+  // dropped too (the loader treats absent overlay offsets as 0 anyway).
+  const hasMode = instanceTopMode && typeof instanceTopMode === 'object';
+  const hasOff = instanceTopOffset && typeof instanceTopOffset === 'object';
+  if (wroteToLibrary && (hasMode || hasOff)) {
+    const merged: Record<string, unknown> = {};
+    if (hasMode) {
+      const modes: Record<string, 'stack' | 'overlay' | 'origin'> = {};
+      for (const [k, v] of Object.entries(instanceTopMode as Record<string, unknown>)) {
+        if (v === 'stack' || v === 'overlay' || v === 'origin') modes[k] = v;
+      }
+      merged.instanceTopMode = modes;
+    }
+    if (hasOff) {
+      const offs: Record<string, number> = {};
+      for (const [k, v] of Object.entries(instanceTopOffset as Record<string, unknown>)) {
+        if (typeof v === 'number' && Number.isFinite(v)) offs[k] = v;
+      }
+      merged.instanceTopOffset = offs;
+    }
+    try {
+      const partDir = dirname(targetPath);
+      const metaPath = join(partDir, PART_FILES.meta);
+      const existing = await resolvePart(id);
+      const prevMeta = existing?.meta ?? {};
+      await writeFile(metaPath, JSON.stringify({ ...prevMeta, ...merged }, null, 2), 'utf8');
+    } catch { /* meta write is best-effort */ }
+  }
+
   invalidateRunesListCache();
 
   // Geometry verification + optional GLB bake.
@@ -233,7 +267,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
       await initManifold();
       const loaded = await loadVolumeComponent(id);
       try {
-        const r = await bakeGlb(id, loaded.geom, extractDefaultsFromSource(source));
+        // Library parts: GLB lives inside the part directory as
+        // `mesh.glb` + `mesh.cut.glb` (per Rule 18, the part dir is
+        // self-contained). Pass the part's dir as outDir so bakeGlb
+        // writes there instead of the bundle STATIC_DIR (which is
+        // for src/-tracked bundle primitives only).
+        const r = await bakeGlb(id, loaded.geom, extractDefaultsFromSource(source), dirname(targetPath));
         bakeReport = r.ok ? { ok: true, bytes: r.bytes } : { ok: false, error: r.error };
       } catch (e: any) {
         bakeReport = { ok: false, error: e?.message ?? String(e) };

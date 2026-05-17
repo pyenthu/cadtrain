@@ -335,6 +335,99 @@ function applyInstanceOps(
   );
 }
 
+/** Walk from `start` inside an arg-object literal to the index that ends
+ *  the current key's value: the next top-level `,` or the closing `}` of
+ *  the object. Tracks (), [], {} depth so commas / closers inside nested
+ *  expressions don't fool us. Returns -1 if no terminator is found. */
+function findArgValueEnd(src: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']') {
+      if (depth === 0) return i;
+      depth--;
+    } else if (c === '}') {
+      if (depth === 0) return i;
+      depth--;
+    } else if (c === ',' && depth === 0) return i;
+  }
+  return -1;
+}
+
+/** Rewrite each `top:` arg in instance declarations per the caller-supplied
+ *  placement mode map. Walks declarations in source order so each
+ *  instance's PREV is the one immediately above it (matching how the
+ *  inspector orders them). Source on disk is unchanged — the rewrite is
+ *  layered at load time, then `expandInstancePropRefs` substitutes the
+ *  new `PREV.top + PREV.length` expressions to literals on the next pass.
+ *
+ *  Modes (instance keyed by uppercase name):
+ *    - 'stack'   → `top: PREV.top + PREV.length`
+ *    - 'overlay' → `top: PREV.top + <offset>` (or `PREV.top` when offset=0)
+ *    - 'origin'  → `top: 0`
+ *  Unset instances are left as-authored. First instance can only be
+ *  rewritten to 'origin' (it has no PREV); other modes silently skip it.
+ *  An instance whose call args have no `top:` key (helpers) is skipped.
+ */
+function applyInstanceTopMode(
+  src: string,
+  modes: Record<string, 'stack' | 'overlay' | 'origin'> | undefined,
+  offsets: Record<string, number> | undefined,
+): string {
+  if (!modes || Object.keys(modes).length === 0) return src;
+  // Collect every `let|const X = call(` declaration in source order.
+  const reDecl = /\b(?:let|const)\s+([A-Z][A-Z0-9]*)\s*=\s*[A-Za-z_][\w]*\s*\(/g;
+  type Decl = { name: string; argStart: number; argEnd: number };
+  const decls: Decl[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = reDecl.exec(src))) {
+    const openParen = m.index + m[0].length - 1;
+    const argStart = openParen + 1;
+    const argEnd = findMatchingParen(src, argStart);
+    if (argEnd === -1) continue;
+    decls.push({ name: m[1], argStart, argEnd });
+  }
+  if (decls.length === 0) return src;
+  // Process in REVERSE source order so earlier rewrites don't shift the
+  // indices we're about to splice into.
+  let out = src;
+  for (let i = decls.length - 1; i >= 0; i--) {
+    const { name, argStart, argEnd } = decls[i];
+    const mode = modes[name];
+    if (!mode) continue;
+    const prev = i > 0 ? decls[i - 1].name : null;
+    let newTop: string;
+    if (mode === 'origin') {
+      newTop = '0';
+    } else if (!prev) {
+      // First instance can't stack/overlay (no PREV). Skip silently.
+      continue;
+    } else if (mode === 'overlay') {
+      const off = offsets?.[name];
+      newTop = off && Number.isFinite(off) && off !== 0
+        ? `${prev}.top + ${off}`
+        : `${prev}.top`;
+    } else {
+      // 'stack'
+      newTop = `${prev}.top + ${prev}.length`;
+    }
+    // Find `top:` inside the args region. Match identifier-bound so
+    // `bottom:` or a substring inside a string literal isn't touched.
+    const argsRegion = out.slice(argStart, argEnd);
+    const topMatch = /\btop\s*:\s*/.exec(argsRegion);
+    if (!topMatch) continue; // helper or component without a `top` arg
+    const keyStartInArgs = topMatch.index;
+    const valStartInArgs = keyStartInArgs + topMatch[0].length;
+    const valEndInArgs = findArgValueEnd(argsRegion, valStartInArgs);
+    if (valEndInArgs === -1) continue;
+    const valStart = argStart + valStartInArgs;
+    const valEnd = argStart + valEndInArgs;
+    out = out.slice(0, valStart) + newTop + out.slice(valEnd);
+  }
+  return out;
+}
+
 /**
  * Transpile a component `.ts` source string and execute it in a sandboxed
  * host-realm function, returning `{ meta, geom }`. `resolveDep` supplies
@@ -343,20 +436,34 @@ function applyInstanceOps(
  * `instanceOps` (optional) rewrites `geom.add(<inst>);` calls to
  * `geom.subtract(...)` / `geom.intersect(...)` per the part's
  * meta.instanceOps map. Unset instances stay as `geom.add` (default).
+ *
+ * `instanceTopMode` + `instanceTopOffset` (optional) rewrite each
+ * instance's `top:` arg before prop-ref expansion so the placement
+ * picker semantics (stack below / overlay-with-offset / at origin)
+ * cascade through to the mv translate via the normal expansion path.
  */
 export function loadGeomFromSource(
   src: string,
   resolveDep: DepResolver,
   instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>,
+  instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>,
+  instanceTopOffset?: Record<string, number>,
 ): LoadedComponent {
   const { stripped, deps } = parseImports(src);
+  // Per-instance placement rewrite — rewrites each `top:` arg per the
+  // mode (+ optional offset). MUST run before expandInstancePropRefs so
+  // the new `PREV.top + PREV.length` (etc.) gets substituted to literals
+  // in the same pass, and so the mv vec3 reading `B.top` picks up the
+  // new value via the normal expansion path. Source on disk is
+  // unchanged — semantics layer on top at execute time.
+  const withTop = applyInstanceTopMode(stripped, instanceTopMode, instanceTopOffset);
   // Substitute `<INST>.<prop>` cross-instance references (e.g.
   // `B = mv(B, [A.length, 0, 0])`) BEFORE transpile — the executed
   // JS sees the concrete numeric value where the user wrote a
   // part-prop reference. Source-on-disk preserves the reference
   // text, so the substitution re-runs on every load and the
   // cascade stays live across saves.
-  const expanded = expandInstancePropRefs(stripped, deps, resolveDep);
+  const expanded = expandInstancePropRefs(withTop, deps, resolveDep);
   // Per-instance CSG op rewrite — flips `geom.add(<inst>);` to
   // `geom.subtract(...)` / `geom.intersect(...)` based on the part's
   // meta.instanceOps. The source on disk stays additive; the
@@ -485,14 +592,20 @@ export async function loadVolumeComponent(
   } catch {
     throw new Error(`Library part "${id}" component.ts unreadable at ${path}.`);
   }
-  // Cache key folds in instanceOps so toggling an op flips the executed
-  // geom on the next /api/components/geom call without needing the user
-  // to also edit the source. (Save endpoint also calls invalidate, so
-  // this is belt + suspenders.)
+  // Cache key folds in instanceOps + placement so toggling any of them
+  // flips the executed geom on the next /api/components/geom call
+  // without needing the user to also edit the source. (Save endpoint
+  // also calls invalidate, so this is belt + suspenders.)
   const opsSig = part.meta.instanceOps
     ? JSON.stringify(Object.entries(part.meta.instanceOps).sort())
     : '';
-  const hash = sha(`${src} ${opsSig}`);
+  const topModeSig = part.meta.instanceTopMode
+    ? JSON.stringify(Object.entries(part.meta.instanceTopMode).sort())
+    : '';
+  const topOffSig = part.meta.instanceTopOffset
+    ? JSON.stringify(Object.entries(part.meta.instanceTopOffset).sort())
+    : '';
+  const hash = sha(`${src} ${opsSig} ${topModeSig} ${topOffSig}`);
   const cached = volumeCache.get(id);
   if (cached && cached.sourceHash === hash) return cached.loaded;
 
@@ -523,6 +636,8 @@ export async function loadVolumeComponent(
       return dep;
     },
     part.meta.instanceOps,
+    part.meta.instanceTopMode,
+    part.meta.instanceTopOffset,
   );
 
   volumeCache.set(id, { sourceHash: hash, loaded });

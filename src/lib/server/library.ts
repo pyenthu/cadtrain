@@ -81,6 +81,22 @@ export interface PartMeta {
    *  so the existing union semantics stay intact. Library parts only —
    *  bundle primitives don't carry meta.json. */
   instanceOps?: Record<string, 'add' | 'subtract' | 'intersect'>;
+  /** Per-instance placement mode, keyed by instance name (`A`, `B`, ...).
+   *  Picks how the loader rewrites this instance's `top:` arg:
+   *    - 'stack'   — `top: PREV.top + PREV.length`   (default — append
+   *                  below the previous part, current autoTranslate
+   *                  behaviour)
+   *    - 'overlay' — `top: PREV.top + <offset>`      (nest inside the
+   *                  previous part; offset from `instanceTopOffset`)
+   *    - 'origin'  — `top: 0`                        (reset to absolute
+   *                  top of the assembly, ignore previous)
+   *  First instance ignores the mode (it has no previous). Absent
+   *  entries default to 'stack' so existing parts keep current
+   *  behaviour. Library parts only. */
+  instanceTopMode?: Record<string, 'stack' | 'overlay' | 'origin'>;
+  /** Offset (number, in part units) for instances whose
+   *  `instanceTopMode` is `'overlay'`. Absent / non-finite → 0. */
+  instanceTopOffset?: Record<string, number>;
 }
 
 export interface ResolvedPart {
@@ -150,6 +166,20 @@ async function readPartMeta(dir: string): Promise<PartMeta> {
         if (v === 'add' || v === 'subtract' || v === 'intersect') ops[k] = v;
       }
       if (Object.keys(ops).length > 0) out.instanceOps = ops;
+    }
+    if (parsed.instanceTopMode && typeof parsed.instanceTopMode === 'object') {
+      const modes: Record<string, 'stack' | 'overlay' | 'origin'> = {};
+      for (const [k, v] of Object.entries(parsed.instanceTopMode)) {
+        if (v === 'stack' || v === 'overlay' || v === 'origin') modes[k] = v;
+      }
+      if (Object.keys(modes).length > 0) out.instanceTopMode = modes;
+    }
+    if (parsed.instanceTopOffset && typeof parsed.instanceTopOffset === 'object') {
+      const offs: Record<string, number> = {};
+      for (const [k, v] of Object.entries(parsed.instanceTopOffset)) {
+        if (typeof v === 'number' && Number.isFinite(v)) offs[k] = v;
+      }
+      if (Object.keys(offs).length > 0) out.instanceTopOffset = offs;
     }
     return out;
   } catch {
