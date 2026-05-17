@@ -88,3 +88,105 @@ export const geom = (p) => baseGeom(p);
     ).toThrow(/must export/);
   });
 });
+
+describe('split-init-composition grammar (Stage A loader gate)', () => {
+  it('accepts a single instance with no composition (vacuous)', () => {
+    const src = `
+import { cyl } from '../manifold-helpers';
+import { defineGeom } from '.';
+export const meta = { id: 'a', name: 'A', params: {} } as const;
+export const geom = defineGeom(meta, (p, geom) => {
+  let A = cyl(1, 0.5);
+  geom.add(A);
+});
+`;
+    expect(() => loadGeomFromSource(src, () => { throw new Error('no deps'); })).not.toThrow();
+  });
+
+  it('accepts the split layout (every decl above all geom.<op> calls)', () => {
+    const src = `
+import { cyl } from '../manifold-helpers';
+import { defineGeom } from '.';
+export const meta = { id: 'a', name: 'A', params: {} } as const;
+export const geom = defineGeom(meta, (p, geom) => {
+  let A = cyl(1, 0.5);
+  let B = cyl(1, 0.4);
+  geom.add(A);
+  geom.subtract(B);
+});
+`;
+    expect(() => loadGeomFromSource(src, () => { throw new Error('no deps'); })).not.toThrow();
+  });
+
+  it('rejects an interleaved layout with a line number', () => {
+    const src = `
+import { cyl } from '../manifold-helpers';
+import { defineGeom } from '.';
+export const meta = { id: 'a', name: 'A', params: {} } as const;
+export const geom = defineGeom(meta, (p, geom) => {
+  let A = cyl(1, 0.5);
+  geom.add(A);
+  let B = cyl(1, 0.4);
+  geom.subtract(B);
+});
+`;
+    expect(() => loadGeomFromSource(src, () => { throw new Error('no deps'); })).toThrow(/Grammar violation/);
+  });
+});
+
+describe('loadGeomFromSource — injectedMeta (Stage B.2 JSON meta)', () => {
+  it('uses injected JSON meta when source has no inline export', () => {
+    // Source has no `export const meta` — only a geom export and the
+    // defineGeom reference. The loader's prepend gives it both.
+    const src = `
+import { cyl } from '../manifold-helpers';
+import { defineGeom } from '.';
+export const geom = defineGeom(meta, (p, geom) => {
+  let A = cyl(p.length, p.r);
+  geom.add(A);
+});
+`;
+    const loaded = loadGeomFromSource(
+      src,
+      () => { throw new Error('no deps'); },
+      undefined,
+      undefined,
+      {
+        id: 'json_part',
+        name: 'JSON Part',
+        description: 'meta from JSON',
+        params: {
+          length: { label: 'L', min: 0, max: 5, step: 0.1, default: 2 },
+          r: { label: 'R', min: 0, max: 2, step: 0.1, default: 0.5 },
+        },
+      },
+    );
+    expect(loaded.meta.id).toBe('json_part');
+    expect(loaded.meta.name).toBe('JSON Part');
+    expect(loaded.meta.params.length.default).toBe(2);
+  });
+
+  it('inline export const meta wins over injectedMeta (back-compat path)', () => {
+    // Pre-migration parts still have an inline export — that one MUST
+    // overwrite the prepended JSON since the inline write happens later
+    // in execution order. Preserves backward compat during the
+    // migration window.
+    const src = `
+import { cyl } from '../manifold-helpers';
+import { defineGeom } from '.';
+export const meta = { id: 'inline_wins', name: 'Inline', params: {} } as const;
+export const geom = defineGeom(meta, (p, geom) => {
+  let A = cyl(1, 0.5);
+  geom.add(A);
+});
+`;
+    const loaded = loadGeomFromSource(
+      src,
+      () => { throw new Error('no deps'); },
+      undefined,
+      undefined,
+      { id: 'should_be_overridden', name: 'Should Lose', params: {} },
+    );
+    expect(loaded.meta.id).toBe('inline_wins');
+  });
+});

@@ -494,20 +494,25 @@ export function loadGeomFromSource(
   // cascade stays live across saves.
   const expanded = expandInstancePropRefs(withTop, deps, resolveDep);
 
-  // Prepend the JSON meta (if any) as a local `const meta` + an
-  // `exports.meta` so:
-  //  - the user's `defineGeom(meta, fn)` call resolves whether or not
-  //    the source itself has an inline `export const meta`.
-  //  - if the source has NO inline `export const meta` (the post-
-  //    migration shape), the module still exposes one for the loader
-  //    to read back.
-  //  - if the source DOES have an inline `export const meta`, the
-  //    inline export overwrites the prepended one (the inline write
-  //    happens later in execution order). Inline meta still wins, so
-  //    pre-migration parts keep their current behaviour.
+  // Prepend the JSON meta as an `export const meta = ...` when the
+  // source doesn't already declare one. esbuild's CJS output wires
+  // `export const` declarations into the module's exports — a plain
+  // `exports.meta = ...` would NOT survive esbuild's
+  // `module.exports = __toCommonJS(stdin_exports)` rebind (it runs
+  // BEFORE the user code, so any post-rebind `exports.meta = ...`
+  // hits a stale `exports` while the actual module.exports has been
+  // replaced). The injected ESM export also brings `meta` into scope
+  // so the user's `defineGeom(meta, fn)` call resolves at load time.
+  //
+  // When the source HAS an inline `export const meta`, we skip the
+  // prepend entirely — declaring `const meta` twice is a fatal
+  // esbuild transform error. Inline meta wins (back-compat path for
+  // pre-migration parts).
+  //
   // JSON.stringify is safe — PartMeta is JSON-clean by construction.
-  const prefix = injectedMeta
-    ? `const meta = ${JSON.stringify(injectedMeta)};\nexports.meta = meta;\n`
+  const hasInlineMeta = /\bexport\s+const\s+meta\s*=/.test(expanded);
+  const prefix = injectedMeta && !hasInlineMeta
+    ? `export const meta = ${JSON.stringify(injectedMeta)};\n`
     : '';
   const { code } = transformSync(prefix + expanded, {
     loader: 'ts',

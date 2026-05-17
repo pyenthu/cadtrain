@@ -26,10 +26,67 @@ import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
 import { parseImports } from '$lib/server/component-loader';
 import { transformSync } from 'esbuild';
+import { readFile, readdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import { join } from 'path';
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_PROMPT_BYTES = 4 * 1024;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const ASSEMBLIES_DIR = join(process.cwd(), 'docs', 'assemblies');
+
+/** Pull assembly recipes from docs/assemblies whose filename or first
+ *  H1 mentions any whitespace-separated keyword in the user prompt.
+ *  Returns up to N recipe bodies concatenated with their filenames so
+ *  the AI can crib from existing recipes when the user asks for a
+ *  named assembly. Empty when no recipes match — that's the common
+ *  case for parameter tweaks on a single primitive. */
+async function findMatchingRecipes(prompt: string, max = 2): Promise<string> {
+  if (!existsSync(ASSEMBLIES_DIR)) return '';
+  let files: string[];
+  try {
+    files = await readdir(ASSEMBLIES_DIR);
+  } catch {
+    return '';
+  }
+  // Lowercased keyword set from the prompt — drop the noise words
+  // ("the", "and", …) so a long prompt doesn't accidentally match
+  // every recipe.
+  const NOISE = new Set([
+    'the', 'and', 'with', 'add', 'make', 'into', 'this', 'that', 'for',
+    'from', 'into', 'use', 'using', 'build', 'show', 'give', 'me',
+    'is', 'are', 'an', 'a', 'i', 'we', 'be', 'to', 'of', 'in', 'on',
+  ]);
+  const keywords = new Set(
+    prompt
+      .toLowerCase()
+      .split(/[^a-z0-9_]+/)
+      .filter((w) => w.length >= 3 && !NOISE.has(w)),
+  );
+  if (keywords.size === 0) return '';
+  const candidates: { file: string; score: number; body: string }[] = [];
+  for (const f of files) {
+    if (!f.endsWith('.md') || f.startsWith('_')) continue;
+    const base = f.replace(/\.md$/, '');
+    const baseTokens = base.split(/[^a-z0-9_]+/i).map((t) => t.toLowerCase());
+    let score = 0;
+    for (const t of baseTokens) if (keywords.has(t)) score += 3;
+    if (score === 0) continue; // require filename hit at least
+    let body = '';
+    try { body = await readFile(join(ASSEMBLIES_DIR, f), 'utf8'); } catch { continue; }
+    // Also count keyword hits in the first 200 chars (the title +
+    // intro paragraph). Cheap proxy for relevance without parsing
+    // the whole file.
+    const intro = body.slice(0, 200).toLowerCase();
+    for (const k of keywords) if (intro.includes(k)) score += 1;
+    candidates.push({ file: f, score, body });
+  }
+  if (candidates.length === 0) return '';
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, max)
+    .map((c) => `### From docs/assemblies/${c.file}\n\n${c.body.trim()}`)
+    .join('\n\n---\n\n');
+}
 
 /** Format a helper-meta entry as one prompt line, e.g.
  *  `- cyl(length, r1, r2?)  — Z-up cylinder/cone (r2 defaults to r1).` */
@@ -293,11 +350,24 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const model = env.RUNES_REFINE_MODEL ?? DEFAULT_MODEL;
   const system = buildSystemPrompt(id);
 
+  // Level 4 — assembly-aware prompting. When the user's prompt mentions
+  // a recognised real-world assembly (matched by filename token + intro
+  // keyword hits in docs/assemblies/*.md), inject the matching recipes
+  // so the model starts from "here's how this was modelled before"
+  // instead of from first principles. Empty when no recipe matches —
+  // most refines are single-primitive param tweaks where the assembly
+  // context is irrelevant.
+  const assemblyContext = await findMatchingRecipes(prompt);
+
   // Build the base user message; the retry round appends an extra
   // turn carrying the validator's hint so Claude can fix the issue
   // without restarting the conversation from scratch.
   const userBase = [
     inst.trim() ? `Persistent design spec for this primitive (from ${id}.md):\n\n${inst}\n` : '',
+    assemblyContext
+      ? `Relevant assembly recipes from docs/assemblies/ (use these for vocabulary, ` +
+        `stack order, and starter dimensions):\n\n${assemblyContext}\n`
+      : '',
     `Current source of ${id}.ts:\n\n\`\`\`typescript\n${source}\n\`\`\``,
     `Goal: ${prompt}`,
     `Return the complete updated file as a single fenced \`\`\`typescript code block.`,
