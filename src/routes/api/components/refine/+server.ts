@@ -24,6 +24,8 @@ import { createAnthropicClient } from '$lib/shared/anthropic-api';
 import { checkRateLimit } from '$lib/rate_limit';
 import { COMPONENT_REGISTRY } from '$lib/cad/components';
 import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
+import { parseImports } from '$lib/server/component-loader';
+import { transformSync } from 'esbuild';
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_PROMPT_BYTES = 4 * 1024;
@@ -79,15 +81,26 @@ export const meta = {
   validate: (p) => string[],  // optional
 } as const;
 
-// Accumulator form. \`geom\` is supplied empty by the framework; add parts
-// onto it. No \`let geom = ...\`, no \`return\`. Each part declared as a
-// \`let|const X = call(args);\` line, then folded in with \`geom.add(X)\`.
+// SPLIT INIT/COMPOSITION grammar (STRICT — the loader rejects violations).
+// Body partitions into TWO regions, in order:
+//
+//   (1) INITIALIZATION — every \`let|const X = call(...)\` declaration
+//       plus any chained \`X = mv(X, ...)\` / \`X = rot(X, ...)\` reassignments.
+//   (2) COMPOSITION    — every \`geom.add(X)\` / \`geom.subtract(X)\` /
+//       \`geom.intersect(X)\` call. The CSG op (union vs cut vs overlap)
+//       lives HERE in the source — there is no \`meta.instanceOps\` field.
+//
+// The boundary is the FIRST \`geom.<op>(...)\` line. Any \`let|const X = …\`
+// declaration AFTER that line is a grammar violation.
 export const geom = defineGeom(meta, (p, geom) => {
+  // INIT
   let A = cyl(p.length, p.od / 2, p.od / 2);
-  geom.add(A);
   let B = tube(p.od / 2, (p.od / 2) - p.wall, p.length);
   B = mv(B, [0, 0, A.top + A.length]);  // stack B below A (see top-model)
-  geom.add(B);
+
+  // COMP — pick add / subtract / intersect per instance.
+  geom.add(A);
+  geom.subtract(B);
 });
 \`\`\`
 
@@ -127,11 +140,15 @@ ${otherPrims || '  (none in the registry yet)'}
 
 # Meta fields the LOADER manages — do NOT touch
 The volume part's \`meta.json\` carries: \`family\`, \`level\`, \`autoTranslate\`,
-\`instanceColors\`, \`instanceOps\`, \`instanceTopMode\`, \`instanceTopOffset\`.
-These live OUTSIDE the \`.ts\` file (in a sibling \`meta.json\`). Never emit
-them in the \`.ts\` export. Never reference them from geom logic — they're
-applied by the loader (e.g. instanceTopMode rewrites the \`top:\` arg before
-prop-ref expansion).
+\`instanceColors\`, \`instanceTopMode\`, \`instanceTopOffset\`. These live
+OUTSIDE the \`.ts\` file (in a sibling \`meta.json\`). Never emit them in the
+\`.ts\` export. Never reference them from geom logic — they're applied by
+the loader (e.g. instanceTopMode rewrites the \`top:\` arg before prop-ref
+expansion).
+
+NOTE: \`meta.instanceOps\` is GONE. The per-instance CSG op now lives in
+the composition source itself — write \`geom.subtract(X)\` directly, do
+not try to express subtraction via a meta field.
 
 # Derived params
 If a value is purely computed from sliders, declare it in \`meta.derived\` so
@@ -144,8 +161,13 @@ Respond with the COMPLETE updated file as a single fenced \`\`\`typescript code 
 - Preserve all existing imports unless the edit removes a referenced symbol.
 - Keep \`meta.id\` unchanged.
 - Use param names that already exist; introduce new ones only when needed.
-- If you remove an instance, remove EVERY reference to it elsewhere in geom
-  (most common bug: deleting \`let B = …\` but leaving \`B.length\` in a sibling).
+- If you remove an instance, remove EVERY reference to it (the \`let X =\`
+  decl, every chain reassignment, AND the \`geom.<op>(X)\` call in the
+  composition section). Most common bug: deleting \`let B = …\` but leaving
+  \`B.length\` in a sibling — throws "B is not defined" at execute time.
+- Maintain split init/composition layout. Every \`let|const X = …\` MUST
+  appear ABOVE every \`geom.<op>(...)\` call. Mixing the two regions is a
+  grammar violation the loader rejects on save with a clear line number.
 - Add comments sparingly — only where geometry intent isn't obvious from names.
 - Always close braces and semicolons cleanly. Parse-clean TypeScript only.
 `;
@@ -159,6 +181,84 @@ function extractCodeBlock(text: string): string {
   const m = /```(?:typescript|ts)?\n([\s\S]*?)\n```/.exec(text);
   if (m) return m[1];
   return text.trim();
+}
+
+/** Post-generation validation. Catches the four most common ways an AI
+ *  edit goes wrong BEFORE the user accepts it, so the error message
+ *  comes back here (where the retry path lives) instead of at execute
+ *  time (where the user has to start over).
+ *
+ *  Layers (cheapest first):
+ *    1. parseImports — allowlist check on imports + denylist scan for
+ *       sandbox-escape tokens (`require(`, `process`, `eval(`, …).
+ *    2. enforceSplitGrammar (re-implemented locally — keeping the loader
+ *       check + the refine check in lockstep is easier than exporting a
+ *       shared symbol because Stage A's enforce is private to the loader).
+ *    3. esbuild transform — parse-check. Catches typos / unbalanced
+ *       braces / TS that won't compile.
+ *    4. Undefined-instance scan — walk every `<INST>.<prop>` reference
+ *       and complain when the inst hasn't been declared with
+ *       `let|const <INST> = …`. Catches the "deleted A but kept B.length
+ *       = A.top" bug the prompt warns about.
+ *
+ *  Returns a Validation result. `ok: true` means we'll return the source;
+ *  `ok: false` with `retryHint` means we should ask Claude to fix it.
+ *  Heavy WASM bake validation is NOT run here — that's Level 3 (the
+ *  Accept-button live-bake gate), invoked from the inspector. */
+function validateRefinedSource(src: string): { ok: true } | { ok: false; retryHint: string } {
+  // Layer 1: imports + denylist (via parseImports — throws on either).
+  let stripped: string;
+  try {
+    const parsed = parseImports(src);
+    stripped = parsed.stripped;
+  } catch (e: any) {
+    return { ok: false, retryHint: `Import / sandbox check failed: ${e?.message ?? e}` };
+  }
+  // Layer 2: split-grammar gate. Same shape as enforceSplitGrammar in
+  // the loader — keeping them locally aligned avoids the cross-module
+  // export dance.
+  const opRe = /\bgeom\s*\.\s*(add|subtract|intersect)\s*\(/;
+  const firstOp = opRe.exec(stripped);
+  if (firstOp) {
+    const declAfterRe = /\b(?:let|const)\s+[A-Z][A-Z0-9]*\s*=\s*[A-Za-z_][\w]*\s*\(/g;
+    declAfterRe.lastIndex = firstOp.index;
+    const stray = declAfterRe.exec(stripped);
+    if (stray) {
+      const lineNo = stripped.slice(0, stray.index).split('\n').length;
+      return {
+        ok: false,
+        retryHint:
+          `Grammar violation on line ${lineNo}: instance declaration "${stray[0]}" appears AFTER ` +
+          `the first geom.${firstOp[1]}(...) call. Move every let|const X = …(…) line into the ` +
+          `INITIALIZATION section (above ALL geom.add / geom.subtract / geom.intersect calls).`,
+      };
+    }
+  }
+  // Layer 3: esbuild parse-check.
+  try {
+    transformSync(stripped, { loader: 'ts', format: 'cjs', target: 'node22' });
+  } catch (e: any) {
+    return { ok: false, retryHint: `TypeScript parse failed: ${e?.message ?? e}` };
+  }
+  // Layer 4: undefined-instance scan.
+  const declared = new Set<string>();
+  const declRe = /\b(?:let|const)\s+([A-Z][A-Z0-9]*)\s*=/g;
+  for (const m of stripped.matchAll(declRe)) declared.add(m[1]);
+  const refRe = /\b([A-Z][A-Z0-9]*)\.([a-z][a-zA-Z0-9_]*)\b/g;
+  const seen = new Set<string>();
+  for (const m of stripped.matchAll(refRe)) {
+    const inst = m[1];
+    if (declared.has(inst) || seen.has(inst)) continue;
+    seen.add(inst);
+    return {
+      ok: false,
+      retryHint:
+        `Undefined instance reference "${inst}.${m[2]}" — no \`let|const ${inst} = …\` ` +
+        `declaration anywhere in the body. Either declare ${inst} in the initialization ` +
+        `section, or drop the reference.`,
+    };
+  }
+  return { ok: true };
 }
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
@@ -193,39 +293,86 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const model = env.RUNES_REFINE_MODEL ?? DEFAULT_MODEL;
   const system = buildSystemPrompt(id);
 
-  let response: any;
-  try {
-    response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      system,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            inst.trim() ? `Persistent design spec for this primitive (from ${id}.md):\n\n${inst}\n` : '',
-            `Current source of ${id}.ts:\n\n\`\`\`typescript\n${source}\n\`\`\``,
-            `Goal: ${prompt}`,
-            `Return the complete updated file as a single fenced \`\`\`typescript code block.`,
-          ].filter(Boolean).join('\n\n'),
-        },
-      ],
-    });
-  } catch (e: any) {
-    throw error(502, `Claude API error: ${e?.message ?? e}`);
+  // Build the base user message; the retry round appends an extra
+  // turn carrying the validator's hint so Claude can fix the issue
+  // without restarting the conversation from scratch.
+  const userBase = [
+    inst.trim() ? `Persistent design spec for this primitive (from ${id}.md):\n\n${inst}\n` : '',
+    `Current source of ${id}.ts:\n\n\`\`\`typescript\n${source}\n\`\`\``,
+    `Goal: ${prompt}`,
+    `Return the complete updated file as a single fenced \`\`\`typescript code block.`,
+  ].filter(Boolean).join('\n\n');
+
+  const messages: any[] = [{ role: 'user', content: userBase }];
+
+  async function callClaude() {
+    try {
+      return await client.messages.create({
+        model,
+        max_tokens: 4096,
+        system,
+        messages,
+      });
+    } catch (e: any) {
+      throw error(502, `Claude API error: ${e?.message ?? e}`);
+    }
   }
 
-  // Concatenate all text blocks from the response (Claude SDK returns
-  // content as an array of blocks; for a text-only completion there's
-  // usually just one, but tolerate multiple).
-  const raw = (response?.content ?? [])
-    .filter((b: any) => b?.type === 'text')
-    .map((b: any) => b.text as string)
-    .join('\n');
+  function extractEdited(response: any): { edited: string; raw: string } {
+    const raw = (response?.content ?? [])
+      .filter((b: any) => b?.type === 'text')
+      .map((b: any) => b.text as string)
+      .join('\n');
+    return { edited: extractCodeBlock(raw), raw };
+  }
 
-  const edited = extractCodeBlock(raw);
+  // First pass — generate.
+  let response: any = await callClaude();
+  let { edited, raw } = extractEdited(response);
   if (!edited || edited.length < 20) {
     return json({ ok: false, error: 'Claude did not return a usable code block.', raw }, { status: 502 });
+  }
+
+  // Level 2 — validate + retry once on failure. The retry adds an
+  // assistant turn (the previous output) + a user turn with the hint,
+  // so Claude sees its prior attempt + the specific error and can fix
+  // narrowly. One retry only — repeated failures usually mean the goal
+  // is ambiguous, not that another pass would help.
+  let validation = validateRefinedSource(edited);
+  if (!validation.ok) {
+    messages.push({ role: 'assistant', content: raw });
+    messages.push({
+      role: 'user',
+      content:
+        `Validation failed on your previous output:\n\n${validation.retryHint}\n\n` +
+        `Fix this one issue and re-emit the COMPLETE file as a single \`\`\`typescript code block.`,
+    });
+    response = await callClaude();
+    const retry = extractEdited(response);
+    edited = retry.edited;
+    raw = retry.raw;
+    if (!edited || edited.length < 20) {
+      return json(
+        { ok: false, error: 'Validator retry: Claude did not return a usable code block.', raw },
+        { status: 502 },
+      );
+    }
+    validation = validateRefinedSource(edited);
+    if (!validation.ok) {
+      // Still bad. Return the source AS-IS so the user can inspect,
+      // but mark `ok: false` + surface the hint so the inspector knows
+      // not to auto-accept (Level 3 will gate that on a live bake too).
+      return json(
+        {
+          ok: false,
+          source: edited,
+          model,
+          error: `Validation failed after retry: ${validation.retryHint}`,
+          usage: response?.usage ?? null,
+        },
+        { status: 422 },
+      );
+    }
   }
 
   return json({

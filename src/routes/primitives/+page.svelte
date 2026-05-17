@@ -3225,6 +3225,17 @@ export const geom = defineGeom(meta, (p, geom) => {
     tab.appliedAt = Date.now();
   }
 
+  /** Force a fresh /api/components/geom POST + GLB re-bake without
+   *  requiring a source edit. The build $effect's `buildKey` already
+   *  folds in `appliedAt`; bumping it makes the effect re-fire with
+   *  the current params + source. Useful after fixing meta.json by
+   *  hand, after toggling placement modes, or just to confirm the
+   *  rendered geometry matches what the source says. */
+  function rebuildActiveTab() {
+    if (!activeTab) return;
+    activeTab.appliedAt = Date.now();
+  }
+
   function removeHelper(name: string) {
     if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
     const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
@@ -7714,6 +7725,21 @@ export const geom = defineGeom(meta, (p, geom) => {
             </div>
           {/if}
           <p class="code-note">Source: <code>src/lib/cad/components/{m.id}.ts</code> · save via the bar below.</p>
+          <!-- Rebuild button — bumps appliedAt to force a fresh
+               /api/components/geom POST + GLB re-bake without needing
+               a source edit. Useful after hand-editing meta.json,
+               flipping placement modes, or just verifying the rendered
+               geometry matches the source. -->
+          <div class="builder-actions">
+            <button
+              class="rebuild-btn"
+              type="button"
+              onclick={() => rebuildActiveTab()}
+              use:floatingTip={'Re-run server geom build with current params + source'}
+            >
+              <span class="ic">↻</span> Rebuild
+            </button>
+          </div>
         {:else if inspectorTab === 'script' && activeTab.kind !== 'xml-primitive'}
           <div class="ed-sec">
             <div class="ed-sec-h">
@@ -10129,6 +10155,19 @@ export const geom = defineGeom(meta, (p, geom) => {
     white-space: pre;
   }
   .code-note { font: 10px Arial; color: #888; line-height: 1.5; margin: 6px 0 0; }
+  /* Builder tab footer — single Rebuild action button right-aligned
+     below the code note. Matches the chrome of other small inspector
+     buttons so it doesn't shout for attention. */
+  .builder-actions { display: flex; justify-content: flex-end; padding: 8px 0 4px; }
+  .rebuild-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; font: 11px/1.2 Arial;
+    background: #fafafa; border: 1px solid #d0d0d0; border-radius: 4px;
+    color: #333; cursor: pointer; user-select: none;
+  }
+  .rebuild-btn:hover { background: #f0f0f0; border-color: #b0b0b0; }
+  .rebuild-btn:active { background: #e8e8e8; }
+  .rebuild-btn .ic { font-size: 13px; line-height: 1; }
   .code-note code { font: 10px monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 3px; color: #444; }
 
   /* ── Parts tab — module-library browser ────────────────────────────────
