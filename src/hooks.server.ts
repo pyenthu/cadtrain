@@ -6,7 +6,6 @@ import { checkRateLimit } from '$lib/rate_limit';
 const RATE_LIMITED_PREFIXES = [
   '/api/identify',
   '/api/refine',
-  '/api/author/chat',
   '/api/wells/extract',
 ];
 const RATE_LIMIT_MAX = 20;
