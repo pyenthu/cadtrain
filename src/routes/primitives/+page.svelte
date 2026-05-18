@@ -3670,6 +3670,19 @@ export const geom = defineGeom(meta, (p, geom) => {
         activeTab && activeTab.kind === 'xml-primitive' ? activeTab.sourceDraft : null;
       const useServerPath = entry && (entry.renderMode === 'server' || !!draft);
       if (entry && useServerPath) {
+        // Dispatch the in-flight draft as `recipe` (parsed JSON) when
+        // the source sniffs as a JSON recipe; otherwise as `source`
+        // (legacy .ts string). Both endpoints accept either shape.
+        let draftRecipe: any = null;
+        let draftSource: string | null = null;
+        if (draft) {
+          if (isJsonRecipeSource(draft)) {
+            try { draftRecipe = JSON.parse(draft); }
+            catch { /* invalid JSON — skip the preview, server will use disk */ }
+          } else {
+            draftSource = draft;
+          }
+        }
         try {
           const r = await fetch('/api/components/geom', {
             method: 'POST',
@@ -3678,7 +3691,8 @@ export const geom = defineGeom(meta, (p, geom) => {
               id: entry.meta.id,
               params: { ...activeTab!.params },
               zScale: scene.zScale,
-              ...(draft ? { source: draft } : {}),
+              ...(draftSource ? { source: draftSource } : {}),
+              ...(draftRecipe ? { recipe: draftRecipe } : {}),
             }),
           });
           if (!r.ok) {
@@ -3756,6 +3770,15 @@ export const geom = defineGeom(meta, (p, geom) => {
     const instanceTopMode = tab.componentEntry.instanceTopMode;
     const instanceTopOffset = tab.componentEntry.instanceTopOffset;
 
+    // Same dispatch as the geom build effect: parse the draft as a
+    // recipe when it sniffs JSON; otherwise treat it as legacy TS.
+    let previewRecipe: any = null;
+    let previewSource: string | null = null;
+    if (isJsonRecipeSource(source)) {
+      try { previewRecipe = JSON.parse(source); } catch { /* skip */ }
+    } else {
+      previewSource = source;
+    }
     if (livePreviewBakeTimer) clearTimeout(livePreviewBakeTimer);
     livePreviewBakeTimer = setTimeout(async () => {
       try {
@@ -3765,7 +3788,8 @@ export const geom = defineGeom(meta, (p, geom) => {
           body: JSON.stringify({
             id,
             params: paramsSnap,
-            source,
+            ...(previewSource ? { source: previewSource } : {}),
+            ...(previewRecipe ? { recipe: previewRecipe } : {}),
             cut,
             ...(instanceTopMode ? { instanceTopMode } : {}),
             ...(instanceTopOffset ? { instanceTopOffset } : {}),
@@ -3788,13 +3812,88 @@ export const geom = defineGeom(meta, (p, geom) => {
     }, 180);
   });
 
+  /** True when `src` is a JSON-recipe (Phase 1+ pivot) instead of a TS
+   *  source. Cheap sniff: starts with `{` after whitespace. The list
+   *  endpoint sends part.json content verbatim in the `source` field
+   *  for recipe parts; this lets the inspector dispatch on it. */
+  function isJsonRecipeSource(src: string): boolean {
+    const t = src.trimStart();
+    return t.startsWith('{');
+  }
+
   async function saveRunesSource(tab: Tab): Promise<boolean> {
     if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return false;
-    // Splice every slider's current value into the meta as the new
-    // `default:` BEFORE formatting. paramsDirty() upstream gates the
-    // save bar, but the splice runs unconditionally here — slider
-    // values that happen to equal the existing default are no-ops.
-    let raw = tab.sourceDraft ?? tab.componentEntry.source;
+    const raw0 = tab.sourceDraft ?? tab.componentEntry.source;
+    const isRecipe = isJsonRecipeSource(raw0);
+
+    // JSON-recipe path — skip TS-specific gates (syntax check, prettier,
+    // param-default splice into source). Parse the JSON, splice slider
+    // defaults into the meta.params, then POST as `recipe`.
+    if (isRecipe) {
+      let recipe: any;
+      try { recipe = JSON.parse(raw0); }
+      catch (e: any) {
+        tab.saveStatus = 'error';
+        tab.saveError = `JSON parse failed — not saved: ${e?.message ?? e}`;
+        return false;
+      }
+      // Splice slider defaults into recipe.meta.params[<key>].default.
+      if (recipe?.meta?.params) {
+        for (const [k, def] of Object.entries(tab.componentEntry.meta.params)) {
+          const cur = tab.params[k];
+          if (cur === undefined) continue;
+          if (Math.round(cur * 1e6) === Math.round(def.default * 1e6)) continue;
+          if (recipe.meta.params[k] && typeof recipe.meta.params[k] === 'object') {
+            recipe.meta.params[k].default = cur;
+          }
+        }
+      }
+      const formatted = JSON.stringify(recipe, null, 2);
+      if (formatted !== raw0) tab.sourceDraft = formatted;
+      tab.saveStatus = 'saving';
+      tab.saveError = undefined;
+      const isNew = !componentList.some((e) => e.meta.id === tab.componentEntry!.meta.id);
+      try {
+        const r = await fetch('/api/components/save', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            id: tab.componentEntry.meta.id,
+            recipe,
+            ...(isNew ? { create: true } : {}),
+            ...(isNew && tab.figureFile ? { picture: tab.figureFile } : {}),
+          }),
+        });
+        if (!r.ok) {
+          const txt = await r.text();
+          tab.saveStatus = 'error';
+          tab.saveError = `${r.status} ${r.statusText} — ${txt.slice(0, 160)}`;
+          return false;
+        }
+        tab.saveStatus = 'saved';
+        tab.sourceDraft = null;
+        tab.lastAppliedSource = null;
+        tab.inputPending = false;
+        await refreshRunesList();
+        const fresh = componentList.find((e) => e.meta.id === tab.componentEntry!.meta.id);
+        if (fresh) tab.componentEntry = { ...fresh, source: formatted };
+        tab.appliedAt = Date.now();
+        if (isNew) {
+          tab.unconstructed = false;
+          sidebarTab = 'test';
+        }
+        return true;
+      } catch (e: any) {
+        tab.saveStatus = 'error';
+        tab.saveError = e?.message ?? String(e);
+        return false;
+      }
+    }
+
+    // TS source path — legacy. Splice slider defaults into the inline
+    // meta block, run prettier, POST as `source`. Pre-pivot library
+    // parts and bundle primitives stay on this path.
+    let raw = raw0;
     for (const [k, def] of Object.entries(tab.componentEntry.meta.params)) {
       const cur = tab.params[k];
       if (cur === undefined) continue;
@@ -6887,8 +6986,9 @@ export const geom = defineGeom(meta, (p, geom) => {
                (group field clustering) since they have no parts axis. -->
           {@const isXml = activeTab.kind === 'xml-primitive' && !!activeTab.componentEntry}
           {@const curSrc = isXml ? (activeTab.sourceDraft ?? activeTab.componentEntry!.source) : ''}
-          {@const imported = isXml ? importedFromSource(curSrc) : { helpers: new Set<string>(), components: new Set<string>() }}
-          {@const instances = isXml && curSrc ? parsePartInstances(curSrc) : []}
+          {@const isJsonRecipe = isXml && curSrc && isJsonRecipeSource(curSrc)}
+          {@const imported = isXml && !isJsonRecipe ? importedFromSource(curSrc) : { helpers: new Set<string>(), components: new Set<string>() }}
+          {@const instances = isXml && curSrc && !isJsonRecipe ? parsePartInstances(curSrc) : []}
           {@const compAliasMap = isXml && curSrc ? componentAliases(curSrc) : {}}
           {@const partGroups = isXml ? instances.map((i) => {
             // One accordion entry per INSTANCE — helpers AND components.
@@ -6942,6 +7042,20 @@ export const geom = defineGeom(meta, (p, geom) => {
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
+            {#if isJsonRecipe}
+              <!-- JSON-recipe parts use a single source-of-truth JSON
+                   file. The form-driven accordion editor for them is
+                   future work — for now, edit the instances/composition
+                   in the Builder tab and the slider defaults here. -->
+              <div class="recipe-banner">
+                <span class="ic">≡</span>
+                <span>
+                  This is a JSON-recipe part — instances and composition live in
+                  <code>part.json</code>. Edit them in the <strong>Builder</strong> tab;
+                  slider edits here adjust the <em>defaults</em> stored on each param.
+                </span>
+              </div>
+            {/if}
             {#if activeTab.descForm?.open}
               {@const df = activeTab.descForm}
               <div class="param-form">
@@ -7637,9 +7751,25 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const m = entry.meta}
           {@const dirty = activeTab.sourceDraft != null && activeTab.sourceDraft !== entry.source}
           {@const editorSource = activeTab.sourceDraft ?? entry.source}
-          {@const split = splitRune(editorSource)}
+          {@const isRecipe = isJsonRecipeSource(editorSource)}
+          {@const split = !isRecipe ? splitRune(editorSource) : { ok: false, header: '', args: '', body: '', tail: '' }}
           {@const editorCompletions = buildEditorCompletions(m)}
-          {#if split.ok}
+          {#if isRecipe}
+            <!-- JSON-recipe parts: skip the TS-split editor entirely.
+                 Single CodeEditor with lang=json + raw recipe. Save
+                 dispatches to the recipe-save path in saveRunesSource. -->
+            <div class="editor-wrap">
+              <CodeEditor
+                value={editorSource}
+                lang="json"
+                variant="svelte"
+                readonly={false}
+                onChange={(next) => { if (activeTab) activeTab.sourceDraft = next; }}
+                onSave={() => { if (activeTab) saveRunesSource(activeTab); }}
+              />
+            </div>
+            <p class="code-note">JSON recipe: <code>library/{entry.origin}/{m.id}/part.json</code> · save via the bar below.</p>
+          {:else if split.ok}
             <!-- Section 1: imports + meta + geom scaffolding, collapsed
                  by default. The user only expands this when they want to
                  add/remove imports, tweak meta fields, or change the
@@ -10168,6 +10298,17 @@ export const geom = defineGeom(meta, (p, geom) => {
   .rebuild-btn:hover { background: #f0f0f0; border-color: #b0b0b0; }
   .rebuild-btn:active { background: #e8e8e8; }
   .rebuild-btn .ic { font-size: 13px; line-height: 1; }
+  /* JSON-recipe banner at the top of the Parts tab — surfaces the
+     "edit instances in Builder" guidance until the JSON form editor
+     ships. Inline, low-key — doesn't compete with the accordion. */
+  .recipe-banner {
+    display: flex; gap: 6px; align-items: center;
+    padding: 6px 10px; margin: 4px 0 8px;
+    font: 11px/1.4 Arial; color: #555;
+    background: #f4f6fb; border: 1px solid #d6deec; border-radius: 4px;
+  }
+  .recipe-banner .ic { font-size: 13px; color: #4a6080; }
+  .recipe-banner code { font: 10.5px/1.2 ui-monospace,Menlo,monospace; padding: 0 3px; background: #eaeef8; border-radius: 3px; }
   .code-note code { font: 10px monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 3px; color: #444; }
 
   /* ── Parts tab — module-library browser ────────────────────────────────
