@@ -109,27 +109,36 @@ files (auto-loaded when working in that subtree):
 
 16. **Sidebar entry classification — two-axis (tab → group → entry).** The `/primitives` sidebar uses a consistent pattern. New components are placed by editing ONE central map (`src/lib/cad/components/families.ts`); the UI auto-groups, filters, and collapses based on it. Full UI contract in `src/routes/primitives/CLAUDE.md`.
 
-17. **Components render two ways**, picked per-entry by `renderMode` on the `/api/components/list` response: `'client'` (bundle primitive in `src/lib/cad/components/`, compiled by Vite) or `'server'` (library part in `<volume>/library/`, transpiled + sandbox-executed via `/api/components/geom`). The picture → AI → `.ts` → volume workflow uses `'server'`. Full security + concurrency detail (the `new Function` sandbox, `expandInstancePropRefs` fixpoint loop, LRU cache invalidation, per-instance viewer colour) lives in `src/lib/cad/CLAUDE.md`.
+17. **Components render two ways**, picked per-entry by `renderMode` on the `/api/components/list` response: `'client'` (bundle primitive in `src/lib/cad/components/`, compiled by Vite) or `'server'` (library part in `<volume>/library/`, interpreted via `/api/components/geom`). Library parts after the **JSON pivot** ship as a single `part.json` recipe — no `.ts`, no sandbox, no `new Function`, no grammar regex. The server interpreter (`src/lib/server/part-recipe.ts` → `buildRecipe`) walks the recipe, evaluates Tier 1 expressions, dispatches calls to Manifold WASM, and folds the composition list through a `GeomAcc`. Full surface in `src/lib/cad/CLAUDE.md`.
 
-    **Split init/composition grammar (post-refactor, plan: `~/.claude/plans/grammar-split-init-compose.md`).** Library parts authored after the refactor obey two hard rules the loader enforces (`enforceSplitGrammar`):
-    - **Identity + schema (`id`, `name`, `description`, `tags`, `params`) live in `meta.json`**, not in `component.ts`. The loader prepends `export const meta = <JSON>;` so the user's `defineGeom(meta, fn)` reference resolves; the source file holds only the geom function. Pre-migration parts that still carry an inline `export const meta = {...}` continue to work (inline wins via the back-compat fallback).
-    - **Body is partitioned**: every `let|const X = call(...)` declaration (and any chained `X = mv(X, …)` reassignment) appears BEFORE every `geom.add(X)` / `geom.subtract(X)` / `geom.intersect(X)` call. The CSG op lives in the source itself — there is no `meta.instanceOps`. The loader rejects interleaved layouts with a clear line number; `enforceSplitGrammar` strips comments first so `// geom.add(X)` in docs doesn't false-trigger.
-
-    Worked example (`library/<cat>/<id>/component.ts`):
-    ```ts
-    import { geom as TubeGeom } from './hollow_cylinder';
-    import { defineGeom } from '.';
-    export const geom = defineGeom(meta, (p, geom) => {
-      // INIT
-      let A = TubeGeom({ od: p.dp_od, wall: p.wall_thk, length: p.body_len, top: 0 });
-      let B = TubeGeom({ od: p.tj_od,  wall: p.wall_thk, length: p.tj_len, top: A.top + A.length });
-      // COMP
-      geom.add(A);
-      geom.subtract(B);
-    });
+    **part.json shape** (`<volume>/library/<cat>/<id>/part.json`):
+    ```jsonc
+    {
+      "meta": {
+        "id": "<id>", "name": "...", "description": "...", "tags": [...],
+        "family": "drillstring|wellhead_xt|...",
+        "params": { "od": { "label":"OD", "min":1, "max":10, "step":0.125, "default":4.5, "unit":"in" } }
+      },
+      "instances": [
+        { "name": "A", "call": "<helper or component id>",
+          "args": { "<argName>": { "lit": 4.5 }, "<other>": { "expr": "p.foo * 2" } },
+          "transforms": [ { "op": "mv", "args": [{"lit":0},{"lit":0},{"expr":"A.length"}] } ]
+        }
+      ],
+      "composition": [
+        { "op": "add",      "of": "A" },
+        { "op": "subtract", "of": "B" }
+      ]
+    }
     ```
+    - Args: `{lit:<n>}` or `{expr:"<tier-1>"}`. Tier 1 = arithmetic + `p.<param>` + `<INST>.<argName>` cross-instance refs + `Math.*` whitelist (abs, sign, floor, ceil, round, trunc, sqrt, cbrt, pow, exp, log, log{2,10}, sin, cos, tan, a{sin,cos,tan,tan2}, min, max, PI, E). No conditionals, no loops.
+    - Transforms: `mv` and `rot` take three scalar args (x, y, z) — the recipe expresses vec3s as three Tier 1 expressions, not a single nested array.
+    - Composition order matters for `subtract` / `intersect`. The interpreter walks left-to-right and folds through one `GeomAcc`.
+    - **Name resolution**: helpers + operators (`cyl`, `tube`, `mv`, `rot`) are the canonical namespace and win on collision — never name a library part `tube` or `cyl`. Convention: suffix library parts with `_part` when the natural name would collide.
 
-    AI refine endpoint (`/api/components/refine`) teaches this layout in its system prompt + post-validates the output (split-grammar gate, esbuild parse, undefined-instance scan, 1-shot retry on failure).
+    **Authoring + AI**: the inspector Builder tab routes JSON parts to a `lang=json` editor; the Parts tab shows a "edit instances in Builder" banner (form-driven JSON Parts editor is a follow-up). The refine endpoint (`/api/components/refine`) accepts either `source` (legacy .ts) or `recipe` (JSON) and emits the matching shape — schema validator + 1-shot retry on bad output.
+
+    **Legacy .ts loader path** (`loadGeomFromSource`, `parseImports`, `enforceSplitGrammar`, `expandInstancePropRefs`) is still kept so the Builder tab can preview in-flight edits to bundle primitives in `src/lib/cad/components/*.ts`. No library part uses it any more — every `library/<cat>/<id>/` now has a `part.json`. Plan: `~/.claude/plans/grammar-split-init-compose.md` (which describes the intermediate split-grammar TS shape; the JSON pivot supersedes Stage G onward).
 
 18. **The library — directory-per-part, location = category.** A part is a self-contained directory under `<volume>/library/<category>/<id>/`. **Its location IS its classification.** No central index, no metadata map that can drift. `src/lib/server/library.ts` is the resolver (`resolvePart`, `listLibraryParts`, `categoryDir`, `partDirIn`). Flow: create → test → review → move → category. `/api/components/save` with `create: true` writes to `library/test/<id>/`; updates write back into the part's current category dir; `/api/components/move` does an atomic `rename` to promote. `/library/` is gitignored.
 
