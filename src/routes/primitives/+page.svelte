@@ -15,6 +15,7 @@
     helix_band: 'thread_helix',
     cyl: 'tapered_cone',
     tube: 'hollow_cylinder',
+    profile_extrude: 'profile_extrude_demo',
   };
 
   let entries: Entry[] = $state([]);

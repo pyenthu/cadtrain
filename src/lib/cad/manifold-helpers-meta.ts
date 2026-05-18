@@ -70,6 +70,7 @@ const HELPER_DEFAULTS: Record<string, Record<string, number>> = {
   tube:  { outerR: 0.5, innerR: 0.4, length: 4.0 },
   // Helical thread band — sized for a typical drill-pipe thread.
   helix_band: { od: 4.5, length: 2, tpi: 4, depth: 0.06, profile: 0, taper: 0 },
+  profile_extrude: { height: 2, twistDegrees: 0, scaleTop: 1, sides: 5 },
   // revolve takes a JSON-encoded [x,z] contour as a string — no
   // meaningful numeric default. Sentinel zeros let the catalog render.
   revolve: { contourJson: 0, _unused1: 0, _unused2: 0, _unused3: 0, _unused4: 0 },

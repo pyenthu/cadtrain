@@ -144,6 +144,37 @@ export function mv(m: any, v: [number, number, number]) { return m.translate(v);
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
+/** @part Profile extrude — sandbox/play primitive. Define a 2D profile (CCW polygon) and extrude it up Z, optionally with twist + taper. Edit the profile array, height, twist, scaleTop to experiment. */
+export function profile_extrude(height: number, twistDegrees: number, scaleTop: number, sides: number): any {
+  if (!G.__cadtrain_manifold__.wasm) {
+    throw new Error('manifold not initialised — call initManifold() first');
+  }
+  const CS = G.__cadtrain_manifold__.wasm.CrossSection;
+
+  // ── EDIT THIS PROFILE ────────────────────────────────────────────
+  // Array of [x, y] points, CCW for outer ring. Default = N-gon of
+  // radius 1; change to ANY shape (L-bracket, star, cam profile, …).
+  // For a hole, add a second array wound CW.
+  const N = Math.max(3, Math.floor(sides));
+  const r = 1;
+  const profile: [number, number][] = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    profile.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+
+  // Try replacing with a fixed shape, e.g. L-bracket:
+  //   const profile: [number, number][] = [
+  //     [0, 0], [1, 0], [1, 0.3], [0.3, 0.3], [0.3, 1], [0, 1],
+  //   ];
+
+  // ── Extrude ──────────────────────────────────────────────────────
+  // extrude(height, nDivisions, twistDegrees, scaleTop, center)
+  const cs = new CS([profile]);
+  const nDivisions = Math.max(8, Math.ceil(Math.abs(twistDegrees) / 12));
+  return cs.extrude(height, nDivisions, twistDegrees, Math.max(0.05, scaleTop));
+}
+
 /** @part Revolve — sweep a 2D profile (array of [x,z] pairs forming a closed contour) 360° around the Z axis. Use radial=x distance, axial=z position. Pass via JSON-encoded contour string. */
 export function revolve(contourJson: string, _unused1?: number, _unused2?: number, _unused3?: number, _unused4?: number): any {
   // The interpreter dispatches with positional numeric args only, so the
