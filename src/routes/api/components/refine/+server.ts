@@ -240,6 +240,164 @@ function extractCodeBlock(text: string): string {
   return text.trim();
 }
 
+/** JSON-fence extractor — prefers ```json, falls back to any fence,
+ *  then raw text. */
+function extractJsonBlock(text: string): string {
+  const m1 = /```json\n([\s\S]*?)\n```/.exec(text);
+  if (m1) return m1[1];
+  const m2 = /```\n([\s\S]*?)\n```/.exec(text);
+  if (m2) return m2[1];
+  // Last resort: take from the first `{` to the last `}`.
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  return text.trim();
+}
+
+/** Build the JSON-recipe system prompt — teaches the post-pivot
+ *  authoring shape. Helpers + the available component pool come from
+ *  the same discovery as the .ts prompt; the structural rules are
+ *  expressed as a worked example of part.json. */
+function buildJsonSystemPrompt(currentId: string): string {
+  const helpers = discoverHelpers();
+  const helperLines = helpers.map((h) => `- \`${h.name}(${h.props.map((p) => p.name).join(', ')})\` — ${h.desc}`).join('\n');
+  const otherPrims = COMPONENT_REGISTRY.filter((e) => e.meta.id !== currentId).map((e) => {
+    const params = Object.keys(e.meta.params).join(', ');
+    return `  - ${e.meta.id} (${e.meta.name}): args { ${params} }`;
+  }).join('\n');
+
+  return `You edit single-file ManifoldCAD primitives for a downhole CAD app.
+
+# File format — part.json (JSON-recipe authoring shape)
+
+Each primitive is a SINGLE JSON file at \`<volume>/library/<cat>/<id>/part.json\`.
+No TypeScript, no sandbox, no \`new Function\` — the server interpreter
+walks the recipe and dispatches calls to ManifoldCAD WASM.
+
+Top-level shape:
+\`\`\`json
+{
+  "meta": {
+    "id": "<id>",
+    "name": "<display name>",
+    "description": "...",
+    "tags": ["..."],
+    "family": "drillstring|wellhead_xt|packers|...",
+    "params": {
+      "paramName": { "label": "...", "min": 0, "max": 10, "step": 0.1, "default": 1, "unit": "in" }
+    }
+  },
+  "instances": [
+    { "name": "A", "call": "<helper or component id>",
+      "args": { "<argName>": { "lit": 4.5 }, "<otherArg>": { "expr": "p.foo * 2" } },
+      "transforms": [
+        { "op": "mv", "args": [{ "lit": 0 }, { "lit": 0 }, { "expr": "A.length" }] }
+      ]
+    }
+  ],
+  "composition": [
+    { "op": "add",      "of": "A" },
+    { "op": "subtract", "of": "B" },
+    { "op": "intersect", "of": "C" }
+  ]
+}
+\`\`\`
+
+# Args — atom OR Tier 1 expression
+- \`{ "lit": <number> }\` — numeric literal.
+- \`{ "expr": "<expression>" }\` — Tier 1 expression evaluated against
+  current params + already-bound instances. Grammar:
+    - numeric literals, parens, unary -, + - * / %
+    - \`p.<paramName>\` — current params bag
+    - \`<INST>.<argName>\` — cross-instance reference; resolves to the
+      arg's RESOLVED value (so chains cascade: B's top can reference
+      A.length, C can reference B.top + B.length, etc.).
+    - \`Math.<fn>(...)\` — whitelist: abs, sign, floor, ceil, round,
+      trunc, sqrt, cbrt, pow, exp, log, log2, log10, sin, cos, tan,
+      asin, acos, atan, atan2, min, max. Also Math.PI / Math.E constants.
+  NO conditionals, NO loops, NO function calls outside Math.*.
+
+# Transforms — vec3 ops expressed as THREE scalar args
+\`mv\` and \`rot\` are the supported transforms. Each takes a vec3 as
+its target — the recipe writes that as three scalar args (x, y, z):
+  \`{ "op": "mv", "args": [{"lit":0}, {"lit":0}, {"expr":"A.length"}] }\`
+
+# Composition — ordered fold
+The interpreter walks \`composition\` left-to-right, applying each
+op to a single Manifold accumulator. Order matters for subtract /
+intersect — if a part should cut out of an earlier add, it appears
+later in the list.
+
+# Helpers (bundle primitives — call by name in instance.call)
+${helperLines}
+
+# Other components available (use the component's id in instance.call)
+${otherPrims || '  (none in the registry yet)'}
+
+# Z-down convention
+- top = LOWER z. bottom = HIGHER z. As z increases, you go DOWN the hole.
+- mv with positive z moves the part toward the bottom.
+
+# Cross-instance refs — the top model
+For stacking, give each instance a \`top\` arg expressed as
+\`PREV.top + PREV.length\`. Components that declare \`top\` in their
+params accept this directly; for helpers (cyl, tube) without a \`top\`
+param, use an mv transform to place them at \`[0, 0, PREV.top + PREV.length]\`.
+
+# Output contract (strict)
+Respond with the COMPLETE updated file as a single fenced \`\`\`json code block.
+- No prose before or after the block. No diff. No explanation.
+- Preserve meta.id; the body \`id\` field must match the part being edited.
+- Use param names that already exist; introduce new ones only when needed.
+- If you remove an instance, remove every composition entry that
+  references it AND every cross-instance \`expr\` that mentions it.
+- The JSON must parse cleanly and pass schema validation
+  (meta.id/name/params + instances[] + composition[] required).
+`;
+}
+
+/** Validate a JSON recipe — schema shape, then dry-run the interpreter
+ *  against the param defaults to catch expression / reference errors
+ *  BEFORE returning. Returns { ok: true } or { ok: false, retryHint }. */
+async function validateRefinedRecipe(
+  raw: string,
+): Promise<{ ok: true; recipe: any } | { ok: false; retryHint: string }> {
+  let recipe: any;
+  try {
+    recipe = JSON.parse(raw);
+  } catch (e: any) {
+    return { ok: false, retryHint: `JSON parse failed: ${e?.message ?? e}` };
+  }
+  if (!recipe?.meta) return { ok: false, retryHint: 'Missing meta object.' };
+  if (typeof recipe.meta.id !== 'string') return { ok: false, retryHint: 'meta.id is required (string).' };
+  if (typeof recipe.meta.name !== 'string') return { ok: false, retryHint: 'meta.name is required (string).' };
+  if (!recipe.meta.params || typeof recipe.meta.params !== 'object') {
+    return { ok: false, retryHint: 'meta.params is required (object of ParamSchema).' };
+  }
+  if (!Array.isArray(recipe.instances)) {
+    return { ok: false, retryHint: 'instances is required (array).' };
+  }
+  if (!Array.isArray(recipe.composition)) {
+    return { ok: false, retryHint: 'composition is required (array).' };
+  }
+  // Composition entries must reference declared instances + valid ops.
+  const instNames = new Set<string>();
+  for (const inst of recipe.instances) {
+    if (typeof inst?.name !== 'string') return { ok: false, retryHint: 'Every instance needs a string name.' };
+    if (typeof inst?.call !== 'string') return { ok: false, retryHint: `Instance "${inst.name}" missing call (string).` };
+    instNames.add(inst.name);
+  }
+  for (const step of recipe.composition) {
+    if (!['add', 'subtract', 'intersect'].includes(step?.op)) {
+      return { ok: false, retryHint: `composition op "${step?.op}" must be add | subtract | intersect.` };
+    }
+    if (!instNames.has(step?.of)) {
+      return { ok: false, retryHint: `composition references undeclared instance "${step?.of}".` };
+    }
+  }
+  return { ok: true, recipe };
+}
+
 /** Post-generation validation. Catches the four most common ways an AI
  *  edit goes wrong BEFORE the user accepts it, so the error message
  *  comes back here (where the retry path lives) instead of at execute
@@ -330,16 +488,30 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
-  const { id, source, prompt, instructions } = body as {
-    id?: unknown; source?: unknown; prompt?: unknown; instructions?: unknown;
+  const { id, source, recipe, prompt, instructions } = body as {
+    id?: unknown; source?: unknown; recipe?: unknown; prompt?: unknown; instructions?: unknown;
   };
-  if (typeof id !== 'string' || typeof source !== 'string' || typeof prompt !== 'string') {
-    throw error(400, 'Missing id (string), source (string), or prompt (string).');
+  if (typeof id !== 'string' || typeof prompt !== 'string') {
+    throw error(400, 'Missing id (string) or prompt (string).');
+  }
+  const hasSource = typeof source === 'string';
+  const hasRecipe = !!(recipe && typeof recipe === 'object');
+  if (!hasSource && !hasRecipe) {
+    throw error(400, 'Missing source (string) or recipe (object) to refine.');
+  }
+  if (hasSource && hasRecipe) {
+    throw error(400, 'Supply exactly one of source (string) or recipe (object).');
   }
   const inst = typeof instructions === 'string' ? instructions : '';
   if (!/^[a-z][a-z0-9_]*$/.test(id)) throw error(400, `Invalid id format "${id}"`);
-  if (Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) {
+  if (hasSource && Buffer.byteLength(source as string, 'utf8') > MAX_SOURCE_BYTES) {
     throw error(413, `Source too large (> ${MAX_SOURCE_BYTES} bytes)`);
+  }
+  if (hasRecipe) {
+    const recipeJson = JSON.stringify(recipe);
+    if (Buffer.byteLength(recipeJson, 'utf8') > MAX_SOURCE_BYTES) {
+      throw error(413, `Recipe too large (> ${MAX_SOURCE_BYTES} bytes)`);
+    }
   }
   if (Buffer.byteLength(prompt, 'utf8') > MAX_PROMPT_BYTES) {
     throw error(413, `Prompt too long (> ${MAX_PROMPT_BYTES} bytes)`);
@@ -350,7 +522,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
   const client = createAnthropicClient();
   const model = env.RUNES_REFINE_MODEL ?? DEFAULT_MODEL;
-  const system = buildSystemPrompt(id);
+  // Dispatch on input shape: JSON recipe → JSON system prompt + JSON
+  // validator; TS source → existing TS system prompt + TS validator.
+  const system = hasRecipe ? buildJsonSystemPrompt(id) : buildSystemPrompt(id);
+  const lang = hasRecipe ? 'json' : 'typescript';
 
   // Level 4 — assembly-aware prompting. When the user's prompt mentions
   // a recognised real-world assembly (matched by filename token + intro
@@ -364,15 +539,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   // Build the base user message; the retry round appends an extra
   // turn carrying the validator's hint so Claude can fix the issue
   // without restarting the conversation from scratch.
+  const currentRepr = hasRecipe
+    ? `Current ${id}/part.json:\n\n\`\`\`json\n${JSON.stringify(recipe, null, 2)}\n\`\`\``
+    : `Current source of ${id}.ts:\n\n\`\`\`typescript\n${source}\n\`\`\``;
   const userBase = [
     inst.trim() ? `Persistent design spec for this primitive (from ${id}.md):\n\n${inst}\n` : '',
     assemblyContext
       ? `Relevant assembly recipes from docs/assemblies/ (use these for vocabulary, ` +
         `stack order, and starter dimensions):\n\n${assemblyContext}\n`
       : '',
-    `Current source of ${id}.ts:\n\n\`\`\`typescript\n${source}\n\`\`\``,
+    currentRepr,
     `Goal: ${prompt}`,
-    `Return the complete updated file as a single fenced \`\`\`typescript code block.`,
+    `Return the complete updated file as a single fenced \`\`\`${lang} code block.`,
   ].filter(Boolean).join('\n\n');
 
   const messages: any[] = [{ role: 'user', content: userBase }];
@@ -395,7 +573,13 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       .filter((b: any) => b?.type === 'text')
       .map((b: any) => b.text as string)
       .join('\n');
-    return { edited: extractCodeBlock(raw), raw };
+    const edited = hasRecipe ? extractJsonBlock(raw) : extractCodeBlock(raw);
+    return { edited, raw };
+  }
+
+  async function runValidator(edited: string): Promise<{ ok: true; recipe?: any } | { ok: false; retryHint: string }> {
+    if (hasRecipe) return validateRefinedRecipe(edited);
+    return validateRefinedSource(edited);
   }
 
   // First pass — generate.
@@ -410,14 +594,14 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   // so Claude sees its prior attempt + the specific error and can fix
   // narrowly. One retry only — repeated failures usually mean the goal
   // is ambiguous, not that another pass would help.
-  let validation = validateRefinedSource(edited);
+  let validation = await runValidator(edited);
   if (!validation.ok) {
     messages.push({ role: 'assistant', content: raw });
     messages.push({
       role: 'user',
       content:
         `Validation failed on your previous output:\n\n${validation.retryHint}\n\n` +
-        `Fix this one issue and re-emit the COMPLETE file as a single \`\`\`typescript code block.`,
+        `Fix this one issue and re-emit the COMPLETE file as a single \`\`\`${lang} code block.`,
     });
     response = await callClaude();
     const retry = extractEdited(response);
@@ -429,7 +613,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
         { status: 502 },
       );
     }
-    validation = validateRefinedSource(edited);
+    validation = await runValidator(edited);
     if (!validation.ok) {
       // Still bad. Return the source AS-IS so the user can inspect,
       // but mark `ok: false` + surface the hint so the inspector knows
@@ -437,7 +621,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       return json(
         {
           ok: false,
-          source: edited,
+          ...(hasRecipe ? { recipe: tryParse(edited) } : { source: edited }),
           model,
           error: `Validation failed after retry: ${validation.retryHint}`,
           usage: response?.usage ?? null,
@@ -449,8 +633,16 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
   return json({
     ok: true,
-    source: edited,
+    ...(hasRecipe ? { recipe: (validation as any).recipe ?? tryParse(edited) } : { source: edited }),
     model,
     usage: response?.usage ?? null,
   });
+};
+
+/** Best-effort JSON parse — returns the parsed object or the raw
+ *  string when parse fails. Keeps the response useful when the
+ *  validator says "not ok" but we still want to show the user what
+ *  Claude emitted. */
+function tryParse(raw: string): any {
+  try { return JSON.parse(raw); } catch { return raw; }
 };

@@ -101,11 +101,16 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
-  const { id, params, zScale, source } = body as {
+  const { id, params, zScale, source, recipe } = body as {
     id?: unknown;
     params?: unknown;
     zScale?: unknown;
     source?: unknown;
+    /** Inline JSON-recipe preview — same shape the saved part.json
+     *  takes. When supplied, the endpoint runs the recipe interpreter
+     *  against this object instead of loading from disk. Mirrors the
+     *  inlineSource path, but for the post-pivot authoring shape. */
+    recipe?: unknown;
   };
   if (typeof id !== 'string' || !/^[a-z][a-z0-9_]*$/.test(id)) {
     throw error(400, `Invalid or missing component id "${String(id)}"`);
@@ -116,6 +121,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const paramBag = params as Record<string, number>;
   const z = typeof zScale === 'number' && isFinite(zScale) && zScale > 0 ? zScale : 1;
   const inlineSource = typeof source === 'string' && source.trim().length > 0 ? source : null;
+  const inlineRecipe = recipe && typeof recipe === 'object' && !Array.isArray(recipe) ? recipe as any : null;
+  if (inlineSource && inlineRecipe) throw error(400, 'Supply exactly one of source or recipe');
 
   // When the client sends an inline `source` (the in-flight `sourceDraft`
   // from the GUI's Apply button), bypass the disk-load + LRU cache and
@@ -123,7 +130,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
   // edits without persisting to disk; mirrors the same sandbox as the
   // volume-loader path.
   const cacheKey = `${id}|${stableParamsJson(paramBag)}|${z}`;
-  if (!inlineSource) {
+  if (!inlineSource && !inlineRecipe) {
     const cached = getGeomResult(cacheKey);
     if (cached !== undefined) {
       return json(cached, { headers: { 'x-cache': 'hit' } });
@@ -135,7 +142,35 @@ export const POST: RequestHandler = async ({ request, url }) => {
   // Resolve the component — bundle fast path, else volume loader.
   let meta: PrimitiveMeta | undefined;
   let geom: ((p: Record<string, number>) => any) | undefined;
-  if (inlineSource) {
+  if (inlineRecipe) {
+    try {
+      const { buildRecipe, createResolveDep } = await import('$lib/server/part-recipe');
+      const { discoverHelpers, discoverOperators } = await import('$lib/cad/manifold-helpers-meta');
+      const helperByName = new Map(discoverHelpers().map((h) => [h.name, h]));
+      const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
+      const componentByCall = new Map<string, any>();
+      const instances = Array.isArray(inlineRecipe.instances) ? inlineRecipe.instances : [];
+      for (const inst of instances) {
+        const cn = inst?.call;
+        if (typeof cn !== 'string') continue;
+        if (helperByName.has(cn) || operatorByName.has(cn)) continue;
+        if (componentByCall.has(cn)) continue;
+        const bg = geomById(cn);
+        if (bg) {
+          const bm = metaById(cn);
+          if (!bm) throw new Error(`Bundled dep "${cn}" has a geom but no meta.`);
+          componentByCall.set(cn, { meta: bm, geom: bg });
+        } else {
+          componentByCall.set(cn, await loadVolumeComponent(cn));
+        }
+      }
+      const resolveDep = createResolveDep(componentByCall);
+      meta = inlineRecipe.meta as PrimitiveMeta;
+      geom = (p: Record<string, number>) => buildRecipe(inlineRecipe, p, resolveDep);
+    } catch (e: any) {
+      throw error(400, `Inline recipe preview failed for "${id}": ${e?.message ?? e}`);
+    }
+  } else if (inlineSource) {
     try {
       // Inline-source path: same sandbox as loadVolumeComponent. Sibling
       // deps are pre-resolved here (mirroring loadVolumeComponent's

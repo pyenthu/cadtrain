@@ -23,7 +23,8 @@
 // expressions). Conditionals will eventually be modelled as discrete
 // "branch" nodes in a future phase.
 
-import { GeomAcc, empty } from '$lib/cad/manifold-helpers';
+import { GeomAcc, empty, cyl, tube, mv, rot } from '$lib/cad/manifold-helpers';
+import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
 
 // ── Schema ───────────────────────────────────────────────────────────────────
 
@@ -269,6 +270,65 @@ export interface RecipeDep {
   /** Callable that produces a Manifold from a resolved-args bag.
    *  Helpers receive a positional array; components receive an object. */
   build: (args: Record<string, number>) => any;
+}
+
+/** Helper-runtime table — the bridge between the recipe's positional
+ *  args and the ManifoldCAD helper signatures. Shared between
+ *  loadVolumeRecipe (the disk-loaded path) and bake-preview (the
+ *  inline-recipe live-preview path) so both interpret an identical
+ *  recipe identically.
+ *
+ *  Transforms (mv/rot) are invoked through the interpreter's
+ *  transform path with `[manifold, ...txArgs]` — so the runtime
+ *  unpacks args[0] as the Manifold and args[1..3] as the vec3 x/y/z.
+ *  This means a recipe transform writes its vec3 as THREE scalar args:
+ *    { "op": "mv", "args": [{lit:0},{lit:0},{expr:"A.length"}] }
+ *  Future extension: support a fourth shape `{vec:[...]}` so a single
+ *  vec3 arg can be written; for now scalars-only keeps Tier 1 trivial. */
+export function createHelperRuntime(): Record<string, (args: any[]) => any> {
+  return {
+    cyl:  (a) => cyl(a[0], a[1], a[2]),
+    tube: (a) => tube(a[0], a[1], a[2]),
+    mv:   (a) => mv(a[0], [a[1], a[2], a[3]]),
+    rot:  (a) => rot(a[0], [a[1], a[2], a[3]]),
+  };
+}
+
+/** A dep resolver that wires every available bundle helper / operator
+ *  plus a caller-supplied component map. Shared by loadVolumeRecipe
+ *  and the bake-preview inline-recipe path so the dispatch contract
+ *  stays consistent. */
+export function createResolveDep(
+  componentByCall: Map<string, { meta: any; geom: (args: any) => any }>,
+): (callName: string) => RecipeDep {
+  const helperByName = new Map(discoverHelpers().map((h) => [h.name, h]));
+  const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
+  const runtime = createHelperRuntime();
+  return (callName: string): RecipeDep => {
+    const h = helperByName.get(callName);
+    if (h) {
+      const fn = runtime[callName];
+      if (!fn) throw new Error(`Helper "${callName}" has no runtime wiring`);
+      return { kind: 'helper', propNames: h.props.map((p) => p.name), build: fn };
+    }
+    const op = operatorByName.get(callName);
+    if (op) {
+      const fn = runtime[callName];
+      if (!fn) throw new Error(`Operator "${callName}" has no runtime wiring`);
+      // Operators (mv/rot) are only invoked via the transform path,
+      // which uses positional args — propNames is dead for them.
+      // Synthesize a placeholder so the helper-dispatch contract stays
+      // uniform (kind: 'helper').
+      return { kind: 'helper', propNames: ['x', 'y', 'z'], build: fn };
+    }
+    const comp = componentByCall.get(callName);
+    if (!comp) throw new Error(`Unknown call "${callName}" — not a helper, operator, or known component`);
+    return {
+      kind: 'component',
+      propNames: Object.keys(comp.meta.params ?? {}),
+      build: (args: Record<string, number>) => comp.geom(args),
+    };
+  };
 }
 
 /** Build a complete Manifold from a recipe. Resolves dependencies

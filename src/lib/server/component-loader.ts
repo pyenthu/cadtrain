@@ -798,9 +798,8 @@ async function loadVolumeRecipe(
   if (cached && cached.sourceHash === hash) return cached.loaded;
 
   // Lazy import — keeps part-recipe out of the unit-test cold path.
-  const { buildRecipe } = await import('./part-recipe');
+  const { buildRecipe, createResolveDep } = await import('./part-recipe');
   const { discoverHelpers, discoverOperators } = await import('../cad/manifold-helpers-meta');
-  const { cyl: cylFn, tube: tubeFn, mv: mvFn, rot: rotFn } = await import('../cad/manifold-helpers');
 
   let recipe: import('./part-recipe').PartRecipe;
   try {
@@ -815,26 +814,12 @@ async function loadVolumeRecipe(
     throw new Error(`Library part "${id}" part.json missing instances or composition arrays.`);
   }
 
-  // Resolve every dep ahead of time so the interpreter's resolveDep
-  // callback can stay synchronous. Deps come from two sources:
-  //   - helper names from manifold-helpers-meta (cyl, tube, mv, rot)
-  //   - sibling component ids (any other library part or bundle prim)
-  const helperMeta = discoverHelpers();
-  const operatorMeta = discoverOperators();
-  const helperByName = new Map(helperMeta.map((h) => [h.name, h]));
-  const operatorByName = new Map(operatorMeta.map((o) => [o.name, o]));
-  // Map helper name to the runtime callable. Only the 4 wired in here
-  // are reachable; new helpers need an entry below.
-  const helperRuntime: Record<string, (args: any) => any> = {
-    cyl: (a: any[]) => cylFn(a[0], a[1], a[2]),
-    tube: (a: any[]) => tubeFn(a[0], a[1], a[2]),
-    mv: (a: any[]) => mvFn(a[0], a[1]),
-    rot: (a: any[]) => rotFn(a[0], a[1]),
-  };
-
-  // Sibling component deps — same recurse + cycle-guard shape as
-  // loadVolumeComponent's .ts path. Bundle primitives win the lookup
-  // first (fast path), volume parts fall through to the recursive load.
+  // Resolve every component dep ahead of time so the interpreter's
+  // resolveDep callback can stay synchronous. Helpers + operators
+  // come from the manifold-helpers-meta discovery; component deps
+  // (sibling library parts + bundle primitives) get pre-loaded here.
+  const helperByName = new Map(discoverHelpers().map((h) => [h.name, h]));
+  const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
   const componentByCall = new Map<string, { meta: any; geom: any }>();
   for (const inst of recipe.instances) {
     const name = inst.call;
@@ -849,36 +834,7 @@ async function loadVolumeRecipe(
       componentByCall.set(name, await loadVolumeComponent(name, seen));
     }
   }
-
-  const resolveDep = (callName: string) => {
-    const helper = helperByName.get(callName);
-    if (helper) {
-      const fn = helperRuntime[callName];
-      if (!fn) throw new Error(`Helper "${callName}" has no runtime wiring`);
-      return {
-        kind: 'helper' as const,
-        propNames: helper.props.map((p) => p.name),
-        build: fn,
-      };
-    }
-    const op = operatorByName.get(callName);
-    if (op) {
-      const fn = helperRuntime[callName];
-      if (!fn) throw new Error(`Operator "${callName}" has no runtime wiring`);
-      return {
-        kind: 'helper' as const,
-        propNames: op.props.map((p) => p.name),
-        build: fn,
-      };
-    }
-    const comp = componentByCall.get(callName);
-    if (!comp) throw new Error(`Unknown call "${callName}" — not a helper, operator, or known component`);
-    return {
-      kind: 'component' as const,
-      propNames: Object.keys(comp.meta.params ?? {}),
-      build: (args: Record<string, number>) => comp.geom(args),
-    };
-  };
+  const resolveDep = createResolveDep(componentByCall);
 
   const meta: PrimitiveMeta = {
     id: recipe.meta.id,

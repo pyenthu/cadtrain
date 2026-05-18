@@ -79,10 +79,17 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') throw error(400, 'Invalid JSON body');
 
-  const { id, params, source, cut, instanceTopMode, instanceTopOffset } = body as {
+  const { id, params, source, recipe, cut, instanceTopMode, instanceTopOffset } = body as {
     id?: unknown;
     params?: unknown;
     source?: unknown;
+    /** JSON-recipe inline preview shape. When supplied the endpoint
+     *  bypasses parseImports/loadGeomFromSource entirely and runs the
+     *  recipe interpreter against the live recipe object — same path
+     *  loadVolumeRecipe takes for a saved part.json. Lets the GLB
+     *  stage tab live-bake JSON-recipe edits the same way the .ts
+     *  inline-source path lets it live-bake source edits. */
+    recipe?: unknown;
     cut?: unknown;
     instanceTopMode?: unknown;
     instanceTopOffset?: unknown;
@@ -97,17 +104,52 @@ export const POST: RequestHandler = async ({ request, url }) => {
   const paramBag = params as Record<string, number>;
   const wantCut = cut === true;
   const inlineSource = typeof source === 'string' && source.trim().length > 0 ? source : null;
+  const inlineRecipe = recipe && typeof recipe === 'object' && !Array.isArray(recipe) ? recipe as any : null;
+  if (inlineSource && inlineRecipe) {
+    throw error(400, 'Supply exactly one of source (string) or recipe (object)');
+  }
   const modes = isStringRecord<'stack' | 'overlay' | 'origin'>(instanceTopMode, ['stack', 'overlay', 'origin']);
   const offsets = isNumberRecord(instanceTopOffset);
 
   await initManifold();
 
-  // Resolve meta + geom. When the caller supplied a source we
-  // transpile that directly (mirrors the geom endpoint's inline
-  // path); otherwise we read the saved source via loadVolumeComponent.
+  // Resolve meta + geom. Three paths:
+  //  - inlineRecipe → build via the recipe interpreter directly.
+  //  - inlineSource → transpile + execute via loadGeomFromSource.
+  //  - neither     → read the saved part (recipe or .ts) via loadVolumeComponent.
   let meta: PrimitiveMeta | undefined;
   let geom: ((p: Record<string, number>) => any) | undefined;
-  if (inlineSource) {
+  if (inlineRecipe) {
+    try {
+      const { buildRecipe, createResolveDep } = await import('$lib/server/part-recipe');
+      const { discoverHelpers, discoverOperators } = await import('$lib/cad/manifold-helpers-meta');
+      const helperByName = new Map(discoverHelpers().map((h) => [h.name, h]));
+      const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
+      // Pre-resolve every component dep referenced by the recipe so
+      // resolveDep can stay synchronous inside buildRecipe.
+      const componentByCall = new Map<string, any>();
+      const instances = Array.isArray(inlineRecipe.instances) ? inlineRecipe.instances : [];
+      for (const inst of instances) {
+        const cn = inst?.call;
+        if (typeof cn !== 'string') continue;
+        if (helperByName.has(cn) || operatorByName.has(cn)) continue;
+        if (componentByCall.has(cn)) continue;
+        const bg = geomById(cn);
+        if (bg) {
+          const bm = metaById(cn);
+          if (!bm) throw new Error(`Bundled dep "${cn}" has a geom but no meta.`);
+          componentByCall.set(cn, { meta: bm, geom: bg });
+        } else {
+          componentByCall.set(cn, await loadVolumeComponent(cn));
+        }
+      }
+      const resolveDep = createResolveDep(componentByCall);
+      meta = inlineRecipe.meta as any;
+      geom = (p: Record<string, number>) => buildRecipe(inlineRecipe, p, resolveDep);
+    } catch (e: any) {
+      throw error(400, `Inline recipe bake-preview failed for "${id}": ${e?.message ?? e}`);
+    }
+  } else if (inlineSource) {
     try {
       const { deps: inlineDeps } = parseImports(inlineSource);
       const inlineResolved = new Map<string, LoadedComponent>();
