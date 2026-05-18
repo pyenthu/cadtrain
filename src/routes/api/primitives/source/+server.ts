@@ -1,6 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { volumePath } from '$lib/server/volume';
 
 // Stage G v1 of the components/primitives split — see
 // ~/.claude/plans/components-primitives-split.md.
@@ -44,8 +46,14 @@ export const GET = async ({ url }) => {
   const name = url.searchParams.get('name');
   if (!name) throw error(400, 'name query param required');
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw error(400, 'invalid primitive name');
+  // Volume first — a volume primitive with the same id SHADOWS the bundle.
+  const volSourcePath = volumePath(join('primitives', name, 'source.ts'));
+  if (existsSync(volSourcePath)) {
+    const src = await readFile(volSourcePath, 'utf8');
+    return json({ source: src, origin: 'volume' });
+  }
   const src = await readFile(HELPERS_PATH, 'utf8');
   const extracted = extractSource(src, name);
   if (!extracted) throw error(404, `primitive "${name}" not found`);
-  return json({ source: extracted });
+  return json({ source: extracted, origin: 'bundle' });
 };
