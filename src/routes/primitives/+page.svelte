@@ -2345,6 +2345,31 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  immediately before the matching `geom.add(<instance>);`. Promotes
    *  the base const to let if needed. */
   function addTransform(src: string, instance: string, op: string, defaultArgsRaw: string): string | null {
+    // JSON-recipe dispatch — append { op, args: [...] } to instance.transforms[].
+    // `defaultArgsRaw` for the TS path is a vec3-string like "[0, 0, 0]";
+    // we parse it back to 3 scalars for the JSON shape.
+    if (isJsonRecipeSource(src)) {
+      let recipe: any;
+      try { recipe = JSON.parse(src); } catch { return null; }
+      if (!Array.isArray(recipe.instances)) return null;
+      const i = recipe.instances.findIndex((x: any) => x?.name === instance);
+      if (i < 0) return null;
+      const target = recipe.instances[i];
+      if (!Array.isArray(target.transforms)) target.transforms = [];
+      // Parse `[a, b, c]` → three scalar lit args (or expr fallback).
+      const m = /^\[(.*)\]$/s.exec((defaultArgsRaw ?? '').trim());
+      let txArgs: any[] = [];
+      if (m) {
+        const parts = splitTopLevel(m[1]).map((p) => p.trim());
+        txArgs = parts.map((p) => {
+          const n = Number(p);
+          return Number.isFinite(n) ? { lit: n } : { expr: p };
+        });
+      }
+      target.transforms.push({ op, args: txArgs });
+      return JSON.stringify(recipe, null, 2);
+    }
+
     const insts = parsePartInstances(src);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return null;
@@ -2383,6 +2408,27 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  raw expression string — literals (`4.5`) AND formulas
    *  (`p.bodyLen / 2`, `A.outerR`) pass through unchanged. */
   function setTransformVec3(src: string, instance: string, tIdx: number, vec: [string, string, string]): string | null {
+    // JSON-recipe dispatch — mutate recipe.instances[i].transforms[tIdx].args
+    // in place. Each axis is a raw expression string; a clean number
+    // collapses to {lit}, anything else stays as {expr}.
+    if (isJsonRecipeSource(src)) {
+      let recipe: any;
+      try { recipe = JSON.parse(src); } catch { return null; }
+      if (!Array.isArray(recipe.instances)) return null;
+      const i = recipe.instances.findIndex((x: any) => x?.name === instance);
+      if (i < 0) return null;
+      const target = recipe.instances[i];
+      if (!Array.isArray(target.transforms) || !target.transforms[tIdx]) return null;
+      target.transforms[tIdx].args = vec.map((axis) => {
+        const t = (axis ?? '').trim() || '0';
+        const n = Number(t);
+        return Number.isFinite(n) && /^-?\d+(\.\d+)?$/.test(t)
+          ? { lit: n }
+          : { expr: t };
+      });
+      return JSON.stringify(recipe, null, 2);
+    }
+
     const insts = parsePartInstances(src);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return null;
@@ -2405,6 +2451,19 @@ export const geom = defineGeom(meta, (p, geom) => {
   /** Drop the transform at `tIdx` (0 = first chip after the base).
    *  Removes the whole `<instance> = <op>(<instance>, …);` line. */
   function removeTransform(src: string, instance: string, tIdx: number): string | null {
+    // JSON-recipe dispatch — splice recipe.instances[i].transforms[tIdx].
+    if (isJsonRecipeSource(src)) {
+      let recipe: any;
+      try { recipe = JSON.parse(src); } catch { return null; }
+      if (!Array.isArray(recipe.instances)) return null;
+      const i = recipe.instances.findIndex((x: any) => x?.name === instance);
+      if (i < 0) return null;
+      const target = recipe.instances[i];
+      if (!Array.isArray(target.transforms) || !target.transforms[tIdx]) return null;
+      target.transforms.splice(tIdx, 1);
+      return JSON.stringify(recipe, null, 2);
+    }
+
     const insts = parsePartInstances(src);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return null;
@@ -3261,7 +3320,9 @@ export const geom = defineGeom(meta, (p, geom) => {
   function openTxEdit(tab: Tab, instance: string, tIdx: number, ev: MouseEvent) {
     if (!tab.componentEntry) return;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
-    const insts = parsePartInstances(cur);
+    // Dispatch by source shape — JSON parts read transforms from the
+    // recipe directly (parsePartInstances only scans .ts source).
+    const insts = isJsonRecipeSource(cur) ? parseRecipeInstances(cur) : parsePartInstances(cur);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return;
     const [xRaw, yRaw, zRaw] = readTransformVec3Raw(inst, tIdx);
@@ -4643,6 +4704,64 @@ export const geom = defineGeom(meta, (p, geom) => {
   ) {
     if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
     if (tab.componentEntry.renderMode !== 'server') return;
+
+    // JSON-recipe parts — rewrite both the instance's `top` arg AND
+    // a leading `mv` transform that actually translates the geom.
+    // The interpreter doesn't have an instanceTopMode rewrite layer
+    // like the .ts loader does, so just setting `top` is only enough
+    // for inner parts that propagate `top` themselves; the mv guarantees
+    // the geometry moves regardless of whether the called part uses top.
+    const curSrc = tab.sourceDraft ?? tab.componentEntry.source;
+    if (isJsonRecipeSource(curSrc)) {
+      let recipe: any;
+      try { recipe = JSON.parse(curSrc); } catch { return; }
+      if (!Array.isArray(recipe.instances)) return;
+      const idx = recipe.instances.findIndex((i: any) => i?.name === instance);
+      if (idx < 0) return;
+      const target = recipe.instances[idx];
+      target.args ??= {};
+      // Find predecessor in source order — the recipe interpreter
+      // walks instances left-to-right, so "prev" is whatever comes
+      // before this one in the array. First instance has no prev;
+      // stack/overlay degenerate to origin for it.
+      const prev = idx > 0 ? recipe.instances[idx - 1] : null;
+      if (mode === null || mode === 'origin') {
+        target.args.top = { lit: 0 };
+      } else if (mode === 'overlay' && prev) {
+        const off = offset != null && Number.isFinite(offset) ? offset : 0;
+        target.args.top = off === 0
+          ? { expr: `${prev.name}.top` }
+          : { expr: `${prev.name}.top + ${off}` };
+      } else if (mode === 'stack' && prev) {
+        target.args.top = { expr: `${prev.name}.top + ${prev.name}.length` };
+      } else {
+        // stack/overlay on first instance → origin.
+        target.args.top = { lit: 0 };
+      }
+
+      // Find or insert the placement mv transform — recognised as the
+      // first mv whose x/y are literal 0 and z is `<ME>.top`. This is
+      // the shape we emit; user-added mv transforms with different args
+      // are left untouched.
+      const meTop = `${instance}.top`;
+      const isPlacementMv = (tx: any) =>
+        tx && tx.op === 'mv' && Array.isArray(tx.args) && tx.args.length === 3
+        && tx.args[0]?.lit === 0 && tx.args[1]?.lit === 0
+        && tx.args[2]?.expr === meTop;
+      const placementTx = { op: 'mv', args: [{ lit: 0 }, { lit: 0 }, { expr: meTop }] };
+      if (!Array.isArray(target.transforms)) target.transforms = [];
+      const existingIdx = target.transforms.findIndex(isPlacementMv);
+      if (existingIdx < 0) {
+        // Prepend so it runs first; user-added rot/mv chains compose after.
+        target.transforms.unshift(placementTx);
+      }
+      const nextSrc = JSON.stringify(recipe, null, 2);
+      tab.sourceDraft = nextSrc;
+      applyDraft(tab);
+      return;
+    }
+
+    // Legacy .ts path — instanceTopMode in meta.json + loader rewrite.
     const prevModes = tab.componentEntry.instanceTopMode ?? {};
     const prevOffs = tab.componentEntry.instanceTopOffset ?? {};
     const nextModes: Record<string, 'stack' | 'overlay' | 'origin'> = { ...prevModes };
@@ -4654,9 +4773,6 @@ export const geom = defineGeom(meta, (p, geom) => {
       nextModes[instance] = mode;
       if (mode === 'overlay') {
         if (offset != null && Number.isFinite(offset)) nextOffs[instance] = offset;
-        // If switching to overlay without an explicit offset, keep
-        // whatever value was previously stored (lets the user click
-        // through stack→overlay→stack without losing the offset).
       } else {
         delete nextOffs[instance];
       }
@@ -7089,8 +7205,12 @@ export const geom = defineGeom(meta, (p, geom) => {
             // `B:hollow_cylinder`, props matched by KEY against the
             // imported component's meta.params (via the alias map).
             if (i.kind === 'component') {
+              // JSON-recipe parts have no `import { ... }` alias layer, so
+              // fall through to a direct callName lookup when the alias
+              // map doesn't resolve.
               const compId = compAliasMap[i.callName];
-              const compEntry = componentList.find((r) => r.meta.id === compId);
+              const compEntry = componentList.find((r) => r.meta.id === compId)
+                ?? componentList.find((r) => r.meta.id === i.callName);
               return {
                 key: `inst:${i.instance}`,
                 name: i.instance,
@@ -7134,20 +7254,6 @@ export const geom = defineGeom(meta, (p, geom) => {
             : paramGroupsOf(allDefs).map((g) => ({ key: g, name: g === '__default__' ? 'Properties' : g, sig: '', removeKind: null as null, removeId: '', instance: undefined }))}
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
-            {#if isJsonRecipe}
-              <!-- JSON-recipe parts: accordion now renders the parsed
-                   recipe instances. Edits to args (number inputs, ƒ
-                   popups) are display-only for the moment — structural
-                   edits go through the Builder tab's JSON editor. -->
-              <div class="recipe-banner">
-                <span class="ic">≡</span>
-                <span>
-                  JSON-recipe part — instance args + composition are read-only here.
-                  Structural edits in the <strong>Builder</strong> tab; slider edits
-                  below adjust <em>defaults</em>.
-                </span>
-              </div>
-            {/if}
             {#if activeTab.descForm?.open}
               {@const df = activeTab.descForm}
               <div class="param-form">
@@ -7213,12 +7319,27 @@ export const geom = defineGeom(meta, (p, geom) => {
                 } : undefined}
               >
               {#if accordion}
-                <button
+                <!-- Bar is a div (not a button) because nested <button>
+                     elements inside <button> are invalid HTML; browsers
+                     would intermittently swallow the outer click. Using
+                     a div + role="button" + onclick lets every child
+                     button still e.stopPropagation() to keep its own
+                     action, while any click on the bar's empty space
+                     toggles the accordion. -->
+                <div
                   class="pg-acc-head"
                   class:collapsed
                   class:instance={!!g.instance}
-                  type="button"
+                  role="button"
+                  tabindex="0"
+                  aria-expanded={!collapsed}
                   onclick={() => toggleParamGroupCollapse(activeTab!.id, g.key)}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleParamGroupCollapse(activeTab!.id, g.key);
+                    }
+                  }}
                 >
                   <!-- Chevron removed — open/close state is evident from the body. -->
 
@@ -7370,7 +7491,7 @@ export const geom = defineGeom(meta, (p, geom) => {
                       </svg>
                     </button>
                   {/if}
-                </button>
+                </div>
               {/if}
               {#if !collapsed}
               <!-- Per-instance Props grid (strict-grammar GUI). The
@@ -7382,7 +7503,8 @@ export const geom = defineGeom(meta, (p, geom) => {
               {@const instView = inst ? instanceViewOf(activeTab.id, inst.instance) : 'properties'}
               {@const helperMeta = inst && inst.kind === 'helper' ? HELPERS.find((h) => h.name === inst.callName) : null}
               {@const compEntry2 = inst && inst.kind === 'component'
-                ? componentList.find((r) => r.meta.id === compAliasMap[inst.callName])
+                ? (componentList.find((r) => r.meta.id === compAliasMap[inst.callName])
+                    ?? componentList.find((r) => r.meta.id === inst.callName))
                 : null}
               <!-- Body wrapper — caps an over-long accordion's height
                    so a part with many props (or a Properties section
