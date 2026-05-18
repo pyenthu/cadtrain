@@ -2118,6 +2118,98 @@ export const geom = defineGeom(meta, (p, geom) => {
     return out;
   }
 
+  /** Parse a JSON-recipe `part.json` source into the same `PartInstance[]`
+   *  shape that `parsePartInstances` returns for .ts source. Lets the
+   *  inspector's Parts-tab accordion render JSON-recipe parts without
+   *  knowing about the JSON shape — the existing accordion templates
+   *  iterate this list and render prop cards from each instance's
+   *  `args` / `argsObj`.
+   *
+   *  callStart / callEnd / opCallStart / opCallEnd are set to -1 since
+   *  JSON parts have no source positions. The edit helpers gate on
+   *  these (negative offsets skip) — JSON parts get read-only behaviour
+   *  in the accordion for now (full round-trip editing is Phase 3b).
+   *  Display works because the accordion only reads `args` / `argsObj`
+   *  / `transforms` / `op` for rendering. */
+  function parseRecipeInstances(src: string): PartInstance[] {
+    let recipe: any;
+    try { recipe = JSON.parse(src); } catch { return []; }
+    if (!recipe?.instances || !Array.isArray(recipe.instances)) return [];
+    const aliases: Record<string, string> = {};
+    // Build a comp-by-instance map from the composition list so each
+    // instance shows the right CSG op (add/subtract/intersect).
+    const opByInst = new Map<string, 'add' | 'subtract' | 'intersect'>();
+    if (Array.isArray(recipe.composition)) {
+      for (const c of recipe.composition) {
+        if (c?.of && ['add','subtract','intersect'].includes(c?.op)) {
+          if (!opByInst.has(c.of)) opByInst.set(c.of, c.op);
+        }
+      }
+    }
+    const out: PartInstance[] = [];
+    for (const inst of recipe.instances) {
+      if (typeof inst?.name !== 'string' || typeof inst?.call !== 'string') continue;
+      const op = opByInst.get(inst.name) ?? 'add';
+      const isHelper = HELPERS.some((h) => h.name === inst.call);
+      const isComponent = !isHelper && componentList.some((e) => e.meta.id === inst.call);
+      // Convert recipe args (Record<string, {lit|expr}>) into the
+      // PartArg shape the accordion's prop cards expect.
+      const args: PartArg[] = [];
+      const argsObj: Record<string, PartArg> = {};
+      for (const [k, v] of Object.entries(inst.args ?? {})) {
+        const arg: PartArg = ('lit' in (v as any))
+          ? { kind: 'literal', raw: String((v as any).lit), value: Number((v as any).lit) }
+          : { kind: 'unknown', raw: String((v as any).expr ?? '') };
+        argsObj[k] = arg;
+      }
+      // For helper instances, also flatten args into the positional
+      // array using helper propNames order — the accordion's prop card
+      // grid keys off this for helpers.
+      if (isHelper) {
+        const helper = HELPERS.find((h) => h.name === inst.call);
+        const propNames = helper?.props.map((p) => p.name) ?? [];
+        for (const n of propNames) {
+          args.push(argsObj[n] ?? { kind: 'unknown', raw: '' });
+        }
+      }
+      // Recipe transforms → Transform[]. mv/rot take 3 scalar args
+      // (x, y, z); collapse them back into a vec3-string for display.
+      const transforms: Transform[] = [];
+      if (Array.isArray(inst.transforms)) {
+        for (const tx of inst.transforms) {
+          if (typeof tx?.op !== 'string' || !Array.isArray(tx?.args)) continue;
+          const txArgs: PartArg[] = tx.args.map((a: any): PartArg => ('lit' in (a ?? {}))
+            ? { kind: 'literal', raw: String(a.lit), value: Number(a.lit) }
+            : { kind: 'unknown', raw: String(a?.expr ?? '') });
+          transforms.push({
+            op: tx.op,
+            args: [{ kind: 'unknown', raw: `[${txArgs.map((a) => a.raw).join(', ')}]` }],
+            callStart: -1,
+            callEnd: -1,
+          });
+        }
+      }
+      const base = {
+        instance: inst.name,
+        callName: inst.call,
+        transforms,
+        callStart: -1,
+        callEnd: -1,
+        op,
+        opCallStart: -1,
+        opCallEnd: -1,
+      };
+      if (isComponent) {
+        out.push({ ...base, kind: 'component', args: [], argsObj });
+      } else {
+        out.push({ ...base, kind: isHelper ? 'helper' : 'unknown', args });
+      }
+      // Suppress unused alias variable
+      void aliases;
+    }
+    return out;
+  }
+
   /** Parse a `{ key: value, key2: value2 }` argText into key → PartArg.
    *  Tolerates whitespace; ignores any unparseable segment. The braces
    *  must be the outermost shape — call sites only invoke this for
@@ -6988,7 +7080,7 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const curSrc = isXml ? (activeTab.sourceDraft ?? activeTab.componentEntry!.source) : ''}
           {@const isJsonRecipe = isXml && curSrc && isJsonRecipeSource(curSrc)}
           {@const imported = isXml && !isJsonRecipe ? importedFromSource(curSrc) : { helpers: new Set<string>(), components: new Set<string>() }}
-          {@const instances = isXml && curSrc && !isJsonRecipe ? parsePartInstances(curSrc) : []}
+          {@const instances = isXml && curSrc ? (isJsonRecipe ? parseRecipeInstances(curSrc) : parsePartInstances(curSrc)) : []}
           {@const compAliasMap = isXml && curSrc ? componentAliases(curSrc) : {}}
           {@const partGroups = isXml ? instances.map((i) => {
             // One accordion entry per INSTANCE — helpers AND components.
@@ -7043,16 +7135,16 @@ export const geom = defineGeom(meta, (p, geom) => {
           {@const accordion = useParts || groups.length > 1}
           <div class="ed-sec compact">
             {#if isJsonRecipe}
-              <!-- JSON-recipe parts use a single source-of-truth JSON
-                   file. The form-driven accordion editor for them is
-                   future work — for now, edit the instances/composition
-                   in the Builder tab and the slider defaults here. -->
+              <!-- JSON-recipe parts: accordion now renders the parsed
+                   recipe instances. Edits to args (number inputs, ƒ
+                   popups) are display-only for the moment — structural
+                   edits go through the Builder tab's JSON editor. -->
               <div class="recipe-banner">
                 <span class="ic">≡</span>
                 <span>
-                  This is a JSON-recipe part — instances and composition live in
-                  <code>part.json</code>. Edit them in the <strong>Builder</strong> tab;
-                  slider edits here adjust the <em>defaults</em> stored on each param.
+                  JSON-recipe part — instance args + composition are read-only here.
+                  Structural edits in the <strong>Builder</strong> tab; slider edits
+                  below adjust <em>defaults</em>.
                 </span>
               </div>
             {/if}
