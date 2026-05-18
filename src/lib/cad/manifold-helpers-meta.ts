@@ -69,7 +69,7 @@ const HELPER_DEFAULTS: Record<string, Record<string, number>> = {
   cyl:   { length: 1.0,   r1: 0.5, r2: 0.5 },
   tube:  { outerR: 0.5, innerR: 0.4, length: 4.0 },
   // Helical thread band — sized for a typical drill-pipe thread.
-  helix_band: { od: 4.5, length: 2, tpi: 4, depth: 0.06, profile: 0 },
+  helix_band: { od: 4.5, length: 2, tpi: 4, depth: 0.06, profile: 0, taper: 0 },
 };
 
 /** Regex: a JSDoc block carrying `@part <desc>`, immediately followed by

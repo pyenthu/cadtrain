@@ -291,7 +291,7 @@ export function createHelperRuntime(): Record<string, (args: any[]) => any> {
     tube: (a) => tube(a[0], a[1], a[2]),
     mv:   (a) => mv(a[0], [a[1], a[2], a[3]]),
     rot:  (a) => rot(a[0], [a[1], a[2], a[3]]),
-    helix_band: (a) => helix_band(a[0], a[1], a[2], a[3], a[4]),
+    helix_band: (a) => helix_band(a[0], a[1], a[2], a[3], a[4], a[5]),
   };
 }
 

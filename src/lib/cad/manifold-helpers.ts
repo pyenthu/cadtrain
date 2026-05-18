@@ -144,8 +144,8 @@ export function mv(m: any, v: [number, number, number]) { return m.translate(v);
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
-/** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60). Pair with subtract to cut threads into a body. */
-export function helix_band(od: number, length: number, tpi: number, depth: number, profile: number): any {
+/** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60, 2 = ACME 29°), taper (degrees/side, 0 = straight). Pair with subtract to cut threads into a body. */
+export function helix_band(od: number, length: number, tpi: number, depth: number, profile: number, taper: number): any {
   const w = G.__cadtrain_manifold__.wasm;
   if (!w) throw new Error('manifold not initialised — call initManifold() first');
   const CS = w.CrossSection;
@@ -153,9 +153,8 @@ export function helix_band(od: number, length: number, tpi: number, depth: numbe
   const pitch = 1 / Math.max(tpi, 0.0001);
   const numTurns = length * tpi;
   const twistDegrees = 360 * numTurns;
-  // Quality: ≥ 12 vertical divisions per full turn so the twist
-  // interpolation stays smooth at moderate TPI without exploding
-  // triangle count on long threads.
+  // ≥ 12 vertical divisions per full turn so the twist interpolation
+  // stays smooth at moderate TPI without exploding tri count.
   const nDivisions = Math.max(8, Math.ceil(numTurns * 12));
 
   const toothWidth = pitch * 0.5;
@@ -164,14 +163,25 @@ export function helix_band(od: number, length: number, tpi: number, depth: numbe
   const outerR = od / 2 + depth;
 
   let contour: [number, number][];
-  if (profile === 1) {
+  if (profile === 2) {
+    // ACME 29° — trapezoidal tooth, ~29° included angle, with wide root
+    // (~0.4 pitch) and narrower crest (~0.18 pitch). The standard ACME
+    // form for power-screw threads; rendered here as a flat-topped
+    // tooth so the side angle is the dominant visual cue.
+    const rootHalfW = pitch * 0.40;
+    const crestHalfW = pitch * 0.18;
+    contour = [
+      [innerR, -rootHalfW],
+      [outerR, -crestHalfW],
+      [outerR, crestHalfW],
+      [innerR, rootHalfW],
+    ];
+  } else if (profile === 1) {
     // V60 — trapezoidal tooth with a small flat crest. A true triangle
     // apex produces a degenerate face under twist (adjacent extrusion
-    // layers cross over at the zero-width tip), so we widen the crest
-    // to 20% of the root width — visually still reads as a V from a
-    // distance and stays manifold-valid.
+    // layers cross at zero-width), so the crest stays at 20% of the
+    // root width — visually still reads as a V from a distance.
     const crestHalfW = halfW * 0.2;
-    // Wound CCW: bottom-left → bottom-right → top-right → top-left.
     contour = [
       [innerR, -halfW],
       [outerR, -crestHalfW],
@@ -188,11 +198,18 @@ export function helix_band(od: number, length: number, tpi: number, depth: numbe
     ];
   }
 
+  // Taper. `taper` is degrees per side — the OD shrinks linearly along
+  // the length. scaleTop scales the whole cross-section uniformly about
+  // the origin; shrink by (length × tan(taper)) / (od/2) so the radius
+  // at the top is reduced by length × tan(taper). taper=0 → scaleTop=1
+  // → straight thread. Clamp to a sane positive scale so a misconfigured
+  // input can't produce a degenerate (zero or negative) top.
+  const taperRad = Math.max(0, taper) * Math.PI / 180;
+  const radiusReduction = length * Math.tan(taperRad);
+  const scaleTop = Math.max(0.05, 1 - radiusReduction / Math.max(od / 2, 0.0001));
+
   const cs = new CS([contour]);
-  // extrude(height, nDivisions, twistDegrees, scaleTop=1, center=false).
-  // Leaving scaleTop default means a straight (non-tapered) thread;
-  // adding a taper param later is one extra arg here.
-  return cs.extrude(length, nDivisions, twistDegrees);
+  return cs.extrude(length, nDivisions, twistDegrees, scaleTop);
 }
 
 /** Used by the cutaway view in finalizeManifold. Cached so multi-part
