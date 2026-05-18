@@ -318,7 +318,7 @@ export function createHelperRuntime(): Record<string, (args: any[]) => any> {
  *
  *  Flip to true once Stage D has migrated every part on the volume.
  *  Operators are always allowed in both modes. */
-const STRICT_RECIPE_CALLS = false;
+const STRICT_RECIPE_CALLS = true;
 
 /** Set used to suppress duplicate warnings — each (call, mode) pair
  *  warns once per process. Avoids log spam when a recipe is built
