@@ -2284,6 +2284,27 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  inline number input in the per-instance Props row. Returns the new
    *  source or `null` if the instance / arg can't be found. */
   function setInstanceArg(src: string, instance: string, argIdx: number, newRaw: string): string | null {
+    // JSON-recipe dispatch — helper instances have positional args mapped
+    // via propNames; mutate recipe.instances[i].args[<propName>].
+    if (isJsonRecipeSource(src)) {
+      let recipe: any;
+      try { recipe = JSON.parse(src); } catch { return null; }
+      if (!Array.isArray(recipe.instances)) return null;
+      const i = recipe.instances.findIndex((x: any) => x?.name === instance);
+      if (i < 0) return null;
+      const target = recipe.instances[i];
+      const helper = HELPERS.find((h) => h.name === target.call);
+      const propName = helper?.props[argIdx]?.name;
+      if (!propName) return null;
+      target.args = target.args ?? {};
+      const t = (newRaw ?? '').trim() || '0';
+      const n = Number(t);
+      target.args[propName] = Number.isFinite(n) && /^-?\d+(\.\d+)?$/.test(t)
+        ? { lit: n }
+        : { expr: t };
+      return JSON.stringify(recipe, null, 2);
+    }
+
     const insts = parsePartInstances(src);
     const inst = insts.find((p) => p.instance === instance);
     if (!inst) return null;
@@ -2302,6 +2323,23 @@ export const geom = defineGeom(meta, (p, geom) => {
    *  `{ key: value, … }` shape — used by the per-component Props rows
    *  that surface inside the parent component's accordion. */
   function setInstanceObjectArg(src: string, instance: string, key: string, newRaw: string): string | null {
+    // JSON-recipe dispatch — mutate recipe.instances[i].args[key] directly.
+    if (isJsonRecipeSource(src)) {
+      let recipe: any;
+      try { recipe = JSON.parse(src); } catch { return null; }
+      if (!Array.isArray(recipe.instances)) return null;
+      const i = recipe.instances.findIndex((x: any) => x?.name === instance);
+      if (i < 0) return null;
+      const target = recipe.instances[i];
+      target.args = target.args ?? {};
+      const t = (newRaw ?? '').trim() || '0';
+      const n = Number(t);
+      target.args[key] = Number.isFinite(n) && /^-?\d+(\.\d+)?$/.test(t)
+        ? { lit: n }
+        : { expr: t };
+      return JSON.stringify(recipe, null, 2);
+    }
+
     const insts = parsePartInstances(src);
     const inst = insts.find((p) => p.instance === instance);
     if (!inst || inst.kind !== 'component') return null;
@@ -4496,7 +4534,9 @@ export const geom = defineGeom(meta, (p, geom) => {
   ) {
     if (!tab.componentEntry) return;
     const cur = tab.sourceDraft ?? tab.componentEntry.source;
-    const insts = parsePartInstances(cur);
+    // Dispatch by source shape — JSON parts go through parseRecipeInstances;
+    // parsePartInstances only scans .ts positions and returns [] for JSON.
+    const insts = isJsonRecipeSource(cur) ? parseRecipeInstances(cur) : parsePartInstances(cur);
     const inst = insts.find((i) => i.instance === instance);
     if (!inst) return;
     let raw = '';
