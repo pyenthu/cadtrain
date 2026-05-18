@@ -54,6 +54,7 @@ export const FAMILY_BY_ID: Record<string, Family> = {
   hollow_cylinder: 'basic', taper: 'basic', shoulder: 'basic', tapered_cone: 'basic',
   slotted_cylinder: 'basic', slotted_tube: 'basic', grooved_cylinder: 'basic', seal_bore: 'basic',
   packer_element: 'basic', slips: 'basic', j_latch: 'basic',
+  thread_helix: 'basic',
   // Casing & Tubing
   thread_eue: 'casing_tubing', thread_ltc: 'casing_tubing',
   threaded_box: 'casing_tubing', threaded_pin: 'casing_tubing',
@@ -141,6 +142,7 @@ export const LEVEL_BY_ID: Record<string, Level> = {
   taper: 2, shoulder: 2, tapered_cone: 2,
   slotted_cylinder: 2, slotted_tube: 2, grooved_cylinder: 2, seal_bore: 2,
   packer_element: 2, slips: 2, j_latch: 2,
+  thread_helix: 2,
 };
 
 /** Level for a component id. Unknown ids default to 1. */
