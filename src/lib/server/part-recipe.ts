@@ -370,7 +370,25 @@ export function buildRecipe(
     } else {
       m = dep.build(resolved);
     }
-    // Apply transforms (mv / rot / …).
+    // Implicit `top`-translation. The recipe convention: `args.top`
+    // expresses WHERE this instance sits along the Z axis (a formula
+    // like `A.top + A.length` for stacking, or `B.top + 0.5` for
+    // overlay+offset). When present and non-zero, the interpreter
+    // translates the freshly-built manifold by `[0, 0, top]` BEFORE
+    // any user-written transforms run — so a user-added mv composes
+    // on top of the placement.
+    //   - Skip when `top` is absent → no implicit translation (part
+    //     sits where origin is).
+    //   - Skip when `top === 0` → mv(0,0,0) is a no-op anyway, no
+    //     point cluttering the chain with it.
+    // Avoids the "stray placement mv shows up in the user's
+    // transforms chip strip" UX bug from the explicit-mv approach.
+    const topVal = resolved.top;
+    if (typeof topVal === 'number' && topVal !== 0) {
+      const mvDep = resolveDep('mv');
+      m = mvDep.build([m, 0, 0, topVal] as any);
+    }
+    // Apply user transforms (mv / rot / …) AFTER the implicit placement.
     if (inst.transforms) {
       for (const tx of inst.transforms) {
         const txDep = resolveDep(tx.op);

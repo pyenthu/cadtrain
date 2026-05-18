@@ -4745,12 +4745,13 @@ export const geom = defineGeom(meta, (p, geom) => {
     if (tab.kind !== 'xml-primitive' || !tab.componentEntry) return;
     if (tab.componentEntry.renderMode !== 'server') return;
 
-    // JSON-recipe parts — rewrite both the instance's `top` arg AND
-    // a leading `mv` transform that actually translates the geom.
-    // The interpreter doesn't have an instanceTopMode rewrite layer
-    // like the .ts loader does, so just setting `top` is only enough
-    // for inner parts that propagate `top` themselves; the mv guarantees
-    // the geometry moves regardless of whether the called part uses top.
+    // JSON-recipe parts — rewrite the instance's `top` arg only. The
+    // interpreter implicitly translates by `[0, 0, top]` (see
+    // part-recipe.ts buildRecipe) when `top` is defined and non-zero,
+    // so no explicit placement mv lands in the user-visible transforms
+    // chip strip. Origin mode deletes `top` entirely → no implicit
+    // translation, part sits at origin. Also evict any legacy
+    // placement mv that previous versions of this code wrote.
     const curSrc = tab.sourceDraft ?? tab.componentEntry.source;
     if (isJsonRecipeSource(curSrc)) {
       let recipe: any;
@@ -4765,35 +4766,41 @@ export const geom = defineGeom(meta, (p, geom) => {
       // before this one in the array. First instance has no prev;
       // stack/overlay degenerate to origin for it.
       const prev = idx > 0 ? recipe.instances[idx - 1] : null;
-      if (mode === null || mode === 'origin') {
-        target.args.top = { lit: 0 };
-      } else if (mode === 'overlay' && prev) {
-        const off = offset != null && Number.isFinite(offset) ? offset : 0;
-        target.args.top = off === 0
-          ? { expr: `${prev.name}.top` }
-          : { expr: `${prev.name}.top + ${off}` };
-      } else if (mode === 'stack' && prev) {
-        target.args.top = { expr: `${prev.name}.top + ${prev.name}.length` };
+      if (mode === null || mode === 'origin' || !prev) {
+        // Origin / no predecessor → delete `top` so the interpreter
+        // skips the implicit translation entirely. Cleaner than
+        // writing `{lit: 0}` (which would still serialize to disk and
+        // re-read as "placed at 0" rather than "placement unset").
+        delete target.args.top;
       } else {
-        // stack/overlay on first instance → origin.
-        target.args.top = { lit: 0 };
+        // Stack / overlay both reference `${prev.name}.top` — make sure
+        // the predecessor has a `top` arg defined so the evaluator can
+        // resolve it. Seeds {lit: 0} when missing (cheap + explicit).
+        prev.args ??= {};
+        if (!('top' in prev.args)) prev.args.top = { lit: 0 };
+
+        if (mode === 'overlay') {
+          const off = offset != null && Number.isFinite(offset) ? offset : 0;
+          target.args.top = off === 0
+            ? { expr: `${prev.name}.top` }
+            : { expr: `${prev.name}.top + ${off}` };
+        } else if (mode === 'stack') {
+          target.args.top = { expr: `${prev.name}.top + ${prev.name}.length` };
+        }
       }
 
-      // Find or insert the placement mv transform — recognised as the
-      // first mv whose x/y are literal 0 and z is `<ME>.top`. This is
-      // the shape we emit; user-added mv transforms with different args
-      // are left untouched.
-      const meTop = `${instance}.top`;
-      const isPlacementMv = (tx: any) =>
-        tx && tx.op === 'mv' && Array.isArray(tx.args) && tx.args.length === 3
-        && tx.args[0]?.lit === 0 && tx.args[1]?.lit === 0
-        && tx.args[2]?.expr === meTop;
-      const placementTx = { op: 'mv', args: [{ lit: 0 }, { lit: 0 }, { expr: meTop }] };
-      if (!Array.isArray(target.transforms)) target.transforms = [];
-      const existingIdx = target.transforms.findIndex(isPlacementMv);
-      if (existingIdx < 0) {
-        // Prepend so it runs first; user-added rot/mv chains compose after.
-        target.transforms.unshift(placementTx);
+      // Evict the legacy placement mv that previous versions of this
+      // function emitted (`mv(0, 0, <ME>.top)`) — kept once for back-
+      // compat, then dropped from the transforms array so it doesn't
+      // double-translate now that the interpreter handles `top`
+      // implicitly. User-added mv with different shape stays.
+      if (Array.isArray(target.transforms)) {
+        const meTop = `${instance}.top`;
+        target.transforms = target.transforms.filter((tx: any) =>
+          !(tx && tx.op === 'mv' && Array.isArray(tx.args) && tx.args.length === 3
+            && tx.args[0]?.lit === 0 && tx.args[1]?.lit === 0
+            && tx.args[2]?.expr === meTop));
+        if (target.transforms.length === 0) delete target.transforms;
       }
       const nextSrc = JSON.stringify(recipe, null, 2);
       tab.sourceDraft = nextSrc;
