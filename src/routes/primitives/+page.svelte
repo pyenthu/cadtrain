@@ -10,6 +10,7 @@
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
+  import { scene } from '$lib/shared/scene-state.svelte';
   import * as THREE from 'three';
 
   interface Entry {
@@ -348,7 +349,7 @@
             {:else}
               <Canvas {createRenderer}>
                 {@const Scene = SceneComponent}
-                <Scene {geo} {geoVersion} showCutaway={true} showEdges={true} />
+                <Scene {geo} {geoVersion} showCutaway={scene.showCutaway} showEdges={scene.showEdges} />
               </Canvas>
               {#if SceneControls}{@const Controls = SceneControls}<Controls />{/if}
             {/if}
