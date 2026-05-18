@@ -259,9 +259,12 @@ function extractJsonBlock(text: string): string {
  *  the same discovery as the .ts prompt; the structural rules are
  *  expressed as a worked example of part.json. */
 function buildJsonSystemPrompt(currentId: string): string {
-  const helpers = discoverHelpers();
-  const helperLines = helpers.map((h) => `- \`${h.name}(${h.props.map((p) => p.name).join(', ')})\` — ${h.desc}`).join('\n');
-  const otherPrims = COMPONENT_REGISTRY.filter((e) => e.meta.id !== currentId).map((e) => {
+  // Stage E of the components/primitives split — recipe call:
+  // targets are COMPONENTS only. Primitives (cyl, tube, helix_band, …)
+  // are backend toolkit; the interpreter rejects direct primitive
+  // calls (STRICT_RECIPE_CALLS = true). The catalog injected below
+  // is the component list, not the helper list.
+  const otherComps = COMPONENT_REGISTRY.filter((e) => e.meta.id !== currentId).map((e) => {
     const params = Object.keys(e.meta.params).join(', ');
     return `  - ${e.meta.id} (${e.meta.name}): args { ${params} }`;
   }).join('\n');
@@ -328,11 +331,18 @@ op to a single Manifold accumulator. Order matters for subtract /
 intersect — if a part should cut out of an earlier add, it appears
 later in the list.
 
-# Helpers (bundle primitives — call by name in instance.call)
-${helperLines}
+# Components — these are the ONLY legal values for instance.call.
+# Each is referenced by id; args are the component's meta.params keys.
+${otherComps || '  (none in the registry yet)'}
 
-# Other components available (use the component's id in instance.call)
-${otherPrims || '  (none in the registry yet)'}
+# Primitives are NOT callable from a recipe.
+# cyl, tube, helix_band, empty are backend-toolkit functions. The
+# interpreter rejects direct primitive calls. If you need a primitive
+# operation, find or write a component that wraps it (e.g.
+# thread_helix wraps helix_band).
+
+# Operators — recipe-level transforms, allowed in instance.transforms[]:
+# mv, rot. Both take three scalar args (x, y, z).
 
 # Z-down convention
 - top = LOWER z. bottom = HIGHER z. As z increases, you go DOWN the hole.
@@ -381,10 +391,20 @@ async function validateRefinedRecipe(
     return { ok: false, retryHint: 'composition is required (array).' };
   }
   // Composition entries must reference declared instances + valid ops.
+  // Stage E: also reject recipe call: targets that are primitives —
+  // the runtime would throw with STRICT_RECIPE_CALLS = true, so catch
+  // it here and ask Claude for a retry instead of failing at execute.
+  const primitiveNames = new Set(discoverHelpers().map((h) => h.name));
   const instNames = new Set<string>();
   for (const inst of recipe.instances) {
     if (typeof inst?.name !== 'string') return { ok: false, retryHint: 'Every instance needs a string name.' };
     if (typeof inst?.call !== 'string') return { ok: false, retryHint: `Instance "${inst.name}" missing call (string).` };
+    if (primitiveNames.has(inst.call)) {
+      return {
+        ok: false,
+        retryHint: `Instance "${inst.name}" calls "${inst.call}", which is a primitive (backend toolkit). Recipe calls must reference a COMPONENT id. Wrap "${inst.call}" in a component (e.g. thread_helix wraps helix_band) and call that instead.`,
+      };
+    }
     instNames.add(inst.name);
   }
   for (const step of recipe.composition) {
