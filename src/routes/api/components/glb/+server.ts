@@ -7,7 +7,7 @@
  * /api/components/{list,geom,save} operate on — even when
  * CADTRAIN_VOLUME_REMOTE_URL is set for /api/volume + kb-sources.
  *
- * The GLB stage tab in /primitives uses this for library parts;
+ * The GLB stage tab in /components uses this for library parts;
  * bundle primitives still load from /components/<id>.glb (the
  * vite-served static asset). 404 when the id isn't a library part
  * or the bake hasn't run yet for this part (no mesh.glb on disk).

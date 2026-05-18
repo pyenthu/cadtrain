@@ -2,7 +2,7 @@
  * Component family classification.
  *
  * Each single-file component under `src/lib/cad/components/<id>.ts` is
- * tagged with one of these families. The /primitives sidebar uses the
+ * tagged with one of these families. The /components sidebar uses the
  * mapping to:
  *
  *   1. Restrict the **Basic** tab to family='basic' (pure geometric

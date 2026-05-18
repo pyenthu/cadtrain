@@ -2,7 +2,7 @@
  * POST /api/components/bake-preview
  *
  * Live-bake a GLB from an in-flight source + params, return the bytes
- * directly without writing to disk. The /primitives GLB stage tab uses
+ * directly without writing to disk. The /components GLB stage tab uses
  * this when the user has unsaved sourceDraft or dirty params so the
  * GLB view tracks edits the same way the Mesh view does (via
  * /api/components/geom). When the part is clean, the client falls

@@ -1,7 +1,7 @@
 /**
  * Per-instance viewer colours (Phase A — UI only).
  *
- * Each part instance in the `/primitives` inspector (`A`, `B`, ...) gets
+ * Each part instance in the `/components` inspector (`A`, `B`, ...) gets
  * a distinct hue so the user can map "this accordion row" to "this part"
  * at a glance. The chosen colour:
  *   1. Comes from `meta.instanceColors[<name>]` when the user has picked

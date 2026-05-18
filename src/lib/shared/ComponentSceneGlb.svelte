@@ -8,7 +8,7 @@
   import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
 
   // Mirrors ComponentScene.svelte's camera / light / axis chrome, but the
-  // rendered body is a static GLB loaded from a URL. Used by the /primitives
+  // rendered body is a static GLB loaded from a URL. Used by the /components
   // stage's GLB sub-tab — visualizes the baked mesh that bakeGlb() writes
   // to static/components/<id>.glb on save, NOT the live ManifoldCAD geom.
   // Useful for confirming the GLB on disk matches the live render, and for

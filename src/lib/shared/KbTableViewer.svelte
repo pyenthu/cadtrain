@@ -1,7 +1,7 @@
 <script lang="ts">
   // Reusable KB table viewer — filterable + sortable table of a single
   // KB's rows, driven by /kb/index.json. Ported out of the old
-  // /kb/[id]/+page.svelte so it can be embedded inside /primitives' KB tab
+  // /kb/[id]/+page.svelte so it can be embedded inside /components' KB tab
   // (and any future host) without re-implementing the table logic.
   import { onMount } from 'svelte';
 

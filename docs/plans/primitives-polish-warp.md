@@ -1,9 +1,9 @@
-# Plan — /primitives polish session (sinusoidal warp + stage UX)
+# Plan — /components polish session (sinusoidal warp + stage UX)
 
 ## Context
 
 What started as a focused sinusoidal Z-warp experiment turned into a
-broader /primitives polish pass. The warp is the headline experimental
+broader /components polish pass. The warp is the headline experimental
 feature (entire pipeline grep-tagged `TEMP warp experiment` for clean
 removal); the rest are permanent UX tightenings to the inspector
 panel, the canvas chrome, and the GLB pipeline.
@@ -94,7 +94,7 @@ transformed.y += warpDisp * uWarpAxis;
 ## Verification (still applicable end-to-end)
 
 1. `bun run build` — green.
-2. `bun run dev`, open `/primitives`, click the canvas gear:
+2. `bun run dev`, open `/components`, click the canvas gear:
    - **Warp** checkbox off (default) → mesh straight; flip on → S-curve.
    - Adjust Amp / Freq / Axis (X|Y); flipping back to off preserves them.
 3. In the 3D stage, click **Mesh ↔ GLB** pill — same warp, same

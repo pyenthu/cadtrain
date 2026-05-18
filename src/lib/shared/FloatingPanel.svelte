@@ -26,7 +26,7 @@
     maxHeight?: string;
     /** If true, the panel positions absolutely (relative to nearest positioned
      *  ancestor) instead of fixed (viewport). Use when the popup should live
-     *  inside a specific layout region — e.g. the tab body in /primitives. */
+     *  inside a specific layout region — e.g. the tab body in /components. */
     containerRelative?: boolean;
     /** If true, the panel renders as a static block element (no float, no
      *  drag) so the parent can place it in a grid/flex column. Use with a

@@ -39,29 +39,29 @@ export const details: Record<number, PlanDetail> = {
     summary:
       'Make a per-primitive spec MD the source of truth and generate the ManifoldCAD ' +
       'builder code from it, instead of the current "edit builder.ts directly" flow. ' +
-      'The /primitives Script popup already surfaces the builder function for each ' +
+      'The /components Script popup already surfaces the builder function for each ' +
       'primitive (sliced out of builder.ts via Vite ?raw); next step is to replace ' +
       'that read-only code view with an editable MD + a "regenerate builder" button.',
     steps: [
       'One-shot seed: run each of the 18 builder functions through Claude to produce ' +
         'a draft spec MD (ops vocabulary: tube/cyl/mv/rot/subtract/add/for-loop-of-rings). ' +
-        'Commit the 18 docs as docs/primitives/<id>.md.',
+        'Commit the 18 docs as docs/components/<id>.md.',
       'Hand-curate the seeds where Claude invented post-hoc justifications.',
       'Define the spec DSL: structured MD with ops blocks (or YAML front-matter + ' +
         'narrative). Keep it tiny — same vocabulary the builders already use.',
       'Write the code generator: spec MD → TypeScript builder function. Wire it into ' +
-        'a "regenerate" pipeline (CLI for now, button in /primitives Script popup later).',
-      'Switch /primitives Script popup to render the MD (editable) instead of the .ts; ' +
+        'a "regenerate" pipeline (CLI for now, button in /components Script popup later).',
+      'Switch /components Script popup to render the MD (editable) instead of the .ts; ' +
         'regenerate writes the .ts back through the generator.',
     ],
     acceptance: [
-      '18 per-primitive spec docs committed under docs/primitives/',
+      '18 per-primitive spec docs committed under docs/components/',
       'Code generator round-trips all 18: spec → generated .ts matches handwritten ' +
         'output byte-for-byte (or compiles to identical geometry under a fuzz test)',
-      '/primitives Script popup edits the MD, button regenerates the builder',
+      '/components Script popup edits the MD, button regenerates the builder',
     ],
     refs: [
-      'src/routes/primitives/+page.svelte (Script popup)',
+      'src/routes/components/+page.svelte (Script popup)',
       'src/lib/cad/builder.ts (18 builder functions)',
     ],
   },
@@ -74,7 +74,7 @@ export const details: Record<number, PlanDetail> = {
       'in src/lib/cad/builder.ts. Close cousin of task 9 — both want the ' +
       'human-readable side to drive code generation — but this entry skips the ' +
       'structured spec MD and goes free-text → code in one step. Useful for adding ' +
-      'a "describe a new primitive" input next to the + button in /primitives.',
+      'a "describe a new primitive" input next to the + button in /components.',
     steps: [
       'Curate a few-shot prompt: 4-6 (description → builder function) pairs sampled ' +
         'from existing builders. Include the helper vocabulary (cyl, tube, mv, rot, ' +
@@ -82,10 +82,10 @@ export const details: Record<number, PlanDetail> = {
         'manifold-chain return).',
       'Pin the output to ManifoldCAD\'s API surface — system prompt enumerates the ' +
         'allowed operations + cube/cylinder/sphere primitives, forbids anything else.',
-      'Wire a server endpoint /api/primitives/generate that accepts {description, ' +
+      'Wire a server endpoint /api/components/generate that accepts {description, ' +
         'name?, paramHints?} and returns {builderSrc, paramDefs}. Subject to the same ' +
         'rate-limit bucket as /api/identify.',
-      'Hook the + button in /primitives: type a description → call endpoint → drop ' +
+      'Hook the + button in /components: type a description → call endpoint → drop ' +
         'the new builder into a draft tab with the generated source + params. Save = ' +
         'append the function to builder.ts + the ComponentDef to library.ts.',
       'Safety: never eval the generated code in-browser. Treat it as text the user ' +
@@ -96,7 +96,7 @@ export const details: Record<number, PlanDetail> = {
         'sleeve", "hexagonal sub") that compile without manual edits',
       'Bad inputs (vague descriptions, unsupported geometry) return a helpful error ' +
         'message instead of malformed code',
-      '/primitives + button shows the NL input field and the round-trip works ' +
+      '/components + button shows the NL input field and the round-trip works ' +
         'end-to-end',
     ],
     refs: [
@@ -110,13 +110,13 @@ export const details: Record<number, PlanDetail> = {
 
   400: {
     summary:
-      'Restructured /primitives into a 4-tab sidebar matching the formal hierarchy ' +
+      'Restructured /components into a 4-tab sidebar matching the formal hierarchy ' +
       '(Primitive / Composition / Component / Assembly) plus a 5th tab for KB browsing. ' +
       'Each tab opens entries as in-tab Threlte canvas tabs in the main bar; the cards ' +
       'grid is gone, navigation is sidebar-driven. Vertical tab rail on the left of the ' +
       'sidebar with rotated wedge-shaped buttons; primary content area gets the full ' +
       'remaining width. Camera/light defaults shared with /author via $lib/shared/scene-state.',
-    refs: ['docs/RULES.md', 'src/routes/primitives/+page.svelte'],
+    refs: ['docs/RULES.md', 'src/routes/components/+page.svelte'],
   },
 
   401: {
@@ -173,7 +173,7 @@ export const details: Record<number, PlanDetail> = {
       'On the casing-tubing KB tab, every row now carries a ▶ button that invokes ' +
       'generateTubingComponent with the row\'s (size, weight, grade, connection) and ' +
       'opens the resulting joint as a composite tab in the main bar.',
-    refs: ['src/lib/shared/KbTableViewer.svelte', 'src/routes/primitives/+page.svelte'],
+    refs: ['src/lib/shared/KbTableViewer.svelte', 'src/routes/components/+page.svelte'],
   },
 
   405: {
@@ -227,7 +227,7 @@ export const details: Record<number, PlanDetail> = {
       'fields (size, weight, grade, length, tpi); editing reruns the rules pipeline ' +
       'and rebuilds the spec → live geometry update. Carries through the KB-anchored / ' +
       'formula-derived flag so the user sees which dims are pinned.',
-    refs: ['src/lib/cad/rules/tubing.ts', 'src/routes/primitives/+page.svelte'],
+    refs: ['src/lib/cad/rules/tubing.ts', 'src/routes/components/+page.svelte'],
   },
 
   412: {
@@ -811,7 +811,7 @@ export const details: Record<number, PlanDetail> = {
       'for HAL Versa-Trieve") and seeds the spatial-grammar work in B.x.',
   },
 
-  // ───── J. /primitives polish — AI refine enforcement (4 levels) ─────
+  // ───── J. /components polish — AI refine enforcement (4 levels) ─────
 
   511: {
     summary:
@@ -880,7 +880,7 @@ export const details: Record<number, PlanDetail> = {
   513: {
     summary:
       'AI refine — Level 3: live-bake gate on the Accept button.\n\n' +
-      'In the inspector AI tab (in src/routes/primitives/+page.svelte), when an AI ' +
+      'In the inspector AI tab (in src/routes/components/+page.svelte), when an AI ' +
       'proposal arrives, fire a bake-preview against the proposed source + current ' +
       'params. Render a small status pill next to the Accept button:\n\n' +
       ' - ✓ "Builds (X positions)" — green\n' +
@@ -895,7 +895,7 @@ export const details: Record<number, PlanDetail> = {
       'No backend changes — purely a UI gate on top of the existing bake-preview endpoint',
     ],
     refs: [
-      'src/routes/primitives/+page.svelte (AI inspector tab + Accept button)',
+      'src/routes/components/+page.svelte (AI inspector tab + Accept button)',
       'src/routes/api/components/bake-preview/+server.ts (existing endpoint)',
     ],
     recorded: false,

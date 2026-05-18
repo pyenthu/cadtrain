@@ -38,7 +38,7 @@ const REMOVED_TOP_LEVEL = [
   '/tools/bottom-sub',
   '/tools/ratch-latch',
   '/library', // removed when the library panel was merged into /author
-  '/author',  // unified workbench retired; library + AI prompt now live inside /primitives
+  '/author',  // unified workbench retired; library + AI prompt now live inside /components
 ];
 
 for (const route of TOP_LEVEL) {

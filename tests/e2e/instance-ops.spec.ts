@@ -2,7 +2,7 @@
  * E2E tests for the per-instance CSG-op selector.
  *
  * The selector is a leftmost icon on each instance accordion head in
- * the `/primitives` inspector:
+ * the `/components` inspector:
  *   - +  → geom.add(<inst>)        (union, the default)
  *   - −  → geom.subtract(<inst>)   (cut out of running accumulator)
  *   - ∩  → geom.intersect(<inst>)  (overlap-only)
@@ -141,7 +141,7 @@ test.describe.serial('per-instance CSG op selector', () => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
 
-    await page.goto('/primitives');
+    await page.goto('/components');
     // Wait for the sidebar to populate from /api/components/list.
     await expect(page.locator('.sidebar')).toBeVisible({ timeout: 10_000 });
 

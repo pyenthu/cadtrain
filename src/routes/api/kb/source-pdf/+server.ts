@@ -1,6 +1,6 @@
 /**
  * Serve a single PDF from the persistent volume (`<VOLUME_ROOT>/kb-sources/`)
- * for the embedded viewer in the /primitives Sources tab.
+ * for the embedded viewer in the /components Sources tab.
  *
  * Path-restricted to `kb-sources/<name>.pdf` + the volume root, so this
  * endpoint can't be turned into an arbitrary file-read primitive.

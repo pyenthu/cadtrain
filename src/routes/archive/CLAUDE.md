@@ -24,7 +24,7 @@ for reference and because some pages (`/archive/wells`,
 deleted). Their backing endpoints (`/api/author/{chat,list,save}`) are
 still on disk but have no UI consumer — see
 `src/routes/api/CLAUDE.md`. Their backing schema
-(`src/lib/authoring/*`) is still imported by `/primitives` and
+(`src/lib/authoring/*`) is still imported by `/components` and
 `/plan` for `AuthoredComponent` types and the compose interpreter.
 
 ## Architecture: Retrieval-Augmented Identification
@@ -79,7 +79,7 @@ grows with use (compounding loop — see `src/lib/shared/CLAUDE.md`).
 The Build sub-app (manual composition editor + authored-component
 browser, formerly at `/archive/author` + `/archive/library`) has been
 removed from the UI but its core (`src/lib/authoring/*`) is still
-imported by `/primitives` and `/plan` for the `AuthoredComponent`
+imported by `/components` and `/plan` for the `AuthoredComponent`
 schema and `buildAuthored()` compose interpreter.
 
 ### Data model — `src/lib/authoring/schema.ts`

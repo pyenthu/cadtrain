@@ -26,11 +26,11 @@ deployment-time variables are honoured without rebuilds.
 |---|---|---|
 | `/api/wells/extract` | POST | PDF/image → WSON extraction. `WELLS_BACKEND=cli\|api` (default `api`). |
 
-### Components library (`/primitives` backing API)
+### Components library (`/components` backing API)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/components/list` | GET | Single-file component registry (one `*.ts` per component under `src/lib/cad/components/` plus library parts from `<volume>/library/`). Powers `/primitives` Basic + Parts + Assemblies tabs. |
+| `/api/components/list` | GET | Single-file component registry (one `*.ts` per component under `src/lib/cad/components/` plus library parts from `<volume>/library/`). Powers `/components` Basic + Parts + Assemblies tabs. |
 | `/api/components/save` | POST | Write a new / updated component file. Bundle parts (`src/lib/cad/components/<id>.ts`) only when editing existing src; creating a new id always writes to `library/test/<id>/` instead. |
 | `/api/components/refine` | POST | Claude-driven source rewrite for one component (the AI Refine tab). |
 | `/api/components/delete` | POST | Remove a component file (plus its `.glb` bake). |
@@ -58,7 +58,7 @@ deliberate: a save shouldn't silently mutate prod.
 
 The `/api/author/*` endpoints (`chat`, `list`, `save`) still exist and
 their backing `src/lib/authoring/` module is still imported by
-`/primitives`, `/plan`, and several `src/lib/cad/` files for the
+`/components`, `/plan`, and several `src/lib/cad/` files for the
 `AuthoredComponent` schema + compose interpreter. But no UI route
 calls these endpoints any more (the `/archive/author` + `/archive/library`
 pages they served were removed). Candidates for deletion if the

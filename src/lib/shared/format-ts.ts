@@ -2,7 +2,7 @@
  * Lazy Prettier loader for the component source editor.
  *
  * Prettier + its TS + estree plugins sum to ~300KB gzipped — heavy
- * enough that we don't want it in the initial /primitives bundle.
+ * enough that we don't want it in the initial /components bundle.
  * Loaded on first format call (typically the first Save-to-disk) and
  * cached for the rest of the session.
  *

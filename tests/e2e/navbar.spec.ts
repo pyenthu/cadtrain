@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test';
 
 const NAV = [
-  { href: '/primitives',    label: 'Primitives' },
+  { href: '/components',    label: 'Primitives' },
   { href: '/wells',         label: 'Wells' },
   { href: '/volume',        label: 'Volume' },
   { href: '/archive/tests', label: 'Tests' },
@@ -40,7 +40,7 @@ test('nav menu Tests link navigates to /archive/tests', async ({ page }) => {
 });
 
 test('nav menu highlights the active route', async ({ page }) => {
-  for (const path of ['/primitives', '/volume', '/archive', '/archive/tests', '/plan']) {
+  for (const path of ['/components', '/volume', '/archive', '/archive/tests', '/plan']) {
     await page.goto(path);
     await openMenu(page);
     await expect(page.locator(`nav.navmenu a.nav-item.active[href="${path}"]`)).toBeVisible();

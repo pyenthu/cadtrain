@@ -14,7 +14,7 @@ files (auto-loaded when working in that subtree):
 | File | Covers |
 |---|---|
 | `src/routes/api/CLAUDE.md` | Full API endpoint catalog + runtime modes + env vars |
-| `src/routes/primitives/CLAUDE.md` | `/primitives` sidebar, family classification, inspector conventions |
+| `src/routes/components/CLAUDE.md` | `/components` sidebar, family classification, inspector conventions |
 | `src/routes/archive/CLAUDE.md` | Archive routes + RAG identification pipeline + authoring core |
 | `src/lib/cad/CLAUDE.md` | Geometry (Z-down), rendering, SVG export, volume component loader |
 | `src/lib/wells/CLAUDE.md` | WSON schema + 5-layer validation pattern |
@@ -24,7 +24,7 @@ files (auto-loaded when working in that subtree):
 ## Rules for Claude (read me first)
 
 1. This repo uses **Bun + SvelteKit + adapter-node**. Never switch to adapter-static or add Python to the runtime.
-2. **Two-product structure** (since commit `55b1f43`, 2026-05-10): the active CAD UI is `/primitives`, the active Wells UI is `/wells` (stub pending port). The previous implementation lives under `/archive/*` as reference. New product code goes in `src/lib/cad/` or `src/lib/wells/` — these MUST NOT cross-import. Both may import from `src/lib/shared/*`.
+2. **Two-product structure** (since commit `55b1f43`, 2026-05-10): the active CAD UI is `/components`, the active Wells UI is `/wells` (stub pending port). The previous implementation lives under `/archive/*` as reference. New product code goes in `src/lib/cad/` or `src/lib/wells/` — these MUST NOT cross-import. Both may import from `src/lib/shared/*`.
 3. All API endpoints must use `$env/dynamic/private` (not `$env/static/private`) so env vars are read at runtime, not build time.
 4. The training cache at `training_data/cache.jsonl` is the app's long-term memory. Writes must be atomic (temp file + rename). Never delete it without backup.
 5. Follow plan files in `~/.claude/plans/`. Don't add features outside the current plan's scope.
@@ -107,7 +107,7 @@ files (auto-loaded when working in that subtree):
       - Anthropic API keys: https://console.anthropic.com/settings/keys.
     - Offer to set up structure (env var name, file location) without ever touching the value.
 
-16. **Sidebar entry classification — two-axis (tab → group → entry).** The `/primitives` sidebar uses a consistent pattern. New components are placed by editing ONE central map (`src/lib/cad/components/families.ts`); the UI auto-groups, filters, and collapses based on it. Full UI contract in `src/routes/primitives/CLAUDE.md`.
+16. **Sidebar entry classification — two-axis (tab → group → entry).** The `/components` sidebar uses a consistent pattern. New components are placed by editing ONE central map (`src/lib/cad/components/families.ts`); the UI auto-groups, filters, and collapses based on it. Full UI contract in `src/routes/components/CLAUDE.md`.
 
 17. **Components render two ways**, picked per-entry by `renderMode` on the `/api/components/list` response: `'client'` (bundle primitive in `src/lib/cad/components/`, compiled by Vite) or `'server'` (library part in `<volume>/library/`, interpreted via `/api/components/geom`). Library parts after the **JSON pivot** ship as a single `part.json` recipe — no `.ts`, no sandbox, no `new Function`, no grammar regex. The server interpreter (`src/lib/server/part-recipe.ts` → `buildRecipe`) walks the recipe, evaluates Tier 1 expressions, dispatches calls to Manifold WASM, and folds the composition list through a `GeomAcc`. Full surface in `src/lib/cad/CLAUDE.md`.
 
@@ -200,7 +200,7 @@ bun run test:e2e:report  # open last HTML report
 | Route | Purpose |
 |---|---|
 | `/` | Landing page — links to Primitives, Wells, Plan, Archive |
-| `/primitives` | **CAD product UI** — sidebar-of-components + canvas + inspector. See `src/routes/primitives/CLAUDE.md`. |
+| `/components` | **CAD product UI** — sidebar-of-components + canvas + inspector. See `src/routes/components/CLAUDE.md`. |
 | `/wells` | Wells product overview — stub pointing at `/archive/wells` until ported |
 | `/volume` | File manager for the persistent data volume (`/api/volume` CRUD UI) |
 | `/archive` | Index of legacy routes — see `src/routes/archive/CLAUDE.md` |

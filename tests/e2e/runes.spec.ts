@@ -1,7 +1,7 @@
 /**
  * E2E test for the components primitives flow:
  *   - /api/components/list returns the expected baseline (Tube + Tapered Cone)
- *   - /primitives lands on the XML Primitive sidebar tab with Tube auto-opened
+ *   - /components lands on the XML Primitive sidebar tab with Tube auto-opened
  *   - "+ New primitive" creates a fresh stub WITHOUT a page reload — the
  *     stub lands in the sidebar's Test tab (the library holding pen)
  *   - The newly-created entry appears in Test + auto-opens as a tab
@@ -48,10 +48,10 @@ test.describe.serial('components primitives — API + create flow', () => {
     expect(tube.source.length).toBeGreaterThan(0);
   });
 
-  test('/primitives lands on XML Primitive tab with baseline runes listed', async ({ page }) => {
+  test('/components lands on XML Primitive tab with baseline runes listed', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-    await page.goto('/primitives');
+    await page.goto('/components');
 
     // The XML Primitive sidebar tab is the default. Wait for the runes list
     // to load (async fetch on mount). Tube + Tapered Cone are baseline
@@ -73,7 +73,7 @@ test.describe.serial('components primitives — API + create flow', () => {
   test('Tapered Cone opens when clicked + renders without errors', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-    await page.goto('/primitives');
+    await page.goto('/components');
     await expect(page.locator('.sidebar').getByRole('button', { name: 'Tapered Cone', exact: true })).toBeVisible({ timeout: 10_000 });
 
     await page.locator('.sidebar').getByRole('button', { name: 'Tapered Cone', exact: true }).click();
@@ -88,7 +88,7 @@ test.describe.serial('components primitives — API + create flow', () => {
   test('+ New primitive creates a stub, appears in sidebar without reload, opens as a tab', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-    await page.goto('/primitives');
+    await page.goto('/components');
     await expect(page.locator('.sidebar').getByRole('button', { name: 'Tube', exact: true })).toBeVisible({ timeout: 10_000 });
 
     // Click "+ New primitive" to open the create form.
@@ -105,7 +105,7 @@ test.describe.serial('components primitives — API + create flow', () => {
       if (frame === page.mainFrame() && frame.url() !== 'about:blank') {
         // Initial navigation already happened; any further main-frame
         // navigation would indicate a reload.
-        if (didReload === false && frame.url().endsWith('/primitives')) didReload = true;
+        if (didReload === false && frame.url().endsWith('/components')) didReload = true;
       }
     });
     didReload = false; // Reset after the initial navigation.

@@ -126,7 +126,7 @@ sandbox + allowlist + denylist instead.
 
 | renderMode | Where | When |
 |---|---|---|
-| `'client'` | Bundle primitive in `src/lib/cad/components/<id>.ts`, seen at build by Vite's `import.meta.glob`. | `/primitives` build `$effect` runs `buildAuthored()` directly — instant, no round-trip. The 26 baseline primitives. |
+| `'client'` | Bundle primitive in `src/lib/cad/components/<id>.ts`, seen at build by Vite's `import.meta.glob`. | `/components` build `$effect` runs `buildAuthored()` directly — instant, no round-trip. The 26 baseline primitives. |
 | `'server'` | Library part in `<volume>/library/<cat>/<id>/component.ts`. | Build `$effect` POSTs `{ id, params, zScale }` to `/api/components/geom`; server transpiles + sandbox-executes + returns serialized mesh-JSON; client rehydrates via `mesh-serial.ts`. |
 
 The picture → AI → `.ts` → volume workflow uses `'server'`. New

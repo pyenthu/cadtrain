@@ -6,7 +6,7 @@
  * Picture-first workflow:
  *   1. `bun run scripts/extract_figures.ts` renders PDF pages to
  *      <volume>/figures/extract-N.png + gallery.json (run FIRST).
- *   2. The user curates in the /primitives Test tab and picks figures
+ *   2. The user curates in the /components Test tab and picks figures
  *      by number ("extract 7").
  *   3. This script takes those figure numbers, and for each one runs a
  *      generate + 5-iter critique loop against the figure IMAGE, saving

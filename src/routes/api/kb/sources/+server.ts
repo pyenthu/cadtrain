@@ -3,7 +3,7 @@
  *
  * Lists `<VOLUME>/kb-sources/` (every PDF / docx / xlsx), enriches each
  * entry with metadata from the sidecar `<VOLUME>/kb-sources/_index.json`
- * if present. Returns the structure the /primitives Sources tab consumes
+ * if present. Returns the structure the /components Sources tab consumes
  * — replacing the old "fetch every bundled KB JSON at mount time" path.
  *
  * Sidecar `_index.json` shape (all fields optional except `name` or `url`):

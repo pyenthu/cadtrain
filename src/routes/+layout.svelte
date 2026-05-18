@@ -10,7 +10,7 @@
     {
       label: null,
       items: [
-        { href: '/primitives', label: 'Primitives' },
+        { href: '/components', label: 'Components' },
       ],
     },
     {

@@ -821,7 +821,7 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
   /** Promote an extracted .ts to a real primitive: fetch the file,
    *  POST it to /api/components/save, refresh the registry, then open
    *  it as a regular xml-primitive tab. The user sees the full
-   *  /primitives UI — stage Render + Picture sub-tabs, params strip,
+   *  /components UI — stage Render + Picture sub-tabs, params strip,
    *  AI Refine, etc. */
   async function promoteAndOpenExtraction(entry: ExtractionResult) {
     extractionPromoteError = { ...extractionPromoteError, [entry.id]: '' };

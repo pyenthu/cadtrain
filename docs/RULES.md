@@ -9,10 +9,10 @@ should be checked against this document first.
 
 | Level | Name | Definition | Surface |
 |---|---|---|---|
-| 1 | **Primitive** | Atomic geometric shape, single ManifoldCAD builder, ≤ ~10 params. May have a `parent` for KB-style derivation (SC/LC/BC variants of `threaded_box`). | `/primitives` → Primitives tab |
-| 2 | **Composition** | Single-part physical item assembled from primitives and unioned into one piece (tubing joint, LatchRite window joint, drill-pipe joint). Geometry built via `buildAuthored(spec)`. | `/primitives` → Compositions tab |
-| 3 | **Component** | Multi-PART physical item where each part installs / moves independently (HS-ICV valve = mandrel + sleeve + ports; HF-1 packer = mandrel + element + slips; Bottom Sub; Ratch-Latch). | `/primitives` → Components tab |
-| 4 | **Assembly** | Multi-component product / installed string (SmartWell 2-zone, multilateral junction, BHA, full completion). | `/primitives` → Assemblies tab |
+| 1 | **Primitive** | Atomic geometric shape, single ManifoldCAD builder, ≤ ~10 params. May have a `parent` for KB-style derivation (SC/LC/BC variants of `threaded_box`). | `/components` → Primitives tab |
+| 2 | **Composition** | Single-part physical item assembled from primitives and unioned into one piece (tubing joint, LatchRite window joint, drill-pipe joint). Geometry built via `buildAuthored(spec)`. | `/components` → Compositions tab |
+| 3 | **Component** | Multi-PART physical item where each part installs / moves independently (HS-ICV valve = mandrel + sleeve + ports; HF-1 packer = mandrel + element + slips; Bottom Sub; Ratch-Latch). | `/components` → Components tab |
+| 4 | **Assembly** | Multi-component product / installed string (SmartWell 2-zone, multilateral junction, BHA, full completion). | `/components` → Assemblies tab |
 
 KB tab is parallel: reference tables (casing-tubing, drill-pipe
 identification, ...) that drive constrained parametrization downstream.
@@ -90,7 +90,7 @@ Adding a KB:
 3. Optional: add an extractor under `scripts/kb/` if you regenerate
    from a PDF.
 
-The KB tab in `/primitives` lists every entry automatically. Each row
+The KB tab in `/components` lists every entry automatically. Each row
 in the table can carry an action button (the casing-tubing tab uses
 this to invoke `generateTubingComponent` per row → opens the resulting
 joint as a composite tab).
@@ -201,6 +201,6 @@ yes → 3 (Component). If it ships as one welded/manufactured piece → 2
   other. Both may import from `src/lib/shared/*`.
 - **No emoji in committed code/docs** unless explicitly requested.
 - **No new top-level routes** — everything browsing-related lives in
-  `/primitives` (which carries Primitives, Compositions, Components,
+  `/components` (which carries Primitives, Compositions, Components,
   Assemblies, KB). The other top-level routes are `/wells`,
   `/plan`, `/archive/*`.

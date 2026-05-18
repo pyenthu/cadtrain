@@ -1,4 +1,4 @@
-# `/primitives` — the CAD product UI
+# `/components` — the CAD product UI
 
 The active CAD route (the legacy `/cad` stub is gone — navbar and
 landing both point here). Single-page Svelte 5 app with a sidebar of
