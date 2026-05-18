@@ -3444,6 +3444,24 @@ export const geom = defineGeom(meta, (p, geom) => {
   function removeInstance(instance: string) {
     if (!activeTab || activeTab.kind !== 'xml-primitive' || !activeTab.componentEntry) return;
     const cur = activeTab.sourceDraft ?? activeTab.componentEntry.source;
+    // JSON-recipe dispatch — splice the instance AND every composition
+    // step that references it. The TS branch below scans .ts source
+    // positions which are absent in JSON; without this dispatch the
+    // trash-can button silently no-op'd on JSON parts.
+    if (isJsonRecipeSource(cur)) {
+      let recipe: any;
+      try { recipe = JSON.parse(cur); } catch { return; }
+      if (!Array.isArray(recipe.instances)) return;
+      const before = recipe.instances.length;
+      recipe.instances = recipe.instances.filter((i: any) => i?.name !== instance);
+      if (recipe.instances.length === before) return; // nothing removed
+      if (Array.isArray(recipe.composition)) {
+        recipe.composition = recipe.composition.filter((c: any) => c?.of !== instance);
+      }
+      activeTab.sourceDraft = JSON.stringify(recipe, null, 2);
+      applyDraft(activeTab);
+      return;
+    }
     const insts = parsePartInstances(cur);
     const target = insts.find((i) => i.instance === instance);
     if (!target) return;
