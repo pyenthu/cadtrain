@@ -295,16 +295,36 @@ export function createHelperRuntime(): Record<string, (args: any[]) => any> {
   };
 }
 
-/** A dep resolver that wires every available bundle helper / operator
- *  plus a caller-supplied component map. Shared by loadVolumeRecipe
- *  and the bake-preview inline-recipe path so the dispatch contract
- *  stays consistent.
+/** Layer contract — see ~/.claude/plans/components-primitives-split.md.
  *
- *  Resolution order: **helpers / operators first, then components**.
- *  The bundle helpers (`cyl`, `tube`, `mv`, `rot`, …) are a canonical
- *  namespace — every recipe assumes their signatures. A library part
- *  that picks one of those names is unreachable as a dep (rename it
- *  to something unique like `<id>_part`). */
+ *  Two layers with different audiences and stability guarantees:
+ *
+ *  - **Primitives** (`cyl`, `tube`, `helix_band`, …): raw manifold /
+ *    extrusion functions. Backend toolkit, internal to bundle
+ *    components. NOT a stable surface — signatures can change. Should
+ *    NOT be called from JSON recipes.
+ *  - **Components** (`hollow_cylinder`, `tube_threaded`, …): bundle .ts
+ *    or library .json. User-facing parametric parts. Stable param
+ *    schema. The ONLY allowed recipe `call:` targets.
+ *  - **Operators** (`mv`, `rot`): recipe-level transforms. Always
+ *    callable from a recipe's `transforms: []` chain.
+ *
+ *  STRICT_RECIPE_CALLS controls the enforcement mode:
+ *  - false (soft, today's default) — primitives still resolvable, but
+ *    a console warning fires on each resolution. Lets the 47 existing
+ *    library parts keep working while Stage D migration is pending.
+ *  - true (strict, post-migration) — primitives throw a friendly error
+ *    pointing the author at the component wrapping pattern.
+ *
+ *  Flip to true once Stage D has migrated every part on the volume.
+ *  Operators are always allowed in both modes. */
+const STRICT_RECIPE_CALLS = false;
+
+/** Set used to suppress duplicate warnings — each (call, mode) pair
+ *  warns once per process. Avoids log spam when a recipe is built
+ *  many times in a session. */
+const warnedPrimitives = new Set<string>();
+
 export function createResolveDep(
   componentByCall: Map<string, { meta: any; geom: (args: any) => any }>,
 ): (callName: string) => RecipeDep {
@@ -312,29 +332,55 @@ export function createResolveDep(
   const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
   const runtime = createHelperRuntime();
   return (callName: string): RecipeDep => {
-    const h = helperByName.get(callName);
-    if (h) {
-      const fn = runtime[callName];
-      if (!fn) throw new Error(`Helper "${callName}" has no runtime wiring`);
-      return { kind: 'helper', propNames: h.props.map((p) => p.name), build: fn };
+    // Components first — stable user-facing surface wins on name
+    // collision (the prior order had primitives first, which forced
+    // library parts to suffix `_part` to avoid being shadowed).
+    const comp = componentByCall.get(callName);
+    if (comp) {
+      return {
+        kind: 'component',
+        propNames: Object.keys(comp.meta.params ?? {}),
+        build: (args: Record<string, number>) => comp.geom(args),
+      };
     }
+    // Operators (mv/rot) — recipe-level transforms, always allowed.
     const op = operatorByName.get(callName);
     if (op) {
       const fn = runtime[callName];
       if (!fn) throw new Error(`Operator "${callName}" has no runtime wiring`);
-      // Operators (mv/rot) are only invoked via the transform path,
-      // which uses positional args — propNames is dead for them.
-      // Synthesize a placeholder so the helper-dispatch contract stays
-      // uniform (kind: 'helper').
+      // Operators are only invoked via the transform path, which uses
+      // positional args — propNames is dead for them. Synthesize a
+      // placeholder so the helper-dispatch contract stays uniform.
       return { kind: 'helper', propNames: ['x', 'y', 'z'], build: fn };
     }
-    const comp = componentByCall.get(callName);
-    if (!comp) throw new Error(`Unknown call "${callName}" — not a helper, operator, or known component`);
-    return {
-      kind: 'component',
-      propNames: Object.keys(comp.meta.params ?? {}),
-      build: (args: Record<string, number>) => comp.geom(args),
-    };
+    // Primitives — internal toolkit. STRICT mode rejects; soft mode
+    // resolves with a deprecation warning so the migration of the 47
+    // existing library parts can land without breaking renders.
+    const h = helperByName.get(callName);
+    if (h) {
+      if (STRICT_RECIPE_CALLS) {
+        throw new Error(
+          `"${callName}" is a primitive (backend toolkit), not a component. ` +
+          `Recipe calls must reference a component id. Wrap "${callName}" ` +
+          `in a bundle component (src/lib/cad/components/<id>.ts) and call ` +
+          `that instead.`
+        );
+      }
+      if (!warnedPrimitives.has(callName)) {
+        warnedPrimitives.add(callName);
+        // Deprecation breadcrumb — surfaces in server logs without
+        // crashing the build. Stage D migration script greps for this.
+        console.warn(
+          `[recipe] primitive "${callName}" called directly from a ` +
+          `recipe — deprecated. Will become an error after Stage D ` +
+          `migration. See ~/.claude/plans/components-primitives-split.md.`
+        );
+      }
+      const fn = runtime[callName];
+      if (!fn) throw new Error(`Primitive "${callName}" has no runtime wiring`);
+      return { kind: 'helper', propNames: h.props.map((p) => p.name), build: fn };
+    }
+    throw new Error(`Unknown call "${callName}" — not a component, operator, or primitive`);
   };
 }
 
