@@ -144,6 +144,57 @@ export function mv(m: any, v: [number, number, number]) { return m.translate(v);
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
+/** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60). Pair with subtract to cut threads into a body. */
+export function helix_band(od: number, length: number, tpi: number, depth: number, profile: number): any {
+  const w = G.__cadtrain_manifold__.wasm;
+  if (!w) throw new Error('manifold not initialised — call initManifold() first');
+  const CS = w.CrossSection;
+
+  const pitch = 1 / Math.max(tpi, 0.0001);
+  const numTurns = length * tpi;
+  const twistDegrees = 360 * numTurns;
+  // Quality: ≥ 12 vertical divisions per full turn so the twist
+  // interpolation stays smooth at moderate TPI without exploding
+  // triangle count on long threads.
+  const nDivisions = Math.max(8, Math.ceil(numTurns * 12));
+
+  const toothWidth = pitch * 0.5;
+  const halfW = toothWidth / 2;
+  const innerR = od / 2;
+  const outerR = od / 2 + depth;
+
+  let contour: [number, number][];
+  if (profile === 1) {
+    // V60 — trapezoidal tooth with a small flat crest. A true triangle
+    // apex produces a degenerate face under twist (adjacent extrusion
+    // layers cross over at the zero-width tip), so we widen the crest
+    // to 20% of the root width — visually still reads as a V from a
+    // distance and stays manifold-valid.
+    const crestHalfW = halfW * 0.2;
+    // Wound CCW: bottom-left → bottom-right → top-right → top-left.
+    contour = [
+      [innerR, -halfW],
+      [outerR, -crestHalfW],
+      [outerR, crestHalfW],
+      [innerR, halfW],
+    ];
+  } else {
+    // Square — rectangular cross-section, simplest + cheapest to bool.
+    contour = [
+      [innerR, -halfW],
+      [outerR, -halfW],
+      [outerR, halfW],
+      [innerR, halfW],
+    ];
+  }
+
+  const cs = new CS([contour]);
+  // extrude(height, nDivisions, twistDegrees, scaleTop=1, center=false).
+  // Leaving scaleTop default means a straight (non-tapered) thread;
+  // adding a taper param later is one extra arg here.
+  return cs.extrude(length, nDivisions, twistDegrees);
+}
+
 /** Used by the cutaway view in finalizeManifold. Cached so multi-part
  *  builds don't reconstruct the same cube on every part. */
 let _cachedCutBox: any = null;
