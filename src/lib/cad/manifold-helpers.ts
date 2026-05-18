@@ -159,8 +159,15 @@ export function helix_band(od: number, length: number, tpi: number, depth: numbe
 
   const toothWidth = pitch * 0.5;
   const halfW = toothWidth / 2;
-  const innerR = od / 2;
-  const outerR = od / 2 + depth;
+  // External-thread geometry: the band straddles the body's OD so the
+  // subtract leaves a `depth`-deep groove in the wall. innerR sits
+  // INSIDE the wall (at od/2 - depth); outerR pokes just beyond the
+  // OD (od/2 + small ε) to ensure a clean cut through the surface.
+  // Without this, the band only touched the body at the zero-thickness
+  // OD surface and the boolean produced floating-point noise instead
+  // of visible teeth.
+  const innerR = od / 2 - depth;
+  const outerR = od / 2 + 0.01;
 
   let contour: [number, number][];
   if (profile === 2) {
