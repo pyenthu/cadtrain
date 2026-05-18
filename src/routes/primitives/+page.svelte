@@ -27,11 +27,13 @@
   let status = $state('');
 
   let SceneComponent = $state<any>(null);
+  let SceneGlbComponent = $state<any>(null);
   let SceneControls = $state<any>(null);
   let geo = $state<any>(null);
   let geoVersion = $state(0);
   let previewError = $state<string | null>(null);
   let previewStatus = $state<string>('idle');
+  let stageView = $state<'mesh' | 'glb'>('mesh');
 
   function createRenderer(canvas: HTMLCanvasElement) {
     return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -51,11 +53,13 @@
     primSource = mod.default;
 
     previewStatus = 'loading scene components…';
-    const [scene, controls] = await Promise.all([
+    const [scene, glbScene, controls] = await Promise.all([
       import('$lib/shared/ComponentScene.svelte'),
+      import('$lib/shared/ComponentSceneGlb.svelte'),
       import('$lib/shared/SceneControls.svelte'),
     ]);
     SceneComponent = scene.default;
+    SceneGlbComponent = glbScene.default;
     SceneControls = controls.default;
 
     refreshFromBuiltIn();
@@ -173,6 +177,17 @@
   }
 
   let isDirty = $derived(editedSource !== serverSource);
+
+  // GLB URL — bundle primitives serve from /components/<id>.glb (Vite
+  // static asset baked at build time). Cache-busted on geoVersion so a
+  // rebuild refreshes both panes. Library demo components would route
+  // through /api/components/glb but every DEMO_COMPONENT today is a
+  // bundle primitive.
+  let demoCompId = $derived(selected ? (DEMO_COMPONENT[selected.name] ?? selected.name) : '');
+  let glbUrl = $derived.by(() => {
+    if (!demoCompId || selected?.kind === 'op') return '';
+    return `/components/${demoCompId}.glb?t=${geoVersion}`;
+  });
 </script>
 
 <div class="prim-page">
@@ -239,9 +254,15 @@
             {#if selected.kind === 'op'}
               Operator — no standalone render.
             {:else}
-              Preview: <code>{DEMO_COMPONENT[selected.name] ?? selected.name}</code>
+              Preview: <code>{demoCompId}</code>
               {#if DEMO_COMPONENT[selected.name]}<span class="preview-meta-sub">(calls <code>{selected.name}</code> internally)</span>{/if}
               · status: <span class="preview-status-text">{previewStatus}</span>
+            {/if}
+            {#if selected.kind === 'prim'}
+              <span class="stage-view-toggle">
+                <button class="stage-view-btn" class:active={stageView === 'mesh'} type="button" onclick={() => (stageView = 'mesh')}>Mesh</button>
+                <button class="stage-view-btn" class:active={stageView === 'glb'} type="button" onclick={() => (stageView = 'glb')}>GLB</button>
+              </span>
             {/if}
           </div>
           <div class="preview-stage">
@@ -253,6 +274,19 @@
               </div>
             {:else if selected.kind === 'op'}
               <div class="preview-empty">Operators transform an existing manifold — no standalone render.</div>
+            {:else if stageView === 'glb'}
+              {#if SceneGlbComponent}
+                {@const GlbScene = SceneGlbComponent}
+                <Canvas {createRenderer}>
+                  <GlbScene url={glbUrl} />
+                </Canvas>
+                {#if SceneControls}{@const Controls = SceneControls}<Controls />{/if}
+                <div class="stage-glb-hint" title={glbUrl}>
+                  served from <code>{glbUrl}</code>
+                </div>
+              {:else}
+                <div class="preview-loading">Loading GLB scene…</div>
+              {/if}
             {:else if !SceneComponent || !geo}
               <div class="preview-loading">{previewStatus}</div>
             {:else}
@@ -375,6 +409,25 @@
     font-size: 12px;
   }
   .preview-error strong { color: #ffaaaa; }
+
+  .stage-view-toggle {
+    display: inline-flex; margin-left: 10px;
+    background: #333; border-radius: 4px; padding: 2px;
+  }
+  .stage-view-btn {
+    background: transparent; border: 0; color: #aaa;
+    padding: 2px 10px; cursor: pointer; font: 11px Arial;
+    border-radius: 3px;
+  }
+  .stage-view-btn.active { background: #cc2222; color: #fff; }
+  .stage-view-btn:hover:not(.active) { color: #ddd; }
+  .stage-glb-hint {
+    position: absolute; bottom: 8px; right: 8px;
+    background: rgba(0, 0, 0, 0.7); color: #ddd;
+    padding: 4px 8px; border-radius: 3px;
+    font: 10px monospace;
+  }
+  .stage-glb-hint code { color: #ffd87a; }
 
   .prim-btn {
     padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px;
