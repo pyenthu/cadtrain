@@ -816,8 +816,9 @@ async function loadVolumeRecipe(
 
   // Resolve every component dep ahead of time so the interpreter's
   // resolveDep callback can stay synchronous. Helpers + operators
-  // come from the manifold-helpers-meta discovery; component deps
-  // (sibling library parts + bundle primitives) get pre-loaded here.
+  // are canonical (their names win on collision); components are
+  // only pre-loaded when the call name doesn't match a helper or
+  // operator.
   const helperByName = new Map(discoverHelpers().map((h) => [h.name, h]));
   const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
   const componentByCall = new Map<string, { meta: any; geom: any }>();

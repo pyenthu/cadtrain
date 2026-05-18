@@ -297,7 +297,13 @@ export function createHelperRuntime(): Record<string, (args: any[]) => any> {
 /** A dep resolver that wires every available bundle helper / operator
  *  plus a caller-supplied component map. Shared by loadVolumeRecipe
  *  and the bake-preview inline-recipe path so the dispatch contract
- *  stays consistent. */
+ *  stays consistent.
+ *
+ *  Resolution order: **helpers / operators first, then components**.
+ *  The bundle helpers (`cyl`, `tube`, `mv`, `rot`, …) are a canonical
+ *  namespace — every recipe assumes their signatures. A library part
+ *  that picks one of those names is unreachable as a dep (rename it
+ *  to something unique like `<id>_part`). */
 export function createResolveDep(
   componentByCall: Map<string, { meta: any; geom: (args: any) => any }>,
 ): (callName: string) => RecipeDep {
