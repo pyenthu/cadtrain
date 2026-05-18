@@ -1,20 +1,16 @@
 <script lang="ts">
   // Primitives library — see ~/.claude/plans/components-primitives-split.md.
   //
-  // v2 adds the visual preview pane: each primitive maps to a demo
-  // component (or itself, if it IS a component) which is built client-
-  // side via buildComponent and rendered in ComponentScene. Params
-  // for the demo come from HELPER_DEFAULTS / the component's
-  // meta.params.default. Bundle primitives only for now; volume
-  // primitives ship with Stage G v3.
+  // v3: real 3D preview (wrapped in Canvas + SceneControls — v2 missed
+  // the Canvas wrapper, so the scene never mounted). Two source-load
+  // buttons (server vs local-bundle) and loud error surfacing.
   import { onMount } from 'svelte';
+  import { Canvas } from '@threlte/core';
+  import { WebGLRenderer } from 'three';
   import { discoverHelpers, discoverOperators, type HelperMeta, type OperatorMeta } from '$lib/cad/manifold-helpers-meta';
 
   type Entry = { name: string; kind: 'prim' | 'op'; sig: string; desc: string };
 
-  // Each primitive maps to a component that renders it visually. mv/rot
-  // (operators) have no standalone render — they need a manifold input,
-  // so they fall back to "no preview".
   const DEMO_COMPONENT: Record<string, string> = {
     helix_band: 'thread_helix',
     cyl: 'tapered_cone',
@@ -25,16 +21,21 @@
   let selected: Entry | null = $state(null);
   let editedSource: string = $state('');
   let serverSource: string = $state('');
+  let localBundleSource: string = $state('');
   let primSource: string = $state('');
   let loading = $state(false);
   let status = $state('');
 
-  // Scene loader + state. Lazy-imported because Threlte / ManifoldCAD
-  // can't SSR — same pattern as /components.
   let SceneComponent = $state<any>(null);
+  let SceneControls = $state<any>(null);
   let geo = $state<any>(null);
   let geoVersion = $state(0);
-  let buildError = $state<string | null>(null);
+  let previewError = $state<string | null>(null);
+  let previewStatus = $state<string>('idle');
+
+  function createRenderer(canvas: HTMLCanvasElement) {
+    return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  }
 
   onMount(async () => {
     const prims = discoverHelpers();
@@ -44,10 +45,19 @@
       ...ops.map((o): Entry => ({ name: o.name, kind: 'op', sig: `[${o.label}]`, desc: o.desc })),
     ];
     if (entries.length > 0) selected = entries.find((e) => e.name === 'helix_band') ?? entries[0];
+
+    previewStatus = 'loading bundle source…';
     const mod = await import('$lib/cad/manifold-helpers.ts?raw');
     primSource = mod.default;
-    const scene = await import('$lib/shared/ComponentScene.svelte');
+
+    previewStatus = 'loading scene components…';
+    const [scene, controls] = await Promise.all([
+      import('$lib/shared/ComponentScene.svelte'),
+      import('$lib/shared/SceneControls.svelte'),
+    ]);
     SceneComponent = scene.default;
+    SceneControls = controls.default;
+
     refreshFromBuiltIn();
   });
 
@@ -77,21 +87,26 @@
     const src = extractSource(primSource, selected.name);
     editedSource = src;
     serverSource = src;
+    localBundleSource = src;
     status = '';
   }
 
-  // Build geometry for the selected primitive via its DEMO_COMPONENT
-  // (the bundle component that wraps the primitive). Operators (mv/rot)
-  // have no standalone render — they need an input manifold — so the
-  // preview pane shows a placeholder for them.
   async function rebuildPreview() {
-    if (!selected) return;
+    if (!selected) {
+      geo = null;
+      previewError = null;
+      previewStatus = 'idle';
+      return;
+    }
     if (selected.kind === 'op') {
       geo = null;
-      buildError = null;
+      previewError = null;
+      previewStatus = 'operator — no standalone render';
       return;
     }
     const compId = DEMO_COMPONENT[selected.name] ?? selected.name;
+    previewStatus = `building ${compId}…`;
+    previewError = null;
     try {
       const [{ initManifold, setCircularSegmentMode }, { buildComponent }, { metaById }] = await Promise.all([
         import('$lib/cad/manifold-helpers'),
@@ -102,8 +117,9 @@
       setCircularSegmentMode('default');
       const meta = metaById(compId);
       if (!meta) {
-        buildError = `No demo component "${compId}" — primitive has no visual wrapper yet.`;
+        previewError = `No demo component "${compId}" registered. Restart \`bun run dev\` to pick up new bundle components.`;
         geo = null;
+        previewStatus = 'error';
         return;
       }
       const defaults: Record<string, number> = {};
@@ -113,10 +129,11 @@
       const result = buildComponent(compId, defaults);
       geo = result;
       geoVersion++;
-      buildError = null;
+      previewStatus = `built ${compId} (${result?.full?.positions?.length ? Math.floor(result.full.positions.length / 3) : '?'} verts)`;
     } catch (e: any) {
-      buildError = `Build failed: ${e?.message ?? e}`;
+      previewError = `Build failed: ${e?.message ?? e}`;
       geo = null;
+      previewStatus = 'error';
     }
   }
 
@@ -124,8 +141,6 @@
     if (selected && primSource) refreshFromBuiltIn();
   });
 
-  // Trigger rebuild whenever selection changes (after primSource is loaded
-  // + Scene is mounted, so the panel is ready to display).
   $effect(() => {
     if (selected && primSource && SceneComponent) rebuildPreview();
   });
@@ -151,8 +166,13 @@
     loading = false;
   }
 
+  function loadFromLocal() {
+    if (!selected) return;
+    editedSource = localBundleSource;
+    status = 'Loaded from in-memory client bundle.';
+  }
+
   let isDirty = $derived(editedSource !== serverSource);
-  let demoCompId = $derived(selected ? (DEMO_COMPONENT[selected.name] ?? selected.name) : '');
 </script>
 
 <div class="prim-page">
@@ -187,19 +207,20 @@
           <p class="desc">{selected.desc}</p>
         </div>
         <div class="head-actions">
-          <button class="prim-btn" type="button" onclick={loadFromServer} disabled={loading}>
+          <button class="prim-btn" type="button" onclick={loadFromLocal} title="Read source from the in-memory client bundle">Load local</button>
+          <button class="prim-btn" type="button" onclick={loadFromServer} disabled={loading} title="Read source from disk via /api/primitives/source">
             {loading ? 'Loading…' : 'Load from server'}
           </button>
+          <button class="prim-btn" type="button" onclick={() => rebuildPreview()} title="Rebuild the 3D preview">Rebuild preview</button>
           <button class="prim-btn" type="button" disabled title="Coming next">Save to volume</button>
           <button class="prim-btn" type="button" disabled title="Coming next">AI assist</button>
         </div>
       </header>
 
       <div class="prim-split">
-        <!-- Left: editor -->
         <div class="prim-stage">
           <div class="editor-meta">
-            <span class="meta-pill" class:dirty={isDirty}>{isDirty ? 'modified (not saved)' : 'in sync with bundle'}</span>
+            <span class="meta-pill" class:dirty={isDirty}>{isDirty ? 'modified (not saved)' : 'in sync with server'}</span>
             {#if status}<span class="meta-status">{status}</span>{/if}
           </div>
           <textarea
@@ -209,29 +230,40 @@
             placeholder="// no source — select a primitive"
           ></textarea>
           <div class="editor-footnote">
-            Edits in-memory only — Save to volume + Monaco syntax highlighting
-            land in v3 (see plan).
+            Edits in-memory only — Save to volume + Monaco syntax highlighting land in v4.
           </div>
         </div>
 
-        <!-- Right: 3D preview -->
         <div class="prim-preview">
           <div class="preview-meta">
             {#if selected.kind === 'op'}
-              Operator — no standalone render (transforms an input manifold).
-            {:else if demoCompId === selected.name}
-              Preview: <code>{selected.name}</code> (itself a component)
+              Operator — no standalone render.
             {:else}
-              Preview via demo component: <code>{demoCompId}</code> (calls <code>{selected.name}</code> internally)
+              Preview: <code>{DEMO_COMPONENT[selected.name] ?? selected.name}</code>
+              {#if DEMO_COMPONENT[selected.name]}<span class="preview-meta-sub">(calls <code>{selected.name}</code> internally)</span>{/if}
+              · status: <span class="preview-status-text">{previewStatus}</span>
             {/if}
           </div>
           <div class="preview-stage">
-            {#if buildError}
-              <div class="preview-error">{buildError}</div>
+            {#if previewError}
+              <div class="preview-error">
+                <strong>Preview error:</strong>
+                <br />
+                {previewError}
+              </div>
+            {:else if selected.kind === 'op'}
+              <div class="preview-empty">Operators transform an existing manifold — no standalone render.</div>
             {:else if !SceneComponent || !geo}
-              <div class="preview-loading">Loading preview…</div>
+              <div class="preview-loading">{previewStatus}</div>
             {:else}
-              <svelte:component this={SceneComponent} {geo} {geoVersion} showCutaway={true} showEdges={true} />
+              <Canvas {createRenderer}>
+                {@const Scene = SceneComponent}
+                <Scene {geo} {geoVersion} showCutaway={true} showEdges={true} />
+              </Canvas>
+              {#if SceneControls}
+                {@const Controls = SceneControls}
+                <Controls />
+              {/if}
             {/if}
           </div>
         </div>
@@ -278,7 +310,7 @@
   }
   .prim-head h1 { margin: 0; font: 700 18px monospace; color: #cc2222; }
   .prim-head .desc { margin: 4px 0 0; color: #555; max-width: 540px; }
-  .head-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .head-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
   .prim-split {
     display: grid; grid-template-columns: 1fr 1fr;
@@ -323,18 +355,26 @@
     padding-bottom: 8px;
   }
   .preview-meta code { background: #333; padding: 1px 6px; border-radius: 3px; color: #fff; font: 11px monospace; }
+  .preview-meta-sub { color: #888; }
+  .preview-status-text { color: #ffd87a; font-family: monospace; }
   .preview-stage {
     flex: 1; min-height: 0;
     background: #2a2a2a; border-radius: 4px;
     position: relative;
     overflow: hidden;
   }
-  .preview-loading, .preview-error {
+  .preview-loading, .preview-empty, .preview-error {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
     color: #aaa; padding: 12px;
+    text-align: center;
   }
-  .preview-error { color: #ff8888; }
+  .preview-error {
+    color: #ff8888;
+    flex-direction: column; gap: 6px;
+    font-size: 12px;
+  }
+  .preview-error strong { color: #ffaaaa; }
 
   .prim-btn {
     padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px;

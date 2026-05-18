@@ -109,7 +109,15 @@ files (auto-loaded when working in that subtree):
 
 16. **Sidebar entry classification — two-axis (tab → group → entry).** The `/components` sidebar uses a consistent pattern. New components are placed by editing ONE central map (`src/lib/cad/components/families.ts`); the UI auto-groups, filters, and collapses based on it. Full UI contract in `src/routes/components/CLAUDE.md`.
 
-17. **Components render two ways**, picked per-entry by `renderMode` on the `/api/components/list` response: `'client'` (bundle primitive in `src/lib/cad/components/`, compiled by Vite) or `'server'` (library part in `<volume>/library/`, interpreted via `/api/components/geom`). Library parts after the **JSON pivot** ship as a single `part.json` recipe — no `.ts`, no sandbox, no `new Function`, no grammar regex. The server interpreter (`src/lib/server/part-recipe.ts` → `buildRecipe`) walks the recipe, evaluates Tier 1 expressions, dispatches calls to Manifold WASM, and folds the composition list through a `GeomAcc`. Full surface in `src/lib/cad/CLAUDE.md`.
+17. **Three layers — primitives ↔ components ↔ recipes.** Post `components/primitives-split` plan (2026-05-18):
+    - **Primitives** (`src/lib/cad/manifold-helpers.ts` — `cyl`, `tube`, `helix_band`, `revolve`, …): backend geometry toolkit. Raw functions returning a `Manifold`. NOT a stable API — signatures can churn. Recipes CANNOT call primitives directly (`STRICT_RECIPE_CALLS = true` in `part-recipe.ts` rejects with a friendly error pointing at the wrapping pattern). Surfaced in the `/primitives` library route for inspection / live editing (in flight).
+    - **Components** — two flavours:
+      - **Bundle** in `src/lib/cad/components/<id>.ts`. Exports `meta` (params schema) + `geom(p)`. Calls primitives directly. Rendered client-side via `buildComponent`. The 26 baseline + new wrappers like `thread_helix`.
+      - **Library** in `<volume>/library/<cat>/<id>/part.json`. JSON recipe — no `.ts`, no sandbox. The ONLY legal `call:` targets are component ids (bundle OR library) + recipe operators (mv, rot).
+    - **Recipes** (the `instances[] + composition[]` model inside library JSON parts) are interpreted by `src/lib/server/part-recipe.ts:buildRecipe`. Tier 1 expression language: arithmetic + `p.<param>` + `<INST>.<argName>` + whitelisted `Math.*`. No conditionals, no loops. Implicit translation: an instance with `top` arg AND non-zero resolved value gets `mv(0, 0, top)` prepended before user transforms.
+    - **renderMode** on `/api/components/list` is still `'client'` (bundle) vs `'server'` (library JSON via `/api/components/geom`).
+
+    The picture → AI → JSON → volume workflow uses `'server'`. Bundle components stay git-tracked + compiled; library parts live on the volume and never need a bundle rebuild.
 
     **part.json shape** (`<volume>/library/<cat>/<id>/part.json`):
     ```jsonc

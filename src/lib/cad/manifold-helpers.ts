@@ -144,6 +144,33 @@ export function mv(m: any, v: [number, number, number]) { return m.translate(v);
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
+/** @part Revolve — sweep a 2D profile (array of [x,z] pairs forming a closed contour) 360° around the Z axis. Use radial=x distance, axial=z position. Pass via JSON-encoded contour string. */
+export function revolve(contourJson: string, _unused1?: number, _unused2?: number, _unused3?: number, _unused4?: number): any {
+  // The interpreter dispatches with positional numeric args only, so the
+  // profile travels as a JSON-encoded string of [x, z] pairs the caller
+  // packs and the primitive un-packs. Demo wrapper components feed real
+  // profiles (e.g. a seal-bore cross-section, an O-ring groove, a thread
+  // tooth meridional cut). circularSegments is left at the global
+  // currentSegments — same quality as cyl/tube.
+  if (!G.__cadtrain_manifold__.wasm) {
+    throw new Error('manifold not initialised — call initManifold() first');
+  }
+  const CS = G.__cadtrain_manifold__.wasm.CrossSection;
+
+  let pts: [number, number][];
+  try {
+    pts = JSON.parse(contourJson);
+    if (!Array.isArray(pts) || pts.length < 3) throw new Error('contour must be ≥ 3 points');
+  } catch (e: any) {
+    throw new Error(`revolve: bad contour JSON: ${e?.message ?? e}`);
+  }
+  const cs = new CS([pts]);
+  // CrossSection.revolve sweeps around the Y axis of the cross-section
+  // (then maps Y → Z in the resulting manifold), matching the Z-down
+  // convention we use everywhere else.
+  return cs.revolve(currentSegments);
+}
+
 /** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60, 2 = ACME 29°), taper (degrees/side, 0 = straight). Pair with subtract to cut threads into a body. */
 export function helix_band(od: number, length: number, tpi: number, depth: number, profile: number, taper: number): any {
   if (!G.__cadtrain_manifold__.wasm) {
