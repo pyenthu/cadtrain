@@ -489,32 +489,70 @@ export function buildComponent(componentId: string, params: Record<string, numbe
 }
 
 function manifoldToGeo(manifold: any): THREE.BufferGeometry {
-  const mesh = manifold.getMesh();
+  // Use Manifold's calculateNormals so we get geometrically correct
+  // per-vertex normals (with sharp-edge splits) instead of relying on
+  // THREE's computeVertexNormals after toNonIndexed() — that path
+  // produced alternating bright/dark stripes on cylinder/cone sides
+  // because CSG output triangles sometimes have inconsistent winding
+  // and THREE's recompute then flips face normals between adjacent
+  // triangles. calculateNormals(propIdx=3, minSharpAngle=60°) inserts
+  // normals into the mesh's vertProperties starting at index 3, splits
+  // sharp edges (≥60°) into separate verts so creases stay crisp, and
+  // gives MeshPhongMaterial proper data to shade against.
+  let withNormals: any;
+  try {
+    withNormals = manifold.calculateNormals(3, 60);
+  } catch {
+    // Older manifold builds without calculateNormals — fall back to
+    // the legacy path. Striping may reappear there.
+    withNormals = manifold;
+  }
+  const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
   const np = mesh.numProp;
   const nv = vp.length / np;
   const pos = new Float32Array(nv * 3);
+  const nrm = np >= 6 ? new Float32Array(nv * 3) : null;
   for (let i = 0; i < nv; i++) {
-    pos[i * 3] = vp[i * np]; pos[i * 3 + 1] = vp[i * np + 1]; pos[i * 3 + 2] = vp[i * np + 2];
+    pos[i * 3]     = vp[i * np];
+    pos[i * 3 + 1] = vp[i * np + 1];
+    pos[i * 3 + 2] = vp[i * np + 2];
+    if (nrm) {
+      nrm[i * 3]     = vp[i * np + 3];
+      nrm[i * 3 + 1] = vp[i * np + 4];
+      nrm[i * 3 + 2] = vp[i * np + 5];
+    }
   }
-  const indexed = new THREE.BufferGeometry();
-  indexed.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  indexed.setIndex(new THREE.BufferAttribute(tri, 1));
-  const geo = indexed.toNonIndexed();
-  geo.computeVertexNormals();
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(tri, 1));
+  if (nrm) {
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  } else {
+    geo.computeVertexNormals();
+  }
   return geo;
 }
 
 function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
-  const mesh = manifold.getMesh();
+  // Same calculateNormals path as manifoldToGeo — keeps shading
+  // consistent across the cross-section overlay.
+  let withNormals: any;
+  try { withNormals = manifold.calculateNormals(3, 60); }
+  catch { withNormals = manifold; }
+  const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
   const np = mesh.numProp;
   const nv = vp.length / np;
   const nt = tri.length / 3;
   const pos: number[] = [];
-  for (let i = 0; i < nv; i++) pos.push(vp[i*np], vp[i*np+1], vp[i*np+2]);
+  const norms: number[] = np >= 6 ? [] : [];
+  for (let i = 0; i < nv; i++) {
+    pos.push(vp[i*np], vp[i*np+1], vp[i*np+2]);
+    if (np >= 6) norms.push(vp[i*np+3], vp[i*np+4], vp[i*np+5]);
+  }
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
@@ -547,6 +585,20 @@ function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
-  geo.computeVertexNormals();
+  if (norms.length === pos.length) {
+    // Scatter Manifold-computed per-vertex normals into the non-indexed
+    // buffer (3 vertices per triangle, same layout as outPos).
+    const outNrm = new Float32Array(nt * 9);
+    for (let i = 0; i < nt; i++) {
+      const a=tri[i*3],b=tri[i*3+1],c=tri[i*3+2];
+      const idx=i*9;
+      outNrm[idx]=norms[a*3];outNrm[idx+1]=norms[a*3+1];outNrm[idx+2]=norms[a*3+2];
+      outNrm[idx+3]=norms[b*3];outNrm[idx+4]=norms[b*3+1];outNrm[idx+5]=norms[b*3+2];
+      outNrm[idx+6]=norms[c*3];outNrm[idx+7]=norms[c*3+1];outNrm[idx+8]=norms[c*3+2];
+    }
+    geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
+  } else {
+    geo.computeVertexNormals();
+  }
   return geo;
 }
