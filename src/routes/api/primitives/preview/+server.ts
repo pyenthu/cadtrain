@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
+import { CIRCULAR_SEGMENTS_DEFAULT } from '$lib/cad/manifold-helpers';
 import { finalizeManifold, setRenderZScale } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 
@@ -20,38 +21,19 @@ import { serializeComponentResult } from '$lib/cad/mesh-serial';
 //
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 
-const HELPER_NAMES = new Set([
-  'M', 'cyl', 'tube', 'mv', 'rot',
-  'cube', 'cylinder', 'helix_band', 'revolve', 'profile_extrude',
-  'CrossSection',
-  'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
-]);
-
-const DENYLIST = ['require(', 'process', 'import(', 'eval(', 'Function(', 'child_process', '__dirname', '__filename', 'globalThis'];
-
+// Loosened sandbox for the primitives editor — the user IS the author
+// (single-user dev tool), so we trust the source. We still strip
+// imports (so the new Function evaluator doesn't see TS import syntax)
+// but no denylist / allowlist beyond that. If cadtrain becomes
+// multi-tenant, tighten this back up.
 const IMPORT_RE = /import\s+(?:type\s+)?(?:\{([^}]*)\})?\s*(?:from\s*)?['"]([^'"]+)['"]\s*;?/g;
 
-function stripAndValidateImports(src: string): string {
+function stripImports(src: string): string {
   let stripped = src;
   let m: RegExpExecArray | null;
   IMPORT_RE.lastIndex = 0;
   while ((m = IMPORT_RE.exec(src)) !== null) {
-    const [whole, named, source] = m;
-    if (source !== '../manifold-helpers') {
-      throw new Error(`Disallowed import from "${source}" — primitives may only import from '../manifold-helpers'.`);
-    }
-    if (named) {
-      for (const spec of named.split(',').map((s) => s.trim()).filter(Boolean)) {
-        const name = spec.split(/\s+as\s+/)[0].trim();
-        if (!HELPER_NAMES.has(name)) {
-          throw new Error(`Disallowed import "${name}" — not in the primitive sandbox allowlist.`);
-        }
-      }
-    }
-    stripped = stripped.replace(whole, '');
-  }
-  for (const bad of DENYLIST) {
-    if (stripped.includes(bad)) throw new Error(`Denylist token "${bad}" found in source.`);
+    stripped = stripped.replace(m[0], '');
   }
   return stripped;
 }
@@ -65,9 +47,7 @@ export const POST = async ({ request }) => {
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   const args: number[] = Array.isArray(params) ? params.map((p) => Number(p)) : [];
 
-  let stripped: string;
-  try { stripped = stripAndValidateImports(source); }
-  catch (e: any) { throw error(400, e?.message ?? String(e)); }
+  const stripped = stripImports(source);
 
   let js: string;
   try {
@@ -82,12 +62,18 @@ export const POST = async ({ request }) => {
   }
 
   // Wrap the CJS output so it exports the named function back to us.
-  // esbuild emits `module.exports = { foo: ... }`; we capture it via a
-  // fake module object passed in scope, then return module.exports[name].
+  // Two preamble injections needed for bundle-source primitives:
+  //   - `currentSegments` is a let in manifold-helpers.ts (module-local,
+  //     not exported). Bundle helpers like `cyl` close over it. We
+  //     re-bind it to the default at sandbox time.
+  //   - `G` is `globalThis as any` — used by primitives that pull
+  //     `wasm.CrossSection` from the shared singleton. We pass
+  //     globalThis through as `G` so those references resolve.
   const wrapper = `
     "use strict";
     const module = { exports: {} };
     const exports = module.exports;
+    const currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
     ${js}
     return module.exports[${JSON.stringify(name)}];
   `;
@@ -98,7 +84,7 @@ export const POST = async ({ request }) => {
     const factory = new Function(
       'M', 'cyl', 'tube', 'mv', 'rot', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
       'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
-      'helix_band', 'revolve', 'profile_extrude',
+      'helix_band', 'revolve', 'profile_extrude', 'G', 'Math',
       wrapper,
     );
     primFn = factory(
@@ -106,6 +92,7 @@ export const POST = async ({ request }) => {
       helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
       helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
       helpers.helix_band, helpers.revolve, helpers.profile_extrude,
+      globalThis, Math,
     );
   } catch (e: any) {
     throw error(400, `factory build failed: ${e?.message ?? e}`);
