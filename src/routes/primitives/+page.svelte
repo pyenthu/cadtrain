@@ -4853,11 +4853,14 @@ export const geom = defineGeom(meta, (p, geom) => {
       for (const dk of Object.keys((entry.meta as any).derived)) out.push(`p.${dk}`);
     }
     const cur = tab.sourceDraft ?? entry?.source ?? '';
-    const insts = parsePartInstances(cur);
-    const aliases = componentAliases(cur);
+    // Dispatch by source shape — JSON parts have no .ts to parse, no
+    // import aliases, so resolve callName directly against componentList.
+    const isJson = cur && isJsonRecipeSource(cur);
+    const insts = isJson ? parseRecipeInstances(cur) : parsePartInstances(cur);
+    const aliases = isJson ? {} as Record<string, string> : componentAliases(cur);
     for (const i of insts) {
       if (i.kind === 'component') {
-        const compId = aliases[i.callName];
+        const compId = aliases[i.callName] ?? i.callName;
         const compEntry = componentList.find((r) => r.meta.id === compId);
         if (!compEntry) continue;
         for (const pk of Object.keys(compEntry.meta.params)) out.push(`${i.instance}.${pk}`);
