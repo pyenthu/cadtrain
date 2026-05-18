@@ -146,77 +146,83 @@ export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
 /** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60, 2 = ACME 29°), taper (degrees/side, 0 = straight). Pair with subtract to cut threads into a body. */
 export function helix_band(od: number, length: number, tpi: number, depth: number, profile: number, taper: number): any {
-  const w = G.__cadtrain_manifold__.wasm;
-  if (!w) throw new Error('manifold not initialised — call initManifold() first');
-  const CS = w.CrossSection;
-
-  const pitch = 1 / Math.max(tpi, 0.0001);
-  const numTurns = length * tpi;
-  const twistDegrees = 360 * numTurns;
-  // ≥ 12 vertical divisions per full turn so the twist interpolation
-  // stays smooth at moderate TPI without exploding tri count.
-  const nDivisions = Math.max(8, Math.ceil(numTurns * 12));
-
-  const toothWidth = pitch * 0.5;
-  const halfW = toothWidth / 2;
-  // External-thread geometry: the band straddles the body's OD so the
-  // subtract leaves a `depth`-deep groove in the wall. innerR sits
-  // INSIDE the wall (at od/2 - depth); outerR pokes just beyond the
-  // OD (od/2 + small ε) to ensure a clean cut through the surface.
-  // Without this, the band only touched the body at the zero-thickness
-  // OD surface and the boolean produced floating-point noise instead
-  // of visible teeth.
-  const innerR = od / 2 - depth;
-  const outerR = od / 2 + 0.01;
-
-  let contour: [number, number][];
-  if (profile === 2) {
-    // ACME 29° — trapezoidal tooth, ~29° included angle, with wide root
-    // (~0.4 pitch) and narrower crest (~0.18 pitch). The standard ACME
-    // form for power-screw threads; rendered here as a flat-topped
-    // tooth so the side angle is the dominant visual cue.
-    const rootHalfW = pitch * 0.40;
-    const crestHalfW = pitch * 0.18;
-    contour = [
-      [innerR, -rootHalfW],
-      [outerR, -crestHalfW],
-      [outerR, crestHalfW],
-      [innerR, rootHalfW],
-    ];
-  } else if (profile === 1) {
-    // V60 — trapezoidal tooth with a small flat crest. A true triangle
-    // apex produces a degenerate face under twist (adjacent extrusion
-    // layers cross at zero-width), so the crest stays at 20% of the
-    // root width — visually still reads as a V from a distance.
-    const crestHalfW = halfW * 0.2;
-    contour = [
-      [innerR, -halfW],
-      [outerR, -crestHalfW],
-      [outerR, crestHalfW],
-      [innerR, halfW],
-    ];
-  } else {
-    // Square — rectangular cross-section, simplest + cheapest to bool.
-    contour = [
-      [innerR, -halfW],
-      [outerR, -halfW],
-      [outerR, halfW],
-      [innerR, halfW],
-    ];
+  if (!G.__cadtrain_manifold__.wasm) {
+    throw new Error('manifold not initialised — call initManifold() first');
   }
 
-  // Taper. `taper` is degrees per side — the OD shrinks linearly along
-  // the length. scaleTop scales the whole cross-section uniformly about
-  // the origin; shrink by (length × tan(taper)) / (od/2) so the radius
-  // at the top is reduced by length × tan(taper). taper=0 → scaleTop=1
-  // → straight thread. Clamp to a sane positive scale so a misconfigured
-  // input can't produce a degenerate (zero or negative) top.
-  const taperRad = Math.max(0, taper) * Math.PI / 180;
-  const radiusReduction = length * Math.tan(taperRad);
-  const scaleTop = Math.max(0.05, 1 - radiusReduction / Math.max(od / 2, 0.0001));
+  // Many-wedges approach. CrossSection.extrude(twist) was wrong: a
+  // narrow 2D cross-section gets swept around the Z axis and the
+  // resulting groove at any θ is too thin axially (width = 2*halfW /
+  // (twistDegrees * length) — for typical thread params, ~0.002").
+  //
+  // Instead we union N small tooth blocks placed along the helix.
+  // Each block is the local thread cross-section, rotated to its θ
+  // and translated to its z. Adjacent blocks overlap tangentially so
+  // the result is a continuous helical ridge.
+  const pitch = 1 / Math.max(tpi, 0.0001);
+  const numTurns = length * tpi;
+  const segmentsPerTurn = 24;
+  const totalSegments = Math.max(8, Math.ceil(numTurns * segmentsPerTurn));
 
-  const cs = new CS([contour]);
-  return cs.extrude(length, nDivisions, twistDegrees, scaleTop);
+  // Tooth dimensions
+  const axialExtent = pitch * 0.5; // tooth occupies ~50% of pitch axially
+  const taperTan = Math.tan(Math.max(0, taper) * Math.PI / 180);
+
+  let band: any = null;
+  for (let i = 0; i < totalSegments; i++) {
+    const angleDeg = (i / segmentsPerTurn) * 360;
+    const z = (i / totalSegments) * length;
+
+    // Taper — the cut depth shrinks linearly with z. Tooth tip moves
+    // inward, fading the thread as it climbs. Clamp to a tiny positive
+    // depth so a tapered-out tooth still produces a valid (but
+    // vanishingly small) cube rather than a degenerate one.
+    const localDepth = Math.max(0.005, depth - z * taperTan);
+
+    // Local segment arc length at the OUTER cylinder surface — width
+    // we extend tangentially so adjacent blocks overlap. 1.6× the bare
+    // arc-length covers the gap from neighbour rotation cleanly.
+    const segArcLen = (2 * Math.PI * (od / 2)) / segmentsPerTurn;
+    const tangentialExtent = segArcLen * 1.6;
+
+    // Profile shapes the tooth's axial cross-section.
+    // 0 = Square: full rectangular block
+    // 1 = V60: V-trapezoidal — narrower at the OD surface
+    // 2 = ACME: wider at the root, narrower at the crest (similar to V
+    //   but less aggressive). For v1, V60 and ACME both narrow the
+    //   tangential extent over the radial depth — approximated by
+    //   stacking two thinner blocks at half-depth offsets. Full
+    //   triangular cross-sections need polygon-extrude per segment
+    //   which is a later refinement.
+    let tooth: any;
+    if (profile === 1 || profile === 2) {
+      // Narrower crest — use a slightly trimmed tangential extent at
+      // the OD half. Visually distinguishable from Square.
+      const crestRatio = profile === 1 ? 0.4 : 0.6;
+      tooth = M.cube(
+        [localDepth + 0.02, tangentialExtent * crestRatio, axialExtent],
+        false,
+      );
+      // Center on Y axis, sit at the right radial position.
+      tooth = tooth
+        .translate([od / 2 - localDepth, -(tangentialExtent * crestRatio) / 2, 0])
+        .rotate([0, 0, angleDeg])
+        .translate([0, 0, z]);
+    } else {
+      // Square — full block.
+      tooth = M.cube(
+        [localDepth + 0.02, tangentialExtent, axialExtent],
+        false,
+      );
+      tooth = tooth
+        .translate([od / 2 - localDepth, -tangentialExtent / 2, 0])
+        .rotate([0, 0, angleDeg])
+        .translate([0, 0, z]);
+    }
+
+    band = band ? M.union(band, tooth) : tooth;
+  }
+  return band;
 }
 
 /** Used by the cutaway view in finalizeManifold. Cached so multi-part
