@@ -488,6 +488,33 @@ export function buildComponent(componentId: string, params: Record<string, numbe
   return finalizeManifold(manifold, maxOD);
 }
 
+// TODO(shading): two known visual artifacts in this path, kept on the
+// flat-shading approach for now because the alternative
+// (manifold.calculateNormals + smooth shading) looked dull / dim
+// compared to GLB. Both are low-priority polish, not correctness:
+//
+//   1. CrossSection.extrude with twist / scaleTop (helix_band,
+//      profile_extrude with non-zero twist) produces side triangles
+//      with inconsistent winding. computeVertexNormals then flips
+//      alternating face normals → bright white "tooth" stripes show
+//      through backface-culled triangles. Reproduces clearly on
+//      profile_extrude with twistDegrees != 0 — screenshot
+//      ~/Desktop/Screenshot 2026-05-19 at 5.34.46 AM.png.
+//   2. M.cylinder / M.cube show a single dark vertical seam where the
+//      circumference closes back on vertex 0 — the duplicated seam
+//      verts have slightly different normals from the cap-edge split,
+//      and the Edges overlay (thresholdAngle=20) draws a line.
+//      Visible on tube primitives — screenshot
+//      ~/Desktop/Screenshot 2026-05-19 at 5.34.00 AM.png.
+//
+// Fix candidates (when we pick this back up):
+//   - Re-orient flipped triangles by signed-volume test before
+//     computeVertexNormals (cheap, targets root cause).
+//   - Switch to manifold.calculateNormals(3, minSharpAngle) + bake a
+//     small specular-boost into the material so the smooth-shading
+//     trade-off stops being visible.
+//   - Raise the Edges overlay thresholdAngle from 20° to ~35° to
+//     suppress the cylinder seam without hiding real creases.
 function manifoldToGeo(manifold: any): THREE.BufferGeometry {
   const mesh = manifold.getMesh();
   const vp = mesh.vertProperties as Float32Array;
