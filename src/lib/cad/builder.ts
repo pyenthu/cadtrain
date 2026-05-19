@@ -488,60 +488,64 @@ export function buildComponent(componentId: string, params: Record<string, numbe
   return finalizeManifold(manifold, maxOD);
 }
 
-// TODO(shading): two known visual artifacts in this path, kept on the
-// flat-shading approach for now because the alternative
-// (manifold.calculateNormals + smooth shading) looked dull / dim
-// compared to GLB. Both are low-priority polish, not correctness:
-//
-//   1. CrossSection.extrude with twist / scaleTop (helix_band,
-//      profile_extrude with non-zero twist) produces side triangles
-//      with inconsistent winding. computeVertexNormals then flips
-//      alternating face normals → bright white "tooth" stripes show
-//      through backface-culled triangles. Reproduces clearly on
-//      profile_extrude with twistDegrees != 0 — screenshot
-//      ~/Desktop/Screenshot 2026-05-19 at 5.34.46 AM.png.
-//   2. M.cylinder / M.cube show a single dark vertical seam where the
-//      circumference closes back on vertex 0 — the duplicated seam
-//      verts have slightly different normals from the cap-edge split,
-//      and the Edges overlay (thresholdAngle=20) draws a line.
-//      Visible on tube primitives — screenshot
-//      ~/Desktop/Screenshot 2026-05-19 at 5.34.00 AM.png.
-//
-// Fix candidates (when we pick this back up):
-//   - Re-orient flipped triangles by signed-volume test before
-//     computeVertexNormals (cheap, targets root cause).
-//   - Switch to manifold.calculateNormals(3, minSharpAngle) + bake a
-//     small specular-boost into the material so the smooth-shading
-//     trade-off stops being visible.
-//   - Raise the Edges overlay thresholdAngle from 20° to ~35° to
-//     suppress the cylinder seam without hiding real creases.
+// Shading: use Manifold's calculateNormals(propIdx=3, minSharpAngle=60°)
+// so the BufferGeometry carries geometrically correct per-vertex
+// normals. THREE.computeVertexNormals after toNonIndexed() produced
+// alternating bright/dark stripes on extrude+warp surfaces (thread
+// cutters, helix_band) because the CSG output sometimes emits adjacent
+// triangles with flipped winding — the recomputed face normals point
+// in alternating directions and MeshPhongMaterial reads them as
+// flickering creases. calculateNormals operates on the indexed adjacency
+// directly, so it doesn't care about winding inversions, and splitting
+// at the 60° threshold keeps hard corners (cylinder caps, hex faces)
+// crisp.
 function manifoldToGeo(manifold: any): THREE.BufferGeometry {
-  const mesh = manifold.getMesh();
+  let withNormals: any;
+  try { withNormals = manifold.calculateNormals(3, 60); }
+  catch { withNormals = manifold; }
+  const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
   const np = mesh.numProp;
   const nv = vp.length / np;
   const pos = new Float32Array(nv * 3);
+  const nrm = np >= 6 ? new Float32Array(nv * 3) : null;
   for (let i = 0; i < nv; i++) {
-    pos[i * 3] = vp[i * np]; pos[i * 3 + 1] = vp[i * np + 1]; pos[i * 3 + 2] = vp[i * np + 2];
+    pos[i * 3]     = vp[i * np];
+    pos[i * 3 + 1] = vp[i * np + 1];
+    pos[i * 3 + 2] = vp[i * np + 2];
+    if (nrm) {
+      nrm[i * 3]     = vp[i * np + 3];
+      nrm[i * 3 + 1] = vp[i * np + 4];
+      nrm[i * 3 + 2] = vp[i * np + 5];
+    }
   }
-  const indexed = new THREE.BufferGeometry();
-  indexed.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  indexed.setIndex(new THREE.BufferAttribute(tri, 1));
-  const geo = indexed.toNonIndexed();
-  geo.computeVertexNormals();
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(tri, 1));
+  if (nrm) geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  else geo.computeVertexNormals();
   return geo;
 }
 
 function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
-  const mesh = manifold.getMesh();
+  // Same calculateNormals path as manifoldToGeo — keeps shading
+  // consistent across the cross-section overlay.
+  let withNormals: any;
+  try { withNormals = manifold.calculateNormals(3, 60); }
+  catch { withNormals = manifold; }
+  const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
   const np = mesh.numProp;
   const nv = vp.length / np;
   const nt = tri.length / 3;
   const pos: number[] = [];
-  for (let i = 0; i < nv; i++) pos.push(vp[i*np], vp[i*np+1], vp[i*np+2]);
+  const norms: number[] = [];
+  for (let i = 0; i < nv; i++) {
+    pos.push(vp[i*np], vp[i*np+1], vp[i*np+2]);
+    if (np >= 6) norms.push(vp[i*np+3], vp[i*np+4], vp[i*np+5]);
+  }
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
@@ -574,6 +578,20 @@ function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
-  geo.computeVertexNormals();
+  if (norms.length === pos.length) {
+    // Scatter Manifold-computed per-vertex normals into the non-indexed
+    // buffer (3 vertices per triangle, same layout as outPos).
+    const outNrm = new Float32Array(nt * 9);
+    for (let i = 0; i < nt; i++) {
+      const a = tri[i*3], b = tri[i*3+1], c = tri[i*3+2];
+      const idx = i*9;
+      outNrm[idx]=norms[a*3];     outNrm[idx+1]=norms[a*3+1]; outNrm[idx+2]=norms[a*3+2];
+      outNrm[idx+3]=norms[b*3];   outNrm[idx+4]=norms[b*3+1]; outNrm[idx+5]=norms[b*3+2];
+      outNrm[idx+6]=norms[c*3];   outNrm[idx+7]=norms[c*3+1]; outNrm[idx+8]=norms[c*3+2];
+    }
+    geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
+  } else {
+    geo.computeVertexNormals();
+  }
   return geo;
 }
