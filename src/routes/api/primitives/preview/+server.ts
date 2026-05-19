@@ -42,10 +42,35 @@ export const POST = async ({ request }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale } = body ?? {};
+  const { source, name, params, zScale, mode } = body ?? {};
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   const args: number[] = Array.isArray(params) ? params.map((p) => Number(p)) : [];
+
+  // Fast path — when the client says `mode: "bundle"` we skip the
+  // sandbox + esbuild + new Function dance and invoke the exported
+  // bundle helper directly. Avoids subtle wasm-instance issues that
+  // surface inside `new Function` (e.g. M.union of many cubes raised
+  // "table index is out of bounds" on helix_band). Used by /primitives
+  // when the editor source is in-sync-with-bundle; switches to the
+  // sandbox path the moment the user edits.
+  if (mode === 'bundle') {
+    const directFn = (helpers as any)[name];
+    if (typeof directFn !== 'function') {
+      throw error(404, `bundle primitive "${name}" not found`);
+    }
+    await helpers.initManifold();
+    if (typeof zScale === 'number' && zScale > 0) setRenderZScale(zScale);
+    let manifold: any;
+    try { manifold = directFn(...args); }
+    catch (e: any) { throw error(400, `primitive call failed: ${e?.message ?? e}`); }
+    if (!manifold || typeof manifold.getMesh !== 'function') {
+      throw error(400, 'primitive did not return a Manifold');
+    }
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6);
+    const s = serializeComponentResult(r);
+    return json({ ok: true, full: s.full, cutVC: s.cutVC });
+  }
 
   const stripped = stripImports(source);
 

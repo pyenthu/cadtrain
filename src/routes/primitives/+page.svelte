@@ -111,11 +111,20 @@
     previewStatus = 'building…';
     const name = selected.id;
     const args = Object.keys(selected.params).map((k) => paramValues[k] ?? 0);
+    // Fast path: when the source is unedited bundle code, ask the
+    // server to call the bundle helper directly (no sandbox). Sandbox
+    // kicks in only for edits or volume primitives.
+    const useBundlePath = selected.source === 'bundle' && editedSource === serverSource;
     try {
       const r = await fetch('/api/primitives/preview', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source: editedSource, name, params: args }),
+        body: JSON.stringify({
+          source: editedSource,
+          name,
+          params: args,
+          mode: useBundlePath ? 'bundle' : 'sandbox',
+        }),
       });
       if (!r.ok) {
         previewError = `Preview failed (${r.status}): ${await r.text()}`;
