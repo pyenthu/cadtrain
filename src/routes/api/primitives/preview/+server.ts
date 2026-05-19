@@ -123,7 +123,32 @@ export const POST = async ({ request }) => {
     throw error(400, `factory build failed: ${e?.message ?? e}`);
   }
   if (typeof primFn !== 'function') {
-    throw error(400, `source did not export a function named "${name}"`);
+    // Fall back to the first exported function — covers the case where
+    // a cloned source still has the old function name, or the user
+    // renamed the function in their edit. Friendlier than failing hard.
+    const allExports = (new Function(
+      'M', 'cyl', 'tube', 'mv', 'rot', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
+      'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
+      'helix_band', 'revolve', 'profile_extrude', 'G', 'Math',
+      `"use strict";
+       const module = { exports: {} };
+       const exports = module.exports;
+       const currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
+       ${js}
+       return module.exports;`,
+    ))(
+      helpers.M, helpers.cyl, helpers.tube, helpers.mv, helpers.rot,
+      helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
+      helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
+      helpers.helix_band, helpers.revolve, helpers.profile_extrude,
+      globalThis, Math,
+    );
+    const exportNames = Object.keys(allExports ?? {});
+    const firstFn = exportNames.map((k) => allExports[k]).find((v) => typeof v === 'function');
+    if (typeof firstFn !== 'function') {
+      throw error(400, `source did not export a function named "${name}" (no exports found at all). Exports: ${exportNames.join(', ') || '(none)'}`);
+    }
+    primFn = firstFn;
   }
 
   let manifold: any;

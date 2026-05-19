@@ -178,13 +178,21 @@
     if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = 'Invalid id'; return; }
     loading = true;
     status = `Cloning to "${newId}"…`;
+    // Rewrite the function header so the new file exports a function
+    // named after the new id (preview looks up module.exports[newId]).
+    // Matches `export function <oldId>(` once and replaces. Body
+    // unchanged — references to the old name inside the body are
+    // rare for primitives but we'd need a stronger rewrite to catch
+    // those.
+    const rewriteRe = new RegExp(`(export\\s+function\\s+)${selected.id}(\\s*\\()`);
+    const rewrittenSource = editedSource.replace(rewriteRe, `$1${newId}$2`);
     try {
       const r = await fetch('/api/primitives/save', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           id: newId,
-          source: editedSource,
+          source: rewrittenSource,
           meta: { ...editedMeta, name: newId },
         }),
       });
