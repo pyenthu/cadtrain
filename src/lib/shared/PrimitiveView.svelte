@@ -1,0 +1,367 @@
+<script lang="ts">
+  // Generic surface for a single primitive — canvas on the left,
+  // tabbed control panel on the right (Params | Source).
+  //
+  // Apply / Save contract (locked in plan per-primitive-svelte-views):
+  //   - Drag a slider / type into a number input:  pending edit
+  //                                                (orange-bar state)
+  //   - Apply (Enter, or button):                  commit to runtime
+  //                                                → re-render canvas
+  //   - Save defaults:                             rewrite `default:`
+  //                                                literals in source.ts
+  //   - Save source:                               write current
+  //                                                editor buffer
+  //
+  // Source.ts is canonical. Editing meta lives there as
+  // `export const meta = {...}`. Save callbacks emit upward — this
+  // component doesn't talk to the API itself.
+  import PrimitiveCanvas from './PrimitiveCanvas.svelte';
+  import PrimitiveGlbCanvas from './PrimitiveGlbCanvas.svelte';
+  import CodeEditor from './CodeEditor.svelte';
+  import ProfileEditor from './ProfileEditor.svelte';
+  import { untrack } from 'svelte';
+
+  type ParamSchema = {
+    label?: string;
+    type?: 'number' | 'boolean' | 'polygon' | 'enum';
+    min?: number;
+    max?: number;
+    step?: number;
+    options?: string[];
+    default: number | [number, number][];
+    unit?: string;
+  };
+
+  let {
+    id,
+    name = id,
+    description = '',
+    paramSchema,
+    editable = false,
+    initialSource = '',
+    serverSource = '',
+    onSaveSource,
+    onSaveDefaults,
+    onReloadSource,
+  }: {
+    id: string;
+    name?: string;
+    description?: string;
+    paramSchema: Record<string, ParamSchema>;
+    editable?: boolean;
+    initialSource?: string;
+    serverSource?: string;
+    onSaveSource?: (newSource: string) => Promise<void> | void;
+    onSaveDefaults?: (applied: Record<string, number>) => Promise<void> | void;
+    onReloadSource?: () => Promise<void> | void;
+  } = $props();
+
+  let paramOrder = $derived(Object.keys(paramSchema));
+
+  // Initial state from props is a deliberate one-time read (untrack).
+  // Parent uses `{#key selected.id}` to remount on primitive change.
+  // Values are `number` for scalar params and `[number, number][]` for
+  // polygon params. The schema's `type` decides the renderer + how the
+  // value flows into appliedArgs (polygons are JSON.stringify'd).
+  let applied = $state<Record<string, number | [number, number][]>>(
+    untrack(() => Object.fromEntries(Object.entries(paramSchema).map(([k, v]) => [k, v.default as any]))),
+  );
+  let pending = $state<Record<string, number | [number, number][]>>(untrack(() => ({ ...applied })));
+  let editedSource = $state(untrack(() => initialSource));
+
+  // First polygon-typed param (if any). The Profile tab edits this
+  // one; multi-polygon primitives aren't a real use case yet.
+  let polygonParamName = $derived(paramOrder.find((k) => paramSchema[k].type === 'polygon') ?? null);
+  let hasProfile = $derived(polygonParamName !== null);
+
+  let tab = $state<'params' | 'profile' | 'source'>('params');
+
+  // Polygon params travel to the server as JSON strings; scalars as
+  // numbers. Order follows the meta param-order.
+  let appliedArgs = $derived(paramOrder.map((k) => {
+    const v = applied[k] ?? paramSchema[k].default;
+    if (paramSchema[k].type === 'polygon') return JSON.stringify(v);
+    return v as number;
+  }));
+
+  // Dirty if any scalar mismatches OR any polygon's JSON serialization
+  // differs (cheap structural compare via stringify).
+  let paramsDirty = $derived(
+    paramOrder.some((k) => {
+      const p = pending[k] ?? paramSchema[k].default;
+      const a = applied[k] ?? paramSchema[k].default;
+      if (paramSchema[k].type === 'polygon') return JSON.stringify(p) !== JSON.stringify(a);
+      return p !== a;
+    }),
+  );
+  let sourceDirty = $derived(editedSource !== serverSource);
+
+  function setPending(k: string, v: number) { pending = { ...pending, [k]: v }; }
+  function apply() { applied = { ...pending }; }
+  function revert() { pending = { ...applied }; }
+
+  let saving = $state(false);
+  async function saveSource() {
+    if (!onSaveSource) return;
+    saving = true;
+    try { await onSaveSource(editedSource); } finally { saving = false; }
+  }
+  async function saveDefaults() {
+    if (!onSaveDefaults) return;
+    saving = true;
+    try { await onSaveDefaults(applied); } finally { saving = false; }
+  }
+
+  // Drag-to-resize the right panel. Width is held in component state
+  // and clamped to a sensible range so the user can't drag it off
+  // either edge.
+  let sideWidth = $state(420);
+  let dragging = $state(false);
+  function beginDrag(e: PointerEvent) {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragging = true;
+  }
+  function endDrag(e: PointerEvent) {
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    dragging = false;
+  }
+  function dragMove(e: PointerEvent) {
+    if (!dragging) return;
+    const container = (e.currentTarget as HTMLElement).parentElement;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const next = rect.right - e.clientX;
+    sideWidth = Math.max(260, Math.min(900, next));
+  }
+</script>
+
+<div class="pv-root">
+  <header class="pv-head">
+    <div class="pv-title">
+      <h1>{name}</h1>
+      {#if description}<p class="pv-desc">{description}</p>{/if}
+    </div>
+  </header>
+
+  <div class="pv-split" style="--side-width: {sideWidth}px;">
+    <div class="pv-canvas-pane">
+      <!-- Always pass `source` so the preview runs through the sandbox
+           path (which has a first-export fallback when the function
+           name differs from the directory id, e.g. dir
+           `profile_extrude_v2` containing `export function profile_extrude`).
+           The bundle fast-path can't handle that mismatch. -->
+      <div class="pv-canvas-stack">
+        <div class="pv-canvas-half">
+          <div class="pv-canvas-label">Mesh (live)</div>
+          <PrimitiveCanvas {id} {name} args={appliedArgs} source={editedSource} />
+        </div>
+        <div class="pv-canvas-half">
+          <div class="pv-canvas-label">GLB (bake preview)</div>
+          <PrimitiveGlbCanvas {id} {name} args={appliedArgs} source={editedSource} />
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="pv-resizer"
+      class:dragging
+      role="separator"
+      aria-orientation="vertical"
+      onpointerdown={beginDrag}
+      onpointermove={dragMove}
+      onpointerup={endDrag}
+      onpointercancel={endDrag}
+    ></div>
+
+    <aside class="pv-side">
+      <div class="pv-tabs" role="tablist">
+        <button class="pv-tab" class:active={tab === 'params'} onclick={() => (tab = 'params')} type="button" role="tab">
+          Params
+          {#if paramsDirty}<span class="pv-dot"></span>{/if}
+        </button>
+        {#if hasProfile}
+          <button class="pv-tab" class:active={tab === 'profile'} onclick={() => (tab = 'profile')} type="button" role="tab">
+            Profile
+          </button>
+        {/if}
+        <button class="pv-tab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab">
+          Source
+          {#if sourceDirty}<span class="pv-dot"></span>{/if}
+        </button>
+      </div>
+
+      {#if tab === 'params'}
+        <div class="pv-pane pv-params">
+          <div class="pv-pane-head">
+            <span class="pv-pill" class:dirty={paramsDirty}>{paramsDirty ? 'pending — press Enter to apply' : 'applied'}</span>
+            <div class="pv-spacer"></div>
+            <button class="pv-btn" onclick={apply} type="button" disabled={!paramsDirty}>Apply</button>
+            <button class="pv-btn" onclick={revert} type="button" disabled={!paramsDirty}>Revert</button>
+            {#if onSaveDefaults}
+              <button class="pv-btn primary" onclick={saveDefaults} type="button" disabled={!editable || saving}>Save defaults</button>
+            {/if}
+          </div>
+          <div class="pv-params-grid">
+            {#each paramOrder.filter((k) => paramSchema[k].type !== 'polygon') as pname (pname)}
+              {@const ps = paramSchema[pname]}
+              {@const value = (pending[pname] ?? ps.default) as number}
+              {@const dirty = value !== (applied[pname] ?? ps.default)}
+              {#if ps.type === 'boolean'}
+                <label class="pv-param pv-param-bool" class:dirty>
+                  <span class="pv-pname">{ps.label ?? pname}</span>
+                  <input
+                    class="pv-pcheck"
+                    type="checkbox"
+                    checked={!!value}
+                    onchange={(e) => {
+                      setPending(pname, (e.currentTarget as HTMLInputElement).checked ? 1 : 0);
+                      // Boolean toggles commit immediately — no waiting for Enter.
+                      apply();
+                    }}
+                  />
+                  <span class="pv-punit">{value ? 'on' : 'off'}</span>
+                </label>
+              {:else if ps.type === 'enum'}
+                {@const opts = ps.options ?? []}
+                <label class="pv-param pv-param-enum" class:dirty>
+                  <span class="pv-pname">{ps.label ?? pname}</span>
+                  <select
+                    class="pv-pselect"
+                    value={value}
+                    onchange={(e) => {
+                      setPending(pname, Number((e.currentTarget as HTMLSelectElement).value));
+                      // Enum changes commit immediately — same as boolean.
+                      apply();
+                    }}
+                  >
+                    {#each opts as label, i (i)}
+                      <option value={i}>{label}</option>
+                    {/each}
+                  </select>
+                  <span class="pv-punit">#{value}</span>
+                </label>
+              {:else}
+                <label class="pv-param" class:dirty>
+                  <span class="pv-pname">{ps.label ?? pname}</span>
+                  <input
+                    class="pv-pslider"
+                    type="range"
+                    min={ps.min ?? 0}
+                    max={ps.max ?? 10}
+                    step={ps.step ?? 0.1}
+                    {value}
+                    oninput={(e) => setPending(pname, Number((e.currentTarget as HTMLInputElement).value))}
+                  />
+                  <input
+                    class="pv-pnum"
+                    type="number"
+                    step={ps.step ?? 0.1}
+                    {value}
+                    oninput={(e) => setPending(pname, Number((e.currentTarget as HTMLInputElement).value))}
+                    onkeydown={(e) => { if (e.key === 'Enter') apply(); }}
+                  />
+                  <span class="pv-punit">{ps.unit ?? ''}</span>
+                </label>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {:else if tab === 'profile' && polygonParamName}
+        {@const pname = polygonParamName}
+        <div class="pv-pane pv-profile">
+          <div class="pv-pane-head">
+            <span class="pv-pname">{paramSchema[pname].label ?? pname}</span>
+            <span class="pv-pill" class:dirty={paramsDirty}>{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
+            <div class="pv-spacer"></div>
+            <button class="pv-btn" onclick={apply} type="button" disabled={!paramsDirty}>Apply</button>
+            <button class="pv-btn" onclick={revert} type="button" disabled={!paramsDirty}>Revert</button>
+          </div>
+          <ProfileEditor
+            value={pending[pname] as [number, number][]}
+            onChange={(next) => { pending = { ...pending, [pname]: next }; }}
+            onApply={apply}
+          />
+        </div>
+      {:else}
+        <div class="pv-pane pv-source">
+          <div class="pv-pane-head">
+            <span class="pv-pill" class:dirty={sourceDirty}>{sourceDirty ? 'modified' : 'in sync'}</span>
+            <div class="pv-spacer"></div>
+            {#if onReloadSource}<button class="pv-btn" onclick={onReloadSource} type="button">Reload</button>{/if}
+            {#if onSaveSource}
+              <button class="pv-btn primary" onclick={saveSource} type="button" disabled={!editable || saving || !sourceDirty}>Save source</button>
+            {/if}
+          </div>
+          <div class="pv-editor-wrap">
+            <CodeEditor
+              value={editedSource}
+              lang="typescript"
+              readonly={!editable}
+              variant="default"
+              onChange={(next) => { editedSource = next; }}
+              onSave={editable ? () => saveSource() : undefined}
+            />
+          </div>
+        </div>
+      {/if}
+    </aside>
+  </div>
+</div>
+
+<style>
+  .pv-root { display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; padding: 0 6px 6px; gap: 4px; box-sizing: border-box; }
+
+  .pv-head { padding: 0 6px 4px; border-bottom: 1px solid #eee; }
+  .pv-title h1 { margin: 0; font: 700 14px monospace; color: #cc2222; line-height: 1.2; }
+  .pv-desc { margin: 2px 0 0; color: #555; font-size: 11px; max-width: 720px; line-height: 1.3; }
+
+  .pv-split { display: grid; grid-template-columns: 1fr 6px var(--side-width, 420px); min-height: 0; height: 100%; gap: 0; }
+
+  .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 6px; }
+  .pv-canvas-stack { display: grid; grid-template-rows: 1fr 1fr; gap: 6px; height: 100%; min-height: 0; }
+  .pv-canvas-half { position: relative; min-height: 0; border-radius: 4px; overflow: hidden; }
+  .pv-canvas-label { position: absolute; top: 6px; left: 8px; z-index: 5; font: 600 10px Arial; color: #fff; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 3px; pointer-events: none; }
+
+  .pv-resizer { background: transparent; cursor: col-resize; position: relative; }
+  .pv-resizer::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eee; transition: background 0.15s; }
+  .pv-resizer:hover::before, .pv-resizer.dragging::before { background: #cc2222; }
+
+  .pv-side { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid #eee; border-radius: 4px; background: #fff; overflow: hidden; }
+  .pv-tabs { display: flex; border-bottom: 1px solid #eee; background: #fafafa; }
+  .pv-tab { background: transparent; border: 0; padding: 8px 14px; font: 600 12px Arial; color: #666; cursor: pointer; display: flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent; }
+  .pv-tab:hover { color: #cc2222; }
+  .pv-tab.active { color: #cc2222; border-bottom-color: #cc2222; background: #fff; }
+  .pv-dot { width: 6px; height: 6px; border-radius: 50%; background: #cc2222; }
+
+  .pv-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .pv-pane-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #eee; flex-wrap: wrap; }
+  .pv-spacer { flex: 1; }
+
+  .pv-params { padding: 0; }
+  .pv-params-grid { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px 12px; overflow-y: auto; }
+  .pv-param { display: grid; grid-template-columns: 90px 1fr 70px 28px; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 3px; }
+  .pv-param.dirty { background: #fff8e6; }
+  .pv-param-bool { grid-template-columns: 90px 18px 1fr; }
+  .pv-param-enum { grid-template-columns: 90px 1fr 40px; }
+  .pv-pselect { font: 11px Arial; padding: 3px 6px; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; }
+  .pv-pselect:hover { border-color: #cc2222; }
+  .pv-pselect:focus { outline: 1px solid #cc2222; }
+  .pv-pname { font: 12px monospace; color: #333; }
+  .pv-pslider { width: 100%; }
+  .pv-pnum { font: 11px monospace; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; width: 100%; }
+  .pv-pcheck { width: 16px; height: 16px; margin: 0; cursor: pointer; }
+  .pv-punit { font: 10px Arial; color: #888; }
+
+  .pv-source { padding: 0; }
+  .pv-editor-wrap { flex: 1; min-height: 0; border-top: 1px solid #eee; padding: 0 0 8px 0; display: flex; flex-direction: column; overflow: hidden; }
+  .pv-editor-wrap :global(.cm-editor) { flex: 1; }
+  .pv-editor-wrap :global(.cm-scroller) { padding-bottom: 24px; }
+
+  .pv-pill { font: 10px Arial; color: #555; background: #f0f0f0; padding: 2px 8px; border-radius: 10px; }
+  .pv-pill.dirty { background: #fff8e6; color: #6a5500; }
+
+  .pv-btn { padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 11px Arial; cursor: pointer; }
+  .pv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pv-btn.primary { background: #cc2222; color: #fff; border-color: #cc2222; }
+  .pv-btn.primary:disabled { background: #888; border-color: #888; }
+</style>

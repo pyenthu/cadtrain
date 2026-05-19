@@ -107,5 +107,12 @@ Thumbs.db
 # Local dev: ./library/ ; Railway: /app_data/library/.
 /library/
 
+# Primitives — volume-resident primitive authoring store. Each entry is
+# a directory under primitives/<id>/ with source.ts holding both `meta`
+# and the geom function. Archived (deleted) primitives live under
+# primitives/archive/<id>/. Local dev: ./primitives/ ; Railway:
+# /app_data/primitives/. Runtime data, NOT source.
+/primitives/
+
 # Claude Code session artifacts (per-session lock files etc.)
 .claude/

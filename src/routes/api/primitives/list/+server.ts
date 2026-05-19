@@ -1,9 +1,10 @@
 import { json } from '@sveltejs/kit';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
 import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
+import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 //
@@ -41,28 +42,50 @@ export const GET = async () => {
   }));
 
   const volume: PrimEntry[] = [];
+  const archived: PrimEntry[] = [];
   const root = volumePath(PRIMS_ROOT);
   if (existsSync(root)) {
     const entries = await readdir(root, { withFileTypes: true });
     for (const dirent of entries) {
       if (!dirent.isDirectory()) continue;
+      if (dirent.name === 'archive') {
+        // Recurse one level into archive/<id>/ for the archived list.
+        const archiveRoot = join(root, 'archive');
+        const inner = await readdir(archiveRoot, { withFileTypes: true });
+        for (const d2 of inner) {
+          if (!d2.isDirectory()) continue;
+          const e = await loadVolumeEntry(join(archiveRoot, d2.name), d2.name);
+          if (e) archived.push(e);
+        }
+        continue;
+      }
       const id = dirent.name;
-      const dir = join(root, id);
-      const metaPath = join(dir, 'meta.json');
-      const sourcePath = join(dir, 'source.ts');
-      if (!existsSync(metaPath) || !existsSync(sourcePath)) continue;
-      try {
-        const meta = JSON.parse(await readFile(metaPath, 'utf8'));
-        volume.push({
-          id,
-          source: 'volume',
-          name: meta.name ?? id,
-          description: meta.description ?? '',
-          params: meta.params ?? {},
-          editable: true,
-        });
-      } catch { /* bad meta, skip */ }
+      const e = await loadVolumeEntry(join(root, id), id);
+      if (e) volume.push(e);
     }
+  }
+
+  async function loadVolumeEntry(dir: string, id: string): Promise<PrimEntry | null> {
+    const sourcePath = join(dir, 'source.ts');
+    if (!existsSync(sourcePath)) return null;
+    try {
+      const src = await readFile(sourcePath, 'utf8');
+      let meta: any = null;
+      try { meta = extractMetaFromSource(src); }
+      catch {
+        const metaPath = join(dir, 'meta.json');
+        if (existsSync(metaPath)) meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      }
+      if (!meta) return null;
+      return {
+        id,
+        source: 'volume',
+        name: meta.name ?? id,
+        description: meta.description ?? '',
+        params: meta.params ?? {},
+        editable: true,
+      };
+    } catch { return null; }
   }
 
   // Volume shadows bundle on id collision (later in the merged list
@@ -72,5 +95,11 @@ export const GET = async () => {
     ...bundle.filter((b) => !volume.some((v) => v.id === b.id)),
     ...volume,
   ];
-  return json({ bundle, volume, merged, shadows: volume.filter((v) => bundleIds.has(v.id)).map((v) => v.id) });
+  return json({
+    bundle,
+    volume,
+    archived,
+    merged,
+    shadows: volume.filter((v) => bundleIds.has(v.id)).map((v) => v.id),
+  });
 };

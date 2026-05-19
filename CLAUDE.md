@@ -20,6 +20,7 @@ files (auto-loaded when working in that subtree):
 | `src/lib/wells/CLAUDE.md` | WSON schema + 5-layer validation pattern |
 | `src/lib/shared/CLAUDE.md` | Dual-backend dispatch + cad↔wells no-cross-import |
 | `tests/CLAUDE.md` | Unit + e2e setup, run modes, per-task recordings |
+| **`docs/CAD_AUTHORING.md`** | **Volume primitive authoring guide — read FIRST when generating or editing any `<volume>/primitives/<id>/source.ts`. Covers param types, apply/save contract, Manifold gotchas (scaleTop+warp collapse, Vec3 tuple, immutable ops, refine n²).** |
 
 ## Rules for Claude (read me first)
 

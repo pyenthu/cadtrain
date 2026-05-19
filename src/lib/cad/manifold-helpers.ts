@@ -283,14 +283,14 @@ export function helix_band(od: number, length: number, tpi: number, depth: numbe
   return band;
 }
 
-/** Used by the cutaway view in finalizeManifold. Cached so multi-part
- *  builds don't reconstruct the same cube on every part. */
-let _cachedCutBox: any = null;
+// Used by the cutaway view in finalizeManifold. Built fresh on each
+// call: the previous module-local cache held a Manifold whose class
+// identity went stale when Vite SSR-rebuilt this module between
+// /api/primitives/preview requests, mixing two embind class registries
+// inside scaled.subtract(cutBox) and throwing "Expected null or
+// instance of Manifold, got an instance of Manifold". /components is
+// unaffected because it builds client-side in one realm.
 export function getCutBox(): any {
-  // Check the singleton directly — `M` is a Proxy and `if (M)` would
-  // always be truthy even when the underlying wasm hasn't initialised.
-  if (!_cachedCutBox && G.__cadtrain_manifold__.M) {
-    _cachedCutBox = M.cube([20, 20, 100], false).translate([0, 0, -50]);
-  }
-  return _cachedCutBox;
+  if (!G.__cadtrain_manifold__.M) return null;
+  return M.cube([20, 20, 100], false).translate([0, 0, -50]);
 }

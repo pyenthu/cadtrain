@@ -45,7 +45,11 @@ export const POST = async ({ request }) => {
   const { source, name, params, zScale, mode } = body ?? {};
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
-  const args: number[] = Array.isArray(params) ? params.map((p) => Number(p)) : [];
+  // Args may be mixed number | string (string carries JSON-encoded
+  // polygon params — the primitive function JSON.parses them inside).
+  const args: (number | string)[] = Array.isArray(params)
+    ? params.map((p) => typeof p === 'string' ? p : Number(p))
+    : [];
 
   // Fast path — when the client says `mode: "bundle"` we skip the
   // sandbox + esbuild + new Function dance and invoke the exported

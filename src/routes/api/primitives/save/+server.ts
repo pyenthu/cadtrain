@@ -1,16 +1,17 @@
 import { json, error } from '@sveltejs/kit';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
+import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 // POST /api/primitives/save
-//   { id: string, source: string, meta: { name, description?, tags?, params } }
-// Writes <volume>/primitives/<id>/{source.ts, meta.json}. If the id is
-// new, the directory is created. Overwrites any existing files at that
-// path — saves are atomic-per-file (temp + rename omitted for now;
-// good-enough for a single-user authoring workflow).
-//
-// Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
+//   { id: string, source: string }
+// Writes <volume>/primitives/<id>/source.ts. The meta schema is
+// embedded inside source.ts as `export const meta = {...}` (single
+// source of truth) — no separate meta.json. If a legacy meta.json
+// exists at the target path, it's removed on save so list/preview
+// only ever reads from source.
 
 const ID_RE = /^[a-z][a-z0-9_]*$/i;
 
@@ -18,27 +19,25 @@ export const POST = async ({ request }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { id, source, meta } = body ?? {};
+  const { id, source } = body ?? {};
   if (typeof id !== 'string' || !ID_RE.test(id)) {
     throw error(400, `bad id "${id}" — must match [a-z_][a-z0-9_]*`);
   }
   if (typeof source !== 'string' || !source.trim()) {
     throw error(400, 'source required (non-empty string)');
   }
-  if (!meta || typeof meta !== 'object' || !meta.params || typeof meta.params !== 'object') {
-    throw error(400, 'meta.params is required (object)');
-  }
+  // Validate meta extracts cleanly before touching disk — a save that
+  // would render the primitive invisible in /list should fail loudly.
+  try { extractMetaFromSource(source); }
+  catch (e: any) { throw error(400, `source missing valid meta: ${e?.message ?? e}`); }
+
   const dir = volumePath(join('primitives', id));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'source.ts'), source, 'utf8');
-  // Strip undefined keys + lock down the meta shape we persist
-  const metaToWrite = {
-    id,
-    name: meta.name ?? id,
-    description: meta.description ?? '',
-    tags: Array.isArray(meta.tags) ? meta.tags : [],
-    params: meta.params,
-  };
-  await writeFile(join(dir, 'meta.json'), JSON.stringify(metaToWrite, null, 2) + '\n', 'utf8');
+  // Clear any legacy meta.json — source.ts is now canonical.
+  const legacyMeta = join(dir, 'meta.json');
+  if (existsSync(legacyMeta)) {
+    try { await unlink(legacyMeta); } catch { /* best-effort */ }
+  }
   return json({ ok: true, id, path: dir });
 };

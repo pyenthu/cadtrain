@@ -136,3 +136,21 @@ render.
 
 `/api/components/list` decides `renderMode` per entry; the client
 build effect dispatches on it.
+
+## Manifold gotchas
+
+### `CrossSection.extrude(..., scaleTop)` + `Manifold.warp` — scalar collapse
+
+When the manifold returned by `CrossSection.extrude(height, nDivisions, twistDegrees, scaleTop)` will be fed to `Manifold.warp(callback)`, **`scaleTop` MUST be the Vec2 `[1, 1]`, never the scalar `1`** (or any other scalar identity). The TypeScript signature `scaleTop?: Readonly<Vec2> | number` advertises both as valid, but in manifold-3d 3.4.1:
+
+- Scalar `1` + warp → silently collapses the top-slice profile (top `yLocal` lost), producing a wedge-tapered top regardless of what the warp callback does.
+- Vec2 `[1, 1]` + warp → identity, behaves correctly.
+- Extrude alone (no warp) → both forms produce identical bboxes; the bug only surfaces when warp follows.
+
+**Symptom**: a primitive built via `extrude → warp` (e.g. `profile_extrude_v3..v5`) renders with one end visibly tapered to a point even though the warp math has no taper term.
+
+**Detection**: compare the post-warp z-extent. If `z_max = height - halfW` instead of `height + halfW`, scaleTop is the culprit.
+
+**Fix**: `extrude(L, n, 0, [1, 1])`, not `extrude(L, n, 0, 1)`.
+
+See `~/.claude/projects/-Users-neerajsethi-code-cadtrain/memory/manifold_extrude_scaletop_warp_bug.md` for the discovery trail. Discovered 2026-05-19 while authoring v5.
