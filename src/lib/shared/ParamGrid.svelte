@@ -1,0 +1,167 @@
+<script lang="ts">
+  /**
+   * ParamGrid — the shared parameter editor used by the `/primitives`
+   * inspector, replicating the `/components` inspector's prop-card grid
+   * (`.pr-card` / `.pr-num.drag` / `.pr-choice`). Single-row cards in an
+   * auto-fit grid; drag-to-scrub number inputs with Enter-only commit;
+   * enum dropdowns + boolean checkboxes commit immediately.
+   *
+   * Commit model (matches /components):
+   *   - typing a number      → onPending(key, v)  (dirty until Enter)
+   *   - Enter / drag-scrub    → onCommit(key, v)   (apply that param)
+   *   - enum / boolean change → onCommit(key, v)   (apply immediately)
+   *
+   * Polygon params are skipped here (the Profile tab edits those).
+   */
+  import { dragNumber } from './dragNumber';
+
+  export type ParamSchema = {
+    label?: string;
+    type?: 'number' | 'boolean' | 'polygon' | 'enum';
+    min?: number;
+    max?: number;
+    step?: number;
+    options?: string[];
+    default: number | [number, number][];
+    unit?: string;
+  };
+
+  let {
+    schema,
+    pending,
+    applied,
+    onPending,
+    onCommit,
+  }: {
+    schema: Record<string, ParamSchema>;
+    pending: Record<string, number | [number, number][]>;
+    applied: Record<string, number | [number, number][]>;
+    onPending: (key: string, value: number) => void;
+    onCommit: (key: string, value: number) => void;
+  } = $props();
+
+  let keys = $derived(Object.keys(schema).filter((k) => schema[k].type !== 'polygon'));
+
+  function num(k: string): number {
+    const v = pending[k] ?? schema[k].default;
+    return typeof v === 'number' ? v : 0;
+  }
+  function isDirty(k: string): boolean {
+    return (pending[k] ?? schema[k].default) !== (applied[k] ?? schema[k].default);
+  }
+</script>
+
+<div class="pr-grid">
+  {#each keys as key (key)}
+    {@const ps = schema[key]}
+    {@const value = num(key)}
+    <div class="pr-card" class:dirty={isDirty(key)}>
+      <div class="pr-card-head">
+        <span class="pr-keyname" title={ps.label ?? key}>{ps.label ?? key}</span>
+        {#if ps.unit}<span class="pr-unit-inline">({ps.unit})</span>{/if}
+      </div>
+
+      {#if ps.type === 'boolean'}
+        <input
+          class="pr-bool"
+          type="checkbox"
+          checked={!!value}
+          onchange={(e) => onCommit(key, (e.currentTarget as HTMLInputElement).checked ? 1 : 0)}
+        />
+      {:else if ps.type === 'enum'}
+        <select
+          class="pr-choice"
+          value={value}
+          onchange={(e) => onCommit(key, Number((e.currentTarget as HTMLSelectElement).value))}
+        >
+          {#each ps.options ?? [] as label, i (i)}
+            <option value={i}>{label}</option>
+          {/each}
+        </select>
+      {:else}
+        <input
+          class="pr-num drag"
+          type="number"
+          step={ps.step ?? 0.1}
+          min={ps.min}
+          max={ps.max}
+          {value}
+          oninput={(e) => onPending(key, Number((e.currentTarget as HTMLInputElement).value))}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              const v = Number((e.currentTarget as HTMLInputElement).value);
+              if (Number.isFinite(v)) onCommit(key, v);
+            } else if (e.key === 'Escape') {
+              (e.currentTarget as HTMLInputElement).value = String(value);
+            }
+          }}
+          use:dragNumber={{
+            step: ps.step ?? 0.1,
+            min: ps.min,
+            max: ps.max,
+            get: () => num(key),
+            set: (v) => onCommit(key, v),
+          }}
+          title="Type then Enter to commit · drag horizontally to scrub"
+        />
+      {/if}
+    </div>
+  {/each}
+</div>
+
+<style>
+  .pr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 4px;
+    padding: 2px 0;
+  }
+  .pr-card {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 5px;
+    background: #fafafa;
+    border: 1px solid #eaeaef;
+    border-radius: 3px;
+    min-width: 0;
+  }
+  .pr-card.dirty { background: #fff8e6; border-color: #f0d8a8; }
+  .pr-card-head { display: contents; }
+  .pr-card-head .pr-keyname {
+    flex: 0 0 auto;
+    max-width: 50%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 12px monospace; color: #333;
+  }
+  .pr-unit-inline {
+    font: 10px Arial; color: #222;
+    flex-shrink: 0;
+    margin-right: 2px;
+  }
+  .pr-num {
+    flex: 1; min-width: 0; order: 1;
+    font: 10px monospace;
+    padding: 1px 3px; border: 1px solid #ddd; border-radius: 3px;
+    text-align: right;
+  }
+  .pr-num.drag {
+    cursor: ew-resize;
+    padding: 3px 6px;
+    font-size: 11px;
+    background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+  }
+  .pr-num:focus { outline: 1px solid #cc2222; border-color: #cc2222; }
+  .pr-choice {
+    flex: 1; min-width: 0; order: 1;
+    font: 11px Arial; padding: 3px 6px;
+    border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer;
+  }
+  .pr-choice:hover { border-color: #cc2222; }
+  .pr-choice:focus { outline: 1px solid #cc2222; }
+  .pr-bool { width: 16px; height: 16px; margin: 0 auto 0 0; cursor: pointer; accent-color: #cc2222; }
+
+  /* Themed cursor while a drag-scrub is active (set on <body> by the
+     dragNumber action). */
+  :global(body.dragnum-active) { cursor: ew-resize !important; user-select: none !important; }
+</style>

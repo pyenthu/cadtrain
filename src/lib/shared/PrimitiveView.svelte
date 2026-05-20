@@ -19,6 +19,7 @@
   import PrimitiveGlbCanvas from './PrimitiveGlbCanvas.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
+  import ParamGrid from './ParamGrid.svelte';
   import { untrack } from 'svelte';
 
   type ParamSchema = {
@@ -106,6 +107,13 @@
   function setPending(k: string, v: number) { pending = { ...pending, [k]: v }; }
   function apply() { applied = { ...pending }; }
   function revert() { pending = { ...applied }; }
+  // Commit a single param (Enter / drag-scrub / enum / boolean) — mirrors
+  // the /components prop-card behaviour where each param commits on its own
+  // Enter or drag rather than waiting for a global Apply.
+  function commitOne(k: string, v: number) {
+    pending = { ...pending, [k]: v };
+    applied = { ...applied, [k]: v };
+  }
 
   let saving = $state(false);
   async function saveSource() {
@@ -187,16 +195,16 @@
     <aside class="pv-side">
       <div class="pv-tabs" role="tablist">
         <button class="pv-tab" class:active={tab === 'params'} onclick={() => (tab = 'params')} type="button" role="tab">
-          Params
+          <span class="pv-ic">⚙</span> Params
           {#if paramsDirty}<span class="pv-dot"></span>{/if}
         </button>
         {#if hasProfile}
           <button class="pv-tab" class:active={tab === 'profile'} onclick={() => (tab = 'profile')} type="button" role="tab">
-            Profile
+            <span class="pv-ic">◧</span> Profile
           </button>
         {/if}
         <button class="pv-tab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab">
-          Source
+          <span class="pv-ic">🛠</span> Source
           {#if sourceDirty}<span class="pv-dot"></span>{/if}
         </button>
       </div>
@@ -213,68 +221,13 @@
             {/if}
           </div>
           <div class="pv-params-grid">
-            {#each paramOrder.filter((k) => paramSchema[k].type !== 'polygon') as pname (pname)}
-              {@const ps = paramSchema[pname]}
-              {@const value = (pending[pname] ?? ps.default) as number}
-              {@const dirty = value !== (applied[pname] ?? ps.default)}
-              {#if ps.type === 'boolean'}
-                <label class="pv-param pv-param-bool" class:dirty>
-                  <span class="pv-pname">{ps.label ?? pname}</span>
-                  <input
-                    class="pv-pcheck"
-                    type="checkbox"
-                    checked={!!value}
-                    onchange={(e) => {
-                      setPending(pname, (e.currentTarget as HTMLInputElement).checked ? 1 : 0);
-                      // Boolean toggles commit immediately — no waiting for Enter.
-                      apply();
-                    }}
-                  />
-                  <span class="pv-punit">{value ? 'on' : 'off'}</span>
-                </label>
-              {:else if ps.type === 'enum'}
-                {@const opts = ps.options ?? []}
-                <label class="pv-param pv-param-enum" class:dirty>
-                  <span class="pv-pname">{ps.label ?? pname}</span>
-                  <select
-                    class="pv-pselect"
-                    value={value}
-                    onchange={(e) => {
-                      setPending(pname, Number((e.currentTarget as HTMLSelectElement).value));
-                      // Enum changes commit immediately — same as boolean.
-                      apply();
-                    }}
-                  >
-                    {#each opts as label, i (i)}
-                      <option value={i}>{label}</option>
-                    {/each}
-                  </select>
-                  <span class="pv-punit">#{value}</span>
-                </label>
-              {:else}
-                <label class="pv-param" class:dirty>
-                  <span class="pv-pname">{ps.label ?? pname}</span>
-                  <input
-                    class="pv-pslider"
-                    type="range"
-                    min={ps.min ?? 0}
-                    max={ps.max ?? 10}
-                    step={ps.step ?? 0.1}
-                    {value}
-                    oninput={(e) => setPending(pname, Number((e.currentTarget as HTMLInputElement).value))}
-                  />
-                  <input
-                    class="pv-pnum"
-                    type="number"
-                    step={ps.step ?? 0.1}
-                    {value}
-                    oninput={(e) => setPending(pname, Number((e.currentTarget as HTMLInputElement).value))}
-                    onkeydown={(e) => { if (e.key === 'Enter') apply(); }}
-                  />
-                  <span class="pv-punit">{ps.unit ?? ''}</span>
-                </label>
-              {/if}
-            {/each}
+            <ParamGrid
+              schema={paramSchema}
+              {pending}
+              {applied}
+              onPending={setPending}
+              onCommit={commitOne}
+            />
           </div>
         </div>
       {:else if tab === 'profile' && polygonParamName}
@@ -346,25 +299,19 @@
   .pv-tab:hover { color: #cc2222; }
   .pv-tab.active { color: #cc2222; border-bottom-color: #cc2222; background: #fff; }
   .pv-dot { width: 6px; height: 6px; border-radius: 50%; background: #cc2222; }
+  .pv-ic { font-size: 11px; opacity: 0.85; line-height: 1; }
 
   .pv-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .pv-pane-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #eee; flex-wrap: wrap; }
   .pv-spacer { flex: 1; }
 
   .pv-params { padding: 0; }
-  .pv-params-grid { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px 12px; overflow-y: auto; }
-  .pv-param { display: grid; grid-template-columns: 90px 1fr 70px 28px; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 3px; }
-  .pv-param.dirty { background: #fff8e6; }
-  .pv-param-bool { grid-template-columns: 90px 18px 1fr; }
-  .pv-param-enum { grid-template-columns: 90px 1fr 40px; }
-  .pv-pselect { font: 11px Arial; padding: 3px 6px; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; }
-  .pv-pselect:hover { border-color: #cc2222; }
-  .pv-pselect:focus { outline: 1px solid #cc2222; }
+  /* Param controls now render via the shared <ParamGrid> (the same
+     .pr-card grid the /components inspector uses). This wrapper just
+     handles padding + scroll. */
+  .pv-params-grid { padding: 8px 12px 12px; overflow-y: auto; }
+  /* Still used by the Profile tab's pane head. */
   .pv-pname { font: 12px monospace; color: #333; }
-  .pv-pslider { width: 100%; }
-  .pv-pnum { font: 11px monospace; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; width: 100%; }
-  .pv-pcheck { width: 16px; height: 16px; margin: 0; cursor: pointer; }
-  .pv-punit { font: 10px Arial; color: #888; }
 
   .pv-source { padding: 0; }
   .pv-editor-wrap { flex: 1; min-height: 0; border-top: 1px solid #eee; padding: 0 0 8px 0; display: flex; flex-direction: column; overflow: hidden; }
