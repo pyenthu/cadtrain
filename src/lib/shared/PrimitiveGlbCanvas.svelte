@@ -16,6 +16,7 @@
     name = id,
     args,
     source,
+    cut = false,
     showControls = true,
     onstatus,
     onerror,
@@ -24,6 +25,7 @@
     name?: string;
     args: (number | string)[];
     source?: string;
+    cut?: boolean;
     showControls?: boolean;
     onstatus?: (s: 'idle' | 'building' | 'ok' | 'error') => void;
     onerror?: (e: string | null) => void;
@@ -98,6 +100,10 @@
           // Positional args; the endpoint pairs them with param names
           // pulled from `export const meta` in source.
           args,
+          // Hint for the endpoint — it ALWAYS bakes both `full` and
+          // `cut`, so this is informational only today. Kept for
+          // forward-compat if we ever skip the cut bake server-side.
+          cut,
         }),
         signal: ac.signal,
       });
@@ -108,7 +114,10 @@
         return;
       }
       const data = await r.json();
-      setBlobUrl(data.full);
+      // The endpoint returns BOTH `full` and `cut` (the cut bake is
+      // best-effort and may be null for one-sided geometry); pick based
+      // on the toggle, fall back to full when cut is unavailable.
+      setBlobUrl(cut && data.cut ? data.cut : data.full);
       emitStatus('ok');
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
@@ -118,7 +127,7 @@
   }
 
   $effect(() => {
-    void id; void args; void source;
+    void id; void args; void source; void cut;
     if (SceneGlb) rebuild();
   });
 </script>

@@ -26,6 +26,7 @@ import { createHash } from 'crypto';
 import { transformSync } from 'esbuild';
 import {
   M,
+  CS,
   cyl,
   tube,
   mv,
@@ -216,6 +217,7 @@ interface ParsedImports {
  *  these positionally into `new Function`. */
 const HELPER_NAMES = new Set([
   'M',
+  'CS',
   'cyl',
   'tube',
   'mv',
@@ -589,6 +591,7 @@ export function loadGeomFromSource(
   const exportsObj: Record<string, unknown> = {};
   const helperValues: unknown[] = [
     M,
+    CS,
     cyl,
     tube,
     mv,
@@ -602,6 +605,7 @@ export function loadGeomFromSource(
   ];
   const helperParamNames = [
     'M',
+    'CS',
     'cyl',
     'tube',
     'mv',

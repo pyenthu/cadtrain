@@ -130,19 +130,26 @@
       {#if showCutaway}
         <T.Mesh geometry={cutGeo}>
           <T.MeshPhongMaterial
-            vertexColors specular="#ffffff" shininess={300} side={THREE.DoubleSide}
+            vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide}
             oncreate={(mat) => attachWarpShader(mat)}
           />
           <!-- Skip Edges overlay for multi-part assemblies: 10 EdgesGeometry
                passes (one per mesh) tank mobile interaction frame rate. The
                edges look messy on assemblies anyway since each part's outline
-               doesn't connect to its neighbour. Kept for single primitives. -->
+               doesn't connect to its neighbour. Kept for single primitives.
+
+               flatShading: true derives one normal per face in the shader
+               via dFdx/dFdy on position — matches the GLB Scene's faceted
+               look (see ComponentSceneGlb.svelte:dressGltfScene) and avoids
+               the dull/uniform appearance that smoothed Manifold-baked
+               vertex normals produce on flat-walled primitives (cube +
+               sphere-subtract reported flat in NORMAL mode 2026-05-20). -->
           {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {:else}
         <T.Mesh geometry={fullGeo}>
           <T.MeshPhongMaterial
-            color="#cc2222" specular="#ffffff" shininess={300} side={THREE.DoubleSide}
+            color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide}
             oncreate={(mat) => attachWarpShader(mat)}
           />
           {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}

@@ -62,6 +62,54 @@ export const M: any = new Proxy(
   },
 );
 
+/** CrossSection class — same live-read Proxy pattern as M but resolved
+ *  through `wasm.CrossSection`. Lets sandboxed volume components do
+ *  `new CS([poly]).extrude(h)` without reaching for the wasm module. */
+export const CS: any = new Proxy(
+  function () {},
+  {
+    get(_t, prop) {
+      const w = G.__cadtrain_manifold__.wasm;
+      if (!w) return undefined;
+      const c = w.CrossSection;
+      const v = c[prop];
+      return typeof v === 'function' ? v.bind(c) : v;
+    },
+    has(_t, prop) {
+      const w = G.__cadtrain_manifold__.wasm;
+      return !!w && prop in w.CrossSection;
+    },
+    construct(_t, args) {
+      const w = G.__cadtrain_manifold__.wasm;
+      if (!w) throw new Error('CrossSection accessed before initManifold()');
+      return new w.CrossSection(...(args as any[]));
+    },
+  },
+);
+
+/** Mesh class — same proxy pattern. Used by raw-vertex primitives that
+ *  build a manifold by handing it a triangle soup:
+ *    new M(new Mesh({ numProp: 3, vertProperties, triVerts }))
+ *  Triangles must be wound CCW from outside and form a closed 2-manifold,
+ *  otherwise the Manifold constructor will throw. */
+export const Mesh: any = new Proxy(
+  function () {},
+  {
+    get(_t, prop) {
+      const w = G.__cadtrain_manifold__.wasm;
+      if (!w) return undefined;
+      const c = w.Mesh;
+      const v = c[prop];
+      return typeof v === 'function' ? v.bind(c) : v;
+    },
+    construct(_t, args) {
+      const w = G.__cadtrain_manifold__.wasm;
+      if (!w) throw new Error('Mesh accessed before initManifold()');
+      return new w.Mesh(...(args as any[]));
+    },
+  },
+);
+
 export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
   currentSegments = mode === 'compose' ? CIRCULAR_SEGMENTS_COMPOSE : CIRCULAR_SEGMENTS_DEFAULT;
   const w = G.__cadtrain_manifold__.wasm;
@@ -202,82 +250,47 @@ export function revolve(contourJson: string, _unused1?: number, _unused2?: numbe
   return cs.revolve(currentSegments);
 }
 
-/** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60, 2 = ACME 29°), taper (degrees/side, 0 = straight). Pair with subtract to cut threads into a body. */
+// helix_band_v2 / helix_band_v3_extrude — moved to volume primitives
+// at <volume>/primitives/<id>/source.ts. The bundle keeps only v1
+// (helix_band) so existing bundle component `thread_helix.ts` and
+// `/api/primitives/preview`'s shipped helpers stay intact. New helix
+// experiments live in the volume sandbox.
+
+/** @part Helical thread band — od, length, tpi, depth, profile (0 = square, 1 = V60, 2 = ACME 29°), taper (degrees/side, 0 = straight). Pair with subtract to cut threads into a body. Union-of-cubes approach. */
 export function helix_band(od: number, length: number, tpi: number, depth: number, profile: number, taper: number): any {
   if (!G.__cadtrain_manifold__.wasm) {
     throw new Error('manifold not initialised — call initManifold() first');
   }
-
-  // Many-wedges approach. CrossSection.extrude(twist) was wrong: a
-  // narrow 2D cross-section gets swept around the Z axis and the
-  // resulting groove at any θ is too thin axially (width = 2*halfW /
-  // (twistDegrees * length) — for typical thread params, ~0.002").
-  //
-  // Instead we union N small tooth blocks placed along the helix.
-  // Each block is the local thread cross-section, rotated to its θ
-  // and translated to its z. Adjacent blocks overlap tangentially so
-  // the result is a continuous helical ridge.
   const pitch = 1 / Math.max(tpi, 0.0001);
   const numTurns = length * tpi;
   const segmentsPerTurn = 24;
   const totalSegments = Math.max(8, Math.ceil(numTurns * segmentsPerTurn));
-
-  // Tooth dimensions
-  const axialExtent = pitch * 0.5; // tooth occupies ~50% of pitch axially
+  const axialExtent = pitch * 0.5;
   const taperTan = Math.tan(Math.max(0, taper) * Math.PI / 180);
 
   let band: any = null;
   for (let i = 0; i < totalSegments; i++) {
     const angleDeg = (i / segmentsPerTurn) * 360;
     const z = (i / totalSegments) * length;
-
-    // Taper — the cut depth shrinks linearly with z. Tooth tip moves
-    // inward, fading the thread as it climbs. Clamp to a tiny positive
-    // depth so a tapered-out tooth still produces a valid (but
-    // vanishingly small) cube rather than a degenerate one.
     const localDepth = Math.max(0.005, depth - z * taperTan);
-
-    // Local segment arc length at the OUTER cylinder surface — width
-    // we extend tangentially so adjacent blocks overlap. 1.6× the bare
-    // arc-length covers the gap from neighbour rotation cleanly.
     const segArcLen = (2 * Math.PI * (od / 2)) / segmentsPerTurn;
     const tangentialExtent = segArcLen * 1.6;
 
-    // Profile shapes the tooth's axial cross-section.
-    // 0 = Square: full rectangular block
-    // 1 = V60: V-trapezoidal — narrower at the OD surface
-    // 2 = ACME: wider at the root, narrower at the crest (similar to V
-    //   but less aggressive). For v1, V60 and ACME both narrow the
-    //   tangential extent over the radial depth — approximated by
-    //   stacking two thinner blocks at half-depth offsets. Full
-    //   triangular cross-sections need polygon-extrude per segment
-    //   which is a later refinement.
     let tooth: any;
     if (profile === 1 || profile === 2) {
-      // Narrower crest — use a slightly trimmed tangential extent at
-      // the OD half. Visually distinguishable from Square.
       const crestRatio = profile === 1 ? 0.4 : 0.6;
-      tooth = M.cube(
-        [localDepth + 0.02, tangentialExtent * crestRatio, axialExtent],
-        false,
-      );
-      // Center on Y axis, sit at the right radial position.
+      tooth = M.cube([localDepth + 0.02, tangentialExtent * crestRatio, axialExtent], false);
       tooth = tooth
         .translate([od / 2 - localDepth, -(tangentialExtent * crestRatio) / 2, 0])
         .rotate([0, 0, angleDeg])
         .translate([0, 0, z]);
     } else {
-      // Square — full block.
-      tooth = M.cube(
-        [localDepth + 0.02, tangentialExtent, axialExtent],
-        false,
-      );
+      tooth = M.cube([localDepth + 0.02, tangentialExtent, axialExtent], false);
       tooth = tooth
         .translate([od / 2 - localDepth, -tangentialExtent / 2, 0])
         .rotate([0, 0, angleDeg])
         .translate([0, 0, z]);
     }
-
     band = band ? M.union(band, tooth) : tooth;
   }
   return band;
