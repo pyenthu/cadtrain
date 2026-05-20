@@ -1,10 +1,15 @@
 /**
  * Library — the volume-resident component store.
  *
- * Each part is a self-contained DIRECTORY under
- * `<volume>/library/<category>/<id>/`:
+ * NOTE (2026-05-20): the on-volume root was renamed `library/` →
+ * `components/` as part of the 4-dir volume restructure. This module is
+ * still called "library" (the concept) but resolves part dirs under
+ * `<volume>/components/<category>/<id>/`. The 4 categories are unchanged.
  *
- *   library/
+ * Each part is a self-contained DIRECTORY under
+ * `<volume>/components/<category>/<id>/`:
+ *
+ *   components/
  *     test/        <id>/{ component.ts, picture.png, mesh.glb,
  *     basic/                instructions.md, prompts.json, meta.json }
  *     parts/
@@ -163,7 +168,7 @@ async function volume() {
 /** Absolute path to a category directory (may not exist yet). */
 export async function categoryDir(cat: LibraryCategory): Promise<string> {
   const { volumePath } = await volume();
-  return volumePath(`library/${cat}`);
+  return volumePath(`components/${cat}`);
 }
 
 /** Absolute path where a part WOULD live in a given category. The
@@ -171,13 +176,13 @@ export async function categoryDir(cat: LibraryCategory): Promise<string> {
  *  part actually is. */
 export async function partDirIn(cat: LibraryCategory, id: string): Promise<string> {
   const { volumePath } = await volume();
-  return volumePath(`library/${cat}/${id}`);
+  return volumePath(`components/${cat}/${id}`);
 }
 
 /** Create the 4 category directories if missing. Idempotent. */
 export async function ensureLibrary(): Promise<void> {
   const { ensureDir } = await volume();
-  for (const cat of LIBRARY_CATEGORIES) ensureDir(`library/${cat}`);
+  for (const cat of LIBRARY_CATEGORIES) ensureDir(`components/${cat}`);
 }
 
 async function readPartMeta(dir: string): Promise<PartMeta> {
@@ -297,5 +302,5 @@ export async function listLibraryParts(): Promise<ResolvedPart[]> {
  *  Returns null when the part has no picture.png. */
 export function picturePathRel(part: ResolvedPart): string | null {
   if (!part.hasPicture) return null;
-  return `library/${part.category}/${part.id}/${PART_FILES.picture}`;
+  return `components/${part.category}/${part.id}/${PART_FILES.picture}`;
 }
