@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { CIRCULAR_SEGMENTS_DEFAULT } from '$lib/cad/manifold-helpers';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { finalizeManifold, setRenderZScale } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 
@@ -110,19 +111,8 @@ export const POST = async ({ request }) => {
   if (typeof zScale === 'number' && zScale > 0) setRenderZScale(zScale);
   let primFn: any;
   try {
-    const factory = new Function(
-      'M', 'cyl', 'tube', 'mv', 'rot', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
-      'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
-      'helix_band', 'revolve', 'profile_extrude', 'G', 'Math',
-      wrapper,
-    );
-    primFn = factory(
-      helpers.M, helpers.cyl, helpers.tube, helpers.mv, helpers.rot,
-      helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
-      helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
-      helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-      globalThis, Math,
-    );
+    const factory = new Function(...SANDBOX_ARG_NAMES, wrapper);
+    primFn = factory(...sandboxArgValues());
   } catch (e: any) {
     throw error(400, `factory build failed: ${e?.message ?? e}`);
   }
@@ -131,22 +121,14 @@ export const POST = async ({ request }) => {
     // a cloned source still has the old function name, or the user
     // renamed the function in their edit. Friendlier than failing hard.
     const allExports = (new Function(
-      'M', 'cyl', 'tube', 'mv', 'rot', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
-      'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
-      'helix_band', 'revolve', 'profile_extrude', 'G', 'Math',
+      ...SANDBOX_ARG_NAMES,
       `"use strict";
        const module = { exports: {} };
        const exports = module.exports;
        const currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
        ${js}
        return module.exports;`,
-    ))(
-      helpers.M, helpers.cyl, helpers.tube, helpers.mv, helpers.rot,
-      helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
-      helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
-      helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-      globalThis, Math,
-    );
+    ))(...sandboxArgValues());
     const exportNames = Object.keys(allExports ?? {});
     const firstFn = exportNames.map((k) => allExports[k]).find((v) => typeof v === 'function');
     if (typeof firstFn !== 'function') {

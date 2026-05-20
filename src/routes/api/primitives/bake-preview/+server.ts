@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { CIRCULAR_SEGMENTS_DEFAULT } from '$lib/cad/manifold-helpers';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { buildGlbBytes } from '$lib/server/manifold-bake';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
@@ -88,19 +89,8 @@ export const POST = async ({ request }) => {
   await helpers.initManifold();
   let allExports: any;
   try {
-    const factory = new Function(
-      'M', 'cyl', 'tube', 'mv', 'rot', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
-      'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
-      'helix_band', 'revolve', 'profile_extrude', 'G', 'Math',
-      wrapper,
-    );
-    allExports = factory(
-      helpers.M, helpers.cyl, helpers.tube, helpers.mv, helpers.rot,
-      helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
-      helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
-      helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-      globalThis, Math,
-    );
+    const factory = new Function(...SANDBOX_ARG_NAMES, wrapper);
+    allExports = factory(...sandboxArgValues());
   } catch (e: any) {
     throw error(400, `factory build failed: ${e?.message ?? e}`);
   }
