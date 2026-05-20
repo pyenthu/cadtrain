@@ -205,10 +205,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
   // Figure-draft first save: copy the source figure into the new part
   // directory as `picture.png` so the picture travels with the part.
-  // Best-effort + path-restricted to figures/ — a bad/missing figure
-  // never fails the save.
+  // Best-effort + path-restricted to archive/figures/ — a bad/missing
+  // figure never fails the save.
   if (wroteToLibrary && typeof picture === 'string' && picture) {
-    if (/^figures\/[^/]+\.png$/.test(picture)) {
+    if (/^archive\/figures\/[^/]+\.png$/.test(picture)) {
       try {
         const src = safeVolumePath(picture);
         if (existsSync(src)) {

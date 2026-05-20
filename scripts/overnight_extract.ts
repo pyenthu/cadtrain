@@ -41,7 +41,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const OUT_DIR = resolve(REPO, 'static/tests/extracted');
 // The figure gallery lives on the volume (not static/, not git).
-const FIGURES_DIR = volumePath('figures');
+const FIGURES_DIR = volumePath('archive/figures');
 const GALLERY = join(FIGURES_DIR, 'gallery.json');
 const COMPONENTS_DIR = resolve(REPO, 'src/lib/cad/components');
 const LOG_FILE = resolve(OUT_DIR, '_run.log');

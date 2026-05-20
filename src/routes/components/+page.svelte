@@ -718,7 +718,7 @@
       await fetch(volumeUrl(fig.thumb), { method: 'DELETE' });
       // Rewrite gallery.json without this figure so a reload stays consistent.
       const next = figures.filter((f) => f.id !== fig.id);
-      await fetch(volumeUrl('figures/gallery.json'), {
+      await fetch(volumeUrl('archive/figures/gallery.json'), {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ generated_at: figuresLoadedAt ?? new Date().toISOString(), items: next }),
@@ -736,7 +736,7 @@
 
   async function loadFiguresGallery() {
     try {
-      const r = await fetch(volumeUrl('figures/gallery.json'), { cache: 'no-store' });
+      const r = await fetch(volumeUrl('archive/figures/gallery.json'), { cache: 'no-store' });
       if (!r.ok) return;
       const payload = await r.json();
       if (Array.isArray(payload?.items)) {

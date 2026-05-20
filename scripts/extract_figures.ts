@@ -34,8 +34,8 @@ import { volumePath } from './_volume';
 const ROOT = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const KB_DIR = join(ROOT, 'kb-sources');
 // Output on the volume, not static/ — figures are regenerable data, not
-// source. Local dev: <repo>/figures/. Railway: /app_data/figures/.
-const FIGURES_REL = 'figures';
+// source. Local dev: <repo>/archive/figures/. Railway: /app_data/archive/figures/.
+const FIGURES_REL = 'archive/figures';
 const OUT_DIR = volumePath(FIGURES_REL);
 
 // Figure-rich PDFs only — the casing-tubing data PDFs are spec tables,
