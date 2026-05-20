@@ -1,33 +1,19 @@
 import { json, error } from '@sveltejs/kit';
-import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
-import { CIRCULAR_SEGMENTS_DEFAULT } from '$lib/cad/manifold-helpers';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
+import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
 import { buildGlbBytes } from '$lib/server/manifold-bake';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 // POST /api/primitives/bake-preview
 //   { id, name, source, params }
 // Mirrors /api/primitives/preview but returns GLB bytes (full + cut)
-// instead of the serialized mesh JSON. Used by the /primitives canvas
-// GLB sub-pane to show what bakeGlb() would write to disk WITHOUT
-// touching the filesystem.
-//
-// Same sandbox layers as /preview: stripImports → esbuild → new Function
-// with the manifold helpers in scope. We wrap the positional primFn
-// into a record-shaped geom (the shape buildGlbBytes expects) by
-// pulling the param order from the source's `export const meta`.
+// instead of the serialized mesh JSON. Builds the geom via
+// primitive-loader.buildPrimitiveGeom (which resolves the source's
+// `meta.uses` deps), then wraps the positional primFn into the
+// record-shaped geom buildGlbBytes expects, using the param order from
+// the source's `export const meta`.
 
-const IMPORT_RE = /import\s+(?:type\s+)?(?:\{([^}]*)\})?\s*(?:from\s*)?['"]([^'"]+)['"]\s*;?/g;
-function stripImports(src: string): string {
-  let stripped = src;
-  let m: RegExpExecArray | null;
-  IMPORT_RE.lastIndex = 0;
-  while ((m = IMPORT_RE.exec(src)) !== null) stripped = stripped.replace(m[0], '');
-  return stripped;
-}
-
-export const POST = async ({ request }) => {
+export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
@@ -69,37 +55,15 @@ export const POST = async ({ request }) => {
     throw error(400, 'either `args` (array) or `params` (record) required');
   }
 
-  // Build the sandbox factory and pull primFn (positional). Same
-  // approach as /api/primitives/preview's sandbox path.
-  const stripped = stripImports(source);
-  let js: string;
-  try {
-    js = transformSync(stripped, { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
-  } catch (e: any) {
-    throw error(400, `esbuild transform failed: ${e?.message ?? e}`);
-  }
-  const wrapper = `
-    "use strict";
-    const module = { exports: {} };
-    const exports = module.exports;
-    const currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
-    ${js}
-    return module.exports;
-  `;
+  // Build the geom (positional) via the shared loader — resolves the
+  // source's meta.uses deps + injects the helper scope. Same path as
+  // /api/primitives/preview.
   await helpers.initManifold();
-  let allExports: any;
+  let primFn: any;
   try {
-    const factory = new Function(...SANDBOX_ARG_NAMES, wrapper);
-    allExports = factory(...sandboxArgValues());
+    primFn = await buildPrimitiveGeom(source, name, fetch);
   } catch (e: any) {
-    throw error(400, `factory build failed: ${e?.message ?? e}`);
-  }
-  let primFn: any = allExports?.[name];
-  if (typeof primFn !== 'function') {
-    primFn = Object.values(allExports ?? {}).find((v) => typeof v === 'function');
-  }
-  if (typeof primFn !== 'function') {
-    throw error(400, `no callable export found in source (looked for "${name}")`);
+    throw error(400, `primitive build failed: ${e?.message ?? e}`);
   }
 
   // Wrap positional → record. buildGlbBytes hands the geom a params
