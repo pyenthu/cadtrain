@@ -41,10 +41,20 @@ deployment-time variables are honoured without rebuilds.
 | `/api/components/prompts` | GET/PUT | `?id=<id>` per-component AI prompt history, stored at `library/<cat>/<id>/prompts.json`. Backs the AI inspector tab's History sub-tab. |
 | `/api/components/picture` | GET | `?id=<id>` streams a library part's `picture.png` (reference figure). |
 
-**None of the `/api/components/*` endpoints are proxied** — they all
-operate on the LOCAL library (`<volume>/library/`), so in proxied dev
-mode they still talk to the local store rather than prod. This is
-deliberate: a save shouldn't silently mutate prod.
+**Single live store (since 2026-05-20): `/api/components/*` and
+`/api/primitives/*` data endpoints ARE proxied to prod** when
+`CADTRAIN_VOLUME_REMOTE_URL` is set. The proxy is centralized in
+`src/hooks.server.ts` via the `VOLUME_PROXY_PATHS` exact-path allowlist
+(components: list, save, move, delete, instructions, picture, prompts,
+rename, glb, geom, bake-preview; primitives: list, save, source, delete,
+restore). So in local dev a save/render reads+writes the PROD volume —
+local dev and prod share ONE store. Excluded (stay local):
+`primitives/{preview,bake-preview}` (stateless compute — fast local WASM
+render) and `components/refine` + `identify` + `refine` + `wells/extract`
+(VLM — keep the local API key). `/api/volume` + `/api/kb/*` self-proxy
+in-endpoint. The `X-Volume-Local: 1` header forces local FS (e2e tests).
+This reverses the prior "a save shouldn't silently mutate prod" stance —
+the user chose prod as the single store.
 
 ### Volume + KB
 

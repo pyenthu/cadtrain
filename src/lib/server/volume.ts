@@ -39,14 +39,14 @@ function resolveRoot(): string {
   }
   if (env.APP_DATA_DIR && existsSync(env.APP_DATA_DIR)) return resolve(env.APP_DATA_DIR);
   if (existsSync('/app_data')) return '/app_data';
-  // Local-dev fallback: if `kb-sources/` is already populated at the
-  // project root (the gitignored kb-sources dir is the dev workflow), use
-  // the project root as the volume root so PDFs there work without
-  // having to symlink them into ./.dev-volume. Falls through to a
-  // dedicated `.dev-volume/` directory when the project doesn't have
-  // local kb-sources content yet (e.g. fresh clone).
+  // Local-dev fallback: a dedicated `.dev-volume/` directory. The old
+  // "project root IS the volume when kb-sources/ exists" heuristic was
+  // removed (2026-05-20) — with prod as the single live store, all
+  // volume-data endpoints proxy to prod, so the local FS root only needs
+  // to be deterministic (and the orphaned repo-root data dirs no longer
+  // shadow it). Override with CADTRAIN_VOLUME_ROOT if you really want a
+  // local FS store.
   const cwd = process.cwd();
-  if (existsSync(resolve(cwd, 'kb-sources'))) return cwd;
   const dev = resolve(cwd, '.dev-volume');
   if (!existsSync(dev)) {
     try { mkdirSync(dev, { recursive: true }); } catch { /* read-only FS in tests */ }
