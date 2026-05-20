@@ -59,13 +59,14 @@
     // Add + focus the tab IMMEDIATELY (non-blocking), then load its source
     // in the background and mount the view when it arrives. Opening and
     // switching never stall, and multiple tabs load concurrently.
-    const tab: Tab = { entry: e, serverSource: '', loading: true };
-    openTabs = [...openTabs, tab];
+    openTabs = [...openTabs, { entry: e, serverSource: '', loading: true }];
     activeId = e.id;
     fetchSourceFor(e.id).then((data) => {
-      tab.serverSource = data?.source ?? '';
-      tab.loading = false;
-      openTabs = [...openTabs];
+      // Replace the tab object (new ref) so $state reactivity fires — do
+      // NOT mutate the original raw object (it isn't the proxied element).
+      openTabs = openTabs.map((t) =>
+        t.entry.id === e.id ? { ...t, serverSource: data?.source ?? '', loading: false } : t,
+      );
     });
   }
   function closeTab(id: string, ev?: Event) {
@@ -76,7 +77,7 @@
   }
   async function loadFromServerFor(tab: Tab) {
     const data = await fetchSourceFor(tab.entry.id);
-    if (data) { tab.serverSource = data.source; openTabs = [...openTabs]; }
+    if (data) openTabs = openTabs.map((t) => t.entry.id === tab.entry.id ? { ...t, serverSource: data.source } : t);
   }
 
   onMount(async () => {
@@ -97,8 +98,7 @@
     if (!r.ok) { status = `Save failed: ${await r.text()}`; return; }
     status = `Saved ${tab.entry.id}.`;
     await refreshList();
-    tab.serverSource = newSource;
-    openTabs = [...openTabs];
+    openTabs = openTabs.map((t) => t.entry.id === tab.entry.id ? { ...t, serverSource: newSource } : t);
   }
 
   // Rewrite the default literals inside `export const meta = {...}` so
