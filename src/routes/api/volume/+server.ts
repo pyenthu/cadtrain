@@ -164,14 +164,21 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
     throw error(500, e?.message ?? String(e));
   }
 
-  // Guard: never let a top-level volume directory (archive / components /
-  // primitives / training / …) be deleted. A single-segment relative path
-  // that resolves to a directory IS a top-level dir — refuse it. Nested
-  // files/dirs delete normally. (UI hides the control too; this also
-  // protects curl/script callers and the proxied prod path.)
+  // Guard: protect top-level volume directories (archive / components /
+  // primitives / training / …) — a single-segment relative path that
+  // resolves to a directory IS a top-level dir. Allow removal ONLY when
+  // it's EMPTY (cleanup of a retired dir, e.g. library/ after the rename);
+  // refuse if it still holds data so a stray UI/curl click can't nuke a
+  // live store. Nested files/dirs delete normally. (UI hides the control
+  // for top-level dirs too; this also guards curl/script + proxied prod.)
   const relForGuard = relative(VOLUME_ROOT, abs);
   if (stat.isDirectory() && relForGuard && !/[\\/]/.test(relForGuard)) {
-    throw error(403, `Refusing to delete top-level volume directory "${relForGuard}".`);
+    let kids: string[];
+    try { kids = await fsp.readdir(abs); }
+    catch { kids = ['?']; /* unreadable → treat as non-empty (refuse) */ }
+    if (kids.length > 0) {
+      throw error(403, `Refusing to delete non-empty top-level volume directory "${relForGuard}" (${kids.length} entries).`);
+    }
   }
 
   const recursive = url.searchParams.get('recursive') === '1';
