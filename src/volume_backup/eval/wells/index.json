@@ -1,0 +1,198 @@
+{
+  "cases": [
+    {
+      "id": "Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021",
+      "title": "Ananas-13",
+      "subtitle": "Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021",
+      "source": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Ananas-13-Rig109-Workover_Report_CEW_ESP_WSO-BP_-Dec_11_2021.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "Ananas-13_Completion_Report_2016-06-08",
+      "title": "Ananas-13",
+      "subtitle": "Ananas-13_Completion_Report_2016-06-08",
+      "source": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Ananas-13_Completion_Report_2016-06-08.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar",
+      "title": "Ananas W-6",
+      "subtitle": "Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar",
+      "source": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Ananas_W-6_-Rig109_Workover_Report__Convert_to_Disposal__Mar.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "Hammal-19_New_well_ESP_workover_report_2015_11_17",
+      "title": "Hammal-19",
+      "subtitle": "Hammal-19_New_well_ESP_workover_report_2015_11_17",
+      "source": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Hammal-19_New_well_ESP_workover_report_2015_11_17.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "Hammal-5_Workover_Report_20140707",
+      "title": "Hammal-5",
+      "subtitle": "Hammal-5_Workover_Report_20140707",
+      "source": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Hammal-5_Workover_Report_20140707.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "Hammal_-20-rig66_completion_report_gravel_packer_ESP_",
+      "title": "Hammal-20",
+      "subtitle": "Hammal_-20-rig66_completion_report_gravel_packer_ESP_",
+      "source": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Hammal_-20-rig66_completion_report_gravel_packer_ESP_.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015",
+      "title": "Mooz S-3",
+      "subtitle": "Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015",
+      "source": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.png",
+      "source_kind": "image",
+      "truth": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.truth.json",
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/Mooz_S-3_PCM_PCP_completion_report_Oct__7_2015.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": true
+    },
+    {
+      "id": "ABJF-610",
+      "title": "ABJF-610",
+      "subtitle": "ABJF-610 WELL SECUREMENT PROGRAM USING TTBP (PWI, HORIZONTAL) \u2014 real Aramco PDF, no ground truth",
+      "source": "/api/volume?path=eval/wells/ABJF-610.pdf",
+      "source_kind": "pdf",
+      "truth": null,
+      "extracted": {
+        "api": {
+          "opus": "/api/volume?path=eval/wells/ABJF-610.extracted.api.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/ABJF-610.extracted.api.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/ABJF-610.extracted.api.haiku.json"
+        },
+        "cli": {
+          "opus": "/api/volume?path=eval/wells/ABJF-610.extracted.cli.opus.json",
+          "sonnet": "/api/volume?path=eval/wells/ABJF-610.extracted.cli.sonnet.json",
+          "haiku": "/api/volume?path=eval/wells/ABJF-610.extracted.cli.haiku.json"
+        }
+      },
+      "has_truth": false
+    }
+  ],
+  "backends": [
+    {
+      "id": "api",
+      "label": "API",
+      "description": "@anthropic-ai/sdk \u2192 ANTHROPIC_API_KEY (per-token, prod path)"
+    },
+    {
+      "id": "cli",
+      "label": "CLI",
+      "description": "claude --print subprocess \u2192 Pro/Max OAuth (subscription, local-only)"
+    }
+  ],
+  "models": [
+    {
+      "id": "opus",
+      "label": "Opus 4.7"
+    },
+    {
+      "id": "sonnet",
+      "label": "Sonnet 4.6"
+    },
+    {
+      "id": "haiku",
+      "label": "Haiku 4.5"
+    }
+  ]
+}

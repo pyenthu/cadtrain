@@ -1,0 +1,109 @@
+{
+  "meta": {
+    "wellName": "Mooz S-3",
+    "units": "m",
+    "td": 1751,
+    "rkbToGl": 6.3,
+    "description": "Proposed Well Schematic - Mooz S-3"
+  },
+  "oh": [
+    {
+      "bitSize": 6,
+      "top": 1250,
+      "bot": 1751
+    }
+  ],
+  "ch": [
+    {
+      "od": 10.75,
+      "id": 10.05,
+      "top": 0,
+      "bot": 503.6,
+      "grade": "K-55",
+      "weight": 40.5,
+      "type": "Surface Casing"
+    },
+    {
+      "od": 7,
+      "id": 6.276,
+      "top": 0,
+      "bot": 1250,
+      "grade": "N-80",
+      "weight": 26,
+      "type": "Production Casing"
+    }
+  ],
+  "cementing": [
+    {
+      "od": 7,
+      "top": 1246,
+      "bot": 1250
+    }
+  ],
+  "completions": [
+    {
+      "description": "Sucker Rod",
+      "od": 1,
+      "top": 0,
+      "bot": 1091.86
+    },
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 0,
+      "bot": 1085
+    },
+    {
+      "description": "Centralizer",
+      "od": 4,
+      "top": 620,
+      "bot": 622
+    },
+    {
+      "description": "Rotor",
+      "od": 3.5,
+      "top": 1075,
+      "bot": 1085
+    },
+    {
+      "description": "Stator",
+      "od": 4,
+      "top": 1078,
+      "bot": 1088
+    },
+    {
+      "description": "Stop Bush",
+      "od": 4,
+      "top": 1088,
+      "bot": 1090
+    },
+    {
+      "description": "Pump",
+      "tool_comp": "PCP Pump",
+      "od": 4,
+      "top": 1090,
+      "bot": 1093.86
+    },
+    {
+      "description": "Torque Anchor",
+      "od": 5,
+      "top": 1093.86,
+      "bot": 1098
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1188.5,
+      "bot": 1200,
+      "label": "Yabus-VI (Exist)"
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus-VI",
+      "top": 1188.5,
+      "color": "#a8e063"
+    }
+  ],
+  "profile": []
+}

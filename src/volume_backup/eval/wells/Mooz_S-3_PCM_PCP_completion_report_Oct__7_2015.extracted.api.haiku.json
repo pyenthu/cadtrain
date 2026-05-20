@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "wellName": "Mooz S-3",
+    "units": "m",
+    "td": 1751,
+    "rkbToGl": 6.3,
+    "description": "Proposed well schematic"
+  },
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "top": 0,
+      "bot": 503.6,
+      "grade": "K-55",
+      "weight": 40.5
+    },
+    {
+      "od": 7,
+      "top": 1246,
+      "bot": 1751,
+      "grade": "N-80",
+      "weight": 26
+    }
+  ],
+  "cementing": [],
+  "completions": [
+    {
+      "description": "3 1/2\" Tubing",
+      "top": 0,
+      "bot": 1091.86
+    },
+    {
+      "description": "Sucker Rod",
+      "top": 0,
+      "bot": 503.6
+    },
+    {
+      "description": "Centralizer",
+      "top": 503.6,
+      "bot": 503.6
+    },
+    {
+      "description": "Rotor",
+      "tool_comp": true,
+      "top": 800,
+      "bot": 900
+    },
+    {
+      "description": "Stator",
+      "tool_comp": true,
+      "top": 900,
+      "bot": 1000
+    },
+    {
+      "description": "Stop Bush",
+      "top": 1000,
+      "bot": 1050
+    },
+    {
+      "description": "Torque Anchor",
+      "top": 1091.86,
+      "bot": 1091.86
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1188.5,
+      "bot": 1200,
+      "label": "Yabus-VI"
+    }
+  ],
+  "strata": [
+    {
+      "name": "Yabus-VI",
+      "top": 1188.5
+    }
+  ],
+  "profile": []
+}

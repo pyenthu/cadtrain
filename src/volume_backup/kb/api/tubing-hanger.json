@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "extracted_at": "2026-05-13",
+  "source_url": "https://miracleoilfield.com/tubing-hanger-spools-and-couplings/",
+  "source_file": "Miracle Industries — Tubing Hanger Spools and Couplings (web product page)",
+  "row_count": 11,
+  "description": "Tubing Hanger Spool (THS) + Tubing Hanger Coupling (THC) catalogue. The spool sits between the casing head and the Christmas tree; it carries the tubing hanger that suspends the production tubing string. Flanges are sized per API 6A pressure class. The coupling variant uses a union nut so the back-pressure valve can be installed without rotating the tree.",
+  "rows": [
+    {
+      "kind": "spool",
+      "model": "THS-7x2.5625-2k",
+      "bottom_flange_od_in": 7.0625,
+      "bottom_flange_pressure_psi": 2000,
+      "top_flange_od_in": 2.5625,
+      "top_flange_pressure_psi": 2000,
+      "bore_in": 2.5625,
+      "bottom_prep_in": 4.5,
+      "notes": "2M class. Bottom-prep counterbore lands a 4½\" tubing string."
+    },
+    {
+      "kind": "spool",
+      "model": "THS-7x2.0625-3kx5k",
+      "bottom_flange_od_in": 7.0625,
+      "bottom_flange_pressure_psi": 3000,
+      "top_flange_od_in": 2.0625,
+      "top_flange_pressure_psi": 5000,
+      "bore_in": 2.0625,
+      "bottom_prep_in": 4.5,
+      "notes": "Mixed-class 3M bottom / 5M top; common for older wellheads being upgraded above the casing flange."
+    },
+    {
+      "kind": "spool",
+      "model": "THS-7x2.0625-5k",
+      "bottom_flange_od_in": 7.0625,
+      "bottom_flange_pressure_psi": 5000,
+      "top_flange_od_in": 2.0625,
+      "top_flange_pressure_psi": 5000,
+      "bore_in": 2.0625,
+      "bottom_prep_in": 4.5,
+      "notes": "5M class. Most common API 6A 5K rating for moderate-pressure completions."
+    },
+    {
+      "kind": "spool",
+      "model": "THS-9x3.125-5k",
+      "bottom_flange_od_in": 9.0,
+      "bottom_flange_pressure_psi": 5000,
+      "top_flange_od_in": 3.125,
+      "top_flange_pressure_psi": 5000,
+      "bore_in": 3.125,
+      "bottom_prep_in": 6.3125,
+      "notes": "5M class, larger bore for 3½\" or larger tubing."
+    },
+    {
+      "kind": "spool",
+      "model": "THS-11x4.0625-5k",
+      "bottom_flange_od_in": 11.0,
+      "bottom_flange_pressure_psi": 5000,
+      "top_flange_od_in": 4.0625,
+      "top_flange_pressure_psi": 5000,
+      "bore_in": 4.125,
+      "bottom_prep_in": 6.875,
+      "notes": "Large-bore 5M variant; takes 4½\" tubing and a full-opening 4-1/16\" master valve."
+    },
+    {
+      "kind": "spool",
+      "model": "THS-7x2.5625-10k",
+      "bottom_flange_od_in": 7.0625,
+      "bottom_flange_pressure_psi": 10000,
+      "top_flange_od_in": 2.5625,
+      "top_flange_pressure_psi": 10000,
+      "bore_in": 2.5625,
+      "bottom_prep_in": 4.5,
+      "notes": "10M class, higher-pressure gas / HPHT applications."
+    },
+    {
+      "kind": "spool",
+      "model": "THS-7x1.8125-15k",
+      "bottom_flange_od_in": 7.0625,
+      "bottom_flange_pressure_psi": 15000,
+      "top_flange_od_in": 1.8125,
+      "top_flange_pressure_psi": 15000,
+      "bore_in": 1.8125,
+      "bottom_prep_in": 4.5,
+      "notes": "15M class. Smaller bore on the top flange — reflects API 6A pressure-vs-bore derating at 15K."
+    },
+    {
+      "kind": "coupling",
+      "model": "THC-4.5x2.375",
+      "coupling_od_in": 4.5,
+      "tubing_size_in": 2.375,
+      "thread": "API EUE",
+      "notes": "Union-nut coupling for 2-3/8\" API external-upset tubing. Lets the BPV be screwed in without spinning the tree."
+    },
+    {
+      "kind": "coupling",
+      "model": "THC-4.5x2.875",
+      "coupling_od_in": 4.5,
+      "tubing_size_in": 2.875,
+      "thread": "API EUE",
+      "notes": "Union-nut coupling for 2-7/8\" API EUE tubing."
+    },
+    {
+      "kind": "coupling",
+      "model": "THC-6.3125x3.5",
+      "coupling_od_in": 6.3125,
+      "tubing_size_in": 3.5,
+      "thread": "API EUE",
+      "notes": "Union-nut coupling for 3-1/2\" API EUE tubing."
+    },
+    {
+      "kind": "coupling",
+      "model": "THC-6.875x4.5",
+      "coupling_od_in": 6.875,
+      "tubing_size_in": 4.5,
+      "thread": "API EUE",
+      "notes": "Union-nut coupling for 4-1/2\" API EUE tubing."
+    }
+  ],
+  "fields": {
+    "kind": "'spool' (THS — flanged spool between casing head and tree) or 'coupling' (THC — union-nut coupling for BPV installation)",
+    "model": "Synthetic part number used as primary key; encodes flange sizes + pressure class",
+    "bottom_flange_od_in": "Lower flange OD (mates to casing head). Inches.",
+    "bottom_flange_pressure_psi": "API 6A pressure rating of the bottom flange (2K, 3K, 5K, 10K, 15M).",
+    "top_flange_od_in": "Upper flange OD (mates to the Christmas tree). Inches.",
+    "top_flange_pressure_psi": "API 6A pressure rating of the top flange.",
+    "bore_in": "Vertical bore through the spool. Tubing string passes through this. Inches.",
+    "bottom_prep_in": "Counterbore at the lower face that lands the tubing hanger.  Inches.",
+    "coupling_od_in": "OD of the union nut on the coupling variant. Inches.",
+    "tubing_size_in": "Nominal OD of the tubing this coupling threads onto. Inches.",
+    "thread": "Tubing thread form (API EUE = external upset end)."
+  }
+}

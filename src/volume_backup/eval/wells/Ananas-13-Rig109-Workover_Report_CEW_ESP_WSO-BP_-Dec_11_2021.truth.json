@@ -1,0 +1,214 @@
+{
+  "oh": [],
+  "ch": [
+    {
+      "od": 10.75,
+      "grade": "K-55",
+      "weight": 40.5,
+      "top": 0,
+      "bot": 458.5
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1334.5,
+      "bot": 1343.5,
+      "label": "Yabus IV"
+    },
+    {
+      "top": 1368,
+      "bot": 1370,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1374,
+      "bot": 1382,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1388,
+      "bot": 1396,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1415.5,
+      "bot": 1430,
+      "label": "Yabus VI"
+    },
+    {
+      "top": 1462,
+      "bot": 1465,
+      "label": "Yabus VII"
+    }
+  ],
+  "cementing": [],
+  "strata": [
+    {
+      "name": "Yabus IV",
+      "top": 1334.5,
+      "bot": 1343.5
+    },
+    {
+      "name": "Yabus VI",
+      "top": 1368,
+      "bot": 1396
+    },
+    {
+      "name": "Yabus VI",
+      "top": 1415.5,
+      "bot": 1430
+    },
+    {
+      "name": "Yabus VII",
+      "top": 1462,
+      "bot": 1465
+    }
+  ],
+  "completions": [
+    {
+      "description": "3 1/2\" Tubing",
+      "od": 3.5,
+      "top": 0,
+      "bot": 1200,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Drain Valve",
+      "od": 3.5,
+      "top": 1200,
+      "bot": 1205,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Check Valve",
+      "od": 3.5,
+      "top": 1205,
+      "bot": 1210,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "ESP Pump",
+      "od": 4,
+      "top": 1215,
+      "bot": 1225,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "ESP Intake",
+      "od": 4,
+      "top": 1230,
+      "bot": 1234,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "ESP Protector",
+      "od": 4,
+      "top": 1234,
+      "bot": 1245,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "ESP Motor",
+      "od": 4,
+      "top": 1245,
+      "bot": 1260,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Downhole Sensor",
+      "od": 4,
+      "top": 1260,
+      "bot": 1270,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Centralizer",
+      "od": 4,
+      "top": 1270,
+      "bot": 1275,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Bridge Plug",
+      "od": 4.5,
+      "top": 1413.5,
+      "bot": 1413.5,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    },
+    {
+      "description": "Cable",
+      "od": 1,
+      "top": 0,
+      "bot": 1260,
+      "weight": 0,
+      "noJoints": 1,
+      "avgJointLength": 10
+    }
+  ],
+  "profile": [
+    {
+      "md": 0,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 1300,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 1700,
+      "dev": 18,
+      "az": 75
+    },
+    {
+      "md": 2400,
+      "dev": 18,
+      "az": 75
+    }
+  ],
+  "openHole": [],
+  "casedHole": [
+    {
+      "od": 10.75,
+      "grade": "K-55",
+      "weight": 40.5,
+      "top": 0,
+      "bot": 458.5
+    }
+  ],
+  "meta": {
+    "wellName": "Ananas-13",
+    "rkbToGl": 7.5,
+    "pbtd": 1524.5,
+    "td": null,
+    "tubingOd": 3.5,
+    "tubingDepth": null,
+    "location": {
+      "x": 500200,
+      "y": 2750100,
+      "crs": "UTM 38N"
+    },
+    "_wellType": "producer"
+  }
+}

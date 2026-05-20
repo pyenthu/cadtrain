@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "extracted_at": "2026-05-12",
+  "source_file": "API Drill Pipe Identification chart (Drilling Professionals Page reference)",
+  "row_count": 8,
+  "description": "API tool-joint identification: grooves and slots cut into the tong-area band of a drill-pipe tool joint identify the grade + weight class. The shape is parametric (grooves are circumferential bands, slots are short axial cuts). This table is what the visual recognizer should match against.",
+  "rows": [
+    {
+      "weight_class": "STANDARD",
+      "grade": "E75",
+      "marking": "no markings",
+      "num_grooves": 0,
+      "num_slots": 0,
+      "yield_min_psi": 75000,
+      "notes": "Baseline drill pipe — no identifying marks on the tool joint."
+    },
+    {
+      "weight_class": "STANDARD",
+      "grade": "X95",
+      "marking": "one groove",
+      "num_grooves": 1,
+      "num_slots": 0,
+      "yield_min_psi": 95000,
+      "notes": "Single circumferential groove on the tong area."
+    },
+    {
+      "weight_class": "STANDARD",
+      "grade": "G105",
+      "marking": "two grooves",
+      "num_grooves": 2,
+      "num_slots": 0,
+      "yield_min_psi": 105000,
+      "notes": "Two grooves on the tong area."
+    },
+    {
+      "weight_class": "STANDARD",
+      "grade": "S135",
+      "marking": "three grooves",
+      "num_grooves": 3,
+      "num_slots": 0,
+      "yield_min_psi": 135000,
+      "notes": "Three grooves on the tong area."
+    },
+    {
+      "weight_class": "HEAVY",
+      "grade": "E75",
+      "marking": "slot",
+      "num_grooves": 0,
+      "num_slots": 1,
+      "yield_min_psi": 75000,
+      "notes": "Heavy-weight drill pipe (HWDP), grade E75 — single axial slot."
+    },
+    {
+      "weight_class": "HEAVY",
+      "grade": "G105",
+      "marking": "one wide groove",
+      "num_grooves": 1,
+      "num_slots": 0,
+      "groove_wide": true,
+      "yield_min_psi": 105000,
+      "notes": "Heavy-weight, G105 — single wide groove (wider than the standard-weight single-groove mark)."
+    },
+    {
+      "weight_class": "HEAVY",
+      "grade": "HIGH STRENGTH",
+      "marking": "groove + slot",
+      "num_grooves": 1,
+      "num_slots": 1,
+      "yield_min_psi": null,
+      "notes": "Heavy-weight high-strength drill pipe — combination of one groove + one slot."
+    },
+    {
+      "weight_class": "STANDARD",
+      "grade": "HIGH STRENGTH",
+      "marking": "slot + groove",
+      "num_grooves": 1,
+      "num_slots": 1,
+      "yield_min_psi": null,
+      "notes": "Standard-weight high-strength drill pipe — slot above a groove (mirror of heavy + groove + slot)."
+    }
+  ]
+}

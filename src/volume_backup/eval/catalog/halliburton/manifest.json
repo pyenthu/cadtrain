@@ -1,0 +1,18 @@
+{
+  "vendor": "Halliburton",
+  "source_set": "Completions Tools Diagrams",
+  "added": "2026-05-11",
+  "license_note": "Public vendor catalog. Re-distribution rights unclear — keep PDFs gitignored and reference by local path.",
+  "chapters": [
+    {
+      "id": "06_packers",
+      "file": "06_Packers.pdf",
+      "title": "Packers",
+      "chapter_number": 6,
+      "page_count": 86,
+      "indexed": false,
+      "extraction_status": "raw",
+      "notes": "Includes Wireline-Set Perma-Series, Hydraulic-Set Perma-Series, Hydrostatic-Set, Versa-Trieve, HPH/HPS, HP1, PHL, RH, G-77, ZoneGuard, AHC, MFT, RDH, HHC, HGO, Versa-Set, PLS, G-6, GO, R4. Page 3 has the application/selectivity master table; page 6 has the wireline-set spec table (50+ rows of casing × packer OD × sealbore ID combinations)."
+    }
+  ]
+}

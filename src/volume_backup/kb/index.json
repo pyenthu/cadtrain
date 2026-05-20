@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "description": "Knowledge-base manifest. Each entry points at a JSON KB file on the persistent volume (kb/) that downstream code (e.g. /author constrained parametrization, Bundle H tasks) can fetch by path.",
+  "kbs": [
+    {
+      "id": "casing-tubing-data",
+      "path": "/api/volume?path=kb/api/casing-tubing-data.json",
+      "title": "Casing, Tubing & Line-Pipe Operational Inventory (2019)",
+      "description": "Per-pipe operator inventory: 9CAT id, type (LP/CSG/TBG), nominal size, weight, supplier, grade, connection, OD, wall, ID, drift, burst, collapse, pipe + joint yield strengths, make-up torque (min/opti/max), color bands. 299 rows covering 25 line pipe + 235 casing + 39 tubing.",
+      "categories": ["api", "casing", "tubing", "line-pipe", "connection", "grade", "make-up-torque"],
+      "family": "casing_tubing",
+      "row_count": 299,
+      "source_kind": "operator_inventory",
+      "extractor": "scripts/kb/build_casing_tubing_data.ts",
+      "default_columns": [
+        "type", "size_label", "weight_lbft", "supplier", "grade", "connection",
+        "connection_od_in", "wall_in", "pipe_id_in", "drift_in",
+        "pipe_yield_klbf", "mut_opti_ftlb"
+      ]
+    },
+    {
+      "id": "tubing-hanger",
+      "path": "/api/volume?path=kb/api/tubing-hanger.json",
+      "title": "Tubing Hanger Spools & Couplings (Miracle Industries catalogue)",
+      "description": "Tubing-hanger spools (THS) sized by bottom-flange OD + top-flange OD + API 6A pressure class (2K → 15M), and tubing-hanger couplings (THC) by union-nut OD + tubing size (API EUE). Drives the tubing_hanger_spool primitive's flange / bore / prep parameters.",
+      "categories": ["api", "wellhead", "tubing-hanger", "spool", "flange", "coupling", "pressure-class"],
+      "family": "wellhead_xt",
+      "row_count": 11,
+      "source_kind": "vendor_catalog",
+      "default_columns": [
+        "kind", "model", "bottom_flange_od_in", "bottom_flange_pressure_psi",
+        "top_flange_od_in", "top_flange_pressure_psi", "bore_in", "bottom_prep_in"
+      ]
+    },
+    {
+      "id": "drill-pipe-specs",
+      "path": "/api/volume?path=kb/api/drill-pipe-specs.json",
+      "title": "API Drill Pipe Specifications (full table)",
+      "description": "Per-grade dimensional and strength data for API drill pipe — OD, wall, nominal weight, grade (E75/X95/G105/S135), tool-joint OD/ID, drift, torsional yield, make-up torque. Stub KB: rows[] not yet extracted from the underlying PDF (kb-sources/api-drill-pipe-specs.pdf).",
+      "categories": ["api", "drill-pipe", "spec", "grade", "tool-joint", "torque"],
+      "family": "drillstring",
+      "row_count": 0,
+      "source_kind": "industry_chart"
+    },
+    {
+      "id": "bha-reference",
+      "path": "/api/volume?path=kb/api/bha-reference.json",
+      "title": "Bottom-Hole Assembly (BHA) Reference",
+      "description": "Drill-string assembly patterns and component sizing — pendulum / fulcrum / packed-hole BHAs, stabilizer placement, drill-collar selection, build/drop/hold tendencies. Stub KB: rows[] not yet extracted from the underlying PDF (kb-sources/bha-reference.pdf).",
+      "categories": ["drillstring", "BHA", "bottom-hole assembly", "drill collar", "stabilizer", "directional"],
+      "family": "drillstring",
+      "row_count": 0,
+      "source_kind": "industry_chart"
+    },
+    {
+      "id": "drill-pipe-identification",
+      "path": "/api/volume?path=kb/api/drill-pipe-identification.json",
+      "title": "API Drill Pipe Tool-Joint Identification",
+      "description": "Drill-pipe tool-joint marking scheme: combinations of grooves and slots on the tong-area band identify the grade (E75, X95, G105, S135, high-strength) and weight class (standard / heavy). Drives the drill_pipe_tool_joint primitive's marking parameters.",
+      "categories": ["api", "drill-pipe", "tool-joint", "identification", "grade", "marking"],
+      "family": "drillstring",
+      "row_count": 8,
+      "source_kind": "industry_chart",
+      "default_columns": [
+        "weight_class", "grade", "marking", "num_grooves", "num_slots", "yield_min_psi"
+      ]
+    }
+  ]
+}
