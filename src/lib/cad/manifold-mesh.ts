@@ -70,9 +70,15 @@ export function gridPatch(
  * come out clean, while annular profiles (tube, tapered tube) are plain
  * quad strips. Coincident seam verts are removed later by weldAndBuild.
  *
- * Winding: the profile is traversed so a COUNTER-CLOCKWISE loop in the
- * (r, z) plane yields OUTWARD normals (matches the right-hand rule with
- * +θ rotation). If a shape comes out inside-out, reverse the profile.
+ * Winding: this triangle order yields OUTWARD-facing solids (POSITIVE
+ * Manifold volume) for a profile traversed axis→rim→up→back (e.g. the
+ * cylinder rect [0,0]→[R,0]→[R,H]→[0,H]). VERIFY ORIENTATION BY VOLUME
+ * SIGN, not by inspecting serialized normals: Manifold canonicalises the
+ * mesh it returns, so getMesh normals always look "outward" even for an
+ * inverted (negative-volume) solid. A negative `manifold.volume()` means
+ * inside-out → CSG subtract will ADD instead of carve. (Burned by exactly
+ * this 2026-05-20: a normal-based check passed while the solids were
+ * inverted; the volume sign caught it.)
  */
 export function revolveProfile(profile: [number, number][], segments: number): Patch {
   const segN = Math.max(3, Math.floor(segments));
@@ -98,13 +104,13 @@ export function revolveProfile(profile: [number, number][], segments: number): P
       const b0 = push(r1, z1, ta), b1 = push(r1, z1, tb);
       if (r0z) {
         // p0 on axis → fan triangle from the axis point a0.
-        tris.push(a0, b0, b1);
+        tris.push(a0, b1, b0);
       } else if (r1z) {
         // p1 on axis → fan triangle to the axis point b0.
-        tris.push(a0, b0, a1);
+        tris.push(a0, a1, b0);
       } else {
-        tris.push(a0, b0, b1);
-        tris.push(a0, b1, a1);
+        tris.push(a0, b1, b0);
+        tris.push(a0, a1, b1);
       }
     }
   }
@@ -187,9 +193,28 @@ export function weldAndBuild(patches: Patch[]): any {
   }
   const newTris = new Uint32Array(allT.length);
   for (let n = 0; n < allT.length; n++) newTris[n] = remap[allT[n]];
-  return new Manifold(new Mesh({
-    numProp: 3,
-    vertProperties: new Float32Array(newPos),
-    triVerts: newTris,
-  }));
+  const verts3 = new Float32Array(newPos);
+
+  let m = new Manifold(new Mesh({ numProp: 3, vertProperties: verts3, triVerts: newTris }));
+
+  // ── Orientation self-correction (the load-bearing safety net) ──────────
+  // A hand-wound mesh wound the wrong way builds a valid-but-INVERTED solid
+  // (negative volume). It renders fine (DoubleSide hides it) but CSG
+  // subtract then ADDS instead of carving — a silent, recurring footgun.
+  // Manifold canonicalises the mesh it RETURNS, so you cannot detect this
+  // from getMesh normals; the VOLUME SIGN is the only reliable signal.
+  // Here we just fix it: if the solid came out inside-out, reverse every
+  // triangle's winding and rebuild. Callers (revolveProfile, raw cubes,
+  // any future welded primitive) get an outward, positive-volume solid no
+  // matter which way they wound their triangles.
+  try {
+    if (m.volume() < 0) {
+      const flip = new Uint32Array(newTris.length);
+      for (let i = 0; i < newTris.length; i += 3) {
+        flip[i] = newTris[i]; flip[i + 1] = newTris[i + 2]; flip[i + 2] = newTris[i + 1];
+      }
+      m = new Manifold(new Mesh({ numProp: 3, vertProperties: verts3, triVerts: flip }));
+    }
+  } catch { /* volume() unavailable on a degenerate result — leave as built */ }
+  return m;
 }
