@@ -50,6 +50,16 @@ Drilling convention. Encoded into every helper and component.
 - Material: **MeshPhongMaterial** (NOT MeshPhysicalMaterial —
   physical washes out on Mac GPUs). `preserveDrawingBuffer: true` so
   the canvas is capture-able for thumbnails.
+- **`flatShading: true` on the live-mesh material** (`ComponentScene.svelte`).
+  `manifoldToGeo`/`manifoldToCutVC` bake Manifold's `calculateNormals(3, 60)`
+  (smoothed per-vertex normals) into the indexed BufferGeometry. Without
+  `flatShading`, flat faces (cubes, hex) average their corner normals and
+  read as dull/flat. `flatShading` makes the shader derive face normals
+  from position derivatives, ignoring the baked smooth normals — matches
+  the GLB pane (`ComponentSceneGlb.svelte`, which strips normals + sets
+  flatShading). The warp path is unaffected (`subdivideAlongZ` recomputes
+  its own normals on non-indexed output). Regressed once in commit 8297314;
+  don't drop `flatShading` from the live material.
 
 ## SVG export — `src/lib/cad/exporter.ts`
 
@@ -138,6 +148,18 @@ render.
 build effect dispatches on it.
 
 ## Manifold gotchas
+
+### Hand-wound raw mesh — preferred for swept/helical geometry
+
+For helical threads + swept profiles, build the triangle mesh by hand and
+wrap it: `new wasm.Manifold(new wasm.Mesh({ numProp:3, vertProperties,
+triVerts }))`. Cleaner topology + far fewer WASM ops than union-of-cubes
+(`helix_band`) or extrude+warp. **Full methodology — SVTC ordered grid
+indexing, the `-du×dv` winding rule, mandatory position-weld, triangle-fan
+caps, the `status()`-returns-a-STRING gotcha — is in `docs/CAD_AUTHORING.md`.**
+Reference primitives: `<volume>/primitives/raw_helix_1..4`. CS + Mesh are
+exposed in the library sandbox (`component-loader.ts`); volume primitives
+reach them via `G.__cadtrain_manifold__.wasm` directly.
 
 ### `CrossSection.extrude(..., scaleTop)` + `Manifold.warp` — scalar collapse
 
