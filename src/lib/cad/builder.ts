@@ -403,6 +403,28 @@ export interface ComponentResult {
   manifold: any;
 }
 
+/** Appearance pair carried on a primitive's `meta.material`. Mirrors
+ *  `PrimMaterial` in src/lib/server/primitives-meta.ts — duplicated here
+ *  to keep builder.ts free of a server-only import (it runs client-side
+ *  too). Only `color` is consumed by the live-mesh path; metallic /
+ *  roughness are GLB-only and ignored here. */
+export interface RenderMaterialSpec { color: string; metallic?: number; roughness?: number }
+export interface RenderMaterial { outer: RenderMaterialSpec; inner: RenderMaterialSpec }
+
+/** '#rrggbb' (or bare 'rrggbb') → [r, g, b] floats in 0..1. Mirrors
+ *  `hexToRgba` in manifold-bake.ts (drops alpha). Falls back to the
+ *  legacy red on a malformed string so a typo can't blank a face. */
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim());
+  if (!m) return [0.8, 0.06, 0.06];
+  const v = m[1];
+  return [
+    parseInt(v.slice(0, 2), 16) / 255,
+    parseInt(v.slice(2, 4), 16) / 255,
+    parseInt(v.slice(4, 6), 16) / 255,
+  ];
+}
+
 /**
  * Build a raw primitive manifold from the library, without any centering
  * or cutaway processing. Used by the composition interpreter
@@ -472,11 +494,11 @@ export function getRenderZScale(): number { return _renderZScale; }
  * the cutaway box and the maxOD-keyed classification work in the
  * geom's natural units.
  */
-export function finalizeManifold(manifold: any, maxOD: number): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial): ComponentResult {
   const scaled = _renderZScale === 1.0 ? manifold : manifold.scale([1, 1, _renderZScale]);
   return {
-    full: manifoldToGeo(scaled),
-    cutVC: manifoldToCutVC(scaled.subtract(getCutBox()), maxOD),
+    full: manifoldToGeo(scaled, material),
+    cutVC: manifoldToCutVC(scaled.subtract(getCutBox()), maxOD, material),
     manifold: scaled,
   };
 }
@@ -499,7 +521,7 @@ export function buildComponent(componentId: string, params: Record<string, numbe
 // directly, so it doesn't care about winding inversions, and splitting
 // at the 60° threshold keeps hard corners (cylinder caps, hex faces)
 // crisp.
-function manifoldToGeo(manifold: any): THREE.BufferGeometry {
+function manifoldToGeo(manifold: any, material?: RenderMaterial): THREE.BufferGeometry {
   let withNormals: any;
   try { withNormals = manifold.calculateNormals(3, 60); }
   catch { withNormals = manifold; }
@@ -525,10 +547,21 @@ function manifoldToGeo(manifold: any): THREE.BufferGeometry {
   geo.setIndex(new THREE.BufferAttribute(tri, 1));
   if (nrm) geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   else geo.computeVertexNormals();
+  // When a material is declared, bake a uniform per-vertex `color` =
+  // material.outer so ComponentScene's full (non-cutaway) branch can
+  // render with `vertexColors` and match the cutaway pane + GLB pane.
+  // Omitted entirely on the legacy/no-material path so the existing
+  // hardcoded `color="#cc2222"` render is byte-identical.
+  if (material) {
+    const [r, g, b] = hexToRgb(material.outer.color);
+    const col = new Float32Array(nv * 3);
+    for (let i = 0; i < nv; i++) { col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
   return geo;
 }
 
-function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
+function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial): THREE.BufferGeometry {
   // Same calculateNormals path as manifoldToGeo — keeps shading
   // consistent across the cross-section overlay.
   let withNormals: any;
@@ -546,6 +579,13 @@ function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
     pos.push(vp[i*np], vp[i*np+1], vp[i*np+2]);
     if (np >= 6) norms.push(vp[i*np+3], vp[i*np+4], vp[i*np+5]);
   }
+  // When a material is declared, drop the tube-tuned bore/cap greying
+  // heuristic entirely (it misfires on solids — see the task brief):
+  // only the cut cross-section faces get material.inner; everything
+  // else gets material.outer. When no material is passed, fall back to
+  // the legacy red/grey heuristic byte-identically.
+  const outerRgb = material ? hexToRgb(material.outer.color) : null;
+  const innerRgb = material ? hexToRgb(material.inner.color) : null;
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
@@ -565,8 +605,16 @@ function manifoldToCutVC(manifold: any, maxOD: number): THREE.BufferGeometry {
     const onCutY=Math.abs(ay)<eps&&Math.abs(by)<eps&&Math.abs(cy)<eps;
     const nzNorm=Math.abs(nz/nLen);
     const maxR=Math.max(Math.sqrt(ax*ax+ay*ay),Math.sqrt(bx*bx+by*by),Math.sqrt(cx*cx+cy*cy));
-    const isGrey=isBore||(onCutX||onCutY)||(nzNorm>0.8&&maxR<maxOD/2+0.05);
-    const r=isGrey?0.45:0.8,g=isGrey?0.45:0.06,b2=isGrey?0.45:0.06;
+    let r:number,g:number,b2:number;
+    if (outerRgb && innerRgb) {
+      // Material path: cut cross-section faces = inner, everything else = outer.
+      const onCut=onCutX||onCutY;
+      const rgb=onCut?innerRgb:outerRgb;
+      r=rgb[0];g=rgb[1];b2=rgb[2];
+    } else {
+      const isGrey=isBore||(onCutX||onCutY)||(nzNorm>0.8&&maxR<maxOD/2+0.05);
+      r=isGrey?0.45:0.8;g=isGrey?0.45:0.06;b2=isGrey?0.45:0.06;
+    }
     const idx=i*9;
     outPos[idx]=ax;outPos[idx+1]=ay;outPos[idx+2]=az;
     outPos[idx+3]=bx;outPos[idx+4]=by;outPos[idx+5]=bz;
