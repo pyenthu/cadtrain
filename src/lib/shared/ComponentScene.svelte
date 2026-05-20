@@ -147,11 +147,26 @@
           {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {:else}
+        <!-- Full (non-cutaway) mesh. When the geometry carries a baked
+             per-vertex `color` attribute (primitive declared meta.material —
+             manifoldToGeo bakes material.outer), render with `vertexColors`
+             so the live full pane matches the cutaway pane + the GLB pane.
+             When no color attribute is present (the 26 bundle primitives /
+             library parts with no material), keep the legacy hardcoded
+             red so those renders stay byte-identical. -->
+        {@const hasVC = !!fullGeo?.getAttribute?.('color')}
         <T.Mesh geometry={fullGeo}>
-          <T.MeshPhongMaterial
-            color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide}
-            oncreate={(mat) => attachWarpShader(mat)}
-          />
+          {#if hasVC}
+            <T.MeshPhongMaterial
+              vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide}
+              oncreate={(mat) => attachWarpShader(mat)}
+            />
+          {:else}
+            <T.MeshPhongMaterial
+              color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide}
+              oncreate={(mat) => attachWarpShader(mat)}
+            />
+          {/if}
           {#if showEdges && meshes.length === 1}<Edges thresholdAngle={20} color="black" />{/if}
         </T.Mesh>
       {/if}

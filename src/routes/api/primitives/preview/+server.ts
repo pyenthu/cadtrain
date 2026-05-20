@@ -4,6 +4,7 @@ import * as helpers from '$lib/cad/manifold-helpers';
 import { CIRCULAR_SEGMENTS_DEFAULT } from '$lib/cad/manifold-helpers';
 import { finalizeManifold, setRenderZScale } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
+import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 // POST /api/primitives/preview
 //   { source: string, name: string, params: number[], zScale?: number }
@@ -51,6 +52,14 @@ export const POST = async ({ request }) => {
     ? params.map((p) => typeof p === 'string' ? p : Number(p))
     : [];
 
+  // Pull the optional appearance block from the source meta — same way
+  // bake-preview does — so the live Mesh pane honours material.outer /
+  // material.inner instead of the legacy red/grey heuristic. Meta-less
+  // (bundle) sources just leave it undefined → legacy look preserved.
+  let material: any = undefined;
+  try { material = extractMetaFromSource(source).material; }
+  catch { /* meta-less source — legacy red/grey */ }
+
   // Fast path — when the client says `mode: "bundle"` we skip the
   // sandbox + esbuild + new Function dance and invoke the exported
   // bundle helper directly. Avoids subtle wasm-instance issues that
@@ -71,7 +80,7 @@ export const POST = async ({ request }) => {
     if (!manifold || typeof manifold.getMesh !== 'function') {
       throw error(400, 'primitive did not return a Manifold');
     }
-    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6);
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material);
     const s = serializeComponentResult(r);
     return json({ ok: true, full: s.full, cutVC: s.cutVC });
   }
@@ -162,7 +171,7 @@ export const POST = async ({ request }) => {
   if (!manifold || typeof manifold.getMesh !== 'function') {
     throw error(400, 'primitive did not return a Manifold');
   }
-  const result = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6);
+  const result = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material);
   const serialized = serializeComponentResult(result);
   return json({ ok: true, full: serialized.full, cutVC: serialized.cutVC });
 };
