@@ -34,6 +34,11 @@ components/.svelte-kit
 viewer/node_modules
 viewer/.svelte-kit
 
+# Volume backup snapshot — tracked in git for durability (the /volume
+# Backup button writes it), but NOT needed in the runtime image. Excluding
+# it from the build context keeps deploys fast despite the 34 MB in-repo.
+src/volume_backup
+
 # Large generated/demo assets we don't need in production
 static/tmp/rag_frames
 training_data/prim_*/images/var_*.png
