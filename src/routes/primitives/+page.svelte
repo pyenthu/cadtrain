@@ -104,29 +104,56 @@
     editedSource = next;
   }
 
-  async function cloneToVolume() {
-    if (!selected) return;
-    const newId = prompt(`Clone "${selected.id}" to volume as id:`, `${selected.id}_v2`);
+  /** Suggest the next id for a clone: increment a trailing number
+   *  (raw_helix_4 → raw_helix_5, skipping any that already exist),
+   *  else append `_copy`. */
+  function suggestNextId(id: string): string {
+    const existing = new Set(entries.map((e) => e.id));
+    const m = id.match(/^(.*?)(\d+)$/);
+    if (m) {
+      let n = parseInt(m[2], 10) + 1;
+      let cand = `${m[1]}${n}`;
+      while (existing.has(cand)) { n++; cand = `${m[1]}${n}`; }
+      return cand;
+    }
+    let cand = `${id}_copy`;
+    let i = 2;
+    while (existing.has(cand)) { cand = `${id}_copy${i}`; i++; }
+    return cand;
+  }
+
+  /** Duplicate any primitive (bundle or volume) into a new VOLUME
+   *  primitive. Clones the SAVED source (save in-editor edits first if
+   *  you want them carried), rewriting the function header + meta id +
+   *  name to the new id. Refuses an id that already exists. */
+  async function cloneEntry(e: Entry) {
+    const newId = prompt(`Duplicate "${e.id}" as new id:`, suggestNextId(e.id));
     if (!newId) return;
-    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = 'Invalid id'; return; }
-    // Rewrite the function header AND the meta block's id + name.
-    const fnRe = new RegExp(`(export\\s+function\\s+)${selected.id}(\\s*\\()`);
-    const idRe = new RegExp(`(\\bid\\s*:\\s*['"\`])${selected.id}(['"\`])`);
-    const nameRe = new RegExp(`(\\bname\\s*:\\s*['"\`])${selected.id}(['"\`])`);
-    const rewrittenSource = editedSource
+    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return; }
+    if (entries.some((x) => x.id === newId)) { status = `"${newId}" already exists.`; return; }
+    const data = await fetchSourceFor(e.id);
+    if (!data) return;
+    const fnRe = new RegExp(`(export\\s+function\\s+)${e.id}(\\s*\\()`);
+    const idRe = new RegExp(`(\\bid\\s*:\\s*['"\`])${e.id}(['"\`])`);
+    const nameRe = new RegExp(`(\\bname\\s*:\\s*['"\`])${e.id}(['"\`])`);
+    const src = data.source
       .replace(fnRe, `$1${newId}$2`)
       .replace(idRe, `$1${newId}$2`)
       .replace(nameRe, `$1${newId}$2`);
     const r = await fetch('/api/primitives/save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: newId, source: rewrittenSource }),
+      body: JSON.stringify({ id: newId, source: src }),
     });
     if (!r.ok) { status = `Clone failed: ${await r.text()}`; return; }
-    status = 'Cloned.';
+    status = `Duplicated ${e.id} → ${newId}.`;
     await refreshList();
-    const created = entries.find((e) => e.id === newId);
+    const created = entries.find((x) => x.id === newId);
     if (created) await selectEntry(created);
+  }
+
+  function cloneToVolume() {
+    if (selected) cloneEntry(selected);
   }
 
   async function deletePrimitive() {
@@ -179,6 +206,7 @@
             <span class="prim-name">{e.id}</span>
             <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
           </button>
+          <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
           {#if e.editable}
             <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
           {/if}
@@ -214,10 +242,9 @@
       <div class="placeholder">No primitives yet.</div>
     {:else}
       <div class="actions-strip">
+        <button class="prim-btn small" type="button" onclick={cloneToVolume}>⎘ Duplicate</button>
         {#if selected.editable}
           <button class="prim-btn danger small" type="button" onclick={deletePrimitive}>Delete</button>
-        {:else}
-          <button class="prim-btn small" type="button" onclick={cloneToVolume}>Clone to volume</button>
         {/if}
       </div>
 
@@ -253,6 +280,8 @@
   .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 6px 8px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; }
   .prim-trash { background: transparent; border: 0; padding: 4px 6px; color: #aaa; cursor: pointer; font: 14px monospace; border-radius: 3px; }
   .prim-trash:hover { color: #cc2222; background: #fff; }
+  .prim-dup { background: transparent; border: 0; padding: 4px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
+  .prim-dup:hover { color: #2266cc; background: #fff; }
 
   .prim-archive { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
   .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 4px 8px; font: 600 11px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }

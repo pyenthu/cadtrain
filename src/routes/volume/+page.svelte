@@ -37,6 +37,26 @@
   let editSaving = $state(false);
   let fileInput: HTMLInputElement | null = $state(null);
 
+  // ── Backup (volume → src/volume_backup) ─────────────────────────────
+  let backing = $state(false);
+  let backupMsg = $state<string | null>(null);
+  async function runBackup() {
+    if (backing) return;
+    backing = true;
+    backupMsg = 'Backing up…';
+    try {
+      const r = await fetch('/api/volume/backup', { method: 'POST' });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(j?.message || `${r.status}`);
+      const ok = j?.errorCount ? ` (${j.errorCount} errors)` : '';
+      backupMsg = `Copied ${j.files} files · ${humanSize(j.bytes)} → src/volume_backup${ok}`;
+    } catch (e: any) {
+      backupMsg = `Backup failed: ${e?.message ?? e}`;
+    } finally {
+      backing = false;
+    }
+  }
+
   const TEXT_RE = /\.(json|jsonl|txt|md|ts|tsx|js|mjs|cjs|svelte|css|html?|csv|log|ya?ml|xml|svg)$/i;
   const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
   const VIDEO_RE = /\.(webm|mp4|mov)$/i;
@@ -255,6 +275,14 @@
         >{c.label}</button>
       {/each}
     </nav>
+    {#if backupMsg}<span class="vol-backup-msg" class:err={backupMsg.startsWith('Backup failed')}>{backupMsg}</span>{/if}
+    <button
+      class="vol-backup"
+      type="button"
+      disabled={backing}
+      title="Copy the entire volume into the repo at src/volume_backup/"
+      onclick={runBackup}
+    >{backing ? '⏳ Backing up…' : '⬇ Backup → src'}</button>
     <button class="vol-refresh" type="button" title="Reload" onclick={() => loadDir(currentPath)}>↻</button>
   </header>
 
@@ -330,14 +358,16 @@
                   <span class="row-size">{humanSize(e.size)}</span>
                 </button>
               {/if}
-              <button
-                class="row-del"
-                type="button"
-                disabled={actionBusy}
-                title={`Delete ${e.name}`}
-                aria-label={`Delete ${e.name}`}
-                onclick={(ev) => deleteEntry(e, ev)}
-              >✕</button>
+              {#if !(currentPath === '' && e.type === 'dir')}
+                <button
+                  class="row-del"
+                  type="button"
+                  disabled={actionBusy}
+                  title={`Delete ${e.name}`}
+                  aria-label={`Delete ${e.name}`}
+                  onclick={(ev) => deleteEntry(e, ev)}
+                >✕</button>
+              {/if}
             </div>
           {/each}
         {/if}
@@ -420,6 +450,18 @@
     padding: 3px 9px; cursor: pointer;
   }
   .vol-refresh:hover { background: #e8e8ee; }
+  .vol-backup {
+    font: 11px Arial; color: #444; background: #f3f3f6;
+    border: 1px solid #d8d8e0; border-radius: 4px;
+    padding: 3px 10px; cursor: pointer; flex-shrink: 0;
+  }
+  .vol-backup:hover:not(:disabled) { background: #ececf2; color: #cc2222; }
+  .vol-backup:disabled { opacity: 0.6; cursor: default; }
+  .vol-backup-msg {
+    font: 11px monospace; color: #2e7d32; flex-shrink: 0;
+    max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .vol-backup-msg.err { color: #c4392f; }
 
   .vol-body { flex: 1; display: flex; min-height: 0; }
   .vol-list {

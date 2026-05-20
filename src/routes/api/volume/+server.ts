@@ -164,6 +164,16 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
     throw error(500, e?.message ?? String(e));
   }
 
+  // Guard: never let a top-level volume directory (archive / components /
+  // primitives / training / …) be deleted. A single-segment relative path
+  // that resolves to a directory IS a top-level dir — refuse it. Nested
+  // files/dirs delete normally. (UI hides the control too; this also
+  // protects curl/script callers and the proxied prod path.)
+  const relForGuard = relative(VOLUME_ROOT, abs);
+  if (stat.isDirectory() && relForGuard && !/[\\/]/.test(relForGuard)) {
+    throw error(403, `Refusing to delete top-level volume directory "${relForGuard}".`);
+  }
+
   const recursive = url.searchParams.get('recursive') === '1';
   if (stat.isDirectory()) {
     await fsp.rm(abs, { recursive, force: false });
