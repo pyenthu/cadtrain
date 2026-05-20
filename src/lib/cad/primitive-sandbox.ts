@@ -16,7 +16,7 @@
  * proxy), `G` (globalThis, for `G.__cadtrain_manifold__.wasm`), `Math`.
  */
 import * as helpers from './manifold-helpers';
-import { gridPatch, capFan, weldAndBuild } from './manifold-mesh';
+import { gridPatch, capFan, weldAndBuild, revolveProfile } from './manifold-mesh';
 
 /** Argument NAMES passed to `new Function(...NAMES, body)`. Must stay
  *  index-aligned with `values()`. */
@@ -24,7 +24,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'M', 'cyl', 'tube', 'mv', 'rot', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
   'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
   'helix_band', 'revolve', 'profile_extrude',
-  'gridPatch', 'capFan', 'weldAndBuild',
+  'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile',
   'G', 'Math',
 ];
 
@@ -35,7 +35,7 @@ export function sandboxArgValues(): any[] {
     helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-    gridPatch, capFan, weldAndBuild,
+    gridPatch, capFan, weldAndBuild, revolveProfile,
     globalThis, Math,
   ];
 }

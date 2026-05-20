@@ -59,6 +59,59 @@ export function gridPatch(
 }
 
 /**
+ * Surface of revolution: spin a CLOSED 2D profile (a loop in the
+ * radial–axial plane, `[r, z]` with r ≥ 0) a full 360° around the z-axis.
+ *
+ * Walks the profile EDGE BY EDGE (profile[k] → profile[(k+1) % N], so the
+ * caller gives the unique loop verts, NOT a wrap copy) and revolves each
+ * edge into a quad strip. Edges that touch the axis (r ≈ 0) emit a
+ * triangle fan to the single axis point instead of degenerate quads — so
+ * solids whose profile reaches the axis (a solid cylinder, a cone apex)
+ * come out clean, while annular profiles (tube, tapered tube) are plain
+ * quad strips. Coincident seam verts are removed later by weldAndBuild.
+ *
+ * Winding: the profile is traversed so a COUNTER-CLOCKWISE loop in the
+ * (r, z) plane yields OUTWARD normals (matches the right-hand rule with
+ * +θ rotation). If a shape comes out inside-out, reverse the profile.
+ */
+export function revolveProfile(profile: [number, number][], segments: number): Patch {
+  const segN = Math.max(3, Math.floor(segments));
+  const dT = (2 * Math.PI) / segN;
+  const EPS = 1e-9;
+  const verts: number[] = [];
+  const tris: number[] = [];
+  const push = (r: number, z: number, theta: number): number => {
+    verts.push(r * Math.cos(theta), r * Math.sin(theta), z);
+    return verts.length / 3 - 1;
+  };
+  const M = profile.length;
+  for (let k = 0; k < M; k++) {
+    const [r0, z0] = profile[k];
+    const [r1, z1] = profile[(k + 1) % M];
+    const r0z = r0 < EPS;
+    const r1z = r1 < EPS;
+    if (r0z && r1z) continue; // edge lies on the axis → nothing to revolve
+    for (let s = 0; s < segN; s++) {
+      const ta = s * dT;
+      const tb = (s + 1) * dT;
+      const a0 = push(r0, z0, ta), a1 = push(r0, z0, tb);
+      const b0 = push(r1, z1, ta), b1 = push(r1, z1, tb);
+      if (r0z) {
+        // p0 on axis → fan triangle from the axis point a0.
+        tris.push(a0, b0, b1);
+      } else if (r1z) {
+        // p1 on axis → fan triangle to the axis point b0.
+        tris.push(a0, b0, a1);
+      } else {
+        tris.push(a0, b0, b1);
+        tris.push(a0, b1, a1);
+      }
+    }
+  }
+  return { verts: new Float32Array(verts), tris: new Uint32Array(tris) };
+}
+
+/**
  * Triangle-fan triangulation of a convex profile polygon at one rail
  * frame — i.e. an end cap. `prof` is the profile's UNIQUE verts (the
  * wrap copy is NOT included). `reverse` flips the winding so the cap
