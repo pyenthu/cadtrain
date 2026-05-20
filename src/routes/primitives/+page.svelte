@@ -1,8 +1,10 @@
 <script lang="ts">
-  // /primitives — sidebar of primitives + PrimitiveView for the
-  // selected one. The actual three-mode UI (Viewer / Editor / Source)
-  // and Apply / Save semantics live in PrimitiveView. This page is
-  // the route shell: list, selection, source fetch + persistence.
+  // /primitives — sidebar of primitives + a MULTI-TAB center (like
+  // /components): clicking a primitive opens it in a tab; multiple tabs
+  // stay open to compare, and each PrimitiveView is kept MOUNTED so it
+  // stays rendered/loaded when you switch tabs. The three-mode UI
+  // (Params / Profile / Source / AI) + Apply/Save live in PrimitiveView;
+  // this page is the route shell: list, tabs, source fetch + persistence.
   //
   // Plan: ~/.claude/plans/per-primitive-svelte-views.md.
   import { onMount } from 'svelte';
@@ -19,9 +21,13 @@
 
   let entries: Entry[] = $state([]);
   let archived: Entry[] = $state([]);
-  let selected: Entry | null = $state(null);
-  let serverSource = $state('');
-  let editedSource = $state('');
+  // Multi-tab (like /components): each opened primitive is a tab kept
+  // MOUNTED so it stays rendered/loaded when you switch — open several to
+  // compare. serverSource is per-tab (dirty tracking + save).
+  type Tab = { entry: Entry; serverSource: string; loading: boolean };
+  let openTabs: Tab[] = $state([]);
+  let activeId: string | null = $state(null);
+  let activeTab = $derived(openTabs.find((t) => t.entry.id === activeId) ?? null);
   let status = $state('');
   let showArchive = $state(false);
 
@@ -45,43 +51,54 @@
     }
   }
 
-  async function loadFromServer() {
-    if (!selected) return;
-    const data = await fetchSourceFor(selected.id);
-    if (data) { editedSource = data.source; serverSource = data.source; }
+  // Open a primitive in a tab (or focus it if already open). Pre-loads its
+  // source so the PrimitiveView mounts with the right initialSource.
+  function openTab(e: Entry) {
+    const existing = openTabs.find((t) => t.entry.id === e.id);
+    if (existing) { activeId = e.id; return; }
+    // Add + focus the tab IMMEDIATELY (non-blocking), then load its source
+    // in the background and mount the view when it arrives. Opening and
+    // switching never stall, and multiple tabs load concurrently.
+    const tab: Tab = { entry: e, serverSource: '', loading: true };
+    openTabs = [...openTabs, tab];
+    activeId = e.id;
+    fetchSourceFor(e.id).then((data) => {
+      tab.serverSource = data?.source ?? '';
+      tab.loading = false;
+      openTabs = [...openTabs];
+    });
   }
-
-  async function selectEntry(e: Entry) {
-    // Pre-load source BEFORE swapping `selected` so the {#key} remount
-    // of PrimitiveView lands with the correct initialSource on first
-    // render — otherwise the child mounts with stale source, then we
-    // need a prop-syncing effect (which caused an update-depth loop).
-    const data = await fetchSourceFor(e.id);
-    if (data) { editedSource = data.source; serverSource = data.source; }
-    selected = e;
+  function closeTab(id: string, ev?: Event) {
+    ev?.stopPropagation();
+    const i = openTabs.findIndex((t) => t.entry.id === id);
+    openTabs = openTabs.filter((t) => t.entry.id !== id);
+    if (activeId === id) activeId = (openTabs[i] ?? openTabs[i - 1] ?? openTabs.at(-1))?.entry.id ?? null;
+  }
+  async function loadFromServerFor(tab: Tab) {
+    const data = await fetchSourceFor(tab.entry.id);
+    if (data) { tab.serverSource = data.source; openTabs = [...openTabs]; }
   }
 
   onMount(async () => {
     await refreshList();
-    if (entries.length > 0) {
-      const initial = entries.find((e) => e.id === 'warp_helix') ?? entries[0];
-      await selectEntry(initial);
-    }
+    // Default-open the first VOLUME primitive (bundle ones can 500 on
+    // source-load); fall back to the first entry.
+    const initial = entries.find((e) => e.source === 'volume') ?? entries[0];
+    if (initial) openTab(initial);
   });
 
-  async function saveSource(newSource: string) {
-    if (!selected || !selected.editable) return;
+  async function saveSourceFor(tab: Tab, newSource: string) {
+    if (!tab.entry.editable) return;
     const r = await fetch('/api/primitives/save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: selected.id, source: newSource }),
+      body: JSON.stringify({ id: tab.entry.id, source: newSource }),
     });
     if (!r.ok) { status = `Save failed: ${await r.text()}`; return; }
-    status = 'Saved to volume.';
+    status = `Saved ${tab.entry.id}.`;
     await refreshList();
-    const updated = entries.find((e) => e.id === selected!.id);
-    if (updated) selected = updated;
-    serverSource = newSource;
+    tab.serverSource = newSource;
+    openTabs = [...openTabs];
   }
 
   // Rewrite the default literals inside `export const meta = {...}` so
@@ -97,11 +114,9 @@
     return out;
   }
 
-  async function saveDefaults(applied: Record<string, number>) {
-    if (!selected || !selected.editable) return;
-    const next = rewriteDefaultsInSource(editedSource, applied);
-    await saveSource(next);
-    editedSource = next;
+  async function saveDefaultsFor(tab: Tab, applied: Record<string, number>) {
+    if (!tab.entry.editable) return;
+    await saveSourceFor(tab, rewriteDefaultsInSource(tab.serverSource, applied));
   }
 
   /** Suggest the next id for a clone: increment a trailing number
@@ -149,16 +164,15 @@
     status = `Duplicated ${e.id} → ${newId}.`;
     await refreshList();
     const created = entries.find((x) => x.id === newId);
-    if (created) await selectEntry(created);
+    if (created) openTab(created);
   }
 
   function cloneToVolume() {
-    if (selected) cloneEntry(selected);
+    if (activeTab) cloneEntry(activeTab.entry);
   }
 
   async function deletePrimitive() {
-    if (!selected || !selected.editable) return;
-    await archiveById(selected.id);
+    if (activeTab?.entry.editable) await archiveById(activeTab.entry.id);
   }
 
   // Soft-delete: trash button moves to archive/ (recoverable). Two-step
@@ -170,10 +184,7 @@
     if (!r.ok) { status = `Archive failed: ${await r.text()}`; return; }
     status = `Archived "${id}".`;
     await refreshList();
-    if (selected?.id === id) {
-      selected = entries[0] ?? null;
-      if (selected) await selectEntry(selected);
-    }
+    closeTab(id);
   }
 
   async function restoreById(id: string) {
@@ -201,8 +212,8 @@
 
     <div class="prim-list">
       {#each entries as e (e.id)}
-        <div class="prim-row-wrap" class:active={selected?.id === e.id}>
-          <button class="prim-row" type="button" onclick={() => selectEntry(e)}>
+        <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+          <button class="prim-row" type="button" onclick={() => openTab(e)}>
             <span class="prim-name">{e.id}</span>
             <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
           </button>
@@ -238,30 +249,62 @@
   </aside>
 
   <main class="prim-main">
-    {#if !selected}
-      <div class="placeholder">No primitives yet.</div>
+    {#if openTabs.length === 0}
+      <div class="placeholder">Click a primitive to open it in a tab.</div>
     {:else}
-      <div class="actions-strip">
-        <button class="prim-btn small" type="button" onclick={cloneToVolume}>⎘ Duplicate</button>
-        {#if selected.editable}
-          <button class="prim-btn danger small" type="button" onclick={deletePrimitive}>Delete</button>
-        {/if}
+      <div class="prim-tabstrip" role="tablist">
+        {#each openTabs as t (t.entry.id)}
+          <button
+            class="prim-tabchip"
+            class:active={activeId === t.entry.id}
+            type="button"
+            role="tab"
+            onclick={() => (activeId = t.entry.id)}
+          >
+            <span class="prim-tabchip-name">{t.entry.id}</span>
+            <span
+              class="prim-tabchip-x"
+              role="button"
+              tabindex="0"
+              aria-label={`Close ${t.entry.id}`}
+              onclick={(e) => closeTab(t.entry.id, e)}
+              onkeydown={(e) => { if (e.key === 'Enter') closeTab(t.entry.id, e); }}
+            >×</span>
+          </button>
+        {/each}
       </div>
 
-      {#key selected.id}
-        <PrimitiveView
-          id={selected.id}
-          name={selected.name}
-          description={selected.description}
-          paramSchema={selected.params}
-          editable={selected.editable}
-          initialSource={serverSource}
-          {serverSource}
-          onSaveSource={saveSource}
-          onSaveDefaults={saveDefaults}
-          onReloadSource={loadFromServer}
-        />
-      {/key}
+      <!-- Every open tab's view stays MOUNTED; only the active one is
+           shown (display:none on the rest). So switching tabs keeps each
+           primitive rendered/loaded — no refetch, no remount. -->
+      <div class="prim-tabviews">
+        {#each openTabs as t (t.entry.id)}
+          <div class="prim-tabview" class:hidden={activeId !== t.entry.id}>
+            <div class="actions-strip">
+              <button class="prim-btn small" type="button" onclick={() => cloneEntry(t.entry)}>⎘ Duplicate</button>
+              {#if t.entry.editable}
+                <button class="prim-btn danger small" type="button" onclick={() => archiveById(t.entry.id)}>Delete</button>
+              {/if}
+            </div>
+            {#if t.loading}
+              <div class="prim-loading">Loading <code>{t.entry.id}</code>…</div>
+            {:else}
+              <PrimitiveView
+                id={t.entry.id}
+                name={t.entry.name}
+                description={t.entry.description}
+                paramSchema={t.entry.params}
+                editable={t.entry.editable}
+                initialSource={t.serverSource}
+                serverSource={t.serverSource}
+                onSaveSource={(s) => saveSourceFor(t, s)}
+                onSaveDefaults={(a) => saveDefaultsFor(t, a)}
+                onReloadSource={() => loadFromServerFor(t)}
+              />
+            {/if}
+          </div>
+        {/each}
+      </div>
     {/if}
   </main>
 </div>
@@ -277,6 +320,7 @@
   .prim-row-wrap:hover { background: #f0e8e8; }
   .prim-row-wrap.active { background: #fef0f0; }
   .prim-row-wrap.active .prim-name { color: #cc2222; }
+  .prim-row-wrap.open .prim-name { font-weight: 800; }  /* open in a tab */
   .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 6px 8px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; }
   .prim-trash { background: transparent; border: 0; padding: 4px 6px; color: #aaa; cursor: pointer; font: 14px monospace; border-radius: 3px; }
   .prim-trash:hover { color: #cc2222; background: #fff; }
@@ -301,6 +345,23 @@
 
   .prim-main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .actions-strip { padding: 2px 8px 0; display: flex; justify-content: flex-end; gap: 6px; }
+
+  /* Tab strip — like /components: open primitives as tabs, click to focus,
+     × to close. */
+  .prim-tabstrip { display: flex; gap: 2px; padding: 5px 6px 0; background: #fafafa; border-bottom: 1px solid #ddd; overflow-x: auto; flex-shrink: 0; }
+  .prim-tabchip { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; font: 12px monospace; color: #666; background: #f0f0f0; border: 1px solid #ddd; border-bottom: none; border-radius: 5px 5px 0 0; cursor: pointer; white-space: nowrap; max-width: 190px; }
+  .prim-tabchip:hover { color: #cc2222; }
+  .prim-tabchip.active { background: #fff; color: #cc2222; border-color: #cc2222; margin-bottom: -1px; font-weight: 600; }
+  .prim-tabchip-name { overflow: hidden; text-overflow: ellipsis; }
+  .prim-tabchip-x { display: inline-flex; width: 15px; height: 15px; align-items: center; justify-content: center; border-radius: 3px; color: #aaa; font: 13px Arial; flex-shrink: 0; }
+  .prim-tabchip-x:hover { background: #fdeceb; color: #c4392f; }
+  /* Views: every open tab stays mounted; only the active is shown so the
+     mesh + edits persist across tab switches (kept LOADED). */
+  .prim-tabviews { flex: 1; min-height: 0; position: relative; }
+  .prim-tabview { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+  .prim-tabview.hidden { display: none; }
+  .prim-loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font: 12px Arial; }
+  .prim-loading code { font: 12px monospace; color: #cc2222; background: #f6f6f8; padding: 1px 6px; border-radius: 3px; margin: 0 4px; }
 
   .prim-btn { padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 12px Arial; cursor: pointer; }
   .prim-btn:disabled { opacity: 0.5; cursor: not-allowed; }
