@@ -6,9 +6,12 @@
    * auto-fit grid; drag-to-scrub number inputs with Enter-only commit;
    * enum dropdowns + boolean checkboxes commit immediately.
    *
-   * Commit model (matches /components):
+   * Commit model:
    *   - typing a number      → onPending(key, v)  (dirty until Enter)
-   *   - Enter / drag-scrub    → onCommit(key, v)   (apply that param)
+   *   - drag-scrub            → onPending(key, v)  (dirty — NO live commit;
+   *                             geometry is a server round-trip, so we don't
+   *                             rebuild per drag tick; press Enter/Apply)
+   *   - Enter                 → onCommit(key, v)   (apply that param)
    *   - enum / boolean change → onCommit(key, v)   (apply immediately)
    *
    * Polygon params are skipped here (the Profile tab edits those).
@@ -100,9 +103,12 @@
             min: ps.min,
             max: ps.max,
             get: () => num(key),
-            set: (v) => onCommit(key, v),
+            // Drag-scrub updates PENDING only (dirty) — NOT a live commit.
+            // The geometry is a server round-trip, so we don't rebuild on
+            // every drag tick; the user presses Enter / Apply to commit.
+            set: (v) => onPending(key, v),
           }}
-          title="Type then Enter to commit · drag horizontally to scrub"
+          title="Type or drag to scrub (dirty) · Enter or Apply to commit"
         />
       {/if}
     </div>
