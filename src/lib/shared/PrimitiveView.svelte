@@ -31,6 +31,11 @@
     options?: string[];
     default: number | [number, number][];
     unit?: string;
+    /** Polygon params only: Z-down vertical axis for the Profile editor
+     *  (revolve profiles are (r,z) with z increasing downward). */
+    yDown?: boolean;
+    hLabel?: string;
+    vLabel?: string;
   };
 
   let {
@@ -329,6 +334,9 @@
           </div>
           <ProfileEditor
             value={pending[pname] as [number, number][]}
+            yDown={paramSchema[pname].yDown ?? false}
+            hLabel={paramSchema[pname].hLabel ?? (paramSchema[pname].yDown ? 'r →' : 'x →')}
+            vLabel={paramSchema[pname].vLabel ?? (paramSchema[pname].yDown ? 'z ↓' : 'y ↑')}
             onChange={(next) => { pending = { ...pending, [pname]: next }; }}
             onApply={apply}
           />

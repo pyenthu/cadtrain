@@ -17,12 +17,24 @@
     value,
     width = 360,
     height = 240,
+    yDown = false,
+    vLabel = 'y',
+    hLabel = 'x',
     onChange,
     onApply,
   }: {
     value: Pt[];
     width?: number;
     height?: number;
+    /** Z-down vertical axis (drilling convention): when true, a LARGER
+     *  second-coordinate renders LOWER on screen so the editor matches
+     *  the Z-down 3D viewer (top of part = lower z = top of editor).
+     *  Default false keeps the Cartesian "up is up" flip for (x,y)
+     *  cross-sections. */
+    yDown?: boolean;
+    /** Axis labels drawn in the corners (e.g. 'z ↓' / 'r →' for revolve). */
+    vLabel?: string;
+    hLabel?: string;
     /** Called on every vertex move / add / delete / preset load with
      *  the new array. Parent owns the state. */
     onChange: (next: Pt[]) => void;
@@ -46,9 +58,11 @@
     return { x: minX - padX, y: minY - padY, w: (maxX - minX) + 2 * padX, h: (maxY - minY) + 2 * padY };
   });
 
-  // SVG y-axis is inverted vs Cartesian; we flip y when projecting so
-  // the polygon reads naturally (up is up).
-  function svgY(y: number) { return bbox.y + bbox.h - (y - bbox.y); }
+  // Project a local vertical value to the SVG y-coordinate.
+  //  - Cartesian (yDown=false): flip so larger value reads higher (up is up).
+  //  - Z-down  (yDown=true):   no flip — larger value (deeper z) reads
+  //    LOWER, matching the Z-down 3D viewer.
+  function svgY(y: number) { return yDown ? y : bbox.y + bbox.h - (y - bbox.y); }
 
   let svgEl: SVGSVGElement;
 
@@ -57,9 +71,9 @@
     const px = (ev.clientX - rect.left) / rect.width;
     const py = (ev.clientY - rect.top) / rect.height;
     const x = bbox.x + px * bbox.w;
-    const yFlipped = bbox.y + py * bbox.h;
-    // Reverse the svgY flip:
-    const y = (bbox.y + bbox.h) - (yFlipped - bbox.y);
+    const yRaw = bbox.y + py * bbox.h;
+    // Reverse the svgY mapping: identity for Z-down, flip for Cartesian.
+    const y = yDown ? yRaw : (bbox.y + bbox.h) - (yRaw - bbox.y);
     return [x, y];
   }
 
@@ -146,6 +160,7 @@
     <button class="pe-preset" type="button" onclick={() => loadPreset(presetPlus())}>+</button>
     <button class="pe-preset" type="button" onclick={() => loadPreset(presetStar())}>★</button>
   </div>
+  <div class="pe-svg-wrap">
   <svg
     bind:this={svgEl}
     class="pe-svg"
@@ -180,11 +195,14 @@
         class="pe-vert"
         class:active={dragIdx === i}
         cx={p[0]} cy={svgY(p[1])}
-        r={Math.max(bbox.w, bbox.h) * 0.018}
+        r={Math.max(bbox.w, bbox.h) * 0.013}
         onpointerdown={(e) => onPointerDownVert(i, e)}
       />
     {/each}
   </svg>
+  <span class="pe-axis-lbl pe-axis-h">{hLabel}</span>
+  <span class="pe-axis-lbl pe-axis-v" class:down={yDown}>{vLabel}</span>
+  </div>
   <div class="pe-hint">
     Drag vertex to move • double-click edge to add • Alt-click vertex to delete (min 3)
   </div>
@@ -197,14 +215,24 @@
   .pe-preset { background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; padding: 3px 8px; font: 11px Arial; cursor: pointer; }
   .pe-preset:hover { background: #fef0f0; border-color: #cc2222; color: #cc2222; }
 
-  .pe-svg { flex: 1; min-height: 180px; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; cursor: crosshair; }
+  .pe-svg-wrap { position: relative; flex: 1; min-height: 180px; display: flex; }
+  .pe-svg { flex: 1; min-height: 0; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; cursor: crosshair; }
   .pe-axis { stroke: #ddd; stroke-width: 0.005; vector-effect: non-scaling-stroke; }
   .pe-poly { fill: rgba(204, 34, 34, 0.18); stroke: #cc2222; stroke-width: 0.01; vector-effect: non-scaling-stroke; }
   .pe-edge { stroke: transparent; stroke-width: 0.03; vector-effect: non-scaling-stroke; cursor: copy; }
   .pe-edge:hover { stroke: rgba(204, 34, 34, 0.25); }
-  .pe-vert { fill: #fff; stroke: #cc2222; stroke-width: 0.012; vector-effect: non-scaling-stroke; cursor: grab; }
-  .pe-vert:hover { fill: #fef0f0; }
+  /* Translucent handles so the profile shape stays visible underneath
+     (opaque white dots used to mask the whole shape). */
+  .pe-vert { fill: rgba(255, 255, 255, 0.35); stroke: #cc2222; stroke-width: 0.011; vector-effect: non-scaling-stroke; cursor: grab; }
+  .pe-vert:hover { fill: rgba(204, 34, 34, 0.5); }
   .pe-vert.active { fill: #cc2222; cursor: grabbing; }
+
+  /* Corner axis labels — orient the user (e.g. 'r →' bottom-right,
+     'z ↓' bottom-left for a Z-down revolve profile). */
+  .pe-axis-lbl { position: absolute; font: 600 10px ui-monospace, monospace; color: #999; pointer-events: none; background: rgba(250,250,250,0.8); padding: 0 3px; border-radius: 2px; }
+  .pe-axis-h { right: 6px; bottom: 4px; }
+  .pe-axis-v { left: 6px; top: 4px; }
+  .pe-axis-v.down { top: auto; bottom: 4px; }
 
   .pe-hint { font: 10px Arial; color: #888; padding: 2px 0; }
 </style>
