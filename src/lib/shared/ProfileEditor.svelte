@@ -20,6 +20,8 @@
     yDown = false,
     vLabel = 'y',
     hLabel = 'x',
+    presetSet = 'cartesian',
+    showAxis = false,
     onChange,
     onApply,
   }: {
@@ -35,6 +37,12 @@
     /** Axis labels drawn in the corners (e.g. 'z ↓' / 'r →' for revolve). */
     vLabel?: string;
     hLabel?: string;
+    /** Which preset palette to offer. 'cartesian' = centred polygons for
+     *  extrusion (hex/+/L/T/star); 'revolve' = r≥0 half-sections for a
+     *  lathe (cylinder/tube/cone/barrel/goblet) that won't self-intersect. */
+    presetSet?: 'cartesian' | 'revolve';
+    /** Draw a prominent axis-of-rotation line at r=0 (revolve mode). */
+    showAxis?: boolean;
     /** Called on every vertex move / add / delete / preset load with
      *  the new array. Parent owns the state. */
     onChange: (next: Pt[]) => void;
@@ -146,19 +154,38 @@
     onChange(p);
     onApply?.();
   }
+
+  // ── Revolve presets — r≥0 half-sections (Z-down: z=0 top, +z down).
+  // Each is a closed loop in the (r, z) plane that stays on one side of
+  // the axis, so revolving it 360° never self-intersects. ──────────────
+  function revCylinder(): Pt[] { return [[0, 0], [1.2, 0], [1.2, 3], [0, 3]]; }
+  function revTube(): Pt[] { return [[0.7, 0], [1.2, 0], [1.2, 3], [0.7, 3]]; }
+  function revCone(): Pt[] { return [[0, 0], [1.4, 3], [0, 3]]; }
+  function revBarrel(): Pt[] { return [[0, 0], [1.0, 0], [1.4, 1.5], [1.0, 3], [0, 3]]; }
+  function revGoblet(): Pt[] {
+    return [[0, 4], [1.6, 4], [1.6, 3.6], [0.5, 3.1], [0.5, 1.5], [1.3, 0.8], [1.3, 0], [0, 0]];
+  }
 </script>
 
 <div class="pe-root">
   <div class="pe-toolbar">
     <span class="pe-label">Preset:</span>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetRect())}>Rect</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetNgon(5))}>Pent</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetNgon(6))}>Hex</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetNgon(24, 0.5))}>Circ</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetL())}>L</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetT())}>T</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetPlus())}>+</button>
-    <button class="pe-preset" type="button" onclick={() => loadPreset(presetStar())}>★</button>
+    {#if presetSet === 'revolve'}
+      <button class="pe-preset" type="button" onclick={() => loadPreset(revCylinder())}>Cyl</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(revTube())}>Tube</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(revCone())}>Cone</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(revBarrel())}>Barrel</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(revGoblet())}>Goblet</button>
+    {:else}
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetRect())}>Rect</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetNgon(5))}>Pent</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetNgon(6))}>Hex</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetNgon(24, 0.5))}>Circ</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetL())}>L</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetT())}>T</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetPlus())}>+</button>
+      <button class="pe-preset" type="button" onclick={() => loadPreset(presetStar())}>★</button>
+    {/if}
   </div>
   <div class="pe-svg-wrap">
   <svg
@@ -175,6 +202,10 @@
     <!-- axes -->
     <line class="pe-axis" x1={bbox.x} y1={svgY(0)} x2={bbox.x + bbox.w} y2={svgY(0)} />
     <line class="pe-axis" x1={0} y1={bbox.y} x2={0} y2={bbox.y + bbox.h} />
+    {#if showAxis}
+      <!-- Axis of rotation (r = 0): the profile is spun 360° around this. -->
+      <line class="pe-rotaxis" x1={0} y1={bbox.y} x2={0} y2={bbox.y + bbox.h} />
+    {/if}
     <!-- filled polygon -->
     <polygon
       class="pe-poly"
@@ -202,6 +233,7 @@
   </svg>
   <span class="pe-axis-lbl pe-axis-h">{hLabel}</span>
   <span class="pe-axis-lbl pe-axis-v" class:down={yDown}>{vLabel}</span>
+  {#if showAxis}<span class="pe-rotaxis-lbl">⟲ rotation axis (r=0)</span>{/if}
   </div>
   <div class="pe-hint">
     Drag vertex to move • double-click edge to add • Alt-click vertex to delete (min 3)
@@ -218,6 +250,9 @@
   .pe-svg-wrap { position: relative; flex: 1; min-height: 180px; display: flex; }
   .pe-svg { flex: 1; min-height: 0; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; cursor: crosshair; }
   .pe-axis { stroke: #ddd; stroke-width: 0.005; vector-effect: non-scaling-stroke; }
+  /* Axis of rotation (revolve) — dashed teal so it reads as "the profile
+     spins around this", distinct from the faint grey grid axes. */
+  .pe-rotaxis { stroke: #1592a6; stroke-width: 1.4px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; opacity: 0.8; }
   .pe-poly { fill: rgba(204, 34, 34, 0.18); stroke: #cc2222; stroke-width: 0.01; vector-effect: non-scaling-stroke; }
   .pe-edge { stroke: transparent; stroke-width: 0.03; vector-effect: non-scaling-stroke; cursor: copy; }
   .pe-edge:hover { stroke: rgba(204, 34, 34, 0.25); }
@@ -233,6 +268,7 @@
   .pe-axis-h { right: 6px; bottom: 4px; }
   .pe-axis-v { left: 6px; top: 4px; }
   .pe-axis-v.down { top: auto; bottom: 4px; }
+  .pe-rotaxis-lbl { position: absolute; left: 6px; top: 4px; font: 600 10px ui-monospace, monospace; color: #1592a6; pointer-events: none; background: rgba(250,250,250,0.85); padding: 0 3px; border-radius: 2px; }
 
   .pe-hint { font: 10px Arial; color: #888; padding: 2px 0; }
 </style>

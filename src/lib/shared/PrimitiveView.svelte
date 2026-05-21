@@ -337,6 +337,8 @@
             yDown={paramSchema[pname].yDown ?? false}
             hLabel={paramSchema[pname].hLabel ?? (paramSchema[pname].yDown ? 'r →' : 'x →')}
             vLabel={paramSchema[pname].vLabel ?? (paramSchema[pname].yDown ? 'z ↓' : 'y ↑')}
+            presetSet={paramSchema[pname].yDown ? 'revolve' : 'cartesian'}
+            showAxis={paramSchema[pname].yDown ?? false}
             onChange={(next) => { pending = { ...pending, [pname]: next }; }}
             onApply={apply}
           />
