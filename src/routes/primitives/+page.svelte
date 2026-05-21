@@ -31,6 +31,7 @@
   let activeTab = $derived(openTabs.find((t) => t.entry.id === activeId) ?? null);
   let status = $state('');
   let showArchive = $state(false);
+  let showTests = $state(false);
 
   async function refreshList() {
     const r = await fetch('/api/primitives/list');
@@ -228,25 +229,29 @@
     </div>
 
     <!-- Tests category — primitives parked under primitives/tests/ on the
-         volume (location IS the category). Always shown so the group is
-         visible even while empty. -->
+         volume (location IS the category). Collapsible folder. -->
     <div class="prim-tests">
-      <div class="prim-grouphead">Tests {#if tests.length}({tests.length}){/if}</div>
-      {#if tests.length === 0}
-        <div class="prim-empty">none yet</div>
-      {:else}
-        {#each tests as e (e.id)}
-          <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-            <button class="prim-row" type="button" onclick={() => openTab(e)}>
-              <span class="prim-name">{e.id}</span>
-              <span class="prim-tag vol">test</span>
-            </button>
-            <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-            {#if e.editable}
-              <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-            {/if}
-          </div>
-        {/each}
+      <button class="prim-arch-head" type="button" onclick={() => (showTests = !showTests)}>
+        <span class="prim-arch-caret">{showTests ? '▾' : '▸'}</span>
+        Tests {#if tests.length}({tests.length}){/if}
+      </button>
+      {#if showTests}
+        {#if tests.length === 0}
+          <div class="prim-empty">none yet</div>
+        {:else}
+          {#each tests as e (e.id)}
+            <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+              <button class="prim-row" type="button" onclick={() => openTab(e)}>
+                <span class="prim-name">{e.id}</span>
+                <span class="prim-tag vol">test</span>
+              </button>
+              <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+              {#if e.editable}
+                <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+              {/if}
+            </div>
+          {/each}
+        {/if}
       {/if}
     </div>
 

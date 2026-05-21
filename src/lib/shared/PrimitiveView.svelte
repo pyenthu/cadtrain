@@ -139,6 +139,17 @@
     txs: (inst.transforms ?? []).map((t: any) => ({ ...t, resolved: resolveArgsText(t.argsText, pending) })),
   })));
 
+  // Round-trip: editable only when this is a volume primitive AND the
+  // source parsed from the ORIGINAL (positions map back). Editing an arg
+  // splices the new text into editedSource at the recognized offsets,
+  // making the Source dirty (Save persists). The recognition $effect then
+  // re-scans editedSource → fresh offsets.
+  let canEdit = $derived(editable && !!recognized?.editable);
+  function spliceSource(start: number, end: number, replacement: string) {
+    if (start < 0 || end < 0) return;
+    editedSource = editedSource.slice(0, start) + replacement + editedSource.slice(end);
+  }
+
   // ── AI tab ───────────────────────────────────────────────────────────
   // Mirrors the /components inspector AI tab. Talks directly to the
   // /api/primitives/{refine,prompts,instructions} endpoints (this view is
@@ -385,9 +396,12 @@
       {:else if tab === 'parts'}
         <div class="pv-pane pv-parts">
           <div class="pv-pane-head">
-            <span class="pv-pill">{parts.length} part{parts.length === 1 ? '' : 's'}</span>
+            <span class="pv-pill" class:dirty={sourceDirty}>{parts.length} part{parts.length === 1 ? '' : 's'}{sourceDirty ? ' · edited' : ''}</span>
             <div class="pv-spacer"></div>
             <button class="pv-btn" type="button" onclick={loadRecognition}>Re-scan</button>
+            {#if canEdit && onSaveSource}
+              <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
+            {/if}
           </div>
           <div class="pv-parts-body">
             {#if recogStatus === 'loading'}
@@ -403,10 +417,31 @@
                     <span class="pv-part-name">{inst.name}</span>
                     <span class="pv-part-call">{inst.call}</span>
                   </div>
-                  <div class="pv-part-args">{inst.argsText}</div>
+                  {#if canEdit && inst.argsStart >= 0}
+                    <input
+                      class="pv-part-edit"
+                      value={inst.argsText}
+                      spellcheck="false"
+                      title="Edit args · Enter to write into the source"
+                      onkeydown={(e) => { if (e.key === 'Enter') spliceSource(inst.argsStart, inst.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
+                    />
+                  {:else}
+                    <div class="pv-part-args">{inst.argsText}</div>
+                  {/if}
                   {#if inst.resolvedArgs}<div class="pv-part-live">→ {inst.resolvedArgs}</div>{/if}
                   {#each inst.txs as t}
-                    <div class="pv-part-tx">↳ {t.op}({t.argsText}){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}</div>
+                    <div class="pv-part-tx">
+                      ↳ {t.op}(
+                      {#if canEdit && t.argsStart >= 0}
+                        <input
+                          class="pv-part-edit pv-part-edit-tx"
+                          value={t.argsText}
+                          spellcheck="false"
+                          onkeydown={(e) => { if (e.key === 'Enter') spliceSource(t.argsStart, t.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
+                        />
+                      {:else}{t.argsText}{/if}
+                      ){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}
+                    </div>
                   {/each}
                 </div>
               {/each}
@@ -415,6 +450,7 @@
               {/if}
               {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
               {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
+              {#if editable && recognized && !recognized.editable}<div class="pv-parts-note">read-only — remove TS type annotations from the params to edit args inline.</div>{/if}
             {/if}
           </div>
         </div>
@@ -567,6 +603,9 @@
   .pv-part-call { font: 11px monospace; color: #2266cc; background: #eef3fb; padding: 1px 6px; border-radius: 8px; }
   .pv-part-args { margin-top: 4px; font: 11px ui-monospace, monospace; color: #555; white-space: pre-wrap; word-break: break-word; }
   .pv-part-tx { margin-top: 3px; font: 11px ui-monospace, monospace; color: #888; }
+  .pv-part-edit { margin-top: 4px; width: 100%; box-sizing: border-box; font: 11px ui-monospace, monospace; color: #333; padding: 3px 6px; border: 1px solid #d8d8e0; border-radius: 4px; background: #fff; }
+  .pv-part-edit:focus { outline: 1px solid #cc2222; border-color: #cc2222; }
+  .pv-part-edit-tx { width: auto; min-width: 170px; margin: 0 2px; padding: 1px 5px; }
   /* Live-resolved values (Option A reactive link) — green, updates as you
      drag a param slider. */
   .pv-part-live { margin-top: 2px; font: 11px ui-monospace, monospace; color: #1a8a3a; }

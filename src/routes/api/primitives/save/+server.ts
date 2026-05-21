@@ -31,7 +31,14 @@ export const POST = async ({ request }) => {
   try { extractMetaFromSource(source); }
   catch (e: any) { throw error(400, `source missing valid meta: ${e?.message ?? e}`); }
 
-  const dir = volumePath(join('primitives', id));
+  // Write back into the part's CURRENT location. If it already lives in the
+  // tests/ sub-category, save THERE — otherwise editing a test primitive via
+  // the GUI would silently fork a flat duplicate (it'd then show in both the
+  // main list and the Tests folder). New ids default to the flat location.
+  const testsDir = volumePath(join('primitives', 'tests', id));
+  const dir = existsSync(join(testsDir, 'source.ts'))
+    ? testsDir
+    : volumePath(join('primitives', id));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'source.ts'), source, 'utf8');
   // Clear any legacy meta.json — source.ts is now canonical.
