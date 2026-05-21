@@ -1,9 +1,28 @@
 # Primitive Recipes — the dual-control composition layer
 
-> Status: **thin slice landed** (interpreter + resolver + `/api/primitives/recipe-preview`
-> + the `t_bolt_hexhead` worked example). Store discrimination (`recipe.json`
-> in the primitives store) and the Builder UI on the `/primitives` route are
-> the next steps.
+> ⚠️ **SUPERSEDED (2026-05-22).** The composite representation is now
+> **source.ts, NOT recipe.json** — the user wants programmatic control
+> (`return A.add(B)`, loops/conditionals/locals) and source.ts is more
+> controllable AND less code (a composite is just `source.ts` with
+> `meta.params` + `meta.uses`; the existing `/primitives` view already
+> renders the params as sliders). **The recipe layer below is PARKED** —
+> dormant, revivable for AI-structured output or a visual builder.
+>
+> **Live direction (source.ts composites):**
+> - GUI introspects the source — `src/lib/server/recognize-composite.ts` +
+>   `POST /api/primitives/recognize` (acorn AST) → instances + composition +
+>   uses. PrimitiveView has a **Parts tab** listing recognized instances.
+> - **Option A reactive runes (client-generated):** PrimitiveView resolves
+>   each part's arg expression against the live `pending` params (a
+>   `$derived`), so dragging a param re-links the parts instantly (green
+>   "→ resolved" lines) and re-bakes the geometry server-side. Worked
+>   example: `docs/examples/t_bolt_driven.ts` (on the volume at
+>   `primitives/tests/t_bolt_driven`).
+> - Split: recognition + geometry = server; runes + GUI = client.
+> - NEXT: editable Parts rows (round-trip → source) + "Load primitive →
+>   import params + scaffold instance".
+>
+> Everything below describes the parked recipe layer.
 
 ## The model: leaf = code, composite = recipe
 

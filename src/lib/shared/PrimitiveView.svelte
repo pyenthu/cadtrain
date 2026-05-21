@@ -108,6 +108,37 @@
   let parts = $derived((recognized?.instances ?? []).filter((i: any) => usesSet.has(i.call)));
   let locals = $derived((recognized?.instances ?? []).filter((i: any) => !usesSet.has(i.call)));
 
+  // Option A — the client-generated "rune" layer. Resolve a part's arg
+  // expression (recognized source text) against the LIVE params so the GUI
+  // shows the parts LINKED to the params: drag a param and the resolved
+  // values update instantly (the geometry then re-bakes on Apply). Refs to
+  // non-param locals can't resolve client-side → returns null (raw text shown).
+  function fmtVal(v: any): string {
+    if (Array.isArray(v)) {
+      // Short numeric vec (e.g. mv's [x,y,z]) → inline; nested/long arrays
+      // (polygon profiles) → collapse so the row stays readable.
+      if (v.length <= 4 && v.every((x) => typeof x === 'number')) {
+        return '[' + v.map((n) => Math.round(n * 1000) / 1000).join(', ') + ']';
+      }
+      return '[…]';
+    }
+    if (typeof v === 'number') return String(Math.round(v * 1000) / 1000);
+    return String(v);
+  }
+  function resolveArgsText(argsText: string, p: Record<string, any>): string | null {
+    try {
+      const names = Object.keys(p);
+      const out = new Function(...names, `return [${argsText}]`)(...names.map((n) => p[n]));
+      return out.map(fmtVal).join(', ');
+    } catch { return null; }
+  }
+  // Reactive over `pending` — re-derives the instant a slider/input changes.
+  let resolvedParts = $derived(parts.map((inst: any) => ({
+    ...inst,
+    resolvedArgs: resolveArgsText(inst.argsText, pending),
+    txs: (inst.transforms ?? []).map((t: any) => ({ ...t, resolved: resolveArgsText(t.argsText, pending) })),
+  })));
+
   // ── AI tab ───────────────────────────────────────────────────────────
   // Mirrors the /components inspector AI tab. Talks directly to the
   // /api/primitives/{refine,prompts,instructions} endpoints (this view is
@@ -366,15 +397,16 @@
             {:else if parts.length === 0}
               <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
             {:else}
-              {#each parts as inst (inst.name)}
+              {#each resolvedParts as inst (inst.name)}
                 <div class="pv-part">
                   <div class="pv-part-head">
                     <span class="pv-part-name">{inst.name}</span>
                     <span class="pv-part-call">{inst.call}</span>
                   </div>
                   <div class="pv-part-args">{inst.argsText}</div>
-                  {#each inst.transforms as t}
-                    <div class="pv-part-tx">↳ {t.op}({t.argsText})</div>
+                  {#if inst.resolvedArgs}<div class="pv-part-live">→ {inst.resolvedArgs}</div>{/if}
+                  {#each inst.txs as t}
+                    <div class="pv-part-tx">↳ {t.op}({t.argsText}){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}</div>
                   {/each}
                 </div>
               {/each}
@@ -535,6 +567,9 @@
   .pv-part-call { font: 11px monospace; color: #2266cc; background: #eef3fb; padding: 1px 6px; border-radius: 8px; }
   .pv-part-args { margin-top: 4px; font: 11px ui-monospace, monospace; color: #555; white-space: pre-wrap; word-break: break-word; }
   .pv-part-tx { margin-top: 3px; font: 11px ui-monospace, monospace; color: #888; }
+  /* Live-resolved values (Option A reactive link) — green, updates as you
+     drag a param slider. */
+  .pv-part-live { margin-top: 2px; font: 11px ui-monospace, monospace; color: #1a8a3a; }
   .pv-part-compose { padding: 6px 9px; font: 12px Arial; color: #444; border-top: 1px dashed #ddd; }
   .pv-part-compose code { font: 11px ui-monospace, monospace; color: #333; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
   .pv-parts-note { font: 10px Arial; color: #999; padding: 2px 0; }
