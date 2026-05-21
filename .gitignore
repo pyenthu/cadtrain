@@ -116,3 +116,6 @@ Thumbs.db
 
 # Claude Code session artifacts (per-session lock files etc.)
 .claude/
+
+# Playwright test output (regenerable)
+test-results/
