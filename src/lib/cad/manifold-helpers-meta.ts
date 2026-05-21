@@ -101,12 +101,18 @@ function parseProps(sig: string, defaults: Record<string, number>): HelperProp[]
 
 let cache: HelperMeta[] | null = null;
 
+/** Helpers kept in manifold-helpers.ts (still imported by bundle
+ *  components / recipes) but HIDDEN from the /primitives bundle list —
+ *  superseded by welded volume primitives (e.g. helix_band → r_threads). */
+const HIDDEN_FROM_PRIMITIVES = new Set(['helix_band']);
+
 export function discoverHelpers(): HelperMeta[] {
   if (cache) return cache;
   const out: HelperMeta[] = [];
   for (const m of helpersSrc.matchAll(PART_RE)) {
     const desc = m[1].replace(/\s+/g, ' ').trim();
     const name = m[2];
+    if (HIDDEN_FROM_PRIMITIVES.has(name)) continue;
     const argText = m[3].replace(/\s+/g, ' ').trim();
     const defaults = HELPER_DEFAULTS[name] ?? {};
     out.push({

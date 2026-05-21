@@ -20,6 +20,7 @@
   }
 
   let entries: Entry[] = $state([]);
+  let tests: Entry[] = $state([]);
   let archived: Entry[] = $state([]);
   // Multi-tab (like /components): each opened primitive is a tab kept
   // MOUNTED so it stays rendered/loaded when you switch — open several to
@@ -35,6 +36,7 @@
     const r = await fetch('/api/primitives/list');
     const data = await r.json();
     entries = data.merged;
+    tests = data.tests ?? [];
     archived = data.archived ?? [];
   }
 
@@ -225,6 +227,29 @@
       {/each}
     </div>
 
+    <!-- Tests category — primitives parked under primitives/tests/ on the
+         volume (location IS the category). Always shown so the group is
+         visible even while empty. -->
+    <div class="prim-tests">
+      <div class="prim-grouphead">Tests {#if tests.length}({tests.length}){/if}</div>
+      {#if tests.length === 0}
+        <div class="prim-empty">none yet</div>
+      {:else}
+        {#each tests as e (e.id)}
+          <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+            <button class="prim-row" type="button" onclick={() => openTab(e)}>
+              <span class="prim-name">{e.id}</span>
+              <span class="prim-tag vol">test</span>
+            </button>
+            <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+            {#if e.editable}
+              <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+            {/if}
+          </div>
+        {/each}
+      {/if}
+    </div>
+
     {#if archived.length > 0}
       <div class="prim-archive">
         <button class="prim-arch-head" type="button" onclick={() => (showArchive = !showArchive)}>
@@ -326,6 +351,10 @@
   .prim-trash:hover { color: #cc2222; background: #fff; }
   .prim-dup { background: transparent; border: 0; padding: 4px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
   .prim-dup:hover { color: #2266cc; background: #fff; }
+
+  .prim-tests { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
+  .prim-grouphead { padding: 4px 8px; font: 600 11px Arial; color: #888; }
+  .prim-empty { padding: 2px 8px 6px; font: italic 11px Arial; color: #bbb; }
 
   .prim-archive { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
   .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 4px 8px; font: 600 11px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }

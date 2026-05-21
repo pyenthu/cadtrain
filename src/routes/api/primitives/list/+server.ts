@@ -42,23 +42,27 @@ export const GET = async () => {
   }));
 
   const volume: PrimEntry[] = [];
+  const tests: PrimEntry[] = [];
   const archived: PrimEntry[] = [];
   const root = volumePath(PRIMS_ROOT);
+  // Recurse one level into a sub-folder, collecting its primitive entries.
+  async function collectSub(name: string, into: PrimEntry[]) {
+    const subRoot = join(root, name);
+    if (!existsSync(subRoot)) return;
+    for (const d of await readdir(subRoot, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      const e = await loadVolumeEntry(join(subRoot, d.name), d.name);
+      if (e) into.push(e);
+    }
+  }
   if (existsSync(root)) {
     const entries = await readdir(root, { withFileTypes: true });
     for (const dirent of entries) {
       if (!dirent.isDirectory()) continue;
-      if (dirent.name === 'archive') {
-        // Recurse one level into archive/<id>/ for the archived list.
-        const archiveRoot = join(root, 'archive');
-        const inner = await readdir(archiveRoot, { withFileTypes: true });
-        for (const d2 of inner) {
-          if (!d2.isDirectory()) continue;
-          const e = await loadVolumeEntry(join(archiveRoot, d2.name), d2.name);
-          if (e) archived.push(e);
-        }
-        continue;
-      }
+      // `archive/` (soft-deleted) and `tests/` (the test-primitive
+      // category) are sub-folders, not primitives themselves — recurse.
+      if (dirent.name === 'archive') { await collectSub('archive', archived); continue; }
+      if (dirent.name === 'tests')   { await collectSub('tests', tests);     continue; }
       const id = dirent.name;
       const e = await loadVolumeEntry(join(root, id), id);
       if (e) volume.push(e);
@@ -98,6 +102,7 @@ export const GET = async () => {
   return json({
     bundle,
     volume,
+    tests,
     archived,
     merged,
     shadows: volume.filter((v) => bundleIds.has(v.id)).map((v) => v.id),

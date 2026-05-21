@@ -47,10 +47,13 @@ export const GET = async ({ url }) => {
   if (!name) throw error(400, 'name query param required');
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw error(400, 'invalid primitive name');
   // Volume first — a volume primitive with the same id SHADOWS the bundle.
-  const volSourcePath = volumePath(join('primitives', name, 'source.ts'));
-  if (existsSync(volSourcePath)) {
-    const src = await readFile(volSourcePath, 'utf8');
-    return json({ source: src, origin: 'volume' });
+  // Check the flat location, then the tests/ sub-category (location = category).
+  for (const rel of [join('primitives', name, 'source.ts'), join('primitives', 'tests', name, 'source.ts')]) {
+    const p = volumePath(rel);
+    if (existsSync(p)) {
+      const src = await readFile(p, 'utf8');
+      return json({ source: src, origin: 'volume' });
+    }
   }
   const src = await readFile(HELPERS_PATH, 'utf8');
   const extracted = extractSource(src, name);
