@@ -80,7 +80,33 @@
   let polygonParamName = $derived(paramOrder.find((k) => paramSchema[k].type === 'polygon') ?? null);
   let hasProfile = $derived(polygonParamName !== null);
 
-  let tab = $state<'params' | 'profile' | 'source' | 'ai'>('params');
+  let tab = $state<'params' | 'parts' | 'profile' | 'source' | 'ai'>('params');
+
+  // ── Parts tab ──────────────────────────────────────────────────────────
+  // Dual-control: the source.ts is the source of truth; the GUI introspects
+  // it to recognize the individual instances (parts). Read-only for now.
+  // A recognized instance is a PART when its call is in meta.uses; instances
+  // calling the weld toolkit (weldAndBuild, …) are leaf locals, not parts.
+  let recognized = $state<any>(null);
+  let recogStatus = $state<'idle' | 'loading' | 'error'>('idle');
+  let recogError = $state<string | null>(null);
+  async function loadRecognition() {
+    recogStatus = 'loading'; recogError = null;
+    try {
+      const r = await fetch('/api/primitives/recognize', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: editedSource }),
+      });
+      if (!r.ok) { recogError = await r.text(); recogStatus = 'error'; return; }
+      recognized = await r.json();
+      recogStatus = 'idle';
+    } catch (e: any) { recogError = e?.message ?? String(e); recogStatus = 'error'; }
+  }
+  // Re-recognize whenever the Parts tab is open and the source changes.
+  $effect(() => { if (tab === 'parts') { void editedSource; loadRecognition(); } });
+  let usesSet = $derived(new Set<string>(recognized?.uses ?? []));
+  let parts = $derived((recognized?.instances ?? []).filter((i: any) => usesSet.has(i.call)));
+  let locals = $derived((recognized?.instances ?? []).filter((i: any) => !usesSet.has(i.call)));
 
   // ── AI tab ───────────────────────────────────────────────────────────
   // Mirrors the /components inspector AI tab. Talks directly to the
@@ -285,6 +311,9 @@
           <span class="pv-ic">⚙</span> Params
           {#if paramsDirty}<span class="pv-dot"></span>{/if}
         </button>
+        <button class="pv-tab" class:active={tab === 'parts'} onclick={() => (tab = 'parts')} type="button" role="tab">
+          <span class="pv-ic">▦</span> Parts
+        </button>
         {#if hasProfile}
           <button class="pv-tab" class:active={tab === 'profile'} onclick={() => (tab = 'profile')} type="button" role="tab">
             <span class="pv-ic">◧</span> Profile
@@ -320,6 +349,41 @@
               onPending={setPending}
               onCommit={commitOne}
             />
+          </div>
+        </div>
+      {:else if tab === 'parts'}
+        <div class="pv-pane pv-parts">
+          <div class="pv-pane-head">
+            <span class="pv-pill">{parts.length} part{parts.length === 1 ? '' : 's'}</span>
+            <div class="pv-spacer"></div>
+            <button class="pv-btn" type="button" onclick={loadRecognition}>Re-scan</button>
+          </div>
+          <div class="pv-parts-body">
+            {#if recogStatus === 'loading'}
+              <div class="pv-parts-empty">recognizing…</div>
+            {:else if recogError}
+              <div class="pv-parts-err">{recogError}</div>
+            {:else if parts.length === 0}
+              <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
+            {:else}
+              {#each parts as inst (inst.name)}
+                <div class="pv-part">
+                  <div class="pv-part-head">
+                    <span class="pv-part-name">{inst.name}</span>
+                    <span class="pv-part-call">{inst.call}</span>
+                  </div>
+                  <div class="pv-part-args">{inst.argsText}</div>
+                  {#each inst.transforms as t}
+                    <div class="pv-part-tx">↳ {t.op}({t.argsText})</div>
+                  {/each}
+                </div>
+              {/each}
+              {#if recognized?.composition}
+                <div class="pv-part-compose"><span class="pv-part-name">return</span> <code>{recognized.composition}</code></div>
+              {/if}
+              {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
+              {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
+            {/if}
           </div>
         </div>
       {:else if tab === 'profile' && polygonParamName}
@@ -461,6 +525,22 @@
   .pv-params-grid { padding: 8px 12px 12px; overflow-y: auto; }
   /* Still used by the Profile tab's pane head. */
   .pv-pname { font: 12px monospace; color: #333; }
+
+  /* Parts tab — read-only recognized instances. */
+  .pv-parts { padding: 0; }
+  .pv-parts-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .pv-part { border: 1px solid #eee; border-radius: 5px; padding: 7px 9px; background: #fafafa; }
+  .pv-part-head { display: flex; align-items: center; gap: 8px; }
+  .pv-part-name { font: 700 13px monospace; color: #cc2222; }
+  .pv-part-call { font: 11px monospace; color: #2266cc; background: #eef3fb; padding: 1px 6px; border-radius: 8px; }
+  .pv-part-args { margin-top: 4px; font: 11px ui-monospace, monospace; color: #555; white-space: pre-wrap; word-break: break-word; }
+  .pv-part-tx { margin-top: 3px; font: 11px ui-monospace, monospace; color: #888; }
+  .pv-part-compose { padding: 6px 9px; font: 12px Arial; color: #444; border-top: 1px dashed #ddd; }
+  .pv-part-compose code { font: 11px ui-monospace, monospace; color: #333; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
+  .pv-parts-note { font: 10px Arial; color: #999; padding: 2px 0; }
+  .pv-parts-empty { font: 12px Arial; color: #999; padding: 14px 4px; line-height: 1.4; }
+  .pv-parts-empty code { background: #eee; padding: 0 4px; border-radius: 3px; }
+  .pv-parts-err { font: 11px ui-monospace, monospace; color: #c4392f; padding: 10px 4px; white-space: pre-wrap; }
 
   .pv-source { padding: 0; }
   .pv-editor-wrap { flex: 1; min-height: 0; border-top: 1px solid #eee; padding: 0 0 8px 0; display: flex; flex-direction: column; overflow: hidden; }

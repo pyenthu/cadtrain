@@ -250,6 +250,13 @@
       {/if}
     </div>
 
+    <!-- Demos — standalone test/demo pages kept under /primitives so we
+         don't proliferate top-level routes. -->
+    <div class="prim-tests">
+      <div class="prim-grouphead">Demos</div>
+      <a class="prim-demolink" href="/primitives/recipe-test">recipe-test ↗</a>
+    </div>
+
     {#if archived.length > 0}
       <div class="prim-archive">
         <button class="prim-arch-head" type="button" onclick={() => (showArchive = !showArchive)}>
@@ -355,6 +362,8 @@
   .prim-tests { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
   .prim-grouphead { padding: 4px 8px; font: 600 11px Arial; color: #888; }
   .prim-empty { padding: 2px 8px 6px; font: italic 11px Arial; color: #bbb; }
+  .prim-demolink { display: block; padding: 5px 8px; font: 600 13px monospace; color: #2266cc; text-decoration: none; border-radius: 4px; }
+  .prim-demolink:hover { background: #eef3fb; }
 
   .prim-archive { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
   .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 4px 8px; font: 600 11px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
