@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "id": "t_bolt_hexhead_r",
+    "name": "t_bolt_hexhead (recipe)",
+    "description": "Bolt re-expressed as a recipe: round shaft (r_cylinder) + hex head (r_extrude). Composite params drive the shaft + head, and the head's placement cross-references the shaft length.",
+    "tags": ["test", "recipe", "csg"],
+    "params": {
+      "shaft_od":   { "label": "shaft OD",   "min": 0.5, "max": 4, "step": 0.1, "default": 1.6 },
+      "shaft_len":  { "label": "shaft len",  "min": 1,   "max": 8, "step": 0.1, "default": 4.5 },
+      "head_thick": { "label": "head thick", "min": 0.4, "max": 3, "step": 0.1, "default": 1.3 }
+    },
+    "material": { "outer": { "color": "#6f8a7d", "metallic": 0.6, "roughness": 0.4 }, "inner": { "color": "#3a3a3a", "metallic": 0.1, "roughness": 0.9 } }
+  },
+  "instances": [
+    {
+      "name": "A",
+      "call": "r_cylinder",
+      "args": { "od": { "expr": "p.shaft_od" }, "length": { "expr": "p.shaft_len" }, "segments": { "lit": 64 } }
+    },
+    {
+      "name": "B",
+      "call": "r_extrude",
+      "args": {
+        "profile": { "val": [[1.6, 0], [0.8, 1.3856], [-0.8, 1.3856], [-1.6, 0], [-0.8, -1.3856], [0.8, -1.3856]] },
+        "height": { "expr": "p.head_thick" }
+      },
+      "transforms": [
+        { "op": "mv", "args": [ { "lit": 0 }, { "lit": 0 }, { "expr": "-(p.shaft_len / 2) - p.head_thick" } ] }
+      ]
+    }
+  ],
+  "composition": [ { "op": "add", "of": "A" }, { "op": "add", "of": "B" } ]
+}

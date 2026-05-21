@@ -44,13 +44,19 @@ export interface RecipeParamSchema {
   choices?: Record<string, number>;
 }
 
-/** A single argument value. Two shapes:
+/** A single argument value. Three shapes:
  *  - `{ lit: 4.5 }`           — numeric literal.
  *  - `{ expr: "p.dp_od + 1" }` — Tier 1 expression evaluated against
- *    the current params + already-bound instances. */
+ *    the current params + already-bound instances.
+ *  - `{ val: <any> }`         — VERBATIM pass-through, NOT Tier-1
+ *    evaluated. For non-scalar args a primitive leaf takes — a polygon
+ *    profile (`[[r,z],…]`), a JSON-encoded contour, an enum index. The
+ *    primitive-recipe layer (r_revolve/r_extrude) needs this; library
+ *    recipes never use it (their helpers are all scalar). */
 export type RecipeArg =
   | { lit: number }
-  | { expr: string };
+  | { expr: string }
+  | { val: any };
 
 /** One instance — a base call plus zero or more transform reassignments
  *  (mv / rot / etc.). The interpreter calls `call(args)` to produce the
@@ -128,8 +134,10 @@ interface EvalEnv {
   /** params bag — `p.<name>` lookups. */
   p: Record<string, number>;
   /** instance-name → resolved-arg-map. Cross-instance refs
-   *  (`A.length`) look up `instances['A']['length']`. */
-  instances: Record<string, Record<string, number>>;
+   *  (`A.length`) look up `instances['A']['length']`. Values are
+   *  usually numbers; `{val}` pass-through args can be non-scalar (a
+   *  cross-ref to one would yield NaN under arithmetic — by design). */
+  instances: Record<string, Record<string, any>>;
 }
 
 interface Token { kind: string; value: string; pos: number; }
@@ -252,8 +260,10 @@ export function evalExpr(src: string, env: EvalEnv): number {
   return result;
 }
 
-/** Resolve a single RecipeArg to a number. */
-export function resolveArg(arg: RecipeArg, env: EvalEnv): number {
+/** Resolve a single RecipeArg. Scalars (lit/expr) return a number;
+ *  `{val}` returns its payload verbatim (polygon array, JSON string, …). */
+export function resolveArg(arg: RecipeArg, env: EvalEnv): any {
+  if ('val' in arg) return arg.val;
   if ('lit' in arg) return arg.lit;
   return evalExpr(arg.expr, env);
 }
@@ -384,6 +394,38 @@ export function createResolveDep(
   };
 }
 
+/** Resolver for the PRIMITIVE-recipe layer (the parallel store under
+ *  `primitives/`). Volume primitives are positional-arg leaves — like
+ *  helpers — but resolved by the CALLER (async, via primitive-loader)
+ *  into `primMap` keyed by call name, each carrying its meta param
+ *  order (`propNames`) and the built geom fn. Operators (mv/rot) reuse
+ *  the shared runtime. This is the ONLY thing that differs from the
+ *  library-recipe path: SAME buildRecipe, SAME evalExpr, different call
+ *  targets — no forked interpreter. */
+export function createPrimitiveResolveDep(
+  primMap: Map<string, { propNames: string[]; fn: (...args: any[]) => any }>,
+): (callName: string) => RecipeDep {
+  const operatorByName = new Map(discoverOperators().map((o) => [o.name, o]));
+  const runtime = createHelperRuntime();
+  return (callName: string): RecipeDep => {
+    const prim = primMap.get(callName);
+    if (prim) {
+      return {
+        kind: 'helper',
+        propNames: prim.propNames,
+        build: (args: any[]) => prim.fn(...args),
+      };
+    }
+    const op = operatorByName.get(callName);
+    if (op) {
+      const fn = runtime[callName];
+      if (!fn) throw new Error(`Operator "${callName}" has no runtime wiring`);
+      return { kind: 'helper', propNames: ['x', 'y', 'z'], build: fn };
+    }
+    throw new Error(`Unknown call "${callName}" in primitive recipe — not a volume primitive or operator (mv/rot)`);
+  };
+}
+
 /** Build a complete Manifold from a recipe. Resolves dependencies
  *  via `resolveDep`. Throws on any expression error, dep miss, or
  *  composition op referencing an undeclared instance. */
@@ -394,14 +436,15 @@ export function buildRecipe(
 ): any {
   // Walk instances in source order so cross-instance refs see only
   // already-bound predecessors (matches the .ts loader's semantics).
-  const instances: Record<string, Record<string, number>> = {};
+  const instances: Record<string, Record<string, any>> = {};
   const manifolds: Record<string, any> = {};
   const env: EvalEnv = { p: params, instances };
 
   for (const inst of recipe.instances) {
     const dep = resolveDep(inst.call);
-    // Resolve every arg via the expression evaluator.
-    const resolved: Record<string, number> = {};
+    // Resolve every arg via the expression evaluator (scalars) or
+    // verbatim (`{val}` non-scalar args like polygon profiles).
+    const resolved: Record<string, any> = {};
     for (const [k, v] of Object.entries(inst.args)) {
       try { resolved[k] = resolveArg(v, env); }
       catch (e: any) { throw new Error(`Instance "${inst.name}" arg "${k}": ${e?.message ?? e}`); }
