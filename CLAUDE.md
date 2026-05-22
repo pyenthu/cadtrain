@@ -49,49 +49,7 @@ files (auto-loaded when working in that subtree):
 
     **Root resolution** (`src/lib/server/volume.ts`): `CADTRAIN_VOLUME_ROOT` → `RAILWAY_VOLUME_MOUNT_PATH` → `APP_DATA_DIR` → `/app_data` → `./.dev-volume`. New endpoints that need persistent storage MUST call `volumePath(rel)` and call `maybeProxy(request, url)` first.
 
-    **Local dev → prod volume**: set in `.env.local`:
-    ```
-    CADTRAIN_VOLUME_REMOTE_URL=https://<service>.up.railway.app
-    CADTRAIN_VOLUME_TOKEN=<openssl rand -hex 32 — same value on Railway>
-    ```
-    Every `bun dev` call to `/api/volume` or `/api/kb/source-pdf` then proxies to prod with `X-Volume-Token`. Single source of truth.
-
-    **Auth model**: `CADTRAIN_VOLUME_TOKEN` on prod gates cross-origin requests. Same-origin browser sessions are trusted without explicit token plumbing. When the env var is unset locally, the endpoint is open.
-
-    **Transfer commands** (run from local against prod — Origin header is required to satisfy SvelteKit's CSRF guard on PUT/POST/PATCH/DELETE):
-    ```sh
-    # Upload
-    curl -X PUT \
-      -H "Origin: https://<svc>.up.railway.app" \
-      -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
-      --data-binary @local-bha.pdf \
-      "https://<svc>.up.railway.app/api/volume?path=kb-sources/bha-reference.pdf"
-
-    # Download
-    curl -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
-      "https://<svc>.up.railway.app/api/volume?path=kb-sources/bha-reference.pdf" \
-      -o local-bha.pdf
-
-    # List a directory (JSON tree, depth 1)
-    curl -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
-      "https://<svc>.up.railway.app/api/volume?path=kb-sources"
-
-    # Delete
-    curl -X DELETE \
-      -H "Origin: https://<svc>.up.railway.app" \
-      -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
-      "https://<svc>.up.railway.app/api/volume?path=kb-sources/old.pdf"
-
-    # mkdir
-    curl -X POST \
-      -H "Origin: https://<svc>.up.railway.app" \
-      -H "X-Volume-Token: $CADTRAIN_VOLUME_TOKEN" \
-      "https://<svc>.up.railway.app/api/volume?path=archive&action=mkdir"
-    ```
-
-    **Upload ceilings (two limits).** (1) adapter-node `BODY_SIZE_LIMIT` — Dockerfile sets `64M`; a Railway service variable of the same name overrides it. (2) Railway's edge request timeout — uploads exceeding it 502 ("Application failed to respond") regardless of body size. Files ≳10–15 MB on slow uplinks need a manual transfer (Railway shell / volume mount). Small/medium files (≤~10 MB) go through fine.
-
-    **Verification — Playwright volume spec** (`tests/e2e/volume.spec.ts`): see `tests/CLAUDE.md` for the three modes (local / dev-via-proxy / direct-prod).
+    **Local dev → prod volume**: set `CADTRAIN_VOLUME_REMOTE_URL` + `CADTRAIN_VOLUME_TOKEN` in `.env.local` and every `bun dev` call to `/api/volume` proxies to prod (token gates cross-origin; same-origin browser sessions are trusted; unset locally = open). Operational reference — `.env.local` setup, curl transfer commands (upload/download/list/delete/mkdir), upload ceilings, and the Playwright verification spec — lives in **`docs/VOLUME_TRANSFER.md`**.
 
 14. **Compounding context for drawings — components + assembly recipes.** Before generating a new single-file component or composing a multi-part assembly, check the catalog:
     - **Per-component specs**: `src/lib/cad/components/<id>.md` — each single-file component should have a sibling `.md` documenting what real-world part it models, vocabulary, validation, derived params. Template: `docs/PRIMITIVE_TEMPLATE.md`. Strong example: `src/lib/cad/components/conn_box.md`.
@@ -120,63 +78,17 @@ files (auto-loaded when working in that subtree):
 
     The picture → AI → JSON → volume workflow uses `'server'`. Bundle components stay git-tracked + compiled; library parts live on the volume and never need a bundle rebuild.
 
-    **part.json shape** (`<volume>/library/<cat>/<id>/part.json`):
-    ```jsonc
-    {
-      "meta": {
-        "id": "<id>", "name": "...", "description": "...", "tags": [...],
-        "family": "drillstring|wellhead_xt|...",
-        "params": { "od": { "label":"OD", "min":1, "max":10, "step":0.125, "default":4.5, "unit":"in" } }
-      },
-      "instances": [
-        { "name": "A", "call": "<helper or component id>",
-          "args": { "<argName>": { "lit": 4.5 }, "<other>": { "expr": "p.foo * 2" } },
-          "transforms": [ { "op": "mv", "args": [{"lit":0},{"lit":0},{"expr":"A.length"}] } ]
-        }
-      ],
-      "composition": [
-        { "op": "add",      "of": "A" },
-        { "op": "subtract", "of": "B" }
-      ]
-    }
-    ```
-    - Args: `{lit:<n>}` or `{expr:"<tier-1>"}`. Tier 1 = arithmetic + `p.<param>` + `<INST>.<argName>` cross-instance refs + `Math.*` whitelist (abs, sign, floor, ceil, round, trunc, sqrt, cbrt, pow, exp, log, log{2,10}, sin, cos, tan, a{sin,cos,tan,tan2}, min, max, PI, E). No conditionals, no loops.
-    - Transforms: `mv` and `rot` take three scalar args (x, y, z) — the recipe expresses vec3s as three Tier 1 expressions, not a single nested array.
-    - Composition order matters for `subtract` / `intersect`. The interpreter walks left-to-right and folds through one `GeomAcc`.
-    - **Name resolution**: helpers + operators (`cyl`, `tube`, `mv`, `rot`) are the canonical namespace and win on collision — never name a library part `tube` or `cyl`. Convention: suffix library parts with `_part` when the natural name would collide.
+    **Name resolution (behavioral rule)**: helpers + operators (`cyl`, `tube`, `mv`, `rot`) are the canonical namespace and win on collision — **never name a library part `tube` or `cyl`**. Suffix library parts with `_part` when the natural name would collide.
 
-    **Authoring + AI**: the inspector Builder tab routes JSON parts to a `lang=json` editor; the Parts tab shows a "edit instances in Builder" banner (form-driven JSON Parts editor is a follow-up). The refine endpoint (`/api/components/refine`) accepts either `source` (legacy .ts) or `recipe` (JSON) and emits the matching shape — schema validator + 1-shot retry on bad output.
-
-    **Legacy .ts loader path** (`loadGeomFromSource`, `parseImports`, `enforceSplitGrammar`, `expandInstancePropRefs`) is still kept so the Builder tab can preview in-flight edits to bundle primitives in `src/lib/cad/components/*.ts`. No library part uses it any more — every `library/<cat>/<id>/` now has a `part.json`. Plan: `~/.claude/plans/grammar-split-init-compose.md` (which describes the intermediate split-grammar TS shape; the JSON pivot supersedes Stage G onward).
+    **Full `part.json` shape** — the schema, Tier-1 expression grammar (`{lit}`/`{expr}` + `Math.*` whitelist), `mv`/`rot` transforms, composition order, authoring/refine flow, and the legacy .ts loader path — is in **`docs/LIBRARY_PART.md`**. Read it before generating or editing any `library/<cat>/<id>/part.json`.
 
 18. **The library — directory-per-part, location = category.** A part is a self-contained directory under `<volume>/library/<category>/<id>/`. **Its location IS its classification.** No central index, no metadata map that can drift. `src/lib/server/library.ts` is the resolver (`resolvePart`, `listLibraryParts`, `categoryDir`, `partDirIn`). Flow: create → test → review → move → category. `/api/components/save` with `create: true` writes to `library/test/<id>/`; updates write back into the part's current category dir; `/api/components/move` does an atomic `rename` to promote. `/library/` is gitignored.
 
 ## Open TODOs (out-of-scope findings)
 
-- **Default-param primitive renders collapse for pHash AND CLIP.**
-  Originally discovered 2026-04-13 with pHash; confirmed for CLIP on
-  2026-05-09. Four primitives (`seal_bore_polished`,
-  `packer_element`, `nc_numbered_connection`, `grooved_cylinder`)
-  share a 64-bit pHash. CLIP collapses even more — cosine = 1.000
-  between **12 of 18** primitives on the synthetic render set
-  because default-param renders strip away every visual cue CLIP was
-  trained on (colour, shading, texture, 3D form).
-
-  CLIP infrastructure stays in place: it likely still helps for real
-  photo uploads to `/api/identify` (different domain), and the
-  embeddings are on every cache record.
-
-  **Counter-finding (2026-05-09):** CLI/Opus cold classification (no
-  RAG, no embeddings, no retrieval — just the catalog text + image)
-  hit **17/18 (94.4%)** on `var_1.png` per primitive. The single
-  miss (`taper_cone` → `thread_eue`) came in at 0.6 confidence — the
-  model knew it was uncertain. This contradicts the assumption that
-  the retrieval scaffolding is load-bearing; for the rendered
-  synthetic domain at least, raw VLM is enough. Before investing in
-  CLIP fine-tuning or pipeline changes, run the multi-variant
-  ablation (`var_1..var_20` × CLI/Opus, no RAG vs API/Sonnet with
-  RAG). See `~/.claude/plans/components-cli-recognition.md` for the
-  deferred queue.
+Research findings (default-param pHash/CLIP collapse, the cold-classification
+counter-finding, and the deferred ablation queue) live in **`docs/FINDINGS.md`**
+and the session memory. Not day-to-day rules.
 
 ## Tech stack
 
@@ -256,41 +168,15 @@ static/
 ├── tests/                            # gitignored
 └── components/                       # Baked .glb meshes — gitignored, regenerable
 
-# Persistent volume ($APP_DATA_DIR — local dev: repo root when kb-sources/
-# is present, else ./.dev-volume; Railway: /app_data). NOTHING here is in
-# git; everything is served to the app via /api/volume. See Rule 13.
-<volume>/
-├── figures/                          # extract_figures.ts PDF-page renders + gallery.json
-├── test-recordings/                  # Playwright WEBMs + e2e/<task>/ videos + manifest.json
-├── kb/                               # KB tables — index.json + api/*.json
-├── kb-sources/                       # vendor/operator reference PDFs + _index.json sidecar
-├── eval/                             # eval datasets — wells/ + components/ recognition fixtures
-├── library/                          # directory-per-part component library
-└── training_data/                    # cache.jsonl + authored_cache.jsonl
+# Persistent volume (<volume> = $APP_DATA_DIR; see Rule 13 for sub-paths +
+# root resolution). NOTHING here is in git; all served via /api/volume.
+# Sub-dirs: figures/ test-recordings/ kb/ kb-sources/ eval/ library/ training_data/
+# Local dev mirror: training_data/ (cache.jsonl + prim_<component>/ seed data,
+# 18 primitives × ~5 variations) and kb-sources/ (gitignored; canonical copy on volume).
 
-training_data/                         # local mirror in dev (volume root when kb-sources/ present)
-├── cache.jsonl
-├── authored_cache.jsonl
-├── authored_context.md
-├── prim_<component>/                 # seed training data (18 primitives × ~5 variations)
-└── reference/                        # thread spec data etc.
-
-kb-sources/                            # local copy of vendor/operator PDFs feeding scripts/kb/. GITIGNORED. Canonical copy is on the volume.
-
-scripts/
-├── _volume.ts                        # volumeRoot()/volumePath() for standalone scripts
-├── seed_cache.ts                     # populate cache.jsonl from prim_* training data
-├── extract_figures.ts                # PDF-page renders → <volume>/figures/
-├── gen_synthetic.ts                  # synthetic training-data generator
-├── generate_authored_library.ts      # bulk AuthoredComponent emitter
-├── harvest_e2e_videos.ts             # copy Playwright WEBMs to <volume>/test-recordings/e2e/<task>/
-├── index_hal_catalog.ts              # ingest HAL catalog assets
-├── migrate_to_clip.ts                # one-shot CLIP embedding backfill
-├── overnight_extract.ts              # batch wells extraction over the eval set
-├── inspect_catalog_pdf.py            # one-off Python inspector
-├── snap_dev.mjs                      # dev screenshot helper
-├── kb/                               # KB table re-extractors
-└── prompts/                          # prompt templates loaded by scripts
+scripts/                               # _volume.ts, seed_cache.ts, extract_figures.ts,
+                                       # gen_synthetic.ts, harvest_e2e_videos.ts, migrate_to_clip.ts,
+                                       # overnight_extract.ts, kb/ (table re-extractors), prompts/, …
 
 docs/
 ├── PRIMITIVE_TEMPLATE.md
