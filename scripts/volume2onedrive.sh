@@ -83,18 +83,21 @@ import json, os, sys, time, urllib.parse, urllib.request
 base, stage = sys.argv[1], sys.argv[2]
 token = os.environ.get("CADTRAIN_VOLUME_TOKEN", "")
 hdrs = {"X-Volume-Token": token} if token else {}
-def get(rel, tries=4):
+def fetch(rel, tries=5):
+    # Read the FULL body inside the retry so a mid-transfer drop
+    # (IncompleteRead / ConnectionReset) is retried, not just the connect.
     url = base + "/api/volume?path=" + urllib.parse.quote(rel)
     for i in range(tries):
         try:
-            return urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=60)
+            with urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=120) as r:
+                return r.read()
         except Exception as e:
             if i == tries - 1:
                 raise
             sys.stderr.write("  retry %d/%d %s (%s)\n" % (i + 1, tries - 1, rel or "/", type(e).__name__))
-            time.sleep(1.5 * (i + 1))
+            time.sleep(2 * (i + 1))
 def walk(rel):
-    node = json.load(get(rel))
+    node = json.loads(fetch(rel))
     if node.get("type") != "dir":
         return
     for c in (node.get("children") or {}).values():
@@ -106,8 +109,9 @@ def walk(rel):
             walk(c["id"])
         else:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with get(c["id"]) as r, open(dest, "wb") as f:
-                f.write(r.read())
+            data = fetch(c["id"])
+            with open(dest, "wb") as f:
+                f.write(data)
             print("  pulled", c["id"])
 walk("")
 PY
