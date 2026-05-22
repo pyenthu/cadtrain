@@ -15,8 +15,7 @@
   // Source.ts is canonical. Editing meta lives there as
   // `export const meta = {...}`. Save callbacks emit upward — this
   // component doesn't talk to the API itself.
-  import PrimitiveCanvas from './PrimitiveCanvas.svelte';
-  import PrimitiveGlbCanvas from './PrimitiveGlbCanvas.svelte';
+  import PrimitiveDualCanvas from './PrimitiveDualCanvas.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -630,13 +629,6 @@
     } catch { instrStatus = 'error'; }
   }
 
-  // GLB cutaway toggle — defaults off so users see the full bake first.
-  // The Mesh pane is ALWAYS cutaway (baked into manifoldToCutVC), so
-  // this toggle gives the GLB pane visual parity on demand. Reacts to
-  // the same appliedArgs signal as the canvas, so it re-bakes only on
-  // Apply, not on every slider drag.
-  let glbCut = $state(false);
-
   // Polygon params travel to the server as JSON strings; scalars as
   // numbers. Order follows the meta param-order.
   let appliedArgs = $derived(paramOrder.map((k) => {
@@ -771,20 +763,7 @@
            name differs from the directory id, e.g. dir
            `profile_extrude_v2` containing `export function profile_extrude`).
            The bundle fast-path can't handle that mismatch. -->
-      <div class="pv-canvas-stack">
-        <div class="pv-canvas-half">
-          <div class="pv-canvas-label">Mesh (live)</div>
-          <PrimitiveCanvas {id} {name} args={appliedArgs} source={editedSource} />
-        </div>
-        <div class="pv-canvas-half">
-          <div class="pv-canvas-label">GLB (bake preview)</div>
-          <label class="pv-canvas-toggle" title="Show the half-sectioned bake (same cut plane as the Mesh pane).">
-            <input type="checkbox" bind:checked={glbCut} />
-            <span>Cutaway</span>
-          </label>
-          <PrimitiveGlbCanvas {id} {name} args={appliedArgs} source={editedSource} cut={glbCut} />
-        </div>
-      </div>
+      <PrimitiveDualCanvas {id} {name} args={appliedArgs} source={editedSource} />
     </div>
 
     <div
@@ -1236,12 +1215,6 @@
   .pv-split { display: grid; grid-template-columns: 1fr 6px var(--side-width, 420px); min-height: 0; height: 100%; gap: 0; }
 
   .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 6px; }
-  .pv-canvas-stack { display: grid; grid-template-rows: 1fr 1fr; gap: 6px; height: 100%; min-height: 0; }
-  .pv-canvas-half { position: relative; min-height: 0; border-radius: 4px; overflow: hidden; }
-  .pv-canvas-label { position: absolute; top: 6px; left: 8px; z-index: 5; font: 600 10px Arial; color: #fff; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 3px; pointer-events: none; }
-  .pv-canvas-toggle { position: absolute; top: 6px; right: 8px; z-index: 5; display: flex; align-items: center; gap: 4px; font: 600 10px Arial; color: #fff; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 3px; cursor: pointer; user-select: none; }
-  .pv-canvas-toggle input { width: 12px; height: 12px; margin: 0; cursor: pointer; accent-color: #cc2222; }
-  .pv-canvas-toggle:hover { background: rgba(204,34,34,0.6); }
 
   .pv-resizer { background: transparent; cursor: col-resize; position: relative; }
   .pv-resizer::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eee; transition: background 0.15s; }
