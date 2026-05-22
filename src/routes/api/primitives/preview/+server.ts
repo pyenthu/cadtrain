@@ -67,21 +67,31 @@ export const POST = async ({ request, fetch }) => {
 
   await helpers.initManifold();
   if (typeof zScale === 'number' && zScale > 0) setRenderZScale(zScale);
+  // Phase timings (ms) — returned as `_t` so we can break down where a
+  // preview spends its time: deps+sandbox build vs WASM geom vs cutaway vs
+  // mesh serialize. Client ignores the field.
+  const T: Record<string, number> = {};
+  const mark = (k: string, t: number) => { T[k] = +(performance.now() - t).toFixed(1); };
+  let t = performance.now();
   let primFn: any;
   try {
     primFn = await buildPrimitiveGeom(source, name, fetch);
   } catch (e: any) {
     throw error(400, `primitive build failed: ${e?.message ?? e}`);
   }
+  mark('buildFn', t); t = performance.now();
 
   let manifold: any;
   try { manifold = primFn(...args); }
   catch (e: any) { throw error(400, `primitive call failed: ${e?.message ?? e}`); }
+  mark('geom', t); t = performance.now();
 
   if (!manifold || typeof manifold.getMesh !== 'function') {
     throw error(400, 'primitive did not return a Manifold');
   }
   const result = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material);
+  mark('finalize', t); t = performance.now();
   const serialized = serializeComponentResult(result);
-  return json({ ok: true, full: serialized.full, cutVC: serialized.cutVC });
+  mark('serialize', t);
+  return json({ ok: true, full: serialized.full, cutVC: serialized.cutVC, _t: T });
 };

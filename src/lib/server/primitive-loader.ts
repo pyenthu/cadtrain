@@ -66,16 +66,17 @@ export async function buildPrimitiveGeom(
 ): Promise<GeomFn> {
   // Resolve declared deps (skip ones already in the standard sandbox scope,
   // e.g. a `uses:['tube']` — that's the bundle helper, already injected).
-  const deps: Array<[string, GeomFn]> = [];
-  for (const dep of usesOf(source)) {
-    if (SANDBOX_ARG_NAMES.includes(dep)) continue;
+  // PARALLEL — a composite's deps were resolved one-at-a-time, so each dep's
+  // source.ts fetch (a prod round-trip in dev) blocked the next.
+  const depNames = usesOf(source).filter((d) => !SANDBOX_ARG_NAMES.includes(d));
+  for (const dep of depNames) {
     if (visited.has(dep)) {
       throw new Error(`circular primitive dependency: ${[...visited, dep].join(' → ')}`);
     }
-    deps.push([dep, await loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))]);
   }
-  const depNames = deps.map((d) => d[0]);
-  const depFns = deps.map((d) => d[1]);
+  const depFns = await Promise.all(
+    depNames.map((dep) => loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))),
+  );
 
   const js = transpile(source);
   const wrapper = `"use strict";
@@ -94,9 +95,33 @@ export async function buildPrimitiveGeom(
   return fn as GeomFn;
 }
 
+// Dep-source cache. A composite preview fetches each `uses` dep's source.ts
+// from the volume (proxied to prod in dev = a network round-trip). Without
+// this, the Mesh build, the GLB bake, and EVERY param re-render each
+// re-fetch the same leaves. Cache by id with a short TTL, caching the
+// PROMISE so concurrent Mesh+GLB builds dedupe to ONE fetch. Leaves rarely
+// change; the TTL bounds staleness (edit a dep → refreshes within the TTL).
+const DEP_TTL_MS = 30_000;
+const depSourceCache = new Map<string, { p: Promise<string>; ts: number }>();
+function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
+  const hit = depSourceCache.get(id);
+  if (hit && Date.now() - hit.ts < DEP_TTL_MS) return hit.p;
+  const p = (async () => {
+    const r = await fetchFn(
+      `/api/volume?path=${encodeURIComponent(`primitives/${id}/source.ts`)}`,
+      { cache: 'no-store' },
+    );
+    if (!r.ok) throw new Error(`dependency primitive "${id}" not found on the volume (HTTP ${r.status})`);
+    return r.text();
+  })().catch((e) => { depSourceCache.delete(id); throw e; });
+  depSourceCache.set(id, { p, ts: Date.now() });
+  return p;
+}
+
 /** Resolve a primitive id → geom function. Bundle helpers (cyl, tube, …)
  *  return directly; volume primitives are read from
- *  <volume>/primitives/<id>/source.ts (via fetchFn) and built recursively. */
+ *  <volume>/primitives/<id>/source.ts (via fetchFn, cached) and built
+ *  recursively. */
 export async function loadPrimitiveGeomById(
   id: string,
   fetchFn: typeof fetch,
@@ -105,13 +130,6 @@ export async function loadPrimitiveGeomById(
   const bundle = (helpers as any)[id];
   if (typeof bundle === 'function') return bundle as GeomFn;
 
-  const r = await fetchFn(
-    `/api/volume?path=${encodeURIComponent(`primitives/${id}/source.ts`)}`,
-    { cache: 'no-store' },
-  );
-  if (!r.ok) {
-    throw new Error(`dependency primitive "${id}" not found on the volume (HTTP ${r.status})`);
-  }
-  const src = await r.text();
+  const src = await fetchDepSource(id, fetchFn);
   return buildPrimitiveGeom(src, id, fetchFn, visited);
 }

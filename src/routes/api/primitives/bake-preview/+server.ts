@@ -59,12 +59,16 @@ export const POST = async ({ request, fetch }) => {
   // source's meta.uses deps + injects the helper scope. Same path as
   // /api/primitives/preview.
   await helpers.initManifold();
+  const T: Record<string, number> = {};
+  const mark = (k: string, t: number) => { T[k] = +(performance.now() - t).toFixed(1); };
+  let t = performance.now();
   let primFn: any;
   try {
     primFn = await buildPrimitiveGeom(source, name, fetch);
   } catch (e: any) {
     throw error(400, `primitive build failed: ${e?.message ?? e}`);
   }
+  mark('buildFn', t); t = performance.now();
 
   // Wrap positional → record. buildGlbBytes hands the geom a params
   // record; we translate via the meta param order. Pass strings
@@ -76,6 +80,7 @@ export const POST = async ({ request, fetch }) => {
     }));
 
   const r = await buildGlbBytes(geom, valuesRecord, material);
+  mark('bake', t); // includes the WASM geom rebuild + GLB export (full + cut)
   if (!r.ok) throw error(400, `bake failed: ${r.error}`);
 
   // Return JSON with base64-encoded GLB blobs. The client converts to
@@ -86,5 +91,6 @@ export const POST = async ({ request, fetch }) => {
     ok: true,
     full: b64(r.full),
     cut: r.cut ? b64(r.cut) : null,
+    _t: T,
   });
 };
