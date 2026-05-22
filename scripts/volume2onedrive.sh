@@ -79,19 +79,36 @@ else
   echo "▸ pulling volume → staging (recursive, depth-1 per call)…"
   # Token is passed via env (not argv) so it never lands in `ps` output.
   CADTRAIN_VOLUME_TOKEN="$CADTRAIN_VOLUME_TOKEN" python3 -u - "$BASE_URL" "$STAGE" <<'PY'
-import json, os, sys, time, urllib.parse, urllib.request
+import http.client, json, os, sys, time, urllib.parse
+from urllib.parse import urlparse
 base, stage = sys.argv[1], sys.argv[2]
 token = os.environ.get("CADTRAIN_VOLUME_TOKEN", "")
 hdrs = {"X-Volume-Token": token} if token else {}
-def fetch(rel, tries=5):
-    # Read the FULL body inside the retry so a mid-transfer drop
-    # (IncompleteRead / ConnectionReset) is retried, not just the connect.
-    url = base + "/api/volume?path=" + urllib.parse.quote(rel)
+host = urlparse(base).hostname
+# ONE persistent HTTPS connection — DNS is resolved ONCE, not per file. A flaky
+# local/ISP resolver chokes on hundreds of rapid per-file getaddrinfo calls
+# (fails for ANY host — incl. paramcad.app while it CNAMEs to railway); reusing
+# the connection means a single successful lookup carries the whole pull.
+_conn = {"c": None}
+def _get_conn():
+    if _conn["c"] is None:
+        _conn["c"] = http.client.HTTPSConnection(host, timeout=120)
+    return _conn["c"]
+def fetch(rel, tries=6):
+    path = "/api/volume?path=" + urllib.parse.quote(rel)
     for i in range(tries):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=120) as r:
-                return r.read()
+            c = _get_conn()
+            c.request("GET", path, headers=hdrs)
+            r = c.getresponse()
+            data = r.read()  # read fully so the connection can be reused
+            if r.status != 200:
+                raise Exception("HTTP %d" % r.status)
+            return data
         except Exception as e:
+            try: _conn["c"].close()
+            except Exception: pass
+            _conn["c"] = None  # force one fresh connect (single DNS lookup) on retry
             if i == tries - 1:
                 raise
             sys.stderr.write("  retry %d/%d %s (%s)\n" % (i + 1, tries - 1, rel or "/", type(e).__name__))
