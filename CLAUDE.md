@@ -95,11 +95,11 @@ and the session memory. Not day-to-day rules.
 > Living section — clear entries as they land. Full detail in the session
 > memory handoff (`session_handoff_2026-05-22`).
 
-- **Volume → OneDrive button** (in progress) — `scripts/volume2onedrive.sh` written (prod volume → `rclone sync` → `onedrive:APPS/cadtrain`, `--backup-dir` keeps the replaced copy). PENDING: dev-only `POST /api/volume/onedrive` that spawns the script + a `{#if dev}` button in `/volume` beside "Backup → src". Prod volume is the source of truth; feeds local-src AND OneDrive independently (two buttons).
-- **Profiles → named polygon params** — hoist inline profile arrays in composite `source.ts` into `meta.params` polygon params; cleans the composition + lets the profile popup edit a param instead of an inline literal.
 - **Cutaway unify** — one shared cut+classify module for client `builder.ts` + server `manifold-bake.ts` (drifted: server lacks the `material` path), plus a server/client render policy keyed on IP sensitivity.
 - **Per-part dynamic editor** (decision pending) — per-part editing UI from the volume: declarative descriptor + main-source component registry (`<svelte:component>`) vs runtime-compiled volume `.svelte`. See memory `todo_per_part_dynamic_editor`.
 - **Non-manifold / CSG-split detection** — plan needed; see memory `todo_nonmanifold_csg_split`.
+
+Shipped this session: CLAUDE.md trim · profile-builder popup · Save As · Volume→OneDrive button (dev-only) · profiles→named polygon params (composites declare `type:'polygon'` params + Parts-tab "Promote to param").
 
 ## Tech stack
 
