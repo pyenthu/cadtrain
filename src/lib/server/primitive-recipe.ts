@@ -24,12 +24,14 @@ import { extractMetaFromSource } from './primitives-meta';
 
 const OPERATORS = new Set(['mv', 'rot']);
 
-/** Read a primitive's source.ts off the volume — flat location first,
- *  then the tests/ sub-category (location = category). */
+/** Read a primitive's source.ts off the volume via the CATEGORY-AWARE source
+ *  endpoint (post-2026-05-23 restructure parts live under
+ *  primitives/<category>/<id>/, so a flat path no longer resolves). */
 async function readPrimitiveSource(name: string, fetchFn: typeof fetch): Promise<string> {
-  for (const rel of [`primitives/${name}/source.ts`, `primitives/tests/${name}/source.ts`]) {
-    const r = await fetchFn(`/api/volume?path=${encodeURIComponent(rel)}`, { cache: 'no-store' });
-    if (r.ok) return r.text();
+  const r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
+  if (r.ok) {
+    const data = await r.json();
+    if (typeof data?.source === 'string' && data.source) return data.source;
   }
   throw new Error(`primitive "${name}" not found on the volume`);
 }

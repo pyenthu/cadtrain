@@ -107,12 +107,19 @@ function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
   const hit = depSourceCache.get(id);
   if (hit && Date.now() - hit.ts < DEP_TTL_MS) return hit.p;
   const p = (async () => {
+    // Resolve via the source endpoint, which is CATEGORY-AWARE (it walks
+    // primitives/{basic,industrial,archive}/<id>/ and completions/<family>/
+    // <id>/). Reading the flat primitives/<id>/source.ts directly broke
+    // after the 2026-05-23 restructure moved parts into sub-folders.
     const r = await fetchFn(
-      `/api/volume?path=${encodeURIComponent(`primitives/${id}/source.ts`)}`,
+      `/api/primitives/source?name=${encodeURIComponent(id)}`,
       { cache: 'no-store' },
     );
     if (!r.ok) throw new Error(`dependency primitive "${id}" not found on the volume (HTTP ${r.status})`);
-    return r.text();
+    const data = await r.json();
+    const src = typeof data?.source === 'string' ? data.source : '';
+    if (!src) throw new Error(`dependency primitive "${id}" returned empty source`);
+    return src;
   })().catch((e) => { depSourceCache.delete(id); throw e; });
   depSourceCache.set(id, { p, ts: Date.now() });
   return p;
