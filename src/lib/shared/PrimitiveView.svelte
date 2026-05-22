@@ -102,40 +102,26 @@
   let pending = $state<Record<string, number | [number, number][]>>(untrack(() => ({ ...applied })));
   let editedSource = $state(untrack(() => initialSource));
 
-  // First polygon-typed param (if any). The Profile tab edits this
-  // one; the Params tab edits ALL of them (composites that promoted
-  // inline profiles to named params can carry several).
-  let polygonParamName = $derived(paramOrder.find((k) => paramSchema[k].type === 'polygon') ?? null);
-  let hasProfile = $derived(polygonParamName !== null);
-  // Every polygon-typed param, in meta order — the Params tab renders one
-  // ProfileEditor per entry below the scalar grid.
+  // Every polygon-typed param, in meta order — the merged Build tab renders a
+  // ✎-profile card per entry below the scalar grid (opens the popup editor).
+  // Composites that promoted inline profiles to named params can carry several.
   let polygonParamNames = $derived(paramOrder.filter((k) => paramSchema[k].type === 'polygon'));
 
-  // ── Profiles tab (meta.profiles — the Svelte-component model) ────────────
-  // Encapsulated profile DEFAULTS. They are NOT params/args — the composition
-  // reads meta.profiles.<name>.value. The GUI edits them by splicing the
-  // value literal in the source BUFFER (editedSource): live edit → canvas
-  // re-bakes off the buffer; Save source persists. (Per-assembly INSTANCE
-  // overrides are the next layer — 1b — not built yet.)
-  let profileNames = $derived(Object.keys(profileSchema ?? {}));
-  let hasProfiles = $derived(profileNames.length > 0);
-  // Working copies of each profile's points, seeded from the schema value.
-  // Edits land here (pending), commit splices into editedSource.
-  let profileVals = $state<Record<string, [number, number][]>>(
-    untrack(() => Object.fromEntries(Object.entries(profileSchema ?? {}).map(([k, v]) => [k, (v.value ?? []).map((p) => [p[0], p[1]] as [number, number])]))),
-  );
-  // Baseline (committed-to-buffer) copy → per-profile dirty detection.
-  let profileBase = $state<Record<string, string>>(
-    untrack(() => Object.fromEntries(Object.entries(profileSchema ?? {}).map(([k, v]) => [k, JSON.stringify(v.value ?? [])]))),
-  );
-  function profileIsDirty(pn: string): boolean {
-    return JSON.stringify(profileVals[pn] ?? []) !== (profileBase[pn] ?? '[]');
+  // Single merged "Build" tab (Parameters section + per-part accordion rows),
+  // plus Source + AI. The dedicated Profiles/Profile tabs are gone — profile
+  // editing is the ✎ popup everywhere (leaf polygon params + composite parts).
+  let tab = $state<'build' | 'source' | 'ai'>('build');
+
+  // Per-part accordion open/close. Keyed by part name; absent = OPEN
+  // (parts start expanded so the merged tab shows everything at a glance).
+  let collapsedParts = $state<Set<string>>(new Set());
+  function togglePart(name: string) {
+    const next = new Set(collapsedParts);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    collapsedParts = next;
   }
-  let anyProfileDirty = $derived(profileNames.some(profileIsDirty));
 
-  let tab = $state<'params' | 'parts' | 'profiles' | 'profile' | 'source' | 'ai'>('params');
-
-  // ── Parts tab ──────────────────────────────────────────────────────────
+  // ── Parts recognition ───────────────────────────────────────────────────
   // Dual-control: the source.ts is the source of truth; the GUI introspects
   // it to recognize the individual instances (parts). Read-only for now.
   // A recognized instance is a PART when its call is in meta.uses; instances
@@ -155,42 +141,10 @@
       recogStatus = 'idle';
     } catch (e: any) { recogError = e?.message ?? String(e); recogStatus = 'error'; }
   }
-  // Re-recognize whenever the Parts OR Profiles tab is open and the source
-  // changes (the Profiles tab needs the recognized meta.profiles value spans
-  // to splice edits back into the buffer).
-  $effect(() => { if (tab === 'parts' || tab === 'profiles') { void editedSource; loadRecognition(); } });
-
-  // Commit a profile edit: splice the new polygon over meta.profiles.<name>.value
-  // in editedSource. We re-locate the span by NAME from the live recognition
-  // (offsets shift as the buffer changes). → Source dirty; canvas re-bakes off
-  // editedSource; Save source persists. Returns false if the span wasn't found.
-  function commitProfile(pn: string): boolean {
-    const rp = (recognized?.profiles ?? []).find((p: any) => p.name === pn);
-    if (!rp || rp.valueStart < 0 || rp.valueEnd < 0) return false;
-    const json = JSON.stringify(profileVals[pn] ?? []);
-    editedSource = editedSource.slice(0, rp.valueStart) + json + editedSource.slice(rp.valueEnd);
-    profileBase = { ...profileBase, [pn]: json };
-    return true;
-  }
-  function commitAllProfiles() {
-    // Apply high→low so earlier splices don't invalidate later offsets.
-    const dirty = profileNames.filter(profileIsDirty)
-      .map((pn) => ({ pn, rp: (recognized?.profiles ?? []).find((p: any) => p.name === pn) }))
-      .filter((x) => x.rp && x.rp.valueStart >= 0)
-      .sort((a, b) => b.rp.valueStart - a.rp.valueStart);
-    let out = editedSource;
-    const nextBase = { ...profileBase };
-    for (const { pn, rp } of dirty) {
-      const json = JSON.stringify(profileVals[pn] ?? []);
-      out = out.slice(0, rp.valueStart) + json + out.slice(rp.valueEnd);
-      nextBase[pn] = json;
-    }
-    editedSource = out;
-    profileBase = nextBase;
-  }
-  function revertProfile(pn: string) {
-    try { profileVals = { ...profileVals, [pn]: JSON.parse(profileBase[pn] ?? '[]') }; } catch { /* keep */ }
-  }
+  // Re-recognize whenever the Build tab is open and the source changes. The
+  // Build tab needs the recognized instance spans (Parts accordion) AND the
+  // meta.profiles value spans (the ✎ profile popups splice edits back here).
+  $effect(() => { if (tab === 'build') { void editedSource; loadRecognition(); } });
 
   // ── Add-transform palette (mirrors the /components chain-op aid) ──────────
   // A clean visual coding aid: a `+` on each Parts-tab instance row opens a
@@ -447,6 +401,27 @@
     profileBaseline = json;
     closeProfilePopup();
   }
+
+  // ── Leaf polygon-param profile popup ─────────────────────────────────────
+  // A LEAF primitive (r_revolve, r_extrude, …) exposes its profile as a
+  // `type: 'polygon'` PARAM (paramSchema), edited via `pending[name]` like any
+  // other param — Apply/Enter commits → re-bake. Per the visual-editor plan we
+  // surface it as a ✎ POPUP (not an inline editor / dedicated tab): the ✎ next
+  // to the param name opens the SAME ProfileEditor in a FloatingPanel, seeded
+  // from `pending[name]`. onChange updates pending (orange-bar dirty); Apply =
+  // the existing global `apply()` (commit pending → applied → canvas re-bake).
+  let leafEdit = $state<{ pname: string; px: number; py: number } | null>(null);
+  function openLeafProfile(pname: string, ev: MouseEvent) {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    leafEdit = {
+      pname,
+      px: Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480)),
+      py: Math.max(8, Math.min(rect.top, window.innerHeight - 360)),
+    };
+  }
+  function closeLeafProfile() { leafEdit = null; }
+  // Apply the leaf-param edit = commit pending → applied (re-bake), then close.
+  function applyLeafProfile() { apply(); closeLeafProfile(); }
 
   // Promote an inline profile literal → an encapsulated meta.profiles entry
   // (the Svelte-component model). Two edits, high→low offset:
@@ -779,24 +754,10 @@
 
     <aside class="pv-side">
       <div class="pv-tabs" role="tablist">
-        <button class="pv-tab" class:active={tab === 'params'} onclick={() => (tab = 'params')} type="button" role="tab">
-          <span class="pv-ic">⚙</span> Params
-          {#if paramsDirty}<span class="pv-dot"></span>{/if}
+        <button class="pv-tab" class:active={tab === 'build'} onclick={() => (tab = 'build')} type="button" role="tab">
+          <span class="pv-ic">⚙</span> Build
+          {#if paramsDirty || sourceDirty}<span class="pv-dot"></span>{/if}
         </button>
-        <button class="pv-tab" class:active={tab === 'parts'} onclick={() => (tab = 'parts')} type="button" role="tab">
-          <span class="pv-ic">▦</span> Parts
-        </button>
-        {#if hasProfiles}
-          <button class="pv-tab" class:active={tab === 'profiles'} onclick={() => (tab = 'profiles')} type="button" role="tab">
-            <span class="pv-ic">◫</span> Profiles
-            {#if anyProfileDirty}<span class="pv-dot"></span>{/if}
-          </button>
-        {/if}
-        {#if hasProfile}
-          <button class="pv-tab" class:active={tab === 'profile'} onclick={() => (tab = 'profile')} type="button" role="tab">
-            <span class="pv-ic">◧</span> Profile
-          </button>
-        {/if}
         <button class="pv-tab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab">
           <span class="pv-ic">🛠</span> Source
           {#if sourceDirty}<span class="pv-dot"></span>{/if}
@@ -808,71 +769,78 @@
         {/if}
       </div>
 
-      {#if tab === 'params'}
-        <div class="pv-pane pv-params">
+      {#if tab === 'build'}
+        <!-- Merged Build tab — Parameters section (ParamGrid + leaf polygon
+             ✎ popups) on top, then ONE collapsible accordion row per
+             recognized part (args + transform chain + ✎ profile inside).
+             Mirrors the /components inspector accordion (.pg-acc-* + .pr-card). -->
+        <div class="pv-pane pv-build">
           <div class="pv-pane-head">
-            <span class="pv-pill" class:dirty={paramsDirty}>{paramsDirty ? 'pending — press Enter to apply' : 'applied'}</span>
+            <span class="pv-pill" class:dirty={paramsDirty || sourceDirty}>
+              {paramsDirty ? 'params pending — Enter to apply' : sourceDirty ? 'source edited' : 'in sync'}
+            </span>
             <div class="pv-spacer"></div>
-            <button class="pv-btn" onclick={apply} type="button" disabled={!paramsDirty}>Apply</button>
-            <button class="pv-btn" onclick={revert} type="button" disabled={!paramsDirty}>Revert</button>
             {#if onSaveDefaults}
-              <button class="pv-btn primary" onclick={saveDefaults} type="button" disabled={!editable || saving}>Save defaults</button>
+              <button class="pv-btn" onclick={saveDefaults} type="button" disabled={!editable || saving} title="Rewrite the default: literals in source.ts">Save defaults</button>
             {/if}
-          </div>
-          <div class="pv-params-grid">
-            <ParamGrid
-              schema={paramSchema}
-              {pending}
-              {applied}
-              onPending={setPending}
-              onCommit={commitOne}
-            />
-            <!-- Polygon params (ParamGrid skips these) render as inline
-                 ProfileEditors — the SAME component the leaf's Profile tab +
-                 the Parts-tab popup use. Editing seeds `pending` (orange-bar
-                 state); Apply/Enter commits → re-bake. Flags mirror the leaf
-                 so a promoted revolve profile gets the (r,z) Z-down editor and
-                 an extrude profile gets the centred Cartesian one. -->
-            {#each polygonParamNames as pname (pname)}
-              <div class="pv-poly-param">
-                <div class="pv-poly-head">
-                  <span class="pv-pname">{paramSchema[pname].label ?? pname}</span>
-                  <span class="pv-poly-verts">{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
-                </div>
-                <ProfileEditor
-                  value={(pending[pname] as [number, number][]) ?? (paramSchema[pname].default as [number, number][])}
-                  width={360}
-                  height={240}
-                  yDown={paramSchema[pname].yDown ?? false}
-                  hLabel={paramSchema[pname].hLabel ?? (paramSchema[pname].yDown ? 'r →' : 'x →')}
-                  vLabel={paramSchema[pname].vLabel ?? (paramSchema[pname].yDown ? 'z ↓' : 'y ↑')}
-                  presetSet={paramSchema[pname].yDown ? 'revolve' : 'cartesian'}
-                  showAxis={paramSchema[pname].yDown ?? false}
-                  onChange={(next) => { pending = { ...pending, [pname]: next }; }}
-                  onApply={apply}
-                />
-              </div>
-            {/each}
-          </div>
-        </div>
-      {:else if tab === 'parts'}
-        <div class="pv-pane pv-parts">
-          <div class="pv-pane-head">
-            <span class="pv-pill" class:dirty={sourceDirty}>{parts.length} part{parts.length === 1 ? '' : 's'}{sourceDirty ? ' · edited' : ''}</span>
-            <div class="pv-spacer"></div>
-            {#if canEdit && recognized && recognized.returnStart >= 0}
-              <select class="pv-load-pick" bind:value={loadPick} title="Load a primitive as a new instance">
-                <option value="">＋ Load…</option>
-                {#each loadable as e (e.id)}<option value={e.id}>{e.id}</option>{/each}
-              </select>
-              <button class="pv-btn" type="button" disabled={!loadPick || loadBusy} onclick={loadPrimitive}>{loadBusy ? '…' : 'Add'}</button>
-            {/if}
-            <button class="pv-btn" type="button" onclick={loadRecognition}>Re-scan</button>
             {#if canEdit && onSaveSource}
               <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
             {/if}
           </div>
-          <div class="pv-parts-body">
+
+          <div class="pv-build-body">
+            <!-- Parameters section: scalar/enum/bool via ParamGrid, polygon
+                 leaf params get a ✎ popup card. -->
+            <div class="pg-acc-wrap">
+              <div class="pg-acc-head" class:collapsed={collapsedParts.has('__params__')}
+                role="button" tabindex="0"
+                aria-expanded={!collapsedParts.has('__params__')}
+                onclick={() => togglePart('__params__')}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart('__params__'); } }}>
+                <span class="pg-acc-title">Parameters</span>
+                {#if paramsDirty}<span class="pv-dot"></span>{/if}
+                <div class="pv-spacer"></div>
+                <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); apply(); }} disabled={!paramsDirty} title="Apply pending params → re-bake">Apply</button>
+                <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); revert(); }} disabled={!paramsDirty} title="Discard pending param edits">Revert</button>
+              </div>
+              {#if !collapsedParts.has('__params__')}
+                <div class="pg-acc-body">
+                  <ParamGrid
+                    schema={paramSchema}
+                    {pending}
+                    {applied}
+                    onPending={setPending}
+                    onCommit={commitOne}
+                  />
+                  <!-- Polygon leaf params — ParamGrid skips these; each gets a
+                       ✎ card that opens the ProfileEditor in a popup (editing
+                       pending; Apply commits → re-bake). -->
+                  {#each polygonParamNames as pname (pname)}
+                    <div class="pr-card pv-poly-card" class:dirty={JSON.stringify(pending[pname] ?? []) !== JSON.stringify(applied[pname] ?? [])}>
+                      <span class="pr-keyname" title={paramSchema[pname].label ?? pname}>{paramSchema[pname].label ?? pname}</span>
+                      <span class="pv-poly-verts">{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
+                      <div class="pv-spacer"></div>
+                      <button class="pv-part-profile" type="button" title="Edit this profile in a popup" onclick={(e) => openLeafProfile(pname, e)}>✎ profile</button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Parts — recognized instances. Add/Load + Re-scan controls. -->
+            <div class="pv-parts-tools">
+              {#if canEdit && recognized && recognized.returnStart >= 0}
+                <select class="pv-load-pick" bind:value={loadPick} title="Load a primitive as a new instance">
+                  <option value="">＋ Load…</option>
+                  {#each loadable as e (e.id)}<option value={e.id}>{e.id}</option>{/each}
+                </select>
+                <button class="pv-mini-btn" type="button" disabled={!loadPick || loadBusy} onclick={loadPrimitive}>{loadBusy ? '…' : 'Add'}</button>
+              {/if}
+              <div class="pv-spacer"></div>
+              <span class="pv-parts-count">{parts.length} part{parts.length === 1 ? '' : 's'}</span>
+              <button class="pv-mini-btn" type="button" onclick={loadRecognition}>Re-scan</button>
+            </div>
+
             {#if recogStatus === 'loading'}
               <div class="pv-parts-empty">recognizing…</div>
             {:else if recogError}
@@ -881,56 +849,63 @@
               <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
             {:else}
               {#each resolvedParts as inst (inst.name)}
-                <div class="pv-part">
-                  <div class="pv-part-head">
-                    <span class="pv-part-name">{inst.name}</span>
-                    <span class="pv-part-call">{inst.call}</span>
-                    {#if canEdit}
-                      <div class="pv-spacer"></div>
-                      {#if inst.argsStart >= 0 && profileInfoFor(inst.call)}
-                        <button
-                          class="pv-part-profile"
-                          type="button"
-                          title="Edit this instance's profile in a popup"
-                          onclick={(e) => openProfilePopup(inst, profileInfoFor(inst.call)!, e)}
-                        >✎ profile</button>
-                      {/if}
+                {@const open = !collapsedParts.has(inst.name)}
+                <div class="pg-acc-wrap instance">
+                  <div class="pg-acc-head instance" class:collapsed={!open}
+                    role="button" tabindex="0"
+                    aria-expanded={open}
+                    onclick={() => togglePart(inst.name)}
+                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart(inst.name); } }}>
+                    <span class="pg-acc-title">{inst.name}</span>
+                    <span class="pg-acc-sig">:{inst.call}</span>
+                    <div class="pv-spacer"></div>
+                    {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call)}
+                      <button
+                        class="pv-part-profile"
+                        type="button"
+                        title="Edit this instance's profile in a popup"
+                        onclick={(e) => { e.stopPropagation(); collapsedParts.delete(inst.name); collapsedParts = new Set(collapsedParts); openProfilePopup(inst, profileInfoFor(inst.call)!, e); }}
+                      >✎ profile</button>
                     {/if}
                   </div>
-                  {#if canEdit && inst.argsStart >= 0}
-                    <input
-                      class="pv-part-edit"
-                      value={inst.argsText}
-                      spellcheck="false"
-                      title="Edit args · Enter to write into the source"
-                      onkeydown={(e) => { if (e.key === 'Enter') spliceSource(inst.argsStart, inst.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
-                    />
-                  {:else}
-                    <div class="pv-part-args">{inst.argsText}</div>
-                  {/if}
-                  {#if inst.resolvedArgs}<div class="pv-part-live">→ {inst.resolvedArgs}</div>{/if}
-                  {#each inst.txs as t}
-                    <div class="pv-part-tx">
-                      ↳ {t.op}(
-                      {#if canEdit && t.argsStart >= 0}
+                  {#if open}
+                    <div class="pg-acc-body pv-part-body">
+                      {#if canEdit && inst.argsStart >= 0}
                         <input
-                          class="pv-part-edit pv-part-edit-tx"
-                          value={t.argsText}
+                          class="pv-part-edit"
+                          value={inst.argsText}
                           spellcheck="false"
-                          onkeydown={(e) => { if (e.key === 'Enter') spliceSource(t.argsStart, t.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
+                          title="Edit args · Enter to write into the source"
+                          onkeydown={(e) => { if (e.key === 'Enter') spliceSource(inst.argsStart, inst.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
                         />
-                      {:else}{t.argsText}{/if}
-                      ){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}
-                      {#if canEdit && t.callStart >= 0}<button class="pv-part-txdel" type="button" title="Delete this transform" onclick={() => deleteTransform(t)}>✕</button>{/if}
+                      {:else}
+                        <div class="pv-part-args">{inst.argsText}</div>
+                      {/if}
+                      {#if inst.resolvedArgs}<div class="pv-part-live">→ {inst.resolvedArgs}</div>{/if}
+                      {#each inst.txs as t}
+                        <div class="pv-part-tx">
+                          ↳ {t.op}(
+                          {#if canEdit && t.argsStart >= 0}
+                            <input
+                              class="pv-part-edit pv-part-edit-tx"
+                              value={t.argsText}
+                              spellcheck="false"
+                              onkeydown={(e) => { if (e.key === 'Enter') spliceSource(t.argsStart, t.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
+                            />
+                          {:else}{t.argsText}{/if}
+                          ){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}
+                          {#if canEdit && t.callStart >= 0}<button class="pv-part-txdel" type="button" title="Delete this transform" onclick={() => deleteTransform(t)}>✕</button>{/if}
+                        </div>
+                      {/each}
+                      {#if canEdit && inst.initStart >= 0}
+                        <button
+                          class="pv-part-addtx"
+                          type="button"
+                          title="Add a transform (translate / rotate) — appended below, applied in sequence"
+                          onclick={(e) => openTxAdd(inst, e)}
+                        >＋ transform</button>
+                      {/if}
                     </div>
-                  {/each}
-                  {#if canEdit && inst.initStart >= 0}
-                    <button
-                      class="pv-part-addtx"
-                      type="button"
-                      title="Add a transform (translate / rotate) — appended below, applied in sequence"
-                      onclick={(e) => openTxAdd(inst, e)}
-                    >＋ transform</button>
                   {/if}
                 </div>
               {/each}
@@ -942,75 +917,6 @@
               {#if editable && recognized && !recognized.editable}<div class="pv-parts-note">read-only — remove TS type annotations from the params to edit args inline.</div>{/if}
             {/if}
           </div>
-        </div>
-      {:else if tab === 'profiles'}
-        <div class="pv-pane pv-params">
-          <div class="pv-pane-head">
-            <span class="pv-pill" class:dirty={anyProfileDirty}>{profileNames.length} profile{profileNames.length === 1 ? '' : 's'}{anyProfileDirty ? ' · edited' : ''}</span>
-            <div class="pv-spacer"></div>
-            <button class="pv-btn" type="button" disabled={!anyProfileDirty} onclick={commitAllProfiles}>Apply all</button>
-            {#if canEdit && onSaveSource}
-              <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
-            {/if}
-          </div>
-          <div class="pv-params-grid">
-            {#if recogStatus === 'loading' && !recognized}
-              <div class="pv-parts-empty">loading profiles…</div>
-            {:else}
-              <p class="pv-profiles-note">
-                Encapsulated profiles (<code>meta.profiles</code>). The composition reads
-                <code>meta.profiles.&lt;name&gt;.value</code> — no args, no overflow. Editing changes
-                the component's profile in the source buffer; <strong>Apply</strong> re-bakes, <strong>Save source</strong> persists.
-              </p>
-              {#each profileNames as pn (pn)}
-                {@const ps = profileSchema[pn]}
-                <div class="pv-poly-param">
-                  <div class="pv-poly-head">
-                    <span class="pv-pname">{ps.label ?? pn}</span>
-                    <span class="pv-poly-verts">{(profileVals[pn] ?? []).length} verts</span>
-                    <div class="pv-spacer"></div>
-                    {#if profileIsDirty(pn)}
-                      <button class="pv-mini-btn" type="button" onclick={() => revertProfile(pn)}>Revert</button>
-                      <button class="pv-mini-btn primary" type="button" onclick={() => commitProfile(pn)} disabled={!canEdit}>Apply</button>
-                    {/if}
-                  </div>
-                  <ProfileEditor
-                    value={profileVals[pn] ?? (ps.value as [number, number][])}
-                    width={360}
-                    height={240}
-                    yDown={ps.yDown ?? false}
-                    hLabel={ps.hLabel ?? (ps.yDown ? 'r →' : 'x →')}
-                    vLabel={ps.vLabel ?? (ps.yDown ? 'z ↓' : 'y ↑')}
-                    presetSet={ps.yDown ? 'revolve' : 'cartesian'}
-                    showAxis={ps.yDown ?? false}
-                    onChange={(next) => { profileVals = { ...profileVals, [pn]: next }; }}
-                    onApply={() => commitProfile(pn)}
-                  />
-                </div>
-              {/each}
-            {/if}
-          </div>
-        </div>
-      {:else if tab === 'profile' && polygonParamName}
-        {@const pname = polygonParamName}
-        <div class="pv-pane pv-profile">
-          <div class="pv-pane-head">
-            <span class="pv-pname">{paramSchema[pname].label ?? pname}</span>
-            <span class="pv-pill" class:dirty={paramsDirty}>{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
-            <div class="pv-spacer"></div>
-            <button class="pv-btn" onclick={apply} type="button" disabled={!paramsDirty}>Apply</button>
-            <button class="pv-btn" onclick={revert} type="button" disabled={!paramsDirty}>Revert</button>
-          </div>
-          <ProfileEditor
-            value={pending[pname] as [number, number][]}
-            yDown={paramSchema[pname].yDown ?? false}
-            hLabel={paramSchema[pname].hLabel ?? (paramSchema[pname].yDown ? 'r →' : 'x →')}
-            vLabel={paramSchema[pname].vLabel ?? (paramSchema[pname].yDown ? 'z ↓' : 'y ↑')}
-            presetSet={paramSchema[pname].yDown ? 'revolve' : 'cartesian'}
-            showAxis={paramSchema[pname].yDown ?? false}
-            onChange={(next) => { pending = { ...pending, [pname]: next }; }}
-            onApply={apply}
-          />
         </div>
       {:else if tab === 'ai'}
         <div class="pv-pane pv-ai">
@@ -1128,10 +1034,47 @@
         />
         <p class="pv-profile-pop-note">
           {#if profileEdit.mode === 'profile'}
-            Edits <code>meta.profiles.{profileEdit.profileName}.value</code> on Apply; also editable in the Profiles tab. Save source to persist.
+            Edits <code>meta.profiles.{profileEdit.profileName}.value</code> on Apply. Save source to persist.
           {:else}
             Edits the inline literal in <code>{profileEdit.instName}</code>'s call on Apply. <strong>Promote to meta.profiles</strong> encapsulates it (clean composition). Save source to persist.
           {/if}
+        </p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if leafEdit}
+    {@const ps = paramSchema[leafEdit.pname]}
+    {@const yd = ps.yDown ?? false}
+    <FloatingPanel
+      title={`Profile · ${ps.label ?? leafEdit.pname}`}
+      visible={true}
+      x={leafEdit.px}
+      y={leafEdit.py}
+      width="min(440px, 90vw)"
+      maxHeight="70vh"
+      onClose={closeLeafProfile}
+    >
+      <div class="pv-profile-pop">
+        <div class="pv-profile-pop-head">
+          <span class="pv-pill" class:dirty={paramsDirty}>{(pending[leafEdit.pname] as [number, number][])?.length ?? 0} verts{paramsDirty ? ' · pending' : ''}</span>
+          <div class="pv-spacer"></div>
+          <button class="pv-btn" type="button" disabled={!paramsDirty} onclick={revert}>Revert</button>
+          <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
+        </div>
+        <ProfileEditor
+          value={(pending[leafEdit.pname] as [number, number][]) ?? (ps.default as [number, number][])}
+          width={400}
+          height={300}
+          yDown={yd}
+          hLabel={ps.hLabel ?? (yd ? 'r →' : 'x →')}
+          vLabel={ps.vLabel ?? (yd ? 'z ↓' : 'y ↑')}
+          presetSet={yd ? 'revolve' : 'cartesian'}
+          showAxis={yd}
+          onChange={(next) => { pending = { ...pending, [leafEdit!.pname]: next }; }}
+        />
+        <p class="pv-profile-pop-note">
+          Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> commits the pending profile → re-bakes the canvas. Save defaults persists it as the new default.
         </p>
       </div>
     </FloatingPanel>
@@ -1232,31 +1175,55 @@
   .pv-pane-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #eee; flex-wrap: wrap; }
   .pv-spacer { flex: 1; }
 
-  .pv-params { padding: 0; }
-  /* Param controls now render via the shared <ParamGrid> (the same
-     .pr-card grid the /components inspector uses). This wrapper just
-     handles padding + scroll. */
-  .pv-params-grid { padding: 8px 12px 12px; overflow-y: auto; }
-  /* Still used by the Profile tab's pane head. */
-  .pv-pname { font: 12px monospace; color: #333; }
-
-  /* Inline polygon-param editors in the Params tab + meta.profiles editors. */
-  .pv-poly-param { margin-top: 10px; border: 1px solid #eaeaef; border-radius: 4px; padding: 6px 8px 4px; background: #fafafa; }
-  .pv-poly-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
   .pv-poly-verts { font: 10px Arial; color: #888; }
-  .pv-profiles-note { margin: 2px 0 4px; font: 11px Arial; color: #666; line-height: 1.4; }
-  .pv-profiles-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
   .pv-mini-btn { padding: 2px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 10px Arial; cursor: pointer; }
   .pv-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .pv-mini-btn.primary { background: #cc2222; color: #fff; border-color: #cc2222; }
 
-  /* Parts tab — read-only recognized instances. */
-  .pv-parts { padding: 0; }
-  .pv-parts-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .pv-part { border: 1px solid #eee; border-radius: 5px; padding: 7px 9px; background: #fafafa; }
-  .pv-part-head { display: flex; align-items: center; gap: 8px; }
+  /* ── Merged Build tab — Parameters section + per-part accordion rows ───── */
+  .pv-build { padding: 0; }
+  .pv-build-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+
+  /* Accordion shell — adopted from the /components inspector (.pg-acc-*). */
+  .pg-acc-wrap { border: 3px solid #d4d4dc; border-radius: 4px; background: #fff; padding: 0 3px 1px; margin: 0; }
+  .pg-acc-wrap:first-of-type { margin-top: 0; }
+  /* Instance (part) wraps get the thinner red-tinted outline + colour stripe. */
+  .pg-acc-wrap.instance { border-width: 2px; border-color: #f0c8c8; background: #fff8f8; border-left-width: 4px; border-left-color: var(--inst-color, #f0c8c8); }
+  .pg-acc-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 4px; margin: 0;
+    background: transparent; border: 0;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
+  .pg-acc-head.collapsed { background: #fafafa; }
+  .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; margin-left: auto; }
+  .pg-acc-head.instance .pg-acc-title { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
+  .pg-acc-sig { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; margin-left: -3px; }
+  /* Body cap — keeps tall parts scrollable rather than pushing the rest of
+     the chain off-screen (memory: accordion-body-scroll-cap). */
+  .pg-acc-body {
+    max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
+    background: #fff; border-radius: 3px;
+    padding: 6px 4px;
+  }
+  .pv-part-body { display: flex; flex-direction: column; gap: 3px; }
+
+  /* Polygon-param card in the Parameters section — same .pr-card shell as the
+     scalar cards, with a ✎ profile trigger on the right. */
+  .pv-poly-card { margin-top: 4px; }
+  .pv-poly-card.dirty { background: #fff8e6; border-color: #f0d8a8; }
+  .pv-poly-card .pr-keyname { font: 12px monospace; color: #333; flex: 0 0 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Bridge: ParamGrid's .pr-grid lives in its own component scope; give the
+     polygon cards the same single-row card look here. */
+  .pv-poly-card { display: flex; align-items: center; gap: 4px; padding: 3px 6px; background: #fafafa; border: 1px solid #eaeaef; border-radius: 3px; min-width: 0; }
+
+  /* Parts tools row (Load / Add / Re-scan + part count). */
+  .pv-parts-tools { display: flex; align-items: center; gap: 6px; padding: 6px 2px 2px; }
+  .pv-parts-count { font: 10px Arial; color: #888; }
+
+  /* Recognized-instance body content (args / transforms / live values). */
   .pv-part-name { font: 700 13px monospace; color: #cc2222; }
-  .pv-part-call { font: 11px monospace; color: #2266cc; background: #eef3fb; padding: 1px 6px; border-radius: 8px; }
   .pv-part-args { margin-top: 4px; font: 11px ui-monospace, monospace; color: #555; white-space: pre-wrap; word-break: break-word; }
   .pv-part-tx { margin-top: 3px; font: 11px ui-monospace, monospace; color: #888; }
   .pv-part-txdel { margin-left: 6px; border: none; background: transparent; color: #c4392f; cursor: pointer; font-size: 11px; line-height: 1; padding: 0 3px; opacity: 0.4; }
