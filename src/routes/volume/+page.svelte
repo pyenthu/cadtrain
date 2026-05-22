@@ -12,6 +12,7 @@
    * is editing PRODUCTION. Without the proxy it's the local volume root.
    */
   import { onMount } from 'svelte';
+  import { dev } from '$app/environment';
 
   interface FileNode { name: string; type: 'file'; id: string; size: number | null }
   interface DirNode { name: string; type: 'dir'; id: string; children: Record<string, FileNode | DirNode> }
@@ -275,14 +276,16 @@
         >{c.label}</button>
       {/each}
     </nav>
-    {#if backupMsg}<span class="vol-backup-msg" class:err={backupMsg.startsWith('Backup failed')}>{backupMsg}</span>{/if}
-    <button
-      class="vol-backup"
-      type="button"
-      disabled={backing}
-      title="Copy the entire volume into the repo at src/volume_backup/"
-      onclick={runBackup}
-    >{backing ? '⏳ Backing up…' : '⬇ Backup → src'}</button>
+    {#if dev}
+      {#if backupMsg}<span class="vol-backup-msg" class:err={backupMsg.startsWith('Backup failed')}>{backupMsg}</span>{/if}
+      <button
+        class="vol-backup"
+        type="button"
+        disabled={backing}
+        title="Copy the entire volume into the repo at src/volume_backup/ (dev only)"
+        onclick={runBackup}
+      >{backing ? '⏳ Backing up…' : '⬇ Backup → src'}</button>
+    {/if}
     <button class="vol-refresh" type="button" title="Reload" onclick={() => loadDir(currentPath)}>↻</button>
   </header>
 
