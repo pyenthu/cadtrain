@@ -58,6 +58,26 @@
     }
   }
 
+  // ── OneDrive sync (PROD volume → onedrive:APPS/cadtrain) ─────────────
+  let syncing = $state(false);
+  let oneDriveMsg = $state<string | null>(null);
+  async function runOneDrive() {
+    if (syncing) return;
+    if (!confirm('Mirror the PRODUCTION volume up to OneDrive (APPS/cadtrain)?\nReplaced/deleted files are kept under APPS/cadtrain-prev/.')) return;
+    syncing = true;
+    oneDriveMsg = 'Syncing to OneDrive…';
+    try {
+      const r = await fetch('/api/volume/onedrive', { method: 'POST' });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.ok === false) throw new Error(j?.message || j?.output || `${r.status}`);
+      oneDriveMsg = j?.summary || 'Synced → onedrive:APPS/cadtrain';
+    } catch (e: any) {
+      oneDriveMsg = `OneDrive sync failed: ${e?.message ?? e}`;
+    } finally {
+      syncing = false;
+    }
+  }
+
   const TEXT_RE = /\.(json|jsonl|txt|md|ts|tsx|js|mjs|cjs|svelte|css|html?|csv|log|ya?ml|xml|svg)$/i;
   const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
   const VIDEO_RE = /\.(webm|mp4|mov)$/i;
@@ -285,6 +305,14 @@
         title="Copy the entire volume into the repo at src/volume_backup/ (dev only)"
         onclick={runBackup}
       >{backing ? '⏳ Backing up…' : '⬇ Backup → src'}</button>
+      {#if oneDriveMsg}<span class="vol-backup-msg" class:err={oneDriveMsg.startsWith('OneDrive sync failed')}>{oneDriveMsg}</span>{/if}
+      <button
+        class="vol-backup"
+        type="button"
+        disabled={syncing}
+        title="Mirror the PRODUCTION volume up to OneDrive (APPS/cadtrain) via rclone (dev only)"
+        onclick={runOneDrive}
+      >{syncing ? '⏳ Syncing…' : '☁ Volume → OneDrive'}</button>
     {/if}
     <button class="vol-refresh" type="button" title="Reload" onclick={() => loadDir(currentPath)}>↻</button>
   </header>
