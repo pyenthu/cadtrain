@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
+import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 // Stage G v1 of the components/primitives split — see
 // ~/.claude/plans/components-primitives-split.md.
@@ -52,7 +53,15 @@ export const GET = async ({ url }) => {
     const p = volumePath(rel);
     if (existsSync(p)) {
       const src = await readFile(p, 'utf8');
-      return json({ source: src, origin: 'volume' });
+      // Return the extracted meta too — the list is now a cheap directory
+      // listing (no params), so the params/name/description load HERE,
+      // lazily, when a primitive is opened. Meta-less/old sources just omit.
+      let meta: any = null;
+      try { meta = extractMetaFromSource(src); } catch { /* leave null */ }
+      return json({
+        source: src, origin: 'volume',
+        name: meta?.name, description: meta?.description, params: meta?.params ?? {},
+      });
     }
   }
   const src = await readFile(HELPERS_PATH, 'utf8');

@@ -1,10 +1,9 @@
 import { json } from '@sveltejs/kit';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
 import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
-import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 //
@@ -45,51 +44,37 @@ export const GET = async () => {
   const tests: PrimEntry[] = [];
   const archived: PrimEntry[] = [];
   const root = volumePath(PRIMS_ROOT);
-  // Recurse one level into a sub-folder, collecting its primitive entries.
+
+  // CHEAP entry — id only, NO source read. The sidebar shows just the id;
+  // a part's params/name/description load LAZILY when it's opened (see
+  // /api/primitives/source, which returns the extracted meta). This keeps
+  // the catalog a directory listing (one stat per part) instead of reading
+  // + meta-parsing every source.ts on every call — the previous behaviour
+  // grew to ~2s once the part count tripled. Rule 18 still holds: the list
+  // is derived from the FS, no central index to drift.
+  function cheapEntry(dir: string, id: string): PrimEntry | null {
+    if (!existsSync(join(dir, 'source.ts'))) return null;
+    return { id, source: 'volume', name: id, description: '', params: {}, editable: true };
+  }
   async function collectSub(name: string, into: PrimEntry[]) {
     const subRoot = join(root, name);
     if (!existsSync(subRoot)) return;
     for (const d of await readdir(subRoot, { withFileTypes: true })) {
       if (!d.isDirectory()) continue;
-      const e = await loadVolumeEntry(join(subRoot, d.name), d.name);
+      const e = cheapEntry(join(subRoot, d.name), d.name);
       if (e) into.push(e);
     }
   }
   if (existsSync(root)) {
-    const entries = await readdir(root, { withFileTypes: true });
-    for (const dirent of entries) {
+    for (const dirent of await readdir(root, { withFileTypes: true })) {
       if (!dirent.isDirectory()) continue;
       // `archive/` (soft-deleted) and `tests/` (the test-primitive
       // category) are sub-folders, not primitives themselves — recurse.
       if (dirent.name === 'archive') { await collectSub('archive', archived); continue; }
       if (dirent.name === 'tests')   { await collectSub('tests', tests);     continue; }
-      const id = dirent.name;
-      const e = await loadVolumeEntry(join(root, id), id);
+      const e = cheapEntry(join(root, dirent.name), dirent.name);
       if (e) volume.push(e);
     }
-  }
-
-  async function loadVolumeEntry(dir: string, id: string): Promise<PrimEntry | null> {
-    const sourcePath = join(dir, 'source.ts');
-    if (!existsSync(sourcePath)) return null;
-    try {
-      const src = await readFile(sourcePath, 'utf8');
-      let meta: any = null;
-      try { meta = extractMetaFromSource(src); }
-      catch {
-        const metaPath = join(dir, 'meta.json');
-        if (existsSync(metaPath)) meta = JSON.parse(await readFile(metaPath, 'utf8'));
-      }
-      if (!meta) return null;
-      return {
-        id,
-        source: 'volume',
-        name: meta.name ?? id,
-        description: meta.description ?? '',
-        params: meta.params ?? {},
-        editable: true,
-      };
-    } catch { return null; }
   }
 
   // Volume shadows bundle on id collision (later in the merged list

@@ -41,11 +41,12 @@
     archived = data.archived ?? [];
   }
 
-  async function fetchSourceFor(id: string): Promise<{ source: string; origin: string } | null> {
+  type SourceData = { source: string; origin: string; name?: string; description?: string; params?: Record<string, any> };
+  async function fetchSourceFor(id: string): Promise<SourceData | null> {
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
       if (!r.ok) { status = `Server returned ${r.status}: ${await r.text()}`; return null; }
-      const data = await r.json() as { source: string; origin: string };
+      const data = await r.json() as SourceData;
       status = `Loaded from ${data.origin}.`;
       return data;
     } catch (e: any) {
@@ -67,9 +68,23 @@
     fetchSourceFor(e.id).then((data) => {
       // Replace the tab object (new ref) so $state reactivity fires — do
       // NOT mutate the original raw object (it isn't the proxied element).
-      openTabs = openTabs.map((t) =>
-        t.entry.id === e.id ? { ...t, serverSource: data?.source ?? '', loading: false } : t,
-      );
+      // The list is now lazy (id only), so the params/name/description
+      // arrive HERE with the source and we fold them into the entry BEFORE
+      // PrimitiveView mounts (it only mounts once loading=false). Bundle
+      // primitives carry their params from the list, so keep those when the
+      // source doesn't supply any.
+      openTabs = openTabs.map((t) => {
+        if (t.entry.id !== e.id) return t;
+        const entry = data
+          ? {
+              ...t.entry,
+              params: data.params && Object.keys(data.params).length ? data.params : t.entry.params,
+              name: data.name ?? t.entry.name,
+              description: data.description ?? t.entry.description,
+            }
+          : t.entry;
+        return { ...t, entry, serverSource: data?.source ?? '', loading: false };
+      });
     });
   }
   function closeTab(id: string, ev?: Event) {
