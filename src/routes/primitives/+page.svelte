@@ -267,11 +267,16 @@
     status = `Permanently deleted "${id}".`;
     await refreshList();
   }
+
+  // Collapsible sidebar (persisted; mirrors SVTC's home-page sidebar pattern).
+  let railCollapsed = $state(typeof localStorage !== 'undefined' && localStorage.getItem('prim-rail-collapsed') === '1');
+  $effect(() => { try { localStorage.setItem('prim-rail-collapsed', railCollapsed ? '1' : '0'); } catch { /* ignore */ } });
 </script>
 
-<div class="prim-page">
+<div class="prim-page" class:rail-collapsed={railCollapsed}>
   <aside class="prim-rail">
     <header>
+      <button class="prim-rail-toggle" type="button" title="Collapse sidebar" onclick={() => railCollapsed = true}>«</button>
       <h2>Primitives</h2>
       <p class="sub">Backend toolkit — raw geometry functions</p>
     </header>
@@ -348,6 +353,10 @@
     {#if status}<div class="status">{status}</div>{/if}
   </aside>
 
+  {#if railCollapsed}
+    <button class="prim-rail-expand" type="button" title="Show sidebar" onclick={() => railCollapsed = false}>»</button>
+  {/if}
+
   <main class="prim-main">
     {#if openTabs.length === 0}
       <div class="placeholder">Click a primitive to open it in a tab.</div>
@@ -413,9 +422,15 @@
 </div>
 
 <style>
-  .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; }
+  .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; position: relative; }
+  .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
+  .prim-page.rail-collapsed .prim-rail { display: none; }
   .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow-y: auto; padding: 12px 8px; display: flex; flex-direction: column; }
-  .prim-rail header { padding: 0 6px 8px; border-bottom: 1px solid #eee; }
+  .prim-rail header { padding: 0 6px 8px; border-bottom: 1px solid #eee; position: relative; }
+  .prim-rail-toggle { position: absolute; top: -2px; right: 0; border: none; background: transparent; color: #999; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+  .prim-rail-toggle:hover { color: #cc2222; }
+  .prim-rail-expand { position: absolute; top: 8px; left: 8px; z-index: 20; border: 1px solid #ddd; background: #fff; color: #555; font-size: 14px; line-height: 1; cursor: pointer; padding: 5px 9px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .prim-rail-expand:hover { color: #cc2222; border-color: #cc2222; }
   .prim-rail h2 { margin: 0; font: 700 14px Arial; color: #cc2222; }
   .prim-rail .sub { margin: 2px 0 0; font: 11px Arial; color: #777; }
   .prim-list { padding: 8px 0; flex: 1; }
