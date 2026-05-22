@@ -118,15 +118,17 @@
 <style>
   .pr-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 4px;
+    /* Narrower min track → params flow into 2 columns at the inspector width
+       (≈390px usable, 3px gap). */
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 3px;
     padding: 2px 0;
   }
   .pr-card {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 5px;
+    gap: 3px;
+    padding: 1px 4px;
     background: #fafafa;
     border: 1px solid #eaeaef;
     border-radius: 3px;

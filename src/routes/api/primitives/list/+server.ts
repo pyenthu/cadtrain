@@ -42,6 +42,7 @@ export const GET = async () => {
   }));
 
   const volume: PrimEntry[] = [];
+  const basic: PrimEntry[] = [];
   const industrial: PrimEntry[] = [];
   const archived: PrimEntry[] = [];
   // Completions is NESTED one level deeper than the flat groups above:
@@ -93,10 +94,12 @@ export const GET = async () => {
   if (existsSync(root)) {
     for (const dirent of await readdir(root, { withFileTypes: true })) {
       if (!dirent.isDirectory()) continue;
-      // `archive/` (soft-deleted), `industrial/` (the industrial-test
-      // category, formerly `tests/`) and `completions/` (nested by
-      // family) are sub-folders, not primitives themselves — recurse.
+      // `archive/` (soft-deleted), `basic/` (the raw r_* geometry
+      // primitives), `industrial/` (the industrial-test category, formerly
+      // `tests/`) and `completions/` (nested by family) are sub-folders,
+      // not primitives themselves — recurse.
       if (dirent.name === 'archive')     { await collectSub('archive', archived);        continue; }
+      if (dirent.name === 'basic')       { await collectSub('basic', basic);             continue; }
       if (dirent.name === 'industrial')  { await collectSub('industrial', industrial);   continue; }
       if (dirent.name === 'completions') { await collectCompletions();                    continue; }
       const e = cheapEntry(join(root, dirent.name), dirent.name);
@@ -114,6 +117,7 @@ export const GET = async () => {
   return json({
     bundle,
     volume,
+    basic,
     industrial,
     completions,
     archived,

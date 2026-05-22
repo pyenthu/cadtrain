@@ -31,7 +31,9 @@ Autonomous run. Orchestrator (main session) spawns subprocesses, verifies, commi
 - On green: commit (one logical commit per task-group) + push. On fail: skip the commit, note it, continue independent phases.
 
 ## Status (orchestrator updates this)
-- [ ] 1A spawned · [ ] 1A verified+committed
-- [ ] 1B spawned · [ ] 1B verified+committed
-- [ ] Phase 2 · [ ] Phase 3
+- [x] 1A spawned (agent a45ad6) · [ ] 1A verified+committed — STILL RUNNING
+- [x] 1B spawned (agent acafcaf) · [x] 1B DONE (files correct; prod volume: 11 r_* → primitives/basic/; verified via X-Volume-Local) — COMMIT HELD: build RED from 1A's in-flight PrimitiveView.svelte:1179 `{@const}` placement. Commit 1A+1B TOGETHER once 1A lands + `bun run build` green. If 1A leaves it broken, fix the {@const} myself.
+- [ ] Phase 2 (tooltips) · [ ] Phase 3 (CSG tree)
+- Baseline before overnight run: `45808b3`. /list confirmed live (industrial=22, completions=7).
+- NOTE: `/api/primitives/list` is proxied to PROD, so `basic` won't show in the proxied response until this work redeploys; the volume files are already moved. Verify locally with header `X-Volume-Local: 1`.
 - Morning report: list commits + any phase that failed verification.

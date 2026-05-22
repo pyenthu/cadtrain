@@ -9,8 +9,8 @@
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, args, source, showControls = true }: {
-    id: string; name?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+  let { id, name = id, description = '', args, source, showControls = true }: {
+    id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
   } = $props();
 
   let Scene = $state<any>(null);
@@ -101,7 +101,7 @@
   {#if Scene}
     {@const S = Scene}
     <Canvas {createRenderer}>
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} title={name} {description} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}
@@ -114,7 +114,8 @@
 <style>
   .pd-stage { position: relative; width: 100%; height: 100%; min-height: 0; background: #1f1f1f; border-radius: 4px; overflow: hidden; }
   .pd-label { position: absolute; top: 6px; z-index: 5; font: 600 10px Arial; color: #fff; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 3px; }
-  .pd-label-l { left: 8px; pointer-events: none; }
+  /* Pushed below the in-canvas title (top-left) so they don't overlap. */
+  .pd-label-l { left: 8px; top: 34px; pointer-events: none; }
   .pd-label-r { right: 8px; display: flex; gap: 8px; align-items: center; }
   .pd-toggle { pointer-events: auto; display: inline-flex; gap: 3px; align-items: center; cursor: pointer; }
   .pd-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font: 12px Arial; }

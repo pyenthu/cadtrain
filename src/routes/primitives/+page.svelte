@@ -24,6 +24,9 @@
   }
 
   let entries: Entry[] = $state([]);
+  // Basic — the raw r_* geometry primitives, parked under primitives/basic/
+  // on the volume (location IS the category, mirroring Industrial).
+  let basic: Entry[] = $state([]);
   let industrial: Entry[] = $state([]);
   // Completions is nested by family: { <family>: Entry[] }. Family dirs
   // may be empty (structure only); the sidebar shows them regardless so
@@ -63,6 +66,7 @@
   let activeTab = $derived(openTabs.find((t) => t.entry.id === activeId) ?? null);
   let status = $state('');
   let showArchive = $state(false);
+  let showBasic = $state(true);
   let showIndustrial = $state(false);
   let showCompletions = $state(true);
   // Per-family collapse state inside Completions, keyed by family id.
@@ -74,6 +78,7 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       entries = data.merged ?? [];
+      basic = data.basic ?? [];
       industrial = data.industrial ?? [];
       completions = data.completions ?? {};
       archived = data.archived ?? [];
@@ -81,7 +86,7 @@
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; industrial = []; completions = {}; archived = [];
+      entries = []; basic = []; industrial = []; completions = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -147,8 +152,9 @@
   onMount(async () => {
     await refreshList();
     // Default-open the first VOLUME primitive (bundle ones can 500 on
-    // source-load); fall back to the first entry.
-    const initial = entries?.find((e) => e.source === 'volume') ?? entries?.[0];
+    // source-load). The raw r_* primitives now live in the Basic group, so
+    // prefer those, then any root-volume entry, then the first entry.
+    const initial = basic?.[0] ?? entries?.find((e) => e.source === 'volume') ?? entries?.[0];
     if (initial) openTab(initial);
   });
 
@@ -244,7 +250,7 @@
    *  backstop). Opens the new primitive on success. */
   async function saveAsEntry(srcId: string, newId: string, editedSource: string) {
     if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return false; }
-    if (entries.some((x) => x.id === newId) || industrial.some((x) => x.id === newId)) {
+    if (entries.some((x) => x.id === newId) || basic.some((x) => x.id === newId) || industrial.some((x) => x.id === newId)) {
       status = `"${newId}" already exists — pick another name.`;
       return false;
     }
@@ -264,7 +270,7 @@
     if (!r.ok) { status = `Save As failed: ${await r.text()}`; return false; }
     status = `Saved ${srcId} as → ${newId}.`;
     await refreshList();
-    const created = entries.find((x) => x.id === newId) ?? industrial.find((x) => x.id === newId);
+    const created = entries.find((x) => x.id === newId) ?? basic.find((x) => x.id === newId) ?? industrial.find((x) => x.id === newId);
     if (created) openTab(created);
     return true;
   }
@@ -326,6 +332,34 @@
           {/if}
         </div>
       {/each}
+    </div>
+
+    <!-- Basic category — the raw r_* geometry primitives, parked under
+         primitives/basic/ on the volume (location IS the category, mirrors
+         Industrial). Collapsible folder. -->
+    <div class="prim-tests">
+      <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
+        <span class="prim-arch-caret">{showBasic ? '▾' : '▸'}</span>
+        Basic {#if basic.length}({basic.length}){/if}
+      </button>
+      {#if showBasic}
+        {#if basic.length === 0}
+          <div class="prim-empty">none yet</div>
+        {:else}
+          {#each basic as e (e.id)}
+            <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+              <button class="prim-row" type="button" onclick={() => openTab(e)}>
+                <span class="prim-name">{e.id}</span>
+                <span class="prim-tag vol">vol</span>
+              </button>
+              <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+              {#if e.editable}
+                <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      {/if}
     </div>
 
     <!-- Industrial category (formerly Tests) — primitives parked under
@@ -488,7 +522,7 @@
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
                 onSaveAs={(newId, src) => saveAsEntry(t.entry.id, newId, src)}
                 onReloadSource={() => loadFromServerFor(t)}
-                catalog={[...entries, ...industrial, ...Object.values(completions).flat()]}
+                catalog={[...entries, ...basic, ...industrial, ...Object.values(completions).flat()]}
               />
             {/if}
           </div>
@@ -502,52 +536,52 @@
   .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; position: relative; }
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
   .prim-page.rail-collapsed .prim-rail { display: none; }
-  .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow-y: auto; padding: 12px 8px; display: flex; flex-direction: column; }
-  .prim-rail header { padding: 0 6px 8px; border-bottom: 1px solid #eee; position: relative; }
+  .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow-y: auto; padding: 8px 6px; display: flex; flex-direction: column; line-height: 1.2; }
+  .prim-rail header { padding: 0 6px 6px; border-bottom: 1px solid #eee; position: relative; }
   .prim-rail-toggle { position: absolute; top: -2px; right: 0; border: none; background: transparent; color: #999; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
   .prim-rail-toggle:hover { color: #cc2222; }
   .prim-rail-expand { position: absolute; top: 8px; left: 8px; z-index: 20; border: 1px solid #ddd; background: #fff; color: #555; font-size: 14px; line-height: 1; cursor: pointer; padding: 5px 9px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
   .prim-rail-expand:hover { color: #cc2222; border-color: #cc2222; }
   .prim-rail h2 { margin: 0; font: 700 14px Arial; color: #cc2222; }
   .prim-rail .sub { margin: 2px 0 0; font: 11px Arial; color: #777; }
-  .prim-list { padding: 8px 0; flex: 1; }
-  .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 1px 0; border-radius: 4px; }
+  .prim-list { padding: 4px 0; flex: 1; }
+  .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; }
   .prim-row-wrap:hover { background: #f0e8e8; }
   .prim-row-wrap.active { background: #fef0f0; }
   .prim-row-wrap.active .prim-name { color: #cc2222; }
   .prim-row-wrap.open .prim-name { font-weight: 800; }  /* open in a tab */
-  .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 6px 8px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; }
-  .prim-trash { background: transparent; border: 0; padding: 4px 6px; color: #aaa; cursor: pointer; font: 14px monospace; border-radius: 3px; }
+  .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 3px 8px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; line-height: 1.3; }
+  .prim-trash { background: transparent; border: 0; padding: 2px 6px; color: #aaa; cursor: pointer; font: 14px monospace; border-radius: 3px; }
   .prim-trash:hover { color: #cc2222; background: #fff; }
-  .prim-dup { background: transparent; border: 0; padding: 4px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
+  .prim-dup { background: transparent; border: 0; padding: 2px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
   .prim-dup:hover { color: #2266cc; background: #fff; }
 
-  .prim-tests { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
-  .prim-grouphead { padding: 4px 8px; font: 600 11px Arial; color: #888; }
-  .prim-empty { padding: 2px 8px 6px; font: italic 11px Arial; color: #bbb; }
+  .prim-tests { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
+  .prim-grouphead { padding: 3px 8px; font: 700 13px Arial; color: #888; }
+  .prim-empty { padding: 1px 8px 3px; font: italic 11px Arial; color: #bbb; }
 
   /* Completions → family sub-folders (one level deeper than the flat
      groups). Caret + label indented; parts indented again. */
   .prim-fam { margin-left: 6px; }
-  .prim-fam-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 600 11px Arial; color: #999; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
+  .prim-fam-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 2px 8px; font: 700 12px Arial; color: #999; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
   .prim-fam-head:hover { background: #f0f0f0; color: #555; }
   .prim-fam-empty { margin-left: 14px; }
   .prim-fam-row { margin-left: 8px; }
-  .prim-demolink { display: block; padding: 5px 8px; font: 600 13px monospace; color: #2266cc; text-decoration: none; border-radius: 4px; }
+  .prim-demolink { display: block; padding: 3px 8px; font: 600 13px monospace; color: #2266cc; text-decoration: none; border-radius: 4px; }
   .prim-demolink:hover { background: #eef3fb; }
 
-  .prim-archive { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
-  .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 4px 8px; font: 600 11px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
+  .prim-archive { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
+  .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 700 13px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
   .prim-arch-head:hover { background: #f0f0f0; color: #555; }
   .prim-arch-caret { font: 10px monospace; width: 10px; }
-  .prim-arch-list { padding: 2px 0; }
-  .prim-row-arch { padding: 4px 8px; gap: 4px; align-items: center; display: flex; }
+  .prim-arch-list { padding: 1px 0; }
+  .prim-row-arch { padding: 2px 8px; gap: 4px; align-items: center; display: flex; }
   .prim-row-arch:hover { background: #f5f5f5; }
-  .prim-name-arch { flex: 1; font: 12px monospace; color: #888; }
+  .prim-name-arch { flex: 1; font: 11px monospace; color: #888; }
   .prim-mini { background: transparent; border: 1px solid #ddd; border-radius: 3px; padding: 2px 6px; font: 11px monospace; color: #888; cursor: pointer; }
   .prim-mini:hover { color: #2266cc; border-color: #2266cc; background: #fff; }
   .prim-mini-danger:hover { color: #cc2222; border-color: #cc2222; }
-  .prim-name { font: 600 13px monospace; flex: 1; }
+  .prim-name { font: 600 11px monospace; flex: 1; }
   .prim-tag { font: 9px Arial; padding: 1px 5px; border-radius: 8px; background: #ddd; color: #555; }
   .prim-tag.vol { background: #cc2222; color: #fff; }
   .status { font: 10px Arial; color: #777; padding: 6px 8px; border-top: 1px solid #eee; }

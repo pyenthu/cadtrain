@@ -112,13 +112,42 @@
   // editing is the ✎ popup everywhere (leaf polygon params + composite parts).
   let tab = $state<'build' | 'source' | 'ai'>('build');
 
-  // Per-part accordion open/close. Keyed by part name; absent = OPEN
-  // (parts start expanded so the merged tab shows everything at a glance).
-  let collapsedParts = $state<Set<string>>(new Set());
+  // ── Exclusive accordion (single-open unless pinned) ──────────────────────
+  // Only ONE non-pinned row is open at a time (`activeOpen`); PINNED rows
+  // (`pinnedParts`) stay open alongside it. A row is OPEN when it's pinned OR
+  // it is the active row. The "Parameters" section uses the same model under
+  // the synthetic key `__params__`, and starts open by default.
+  let activeOpen = $state<string | null>('__params__');
+  let pinnedParts = $state<Set<string>>(new Set());
+  function isOpen(name: string): boolean {
+    return pinnedParts.has(name) || activeOpen === name;
+  }
+  // Open a row (exclusively, unless pinned). Pinned rows are always open, so
+  // this is a no-op for them beyond ensuring it's surfaced.
+  function openPart(name: string) {
+    if (pinnedParts.has(name)) return;
+    activeOpen = name;
+  }
+  // Header click: pinned rows ignore collapse (un-pin to close); otherwise
+  // toggle — open exclusively, or close if it was the active row.
   function togglePart(name: string) {
-    const next = new Set(collapsedParts);
-    if (next.has(name)) next.delete(name); else next.add(name);
-    collapsedParts = next;
+    if (pinnedParts.has(name)) return;
+    activeOpen = activeOpen === name ? null : name;
+  }
+  // 📌 pin toggle. Pinning keeps a row open independently of the active row;
+  // un-pinning collapses it (handing the single active slot back).
+  function togglePin(name: string) {
+    const next = new Set(pinnedParts);
+    if (next.has(name)) {
+      next.delete(name);
+      // Was held open only by its pin → collapse it (clear active if it was).
+      if (activeOpen === name) activeOpen = null;
+    } else {
+      next.add(name);
+      // Free the exclusive slot if this row held it (now held by the pin).
+      if (activeOpen === name) activeOpen = null;
+    }
+    pinnedParts = next;
   }
 
   // ── Parts recognition ───────────────────────────────────────────────────
@@ -400,6 +429,54 @@
     spliceSource(profileEdit.profStart, profileEdit.profEnd, json);
     profileBaseline = json;
     closeProfilePopup();
+  }
+
+  // ── Profile shape extraction (for the shape-icon previews) ───────────────
+  // Pull the polygon points for a recognized part instance WITHOUT opening the
+  // popup — mirrors openProfilePopup's locate logic (meta.profiles ref OR inline
+  // literal). Returns null when the arg isn't a literal/profile we can draw.
+  function profilePtsPreview(inst: any): [number, number][] | null {
+    const info = profileInfoFor(inst.call);
+    if (!info || inst.argsStart < 0 || inst.argsEnd < 0) return null;
+    try {
+      const argsText = editedSource.slice(inst.argsStart, inst.argsEnd);
+      const seg = splitTopLevelArgs(argsText)[info.argIndex];
+      if (!seg) return null;
+      const segText = seg.text.trim();
+      const refName = profileRefName(segText);
+      if (refName) {
+        const rp = (recognized?.profiles ?? []).find((p: any) => p.name === refName);
+        if (rp && rp.valueStart >= 0) {
+          const parsed = JSON.parse(editedSource.slice(rp.valueStart, rp.valueEnd).trim());
+          if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) return parsed as [number, number][];
+        }
+        return null;
+      }
+      const parsed = JSON.parse(segText);
+      if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) return parsed as [number, number][];
+    } catch { /* not a literal we can draw */ }
+    return null;
+  }
+
+  // Build an SVG path `d` from polygon points, fitted into a `size`×`size` box
+  // (with `pad` margin). Y is flipped so the drawing matches screen-up. Closed
+  // path. Returns '' for empty/degenerate input.
+  function pathFor(pts: [number, number][] | null | undefined, size: number, pad = 1.5): string {
+    if (!pts || pts.length < 2) return '';
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [x, y] of pts) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    const w = maxX - minX || 1, h = maxY - minY || 1;
+    const span = size - pad * 2;
+    const s = Math.min(span / w, span / h);
+    // Center the (possibly non-square) shape within the box.
+    const ox = pad + (span - w * s) / 2, oy = pad + (span - h * s) / 2;
+    const tx = (x: number) => ox + (x - minX) * s;
+    const ty = (y: number) => oy + (maxY - y) * s; // flip Y (screen-up)
+    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${tx(p[0]).toFixed(2)},${ty(p[1]).toFixed(2)}`).join(' ') + ' Z';
+  }
+  // Format a coordinate to MAX 2 decimal places (drops trailing zeros).
+  function fmt2(n: number): string {
+    return String(Math.round(n * 100) / 100);
   }
 
   // ── Leaf polygon-param profile popup ─────────────────────────────────────
@@ -723,14 +800,30 @@
   }
 </script>
 
-<div class="pv-root">
-  <header class="pv-head">
-    <div class="pv-title">
-      <h1>{name}</h1>
-      {#if description}<p class="pv-desc">{description}</p>{/if}
-    </div>
-  </header>
+<!-- Profile shape-icon: a tiny SVG that DRAWS the profile, with a hover tooltip
+     ("profile") + a larger shape preview. The click action is owned by the
+     wrapping button (opens the ✎ popup). -->
+{#snippet shapeIcon(pts: [number, number][] | null | undefined)}
+  <span class="pv-shape-ic" aria-hidden="true">
+    {#if pts && pts.length >= 2}
+      <svg viewBox="0 0 18 18" width="18" height="18">
+        <path d={pathFor(pts, 18)} fill="rgba(34,102,204,0.18)" stroke="#2266cc" stroke-width="1" stroke-linejoin="round" />
+      </svg>
+    {:else}
+      <svg viewBox="0 0 18 18" width="18" height="18"><path d="M3 14 L9 4 L15 14 Z" fill="none" stroke="#2266cc" stroke-width="1" stroke-linejoin="round" /></svg>
+    {/if}
+    <span class="pv-shape-tip" role="tooltip">
+      <span class="pv-shape-tip-label">profile</span>
+      {#if pts && pts.length >= 2}
+        <svg class="pv-shape-tip-svg" viewBox="0 0 72 72" width="72" height="72">
+          <path d={pathFor(pts, 72, 6)} fill="rgba(34,102,204,0.15)" stroke="#2266cc" stroke-width="1.4" stroke-linejoin="round" />
+        </svg>
+      {/if}
+    </span>
+  </span>
+{/snippet}
 
+<div class="pv-root">
   <div class="pv-split" style="--side-width: {sideWidth}px;">
     <div class="pv-canvas-pane">
       <!-- Always pass `source` so the preview runs through the sandbox
@@ -738,7 +831,7 @@
            name differs from the directory id, e.g. dir
            `profile_extrude_v2` containing `export function profile_extrude`).
            The bundle fast-path can't handle that mismatch. -->
-      <PrimitiveDualCanvas {id} {name} args={appliedArgs} source={editedSource} />
+      <PrimitiveDualCanvas {id} {name} {description} args={appliedArgs} source={editedSource} />
     </div>
 
     <div
@@ -792,18 +885,19 @@
             <!-- Parameters section: scalar/enum/bool via ParamGrid, polygon
                  leaf params get a ✎ popup card. -->
             <div class="pg-acc-wrap">
-              <div class="pg-acc-head" class:collapsed={collapsedParts.has('__params__')}
+              <div class="pg-acc-head" class:collapsed={!isOpen('__params__')}
                 role="button" tabindex="0"
-                aria-expanded={!collapsedParts.has('__params__')}
+                aria-expanded={isOpen('__params__')}
                 onclick={() => togglePart('__params__')}
                 onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart('__params__'); } }}>
+                <button class="pv-pin" class:pinned={pinnedParts.has('__params__')} type="button" title={pinnedParts.has('__params__') ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin('__params__'); }}>📌</button>
                 <span class="pg-acc-title">Parameters</span>
                 {#if paramsDirty}<span class="pv-dot"></span>{/if}
                 <div class="pv-spacer"></div>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); apply(); }} disabled={!paramsDirty} title="Apply pending params → re-bake">Apply</button>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); revert(); }} disabled={!paramsDirty} title="Discard pending param edits">Revert</button>
               </div>
-              {#if !collapsedParts.has('__params__')}
+              {#if isOpen('__params__')}
                 <div class="pg-acc-body">
                   <ParamGrid
                     schema={paramSchema}
@@ -820,7 +914,7 @@
                       <span class="pr-keyname" title={paramSchema[pname].label ?? pname}>{paramSchema[pname].label ?? pname}</span>
                       <span class="pv-poly-verts">{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
                       <div class="pv-spacer"></div>
-                      <button class="pv-part-profile" type="button" title="Edit this profile in a popup" onclick={(e) => openLeafProfile(pname, e)}>✎ profile</button>
+                      <button class="pv-part-profile" type="button" title="Edit this profile in a popup" onclick={(e) => openLeafProfile(pname, e)}>{@render shapeIcon(pending[pname] as [number, number][])}<span class="pv-part-profile-lbl">profile</span></button>
                     </div>
                   {/each}
                 </div>
@@ -849,13 +943,14 @@
               <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
             {:else}
               {#each resolvedParts as inst (inst.name)}
-                {@const open = !collapsedParts.has(inst.name)}
+                {@const open = isOpen(inst.name)}
                 <div class="pg-acc-wrap instance">
                   <div class="pg-acc-head instance" class:collapsed={!open}
                     role="button" tabindex="0"
                     aria-expanded={open}
                     onclick={() => togglePart(inst.name)}
                     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart(inst.name); } }}>
+                    <button class="pv-pin" class:pinned={pinnedParts.has(inst.name)} type="button" title={pinnedParts.has(inst.name) ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin(inst.name); }}>📌</button>
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
                     <div class="pv-spacer"></div>
@@ -864,8 +959,8 @@
                         class="pv-part-profile"
                         type="button"
                         title="Edit this instance's profile in a popup"
-                        onclick={(e) => { e.stopPropagation(); collapsedParts.delete(inst.name); collapsedParts = new Set(collapsedParts); openProfilePopup(inst, profileInfoFor(inst.call)!, e); }}
-                      >✎ profile</button>
+                        onclick={(e) => { e.stopPropagation(); openPart(inst.name); openProfilePopup(inst, profileInfoFor(inst.call)!, e); }}
+                      >{@render shapeIcon(profilePtsPreview(inst))}<span class="pv-part-profile-lbl">profile</span></button>
                     {/if}
                   </div>
                   {#if open}
@@ -1032,6 +1127,14 @@
           showAxis={profileEdit.info.revolve}
           onChange={(next) => { profilePts = next; }}
         />
+        <details class="pv-coords" open>
+          <summary>Coordinates · {profilePts.length} pts</summary>
+          <ol class="pv-coords-list">
+            {#each profilePts as pt, i (i)}
+              <li><span class="pv-coords-i">{i}</span><code>{fmt2(pt[0])}, {fmt2(pt[1])}</code></li>
+            {/each}
+          </ol>
+        </details>
         <p class="pv-profile-pop-note">
           {#if profileEdit.mode === 'profile'}
             Edits <code>meta.profiles.{profileEdit.profileName}.value</code> on Apply. Save source to persist.
@@ -1046,6 +1149,7 @@
   {#if leafEdit}
     {@const ps = paramSchema[leafEdit.pname]}
     {@const yd = ps.yDown ?? false}
+    {@const lpts = ((pending[leafEdit.pname] as [number, number][]) ?? (ps.default as [number, number][])) ?? []}
     <FloatingPanel
       title={`Profile · ${ps.label ?? leafEdit.pname}`}
       visible={true}
@@ -1073,6 +1177,14 @@
           showAxis={yd}
           onChange={(next) => { pending = { ...pending, [leafEdit!.pname]: next }; }}
         />
+        <details class="pv-coords" open>
+          <summary>Coordinates · {lpts.length} pts</summary>
+          <ol class="pv-coords-list">
+            {#each lpts as pt, i (i)}
+              <li><span class="pv-coords-i">{i}</span><code>{fmt2(pt[0])}, {fmt2(pt[1])}</code></li>
+            {/each}
+          </ol>
+        </details>
         <p class="pv-profile-pop-note">
           Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> commits the pending profile → re-bakes the canvas. Save defaults persists it as the new default.
         </p>
@@ -1149,15 +1261,14 @@
 </div>
 
 <style>
-  .pv-root { display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; padding: 0 6px 6px; gap: 4px; box-sizing: border-box; }
-
-  .pv-head { padding: 0 6px 4px; border-bottom: 1px solid #eee; }
-  .pv-title h1 { margin: 0; font: 700 14px monospace; color: #cc2222; line-height: 1.2; }
-  .pv-desc { margin: 2px 0 0; color: #555; font-size: 11px; max-width: 720px; line-height: 1.3; }
+  /* Single-row layout — the canvas sits at the TOP of the split (no header,
+     no padding above the canvas pane). Title + description now live INSIDE
+     the canvas (PrimitiveDualScene <HTML> overlay). */
+  .pv-root { display: grid; grid-template-rows: 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; padding: 0 6px 6px; box-sizing: border-box; }
 
   .pv-split { display: grid; grid-template-columns: 1fr 6px var(--side-width, 420px); min-height: 0; height: 100%; gap: 0; }
 
-  .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 6px; }
+  .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 0; }
 
   .pv-resizer { background: transparent; cursor: col-resize; position: relative; }
   .pv-resizer::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eee; transition: background 0.15s; }
@@ -1197,7 +1308,7 @@
   }
   .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
   .pg-acc-head.collapsed { background: #fafafa; }
-  .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; margin-left: auto; }
+  .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
   .pg-acc-head.instance .pg-acc-title { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
   .pg-acc-sig { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; margin-left: -3px; }
   /* Body cap — keeps tall parts scrollable rather than pushing the rest of
@@ -1243,9 +1354,39 @@
   .pv-parts-err { font: 11px ui-monospace, monospace; color: #c4392f; padding: 10px 4px; white-space: pre-wrap; }
   .pv-load-pick { font: 11px monospace; padding: 3px 4px; border: 1px solid #ccc; border-radius: 4px; background: #fff; max-width: 150px; cursor: pointer; }
   .pv-load-pick:hover { border-color: #cc2222; }
-  /* ✎ profile trigger on a part row — opens the ProfileEditor in a popup. */
-  .pv-part-profile { font: 600 10px Arial; color: #2266cc; background: #eef3fb; border: 1px solid #d4e1f5; border-radius: 4px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
+  /* profile trigger on a part row — shape-icon + "profile" label; opens the
+     ProfileEditor popup on click. */
+  .pv-part-profile { display: inline-flex; align-items: center; gap: 4px; font: 600 10px Arial; color: #2266cc; background: #eef3fb; border: 1px solid #d4e1f5; border-radius: 4px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
   .pv-part-profile:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
+  .pv-part-profile:hover :global(.pv-shape-ic path) { stroke: #fff; }
+  .pv-part-profile-lbl { line-height: 1; }
+
+  /* ── Profile shape-icon (draws the polygon) + hover preview ──────────────── */
+  .pv-shape-ic { position: relative; display: inline-flex; align-items: center; }
+  .pv-shape-ic svg { display: block; }
+  /* Hover preview — a larger shape + the "profile" label, body-styled card. */
+  .pv-shape-tip {
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    display: none; flex-direction: column; align-items: center; gap: 4px;
+    background: #1a1a1a; color: #fff; border-radius: 6px; padding: 7px 9px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3); z-index: 1200; pointer-events: none;
+  }
+  .pv-shape-ic:hover .pv-shape-tip { display: flex; }
+  .pv-shape-tip-label { font: 600 10px Arial; letter-spacing: 0.3px; }
+  .pv-shape-tip-svg { background: #2a2a2a; border-radius: 4px; }
+
+  /* ── Pin (📌) toggle on accordion headers ────────────────────────────────── */
+  .pv-pin { border: 0; background: transparent; cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; opacity: 0.28; filter: grayscale(1); transition: opacity 0.12s; flex: 0 0 auto; }
+  .pv-pin:hover { opacity: 0.7; }
+  .pv-pin.pinned { opacity: 1; filter: none; }
+
+  /* ── Coordinates section in the profile popups ───────────────────────────── */
+  .pv-coords { margin: 4px 4px 0; font: 11px Arial; color: #555; }
+  .pv-coords > summary { cursor: pointer; font: 600 11px Arial; color: #444; padding: 2px 0; user-select: none; }
+  .pv-coords-list { margin: 4px 0 0; padding: 0; list-style: none; max-height: 140px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 1px 8px; }
+  .pv-coords-list li { display: flex; align-items: center; gap: 5px; font: 11px ui-monospace, monospace; }
+  .pv-coords-i { color: #aaa; min-width: 16px; text-align: right; }
+  .pv-coords-list code { color: #2266cc; }
   /* ＋ transform trigger — opens the transform palette popover. */
   .pv-part-addtx { font: 600 10px Arial; color: #1a8a3a; background: #eafaef; border: 1px solid #cce8d4; border-radius: 4px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
   .pv-part-addtx:hover { background: #1a8a3a; color: #fff; border-color: #1a8a3a; }
