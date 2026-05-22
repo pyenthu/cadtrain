@@ -36,6 +36,12 @@ export interface RecognizedTransform {
   argsText: string;
   argsStart: number;
   argsEnd: number;
+  /** Span of the WHOLE `op(inner, args)` call + its first (inner) argument, so
+   *  the GUI can DELETE the transform by replacing the call with its inner. */
+  callStart: number;
+  callEnd: number;
+  innerStart: number;
+  innerEnd: number;
 }
 export interface RecognizedInstance {
   name: string;
@@ -244,8 +250,10 @@ export function recognizeComposite(source: string): RecognizedComposite {
         const transforms: RecognizedTransform[] = [];
         while (node?.type === 'CallExpression' && node.callee?.type === 'Identifier' && OPERATORS.has(node.callee.name)) {
           const sp = argsSpan(node, 1);
-          transforms.push({ op: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end });
-          node = node.arguments[0];
+          const inner = node.arguments[0];
+          transforms.push({ op: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end,
+            callStart: node.start, callEnd: node.end, innerStart: inner.start, innerEnd: inner.end });
+          node = inner;
         }
         if (node?.type === 'CallExpression' && node.callee?.type === 'Identifier') {
           const sp = argsSpan(node, 0);

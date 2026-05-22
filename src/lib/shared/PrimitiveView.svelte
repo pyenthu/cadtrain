@@ -225,6 +225,11 @@
     spliceSource(txAdd.initStart, txAdd.initEnd, `${t.op}(${inner}, ${t.args})`);
     closeTxAdd();
   }
+  // Delete a transform = UNWRAP it: replace `op(inner, args)` with just `inner`.
+  function deleteTransform(t: any) {
+    if (!t || typeof t.callStart !== 'number' || t.callStart < 0) return;
+    spliceSource(t.callStart, t.callEnd, editedSource.slice(t.innerStart, t.innerEnd));
+  }
 
   let usesSet = $derived(new Set<string>(recognized?.uses ?? []));
   let parts = $derived((recognized?.instances ?? []).filter((i: any) => usesSet.has(i.call)));
@@ -911,14 +916,6 @@
                           onclick={(e) => openProfilePopup(inst, profileInfoFor(inst.call)!, e)}
                         >✎ profile</button>
                       {/if}
-                      {#if inst.initStart >= 0}
-                        <button
-                          class="pv-part-addtx"
-                          type="button"
-                          title="Add a transform (translate / rotate)"
-                          onclick={(e) => openTxAdd(inst, e)}
-                        >＋ transform</button>
-                      {/if}
                     {/if}
                   </div>
                   {#if canEdit && inst.argsStart >= 0}
@@ -945,8 +942,17 @@
                         />
                       {:else}{t.argsText}{/if}
                       ){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}
+                      {#if canEdit && t.callStart >= 0}<button class="pv-part-txdel" type="button" title="Delete this transform" onclick={() => deleteTransform(t)}>✕</button>{/if}
                     </div>
                   {/each}
+                  {#if canEdit && inst.initStart >= 0}
+                    <button
+                      class="pv-part-addtx"
+                      type="button"
+                      title="Add a transform (translate / rotate) — appended below, applied in sequence"
+                      onclick={(e) => openTxAdd(inst, e)}
+                    >＋ transform</button>
+                  {/if}
                 </div>
               {/each}
               {#if recognized?.composition}
@@ -1280,6 +1286,9 @@
   .pv-part-call { font: 11px monospace; color: #2266cc; background: #eef3fb; padding: 1px 6px; border-radius: 8px; }
   .pv-part-args { margin-top: 4px; font: 11px ui-monospace, monospace; color: #555; white-space: pre-wrap; word-break: break-word; }
   .pv-part-tx { margin-top: 3px; font: 11px ui-monospace, monospace; color: #888; }
+  .pv-part-txdel { margin-left: 6px; border: none; background: transparent; color: #c4392f; cursor: pointer; font-size: 11px; line-height: 1; padding: 0 3px; opacity: 0.4; }
+  .pv-part-tx:hover .pv-part-txdel { opacity: 0.85; }
+  .pv-part-txdel:hover { opacity: 1; }
   .pv-part-edit { margin-top: 4px; width: 100%; box-sizing: border-box; font: 11px ui-monospace, monospace; color: #333; padding: 3px 6px; border: 1px solid #d8d8e0; border-radius: 4px; background: #fff; }
   .pv-part-edit:focus { outline: 1px solid #cc2222; border-color: #cc2222; }
   .pv-part-edit-tx { width: auto; min-width: 170px; margin: 0 2px; padding: 1px 5px; }
