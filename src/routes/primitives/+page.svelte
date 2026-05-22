@@ -38,11 +38,20 @@
   let showTests = $state(false);
 
   async function refreshList() {
-    const r = await fetch('/api/primitives/list');
-    const data = await r.json();
-    entries = data.merged;
-    tests = data.tests ?? [];
-    archived = data.archived ?? [];
+    try {
+      const r = await fetch('/api/primitives/list');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      entries = data.merged ?? [];
+      tests = data.tests ?? [];
+      archived = data.archived ?? [];
+      status = '';
+    } catch (e: any) {
+      // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
+      // gracefully instead of leaving `entries` undefined and crashing onMount.
+      entries = []; tests = []; archived = [];
+      status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
+    }
   }
 
   type SourceData = { source: string; origin: string; name?: string; description?: string; params?: Record<string, any>; profiles?: Record<string, any> };
@@ -107,7 +116,7 @@
     await refreshList();
     // Default-open the first VOLUME primitive (bundle ones can 500 on
     // source-load); fall back to the first entry.
-    const initial = entries.find((e) => e.source === 'volume') ?? entries[0];
+    const initial = entries?.find((e) => e.source === 'volume') ?? entries?.[0];
     if (initial) openTab(initial);
   });
 
