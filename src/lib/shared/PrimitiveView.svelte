@@ -39,11 +39,25 @@
     vLabel?: string;
   };
 
+  /** A meta.profiles entry — the Svelte-component encapsulated profile
+   *  default. Same render flags as a polygon param, but the value lives in
+   *  `value` (not `default`) and is edited by splicing meta.profiles in the
+   *  source buffer (live edit → re-bake; Save source persists). */
+  type ProfileSchema = {
+    label?: string;
+    type?: 'polygon';
+    yDown?: boolean;
+    hLabel?: string;
+    vLabel?: string;
+    value: [number, number][];
+  };
+
   let {
     id,
     name = id,
     description = '',
     paramSchema,
+    profileSchema = {},
     editable = false,
     initialSource = '',
     serverSource = '',
@@ -57,6 +71,10 @@
     name?: string;
     description?: string;
     paramSchema: Record<string, ParamSchema>;
+    /** meta.profiles — encapsulated profile defaults (Svelte-component model).
+     *  Rendered as ProfileEditors in the Profiles tab; editing splices the
+     *  meta.profiles.<name>.value literal in the source buffer. */
+    profileSchema?: Record<string, ProfileSchema>;
     editable?: boolean;
     initialSource?: string;
     serverSource?: string;
@@ -94,7 +112,29 @@
   // ProfileEditor per entry below the scalar grid.
   let polygonParamNames = $derived(paramOrder.filter((k) => paramSchema[k].type === 'polygon'));
 
-  let tab = $state<'params' | 'parts' | 'profile' | 'source' | 'ai'>('params');
+  // ── Profiles tab (meta.profiles — the Svelte-component model) ────────────
+  // Encapsulated profile DEFAULTS. They are NOT params/args — the composition
+  // reads meta.profiles.<name>.value. The GUI edits them by splicing the
+  // value literal in the source BUFFER (editedSource): live edit → canvas
+  // re-bakes off the buffer; Save source persists. (Per-assembly INSTANCE
+  // overrides are the next layer — 1b — not built yet.)
+  let profileNames = $derived(Object.keys(profileSchema ?? {}));
+  let hasProfiles = $derived(profileNames.length > 0);
+  // Working copies of each profile's points, seeded from the schema value.
+  // Edits land here (pending), commit splices into editedSource.
+  let profileVals = $state<Record<string, [number, number][]>>(
+    untrack(() => Object.fromEntries(Object.entries(profileSchema ?? {}).map(([k, v]) => [k, (v.value ?? []).map((p) => [p[0], p[1]] as [number, number])]))),
+  );
+  // Baseline (committed-to-buffer) copy → per-profile dirty detection.
+  let profileBase = $state<Record<string, string>>(
+    untrack(() => Object.fromEntries(Object.entries(profileSchema ?? {}).map(([k, v]) => [k, JSON.stringify(v.value ?? [])]))),
+  );
+  function profileIsDirty(pn: string): boolean {
+    return JSON.stringify(profileVals[pn] ?? []) !== (profileBase[pn] ?? '[]');
+  }
+  let anyProfileDirty = $derived(profileNames.some(profileIsDirty));
+
+  let tab = $state<'params' | 'parts' | 'profiles' | 'profile' | 'source' | 'ai'>('params');
 
   // ── Parts tab ──────────────────────────────────────────────────────────
   // Dual-control: the source.ts is the source of truth; the GUI introspects
@@ -116,8 +156,76 @@
       recogStatus = 'idle';
     } catch (e: any) { recogError = e?.message ?? String(e); recogStatus = 'error'; }
   }
-  // Re-recognize whenever the Parts tab is open and the source changes.
-  $effect(() => { if (tab === 'parts') { void editedSource; loadRecognition(); } });
+  // Re-recognize whenever the Parts OR Profiles tab is open and the source
+  // changes (the Profiles tab needs the recognized meta.profiles value spans
+  // to splice edits back into the buffer).
+  $effect(() => { if (tab === 'parts' || tab === 'profiles') { void editedSource; loadRecognition(); } });
+
+  // Commit a profile edit: splice the new polygon over meta.profiles.<name>.value
+  // in editedSource. We re-locate the span by NAME from the live recognition
+  // (offsets shift as the buffer changes). → Source dirty; canvas re-bakes off
+  // editedSource; Save source persists. Returns false if the span wasn't found.
+  function commitProfile(pn: string): boolean {
+    const rp = (recognized?.profiles ?? []).find((p: any) => p.name === pn);
+    if (!rp || rp.valueStart < 0 || rp.valueEnd < 0) return false;
+    const json = JSON.stringify(profileVals[pn] ?? []);
+    editedSource = editedSource.slice(0, rp.valueStart) + json + editedSource.slice(rp.valueEnd);
+    profileBase = { ...profileBase, [pn]: json };
+    return true;
+  }
+  function commitAllProfiles() {
+    // Apply high→low so earlier splices don't invalidate later offsets.
+    const dirty = profileNames.filter(profileIsDirty)
+      .map((pn) => ({ pn, rp: (recognized?.profiles ?? []).find((p: any) => p.name === pn) }))
+      .filter((x) => x.rp && x.rp.valueStart >= 0)
+      .sort((a, b) => b.rp.valueStart - a.rp.valueStart);
+    let out = editedSource;
+    const nextBase = { ...profileBase };
+    for (const { pn, rp } of dirty) {
+      const json = JSON.stringify(profileVals[pn] ?? []);
+      out = out.slice(0, rp.valueStart) + json + out.slice(rp.valueEnd);
+      nextBase[pn] = json;
+    }
+    editedSource = out;
+    profileBase = nextBase;
+  }
+  function revertProfile(pn: string) {
+    try { profileVals = { ...profileVals, [pn]: JSON.parse(profileBase[pn] ?? '[]') }; } catch { /* keep */ }
+  }
+
+  // ── Add-transform palette (mirrors the /components chain-op aid) ──────────
+  // A clean visual coding aid: a `+` on each Parts-tab instance row opens a
+  // palette of transforms. Picking one WRAPS the instance's init expression
+  // with that operator in editedSource — `const X = cyl(…)` becomes
+  // `const X = mv(cyl(…), [0, 0, 0])`. Extensible: add an entry here for each
+  // new transform helper (it just emits `op(<inner>, <args>)`).
+  type TxDef = { id: string; label: string; glyph: string; op: string; args: string; hint: string };
+  const TRANSFORMS: TxDef[] = [
+    { id: 'translate', label: 'Translate', glyph: '↔', op: 'mv',  args: '[0, 0, 0]',  hint: 'Move along X / Y / Z (Z-down: +z is deeper).' },
+    { id: 'rotate',    label: 'Rotate',    glyph: '⟳', op: 'rot', args: '[0, 0, 0]',  hint: 'Rotate about X / Y / Z in degrees.' },
+    // Future transforms (scale, mirror, twist, …) drop in here — each just
+    // emits `op(<inner>, <args>)` and the recognizer renders the new ↳ row.
+  ];
+  let txAdd = $state<{ instName: string; initStart: number; initEnd: number; px: number; py: number } | null>(null);
+  function openTxAdd(inst: any, ev: MouseEvent) {
+    if (!canEdit || inst.initStart < 0) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    txAdd = {
+      instName: inst.name, initStart: inst.initStart, initEnd: inst.initEnd,
+      px: Math.max(8, Math.min(rect.left - 40, window.innerWidth - 240)),
+      py: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 220)),
+    };
+  }
+  function closeTxAdd() { txAdd = null; }
+  function addTransform(t: TxDef) {
+    if (!txAdd) return;
+    const inner = editedSource.slice(txAdd.initStart, txAdd.initEnd);
+    // Wrap the WHOLE init expr → the new op becomes the OUTERMOST transform
+    // (applied last), matching how the recognizer reads the chain.
+    spliceSource(txAdd.initStart, txAdd.initEnd, `${t.op}(${inner}, ${t.args})`);
+    closeTxAdd();
+  }
+
   let usesSet = $derived(new Set<string>(recognized?.uses ?? []));
   let parts = $derived((recognized?.instances ?? []).filter((i: any) => usesSet.has(i.call)));
   let locals = $derived((recognized?.instances ?? []).filter((i: any) => !usesSet.has(i.call)));
@@ -235,35 +343,43 @@
   }
 
   // ── Profile popup state ──────────────────────────────────────────────────
-  // The profile arg of an instance can be one of two editable shapes:
+  // The profile arg of an instance (Parts tab) can be one of two editable
+  // shapes under the Svelte-component (meta.profiles) model:
+  //   - 'profile' — `meta.profiles.<name>.value` (the encapsulated default,
+  //     already extracted). The popup edits THAT value literal in the buffer.
   //   - 'literal' — an inline `[[x,y],…]` array. The popup edits it in place
-  //     (splice over the literal) AND offers "Promote to param" (extract the
-  //     literal into a named meta.params polygon param + a positional fn arg).
-  //   - 'param'   — a bare identifier that resolves to a meta.params polygon
-  //     param (already promoted). The popup edits THAT param's `default` value.
-  // Anything else (expression, non-polygon param) → refuse.
+  //     AND offers "Promote to profile" (extract the literal into a named
+  //     meta.profiles entry + replace the inline arg with meta.profiles.<n>.value).
+  // Anything else (other expression) → refuse.
   let profileEdit = $state<{
     instName: string;
     call: string;
     info: LeafProfile;
-    mode: 'literal' | 'param';
+    mode: 'literal' | 'profile';
     /** Absolute offsets in editedSource of the value to splice on Apply:
-     *  the inline array literal ('literal') or the param's `default:` value
-     *  expression ('param'). */
+     *  the inline array literal ('literal') or the meta.profiles value ('profile'). */
     profStart: number;
     profEnd: number;
-    /** 'param' mode only — the param name being edited. */
-    paramName: string | null;
-    /** True when this 'literal' arg can be promoted to a named param (we have
-     *  the meta.params + signature insert points + the leaf's flags). */
+    /** 'profile' mode only — the profile name being edited. */
+    profileName: string | null;
+    /** True when this 'literal' arg can be promoted to a meta.profiles entry. */
     canPromote: boolean;
-    /** Pixel anchor for the FloatingPanel (near the ✎ trigger). */
     px: number;
     py: number;
   } | null>(null);
   let profilePts = $state<[number, number][]>([]);
   let profileBaseline = ''; // JSON of pts at open → dirty detection
   let promoteBusy = $state(false);
+
+  // Match `meta.profiles.<name>.value` (or a `P.<name>` merge ref) → the
+  // profile name. Returns null when the segment isn't a profile reference.
+  function profileRefName(segText: string): string | null {
+    let m = /^meta\s*\.\s*profiles\s*\.\s*([a-z_$][a-z0-9_$]*)\s*\.\s*value$/i.exec(segText);
+    if (m) return m[1];
+    m = /^[A-Za-z_$][\w$]*\s*\.\s*([a-z_$][a-z0-9_$]*)$/i.exec(segText); // P.body
+    if (m && (recognized?.profiles ?? []).some((p: any) => p.name === m![1])) return m[1];
+    return null;
+  }
 
   // Open the popup for a recognized instance. We re-locate the profile arg
   // against the LIVE editedSource (offsets shift as the user edits) by reading
@@ -282,23 +398,24 @@
     const px = Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480));
     const py = Math.max(8, Math.min(rect.top, window.innerHeight - 360));
 
-    // Case 1 — bare identifier matching a polygon meta.param → edit its default.
-    if (/^[a-z_$][a-z0-9_$]*$/i.test(segText)) {
-      const rp = (recognized?.params ?? []).find((p: any) => p.name === segText && p.polygon);
-      if (rp && rp.defaultStart >= 0) {
+    // Case 1 — a meta.profiles reference → edit that profile's value literal.
+    const refName = profileRefName(segText);
+    if (refName) {
+      const rp = (recognized?.profiles ?? []).find((p: any) => p.name === refName);
+      if (rp && rp.valueStart >= 0) {
         let pts: [number, number][] | null = null;
         try {
-          const parsed = JSON.parse(editedSource.slice(rp.defaultStart, rp.defaultEnd).trim());
+          const parsed = JSON.parse(editedSource.slice(rp.valueStart, rp.valueEnd).trim());
           if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
-        } catch { /* default isn't a literal array */ }
+        } catch { /* value isn't a literal array */ }
         if (pts) {
           profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
           profileBaseline = JSON.stringify(profilePts);
-          profileEdit = { instName: inst.name, call: inst.call, info, mode: 'param', profStart: rp.defaultStart, profEnd: rp.defaultEnd, paramName: rp.name, canPromote: false, px, py };
+          profileEdit = { instName: inst.name, call: inst.call, info, mode: 'profile', profStart: rp.valueStart, profEnd: rp.valueEnd, profileName: refName, canPromote: false, px, py };
           return;
         }
       }
-      recogError = `Can't edit ${inst.name}'s profile — "${segText}" isn't a polygon param with a literal default.`;
+      recogError = `Can't edit ${inst.name}'s profile — "${segText}" references a profile with no literal value. (Edit it in the Profiles tab.)`;
       return;
     }
 
@@ -308,17 +425,17 @@
       const parsed = JSON.parse(segText);
       if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
     } catch { /* not a literal array (expression) → can't edit visually */ }
-    if (!pts) { recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array or a polygon param.`; return; }
+    if (!pts) { recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array or a meta.profiles reference.`; return; }
     profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
     profileBaseline = JSON.stringify(profilePts);
-    const canPromote = !!recognized?.editable && recognized.paramsInsertPos >= 0 && recognized.sigInsertPos >= 0;
-    profileEdit = { instName: inst.name, call: inst.call, info, mode: 'literal', profStart: segStart, profEnd: segEnd, paramName: null, canPromote, px, py };
+    const canPromote = !!recognized?.editable && (recognized.profilesInsertPos >= 0 || recognized.metaInsertPos >= 0);
+    profileEdit = { instName: inst.name, call: inst.call, info, mode: 'literal', profStart: segStart, profEnd: segEnd, profileName: null, canPromote, px, py };
   }
   let profileDirty = $derived(profileEdit !== null && JSON.stringify(profilePts) !== profileBaseline);
   function closeProfilePopup() { profileEdit = null; }
   // Apply: serialize the edited polygon and splice it over the target (inline
-  // literal or promoted param's default) in editedSource. → Source dirty;
-  // canvases re-bake off editedSource; the recognition $effect re-scans.
+  // literal or meta.profiles value) in editedSource. → Source dirty; canvases
+  // re-bake off editedSource; the recognition $effect re-scans.
   function applyProfile() {
     if (!profileEdit) return;
     const json = JSON.stringify(profilePts);
@@ -327,16 +444,16 @@
     closeProfilePopup();
   }
 
-  // Promote an inline profile literal → a named polygon param. Three edits,
-  // applied high→low offset so earlier offsets stay valid:
-  //   1. replace the inline literal in the body with the new param NAME
-  //   2. add the param to the function signature (positional, after the last)
-  //   3. add a polygon entry to meta.params (mirroring the leaf's flags so the
-  //      Params-tab ProfileEditor renders it the same way as the leaf)
-  // meta.params append is last in source order (top of file) → lowest offset.
-  function suggestParamName(instName: string): string {
-    const taken = new Set<string>((recognized?.params ?? []).map((p: any) => p.name));
-    let base = `${instName}_profile`;
+  // Promote an inline profile literal → an encapsulated meta.profiles entry
+  // (the Svelte-component model). Two edits, high→low offset:
+  //   1. replace the inline literal in the body with `meta.profiles.<name>.value`
+  //   2. add a `<name>: { …flags, value: <literal> }` entry to meta.profiles
+  //      (creating the `profiles: {…}` block if the meta has none)
+  // The flags mirror the leaf's polygon flags so the Profiles-tab ProfileEditor
+  // renders it the same way as the leaf.
+  function suggestProfileName(instName: string): string {
+    const taken = new Set<string>((recognized?.profiles ?? []).map((p: any) => p.name));
+    let base = instName || 'profile';
     if (!taken.has(base)) return base;
     let i = 2; while (taken.has(`${base}${i}`)) i++; return `${base}${i}`;
   }
@@ -346,26 +463,23 @@
     if (!r) return;
     promoteBusy = true;
     try {
-      const pname = suggestParamName(profileEdit.instName);
+      const pname = suggestProfileName(profileEdit.instName);
       const info = profileEdit.info;
-      // The literal to extract — use the current (possibly-edited) pts so an
-      // in-popup edit is captured by the promotion.
       const literal = JSON.stringify(profilePts);
-      // Build the meta.params entry, mirroring the leaf's polygon flags.
-      const flags: string[] = [`label: '${profileEdit.instName} profile'`, `type: 'polygon'`];
-      if (info.yDown) {
-        flags.push(`yDown: true`, `hLabel: '${info.hLabel}'`, `vLabel: '${info.vLabel}'`);
-      }
-      flags.push(`default: ${literal}`);
-      const paramEntry = `${r.paramsHasElems ? ', ' : ''}${pname}: { ${flags.join(', ')} }`;
-      // Signature param name (positional). meta.params order must match arg
-      // order — we append both at the END so the new param is the LAST arg.
-      const sigEntry = `${r.sigHasParams ? ', ' : ''}${pname}`;
-      const edits = [
-        { s: profileEdit.profStart, e: profileEdit.profEnd, text: pname },
-        { s: r.sigInsertPos, e: r.sigInsertPos, text: sigEntry },
-        { s: r.paramsInsertPos, e: r.paramsInsertPos, text: paramEntry },
+      const flags: string[] = [`label: '${profileEdit.instName} section'`, `type: 'polygon'`];
+      if (info.yDown) flags.push(`yDown: true`, `hLabel: '${info.hLabel}'`, `vLabel: '${info.vLabel}'`);
+      flags.push(`value: ${literal}`);
+      const entryBody = `${pname}: { ${flags.join(', ')} }`;
+      const edits: Array<{ s: number; e: number; text: string }> = [
+        { s: profileEdit.profStart, e: profileEdit.profEnd, text: `meta.profiles.${pname}.value` },
       ];
+      if (r.profilesInsertPos >= 0) {
+        // meta.profiles already exists → append an entry.
+        edits.push({ s: r.profilesInsertPos, e: r.profilesInsertPos, text: `${r.profilesHasElems ? ', ' : ''}${entryBody}` });
+      } else {
+        // No profiles block → synthesise one at the end of meta.
+        edits.push({ s: r.metaInsertPos, e: r.metaInsertPos, text: `, profiles: { ${entryBody} }` });
+      }
       edits.sort((a, b) => b.s - a.s);
       let out = editedSource;
       for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
@@ -688,6 +802,12 @@
         <button class="pv-tab" class:active={tab === 'parts'} onclick={() => (tab = 'parts')} type="button" role="tab">
           <span class="pv-ic">▦</span> Parts
         </button>
+        {#if hasProfiles}
+          <button class="pv-tab" class:active={tab === 'profiles'} onclick={() => (tab = 'profiles')} type="button" role="tab">
+            <span class="pv-ic">◫</span> Profiles
+            {#if anyProfileDirty}<span class="pv-dot"></span>{/if}
+          </button>
+        {/if}
         {#if hasProfile}
           <button class="pv-tab" class:active={tab === 'profile'} onclick={() => (tab = 'profile')} type="button" role="tab">
             <span class="pv-ic">◧</span> Profile
@@ -781,14 +901,24 @@
                   <div class="pv-part-head">
                     <span class="pv-part-name">{inst.name}</span>
                     <span class="pv-part-call">{inst.call}</span>
-                    {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call)}
+                    {#if canEdit}
                       <div class="pv-spacer"></div>
-                      <button
-                        class="pv-part-profile"
-                        type="button"
-                        title="Edit this instance's profile in a popup"
-                        onclick={(e) => openProfilePopup(inst, profileInfoFor(inst.call)!, e)}
-                      >✎ profile</button>
+                      {#if inst.argsStart >= 0 && profileInfoFor(inst.call)}
+                        <button
+                          class="pv-part-profile"
+                          type="button"
+                          title="Edit this instance's profile in a popup"
+                          onclick={(e) => openProfilePopup(inst, profileInfoFor(inst.call)!, e)}
+                        >✎ profile</button>
+                      {/if}
+                      {#if inst.initStart >= 0}
+                        <button
+                          class="pv-part-addtx"
+                          type="button"
+                          title="Add a transform (translate / rotate)"
+                          onclick={(e) => openTxAdd(inst, e)}
+                        >＋ transform</button>
+                      {/if}
                     {/if}
                   </div>
                   {#if canEdit && inst.argsStart >= 0}
@@ -825,6 +955,54 @@
               {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
               {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
               {#if editable && recognized && !recognized.editable}<div class="pv-parts-note">read-only — remove TS type annotations from the params to edit args inline.</div>{/if}
+            {/if}
+          </div>
+        </div>
+      {:else if tab === 'profiles'}
+        <div class="pv-pane pv-params">
+          <div class="pv-pane-head">
+            <span class="pv-pill" class:dirty={anyProfileDirty}>{profileNames.length} profile{profileNames.length === 1 ? '' : 's'}{anyProfileDirty ? ' · edited' : ''}</span>
+            <div class="pv-spacer"></div>
+            <button class="pv-btn" type="button" disabled={!anyProfileDirty} onclick={commitAllProfiles}>Apply all</button>
+            {#if canEdit && onSaveSource}
+              <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
+            {/if}
+          </div>
+          <div class="pv-params-grid">
+            {#if recogStatus === 'loading' && !recognized}
+              <div class="pv-parts-empty">loading profiles…</div>
+            {:else}
+              <p class="pv-profiles-note">
+                Encapsulated profiles (<code>meta.profiles</code>). The composition reads
+                <code>meta.profiles.&lt;name&gt;.value</code> — no args, no overflow. Editing changes
+                the component's profile in the source buffer; <strong>Apply</strong> re-bakes, <strong>Save source</strong> persists.
+              </p>
+              {#each profileNames as pn (pn)}
+                {@const ps = profileSchema[pn]}
+                <div class="pv-poly-param">
+                  <div class="pv-poly-head">
+                    <span class="pv-pname">{ps.label ?? pn}</span>
+                    <span class="pv-poly-verts">{(profileVals[pn] ?? []).length} verts</span>
+                    <div class="pv-spacer"></div>
+                    {#if profileIsDirty(pn)}
+                      <button class="pv-mini-btn" type="button" onclick={() => revertProfile(pn)}>Revert</button>
+                      <button class="pv-mini-btn primary" type="button" onclick={() => commitProfile(pn)} disabled={!canEdit}>Apply</button>
+                    {/if}
+                  </div>
+                  <ProfileEditor
+                    value={profileVals[pn] ?? (ps.value as [number, number][])}
+                    width={360}
+                    height={240}
+                    yDown={ps.yDown ?? false}
+                    hLabel={ps.hLabel ?? (ps.yDown ? 'r →' : 'x →')}
+                    vLabel={ps.vLabel ?? (ps.yDown ? 'z ↓' : 'y ↑')}
+                    presetSet={ps.yDown ? 'revolve' : 'cartesian'}
+                    showAxis={ps.yDown ?? false}
+                    onChange={(next) => { profileVals = { ...profileVals, [pn]: next }; }}
+                    onApply={() => commitProfile(pn)}
+                  />
+                </div>
+              {/each}
             {/if}
           </div>
         </div>
@@ -942,12 +1120,12 @@
       <div class="pv-profile-pop">
         <div class="pv-profile-pop-head">
           <span class="pv-pill" class:dirty={profileDirty}>{profilePts.length} verts{profileDirty ? ' · edited' : ''}</span>
-          {#if profileEdit.mode === 'param'}
-            <span class="pv-profile-pop-tag">param <code>{profileEdit.paramName}</code></span>
+          {#if profileEdit.mode === 'profile'}
+            <span class="pv-profile-pop-tag">profile <code>{profileEdit.profileName}</code></span>
           {/if}
           <div class="pv-spacer"></div>
           {#if profileEdit.mode === 'literal' && profileEdit.canPromote}
-            <button class="pv-btn" type="button" disabled={promoteBusy} title="Extract this inline profile into a named polygon param + a positional fn arg" onclick={promoteProfile}>{promoteBusy ? '…' : '↥ Promote to param'}</button>
+            <button class="pv-btn" type="button" disabled={promoteBusy} title="Extract this inline profile into an encapsulated meta.profiles entry (clean composition)" onclick={promoteProfile}>{promoteBusy ? '…' : '↥ Promote to meta.profiles'}</button>
           {/if}
           <button class="pv-btn" type="button" disabled={!profileDirty} onclick={() => { profilePts = JSON.parse(profileBaseline); }}>Revert</button>
           <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply → source</button>
@@ -964,12 +1142,35 @@
           onChange={(next) => { profilePts = next; }}
         />
         <p class="pv-profile-pop-note">
-          {#if profileEdit.mode === 'param'}
-            Edits the <code>{profileEdit.paramName}</code> param's default in source.ts on Apply; also editable in the Params tab. Save source to persist.
+          {#if profileEdit.mode === 'profile'}
+            Edits <code>meta.profiles.{profileEdit.profileName}.value</code> on Apply; also editable in the Profiles tab. Save source to persist.
           {:else}
-            Edits write into <code>{profileEdit.instName}</code>'s call in source.ts on Apply. <strong>Promote to param</strong> makes it an editable named param. Save source to persist.
+            Edits the inline literal in <code>{profileEdit.instName}</code>'s call on Apply. <strong>Promote to meta.profiles</strong> encapsulates it (clean composition). Save source to persist.
           {/if}
         </p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if txAdd}
+    <FloatingPanel
+      title={`Add transform · ${txAdd.instName}`}
+      visible={true}
+      x={txAdd.px}
+      y={txAdd.py}
+      width="min(240px, 90vw)"
+      maxHeight="60vh"
+      onClose={closeTxAdd}
+    >
+      <div class="pv-txadd-pop">
+        {#each TRANSFORMS as t (t.id)}
+          <button class="pv-txadd-item" type="button" title={t.hint} onclick={() => addTransform(t)}>
+            <span class="pv-txadd-glyph">{t.glyph}</span>
+            <span class="pv-txadd-label">{t.label}</span>
+            <span class="pv-txadd-op">{t.op}(…)</span>
+          </button>
+        {/each}
+        <p class="pv-txadd-note">Wraps <code>{txAdd.instName}</code>'s call. Edit the values on the new <code>↳</code> row; Save source to persist.</p>
       </div>
     </FloatingPanel>
   {/if}
@@ -1060,10 +1261,15 @@
   /* Still used by the Profile tab's pane head. */
   .pv-pname { font: 12px monospace; color: #333; }
 
-  /* Inline polygon-param editors in the Params tab. */
+  /* Inline polygon-param editors in the Params tab + meta.profiles editors. */
   .pv-poly-param { margin-top: 10px; border: 1px solid #eaeaef; border-radius: 4px; padding: 6px 8px 4px; background: #fafafa; }
   .pv-poly-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
   .pv-poly-verts { font: 10px Arial; color: #888; }
+  .pv-profiles-note { margin: 2px 0 4px; font: 11px Arial; color: #666; line-height: 1.4; }
+  .pv-profiles-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
+  .pv-mini-btn { padding: 2px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 10px Arial; cursor: pointer; }
+  .pv-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pv-mini-btn.primary { background: #cc2222; color: #fff; border-color: #cc2222; }
 
   /* Parts tab — read-only recognized instances. */
   .pv-parts { padding: 0; }
@@ -1091,6 +1297,19 @@
   /* ✎ profile trigger on a part row — opens the ProfileEditor in a popup. */
   .pv-part-profile { font: 600 10px Arial; color: #2266cc; background: #eef3fb; border: 1px solid #d4e1f5; border-radius: 4px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
   .pv-part-profile:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
+  /* ＋ transform trigger — opens the transform palette popover. */
+  .pv-part-addtx { font: 600 10px Arial; color: #1a8a3a; background: #eafaef; border: 1px solid #cce8d4; border-radius: 4px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
+  .pv-part-addtx:hover { background: #1a8a3a; color: #fff; border-color: #1a8a3a; }
+
+  /* Add-transform palette popover (FloatingPanel). */
+  .pv-txadd-pop { display: flex; flex-direction: column; gap: 4px; padding: 4px 2px; }
+  .pv-txadd-item { display: flex; align-items: center; gap: 8px; text-align: left; background: #fafafa; border: 1px solid #eaeaef; border-radius: 5px; padding: 7px 9px; cursor: pointer; font: 12px Arial; color: #333; }
+  .pv-txadd-item:hover { background: #eafaef; border-color: #cce8d4; }
+  .pv-txadd-glyph { font-size: 15px; width: 18px; text-align: center; color: #1a8a3a; }
+  .pv-txadd-label { font-weight: 600; flex: 1; }
+  .pv-txadd-op { font: 10px ui-monospace, monospace; color: #888; }
+  .pv-txadd-note { margin: 4px 2px 0; font: 10px Arial; color: #888; line-height: 1.3; }
+  .pv-txadd-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
 
   /* Profile-editor popup body (FloatingPanel). */
   .pv-profile-pop { display: flex; flex-direction: column; min-height: 0; gap: 4px; padding: 2px; }

@@ -66,6 +66,22 @@ export interface PrimMeta {
    *  absent, the bake path falls back to the legacy hardcoded
    *  red/grey look so old primitives keep working. */
   material?: PrimMaterial;
+  /** Encapsulated profile DEFAULTS — the Svelte-component model. Profiles
+   *  live here (not in `params`, not in the function signature) so the
+   *  composition stays clean: it reads `meta.profiles.<name>.value` (or
+   *  merges a `props` override over it). The GUI renders each via the
+   *  ProfileEditor exactly like a polygon param; `yDown`/`hLabel`/`vLabel`
+   *  pick revolve (r,z half-section) vs centred-Cartesian rendering. */
+  profiles?: Record<string, {
+    label?: string;
+    type?: 'polygon';
+    yDown?: boolean;
+    hLabel?: string;
+    vLabel?: string;
+    /** The default profile — `[[x,y],...]`. An assembly may override it
+     *  per-use by passing `props.<name>`. */
+    value: [number, number][];
+  }>;
 }
 
 const META_DECL_RE = /export\s+const\s+meta\s*=\s*\{/;
@@ -127,6 +143,7 @@ export function extractMetaFromSource(src: string): PrimMeta {
     tags: Array.isArray(meta.tags) ? meta.tags.map(String) : [],
     params: meta.params,
     material,
+    profiles: meta.profiles && typeof meta.profiles === 'object' ? meta.profiles : undefined,
   };
 }
 

@@ -61,6 +61,7 @@ export const GET = async ({ url }) => {
       return json({
         source: src, origin: 'volume',
         name: meta?.name, description: meta?.description, params: meta?.params ?? {},
+        profiles: meta?.profiles ?? {},
       });
     }
   }

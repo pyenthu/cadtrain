@@ -44,6 +44,11 @@ export interface RecognizedInstance {
   argsStart: number;
   argsEnd: number;
   transforms: RecognizedTransform[];
+  /** Span of the WHOLE init expression (the RHS of `const X = …`, including
+   *  any existing mv/rot wrappers). The "+ transform" action wraps this span
+   *  with a new operator: `op(<initText>, <args>)`. -1 when not editable. */
+  initStart: number;
+  initEnd: number;
 }
 export interface RecognizedParam {
   /** Param name (object-literal key inside meta.params). */
@@ -55,6 +60,15 @@ export interface RecognizedParam {
    *  (-1 when not found / no default). */
   defaultStart: number;
   defaultEnd: number;
+}
+export interface RecognizedProfile {
+  /** Profile name (object-literal key inside meta.profiles). */
+  name: string;
+  /** Offsets of this profile's `value:` ARRAY expression in the source, so the
+   *  GUI can splice an edited polygon over it (live edit → editedSource buffer;
+   *  Save source persists). -1 when no value literal found. */
+  valueStart: number;
+  valueEnd: number;
 }
 export interface RecognizedComposite {
   instances: RecognizedInstance[];
@@ -85,6 +99,18 @@ export interface RecognizedComposite {
   sigInsertPos: number;
   sigHasParams: boolean;
   params: RecognizedParam[];
+  /** "Promote inline profile → meta.profiles" support (the Svelte-component
+   *  model — the active path). profilesInsertPos: where to append a new
+   *  `name: { …, value:[…] }` entry inside meta.profiles (-1 when meta has no
+   *  profiles block — Promote then creates one before `material`/at meta end).
+   *  metaInsertPos: a fallback append point just inside the meta object so
+   *  Promote can synthesise a `profiles: { … }` block when none exists.
+   *  profiles[]: each declared profile + its `value:` span (for live editing
+   *  via splice). All -1 / [] when not editable. */
+  profilesInsertPos: number;
+  profilesHasElems: boolean;
+  metaInsertPos: number;
+  profiles: RecognizedProfile[];
 }
 
 const OPERATORS = new Set(['mv', 'rot']);
@@ -112,12 +138,20 @@ export function recognizeComposite(source: string): RecognizedComposite {
   // literal-array arg from a param-ref + find a promoted param's default).
   let usesInsertPos = -1, usesHasElems = false;
   let paramsInsertPos = -1, paramsHasElems = false;
+  let profilesInsertPos = -1, profilesHasElems = false, metaInsertPos = -1;
   const params: RecognizedParam[] = [];
+  const profiles: RecognizedProfile[] = [];
   for (const node of ast.body) {
     const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node;
     if (decl?.type !== 'VariableDeclaration') continue;
     for (const d of decl.declarations) {
       if (d.id?.type === 'Identifier' && d.id.name === 'meta' && d.init?.type === 'ObjectExpression') {
+        // Fallback append point for a synthesised `profiles: {…}` block: just
+        // after the LAST meta property (so Promote can add one when absent).
+        const mprops = d.init.properties;
+        if (mprops.length) metaInsertPos = mprops[mprops.length - 1].end;
+        else metaInsertPos = d.init.start + 1;
+
         const up = d.init.properties.find((p: any) => (p.key?.name ?? p.key?.value) === 'uses');
         if (up?.value?.type === 'ArrayExpression') {
           const els = up.value.elements;
@@ -143,6 +177,25 @@ export function recognizeComposite(source: string): RecognizedComposite {
             });
           }
         }
+        // meta.profiles — the Svelte-component profile block. Each entry's
+        // `value:` array is the live-editable default; the insert point lets
+        // Promote append a new entry.
+        const fp = d.init.properties.find((p: any) => (p.key?.name ?? p.key?.value) === 'profiles');
+        if (fp?.value?.type === 'ObjectExpression') {
+          const props = fp.value.properties;
+          if (props.length) { profilesInsertPos = props[props.length - 1].end; profilesHasElems = true; }
+          else { profilesInsertPos = fp.value.start + 1; profilesHasElems = false; }
+          for (const prop of props) {
+            const pname = prop.key?.name ?? prop.key?.value;
+            if (pname == null || prop.value?.type !== 'ObjectExpression') continue;
+            const valProp = prop.value.properties.find((q: any) => (q.key?.name ?? q.key?.value) === 'value');
+            profiles.push({
+              name: String(pname),
+              valueStart: valProp?.value ? valProp.value.start : -1,
+              valueEnd: valProp?.value ? valProp.value.end : -1,
+            });
+          }
+        }
       }
     }
   }
@@ -157,7 +210,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params };
+  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 
   // Function signature append point — where Promote adds a positional param.
   // After the last param's end, or just inside `(` for a no-arg signature.
@@ -186,6 +239,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
     if (stmt.type === 'VariableDeclaration') {
       for (const d of stmt.declarations) {
         if (d.id?.type !== 'Identifier' || !d.init) { unrecognized++; continue; }
+        const initStart = d.init.start, initEnd = d.init.end;
         let node: any = d.init;
         const transforms: RecognizedTransform[] = [];
         while (node?.type === 'CallExpression' && node.callee?.type === 'Identifier' && OPERATORS.has(node.callee.name)) {
@@ -195,7 +249,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
         }
         if (node?.type === 'CallExpression' && node.callee?.type === 'Identifier') {
           const sp = argsSpan(node, 0);
-          instances.push({ name: d.id.name, call: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end, transforms });
+          instances.push({ name: d.id.name, call: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end, transforms, initStart, initEnd });
         } else {
           unrecognized++;
         }
@@ -209,5 +263,5 @@ export function recognizeComposite(source: string): RecognizedComposite {
       unrecognized++;
     }
   }
-  return { instances, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params };
+  return { instances, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 }

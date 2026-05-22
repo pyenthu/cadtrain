@@ -16,6 +16,10 @@
     name: string;
     description: string;
     params: Record<string, any>;
+    /** Encapsulated profile defaults (meta.profiles) — the Svelte-component
+     *  model. Profiles live here, NOT in params/signature, so compositions
+     *  stay clean. Loaded lazily with the source. */
+    profiles?: Record<string, any>;
     editable: boolean;
   }
 
@@ -41,7 +45,7 @@
     archived = data.archived ?? [];
   }
 
-  type SourceData = { source: string; origin: string; name?: string; description?: string; params?: Record<string, any> };
+  type SourceData = { source: string; origin: string; name?: string; description?: string; params?: Record<string, any>; profiles?: Record<string, any> };
   async function fetchSourceFor(id: string): Promise<SourceData | null> {
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
@@ -79,6 +83,7 @@
           ? {
               ...t.entry,
               params: data.params && Object.keys(data.params).length ? data.params : t.entry.params,
+              profiles: data.profiles && Object.keys(data.profiles).length ? data.profiles : t.entry.profiles,
               name: data.name ?? t.entry.name,
               description: data.description ?? t.entry.description,
             }
@@ -102,7 +107,7 @@
     await refreshList();
     // Default-open the first VOLUME primitive (bundle ones can 500 on
     // source-load); fall back to the first entry.
-    const initial = entries.find((e) => e.source === 'volume') ?? entries[0];
+    const initial = [...entries, ...tests].find((e) => e.id === 't_spinner') ?? entries.find((e) => e.source === 'volume') ?? entries[0];
     if (initial) openTab(initial);
   });
 
@@ -380,6 +385,7 @@
                 name={t.entry.name}
                 description={t.entry.description}
                 paramSchema={t.entry.params}
+                profileSchema={t.entry.profiles ?? {}}
                 editable={t.entry.editable}
                 initialSource={t.serverSource}
                 serverSource={t.serverSource}
