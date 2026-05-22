@@ -45,6 +45,17 @@ export interface RecognizedInstance {
   argsEnd: number;
   transforms: RecognizedTransform[];
 }
+export interface RecognizedParam {
+  /** Param name (object-literal key inside meta.params). */
+  name: string;
+  /** Whether the param declares `type: 'polygon'`. */
+  polygon: boolean;
+  /** Offsets of this param's `default:` VALUE expression in the source, so the
+   *  popup can splice a new polygon literal over a promoted param's default
+   *  (-1 when not found / no default). */
+  defaultStart: number;
+  defaultEnd: number;
+}
 export interface RecognizedComposite {
   instances: RecognizedInstance[];
   uses: string[];
@@ -64,6 +75,16 @@ export interface RecognizedComposite {
   compEnd: number;
   usesInsertPos: number;
   usesHasElems: boolean;
+  /** "Promote inline profile → named param" support. The meta.params object's
+   *  append point (insert a new `name: {…}` entry); the function signature's
+   *  append point (add a positional param name); plus every declared param so
+   *  the popup can tell a literal arg from a param-ref + locate a promoted
+   *  param's default value to edit it. All -1 / [] when not editable. */
+  paramsInsertPos: number;
+  paramsHasElems: boolean;
+  sigInsertPos: number;
+  sigHasParams: boolean;
+  params: RecognizedParam[];
 }
 
 const OPERATORS = new Set(['mv', 'rot']);
@@ -86,7 +107,12 @@ export function recognizeComposite(source: string): RecognizedComposite {
   const slice = (n: any) => js.slice(n.start, n.end);
 
   // Locate the meta.uses array → where the Load action appends a new id.
+  // While here, also locate meta.params (where Promote appends a new param
+  // entry) and enumerate the declared params (so the popup can distinguish a
+  // literal-array arg from a param-ref + find a promoted param's default).
   let usesInsertPos = -1, usesHasElems = false;
+  let paramsInsertPos = -1, paramsHasElems = false;
+  const params: RecognizedParam[] = [];
   for (const node of ast.body) {
     const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node;
     if (decl?.type !== 'VariableDeclaration') continue;
@@ -98,11 +124,31 @@ export function recognizeComposite(source: string): RecognizedComposite {
           if (els.length) { usesInsertPos = els[els.length - 1].end; usesHasElems = true; }
           else { usesInsertPos = up.value.start + 1; usesHasElems = false; }
         }
+        const pp = d.init.properties.find((p: any) => (p.key?.name ?? p.key?.value) === 'params');
+        if (pp?.value?.type === 'ObjectExpression') {
+          const props = pp.value.properties;
+          if (props.length) { paramsInsertPos = props[props.length - 1].end; paramsHasElems = true; }
+          else { paramsInsertPos = pp.value.start + 1; paramsHasElems = false; }
+          for (const prop of props) {
+            const pname = prop.key?.name ?? prop.key?.value;
+            if (pname == null || prop.value?.type !== 'ObjectExpression') continue;
+            const typeProp = prop.value.properties.find((q: any) => (q.key?.name ?? q.key?.value) === 'type');
+            const isPoly = typeProp?.value?.value === 'polygon';
+            const defProp = prop.value.properties.find((q: any) => (q.key?.name ?? q.key?.value) === 'default');
+            params.push({
+              name: String(pname),
+              polygon: isPoly,
+              defaultStart: defProp?.value ? defProp.value.start : -1,
+              defaultEnd: defProp?.value ? defProp.value.end : -1,
+            });
+          }
+        }
       }
     }
   }
 
   let returnStart = -1, compStart = -1, compEnd = -1;
+  let sigInsertPos = -1, sigHasParams = false;
 
   let fn: any = null;
   for (const node of ast.body) {
@@ -111,7 +157,17 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems };
+  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params };
+
+  // Function signature append point — where Promote adds a positional param.
+  // After the last param's end, or just inside `(` for a no-arg signature.
+  if (fn.params.length) { sigInsertPos = fn.params[fn.params.length - 1].end; sigHasParams = true; }
+  else {
+    // No params: find the `(` after the function name (before the body `{`).
+    const openParen = js.indexOf('(', fn.id ? fn.id.end : fn.start);
+    sigInsertPos = openParen >= 0 ? openParen + 1 : -1;
+    sigHasParams = false;
+  }
 
   // Args span = first arg start → last arg end (the text inside the parens,
   // commas included). `fromIndex` skips the wrapped manifold for mv/rot.
@@ -153,5 +209,5 @@ export function recognizeComposite(source: string): RecognizedComposite {
       unrecognized++;
     }
   }
-  return { instances, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems };
+  return { instances, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params };
 }

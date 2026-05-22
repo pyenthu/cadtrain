@@ -54,6 +54,13 @@ export interface PrimMeta {
     /** Number for 'number'/'boolean'/'enum' params. Array of [x,y] for 'polygon'. */
     default: number | [number, number][];
     unit?: string;
+    /** Polygon params only — passed straight through to the ProfileEditor so a
+     *  composite's promoted profile renders the same way as the leaf's own
+     *  profile param (revolve = (r,z) Z-down half-section w/ axis; extrude =
+     *  centred Cartesian). Mirror the leaf's flags when promoting. */
+    yDown?: boolean;
+    hLabel?: string;
+    vLabel?: string;
   }>;
   /** Optional appearance settings baked into the GLB output. When
    *  absent, the bake path falls back to the legacy hardcoded

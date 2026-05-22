@@ -86,9 +86,13 @@
   let editedSource = $state(untrack(() => initialSource));
 
   // First polygon-typed param (if any). The Profile tab edits this
-  // one; multi-polygon primitives aren't a real use case yet.
+  // one; the Params tab edits ALL of them (composites that promoted
+  // inline profiles to named params can carry several).
   let polygonParamName = $derived(paramOrder.find((k) => paramSchema[k].type === 'polygon') ?? null);
   let hasProfile = $derived(polygonParamName !== null);
+  // Every polygon-typed param, in meta order — the Params tab renders one
+  // ProfileEditor per entry below the scalar grid.
+  let polygonParamNames = $derived(paramOrder.filter((k) => paramSchema[k].type === 'polygon'));
 
   let tab = $state<'params' | 'parts' | 'profile' | 'source' | 'ai'>('params');
 
@@ -231,20 +235,35 @@
   }
 
   // ── Profile popup state ──────────────────────────────────────────────────
+  // The profile arg of an instance can be one of two editable shapes:
+  //   - 'literal' — an inline `[[x,y],…]` array. The popup edits it in place
+  //     (splice over the literal) AND offers "Promote to param" (extract the
+  //     literal into a named meta.params polygon param + a positional fn arg).
+  //   - 'param'   — a bare identifier that resolves to a meta.params polygon
+  //     param (already promoted). The popup edits THAT param's `default` value.
+  // Anything else (expression, non-polygon param) → refuse.
   let profileEdit = $state<{
     instName: string;
     call: string;
     info: LeafProfile;
-    /** Absolute offsets in editedSource of the profile ARGUMENT (the array
-     *  literal), so save splices only it — leaving sibling args verbatim. */
+    mode: 'literal' | 'param';
+    /** Absolute offsets in editedSource of the value to splice on Apply:
+     *  the inline array literal ('literal') or the param's `default:` value
+     *  expression ('param'). */
     profStart: number;
     profEnd: number;
+    /** 'param' mode only — the param name being edited. */
+    paramName: string | null;
+    /** True when this 'literal' arg can be promoted to a named param (we have
+     *  the meta.params + signature insert points + the leaf's flags). */
+    canPromote: boolean;
     /** Pixel anchor for the FloatingPanel (near the ✎ trigger). */
     px: number;
     py: number;
   } | null>(null);
   let profilePts = $state<[number, number][]>([]);
   let profileBaseline = ''; // JSON of pts at open → dirty detection
+  let promoteBusy = $state(false);
 
   // Open the popup for a recognized instance. We re-locate the profile arg
   // against the LIVE editedSource (offsets shift as the user edits) by reading
@@ -255,39 +274,106 @@
     const segs = splitTopLevelArgs(argsText);
     const seg = segs[info.argIndex];
     if (!seg) return;
+    const segText = seg.text.trim();
+    const lead = seg.text.length - seg.text.trimStart().length;
+    const segStart = inst.argsStart + seg.start + lead;
+    const segEnd = inst.argsStart + seg.end - (seg.text.length - seg.text.trimEnd().length);
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const px = Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480));
+    const py = Math.max(8, Math.min(rect.top, window.innerHeight - 360));
+
+    // Case 1 — bare identifier matching a polygon meta.param → edit its default.
+    if (/^[a-z_$][a-z0-9_$]*$/i.test(segText)) {
+      const rp = (recognized?.params ?? []).find((p: any) => p.name === segText && p.polygon);
+      if (rp && rp.defaultStart >= 0) {
+        let pts: [number, number][] | null = null;
+        try {
+          const parsed = JSON.parse(editedSource.slice(rp.defaultStart, rp.defaultEnd).trim());
+          if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
+        } catch { /* default isn't a literal array */ }
+        if (pts) {
+          profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
+          profileBaseline = JSON.stringify(profilePts);
+          profileEdit = { instName: inst.name, call: inst.call, info, mode: 'param', profStart: rp.defaultStart, profEnd: rp.defaultEnd, paramName: rp.name, canPromote: false, px, py };
+          return;
+        }
+      }
+      recogError = `Can't edit ${inst.name}'s profile — "${segText}" isn't a polygon param with a literal default.`;
+      return;
+    }
+
+    // Case 2 — inline literal array → edit in place + offer Promote.
     let pts: [number, number][] | null = null;
     try {
-      const parsed = JSON.parse(seg.text.trim());
+      const parsed = JSON.parse(segText);
       if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
-    } catch { /* not a literal array (expression / param ref) → can't edit visually */ }
-    if (!pts) { recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array.`; return; }
+    } catch { /* not a literal array (expression) → can't edit visually */ }
+    if (!pts) { recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array or a polygon param.`; return; }
     profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
     profileBaseline = JSON.stringify(profilePts);
-    // The profile arg lives at argsStart + (offset within argsText). Trim
-    // leading whitespace inside the segment so the splice replaces the literal
-    // exactly (keeps the original `, ` separators intact).
-    const lead = seg.text.length - seg.text.trimStart().length;
-    const profStart = inst.argsStart + seg.start + lead;
-    const profEnd = inst.argsStart + seg.end - (seg.text.length - seg.text.trimEnd().length);
-    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    profileEdit = {
-      instName: inst.name, call: inst.call, info,
-      profStart, profEnd,
-      px: Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480)),
-      py: Math.max(8, Math.min(rect.top, window.innerHeight - 360)),
-    };
+    const canPromote = !!recognized?.editable && recognized.paramsInsertPos >= 0 && recognized.sigInsertPos >= 0;
+    profileEdit = { instName: inst.name, call: inst.call, info, mode: 'literal', profStart: segStart, profEnd: segEnd, paramName: null, canPromote, px, py };
   }
   let profileDirty = $derived(profileEdit !== null && JSON.stringify(profilePts) !== profileBaseline);
   function closeProfilePopup() { profileEdit = null; }
-  // Apply: serialize the edited polygon and splice it over the original
-  // profile arg in editedSource. → Source dirty; canvases re-bake off
-  // editedSource; the recognition $effect re-scans for fresh offsets.
+  // Apply: serialize the edited polygon and splice it over the target (inline
+  // literal or promoted param's default) in editedSource. → Source dirty;
+  // canvases re-bake off editedSource; the recognition $effect re-scans.
   function applyProfile() {
     if (!profileEdit) return;
     const json = JSON.stringify(profilePts);
     spliceSource(profileEdit.profStart, profileEdit.profEnd, json);
     profileBaseline = json;
     closeProfilePopup();
+  }
+
+  // Promote an inline profile literal → a named polygon param. Three edits,
+  // applied high→low offset so earlier offsets stay valid:
+  //   1. replace the inline literal in the body with the new param NAME
+  //   2. add the param to the function signature (positional, after the last)
+  //   3. add a polygon entry to meta.params (mirroring the leaf's flags so the
+  //      Params-tab ProfileEditor renders it the same way as the leaf)
+  // meta.params append is last in source order (top of file) → lowest offset.
+  function suggestParamName(instName: string): string {
+    const taken = new Set<string>((recognized?.params ?? []).map((p: any) => p.name));
+    let base = `${instName}_profile`;
+    if (!taken.has(base)) return base;
+    let i = 2; while (taken.has(`${base}${i}`)) i++; return `${base}${i}`;
+  }
+  function promoteProfile() {
+    if (!profileEdit || profileEdit.mode !== 'literal' || !profileEdit.canPromote || promoteBusy) return;
+    const r = recognized;
+    if (!r) return;
+    promoteBusy = true;
+    try {
+      const pname = suggestParamName(profileEdit.instName);
+      const info = profileEdit.info;
+      // The literal to extract — use the current (possibly-edited) pts so an
+      // in-popup edit is captured by the promotion.
+      const literal = JSON.stringify(profilePts);
+      // Build the meta.params entry, mirroring the leaf's polygon flags.
+      const flags: string[] = [`label: '${profileEdit.instName} profile'`, `type: 'polygon'`];
+      if (info.yDown) {
+        flags.push(`yDown: true`, `hLabel: '${info.hLabel}'`, `vLabel: '${info.vLabel}'`);
+      }
+      flags.push(`default: ${literal}`);
+      const paramEntry = `${r.paramsHasElems ? ', ' : ''}${pname}: { ${flags.join(', ')} }`;
+      // Signature param name (positional). meta.params order must match arg
+      // order — we append both at the END so the new param is the LAST arg.
+      const sigEntry = `${r.sigHasParams ? ', ' : ''}${pname}`;
+      const edits = [
+        { s: profileEdit.profStart, e: profileEdit.profEnd, text: pname },
+        { s: r.sigInsertPos, e: r.sigInsertPos, text: sigEntry },
+        { s: r.paramsInsertPos, e: r.paramsInsertPos, text: paramEntry },
+      ];
+      edits.sort((a, b) => b.s - a.s);
+      let out = editedSource;
+      for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
+      editedSource = out; // → Source dirty; the recognition $effect re-scans
+      closeProfilePopup();
+    } finally {
+      promoteBusy = false;
+    }
   }
 
   // ── Load primitive → scaffold an instance ────────────────────────────────
@@ -637,6 +723,32 @@
               onPending={setPending}
               onCommit={commitOne}
             />
+            <!-- Polygon params (ParamGrid skips these) render as inline
+                 ProfileEditors — the SAME component the leaf's Profile tab +
+                 the Parts-tab popup use. Editing seeds `pending` (orange-bar
+                 state); Apply/Enter commits → re-bake. Flags mirror the leaf
+                 so a promoted revolve profile gets the (r,z) Z-down editor and
+                 an extrude profile gets the centred Cartesian one. -->
+            {#each polygonParamNames as pname (pname)}
+              <div class="pv-poly-param">
+                <div class="pv-poly-head">
+                  <span class="pv-pname">{paramSchema[pname].label ?? pname}</span>
+                  <span class="pv-poly-verts">{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
+                </div>
+                <ProfileEditor
+                  value={(pending[pname] as [number, number][]) ?? (paramSchema[pname].default as [number, number][])}
+                  width={360}
+                  height={240}
+                  yDown={paramSchema[pname].yDown ?? false}
+                  hLabel={paramSchema[pname].hLabel ?? (paramSchema[pname].yDown ? 'r →' : 'x →')}
+                  vLabel={paramSchema[pname].vLabel ?? (paramSchema[pname].yDown ? 'z ↓' : 'y ↑')}
+                  presetSet={paramSchema[pname].yDown ? 'revolve' : 'cartesian'}
+                  showAxis={paramSchema[pname].yDown ?? false}
+                  onChange={(next) => { pending = { ...pending, [pname]: next }; }}
+                  onApply={apply}
+                />
+              </div>
+            {/each}
           </div>
         </div>
       {:else if tab === 'parts'}
@@ -830,7 +942,13 @@
       <div class="pv-profile-pop">
         <div class="pv-profile-pop-head">
           <span class="pv-pill" class:dirty={profileDirty}>{profilePts.length} verts{profileDirty ? ' · edited' : ''}</span>
+          {#if profileEdit.mode === 'param'}
+            <span class="pv-profile-pop-tag">param <code>{profileEdit.paramName}</code></span>
+          {/if}
           <div class="pv-spacer"></div>
+          {#if profileEdit.mode === 'literal' && profileEdit.canPromote}
+            <button class="pv-btn" type="button" disabled={promoteBusy} title="Extract this inline profile into a named polygon param + a positional fn arg" onclick={promoteProfile}>{promoteBusy ? '…' : '↥ Promote to param'}</button>
+          {/if}
           <button class="pv-btn" type="button" disabled={!profileDirty} onclick={() => { profilePts = JSON.parse(profileBaseline); }}>Revert</button>
           <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply → source</button>
         </div>
@@ -845,7 +963,13 @@
           showAxis={profileEdit.info.revolve}
           onChange={(next) => { profilePts = next; }}
         />
-        <p class="pv-profile-pop-note">Edits write into <code>{profileEdit.instName}</code>'s call in source.ts on Apply; Save source to persist.</p>
+        <p class="pv-profile-pop-note">
+          {#if profileEdit.mode === 'param'}
+            Edits the <code>{profileEdit.paramName}</code> param's default in source.ts on Apply; also editable in the Params tab. Save source to persist.
+          {:else}
+            Edits write into <code>{profileEdit.instName}</code>'s call in source.ts on Apply. <strong>Promote to param</strong> makes it an editable named param. Save source to persist.
+          {/if}
+        </p>
       </div>
     </FloatingPanel>
   {/if}
@@ -936,6 +1060,11 @@
   /* Still used by the Profile tab's pane head. */
   .pv-pname { font: 12px monospace; color: #333; }
 
+  /* Inline polygon-param editors in the Params tab. */
+  .pv-poly-param { margin-top: 10px; border: 1px solid #eaeaef; border-radius: 4px; padding: 6px 8px 4px; background: #fafafa; }
+  .pv-poly-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .pv-poly-verts { font: 10px Arial; color: #888; }
+
   /* Parts tab — read-only recognized instances. */
   .pv-parts { padding: 0; }
   .pv-parts-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -972,6 +1101,8 @@
   .pv-profile-pop-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; }
   .pv-profile-pop-note { margin: 2px 4px 0; font: 10px Arial; color: #888; line-height: 1.3; }
   .pv-profile-pop-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
+  .pv-profile-pop-tag { font: 10px Arial; color: #2266cc; }
+  .pv-profile-pop-tag code { font: 10px ui-monospace, monospace; color: #2266cc; background: #eef3fb; padding: 0 4px; border-radius: 3px; }
 
   /* Save As… popup body (FloatingPanel). */
   .pv-saveas-pop { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px; }
