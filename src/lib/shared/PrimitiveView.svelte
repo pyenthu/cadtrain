@@ -19,6 +19,7 @@
   import PrimitiveGlbCanvas from './PrimitiveGlbCanvas.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
+  import FloatingPanel from './FloatingPanel.svelte';
   import ParamGrid from './ParamGrid.svelte';
   import { untrack } from 'svelte';
 
@@ -48,6 +49,7 @@
     serverSource = '',
     onSaveSource,
     onSaveDefaults,
+    onSaveAs,
     onReloadSource,
     catalog = [],
   }: {
@@ -60,6 +62,10 @@
     serverSource?: string;
     onSaveSource?: (newSource: string) => Promise<void> | void;
     onSaveDefaults?: (applied: Record<string, number>) => Promise<void> | void;
+    /** Save As… — persist the CURRENT editor buffer under a NEW id, creating
+     *  a new primitive without overwriting this one. Returns true on success
+     *  (popup closes), false on rejection (collision / bad id — popup stays). */
+    onSaveAs?: (newId: string, editedSource: string) => Promise<boolean> | boolean;
     onReloadSource?: () => Promise<void> | void;
     /** Available primitives for the Parts-tab "Load" action (ids; params
      *  are fetched lazily on Load since the catalog list is id-only). */
@@ -152,6 +158,136 @@
   function spliceSource(start: number, end: number, replacement: string) {
     if (start < 0 || end < 0) return;
     editedSource = editedSource.slice(0, start) + replacement + editedSource.slice(end);
+  }
+
+  // ── Profile popup for instances of a profile-bearing primitive ──────────────
+  // When a part's `call` resolves to a primitive that declares a `polygon`
+  // param (r_revolve, r_extrude, …), surface a ✎-profile button on its row.
+  // Clicking it opens the SAME ProfileEditor as a leaf's Profile tab — but
+  // anchored in a FloatingPanel — seeded with the profile literal sliced out of
+  // that instance's argsText. Apply round-trips the edited polygon back into
+  // source.ts via the existing splice-by-offset path (→ Source dirty → re-bake).
+  //
+  // The leaf's param schema (which arg index is the polygon, plus its
+  // yDown/labels) is fetched lazily + cached, keyed by the call id.
+  type LeafProfile = { argIndex: number; yDown: boolean; hLabel: string; vLabel: string; revolve: boolean };
+  let leafProfileCache = $state<Record<string, LeafProfile | null>>({});
+
+  async function fetchLeafProfile(call: string): Promise<LeafProfile | null> {
+    if (call in leafProfileCache) return leafProfileCache[call];
+    let result: LeafProfile | null = null;
+    try {
+      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(call)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const params = data?.params ?? {};
+        const keys = Object.keys(params);
+        const idx = keys.findIndex((k) => params[k]?.type === 'polygon');
+        if (idx >= 0) {
+          const ps = params[keys[idx]];
+          const yDown = !!ps.yDown;
+          result = {
+            argIndex: idx,
+            yDown,
+            hLabel: ps.hLabel ?? (yDown ? 'r →' : 'x →'),
+            vLabel: ps.vLabel ?? (yDown ? 'z ↓' : 'y ↑'),
+            revolve: yDown, // revolve profiles use the Z-down (r,z) editor
+          };
+        }
+      }
+    } catch { /* leaf unavailable → no profile button */ }
+    leafProfileCache = { ...leafProfileCache, [call]: result };
+    return result;
+  }
+
+  // Whether a recognized part exposes a profile we can edit in the popup.
+  // Derives from the lazily-populated cache; the load $effect below fills it.
+  function profileInfoFor(call: string): LeafProfile | null {
+    return leafProfileCache[call] ?? null;
+  }
+  // Prefetch leaf-profile metadata for every editable part so the ✎ button
+  // appears without a click. Runs whenever the recognized parts change.
+  $effect(() => {
+    if (!canEdit) return;
+    for (const inst of parts as any[]) void fetchLeafProfile(inst.call);
+  });
+
+  // Split an arg-list string into its top-level argument substrings, ignoring
+  // commas nested inside (), [], {}, or quotes. Returns each segment's TEXT
+  // plus its [start, end) offset WITHIN argsText so we can splice precisely.
+  function splitTopLevelArgs(argsText: string): Array<{ text: string; start: number; end: number }> {
+    const out: Array<{ text: string; start: number; end: number }> = [];
+    let depth = 0, segStart = 0, quote = '';
+    for (let i = 0; i < argsText.length; i++) {
+      const c = argsText[i];
+      if (quote) { if (c === quote && argsText[i - 1] !== '\\') quote = ''; continue; }
+      if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+      else if (c === ',' && depth === 0) { out.push({ text: argsText.slice(segStart, i), start: segStart, end: i }); segStart = i + 1; }
+    }
+    out.push({ text: argsText.slice(segStart), start: segStart, end: argsText.length });
+    return out;
+  }
+
+  // ── Profile popup state ──────────────────────────────────────────────────
+  let profileEdit = $state<{
+    instName: string;
+    call: string;
+    info: LeafProfile;
+    /** Absolute offsets in editedSource of the profile ARGUMENT (the array
+     *  literal), so save splices only it — leaving sibling args verbatim. */
+    profStart: number;
+    profEnd: number;
+    /** Pixel anchor for the FloatingPanel (near the ✎ trigger). */
+    px: number;
+    py: number;
+  } | null>(null);
+  let profilePts = $state<[number, number][]>([]);
+  let profileBaseline = ''; // JSON of pts at open → dirty detection
+
+  // Open the popup for a recognized instance. We re-locate the profile arg
+  // against the LIVE editedSource (offsets shift as the user edits) by reading
+  // the recognized argsStart/argsEnd then sub-splitting the arg list.
+  function openProfilePopup(inst: any, info: LeafProfile, ev: MouseEvent) {
+    if (inst.argsStart < 0 || inst.argsEnd < 0) return;
+    const argsText = editedSource.slice(inst.argsStart, inst.argsEnd);
+    const segs = splitTopLevelArgs(argsText);
+    const seg = segs[info.argIndex];
+    if (!seg) return;
+    let pts: [number, number][] | null = null;
+    try {
+      const parsed = JSON.parse(seg.text.trim());
+      if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
+    } catch { /* not a literal array (expression / param ref) → can't edit visually */ }
+    if (!pts) { recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array.`; return; }
+    profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
+    profileBaseline = JSON.stringify(profilePts);
+    // The profile arg lives at argsStart + (offset within argsText). Trim
+    // leading whitespace inside the segment so the splice replaces the literal
+    // exactly (keeps the original `, ` separators intact).
+    const lead = seg.text.length - seg.text.trimStart().length;
+    const profStart = inst.argsStart + seg.start + lead;
+    const profEnd = inst.argsStart + seg.end - (seg.text.length - seg.text.trimEnd().length);
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    profileEdit = {
+      instName: inst.name, call: inst.call, info,
+      profStart, profEnd,
+      px: Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480)),
+      py: Math.max(8, Math.min(rect.top, window.innerHeight - 360)),
+    };
+  }
+  let profileDirty = $derived(profileEdit !== null && JSON.stringify(profilePts) !== profileBaseline);
+  function closeProfilePopup() { profileEdit = null; }
+  // Apply: serialize the edited polygon and splice it over the original
+  // profile arg in editedSource. → Source dirty; canvases re-bake off
+  // editedSource; the recognition $effect re-scans for fresh offsets.
+  function applyProfile() {
+    if (!profileEdit) return;
+    const json = JSON.stringify(profilePts);
+    spliceSource(profileEdit.profStart, profileEdit.profEnd, json);
+    profileBaseline = json;
+    closeProfilePopup();
   }
 
   // ── Load primitive → scaffold an instance ────────────────────────────────
@@ -339,6 +475,59 @@
     try { await onSaveDefaults(applied); } finally { saving = false; }
   }
 
+  // ── Save As… popup ────────────────────────────────────────────────────
+  // "File → Save As": persist the CURRENT editor buffer (editedSource —
+  // INCLUDING unsaved edits like a just-changed profile) under a NEW id,
+  // creating a new primitive. The original (this id) is untouched. Differs
+  // from the route page's Duplicate, which clones the SAVED source.
+  // FloatingPanel popup anchored to the trigger; commits on Enter.
+  const ID_RE = /^[a-z][a-z0-9_]*$/i;
+  let saveAsOpen = $state(false);
+  let saveAsId = $state('');
+  let saveAsX = $state(0);
+  let saveAsY = $state(0);
+  let saveAsBusy = $state(false);
+  // Existing ids (this primitive's catalog) for the collision guard. The
+  // catalog is the merged list + tests passed from the route; fall back to
+  // at least excluding our own id.
+  let existingIds = $derived(new Set<string>((catalog ?? []).map((e) => e.id)));
+  // Default suggestion: `<id>_copy`, bumping a suffix until it's free.
+  function suggestSaveAsId(): string {
+    let cand = `${id}_copy`;
+    let i = 2;
+    while (existingIds.has(cand)) { cand = `${id}_copy${i}`; i++; }
+    return cand;
+  }
+  // Live validation message (null = ok). Order: format → collision.
+  let saveAsError = $derived.by(() => {
+    const v = saveAsId.trim();
+    if (!v) return null;                                // empty → no error yet, just disabled
+    if (!ID_RE.test(v)) return 'Letters, digits, underscores; must start with a letter.';
+    if (v === id) return 'Same as the current id — pick a different name.';
+    if (existingIds.has(v)) return `"${v}" already exists — pick another name.`;
+    return null;
+  });
+  let saveAsValid = $derived(!!saveAsId.trim() && saveAsError === null);
+  function openSaveAs(ev: MouseEvent) {
+    saveAsId = suggestSaveAsId();
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    // Anchor below-left of the trigger, clamped into the viewport.
+    saveAsX = Math.max(8, Math.min(rect.left - 60, window.innerWidth - 320));
+    saveAsY = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 200));
+    saveAsOpen = true;
+  }
+  function closeSaveAs() { saveAsOpen = false; }
+  async function confirmSaveAs() {
+    if (!onSaveAs || !saveAsValid || saveAsBusy) return;
+    saveAsBusy = true;
+    try {
+      const ok = await onSaveAs(saveAsId.trim(), editedSource);
+      if (ok) closeSaveAs();
+    } finally {
+      saveAsBusy = false;
+    }
+  }
+
   // Drag-to-resize the right panel. Width is held in component state
   // and clamped to a sensible range so the user can't drag it off
   // either edge.
@@ -480,6 +669,15 @@
                   <div class="pv-part-head">
                     <span class="pv-part-name">{inst.name}</span>
                     <span class="pv-part-call">{inst.call}</span>
+                    {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call)}
+                      <div class="pv-spacer"></div>
+                      <button
+                        class="pv-part-profile"
+                        type="button"
+                        title="Edit this instance's profile in a popup"
+                        onclick={(e) => openProfilePopup(inst, profileInfoFor(inst.call)!, e)}
+                      >✎ profile</button>
+                    {/if}
                   </div>
                   {#if canEdit && inst.argsStart >= 0}
                     <input
@@ -597,6 +795,9 @@
             <span class="pv-pill" class:dirty={sourceDirty}>{sourceDirty ? 'modified' : 'in sync'}</span>
             <div class="pv-spacer"></div>
             {#if onReloadSource}<button class="pv-btn" onclick={onReloadSource} type="button">Reload</button>{/if}
+            {#if onSaveAs}
+              <button class="pv-btn" onclick={openSaveAs} type="button" title="Save the current edits as a NEW primitive (the original is untouched)">Save As…</button>
+            {/if}
             {#if onSaveSource}
               <button class="pv-btn primary" onclick={saveSource} type="button" disabled={!editable || saving || !sourceDirty}>Save source</button>
             {/if}
@@ -615,6 +816,83 @@
       {/if}
     </aside>
   </div>
+
+  {#if profileEdit}
+    <FloatingPanel
+      title={`Profile · ${profileEdit.instName} (${profileEdit.call})`}
+      visible={true}
+      x={profileEdit.px}
+      y={profileEdit.py}
+      width="min(440px, 90vw)"
+      maxHeight="70vh"
+      onClose={closeProfilePopup}
+    >
+      <div class="pv-profile-pop">
+        <div class="pv-profile-pop-head">
+          <span class="pv-pill" class:dirty={profileDirty}>{profilePts.length} verts{profileDirty ? ' · edited' : ''}</span>
+          <div class="pv-spacer"></div>
+          <button class="pv-btn" type="button" disabled={!profileDirty} onclick={() => { profilePts = JSON.parse(profileBaseline); }}>Revert</button>
+          <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply → source</button>
+        </div>
+        <ProfileEditor
+          value={profilePts}
+          width={400}
+          height={300}
+          yDown={profileEdit.info.yDown}
+          hLabel={profileEdit.info.hLabel}
+          vLabel={profileEdit.info.vLabel}
+          presetSet={profileEdit.info.revolve ? 'revolve' : 'cartesian'}
+          showAxis={profileEdit.info.revolve}
+          onChange={(next) => { profilePts = next; }}
+        />
+        <p class="pv-profile-pop-note">Edits write into <code>{profileEdit.instName}</code>'s call in source.ts on Apply; Save source to persist.</p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if saveAsOpen}
+    <FloatingPanel
+      title="Save As…"
+      visible={true}
+      x={saveAsX}
+      y={saveAsY}
+      width="min(320px, 90vw)"
+      maxHeight="60vh"
+      onClose={closeSaveAs}
+    >
+      <div class="pv-saveas-pop">
+        <p class="pv-saveas-note">
+          Save the current edits — including anything not yet saved — as a
+          <strong>new</strong> primitive. <code>{id}</code> stays untouched.
+        </p>
+        <label class="pv-saveas-label" for="pv-saveas-input">New id / name</label>
+        <input
+          id="pv-saveas-input"
+          class="pv-saveas-input"
+          class:invalid={saveAsId.trim() !== '' && saveAsError !== null}
+          bind:value={saveAsId}
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="e.g. {id}_copy"
+          title="Enter to save · Esc/× to cancel"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); confirmSaveAs(); }
+            else if (e.key === 'Escape') { e.preventDefault(); closeSaveAs(); }
+          }}
+        />
+        {#if saveAsId.trim() !== '' && saveAsError}
+          <div class="pv-saveas-err">{saveAsError}</div>
+        {/if}
+        <div class="pv-saveas-row">
+          <button class="pv-btn" type="button" onclick={closeSaveAs}>Cancel</button>
+          <div class="pv-spacer"></div>
+          <button class="pv-btn primary" type="button" disabled={!saveAsValid || saveAsBusy} onclick={confirmSaveAs}>
+            {saveAsBusy ? 'Saving…' : 'Save As'}
+          </button>
+        </div>
+      </div>
+    </FloatingPanel>
+  {/if}
 </div>
 
 <style>
@@ -681,6 +959,31 @@
   .pv-parts-err { font: 11px ui-monospace, monospace; color: #c4392f; padding: 10px 4px; white-space: pre-wrap; }
   .pv-load-pick { font: 11px monospace; padding: 3px 4px; border: 1px solid #ccc; border-radius: 4px; background: #fff; max-width: 150px; cursor: pointer; }
   .pv-load-pick:hover { border-color: #cc2222; }
+  /* ✎ profile trigger on a part row — opens the ProfileEditor in a popup. */
+  .pv-part-profile { font: 600 10px Arial; color: #2266cc; background: #eef3fb; border: 1px solid #d4e1f5; border-radius: 4px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
+  .pv-part-profile:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
+
+  /* Profile-editor popup body (FloatingPanel). */
+  .pv-profile-pop { display: flex; flex-direction: column; min-height: 0; gap: 4px; padding: 2px; }
+  /* Give the embedded ProfileEditor (flex:1, no intrinsic height) a fixed
+     drawing area so the SVG renders inside the auto-sized FloatingPanel. */
+  .pv-profile-pop :global(.pe-root) { flex: 0 0 auto; }
+  .pv-profile-pop :global(.pe-svg-wrap) { height: 280px; flex: 0 0 auto; }
+  .pv-profile-pop-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; }
+  .pv-profile-pop-note { margin: 2px 4px 0; font: 10px Arial; color: #888; line-height: 1.3; }
+  .pv-profile-pop-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
+
+  /* Save As… popup body (FloatingPanel). */
+  .pv-saveas-pop { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px; }
+  .pv-saveas-note { margin: 0; font: 11px Arial; color: #666; line-height: 1.35; }
+  .pv-saveas-note code { font: 11px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
+  .pv-saveas-label { font: 600 11px Arial; color: #444; }
+  .pv-saveas-input { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+  .pv-saveas-input:focus { outline: 1px solid #cc2222; border-color: #cc2222; }
+  .pv-saveas-input.invalid { border-color: #c4392f; }
+  .pv-saveas-input.invalid:focus { outline-color: #c4392f; }
+  .pv-saveas-err { font: 11px Arial; color: #c4392f; line-height: 1.3; }
+  .pv-saveas-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 
   .pv-source { padding: 0; }
   .pv-editor-wrap { flex: 1; min-height: 0; border-top: 1px solid #eee; padding: 0 0 8px 0; display: flex; flex-direction: column; overflow: hidden; }

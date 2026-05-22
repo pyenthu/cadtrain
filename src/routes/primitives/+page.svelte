@@ -189,6 +189,40 @@
     if (activeTab) cloneEntry(activeTab.entry);
   }
 
+  /** Save As… — persist the CURRENT (live, possibly-unsaved) editor buffer
+   *  under a NEW id, creating a new volume primitive without touching the
+   *  original. Differs from Duplicate (which clones the SAVED source): this
+   *  takes the in-flight `editedSource` straight from PrimitiveView. The meta
+   *  id/name are rewritten to the new id; refuses an existing id (collision
+   *  guard lives in PrimitiveView's popup too, this is the server-side-of-UI
+   *  backstop). Opens the new primitive on success. */
+  async function saveAsEntry(srcId: string, newId: string, editedSource: string) {
+    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return false; }
+    if (entries.some((x) => x.id === newId) || tests.some((x) => x.id === newId)) {
+      status = `"${newId}" already exists — pick another name.`;
+      return false;
+    }
+    const idRe = /(\bid\s*:\s*['"`])[a-z0-9_]*(['"`])/i;
+    const nameRe = /(\bname\s*:\s*['"`])[a-z0-9_]*(['"`])/i;
+    // Rewrite the FIRST id: / name: literal inside the meta block. The meta
+    // declaration is at the top of source, so the first match is meta.id /
+    // meta.name (matches the cloneEntry convention but keyed to the literal,
+    // not the source dir-id, so it works regardless of the old value).
+    let src = editedSource.replace(idRe, `$1${newId}$2`);
+    if (nameRe.test(src)) src = src.replace(nameRe, `$1${newId}$2`);
+    const r = await fetch('/api/primitives/save', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: newId, source: src }),
+    });
+    if (!r.ok) { status = `Save As failed: ${await r.text()}`; return false; }
+    status = `Saved ${srcId} as → ${newId}.`;
+    await refreshList();
+    const created = entries.find((x) => x.id === newId) ?? tests.find((x) => x.id === newId);
+    if (created) openTab(created);
+    return true;
+  }
+
   async function deletePrimitive() {
     if (activeTab?.entry.editable) await archiveById(activeTab.entry.id);
   }
@@ -351,6 +385,7 @@
                 serverSource={t.serverSource}
                 onSaveSource={(s) => saveSourceFor(t, s)}
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
+                onSaveAs={(newId, src) => saveAsEntry(t.entry.id, newId, src)}
                 onReloadSource={() => loadFromServerFor(t)}
                 catalog={[...entries, ...tests]}
               />
