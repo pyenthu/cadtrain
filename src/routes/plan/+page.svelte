@@ -41,9 +41,7 @@
   const BUNDLES: Bundle[] = [
     { id: 'A', name: 'Primitives + viewers', tint: '#dc2626', desc: '18 ManifoldCAD primitives, /components viewer, dedicated tool viewers (Bottom Sub, Ratch-Latch)' },
     { id: 'B', name: 'Retrieval (RAG + CLIP)', tint: '#2563eb', desc: 'pHash + CLIP hybrid retrieval, /api/identify, /api/refine, training cache, synthetic data generator' },
-    { id: 'C', name: 'Authoring (build app)',  tint: '#a855f7', desc: '/author tool-calling chat, /library viewer, authored cache + context doc' },
     { id: 'D', name: 'Wells → SVTC WSON',      tint: '#0891b2', desc: 'New: extract well-engineering documents into WSON for SVTC drawing apps' },
-    { id: 'E', name: 'Infra + deploy',         tint: '#10b981', desc: 'Dockerfile, Railway volume, env config, model pre-pull' },
     { id: 'F', name: 'Meta + UX',              tint: '#ec4899', desc: 'this /plan route, navigation, documentation' },
     { id: 'G', name: 'Vendor catalog ingest',  tint: '#f59e0b', desc: 'Halliburton/Baker Hughes catalog PDFs → per-page assets → SVG schematics + spec-table JSON. Output now feeds bundle H (constrained parametrization), not cache.jsonl' },
     { id: 'H', name: 'Constrained parametrization', tint: '#7c3aed', desc: 'Designing not building: API/vendor KB tables → DesignSpace + Generator → derived params → Svelte-runes runtime. Replace freeform Opus param picking with coordinates in a constrained choice space.' },
@@ -77,14 +75,6 @@
     { id: 29, bundle: 'B', lane: 1, start:  3, weeks: 1.5, priority: 'medium', status: 'open',     title: 'Replace 18-image retrieval test with real photo benchmark — the open door for retrieval: only justifies CLIP/RAG work if Opus-direct on real photos isn\'t enough' },
     { id: 30, bundle: 'B', lane: 1, start:  4, weeks: 2,   priority: 'medium', status: 'deferred', title: 'Domain-adapted CLIP fine-tune — shelved; gated on #29 showing meaningful retrieval gain over Opus-direct baseline' },
 
-    // ───── C. Authoring (build app) ─────
-    { id: 40, bundle: 'C', lane: 2, start: -2, weeks: 2,   priority: 'medium', status: 'done', title: 'Authoring schema (AuthoredComponent / Part / Op / Step) + buildAuthored interpreter' },
-    { id: 41, bundle: 'C', lane: 2, start: -1, weeks: 1.5, priority: 'medium', status: 'done', title: '/author manual editor — add primitives, transforms, CSG ops, save' },
-    { id: 42, bundle: 'C', lane: 2, start:  0, weeks: 1.5, priority: 'medium', status: 'done', title: 'Claude tool-calling chat (ChatPanel + tool dispatcher)' },
-    { id: 43, bundle: 'C', lane: 2, start:  0, weeks: 0.5, priority: 'medium', status: 'done', title: '/library — browse + reload authored components' },
-    { id: 44, bundle: 'C', lane: 2, start:  1, weeks: 1,   priority: 'medium', status: 'open', title: 'Authoring fine-tune corpus — extract authoring_log[] for Claude fine-tuning' },
-    { id: 45, bundle: 'C', lane: 2, start:  2, weeks: 1,   priority: 'medium', status: 'open', title: 'Auto-export authored → SVTC parametric tool library (commit in cadtrain triggers SVTC update)' },
-
     // ───── D. Wells → SVTC WSON ─────
     { id: 60, bundle: 'D', lane: 3, start:  0,   weeks: 0.2, priority: 'high',   status: 'done', title: 'WSON schema + validateWson — mirrored from SVTC src/lib/apps/wson/CLAUDE.md' },
     { id: 61, bundle: 'D', lane: 3, start:  0.2, weeks: 0.2, priority: 'high',   status: 'done', title: '/api/wells/extract — Claude (Opus 4.7) vision → WSON; type:document for PDFs; rate-limited' },
@@ -94,17 +84,10 @@
     { id: 65, bundle: 'D', lane: 3, start:  3.5, weeks: 1, priority: 'medium', status: 'open', title: 'Validation roundtrip — feed extracted WSON to SVTC\'s 2D + 3D renderers, compare against ground truth, log mismatches' },
     { id: 66, bundle: 'D', lane: 3, start:  4.5, weeks: 0.5, priority: 'low',  status: 'open', title: 'Confidence-driven review queue — auto-accept ≥ 0.95, spot-check ≥ 0.80, full re-extract otherwise' },
 
-    // ───── E. Infra + deploy ─────
-    { id: 80, bundle: 'E', lane: 4, start: -2, weeks: 0.5, priority: 'medium', status: 'done', title: 'Dockerfile (bun build → node:22-slim) + docker-entrypoint.sh' },
-    { id: 81, bundle: 'E', lane: 4, start: -1.5, weeks: 0.5, priority: 'medium', status: 'done', title: 'railway.toml + Railway deploy from GitHub' },
-    { id: 82, bundle: 'E', lane: 4, start: -1, weeks: 0.3, priority: 'medium', status: 'done', title: 'Railway volume mount for /data (cache persistence across deploys)' },
-    { id: 83, bundle: 'E', lane: 4, start:  0.3, weeks: 0.3, priority: 'low',    status: 'deferred', title: 'Pre-pull CLIP weights in Dockerfile build — shelved with rest of CLIP work' },
-    { id: 84, bundle: 'E', lane: 4, start:  1,   weeks: 0.5, priority: 'medium', status: 'deferred', title: 'warmup() CLIP at boot — shelved with rest of CLIP work' },
-
     // ───── F. Meta + UX ─────
     { id: 100, bundle: 'F', lane: 5, start:  0,   weeks: 0.2, priority: 'medium', status: 'done', title: '/plan Gantt route — this page' },
     { id: 101, bundle: 'F', lane: 5, start:  0.2, weeks: 0.1, priority: 'medium', status: 'done', title: 'Navbar: Wells + Meta segments added' },
-    { id: 102, bundle: 'F', lane: 5, start:  0.4, weeks: 0.5, priority: 'low',    status: 'open', title: 'Per-task plan details — populate ./details.ts entries for in-flight items' },
+    { id: 102, bundle: 'F', lane: 5, start:  0.4, weeks: 0.5, priority: 'low',    status: 'done', title: 'Per-task plan details — populate ./details.ts entries for in-flight items' },
 
     // ───── F. Two-product split (CAD / Wells / Archive) ─────
     { id: 110, bundle: 'F', lane: 5, start:  1,   weeks: 0.4, priority: 'high',   status: 'done',   title: 'Phase 0 — Extract shared API/CLI infra (identify + wells backends → src/lib/shared/)' },
@@ -120,8 +103,8 @@
     { id: 120, bundle: 'F', lane: 5, start:  3.9, weeks: 0.2, priority: 'medium', status: 'done',   title: 'Mobile responsive (≤900px stack vertical) + collapsible side panels (params/meta/parts) on components + author' },
     { id: 121, bundle: 'F', lane: 5, start:  4.1, weeks: 0.1, priority: 'high',   status: 'done',   title: 'Promote /author + /library to top-level (out of /archive); add to navbar' },
     { id: 122, bundle: 'F', lane: 5, start:  4.2, weeks: 0.3, priority: 'high',   status: 'done',   title: 'Multi-mesh render path for compose.ts (mirror bottom-sub) — fixes mobile WebKit OOM on Opus assemblies; restores 192-segment precision' },
-    { id: 123, bundle: 'F', lane: 5, start:  4.5, weeks: 0.5, priority: 'medium', status: 'open',   title: 'GLB-via-REST: server-side ManifoldCAD writes <id>.glb (or <paramhash>.glb on Apply); client just GLTFLoads — no WASM in the browser at all' },
-    { id: 124, bundle: 'F', lane: 5, start:  5.0, weeks: 1.0, priority: 'low',    status: 'open',   title: 'Explore GPU-based CSG (compute-shader booleans) for the giant-mesh path — would let /author do live edits on assemblies that today exceed WASM heap' },
+    { id: 123, bundle: 'F', lane: 5, start:  4.5, weeks: 0.5, priority: 'medium', status: 'done',   title: 'GLB-via-REST: server-side ManifoldCAD writes <id>.glb (or <paramhash>.glb on Apply); client just GLTFLoads — no WASM in the browser at all' },
+    { id: 124, bundle: 'F', lane: 5, start:  5.0, weeks: 1.0, priority: 'low',    status: 'done',   title: 'Explore GPU-based CSG (compute-shader booleans) for the giant-mesh path — would let /author do live edits on assemblies that today exceed WASM heap' },
 
     // ───── G. Vendor catalog ingest ─────
     { id: 200, bundle: 'G', lane: 6, start:  1.5, weeks: 0.2, priority: 'medium', status: 'done',   title: 'G.0 — Storage convention: static/eval/catalog/<vendor>/ + manifest.json; PDFs gitignored, structure committed' },

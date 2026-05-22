@@ -90,17 +90,17 @@ Research findings (default-param pHash/CLIP collapse, the cold-classification
 counter-finding, and the deferred ablation queue) live in **`docs/FINDINGS.md`**
 and the session memory. Not day-to-day rules.
 
-## Current work in flight (2026-05-22 — resume point)
+## Current work in flight (2026-05-23 — resume point)
 
 > Living section — clear entries as they land. Full detail in the session
-> memory handoff (`session_handoff_2026-05-22`).
+> memory handoff (`session_handoff_2026-05-23`). **Launch `claude --chrome`
+> for fast visual iteration on /primitives** (`feedback_claude_chrome_efficiency`).
 
-**Done (all on `main`):** CLAUDE.md trim → pointer docs · profile-builder popup · Save As · Volume→OneDrive button (dev-only) · profiles→named polygon params · **primitives as instantiable components** — `meta.profiles.<name>.value` defaults + a single optional `props` override object (`t_valve_port(props={})`), so compositions stay clean; t_valve_port converted, geometry verified (482 verts).
+**Shipped (on `main`):** CLAUDE.md trim → docs · profile popup · Save As · Volume→OneDrive button (dev-only) · profiles→named params · instantiable components (`meta.profiles` + `props`) · **single canvas** (mesh+GLB side-by-side, WebGL-context leak closed) · collapsible sidebar · transform move + ✕ delete.
 
-**Pending:**
-- **Assembly / instance-override layer** — the next piece of the component model: somewhere for an assembly to instantiate a primitive and store *per-use* profile overrides (`t_valve_port({ body: [[...]] })`), edited-in-context + saved into the assembly. Doesn't exist yet. See memory `todo_per_part_dynamic_editor`.
-- **Cutaway unify** — shared cut+classify module (client/server drifted) + IP-sensitivity render policy. Memory `todo_cutaway_unify`.
-- **Non-manifold / CSG-split detection** — plan needed. Memory `todo_nonmanifold_csg_split`.
+**Next — approved, not built:** /primitives volume org — rename `primitives/tests/` → `industrial/` + a new NESTED `primitives/completions/<family>/` group (folders: drill_pipe, tubulars, packers, wellhead_xt, fishing, artificial_lift, flow_control — start empty). See `session_handoff_2026-05-23`.
+
+**Queue:** A — Params+Parts → one /components-style accordion + drop the Profile(s) tabs (profile edit = `✎` popup everywhere) · C — visual CSG/BODMAS composition tree · TODOs: `todo_r_threads_radial_taper`, `todo_cutaway_unify`, `todo_nonmanifold_csg_split`, assembly/instance-override (`todo_per_part_dynamic_editor`).
 
 ## Tech stack
 
