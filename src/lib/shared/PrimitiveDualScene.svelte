@@ -8,6 +8,9 @@
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
+  // TEMP warp experiment — mirror ComponentScene/ComponentSceneGlb so the
+  // warp toggle works in the combined canvas too (was dropped in the rewrite).
+  import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
 
   let {
     geo = null,
@@ -39,6 +42,9 @@
         color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
         specular: '#666666', shininess: 120, flatShading: true, side: THREE.DoubleSide,
       });
+      attachWarpShader(obj.material);
+      obj.userData.warpOriginalGeo = g;
+      obj.userData.warpSubdividedGeo = subdivideAlongZ(g);
     });
   }
   $effect(() => {
@@ -46,6 +52,15 @@
     if (!myUrl) { loaded = null; return; }
     const loader = new GLTFLoader();
     loader.load(myUrl, (gltf) => { if (myUrl !== glbUrl) return; dressGltfScene(gltf.scene); loaded = gltf.scene; }, undefined, () => {});
+  });
+  // TEMP warp experiment — swap GLB geometry to the subdivided variant on toggle.
+  $effect(() => {
+    const active = scene.warpEnabled;
+    if (!loaded) return;
+    loaded.traverse((obj: any) => {
+      if (!obj.isMesh || !obj.userData.warpOriginalGeo) return;
+      obj.geometry = active ? obj.userData.warpSubdividedGeo : obj.userData.warpOriginalGeo;
+    });
   });
 
   // --- shared camera / lights (mirror ComponentScene) ---
@@ -80,18 +95,20 @@
 
 <!-- LEFT — live mesh (zScale already baked server-side, so no scale.z here) -->
 <T.Group position={[-offset, 0, 0]}>
-  {#key geoVersion + (showCutaway ? '_cut' : '_full')}
+  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '')}
     {#if showCutaway && cutVC}
-      <T.Mesh geometry={cutVC}>
-        <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} />
+      {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
+      <T.Mesh geometry={cg}>
+        <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
       </T.Mesh>
     {:else if full}
       {@const hasVC = !!full?.getAttribute?.('color')}
-      <T.Mesh geometry={full}>
+      {@const fg = scene.warpEnabled ? subdivideAlongZ(full) : full}
+      <T.Mesh geometry={fg}>
         {#if hasVC}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {:else}
-          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {/if}
       </T.Mesh>
     {/if}
