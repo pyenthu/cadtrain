@@ -297,7 +297,6 @@
       {/each}
     </nav>
     {#if dev}
-      {#if backupMsg}<span class="vol-backup-msg" class:err={backupMsg.startsWith('Backup failed')}>{backupMsg}</span>{/if}
       <button
         class="vol-backup"
         type="button"
@@ -305,7 +304,6 @@
         title="Copy the entire volume into the repo at src/volume_backup/ (dev only)"
         onclick={runBackup}
       >{backing ? '⏳ Backing up…' : '⬇ Backup → src'}</button>
-      {#if oneDriveMsg}<span class="vol-backup-msg" class:err={oneDriveMsg.startsWith('OneDrive sync failed')}>{oneDriveMsg}</span>{/if}
       <button
         class="vol-backup"
         type="button"
@@ -316,6 +314,14 @@
     {/if}
     <button class="vol-refresh" type="button" title="Reload" onclick={() => loadDir(currentPath)}>↻</button>
   </header>
+
+  {#if dev && (oneDriveMsg || backupMsg)}
+    {@const flashMsg = oneDriveMsg ?? backupMsg}
+    <div class="vol-flash" class:err={(flashMsg ?? '').toLowerCase().includes('failed')}>
+      <pre>{flashMsg}</pre>
+      <button class="vol-flash-x" type="button" title="Dismiss" onclick={() => { oneDriveMsg = null; backupMsg = null; }}>×</button>
+    </div>
+  {/if}
 
   <div class="vol-body">
     <!-- Left — listing + actions -->
@@ -488,11 +494,25 @@
   }
   .vol-backup:hover:not(:disabled) { background: #ececf2; color: #cc2222; }
   .vol-backup:disabled { opacity: 0.6; cursor: default; }
-  .vol-backup-msg {
-    font: 11px monospace; color: #2e7d32; flex-shrink: 0;
-    max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .vol-flash {
+    position: relative;
+    padding: 8px 34px 8px 16px;
+    background: #eef4ee; border-bottom: 1px solid #cfe0cf;
+    flex-shrink: 0;
   }
-  .vol-backup-msg.err { color: #c4392f; }
+  .vol-flash.err { background: #fbecea; border-bottom-color: #e7bdb6; }
+  .vol-flash pre {
+    margin: 0; font: 11px/1.5 ui-monospace, Menlo, monospace; color: #2e7d32;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 200px; overflow: auto;
+  }
+  .vol-flash.err pre { color: #b3271c; }
+  .vol-flash-x {
+    position: absolute; top: 5px; right: 8px;
+    border: none; background: transparent; cursor: pointer;
+    font-size: 16px; line-height: 1; color: #999;
+  }
+  .vol-flash-x:hover { color: #333; }
 
   .vol-body { flex: 1; display: flex; min-height: 0; }
   .vol-list {

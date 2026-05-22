@@ -66,22 +66,33 @@ if [ "$SOURCE" = "local" ]; then
 else
   BASE_URL="${CADTRAIN_VOLUME_REMOTE_URL:-https://cadtrain.up.railway.app}"
   if [ -z "${CADTRAIN_VOLUME_TOKEN:-}" ] && [ -f "$REPO_ROOT/.env.local" ]; then
-    CADTRAIN_VOLUME_TOKEN="$(grep -E '^CADTRAIN_VOLUME_TOKEN=' "$REPO_ROOT/.env.local" | head -1 | cut -d= -f2- | tr -d '"'\''')"
+    CADTRAIN_VOLUME_TOKEN="$(grep -E '^CADTRAIN_VOLUME_TOKEN=' "$REPO_ROOT/.env.local" | head -1 | cut -d= -f2- | tr -d "\"'" || true)"
   fi
-  : "${CADTRAIN_VOLUME_TOKEN:?--prod needs CADTRAIN_VOLUME_TOKEN (export it or put it in .env.local)}"
+  # Token is OPTIONAL: prod /api/volume GET (list + download) is open; the token
+  # only gates cross-origin WRITES. Send it if present, otherwise proceed.
+  CADTRAIN_VOLUME_TOKEN="${CADTRAIN_VOLUME_TOKEN:-}"
+  [ -z "$CADTRAIN_VOLUME_TOKEN" ] && echo "▸ note: no CADTRAIN_VOLUME_TOKEN set — using open GET access to the volume"
   STAGE="$REPO_ROOT/.volume-sync-staging"
   trap 'rm -rf "$STAGE"' EXIT
   rm -rf "$STAGE"; mkdir -p "$STAGE"
   echo "▸ source: prod   $BASE_URL/api/volume"
   echo "▸ pulling volume → staging (recursive, depth-1 per call)…"
   # Token is passed via env (not argv) so it never lands in `ps` output.
-  CADTRAIN_VOLUME_TOKEN="$CADTRAIN_VOLUME_TOKEN" python3 - "$BASE_URL" "$STAGE" <<'PY'
-import json, os, sys, urllib.parse, urllib.request
+  CADTRAIN_VOLUME_TOKEN="$CADTRAIN_VOLUME_TOKEN" python3 -u - "$BASE_URL" "$STAGE" <<'PY'
+import json, os, sys, time, urllib.parse, urllib.request
 base, stage = sys.argv[1], sys.argv[2]
-token = os.environ["CADTRAIN_VOLUME_TOKEN"]
-def get(rel):
+token = os.environ.get("CADTRAIN_VOLUME_TOKEN", "")
+hdrs = {"X-Volume-Token": token} if token else {}
+def get(rel, tries=4):
     url = base + "/api/volume?path=" + urllib.parse.quote(rel)
-    return urllib.request.urlopen(urllib.request.Request(url, headers={"X-Volume-Token": token}))
+    for i in range(tries):
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=60)
+        except Exception as e:
+            if i == tries - 1:
+                raise
+            sys.stderr.write("  retry %d/%d %s (%s)\n" % (i + 1, tries - 1, rel or "/", type(e).__name__))
+            time.sleep(1.5 * (i + 1))
 def walk(rel):
     node = json.load(get(rel))
     if node.get("type") != "dir":

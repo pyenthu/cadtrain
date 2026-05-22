@@ -16,10 +16,10 @@ import type { RequestHandler } from './$types';
 import { dev } from '$app/environment';
 import { promisify } from 'node:util';
 import { execFile as _execFile } from 'node:child_process';
-import { resolve } from 'node:path';
 
 const execFile = promisify(_execFile);
-const SCRIPT = resolve(process.cwd(), 'scripts', 'volume2onedrive.sh');
+// Relative to cwd (the repo root in dev); this endpoint is dev-only.
+const SCRIPT = 'scripts/volume2onedrive.sh';
 
 const tail = (s: string, n = 2000): string => (s.length > n ? s.slice(-n) : s);
 
@@ -47,6 +47,6 @@ export const POST: RequestHandler = async ({ request }) => {
   } catch (e: any) {
     // execFile rejects on non-zero exit / timeout; surface its captured output.
     const out = `${e?.stdout ?? ''}${e?.stderr ?? ''}`.trim();
-    return json({ ok: false, message: e?.message ?? String(e), output: tail(out) }, { status: 500 });
+    return json({ ok: false, message: tail(out) || (e?.message ?? String(e)), output: tail(out) }, { status: 500 });
   }
 };
