@@ -6,6 +6,7 @@ import { volumePath } from '$lib/server/volume';
 import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
+// (tests→industrial rename + nested completions group, 2026-05-23)
 //
 // Returns the combined catalog of primitives the /primitives UI shows:
 //   - bundle (compiled into the app, src/lib/cad/manifold-helpers.ts)
@@ -41,8 +42,14 @@ export const GET = async () => {
   }));
 
   const volume: PrimEntry[] = [];
-  const tests: PrimEntry[] = [];
+  const industrial: PrimEntry[] = [];
   const archived: PrimEntry[] = [];
+  // Completions is NESTED one level deeper than the flat groups above:
+  // primitives/completions/<family>/<id>/. The sidebar renders it as
+  // Completions → collapsible family sub-folder → parts. Family dirs may
+  // be empty (structure only) — they still appear so the user can see
+  // where each family's parts will land.
+  const completions: Record<string, PrimEntry[]> = {};
   const root = volumePath(PRIMS_ROOT);
 
   // CHEAP entry — id only, NO source read. The sidebar shows just the id;
@@ -65,13 +72,33 @@ export const GET = async () => {
       if (e) into.push(e);
     }
   }
+  // Two-level recurse: primitives/completions/<family>/<id>/. Each family
+  // sub-dir becomes a key in `completions` (even when empty), and its
+  // parts are collected one level below.
+  async function collectCompletions() {
+    const subRoot = join(root, 'completions');
+    if (!existsSync(subRoot)) return;
+    for (const fam of await readdir(subRoot, { withFileTypes: true })) {
+      if (!fam.isDirectory()) continue;
+      const parts: PrimEntry[] = [];
+      const famRoot = join(subRoot, fam.name);
+      for (const d of await readdir(famRoot, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue;
+        const e = cheapEntry(join(famRoot, d.name), d.name);
+        if (e) parts.push(e);
+      }
+      completions[fam.name] = parts;
+    }
+  }
   if (existsSync(root)) {
     for (const dirent of await readdir(root, { withFileTypes: true })) {
       if (!dirent.isDirectory()) continue;
-      // `archive/` (soft-deleted) and `tests/` (the test-primitive
-      // category) are sub-folders, not primitives themselves — recurse.
-      if (dirent.name === 'archive') { await collectSub('archive', archived); continue; }
-      if (dirent.name === 'tests')   { await collectSub('tests', tests);     continue; }
+      // `archive/` (soft-deleted), `industrial/` (the industrial-test
+      // category, formerly `tests/`) and `completions/` (nested by
+      // family) are sub-folders, not primitives themselves — recurse.
+      if (dirent.name === 'archive')     { await collectSub('archive', archived);        continue; }
+      if (dirent.name === 'industrial')  { await collectSub('industrial', industrial);   continue; }
+      if (dirent.name === 'completions') { await collectCompletions();                    continue; }
       const e = cheapEntry(join(root, dirent.name), dirent.name);
       if (e) volume.push(e);
     }
@@ -87,7 +114,8 @@ export const GET = async () => {
   return json({
     bundle,
     volume,
-    tests,
+    industrial,
+    completions,
     archived,
     merged,
     shadows: volume.filter((v) => bundleIds.has(v.id)).map((v) => v.id),

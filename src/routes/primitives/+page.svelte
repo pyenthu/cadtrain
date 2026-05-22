@@ -24,8 +24,36 @@
   }
 
   let entries: Entry[] = $state([]);
-  let tests: Entry[] = $state([]);
+  let industrial: Entry[] = $state([]);
+  // Completions is nested by family: { <family>: Entry[] }. Family dirs
+  // may be empty (structure only); the sidebar shows them regardless so
+  // the user sees where each family's parts will land.
+  let completions: Record<string, Entry[]> = $state({});
   let archived: Entry[] = $state([]);
+
+  // Display order + labels for the Completions family sub-folders. Sourced
+  // from src/lib/cad/components/families.ts (the central family map); these
+  // are the 7 user-approved completion families. Any family dir the server
+  // returns that isn't listed here still renders (appended, raw key).
+  const COMPLETION_FAMILIES: { id: string; label: string }[] = [
+    { id: 'drill_pipe',      label: 'Drill Pipe' },
+    { id: 'tubulars',        label: 'Tubulars' },
+    { id: 'packers',         label: 'Packers' },
+    { id: 'wellhead_xt',     label: 'Wellhead & XT' },
+    { id: 'fishing',         label: 'Fishing' },
+    { id: 'artificial_lift', label: 'Artificial Lift' },
+    { id: 'flow_control',    label: 'Flow Control' },
+  ];
+  // Ordered family list for rendering: known families first (in order),
+  // then any unexpected keys the server returns.
+  let completionFamilies = $derived.by(() => {
+    const known = COMPLETION_FAMILIES.filter((f) => f.id in completions);
+    const knownIds = new Set(COMPLETION_FAMILIES.map((f) => f.id));
+    const extra = Object.keys(completions)
+      .filter((k) => !knownIds.has(k))
+      .map((k) => ({ id: k, label: k }));
+    return [...known, ...extra];
+  });
   // Multi-tab (like /components): each opened primitive is a tab kept
   // MOUNTED so it stays rendered/loaded when you switch — open several to
   // compare. serverSource is per-tab (dirty tracking + save).
@@ -35,7 +63,10 @@
   let activeTab = $derived(openTabs.find((t) => t.entry.id === activeId) ?? null);
   let status = $state('');
   let showArchive = $state(false);
-  let showTests = $state(false);
+  let showIndustrial = $state(false);
+  let showCompletions = $state(true);
+  // Per-family collapse state inside Completions, keyed by family id.
+  let openFamilies: Record<string, boolean> = $state({});
 
   async function refreshList() {
     try {
@@ -43,13 +74,14 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       entries = data.merged ?? [];
-      tests = data.tests ?? [];
+      industrial = data.industrial ?? [];
+      completions = data.completions ?? {};
       archived = data.archived ?? [];
       status = '';
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; tests = []; archived = [];
+      entries = []; industrial = []; completions = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -212,7 +244,7 @@
    *  backstop). Opens the new primitive on success. */
   async function saveAsEntry(srcId: string, newId: string, editedSource: string) {
     if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return false; }
-    if (entries.some((x) => x.id === newId) || tests.some((x) => x.id === newId)) {
+    if (entries.some((x) => x.id === newId) || industrial.some((x) => x.id === newId)) {
       status = `"${newId}" already exists — pick another name.`;
       return false;
     }
@@ -232,7 +264,7 @@
     if (!r.ok) { status = `Save As failed: ${await r.text()}`; return false; }
     status = `Saved ${srcId} as → ${newId}.`;
     await refreshList();
-    const created = entries.find((x) => x.id === newId) ?? tests.find((x) => x.id === newId);
+    const created = entries.find((x) => x.id === newId) ?? industrial.find((x) => x.id === newId);
     if (created) openTab(created);
     return true;
   }
@@ -296,26 +328,71 @@
       {/each}
     </div>
 
-    <!-- Tests category — primitives parked under primitives/tests/ on the
-         volume (location IS the category). Collapsible folder. -->
+    <!-- Industrial category (formerly Tests) — primitives parked under
+         primitives/industrial/ on the volume (location IS the category).
+         Collapsible folder. -->
     <div class="prim-tests">
-      <button class="prim-arch-head" type="button" onclick={() => (showTests = !showTests)}>
-        <span class="prim-arch-caret">{showTests ? '▾' : '▸'}</span>
-        Tests {#if tests.length}({tests.length}){/if}
+      <button class="prim-arch-head" type="button" onclick={() => (showIndustrial = !showIndustrial)}>
+        <span class="prim-arch-caret">{showIndustrial ? '▾' : '▸'}</span>
+        Industrial {#if industrial.length}({industrial.length}){/if}
       </button>
-      {#if showTests}
-        {#if tests.length === 0}
+      {#if showIndustrial}
+        {#if industrial.length === 0}
           <div class="prim-empty">none yet</div>
         {:else}
-          {#each tests as e (e.id)}
+          {#each industrial as e (e.id)}
             <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
               <button class="prim-row" type="button" onclick={() => openTab(e)}>
                 <span class="prim-name">{e.id}</span>
-                <span class="prim-tag vol">test</span>
+                <span class="prim-tag vol">ind</span>
               </button>
               <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
               {#if e.editable}
                 <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      {/if}
+    </div>
+
+    <!-- Completions category — NESTED by family. primitives/completions/
+         <family>/<id>/ on the volume. Outer collapsible group → per-family
+         collapsible sub-folders → parts. Family dirs may be empty
+         (structure only) and still show. -->
+    <div class="prim-tests">
+      <button class="prim-arch-head" type="button" onclick={() => (showCompletions = !showCompletions)}>
+        <span class="prim-arch-caret">{showCompletions ? '▾' : '▸'}</span>
+        Completions {#if completionFamilies.length}({completionFamilies.length}){/if}
+      </button>
+      {#if showCompletions}
+        {#if completionFamilies.length === 0}
+          <div class="prim-empty">no families yet</div>
+        {:else}
+          {#each completionFamilies as fam (fam.id)}
+            {@const parts = completions[fam.id] ?? []}
+            <div class="prim-fam">
+              <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
+                <span class="prim-arch-caret">{openFamilies[fam.id] ? '▾' : '▸'}</span>
+                {fam.label} {#if parts.length}({parts.length}){/if}
+              </button>
+              {#if openFamilies[fam.id]}
+                {#if parts.length === 0}
+                  <div class="prim-empty prim-fam-empty">empty</div>
+                {:else}
+                  {#each parts as e (e.id)}
+                    <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                      <button class="prim-row" type="button" onclick={() => openTab(e)}>
+                        <span class="prim-name">{e.id}</span>
+                        <span class="prim-tag vol">vol</span>
+                      </button>
+                      <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                      {#if e.editable}
+                        <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
               {/if}
             </div>
           {/each}
@@ -411,7 +488,7 @@
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
                 onSaveAs={(newId, src) => saveAsEntry(t.entry.id, newId, src)}
                 onReloadSource={() => loadFromServerFor(t)}
-                catalog={[...entries, ...tests]}
+                catalog={[...entries, ...industrial, ...Object.values(completions).flat()]}
               />
             {/if}
           </div>
@@ -448,6 +525,14 @@
   .prim-tests { margin-top: 12px; border-top: 1px solid #eee; padding-top: 6px; }
   .prim-grouphead { padding: 4px 8px; font: 600 11px Arial; color: #888; }
   .prim-empty { padding: 2px 8px 6px; font: italic 11px Arial; color: #bbb; }
+
+  /* Completions → family sub-folders (one level deeper than the flat
+     groups). Caret + label indented; parts indented again. */
+  .prim-fam { margin-left: 6px; }
+  .prim-fam-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 600 11px Arial; color: #999; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
+  .prim-fam-head:hover { background: #f0f0f0; color: #555; }
+  .prim-fam-empty { margin-left: 14px; }
+  .prim-fam-row { margin-left: 8px; }
   .prim-demolink { display: block; padding: 5px 8px; font: 600 13px monospace; color: #2266cc; text-decoration: none; border-radius: 4px; }
   .prim-demolink:hover { background: #eef3fb; }
 
