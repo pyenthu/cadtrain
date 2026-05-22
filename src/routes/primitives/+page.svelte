@@ -107,7 +107,7 @@
     await refreshList();
     // Default-open the first VOLUME primitive (bundle ones can 500 on
     // source-load); fall back to the first entry.
-    const initial = [...entries, ...tests].find((e) => e.id === 't_spinner') ?? entries.find((e) => e.source === 'volume') ?? entries[0];
+    const initial = entries.find((e) => e.source === 'volume') ?? entries[0];
     if (initial) openTab(initial);
   });
 
