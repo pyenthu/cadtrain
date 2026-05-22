@@ -49,6 +49,7 @@
     onSaveSource,
     onSaveDefaults,
     onReloadSource,
+    catalog = [],
   }: {
     id: string;
     name?: string;
@@ -60,6 +61,9 @@
     onSaveSource?: (newSource: string) => Promise<void> | void;
     onSaveDefaults?: (applied: Record<string, number>) => Promise<void> | void;
     onReloadSource?: () => Promise<void> | void;
+    /** Available primitives for the Parts-tab "Load" action (ids; params
+     *  are fetched lazily on Load since the catalog list is id-only). */
+    catalog?: Array<{ id: string }>;
   } = $props();
 
   let paramOrder = $derived(Object.keys(paramSchema));
@@ -148,6 +152,59 @@
   function spliceSource(start: number, end: number, replacement: string) {
     if (start < 0 || end < 0) return;
     editedSource = editedSource.slice(0, start) + replacement + editedSource.slice(end);
+  }
+
+  // ── Load primitive → scaffold an instance ────────────────────────────────
+  // Pick a primitive; we fetch its params (the catalog list is id-only/lazy),
+  // scaffold `const <inst> = <call>(<default args>)` before the return, wire
+  // it into the composition (`.add(<inst>)`) + meta.uses, and write it into
+  // the source. The inlined defaults are then editable via the rows above.
+  let loadPick = $state('');
+  let loadBusy = $state(false);
+  let loadable = $derived((catalog ?? []).filter((e) => e.id !== id));
+  function defaultArgFor(ps: any): string {
+    const d = ps?.default;
+    return Array.isArray(d) ? JSON.stringify(d) : String(d ?? 0);
+  }
+  function uniqueInstName(childId: string): string {
+    const taken = new Set<string>([...parts, ...locals].map((i: any) => i.name));
+    const base = childId.replace(/^r_/, '') || 'part';
+    if (!taken.has(base)) return base;
+    let i = 2; while (taken.has(base + i)) i++; return base + i;
+  }
+  async function loadPrimitive() {
+    const r = recognized;
+    if (!loadPick || !r || r.returnStart < 0 || r.compStart < 0) return;
+    loadBusy = true;
+    recogError = null;
+    try {
+      // Fetch the chosen primitive's params (defaults) — the list is lazy.
+      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(loadPick)}`);
+      if (!res.ok) { recogError = `Load failed: ${await res.text()}`; return; }
+      const data = await res.json();
+      const childParams = data.params ?? {};
+      const child = loadPick;
+      const inst = uniqueInstName(child);
+      const argList = Object.values(childParams).map(defaultArgFor).join(', ');
+      const src = editedSource;
+      // Three edits, applied high→low offset so earlier offsets stay valid.
+      const edits = [
+        { s: r.compStart, e: r.compEnd, text: src.slice(r.compStart, r.compEnd) + `.add(${inst})` },
+        { s: r.returnStart, e: r.returnStart, text: `const ${inst} = ${child}(${argList});\n  ` },
+      ];
+      if (r.usesInsertPos >= 0) {
+        edits.push({ s: r.usesInsertPos, e: r.usesInsertPos, text: (r.usesHasElems ? ', ' : '') + `'${child}'` });
+      }
+      edits.sort((a, b) => b.s - a.s);
+      let out = src;
+      for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
+      editedSource = out;       // → Source dirty; the recognition $effect re-scans
+      loadPick = '';
+    } catch (e: any) {
+      recogError = `Load error: ${e?.message ?? e}`;
+    } finally {
+      loadBusy = false;
+    }
   }
 
   // ── AI tab ───────────────────────────────────────────────────────────
@@ -398,6 +455,13 @@
           <div class="pv-pane-head">
             <span class="pv-pill" class:dirty={sourceDirty}>{parts.length} part{parts.length === 1 ? '' : 's'}{sourceDirty ? ' · edited' : ''}</span>
             <div class="pv-spacer"></div>
+            {#if canEdit && recognized && recognized.returnStart >= 0}
+              <select class="pv-load-pick" bind:value={loadPick} title="Load a primitive as a new instance">
+                <option value="">＋ Load…</option>
+                {#each loadable as e (e.id)}<option value={e.id}>{e.id}</option>{/each}
+              </select>
+              <button class="pv-btn" type="button" disabled={!loadPick || loadBusy} onclick={loadPrimitive}>{loadBusy ? '…' : 'Add'}</button>
+            {/if}
             <button class="pv-btn" type="button" onclick={loadRecognition}>Re-scan</button>
             {#if canEdit && onSaveSource}
               <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
@@ -615,6 +679,8 @@
   .pv-parts-empty { font: 12px Arial; color: #999; padding: 14px 4px; line-height: 1.4; }
   .pv-parts-empty code { background: #eee; padding: 0 4px; border-radius: 3px; }
   .pv-parts-err { font: 11px ui-monospace, monospace; color: #c4392f; padding: 10px 4px; white-space: pre-wrap; }
+  .pv-load-pick { font: 11px monospace; padding: 3px 4px; border: 1px solid #ccc; border-radius: 4px; background: #fff; max-width: 150px; cursor: pointer; }
+  .pv-load-pick:hover { border-color: #cc2222; }
 
   .pv-source { padding: 0; }
   .pv-editor-wrap { flex: 1; min-height: 0; border-top: 1px solid #eee; padding: 0 0 8px 0; display: flex; flex-direction: column; overflow: hidden; }

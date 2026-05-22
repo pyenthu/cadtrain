@@ -352,6 +352,7 @@
                 onSaveSource={(s) => saveSourceFor(t, s)}
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
                 onReloadSource={() => loadFromServerFor(t)}
+                catalog={[...entries, ...tests]}
               />
             {/if}
           </div>

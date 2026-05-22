@@ -54,6 +54,16 @@ export interface RecognizedComposite {
    *  to it and arg edits can round-trip. False when we had to type-strip
    *  first → positions don't map → GUI shows the rows read-only. */
   editable: boolean;
+  /** Source offsets the "Load primitive" action splices at (original
+   *  source; -1 when absent / not editable). returnStart: insert the new
+   *  `const X = …` line before the return. comp{Start,End}: the return's
+   *  expression span (wrapped with `.add(X)`). usesInsertPos / usesHasElems:
+   *  append `'<id>'` to the meta.uses array. */
+  returnStart: number;
+  compStart: number;
+  compEnd: number;
+  usesInsertPos: number;
+  usesHasElems: boolean;
 }
 
 const OPERATORS = new Set(['mv', 'rot']);
@@ -75,6 +85,25 @@ export function recognizeComposite(source: string): RecognizedComposite {
   }
   const slice = (n: any) => js.slice(n.start, n.end);
 
+  // Locate the meta.uses array → where the Load action appends a new id.
+  let usesInsertPos = -1, usesHasElems = false;
+  for (const node of ast.body) {
+    const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node;
+    if (decl?.type !== 'VariableDeclaration') continue;
+    for (const d of decl.declarations) {
+      if (d.id?.type === 'Identifier' && d.id.name === 'meta' && d.init?.type === 'ObjectExpression') {
+        const up = d.init.properties.find((p: any) => (p.key?.name ?? p.key?.value) === 'uses');
+        if (up?.value?.type === 'ArrayExpression') {
+          const els = up.value.elements;
+          if (els.length) { usesInsertPos = els[els.length - 1].end; usesHasElems = true; }
+          else { usesInsertPos = up.value.start + 1; usesHasElems = false; }
+        }
+      }
+    }
+  }
+
+  let returnStart = -1, compStart = -1, compEnd = -1;
+
   let fn: any = null;
   for (const node of ast.body) {
     if (node.type === 'FunctionDeclaration') { fn = node; break; }
@@ -82,7 +111,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable };
+  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems };
 
   // Args span = first arg start → last arg end (the text inside the parens,
   // commas included). `fromIndex` skips the wrapped manifold for mv/rot.
@@ -117,9 +146,12 @@ export function recognizeComposite(source: string): RecognizedComposite {
       }
     } else if (stmt.type === 'ReturnStatement' && stmt.argument) {
       composition = slice(stmt.argument);
+      returnStart = stmt.start;
+      compStart = stmt.argument.start;
+      compEnd = stmt.argument.end;
     } else {
       unrecognized++;
     }
   }
-  return { instances, uses, composition, unrecognized, editable };
+  return { instances, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems };
 }
