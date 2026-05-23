@@ -21,6 +21,8 @@
   import FloatingPanel from './FloatingPanel.svelte';
   import ParamGrid from './ParamGrid.svelte';
   import ConstructionTree from './ConstructionTree.svelte';
+  import ProfilePalette from './ProfilePalette.svelte';
+  import type { VolProfile } from './ProfilePalette.svelte';
   import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
   import { untrack } from 'svelte';
 
@@ -506,6 +508,18 @@
   // from `pending[name]`. onChange updates pending (orange-bar dirty); Apply =
   // the existing global `apply()` (commit pending → applied → canvas re-bake).
   let leafEdit = $state<{ pname: string; px: number; py: number } | null>(null);
+  // Volume-saved profiles (profile-system.md P2) — fetched lazily when a profile
+  // popup first opens; merged with the built-in registry in ProfilePalette.
+  let volProfiles = $state<VolProfile[]>([]);
+  let volProfilesLoaded = $state(false);
+  async function loadVolProfiles(force = false) {
+    if (volProfilesLoaded && !force) return;
+    volProfilesLoaded = true;
+    try {
+      const r = await fetch('/api/primitives/profiles/list');
+      if (r.ok) { const d = await r.json(); volProfiles = (d?.profiles ?? d ?? []) as VolProfile[]; }
+    } catch { /* offline / no volume — built-ins still work */ }
+  }
   function openLeafProfile(pname: string, ev: MouseEvent) {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     leafEdit = {
@@ -513,8 +527,48 @@
       px: Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480)),
       py: Math.max(8, Math.min(rect.top, window.innerHeight - 360)),
     };
+    void loadVolProfiles();
   }
   function closeLeafProfile() { leafEdit = null; }
+  // Palette pick → set the leaf descriptor. Built-in → { kind, params } via the
+  // existing setLeafKind; volume → its stored { kind, params } or { points }.
+  function pickPaletteProfile(pname: string, id: string, origin: 'builtin' | 'volume') {
+    if (origin === 'builtin') { setLeafKind(pname, id); return; }
+    const v = volProfiles.find((x) => x.id === id);
+    if (!v) return;
+    if (Array.isArray(v.points)) pending = { ...pending, [pname]: { points: v.points } };
+    else if (v.kind) pending = { ...pending, [pname]: { kind: v.kind, params: v.params ?? {} } };
+  }
+  // Save the current leaf descriptor to the volume (primitives/profiles/<id>/)
+  // so it appears in the palette across sessions + primitives.
+  let saveProfilePanel = $state<{ pname: string; id: string; label: string; px: number; py: number } | null>(null);
+  let saveProfileBusy = $state(false);
+  let saveProfileErr = $state<string | null>(null);
+  function openSaveProfile(pname: string, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const k = leafKindOf(pname) || pname || 'profile';
+    saveProfileErr = null;
+    saveProfilePanel = { pname, id: k, label: k, px: Math.max(8, Math.min(r.left - 150, window.innerWidth - 300)), py: Math.min(r.bottom + 6, window.innerHeight - 220) };
+  }
+  function closeSaveProfile() { saveProfilePanel = null; }
+  async function submitSaveProfile() {
+    if (!saveProfilePanel || saveProfileBusy) return;
+    const { pname, id, label } = saveProfilePanel;
+    const slug = id.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!slug) { saveProfileErr = 'id required'; return; }
+    const d = leafDesc(pname);
+    const set = paramSchema[pname]?.yDown ? 'revolve' : 'cartesian';
+    const body: any = { id: slug, label: label.trim() || slug, set };
+    if (d && typeof d === 'object' && 'kind' in d) { body.kind = d.kind; body.params = d.params ?? {}; }
+    else { body.points = resolveProfile(d); }
+    saveProfileBusy = true; saveProfileErr = null;
+    try {
+      const r = await fetch('/api/primitives/profiles/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.ok) { await loadVolProfiles(true); closeSaveProfile(); }
+      else saveProfileErr = `save failed: ${await r.text()}`;
+    } catch (e: any) { saveProfileErr = `error: ${e?.message ?? e}`; }
+    finally { saveProfileBusy = false; }
+  }
   // Apply the leaf-param edit = commit pending → applied (re-bake), then close.
   function applyLeafProfile() { apply(); closeLeafProfile(); }
 
@@ -1457,6 +1511,22 @@
     </FloatingPanel>
   {/if}
 
+  {#if saveProfilePanel}
+    <FloatingPanel title="Save profile → volume" visible={true} x={saveProfilePanel.px} y={saveProfilePanel.py} width="280px" onClose={closeSaveProfile}>
+      <div class="pv-saveprof">
+        <label class="pv-saveprof-row">id <input bind:value={saveProfilePanel.id} spellcheck="false" placeholder="my_flange" /></label>
+        <label class="pv-saveprof-row">label <input bind:value={saveProfilePanel.label} spellcheck="false" placeholder="My Flange" /></label>
+        {#if saveProfileErr}<div class="pv-saveprof-err">{saveProfileErr}</div>{/if}
+        <div class="pv-saveprof-foot">
+          <span class="pv-saveprof-note">→ <code>primitives/profiles/</code></span>
+          <div class="pv-spacer"></div>
+          <button class="pv-btn" type="button" onclick={closeSaveProfile}>Cancel</button>
+          <button class="pv-btn primary" type="button" disabled={saveProfileBusy} onclick={submitSaveProfile}>{saveProfileBusy ? '…' : 'Save'}</button>
+        </div>
+      </div>
+    </FloatingPanel>
+  {/if}
+
   {#if leafEdit}
     {@const ps = paramSchema[leafEdit.pname]}
     {@const yd = ps.yDown ?? false}
@@ -1475,9 +1545,14 @@
         <div class="pv-profile-pop-head">
           <span class="pv-pill" class:dirty={paramsDirty}>{lpts.length} verts{paramsDirty ? ' · pending' : ''}</span>
           <div class="pv-spacer"></div>
+          <button class="pv-btn" type="button" title="Save this profile to the volume so it shows in the palette" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋ save</button>
           <button class="pv-btn" type="button" disabled={!paramsDirty} onclick={revert}>Revert</button>
           <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
         </div>
+        <details class="pv-palette-det" open={!lkind}>
+          <summary>Browse profiles · {(volProfiles.filter((v) => v.set === (yd ? 'revolve' : 'cartesian')).length) + leafKindOptions(yd).length}</summary>
+          <ProfilePalette set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
+        </details>
         <div style="display:flex; flex-direction:column; gap:6px; padding:0 0 6px; border-bottom:1px solid #eee; margin-bottom:6px;">
           <label style="font:11px Arial; color:#555; display:flex; gap:6px; align-items:center;">Profile
             <select value={lkind} onchange={(e) => setLeafKind(leafEdit.pname, (e.currentTarget as HTMLSelectElement).value)} style="flex:1; font:11px Arial; padding:2px 4px;">
@@ -1678,6 +1753,15 @@
   .pv-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pv-mini-btn.on { background: #2266cc; border-color: #2266cc; color: #fff; }
   .pv-warp-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+  .pv-palette-det { border: 1px solid #eee; border-radius: 6px; padding: 4px 6px; margin-bottom: 6px; }
+  .pv-palette-det summary { font: 11px Arial; color: #555; cursor: pointer; }
+  .pv-palette-det[open] summary { margin-bottom: 6px; }
+  .pv-saveprof { display: flex; flex-direction: column; gap: 8px; }
+  .pv-saveprof-row { display: flex; align-items: center; gap: 8px; font: 11px Arial; color: #555; }
+  .pv-saveprof-row input { flex: 1; font: 11px ui-monospace, monospace; padding: 3px 6px; border: 1px solid #d4d4dc; border-radius: 4px; }
+  .pv-saveprof-foot { display: flex; align-items: center; gap: 6px; }
+  .pv-saveprof-note { font: 10px Arial; color: #999; }
+  .pv-saveprof-err { font: 10px Arial; color: #c0392b; }
 
   /* ── Merged Build tab — Parameters section + per-part accordion rows ───── */
   .pv-build { padding: 0; }
