@@ -90,7 +90,13 @@
     catalog?: Array<{ id: string }>;
   } = $props();
 
-  let paramOrder = $derived(Object.keys(paramSchema));
+  // Session-added params (the "+ param" form) until Save reloads the primitive.
+  // effectiveSchema merges them over the prop so the grid + args see them
+  // immediately; they're ALSO spliced into editedSource (meta.params + the
+  // function signature) so Save persists them and a parent assembly can drive them.
+  let addedParams = $state<Record<string, ParamSchema>>({});
+  let effectiveSchema = $derived({ ...paramSchema, ...addedParams });
+  let paramOrder = $derived(Object.keys(effectiveSchema));
 
   // Initial state from props is a deliberate one-time read (untrack).
   // Parent uses `{#key selected.id}` to remount on primitive change.
@@ -106,7 +112,7 @@
   // Every polygon-typed param, in meta order — the merged Build tab renders a
   // ✎-profile card per entry below the scalar grid (opens the popup editor).
   // Composites that promoted inline profiles to named params can carry several.
-  let polygonParamNames = $derived(paramOrder.filter((k) => paramSchema[k].type === 'polygon'));
+  let polygonParamNames = $derived(paramOrder.filter((k) => effectiveSchema[k].type === 'polygon'));
 
   // Single merged "Build" tab (Parameters section + per-part accordion rows),
   // plus Source + AI. The dedicated Profiles/Profile tabs are gone — profile
@@ -636,6 +642,50 @@
     if (!taken.has(base)) return base;
     let i = 2; while (taken.has(base + i)) i++; return base + i;
   }
+
+  // ── Add parameter ("+ param") ───────────────────────────────────────────
+  // Splice a new meta.params entry + a function-signature param into the source
+  // so this composite exposes a knob a PARENT assembly can drive. Reflected
+  // immediately via addedParams/effectiveSchema; Save source persists it.
+  let addParamPanel = $state<{ x: number; y: number } | null>(null);
+  let apName = $state('');
+  let apDefault = $state('1'), apMin = $state('0'), apMax = $state('10'), apStep = $state('0.1');
+  let addParamError = $derived.by(() => {
+    const n = apName.trim();
+    if (!n) return null;
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(n)) return 'not a valid identifier';
+    if (n in effectiveSchema) return 'already a param';
+    return null;
+  });
+  function openAddParam(ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    apName = ''; apDefault = '1'; apMin = '0'; apMax = '10'; apStep = '0.1';
+    addParamPanel = {
+      x: Math.max(8, Math.min(r.left - 80, window.innerWidth - 300)),
+      y: Math.min(r.bottom + 6, window.innerHeight - 260),
+    };
+  }
+  function closeAddParam() { addParamPanel = null; }
+  function submitAddParam() {
+    const r = recognized;
+    const n = apName.trim();
+    if (!n || addParamError || !r || r.paramsInsertPos < 0 || r.sigInsertPos < 0) return;
+    const def = Number(apDefault) || 0, mn = Number(apMin) || 0, mx = Number(apMax) || 10, st = Number(apStep) || 0.1;
+    const entry = `${r.paramsHasElems ? ', ' : ''}${n}: { label: '${n}', min: ${mn}, max: ${mx}, step: ${st}, default: ${def} }`;
+    const sigParam = `${r.sigHasParams ? ', ' : ''}${n}`;
+    // Two splices, applied high→low so the earlier offset stays valid.
+    const edits = [
+      { s: r.paramsInsertPos, e: r.paramsInsertPos, text: entry },
+      { s: r.sigInsertPos, e: r.sigInsertPos, text: sigParam },
+    ].sort((a, b) => b.s - a.s);
+    let out = editedSource;
+    for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
+    editedSource = out;
+    addedParams = { ...addedParams, [n]: { label: n, type: 'number', min: mn, max: mx, step: st, default: def } };
+    applied = { ...applied, [n]: def };
+    pending = { ...pending, [n]: def };
+    closeAddParam();
+  }
   async function loadPrimitive() {
     const r = recognized;
     if (!loadPick || !r || r.returnStart < 0 || r.compStart < 0) return;
@@ -756,11 +806,11 @@
   // Polygon params travel to the server as JSON strings; scalars as
   // numbers. Order follows the meta param-order.
   let appliedArgs = $derived(paramOrder.map((k) => {
-    const v = applied[k] ?? paramSchema[k].default;
+    const v = applied[k] ?? effectiveSchema[k].default;
     // Polygon params may hold a PARAMETRIC descriptor ({kind,params}) or a
     // detached {points} — resolve to a plain polygon before sending so the
     // primitive body (r_extrude/r_revolve) JSON.parses a Pt[] exactly as before.
-    if (paramSchema[k].type === 'polygon') return JSON.stringify(resolveProfile(v as any));
+    if (effectiveSchema[k].type === 'polygon') return JSON.stringify(resolveProfile(v as any));
     return v as number;
   }));
 
@@ -768,9 +818,9 @@
   // differs (cheap structural compare via stringify).
   let paramsDirty = $derived(
     paramOrder.some((k) => {
-      const p = pending[k] ?? paramSchema[k].default;
-      const a = applied[k] ?? paramSchema[k].default;
-      if (paramSchema[k].type === 'polygon') return JSON.stringify(p) !== JSON.stringify(a);
+      const p = pending[k] ?? effectiveSchema[k].default;
+      const a = applied[k] ?? effectiveSchema[k].default;
+      if (effectiveSchema[k].type === 'polygon') return JSON.stringify(p) !== JSON.stringify(a);
       return p !== a;
     }),
   );
@@ -971,11 +1021,14 @@
                 <div class="pv-spacer"></div>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); apply(); }} disabled={!paramsDirty} title="Apply pending params → re-bake">Apply</button>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); revert(); }} disabled={!paramsDirty} title="Discard pending param edits">Revert</button>
+                {#if canEdit && recognized && recognized.paramsInsertPos >= 0 && recognized.sigInsertPos >= 0}
+                  <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); openAddParam(e); }} title="Add a parameter — exposes a knob a parent assembly can drive">＋ param</button>
+                {/if}
               </div>
               {#if isOpen('__params__')}
                 <div class="pg-acc-body">
                   <ParamGrid
-                    schema={paramSchema}
+                    schema={effectiveSchema}
                     {pending}
                     {applied}
                     onPending={setPending}
@@ -985,7 +1038,7 @@
                        ✎ card that opens the ProfileEditor in a popup (editing
                        pending; Apply commits → re-bake). -->
                   {#each polygonParamNames as pname (pname)}
-                    {@const cardPts = resolveProfile((pending[pname] ?? paramSchema[pname].default) as any)}
+                    {@const cardPts = resolveProfile((pending[pname] ?? effectiveSchema[pname].default) as any)}
                     {@const cardKind = leafKindOf(pname)}
                     <div class="pr-card pv-poly-card" class:dirty={JSON.stringify(pending[pname] ?? []) !== JSON.stringify(applied[pname] ?? [])}>
                       <span class="pr-keyname" title={paramSchema[pname].label ?? pname}>{paramSchema[pname].label ?? pname}</span>
@@ -1072,7 +1125,6 @@
                       {:else}
                         <div class="pv-part-args">{inst.argsText}</div>
                       {/if}
-                      {#if inst.resolvedArgs}<div class="pv-part-live">→ {inst.resolvedArgs}</div>{/if}
                       {#each inst.txs as t}
                         <div class="pv-part-tx">
                           ↳ {t.op}(
@@ -1084,7 +1136,7 @@
                               onkeydown={(e) => { if (e.key === 'Enter') spliceSource(t.argsStart, t.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
                             />
                           {:else}{t.argsText}{/if}
-                          ){#if t.resolved}<span class="pv-part-live"> → {t.op}({t.resolved})</span>{/if}
+                          )
                           {#if canEdit && t.callStart >= 0}<button class="pv-part-txdel" type="button" title="Delete this transform" onclick={() => deleteTransform(t)}>✕</button>{/if}
                         </div>
                       {/each}
@@ -1310,6 +1362,30 @@
         <p class="pv-profile-pop-note">
           {#if lkind}Parametric <code>{lkind}</code> — tune params above; dragging a vertex detaches to a custom shape. {/if}Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> re-bakes; Save defaults persists.
         </p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if addParamPanel}
+    <FloatingPanel title="Add parameter" visible={true} x={addParamPanel.x} y={addParamPanel.y} width="280px" maxHeight="70vh" onClose={closeAddParam}>
+      <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
+        <label style="font:11px Arial; color:#555; display:flex; flex-direction:column; gap:2px;">name
+          <input bind:value={apName} placeholder="e.g. boreR" spellcheck="false"
+            onkeydown={(e) => { if (e.key === 'Enter' && apName.trim() && !addParamError) submitAddParam(); }}
+            style="font:11px ui-monospace, monospace; padding:3px 5px; border:1px solid {addParamError ? '#cc2222' : '#ccc'}; border-radius:4px;" />
+        </label>
+        {#if addParamError}<span style="font:10px Arial; color:#cc2222;">{addParamError}</span>{/if}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <label style="font:11px Arial; color:#555; display:flex; flex-direction:column; gap:2px;">default<input type="number" bind:value={apDefault} style="font:11px ui-monospace,monospace; padding:3px 5px; border:1px solid #ccc; border-radius:4px;" /></label>
+          <label style="font:11px Arial; color:#555; display:flex; flex-direction:column; gap:2px;">step<input type="number" bind:value={apStep} style="font:11px ui-monospace,monospace; padding:3px 5px; border:1px solid #ccc; border-radius:4px;" /></label>
+          <label style="font:11px Arial; color:#555; display:flex; flex-direction:column; gap:2px;">min<input type="number" bind:value={apMin} style="font:11px ui-monospace,monospace; padding:3px 5px; border:1px solid #ccc; border-radius:4px;" /></label>
+          <label style="font:11px Arial; color:#555; display:flex; flex-direction:column; gap:2px;">max<input type="number" bind:value={apMax} style="font:11px ui-monospace,monospace; padding:3px 5px; border:1px solid #ccc; border-radius:4px;" /></label>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:2px;">
+          <button class="pv-btn" type="button" onclick={closeAddParam}>Cancel</button>
+          <button class="pv-btn primary" type="button" disabled={!apName.trim() || !!addParamError} onclick={submitAddParam}>Add</button>
+        </div>
+        <p style="font:10px Arial; color:#888; margin:2px 0 0;">Adds <code>{apName.trim() || 'name'}</code> to meta.params + the function signature. Reference it bare in part args; <strong>Save source</strong> to persist.</p>
       </div>
     </FloatingPanel>
   {/if}
