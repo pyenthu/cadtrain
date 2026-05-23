@@ -620,8 +620,19 @@
     return Array.isArray(d) ? JSON.stringify(d) : String(d ?? 0);
   }
   function uniqueInstName(childId: string): string {
-    const taken = new Set<string>([...parts, ...locals].map((i: any) => i.name));
-    const base = childId.replace(/^r_/, '') || 'part';
+    // FORBID names that would shadow an injected function param: the instance
+    // name must never equal the primitive it calls (`const X = X()` hits the
+    // temporal-dead-zone → "Cannot access X before initialization"), nor any
+    // OTHER instance's call id, nor a sandbox helper. Strip a leading r_/t_
+    // type prefix so e.g. t_goblet_bored → goblet_bored (≠ the call).
+    const callIds = [...parts, ...locals].map((i: any) => i.call);
+    const taken = new Set<string>([
+      ...[...parts, ...locals].map((i: any) => i.name),
+      ...callIds, childId,
+      'cyl', 'tube', 'mv', 'rot', 'revolve', 'profile_extrude', 'helix_band', 'empty',
+      'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'M', 'G', 'Math',
+    ]);
+    const base = childId.replace(/^[rt]_/, '') || 'part';
     if (!taken.has(base)) return base;
     let i = 2; while (taken.has(base + i)) i++; return base + i;
   }
