@@ -322,7 +322,7 @@
     <div class="prim-list">
       {#each entries as e (e.id)}
         <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-          <button class="prim-row" type="button" onclick={() => openTab(e)}>
+          <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
             <span class="prim-name">{e.id}</span>
             <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
           </button>
@@ -348,7 +348,7 @@
         {:else}
           {#each basic as e (e.id)}
             <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-              <button class="prim-row" type="button" onclick={() => openTab(e)}>
+              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                 <span class="prim-name">{e.id}</span>
                 <span class="prim-tag vol">vol</span>
               </button>
@@ -376,7 +376,7 @@
         {:else}
           {#each industrial as e (e.id)}
             <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-              <button class="prim-row" type="button" onclick={() => openTab(e)}>
+              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                 <span class="prim-name">{e.id}</span>
                 <span class="prim-tag vol">ind</span>
               </button>
@@ -416,7 +416,7 @@
                 {:else}
                   {#each parts as e (e.id)}
                     <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-                      <button class="prim-row" type="button" onclick={() => openTab(e)}>
+                      <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                         <span class="prim-name">{e.id}</span>
                         <span class="prim-tag vol">vol</span>
                       </button>

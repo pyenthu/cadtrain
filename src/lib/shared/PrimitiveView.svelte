@@ -605,6 +605,7 @@
   // it into the composition (`.add(<inst>)`) + meta.uses, and write it into
   // the source. The inlined defaults are then editable via the rows above.
   let loadPick = $state('');
+  let dragOverCanvas = $state(false);  // sidebar→canvas drag-to-add highlight
   let loadBusy = $state(false);
   // Dedupe by id — the merged catalog can legitimately contain the same id
   // twice (e.g. a primitive present at both the flat location and a category
@@ -730,18 +731,18 @@
     editedSource = out;
     pinnedParts = new Set([...pinnedParts].filter((n) => n !== inst.name));
   }
-  async function loadPrimitive() {
+  async function loadPrimitive(childId?: string) {
     const r = recognized;
-    if (!loadPick || !r || r.returnStart < 0 || r.compStart < 0) return;
+    const child = childId ?? loadPick;
+    if (!child || !r || r.returnStart < 0 || r.compStart < 0) return;
     loadBusy = true;
     recogError = null;
     try {
       // Fetch the chosen primitive's params (defaults) — the list is lazy.
-      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(loadPick)}`);
+      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(child)}`);
       if (!res.ok) { recogError = `Load failed: ${await res.text()}`; return; }
       const data = await res.json();
       const childParams = data.params ?? {};
-      const child = loadPick;
       const inst = uniqueInstName(child);
       const argList = Object.values(childParams).map(defaultArgFor).join(', ');
       const src = editedSource;
@@ -994,7 +995,14 @@
 
 <div class="pv-root">
   <div class="pv-split" style="--side-width: {sideWidth}px;">
-    <div class="pv-canvas-pane">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="pv-canvas-pane"
+      class:pv-drop-ok={dragOverCanvas}
+      role="application"
+      ondragover={(ev) => { if (canEdit && recognized && recognized.returnStart >= 0 && ev.dataTransfer?.types.includes('application/x-primitive-id')) { ev.preventDefault(); dragOverCanvas = true; } }}
+      ondragleave={() => { dragOverCanvas = false; }}
+      ondrop={(ev) => { dragOverCanvas = false; const dropped = ev.dataTransfer?.getData('application/x-primitive-id'); if (dropped && canEdit && recognized && recognized.returnStart >= 0) { ev.preventDefault(); loadPrimitive(dropped); } }}
+    >
       <!-- Always pass `source` so the preview runs through the sandbox
            path (which has a first-export fallback when the function
            name differs from the directory id, e.g. dir
@@ -1514,6 +1522,7 @@
   .pv-split { display: grid; grid-template-columns: 1fr 6px var(--side-width, 420px); min-height: 0; height: 100%; gap: 0; }
 
   .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 0; }
+  .pv-canvas-pane.pv-drop-ok { outline: 2px dashed #2266cc; outline-offset: -2px; }
 
   .pv-resizer { background: transparent; cursor: col-resize; position: relative; }
   .pv-resizer::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eee; transition: background 0.15s; }
