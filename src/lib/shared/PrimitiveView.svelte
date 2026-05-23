@@ -20,6 +20,7 @@
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import ParamGrid from './ParamGrid.svelte';
+  import ConstructionTree from './ConstructionTree.svelte';
   import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
   import { untrack } from 'svelte';
 
@@ -754,6 +755,7 @@
   // inner chain. Edits the buffer only; Save source persists.
   const DEFAULT_WARP_PATH: number[][] = [[0, 0], [0, 2], [1, 4], [3, 5]];
   let isWarped = $derived((recognized?.warpInnerStart ?? -1) >= 0);
+  let showTree = $state(false);
   let warpPathEdit = $state<{ pts: number[][] } | null>(null);
   function toggleWarpEnd() {
     const r = recognized;
@@ -1271,7 +1273,13 @@
                   {#if isWarped && recognized.warpPathStart >= 0}
                     <button class="pv-mini-btn" type="button" title="Edit the spline path the solid bends along" onclick={openWarpPath}>✎ path</button>
                   {/if}
+                  {#if (recognized?.operands?.length ?? 0) >= 1}
+                    <button class="pv-mini-btn" class:on={showTree} type="button" title="Show the construction tree + BODMAS evaluation order for this composition" onclick={() => (showTree = !showTree)}>🌳 tree</button>
+                  {/if}
                 </div>
+                {#if showTree}
+                  <ConstructionTree {recognized} parts={resolvedParts} onPick={(name) => openPart(name)} />
+                {/if}
               {/if}
               {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
               {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
