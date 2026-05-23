@@ -98,10 +98,12 @@
     <span>GLB (bake){#if glbStatus === 'building'} · …{/if}</span>
     <label class="pd-toggle" title="Half-sectioned bake"><input type="checkbox" bind:checked={glbCut} /> cut</label>
   </div>
+  {#if name}<div class="pd-title">{name}</div>{/if}
+  {#if description}<div class="pd-desc">{description}</div>{/if}
   {#if Scene}
     {@const S = Scene}
     <Canvas {createRenderer}>
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} title={name} {description} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}
@@ -119,7 +121,12 @@
   .pd-label-r { right: 8px; display: flex; gap: 8px; align-items: center; }
   .pd-toggle { pointer-events: auto; display: inline-flex; gap: 3px; align-items: center; cursor: pointer; }
   .pd-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font: 12px Arial; }
-  .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 5; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
+  /* Title (top-left) + description (bottom) as DOM overlays — NOT a Threlte
+     <HTML> overlay, which rendered a pointer-events:auto wrapper at z-index 8
+     that swallowed clicks on the ⬇ GLB button + the cut toggle. */
+  .pd-title { position: absolute; top: 8px; left: 12px; z-index: 5; pointer-events: none; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; color: #ff5a5a; letter-spacing: 0.3px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+  .pd-desc { position: absolute; bottom: 8px; left: 12px; right: 96px; z-index: 5; pointer-events: none; font: 11px Arial; color: #d8d8d8; line-height: 1.35; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
+  .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 6; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
 </style>

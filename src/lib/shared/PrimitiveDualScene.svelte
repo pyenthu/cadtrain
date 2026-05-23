@@ -4,7 +4,7 @@
   // two stacked PrimitiveCanvas + PrimitiveGlbCanvas (was 2 contexts per tab
   // → the WebGL-context leak). Chrome (camera / lights) mirrors ComponentScene.
   import { T } from '@threlte/core';
-  import { OrbitControls, HTML } from '@threlte/extras';
+  import { OrbitControls } from '@threlte/extras';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
@@ -18,16 +18,12 @@
     glbUrl = null,
     showCutaway = false,
     offset = 4.5,
-    title = '',
-    description = '',
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
     glbUrl?: string | null; // blob URL of the baked GLB
     showCutaway?: boolean;  // applies to the LIVE-mesh half (GLB half follows its own cut bake)
     offset?: number;        // half-separation along X
-    title?: string;         // primitive name → rendered top-left INSIDE the canvas
-    description?: string;   // → rendered along the BOTTOM of the canvas
   } = $props();
 
   let full = $derived(geo?.full ?? null);
@@ -92,7 +88,11 @@
   <OrbitControls bind:ref={controls} target={[0, 0, 0]} enableDamping enableZoom enableRotate enablePan />
 </T.PerspectiveCamera>
 
-<T.Color args={['#ffffff']} attach="background" />
+<!-- Match the dark CSS canvas container (#1f1f1f). The previous white
+     attached only in the dev server — the production build dropped it and
+     fell back to the dark CSS, so dev looked white and prod looked black.
+     A dark value is consistent in both and matches the viewport theme. -->
+<T.Color args={['#1f1f1f']} attach="background" />
 <T.AmbientLight intensity={0.3} />
 <T.PointLight position={light1Pos} intensity={scene.l1.i} distance={50} />
 <T.PointLight position={light2Pos} intensity={scene.l2.i} distance={50} />
@@ -129,30 +129,6 @@
   </T.Group>
 {/if}
 
-<!-- Title (top-left) + description (bottom) rendered INSIDE the canvas via a
-     screen-space Threlte <HTML fullscreen> overlay (anchored at the origin,
-     spans the whole canvas). pointer-events stay off so it never steals orbit. -->
-{#if title || description}
-  <HTML fullscreen pointerEvents="none" zIndexRange={[8, 8]}>
-    <div class="pds-overlay">
-      {#if title}<div class="pds-title">{title}</div>{/if}
-      {#if description}<div class="pds-desc">{description}</div>{/if}
-    </div>
-  </HTML>
-{/if}
-
-<style>
-  .pds-overlay { position: relative; width: 100%; height: 100%; pointer-events: none; font-family: Arial, sans-serif; }
-  .pds-title {
-    position: absolute; top: 10px; left: 12px;
-    font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #ff5a5a; letter-spacing: 0.3px;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-  }
-  .pds-desc {
-    position: absolute; bottom: 10px; left: 12px; right: 12px;
-    font: 11px Arial; color: #d8d8d8; line-height: 1.35;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.85);
-    text-align: center;
-  }
-</style>
+<!-- Title + description are now DOM overlays in PrimitiveDualCanvas (.pd-stage),
+     not a Threlte <HTML> overlay — the latter's wrapper rendered with
+     pointer-events:auto at z-index 8 and swallowed clicks on the ⬇ GLB button. -->
