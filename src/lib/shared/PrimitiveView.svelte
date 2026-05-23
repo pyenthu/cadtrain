@@ -745,6 +745,45 @@
   function closeFx() { fxEdit = null; }
   function fxAppend(tok: string) { if (fxEdit) fxEdit = { ...fxEdit, raw: fxEdit.raw + tok }; }
   function applyFx() { if (!fxEdit) return; spliceArg(fxEdit.inst, fxEdit.a, fxEdit.raw); closeFx(); }
+
+  // ── Warp at end (construction-tree Slice 0) ─────────────────────────────
+  // Wrap the WHOLE composition in warpSpline(comp, path, {refine}) — bends the
+  // assembled solid along an (x,z) spline as the final transform. The
+  // recognizer exposes warpInnerStart/End (the inner comp) + warpPathStart/End
+  // (the path arg) so the toggle round-trips and delete-part still sees the
+  // inner chain. Edits the buffer only; Save source persists.
+  const DEFAULT_WARP_PATH: number[][] = [[0, 0], [0, 2], [1, 4], [3, 5]];
+  let isWarped = $derived((recognized?.warpInnerStart ?? -1) >= 0);
+  let warpPathEdit = $state<{ pts: number[][] } | null>(null);
+  function toggleWarpEnd() {
+    const r = recognized;
+    if (!canEdit || !r || r.compStart < 0 || r.compEnd < 0) return;
+    if ((r.warpInnerStart ?? -1) >= 0) {
+      const inner = editedSource.slice(r.warpInnerStart, r.warpInnerEnd);
+      editedSource = editedSource.slice(0, r.compStart) + inner + editedSource.slice(r.compEnd);
+    } else {
+      const comp = editedSource.slice(r.compStart, r.compEnd);
+      editedSource = editedSource.slice(0, r.compStart)
+        + `warpSpline(${comp}, ${JSON.stringify(DEFAULT_WARP_PATH)}, { refine: 4 })`
+        + editedSource.slice(r.compEnd);
+    }
+  }
+  function openWarpPath() {
+    const r = recognized;
+    if (!r || (r.warpPathStart ?? -1) < 0) return;
+    let pts: number[][];
+    try { pts = JSON.parse(editedSource.slice(r.warpPathStart, r.warpPathEnd)); } catch { pts = DEFAULT_WARP_PATH; }
+    if (!Array.isArray(pts) || pts.length < 2) pts = DEFAULT_WARP_PATH;
+    warpPathEdit = { pts };
+  }
+  function closeWarpPath() { warpPathEdit = null; }
+  function applyWarpPath() {
+    const r = recognized;
+    if (!warpPathEdit || !r || (r.warpPathStart ?? -1) < 0) return;
+    const txt = JSON.stringify(warpPathEdit.pts.map((p) => [p[0], p[1]]));
+    editedSource = editedSource.slice(0, r.warpPathStart) + txt + editedSource.slice(r.warpPathEnd);
+    warpPathEdit = null;
+  }
   async function loadPrimitive(childId?: string) {
     const r = recognized;
     const child = childId ?? loadPick;
@@ -1224,6 +1263,16 @@
               {#if recognized?.composition}
                 <div class="pv-part-compose"><span class="pv-part-name">return</span> <code>{recognized.composition}</code></div>
               {/if}
+              {#if canEdit && recognized && recognized.returnStart >= 0 && recognized.compStart >= 0}
+                <div class="pv-warp-row">
+                  <button class="pv-mini-btn" class:on={isWarped} type="button"
+                    title="Wrap the whole composition in warpSpline(...) — bends the assembled solid along an (x,z) spline as the final transform. Toggle off to un-warp."
+                    onclick={toggleWarpEnd}>⟿ warp at end{isWarped ? ' ✓' : ''}</button>
+                  {#if isWarped && recognized.warpPathStart >= 0}
+                    <button class="pv-mini-btn" type="button" title="Edit the spline path the solid bends along" onclick={openWarpPath}>✎ path</button>
+                  {/if}
+                </div>
+              {/if}
               {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
               {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
               {#if editable && recognized && !recognized.editable}<div class="pv-parts-note">read-only — remove TS type annotations from the params to edit args inline.</div>{/if}
@@ -1358,6 +1407,41 @@
           {:else}
             Edits the inline literal in <code>{profileEdit.instName}</code>'s call on Apply. <strong>Promote to meta.profiles</strong> encapsulates it (clean composition). Save source to persist.
           {/if}
+        </p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if warpPathEdit}
+    <FloatingPanel
+      title="Warp path · (x, z) spline"
+      visible={true}
+      x={Math.max(8, window.innerWidth - 470)}
+      y={120}
+      width="min(440px, 90vw)"
+      maxHeight="70vh"
+      onClose={closeWarpPath}
+    >
+      <div class="pv-profile-pop">
+        <div class="pv-profile-pop-head">
+          <span class="pv-pill">{warpPathEdit.pts.length} pts</span>
+          <div class="pv-spacer"></div>
+          <button class="pv-btn primary" type="button" onclick={applyWarpPath}>Apply → source</button>
+        </div>
+        <ProfileEditor
+          value={warpPathEdit.pts}
+          width={400}
+          height={300}
+          yDown={true}
+          hLabel="x"
+          vLabel="z"
+          presetSet="revolve"
+          showAxis={true}
+          onChange={(next) => { if (warpPathEdit) warpPathEdit = { pts: next }; }}
+        />
+        <p class="pv-profile-pop-note">
+          The assembled solid's z-extent is mapped onto this spline (z → arc-length);
+          x becomes the in-plane radial offset. Edits <code>warpSpline(…)</code>'s path arg on Apply. Save source to persist.
         </p>
       </div>
     </FloatingPanel>
@@ -1582,6 +1666,8 @@
   .pv-poly-verts { font: 10px Arial; color: #888; }
   .pv-mini-btn { padding: 2px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 10px Arial; cursor: pointer; }
   .pv-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pv-mini-btn.on { background: #2266cc; border-color: #2266cc; color: #fff; }
+  .pv-warp-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 
   /* ── Merged Build tab — Parameters section + per-part accordion rows ───── */
   .pv-build { padding: 0; }

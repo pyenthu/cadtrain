@@ -96,6 +96,12 @@ export interface RecognizedComposite {
   instances: RecognizedInstance[];
   /** Composition chain operands (base first), for delete-part. */
   operands: RecognizedCompositionOperand[];
+  /** When the return is wrapped in warpSpline(inner, path, opts) ("warp at
+   *  end"): the inner-composition span + the path-arg span. -1 when not warped. */
+  warpInnerStart: number;
+  warpInnerEnd: number;
+  warpPathStart: number;
+  warpPathEnd: number;
   uses: string[];
   composition: string | null;
   unrecognized: number;
@@ -234,7 +240,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], operands: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  if (!fn) return { instances: [], operands: [], warpInnerStart: -1, warpInnerEnd: -1, warpPathStart: -1, warpPathEnd: -1, uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 
   // Function signature append point — where Promote adds a positional param.
   // After the last param's end, or just inside `(` for a no-arg signature.
@@ -277,6 +283,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
   const instances: RecognizedInstance[] = [];
   let composition: string | null = null;
   let compositionOperands: RecognizedCompositionOperand[] = [];
+  let warpInnerStart = -1, warpInnerEnd = -1, warpPathStart = -1, warpPathEnd = -1;
   let unrecognized = 0;
 
   for (const stmt of fn.body.body) {
@@ -302,13 +309,24 @@ export function recognizeComposite(source: string): RecognizedComposite {
       }
     } else if (stmt.type === 'ReturnStatement' && stmt.argument) {
       composition = slice(stmt.argument);
-      compositionOperands = walkChain(stmt.argument);
       returnStart = stmt.start;
       compStart = stmt.argument.start;
       compEnd = stmt.argument.end;
+      let chainNode: any = stmt.argument;
+      // Detect a top-level warpSpline(inner, path, opts) "warp at end" wrap →
+      // expose the inner + path spans, and walk the INNER for operands so
+      // delete-part still sees the chain.
+      if (stmt.argument.type === 'CallExpression' && stmt.argument.callee?.type === 'Identifier'
+          && stmt.argument.callee.name === 'warpSpline' && stmt.argument.arguments.length >= 1) {
+        const inner = stmt.argument.arguments[0], path = stmt.argument.arguments[1];
+        warpInnerStart = inner.start; warpInnerEnd = inner.end;
+        if (path) { warpPathStart = path.start; warpPathEnd = path.end; }
+        chainNode = inner;
+      }
+      compositionOperands = walkChain(chainNode);
     } else {
       unrecognized++;
     }
   }
-  return { instances, operands: compositionOperands, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  return { instances, operands: compositionOperands, warpInnerStart, warpInnerEnd, warpPathStart, warpPathEnd, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 }
