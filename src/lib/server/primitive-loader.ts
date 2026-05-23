@@ -68,7 +68,11 @@ export async function buildPrimitiveGeom(
   // e.g. a `uses:['tube']` — that's the bundle helper, already injected).
   // PARALLEL — a composite's deps were resolved one-at-a-time, so each dep's
   // source.ts fetch (a prod round-trip in dev) blocked the next.
-  const depNames = usesOf(source).filter((d) => !SANDBOX_ARG_NAMES.includes(d));
+  // DEDUPE: `new Function(...depNames, body)` throws "Invalid parameters … in
+  // strict mode" on a duplicate param name. meta.uses can legitimately list the
+  // same primitive twice (e.g. adding a 2nd r_extrude part), which otherwise
+  // crashed the whole build with a 400.
+  const depNames = [...new Set(usesOf(source))].filter((d) => !SANDBOX_ARG_NAMES.includes(d));
   for (const dep of depNames) {
     if (visited.has(dep)) {
       throw new Error(`circular primitive dependency: ${[...visited, dep].join(' → ')}`);
