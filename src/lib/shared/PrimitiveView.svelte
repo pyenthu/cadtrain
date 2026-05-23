@@ -259,6 +259,12 @@
     if (start < 0 || end < 0) return;
     editedSource = editedSource.slice(0, start) + replacement + editedSource.slice(end);
   }
+  // Splice ONE recognized arg (offsets are relative to the instance's argsText).
+  // Edit one arg per commit — the recognition $effect re-scans between edits, so
+  // later args' offsets stay correct.
+  function spliceArg(inst: any, a: { start: number; end: number }, value: string) {
+    spliceSource(inst.argsStart + a.start, inst.argsStart + a.end, ' ' + value.trim());
+  }
 
   // ── Profile popup for instances of a profile-bearing primitive ──────────────
   // When a part's `call` resolves to a primitive that declares a `polygon`
@@ -272,6 +278,9 @@
   // yDown/labels) is fetched lazily + cached, keyed by the call id.
   type LeafProfile = { argIndex: number; yDown: boolean; hLabel: string; vLabel: string; revolve: boolean };
   let leafProfileCache = $state<Record<string, LeafProfile | null>>({});
+  // Ordered param NAMES per leaf call → labels for the per-arg cards in the
+  // Parts tab. Populated by fetchLeafProfile (same fetch as the profile cache).
+  let leafMetaCache = $state<Record<string, string[]>>({});
 
   async function fetchLeafProfile(call: string): Promise<LeafProfile | null> {
     if (call in leafProfileCache) return leafProfileCache[call];
@@ -282,6 +291,7 @@
         const data = await res.json();
         const params = data?.params ?? {};
         const keys = Object.keys(params);
+        leafMetaCache = { ...leafMetaCache, [call]: keys };
         const idx = keys.findIndex((k) => params[k]?.type === 'polygon');
         if (idx >= 0) {
           const ps = params[keys[idx]];
@@ -1008,13 +1018,32 @@
                   {#if open}
                     <div class="pg-acc-body pv-part-body">
                       {#if canEdit && inst.argsStart >= 0}
-                        <input
-                          class="pv-part-edit"
-                          value={inst.argsText}
-                          spellcheck="false"
-                          title="Edit args · Enter to write into the source"
-                          onkeydown={(e) => { if (e.key === 'Enter') spliceSource(inst.argsStart, inst.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
-                        />
+                        {@const argSpans = splitTopLevelArgs(inst.argsText)}
+                        {@const pnames = leafMetaCache[inst.call] ?? []}
+                        {@const polyIdx = profileInfoFor(inst.call)?.argIndex ?? -1}
+                        <div style="display:flex; flex-direction:column; gap:3px;">
+                          {#each argSpans as a, i (i)}
+                            {#if i === polyIdx}
+                              <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="min-width:88px; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
+                                <span style="flex:1; font:10px Arial; color:#2266cc;">↑ edit via the profile button</span>
+                              </div>
+                            {:else}
+                              {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(a.text)}
+                              <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="min-width:88px; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
+                                <input
+                                  value={a.text.trim()}
+                                  spellcheck="false"
+                                  title={isLit ? 'number — Enter to commit' : 'expression (param names · Math.*) — Enter to commit'}
+                                  onkeydown={(e) => { if (e.key === 'Enter') spliceArg(inst, a, (e.currentTarget as HTMLInputElement).value); }}
+                                  style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
+                                />
+                                {#if !isLit}<span title="linked to an expression" style="font:600 12px Arial; color:#2266cc;">ƒ</span>{/if}
+                              </div>
+                            {/if}
+                          {/each}
+                        </div>
                       {:else}
                         <div class="pv-part-args">{inst.argsText}</div>
                       {/if}
