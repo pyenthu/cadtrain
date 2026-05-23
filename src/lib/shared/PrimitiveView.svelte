@@ -600,7 +600,21 @@
   // the source. The inlined defaults are then editable via the rows above.
   let loadPick = $state('');
   let loadBusy = $state(false);
-  let loadable = $derived((catalog ?? []).filter((e) => e.id !== id));
+  // Dedupe by id — the merged catalog can legitimately contain the same id
+  // twice (e.g. a primitive present at both the flat location and a category
+  // sub-folder on the volume). A duplicate KEY in the {#each (e.id)} below
+  // throws `each_key_duplicate`, which crashes the whole inspector render
+  // (parts stuck on "recognizing…"). Dedupe so a volume inconsistency can
+  // never break the UI.
+  let loadable = $derived.by(() => {
+    const seen = new Set<string>();
+    const out: Array<{ id: string }> = [];
+    for (const e of catalog ?? []) {
+      if (e.id === id || seen.has(e.id)) continue;
+      seen.add(e.id); out.push(e);
+    }
+    return out;
+  });
   function defaultArgFor(ps: any): string {
     const d = ps?.default;
     return Array.isArray(d) ? JSON.stringify(d) : String(d ?? 0);
