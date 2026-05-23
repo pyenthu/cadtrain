@@ -1046,17 +1046,17 @@
                         {@const argSpans = splitTopLevelArgs(inst.argsText)}
                         {@const pnames = leafMetaCache[inst.call] ?? []}
                         {@const polyIdx = profileInfoFor(inst.call)?.argIndex ?? -1}
-                        <div style="display:flex; flex-direction:column; gap:3px;">
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:4px 8px;">
                           {#each argSpans as a, i (i)}
                             {#if i === polyIdx}
                               <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="min-width:88px; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
+                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
                                 <span style="flex:1; font:10px Arial; color:#2266cc;">↑ edit via the profile button</span>
                               </div>
                             {:else}
                               {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(a.text)}
                               <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="min-width:88px; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
+                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
                                 <input
                                   value={a.text.trim()}
                                   spellcheck="false"
