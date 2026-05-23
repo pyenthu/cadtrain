@@ -686,6 +686,50 @@
     pending = { ...pending, [n]: def };
     closeAddParam();
   }
+
+  // ── Delete a part (✕) ───────────────────────────────────────────────────
+  // Remove the instance's `const X = …;` declaration + splice it out of the
+  // composition (mid-chain `.op(X)` removed; base operand → next promoted).
+  // Leaves an unused meta.uses dep (harmless). Edits the buffer only —
+  // Revert/reload undoes; Save source persists.
+  function deletePart(inst: any) {
+    const r = recognized;
+    if (!canEdit || !r || inst.declStart < 0) return;
+    // Block if another instance references this one (cross-instance arg/transform).
+    const refRe = new RegExp(`(?<![.\\w$])${inst.name}(?![\\w$])`);
+    for (const o of parts as any[]) {
+      if (o.name === inst.name) continue;
+      if (refRe.test(o.argsText ?? '') || (o.transforms ?? []).some((t: any) => refRe.test(t.argsText ?? ''))) {
+        recogError = `Can't delete ${inst.name} — referenced by ${o.name}. Remove that reference first.`;
+        return;
+      }
+    }
+    const ops = (r.operands ?? []) as any[];
+    const idx = ops.findIndex((o) => o.name === inst.name);
+    const edits: Array<{ s: number; e: number; text: string }> = [];
+    // 1. remove the declaration + trailing whitespace/newline.
+    let dEnd = inst.declEnd;
+    while (dEnd < editedSource.length && /\s/.test(editedSource[dEnd])) dEnd++;
+    edits.push({ s: inst.declStart, e: dEnd, text: '' });
+    // 2. remove from the composition.
+    if (idx >= 0) {
+      const op = ops[idx];
+      if (!op.isBase) {
+        edits.push({ s: op.segStart, e: op.segEnd, text: '' });
+      } else if (ops.length >= 2) {
+        const next = ops[1];
+        edits.push({ s: op.segStart, e: next.segEnd, text: editedSource.slice(next.argStart, next.argEnd) });
+      } else {
+        recogError = `Can't delete ${inst.name} — it's the only part (the composite must return something).`;
+        return;
+      }
+    }
+    edits.sort((a, b) => b.s - a.s);
+    let out = editedSource;
+    for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
+    editedSource = out;
+    pinnedParts = new Set([...pinnedParts].filter((n) => n !== inst.name));
+  }
   async function loadPrimitive() {
     const r = recognized;
     if (!loadPick || !r || r.returnStart < 0 || r.compStart < 0) return;
@@ -1091,6 +1135,9 @@
                         title="Edit this instance's profile in a popup"
                         onclick={(e) => { e.stopPropagation(); openPart(inst.name); openProfilePopup(inst, profileInfoFor(inst.call)!, e); }}
                       >{@render shapeIcon(profilePtsPreview(inst))}<span class="pv-part-profile-lbl">profile</span></button>
+                    {/if}
+                    {#if canEdit && inst.declStart >= 0}
+                      <button class="pv-part-txdel" type="button" title="Delete this part — removes it from the composition" onclick={(e) => { e.stopPropagation(); deletePart(inst); }}>✕</button>
                     {/if}
                   </div>
                   {#if open}

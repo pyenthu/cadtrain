@@ -55,6 +55,22 @@ export interface RecognizedInstance {
    *  with a new operator: `op(<initText>, <args>)`. -1 when not editable. */
   initStart: number;
   initEnd: number;
+  /** Span of the WHOLE `const X = …;` statement so delete-part removes the
+   *  declaration in one splice. -1 if unmapped. */
+  declStart: number;
+  declEnd: number;
+}
+/** One operand in the composition chain (`L`, or the `h1` in `.subtract(h1)`).
+ *  delete-part removes a mid-chain operand by splicing its `.op(X)` segment,
+ *  or removes the base by promoting the next operand. */
+export interface RecognizedCompositionOperand {
+  name: string | null;   // bare instance ref, else null (inline expr → not deletable)
+  isBase: boolean;
+  op: string | null;     // 'add'|'subtract'|'intersect'; null for base
+  segStart: number;      // mid-chain: the `.op(X)` segment; base: the operand expr
+  segEnd: number;
+  argStart: number;      // inner operand expr (for base promotion)
+  argEnd: number;
 }
 export interface RecognizedParam {
   /** Param name (object-literal key inside meta.params). */
@@ -78,6 +94,8 @@ export interface RecognizedProfile {
 }
 export interface RecognizedComposite {
   instances: RecognizedInstance[];
+  /** Composition chain operands (base first), for delete-part. */
+  operands: RecognizedCompositionOperand[];
   uses: string[];
   composition: string | null;
   unrecognized: number;
@@ -216,7 +234,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  if (!fn) return { instances: [], operands: [], uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 
   // Function signature append point — where Promote adds a positional param.
   // After the last param's end, or just inside `(` for a no-arg signature.
@@ -237,8 +255,28 @@ export function recognizeComposite(source: string): RecognizedComposite {
     return { start, end, txt: js.slice(start, end) };
   };
 
+  // Walk the composition chain (L.subtract(h1).add(h2)) into operands, base
+  // first — for delete-part (remove a mid-chain `.op(X)` or promote the base).
+  function walkChain(node: any): RecognizedCompositionOperand[] {
+    const segs: RecognizedCompositionOperand[] = [];
+    let n = node;
+    while (n?.type === 'CallExpression' && n.callee?.type === 'MemberExpression') {
+      const arg = n.arguments[0];
+      segs.push({
+        name: arg?.type === 'Identifier' ? arg.name : null,
+        isBase: false, op: n.callee.property?.name ?? null,
+        segStart: n.callee.object.end, segEnd: n.end,
+        argStart: arg ? arg.start : -1, argEnd: arg ? arg.end : -1,
+      });
+      n = n.callee.object;
+    }
+    segs.push({ name: n?.type === 'Identifier' ? n.name : null, isBase: true, op: null, segStart: n.start, segEnd: n.end, argStart: n.start, argEnd: n.end });
+    return segs.reverse();
+  }
+
   const instances: RecognizedInstance[] = [];
   let composition: string | null = null;
+  let compositionOperands: RecognizedCompositionOperand[] = [];
   let unrecognized = 0;
 
   for (const stmt of fn.body.body) {
@@ -257,13 +295,14 @@ export function recognizeComposite(source: string): RecognizedComposite {
         }
         if (node?.type === 'CallExpression' && node.callee?.type === 'Identifier') {
           const sp = argsSpan(node, 0);
-          instances.push({ name: d.id.name, call: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end, transforms, initStart, initEnd });
+          instances.push({ name: d.id.name, call: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end, transforms, initStart, initEnd, declStart: stmt.start, declEnd: stmt.end });
         } else {
           unrecognized++;
         }
       }
     } else if (stmt.type === 'ReturnStatement' && stmt.argument) {
       composition = slice(stmt.argument);
+      compositionOperands = walkChain(stmt.argument);
       returnStart = stmt.start;
       compStart = stmt.argument.start;
       compEnd = stmt.argument.end;
@@ -271,5 +310,5 @@ export function recognizeComposite(source: string): RecognizedComposite {
       unrecognized++;
     }
   }
-  return { instances, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  return { instances, operands: compositionOperands, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 }
