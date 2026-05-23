@@ -1,9 +1,34 @@
 import { json, error } from '@sveltejs/kit';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
+
+// Find a primitive's CURRENT directory anywhere in the primitives tree —
+// flat (primitives/<id>/), one level (primitives/<cat>/<id>/, e.g. basic/
+// industrial/archive), or two (primitives/completions/<family>/<id>/). Mirrors
+// the source endpoint's resolver. Returns null for a genuinely new id.
+async function findExistingDir(id: string): Promise<string | null> {
+  const root = volumePath('primitives');
+  const flat = volumePath(join('primitives', id));
+  if (existsSync(join(flat, 'source.ts'))) return flat;
+  let lvl1;
+  try { lvl1 = await readdir(root, { withFileTypes: true }); } catch { return null; }
+  for (const cat of lvl1) {
+    if (!cat.isDirectory()) continue;
+    const p1 = join(root, cat.name, id);
+    if (existsSync(join(p1, 'source.ts'))) return p1;
+    let lvl2;
+    try { lvl2 = await readdir(join(root, cat.name), { withFileTypes: true }); } catch { continue; }
+    for (const fam of lvl2) {
+      if (!fam.isDirectory()) continue;
+      const p2 = join(root, cat.name, fam.name, id);
+      if (existsSync(join(p2, 'source.ts'))) return p2;
+    }
+  }
+  return null;
+}
 
 // POST /api/primitives/save
 //   { id: string, source: string }
@@ -31,14 +56,14 @@ export const POST = async ({ request }) => {
   try { extractMetaFromSource(source); }
   catch (e: any) { throw error(400, `source missing valid meta: ${e?.message ?? e}`); }
 
-  // Write back into the part's CURRENT location. If it already lives in the
-  // tests/ sub-category, save THERE — otherwise editing a test primitive via
-  // the GUI would silently fork a flat duplicate (it'd then show in both the
-  // main list and the Tests folder). New ids default to the flat location.
-  const testsDir = volumePath(join('primitives', 'tests', id));
-  const dir = existsSync(join(testsDir, 'source.ts'))
-    ? testsDir
-    : volumePath(join('primitives', id));
+  // Write back into the part's CURRENT location — search the whole tree
+  // (basic/, industrial/, completions/<family>/, archive/, or flat). The old
+  // code only checked the pre-restructure `tests/` path, so saving an edit to
+  // a primitive that lives in a category sub-folder silently FORKED a flat
+  // top-level duplicate (it then showed twice in the list — and a duplicate id
+  // crashed the inspector). New ids default to the flat location.
+  const existing = await findExistingDir(id);
+  const dir = existing ?? volumePath(join('primitives', id));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'source.ts'), source, 'utf8');
   // Clear any legacy meta.json — source.ts is now canonical.
