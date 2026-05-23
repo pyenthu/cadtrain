@@ -118,7 +118,25 @@ export async function maybeProxy(request: Request, url: URL): Promise<Response |
     init.duplex = 'half';
   }
 
-  const upstream = await fetch(target, init);
+  // Retry idempotent reads — local dev proxies to prod, and some ISP resolvers
+  // intermittently fail/refuse *.up.railway.app, which surfaced as opaque 500s
+  // ("TypeError: fetch failed") that made the sidebar/parts vanish until a
+  // reload. GET/HEAD are safe to retry (no body stream to re-consume); bodied
+  // requests stream once, so they get a single attempt.
+  const attempts = (request.method === 'GET' || request.method === 'HEAD') ? 3 : 1;
+  let upstream: Response | null = null;
+  let lastErr: unknown = null;
+  for (let i = 0; i < attempts; i++) {
+    try { upstream = await fetch(target, init); lastErr = null; break; }
+    catch (e) { lastErr = e; if (i < attempts - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1))); }
+  }
+  if (!upstream) {
+    console.warn(`[volume-proxy] ${request.method} ${url.pathname} failed after ${attempts} attempt(s): ${(lastErr as any)?.message ?? lastErr}`);
+    return new Response(
+      JSON.stringify({ error: 'volume proxy unreachable', detail: String((lastErr as any)?.message ?? lastErr) }),
+      { status: 502, headers: { 'content-type': 'application/json' } },
+    );
+  }
 
   const respHeaders = new Headers();
   for (const [k, v] of upstream.headers) {
