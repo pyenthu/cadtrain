@@ -20,6 +20,7 @@
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import ParamGrid from './ParamGrid.svelte';
+  import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
   import { untrack } from 'svelte';
 
   type ParamSchema = {
@@ -500,6 +501,42 @@
   // Apply the leaf-param edit = commit pending → applied (re-bake), then close.
   function applyLeafProfile() { apply(); closeLeafProfile(); }
 
+  // ── Parametric profile controls (leaf popup) ──────────────────────────────
+  // pending[pname] holds a ProfileDescriptor: parametric { kind, params }, a
+  // detached { points } (optionally re-linkable via _gen), or a legacy Pt[].
+  function leafDesc(pname: string): any { return (pending[pname] ?? paramSchema[pname]?.default) as any; }
+  function leafKindOf(pname: string): string {
+    const d = leafDesc(pname);
+    return d && typeof d === 'object' && !Array.isArray(d) && 'kind' in d ? d.kind : '';
+  }
+  function leafKindOptions(yd: boolean) {
+    const set = yd ? 'revolve' : 'cartesian';
+    return Object.values(PROFILE_REGISTRY).filter((def) => def.set === set);
+  }
+  // Switch parametric kind. '' = detach to a custom point list (resolve the
+  // current shape so the hand-editor starts from what's on screen).
+  function setLeafKind(pname: string, kind: string) {
+    if (!kind) { pending = { ...pending, [pname]: { points: resolveProfile(leafDesc(pname)) } }; return; }
+    const def = PROFILE_REGISTRY[kind];
+    const prev = leafDesc(pname);
+    const carry = prev && typeof prev === 'object' && 'params' in prev ? prev.params : {};
+    const params: Record<string, number> = { ...defaultsFor(def) };
+    for (const k in params) if (k in carry) params[k] = carry[k];
+    pending = { ...pending, [pname]: { kind, params } };
+  }
+  function setLeafParam(pname: string, pkey: string, val: number) {
+    const d = leafDesc(pname);
+    if (!(d && typeof d === 'object' && 'kind' in d)) return;
+    pending = { ...pending, [pname]: { kind: d.kind, params: { ...d.params, [pkey]: val } } };
+  }
+  // A vertex drag/add/delete DETACHES a parametric profile to custom points,
+  // keeping the prior kind+params in _gen so it can be re-linked later.
+  function setLeafPoints(pname: string, next: [number, number][]) {
+    const d = leafDesc(pname);
+    const gen = d && typeof d === 'object' && 'kind' in d ? { kind: d.kind, params: d.params } : (d && d._gen);
+    pending = { ...pending, [pname]: gen ? { points: next, _gen: gen } : { points: next } };
+  }
+
   // Promote an inline profile literal → an encapsulated meta.profiles entry
   // (the Svelte-component model). Two edits, high→low offset:
   //   1. replace the inline literal in the body with `meta.profiles.<name>.value`
@@ -685,7 +722,10 @@
   // numbers. Order follows the meta param-order.
   let appliedArgs = $derived(paramOrder.map((k) => {
     const v = applied[k] ?? paramSchema[k].default;
-    if (paramSchema[k].type === 'polygon') return JSON.stringify(v);
+    // Polygon params may hold a PARAMETRIC descriptor ({kind,params}) or a
+    // detached {points} — resolve to a plain polygon before sending so the
+    // primitive body (r_extrude/r_revolve) JSON.parses a Pt[] exactly as before.
+    if (paramSchema[k].type === 'polygon') return JSON.stringify(resolveProfile(v as any));
     return v as number;
   }));
 
@@ -910,11 +950,13 @@
                        ✎ card that opens the ProfileEditor in a popup (editing
                        pending; Apply commits → re-bake). -->
                   {#each polygonParamNames as pname (pname)}
+                    {@const cardPts = resolveProfile((pending[pname] ?? paramSchema[pname].default) as any)}
+                    {@const cardKind = leafKindOf(pname)}
                     <div class="pr-card pv-poly-card" class:dirty={JSON.stringify(pending[pname] ?? []) !== JSON.stringify(applied[pname] ?? [])}>
                       <span class="pr-keyname" title={paramSchema[pname].label ?? pname}>{paramSchema[pname].label ?? pname}</span>
-                      <span class="pv-poly-verts">{(pending[pname] as [number, number][])?.length ?? 0} verts</span>
+                      <span class="pv-poly-verts">{cardKind ? cardKind : `${cardPts.length} verts`}</span>
                       <div class="pv-spacer"></div>
-                      <button class="pv-part-profile" type="button" title="Edit this profile in a popup" onclick={(e) => openLeafProfile(pname, e)}>{@render shapeIcon(pending[pname] as [number, number][])}<span class="pv-part-profile-lbl">profile</span></button>
+                      <button class="pv-part-profile" type="button" title="Edit this profile in a popup" onclick={(e) => openLeafProfile(pname, e)}>{@render shapeIcon(cardPts)}<span class="pv-part-profile-lbl">profile</span></button>
                     </div>
                   {/each}
                 </div>
@@ -1149,7 +1191,8 @@
   {#if leafEdit}
     {@const ps = paramSchema[leafEdit.pname]}
     {@const yd = ps.yDown ?? false}
-    {@const lpts = ((pending[leafEdit.pname] as [number, number][]) ?? (ps.default as [number, number][])) ?? []}
+    {@const lkind = leafKindOf(leafEdit.pname)}
+    {@const lpts = resolveProfile(leafDesc(leafEdit.pname))}
     <FloatingPanel
       title={`Profile · ${ps.label ?? leafEdit.pname}`}
       visible={true}
@@ -1161,13 +1204,38 @@
     >
       <div class="pv-profile-pop">
         <div class="pv-profile-pop-head">
-          <span class="pv-pill" class:dirty={paramsDirty}>{(pending[leafEdit.pname] as [number, number][])?.length ?? 0} verts{paramsDirty ? ' · pending' : ''}</span>
+          <span class="pv-pill" class:dirty={paramsDirty}>{lpts.length} verts{paramsDirty ? ' · pending' : ''}</span>
           <div class="pv-spacer"></div>
           <button class="pv-btn" type="button" disabled={!paramsDirty} onclick={revert}>Revert</button>
           <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
         </div>
+        <div style="display:flex; flex-direction:column; gap:6px; padding:0 0 6px; border-bottom:1px solid #eee; margin-bottom:6px;">
+          <label style="font:11px Arial; color:#555; display:flex; gap:6px; align-items:center;">Profile
+            <select value={lkind} onchange={(e) => setLeafKind(leafEdit.pname, (e.currentTarget as HTMLSelectElement).value)} style="flex:1; font:11px Arial; padding:2px 4px;">
+              <option value="">Custom (points)</option>
+              {#each leafKindOptions(yd) as def (def.id)}
+                <option value={def.id}>{def.label}</option>
+              {/each}
+            </select>
+          </label>
+          {#if lkind}
+            {@const def = PROFILE_REGISTRY[lkind]}
+            {@const dp = (leafDesc(leafEdit.pname).params) ?? {}}
+            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:4px 10px;">
+              {#each Object.entries(def.params) as [pk, spec] (pk)}
+                <label style="display:flex; justify-content:space-between; align-items:center; gap:6px; font:11px Arial; color:#555;">
+                  <span>{spec.label}{#if spec.unit}<em style="color:#999"> {spec.unit}</em>{/if}</span>
+                  <input type="number" min={spec.min} max={spec.max} step={spec.step}
+                    value={dp[pk] ?? spec.default}
+                    oninput={(e) => setLeafParam(leafEdit.pname, pk, +(e.currentTarget as HTMLInputElement).value)}
+                    style="width:62px; font:11px ui-monospace, monospace; padding:2px 4px;" />
+                </label>
+              {/each}
+            </div>
+          {/if}
+        </div>
         <ProfileEditor
-          value={(pending[leafEdit.pname] as [number, number][]) ?? (ps.default as [number, number][])}
+          value={lpts}
           width={400}
           height={300}
           yDown={yd}
@@ -1175,7 +1243,7 @@
           vLabel={ps.vLabel ?? (yd ? 'z ↓' : 'y ↑')}
           presetSet={yd ? 'revolve' : 'cartesian'}
           showAxis={yd}
-          onChange={(next) => { pending = { ...pending, [leafEdit!.pname]: next }; }}
+          onChange={(next) => setLeafPoints(leafEdit.pname, next)}
         />
         <details class="pv-coords" open>
           <summary>Coordinates · {lpts.length} pts</summary>
@@ -1186,7 +1254,7 @@
           </ol>
         </details>
         <p class="pv-profile-pop-note">
-          Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> commits the pending profile → re-bakes the canvas. Save defaults persists it as the new default.
+          {#if lkind}Parametric <code>{lkind}</code> — tune params above; dragging a vertex detaches to a custom shape. {/if}Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> re-bakes; Save defaults persists.
         </p>
       </div>
     </FloatingPanel>
