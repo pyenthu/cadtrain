@@ -119,3 +119,9 @@ Thumbs.db
 
 # Playwright test output (regenerable)
 test-results/
+
+# Volume snapshot backup (created by the backup-to-src endpoint) — data, not source
+/src/volume_backup/
+
+# Temp/scratch scripts
+/scripts/_*tmp*.mjs
