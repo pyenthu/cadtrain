@@ -731,6 +731,20 @@
     editedSource = out;
     pinnedParts = new Set([...pinnedParts].filter((n) => n !== inst.name));
   }
+
+  // ── ƒ function / expression picker for a part arg ───────────────────────
+  // Edit an instance arg as an expression: bare param names + Math.* + arithmetic.
+  // Param refs resolve at build (params are in the composite's function scope).
+  // Cross-instance <INST>.<arg> refs are a later phase (need expandInstancePropRefs).
+  let fxEdit = $state<{ inst: any; a: any; raw: string; px: number; py: number } | null>(null);
+  let fxParams = $derived(paramOrder.filter((k) => effectiveSchema[k]?.type !== 'polygon'));
+  function openFx(inst: any, a: any, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    fxEdit = { inst, a, raw: a.text.trim(), px: Math.max(8, Math.min(r.left - 210, window.innerWidth - 320)), py: Math.min(r.bottom + 6, window.innerHeight - 220) };
+  }
+  function closeFx() { fxEdit = null; }
+  function fxAppend(tok: string) { if (fxEdit) fxEdit = { ...fxEdit, raw: fxEdit.raw + tok }; }
+  function applyFx() { if (!fxEdit) return; spliceArg(fxEdit.inst, fxEdit.a, fxEdit.raw); closeFx(); }
   async function loadPrimitive(childId?: string) {
     const r = recognized;
     const child = childId ?? loadPick;
@@ -1172,7 +1186,7 @@
                                   onkeydown={(e) => { if (e.key === 'Enter') spliceArg(inst, a, (e.currentTarget as HTMLInputElement).value); }}
                                   style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
                                 />
-                                {#if !isLit}<span title="linked to an expression" style="font:600 12px Arial; color:#2266cc;">ƒ</span>{/if}
+                                <button type="button" title="Edit as a function / expression (param names · Math.*)" onclick={(e) => openFx(inst, a, e)} style="border:none; background:transparent; cursor:pointer; font:600 13px Arial; color:{isLit ? '#bbb' : '#2266cc'}; padding:0 2px; line-height:1;">ƒ</button>
                               </div>
                             {/if}
                           {/each}
@@ -1441,6 +1455,31 @@
           <button class="pv-btn primary" type="button" disabled={!apName.trim() || !!addParamError} onclick={submitAddParam}>Add</button>
         </div>
         <p style="font:10px Arial; color:#888; margin:2px 0 0;">Adds <code>{apName.trim() || 'name'}</code> to meta.params + the function signature. Reference it bare in part args; <strong>Save source</strong> to persist.</p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if fxEdit}
+    <FloatingPanel title="ƒ function / expression" visible={true} x={fxEdit.px} y={fxEdit.py} width="300px" onClose={closeFx}>
+      <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
+        <input bind:value={fxEdit.raw} spellcheck="false" placeholder="e.g. boreR * 2"
+          onkeydown={(e) => { if (e.key === 'Enter') applyFx(); }}
+          style="font:11px ui-monospace, monospace; padding:4px 6px; border:1px solid #d4e1f5; border-radius:4px;" />
+        {#if fxParams.length}
+          <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;"><span style="font:10px Arial; color:#888;">params:</span>
+            {#each fxParams as p (p)}<button type="button" onclick={() => fxAppend(p)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #d4e1f5; border-radius:3px; background:#eef3fb; cursor:pointer;">{p}</button>{/each}
+          </div>
+        {:else}
+          <div style="font:10px Arial; color:#888;">No params yet — add one with <strong>＋ param</strong> to reference it here.</div>
+        {/if}
+        <div style="display:flex; flex-wrap:wrap; gap:4px;">
+          {#each ['+', '-', '*', '/', '(', ')', 'Math.PI'] as t (t)}<button type="button" onclick={() => fxAppend(t)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #ddd; border-radius:3px; background:#fafafa; cursor:pointer;">{t}</button>{/each}
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:6px;">
+          <button class="pv-btn" type="button" onclick={closeFx}>Cancel</button>
+          <button class="pv-btn primary" type="button" onclick={applyFx}>Apply</button>
+        </div>
+        <p style="font:10px Arial; color:#888; margin:2px 0 0;">Param names + <code>Math.*</code> resolve at build. <strong>Save source</strong> to persist.</p>
       </div>
     </FloatingPanel>
   {/if}
