@@ -82,16 +82,33 @@ export async function buildPrimitiveGeom(
     depNames.map((dep) => loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))),
   );
 
-  const js = transpile(source);
+  let body = transpile(source);
+  // A composite instance named after the primitive it calls — `const X = X()`,
+  // produced by older saves before uniqueInstName forbade it — shadows the
+  // injected dep param, so the RHS call hits the temporal-dead-zone ("Cannot
+  // access X before initialization"). When a dep is ALSO declared as a
+  // const/let/var in the body, inject it under a collision-proof alias and
+  // rewrite its CALL sites (`X(` → `__dep_i(`), so the declaration no longer
+  // shadows it. Non-colliding deps are untouched (zero blast radius). This
+  // repairs every already-saved broken composite without a data migration.
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const injectNames = [...depNames];
+  depNames.forEach((dep, i) => {
+    if (new RegExp(`\\b(?:const|let|var)\\s+${escapeRe(dep)}\\b`).test(body)) {
+      const alias = `__dep_${i}`;
+      body = body.replace(new RegExp(`(?<![.\\w$])${escapeRe(dep)}\\s*\\(`, 'g'), `${alias}(`);
+      injectNames[i] = alias;
+    }
+  });
   const wrapper = `"use strict";
     const module = { exports: {} };
     const exports = module.exports;
     const currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
-    ${js}
+    ${body}
     return module.exports[${JSON.stringify(name)}]
         ?? Object.values(module.exports).find((v) => typeof v === 'function');`;
 
-  const factory = new Function(...SANDBOX_ARG_NAMES, ...depNames, wrapper);
+  const factory = new Function(...SANDBOX_ARG_NAMES, ...injectNames, wrapper);
   const fn = factory(...sandboxArgValues(), ...depFns);
   if (typeof fn !== 'function') {
     throw new Error(`primitive "${name}" did not export a function`);
