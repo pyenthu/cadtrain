@@ -753,7 +753,9 @@
   // recognizer exposes warpInnerStart/End (the inner comp) + warpPathStart/End
   // (the path arg) so the toggle round-trips and delete-part still sees the
   // inner chain. Edits the buffer only; Save source persists.
-  const DEFAULT_WARP_PATH: number[][] = [[0, 0], [0, 2], [1, 4], [3, 5]];
+  // A ~quarter-arc (radius ≈ 2.5) so a typical part bends visibly over its own
+  // length WITHOUT stretching (warpSpline maps z→arc-length 1:1 by default).
+  const DEFAULT_WARP_PATH: number[][] = [[0, 0], [0.34, 1.25], [1.25, 2.17], [2.5, 2.5]];
   let isWarped = $derived((recognized?.warpInnerStart ?? -1) >= 0);
   let showTree = $state(false);
   let warpPathEdit = $state<{ pts: number[][] } | null>(null);

@@ -67,7 +67,7 @@ function frameN(tan: [number, number, number]): [number, number, number] {
  * offsets on the local frame. Optional `refine` subdivides first so flat walls
  * bend as arcs rather than chords (n²-ish — keep modest). Returns a NEW Manifold.
  */
-export function warpManifoldAlongSpline(m: any, cp: Pt2[], opts: { refine?: number } = {}): any {
+export function warpManifoldAlongSpline(m: any, cp: Pt2[], opts: { refine?: number; stretch?: boolean } = {}): any {
   if (!m || !Array.isArray(cp) || cp.length < 2) return m;
   const { sampleAt, total } = splineSampler(cp);
   let bb: any;
@@ -76,9 +76,13 @@ export function warpManifoldAlongSpline(m: any, cp: Pt2[], opts: { refine?: numb
   let mm = m;
   const refN = Math.max(0, Math.floor(opts.refine ?? 0));
   if (refN > 1) { try { mm = mm.refine(refN); } catch { /* leave un-refined */ } }
+  // NO-STRETCH (default): map z → arc-length 1:1 so the solid keeps its own
+  // length and merely BENDS along the spline (a 3-unit part follows 3 units of
+  // arc, regardless of the spline's total length). `stretch:true` opts into the
+  // old behaviour — elongate/compress the part to span the WHOLE spline.
   return mm.warp((p: number[]) => {
     const x = p[0], y = p[1], z = p[2];
-    const s = ((z - z0) / zLen) * total;
+    const s = opts.stretch ? ((z - z0) / zLen) * total : (z - z0);
     const { pos, tan } = sampleAt(s);
     const N = frameN(tan);
     p[0] = pos[0] + x * N[0];
