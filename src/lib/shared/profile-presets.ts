@@ -138,6 +138,52 @@ export const PROFILE_REGISTRY: Record<string, ProfileDef> = {
     params: { rEnd: P('endR', 1.0, 0.05, 20, 0.05), rMid: P('midR', 1.4, 0.05, 20, 0.05), len: P('length', 3, 0.1, 40, 0.1) },
     build: (p) => [[0, 0], [p.rEnd, 0], [p.rMid, p.len / 2], [p.rEnd, p.len], [0, p.len]],
   },
+  // Drill-pipe tool-joint connection half-sections (Z-down: z=0 = pipe-body
+  // end, increasing toward the connection). Parametric so the profile is
+  // shaped entirely from the params in the GUI.
+  drill_pipe_pin: {
+    id: 'drill_pipe_pin', label: 'Drill-pipe Pin (male)', set: 'revolve',
+    tags: ['drill pipe', 'tool joint', 'connection', 'pin', 'male', 'rotary shouldered'],
+    params: {
+      bore:     P('bore ID', 2.75, 0.5, 16, 0.1, 'in'),
+      wall:     P('pipe wall t', 0.5, 0.1, 4, 0.05, 'in'),
+      tjOD:     P('tool-joint OD', 6.5, 1, 24, 0.1, 'in'),
+      pipeLen:  P('pipe body len', 6, 0, 40, 0.5, 'in'),
+      upsetLen: P('upset taper len', 2, 0.1, 12, 0.1, 'in'),
+      connLen:  P('connection len', 3, 0.5, 16, 0.1, 'in'),
+      pinLen:   P('pin nose len', 4, 0.5, 12, 0.1, 'in'),
+      taper:    P('pin taper', 3, 0, 15, 0.1, '°/side'),
+    },
+    build: (p) => {
+      const ri = p.bore / 2, pipeRo = ri + p.wall, tjRo = p.tjOD / 2;
+      const z1 = p.pipeLen, z2 = z1 + p.upsetLen, z3 = z2 + p.connLen, z4 = z3 + p.pinLen;
+      const noseRo = Math.max(ri + 0.1, tjRo - p.pinLen * Math.tan((p.taper * Math.PI) / 180));
+      return [[ri, 0], [pipeRo, 0], [pipeRo, z1], [tjRo, z2], [tjRo, z3], [noseRo, z4], [ri, z4]];
+    },
+  },
+  drill_pipe_box: {
+    id: 'drill_pipe_box', label: 'Drill-pipe Box (female)', set: 'revolve',
+    tags: ['drill pipe', 'tool joint', 'connection', 'box', 'female', 'rotary shouldered'],
+    params: {
+      bore:     P('bore ID', 2.75, 0.5, 16, 0.1, 'in'),
+      wall:     P('pipe wall t', 0.5, 0.1, 4, 0.05, 'in'),
+      tjOD:     P('tool-joint OD', 6.5, 1, 24, 0.1, 'in'),
+      pipeLen:  P('pipe body len', 6, 0, 40, 0.5, 'in'),
+      upsetLen: P('upset taper len', 2, 0.1, 12, 0.1, 'in'),
+      boxLen:   P('box length', 5, 0.5, 16, 0.1, 'in'),
+      cboreId:  P('counterbore ID', 4.5, 1, 22, 0.1, 'in'),
+      taper:    P('box taper', 3, 0, 15, 0.1, '°/side'),
+    },
+    build: (p) => {
+      const ri = p.bore / 2, pipeRo = ri + p.wall, tjRo = p.tjOD / 2;
+      const z1 = p.pipeLen, z2 = z1 + p.upsetLen, zFace = z2 + p.boxLen;
+      const mouthRo = Math.max(ri + 0.1, Math.min(tjRo - 0.1, p.cboreId / 2));
+      const run = (mouthRo - ri) / Math.max(1e-3, Math.tan((p.taper * Math.PI) / 180));
+      const zCb = Math.max(z2 + 0.05, zFace - Math.min(p.boxLen - 0.05, run)); // counterbore floor
+      // outer (bore→pipe→upset→connection→box face), then internal tapered counterbore
+      return [[ri, 0], [pipeRo, 0], [pipeRo, z1], [tjRo, z2], [tjRo, zFace], [mouthRo, zFace], [ri, zCb]];
+    },
+  },
 };
 
 export function defaultsFor(def: ProfileDef): Record<string, number> {
