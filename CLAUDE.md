@@ -84,6 +84,8 @@ files (auto-loaded when working in that subtree):
 
 18. **The library — directory-per-part, location = category.** A part is a self-contained directory under `<volume>/library/<category>/<id>/`. **Its location IS its classification.** No central index, no metadata map that can drift. `src/lib/server/library.ts` is the resolver (`resolvePart`, `listLibraryParts`, `categoryDir`, `partDirIn`). Flow: create → test → review → move → category. `/api/components/save` with `create: true` writes to `library/test/<id>/`; updates write back into the part's current category dir; `/api/components/move` does an atomic `rename` to promote. `/library/` is gitignored.
 
+19. **`/plan` is the single source of truth for the roadmap (one common plan + todo).** The Gantt at `src/routes/plan/+page.svelte` (item rows: `id`/`bundle`/`lane`/`status` ∈ `done|active|open|todo|deferred`/`title`; bundles in `BUNDLES`; optional popups in `details.ts`) is the durable, user-facing plan. The session task-tracker (TaskCreate/TaskList) is ephemeral working state; the memory `todo_*.md` files are a private cache. **Both MUST be reconciled INTO `/plan`** — don't let them diverge. At the end of a work session (and when the user asks "what's done / update the plan"): mark completed items `done`, retitle to reflect reality, and ADD new shipped work + new TODOs as `/plan` items (new bundle when it's a distinct area). Marking `done` is a factual claim — verify before flipping. Editing `/plan` is a source change → commit + push to update prod.
+
 ## Open TODOs (out-of-scope findings)
 
 Research findings (default-param pHash/CLIP collapse, the cold-classification
