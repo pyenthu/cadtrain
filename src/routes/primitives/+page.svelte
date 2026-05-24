@@ -253,13 +253,14 @@ export const meta = {
   id: '${id}', name: '${id}',
   description: 'New primitive — edit the source.',
   tags: ['new'],
+  uses: [],
   params: {
     radius: { label: 'radius', min: 0.1, max: 20, step: 0.1, default: 1 },
     height: { label: 'height', min: 0.1, max: 40, step: 0.1, default: 2 },
   },
 };
-export function geom(p) {
-  return cyl(p.height, p.radius);
+export function ${id}(radius, height) {
+  return cyl(height, radius);
 }
 `;
   }

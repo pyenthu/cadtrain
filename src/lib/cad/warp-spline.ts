@@ -74,7 +74,15 @@ export function warpManifoldAlongSpline(m: any, cp: Pt2[], opts: { refine?: numb
   try { bb = m.boundingBox(); } catch { return m; }
   const z0 = bb.min[2], zLen = (bb.max[2] - bb.min[2]) || 1;
   let mm = m;
-  const refN = Math.max(0, Math.floor(opts.refine ?? 0));
+  let refN = Math.max(0, Math.floor(opts.refine ?? 0));
+  // Adaptive subdivision: refine ONLY exists to bend flat walls as arcs rather
+  // than chords. An already-dense mesh (threads, revolves) bends smoothly as-is,
+  // and refine(n) = n²× its (already large) triangle count would be very slow —
+  // plus the downstream cutaway CSG balloons. So skip refine when the mesh is
+  // already dense; keep it for sparse flat-walled parts (blocks, L-brackets).
+  if (refN > 1) {
+    try { if ((mm.numTri?.() ?? 0) > 1200) refN = 0; } catch { /* keep refN */ }
+  }
   if (refN > 1) { try { mm = mm.refine(refN); } catch { /* leave un-refined */ } }
   // NO-STRETCH (default): map z → arc-length 1:1 so the solid keeps its own
   // length and merely BENDS along the spline (a 3-unit part follows 3 units of

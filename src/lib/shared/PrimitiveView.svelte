@@ -450,6 +450,23 @@
     profileBaseline = json;
     closeProfilePopup();
   }
+  // Composite popup: the inline profile is a raw point literal (not a {kind}
+  // descriptor), so the searchable dropdown loads the chosen shape's polygon
+  // into the editor (like the old preset chips, but searchable + thumbnailed).
+  // Apply then splices these points back into the call.
+  function pickProfileShape(id: string, origin: 'builtin' | 'volume') {
+    let pts: [number, number][] | null = null;
+    const def = PROFILE_REGISTRY[id];
+    if (origin === 'builtin' && def) {
+      try { pts = def.build(defaultsFor(def)) as [number, number][]; } catch { /* ignore */ }
+    } else {
+      const v = volProfiles.find((x) => x.id === id);
+      if (v) {
+        try { pts = resolveProfile(Array.isArray(v.points) ? v.points : { kind: v.kind!, params: v.params ?? {} }) as [number, number][]; } catch { /* ignore */ }
+      }
+    }
+    if (pts && pts.length) profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
+  }
 
   // ── Profile shape extraction (for the shape-icon previews) ───────────────
   // Pull the polygon points for a recognized part instance WITHOUT opening the
@@ -1221,7 +1238,7 @@
                   <option value="">＋ Load…</option>
                   {#each loadable as e (e.id)}<option value={e.id}>{e.id}</option>{/each}
                 </select>
-                <button class="pv-mini-btn" type="button" disabled={!loadPick || loadBusy} onclick={loadPrimitive}>{loadBusy ? '…' : 'Add'}</button>
+                <button class="pv-mini-btn" type="button" disabled={!loadPick || loadBusy} onclick={() => loadPrimitive()}>{loadBusy ? '…' : 'Add'}</button>
               {/if}
               <div class="pv-spacer"></div>
               <span class="pv-parts-count">{parts.length} part{parts.length === 1 ? '' : 's'}</span>
@@ -1429,49 +1446,44 @@
       visible={true}
       x={profileEdit.px}
       y={profileEdit.py}
-      width="min(440px, 90vw)"
+      width="min(360px, 92vw)"
       maxHeight="70vh"
       onClose={closeProfilePopup}
     >
       <div class="pv-profile-pop">
-        <div class="pv-profile-pop-head">
-          <span class="pv-pill" class:dirty={profileDirty}>{profilePts.length} verts{profileDirty ? ' · edited' : ''}</span>
-          {#if profileEdit.mode === 'profile'}
-            <span class="pv-profile-pop-tag">profile <code>{profileEdit.profileName}</code></span>
-          {/if}
-          <div class="pv-spacer"></div>
+        <!-- One bar: searchable shape dropdown + actions (no separate head). -->
+        <div class="pv-prof-bar">
+          <div class="pv-prof-combo">
+            <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} volume={volProfiles} onPick={(id, origin) => pickProfileShape(id, origin)} />
+          </div>
           {#if profileEdit.mode === 'literal' && profileEdit.canPromote}
-            <button class="pv-btn" type="button" disabled={promoteBusy} title="Extract this inline profile into an encapsulated meta.profiles entry (clean composition)" onclick={promoteProfile}>{promoteBusy ? '…' : '↥ Promote to meta.profiles'}</button>
+            <button class="pv-iconbtn" type="button" disabled={promoteBusy} title="Promote to meta.profiles (clean composition)" onclick={promoteProfile}>{promoteBusy ? '…' : '↥'}</button>
           {/if}
-          <button class="pv-btn" type="button" disabled={!profileDirty} onclick={() => { profilePts = JSON.parse(profileBaseline); }}>Revert</button>
-          <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply → source</button>
+          <button class="pv-iconbtn" type="button" disabled={!profileDirty} title="Revert" onclick={() => { profilePts = JSON.parse(profileBaseline); }}>↺</button>
+          <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply</button>
         </div>
-        <ProfileEditor
-          value={profilePts}
-          width={400}
-          height={300}
-          yDown={profileEdit.info.yDown}
-          hLabel={profileEdit.info.hLabel}
-          vLabel={profileEdit.info.vLabel}
-          presetSet={profileEdit.info.revolve ? 'revolve' : 'cartesian'}
-          showAxis={profileEdit.info.revolve}
-          onChange={(next) => { profilePts = next; }}
-        />
-        <details class="pv-coords" open>
-          <summary>Coordinates · {profilePts.length} pts</summary>
-          <ol class="pv-coords-list">
-            {#each profilePts as pt, i (i)}
-              <li><span class="pv-coords-i">{i}</span><code>{fmt2(pt[0])}, {fmt2(pt[1])}</code></li>
-            {/each}
-          </ol>
-        </details>
-        <p class="pv-profile-pop-note">
-          {#if profileEdit.mode === 'profile'}
-            Edits <code>meta.profiles.{profileEdit.profileName}.value</code> on Apply. Save source to persist.
-          {:else}
-            Edits the inline literal in <code>{profileEdit.instName}</code>'s call on Apply. <strong>Promote to meta.profiles</strong> encapsulates it (clean composition). Save source to persist.
-          {/if}
-        </p>
+        <div class="pv-prof-split">
+          <ProfileEditor
+            value={profilePts}
+            width={232}
+            height={200}
+            yDown={profileEdit.info.yDown}
+            hLabel={profileEdit.info.hLabel}
+            vLabel={profileEdit.info.vLabel}
+            presetSet={profileEdit.info.revolve ? 'revolve' : 'cartesian'}
+            showAxis={profileEdit.info.revolve}
+            showPresets={false}
+            onChange={(next) => { profilePts = next; }}
+          />
+          <div class="pv-coords-col">
+            <div class="pv-coords-head"><span>#</span><span>{profileEdit.info.revolve ? 'r' : 'x'}</span><span>{profileEdit.info.revolve ? 'z' : 'y'}</span></div>
+            <ol class="pv-coords-list pv-coords-tbl">
+              {#each profilePts as pt, i (i)}
+                <li><span class="pv-coords-i">{i}</span><span class="pv-coords-n">{fmt2(pt[0])}</span><span class="pv-coords-n">{fmt2(pt[1])}</span></li>
+              {/each}
+            </ol>
+          </div>
+        </div>
       </div>
     </FloatingPanel>
   {/if}
@@ -1542,21 +1554,15 @@
       onClose={closeLeafProfile}
     >
       <div class="pv-profile-pop">
-        <div class="pv-profile-pop-head">
-          <span class="pv-pill" class:dirty={paramsDirty}>{lpts.length} verts{paramsDirty ? ' · pending' : ''}</span>
-          <div class="pv-spacer"></div>
-          <button class="pv-btn" type="button" title="Save this profile to the volume so it shows in the palette" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋ save</button>
-          <button class="pv-btn" type="button" disabled={!paramsDirty} onclick={revert}>Revert</button>
-          <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
-        </div>
-        <!-- Searchable dropdown kind picker (shows the shape thumbnail as you
-             type) — replaces the preset "tabs" + the plain <select>. -->
-        <label class="pv-prof-pick">
-          <span>Profile</span>
-          <div style="flex:1; min-width:0;">
+        <!-- One bar: searchable shape dropdown + actions (no separate head). -->
+        <div class="pv-prof-bar">
+          <div class="pv-prof-combo">
             <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
           </div>
-        </label>
+          <button class="pv-iconbtn" type="button" title="Save this profile to the volume" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋</button>
+          <button class="pv-iconbtn" type="button" disabled={!paramsDirty} title="Revert" onclick={revert}>↺</button>
+          <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
+        </div>
         {#if lkind}
           {@const def = PROFILE_REGISTRY[lkind]}
           {@const dp = (leafDesc(leafEdit.pname).params) ?? {}}
@@ -1587,17 +1593,14 @@
             onChange={(next) => setLeafPoints(leafEdit.pname, next)}
           />
           <div class="pv-coords-col">
-            <div class="pv-coords-col-head">{lpts.length} pts</div>
-            <ol class="pv-coords-list">
+            <div class="pv-coords-head"><span>#</span><span>{yd ? 'r' : 'x'}</span><span>{yd ? 'z' : 'y'}</span></div>
+            <ol class="pv-coords-list pv-coords-tbl">
               {#each lpts as pt, i (i)}
-                <li><span class="pv-coords-i">{i}</span><code>{fmt2(pt[0])}, {fmt2(pt[1])}</code></li>
+                <li><span class="pv-coords-i">{i}</span><span class="pv-coords-n">{fmt2(pt[0])}</span><span class="pv-coords-n">{fmt2(pt[1])}</span></li>
               {/each}
             </ol>
           </div>
         </div>
-        <p class="pv-profile-pop-note">
-          {#if lkind}Parametric <code>{lkind}</code> — tune params above; dragging a vertex detaches to a custom shape. {/if}Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> re-bakes; Save defaults persists.
-        </p>
       </div>
     </FloatingPanel>
   {/if}
@@ -1875,14 +1878,23 @@
      drawing area so the SVG renders inside the auto-sized FloatingPanel. */
   .pv-profile-pop :global(.pe-root) { flex: 0 0 auto; }
   .pv-profile-pop :global(.pe-svg-wrap) { height: 280px; flex: 0 0 auto; }
-  /* Leaf popup: searchable dropdown picker + a vertical editor|coords split. */
-  .pv-prof-pick { display: flex; align-items: center; gap: 6px; font: 11px Arial; color: #555; margin: 2px 0; }
+  /* Profile popup: one bar (search dropdown + actions) + a vertical editor|coords split. */
+  .pv-prof-bar { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; }
+  .pv-prof-combo { flex: 1; min-width: 0; }
+  .pv-iconbtn { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #ccc; border-radius: 5px; background: #fff; color: #555; font: 14px Arial; cursor: pointer; padding: 0; }
+  .pv-iconbtn:hover:not(:disabled) { border-color: #2266cc; color: #2266cc; background: #f5f8fe; }
+  .pv-iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
   .pv-prof-split { display: flex; align-items: flex-start; gap: 8px; }
   .pv-prof-split :global(.pe-root) { width: 232px; flex: 0 0 232px; }
   .pv-prof-split :global(.pe-svg-wrap) { height: 200px; }
   .pv-coords-col { flex: 1; min-width: 0; display: flex; flex-direction: column; max-height: 224px; }
-  .pv-coords-col-head { font: 600 10px Arial; color: #888; padding: 2px 0; }
-  .pv-coords-col .pv-coords-list { grid-template-columns: 1fr; max-height: 200px; gap: 0; }
+  /* Tidy 3-column points table: # | x | y, header + zebra + right-aligned nums. */
+  .pv-coords-head { display: grid; grid-template-columns: 22px 1fr 1fr; gap: 6px; font: 700 9px Arial; color: #999; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 4px 3px; border-bottom: 1px solid #eee; }
+  .pv-coords-head span:not(:first-child) { text-align: right; }
+  .pv-coords-tbl { grid-template-columns: 1fr !important; max-height: 200px; gap: 0 !important; }
+  .pv-coords-tbl li { display: grid; grid-template-columns: 22px 1fr 1fr; gap: 6px; padding: 1px 4px; border-radius: 3px; }
+  .pv-coords-tbl li:nth-child(even) { background: #f7f7fa; }
+  .pv-coords-n { text-align: right; color: #2266cc; font: 11px ui-monospace, monospace; }
   .pv-profile-pop-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; }
   .pv-profile-pop-note { margin: 2px 4px 0; font: 10px Arial; color: #888; line-height: 1.3; }
   .pv-profile-pop-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
