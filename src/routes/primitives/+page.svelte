@@ -9,6 +9,7 @@
   // Plan: ~/.claude/plans/per-primitive-svelte-views.md.
   import { onMount } from 'svelte';
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
+  import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
 
   interface Entry {
     id: string;
@@ -245,22 +246,25 @@
    *  edits. `cyl(length, r1)` — height then radius. */
   function stubSource(id: string): string {
     return `/**
- * ${id} — new primitive (edit me). Starts as a simple cylinder; replace the
- * params + geom body with your geometry. In scope: cyl, tube, mv, rot, revolve,
- * profile_extrude, gridPatch/capFan/weldAndBuild, resolveProfile, warpSpline, M.
+ * ${id} — new primitive (edit me). COMPOSE the r_* primitives, declared in
+ * meta.uses: r_cylinder, r_tube, r_cube, r_cone, r_ball, r_extrude, r_revolve,
+ * r_threads, … combine with .add / .subtract / .intersect (+ mv / rot to place).
+ * Do NOT call the raw cyl / tube / profile_extrude / revolve helpers — those are
+ * the unstable base toolkit used only inside the r_* leaf primitives.
  */
 export const meta = {
   id: '${id}', name: '${id}',
   description: 'New primitive — edit the source.',
   tags: ['new'],
-  uses: [],
+  uses: ['r_cylinder'],
   params: {
-    radius: { label: 'radius', min: 0.1, max: 20, step: 0.1, default: 1 },
-    height: { label: 'height', min: 0.1, max: 40, step: 0.1, default: 2 },
+    od:     { label: 'OD',     min: 0.1, max: 40, step: 0.1, default: 2 },
+    length: { label: 'length', min: 0.1, max: 40, step: 0.1, default: 4 },
   },
 };
-export function ${id}(radius, height) {
-  return cyl(height, radius);
+export function ${id}(od, length) {
+  const body = r_cylinder(od, length, 64);
+  return body;
 }
 `;
   }
@@ -268,24 +272,72 @@ export function ${id}(radius, height) {
   /** Create a NEW primitive inside a group folder (the sidebar "+" affordance).
    *  Writes a stub to primitives/<dir>/<id>/, opens the folder, refreshes, and
    *  opens the new part for editing. dir ∈ basic | industrial | completions/<family>. */
-  async function createInFolder(dir: string, label: string) {
-    const all = () => [...entries, ...basic, ...industrial, ...Object.values(completions).flat()];
-    const newId = (prompt(`New primitive in ${label} — id:`, '') ?? '').trim();
-    if (!newId) return;
-    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return; }
-    if (all().some((x) => x.id === newId)) { status = `"${newId}" already exists.`; return; }
-    const r = await fetch('/api/primitives/save', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: newId, source: stubSource(newId), dir }),
-    });
-    if (!r.ok) { status = `Create failed: ${await r.text()}`; return; }
-    status = `Created ${newId} in ${label}.`;
-    if (dir === 'basic') showBasic = true;
-    else if (dir === 'industrial') showIndustrial = true;
-    else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
-    await refreshList();
-    const created = all().find((x) => x.id === newId);
-    if (created) openTab(created);
+  // ── New-primitive popup (FloatingPanel — automatable, no native prompt) ──
+  // Name + a searchable "start from" picker of r_* base primitives. The new
+  // part is a composite that wraps the chosen r_* (meta.uses + a call), so it
+  // follows the r_* authoring model (never raw cyl/tube).
+  let createPanel = $state<{ dir: string; label: string; x: number; y: number } | null>(null);
+  let createId = $state('');
+  let createBase = $state('r_cylinder');
+  let createSearch = $state('');
+  let createBusy = $state(false);
+  let createErr = $state('');
+  // Candidate base primitives = the r_* leaves (Basic group) + bundle helpers'
+  // r_* — searchable. Filter by id.
+  let createBaseList = $derived.by(() => {
+    const q = createSearch.trim().toLowerCase();
+    const ids = [...basic.map((b) => b.id)].filter((id) => id.startsWith('r_'));
+    const uniq = [...new Set(ids)].sort();
+    return q ? uniq.filter((id) => id.toLowerCase().includes(q)) : uniq;
+  });
+  function openCreate(dir: string, label: string, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    createId = ''; createSearch = ''; createBase = 'r_cylinder'; createErr = '';
+    createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
+  }
+  function closeCreate() { createPanel = null; }
+  // Build a composite stub that wraps the chosen base r_* (mirrors its params).
+  async function buildStubFromBase(id: string, base: string): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
+      if (!res.ok) return null;
+      const params: Record<string, any> = (await res.json()).params ?? {};
+      const names = Object.keys(params);
+      if (names.length === 0) return null;
+      const block = names.map((k) => {
+        const s = params[k] ?? {};
+        return `    ${k}: { label: '${(s.label ?? k).replace(/'/g, '')}', min: ${s.min ?? 0}, max: ${s.max ?? 100}, step: ${s.step ?? 0.1}, default: ${s.default ?? 1} },`;
+      }).join('\n');
+      const sig = names.join(', ');
+      return `/**\n * ${id} — composite that wraps the ${base} primitive. Edit to add more r_*\n * parts: declare them in meta.uses and combine with .add / .subtract / .intersect\n * (+ mv / rot to place). Do NOT call the raw cyl/tube/profile_extrude helpers.\n */\nexport const meta = {\n  id: '${id}', name: '${id}',\n  description: 'New primitive — composed from ${base}.',\n  tags: ['new'],\n  uses: ['${base}'],\n  params: {\n${block}\n  },\n};\nexport function ${id}(${sig}) {\n  const body = ${base}(${sig});\n  return body;\n}\n`;
+    } catch { return null; }
+  }
+  async function submitCreate() {
+    if (!createPanel || createBusy) return;
+    const all = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()];
+    const newId = createId.trim();
+    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { createErr = 'id must be [a-z][a-z0-9_]*'; return; }
+    if (all.some((x) => x.id === newId)) { createErr = `"${newId}" already exists`; return; }
+    if (!createBase) { createErr = 'pick a base primitive'; return; }
+    createBusy = true; createErr = '';
+    const { dir, label } = createPanel;
+    try {
+      const source = await buildStubFromBase(newId, createBase) ?? stubSource(newId);
+      const r = await fetch('/api/primitives/save', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: newId, source, dir }),
+      });
+      if (!r.ok) { createErr = `save failed: ${await r.text()}`; return; }
+      status = `Created ${newId} in ${label}.`;
+      if (dir === 'basic') showBasic = true;
+      else if (dir === 'industrial') showIndustrial = true;
+      else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
+      closeCreate();
+      await refreshList();
+      const created = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()].find((x) => x.id === newId);
+      if (created) openTab(created);
+    } catch (e: any) { createErr = `error: ${e?.message ?? e}`; }
+    finally { createBusy = false; }
   }
 
   /** Save As… — persist the CURRENT (live, possibly-unsaved) editor buffer
@@ -423,7 +475,7 @@ export function ${id}(radius, height) {
           <span class="prim-arch-caret">{showBasic ? '▾' : '▸'}</span>
           Basic {#if basic.length}({basic.length}){/if}
         </button>
-        <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={() => createInFolder('basic', 'Basic')}>＋</button>
+        <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openCreate('basic', 'Basic', e)}>＋</button>
       </div>
       {#if showBasic}
         {#if basic.length === 0}
@@ -454,7 +506,7 @@ export function ${id}(radius, height) {
           <span class="prim-arch-caret">{showIndustrial ? '▾' : '▸'}</span>
           Industrial {#if industrial.length}({industrial.length}){/if}
         </button>
-        <button class="prim-add" type="button" title="New primitive in Industrial" aria-label="Add primitive" onclick={() => createInFolder('industrial', 'Industrial')}>＋</button>
+        <button class="prim-add" type="button" title="New primitive in Industrial" aria-label="Add primitive" onclick={(e) => openCreate('industrial', 'Industrial', e)}>＋</button>
       </div>
       {#if showIndustrial}
         {#if industrial.length === 0}
@@ -497,7 +549,7 @@ export function ${id}(radius, height) {
                   <span class="prim-arch-caret">{openFamilies[fam.id] ? '▾' : '▸'}</span>
                   {fam.label} {#if parts.length}({parts.length}){/if}
                 </button>
-                <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={() => createInFolder(`completions/${fam.id}`, fam.label)}>＋</button>
+                <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
               </div>
               {#if openFamilies[fam.id]}
                 {#if parts.length === 0}
@@ -621,6 +673,34 @@ export function ${id}(radius, height) {
   </main>
 </div>
 
+{#if createPanel}
+  <FloatingPanel title={`New primitive · ${createPanel.label}`} visible={true} x={createPanel.x} y={createPanel.y} width="300px" maxHeight="70vh" onClose={closeCreate}>
+    <div class="prim-create">
+      <label class="prim-create-row">id
+        <input bind:value={createId} placeholder="e.g. dp_pin" spellcheck="false" autofocus
+          onkeydown={(e) => { if (e.key === 'Enter' && createId.trim() && !createBusy) submitCreate(); }} />
+      </label>
+      <div class="prim-create-base">
+        <div class="prim-create-baselabel">start from <code>{createBase}</code></div>
+        <input class="prim-create-search" bind:value={createSearch} placeholder="search r_* base…" spellcheck="false" />
+        <div class="prim-create-list">
+          {#each createBaseList as b (b)}
+            <button class="prim-create-opt" class:sel={b === createBase} type="button" onclick={() => (createBase = b)}>{b}</button>
+          {/each}
+          {#if createBaseList.length === 0}<div class="prim-create-empty">no r_* match</div>{/if}
+        </div>
+      </div>
+      {#if createErr}<div class="prim-create-err">{createErr}</div>{/if}
+      <div class="prim-create-foot">
+        <span class="prim-create-note">→ <code>primitives/{createPanel.dir}/</code></span>
+        <div style="flex:1;"></div>
+        <button class="prim-mini-btn" type="button" onclick={closeCreate}>Cancel</button>
+        <button class="prim-mini-btn primary" type="button" disabled={createBusy || !createId.trim()} onclick={submitCreate}>{createBusy ? '…' : 'Create'}</button>
+      </div>
+    </div>
+  </FloatingPanel>
+{/if}
+
 <style>
   .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; position: relative; }
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
@@ -665,6 +745,26 @@ export function ${id}(radius, height) {
   .prim-head-row > button:first-child { flex: 1; min-width: 0; }
   .prim-add { flex: 0 0 auto; background: transparent; border: 0; color: #bbb; font: 700 14px Arial; cursor: pointer; padding: 0 8px; line-height: 1; border-radius: 3px; }
   .prim-add:hover { color: #2266cc; background: #eef3fb; }
+  /* New-primitive popup (FloatingPanel — replaces the native prompt). */
+  .prim-create { display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+  .prim-create-row { display: flex; align-items: center; gap: 8px; font: 11px Arial; color: #555; }
+  .prim-create-row input { flex: 1; min-width: 0; font: 12px ui-monospace, monospace; padding: 4px 6px; border: 1px solid #d4d4dc; border-radius: 4px; }
+  .prim-create-base { display: flex; flex-direction: column; gap: 4px; }
+  .prim-create-baselabel { font: 11px Arial; color: #555; }
+  .prim-create-baselabel code { font: 11px ui-monospace, monospace; color: #cc2222; }
+  .prim-create-search { font: 11px Arial; padding: 3px 6px; border: 1px solid #d4d4dc; border-radius: 4px; }
+  .prim-create-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 132px; overflow-y: auto; padding: 2px; border: 1px solid #eee; border-radius: 5px; }
+  .prim-create-opt { font: 11px ui-monospace, monospace; padding: 2px 7px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; color: #444; }
+  .prim-create-opt:hover { border-color: #2266cc; background: #f5f8fe; }
+  .prim-create-opt.sel { border-color: #2266cc; background: #2266cc; color: #fff; }
+  .prim-create-empty { font: 11px Arial; color: #999; padding: 6px; }
+  .prim-create-foot { display: flex; align-items: center; gap: 6px; }
+  .prim-create-note { font: 10px Arial; color: #999; }
+  .prim-create-note code { font: 10px ui-monospace, monospace; color: #888; }
+  .prim-create-err { font: 10px Arial; color: #c0392b; }
+  .prim-mini-btn { padding: 3px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 11px Arial; cursor: pointer; }
+  .prim-mini-btn.primary { background: #2266cc; border-color: #2266cc; color: #fff; }
+  .prim-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .prim-fam-head:hover { background: #f0f0f0; color: #555; }
   .prim-fam-empty { margin-left: 14px; }
   .prim-fam-row { margin-left: 8px; }

@@ -1,8 +1,34 @@
 import { json, error } from '@sveltejs/kit';
-import { rename, rm, mkdir } from 'node:fs/promises';
+import { rename, rm, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
+
+// Find a primitive's CURRENT directory anywhere in the tree — flat
+// (primitives/<id>/), one level (primitives/<cat>/<id>/), or two
+// (primitives/<cat>/<family>/<id>/). Mirrors the save/source resolvers; the
+// old flat-only lookup 404'd on basic/industrial/completions parts (so they
+// couldn't be archived). Excludes the archive/ subtree.
+async function findActiveDir(id: string): Promise<string | null> {
+  const root = volumePath('primitives');
+  const flat = join(root, id);
+  if (existsSync(join(flat, 'source.ts'))) return flat;
+  let lvl1;
+  try { lvl1 = await readdir(root, { withFileTypes: true }); } catch { return null; }
+  for (const cat of lvl1) {
+    if (!cat.isDirectory() || cat.name === 'archive') continue;
+    const p1 = join(root, cat.name, id);
+    if (existsSync(join(p1, 'source.ts'))) return p1;
+    let lvl2;
+    try { lvl2 = await readdir(join(root, cat.name), { withFileTypes: true }); } catch { continue; }
+    for (const fam of lvl2) {
+      if (!fam.isDirectory()) continue;
+      const p2 = join(root, cat.name, fam.name, id);
+      if (existsSync(join(p2, 'source.ts'))) return p2;
+    }
+  }
+  return null;
+}
 
 // Two-step deletion for volume primitives:
 //   DELETE /api/primitives/delete?id=<id>
@@ -26,12 +52,12 @@ export const DELETE = async ({ url }) => {
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
   if (id === ARCHIVE) throw error(400, 'cannot operate on the archive directory itself');
 
-  const active = volumePath(join('primitives', id));
+  const active = await findActiveDir(id);
   const archived = volumePath(join('primitives', ARCHIVE, id));
 
   if (permanent) {
     // Hard delete from wherever the primitive currently lives.
-    const target = existsSync(archived) ? archived : existsSync(active) ? active : null;
+    const target = existsSync(archived) ? archived : active;
     if (!target) throw error(404, `primitive "${id}" not found (neither active nor archived)`);
     await rm(target, { recursive: true, force: true });
     return json({ ok: true, id, action: 'permanent-delete', removed: target });
@@ -39,7 +65,7 @@ export const DELETE = async ({ url }) => {
 
   // Default: archive — move from active → archive/. If already archived
   // (e.g. duplicate delete click) treat as success.
-  if (!existsSync(active)) {
+  if (!active) {
     if (existsSync(archived)) return json({ ok: true, id, action: 'archive', note: 'already archived' });
     throw error(404, `primitive "${id}" not found on volume`);
   }
