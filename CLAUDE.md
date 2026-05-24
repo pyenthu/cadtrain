@@ -36,15 +36,15 @@ files (auto-loaded when working in that subtree):
 10. Railway deploys via `Dockerfile` (not Railpack). `railway.toml` sets `builder = "DOCKERFILE"`.
 11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits.
 12. **Each logical plan step gets a recorded e2e run.** See `tests/CLAUDE.md` for the recording + harvest workflow.
-13. **Persistent data volume.** Production URL: **`https://cadtrain.up.railway.app`** (NOT `.com` — Railway uses `.up.railway.app`). All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; local dev falls back to `./.dev-volume/`). Sub-paths in use:
-    - `$APP_DATA_DIR/training_data/cache.jsonl` — RAG cache for /api/identify
-    - `$APP_DATA_DIR/training_data/authored_cache.jsonl` — authored-components cache (dormant; backing UI removed)
-    - `$APP_DATA_DIR/library/<category>/<id>/` — the component **library**. Each part is a self-contained directory (`component.ts`, `picture.png`, `mesh.glb`, `instructions.md`, `prompts.json`, `meta.json`); the directory's LOCATION (`test` | `basic` | `parts` | `assemblies`) IS its sidebar category. See `src/lib/server/library.ts` (`resolvePart`). **No `/api/components/*` proxy** — the whole family is dev-local so all writes agree on one store. See Rules 17 + 18.
-    - `$APP_DATA_DIR/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
-    - `$APP_DATA_DIR/kb/index.json` + `kb/api/*.json` — structured KB tables; fetched via `/api/volume?path=kb/...` by the KB DB sub-tab. Re-extracted by `scripts/kb/*.ts` then re-uploaded.
-    - `$APP_DATA_DIR/figures/` — `scripts/extract_figures.ts` PDF-page renders + `gallery.json` (Test tab figure gallery)
-    - `$APP_DATA_DIR/test-recordings/` — Playwright WEBMs + `e2e/<task>/` videos + `manifest.json` (`/archive/tests` + `/plan` popups)
-    - `$APP_DATA_DIR/eval/` — `wells/` + `components/` recognition eval fixtures
+13. **Persistent data volume.** Production URL: **`https://cadtrain.up.railway.app`** (NOT `.com` — Railway uses `.up.railway.app`). All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; local dev falls back to `./.dev-volume/`). **4-dir layout (2026-05-24): `archive/` · `components/` · `ai/` · `primitives/`.** Sub-paths in use:
+    - `$APP_DATA_DIR/components/<category>/<id>/` — the component **library**. Each part is a self-contained directory (`component.ts`, `picture.png`, `mesh.glb`, `instructions.md`, `prompts.json`, `meta.json`); the directory's LOCATION (`test` | `basic` | `parts` | `assemblies`) IS its sidebar category. See `src/lib/server/library.ts` (`resolvePart`). See Rules 17 + 18. (`library/` was renamed to `components/`; the old empty `library/` husk was deleted.)
+    - `$APP_DATA_DIR/primitives/<category>/<id>/source.ts` — primitive sources (`basic/`, `industrial/`, `completions/<family>/`, `archive/`, `profiles/`).
+    - `$APP_DATA_DIR/ai/training_data/cache.jsonl` — RAG cache for /api/identify (the in-image `training_data/` working path is symlinked here by `docker-entrypoint.sh`).
+    - `$APP_DATA_DIR/ai/training_data/authored_cache.jsonl` — authored-components cache (dormant; backing UI removed)
+    - `$APP_DATA_DIR/ai/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
+    - `$APP_DATA_DIR/ai/kb/index.json` + `ai/kb/api/*.json` — structured KB tables; fetched via `/api/volume?path=ai/kb/...` by the KB DB sub-tab. Re-extracted by `scripts/kb/*.ts` then re-uploaded.
+    - `$APP_DATA_DIR/ai/eval/` — `wells/` + `components/` recognition eval fixtures
+    - `$APP_DATA_DIR/archive/` — soft-deleted parts + `figures/` (PDF-page renders + `gallery.json`) + `test-recordings/` (Playwright WEBMs + `manifest.json`) + legacy
     - **Nothing data/test-related lives in `static/` or git anymore** — `static/` holds only build output (`components/*.glb`, gitignored). The volume CRUD endpoint serves all of the above; the `/volume` route is a browser/file-manager for it.
 
     **Root resolution** (`src/lib/server/volume.ts`): `CADTRAIN_VOLUME_ROOT` → `RAILWAY_VOLUME_MOUNT_PATH` → `APP_DATA_DIR` → `/app_data` → `./.dev-volume`. New endpoints that need persistent storage MUST call `volumePath(rel)` and call `maybeProxy(request, url)` first.
@@ -182,7 +182,8 @@ static/
 
 # Persistent volume (<volume> = $APP_DATA_DIR; see Rule 13 for sub-paths +
 # root resolution). NOTHING here is in git; all served via /api/volume.
-# Sub-dirs: figures/ test-recordings/ kb/ kb-sources/ eval/ library/ training_data/
+# 4 dirs: archive/ (figures, test-recordings, legacy) · components/ (library) ·
+# ai/ (training_data, kb, kb-sources, eval) · primitives/
 # Local dev mirror: training_data/ (cache.jsonl + prim_<component>/ seed data,
 # 18 primitives × ~5 variations) and kb-sources/ (gitignored; canonical copy on volume).
 

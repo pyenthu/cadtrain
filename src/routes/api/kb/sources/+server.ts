@@ -60,7 +60,7 @@ interface SourceEntry {
 }
 
 async function readSidecar(): Promise<SidecarFile[]> {
-  const p = join(VOLUME_ROOT, 'kb-sources', '_index.json');
+  const p = join(VOLUME_ROOT, 'ai', 'kb-sources', '_index.json');
   try {
     const raw = await fsp.readFile(p, 'utf8');
     const parsed = JSON.parse(raw);
@@ -71,7 +71,7 @@ async function readSidecar(): Promise<SidecarFile[]> {
 }
 
 async function listDirectory(): Promise<{ name: string; size: number | null; mtime: string }[]> {
-  const dir = join(VOLUME_ROOT, 'kb-sources');
+  const dir = join(VOLUME_ROOT, 'ai', 'kb-sources');
   let entries;
   try { entries = await fsp.readdir(dir, { withFileTypes: true }); }
   catch { return []; }
@@ -112,7 +112,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
     const meta = byName.get(f.name) ?? {};
     out.push({
       key: f.name,
-      file: `kb-sources/${f.name}`,
+      file: `ai/kb-sources/${f.name}`,
       label: meta.title ?? f.name,
       title: meta.title,
       family: meta.family ?? 'basic',

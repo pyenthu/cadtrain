@@ -1106,7 +1106,7 @@ export const geom = defineGeom(meta, (_p) => cyl(1, 1));
     // come from the persistent volume via /api/kb/sources so PDFs
     // uploaded after the deploy appear without rebuilds.
     try {
-      const r = await fetch('/api/volume?path=kb/index.json', { cache: 'no-cache' });
+      const r = await fetch('/api/volume?path=ai/kb/index.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`${r.status}`);
       const data = await r.json();
       kbList = (data.kbs ?? []).map((k: any) => ({

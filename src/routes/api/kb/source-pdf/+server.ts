@@ -23,7 +23,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
 
   const path = url.searchParams.get('path');
   if (!path) throw error(400, 'Missing path parameter');
-  if (!path.startsWith('kb-sources/')) throw error(400, 'Path must start with kb-sources/');
+  if (!path.startsWith('ai/kb-sources/')) throw error(400, 'Path must start with ai/kb-sources/');
   if (path.includes('..')) throw error(400, 'Path traversal not allowed');
   if (!path.toLowerCase().endsWith('.pdf')) throw error(400, 'Only .pdf files are served');
 

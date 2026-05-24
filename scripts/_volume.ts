@@ -22,7 +22,7 @@ export function volumeRoot(): string {
   if (env.APP_DATA_DIR && existsSync(env.APP_DATA_DIR)) return resolve(env.APP_DATA_DIR);
   if (existsSync('/app_data')) return '/app_data';
   const cwd = process.cwd();
-  if (existsSync(resolve(cwd, 'kb-sources'))) return cwd;
+  if (existsSync(resolve(cwd, 'ai', 'kb-sources'))) return cwd;
   const dev = resolve(cwd, '.dev-volume');
   if (!existsSync(dev)) {
     try { mkdirSync(dev, { recursive: true }); } catch { /* read-only FS */ }

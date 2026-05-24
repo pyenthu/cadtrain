@@ -32,7 +32,7 @@ import sharp from 'sharp';
 import { volumePath } from './_volume';
 
 const ROOT = resolve(fileURLToPath(new URL('../', import.meta.url)));
-const KB_DIR = join(ROOT, 'kb-sources');
+const KB_DIR = join(ROOT, 'ai', 'kb-sources');
 // Output on the volume, not static/ — figures are regenerable data, not
 // source. Local dev: <repo>/archive/figures/. Railway: /app_data/archive/figures/.
 const FIGURES_REL = 'archive/figures';

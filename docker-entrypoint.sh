@@ -19,19 +19,23 @@ set -e
 if [ -n "$APP_DATA_DIR" ] && [ -d "$APP_DATA_DIR" ]; then
   # Make sure every well-known subdir exists so the API handlers don't
   # ENOENT before they've ever written anything.
-  mkdir -p "$APP_DATA_DIR/training_data" "$APP_DATA_DIR/components" "$APP_DATA_DIR/kb-sources"
+  # 4-dir volume layout (2026-05-24): archive / components / ai / primitives.
+  # The RAG caches + KB live under ai/. The app still reads cache.jsonl from
+  # the in-image working path `training_data/` (cwd), which we symlink to the
+  # volume's `ai/training_data/`.
+  mkdir -p "$APP_DATA_DIR/ai/training_data" "$APP_DATA_DIR/components" "$APP_DATA_DIR/ai/kb-sources"
 
   # Seed the training caches from the baked image on first run (volume
   # is empty). Subsequent runs find files already there and skip.
   for name in cache.jsonl authored_cache.jsonl; do
-    if [ ! -f "$APP_DATA_DIR/training_data/$name" ] && [ -f "training_data/$name" ]; then
-      echo "[entrypoint] First run: seeding $name into $APP_DATA_DIR/training_data/"
-      cp "training_data/$name" "$APP_DATA_DIR/training_data/$name"
+    if [ ! -f "$APP_DATA_DIR/ai/training_data/$name" ] && [ -f "training_data/$name" ]; then
+      echo "[entrypoint] First run: seeding $name into $APP_DATA_DIR/ai/training_data/"
+      cp "training_data/$name" "$APP_DATA_DIR/ai/training_data/$name"
     fi
     rm -f "training_data/$name"
-    ln -s "$APP_DATA_DIR/training_data/$name" "training_data/$name"
+    ln -s "$APP_DATA_DIR/ai/training_data/$name" "training_data/$name"
   done
-  echo "[entrypoint] Volume linked: $APP_DATA_DIR (training_data, components, kb-sources)"
+  echo "[entrypoint] Volume linked: $APP_DATA_DIR (ai/training_data, components, ai/kb-sources)"
 
 # ─── Legacy: $CACHE_VOLUME (kept for backward compat) ──────────────────────────
 elif [ -n "$CACHE_VOLUME" ] && [ -d "$CACHE_VOLUME" ]; then

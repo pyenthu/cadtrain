@@ -33,10 +33,10 @@ import { createHash } from 'crypto';
 import { resolve, dirname } from 'path';
 import { volumePath } from '../_volume';
 
-const INPUT_PDF  = resolve('kb-sources/825214624-Casing-and-Tubing-Data-2019-01.pdf');
-// KB tables live on the volume now (not static/, not git). Local dev:
-// ./kb/api/; Railway: /app_data/kb/api/. Re-run uploads to prod separately.
-const OUTPUT_JSON = volumePath('kb/api/casing-tubing-data.json');
+const INPUT_PDF  = resolve('ai/kb-sources/825214624-Casing-and-Tubing-Data-2019-01.pdf');
+// KB tables live on the volume under ai/ now (not static/, not git). Local dev:
+// ./ai/kb/api/; Railway: /app_data/ai/kb/api/. Re-run uploads to prod separately.
+const OUTPUT_JSON = volumePath('ai/kb/api/casing-tubing-data.json');
 
 // Grade-token shape test. A grade token is single-word, ≤16 chars, AND
 // either matches the bare "B" sentinel (API-5L Grade B), OR contains BOTH
