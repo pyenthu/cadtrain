@@ -23,6 +23,7 @@
   import ConstructionTree from './ConstructionTree.svelte';
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
+  import { dragNumber } from './dragNumber';
   import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
   import { untrack } from 'svelte';
 
@@ -1569,13 +1570,12 @@
           <div class="pv-kindparams">
             {#each Object.entries(def.params) as [pk, spec] (pk)}
               {@const val = dp[pk] ?? spec.default}
-              <div class="pv-kindparam">
-                <span class="pv-kindparam-lbl" title={spec.label}>{spec.label}{#if spec.unit}<em> {spec.unit}</em>{/if}</span>
-                <input type="range" min={spec.min} max={spec.max} step={spec.step} value={val}
-                  oninput={(e) => setLeafParam(leafEdit.pname, pk, +(e.currentTarget as HTMLInputElement).value)} />
-                <input type="number" min={spec.min} max={spec.max} step={spec.step} value={val}
-                  oninput={(e) => setLeafParam(leafEdit.pname, pk, +(e.currentTarget as HTMLInputElement).value)}
-                  class="pv-kindparam-num" />
+              <div class="pv-kpcard">
+                <span class="pv-kpcard-lbl" title={spec.label}>{spec.label}{#if spec.unit}<em> {spec.unit}</em>{/if}</span>
+                <input class="pv-kpnum" type="number" min={spec.min} max={spec.max} step={spec.step} value={val}
+                  oninput={(e) => setLeafParam(leafEdit!.pname, pk, +(e.currentTarget as HTMLInputElement).value)}
+                  use:dragNumber={{ step: spec.step, min: spec.min, max: spec.max, get: () => (leafDesc(leafEdit!.pname).params?.[pk] ?? spec.default), set: (v) => setLeafParam(leafEdit!.pname, pk, v) }}
+                  title="Type or drag to scrub" />
               </div>
             {/each}
           </div>
@@ -1897,13 +1897,15 @@
   .pv-coords-tbl li { display: grid; grid-template-columns: 22px 1fr 1fr; gap: 6px; padding: 1px 4px; border-radius: 3px; }
   .pv-coords-tbl li:nth-child(even) { background: #f7f7fa; }
   .pv-coords-n { text-align: right; color: #2266cc; font: 11px ui-monospace, monospace; }
-  /* Parametric-kind param controls: label · slider · number, live-redraw. */
-  .pv-kindparams { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; padding-bottom: 6px; border-bottom: 1px solid #eee; max-height: 176px; overflow-y: auto; }
-  .pv-kindparam { display: grid; grid-template-columns: 96px 1fr 52px; align-items: center; gap: 7px; }
-  .pv-kindparam-lbl { font: 11px Arial; color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pv-kindparam-lbl em { color: #999; font-style: normal; }
-  .pv-kindparam input[type=range] { width: 100%; min-width: 0; accent-color: #2266cc; height: 4px; }
-  .pv-kindparam-num { width: 52px; font: 11px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #d4d4dc; border-radius: 3px; }
+  /* Parametric-kind param controls: 2-col grid of draggable number boxes
+     (drag-to-scrub, no spinner arrows) — compact, like the Parts panel. */
+  .pv-kindparams { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 10px; margin: 6px 0; padding-bottom: 6px; border-bottom: 1px solid #eee; max-height: 200px; overflow-y: auto; }
+  .pv-kpcard { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .pv-kpcard-lbl { flex: 1; min-width: 0; font: 11px Arial; color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pv-kpcard-lbl em { color: #999; font-style: normal; }
+  .pv-kpnum { flex: 0 0 58px; width: 58px; font: 11px ui-monospace, monospace; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; cursor: ew-resize; background: #fff; }
+  .pv-kpnum::-webkit-inner-spin-button, .pv-kpnum::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .pv-kpnum { -moz-appearance: textfield; appearance: textfield; }
   .pv-profile-pop-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; }
   .pv-profile-pop-note { margin: 2px 4px 0; font: 10px Arial; color: #888; line-height: 1.3; }
   .pv-profile-pop-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
