@@ -309,9 +309,42 @@
   // Collapsible sidebar (persisted; mirrors SVTC's home-page sidebar pattern).
   let railCollapsed = $state(typeof localStorage !== 'undefined' && localStorage.getItem('prim-rail-collapsed') === '1');
   $effect(() => { try { localStorage.setItem('prim-rail-collapsed', railCollapsed ? '1' : '0'); } catch { /* ignore */ } });
+
+  // Resizable sidebar — drag the right edge to widen so long primitive names
+  // are readable. Width persisted; clamped to a sane range.
+  const RAIL_MIN = 160, RAIL_MAX = 560;
+  const railInit = (() => {
+    const v = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('prim-rail-width')) : NaN;
+    return Number.isFinite(v) && v >= RAIL_MIN && v <= RAIL_MAX ? v : 240;
+  })();
+  let railWidth = $state(railInit);
+  let railResizing = $state(false);
+  function startRailResize(ev: PointerEvent) {
+    ev.preventDefault();
+    railResizing = true;
+    const move = (e: PointerEvent) => {
+      railWidth = Math.max(RAIL_MIN, Math.min(RAIL_MAX, e.clientX));
+    };
+    const up = () => {
+      railResizing = false;
+      try { localStorage.setItem('prim-rail-width', String(Math.round(railWidth))); } catch { /* ignore */ }
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
 </script>
 
-<div class="prim-page" class:rail-collapsed={railCollapsed}>
+<div class="prim-page" class:rail-collapsed={railCollapsed} class:rail-resizing={railResizing}
+  style={railCollapsed ? '' : `grid-template-columns: ${railWidth}px 1fr;`}>
+  {#if !railCollapsed}
+    <div class="prim-rail-resize" role="separator" aria-orientation="vertical"
+      title="Drag to resize · double-click to reset"
+      style={`left: ${railWidth}px;`}
+      onpointerdown={startRailResize}
+      ondblclick={() => { railWidth = 240; try { localStorage.setItem('prim-rail-width', '240'); } catch { /* ignore */ } }}></div>
+  {/if}
   <aside class="prim-rail">
     <header>
       <button class="prim-rail-toggle" type="button" title="Collapse sidebar" onclick={() => railCollapsed = true}>«</button>
@@ -537,6 +570,12 @@
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
   .prim-page.rail-collapsed .prim-rail { display: none; }
   .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow-y: auto; padding: 8px 6px; display: flex; flex-direction: column; line-height: 1.2; }
+  /* Drag handle straddling the rail/main boundary (rail is overflow:auto, so
+     the handle lives on .prim-page which is position:relative). */
+  .prim-rail-resize { position: absolute; top: 0; bottom: 0; width: 7px; margin-left: -3px; z-index: 20; cursor: col-resize; }
+  .prim-rail-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; }
+  .prim-rail-resize:hover::after, .prim-page.rail-resizing .prim-rail-resize::after { background: #2266cc; width: 2px; left: 2px; }
+  .prim-page.rail-resizing { cursor: col-resize; user-select: none; }
   .prim-rail header { padding: 0 6px 6px; border-bottom: 1px solid #eee; position: relative; }
   .prim-rail-toggle { position: absolute; top: -2px; right: 0; border: none; background: transparent; color: #999; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
   .prim-rail-toggle:hover { color: #cc2222; }
