@@ -31,22 +31,37 @@
   type TNode =
     | { kind: 'leaf'; name: string; call: string; txs: any[] }
     | { kind: 'csg'; op: string; left: TNode; right: TNode }
+    | { kind: 'group'; name: string; child: TNode }   // intermediate composition var
     | { kind: 'warp'; child: TNode };
 
   let partByName = $derived(new Map((parts ?? []).map((p: any) => [p.name, p])));
+  let chains = $derived((recognized?.chains ?? {}) as Record<string, any[]>);
   function leafOf(name: string | null): TNode {
     const p = name ? partByName.get(name) : null;
     return { kind: 'leaf', name: name ?? '?', call: p?.call ?? '', txs: (p?.transforms ?? p?.txs ?? []) };
   }
+  // Resolve one operand: an intermediate composition var (const X = a.add(b))
+  // expands into a named group holding its sub-chain; otherwise a leaf.
+  function buildOperand(name: string | null, seen: Set<string>): TNode {
+    if (name && chains[name]?.length && !seen.has(name)) {
+      const next = new Set(seen); next.add(name);
+      return { kind: 'group', name, child: foldChain(chains[name], next) };
+    }
+    return leafOf(name);
+  }
+  // Fold a base-first operand chain into a left-deep binary tree.
+  function foldChain(ops: any[], seen: Set<string>): TNode {
+    let node = buildOperand(ops[0]?.name, seen);
+    for (let i = 1; i < ops.length; i++) {
+      node = { kind: 'csg', op: ops[i].op ?? '?', left: node, right: buildOperand(ops[i].name, seen) };
+    }
+    return node;
+  }
 
-  // Fold the operand chain into a left-deep binary tree; wrap in warp if warped.
   let tree = $derived.by<TNode | null>(() => {
     const ops = (recognized?.operands ?? []) as any[];
     if (ops.length === 0) return null;
-    let node: TNode = leafOf(ops[0]?.name);
-    for (let i = 1; i < ops.length; i++) {
-      node = { kind: 'csg', op: ops[i].op ?? '?', left: node, right: leafOf(ops[i].name) };
-    }
+    let node = foldChain(ops, new Set<string>());
     if ((recognized?.warpInnerStart ?? -1) >= 0) node = { kind: 'warp', child: node };
     return node;
   });
@@ -54,6 +69,7 @@
   function expr(n: TNode): string {
     if (n.kind === 'leaf') return n.name;
     if (n.kind === 'warp') return `⟿(${expr(n.child)})`;
+    if (n.kind === 'group') return expr(n.child);  // inline-expand the intermediate var
     return `(${expr(n.left)} ${glyph(n.op)} ${expr(n.right)})`;
   }
   let bodmas = $derived(tree ? expr(tree) : '');
@@ -86,6 +102,15 @@
   {:else if n.kind === 'warp'}
     <div class="ct-node ct-op ct-warp"><span class="ct-glyph">⟿</span><span class="ct-oplbl">warp at end</span></div>
     <div class="ct-children">{@render treeNode(n.child)}</div>
+  {:else if n.kind === 'group'}
+    <div class="ct-node ct-group" role="button" tabindex="0"
+      onclick={() => onPick?.(n.name)}
+      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick?.(n.name); } }}>
+      <span class="ct-glyph ct-groupglyph">≔</span>
+      <span class="ct-name">{n.name}</span>
+      <span class="ct-grouptag">sub-composite</span>
+    </div>
+    <div class="ct-children">{@render treeNode(n.child)}</div>
   {:else}
     <div class="ct-node ct-op"><span class="ct-glyph">{glyph(n.op)}</span><span class="ct-oplbl">{OPLBL[n.op] ?? n.op}</span></div>
     <div class="ct-children">
@@ -107,6 +132,10 @@
   .ct-op .ct-glyph { background: #eceaf8; color: #5a48b8; }
   .ct-warp .ct-glyph { background: #fde8d4; color: #b5651d; }
   .ct-leafglyph { background: transparent; color: #cc2222; font-size: 9px; }
+  .ct-group { cursor: pointer; border-radius: 4px; }
+  .ct-group:hover { background: #eef9f0; }
+  .ct-groupglyph { background: #e3f3e6; color: #2e7d4f; font: 700 11px Arial; }
+  .ct-grouptag { font: 9px Arial; color: #2e7d4f; background: #eef9f0; border-radius: 3px; padding: 0 5px; }
   .ct-oplbl { font: 600 10px Arial; color: #777; text-transform: uppercase; letter-spacing: 0.04em; }
   .ct-leaf { cursor: pointer; border-radius: 4px; }
   .ct-leaf:hover { background: #eef3fb; }

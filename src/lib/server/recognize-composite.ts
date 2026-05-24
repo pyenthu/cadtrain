@@ -102,6 +102,10 @@ export interface RecognizedComposite {
   warpInnerEnd: number;
   warpPathStart: number;
   warpPathEnd: number;
+  /** Intermediate composition variables: `const X = a.add(b).subtract(c)` →
+   *  X's operand chain. Lets the tree EXPAND X into its sub-composition instead
+   *  of drawing it as an opaque leaf. Keyed by the var name. */
+  chains: Record<string, RecognizedCompositionOperand[]>;
   uses: string[];
   composition: string | null;
   unrecognized: number;
@@ -240,7 +244,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], operands: [], warpInnerStart: -1, warpInnerEnd: -1, warpPathStart: -1, warpPathEnd: -1, uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  if (!fn) return { instances: [], operands: [], warpInnerStart: -1, warpInnerEnd: -1, warpPathStart: -1, warpPathEnd: -1, chains: {}, uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 
   // Function signature append point — where Promote adds a positional param.
   // After the last param's end, or just inside `(` for a no-arg signature.
@@ -284,6 +288,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
   let composition: string | null = null;
   let compositionOperands: RecognizedCompositionOperand[] = [];
   let warpInnerStart = -1, warpInnerEnd = -1, warpPathStart = -1, warpPathEnd = -1;
+  const chainsMap: Record<string, RecognizedCompositionOperand[]> = {};
   let unrecognized = 0;
 
   for (const stmt of fn.body.body) {
@@ -303,6 +308,10 @@ export function recognizeComposite(source: string): RecognizedComposite {
         if (node?.type === 'CallExpression' && node.callee?.type === 'Identifier') {
           const sp = argsSpan(node, 0);
           instances.push({ name: d.id.name, call: node.callee.name, argsText: sp.txt, argsStart: sp.start, argsEnd: sp.end, transforms, initStart, initEnd, declStart: stmt.start, declEnd: stmt.end });
+        } else if (node?.type === 'CallExpression' && node.callee?.type === 'MemberExpression') {
+          // Intermediate composition var: const X = a.add(b).subtract(c).
+          // Record its operand chain so the tree can expand X.
+          chainsMap[d.id.name] = walkChain(node);
         } else {
           unrecognized++;
         }
@@ -328,5 +337,5 @@ export function recognizeComposite(source: string): RecognizedComposite {
       unrecognized++;
     }
   }
-  return { instances, operands: compositionOperands, warpInnerStart, warpInnerEnd, warpPathStart, warpPathEnd, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  return { instances, operands: compositionOperands, warpInnerStart, warpInnerEnd, warpPathStart, warpPathEnd, chains: chainsMap, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
 }
