@@ -22,6 +22,7 @@
     hLabel = 'x',
     presetSet = 'cartesian',
     showAxis = false,
+    showPresets = true,
     onChange,
     onApply,
   }: {
@@ -43,6 +44,9 @@
     presetSet?: 'cartesian' | 'revolve';
     /** Draw a prominent axis-of-rotation line at r=0 (revolve mode). */
     showAxis?: boolean;
+    /** Show the preset chip toolbar (rect/hex/cyl/…). Off when the kind is
+     *  chosen via an external searchable dropdown. */
+    showPresets?: boolean;
     /** Called on every vertex move / add / delete / preset load with
      *  the new array. Parent owns the state. */
     onChange: (next: Pt[]) => void;
@@ -168,6 +172,7 @@
 </script>
 
 <div class="pe-root">
+  {#if showPresets}
   <div class="pe-toolbar">
     <span class="pe-label">Preset:</span>
     {#if presetSet === 'revolve'}
@@ -187,6 +192,7 @@
       <button class="pe-preset" type="button" onclick={() => loadPreset(presetStar())}>★</button>
     {/if}
   </div>
+  {/if}
   <div class="pe-svg-wrap">
   <svg
     bind:this={svgEl}

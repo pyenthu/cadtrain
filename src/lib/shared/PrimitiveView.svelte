@@ -1537,7 +1537,7 @@
       visible={true}
       x={leafEdit.px}
       y={leafEdit.py}
-      width="min(440px, 90vw)"
+      width="min(360px, 92vw)"
       maxHeight="70vh"
       onClose={closeLeafProfile}
     >
@@ -1549,54 +1549,52 @@
           <button class="pv-btn" type="button" disabled={!paramsDirty} onclick={revert}>Revert</button>
           <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
         </div>
-        <details class="pv-palette-det" open={!lkind}>
-          <summary>Browse profiles · {(volProfiles.filter((v) => v.set === (yd ? 'revolve' : 'cartesian')).length) + leafKindOptions(yd).length}</summary>
-          <ProfilePalette set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
-        </details>
-        <div style="display:flex; flex-direction:column; gap:6px; padding:0 0 6px; border-bottom:1px solid #eee; margin-bottom:6px;">
-          <label style="font:11px Arial; color:#555; display:flex; gap:6px; align-items:center;">Profile
-            <select value={lkind} onchange={(e) => setLeafKind(leafEdit.pname, (e.currentTarget as HTMLSelectElement).value)} style="flex:1; font:11px Arial; padding:2px 4px;">
-              <option value="">Custom (points)</option>
-              {#each leafKindOptions(yd) as def (def.id)}
-                <option value={def.id}>{def.label}</option>
-              {/each}
-            </select>
-          </label>
-          {#if lkind}
-            {@const def = PROFILE_REGISTRY[lkind]}
-            {@const dp = (leafDesc(leafEdit.pname).params) ?? {}}
-            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:4px 10px;">
-              {#each Object.entries(def.params) as [pk, spec] (pk)}
-                <label style="display:flex; justify-content:space-between; align-items:center; gap:6px; font:11px Arial; color:#555;">
-                  <span>{spec.label}{#if spec.unit}<em style="color:#999"> {spec.unit}</em>{/if}</span>
-                  <input type="number" min={spec.min} max={spec.max} step={spec.step}
-                    value={dp[pk] ?? spec.default}
-                    oninput={(e) => setLeafParam(leafEdit.pname, pk, +(e.currentTarget as HTMLInputElement).value)}
-                    style="width:62px; font:11px ui-monospace, monospace; padding:2px 4px;" />
-                </label>
-              {/each}
-            </div>
-          {/if}
-        </div>
-        <ProfileEditor
-          value={lpts}
-          width={400}
-          height={300}
-          yDown={yd}
-          hLabel={ps.hLabel ?? (yd ? 'r →' : 'x →')}
-          vLabel={ps.vLabel ?? (yd ? 'z ↓' : 'y ↑')}
-          presetSet={yd ? 'revolve' : 'cartesian'}
-          showAxis={yd}
-          onChange={(next) => setLeafPoints(leafEdit.pname, next)}
-        />
-        <details class="pv-coords" open>
-          <summary>Coordinates · {lpts.length} pts</summary>
-          <ol class="pv-coords-list">
-            {#each lpts as pt, i (i)}
-              <li><span class="pv-coords-i">{i}</span><code>{fmt2(pt[0])}, {fmt2(pt[1])}</code></li>
+        <!-- Searchable dropdown kind picker (shows the shape thumbnail as you
+             type) — replaces the preset "tabs" + the plain <select>. -->
+        <label class="pv-prof-pick">
+          <span>Profile</span>
+          <div style="flex:1; min-width:0;">
+            <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
+          </div>
+        </label>
+        {#if lkind}
+          {@const def = PROFILE_REGISTRY[lkind]}
+          {@const dp = (leafDesc(leafEdit.pname).params) ?? {}}
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:4px 10px; margin:6px 0; padding-bottom:6px; border-bottom:1px solid #eee;">
+            {#each Object.entries(def.params) as [pk, spec] (pk)}
+              <label style="display:flex; justify-content:space-between; align-items:center; gap:6px; font:11px Arial; color:#555;">
+                <span>{spec.label}{#if spec.unit}<em style="color:#999"> {spec.unit}</em>{/if}</span>
+                <input type="number" min={spec.min} max={spec.max} step={spec.step}
+                  value={dp[pk] ?? spec.default}
+                  oninput={(e) => setLeafParam(leafEdit.pname, pk, +(e.currentTarget as HTMLInputElement).value)}
+                  style="width:58px; font:11px ui-monospace, monospace; padding:2px 4px;" />
+              </label>
             {/each}
-          </ol>
-        </details>
+          </div>
+        {/if}
+        <!-- Vertical split: editor (wider) | coordinates (narrow single column). -->
+        <div class="pv-prof-split">
+          <ProfileEditor
+            value={lpts}
+            width={232}
+            height={200}
+            yDown={yd}
+            hLabel={ps.hLabel ?? (yd ? 'r →' : 'x →')}
+            vLabel={ps.vLabel ?? (yd ? 'z ↓' : 'y ↑')}
+            presetSet={yd ? 'revolve' : 'cartesian'}
+            showAxis={yd}
+            showPresets={false}
+            onChange={(next) => setLeafPoints(leafEdit.pname, next)}
+          />
+          <div class="pv-coords-col">
+            <div class="pv-coords-col-head">{lpts.length} pts</div>
+            <ol class="pv-coords-list">
+              {#each lpts as pt, i (i)}
+                <li><span class="pv-coords-i">{i}</span><code>{fmt2(pt[0])}, {fmt2(pt[1])}</code></li>
+              {/each}
+            </ol>
+          </div>
+        </div>
         <p class="pv-profile-pop-note">
           {#if lkind}Parametric <code>{lkind}</code> — tune params above; dragging a vertex detaches to a custom shape. {/if}Edits the <code>{leafEdit.pname}</code> param. <strong>Apply</strong> re-bakes; Save defaults persists.
         </p>
@@ -1753,9 +1751,6 @@
   .pv-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pv-mini-btn.on { background: #2266cc; border-color: #2266cc; color: #fff; }
   .pv-warp-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
-  .pv-palette-det { border: 1px solid #eee; border-radius: 6px; padding: 4px 6px; margin-bottom: 6px; }
-  .pv-palette-det summary { font: 11px Arial; color: #555; cursor: pointer; }
-  .pv-palette-det[open] summary { margin-bottom: 6px; }
   .pv-saveprof { display: flex; flex-direction: column; gap: 8px; }
   .pv-saveprof-row { display: flex; align-items: center; gap: 8px; font: 11px Arial; color: #555; }
   .pv-saveprof-row input { flex: 1; font: 11px ui-monospace, monospace; padding: 3px 6px; border: 1px solid #d4d4dc; border-radius: 4px; }
@@ -1880,6 +1875,14 @@
      drawing area so the SVG renders inside the auto-sized FloatingPanel. */
   .pv-profile-pop :global(.pe-root) { flex: 0 0 auto; }
   .pv-profile-pop :global(.pe-svg-wrap) { height: 280px; flex: 0 0 auto; }
+  /* Leaf popup: searchable dropdown picker + a vertical editor|coords split. */
+  .pv-prof-pick { display: flex; align-items: center; gap: 6px; font: 11px Arial; color: #555; margin: 2px 0; }
+  .pv-prof-split { display: flex; align-items: flex-start; gap: 8px; }
+  .pv-prof-split :global(.pe-root) { width: 232px; flex: 0 0 232px; }
+  .pv-prof-split :global(.pe-svg-wrap) { height: 200px; }
+  .pv-coords-col { flex: 1; min-width: 0; display: flex; flex-direction: column; max-height: 224px; }
+  .pv-coords-col-head { font: 600 10px Arial; color: #888; padding: 2px 0; }
+  .pv-coords-col .pv-coords-list { grid-template-columns: 1fr; max-height: 200px; gap: 0; }
   .pv-profile-pop-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; }
   .pv-profile-pop-note { margin: 2px 4px 0; font: 10px Arial; color: #888; line-height: 1.3; }
   .pv-profile-pop-note code { font: 10px ui-monospace, monospace; color: #cc2222; background: #f6f6f8; padding: 0 4px; border-radius: 3px; }
