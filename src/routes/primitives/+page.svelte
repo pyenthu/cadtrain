@@ -241,6 +241,52 @@
     if (activeTab) cloneEntry(activeTab.entry);
   }
 
+  /** Minimal valid stub for a brand-new primitive: a simple cylinder the user
+   *  edits. `cyl(length, r1)` — height then radius. */
+  function stubSource(id: string): string {
+    return `/**
+ * ${id} — new primitive (edit me). Starts as a simple cylinder; replace the
+ * params + geom body with your geometry. In scope: cyl, tube, mv, rot, revolve,
+ * profile_extrude, gridPatch/capFan/weldAndBuild, resolveProfile, warpSpline, M.
+ */
+export const meta = {
+  id: '${id}', name: '${id}',
+  description: 'New primitive — edit the source.',
+  tags: ['new'],
+  params: {
+    radius: { label: 'radius', min: 0.1, max: 20, step: 0.1, default: 1 },
+    height: { label: 'height', min: 0.1, max: 40, step: 0.1, default: 2 },
+  },
+};
+export function geom(p) {
+  return cyl(p.height, p.radius);
+}
+`;
+  }
+
+  /** Create a NEW primitive inside a group folder (the sidebar "+" affordance).
+   *  Writes a stub to primitives/<dir>/<id>/, opens the folder, refreshes, and
+   *  opens the new part for editing. dir ∈ basic | industrial | completions/<family>. */
+  async function createInFolder(dir: string, label: string) {
+    const all = () => [...entries, ...basic, ...industrial, ...Object.values(completions).flat()];
+    const newId = (prompt(`New primitive in ${label} — id:`, '') ?? '').trim();
+    if (!newId) return;
+    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return; }
+    if (all().some((x) => x.id === newId)) { status = `"${newId}" already exists.`; return; }
+    const r = await fetch('/api/primitives/save', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: newId, source: stubSource(newId), dir }),
+    });
+    if (!r.ok) { status = `Create failed: ${await r.text()}`; return; }
+    status = `Created ${newId} in ${label}.`;
+    if (dir === 'basic') showBasic = true;
+    else if (dir === 'industrial') showIndustrial = true;
+    else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
+    await refreshList();
+    const created = all().find((x) => x.id === newId);
+    if (created) openTab(created);
+  }
+
   /** Save As… — persist the CURRENT (live, possibly-unsaved) editor buffer
    *  under a NEW id, creating a new volume primitive without touching the
    *  original. Differs from Duplicate (which clones the SAVED source): this
@@ -371,10 +417,13 @@
          primitives/basic/ on the volume (location IS the category, mirrors
          Industrial). Collapsible folder. -->
     <div class="prim-tests">
-      <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
-        <span class="prim-arch-caret">{showBasic ? '▾' : '▸'}</span>
-        Basic {#if basic.length}({basic.length}){/if}
-      </button>
+      <div class="prim-head-row">
+        <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
+          <span class="prim-arch-caret">{showBasic ? '▾' : '▸'}</span>
+          Basic {#if basic.length}({basic.length}){/if}
+        </button>
+        <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={() => createInFolder('basic', 'Basic')}>＋</button>
+      </div>
       {#if showBasic}
         {#if basic.length === 0}
           <div class="prim-empty">none yet</div>
@@ -399,10 +448,13 @@
          primitives/industrial/ on the volume (location IS the category).
          Collapsible folder. -->
     <div class="prim-tests">
-      <button class="prim-arch-head" type="button" onclick={() => (showIndustrial = !showIndustrial)}>
-        <span class="prim-arch-caret">{showIndustrial ? '▾' : '▸'}</span>
-        Industrial {#if industrial.length}({industrial.length}){/if}
-      </button>
+      <div class="prim-head-row">
+        <button class="prim-arch-head" type="button" onclick={() => (showIndustrial = !showIndustrial)}>
+          <span class="prim-arch-caret">{showIndustrial ? '▾' : '▸'}</span>
+          Industrial {#if industrial.length}({industrial.length}){/if}
+        </button>
+        <button class="prim-add" type="button" title="New primitive in Industrial" aria-label="Add primitive" onclick={() => createInFolder('industrial', 'Industrial')}>＋</button>
+      </div>
       {#if showIndustrial}
         {#if industrial.length === 0}
           <div class="prim-empty">none yet</div>
@@ -439,10 +491,13 @@
           {#each completionFamilies as fam (fam.id)}
             {@const parts = completions[fam.id] ?? []}
             <div class="prim-fam">
-              <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
-                <span class="prim-arch-caret">{openFamilies[fam.id] ? '▾' : '▸'}</span>
-                {fam.label} {#if parts.length}({parts.length}){/if}
-              </button>
+              <div class="prim-head-row">
+                <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
+                  <span class="prim-arch-caret">{openFamilies[fam.id] ? '▾' : '▸'}</span>
+                  {fam.label} {#if parts.length}({parts.length}){/if}
+                </button>
+                <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={() => createInFolder(`completions/${fam.id}`, fam.label)}>＋</button>
+              </div>
               {#if openFamilies[fam.id]}
                 {#if parts.length === 0}
                   <div class="prim-empty prim-fam-empty">empty</div>
@@ -603,6 +658,12 @@
      groups). Caret + label indented; parts indented again. */
   .prim-fam { margin-left: 6px; }
   .prim-fam-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 2px 8px; font: 700 12px Arial; color: #999; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
+  /* Folder header row: the collapse toggle (flex:1) + an "＋ add" button that
+     creates a new primitive in that folder. */
+  .prim-head-row { display: flex; align-items: center; }
+  .prim-head-row > button:first-child { flex: 1; min-width: 0; }
+  .prim-add { flex: 0 0 auto; background: transparent; border: 0; color: #bbb; font: 700 14px Arial; cursor: pointer; padding: 0 8px; line-height: 1; border-radius: 3px; }
+  .prim-add:hover { color: #2266cc; background: #eef3fb; }
   .prim-fam-head:hover { background: #f0f0f0; color: #555; }
   .prim-fam-empty { margin-left: 14px; }
   .prim-fam-row { margin-left: 8px; }

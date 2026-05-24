@@ -44,9 +44,16 @@ export const POST = async ({ request }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { id, source } = body ?? {};
+  const { id, source, dir: targetDir } = body ?? {};
   if (typeof id !== 'string' || !ID_RE.test(id)) {
     throw error(400, `bad id "${id}" — must match [a-z_][a-z0-9_]*`);
+  }
+  // Optional target folder for a NEW primitive (the sidebar "+ add" affordance).
+  // Allowlisted to the known group folders — no traversal. Ignored when the id
+  // already exists (updates always write back in place).
+  const TARGET_RE = /^(basic|industrial|archive|completions\/[a-z][a-z0-9_]*)$/;
+  if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir))) {
+    throw error(400, `bad dir "${targetDir}" — must be basic | industrial | archive | completions/<family>`);
   }
   if (typeof source !== 'string' || !source.trim()) {
     throw error(400, 'source required (non-empty string)');
@@ -63,7 +70,8 @@ export const POST = async ({ request }) => {
   // top-level duplicate (it then showed twice in the list — and a duplicate id
   // crashed the inspector). New ids default to the flat location.
   const existing = await findExistingDir(id);
-  const dir = existing ?? volumePath(join('primitives', id));
+  const dir = existing
+    ?? (targetDir ? volumePath(join('primitives', targetDir, id)) : volumePath(join('primitives', id)));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'source.ts'), source, 'utf8');
   // Clear any legacy meta.json — source.ts is now canonical.
