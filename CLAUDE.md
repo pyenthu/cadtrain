@@ -90,17 +90,22 @@ Research findings (default-param pHash/CLIP collapse, the cold-classification
 counter-finding, and the deferred ablation queue) live in **`docs/FINDINGS.md`**
 and the session memory. Not day-to-day rules.
 
-## Current work in flight (2026-05-23 — resume point)
+## Current work in flight (2026-05-24 — resume point)
 
 > Living section — clear entries as they land. Full detail in the session
-> memory handoff (`session_handoff_2026-05-23`). **Launch `claude --chrome`
+> memory handoffs. **Launch `claude --chrome`
 > for fast visual iteration on /primitives** (`feedback_claude_chrome_efficiency`).
 
-**Shipped (on `main`):** CLAUDE.md trim → docs · profile popup · Save As · Volume→OneDrive button (dev-only) · profiles→named params · instantiable components (`meta.profiles` + `props`) · **single canvas** (mesh+GLB side-by-side, WebGL-context leak closed) · collapsible sidebar · transform move + ✕ delete.
+**Shipped 2026-05-24 (on `main`, pushed):** warp-at-end toggle + no-stretch 1:1 fix (`warp-spline.ts`) · construction-tree view + **BODMAS diagram** (`ConstructionTree.svelte`) · searchable **profile palette** + volume profiles (`/api/primitives/profiles/{list,save}`) · **volume consolidated to 4 dirs** (archive/components/ai/primitives — kb+kb-sources+training_data+eval → `ai/`; see `volume_4dir_layout`) · drag-resizable /primitives sidebar.
 
-**Next — approved, not built:** /primitives volume org — rename `primitives/tests/` → `industrial/` + a new NESTED `primitives/completions/<family>/` group (folders: drill_pipe, tubulars, packers, wellhead_xt, fishing, artificial_lift, flow_control — start empty). See `session_handoff_2026-05-23`.
+**Earlier shipped:** profile popup · Save As · profiles→named params · instantiable components · single canvas (WebGL leak closed) · collapsible sidebar · transform move + ✕ delete · tests→industrial + completions/<family> nested group.
 
-**Queue:** A — Params+Parts → one /components-style accordion + drop the Profile(s) tabs (profile edit = `✎` popup everywhere) · C — visual CSG/BODMAS composition tree · TODOs: `todo_r_threads_radial_taper`, `todo_cutaway_unify`, `todo_nonmanifold_csg_split`, assembly/instance-override (`todo_per_part_dynamic_editor`).
+**TODOs to revisit (deferred by decision):**
+- **Warp z-spline** (`todo_warp_popup_and_logic`) — give the warp path its OWN popup (not the ProfileEditor) + revisit the suspected interpretation bug (Z-down anchor `z0=min.z`=top→s=0; planar-only frame; x-centered assumption). **Parked at user request 2026-05-24.**
+- **Profile P3** — custom-function generator profiles (sandbox-eval, async endpoint pre-resolution).
+- **WASM** (`todo_wasm_deferred`) — server-render already conceals; revisit only for offline-client-concealed parts.
+- **Customize dir / OAuth** (`todo_customize_dir_deferred`, `docs/plans/oauth-identity.md`) — private per-user parts need the SVTC Google-OAuth port (event.locals.userId) first; needs OAuth creds from the user.
+- Other: `todo_r_threads_radial_taper`, `todo_cutaway_unify`, `todo_nonmanifold_csg_split`, `todo_per_part_dynamic_editor`, construction-tree P1–P4 (JSON-tree drag/reparent editor).
 
 ## Tech stack
 
