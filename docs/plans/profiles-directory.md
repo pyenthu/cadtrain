@@ -85,8 +85,28 @@ parametric — no baked points). This is what removes dp_ball-style patchwork.
     validates build(defaults) before persisting, writes source.ts. On save the
     profile joins the palette (ƒ badge) and is auto-picked into the leaf. GUI-
     verified: author→preview(live)→save→pick→Apply bakes (5-vert taper, in sync).
-- **P4 — quick-create**: "revolve part from profile" scaffolder (profile → part
-  with lifted params).
+- **P3c (done) — edit-existing function profiles**: `✎` on a ƒ entry in the
+  palette dropdown opens `ProfileFnEditor` seeded from it (params + build body
+  via `/api/primitives/profiles/source?id=`); Save overwrites by id = update.
+  No `profiles/custom` dir — the volume `primitives/profiles/` already IS the
+  custom store.
+- **P4 (done) — quick-create**: "revolve part from profile" in the New-primitive
+  popup. Pick a curated revolve profile FUNCTION (`profile:<kind>`) → scaffolds a
+  part whose params ARE the profile's params (lifted), source =
+  `r_revolve(resolveProfile({kind, params:{…the part's args}}), 96)`. Born
+  parametric (E lift). resolveProfile is injected into the sandbox; curated kinds.
+
+- **P5 (NEXT — function-first profiles, eliminate vertices).** Direction
+  (2026-05-25): EVERY profile is a function (params → points), even simple shapes
+  — a rect is a function of axial offset + side offsets of length/height; a
+  cylinder is `r,len`. The hand-drawn VERTEX editor becomes secondary/removed; a
+  points list is only ever a function's OUTPUT, never the authored thing.
+  Rationale: parametric means functions define everything, and a function is far
+  easier to modify in a structured way than a vertex soup. Curated
+  `PROFILE_REGISTRY` + volume `ƒ` profiles already ARE functions — make it
+  universal: default the profile popup to function mode, demote/retire the
+  drag-vertex `ProfileEditor`, and ensure every primitive's profile arg is a
+  `{kind|source, params}` function descriptor (points only as a resolved cache).
 
 ## Critical files
 - `src/lib/shared/profile-presets.ts` — tier-1 registry + `resolveProfile` (sync).

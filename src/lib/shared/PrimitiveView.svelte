@@ -597,10 +597,32 @@
   // and we auto-pick it into the leaf so the part renders it immediately.
   // target 'leaf' = a standalone leaf primitive's polygon param (pickPaletteProfile);
   // 'instance' = a composite Parts-list instance's profile arg (pickProfileShape).
-  let fnEditor = $state<{ target: 'leaf' | 'instance'; pname: string | null; set: 'revolve' | 'cartesian'; px: number; py: number } | null>(null);
+  let fnEditor = $state<{ target: 'leaf' | 'instance'; pname: string | null; set: 'revolve' | 'cartesian'; seed: any; px: number; py: number } | null>(null);
+  function fnEditorPos(left: number, bottom: number) {
+    return { px: Math.max(8, Math.min(left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(bottom + 6, window.innerHeight - 440)) };
+  }
   function openFnEditor(target: 'leaf' | 'instance', pname: string | null, set: 'revolve' | 'cartesian', ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    fnEditor = { target, pname, set, px: Math.max(8, Math.min(r.left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 440)) };
+    fnEditor = { target, pname, set, seed: null, ...fnEditorPos(r.left, r.bottom) };
+  }
+  // EDIT-EXISTING (K.22 D): fetch a saved function profile's source + params and
+  // open the editor seeded from it. Save then UPDATES it (same id overwrites).
+  function bodyOf(source: string): string {
+    const i = source.indexOf('{'), j = source.lastIndexOf('}');
+    return i >= 0 && j > i ? source.slice(i + 1, j).replace(/^\n/, '').replace(/\n\s*$/, '') : source;
+  }
+  async function editFnProfile(target: 'leaf' | 'instance', pname: string | null, id: string) {
+    try {
+      const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(id)}`);
+      if (!r.ok) return;
+      const p = await r.json();
+      if (!p.source) return; // configured/drawn profile — no build() to edit
+      fnEditor = {
+        target, pname, set: p.set ?? 'revolve',
+        seed: { id: p.id, label: p.label, tags: p.tags, params: p.params, body: bodyOf(p.source) },
+        ...fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220),
+      };
+    } catch { /* offline — ignore */ }
   }
   function closeFnEditor() { fnEditor = null; }
   async function onFnSaved(id: string) {
@@ -1476,7 +1498,7 @@
         <!-- One bar: searchable shape dropdown + actions (no separate head). -->
         <div class="pv-prof-bar">
           <div class="pv-prof-combo">
-            <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} volume={volProfiles} onPick={(id, origin) => pickProfileShape(id, origin)} />
+            <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} volume={volProfiles} onPick={(id, origin) => pickProfileShape(id, origin)} onEdit={(id) => editFnProfile('instance', null, id)} />
           </div>
           {#if profileEdit.mode === 'literal' && profileEdit.canPromote}
             <button class="pv-iconbtn" type="button" disabled={promoteBusy} title="Promote to meta.profiles (clean composition)" onclick={promoteProfile}>{promoteBusy ? '…' : '↥'}</button>
@@ -1580,7 +1602,7 @@
         <!-- One bar: searchable shape dropdown + actions (no separate head). -->
         <div class="pv-prof-bar">
           <div class="pv-prof-combo">
-            <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
+            <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} onEdit={(id) => editFnProfile('leaf', leafEdit!.pname, id)} />
           </div>
           <button class="pv-iconbtn" type="button" title="Save this profile to the volume" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋</button>
           <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor('leaf', leafEdit!.pname, yd ? 'revolve' : 'cartesian', e)}>ƒ+</button>
@@ -1632,7 +1654,7 @@
 
   {#if fnEditor}
     <FloatingPanel title="" visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
-      <ProfileFnEditor set={fnEditor.set} onSaved={onFnSaved} onClose={closeFnEditor} />
+      <ProfileFnEditor set={fnEditor.set} seed={fnEditor.seed} onSaved={onFnSaved} onClose={closeFnEditor} />
     </FloatingPanel>
   {/if}
 

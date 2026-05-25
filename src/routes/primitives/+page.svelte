@@ -10,6 +10,7 @@
   import { onMount } from 'svelte';
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
+  import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
 
   interface Entry {
     id: string;
@@ -284,20 +285,46 @@ export function ${id}(od, length) {
   let createErr = $state('');
   // Candidate base primitives = the r_* leaves (Basic group) + bundle helpers'
   // r_* — searchable. Filter by id.
+  // Base options = the r_* leaves (Basic) + curated REVOLVE profile FUNCTIONS
+  // (profile:<id>). Picking a profile scaffolds a parametric revolve part whose
+  // params ARE the profile's params, lifted (K.22 E) — the function-first path.
   let createBaseList = $derived.by(() => {
     const q = createSearch.trim().toLowerCase();
-    const ids = [...basic.map((b) => b.id)].filter((id) => id.startsWith('r_'));
-    const uniq = [...new Set(ids)].sort();
-    return q ? uniq.filter((id) => id.toLowerCase().includes(q)) : uniq;
+    const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_')))].sort();
+    const profs = Object.values(PROFILE_REGISTRY).filter((d) => d.set === 'revolve').map((d) => `profile:${d.id}`);
+    const all = [...rs, ...profs];
+    return q ? all.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : all;
   });
+  function baseLabel(b: string): string {
+    if (b.startsWith('profile:')) { const k = b.slice(8); return `${PROFILE_REGISTRY[k]?.label ?? k} ◆ profile`; }
+    return b;
+  }
   function openCreate(dir: string, label: string, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     createId = ''; createSearch = ''; createBase = 'r_cylinder'; createErr = '';
     createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
   }
   function closeCreate() { createPanel = null; }
+  // Revolve part from a curated profile FUNCTION (K.22 E lift): the profile's
+  // params become the PART's params, and the body resolves the profile from them
+  // each bake → r_revolve. Born parametric — edit OD/ID/taper and the profile
+  // re-resolves. resolveProfile is injected into the sandbox; curated kinds only.
+  function buildStubFromProfile(id: string, kind: string): string | null {
+    const def: any = PROFILE_REGISTRY[kind];
+    if (!def) return null;
+    const names = Object.keys(def.params ?? {});
+    if (!names.length) return null;
+    const block = names.map((k) => {
+      const s: any = def.params[k] ?? {};
+      const unit = s.unit ? `, unit: '${String(s.unit).replace(/'/g, '')}'` : '';
+      return `    ${k}: { label: '${String(s.label ?? k).replace(/'/g, '')}', min: ${s.min ?? 0}, max: ${s.max ?? 100}, step: ${s.step ?? 0.1}, default: ${s.default ?? 1}${unit} },`;
+    }).join('\n');
+    const sig = names.join(', ');
+    return `/**\n * ${id} — revolved part from the '${kind}' profile FUNCTION. Its params ARE the\n * profile's params (lifted): edit them and the profile re-resolves → r_revolve.\n * Add r_* parts (.add/.subtract + mv/rot) to build a fuller connection.\n */\nexport const meta = {\n  id: '${id}', name: '${id}',\n  description: 'Revolved part from the ${kind} profile.',\n  tags: ['new', 'revolve'],\n  uses: ['r_revolve'],\n  params: {\n${block}\n  },\n};\nexport function ${id}(${sig}) {\n  const profile = resolveProfile({ kind: '${kind}', params: { ${sig} } });\n  const body = r_revolve(profile, 96);\n  return body;\n}\n`;
+  }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
+    if (base.startsWith('profile:')) return buildStubFromProfile(id, base.slice(8));
     try {
       const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
       if (!res.ok) return null;
@@ -686,13 +713,13 @@ export function ${id}(od, length) {
           onkeydown={(e) => { if (e.key === 'Enter' && createId.trim() && !createBusy) submitCreate(); }} />
       </label>
       <div class="prim-create-base">
-        <div class="prim-create-baselabel">start from <code>{createBase}</code></div>
-        <input class="prim-create-search" bind:value={createSearch} placeholder="search r_* base…" spellcheck="false" />
+        <div class="prim-create-baselabel">start from <code>{baseLabel(createBase)}</code></div>
+        <input class="prim-create-search" bind:value={createSearch} placeholder="search r_* or profile…" spellcheck="false" />
         <div class="prim-create-list">
           {#each createBaseList as b (b)}
-            <button class="prim-create-opt" class:sel={b === createBase} type="button" onclick={() => (createBase = b)}>{b}</button>
+            <button class="prim-create-opt" class:sel={b === createBase} class:prof={b.startsWith('profile:')} type="button" onclick={() => (createBase = b)}>{baseLabel(b)}</button>
           {/each}
-          {#if createBaseList.length === 0}<div class="prim-create-empty">no r_* match</div>{/if}
+          {#if createBaseList.length === 0}<div class="prim-create-empty">no base matches</div>{/if}
         </div>
       </div>
       {#if createErr}<div class="prim-create-err">{createErr}</div>{/if}

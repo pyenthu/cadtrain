@@ -18,11 +18,14 @@
     current?: string;
     volume?: VolProfile[];
     onPick: (id: string, origin: 'builtin' | 'volume') => void;
+    /** Edit a volume FUNCTION profile (ƒ) in place — opens ProfileFnEditor
+     *  seeded from it (K.22 D edit-existing). Only shown on ƒ entries. */
+    onEdit?: (id: string) => void;
     /** 'grid' = always-visible thumbnail grid; 'dropdown' = a searchable
      *  combobox whose menu shows the shape thumbnail next to each option. */
     layout?: 'grid' | 'dropdown';
   }
-  let { set, current, volume = [], onPick, layout = 'grid' }: Props = $props();
+  let { set, current, volume = [], onPick, onEdit, layout = 'grid' }: Props = $props();
   let filter = $state('');
   let open = $state(false);
 
@@ -92,16 +95,21 @@
       <div class="pp-menu">
         {#each shown as e (e.origin + ':' + e.id)}
           {@const t = thumb(e.pts, e.set === 'revolve')}
-          <button class="pp-opt" class:sel={e.id === current} type="button"
-            title={`${e.label}${e.tags.length ? ' · ' + e.tags.join(', ') : ''}`}
-            onclick={() => { onPick(e.id, e.origin); filter = ''; open = false; }}>
-            <svg viewBox="0 0 40 40" class="pp-mini">
-              {#if t.axis !== null}<line x1={t.axis} y1="2" x2={t.axis} y2="38" class="pp-axis" />{/if}
-              <path d={t.d} class="pp-path" class:vol={e.origin === 'volume'} />
-            </svg>
-            <span class="pp-opt-lbl">{e.label}</span>
-            <span class="pp-badge" class:vol={e.origin === 'volume'}>{e.fn ? 'ƒ' : e.origin === 'volume' ? '◆' : '·'}</span>
-          </button>
+          <div class="pp-optrow" class:sel={e.id === current}>
+            <button class="pp-opt" type="button"
+              title={`${e.label}${e.tags.length ? ' · ' + e.tags.join(', ') : ''}`}
+              onclick={() => { onPick(e.id, e.origin); filter = ''; open = false; }}>
+              <svg viewBox="0 0 40 40" class="pp-mini">
+                {#if t.axis !== null}<line x1={t.axis} y1="2" x2={t.axis} y2="38" class="pp-axis" />{/if}
+                <path d={t.d} class="pp-path" class:vol={e.origin === 'volume'} />
+              </svg>
+              <span class="pp-opt-lbl">{e.label}</span>
+              <span class="pp-badge" class:vol={e.origin === 'volume'}>{e.fn ? 'ƒ' : e.origin === 'volume' ? '◆' : '·'}</span>
+            </button>
+            {#if e.fn && onEdit}
+              <button class="pp-edit" type="button" title="Edit this function profile" onclick={() => { onEdit?.(e.id); filter = ''; open = false; }}>✎</button>
+            {/if}
+          </div>
         {/each}
         {#if shown.length === 0}<div class="pp-empty">no profiles match “{filter}”</div>{/if}
       </div>
@@ -152,9 +160,12 @@
   .pp-mini-empty { display: inline-flex; align-items: center; justify-content: center; color: #ccc; font-size: 14px; }
   .pp-caret { color: #aaa; font-size: 10px; flex: 0 0 auto; }
   .pp-menu { position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 30; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #d0d0da; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.14); padding: 3px; }
-  .pp-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 5px; padding: 3px 6px; cursor: pointer; position: relative; }
-  .pp-opt:hover { background: #f0f4fb; }
-  .pp-opt.sel { background: #e8effb; box-shadow: 0 0 0 1px #2266cc inset; }
+  .pp-optrow { display: flex; align-items: center; border-radius: 5px; }
+  .pp-optrow:hover { background: #f0f4fb; }
+  .pp-optrow.sel { background: #e8effb; box-shadow: 0 0 0 1px #2266cc inset; }
+  .pp-opt { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; border-radius: 5px; padding: 3px 6px; cursor: pointer; position: relative; }
   .pp-opt-lbl { flex: 1; min-width: 0; font: 11px Arial; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pp-opt .pp-badge { position: static; }
+  .pp-edit { flex: 0 0 auto; border: 0; background: transparent; cursor: pointer; color: #6a5acd; padding: 2px 7px; font-size: 12px; border-radius: 4px; }
+  .pp-edit:hover { color: #4838b0; background: #e3def7; }
 </style>
