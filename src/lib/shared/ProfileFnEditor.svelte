@@ -82,21 +82,24 @@
     return () => clearTimeout(timer);
   });
 
-  // Fitted SVG path (revolve halves mirrored across r=0 for a recognizable shape).
+  // Preview matches the app's half-section convention: a revolve shows the r≥0
+  // HALF only (NOT mirrored) with the rotation axis at r=0 and z increasing
+  // downward (Z-down) — same as the leaf ProfileEditor. Cartesian shows the
+  // centered cross-section (y up, no axis).
   const view = $derived.by(() => {
-    const pts = previewPts;
-    if (!pts.length) return { d: '', axis: null as number | null };
-    let poly = pts;
-    if (set === 'revolve') poly = [...pts, ...[...pts].reverse().map((p) => [-p[0], p[1]] as Pt)];
+    const poly = previewPts;
+    if (!poly.length) return { d: '', axis: null as number | null };
+    const revolve = set === 'revolve';
     const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const minX = revolve ? Math.min(0, ...xs) : Math.min(...xs);
+    const maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
     const w = (maxX - minX) || 1, h = (maxY - minY) || 1, size = 180, pad = 12;
     const s = (size - 2 * pad) / Math.max(w, h);
     const ox = pad + (size - 2 * pad - w * s) / 2, oy = pad + (size - 2 * pad - h * s) / 2;
     const sx = (x: number) => ox + (x - minX) * s;
-    const sy = (y: number) => size - (oy + (y - minY) * s);
+    const sy = (y: number) => (revolve ? oy + (y - minY) * s : size - (oy + (y - minY) * s));
     const d = poly.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join(' ') + ' Z';
-    return { d, axis: set === 'revolve' ? sx(0) : null };
+    return { d, axis: revolve ? sx(0) : null };
   });
 
   async function save() {

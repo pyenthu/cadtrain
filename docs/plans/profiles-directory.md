@@ -77,9 +77,14 @@ parametric — no baked points). This is what removes dp_ball-style patchwork.
     `import(`) + ≥3-point shape guard. `profiles/list` runs `build(defaults)` →
     preview `points` (broken build → `buildError`, still listed). GUI pick path
     already bakes `v.points` → r_revolve. Seed: `primitives/profiles/casing_coupling`.
-  - **P3b (next)**: in-GUI build() editor (author params + body, save source.ts
-    via `profiles/save`) + live per-param re-resolution (call an endpoint on
-    param change since `build` is server-side, not `resolveProfile`).
+  - **P3b (done — `f0a6575`)**: in-GUI authoring. `ProfileFnEditor.svelte` (ƒ+
+    in the leaf profile popup) — params SCHEMA editor + build(p) body + a live
+    preview that round-trips `/api/primitives/profiles/resolve` ({source|id,
+    params}→points; the server-side re-resolve path, since `resolveProfile` is
+    sync/client/curated-only). `profiles/save` accepts {source, params:<schema>},
+    validates build(defaults) before persisting, writes source.ts. On save the
+    profile joins the palette (ƒ badge) and is auto-picked into the leaf. GUI-
+    verified: author→preview(live)→save→pick→Apply bakes (5-vert taper, in sync).
 - **P4 — quick-create**: "revolve part from profile" scaffolder (profile → part
   with lifted params).
 
