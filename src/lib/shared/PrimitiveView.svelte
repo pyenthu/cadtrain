@@ -23,6 +23,7 @@
   import ConstructionTree from './ConstructionTree.svelte';
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
+  import ProfileFnEditor from './ProfileFnEditor.svelte';
   import { dragNumber } from './dragNumber';
   import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
   import { untrack } from 'svelte';
@@ -589,6 +590,23 @@
   }
   // Apply the leaf-param edit = commit pending → applied (re-bake), then close.
   function applyLeafProfile() { apply(); closeLeafProfile(); }
+
+  // ── Author a volume FUNCTION profile (K.22 P3b) ───────────────────────────
+  // The `ƒ+` in the leaf popup opens ProfileFnEditor (params schema + build(p)
+  // body + live server-resolved preview). On save it joins the palette (ƒ badge)
+  // and we auto-pick it into the leaf so the part renders it immediately.
+  let fnEditor = $state<{ pname: string; set: 'revolve' | 'cartesian'; px: number; py: number } | null>(null);
+  function openFnEditor(pname: string, set: 'revolve' | 'cartesian', ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    fnEditor = { pname, set, px: Math.max(8, Math.min(r.left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 440)) };
+  }
+  function closeFnEditor() { fnEditor = null; }
+  async function onFnSaved(id: string) {
+    const pname = fnEditor?.pname;
+    await loadVolProfiles(true);
+    if (pname) pickPaletteProfile(pname, id, 'volume');
+    fnEditor = null;
+  }
 
   // ── Parametric profile controls (leaf popup) ──────────────────────────────
   // pending[pname] holds a ProfileDescriptor: parametric { kind, params }, a
@@ -1561,6 +1579,7 @@
             <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
           </div>
           <button class="pv-iconbtn" type="button" title="Save this profile to the volume" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋</button>
+          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor(leafEdit!.pname, yd ? 'revolve' : 'cartesian', e)}>ƒ+</button>
           <button class="pv-iconbtn" type="button" disabled={!paramsDirty} title="Revert" onclick={revert}>↺</button>
           <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
         </div>
@@ -1604,6 +1623,12 @@
           </div>
         </div>
       </div>
+    </FloatingPanel>
+  {/if}
+
+  {#if fnEditor}
+    <FloatingPanel title="" visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
+      <ProfileFnEditor set={fnEditor.set} onSaved={onFnSaved} onClose={closeFnEditor} />
     </FloatingPanel>
   {/if}
 

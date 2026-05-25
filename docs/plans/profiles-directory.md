@@ -71,6 +71,15 @@ parametric — no baked points). This is what removes dp_ball-style patchwork.
 - **P3 — volume *function* profiles**: `source.ts` `build(p)` per profile dir;
   a pure-function sandbox; endpoint pre-resolution; an in-GUI editor (params +
   build body) to author a profile function without a rebuild.
+  - **P3a (done — `7d1eba8`)**: the resolver. `src/lib/server/profile-fn.ts`
+    (`buildProfileFromSource`) — import-strip + esbuild ts→cjs + `new Function`,
+    points-only (Math + params), denylist (require/process/Function/eval/fetch/
+    `import(`) + ≥3-point shape guard. `profiles/list` runs `build(defaults)` →
+    preview `points` (broken build → `buildError`, still listed). GUI pick path
+    already bakes `v.points` → r_revolve. Seed: `primitives/profiles/casing_coupling`.
+  - **P3b (next)**: in-GUI build() editor (author params + body, save source.ts
+    via `profiles/save`) + live per-param re-resolution (call an endpoint on
+    param change since `build` is server-side, not `resolveProfile`).
 - **P4 — quick-create**: "revolve part from profile" scaffolder (profile → part
   with lifted params).
 
