@@ -26,6 +26,8 @@
 import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
+import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
+import { compileProfileBuild } from './profile-fn';
 
 type GeomFn = (...args: any[]) => any;
 
@@ -109,7 +111,8 @@ export async function buildPrimitiveGeom(
         ?? Object.values(module.exports).find((v) => typeof v === 'function');`;
 
   const factory = new Function(...SANDBOX_ARG_NAMES, ...injectNames, wrapper);
-  const fn = factory(...sandboxArgValues(), ...depFns);
+  const argValues = await profileAwareArgValues(source, fetchFn);
+  const fn = factory(...argValues, ...depFns);
   if (typeof fn !== 'function') {
     throw new Error(`primitive "${name}" did not export a function`);
   }
@@ -144,6 +147,49 @@ function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
   })().catch((e) => { depSourceCache.delete(id); throw e; });
   depSourceCache.set(id, { p, ts: Date.now() });
   return p;
+}
+
+// ── P6: VOLUME profile bake-resolve ─────────────────────────────────────────
+// A part's `resolveProfile({kind})` resolves only CURATED kinds in-sandbox
+// (sync). For a VOLUME function profile, pre-load its build here (server-side,
+// volume access) and inject a resolveProfile that resolves volume kinds too —
+// so editing/forking a profile in the editor actually drives its parts.
+const PROF_TTL_MS = 30_000;
+type ProfBuild = (pm?: Record<string, number>) => [number, number][];
+const profFnCache = new Map<string, { p: Promise<ProfBuild | null>; ts: number }>();
+function loadProfileBuild(id: string, fetchFn: typeof fetch): Promise<ProfBuild | null> {
+  const hit = profFnCache.get(id);
+  if (hit && Date.now() - hit.ts < PROF_TTL_MS) return hit.p;
+  const p = (async () => {
+    try {
+      const r = await fetchFn(`/api/primitives/profiles/source?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+      if (!r.ok) return null;
+      const d = await r.json();
+      return typeof d?.source === 'string' && d.source ? compileProfileBuild(d.source) : null;
+    } catch { return null; }
+  })().catch(() => null);
+  profFnCache.set(id, { p, ts: Date.now() });
+  return p;
+}
+async function profileAwareArgValues(source: string, fetchFn: typeof fetch): Promise<any[]> {
+  const values = sandboxArgValues();
+  // VOLUME kinds only — curated kinds the sync resolveProfile already handles.
+  const kinds = [...new Set([...source.matchAll(/resolveProfile\s*\(\s*\{[^{}]*\bkind\s*:\s*['"]([a-z_$][\w$]*)['"]/g)].map((m) => m[1]))]
+    .filter((k) => !PROFILE_REGISTRY[k]);
+  if (!kinds.length) return values;
+  const builds: Record<string, ProfBuild> = {};
+  await Promise.all(kinds.map(async (k) => { const b = await loadProfileBuild(k, fetchFn); if (b) builds[k] = b; }));
+  if (!Object.keys(builds).length) return values;
+  const idx = SANDBOX_ARG_NAMES.indexOf('resolveProfile');
+  if (idx < 0) return values;
+  const curated = values[idx] as (d: any) => any;
+  const out = [...values];
+  out[idx] = (desc: any) => {
+    const kind = desc && typeof desc === 'object' && !Array.isArray(desc) ? desc.kind : undefined;
+    if (kind && builds[kind]) return builds[kind](desc.params ?? {});
+    return curated(desc);
+  };
+  return out;
 }
 
 /** Resolve a primitive id → geom function. Bundle helpers (cyl, tube, …)

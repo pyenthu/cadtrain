@@ -20,7 +20,11 @@ function stripImports(src: string): string {
 // Points-only: no Manifold, no I/O. Reject the obvious escape/IO vectors.
 const DENY = /\b(require|process|globalThis|Function|eval|fetch|__proto__|constructor)\b|import\s*\(/;
 
-export function buildProfileFromSource(source: string, params: Record<string, number> = {}): [number, number][] {
+/** Compile a profile's `build(p)` ONCE → a reusable (params)→points function.
+ *  Used by the bake path (P6): a part's `resolveProfile({kind})` for a VOLUME
+ *  profile calls this compiled build with the part's params, so edits/forks
+ *  drive the part. */
+export function compileProfileBuild(source: string): (params?: Record<string, number>) => [number, number][] {
   const stripped = stripImports(source);
   if (DENY.test(stripped)) throw new Error('profile source uses a denied construct (points-only: Math + params)');
   const body = transformSync(stripped, { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
@@ -29,7 +33,13 @@ export function buildProfileFromSource(source: string, params: Record<string, nu
   const fn = new Function('Math', 'pen', 'exports', 'module', `${body}\nreturn (exports.build || (module.exports && module.exports.build));`);
   const build = fn(Math, pen, mod.exports, mod) as ((p: Record<string, number>) => unknown) | undefined;
   if (typeof build !== 'function') throw new Error('profile source must `export function build(p)`');
-  const pts = build(params || {});
-  if (!Array.isArray(pts) || pts.length < 3) throw new Error('build(p) must return ≥ 3 [r,z] points');
-  return pts.map((q: any) => [Number(q?.[0]), Number(q?.[1])] as [number, number]);
+  return (params: Record<string, number> = {}) => {
+    const pts = build(params || {});
+    if (!Array.isArray(pts) || pts.length < 3) throw new Error('build(p) must return ≥ 3 [r,z] points');
+    return pts.map((q: any) => [Number(q?.[0]), Number(q?.[1])] as [number, number]);
+  };
+}
+
+export function buildProfileFromSource(source: string, params: Record<string, number> = {}): [number, number][] {
+  return compileProfileBuild(source)(params);
 }
