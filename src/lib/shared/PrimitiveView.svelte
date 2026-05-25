@@ -364,7 +364,9 @@
     instName: string;
     call: string;
     info: LeafProfile;
-    mode: 'literal' | 'profile';
+    mode: 'literal' | 'profile' | 'fn';
+    /** 'fn' mode only — the resolveProfile({kind}) function profile's kind. */
+    kind?: string;
     /** Absolute offsets in editedSource of the value to splice on Apply:
      *  the inline array literal ('literal') or the meta.profiles value ('profile'). */
     profStart: number;
@@ -434,7 +436,30 @@
       const parsed = JSON.parse(segText);
       if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
     } catch { /* not a literal array (expression) → can't edit visually */ }
-    if (!pts) { recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array or a meta.profiles reference.`; return; }
+    if (!pts) {
+      // Case 3 — a resolveProfile({kind,params}) FUNCTION profile (function-first
+      // parts). You don't drag vertices on a function — its params ARE the part's
+      // params (edit them in the Parameters panel). Matches both the inline call
+      // AND a local var (`const profile = resolveProfile({kind:'X'})`) since the
+      // scaffold names it. Show the kind + a resolved preview instead of erroring.
+      const KIND_RE = /resolveProfile\s*\(\s*\{[^{}]*\bkind\s*:\s*['"]([a-z_$][\w$]*)['"]/i;
+      let fnKind: string | null = null;
+      const inlineM = KIND_RE.exec(segText);
+      if (inlineM) fnKind = inlineM[1];
+      else if (/^[A-Za-z_$][\w$]*$/.test(segText)) {
+        const declM = new RegExp(`\\b(?:const|let|var)\\s+${segText}\\s*=\\s*` + KIND_RE.source, 'i').exec(editedSource);
+        if (declM) fnKind = declM[1];
+      }
+      if (fnKind) {
+        let fpts: [number, number][] = [];
+        try { const def = PROFILE_REGISTRY[fnKind]; if (def) fpts = def.build(defaultsFor(def)) as [number, number][]; } catch { /* unknown kind */ }
+        profilePts = fpts;
+        profileBaseline = JSON.stringify(profilePts);
+        profileEdit = { instName: inst.name, call: inst.call, info, mode: 'fn', kind: fnKind, profStart: segStart, profEnd: segEnd, profileName: null, canPromote: false, px, py };
+        return;
+      }
+      recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array or a meta.profiles reference.`; return;
+    }
     profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
     profileBaseline = JSON.stringify(profilePts);
     const canPromote = !!recognized?.editable && (recognized.profilesInsertPos >= 0 || recognized.metaInsertPos >= 0);
@@ -1495,6 +1520,38 @@
       onClose={closeProfilePopup}
     >
       <div class="pv-profile-pop">
+        {#if profileEdit.mode === 'fn'}
+          <!-- Function-first profile: the arg is resolveProfile({kind,…}); its
+               params ARE the part's params, edited in the Parameters panel. We
+               show the function + a resolved preview (read-only) here. -->
+          <div class="pv-fn-note">
+            <strong>ƒ {profileEdit.kind}</strong> — this profile is a <em>function</em>.
+            Its parameters are this part's parameters — edit them in the
+            <strong>Parameters</strong> panel above; the profile re-resolves on Apply.
+          </div>
+          <div class="pv-prof-split">
+            <ProfileEditor
+              value={profilePts}
+              width={232}
+              height={200}
+              yDown={profileEdit.info.yDown}
+              hLabel={profileEdit.info.hLabel}
+              vLabel={profileEdit.info.vLabel}
+              presetSet={profileEdit.info.revolve ? 'revolve' : 'cartesian'}
+              showAxis={profileEdit.info.revolve}
+              showPresets={false}
+              onChange={() => { /* read-only preview (value stays controlled) */ }}
+            />
+            <div class="pv-coords-col">
+              <div class="pv-coords-head"><span>#</span><span>{profileEdit.info.revolve ? 'r' : 'x'}</span><span>{profileEdit.info.revolve ? 'z' : 'y'}</span></div>
+              <ol class="pv-coords-list pv-coords-tbl">
+                {#each profilePts as pt, i (i)}
+                  <li><span class="pv-coords-i">{i}</span><span class="pv-coords-n">{fmt2(pt[0])}</span><span class="pv-coords-n">{fmt2(pt[1])}</span></li>
+                {/each}
+              </ol>
+            </div>
+          </div>
+        {:else}
         <!-- One bar: searchable shape dropdown + actions (no separate head). -->
         <div class="pv-prof-bar">
           <div class="pv-prof-combo">
@@ -1529,6 +1586,7 @@
             </ol>
           </div>
         </div>
+        {/if}
       </div>
     </FloatingPanel>
   {/if}
@@ -1937,6 +1995,8 @@
   .pv-iconbtn { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #ccc; border-radius: 5px; background: #fff; color: #555; font: 14px Arial; cursor: pointer; padding: 0; }
   .pv-iconbtn:hover:not(:disabled) { border-color: #2266cc; color: #2266cc; background: #f5f8fe; }
   .pv-iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pv-fn-note { font: 11px/1.45 Arial; color: #555; background: #f4f1fb; border: 1px solid #e0d9f5; border-radius: 6px; padding: 7px 9px; margin-bottom: 8px; }
+  .pv-fn-note strong { color: #6a5acd; }
   .pv-prof-split { display: flex; align-items: flex-start; gap: 8px; }
   .pv-prof-split :global(.pe-root) { width: 232px; flex: 0 0 232px; }
   .pv-prof-split :global(.pe-svg-wrap) { height: 200px; }
