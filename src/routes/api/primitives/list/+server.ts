@@ -107,13 +107,14 @@ export const GET = async () => {
     }
   }
 
-  // Volume shadows bundle on id collision (later in the merged list
-  // means it overrides — for UI purposes we just attach the override flag).
+  // Bundle raw helpers (cyl/tube/profile_extrude/revolve/helix_band …) are the
+  // unstable backend toolkit (Rule 17/20): runtime-injected into the sandbox and
+  // used INSIDE the r_* leaves, but NOT shown in the /primitives sidebar — the UI
+  // surfaces only the new-style r_* components + composites. They stay in the
+  // `bundle` field for any internal use; `merged` (the sidebar's loose top
+  // section) carries only volume primitives.
   const bundleIds = new Set(bundle.map((b) => b.id));
-  const merged = [
-    ...bundle.filter((b) => !volume.some((v) => v.id === b.id)),
-    ...volume,
-  ];
+  const merged = [...volume];
   return json({
     bundle,
     volume,

@@ -595,16 +595,19 @@
   // The `ƒ+` in the leaf popup opens ProfileFnEditor (params schema + build(p)
   // body + live server-resolved preview). On save it joins the palette (ƒ badge)
   // and we auto-pick it into the leaf so the part renders it immediately.
-  let fnEditor = $state<{ pname: string; set: 'revolve' | 'cartesian'; px: number; py: number } | null>(null);
-  function openFnEditor(pname: string, set: 'revolve' | 'cartesian', ev: MouseEvent) {
+  // target 'leaf' = a standalone leaf primitive's polygon param (pickPaletteProfile);
+  // 'instance' = a composite Parts-list instance's profile arg (pickProfileShape).
+  let fnEditor = $state<{ target: 'leaf' | 'instance'; pname: string | null; set: 'revolve' | 'cartesian'; px: number; py: number } | null>(null);
+  function openFnEditor(target: 'leaf' | 'instance', pname: string | null, set: 'revolve' | 'cartesian', ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    fnEditor = { pname, set, px: Math.max(8, Math.min(r.left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 440)) };
+    fnEditor = { target, pname, set, px: Math.max(8, Math.min(r.left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 440)) };
   }
   function closeFnEditor() { fnEditor = null; }
   async function onFnSaved(id: string) {
-    const pname = fnEditor?.pname;
+    const ed = fnEditor;
     await loadVolProfiles(true);
-    if (pname) pickPaletteProfile(pname, id, 'volume');
+    if (ed?.target === 'leaf' && ed.pname) pickPaletteProfile(ed.pname, id, 'volume');
+    else if (ed?.target === 'instance') pickProfileShape(id, 'volume');
     fnEditor = null;
   }
 
@@ -1478,6 +1481,7 @@
           {#if profileEdit.mode === 'literal' && profileEdit.canPromote}
             <button class="pv-iconbtn" type="button" disabled={promoteBusy} title="Promote to meta.profiles (clean composition)" onclick={promoteProfile}>{promoteBusy ? '…' : '↥'}</button>
           {/if}
+          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor('instance', null, profileEdit!.info.revolve ? 'revolve' : 'cartesian', e)}>ƒ+</button>
           <button class="pv-iconbtn" type="button" disabled={!profileDirty} title="Revert" onclick={() => { profilePts = JSON.parse(profileBaseline); }}>↺</button>
           <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply</button>
         </div>
@@ -1579,7 +1583,7 @@
             <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} />
           </div>
           <button class="pv-iconbtn" type="button" title="Save this profile to the volume" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋</button>
-          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor(leafEdit!.pname, yd ? 'revolve' : 'cartesian', e)}>ƒ+</button>
+          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor('leaf', leafEdit!.pname, yd ? 'revolve' : 'cartesian', e)}>ƒ+</button>
           <button class="pv-iconbtn" type="button" disabled={!paramsDirty} title="Revert" onclick={revert}>↺</button>
           <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
         </div>
