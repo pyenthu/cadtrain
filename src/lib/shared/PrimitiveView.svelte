@@ -494,6 +494,21 @@
     }
     if (pts && pts.length) profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
   }
+  // fn-mode: picking a different profile swaps the kind in the resolveProfile()
+  // call (the part stays function-first). Curated kinds only — a part's
+  // resolveProfile resolves curated kinds in-sandbox; a volume ƒ profile can't
+  // resolve there yet. Params stay; the new kind uses its own defaults for names
+  // it doesn't share (a clean param re-lift is a follow-up).
+  function swapFnKind(id: string, origin: 'builtin' | 'volume') {
+    if (!profileEdit || profileEdit.mode !== 'fn' || !profileEdit.kind) return;
+    if (origin !== 'builtin') { recogError = `"${id}" is a volume function profile — swapping it into a part isn't wired yet; pick a curated profile, or create a new part from it.`; return; }
+    const esc = profileEdit.kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
+    if (!m) return;
+    const kStart = m.index + m[1].length;
+    spliceSource(kStart, kStart + profileEdit.kind.length, id);
+    closeProfilePopup();
+  }
 
   // ── Profile shape extraction (for the shape-icon previews) ───────────────
   // Pull the polygon points for a recognized part instance WITHOUT opening the
@@ -1522,12 +1537,17 @@
       <div class="pv-profile-pop">
         {#if profileEdit.mode === 'fn'}
           <!-- Function-first profile: the arg is resolveProfile({kind,…}); its
-               params ARE the part's params, edited in the Parameters panel. We
-               show the function + a resolved preview (read-only) here. -->
+               params ARE the part's params, edited in the Parameters panel. The
+               picker SWAPS the profile function; preview is read-only. -->
+          <div class="pv-prof-bar">
+            <div class="pv-prof-combo">
+              <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} current={profileEdit.kind} volume={volProfiles} onPick={(id, origin) => swapFnKind(id, origin)} onEdit={(id) => editFnProfile('instance', null, id)} />
+            </div>
+          </div>
           <div class="pv-fn-note">
             <strong>ƒ {profileEdit.kind}</strong> — this profile is a <em>function</em>.
-            Its parameters are this part's parameters — edit them in the
-            <strong>Parameters</strong> panel above; the profile re-resolves on Apply.
+            Pick another above to swap it; edit its parameters in the
+            <strong>Parameters</strong> panel (they're this part's params).
           </div>
           <div class="pv-prof-split">
             <ProfileEditor
