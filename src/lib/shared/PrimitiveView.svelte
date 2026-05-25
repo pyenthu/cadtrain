@@ -451,11 +451,9 @@
         if (declM) fnKind = declM[1];
       }
       if (fnKind) {
-        let fpts: [number, number][] = [];
-        try { const def = PROFILE_REGISTRY[fnKind]; if (def) fpts = def.build(defaultsFor(def)) as [number, number][]; } catch { /* unknown kind */ }
-        profilePts = fpts;
-        profileBaseline = JSON.stringify(profilePts);
-        profileEdit = { instName: inst.name, call: inst.call, info, mode: 'fn', kind: fnKind, profStart: segStart, profEnd: segEnd, profileName: null, canPromote: false, px, py };
+        // Function profile → open the unified editor directly (selector in its
+        // title repoints the part); no intermediate picker popup.
+        void openInstanceFnEditor(inst, info, fnKind);
         return;
       }
       recogError = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array or a meta.profiles reference.`; return;
@@ -637,7 +635,14 @@
   // and we auto-pick it into the leaf so the part renders it immediately.
   // target 'leaf' = a standalone leaf primitive's polygon param (pickPaletteProfile);
   // 'instance' = a composite Parts-list instance's profile arg (pickProfileShape).
-  let fnEditor = $state<{ target: 'leaf' | 'instance'; pname: string | null; set: 'revolve' | 'cartesian'; seed: any; px: number; py: number } | null>(null);
+  let fnEditor = $state<{
+    target: 'leaf' | 'instance'; pname: string | null;
+    set: 'revolve' | 'cartesian'; seed: any;
+    /** When editing a PART's function profile: the binding used by the title
+     *  selector to repoint the part (swap which profile drives it). */
+    bind?: { instName: string; kind: string; revolve: boolean } | null;
+    px: number; py: number;
+  } | null>(null);
   // Profile identity (id/name/description/tags) is owned here so the title-bar ⚙
   // popover can edit it; ProfileFnEditor reads it as props. Reseeded on each open.
   let fnMeta = $state({ id: '', label: '', description: '', tags: '' });
@@ -711,6 +716,45 @@
       void editFnProfile('instance', null, kind); // volume ƒ profile
     }
     closeProfilePopup();
+  }
+  // ── Unified editor: a part's function profile opens the editor DIRECTLY, with
+  // the profile selector in its title bar (no intermediate picker popup). ──────
+  // Seed for a CURATED kind (from the registry); null when not curated (→ volume).
+  function curatedSeed(kind: string): any {
+    const def = PROFILE_REGISTRY[kind];
+    if (!def) return null;
+    return { id: def.id, label: def.label, description: '', tags: def.tags, params: def.params, body: curatedBody(def.build) };
+  }
+  // Open the editor bound to an instance's function profile (`resolveProfile({kind})`).
+  async function openInstanceFnEditor(inst: any, info: LeafProfile, kind: string) {
+    const set: 'revolve' | 'cartesian' = info.revolve ? 'revolve' : 'cartesian';
+    const pos = fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220);
+    const bind = { instName: inst.name, kind, revolve: !!info.revolve };
+    const cs = curatedSeed(kind);
+    if (cs) { fnEditor = { target: 'instance', pname: null, set, seed: cs, bind, ...pos }; return; }
+    try {
+      const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(kind)}`);
+      if (r.ok) { const p = await r.json(); fnEditor = { target: 'instance', pname: null, set: p.set ?? set, seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) }, bind, ...pos }; }
+    } catch { /* offline — ignore */ }
+  }
+  // Title selector → swap WHICH profile drives the part: repoint the part's
+  // source (kind string, regex-relocated so it survives offset shifts) then
+  // reseed the editor from the picked profile. Volume kinds resolve via the P6
+  // bake path, so both curated + volume swaps work.
+  async function swapEditorProfile(id: string, _origin: 'builtin' | 'volume') {
+    const b = fnEditor?.bind;
+    if (!b || id === b.kind) return;
+    const esc = b.kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
+    if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + b.kind.length, id); }
+    const pos = { px: fnEditor!.px, py: fnEditor!.py };
+    const nb = { ...b, kind: id };
+    const cs = curatedSeed(id);
+    if (cs) { fnEditor = { target: 'instance', pname: null, set: fnEditor!.set, seed: cs, bind: nb, ...pos }; return; }
+    try {
+      const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(id)}`);
+      if (r.ok) { const p = await r.json(); fnEditor = { target: 'instance', pname: null, set: p.set ?? fnEditor!.set, seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) }, bind: nb, ...pos }; }
+    } catch { /* ignore */ }
   }
   async function onFnSaved(id: string) {
     const ed = fnEditor;
@@ -1785,9 +1829,15 @@
     {#key fnEditor}
       <FloatingPanel
         title="Profile Function"
-        subtitle={`${fnMeta.label || fnMeta.id || 'New profile'} · ${fnMeta.description || fnAutoDesc}`}
+        subtitle={fnEditor.bind ? (fnMeta.description || fnAutoDesc) : `${fnMeta.label || fnMeta.id || 'New profile'} · ${fnMeta.description || fnAutoDesc}`}
         visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
         {#snippet titleAction()}
+          {#if fnEditor.bind}
+            <!-- selector: swap WHICH profile drives the part, in the title itself -->
+            <div class="pv-fn-sel" role="presentation" onmousedown={(e) => e.stopPropagation()}>
+              <ProfilePalette layout="dropdown" set={fnEditor.set} current={fnMeta.id} volume={volProfiles} onPick={(id, origin) => swapEditorProfile(id, origin)} />
+            </div>
+          {/if}
           <button
             class="pv-meta-gear" type="button"
             title={`Edit name · description · tags\nname: ${fnMeta.label || '(unnamed)'}\ndescription: ${fnMeta.description || fnAutoDesc}\ntags: ${fnMeta.tags || '(none)'}`}
@@ -1932,6 +1982,7 @@
 
 <style>
   /* Profile Function title-bar ⚙ (edits name/description/tags) + its popover form */
+  .pv-fn-sel { width: 190px; }
   .pv-meta-gear { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border: 1px solid #dcdce2; background: #fff; border-radius: 4px; cursor: pointer; color: #888; padding: 0; }
   .pv-meta-gear:hover { color: #c4392f; border-color: #e0b4ad; background: #fceeec; }
   .pv-meta-form { display: flex; flex-direction: column; gap: 8px; font: 11px Arial; }

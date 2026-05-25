@@ -28,6 +28,15 @@
   let { set, current, volume = [], onPick, onEdit, layout = 'grid' }: Props = $props();
   let filter = $state('');
   let open = $state(false);
+  // The menu is body-relative (position:fixed, measured from the combo) so it
+  // escapes any overflow:hidden ancestor — e.g. a FloatingPanel title bar.
+  let comboEl: HTMLElement | undefined = $state();
+  let menuPos = $state({ x: 0, y: 0, w: 0 });
+  function openMenu() {
+    open = true;
+    const r = comboEl?.getBoundingClientRect();
+    if (r) menuPos = { x: r.left, y: r.bottom + 2, w: r.width };
+  }
 
   function builtinPts(d: ProfileDef): Pt[] { try { return d.build(defaultsFor(d)); } catch { return []; } }
   function volPts(v: VolProfile): Pt[] {
@@ -78,7 +87,7 @@
 {#if layout === 'dropdown'}
   <!-- Searchable combobox: one input; the menu shows each shape's thumbnail as
        you type. Replaces the preset "tabs" + plain <select>. -->
-  <div class="pp-combo">
+  <div class="pp-combo" bind:this={comboEl}>
     <div class="pp-combo-input" class:sel={!!currentEntry}>
       {#if currentEntry}
         {@const ct = thumb(currentEntry.pts, currentEntry.set === 'revolve')}
@@ -88,11 +97,11 @@
         </svg>
       {:else}<span class="pp-mini pp-mini-empty">▦</span>{/if}
       <input class="pp-search" placeholder={currentLabel || 'Search profiles…'} bind:value={filter} spellcheck="false"
-        onfocus={() => (open = true)} onblur={() => setTimeout(() => (open = false), 150)} />
+        onfocus={openMenu} onblur={() => setTimeout(() => (open = false), 150)} />
       <span class="pp-caret">▾</span>
     </div>
     {#if open}
-      <div class="pp-menu">
+      <div class="pp-menu" style={`left:${menuPos.x}px; top:${menuPos.y}px; width:${menuPos.w}px;`}>
         {#each shown as e (e.origin + ':' + e.id)}
           {@const t = thumb(e.pts, e.set === 'revolve')}
           <div class="pp-optrow" class:sel={e.id === current}>
@@ -159,7 +168,7 @@
   .pp-mini { width: 22px; height: 22px; flex: 0 0 auto; }
   .pp-mini-empty { display: inline-flex; align-items: center; justify-content: center; color: #ccc; font-size: 14px; }
   .pp-caret { color: #aaa; font-size: 10px; flex: 0 0 auto; }
-  .pp-menu { position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 30; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #d0d0da; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.14); padding: 3px; }
+  .pp-menu { position: fixed; z-index: 1300; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #d0d0da; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.14); padding: 3px; }
   .pp-optrow { display: flex; align-items: center; border-radius: 5px; }
   .pp-optrow:hover { background: #f0f4fb; }
   .pp-optrow.sel { background: #e8effb; box-shadow: 0 0 0 1px #2266cc inset; }

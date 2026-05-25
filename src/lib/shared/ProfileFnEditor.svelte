@@ -278,9 +278,9 @@
     <div class="fn-actions">
       <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
       {#if seedId}
-        <button type="button" class="fn-saveas" disabled={busy || !!err || !slug} onclick={() => save(true)} title="Save under a new id (fork a copy)">Save as new</button>
+        <button type="button" class="fn-saveas" disabled={busy || !!err || !slug} onclick={() => save(true)} title="Save under a new id (fork a copy)">Save as</button>
       {/if}
-      <button type="button" class="fn-save" disabled={busy || !!err || !slug} onclick={() => save(false)}>{busy ? 'Saving…' : seedId ? 'Save' : 'Save profile'}</button>
+      <button type="button" class="fn-save" disabled={busy || !!err || !slug} onclick={() => save(false)} title="Save to the volume">{busy ? '…' : 'Save'}</button>
     </div>
     {#if saveErr}<div class="fn-saveerr" title={saveErr}>{saveErr}</div>{/if}
     <div class="fn-prev">
@@ -314,13 +314,14 @@
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
-  .fn-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-  .fn-cancel { flex: 0 0 auto; border: 1px solid #d4d4dc; background: #fff; border-radius: 5px; padding: 4px 12px; cursor: pointer; font: 11px Arial; }
+  /* three buttons in a single row — Cancel · Save as · Save */
+  .fn-actions { display: flex; gap: 5px; align-items: stretch; }
+  .fn-cancel { flex: 1 1 0; min-width: 0; border: 1px solid #d4d4dc; background: #fff; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
   .fn-cancel:hover { background: #f6f6f8; }
-  .fn-saveas { flex: 1 1 0; min-width: 0; border: 1px solid #e8c6c1; background: #fff; color: #c4392f; border-radius: 5px; padding: 4px 10px; cursor: pointer; font: 11px Arial; }
+  .fn-saveas { flex: 1 1 0; min-width: 0; white-space: nowrap; border: 1px solid #e8c6c1; background: #fff; color: #c4392f; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
   .fn-saveas:hover:not(:disabled) { background: #fceeec; }
   .fn-saveas:disabled { opacity: .5; cursor: not-allowed; }
-  .fn-save { flex: 1 1 100%; border: 1px solid #a8302a; background: #c4392f; color: #fff; border-radius: 5px; padding: 5px 14px; cursor: pointer; font: 11px Arial; }
+  .fn-save { flex: 1 1 0; min-width: 0; border: 1px solid #a8302a; background: #c4392f; color: #fff; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
   .fn-save:hover:not(:disabled) { background: #b23329; }
   .fn-save:disabled { opacity: .5; cursor: not-allowed; }
   .fn-saveerr { font-size: 10px; color: #cc2222; line-height: 1.3; }
@@ -361,7 +362,7 @@
   .fn-marg-na { color: #ccc; text-align: center; }
   /* preview — fills the right column (capped to popup viewport); shape ~90% */
   .fn-prev { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
-  .fn-svg { flex: 1; width: 100%; min-height: 170px; min-width: 0; border: 1px solid #ececf2; border-radius: 6px; background: #fffdfc; }
+  .fn-svg { flex: 1; width: 100%; min-height: 120px; max-height: 320px; min-width: 0; border: 1px solid #ececf2; border-radius: 6px; background: #fffdfc; }
   .fn-svg.bad { background: #fff6f6; border-color: #f0caca; }
   .fn-path { fill: rgba(196,57,47,0.13); stroke: #c4392f; stroke-width: 1.4; stroke-linejoin: round; }
   .fn-axis { stroke: #d08b84; stroke-width: 1.4; stroke-dasharray: 6 4; opacity: .9; }
