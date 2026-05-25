@@ -43,6 +43,32 @@ export interface ProfileDef {
 const P = (label: string, def: number, min: number, max: number, step: number, unit?: string): ProfileParamSpec =>
   ({ label, default: def, min, max, step, unit });
 
+// A tiny "pen" for TRACING a profile as a sequence of moves — far more readable,
+// editable (insert/delete one line), and AI-friendly (a command chain you could
+// generate from a prompt) than a raw [[r,z],…] array. `mv(r,z)` starts the path;
+// `line(r,z)` draws to a point; `lineR`/`lineZ` are axis-locked convenience moves.
+// Coords are any expression of the params. `pts()` returns the polygon. The pen
+// is imported by curated builds and INJECTED into the volume profile sandbox.
+export interface ProfilePen {
+  mv(r: number, z: number): ProfilePen;
+  line(r: number, z: number): ProfilePen;
+  lineR(r: number): ProfilePen; // horizontal move (same z)
+  lineZ(z: number): ProfilePen; // vertical move (same r)
+  pts(): Pt[];
+}
+export function pen(): ProfilePen {
+  const out: Pt[] = [];
+  const cur = () => out[out.length - 1] ?? [0, 0];
+  const api: ProfilePen = {
+    mv(r, z) { out.length = 0; out.push([r, z]); return api; },
+    line(r, z) { out.push([r, z]); return api; },
+    lineR(r) { out.push([r, cur()[1]]); return api; },
+    lineZ(z) { out.push([cur()[0], z]); return api; },
+    pts() { return out.map((p) => [p[0], p[1]] as Pt); },
+  };
+  return api;
+}
+
 function ngonPts(n: number, r: number, rot = 0): Pt[] {
   const N = Math.max(3, Math.round(n));
   return Array.from({ length: N }, (_, i) => {
@@ -165,9 +191,18 @@ export const PROFILE_REGISTRY: Record<string, ProfileDef> = {
       const ri = p.bore / 2, pipeRo = ri + p.wall, tjRo = p.tjOD / 2;
       const noseRo = Math.max(ri + 0.05, Math.min(tjRo, p.pinOD / 2));
       const z1 = p.pipeLen, z2 = z1 + p.upsetLen;
-      const zt = z2 + p.connLen + (p.threadOff ?? 0); // straight at tjOD → thread/taper starts here
+      const zt = z2 + p.connLen + (p.threadOff ?? 0);
       const z4 = zt + p.pinLen;
-      return [[ri, 0], [pipeRo, 0], [pipeRo, z1], [tjRo, z2], [tjRo, zt], [noseRo, z4], [ri, z4]];
+      // Traced as a pen path — read it top→bottom down the outer contour:
+      const t = pen();
+      t.mv(ri, 0);          // bore, top
+      t.line(pipeRo, 0);    // → pipe OD
+      t.line(pipeRo, z1);   // ↓ pipe body
+      t.line(tjRo, z2);     // ↘ upset taper out to tool-joint OD
+      t.line(tjRo, zt);     // ↓ barrel + thread-start offset
+      t.line(noseRo, z4);   // ↙ pin nose taper
+      t.line(ri, z4);       // → bottom face back to bore (closes up the bore)
+      return t.pts();
     },
   },
   drill_pipe_box: {

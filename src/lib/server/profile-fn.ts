@@ -11,6 +11,7 @@
  * realm (same posture as component-loader.ts) + import-strip + denylist.
  */
 import { transformSync } from 'esbuild';
+import { pen } from '$lib/shared/profile-presets';
 
 function stripImports(src: string): string {
   return src.replace(/^\s*import\s[^\n]*;?\s*$/gm, '');
@@ -25,8 +26,8 @@ export function buildProfileFromSource(source: string, params: Record<string, nu
   const body = transformSync(stripped, { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
   const mod = { exports: {} as Record<string, unknown> };
   // eslint-disable-next-line no-new-func
-  const fn = new Function('Math', 'exports', 'module', `${body}\nreturn (exports.build || (module.exports && module.exports.build));`);
-  const build = fn(Math, mod.exports, mod) as ((p: Record<string, number>) => unknown) | undefined;
+  const fn = new Function('Math', 'pen', 'exports', 'module', `${body}\nreturn (exports.build || (module.exports && module.exports.build));`);
+  const build = fn(Math, pen, mod.exports, mod) as ((p: Record<string, number>) => unknown) | undefined;
   if (typeof build !== 'function') throw new Error('profile source must `export function build(p)`');
   const pts = build(params || {});
   if (!Array.isArray(pts) || pts.length < 3) throw new Error('build(p) must return ≥ 3 [r,z] points');

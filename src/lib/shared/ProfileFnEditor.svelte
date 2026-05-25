@@ -21,7 +21,9 @@
   let { set, seed = null, onSaved, onClose }: Props = $props();
 
   // Seed an editable cylinder so a fresh editor previews immediately.
-  const DEFAULT_BODY = `const r = p.r ?? 40;\nconst len = p.len ?? 120;\nreturn [[0, 0], [r, 0], [r, len], [0, len]];`;
+  // Trace the profile with the pen (mv/line) — readable + editable (insert/
+  // delete a move). `pen` is injected into the profile sandbox.
+  const DEFAULT_BODY = `const r = p.r ?? 40;\nconst len = p.len ?? 120;\nconst t = pen();\nt.mv(0, 0);    // axis, top\nt.line(r, 0);  // → out to radius\nt.line(r, len);// ↓ down the side\nt.line(0, len);// → back to axis\nreturn t.pts();`;
   function seedRows(s: Seed | null): ParamRow[] {
     if (s?.params && typeof s.params === 'object' && Object.keys(s.params).length) {
       return Object.entries<any>(s.params).map(([key, d]) => ({
