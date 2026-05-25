@@ -13,6 +13,13 @@
 
   interface Props {
     title: string;
+    /** Optional lighter subtitle shown beside the title (e.g. name · short desc). */
+    subtitle?: string;
+    /** Optional tooltip on the title group — hover for more detail. */
+    titleTip?: string;
+    /** Optional interactive content rendered between the title and subtitle
+     *  (e.g. a settings ⚙ button). */
+    titleAction?: Snippet;
     visible: boolean;
     onClose: () => void;
     /** Initial x/y in pixels. Interpreted as viewport coordinates by default,
@@ -38,7 +45,7 @@
     children: Snippet;
   }
 
-  let { title, visible, onClose, x = 80, y = 80, width = 'min(560px, 80vw)', maxHeight = '80vh', containerRelative = false, docked = false, onToggleDock = undefined, children }: Props = $props();
+  let { title, subtitle = '', titleTip = '', titleAction = undefined, visible, onClose, x = 80, y = 80, width = 'min(560px, 80vw)', maxHeight = '80vh', containerRelative = false, docked = false, onToggleDock = undefined, children }: Props = $props();
 
   let posX = $state(x);
   let posY = $state(y);
@@ -94,7 +101,11 @@
     style={docked ? '' : `left:${posX}px; top:${posY}px; width:${width}; max-height:${maxHeight};`}
   >
     <div class="fp-hdr" role="presentation" onmousedown={docked ? undefined : startDrag}>
-      <h3 class="fp-title">{title}</h3>
+      <div class="fp-titlewrap" title={titleTip || undefined}>
+        <h3 class="fp-title">{title}</h3>
+        {#if titleAction}{@render titleAction()}{/if}
+        {#if subtitle}<span class="fp-sub">{subtitle}</span>{/if}
+      </div>
       <div class="fp-hdr-actions">
         {#if onToggleDock}
           <button
@@ -188,7 +199,9 @@
     flex-shrink: 0;
   }
   .fp-root.dragging .fp-hdr { cursor: grabbing; }
-  .fp-title { margin: 0; font: bold 12px Arial; color: #333; }
+  .fp-titlewrap { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; }
+  .fp-title { margin: 0; font: bold 12px Arial; color: #333; white-space: nowrap; flex-shrink: 0; }
+  .fp-sub { font: 11px Arial; color: #8a8a98; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .fp-hdr-actions {
     display: inline-flex;
     gap: 4px;

@@ -27,7 +27,7 @@ function defaultsOf(params: any): Record<string, number> {
 export const POST = async ({ request }) => {
   let body: any;
   try { body = await request.json(); } catch { throw error(400, 'invalid JSON body'); }
-  const { id, label, set, tags, kind, params, points, source } = body ?? {};
+  const { id, label, description, set, tags, kind, params, points, source } = body ?? {};
   if (typeof id !== 'string' || !ID_RE.test(id)) throw error(400, `bad id "${id}" — must match [a-z][a-z0-9_]*`);
   if (set !== 'cartesian' && set !== 'revolve') throw error(400, 'set must be "cartesian" | "revolve"');
   const hasKind = typeof kind === 'string' && kind.length > 0;
@@ -38,6 +38,7 @@ export const POST = async ({ request }) => {
   const rec: any = {
     id,
     label: typeof label === 'string' && label.trim() ? label.trim() : id,
+    description: typeof description === 'string' ? description.trim() : '',
     set,
     tags: Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [],
   };

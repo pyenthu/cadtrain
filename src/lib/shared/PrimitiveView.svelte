@@ -638,6 +638,25 @@
   // target 'leaf' = a standalone leaf primitive's polygon param (pickPaletteProfile);
   // 'instance' = a composite Parts-list instance's profile arg (pickProfileShape).
   let fnEditor = $state<{ target: 'leaf' | 'instance'; pname: string | null; set: 'revolve' | 'cartesian'; seed: any; px: number; py: number } | null>(null);
+  // Profile identity (id/name/description/tags) is owned here so the title-bar ⚙
+  // popover can edit it; ProfileFnEditor reads it as props. Reseeded on each open.
+  let fnMeta = $state({ id: '', label: '', description: '', tags: '' });
+  let fnMetaPop = $state<{ x: number; y: number } | null>(null);
+  const fnAutoDesc = $derived(fnEditor ? (fnEditor.set === 'revolve' ? 'revolve half-section (r, z)' : 'cross-section profile') : '');
+  $effect(() => {
+    if (!fnEditor) return;
+    const s = fnEditor.seed;
+    fnMeta = {
+      id: s?.id ?? '', label: s?.label ?? '', description: s?.description ?? '',
+      tags: Array.isArray(s?.tags) ? s.tags.join(', ') : (s?.tags ?? ''),
+    };
+    fnMetaPop = null;
+  });
+  function toggleFnMetaPop(ev: MouseEvent) {
+    if (fnMetaPop) { fnMetaPop = null; return; }
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    fnMetaPop = { x: Math.max(8, Math.min(r.left - 12, window.innerWidth - 296)), y: r.bottom + 8 };
+  }
   function fnEditorPos(left: number, bottom: number) {
     return { px: Math.max(8, Math.min(left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(bottom + 6, window.innerHeight - 440)) };
   }
@@ -659,7 +678,7 @@
       if (!p.source) return; // configured/drawn profile — no build() to edit
       fnEditor = {
         target, pname, set: p.set ?? 'revolve',
-        seed: { id: p.id, label: p.label, tags: p.tags, params: p.params, body: bodyOf(p.source) },
+        seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) },
         ...fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220),
       };
     } catch { /* offline — ignore */ }
@@ -1764,10 +1783,34 @@
          seeds from `seed` only on mount, so reusing the instance kept the first
          seed (the rect default) even after picking a different profile. -->
     {#key fnEditor}
-      <FloatingPanel title="" visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
-        <ProfileFnEditor set={fnEditor.set} seed={fnEditor.seed} onSaved={onFnSaved} onClose={closeFnEditor} />
+      <FloatingPanel
+        title="Profile Function"
+        subtitle={`${fnMeta.label || fnMeta.id || 'New profile'} · ${fnMeta.description || fnAutoDesc}`}
+        visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
+        {#snippet titleAction()}
+          <button
+            class="pv-meta-gear" type="button"
+            title={`Edit name · description · tags\nname: ${fnMeta.label || '(unnamed)'}\ndescription: ${fnMeta.description || fnAutoDesc}\ntags: ${fnMeta.tags || '(none)'}`}
+            onmousedown={(e) => e.stopPropagation()} onclick={toggleFnMetaPop} aria-label="Edit profile name, description and tags">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        {/snippet}
+        <ProfileFnEditor
+          set={fnEditor.set} seed={fnEditor.seed}
+          id={fnMeta.id} label={fnMeta.label} description={fnMeta.description} tags={fnMeta.tags}
+          onSaved={onFnSaved} onClose={closeFnEditor} />
       </FloatingPanel>
     {/key}
+    {#if fnMetaPop}
+      <FloatingPanel title="Profile details" visible={true} x={fnMetaPop.x} y={fnMetaPop.y} width="288px" onClose={() => (fnMetaPop = null)}>
+        <div class="pv-meta-form">
+          <label><span>id</span><input bind:value={fnMeta.id} placeholder="casing_coupling" spellcheck="false" /></label>
+          <label><span>name</span><input bind:value={fnMeta.label} placeholder="Casing coupling" /></label>
+          <label><span>description</span><input bind:value={fnMeta.description} placeholder={fnAutoDesc} /></label>
+          <label><span>tags</span><input bind:value={fnMeta.tags} placeholder="coupling, casing" /></label>
+        </div>
+      </FloatingPanel>
+    {/if}
   {/if}
 
   {#if addParamPanel}
@@ -1888,6 +1931,14 @@
 </div>
 
 <style>
+  /* Profile Function title-bar ⚙ (edits name/description/tags) + its popover form */
+  .pv-meta-gear { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border: 1px solid #dcdce2; background: #fff; border-radius: 4px; cursor: pointer; color: #888; padding: 0; }
+  .pv-meta-gear:hover { color: #c4392f; border-color: #e0b4ad; background: #fceeec; }
+  .pv-meta-form { display: flex; flex-direction: column; gap: 8px; font: 11px Arial; }
+  .pv-meta-form label { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; }
+  .pv-meta-form span { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: #999; }
+  .pv-meta-form input { font: 11px Arial; padding: 4px 7px; border: 1px solid #d8d8e2; border-radius: 5px; min-width: 0; }
+  .pv-meta-form input:focus { outline: none; border-color: #c4392f; box-shadow: 0 0 0 2px rgba(196,57,47,.14); }
   /* Single-row layout — the canvas sits at the TOP of the split (no header,
      no padding above the canvas pane). Title + description now live INSIDE
      the canvas (PrimitiveDualScene <HTML> overlay). */

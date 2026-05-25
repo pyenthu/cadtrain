@@ -21,5 +21,5 @@ export const GET = async ({ url }) => {
   let source = '';
   try { source = await readFile(join(dir, 'source.ts'), 'utf8'); }
   catch { /* configured/drawn profile — no source */ }
-  return json({ id, label: meta.label ?? id, set: meta.set ?? 'revolve', tags: meta.tags ?? [], params: meta.params ?? {}, source });
+  return json({ id, label: meta.label ?? id, description: meta.description ?? '', set: meta.set ?? 'revolve', tags: meta.tags ?? [], params: meta.params ?? {}, source });
 };
