@@ -1760,9 +1760,14 @@
   {/if}
 
   {#if fnEditor}
-    <FloatingPanel title="" visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
-      <ProfileFnEditor set={fnEditor.set} seed={fnEditor.seed} onSaved={onFnSaved} onClose={closeFnEditor} />
-    </FloatingPanel>
+    <!-- key on the fnEditor object so the editor REMOUNTS each open — its state
+         seeds from `seed` only on mount, so reusing the instance kept the first
+         seed (the rect default) even after picking a different profile. -->
+    {#key fnEditor}
+      <FloatingPanel title="" visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
+        <ProfileFnEditor set={fnEditor.set} seed={fnEditor.seed} onSaved={onFnSaved} onClose={closeFnEditor} />
+      </FloatingPanel>
+    {/key}
   {/if}
 
   {#if addParamPanel}
