@@ -151,13 +151,17 @@ export const PROFILE_REGISTRY: Record<string, ProfileDef> = {
       pipeLen:  P('pipe body len', 6, 0, 40, 0.5, 'in'),
       upsetLen: P('upset taper len', 2, 0.1, 12, 0.1, 'in'),
       connLen:  P('connection len', 3, 0.5, 16, 0.1, 'in'),
-      pinLen:   P('pin nose len', 4, 0.5, 12, 0.1, 'in'),
-      taper:    P('pin taper', 3, 0, 15, 0.1, '°/side'),
+      pinLen:   P('pin nose len', 5, 0.5, 12, 0.1, 'in'),
+      pinOD:    P('pin nose OD', 4.5, 0.5, 24, 0.1, 'in'),
     },
+    // Half-section (r,z), Z-down: bore wall · pipe body OD · upset taper to the
+    // tool-joint OD · connection barrel · PIN NOSE tapering from tjOD down to
+    // pinOD over pinLen · bottom face back to the bore. pinOD drives a real,
+    // visible nose cone (vs the old tiny taper-angle that barely narrowed).
     build: (p) => {
       const ri = p.bore / 2, pipeRo = ri + p.wall, tjRo = p.tjOD / 2;
+      const noseRo = Math.max(ri + 0.05, Math.min(tjRo, p.pinOD / 2));
       const z1 = p.pipeLen, z2 = z1 + p.upsetLen, z3 = z2 + p.connLen, z4 = z3 + p.pinLen;
-      const noseRo = Math.max(ri + 0.1, tjRo - p.pinLen * Math.tan((p.taper * Math.PI) / 180));
       return [[ri, 0], [pipeRo, 0], [pipeRo, z1], [tjRo, z2], [tjRo, z3], [noseRo, z4], [ri, z4]];
     },
   },
