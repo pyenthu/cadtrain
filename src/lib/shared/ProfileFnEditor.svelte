@@ -82,11 +82,30 @@
       .trim();
     return { expr, moves };
   }
+  interface Calc { name: string; expr: string; }
+  // Split the calc block (`const a = X, b = Y; const c = Z;`) into structured
+  // { name, expr } entries for the visual 3-column editor.
+  function parseCalc(body: string): Calc[] {
+    const out: Calc[] = [];
+    for (const stmt of (body || '').replace(/\/\/[^\n]*/g, '').split(';')) {
+      const decl = stmt.replace(/^\s*(?:const|let|var)\s+/, '');
+      for (const part of splitArgs(decl)) {
+        const eq = part.indexOf('=');
+        if (eq < 0) continue;
+        const name = part.slice(0, eq).trim();
+        const expr = part.slice(eq + 1).trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name) && expr) out.push({ name, expr });
+      }
+    }
+    return out;
+  }
 
   const _parsed = parseBody(seed?.body ?? DEFAULT_BODY);
   let rows = $state<ParamRow[]>(seedRows(seed));
-  let exprBody = $state(_parsed.expr);
+  let calc = $state<Calc[]>(parseCalc(_parsed.expr));
   let moves = $state<Move[]>(_parsed.moves);
+  // Recomposed calc source (one declaration per line) — for the Source tab.
+  const exprSource = $derived(calc.map((c) => `const ${c.name} = ${c.expr};`).join('\n'));
   let exprOpen = $state(true);
   let movesOpen = $state(true);
   let previewPts = $state<Pt[]>([]);
@@ -108,15 +127,18 @@
   // row's ⚙. Holds the metadata you rarely touch (label / min / max / step) so
   // the param row itself stays compact (key · default · unit).
   let paramPop = $state<{ i: number; x: number; y: number } | null>(null);
-  // ƒ callout for a path move's x/y expression when it's too long for the input.
-  let fxEdit = $state<{ i: number; field: 'a' | 'b'; x: number; y: number } | null>(null);
-  function openFx(i: number, field: 'a' | 'b', ev: MouseEvent) {
+  // ƒ callout for editing an expression too long for the inline input — a path
+  // move's x/y ('move') or a calculated value ('calc').
+  let fxEdit = $state<{ kind: 'move' | 'calc'; i: number; field?: 'a' | 'b'; x: number; y: number } | null>(null);
+  function fxPos(ev: MouseEvent): { x: number; y: number } {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    const popH = 100; // approx callout height — flip above if it'd clip the bottom
+    const popH = 110; // flip above if opening below would clip the viewport bottom
     let y = r.bottom + 8;
     if (y + popH > window.innerHeight - 8) y = Math.max(8, r.top - popH - 8);
-    fxEdit = { i, field, x: Math.max(8, Math.min(r.left - 100, window.innerWidth - 256)), y };
+    return { x: Math.max(8, Math.min(r.left - 110, window.innerWidth - 266)), y };
   }
+  function openFx(i: number, field: 'a' | 'b', ev: MouseEvent) { fxEdit = { kind: 'move', i, field, ...fxPos(ev) }; }
+  function openFxCalc(i: number, ev: MouseEvent) { fxEdit = { kind: 'calc', i, ...fxPos(ev) }; }
   function openParamPop(i: number, ev: MouseEvent) {
     if (paramPop?.i === i) { paramPop = null; return; }
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
@@ -135,14 +157,15 @@
     // calc can use them directly — no `const ri = p.bore` aliasing needed. Skip
     // any name the calc block already declares (avoids double-declaration).
     const keys = rows.map((r) => r.key.trim()).filter((k) => /^[a-zA-Z_]\w*$/.test(k));
-    const usable = keys.filter((k) => !new RegExp(`\\b${k}\\s*=`).test(exprBody));
+    const usable = keys.filter((k) => !calc.some((c) => c.name === k));
     const destr = usable.length ? `  const { ${usable.join(', ')} } = p;\n` : '';
-    if (!moves.length) return `export function build(p) {\n${destr}${exprBody}\n}`;
+    const ex = calc.length ? calc.map((c) => `  const ${c.name} = ${c.expr};`).join('\n') + '\n' : '';
+    if (!moves.length) return `export function build(p) {\n${destr}${ex}}`;
     // Chained pen path: pen().mv(…).line(…)….pts()
     const chain = moves.map((mv) =>
       mv.cmd === 'lineR' || mv.cmd === 'lineZ' ? `    .${mv.cmd}(${mv.a})` : `    .${mv.cmd}(${mv.a}, ${mv.b})`,
     ).join('\n');
-    return `export function build(p) {\n${destr}${exprBody}\n  return pen()\n${chain}\n    .pts();\n}`;
+    return `export function build(p) {\n${destr}${ex}  return pen()\n${chain}\n    .pts();\n}`;
   }
   // Full profile source.ts (meta block + build) — the unified P6 form, shown in
   // the Source tab the same way a part's source reads: meta (params + calc) on
@@ -295,15 +318,25 @@
       </div>
     {/if}
 
-    <!-- calculated expressions (derived values from the params) -->
+    <!-- calculated expressions — visual 3-column grid of {name = expr} boxes -->
     <div class="fn-acc">
       <button type="button" class="fn-acc-tog" onclick={() => (exprOpen = !exprOpen)}>
-        <span class="fn-acc-caret">{exprOpen ? '▾' : '▸'}</span> calculated expressions
+        <span class="fn-acc-caret">{exprOpen ? '▾' : '▸'}</span> calculated expressions <span class="fn-acc-n">{calc.length}</span>
       </button>
+      <button type="button" class="fn-acc-add" onclick={() => { exprOpen = true; calc = [...calc, { name: '', expr: '0' }]; }} title="Add a calculated value">+ expr</button>
     </div>
     {#if exprOpen}
-      <textarea class="fn-expr" bind:value={exprBody} spellcheck="false" rows="4"
-        placeholder="const ri = p.bore / 2;  // derived values used by the path"></textarea>
+      <div class="fn-calc">
+        {#each calc as c, i (i)}
+          <div class="fn-cbox">
+            <input class="fn-cname" bind:value={c.name} spellcheck="false" placeholder="name" />
+            <span class="fn-ceq">=</span>
+            <input class="fn-cexpr" bind:value={c.expr} spellcheck="false" placeholder="expr" />
+            {#if (c.expr?.length ?? 0) > 9}<button type="button" class="fn-fx" onclick={(e) => openFxCalc(i, e)} aria-label="Edit expression">ƒ</button>{/if}
+            <button type="button" class="fn-cdel" onclick={() => (calc = calc.filter((_, j) => j !== i))} aria-label="Remove" title="Remove">✕</button>
+          </div>
+        {/each}
+      </div>
     {/if}
 
     <!-- path: visual list of pen moves (mv / line) — r,z are expressions -->
@@ -382,7 +415,7 @@
       <div class="fn-acc"><button type="button" class="fn-acc-tog" onclick={() => (paramsOpen = !paramsOpen)}><span class="fn-acc-caret">{paramsOpen ? '▾' : '▸'}</span> meta</button></div>
       {#if paramsOpen}<textarea class="fn-expr" readonly spellcheck="false" rows="9" value={metaCode}></textarea>{/if}
       <div class="fn-acc"><button type="button" class="fn-acc-tog" onclick={() => (exprOpen = !exprOpen)}><span class="fn-acc-caret">{exprOpen ? '▾' : '▸'}</span> calculated expressions</button></div>
-      {#if exprOpen}<textarea class="fn-expr" bind:value={exprBody} spellcheck="false" rows="4" placeholder="const ri = p.bore / 2;"></textarea>{/if}
+      {#if exprOpen}<textarea class="fn-expr" value={exprSource} onchange={(e) => (calc = parseCalc((e.currentTarget as HTMLTextAreaElement).value))} spellcheck="false" rows="4" placeholder="const ri = p.bore / 2;"></textarea>{/if}
       <div class="fn-acc"><button type="button" class="fn-acc-tog" onclick={() => (movesOpen = !movesOpen)}><span class="fn-acc-caret">{movesOpen ? '▾' : '▸'}</span> path <span class="fn-acc-hint">(composer)</span></button></div>
       {#if movesOpen}<textarea class="fn-expr" spellcheck="false" rows="7" value={pathLines} onchange={(e) => (moves = parsePathLines((e.currentTarget as HTMLTextAreaElement).value))}></textarea>{/if}
     {/if}
@@ -422,7 +455,7 @@
   {/if}
 {/if}
 
-{#if fxEdit}
+{#if fxEdit && fxEdit.kind === 'move'}
   {@const fm = moves[fxEdit.i]}
   {#if fm}
     <div class="fn-pop-back" role="presentation" onclick={() => (fxEdit = null)}></div>
@@ -431,6 +464,16 @@
       <textarea class="fn-fx-ta" spellcheck="false" rows="3"
         value={fxEdit.field === 'a' ? fm.a : fm.b}
         oninput={(e) => { const v = (e.currentTarget as HTMLTextAreaElement).value; if (fxEdit!.field === 'a') fm.a = v; else fm.b = v; }}></textarea>
+    </div>
+  {/if}
+{:else if fxEdit && fxEdit.kind === 'calc'}
+  {@const c = calc[fxEdit.i]}
+  {#if c}
+    <div class="fn-pop-back" role="presentation" onclick={() => (fxEdit = null)}></div>
+    <div class="fn-pop fn-fx-pop" style={`left:${fxEdit.x}px; top:${fxEdit.y}px`}>
+      <div class="fn-pop-ttl"><code>{c.name || 'calc'}</code> = … expression</div>
+      <label class="fn-fx-row"><span>name</span><input bind:value={c.name} spellcheck="false" placeholder="ri" /></label>
+      <textarea class="fn-fx-ta" bind:value={c.expr} spellcheck="false" rows="3" placeholder="p.bore / 2"></textarea>
     </div>
   {/if}
 {/if}
@@ -518,6 +561,20 @@
   .fn-fx-pop { width: 248px; }
   .fn-fx-ta { width: 100%; box-sizing: border-box; font: 11px 'SF Mono', Menlo, monospace; padding: 6px; border: 1px solid #dcdce4; border-radius: 5px; resize: vertical; color: #222; }
   .fn-fx-ta:focus { outline: none; border-color: #c4392f; }
+  .fn-fx-row { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .fn-fx-row span { font-size: 9px; color: #888; }
+  .fn-fx-row input { font: 11px 'SF Mono', Menlo, monospace; padding: 4px 6px; border: 1px solid #dcdce4; border-radius: 4px; width: 100%; box-sizing: border-box; }
+  .fn-fx-row input:focus { outline: none; border-color: #c4392f; }
+  /* calculated expressions — 3-column grid of {name = expr} boxes (no units) */
+  .fn-calc { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 3px 2px 0; }
+  .fn-cbox { display: inline-flex; align-items: center; gap: 2px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 2px 4px; background: #fff; min-width: 0; }
+  .fn-cname { width: 48px; flex-shrink: 0; border: 1px solid transparent; background: transparent; font: 700 10px 'SF Mono', Menlo, monospace; color: #1a1a1a; padding: 1px 2px; border-radius: 3px; box-sizing: border-box; }
+  .fn-cname:focus { outline: none; border-color: #c4392f; background: #fdf4f3; }
+  .fn-ceq { color: #c9bcba; font: 10px 'SF Mono', Menlo, monospace; flex-shrink: 0; }
+  .fn-cexpr { flex: 1; min-width: 0; border: 1px solid transparent; background: transparent; font: 10px 'SF Mono', Menlo, monospace; color: #444; padding: 1px 2px; border-radius: 3px; box-sizing: border-box; }
+  .fn-cexpr:focus { outline: none; border-color: #c4392f; background: #fdf4f3; }
+  .fn-cdel { border: 0; background: transparent; color: #c4c4d0; cursor: pointer; font-size: 11px; padding: 0 1px; flex-shrink: 0; line-height: 1; }
+  .fn-cdel:hover { color: #cc2222; }
   /* rounded U-turn drawn in the side margin, from one box's vertical centre to
      the next row's (inset ~half a box so it meets the box centres). */
   .fn-turn { align-self: stretch; justify-self: stretch; border: 2px solid #e0cfcb; border-left: 0; border-radius: 0 14px 14px 0; margin: 15px 0; }
