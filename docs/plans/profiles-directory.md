@@ -108,6 +108,23 @@ parametric — no baked points). This is what removes dp_ball-style patchwork.
   drag-vertex `ProfileEditor`, and ensure every primitive's profile arg is a
   `{kind|source, params}` function descriptor (points only as a resolved cache).
 
+- **P6 (NEXT — profiles ARE part-like source: `meta` + `build`).** Direction
+  (2026-05-25): a profile should be structurally identical to a part — ONE
+  `source.ts` with `export const meta = { id, label, set, tags, params }` +
+  `export function build(p) { return [[r,z],…]; }` — and edited the SAME way
+  (Source tab + the params panel + AI refine), not a bespoke params-grid +
+  body-textarea. Volume ƒ profiles are 90% there (profile.json = meta, source.ts
+  = build); unify into ONE source (parse meta from the source like parts do).
+  MIGRATE the curated kinds (cylinder/tube/cone/barrel/drill_pipe_pin/box) into
+  this `source.ts` form so they're GUI-editable instead of hardcoded.
+  - **Blocker to resolve here**: a part's `resolveProfile({kind})` resolves only
+    CURATED kinds in-sandbox (sync). For an EDITED (source) profile to drive a
+    part, either (a) the bake pre-resolves the profile's `build(partParams)`
+    server-side (the deferred Approach-2 plumbing), or (b) inline the build into
+    the part's source. The user chose the "function editor + library" model
+    (option 2), which implies (a). · Curated stays the fast built-in tier; new/
+    edited ones are source profiles. · Keep the picker (regression fix 23df4ae).
+
 ## Critical files
 - `src/lib/shared/profile-presets.ts` — tier-1 registry + `resolveProfile` (sync).
 - `src/routes/api/primitives/profiles/{list,save}/+server.ts` — volume tier (P2 done; P3 adds source.ts + sandbox-run).

@@ -665,6 +665,34 @@
     } catch { /* offline — ignore */ }
   }
   function closeFnEditor() { fnEditor = null; }
+  // Open the ƒ editor for the CURRENTLY-shown function profile (the ✎ in the
+  // fn popup). Curated kind → seed from its build()+params (derive the body from
+  // the compiled fn so you can fork/edit it); volume ƒ → load its source.
+  function curatedBody(build: (p: any) => any): string {
+    try {
+      const s = build.toString();
+      const a = s.indexOf('=>');
+      if (a < 0) return '';
+      const after = s.slice(a + 2).trim();
+      if (after.startsWith('{')) return after.slice(1, after.lastIndexOf('}')).trim();
+      return 'return ' + after.replace(/;\s*$/, '') + ';';
+    } catch { return ''; }
+  }
+  function editCurrentFnProfile() {
+    const kind = profileEdit?.kind;
+    if (!kind) return;
+    const def = PROFILE_REGISTRY[kind];
+    if (def) {
+      fnEditor = {
+        target: 'instance', pname: null, set: def.set,
+        seed: { id: def.id, label: def.label, tags: def.tags, params: def.params, body: curatedBody(def.build) },
+        ...fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220),
+      };
+    } else {
+      void editFnProfile('instance', null, kind); // volume ƒ profile
+    }
+    closeProfilePopup();
+  }
   async function onFnSaved(id: string) {
     const ed = fnEditor;
     await loadVolProfiles(true);
@@ -1543,6 +1571,7 @@
             <div class="pv-prof-combo">
               <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} current={profileEdit.kind} volume={volProfiles} onPick={(id, origin) => swapFnKind(id, origin)} onEdit={(id) => editFnProfile('instance', null, id)} />
             </div>
+            <button class="pv-btn primary" type="button" title="Open the function editor (params + build code) for this profile" onclick={editCurrentFnProfile}>✎ Edit function</button>
           </div>
           <div class="pv-fn-note">
             <strong>ƒ {profileEdit.kind}</strong> — this profile is a <em>function</em>.
