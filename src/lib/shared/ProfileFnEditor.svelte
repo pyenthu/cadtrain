@@ -14,6 +14,7 @@
    */
   import type { Pt } from './profile-presets';
   import { dragNumber } from './dragNumber';
+  import { tipHost } from './floating-tip';
 
   interface ParamRow { key: string; label: string; def: number; min: number; max: number; step: number; unit: string; }
   interface Seed { id?: string; label?: string; description?: string; tags?: string[]; params?: Record<string, any>; body?: string; }
@@ -94,14 +95,35 @@
   let saveErr = $state<string | null>(null);
   let paramsOpen = $state(true);
   let tab = $state<'builder' | 'source'>('builder');
+  let pathView = $state<'flow' | 'rows'>('flow'); // PATH section: node flow-chart vs row table
+  let flowOpen = $state<number | null>(null);      // which flow node is expanded for editing
+  const f2 = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '·');
+  // Chunk the moves into rows of n for the snake (boustrophedon) flow layout.
+  function chunkMoves(n: number): { mv: Move; i: number }[][] {
+    const out: { mv: Move; i: number }[][] = [];
+    moves.forEach((mv, i) => { (out[Math.floor(i / n)] ??= []).push({ mv, i }); });
+    return out;
+  }
   // Per-param range/label callout — a Flowbite-style popover anchored to the
   // row's ⚙. Holds the metadata you rarely touch (label / min / max / step) so
   // the param row itself stays compact (key · default · unit).
   let paramPop = $state<{ i: number; x: number; y: number } | null>(null);
+  // ƒ callout for a path move's x/y expression when it's too long for the input.
+  let fxEdit = $state<{ i: number; field: 'a' | 'b'; x: number; y: number } | null>(null);
+  function openFx(i: number, field: 'a' | 'b', ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const popH = 100; // approx callout height — flip above if it'd clip the bottom
+    let y = r.bottom + 8;
+    if (y + popH > window.innerHeight - 8) y = Math.max(8, r.top - popH - 8);
+    fxEdit = { i, field, x: Math.max(8, Math.min(r.left - 100, window.innerWidth - 256)), y };
+  }
   function openParamPop(i: number, ev: MouseEvent) {
     if (paramPop?.i === i) { paramPop = null; return; }
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    paramPop = { i, x: Math.max(8, Math.min(r.right - 172, window.innerWidth - 196)), y: r.bottom + 9 };
+    const popH = 128; // flip above if it'd clip the bottom of the viewport
+    let y = r.bottom + 9;
+    if (y + popH > window.innerHeight - 8) y = Math.max(8, r.top - popH - 9);
+    paramPop = { i, x: Math.max(8, Math.min(r.right - 172, window.innerWidth - 196)), y };
   }
 
   // Auto description (shown / persisted when the parent hasn't typed one).
@@ -196,7 +218,7 @@
     const minX = revolve ? Math.min(0, ...xs) : Math.min(...xs);
     const maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
     const w = (maxX - minX) || 1, h = (maxY - minY) || 1;
-    const pad = 0.06 * Math.max(w, h); // ~6% margin → shape ~88% of the box
+    const pad = 0.04 * Math.max(w, h); // small margin → shape fills more of the box
     const vbX = minX - pad, vbY = minY - pad, vbW = w + 2 * pad, vbH = h + 2 * pad;
     const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(3)} ${p[1].toFixed(3)}`).join(' ') + ' Z';
     return { d, axis: revolve ? 0 : null, vb: `${vbX} ${vbY} ${vbW} ${vbH}`, y0: vbY, y1: vbY + vbH };
@@ -231,7 +253,7 @@
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && paramPop) paramPop = null; }} />
 
-<div class="fn-ed">
+<div class="fn-ed" use:tipHost>
   <!-- slim vertical tabs: Builder (GUI) | Source -->
   <div class="fn-tabs" role="tablist">
     <button class="fn-tab" class:active={tab === 'builder'} onclick={() => (tab = 'builder')} type="button" role="tab" title="Builder — params, expressions, path">
@@ -291,28 +313,67 @@
         <span class="fn-acc-n">{moves.length}</span>
         <span class="fn-acc-hint">({set === 'revolve' ? 'r ≥ 0 half-section, Z-down' : 'centered'})</span>
       </button>
+      <button type="button" class="fn-acc-add" title="Toggle flow / rows view" onclick={() => (pathView = pathView === 'flow' ? 'rows' : 'flow')}>{pathView === 'flow' ? 'rows' : 'flow'}</button>
       <button type="button" class="fn-acc-add" onclick={() => { movesOpen = true; addMove(); }} title="Add a move">+ move</button>
     </div>
     {#if movesOpen}
-      <div class="fn-moves">
-        <div class="fn-mrow fn-mrow-h"><span></span><span>cmd</span><span>r</span><span>z</span><span></span></div>
-        {#each moves as mv, i (i)}
-          <div class="fn-mrow">
-            <span class="fn-mnum">{i}</span>
-            <select class="fn-mcmd" bind:value={mv.cmd}>
-              <option value="mv">mv</option><option value="line">line</option>
-              <option value="lineR">lineR</option><option value="lineZ">lineZ</option>
-            </select>
-            <input class="fn-marg" bind:value={mv.a} placeholder={mv.cmd === 'lineZ' ? 'z' : 'r'} spellcheck="false" title="r / expression" />
-            {#if mv.cmd === 'mv' || mv.cmd === 'line'}
-              <input class="fn-marg" bind:value={mv.b} placeholder="z" spellcheck="false" title="z / expression" />
-            {:else}<span class="fn-marg fn-marg-na">—</span>{/if}
-            <button type="button" class="fn-del" onclick={() => delMove(i)} title="Remove move" aria-label="Remove move">
-              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M6 2h4l.5 1H13v1.4H3V3h2.5L6 2zm-1.6 3.4h7.2l-.6 8.1a1.1 1.1 0 0 1-1.1 1H6.1a1.1 1.1 0 0 1-1.1-1l-.6-8.1zM7 7v5h1V7H7zm2 0v5h1V7H9z"/></svg>
-            </button>
-          </div>
-        {/each}
-      </div>
+      {#if pathView === 'flow'}
+        <!-- node flow-chart: a circle per move (hollow = start), the resolved
+             (r,z) beside it, the Δ vector to the next node, then a closure line. -->
+        <!-- snake grid: fixed left/right margins for the U-turn lines; boxes line
+             up in columns, flow L→R then R→L, turns drawn in the margins. -->
+        <div class="fn-snake">
+          {#each moves as mv, i (i)}
+            {@const row = Math.floor(i / 3)}
+            {@const col = row % 2 === 0 ? i % 3 : 2 - (i % 3)}
+            <div class="fn-box" class:start={i === 0} style="grid-column:{col + 2};grid-row:{row + 1}">
+              <span class="fn-box-i">{i}</span>
+              <div class="fn-box-rows">
+                <label class="fn-box-row">
+                  <span class="fn-box-k">x</span>
+                  <input class="fn-box-v" bind:value={moves[i].a} spellcheck="false" />
+                  {#if (moves[i].a?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'a', e)} aria-label="Edit expression">ƒ</button>{/if}
+                </label>
+                {#if moves[i].cmd === 'mv' || moves[i].cmd === 'line'}
+                  <label class="fn-box-row">
+                    <span class="fn-box-k">y</span>
+                    <input class="fn-box-v" bind:value={moves[i].b} spellcheck="false" />
+                    {#if (moves[i].b?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'b', e)} aria-label="Edit expression">ƒ</button>{/if}
+                  </label>
+                {/if}
+              </div>
+            </div>
+          {/each}
+          {#each Array.from({ length: Math.ceil(moves.length / 3) }) as _, r (r)}
+            {@const count = Math.min(3, moves.length - r * 3)}
+            {#if count > 1}<span class="fn-rail" style="grid-row:{r + 1};grid-column:{r % 2 === 0 ? 2 : 5 - count}/{r % 2 === 0 ? count + 2 : 5}"></span>{/if}
+          {/each}
+          {#each Array.from({ length: Math.max(0, Math.ceil(moves.length / 3) - 1) }) as _, r (r)}
+            <span class="fn-turn" class:left={r % 2 === 1} style="grid-row:{r + 1}/{r + 3};grid-column:{r % 2 === 0 ? 5 : 1}"></span>
+          {/each}
+        </div>
+        <div class="fn-snake-close">↺ closes back to start</div>
+      {:else}
+        <div class="fn-moves">
+          <div class="fn-mrow fn-mrow-h"><span></span><span>cmd</span><span>r</span><span>z</span><span></span></div>
+          {#each moves as mv, i (i)}
+            <div class="fn-mrow">
+              <span class="fn-mnum">{i}</span>
+              <select class="fn-mcmd" bind:value={mv.cmd}>
+                <option value="mv">mv</option><option value="line">line</option>
+                <option value="lineR">lineR</option><option value="lineZ">lineZ</option>
+              </select>
+              <input class="fn-marg" bind:value={mv.a} placeholder={mv.cmd === 'lineZ' ? 'z' : 'r'} spellcheck="false" title="r / expression" />
+              {#if mv.cmd === 'mv' || mv.cmd === 'line'}
+                <input class="fn-marg" bind:value={mv.b} placeholder="z" spellcheck="false" title="z / expression" />
+              {:else}<span class="fn-marg fn-marg-na">—</span>{/if}
+              <button type="button" class="fn-del" onclick={() => delMove(i)} title="Remove move" aria-label="Remove move">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M6 2h4l.5 1H13v1.4H3V3h2.5L6 2zm-1.6 3.4h7.2l-.6 8.1a1.1 1.1 0 0 1-1.1 1H6.1a1.1 1.1 0 0 1-1.1-1l-.6-8.1zM7 7v5h1V7H7zm2 0v5h1V7H9z"/></svg>
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
     {:else}
       <!-- Source: same collapsible sections as the builder, shown as code -->
@@ -338,7 +399,7 @@
     </div>
     {#if saveErr}<div class="fn-saveerr" title={saveErr}>{saveErr}</div>{/if}
     <div class="fn-prev">
-      <svg viewBox={view.vb} preserveAspectRatio="xMidYMid meet" class="fn-svg" class:bad={!!err}>
+      <svg viewBox={view.vb} preserveAspectRatio="xMinYMid meet" class="fn-svg" class:bad={!!err}>
         {#if view.axis !== null}<line x1={view.axis} y1={view.y0} x2={view.axis} y2={view.y1} class="fn-axis" vector-effect="non-scaling-stroke" />{/if}
         {#if view.d}<path d={view.d} class="fn-path" vector-effect="non-scaling-stroke" />{/if}
       </svg>
@@ -361,11 +422,24 @@
   {/if}
 {/if}
 
+{#if fxEdit}
+  {@const fm = moves[fxEdit.i]}
+  {#if fm}
+    <div class="fn-pop-back" role="presentation" onclick={() => (fxEdit = null)}></div>
+    <div class="fn-pop fn-fx-pop" style={`left:${fxEdit.x}px; top:${fxEdit.y}px`}>
+      <div class="fn-pop-ttl">point <code>{fxEdit.i}</code> · {fxEdit.field === 'a' ? 'x (r)' : 'y (z)'} expression</div>
+      <textarea class="fn-fx-ta" spellcheck="false" rows="3"
+        value={fxEdit.field === 'a' ? fm.a : fm.b}
+        oninput={(e) => { const v = (e.currentTarget as HTMLTextAreaElement).value; if (fxEdit!.field === 'a') fm.a = v; else fm.b = v; }}></textarea>
+    </div>
+  {/if}
+{/if}
+
 <style>
   /* two columns; LEFT scrolls, RIGHT is fixed. height:100% lets the popup's
      own max-height cap the panel and confine scrolling to the left column. */
   /* FIXED height — the popup doesn't resize with content; only the left column scrolls. */
-  .fn-ed { width: 600px; max-width: 94vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px 1fr 196px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
+  .fn-ed { width: 600px; max-width: 94vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px 1fr 130px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
   /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
      vertical labels, so the rail stays narrow and reads top-to-bottom. */
   .fn-tabs { display: flex; flex-direction: column; gap: 5px; align-items: stretch; padding-top: 4px; }
@@ -423,6 +497,36 @@
   .fn-marg { font: 10px 'SF Mono', Menlo, monospace; padding: 3px 5px; border: 1px solid #dcdce4; border-radius: 4px; min-width: 0; width: 100%; box-sizing: border-box; }
   .fn-marg:focus { outline: none; border-color: #c4392f; }
   .fn-marg-na { color: #ccc; text-align: center; }
+  /* path snake (CSS grid): 3 box columns centred between fixed left/right margins
+     that hold the rounded U-turn lines; boxes line up in columns and flow L→R
+     then R→L. Inputs look like labels (transparent border) → no reflow on edit. */
+  .fn-snake { display: grid; grid-template-columns: 20px repeat(3, 1fr) 20px; gap: 8px 8px; padding: 8px 2px 2px; align-items: center; overflow-x: hidden; }
+  .fn-box { position: relative; z-index: 1; display: inline-flex; align-items: flex-start; gap: 4px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 3px 6px; background: #fff; justify-self: center; }
+  .fn-box.start { border-color: #c4392f; background: #fceeec; }
+  /* continuous rail behind a row's boxes → connects them (boxes cover it; the
+     line shows through the gaps so adjacent boxes read as joined) */
+  .fn-rail { align-self: center; justify-self: stretch; height: 2px; background: #e0cfcb; z-index: 0; }
+  .fn-box-i { font: 8px 'SF Mono', Menlo, monospace; color: #b3b3b3; padding-top: 1px; }
+  .fn-box-rows { display: flex; flex-direction: column; gap: 2px; }
+  .fn-box-row { display: flex; align-items: center; gap: 4px; }
+  .fn-box-k { font: 700 11px 'SF Mono', Menlo, monospace; color: #1a1a1a; width: 10px; }
+  .fn-box-v { width: 46px; border: 1px solid transparent; background: transparent; font: 10px 'SF Mono', Menlo, monospace; color: #222; padding: 1px 3px; border-radius: 3px; box-sizing: border-box; }
+  .fn-box-v:focus { outline: none; border-color: #c4392f; background: #fdf4f3; }
+  /* ƒ — opens a callout to edit an expression too long for the inline input */
+  .fn-fx { border: 0; background: transparent; color: #c4392f; cursor: pointer; font: italic 700 12px Georgia, 'Times New Roman', serif; padding: 0 1px; flex-shrink: 0; line-height: 1; }
+  .fn-fx:hover { color: #a8302a; }
+  .fn-fx-pop { width: 248px; }
+  .fn-fx-ta { width: 100%; box-sizing: border-box; font: 11px 'SF Mono', Menlo, monospace; padding: 6px; border: 1px solid #dcdce4; border-radius: 5px; resize: vertical; color: #222; }
+  .fn-fx-ta:focus { outline: none; border-color: #c4392f; }
+  /* rounded U-turn drawn in the side margin, from one box's vertical centre to
+     the next row's (inset ~half a box so it meets the box centres). */
+  .fn-turn { align-self: stretch; justify-self: stretch; border: 2px solid #e0cfcb; border-left: 0; border-radius: 0 14px 14px 0; margin: 15px 0; }
+  .fn-turn.left { border-left: 2px solid #e0cfcb; border-right: 0; border-radius: 14px 0 0 14px; }
+  .fn-snake-close { font: 9px Arial; color: #b06b63; padding: 4px 0 0 4px; }
+  /* the left column scrolls; its sections keep their height (no squeezing) */
+  .fn-left > * { flex-shrink: 0; }
+  /* black floating tooltip (body-portaled by the tipHost action) */
+  :global(.floating-tip) { position: fixed; z-index: 2000; background: #000; color: #fff; padding: 4px 8px; border-radius: 3px; font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 320px; width: max-content; white-space: pre-line; box-shadow: 0 2px 6px rgba(0,0,0,0.35); pointer-events: none; }
   /* preview — fills the right column (capped to popup viewport); shape ~90% */
   .fn-prev { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
   .fn-svg { flex: 1; width: 100%; min-height: 120px; max-height: 320px; min-width: 0; border: 1px solid #ececf2; border-radius: 6px; background: #fffdfc; }
