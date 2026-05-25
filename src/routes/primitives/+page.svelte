@@ -153,6 +153,7 @@
 
   onMount(async () => {
     await refreshList();
+    void loadVolProfiles();
     // Default-open the first VOLUME primitive (bundle ones can 500 on
     // source-load). The raw r_* primitives now live in the Basic group, so
     // prefer those, then any root-volume entry, then the first entry.
@@ -283,34 +284,46 @@ export function ${id}(od, length) {
   let createSearch = $state('');
   let createBusy = $state(false);
   let createErr = $state('');
-  // Candidate base primitives = the r_* leaves (Basic group) + bundle helpers'
-  // r_* — searchable. Filter by id.
-  // Base options = the r_* leaves (Basic) + curated REVOLVE profile FUNCTIONS
-  // (profile:<id>). Picking a profile scaffolds a parametric revolve part whose
-  // params ARE the profile's params, lifted (K.22 E) — the function-first path.
+  // Volume function profiles (primitives/profiles/<id>/) — fetched for the create
+  // picker so a part can be born from a USER-authored/forked profile, resolved at
+  // bake by P6. Refreshed when the popup opens (picks up just-forked ones).
+  let volProfiles = $state<any[]>([]);
+  async function loadVolProfiles() {
+    try { const r = await fetch('/api/primitives/profiles/list'); if (r.ok) volProfiles = (await r.json())?.profiles ?? []; }
+    catch { /* offline — curated profiles still work */ }
+  }
+  function profileDef(kind: string): any { return PROFILE_REGISTRY[kind] ?? volProfiles.find((v) => v.id === kind); }
+  // Base options = the r_* leaves (Basic) + REVOLVE profile FUNCTIONS — curated
+  // (PROFILE_REGISTRY) AND volume ƒ — as `profile:<id>`. Picking a profile
+  // scaffolds a parametric revolve part whose params ARE the profile's params,
+  // lifted (K.22 E); volume kinds resolve at bake via P6 (function-first loop).
   let createBaseList = $derived.by(() => {
     const q = createSearch.trim().toLowerCase();
     const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_')))].sort();
-    const profs = Object.values(PROFILE_REGISTRY).filter((d) => d.set === 'revolve').map((d) => `profile:${d.id}`);
+    const cur = Object.values(PROFILE_REGISTRY).filter((d) => d.set === 'revolve').map((d) => d.id);
+    const vol = volProfiles.filter((v) => v.set === 'revolve' && v.hasSource).map((v) => v.id);
+    const profs = [...new Set([...cur, ...vol])].map((id) => `profile:${id}`);
     const all = [...rs, ...profs];
     return q ? all.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : all;
   });
   function baseLabel(b: string): string {
-    if (b.startsWith('profile:')) { const k = b.slice(8); return `${PROFILE_REGISTRY[k]?.label ?? k} ◆ profile`; }
+    if (b.startsWith('profile:')) { const k = b.slice(8); const d = profileDef(k); return `${d?.label ?? k} ◆ profile${PROFILE_REGISTRY[k] ? '' : ' ƒ'}`; }
     return b;
   }
   function openCreate(dir: string, label: string, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     createId = ''; createSearch = ''; createBase = 'r_cylinder'; createErr = '';
+    void loadVolProfiles(); // refresh so freshly-forked ƒ profiles appear
     createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
   }
   function closeCreate() { createPanel = null; }
-  // Revolve part from a curated profile FUNCTION (K.22 E lift): the profile's
-  // params become the PART's params, and the body resolves the profile from them
-  // each bake → r_revolve. Born parametric — edit OD/ID/taper and the profile
-  // re-resolves. resolveProfile is injected into the sandbox; curated kinds only.
+  // Revolve part from a profile FUNCTION (K.22 E lift): the profile's params
+  // become the PART's params, and the body resolves the profile from them each
+  // bake → r_revolve. Born parametric. Curated kinds resolve in-sandbox; VOLUME
+  // (ƒ) kinds resolve server-side at bake via P6 — so a forked/edited profile
+  // drives the part.
   function buildStubFromProfile(id: string, kind: string): string | null {
-    const def: any = PROFILE_REGISTRY[kind];
+    const def: any = profileDef(kind);
     if (!def) return null;
     const names = Object.keys(def.params ?? {});
     if (!names.length) return null;
