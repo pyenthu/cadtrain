@@ -102,21 +102,28 @@
     return { d, axis: revolve ? sx(0) : null };
   });
 
-  async function save() {
+  // The id this editor opened on (when editing/forking an existing profile).
+  const seedId = seed?.id ?? '';
+  // Save under `slug` (Save), or fork to a new id (Save as new — appends _copy
+  // when the id still matches the one we opened, so the original is never
+  // clobbered; rename in the id field for a specific name).
+  async function save(asNew = false) {
     saveErr = null;
-    if (!slug) { saveErr = 'id required'; return; }
+    let targetId = slug;
+    if (asNew && seedId && targetId === seedId) targetId = `${targetId}_copy`;
+    if (!targetId) { saveErr = 'id required'; return; }
     if (Object.keys(schema()).length === 0) { saveErr = 'add at least one param'; return; }
     busy = true;
     try {
       const r = await fetch('/api/primitives/profiles/save', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          id: slug, label: label.trim() || slug, set,
+          id: targetId, label: label.trim() || targetId, set,
           tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
           params: schema(), source: composeSource(),
         }),
       });
-      if (r.ok) onSaved(slug);
+      if (r.ok) onSaved(targetId);
       else saveErr = `save failed: ${(await r.text()).slice(0, 200)}`;
     } catch (e: any) { saveErr = `error: ${e?.message ?? e}`; }
     finally { busy = false; }
@@ -138,7 +145,9 @@
         <label>label <input bind:value={label} placeholder="Casing coupling" /></label>
         <label>tags <input bind:value={tags} placeholder="coupling, casing" /></label>
       </div>
-      {#if slug && slug !== id}<div class="fn-slug">saves as <code>{slug}</code></div>{/if}
+      <div class="fn-slug">
+        {#if seedId && slug === seedId}editing <code>{seedId}</code> — change the id (or use “Save as new”) to fork a copy{:else if slug}saves as <code>{slug}</code> (new profile){/if}
+      </div>
 
       <div class="fn-sec">params</div>
       <div class="fn-params">
@@ -175,7 +184,10 @@
   <div class="fn-foot">
     {#if saveErr}<span class="fn-saveerr">{saveErr}</span>{/if}
     <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
-    <button type="button" class="fn-save" disabled={busy || !!err || !slug} onclick={save}>{busy ? 'Saving…' : 'Save profile'}</button>
+    {#if seedId}
+      <button type="button" class="fn-saveas" disabled={busy || !!err || !slug} onclick={() => save(true)} title="Save under a new id (fork a copy)">Save as new</button>
+    {/if}
+    <button type="button" class="fn-save" disabled={busy || !!err || !slug} onclick={() => save(false)}>{busy ? 'Saving…' : seedId ? 'Save' : 'Save profile'}</button>
   </div>
 </div>
 
@@ -215,4 +227,6 @@
   .fn-cancel { margin-left: auto; border: 1px solid #d4d4dc; background: #fff; border-radius: 4px; padding: 4px 12px; cursor: pointer; font: 11px Arial; }
   .fn-save { border: 1px solid #5848c2; background: #6a5acd; color: #fff; border-radius: 4px; padding: 4px 14px; cursor: pointer; font: 11px Arial; }
   .fn-save:disabled { opacity: .5; cursor: not-allowed; }
+  .fn-saveas { border: 1px solid #c8c2e8; background: #fff; color: #6a5acd; border-radius: 4px; padding: 4px 12px; cursor: pointer; font: 11px Arial; }
+  .fn-saveas:disabled { opacity: .5; cursor: not-allowed; }
 </style>
