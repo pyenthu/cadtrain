@@ -451,20 +451,25 @@ export function ${id}(od, length) {
       <p class="sub">Backend toolkit — raw geometry functions</p>
     </header>
 
-    <div class="prim-list">
-      {#each entries as e (e.id)}
-        <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-          <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-            <span class="prim-name">{e.id}</span>
-            <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
-          </button>
-          <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-          {#if e.editable}
-            <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-          {/if}
-        </div>
-      {/each}
-    </div>
+    <!-- Loose top section — only renders when there are uncategorized volume
+         primitives. Empty by default now (bundle helpers are hidden; loose
+         primitives are archived), so the category folders start at the top. -->
+    {#if entries.length}
+      <div class="prim-list">
+        {#each entries as e (e.id)}
+          <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+            <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+              <span class="prim-name">{e.id}</span>
+              <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
+            </button>
+            <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+            {#if e.editable}
+              <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     <!-- Basic category — the raw r_* geometry primitives, parked under
          primitives/basic/ on the volume (location IS the category, mirrors
