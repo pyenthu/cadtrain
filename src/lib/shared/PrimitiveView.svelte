@@ -665,6 +665,12 @@
   function fnEditorPos(left: number, bottom: number) {
     return { px: Math.max(8, Math.min(left - 300, window.innerWidth - 580)), py: Math.max(8, Math.min(bottom + 6, window.innerHeight - 440)) };
   }
+  // Default open position for the (single) editor: near the top, right-leaning so
+  // it sits beside the right inspector (the ~430px panel) rather than over the
+  // left sidebar — fixed height, so it doesn't need a content-based vertical spot.
+  function editorOpenPos() {
+    return { px: Math.max(258, Math.round(window.innerWidth - 1010)), py: 64 };
+  }
   function openFnEditor(target: 'leaf' | 'instance', pname: string | null, set: 'revolve' | 'cartesian', ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     fnEditor = { target, pname, set, seed: null, ...fnEditorPos(r.left, r.bottom) };
@@ -684,7 +690,7 @@
       fnEditor = {
         target, pname, set: p.set ?? 'revolve',
         seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) },
-        ...fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220),
+        ...editorOpenPos(),
       };
     } catch { /* offline — ignore */ }
   }
@@ -710,7 +716,7 @@
       fnEditor = {
         target: 'instance', pname: null, set: def.set,
         seed: { id: def.id, label: def.label, tags: def.tags, params: def.params, body: curatedBody(def.build) },
-        ...fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220),
+        ...editorOpenPos(),
       };
     } else {
       void editFnProfile('instance', null, kind); // volume ƒ profile
@@ -728,7 +734,7 @@
   // Open the editor bound to an instance's function profile (`resolveProfile({kind})`).
   async function openInstanceFnEditor(inst: any, info: LeafProfile, kind: string) {
     const set: 'revolve' | 'cartesian' = info.revolve ? 'revolve' : 'cartesian';
-    const pos = fnEditorPos(window.innerWidth / 2 - 280, window.innerHeight / 2 - 220);
+    const pos = editorOpenPos();
     const bind = { instName: inst.name, kind, revolve: !!info.revolve };
     const cs = curatedSeed(kind);
     if (cs) { fnEditor = { target: 'instance', pname: null, set, seed: cs, bind, ...pos }; return; }
@@ -1828,7 +1834,7 @@
          seed (the rect default) even after picking a different profile. -->
     {#key fnEditor}
       <FloatingPanel
-        title="Profile Function"
+        title=""
         subtitle={fnEditor.bind ? (fnMeta.description || fnAutoDesc) : `${fnMeta.label || fnMeta.id || 'New profile'} · ${fnMeta.description || fnAutoDesc}`}
         visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
         {#snippet titleAction()}
@@ -1982,9 +1988,9 @@
 
 <style>
   /* Profile Function title-bar ⚙ (edits name/description/tags) + its popover form */
-  .pv-fn-sel { width: 190px; }
-  .pv-meta-gear { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border: 1px solid #dcdce2; background: #fff; border-radius: 4px; cursor: pointer; color: #888; padding: 0; }
-  .pv-meta-gear:hover { color: #c4392f; border-color: #e0b4ad; background: #fceeec; }
+  .pv-fn-sel { width: 190px; display: flex; align-items: center; }
+  .pv-meta-gear { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1.5px solid #2a2a2a; background: #fff; border-radius: 4px; cursor: pointer; color: #2a2a2a; padding: 0; }
+  .pv-meta-gear:hover { color: #c4392f; border-color: #c4392f; background: #fceeec; }
   .pv-meta-form { display: flex; flex-direction: column; gap: 8px; font: 11px Arial; }
   .pv-meta-form label { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; }
   .pv-meta-form span { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: #999; }

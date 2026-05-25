@@ -310,7 +310,8 @@
 <style>
   /* two columns; LEFT scrolls, RIGHT is fixed. height:100% lets the popup's
      own max-height cap the panel and confine scrolling to the left column. */
-  .fn-ed { width: 580px; max-width: 92vw; height: 100%; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr 196px; gap: 12px; align-items: stretch; font: 11px Arial; color: #222; }
+  /* FIXED height — the popup doesn't resize with content; only the left column scrolls. */
+  .fn-ed { width: 580px; max-width: 92vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr 196px; gap: 12px; align-items: stretch; font: 11px Arial; color: #222; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */

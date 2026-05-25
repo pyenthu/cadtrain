@@ -102,7 +102,7 @@
   >
     <div class="fp-hdr" role="presentation" onmousedown={docked ? undefined : startDrag}>
       <div class="fp-titlewrap" title={titleTip || undefined}>
-        <h3 class="fp-title">{title}</h3>
+        {#if title}<h3 class="fp-title">{title}</h3>{/if}
         {#if titleAction}{@render titleAction()}{/if}
         {#if subtitle}<span class="fp-sub">{subtitle}</span>{/if}
       </div>
@@ -192,16 +192,16 @@
   }
   .fp-hdr {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 6px 10px;
+    padding: 4px 8px;
     background: linear-gradient(to right, #f6f6fa, #ecedf2);
     border-bottom: 1px solid #e2e2e8;
     cursor: grab;
     flex-shrink: 0;
   }
   .fp-root.dragging .fp-hdr { cursor: grabbing; }
-  .fp-titlewrap { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; }
+  .fp-titlewrap { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
   .fp-title { margin: 0; font: bold 12px Arial; color: #333; white-space: nowrap; flex-shrink: 0; }
-  .fp-sub { font: 11px Arial; color: #8a8a98; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .fp-sub { font: 11px Arial; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .fp-hdr-actions {
     display: inline-flex;
     gap: 4px;
