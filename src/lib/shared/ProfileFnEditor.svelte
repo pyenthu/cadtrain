@@ -33,7 +33,8 @@
   // Seed an editable cylinder so a fresh editor previews immediately.
   // Trace the profile with the pen (mv/line) — readable + editable (insert/
   // delete a move). `pen` is injected into the profile sandbox.
-  const DEFAULT_BODY = `const r = p.r ?? 40;\nconst len = p.len ?? 120;\nconst t = pen();\nt.mv(0, 0);    // axis, top\nt.line(r, 0);  // → out to radius\nt.line(r, len);// ↓ down the side\nt.line(0, len);// → back to axis\nreturn t.pts();`;
+  // r, len come from the params (auto-destructured in build) — no aliasing.
+  const DEFAULT_BODY = `const t = pen();\nt.mv(0, 0);    // axis, top\nt.line(r, 0);  // → out to radius\nt.line(r, len);// ↓ down the side\nt.line(0, len);// → back to axis\nreturn t.pts();`;
   function seedRows(s: Seed | null): ParamRow[] {
     if (s?.params && typeof s.params === 'object' && Object.keys(s.params).length) {
       return Object.entries<any>(s.params).map(([key, d]) => ({
@@ -62,18 +63,20 @@
   // Parse a build body into { expr (calculated values), moves (the pen path) }.
   function parseBody(b: string): { expr: string; moves: Move[] } {
     const moves: Move[] = [];
-    const re = /\bt\.(mv|line|lineR|lineZ)\s*\(((?:[^()]|\([^()]*\))*)\)/g;
+    // Match .mv/.line/… whether written as separate statements (t.mv(…)) OR
+    // chained (pen().mv(…).line(…)) — both have the `.method(` form.
+    const re = /\.(mv|line|lineR|lineZ)\s*\(((?:[^()]|\([^()]*\))*)\)/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(b))) {
       const a = splitArgs(m[2]);
       moves.push({ cmd: m[1] as Move['cmd'], a: a[0] ?? '0', b: a[1] ?? '0' });
     }
-    const expr = b
-      .replace(/\bt\.(?:mv|line|lineR|lineZ)\s*\((?:[^()]|\([^()]*\))*\)\s*;?/g, '')
-      .replace(/\breturn\s+t\s*\.\s*pts\s*\(\s*\)\s*;?/g, '')
-      .replace(/,?\s*\bt\s*=\s*pen\s*\(\s*\)\s*;?/g, ';')
-      .replace(/^\s*(?:const|let|var)\s*;\s*$/gm, '')
-      .replace(/;\s*;/g, ';')
+    // calc = everything before the pen path begins (`const t = pen()` /
+    // `return pen()`); a raw `return [...]` profile (no pen) → whole body is calc.
+    const penIdx = b.search(/\bpen\s*\(/);
+    const expr = (penIdx >= 0 ? b.slice(0, penIdx) : b)
+      .replace(/[,;]?\s*(?:\b(?:const|let|var)\s+)?[A-Za-z_$][\w$]*\s*=\s*$/, '')
+      .replace(/\breturn\s+$/, '')
       .replace(/\n{2,}/g, '\n')
       .trim();
     return { expr, moves };
@@ -90,6 +93,7 @@
   let busy = $state(false);
   let saveErr = $state<string | null>(null);
   let paramsOpen = $state(true);
+  let tab = $state<'builder' | 'source'>('builder');
   // Per-param range/label callout — a Flowbite-style popover anchored to the
   // row's ⚙. Holds the metadata you rarely touch (label / min / max / step) so
   // the param row itself stays compact (key · default · unit).
@@ -105,11 +109,38 @@
   const slug = $derived(id.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, ''));
   // Reassemble the build: expressions, then the pen path from the move list.
   function composeSource(): string {
-    if (!moves.length) return `export function build(p) {\n${exprBody}\n}`;
-    const lines = moves.map((mv) =>
-      mv.cmd === 'lineR' || mv.cmd === 'lineZ' ? `  t.${mv.cmd}(${mv.a});` : `  t.${mv.cmd}(${mv.a}, ${mv.b});`,
+    // Expose params as bare names (const { bore, wall, … } = p) so the path AND
+    // calc can use them directly — no `const ri = p.bore` aliasing needed. Skip
+    // any name the calc block already declares (avoids double-declaration).
+    const keys = rows.map((r) => r.key.trim()).filter((k) => /^[a-zA-Z_]\w*$/.test(k));
+    const usable = keys.filter((k) => !new RegExp(`\\b${k}\\s*=`).test(exprBody));
+    const destr = usable.length ? `  const { ${usable.join(', ')} } = p;\n` : '';
+    if (!moves.length) return `export function build(p) {\n${destr}${exprBody}\n}`;
+    // Chained pen path: pen().mv(…).line(…)….pts()
+    const chain = moves.map((mv) =>
+      mv.cmd === 'lineR' || mv.cmd === 'lineZ' ? `    .${mv.cmd}(${mv.a})` : `    .${mv.cmd}(${mv.a}, ${mv.b})`,
     ).join('\n');
-    return `export function build(p) {\n${exprBody}\n  const t = pen();\n${lines}\n  return t.pts();\n}`;
+    return `export function build(p) {\n${destr}${exprBody}\n  return pen()\n${chain}\n    .pts();\n}`;
+  }
+  // Full profile source.ts (meta block + build) — the unified P6 form, shown in
+  // the Source tab the same way a part's source reads: meta (params + calc) on
+  // top, the build/composer below.
+  function metaSource(): string {
+    const meta: Record<string, any> = { id: slug || 'profile', label: label.trim() || slug || 'profile' };
+    if (description.trim() || autoDesc) meta.description = description.trim() || autoDesc;
+    meta.set = set;
+    meta.tags = tags.split(',').map((t) => t.trim()).filter(Boolean);
+    meta.params = schema();
+    return `export const meta = ${JSON.stringify(meta, null, 2)};`;
+  }
+  // Parse the pen-path code (t.mv/line(...) lines) back into the move list, so
+  // the Source tab's path editor round-trips to the builder + preview.
+  function parsePathLines(text: string): Move[] {
+    const out: Move[] = [];
+    const re = /\.(mv|line|lineR|lineZ)\s*\(((?:[^()]|\([^()]*\))*)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) { const a = splitArgs(m[2]); out.push({ cmd: m[1] as Move['cmd'], a: a[0] ?? '0', b: a[1] ?? '0' }); }
+    return out;
   }
   function schema(): Record<string, any> {
     const out: Record<string, any> = {};
@@ -201,8 +232,20 @@
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && paramPop) paramPop = null; }} />
 
 <div class="fn-ed">
-  <!-- LEFT (scrolls): params · expressions · path -->
+  <!-- slim vertical tabs: Builder (GUI) | Source -->
+  <div class="fn-tabs" role="tablist">
+    <button class="fn-tab" class:active={tab === 'builder'} onclick={() => (tab = 'builder')} type="button" role="tab" title="Builder — params, expressions, path">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      <span class="fn-tab-lbl">Builder</span>
+    </button>
+    <button class="fn-tab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab" title="Source — the full source.ts (meta + build)">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span class="fn-tab-lbl">Source</span>
+    </button>
+  </div>
+  <!-- LEFT (scrolls): Builder = params·expressions·path; Source = the source.ts -->
   <div class="fn-left">
+    {#if tab === 'builder'}
     <div class="fn-acc">
       <button type="button" class="fn-acc-tog" onclick={() => (paramsOpen = !paramsOpen)}>
         <span class="fn-acc-caret">{paramsOpen ? '▾' : '▸'}</span> params <span class="fn-acc-n">{rows.length}</span>
@@ -271,6 +314,17 @@
         {/each}
       </div>
     {/if}
+    {:else}
+      <!-- Source: same collapsible sections as the builder, shown as code -->
+      {@const metaCode = metaSource()}
+      {@const pathLines = 'pen()\n' + moves.map((mv) => mv.cmd === 'lineR' || mv.cmd === 'lineZ' ? `  .${mv.cmd}(${mv.a})` : `  .${mv.cmd}(${mv.a}, ${mv.b})`).join('\n') + '\n  .pts();'}
+      <div class="fn-acc"><button type="button" class="fn-acc-tog" onclick={() => (paramsOpen = !paramsOpen)}><span class="fn-acc-caret">{paramsOpen ? '▾' : '▸'}</span> meta</button></div>
+      {#if paramsOpen}<textarea class="fn-expr" readonly spellcheck="false" rows="9" value={metaCode}></textarea>{/if}
+      <div class="fn-acc"><button type="button" class="fn-acc-tog" onclick={() => (exprOpen = !exprOpen)}><span class="fn-acc-caret">{exprOpen ? '▾' : '▸'}</span> calculated expressions</button></div>
+      {#if exprOpen}<textarea class="fn-expr" bind:value={exprBody} spellcheck="false" rows="4" placeholder="const ri = p.bore / 2;"></textarea>{/if}
+      <div class="fn-acc"><button type="button" class="fn-acc-tog" onclick={() => (movesOpen = !movesOpen)}><span class="fn-acc-caret">{movesOpen ? '▾' : '▸'}</span> path <span class="fn-acc-hint">(composer)</span></button></div>
+      {#if movesOpen}<textarea class="fn-expr" spellcheck="false" rows="7" value={pathLines} onchange={(e) => (moves = parsePathLines((e.currentTarget as HTMLTextAreaElement).value))}></textarea>{/if}
+    {/if}
   </div>
 
   <!-- RIGHT (fixed): actions on top, then the capped preview -->
@@ -311,7 +365,15 @@
   /* two columns; LEFT scrolls, RIGHT is fixed. height:100% lets the popup's
      own max-height cap the panel and confine scrolling to the left column. */
   /* FIXED height — the popup doesn't resize with content; only the left column scrolls. */
-  .fn-ed { width: 580px; max-width: 92vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr 196px; gap: 12px; align-items: stretch; font: 11px Arial; color: #222; }
+  .fn-ed { width: 600px; max-width: 94vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px 1fr 196px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
+  /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
+     vertical labels, so the rail stays narrow and reads top-to-bottom. */
+  .fn-tabs { display: flex; flex-direction: column; gap: 5px; align-items: stretch; padding-top: 4px; }
+  .fn-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 0; background: #f1e7e5; cursor: pointer; color: #8a8a8a; padding: 14px 0; clip-path: polygon(0 12%, 100% 0, 100% 100%, 0 88%); }
+  .fn-tab:hover { background: #f7ddd9; color: #b23329; }
+  .fn-tab.active { background: #c4392f; color: #fff; }
+  .fn-tab svg { display: block; transform: rotate(90deg); width: 13px; height: 13px; }
+  .fn-tab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 8px Arial; text-transform: uppercase; letter-spacing: .09em; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
@@ -330,7 +392,7 @@
      slightly rounded, tight. The + action lives inside the title chip. */
   .fn-acc { display: flex; align-items: stretch; border: 1px solid #e3c4bf; background: #fbf4f3; border-radius: 4px; margin-top: 2px; overflow: hidden; }
   .fn-acc:hover { border-color: #e0b4ad; }
-  .fn-acc-tog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; text-align: left; border: 0; background: transparent; cursor: pointer; font: 600 9px/1.3 Arial; text-transform: uppercase; letter-spacing: .055em; color: #7a6f6d; padding: 4px 8px; }
+  .fn-acc-tog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; text-align: left; border: 0; background: transparent; cursor: pointer; font: 700 9px/1.3 Arial; text-transform: uppercase; letter-spacing: .055em; color: #1f1f1f; padding: 4px 8px; }
   .fn-acc-tog:hover { background: #fceeec; color: #b23329; }
   .fn-acc-add { flex: 0 0 auto; border: 0; border-left: 1px solid #efd3ce; background: transparent; cursor: pointer; color: #c4392f; font: 700 9px Arial; text-transform: uppercase; letter-spacing: .04em; padding: 0 9px; }
   .fn-acc-add:hover { background: #fceeec; }
