@@ -11,6 +11,7 @@
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
+  import { stubSource, buildPartStubFromBase, buildRevolveStubFromProfile } from '$lib/cad/primitive-stub';
 
   interface Entry {
     id: string;
@@ -244,32 +245,6 @@
     if (activeTab) cloneEntry(activeTab.entry);
   }
 
-  /** Minimal valid stub for a brand-new primitive: a simple cylinder the user
-   *  edits. `cyl(length, r1)` — height then radius. */
-  function stubSource(id: string): string {
-    return `/**
- * ${id} — new primitive (edit me). COMPOSE the r_* primitives, declared in
- * meta.uses: r_cylinder, r_tube, r_cube, r_cone, r_ball, r_extrude, r_revolve,
- * r_threads, … combine with .add / .subtract / .intersect (+ mv / rot to place).
- * Do NOT call the raw cyl / tube / profile_extrude / revolve helpers — those are
- * the unstable base toolkit used only inside the r_* leaf primitives.
- */
-export const meta = {
-  id: '${id}', name: '${id}',
-  description: 'New primitive — edit the source.',
-  tags: ['new'],
-  uses: ['r_cylinder'],
-  params: {
-    od:     { label: 'OD',     min: 0.1, max: 40, step: 0.1, default: 2 },
-    length: { label: 'length', min: 0.1, max: 40, step: 0.1, default: 4 },
-  },
-};
-export function ${id}(od, length) {
-  const body = r_cylinder(od, length, 64);
-  return body;
-}
-`;
-  }
 
   /** Create a NEW primitive inside a group folder (the sidebar "+" affordance).
    *  Writes a stub to primitives/<dir>/<id>/, opens the folder, refreshes, and
@@ -297,9 +272,15 @@ export function ${id}(od, length) {
   // (PROFILE_REGISTRY) AND volume ƒ — as `profile:<id>`. Picking a profile
   // scaffolds a parametric revolve part whose params ARE the profile's params,
   // lifted (K.22 E); volume kinds resolve at bake via P6 (function-first loop).
+  // The polygon-param leaves (r_revolve/r_extrude) take a raw [[x,y],…] profile —
+  // the OLD "hardcoded vertices" way. They're excluded from the base picker so a
+  // revolve/extrude part is ALWAYS born from a profile FUNCTION (the `◆ profile`
+  // options → resolveProfile + lifted params), per the function-first philosophy
+  // (docs/plans/profiles-directory.md: "never hardcoded points").
+  const POLYGON_LEAF_BASES = new Set(['r_revolve', 'r_extrude']);
   let createBaseList = $derived.by(() => {
     const q = createSearch.trim().toLowerCase();
-    const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_')))].sort();
+    const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_') && !POLYGON_LEAF_BASES.has(id)))].sort();
     const cur = Object.values(PROFILE_REGISTRY).filter((d) => d.set === 'revolve').map((d) => d.id);
     const vol = volProfiles.filter((v) => v.set === 'revolve' && v.hasSource).map((v) => v.id);
     const profs = [...new Set([...cur, ...vol])].map((id) => `profile:${id}`);
@@ -325,15 +306,7 @@ export function ${id}(od, length) {
   function buildStubFromProfile(id: string, kind: string): string | null {
     const def: any = profileDef(kind);
     if (!def) return null;
-    const names = Object.keys(def.params ?? {});
-    if (!names.length) return null;
-    const block = names.map((k) => {
-      const s: any = def.params[k] ?? {};
-      const unit = s.unit ? `, unit: '${String(s.unit).replace(/'/g, '')}'` : '';
-      return `    ${k}: { label: '${String(s.label ?? k).replace(/'/g, '')}', min: ${s.min ?? 0}, max: ${s.max ?? 100}, step: ${s.step ?? 0.1}, default: ${s.default ?? 1}${unit} },`;
-    }).join('\n');
-    const sig = names.join(', ');
-    return `/**\n * ${id} — revolved part from the '${kind}' profile FUNCTION. Its params ARE the\n * profile's params (lifted): edit them and the profile re-resolves → r_revolve.\n * Add r_* parts (.add/.subtract + mv/rot) to build a fuller connection.\n */\nexport const meta = {\n  id: '${id}', name: '${id}',\n  description: 'Revolved part from the ${kind} profile.',\n  tags: ['new', 'revolve'],\n  uses: ['r_revolve'],\n  params: {\n${block}\n  },\n};\nexport function ${id}(${sig}) {\n  const profile = resolveProfile({ kind: '${kind}', params: { ${sig} } });\n  const body = r_revolve(profile, 96);\n  return body;\n}\n`;
+    return buildRevolveStubFromProfile(id, kind, def.params ?? {});
   }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
@@ -342,14 +315,7 @@ export function ${id}(od, length) {
       const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
       if (!res.ok) return null;
       const params: Record<string, any> = (await res.json()).params ?? {};
-      const names = Object.keys(params);
-      if (names.length === 0) return null;
-      const block = names.map((k) => {
-        const s = params[k] ?? {};
-        return `    ${k}: { label: '${(s.label ?? k).replace(/'/g, '')}', min: ${s.min ?? 0}, max: ${s.max ?? 100}, step: ${s.step ?? 0.1}, default: ${s.default ?? 1} },`;
-      }).join('\n');
-      const sig = names.join(', ');
-      return `/**\n * ${id} — composite that wraps the ${base} primitive. Edit to add more r_*\n * parts: declare them in meta.uses and combine with .add / .subtract / .intersect\n * (+ mv / rot to place). Do NOT call the raw cyl/tube/profile_extrude helpers.\n */\nexport const meta = {\n  id: '${id}', name: '${id}',\n  description: 'New primitive — composed from ${base}.',\n  tags: ['new'],\n  uses: ['${base}'],\n  params: {\n${block}\n  },\n};\nexport function ${id}(${sig}) {\n  const body = ${base}(${sig});\n  return body;\n}\n`;
+      return buildPartStubFromBase(id, base, params);
     } catch { return null; }
   }
   async function submitCreate() {
@@ -373,9 +339,18 @@ export function ${id}(od, length) {
       else if (dir === 'industrial') showIndustrial = true;
       else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
       closeCreate();
-      await refreshList();
-      const created = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()].find((x) => x.id === newId);
+      // The list read can lag the write (prod volume propagation), so the just-
+      // created id may be absent on the first refresh. Retry a few times before
+      // giving up so the new part reliably shows up + opens.
+      let created: Entry | undefined;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        await refreshList();
+        created = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()].find((x) => x.id === newId);
+        if (created) break;
+        await new Promise((res) => setTimeout(res, 350));
+      }
       if (created) openTab(created);
+      else status = `Created ${newId} in ${label} — it may take a moment to appear; click Re-scan if not.`;
     } catch (e: any) { createErr = `error: ${e?.message ?? e}`; }
     finally { createBusy = false; }
   }
