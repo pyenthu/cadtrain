@@ -1,7 +1,13 @@
 # Plan: Profiles as first-class, function-only entities
 
-Status: **proposed** (2026-05-26). Supersedes the ad-hoc profile-editing popups.
-Builds on `docs/plans/profiles-directory.md` (the K.22 two-tier profile library).
+> **SUPERSEDED (2026-05-26) by `docs/plans/file-based-architecture.md`** — the
+> profiles-only framing here was generalized into a full file-based architecture
+> (volume-only · `<id>.<kind>.ts` typed files · mid-ext → app/API registry ·
+> server bake cache · composition-by-reference / slots · tabs-as-files). The
+> profile-specific decisions below (function-only, pick+lift) still hold; read the
+> file-based doc for the current plan.
+
+Status: **superseded**. Builds on `docs/plans/profiles-directory.md` (K.22).
 
 ## Motivation
 
