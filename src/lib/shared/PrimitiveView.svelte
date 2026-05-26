@@ -785,6 +785,52 @@
     const d = leafDesc(pname);
     return d && typeof d === 'object' && !Array.isArray(d) && 'kind' in d ? d.kind : '';
   }
+
+  // ── Function-profile params shown INSIDE the part row ─────────────────────
+  // A revolve part driven by a function profile (`resolveProfile({kind})`,
+  // inline or via a named local) has the profile's params LIFTED into the
+  // part's meta.params. Surface those params right inside the part's accordion
+  // (not only the top Parameters panel) so they're encapsulated with the part
+  // that uses them — editable there, sharing the same pending/applied state.
+  const PROFILE_KIND_RE = /resolveProfile\s*\(\s*\{[^{}]*\bkind\s*:\s*['"]([a-z_$][\w$]*)['"]/i;
+  // The function-profile kind a part instance is driven by (null if none).
+  function partProfileKind(inst: any): string | null {
+    const info = profileInfoFor(inst.call);
+    if (!info || inst.argsStart < 0) return null;
+    const seg = splitTopLevelArgs(inst.argsText)[info.argIndex];
+    if (!seg) return null;
+    const segText = seg.text.trim();
+    const inlineM = PROFILE_KIND_RE.exec(segText);
+    if (inlineM) return inlineM[1];
+    // a named local: `const profile = resolveProfile({kind:'X'})`
+    if (/^[A-Za-z_$][\w$]*$/.test(segText)) {
+      const declM = new RegExp(`\\b(?:const|let|var)\\s+${segText}\\s*=\\s*` + PROFILE_KIND_RE.source, 'i').exec(editedSource);
+      if (declM) return declM[1];
+    }
+    return null;
+  }
+  // The profile's param SCHEMA (curated registry, else a volume ƒ profile).
+  function profileSchemaForKind(kind: string): Record<string, any> | null {
+    const def = PROFILE_REGISTRY[kind];
+    if (def) return def.params as any;
+    const v = volProfiles.find((p) => p.id === kind) as any;
+    return v && v.params && typeof v.params === 'object' ? v.params : null;
+  }
+  // Profile param names that are ALSO part params (lifted) — those we can show
+  // + edit inside the part row. Order follows the profile schema.
+  function partProfileParamNames(inst: any): string[] {
+    const kind = partProfileKind(inst);
+    if (!kind) return [];
+    const schema = profileSchemaForKind(kind);
+    if (!schema) return [];
+    return Object.keys(schema).filter((n) => n in effectiveSchema && effectiveSchema[n]?.type !== 'polygon');
+  }
+  // A filtered schema (just the named params) to feed ParamGrid in the part row.
+  function pickSchema(names: string[]): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const n of names) if (effectiveSchema[n]) out[n] = effectiveSchema[n];
+    return out;
+  }
   function leafKindOptions(yd: boolean) {
     const set = yd ? 'revolve' : 'cartesian';
     return Object.values(PROFILE_REGISTRY).filter((def) => def.set === set);
@@ -1496,6 +1542,17 @@
                       {:else}
                         <div class="pv-part-args">{inst.argsText}</div>
                       {/if}
+                      <!-- Function-profile params lifted into the part — shown
+                           HERE (encapsulated with the part that uses them), not
+                           only in the top Parameters panel. Shares pending/
+                           applied, so edits live-rebake + mirror the top grid. -->
+                      {#if partProfileParamNames(inst).length}
+                        {@const ppNames = partProfileParamNames(inst)}
+                        <div class="pv-profile-params">
+                          <div class="pv-pp-head">profile params · <code>{partProfileKind(inst)}</code></div>
+                          <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} />
+                        </div>
+                      {/if}
                       {#each inst.txs as t}
                         <div class="pv-part-tx">
                           ↳ {t.op}(
@@ -2111,6 +2168,10 @@
   .pv-part-profile:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
   .pv-part-profile:hover :global(.pv-shape-ic path) { stroke: #fff; }
   .pv-part-profile-lbl { line-height: 1; }
+  /* Function-profile params surfaced inside a part row (the "body" instance). */
+  .pv-profile-params { margin: 5px 0 2px; padding: 5px 7px; border: 1px dashed #d4e1f5; border-radius: 5px; background: #f7faff; }
+  .pv-pp-head { font: 700 8px Arial; text-transform: uppercase; letter-spacing: .05em; color: #2266cc; margin-bottom: 5px; }
+  .pv-pp-head code { font-family: 'SF Mono', Menlo, monospace; text-transform: none; letter-spacing: 0; color: #1a4fa0; }
 
   /* ── Profile shape-icon (draws the polygon) + hover preview ──────────────── */
   .pv-shape-ic { position: relative; display: inline-flex; align-items: center; }
