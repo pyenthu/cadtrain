@@ -125,3 +125,4 @@ test-results/
 
 # Temp/scratch scripts
 /scripts/_*tmp*.mjs
+.volume-backup/

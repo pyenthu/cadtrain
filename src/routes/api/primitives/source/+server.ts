@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
-import { readFile, readdir } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import { volumePath } from '$lib/server/volume';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
+import { findPrim } from '$lib/server/primitive-paths';
 
 // Stage G v1 of the components/primitives split — see
 // ~/.claude/plans/components-primitives-split.md.
@@ -43,42 +43,16 @@ function extractSource(src: string, name: string): string {
   return src.slice(docStart, i);
 }
 
-// Resolve a primitive's source.ts under the volume's primitives/ tree.
-// Post-restructure (2026-05-23) parts live in CATEGORY sub-folders — basic/,
-// industrial/, archive/, and the nested completions/<family>/ — instead of
-// flat. We search: flat primitives/<name>/, then one level deep
-// (primitives/<cat>/<name>/), then two (primitives/<cat>/<family>/<name>/),
-// so the lookup survives future category renames without another code edit.
-async function findVolumeSource(name: string): Promise<string | null> {
-  const root = volumePath('primitives');
-  if (!existsSync(root)) return null;
-  const direct = join(root, name, 'source.ts');
-  if (existsSync(direct)) return direct;
-  let lvl1;
-  try { lvl1 = await readdir(root, { withFileTypes: true }); } catch { return null; }
-  for (const cat of lvl1) {
-    if (!cat.isDirectory()) continue;
-    const p1 = join(root, cat.name, name, 'source.ts');
-    if (existsSync(p1)) return p1;
-    let lvl2;
-    try { lvl2 = await readdir(join(root, cat.name), { withFileTypes: true }); } catch { continue; }
-    for (const fam of lvl2) {
-      if (!fam.isDirectory()) continue;
-      const p2 = join(root, cat.name, fam.name, name, 'source.ts');
-      if (existsSync(p2)) return p2;
-    }
-  }
-  return null;
-}
-
 export const GET = async ({ url }) => {
   const name = url.searchParams.get('name');
   if (!name) throw error(400, 'name query param required');
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw error(400, 'invalid primitive name');
   // Volume first — a volume primitive with the same id SHADOWS the bundle.
-  const volSrc = await findVolumeSource(name);
-  if (volSrc) {
-    const src = await readFile(volSrc, 'utf8');
+  // findPrim resolves the new flat <id>.prim.ts/.asm.ts (and the legacy
+  // <id>/source.ts folder, until migrated) anywhere in the category tree.
+  const hit = await findPrim(name);
+  if (hit) {
+    const src = await readFile(hit.path, 'utf8');
     // Return the extracted meta too — the list is now a cheap directory
     // listing (no params), so the params/name/description load HERE,
     // lazily, when a primitive is opened. Meta-less/old sources just omit.

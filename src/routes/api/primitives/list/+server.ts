@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
 import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
+import { listEntitiesIn } from '$lib/server/primitive-paths';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 // (tests→industrial rename + nested completions group, 2026-05-23)
@@ -53,58 +54,37 @@ export const GET = async () => {
   const completions: Record<string, PrimEntry[]> = {};
   const root = volumePath(PRIMS_ROOT);
 
-  // CHEAP entry — id only, NO source read. The sidebar shows just the id;
+  // CHEAP listing — id only, NO source read. The sidebar shows just the id;
   // a part's params/name/description load LAZILY when it's opened (see
-  // /api/primitives/source, which returns the extracted meta). This keeps
-  // the catalog a directory listing (one stat per part) instead of reading
-  // + meta-parsing every source.ts on every call — the previous behaviour
-  // grew to ~2s once the part count tripled. Rule 18 still holds: the list
-  // is derived from the FS, no central index to drift.
-  function cheapEntry(dir: string, id: string): PrimEntry | null {
-    if (!existsSync(join(dir, 'source.ts'))) return null;
-    return { id, source: 'volume', name: id, description: '', params: {}, editable: true };
-  }
+  // /api/primitives/source). listEntitiesIn enumerates the new flat files
+  // (<id>.prim.ts / .asm.ts) AND any not-yet-migrated legacy <id>/source.ts
+  // folders, so the catalog is a directory listing (no per-part source read).
+  // Rule 18 still holds: derived from the FS, no central index to drift.
+  const mk = (id: string): PrimEntry =>
+    ({ id, source: 'volume', name: id, description: '', params: {}, editable: true });
   async function collectSub(name: string, into: PrimEntry[]) {
-    const subRoot = join(root, name);
-    if (!existsSync(subRoot)) return;
-    for (const d of await readdir(subRoot, { withFileTypes: true })) {
-      if (!d.isDirectory()) continue;
-      const e = cheapEntry(join(subRoot, d.name), d.name);
-      if (e) into.push(e);
-    }
+    for (const e of await listEntitiesIn(join(root, name))) into.push(mk(e.id));
   }
-  // Two-level recurse: primitives/completions/<family>/<id>/. Each family
-  // sub-dir becomes a key in `completions` (even when empty), and its
-  // parts are collected one level below.
+  // Two-level: primitives/completions/<family>/<id>.prim.ts. Each family sub-dir
+  // becomes a key (even when empty) so the sidebar shows where parts will land.
   async function collectCompletions() {
     const subRoot = join(root, 'completions');
     if (!existsSync(subRoot)) return;
     for (const fam of await readdir(subRoot, { withFileTypes: true })) {
       if (!fam.isDirectory()) continue;
-      const parts: PrimEntry[] = [];
-      const famRoot = join(subRoot, fam.name);
-      for (const d of await readdir(famRoot, { withFileTypes: true })) {
-        if (!d.isDirectory()) continue;
-        const e = cheapEntry(join(famRoot, d.name), d.name);
-        if (e) parts.push(e);
-      }
-      completions[fam.name] = parts;
+      completions[fam.name] = (await listEntitiesIn(join(subRoot, fam.name))).map((e) => mk(e.id));
     }
   }
   if (existsSync(root)) {
-    for (const dirent of await readdir(root, { withFileTypes: true })) {
-      if (!dirent.isDirectory()) continue;
-      // `archive/` (soft-deleted), `basic/` (the raw r_* geometry
-      // primitives), `industrial/` (the industrial-test category, formerly
-      // `tests/`) and `completions/` (nested by family) are sub-folders,
-      // not primitives themselves — recurse.
-      if (dirent.name === 'archive')     { await collectSub('archive', archived);        continue; }
-      if (dirent.name === 'basic')       { await collectSub('basic', basic);             continue; }
-      if (dirent.name === 'industrial')  { await collectSub('industrial', industrial);   continue; }
-      if (dirent.name === 'completions') { await collectCompletions();                    continue; }
-      const e = cheapEntry(join(root, dirent.name), dirent.name);
-      if (e) volume.push(e);
-    }
+    // Flat parts live directly under primitives/ as <id>.prim.ts (or a legacy
+    // <id>/source.ts folder). Category dirs (basic/industrial/archive/
+    // completions/profiles) have no source of their own, so listEntitiesIn
+    // skips them — they're recursed explicitly below.
+    for (const e of await listEntitiesIn(root)) volume.push(mk(e.id));
+    await collectSub('basic', basic);
+    await collectSub('industrial', industrial);
+    await collectSub('archive', archived);
+    await collectCompletions();
   }
 
   // Bundle raw helpers (cyl/tube/profile_extrude/revolve/helix_band …) are the

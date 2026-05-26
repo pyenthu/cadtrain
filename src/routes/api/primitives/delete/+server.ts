@@ -1,47 +1,20 @@
 import { json, error } from '@sveltejs/kit';
-import { rename, rm, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
+import { findPrim, removeIdForms } from '$lib/server/primitive-paths';
 
-// Find a primitive's CURRENT directory anywhere in the tree — flat
-// (primitives/<id>/), one level (primitives/<cat>/<id>/), or two
-// (primitives/<cat>/<family>/<id>/). Mirrors the save/source resolvers; the
-// old flat-only lookup 404'd on basic/industrial/completions parts (so they
-// couldn't be archived). Excludes the archive/ subtree.
-async function findActiveDir(id: string): Promise<string | null> {
-  const root = volumePath('primitives');
-  const flat = join(root, id);
-  if (existsSync(join(flat, 'source.ts'))) return flat;
-  let lvl1;
-  try { lvl1 = await readdir(root, { withFileTypes: true }); } catch { return null; }
-  for (const cat of lvl1) {
-    if (!cat.isDirectory() || cat.name === 'archive') continue;
-    const p1 = join(root, cat.name, id);
-    if (existsSync(join(p1, 'source.ts'))) return p1;
-    let lvl2;
-    try { lvl2 = await readdir(join(root, cat.name), { withFileTypes: true }); } catch { continue; }
-    for (const fam of lvl2) {
-      if (!fam.isDirectory()) continue;
-      const p2 = join(root, cat.name, fam.name, id);
-      if (existsSync(join(p2, 'source.ts'))) return p2;
-    }
-  }
-  return null;
-}
-
-// Two-step deletion for volume primitives:
+// Two-step deletion for volume primitives (file-based layout):
 //   DELETE /api/primitives/delete?id=<id>
-//     → MOVE <volume>/primitives/<id>/ into <volume>/primitives/archive/<id>/.
-//     This is the default action triggered by the trash button in the
-//     active list. Survives in `archive/` until a permanent delete.
+//     → ARCHIVE: copy the part's source to <volume>/primitives/archive/
+//       <id>.<kind>.ts, then remove the active original (flat file or legacy
+//       folder). Survives in archive/ until a permanent delete.
 //   DELETE /api/primitives/delete?id=<id>&permanent=true
-//     → RECURSIVELY DELETE either <volume>/primitives/<id>/ or
-//     <volume>/primitives/archive/<id>/, whichever exists. Used by
-//     the archive view's permanent-delete button.
+//     → HARD DELETE every on-disk form of <id> wherever it currently lives
+//       (active OR archived).
 //
-// Bundle primitives cannot be deleted (they live in git-tracked src/).
-// The /primitives UI hides delete + archive UI for non-volume entries.
+// Bundle primitives cannot be deleted (they live in git-tracked src/). The
+// /primitives UI hides delete + archive for non-volume entries.
 
 const ID_RE = /^[a-z][a-z0-9_]*$/i;
 const ARCHIVE = 'archive';
@@ -52,28 +25,34 @@ export const DELETE = async ({ url }) => {
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
   if (id === ARCHIVE) throw error(400, 'cannot operate on the archive directory itself');
 
-  const active = await findActiveDir(id);
-  const archived = volumePath(join('primitives', ARCHIVE, id));
+  const archiveDir = volumePath(join('primitives', ARCHIVE));
 
   if (permanent) {
-    // Hard delete from wherever the primitive currently lives.
-    const target = existsSync(archived) ? archived : active;
-    if (!target) throw error(404, `primitive "${id}" not found (neither active nor archived)`);
-    await rm(target, { recursive: true, force: true });
-    return json({ ok: true, id, action: 'permanent-delete', removed: target });
+    // Hard delete wherever it lives (active or archived).
+    const hit = await findPrim(id, { includeArchive: true });
+    if (!hit) throw error(404, `primitive "${id}" not found (neither active nor archived)`);
+    if (hit.legacy) await rm(join(hit.dir, id), { recursive: true, force: true });
+    else await rm(hit.path, { force: true });
+    return json({ ok: true, id, action: 'permanent-delete', removed: hit.path });
   }
 
-  // Default: archive — move from active → archive/. If already archived
-  // (e.g. duplicate delete click) treat as success.
+  // Default: archive — move active → archive/. Excludes the archive subtree.
+  const active = await findPrim(id, { includeArchive: false });
   if (!active) {
-    if (existsSync(archived)) return json({ ok: true, id, action: 'archive', note: 'already archived' });
+    // Idempotent: a duplicate archive click when it's already archived succeeds.
+    if (await findPrim(id, { includeArchive: true })) {
+      return json({ ok: true, id, action: 'archive', note: 'already archived' });
+    }
     throw error(404, `primitive "${id}" not found on volume`);
   }
-  // Collision: archive/<id> already exists from a prior archive of the
-  // same id. Overwrite with the current copy so the user's last action
-  // is what's preserved.
-  if (existsSync(archived)) await rm(archived, { recursive: true, force: true });
-  await mkdir(volumePath(join('primitives', ARCHIVE)), { recursive: true });
-  await rename(active, archived);
+  const src = await readFile(active.path, 'utf8');
+  await mkdir(archiveDir, { recursive: true });
+  // Clear any prior archived copy of this id (new file or legacy folder), then
+  // write the current source as the archived flat file.
+  await removeIdForms(archiveDir, id);
+  await writeFile(join(archiveDir, `${id}.${active.kind}.ts`), src, 'utf8');
+  // Remove the active original.
+  if (active.legacy) await rm(join(active.dir, id), { recursive: true, force: true });
+  else await rm(active.path, { force: true });
   return json({ ok: true, id, action: 'archive' });
 };

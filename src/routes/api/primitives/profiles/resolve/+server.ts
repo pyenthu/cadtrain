@@ -1,16 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { volumePath } from '$lib/server/volume';
+import { findProfile } from '$lib/server/primitive-paths';
 import { buildProfileFromSource } from '$lib/server/profile-fn';
 
 // POST /api/primitives/profiles/resolve
 //   { source, params }   → run raw build() source (live authoring preview), OR
-//   { id, params }        → resolve a saved volume function profile by id.
-// → { points: [[r,z],…] }.  A `build` is server-side (the points-only sandbox),
-// so this is how the GUI re-resolves on param change — `resolveProfile` (sync,
-// client) can only do the curated `kind`s. Proxied to prod (the {id} branch
-// reads the prod volume source; {source} travels in the body either way).
+//   { id, params }        → resolve a saved volume profile by id.
+// → { points: [[r,z],…] }. buildProfileFromSource strips imports + finds the
+// `build` export, so it accepts either a bare build body OR the full merged
+// module (meta + build). Proxied to prod (the {id} branch reads the prod volume).
 const ID_RE = /^[a-z][a-z0-9_]*$/;
 
 export const POST = async ({ request }) => {
@@ -23,8 +21,9 @@ export const POST = async ({ request }) => {
   if (typeof source === 'string' && source.trim()) {
     src = source;
   } else if (typeof id === 'string' && ID_RE.test(id)) {
-    try { src = await readFile(volumePath(join('primitives', 'profiles', id, 'source.ts')), 'utf8'); }
-    catch { throw error(404, `no function profile "${id}" (missing source.ts)`); }
+    const hit = findProfile(id);
+    if (!hit) throw error(404, `no function profile "${id}"`);
+    src = await readFile(hit.path, 'utf8');
   } else {
     throw error(400, 'resolve needs a `source` string or a valid `id`');
   }

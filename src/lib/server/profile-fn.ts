@@ -12,6 +12,7 @@
  */
 import { transformSync } from 'esbuild';
 import { pen } from '$lib/shared/profile-presets';
+import { evalMetaLiteral, metaLiteralRange } from '$lib/server/primitives-meta';
 
 function stripImports(src: string): string {
   return src.replace(/^\s*import\s[^\n]*;?\s*$/gm, '');
@@ -42,4 +43,59 @@ export function compileProfileBuild(source: string): (params?: Record<string, nu
 
 export function buildProfileFromSource(source: string, params: Record<string, number> = {}): [number, number][] {
   return compileProfileBuild(source)(params);
+}
+
+// ── Merged profile module (<id>.prvl.ts / .prex.ts) ─────────────────────────
+// The file-based layout (docs/plans/file-based-architecture.md) stores a profile
+// as ONE module: the meta literal (params schema + axis `set`) followed by the
+// `build(p)` body — replacing the old `profile.json` + `source.ts` pair. The
+// mid-extension (prvl/prex) IS the kind; `set` is mirrored in meta for the
+// existing profile-list filter + the editor.
+
+export interface ProfileMeta {
+  id: string;
+  label: string;
+  description: string;
+  set: 'revolve' | 'cartesian';
+  tags: string[];
+  params: Record<string, any>;
+}
+
+/** The file mid-extension a profile's `set` maps to: revolve→prvl, cartesian→prex. */
+export function profileExt(set: string): 'prvl' | 'prex' {
+  return set === 'cartesian' ? 'prex' : 'prvl';
+}
+
+/** Compose a merged profile module from its meta + build() body. */
+export function composeProfileModule(meta: ProfileMeta, buildSource: string): string {
+  const ext = profileExt(meta.set);
+  const kind = meta.set === 'cartesian' ? 'extrude (cross-section)' : 'revolve ((r,z) half-section)';
+  const header =
+    `// ${meta.id}.${ext}.ts — ${kind} profile (function).\n` +
+    `// meta = params schema + axis; build(p) returns the profile points.`;
+  return `${header}\nexport const meta = ${JSON.stringify(meta, null, 2)};\n\n${buildSource.trim()}\n`;
+}
+
+/** Split a merged profile module back into { meta, buildSource }. buildSource is
+ *  everything after the meta literal (the build fn + any helpers it defines). */
+export function splitProfileModule(src: string): { meta: ProfileMeta; buildSource: string } {
+  const raw = evalMetaLiteral(src);
+  const range = metaLiteralRange(src);
+  let buildSource = src;
+  if (range) {
+    let after = range[1] + 1;
+    while (after < src.length && /[;\s]/.test(src[after])) after++; // skip `;` + whitespace
+    buildSource = src.slice(after);
+  }
+  return {
+    meta: {
+      id: String(raw.id ?? ''),
+      label: String(raw.label ?? raw.id ?? ''),
+      description: String(raw.description ?? ''),
+      set: raw.set === 'cartesian' ? 'cartesian' : 'revolve',
+      tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+      params: raw.params && typeof raw.params === 'object' ? raw.params : {},
+    },
+    buildSource: buildSource.trim(),
+  };
 }

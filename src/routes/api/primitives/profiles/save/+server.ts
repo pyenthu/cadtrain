@@ -3,17 +3,18 @@ import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
-import { buildProfileFromSource } from '$lib/server/profile-fn';
+import { buildProfileFromSource, composeProfileModule } from '$lib/server/profile-fn';
+import { profileFilePath, legacyProfileDir } from '$lib/server/primitive-paths';
 
 // POST /api/primitives/profiles/save
-//   { id, label?, set, tags?, kind?, params?, points?, source? }
-// Writes <volume>/primitives/profiles/<id>/profile.json. Three flavours:
-//   • configured  → { kind, params }          (params = VALUES for the kind)
-//   • hand-drawn  → { points }
-//   • FUNCTION    → source.ts with build(p) + { params } (params = SCHEMA:
-//                   {label,min,max,step,default,unit}).  P3.
-// A function save validates build(defaults) in the sandbox first — a broken
-// build never lands on disk. Proxied to prod via VOLUME_PROXY_PATHS.
+//   { id, label?, description?, set, tags?, kind?, params?, points?, source? }
+// FUNCTION profile (source + build) → the new merged module
+//   <volume>/primitives/profiles/<id>.prvl.ts | .prex.ts  (meta + build in one
+//   file). A function save validates build(defaults) in the sandbox first — a
+//   broken build never lands on disk — then drops any legacy folder it migrates.
+// Configured (kind) / hand-drawn (points) profiles keep the legacy folder write
+// (profile.json) — these flavours are being retired (function-first, P3).
+// Proxied to prod via VOLUME_PROXY_PATHS.
 const ID_RE = /^[a-z][a-z0-9_]*$/;
 
 function defaultsOf(params: any): Record<string, number> {
@@ -35,27 +36,35 @@ export const POST = async ({ request }) => {
   const hasSource = typeof source === 'string' && /\bfunction\s+build\b/.test(source);
   if (!hasKind && !hasPoints && !hasSource) throw error(400, 'profile needs a kind, points (>= 3), or a build() source');
 
-  const rec: any = {
+  const meta = {
     id,
     label: typeof label === 'string' && label.trim() ? label.trim() : id,
     description: typeof description === 'string' ? description.trim() : '',
-    set,
+    set: set as 'cartesian' | 'revolve',
     tags: Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [],
+    params: (params && typeof params === 'object') ? params : {},
   };
-  if (hasKind) { rec.kind = kind; rec.params = (params && typeof params === 'object') ? params : {}; }
-  if (hasPoints) rec.points = points;
+
+  // FUNCTION profile → merged module (new flat file).
   if (hasSource) {
-    rec.params = (params && typeof params === 'object') ? params : {};
-    // Fail fast: the build() must resolve on its own defaults before it persists.
-    try { buildProfileFromSource(source, defaultsOf(rec.params)); }
+    // Fail fast: build() must resolve on its own defaults before it persists.
+    try { buildProfileFromSource(source, defaultsOf(meta.params)); }
     catch (e) { throw error(400, `build() failed on defaults: ${(e as Error)?.message ?? e}`); }
+    const filePath = profileFilePath(id, set);
+    await mkdir(volumePath(join('primitives', 'profiles')), { recursive: true });
+    await writeFile(filePath, composeProfileModule(meta, source), 'utf8');
+    // Migrate-on-save: drop the legacy folder if this id used to live there.
+    const legacy = legacyProfileDir(id);
+    if (existsSync(legacy)) { try { await rm(legacy, { recursive: true, force: true }); } catch { /* best-effort */ } }
+    return json({ ok: true, id, path: filePath });
   }
 
-  const dir = volumePath(join('primitives', 'profiles', id));
+  // Configured (kind) / hand-drawn (points) → legacy folder profile.json.
+  const rec: any = { id: meta.id, label: meta.label, description: meta.description, set: meta.set, tags: meta.tags };
+  if (hasKind) { rec.kind = kind; rec.params = meta.params; }
+  if (hasPoints) rec.points = points;
+  const dir = legacyProfileDir(id);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'profile.json'), JSON.stringify(rec, null, 2), 'utf8');
-  if (hasSource) await writeFile(join(dir, 'source.ts'), source, 'utf8');
-  // Switching a function profile back to configured/drawn: drop the stale source.
-  else if (existsSync(join(dir, 'source.ts'))) await rm(join(dir, 'source.ts'));
   return json({ ok: true, id, path: dir });
 };

@@ -86,22 +86,35 @@ export interface PrimMeta {
 
 const META_DECL_RE = /export\s+const\s+meta\s*=\s*\{/;
 
-export function extractMetaFromSource(src: string): PrimMeta {
+/** Locate the `export const meta = { … }` object literal in a source module
+ *  and return [braceStart, braceEnd] (inclusive of the closing brace), or null
+ *  if there's no meta declaration. Shared by the primitive meta parser and the
+ *  profile module split. */
+export function metaLiteralRange(src: string): [number, number] | null {
   const declMatch = META_DECL_RE.exec(src);
-  if (!declMatch) {
-    throw new Error('source has no `export const meta = {...}` declaration');
-  }
+  if (!declMatch) return null;
   const braceStart = declMatch.index + declMatch[0].length - 1;
   let depth = 0;
-  let braceEnd = -1;
   for (let i = braceStart; i < src.length; i++) {
     const c = src[i];
     if (c === '{') depth++;
-    else if (c === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
+    else if (c === '}') { depth--; if (depth === 0) return [braceStart, i]; }
   }
-  if (braceEnd < 0) throw new Error('meta literal has unbalanced braces');
-  const literal = src.slice(braceStart, braceEnd + 1);
+  return null; // unbalanced
+}
 
+/** Evaluate the `export const meta = {...}` literal to a plain object. Object
+ *  literals are pure data (no helpers/globals/wasm) so this is safe. Throws on
+ *  missing/unparseable meta. Used by both primitive AND profile modules — it
+ *  does NOT validate field shape (callers pick the fields they need). */
+export function evalMetaLiteral(src: string): any {
+  const range = metaLiteralRange(src);
+  if (!range) {
+    // Distinguish "no declaration" from "unbalanced braces" for a clearer error.
+    if (!META_DECL_RE.test(src)) throw new Error('source has no `export const meta = {...}` declaration');
+    throw new Error('meta literal has unbalanced braces');
+  }
+  const literal = src.slice(range[0], range[1] + 1);
   let js: string;
   try {
     js = transformSync(`(${literal})`, { loader: 'ts', format: 'esm', target: 'es2022' }).code;
@@ -118,6 +131,11 @@ export function extractMetaFromSource(src: string): PrimMeta {
   if (!meta || typeof meta !== 'object') {
     throw new Error('meta did not evaluate to an object');
   }
+  return meta;
+}
+
+export function extractMetaFromSource(src: string): PrimMeta {
+  const meta = evalMetaLiteral(src);
   if (!meta.params || typeof meta.params !== 'object') {
     throw new Error('meta.params is required');
   }
