@@ -7,9 +7,8 @@
     </p>
 
     <section>
-      <h2>CAD components</h2>
+      <h2>Reverse-ID &amp; training</h2>
       <ul>
-        <li><a href="/archive/components">/archive/components</a> — 18-primitive parametric library viewer</li>
         <li><a href="/archive/reverse">/archive/reverse</a> — image upload → identify (RAG + Claude vision) → refine loop</li>
         <li><a href="/archive/training">/archive/training</a> — training data gallery (35+ tools, original vs 3D)</li>
       </ul>
@@ -35,7 +34,6 @@
       <ul>
         <li><a href="/archive/tests">/archive/tests</a> — Playwright recordings + cache stats</li>
         <li><a href="/archive/tests/wells">/archive/tests/wells</a> — wells extraction eval (8 cases × 2 backends × 3 models)</li>
-        <li><a href="/archive/tests/components">/archive/tests/components</a> — components recognition eval (17/18 cold-classification baseline)</li>
       </ul>
     </section>
 

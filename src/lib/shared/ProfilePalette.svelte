@@ -66,8 +66,12 @@
     return entries.filter((e) => e.id.toLowerCase().includes(q) || e.label.toLowerCase().includes(q) || e.tags.some((t) => t.toLowerCase().includes(q)));
   });
 
-  // Polygon → fitted SVG path in a `size`×`size` box (+y up; revolve halves get
-  // mirrored across the r=0 axis for a recognizable revolved silhouette).
+  // Polygon → fitted SVG path in a `size`×`size` box. MUST match
+  // PrimitiveView.pathFor(). REVOLVE halves are MIRRORED across the r=0 axis
+  // (plot +r and −r, r=0 anchored at the icon's horizontal center) so a tube
+  // shows its hollow ID gap and a solid fills the bar. Z-DOWN: z increases
+  // downward (part top = lower z) → NO vertical flip, so the profile is
+  // right-side-up (top at the icon top). Cartesian keeps the +y-up screen flip.
   function thumb(pts: Pt[], revolve: boolean): { d: string; axis: number | null } {
     if (!pts.length) return { d: '', axis: null };
     let poly = pts;
@@ -78,7 +82,8 @@
     const s = (size - 2 * pad) / Math.max(w, h);
     const ox = pad + (size - 2 * pad - w * s) / 2, oy = pad + (size - 2 * pad - h * s) / 2;
     const sx = (x: number) => ox + (x - minX) * s;
-    const sy = (y: number) => size - (oy + (y - minY) * s); // flip y
+    // Z-down (revolve): no flip. Cartesian: flip y so +y points up on screen.
+    const sy = (y: number) => revolve ? oy + (y - minY) * s : size - (oy + (y - minY) * s);
     const d = poly.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join(' ') + ' Z';
     return { d, axis: revolve ? sx(0) : null };
   }

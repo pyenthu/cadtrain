@@ -28,9 +28,9 @@ export const POST = async ({ request }) => {
   // Optional target folder for a NEW primitive (the sidebar "+ add" affordance).
   // Allowlisted to the known group folders — no traversal. Ignored when the id
   // already exists (updates always write back in place).
-  const TARGET_RE = /^(basic|industrial|archive|completions\/[a-z][a-z0-9_]*)$/;
+  const TARGET_RE = /^(basic|archive|completions\/[a-z][a-z0-9_]*)$/;
   if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir))) {
-    throw error(400, `bad dir "${targetDir}" — must be basic | industrial | archive | completions/<family>`);
+    throw error(400, `bad dir "${targetDir}" — must be basic | archive | completions/<family>`);
   }
   if (typeof source !== 'string' || !source.trim()) {
     throw error(400, 'source required (non-empty string)');
@@ -41,7 +41,7 @@ export const POST = async ({ request }) => {
   catch (e: any) { throw error(400, `source missing valid meta: ${e?.message ?? e}`); }
 
   // Write back into the part's CURRENT ACTIVE category dir — findPrim searches
-  // basic/, industrial/, completions/<family>/, or flat (NOT archive/) so an
+  // basic/, completions/<family>/, or flat (NOT archive/) so an
   // edit never FORKS a flat duplicate. A new id lands in `dir` (or flat).
   // includeArchive:false is load-bearing: a NEW part whose id collides with an
   // ARCHIVED part (e.g. creating dp_new when archive/dp_new exists) must NOT

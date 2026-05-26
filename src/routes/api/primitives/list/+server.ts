@@ -3,19 +3,13 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
-import { discoverHelpers } from '$lib/cad/manifold-helpers-meta';
 import { listEntitiesIn } from '$lib/server/primitive-paths';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
-// (tests→industrial rename + nested completions group, 2026-05-23)
+// (nested completions group, 2026-05-23; industrial category removed 2026-05-27)
 //
-// Returns the combined catalog of primitives the /primitives UI shows:
-//   - bundle (compiled into the app, src/lib/cad/manifold-helpers.ts)
-//   - volume ($APP_DATA_DIR/primitives/<id>/source.ts + meta.json)
-//
-// Each entry carries `editable` — bundle ones are false, volume ones are
-// true. Volume primitives with an id that collides with a bundle one
-// shadow the bundle (a way to override a built-in for experimentation).
+// Returns the volume primitive catalog the /primitives sidebar shows (basic,
+// completions/<family>, archive, merged flat). Params load lazily via /source.
 
 interface PrimEntry {
   id: string;
@@ -29,22 +23,8 @@ interface PrimEntry {
 const PRIMS_ROOT = 'primitives';
 
 export const GET = async () => {
-  const bundle: PrimEntry[] = discoverHelpers().map((h) => ({
-    id: h.name,
-    source: 'bundle',
-    name: h.name,
-    description: h.desc,
-    // Synthesize a params schema from the discovered prop list. Defaults
-    // come from HELPER_DEFAULTS via discoverHelpers().props[i].default.
-    params: Object.fromEntries(
-      h.props.map((p) => [p.name, { label: p.name, min: -10, max: 10, step: 0.1, default: p.default }]),
-    ),
-    editable: false,
-  }));
-
   const volume: PrimEntry[] = [];
   const basic: PrimEntry[] = [];
-  const industrial: PrimEntry[] = [];
   const archived: PrimEntry[] = [];
   // Completions is NESTED one level deeper than the flat groups above:
   // primitives/completions/<family>/<id>/. The sidebar renders it as
@@ -77,32 +57,15 @@ export const GET = async () => {
   }
   if (existsSync(root)) {
     // Flat parts live directly under primitives/ as <id>.prim.ts (or a legacy
-    // <id>/source.ts folder). Category dirs (basic/industrial/archive/
+    // <id>/source.ts folder). Category dirs (basic/archive/
     // completions/profiles) have no source of their own, so listEntitiesIn
     // skips them — they're recursed explicitly below.
     for (const e of await listEntitiesIn(root)) volume.push(mk(e.id));
     await collectSub('basic', basic);
-    await collectSub('industrial', industrial);
     await collectSub('archive', archived);
     await collectCompletions();
   }
 
-  // Bundle raw helpers (cyl/tube/profile_extrude/revolve/helix_band …) are the
-  // unstable backend toolkit (Rule 17/20): runtime-injected into the sandbox and
-  // used INSIDE the r_* leaves, but NOT shown in the /primitives sidebar — the UI
-  // surfaces only the new-style r_* components + composites. They stay in the
-  // `bundle` field for any internal use; `merged` (the sidebar's loose top
-  // section) carries only volume primitives.
-  const bundleIds = new Set(bundle.map((b) => b.id));
   const merged = [...volume];
-  return json({
-    bundle,
-    volume,
-    basic,
-    industrial,
-    completions,
-    archived,
-    merged,
-    shadows: volume.filter((v) => bundleIds.has(v.id)).map((v) => v.id),
-  });
+  return json({ basic, completions, archived, merged });
 };

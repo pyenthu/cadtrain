@@ -163,7 +163,7 @@ export async function identifyViaCli(req: IdentifyRequest): Promise<IdentifyResp
   const ext = guessImageExt(req.mime);
 
   return withTempFile('cadtrain-identify-', ext, req.imageBuffer, async ({ filePath, dir }) => {
-    const systemPrompt = `You are a downhole tool component identifier. The user will give you the path to an image of an industrial component. Identify which of the 18 catalog primitives below it is, and estimate its parameters.
+    const systemPrompt = `You are a downhole tool component identifier. The user will give you the path to an image of a downhole tool component. Identify which of the 18 catalog primitives below it is, and estimate its parameters.
 
 COMPONENT CATALOG (18 types):
 ${buildCatalogText()}

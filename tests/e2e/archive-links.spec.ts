@@ -23,12 +23,10 @@ const STALE_PATTERNS = [
 
 const ARCHIVED_PAGES = [
   '/archive',
-  '/archive/components',
   '/archive/reverse',
   '/archive/training',
   '/archive/tests',
   '/archive/tests/wells',
-  '/archive/tests/components',
   '/archive/wells',
   '/archive/tools/bottom-sub',
   '/archive/tools/ratch-latch',
@@ -48,13 +46,11 @@ for (const path of ARCHIVED_PAGES) {
 test('Archive index page lists all canonical archived routes', async ({ page }) => {
   await page.goto('/archive');
   for (const href of [
-    '/archive/components',
     '/archive/reverse',
     '/archive/training',
     '/archive/wells',
     '/archive/tests',
     '/archive/tests/wells',
-    '/archive/tests/components',
     '/archive/tools/bottom-sub',
     '/archive/tools/ratch-latch',
   ]) {
@@ -62,9 +58,8 @@ test('Archive index page lists all canonical archived routes', async ({ page }) 
   }
 });
 
-test('archived Tests page links to /archive/tests/wells and /archive/tests/components', async ({ page }) => {
+test('archived Tests page links to /archive/tests/wells', async ({ page }) => {
   await page.goto('/archive/tests');
   await expect(page.locator('main.content a[href="/archive/tests/wells"]')).toBeVisible();
-  await expect(page.locator('main.content a[href="/archive/tests/components"]')).toBeVisible();
 });
 

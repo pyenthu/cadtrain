@@ -3,6 +3,7 @@ import {
   stubSource,
   buildPartStubFromBase,
   buildRevolveStubFromProfile,
+  buildRotateStubFromProfile,
   metaParamEntry,
   type StubParam,
 } from './primitive-stub';

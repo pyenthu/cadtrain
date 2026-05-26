@@ -37,8 +37,9 @@ test.describe.serial('/primitives — create flow (function-first)', () => {
     await page.locator('.prim-fam', { hasText: 'Drill Pipe' }).locator('.prim-add').click();
     await expect(page.locator('.prim-create')).toBeVisible();
 
-    // The base picker offers profile FUNCTIONS but NOT raw r_revolve/r_extrude.
-    await expect(page.locator('.prim-create-opt', { hasText: /◆ profile/i }).first()).toBeVisible();
+    // The base picker offers r_rotate (function-first revolve — profile chosen
+    // inside the part) but NOT the raw r_revolve/r_extrude engines.
+    await expect(page.locator('.prim-create-opt', { hasText: /◆ function profile/i }).first()).toBeVisible();
     await expect(page.locator('.prim-create-opt', { hasText: /^r_revolve$/ })).toHaveCount(0);
     await expect(page.locator('.prim-create-opt', { hasText: /^r_extrude$/ })).toHaveCount(0);
   });
@@ -52,9 +53,9 @@ test.describe.serial('/primitives — create flow (function-first)', () => {
     await page.locator('.prim-fam', { hasText: 'Drill Pipe' }).locator('.prim-add').click();
     await expect(page.locator('.prim-create')).toBeVisible();
 
-    // id + pick the first profile-function base (function-first revolve).
+    // id + pick the r_rotate function-first revolve base.
     await page.getByPlaceholder(/e\.g\. dp_pin/i).fill(STUB_ID);
-    await page.locator('.prim-create-opt', { hasText: /◆ profile/i }).first().click();
+    await page.locator('.prim-create-opt', { hasText: /◆ function profile/i }).first().click();
 
     // Save must return 200 (the transpile bug returned 400) and no error banner.
     const saveResp = page.waitForResponse((r) => r.url().includes('/api/primitives/save'));

@@ -4,7 +4,6 @@
 
 import * as THREE from 'three';
 import { COMPONENTS } from './library';
-import { geomById, metaById, resolveDerived } from './components';
 // Manifold runtime + small helpers live in their own module so per-primitive
 // component files can import them without depending on builder.ts. Re-exported
 // here for back-compat with anything still importing them from this file.
@@ -433,17 +432,10 @@ function hexToRgb(hex: string): [number, number, number] {
  * `buildComponent` instead.
  */
 export function buildPrimitiveManifold(componentId: string, params: Record<string, number>): any {
-  // Runes registry takes precedence — single-file primitives in
-  // ./components/<id>.ts are the source of truth for any id they define.
-  // Derived params (meta.derived) are computed and merged into the bag
-  // BEFORE geom runs, so the geom can read p.<derivedKey> naturally.
-  const componentGeom = geomById(componentId);
-  if (componentGeom) {
-    const meta = metaById(componentId);
-    const resolved = meta ? resolveDerived(meta, params) : params;
-    return componentGeom(resolved);
-  }
-
+  // Legacy ComponentDef builders (cad/library) + parent-chain fallback. The
+  // runes bundle registry (src/lib/cad/components/) was removed with the
+  // components product (2026-05-27); live /primitives bakes server-side via
+  // primitive-loader (buildPrimitiveGeom), not this path.
   let fn = builders[componentId];
   // Walk the parent chain — derived primitives (ComponentDef.parent) reuse
   // their base class's builder unless they register their own. Lets us spin

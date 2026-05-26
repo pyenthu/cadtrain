@@ -13,18 +13,17 @@ import { test, expect } from '@playwright/test';
 
 const TOP_LEVEL = [
   { path: '/', heading: /CAD Train/i },
+  { path: '/primitives', heading: /Primitives/i },
   { path: '/wells', heading: /Wells/i },
   { path: '/archive', heading: /Archive/i },
   { path: '/plan', heading: /Plan/i },
 ];
 
 const ARCHIVED = [
-  '/archive/components',
   '/archive/reverse',
   '/archive/training',
   '/archive/tests',
   '/archive/tests/wells',
-  '/archive/tests/components',
   '/archive/wells',
   '/archive/tools/bottom-sub',
   '/archive/tools/ratch-latch',
@@ -51,6 +50,9 @@ for (const route of TOP_LEVEL) {
       // Home is the SVTC-style nav menu — no <h1>, just the .menu-header
       // ('CAD Train') + the route list.
       await expect(page.locator('.menu-header')).toContainText(route.heading);
+    } else if (route.path === '/primitives') {
+      // /primitives uses an <h2> sidebar heading, not an <h1>.
+      await expect(page.locator('h2').first()).toContainText(route.heading);
     } else {
       await expect(page.locator('h1').first()).toContainText(route.heading);
     }

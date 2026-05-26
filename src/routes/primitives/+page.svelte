@@ -11,7 +11,7 @@
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
-  import { stubSource, buildPartStubFromBase, buildRevolveStubFromProfile } from '$lib/cad/primitive-stub';
+  import { stubSource, buildPartStubFromBase, buildRotateStubFromProfile } from '$lib/cad/primitive-stub';
 
   interface Entry {
     id: string;
@@ -28,9 +28,8 @@
 
   let entries: Entry[] = $state([]);
   // Basic — the raw r_* geometry primitives, parked under primitives/basic/
-  // on the volume (location IS the category, mirroring Industrial).
+  // on the volume (location IS the category).
   let basic: Entry[] = $state([]);
-  let industrial: Entry[] = $state([]);
   // Completions is nested by family: { <family>: Entry[] }. Family dirs
   // may be empty (structure only); the sidebar shows them regardless so
   // the user sees where each family's parts will land.
@@ -42,13 +41,12 @@
   // up + stays put instead of vanishing on the next refresh. {id, dir}.
   let pendingCreated: { id: string; dir: string }[] = $state([]);
   function mergePending() {
-    const serverIds = new Set([...basic, ...industrial, ...Object.values(completions).flat()].map((x) => x.id));
+    const serverIds = new Set([...basic, ...Object.values(completions).flat()].map((x) => x.id));
     // Drop any the server has now caught up to.
     pendingCreated = pendingCreated.filter((pc) => !serverIds.has(pc.id));
     for (const pc of pendingCreated) {
       const e: Entry = { id: pc.id, source: 'volume', name: pc.id, description: '', params: {}, editable: true };
       if (pc.dir === 'basic') basic = [...basic, e];
-      else if (pc.dir === 'industrial') industrial = [...industrial, e];
       else if (pc.dir.startsWith('completions/')) {
         const fam = pc.dir.slice('completions/'.length);
         completions = { ...completions, [fam]: [...(completions[fam] ?? []), e] };
@@ -89,7 +87,6 @@
   let status = $state('');
   let showArchive = $state(false);
   let showBasic = $state(true);
-  let showIndustrial = $state(false);
   let showCompletions = $state(true);
   // Per-family collapse state inside Completions, keyed by family id.
   let openFamilies: Record<string, boolean> = $state({});
@@ -101,7 +98,6 @@
       const data = await r.json();
       entries = data.merged ?? [];
       basic = data.basic ?? [];
-      industrial = data.industrial ?? [];
       completions = data.completions ?? {};
       archived = data.archived ?? [];
       mergePending(); // keep just-created parts visible until the list catches up
@@ -109,7 +105,7 @@
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; basic = []; industrial = []; completions = {}; archived = [];
+      entries = []; basic = []; completions = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -174,7 +170,6 @@
 
   onMount(async () => {
     await refreshList();
-    void loadVolProfiles();
     // Default-open the first VOLUME primitive (bundle ones can 500 on
     // source-load). The raw r_* primitives now live in the Basic group, so
     // prefer those, then any root-volume entry, then the first entry.
@@ -261,14 +256,9 @@
     if (created) openTab(created);
   }
 
-  function cloneToVolume() {
-    if (activeTab) cloneEntry(activeTab.entry);
-  }
-
-
   /** Create a NEW primitive inside a group folder (the sidebar "+" affordance).
    *  Writes a stub to primitives/<dir>/<id>/, opens the folder, refreshes, and
-   *  opens the new part for editing. dir ∈ basic | industrial | completions/<family>. */
+   *  opens the new part for editing. dir ∈ basic | completions/<family>. */
   // ── New-primitive popup (FloatingPanel — automatable, no native prompt) ──
   // Name + a searchable "start from" picker of r_* base primitives. The new
   // part is a composite that wraps the chosen r_* (meta.uses + a call), so it
@@ -279,31 +269,8 @@
   let createSearch = $state('');
   let createBusy = $state(false);
   let createErr = $state('');
-  // Volume function profiles (primitives/profiles/<id>/) — fetched for the create
-  // picker so a part can be born from a USER-authored/forked profile, resolved at
-  // bake by P6. Refreshed when the popup opens (picks up just-forked ones).
-  let volProfiles = $state<any[]>([]);
-  async function loadVolProfiles() {
-    try { const r = await fetch('/api/primitives/profiles/list'); if (r.ok) volProfiles = (await r.json())?.profiles ?? []; }
-    catch { /* offline — curated profiles still work */ }
-  }
-  function profileDef(kind: string): any { return PROFILE_REGISTRY[kind] ?? volProfiles.find((v) => v.id === kind); }
-  // Base options = the r_* leaves (Basic) + REVOLVE profile FUNCTIONS — curated
-  // (PROFILE_REGISTRY) AND volume ƒ — as `profile:<id>`. Picking a profile
-  // scaffolds a parametric revolve part whose params ARE the profile's params,
-  // lifted (K.22 E); volume kinds resolve at bake via P6 (function-first loop).
-  // r_revolve is a PRIMARY, selectable base (Inc 1 — function-first). Picking it
-  // scaffolds a part born from a DEFAULT function profile with its params LIFTED
-  // (no raw [[x,y],…] vertex param) — buildStubFromBase routes r_revolve to
-  // DEFAULT_REVOLVE_PROFILE. The actual profile is chosen INSIDE the part (Inc 2),
-  // never at create. We no longer list every profile here (the old `◆ profile`
-  // clutter). r_extrude stays hidden until it has a function-profile flow (no
-  // .prex.ts profiles exist yet) — selecting it would fall back to the retiring
-  // polygon-vertex path.
-  // r_rotate is the FUNCTION-FIRST revolve (pick a profile fn; its params lift).
-  // The low-level r_revolve (points engine — ~10 parts call r_revolve(points,…))
-  // and r_extrude (no fn profiles yet) are hidden from the create picker: they're
-  // not function-first. Create a revolve from r_rotate; r_revolve stays the engine.
+  // Base options = r_* leaves in Basic. r_revolve / r_extrude are hidden (not
+  // function-first); create a revolve via r_rotate (profile chosen inside the part).
   const NO_FN_PROFILE_YET = new Set(['r_revolve', 'r_extrude']);
   const DEFAULT_REVOLVE_PROFILE = 'cylinder'; // curated revolve profile (r + len)
   let createBaseList = $derived.by(() => {
@@ -313,34 +280,20 @@
   });
   function baseLabel(b: string): string {
     if (b === 'r_rotate') return 'r_rotate  ◆ function profile';
-    if (b.startsWith('profile:')) { const k = b.slice(8); const d = profileDef(k); return `${d?.label ?? k} ◆ profile${PROFILE_REGISTRY[k] ? '' : ' ƒ'}`; }
     return b;
   }
   function openCreate(dir: string, label: string, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     createId = ''; createSearch = ''; createBase = 'r_cylinder'; createErr = '';
-    void loadVolProfiles(); // refresh so freshly-forked ƒ profiles appear
     createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
   }
   function closeCreate() { createPanel = null; }
-  // Revolve part from a profile FUNCTION (K.22 E lift): the profile's params
-  // become the PART's params, and the body resolves the profile from them each
-  // bake → r_revolve. Born parametric. Curated kinds resolve in-sandbox; VOLUME
-  // (ƒ) kinds resolve server-side at bake via P6 — so a forked/edited profile
-  // drives the part.
-  function buildStubFromProfile(id: string, kind: string): string | null {
-    const def: any = profileDef(kind);
-    if (!def) return null;
-    return buildRevolveStubFromProfile(id, kind, def.params ?? {});
-  }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
-    // r_rotate is born function-first: seed with the default revolve profile, its
-    // params lifted onto the part (NO raw polygon param). The profile is then
-    // changed inside the part via the picker. This is why r_rotate never opens the
-    // old vertex editor — unlike the low-level r_revolve engine.
-    if (base === 'r_rotate') return buildStubFromProfile(id, DEFAULT_REVOLVE_PROFILE);
-    if (base.startsWith('profile:')) return buildStubFromProfile(id, base.slice(8));
+    if (base === 'r_rotate') {
+      const def = PROFILE_REGISTRY[DEFAULT_REVOLVE_PROFILE];
+      return def ? buildRotateStubFromProfile(id, DEFAULT_REVOLVE_PROFILE, def.params ?? {}) : null;
+    }
     try {
       const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
       if (!res.ok) return null;
@@ -350,7 +303,7 @@
   }
   async function submitCreate() {
     if (!createPanel || createBusy) return;
-    const all = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()];
+    const all = [...entries, ...basic, ...Object.values(completions).flat()];
     const newId = createId.trim();
     if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { createErr = 'id must be [a-z][a-z0-9_]*'; return; }
     if (all.some((x) => x.id === newId)) { createErr = `"${newId}" already exists`; return; }
@@ -366,7 +319,6 @@
       if (!r.ok) { createErr = `save failed: ${await r.text()}`; return; }
       status = `Created ${newId} in ${label}.`;
       if (dir === 'basic') showBasic = true;
-      else if (dir === 'industrial') showIndustrial = true;
       else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
       closeCreate();
       // Show the new part IMMEDIATELY — the prod list read (proxied to Railway)
@@ -375,7 +327,7 @@
       // open it. The source endpoint is fresh, so the tab loads even mid-lag.
       if (!pendingCreated.some((pc) => pc.id === newId)) pendingCreated = [...pendingCreated, { id: newId, dir }];
       await refreshList();
-      const created = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()].find((x) => x.id === newId)
+      const created = [...entries, ...basic, ...Object.values(completions).flat()].find((x) => x.id === newId)
         ?? ({ id: newId, source: 'volume', name: newId, description: '', params: {}, editable: true } as Entry);
       openTab(created);
       status = `Created ${newId} in ${label}.`;
@@ -392,7 +344,7 @@
    *  backstop). Opens the new primitive on success. */
   async function saveAsEntry(srcId: string, newId: string, editedSource: string) {
     if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { status = `Invalid id "${newId}".`; return false; }
-    if (entries.some((x) => x.id === newId) || basic.some((x) => x.id === newId) || industrial.some((x) => x.id === newId)) {
+    if (entries.some((x) => x.id === newId) || basic.some((x) => x.id === newId)) {
       status = `"${newId}" already exists — pick another name.`;
       return false;
     }
@@ -412,13 +364,9 @@
     if (!r.ok) { status = `Save As failed: ${await r.text()}`; return false; }
     status = `Saved ${srcId} as → ${newId}.`;
     await refreshList();
-    const created = entries.find((x) => x.id === newId) ?? basic.find((x) => x.id === newId) ?? industrial.find((x) => x.id === newId);
+    const created = entries.find((x) => x.id === newId) ?? basic.find((x) => x.id === newId);
     if (created) openTab(created);
     return true;
-  }
-
-  async function deletePrimitive() {
-    if (activeTab?.entry.editable) await archiveById(activeTab.entry.id);
   }
 
   // Soft-delete: trash button moves to archive/ (recoverable). Two-step
@@ -518,8 +466,8 @@
     {/if}
 
     <!-- Basic category — the raw r_* geometry primitives, parked under
-         primitives/basic/ on the volume (location IS the category, mirrors
-         Industrial). Collapsible folder. -->
+         primitives/basic/ on the volume (location IS the category).
+         Collapsible folder. -->
     <div class="prim-tests">
       <div class="prim-head-row">
         <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
@@ -537,37 +485,6 @@
               <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                 <span class="prim-name">{e.id}</span>
                 <span class="prim-tag vol">vol</span>
-              </button>
-              <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-              {#if e.editable}
-                <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-              {/if}
-            </div>
-          {/each}
-        {/if}
-      {/if}
-    </div>
-
-    <!-- Industrial category (formerly Tests) — primitives parked under
-         primitives/industrial/ on the volume (location IS the category).
-         Collapsible folder. -->
-    <div class="prim-tests">
-      <div class="prim-head-row">
-        <button class="prim-arch-head" type="button" onclick={() => (showIndustrial = !showIndustrial)}>
-          <span class="prim-arch-caret">{showIndustrial ? '▾' : '▸'}</span>
-          Industrial {#if industrial.length}({industrial.length}){/if}
-        </button>
-        <button class="prim-add" type="button" title="New primitive in Industrial" aria-label="Add primitive" onclick={(e) => openCreate('industrial', 'Industrial', e)}>＋</button>
-      </div>
-      {#if showIndustrial}
-        {#if industrial.length === 0}
-          <div class="prim-empty">none yet</div>
-        {:else}
-          {#each industrial as e (e.id)}
-            <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                <span class="prim-name">{e.id}</span>
-                <span class="prim-tag vol">ind</span>
               </button>
               <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
               {#if e.editable}
@@ -624,13 +541,6 @@
           {/each}
         {/if}
       {/if}
-    </div>
-
-    <!-- Demos — standalone test/demo pages kept under /primitives so we
-         don't proliferate top-level routes. -->
-    <div class="prim-tests">
-      <div class="prim-grouphead">Demos</div>
-      <a class="prim-demolink" href="/primitives/recipe-test">recipe-test ↗</a>
     </div>
 
     {#if archived.length > 0}
@@ -714,7 +624,7 @@
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
                 onSaveAs={(newId, src) => saveAsEntry(t.entry.id, newId, src)}
                 onReloadSource={() => loadFromServerFor(t)}
-                catalog={[...entries, ...basic, ...industrial, ...Object.values(completions).flat()]}
+                catalog={[...entries, ...basic, ...Object.values(completions).flat()]}
               />
             {/if}
           </div>
@@ -733,10 +643,10 @@
       </label>
       <div class="prim-create-base">
         <div class="prim-create-baselabel">start from <code>{baseLabel(createBase)}</code></div>
-        <input class="prim-create-search" bind:value={createSearch} placeholder="search r_* or profile…" spellcheck="false" />
+        <input class="prim-create-search" bind:value={createSearch} placeholder="search r_*…" spellcheck="false" />
         <div class="prim-create-list">
           {#each createBaseList as b (b)}
-            <button class="prim-create-opt" class:sel={b === createBase} class:prof={b.startsWith('profile:')} type="button" onclick={() => (createBase = b)}>{baseLabel(b)}</button>
+            <button class="prim-create-opt" class:sel={b === createBase} type="button" onclick={() => (createBase = b)}>{baseLabel(b)}</button>
           {/each}
           {#if createBaseList.length === 0}<div class="prim-create-empty">no base matches</div>{/if}
         </div>
@@ -785,7 +695,6 @@
   .prim-dup:hover { color: #2266cc; background: #fff; }
 
   .prim-tests { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
-  .prim-grouphead { padding: 3px 8px; font: 700 13px Arial; color: #888; }
   .prim-empty { padding: 1px 8px 3px; font: italic 11px Arial; color: #bbb; }
 
   /* Completions → family sub-folders (one level deeper than the flat
@@ -821,8 +730,6 @@
   .prim-fam-head:hover { background: #f0f0f0; color: #555; }
   .prim-fam-empty { margin-left: 14px; }
   .prim-fam-row { margin-left: 8px; }
-  .prim-demolink { display: block; padding: 3px 8px; font: 600 13px monospace; color: #2266cc; text-decoration: none; border-radius: 4px; }
-  .prim-demolink:hover { background: #eef3fb; }
 
   .prim-archive { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
   .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 700 13px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }

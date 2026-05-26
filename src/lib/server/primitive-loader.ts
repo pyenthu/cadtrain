@@ -131,7 +131,7 @@ function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
   if (hit && Date.now() - hit.ts < DEP_TTL_MS) return hit.p;
   const p = (async () => {
     // Resolve via the source endpoint, which is CATEGORY-AWARE (it walks
-    // primitives/{basic,industrial,archive}/<id>/ and completions/<family>/
+    // primitives/{basic,archive}/<id>/ and completions/<family>/
     // <id>/). Reading the flat primitives/<id>/source.ts directly broke
     // after the 2026-05-23 restructure moved parts into sub-folders.
     const r = await fetchFn(
@@ -176,7 +176,27 @@ async function profileAwareArgValues(source: string, fetchFn: typeof fetch): Pro
   // (consistent with the palette + editor): loadProfileBuild returns null when
   // no volume profile exists for the id, so curated kinds without a volume
   // override fall through to the in-sandbox curated resolveProfile below.
-  const kinds = [...new Set([...source.matchAll(/resolveProfile\s*\(\s*\{[^{}]*\bkind\s*:\s*['"]([a-z_$][\w$]*)['"]/g)].map((m) => m[1]))];
+  // Extract string-literal `kind: '...'` from ANY `resolveProfile(` call,
+  // independent of property order or nested braces inside the argument object.
+  function kindsFromResolveProfileCalls(src: string): string[] {
+    const calls: Array<{ callIndex: number; argsStart: number }> = [];
+    const callRe = /resolveProfile\s*\(/gi;
+    let m: RegExpExecArray | null;
+    while ((m = callRe.exec(src)) !== null) {
+      calls.push({ callIndex: m.index, argsStart: m.index + m[0].length });
+      if (callRe.lastIndex === m.index) callRe.lastIndex++; // safety for zero-width matches
+    }
+    const out: string[] = [];
+    for (let i = 0; i < calls.length; i++) {
+      const { argsStart } = calls[i];
+      const end = calls[i + 1]?.callIndex ?? src.length;
+      const segment = src.slice(argsStart, end);
+      const km = /\bkind\s*:\s*['"`]([a-z_$][\w$]*)['"`]/i.exec(segment);
+      if (km) out.push(km[1]);
+    }
+    return [...new Set(out)];
+  }
+  const kinds = kindsFromResolveProfileCalls(source);
   if (!kinds.length) return values;
   const builds: Record<string, ProfBuild> = {};
   await Promise.all(kinds.map(async (k) => { const b = await loadProfileBuild(k, fetchFn); if (b) builds[k] = b; }));

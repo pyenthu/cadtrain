@@ -155,3 +155,39 @@ export function ${id}(${sig}) {
 }
 `;
 }
+
+/** Function-first revolve part driven by r_rotate (NOT r_revolve): the chosen
+ *  profile FUNCTION's params lift onto the part, and the body resolves the
+ *  profile + feeds the r_rotate engine (the standalone welded-lathe clone).
+ *  The named `profile` local makes the part show the profile selector + the
+ *  lifted params in its accordion. `profileParams` is the profile def's schema.
+ *  Returns null when the profile has no params. */
+export function buildRotateStubFromProfile(id: string, kind: string, profileParams: Record<string, StubParam>): string | null {
+  const names = Object.keys(profileParams ?? {});
+  if (names.length === 0) return null;
+  const block = metaParamsBlock(profileParams)
+    + `\n    segments: { label: 'segments', min: 8, max: 256, step: 1, default: 96 },`;
+  const profSig = names.join(', ');
+  const sig = `${profSig}, segments`;
+  return `/**
+ * ${id} — function-first revolved part from the '${kind}' profile FUNCTION via
+ * r_rotate. Its params ARE the profile's params (lifted): edit them and the
+ * profile re-resolves → r_rotate. Pick a different profile with the selector in
+ * the part's accordion. Add r_* parts (.add/.subtract + mv/rot) for more.
+ */
+export const meta = {
+  id: '${id}', name: '${id}',
+  description: 'Function-first revolved part from the ${kind} profile.',
+  tags: ['new', 'revolve', 'rotate'],
+  uses: ['r_rotate'],
+  params: {
+${block}
+  },
+};
+export function ${id}(${sig}) {
+  const profile = resolveProfile({ kind: '${kind}', params: { ${profSig} } });
+  const body = r_rotate(profile, segments);
+  return body;
+}
+`;
+}

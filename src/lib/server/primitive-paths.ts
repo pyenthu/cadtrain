@@ -8,7 +8,7 @@
  *   primitives/<cat>/<id>.prim.ts   CAD primitive
  *   primitives/<cat>/<id>.asm.ts    assembly
  *   primitives/profiles/<id>.prvl.ts | .prex.ts   profile (function)
- * where <cat> ∈ { '' (flat), basic, industrial, archive } or completions/<family>.
+ * where <cat> ∈ { '' (flat), basic, archive } or completions/<family>.
  *
  * LEGACY (pre-migration) folder scheme — still READ as a fallback so the app
  * keeps working during/after the destructive migration, and so a volume that
@@ -38,7 +38,7 @@ export interface PrimHit {
   legacy: boolean;
   /** Directory the entity lives IN — its category dir (or the root for flat). */
   dir: string;
-  /** '' (flat) | basic | industrial | archive | completions */
+  /** '' (flat) | basic | archive | completions */
   category: string;
   /** completions family, when category === 'completions'. */
   family?: string;
