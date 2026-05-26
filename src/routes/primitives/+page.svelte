@@ -292,22 +292,23 @@
   // (PROFILE_REGISTRY) AND volume ƒ — as `profile:<id>`. Picking a profile
   // scaffolds a parametric revolve part whose params ARE the profile's params,
   // lifted (K.22 E); volume kinds resolve at bake via P6 (function-first loop).
-  // The polygon-param leaves (r_revolve/r_extrude) take a raw [[x,y],…] profile —
-  // the OLD "hardcoded vertices" way. They're excluded from the base picker so a
-  // revolve/extrude part is ALWAYS born from a profile FUNCTION (the `◆ profile`
-  // options → resolveProfile + lifted params), per the function-first philosophy
-  // (docs/plans/profiles-directory.md: "never hardcoded points").
-  const POLYGON_LEAF_BASES = new Set(['r_revolve', 'r_extrude']);
+  // r_revolve is a PRIMARY, selectable base (Inc 1 — function-first). Picking it
+  // scaffolds a part born from a DEFAULT function profile with its params LIFTED
+  // (no raw [[x,y],…] vertex param) — buildStubFromBase routes r_revolve to
+  // DEFAULT_REVOLVE_PROFILE. The actual profile is chosen INSIDE the part (Inc 2),
+  // never at create. We no longer list every profile here (the old `◆ profile`
+  // clutter). r_extrude stays hidden until it has a function-profile flow (no
+  // .prex.ts profiles exist yet) — selecting it would fall back to the retiring
+  // polygon-vertex path.
+  const NO_FN_PROFILE_YET = new Set(['r_extrude']);
+  const DEFAULT_REVOLVE_PROFILE = 'cylinder'; // curated revolve profile (r + len)
   let createBaseList = $derived.by(() => {
     const q = createSearch.trim().toLowerCase();
-    const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_') && !POLYGON_LEAF_BASES.has(id)))].sort();
-    const cur = Object.values(PROFILE_REGISTRY).filter((d) => d.set === 'revolve').map((d) => d.id);
-    const vol = volProfiles.filter((v) => v.set === 'revolve' && v.hasSource).map((v) => v.id);
-    const profs = [...new Set([...cur, ...vol])].map((id) => `profile:${id}`);
-    const all = [...rs, ...profs];
-    return q ? all.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : all;
+    const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_') && !NO_FN_PROFILE_YET.has(id)))].sort();
+    return q ? rs.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : rs;
   });
   function baseLabel(b: string): string {
+    if (b === 'r_revolve') return 'r_revolve  ◆ function profile';
     if (b.startsWith('profile:')) { const k = b.slice(8); const d = profileDef(k); return `${d?.label ?? k} ◆ profile${PROFILE_REGISTRY[k] ? '' : ' ƒ'}`; }
     return b;
   }
@@ -330,6 +331,11 @@
   }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
+    // r_revolve is born function-first: seed with the default revolve profile,
+    // its params lifted onto the part (NO raw polygon param). The profile is then
+    // changed inside the part (Inc 2). This is why selecting r_revolve never opens
+    // the old vertex editor.
+    if (base === 'r_revolve') return buildStubFromProfile(id, DEFAULT_REVOLVE_PROFILE);
     if (base.startsWith('profile:')) return buildStubFromProfile(id, base.slice(8));
     try {
       const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
