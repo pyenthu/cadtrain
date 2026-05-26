@@ -364,9 +364,7 @@
     instName: string;
     call: string;
     info: LeafProfile;
-    mode: 'literal' | 'profile' | 'fn';
-    /** 'fn' mode only — the resolveProfile({kind}) function profile's kind. */
-    kind?: string;
+    mode: 'literal' | 'profile';
     /** Absolute offsets in editedSource of the value to splice on Apply:
      *  the inline array literal ('literal') or the meta.profiles value ('profile'). */
     profStart: number;
@@ -491,21 +489,6 @@
       }
     }
     if (pts && pts.length) profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
-  }
-  // fn-mode: picking a different profile swaps the kind in the resolveProfile()
-  // call (the part stays function-first). Curated kinds only — a part's
-  // resolveProfile resolves curated kinds in-sandbox; a volume ƒ profile can't
-  // resolve there yet. Params stay; the new kind uses its own defaults for names
-  // it doesn't share (a clean param re-lift is a follow-up).
-  function swapFnKind(id: string, origin: 'builtin' | 'volume') {
-    if (!profileEdit || profileEdit.mode !== 'fn' || !profileEdit.kind) return;
-    if (origin !== 'builtin') { recogError = `"${id}" is a volume function profile — swapping it into a part isn't wired yet; pick a curated profile, or create a new part from it.`; return; }
-    const esc = profileEdit.kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
-    if (!m) return;
-    const kStart = m.index + m[1].length;
-    spliceSource(kStart, kStart + profileEdit.kind.length, id);
-    closeProfilePopup();
   }
 
   // ── Profile shape extraction (for the shape-icon previews) ───────────────
@@ -695,9 +678,8 @@
     } catch { /* offline — ignore */ }
   }
   function closeFnEditor() { fnEditor = null; }
-  // Open the ƒ editor for the CURRENTLY-shown function profile (the ✎ in the
-  // fn popup). Curated kind → seed from its build()+params (derive the body from
-  // the compiled fn so you can fork/edit it); volume ƒ → load its source.
+  // Derive an editable build() body from a compiled curated profile fn, so a
+  // built-in can be forked/edited in the function editor.
   function curatedBody(build: (p: any) => any): string {
     try {
       const s = build.toString();
@@ -707,14 +689,6 @@
       if (after.startsWith('{')) return after.slice(1, after.lastIndexOf('}')).trim();
       return 'return ' + after.replace(/;\s*$/, '') + ';';
     } catch { return ''; }
-  }
-  async function editCurrentFnProfile() {
-    const kind = profileEdit?.kind;
-    if (!kind) return;
-    const set: 'revolve' | 'cartesian' = profileEdit?.info?.revolve ? 'revolve' : 'cartesian';
-    const seed = await seedForKind(kind);
-    if (seed) fnEditor = { target: 'instance', pname: null, set, seed, ...editorOpenPos() };
-    closeProfilePopup();
   }
   // ── Unified editor: a part's function profile opens the editor DIRECTLY, with
   // the profile selector in its title bar (no intermediate picker popup). ──────
@@ -1696,44 +1670,6 @@
       onClose={closeProfilePopup}
     >
       <div class="pv-profile-pop">
-        {#if profileEdit.mode === 'fn'}
-          <!-- Function-first profile: the arg is resolveProfile({kind,…}); its
-               params ARE the part's params, edited in the Parameters panel. The
-               picker SWAPS the profile function; preview is read-only. -->
-          <div class="pv-prof-bar">
-            <div class="pv-prof-combo">
-              <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} current={profileEdit.kind} volume={volProfiles} onPick={(id, origin) => swapFnKind(id, origin)} onEdit={(id) => editFnProfile('instance', null, id)} />
-            </div>
-            <button class="pv-btn primary" type="button" title="Open the function editor (params + build code) for this profile" onclick={editCurrentFnProfile}>✎ Edit function</button>
-          </div>
-          <div class="pv-fn-note">
-            <strong>ƒ {profileEdit.kind}</strong> — this profile is a <em>function</em>.
-            Pick another above to swap it; edit its parameters in the
-            <strong>Parameters</strong> panel (they're this part's params).
-          </div>
-          <div class="pv-prof-split">
-            <ProfileEditor
-              value={profilePts}
-              width={232}
-              height={200}
-              yDown={profileEdit.info.yDown}
-              hLabel={profileEdit.info.hLabel}
-              vLabel={profileEdit.info.vLabel}
-              presetSet={profileEdit.info.revolve ? 'revolve' : 'cartesian'}
-              showAxis={profileEdit.info.revolve}
-              showPresets={false}
-              onChange={() => { /* read-only preview (value stays controlled) */ }}
-            />
-            <div class="pv-coords-col">
-              <div class="pv-coords-head"><span>#</span><span>{profileEdit.info.revolve ? 'r' : 'x'}</span><span>{profileEdit.info.revolve ? 'z' : 'y'}</span></div>
-              <ol class="pv-coords-list pv-coords-tbl">
-                {#each profilePts as pt, i (i)}
-                  <li><span class="pv-coords-i">{i}</span><span class="pv-coords-n">{fmt2(pt[0])}</span><span class="pv-coords-n">{fmt2(pt[1])}</span></li>
-                {/each}
-              </ol>
-            </div>
-          </div>
-        {:else}
         <!-- One bar: searchable shape dropdown + actions (no separate head). -->
         <div class="pv-prof-bar">
           <div class="pv-prof-combo">
@@ -1768,7 +1704,6 @@
             </ol>
           </div>
         </div>
-        {/if}
       </div>
     </FloatingPanel>
   {/if}
@@ -2225,8 +2160,6 @@
   .pv-iconbtn { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #ccc; border-radius: 5px; background: #fff; color: #555; font: 14px Arial; cursor: pointer; padding: 0; }
   .pv-iconbtn:hover:not(:disabled) { border-color: #2266cc; color: #2266cc; background: #f5f8fe; }
   .pv-iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .pv-fn-note { font: 11px/1.45 Arial; color: #555; background: #f4f1fb; border: 1px solid #e0d9f5; border-radius: 6px; padding: 7px 9px; margin-bottom: 8px; }
-  .pv-fn-note strong { color: #6a5acd; }
   .pv-prof-split { display: flex; align-items: flex-start; gap: 8px; }
   .pv-prof-split :global(.pe-root) { width: 232px; flex: 0 0 232px; }
   .pv-prof-split :global(.pe-svg-wrap) { height: 200px; }
