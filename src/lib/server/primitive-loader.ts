@@ -26,7 +26,6 @@
 import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
-import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
 import { compileProfileBuild } from './profile-fn';
 
 type GeomFn = (...args: any[]) => any;
@@ -173,9 +172,11 @@ function loadProfileBuild(id: string, fetchFn: typeof fetch): Promise<ProfBuild 
 }
 async function profileAwareArgValues(source: string, fetchFn: typeof fetch): Promise<any[]> {
   const values = sandboxArgValues();
-  // VOLUME kinds only — curated kinds the sync resolveProfile already handles.
-  const kinds = [...new Set([...source.matchAll(/resolveProfile\s*\(\s*\{[^{}]*\bkind\s*:\s*['"]([a-z_$][\w$]*)['"]/g)].map((m) => m[1]))]
-    .filter((k) => !PROFILE_REGISTRY[k]);
+  // ALL kinds. A VOLUME function profile WINS over the same-named curated kind
+  // (consistent with the palette + editor): loadProfileBuild returns null when
+  // no volume profile exists for the id, so curated kinds without a volume
+  // override fall through to the in-sandbox curated resolveProfile below.
+  const kinds = [...new Set([...source.matchAll(/resolveProfile\s*\(\s*\{[^{}]*\bkind\s*:\s*['"]([a-z_$][\w$]*)['"]/g)].map((m) => m[1]))];
   if (!kinds.length) return values;
   const builds: Record<string, ProfBuild> = {};
   await Promise.all(kinds.map(async (k) => { const b = await loadProfileBuild(k, fetchFn); if (b) builds[k] = b; }));

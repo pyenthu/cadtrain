@@ -251,10 +251,21 @@
   const seedId = seed?.id ?? '';
   // Save under `slug` (Save), or fork to a new id (Save as new — appends _copy
   // when the id still matches the one we opened, so the original is never clobbered).
-  async function save(asNew = false) {
+  // "Save as" → a small popover to name a NEW custom profile (id + name).
+  let saveAs = $state<{ id: string; label: string; x: number; y: number } | null>(null);
+  function openSaveAs(ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const popH = 150;
+    let y = r.bottom + 8;
+    if (y + popH > window.innerHeight - 8) y = Math.max(8, r.top - popH - 8);
+    const base = slug || 'profile';
+    saveAs = { id: `${base}_copy`, label: `${(label.trim() || base)} copy`, x: Math.max(8, Math.min(r.left - 70, window.innerWidth - 248)), y };
+  }
+  async function save(asNew = false, customId?: string, customLabel?: string) {
     saveErr = null;
-    let targetId = slug;
-    if (asNew && seedId && targetId === seedId) targetId = `${targetId}_copy`;
+    const norm = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    let targetId = customId != null ? norm(customId) : slug;
+    if (asNew && customId == null && seedId && targetId === seedId) targetId = `${targetId}_copy`;
     if (!targetId) { saveErr = 'id required'; return; }
     if (Object.keys(schema()).length === 0) { saveErr = 'add at least one param'; return; }
     busy = true;
@@ -262,12 +273,12 @@
       const r = await fetch('/api/primitives/profiles/save', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          id: targetId, label: label.trim() || targetId, description: description.trim() || autoDesc, set,
+          id: targetId, label: (customLabel ?? label).trim() || targetId, description: description.trim() || autoDesc, set,
           tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
           params: schema(), source: composeSource(),
         }),
       });
-      if (r.ok) onSaved(targetId);
+      if (r.ok) { saveAs = null; onSaved(targetId); }
       else saveErr = `save failed: ${(await r.text()).slice(0, 200)}`;
     } catch (e: any) { saveErr = `error: ${e?.message ?? e}`; }
     finally { busy = false; }
@@ -426,7 +437,7 @@
     <div class="fn-actions">
       <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
       {#if seedId}
-        <button type="button" class="fn-saveas" disabled={busy || !!err || !slug} onclick={() => save(true)} title="Save under a new id (fork a copy)">Save as</button>
+        <button type="button" class="fn-saveas" disabled={busy || !!err} onclick={(e) => openSaveAs(e)} title="Save as a new custom profile">Save as</button>
       {/if}
       <button type="button" class="fn-save" disabled={busy || !!err || !slug} onclick={() => save(false)} title="Save to the volume">{busy ? '…' : 'Save'}</button>
     </div>
@@ -453,6 +464,16 @@
       <label class="fn-pp-row"><span>step</span><input class="num" type="text" inputmode="decimal" value={prow.step} oninput={(e) => (prow.step = +(e.currentTarget as HTMLInputElement).value)} use:dragNumber={{ step: 0.1, get: () => prow.step, set: (v) => (prow.step = v) }} /></label>
     </div>
   {/if}
+{/if}
+
+{#if saveAs}
+  <div class="fn-pop-back" role="presentation" onclick={() => (saveAs = null)}></div>
+  <div class="fn-pop fn-saveas-pop" style={`left:${saveAs.x}px; top:${saveAs.y}px`}>
+    <div class="fn-pop-ttl">save as a new custom profile</div>
+    <label class="fn-fx-row"><span>id</span><input bind:value={saveAs.id} spellcheck="false" placeholder="my_profile" /></label>
+    <label class="fn-fx-row"><span>name</span><input bind:value={saveAs.label} placeholder="My profile" /></label>
+    <button type="button" class="fn-save fn-saveas-go" disabled={busy || !saveAs.id.trim()} onclick={() => save(true, saveAs!.id, saveAs!.label)}>{busy ? '…' : 'Save copy'}</button>
+  </div>
 {/if}
 
 {#if fxEdit && fxEdit.kind === 'move'}
@@ -565,6 +586,8 @@
   .fn-fx-row span { font-size: 9px; color: #888; }
   .fn-fx-row input { font: 11px 'SF Mono', Menlo, monospace; padding: 4px 6px; border: 1px solid #dcdce4; border-radius: 4px; width: 100%; box-sizing: border-box; }
   .fn-fx-row input:focus { outline: none; border-color: #c4392f; }
+  .fn-saveas-pop { width: 232px; }
+  .fn-saveas-go { width: 100%; margin-top: 4px; flex: none; }
   /* calculated expressions — 3-column grid of {name = expr} boxes (no units) */
   .fn-calc { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 3px 2px 0; }
   .fn-cbox { display: inline-flex; align-items: center; gap: 2px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 2px 4px; background: #fff; min-width: 0; }

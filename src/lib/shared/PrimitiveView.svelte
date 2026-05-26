@@ -708,19 +708,12 @@
       return 'return ' + after.replace(/;\s*$/, '') + ';';
     } catch { return ''; }
   }
-  function editCurrentFnProfile() {
+  async function editCurrentFnProfile() {
     const kind = profileEdit?.kind;
     if (!kind) return;
-    const def = PROFILE_REGISTRY[kind];
-    if (def) {
-      fnEditor = {
-        target: 'instance', pname: null, set: def.set,
-        seed: { id: def.id, label: def.label, tags: def.tags, params: def.params, body: curatedBody(def.build) },
-        ...editorOpenPos(),
-      };
-    } else {
-      void editFnProfile('instance', null, kind); // volume ƒ profile
-    }
+    const set: 'revolve' | 'cartesian' = profileEdit?.info?.revolve ? 'revolve' : 'cartesian';
+    const seed = await seedForKind(kind);
+    if (seed) fnEditor = { target: 'instance', pname: null, set, seed, ...editorOpenPos() };
     closeProfilePopup();
   }
   // ── Unified editor: a part's function profile opens the editor DIRECTLY, with
@@ -731,17 +724,28 @@
     if (!def) return null;
     return { id: def.id, label: def.label, description: '', tags: def.tags, params: def.params, body: curatedBody(def.build) };
   }
+  // A VOLUME function profile WINS over the same-named curated kind (Option A —
+  // consistent with the palette + the part bake): seed the editor from the
+  // volume source if one exists for this id, else from the curated registry.
+  // Returns null when the kind is neither a volume nor a curated profile.
+  async function seedForKind(kind: string): Promise<any> {
+    await loadVolProfiles();
+    const vol = volProfiles.find((v) => v.id === kind && (v as any).hasSource);
+    if (vol) {
+      try {
+        const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(kind)}`);
+        if (r.ok) { const p = await r.json(); if (p.source) return { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) }; }
+      } catch { /* fall through to curated */ }
+    }
+    return curatedSeed(kind);
+  }
   // Open the editor bound to an instance's function profile (`resolveProfile({kind})`).
   async function openInstanceFnEditor(inst: any, info: LeafProfile, kind: string) {
     const set: 'revolve' | 'cartesian' = info.revolve ? 'revolve' : 'cartesian';
     const pos = editorOpenPos();
     const bind = { instName: inst.name, kind, revolve: !!info.revolve };
-    const cs = curatedSeed(kind);
-    if (cs) { fnEditor = { target: 'instance', pname: null, set, seed: cs, bind, ...pos }; return; }
-    try {
-      const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(kind)}`);
-      if (r.ok) { const p = await r.json(); fnEditor = { target: 'instance', pname: null, set: p.set ?? set, seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) }, bind, ...pos }; }
-    } catch { /* offline — ignore */ }
+    const seed = await seedForKind(kind);
+    fnEditor = { target: 'instance', pname: null, set, seed, bind, ...pos };
   }
   // Title selector → swap WHICH profile drives the part: repoint the part's
   // source (kind string, regex-relocated so it survives offset shifts) then
@@ -755,18 +759,21 @@
     if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + b.kind.length, id); }
     const pos = { px: fnEditor!.px, py: fnEditor!.py };
     const nb = { ...b, kind: id };
-    const cs = curatedSeed(id);
-    if (cs) { fnEditor = { target: 'instance', pname: null, set: fnEditor!.set, seed: cs, bind: nb, ...pos }; return; }
-    try {
-      const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(id)}`);
-      if (r.ok) { const p = await r.json(); fnEditor = { target: 'instance', pname: null, set: p.set ?? fnEditor!.set, seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) }, bind: nb, ...pos }; }
-    } catch { /* ignore */ }
+    const seed = await seedForKind(id);
+    fnEditor = { target: 'instance', pname: null, set: fnEditor!.set, seed, bind: nb, ...pos };
   }
   async function onFnSaved(id: string) {
     const ed = fnEditor;
     await loadVolProfiles(true);
-    if (ed?.target === 'leaf' && ed.pname) pickPaletteProfile(ed.pname, id, 'volume');
-    else if (ed?.target === 'instance') pickProfileShape(id, 'volume');
+    // Repoint the bound part's function profile to the saved id (so editing a
+    // profile OR saving it as a new custom one actually drives the part).
+    if (ed?.bind && id !== ed.bind.kind) {
+      const esc = ed.bind.kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
+      if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + ed.bind.kind.length, id); }
+    } else if (ed?.target === 'leaf' && ed.pname) {
+      pickPaletteProfile(ed.pname, id, 'volume');
+    }
     fnEditor = null;
   }
 
