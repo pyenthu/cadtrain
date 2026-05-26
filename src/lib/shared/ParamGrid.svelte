@@ -43,8 +43,9 @@
     applied: Record<string, number | [number, number][]>;
     onPending: (key: string, value: number) => void;
     onCommit: (key: string, value: number) => void;
-    /** When provided, each card shows a ✕ to delete that param. */
-    onDelete?: (key: string) => void;
+    /** When provided, each card shows a ✕ to delete that param. The parent
+     *  confirms (the ev anchors a confirm popup) before actually removing it. */
+    onDelete?: (key: string, ev: MouseEvent) => void;
     /** 'fn' = profile-editor look: the VARIABLE NAME as the label + a
      *  draggable text input (no spinner arrows), matching ProfileFnEditor. */
     variant?: 'default' | 'fn';
@@ -122,7 +123,7 @@
       {/if}
 
       {#if onDelete}
-        <button class="pr-del" type="button" title="Delete this parameter" aria-label="Delete parameter" onclick={() => onDelete?.(key)}>✕</button>
+        <button class="pr-del" type="button" title="Delete this parameter" aria-label="Delete parameter" onclick={(e) => onDelete?.(key, e)}>✕</button>
       {/if}
     </div>
   {/each}
@@ -197,6 +198,14 @@
     color: #c4c4d0; font-size: 11px; line-height: 1; padding: 0 1px;
   }
   .pr-del:hover { color: #cc2222; }
+  /* armed confirm — card tints red; ✓ confirms (red/bold), ✕ cancels (grey) */
+  .pr-card.confirming { background: #fdeceb; border-color: #e7b4ae; }
+  .pr-delc { order: 2; flex: 0 0 auto; display: inline-flex; gap: 1px; }
+  .pr-del-yes, .pr-del-no { border: 0; background: transparent; cursor: pointer; font-size: 12px; line-height: 1; padding: 0 1px; }
+  .pr-del-yes { color: #cc2222; font-weight: 700; }
+  .pr-del-yes:hover { color: #a8302a; }
+  .pr-del-no { color: #b3b3bd; }
+  .pr-del-no:hover { color: #555; }
 
   /* Themed cursor while a drag-scrub is active (set on <body> by the
      dragNumber action). */

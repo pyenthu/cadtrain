@@ -988,14 +988,13 @@
     if (editedSource[j] === ',') return { s: j, e };               // else leading comma
     return { s, e };
   }
-  function deleteParam(name: string) {
+  // Why `name` can't be deleted — referenced in the geom body, or not found.
+  // null = deletable. (Deleting a body-referenced param leaves a dangling ref.)
+  function paramBlockedReason(name: string): string | null {
     const r = recognized;
-    if (!canEdit || !r) return;
+    if (!r) return 'the primitive isn\'t editable';
     const rp = (r.params ?? []).find((p: any) => p.name === name);
-    if (!rp || rp.entryStart < 0) { recogError = `Can't delete "${name}" — not found in the source meta.`; return; }
-    // Guard: refuse if the name is referenced anywhere OUTSIDE its own meta
-    // entry + signature token (i.e. used by the geom body) — deleting it would
-    // leave a dangling reference and break the bake.
+    if (!rp || rp.entryStart < 0) return `"${name}" — not found in the source meta`;
     const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`(?<![.\\w$])${esc}(?![\\w$])`, 'g');
     let m: RegExpExecArray | null;
@@ -1003,11 +1002,29 @@
       const i = m.index;
       const inEntry = i >= rp.entryStart && i < rp.entryEnd;
       const inSig = rp.sigStart >= 0 && i >= rp.sigStart && i < rp.sigEnd;
-      if (!inEntry && !inSig) {
-        recogError = `Can't delete "${name}" — it's still used in the function body. Remove those references first.`;
-        return;
-      }
+      if (!inEntry && !inSig) return `"${name}" — still used in the function body; remove those references first`;
     }
+    return null;
+  }
+  // ✕ on a param card → confirm popup (a native alert/confirm freezes the
+  // in-browser automation, so we use a FloatingPanel). Blocked params surface
+  // the reason immediately instead of opening the popup.
+  let delParamPopup = $state<{ name: string; x: number; y: number } | null>(null);
+  function requestDeleteParam(name: string, ev: MouseEvent) {
+    if (!canEdit) return;
+    const reason = paramBlockedReason(name);
+    if (reason) { recogError = `Can't delete ${reason}.`; return; }
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    delParamPopup = {
+      name,
+      x: Math.max(8, Math.min(r.left - 130, window.innerWidth - 248)),
+      y: Math.min(r.bottom + 6, window.innerHeight - 140),
+    };
+  }
+  function performDeleteParam(name: string) {
+    const r = recognized;
+    if (!canEdit || !r || paramBlockedReason(name)) { delParamPopup = null; return; }
+    const rp = (r.params ?? []).find((p: any) => p.name === name)!;
     const edits = [spanWithComma(rp.entryStart, rp.entryEnd)];
     if (rp.sigStart >= 0) edits.push(spanWithComma(rp.sigStart, rp.sigEnd));
     edits.sort((a, b) => b.s - a.s); // high→low so earlier offsets stay valid
@@ -1019,6 +1036,7 @@
     pending = drop(pending);
     applied = drop(applied);
     removedParams = new Set([...removedParams, name]); // hide from the grid now
+    delParamPopup = null;
   }
 
   // ── Delete a part (✕) ───────────────────────────────────────────────────
@@ -1474,7 +1492,8 @@
                     {applied}
                     onPending={setPending}
                     onCommit={commitOne}
-                    onDelete={canEdit ? deleteParam : undefined}
+                    onDelete={canEdit ? requestDeleteParam : undefined}
+                    variant="fn"
                   />
                   <!-- Polygon leaf params — ParamGrid skips these; each gets a
                        ✎ card that opens the ProfileEditor in a popup (editing
@@ -1546,12 +1565,7 @@
                         {@const polyIdx = profileInfoFor(inst.call)?.argIndex ?? -1}
                         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:4px 8px;">
                           {#each argSpans as a, i (i)}
-                            {#if i === polyIdx}
-                              <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
-                                <span style="flex:1; font:10px Arial; color:#2266cc;">↑ edit via the profile button</span>
-                              </div>
-                            {:else}
+                            {#if i !== polyIdx}
                               {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(a.text)}
                               <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
@@ -1946,6 +1960,19 @@
     </FloatingPanel>
   {/if}
 
+  {#if delParamPopup}
+    <FloatingPanel title="Delete parameter" visible={true} x={delParamPopup.x} y={delParamPopup.y} width="232px" onClose={() => (delParamPopup = null)}>
+      <div style="display:flex; flex-direction:column; gap:9px; padding:4px;">
+        <p style="font:12px Arial; color:#333; margin:0; line-height:1.4;">Remove <code style="font-family:'SF Mono',Menlo,monospace; color:#c4392f;">{delParamPopup.name}</code> from this primitive's parameters?</p>
+        <p style="font:10px Arial; color:#888; margin:0;">Removes it from <code>meta.params</code> + the function signature. <strong>Save source</strong> to persist.</p>
+        <div style="display:flex; justify-content:flex-end; gap:6px;">
+          <button class="pv-btn" type="button" onclick={() => (delParamPopup = null)}>Cancel</button>
+          <button class="pv-btn danger" type="button" onclick={() => performDeleteParam(delParamPopup!.name)}>Delete</button>
+        </div>
+      </div>
+    </FloatingPanel>
+  {/if}
+
   {#if fxEdit}
     <FloatingPanel title="ƒ function / expression" visible={true} x={fxEdit.px} y={fxEdit.py} width="300px" onClose={closeFx}>
       <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
@@ -2264,6 +2291,8 @@
   .pv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pv-btn.primary { background: #cc2222; color: #fff; border-color: #cc2222; }
   .pv-btn.primary:disabled { background: #888; border-color: #888; }
+  .pv-btn.danger { background: #cc2222; color: #fff; border-color: #a8302a; }
+  .pv-btn.danger:hover { background: #b21f1f; }
 
   /* AI tab — mirrors the /components ai-pane look (purple accent). */
   .pv-tab-ai.active { color: #7c4dff; border-bottom-color: #7c4dff; }
