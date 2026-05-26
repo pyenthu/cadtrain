@@ -35,6 +35,7 @@
     applied,
     onPending,
     onCommit,
+    onDelete,
     variant = 'default',
   }: {
     schema: Record<string, ParamSchema>;
@@ -42,6 +43,8 @@
     applied: Record<string, number | [number, number][]>;
     onPending: (key: string, value: number) => void;
     onCommit: (key: string, value: number) => void;
+    /** When provided, each card shows a ✕ to delete that param. */
+    onDelete?: (key: string) => void;
     /** 'fn' = profile-editor look: the VARIABLE NAME as the label + a
      *  draggable text input (no spinner arrows), matching ProfileFnEditor. */
     variant?: 'default' | 'fn';
@@ -117,6 +120,10 @@
           title="Type or drag to scrub (dirty) · Enter or Apply to commit"
         />
       {/if}
+
+      {#if onDelete}
+        <button class="pr-del" type="button" title="Delete this parameter" aria-label="Delete parameter" onclick={() => onDelete?.(key)}>✕</button>
+      {/if}
     </div>
   {/each}
 </div>
@@ -182,6 +189,14 @@
   .pr-choice:hover { border-color: #cc2222; }
   .pr-choice:focus { outline: 1px solid #cc2222; }
   .pr-bool { width: 16px; height: 16px; margin: 0 auto 0 0; cursor: pointer; accent-color: #cc2222; }
+  /* per-param delete — only rendered when onDelete is supplied. Sits after the
+     value input (order:2) so it's the rightmost element in the single-row card. */
+  .pr-del {
+    order: 2; flex: 0 0 auto;
+    border: 0; background: transparent; cursor: pointer;
+    color: #c4c4d0; font-size: 11px; line-height: 1; padding: 0 1px;
+  }
+  .pr-del:hover { color: #cc2222; }
 
   /* Themed cursor while a drag-scrub is active (set on <body> by the
      dragNumber action). */

@@ -100,7 +100,13 @@
   // immediately; they're ALSO spliced into editedSource (meta.params + the
   // function signature) so Save persists them and a parent assembly can drive them.
   let addedParams = $state<Record<string, ParamSchema>>({});
-  let effectiveSchema = $derived({ ...paramSchema, ...addedParams });
+  // Session-deleted params (the ✕ on a param card) until Save reloads the
+  // primitive — excluded from effectiveSchema so the grid hides them at once
+  // (the `paramSchema` prop is set at load, so it still carries deleted keys).
+  let removedParams = $state<Set<string>>(new Set());
+  let effectiveSchema = $derived(
+    Object.fromEntries(Object.entries({ ...paramSchema, ...addedParams }).filter(([k]) => !removedParams.has(k))),
+  );
   let paramOrder = $derived(Object.keys(effectiveSchema));
 
   // Initial state from props is a deliberate one-time read (untrack).
@@ -968,6 +974,53 @@
     closeAddParam();
   }
 
+  // ── Delete a parameter (✕ on a param card) ───────────────────────────────
+  // Splice the param's `name: {…}` meta entry AND its signature token out of
+  // the source (each with one adjacent comma), then drop it from the live
+  // state maps. Blocks deletion when the function BODY still references the
+  // name (would break the build) — same guard spirit as deletePart.
+  function spanWithComma(s: number, e: number): { s: number; e: number } {
+    let i = e;
+    while (i < editedSource.length && /\s/.test(editedSource[i])) i++;
+    if (editedSource[i] === ',') return { s, e: i + 1 };           // trailing comma
+    let j = s - 1;
+    while (j >= 0 && /\s/.test(editedSource[j])) j--;
+    if (editedSource[j] === ',') return { s: j, e };               // else leading comma
+    return { s, e };
+  }
+  function deleteParam(name: string) {
+    const r = recognized;
+    if (!canEdit || !r) return;
+    const rp = (r.params ?? []).find((p: any) => p.name === name);
+    if (!rp || rp.entryStart < 0) { recogError = `Can't delete "${name}" — not found in the source meta.`; return; }
+    // Guard: refuse if the name is referenced anywhere OUTSIDE its own meta
+    // entry + signature token (i.e. used by the geom body) — deleting it would
+    // leave a dangling reference and break the bake.
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(?<![.\\w$])${esc}(?![\\w$])`, 'g');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(editedSource))) {
+      const i = m.index;
+      const inEntry = i >= rp.entryStart && i < rp.entryEnd;
+      const inSig = rp.sigStart >= 0 && i >= rp.sigStart && i < rp.sigEnd;
+      if (!inEntry && !inSig) {
+        recogError = `Can't delete "${name}" — it's still used in the function body. Remove those references first.`;
+        return;
+      }
+    }
+    const edits = [spanWithComma(rp.entryStart, rp.entryEnd)];
+    if (rp.sigStart >= 0) edits.push(spanWithComma(rp.sigStart, rp.sigEnd));
+    edits.sort((a, b) => b.s - a.s); // high→low so earlier offsets stay valid
+    let out = editedSource;
+    for (const ed of edits) out = out.slice(0, ed.s) + out.slice(ed.e);
+    editedSource = out; // → Source dirty; recognition $effect re-scans + re-bake
+    const drop = <T extends Record<string, any>>(o: T) => { const { [name]: _x, ...rest } = o; return rest as T; };
+    addedParams = drop(addedParams);
+    pending = drop(pending);
+    applied = drop(applied);
+    removedParams = new Set([...removedParams, name]); // hide from the grid now
+  }
+
   // ── Delete a part (✕) ───────────────────────────────────────────────────
   // Remove the instance's `const X = …;` declaration + splice it out of the
   // composition (mid-chain `.op(X)` removed; base operand → next promoted).
@@ -1421,6 +1474,7 @@
                     {applied}
                     onPending={setPending}
                     onCommit={commitOne}
+                    onDelete={canEdit ? deleteParam : undefined}
                   />
                   <!-- Polygon leaf params — ParamGrid skips these; each gets a
                        ✎ card that opens the ProfileEditor in a popup (editing

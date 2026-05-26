@@ -82,6 +82,15 @@ export interface RecognizedParam {
    *  (-1 when not found / no default). */
   defaultStart: number;
   defaultEnd: number;
+  /** Span of this param's whole `name: {…}` entry inside meta.params, so the
+   *  GUI can splice it out on delete. */
+  entryStart: number;
+  entryEnd: number;
+  /** Span of this param's positional token in the function signature (matched
+   *  by name), so delete removes it from the signature too. -1 when the param
+   *  has no signature slot. */
+  sigStart: number;
+  sigEnd: number;
 }
 export interface RecognizedProfile {
   /** Profile name (object-literal key inside meta.profiles). */
@@ -208,6 +217,10 @@ export function recognizeComposite(source: string): RecognizedComposite {
               polygon: isPoly,
               defaultStart: defProp?.value ? defProp.value.start : -1,
               defaultEnd: defProp?.value ? defProp.value.end : -1,
+              entryStart: prop.start,
+              entryEnd: prop.end,
+              sigStart: -1,
+              sigEnd: -1,
             });
           }
         }
@@ -254,6 +267,17 @@ export function recognizeComposite(source: string): RecognizedComposite {
     const openParen = js.indexOf('(', fn.id ? fn.id.end : fn.start);
     sigInsertPos = openParen >= 0 ? openParen + 1 : -1;
     sigHasParams = false;
+  }
+
+  // Match each declared meta.params entry to its positional signature token (by
+  // name) so delete can splice the param out of BOTH the meta block and the
+  // signature. Handles `x` (Identifier) and `x = 1` (AssignmentPattern).
+  for (const sp of fn.params) {
+    const nm = sp?.type === 'Identifier' ? sp.name
+      : (sp?.type === 'AssignmentPattern' && sp.left?.type === 'Identifier' ? sp.left.name : null);
+    if (!nm) continue;
+    const rp = params.find((p) => p.name === nm);
+    if (rp) { rp.sigStart = sp.start; rp.sigEnd = sp.end; }
   }
 
   // Args span = first arg start → last arg end (the text inside the parens,
