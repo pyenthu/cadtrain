@@ -83,11 +83,13 @@ Research findings (default-param pHash/CLIP collapse, the cold-classification
 counter-finding, and the deferred ablation queue) live in **`docs/FINDINGS.md`**
 and the session memory. Not day-to-day rules.
 
-## Current work in flight (2026-05-24 — resume point)
+## Current work in flight (2026-05-27 — resume point)
 
 > Living section — clear entries as they land. Full detail in the session
 > memory handoffs. **Launch `claude --chrome`
 > for fast visual iteration on /primitives** (`feedback_claude_chrome_efficiency`).
+
+**Shipped 2026-05-27 (committed `a712986`, NOT yet pushed):** **components product DELETED** — `/components` route, all 12 `/api/components/*` endpoints, `src/lib/cad/components/` (bundle registry + families), `components-l3`, `server/library.ts`, `component-loader.ts`, the recipe chain (`part-recipe`/`primitive-recipe`/`recipe-preview`), `/archive/**/components`, and the `industrial` category — all gone. `/primitives` is now the one CAD UI; nav + landing repointed; e2e specs updated (runes/instance-ops deleted). `builder.ts` kept (live preview render helpers) but detached from the bundle registry. Also: finished the half-applied profile-swap refactor in `PrimitiveView` (▾ selector → `ProfilePalette` popup) + `r_rotate` function-first scaffold.
 
 **Shipped 2026-05-24 (on `main`, pushed):** warp-at-end toggle + no-stretch 1:1 fix (`warp-spline.ts`) · construction-tree view + **BODMAS diagram** (`ConstructionTree.svelte`) · searchable **profile palette** + volume profiles (`/api/primitives/profiles/{list,save}`) · **volume consolidated to 4 dirs** (archive/components/ai/primitives — kb+kb-sources+training_data+eval → `ai/`; see `volume_4dir_layout`) · drag-resizable /primitives sidebar.
 
@@ -183,7 +185,8 @@ static/
 
 # Persistent volume (<volume> = $APP_DATA_DIR; see Rule 13 for sub-paths +
 # root resolution). NOTHING here is in git; all served via /api/volume.
-# 4 dirs: archive/ (figures, test-recordings, legacy) · components/ (library) ·
+# 4 dirs: archive/ (figures, test-recordings, legacy) · components/ (DORMANT —
+# former library, reader code deleted 2026-05-27) ·
 # ai/ (training_data, kb, kb-sources, eval) · primitives/
 # Local dev mirror: training_data/ (cache.jsonl + prim_<component>/ seed data,
 # 18 primitives × ~5 variations) and kb-sources/ (gitignored; canonical copy on volume).
@@ -243,7 +246,7 @@ docker run -p 3333:3333 \
 - **Never** add Python to the production container — the `/api/refine` endpoint uses pure-TS image diff (`src/lib/training/image_diff.ts`). The historical `vlm/` Python tools were deleted; don't re-introduce them.
 - **Node 22.2.0** is too old for Vite 8 — use `bun --bun run vite dev` locally if you see the warning, or use Node ≥ 22.12
 - Running multiple Vite servers on different ports at once will conflict — **the main SvelteKit app on port 3333 supersedes all legacy viewers**
-- When adding a new bundle primitive, edit `src/lib/cad/components/families.ts` (Rule 16) — adding to `src/lib/cad/library.ts` is only for the legacy ComponentDef catalog
+- New volume primitives are authored in `/primitives` (Rule 20) — compose `r_*` parts, no bundle/`families.ts` edits (that system was deleted 2026-05-27)
 - Training data under `training_data/cache.jsonl` should be committed when it grows meaningfully — it's the app's learned memory
 
 ## Related directories
