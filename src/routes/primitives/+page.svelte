@@ -36,6 +36,25 @@
   // the user sees where each family's parts will land.
   let completions: Record<string, Entry[]> = $state({});
   let archived: Entry[] = $state([]);
+  // Just-created parts the prod list read hasn't caught up to yet (the list is
+  // proxied to Railway and can trail the write by seconds). refreshList re-merges
+  // these into their bucket until the server includes them — so a new part shows
+  // up + stays put instead of vanishing on the next refresh. {id, dir}.
+  let pendingCreated: { id: string; dir: string }[] = $state([]);
+  function mergePending() {
+    const serverIds = new Set([...basic, ...industrial, ...Object.values(completions).flat()].map((x) => x.id));
+    // Drop any the server has now caught up to.
+    pendingCreated = pendingCreated.filter((pc) => !serverIds.has(pc.id));
+    for (const pc of pendingCreated) {
+      const e: Entry = { id: pc.id, source: 'volume', name: pc.id, description: '', params: {}, editable: true };
+      if (pc.dir === 'basic') basic = [...basic, e];
+      else if (pc.dir === 'industrial') industrial = [...industrial, e];
+      else if (pc.dir.startsWith('completions/')) {
+        const fam = pc.dir.slice('completions/'.length);
+        completions = { ...completions, [fam]: [...(completions[fam] ?? []), e] };
+      }
+    }
+  }
 
   // Display order + labels for the Completions family sub-folders. Sourced
   // from src/lib/cad/components/families.ts (the central family map); these
@@ -85,6 +104,7 @@
       industrial = data.industrial ?? [];
       completions = data.completions ?? {};
       archived = data.archived ?? [];
+      mergePending(); // keep just-created parts visible until the list catches up
       status = '';
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
@@ -339,18 +359,16 @@
       else if (dir === 'industrial') showIndustrial = true;
       else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
       closeCreate();
-      // The list read can lag the write (prod volume propagation), so the just-
-      // created id may be absent on the first refresh. Retry a few times before
-      // giving up so the new part reliably shows up + opens.
-      let created: Entry | undefined;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        await refreshList();
-        created = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()].find((x) => x.id === newId);
-        if (created) break;
-        await new Promise((res) => setTimeout(res, 350));
-      }
-      if (created) openTab(created);
-      else status = `Created ${newId} in ${label} — it may take a moment to appear; click Re-scan if not.`;
+      // Show the new part IMMEDIATELY — the prod list read (proxied to Railway)
+      // can trail the write, so don't gate the UI on it. Track it as pending +
+      // refresh (mergePending keeps it visible until the server catches up), then
+      // open it. The source endpoint is fresh, so the tab loads even mid-lag.
+      if (!pendingCreated.some((pc) => pc.id === newId)) pendingCreated = [...pendingCreated, { id: newId, dir }];
+      await refreshList();
+      const created = [...entries, ...basic, ...industrial, ...Object.values(completions).flat()].find((x) => x.id === newId)
+        ?? ({ id: newId, source: 'volume', name: newId, description: '', params: {}, editable: true } as Entry);
+      openTab(created);
+      status = `Created ${newId} in ${label}.`;
     } catch (e: any) { createErr = `error: ${e?.message ?? e}`; }
     finally { createBusy = false; }
   }
@@ -401,6 +419,7 @@
     const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!r.ok) { status = `Archive failed: ${await r.text()}`; return; }
     status = `Archived "${id}".`;
+    pendingCreated = pendingCreated.filter((pc) => pc.id !== id); // don't resurrect a deleted just-created part
     await refreshList();
     closeTab(id);
   }
@@ -417,6 +436,7 @@
     const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}&permanent=true`, { method: 'DELETE' });
     if (!r.ok) { status = `Permanent delete failed: ${await r.text()}`; return; }
     status = `Permanently deleted "${id}".`;
+    pendingCreated = pendingCreated.filter((pc) => pc.id !== id); // don't resurrect a purged part
     await refreshList();
   }
 
