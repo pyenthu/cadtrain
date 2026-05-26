@@ -60,6 +60,46 @@ sibling files.
   invalidates the parts that slot it). Also fixes today's prod list/bake lag for
   edits (save → invalidate → fresh bake).
 
+#### Design vs instance (cache granularity) — IMPORTANT
+A file is a **design** (parametric definition + default params). A **reference
+site** in a higher file supplies concrete params → an **instance**. **The cache
+memoizes INSTANCES, not designs** — key ≈ `(designContentHash, instanceParams,
+depInstanceKeys)`. Therefore:
+- **Editing a design's source** (its shape/`build`) changes its content hash and
+  invalidates **all** instances of it, transitively down the DAG (the shape changed).
+- **Changing params at a reference site** (a higher assembly overriding a profile's
+  `bore`) is an edit to the **referencing file** — params live in the *instance*,
+  not the design. It yields a **new instance key**, dirties **only the referencing
+  file's bake**, and leaves the **original design + every sibling instance untouched**.
+
+So a higher assembly never invalidates the original part/profile: the profile's
+*manifestation* (its resolved geom at those params) is the **instance**, cached
+under the assembly's reference; the design is shared + immutable to param overrides.
+Param overrides are **persisted in the referencing file** (so editing them = editing
+that file's content → only its bake re-runs). Only a **source edit of the design**
+propagates down the reference graph.
+
+**Staleness across the graph — always-latest, no version field (decided).** The
+bake key is a **Merkle hash of the reference DAG**:
+`key(A) = hash(A.content, A.instanceParams, key(dep1), key(dep2), …)` (recursive).
+So a sub-part `S` contributes `key(S)` into every ancestor's key. When `S`'s design
+changes, `key(S)` changes → every ancestor's key changes → their cache entries miss
+→ they re-bake fresh on next open. An assembly "knows" `S` changed because its key is
+**derived from `S`'s current content at bake time**, not stored against a snapshot —
+the content hash *is* the version (no manual bump, catches external edits too).
+Keep a per-file `contentHash` updated on save so the DAG isn't fully re-hashed every
+request. **No explicit version/pin now** (always-latest); the reference shape may add
+an optional pin later for frozen/published assemblies (ties to per-user/public space)
+without a migration.
+
+#### Hashing cost — negligible
+We hash the **source** (a few KB of `.ts`), not the baked mesh (the cache *value*,
+which is never hashed for the key). Per-file `contentHash` is computed **once on
+save** and cached, so a bake just **composes cached dep hashes** (sub-ms even for a
+deep DAG). Even a large file would hash at hundreds of MB/s–GB/s (SHA-256) or
+multiple GB/s (xxHash/Blake3); our inputs are KB → instant. Hash choice is free at
+this size — xxHash64 for speed, or SHA-256 if we want content-addressed dedup.
+
 ### 5. Composition by reference (assemblies + slots are one concept)
 **Everything composes by reference to volume files — no inlining.** An `.asm.ts`
 references other volume files (`.prim.ts` / `.asm.ts` / `.prvl.ts`) by id, each
@@ -125,6 +165,11 @@ the cache + slot-resolver don't assume a single global namespace.
 - **Volume-only** storage; tab state persists to volume/session (not local).
 - **Assemblies = composition by reference** to volume files (no inlining); slots
   are the same reference mechanism; bake walks the reference DAG.
+- **Cache memoizes INSTANCES** `(designContentHash, params, depKeys)`, never designs;
+  param overrides live in the referencing file.
+- **Always-latest via content-hash Merkle keys** — no version field; a design source
+  edit auto-invalidates dependents on next open. Pinning deferred (reference shape
+  stays pin-capable).
 - **`<id>.<kind>.ts`** files; **mid-ext = type key** for client app + server route.
 - **Flat files**; baked artifacts in a **server bake cache** (content+params, busted on save).
 - **Profile content = a `.ts` module** (meta + `build()`), same sandbox as today.
