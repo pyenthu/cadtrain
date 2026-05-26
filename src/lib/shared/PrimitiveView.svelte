@@ -1524,7 +1524,7 @@
                         {@const ppNames = partProfileParamNames(inst)}
                         <div class="pv-profile-params">
                           <div class="pv-pp-head">profile params · <code>{partProfileKind(inst)}</code></div>
-                          <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} />
+                          <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
                         </div>
                       {/if}
                       {#each inst.txs as t}

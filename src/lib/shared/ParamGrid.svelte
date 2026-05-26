@@ -35,12 +35,16 @@
     applied,
     onPending,
     onCommit,
+    variant = 'default',
   }: {
     schema: Record<string, ParamSchema>;
     pending: Record<string, number | [number, number][]>;
     applied: Record<string, number | [number, number][]>;
     onPending: (key: string, value: number) => void;
     onCommit: (key: string, value: number) => void;
+    /** 'fn' = profile-editor look: the VARIABLE NAME as the label + a
+     *  draggable text input (no spinner arrows), matching ProfileFnEditor. */
+    variant?: 'default' | 'fn';
   } = $props();
 
   let keys = $derived(Object.keys(schema).filter((k) => schema[k].type !== 'polygon'));
@@ -60,7 +64,7 @@
     {@const value = num(key)}
     <div class="pr-card" class:dirty={isDirty(key)}>
       <div class="pr-card-head">
-        <span class="pr-keyname" title={ps.label ?? key}>{ps.label ?? key}</span>
+        <span class="pr-keyname" title={ps.label ?? key}>{variant === 'fn' ? key : (ps.label ?? key)}</span>
         {#if ps.unit}<span class="pr-unit-inline">({ps.unit})</span>{/if}
       </div>
 
@@ -84,7 +88,9 @@
       {:else}
         <input
           class="pr-num drag"
-          type="number"
+          class:fn={variant === 'fn'}
+          type={variant === 'fn' ? 'text' : 'number'}
+          inputmode="decimal"
           step={ps.step ?? 0.1}
           min={ps.min}
           max={ps.max}
@@ -158,6 +164,14 @@
     padding: 3px 6px;
     font-size: 11px;
     background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+  }
+  /* fn variant — matches ProfileFnEditor's draggable `.num`: monospace,
+     right-aligned, ew-resize, faint pink fill. type=text → no spinner arrows. */
+  .pr-num.fn {
+    font-family: 'SF Mono', Menlo, monospace;
+    text-align: right;
+    cursor: ew-resize;
+    background: #fdf8f7;
   }
   .pr-num:focus { outline: 1px solid #cc2222; border-color: #cc2222; }
   .pr-choice {
