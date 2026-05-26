@@ -136,10 +136,22 @@ editing a referenced file invalidates everything that references it.
 
 ## Phases (re-sequenced)
 
-- **P0 — Taxonomy + migration + server.** Define the mid-ext taxonomy; migration
-  script renames existing `source.ts`→`.prim.ts`, profile `profile.json`+`source.ts`
-  →`.prvl.ts`/`.prex.ts` (set inferred). Server routes by mid-ext + adds the bake
-  cache (content+params, busted on save). Resolvers/loaders read the new names.
+- **P0 — Taxonomy + migration + server.**
+  - **P0a — SHIPPED 2026-05-26** (`bcd3f2b`): mid-ext taxonomy + the flat-file
+    migration. `scripts/migrate_to_file_kinds.py` renamed every `source.ts`→
+    `.prim.ts` and merged each profile `profile.json`+`source.ts`→ one
+    `.prvl.ts`/`.prex.ts` module (meta + `build()`); **prod volume migrated**
+    (42 primitives + 4 profiles; `t_bolt_driven` husk removed; full backup at
+    `.volume-backup/`). `src/lib/server/primitive-paths.ts` is the single resolver
+    (`findPrim`/`findProfile`/`listEntitiesIn`) — new flat files resolve first,
+    legacy folders still READ (dual-read) so deploy + migration was zero-downtime.
+    Endpoints `source`/`save`/`list`/`delete`/`restore` + `profiles/*` rewritten;
+    `profile-fn.ts` gained `composeProfileModule`/`splitProfileModule`;
+    `primitives-meta.ts` gained `evalMetaLiteral`. Validated end-to-end on a local
+    mirror, then prod (canary + full).
+  - **P0b — remaining:** the **content-hash bake cache** (memoize instances on
+    `hash(content, params, depKeys)`, always-latest, busted on save). Non-destructive,
+    additive — the next piece.
 - **P1 — App registry + tabs-as-files.** Volume-backed tab store keyed by path;
   `getApp(midExt)`; profile tabs render `ProfileFnEditor`. Sidebar lists files
   (incl. a Profiles section).
