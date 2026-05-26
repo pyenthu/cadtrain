@@ -9,13 +9,11 @@ for reference and because some pages (`/archive/wells`,
 | Route | Purpose |
 |---|---|
 | `/archive` | Index of legacy routes with descriptions |
-| `/archive/components` | Parametric component library — 18 primitives, live 3D + SVG + PNG export |
 | `/archive/reverse` | Upload image → RAG-based identify → live 3D render → auto-refine loop → save to cache |
 | `/archive/training` | Tabbed viewer for completion-tool training data |
 | `/archive/wells` | Upload PDF/image → Claude vision → WSON extraction (working — likely ported wholesale to `/wells`) |
 | `/archive/tests` | Playwright test recordings (WEBM) + cache stats + links to eval viewers |
 | `/archive/tests/wells` | Wells extraction eval — 8 cases × 2 backends × 3 models |
-| `/archive/tests/components` | Components recognition eval — 18 primitives via CLI/Opus, 17/18 baseline |
 | `/archive/tools/bottom-sub` | Dedicated Bottom Sub (HAL10408) parametric viewer |
 | `/archive/tools/ratch-latch` | Dedicated Ratch-Latch Receiving Head viewer |
 
@@ -24,8 +22,8 @@ for reference and because some pages (`/archive/wells`,
 deleted). Their backing endpoints (`/api/author/{chat,list,save}`) are
 still on disk but have no UI consumer — see
 `src/routes/api/CLAUDE.md`. Their backing schema
-(`src/lib/authoring/*`) is still imported by `/components` and
-`/plan` for `AuthoredComponent` types and the compose interpreter.
+(`src/lib/authoring/*`) is still imported by `/plan` for
+`AuthoredComponent` types and the compose interpreter.
 
 ## Architecture: Retrieval-Augmented Identification
 
@@ -79,8 +77,8 @@ grows with use (compounding loop — see `src/lib/shared/CLAUDE.md`).
 The Build sub-app (manual composition editor + authored-component
 browser, formerly at `/archive/author` + `/archive/library`) has been
 removed from the UI but its core (`src/lib/authoring/*`) is still
-imported by `/components` and `/plan` for the `AuthoredComponent`
-schema and `buildAuthored()` compose interpreter.
+imported by `/plan` for the `AuthoredComponent` schema and
+`buildAuthored()` compose interpreter.
 
 ### Data model — `src/lib/authoring/schema.ts`
 

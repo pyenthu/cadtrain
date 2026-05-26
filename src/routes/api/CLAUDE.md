@@ -26,35 +26,27 @@ deployment-time variables are honoured without rebuilds.
 |---|---|---|
 | `/api/wells/extract` | POST | PDF/image → WSON extraction. `WELLS_BACKEND=cli\|api` (default `api`). |
 
-### Components library (`/components` backing API)
+### Primitives (`/primitives` backing API)
 
-| Route | Method | Purpose |
-|---|---|---|
-| `/api/components/list` | GET | Single-file component registry (one `*.ts` per component under `src/lib/cad/components/` plus library parts from `<volume>/library/`). Powers `/components` Basic + Parts + Assemblies tabs. |
-| `/api/components/save` | POST | Write a new / updated component file. Bundle parts (`src/lib/cad/components/<id>.ts`) only when editing existing src; creating a new id always writes to `library/test/<id>/` instead. |
-| `/api/components/refine` | POST | Claude-driven source rewrite for one component (the AI Refine tab). |
-| `/api/components/delete` | POST | Remove a component file (plus its `.glb` bake). |
-| `/api/components/instructions` | POST | Write `<id>.md` instructions sidecar for a component. |
-| `/api/components/geom` | POST | `{ id, params, zScale? }` → server-side ManifoldCAD render for a **library part**. Transpiles + sandbox-executes `library/<cat>/<id>/component.ts`, returns serialized `{ full, cutVC }` mesh-JSON. Bundle primitives render client-side and never hit this. See Rule 17. |
-| `/api/components/move` | POST | `{ id, category, family?, level? }` — promote a Test-tab part: atomic `rename` of the part directory + writes its `meta.json`. See Rule 18. |
-| `/api/components/rename` | POST | `{ oldId, newId }` — rename a library part's directory slug. Atomic dir move + rewrites `meta.id` in the moved `component.ts` + walks every other library part and rewrites `from './<oldId>'` import specifiers. Refuses bundle primitives + collisions. |
-| `/api/components/prompts` | GET/PUT | `?id=<id>` per-component AI prompt history, stored at `library/<cat>/<id>/prompts.json`. Backs the AI inspector tab's History sub-tab. |
-| `/api/components/picture` | GET | `?id=<id>` streams a library part's `picture.png` (reference figure). |
+The `/primitives` route is the one true CAD UI. Its data endpoints live
+under `/api/primitives/*` (list, save, source, delete, restore, recognize,
+refine, preview, bake-preview, prompts, instructions, profiles/*). Sources
+are flat typed files on the volume (`<id>.prim.ts` / `.asm.ts`, profiles
+`.prvl.ts` / `.prex.ts`); all path resolution goes through
+`src/lib/server/primitive-paths.ts`. See Rule 13 + Rule 20.
 
-**Single live store (since 2026-05-20): `/api/components/*` and
-`/api/primitives/*` data endpoints ARE proxied to prod** when
-`CADTRAIN_VOLUME_REMOTE_URL` is set. The proxy is centralized in
-`src/hooks.server.ts` via the `VOLUME_PROXY_PATHS` exact-path allowlist
-(components: list, save, move, delete, instructions, picture, prompts,
-rename, glb, geom, bake-preview; primitives: list, save, source, delete,
-restore). So in local dev a save/render reads+writes the PROD volume —
-local dev and prod share ONE store. Excluded (stay local):
+**Single live store (since 2026-05-20): `/api/primitives/*` data
+endpoints ARE proxied to prod** when `CADTRAIN_VOLUME_REMOTE_URL` is set.
+The proxy is centralized in `src/hooks.server.ts` via the
+`VOLUME_PROXY_PATHS` exact-path allowlist (primitives: list, save, source,
+delete, restore). So in local dev a save/render reads+writes the PROD
+volume — local dev and prod share ONE store. Excluded (stay local):
 `primitives/{preview,bake-preview}` (stateless compute — fast local WASM
-render) and `components/refine` + `identify` + `refine` + `wells/extract`
-(VLM — keep the local API key). `/api/volume` + `/api/kb/*` self-proxy
-in-endpoint. The `X-Volume-Local: 1` header forces local FS (e2e tests).
-This reverses the prior "a save shouldn't silently mutate prod" stance —
-the user chose prod as the single store.
+render) and `identify` + `refine` + `wells/extract` (VLM — keep the local
+API key). `/api/volume` + `/api/kb/*` self-proxy in-endpoint. The
+`X-Volume-Local: 1` header forces local FS (e2e tests). This reverses the
+prior "a save shouldn't silently mutate prod" stance — the user chose prod
+as the single store.
 
 ### Volume + KB
 
@@ -67,12 +59,11 @@ the user chose prod as the single store.
 ### Authoring (legacy — orphaned)
 
 The `/api/author/*` endpoints (`chat`, `list`, `save`) still exist and
-their backing `src/lib/authoring/` module is still imported by
-`/components`, `/plan`, and several `src/lib/cad/` files for the
-`AuthoredComponent` schema + compose interpreter. But no UI route
-calls these endpoints any more (the `/archive/author` + `/archive/library`
-pages they served were removed). Candidates for deletion if the
-authoring chat UI is not coming back.
+their backing `src/lib/authoring/` module is still imported by `/plan`
+and several `src/lib/cad/` files for the `AuthoredComponent` schema +
+compose interpreter. But no UI route calls these endpoints any more (the
+`/archive/author` + `/archive/library` pages they served were removed).
+Candidates for deletion if the authoring chat UI is not coming back.
 
 ## Runtime modes — `/api/wells/extract`
 

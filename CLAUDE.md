@@ -14,9 +14,8 @@ files (auto-loaded when working in that subtree):
 | File | Covers |
 |---|---|
 | `src/routes/api/CLAUDE.md` | Full API endpoint catalog + runtime modes + env vars |
-| `src/routes/components/CLAUDE.md` | `/components` sidebar, family classification, inspector conventions |
 | `src/routes/archive/CLAUDE.md` | Archive routes + RAG identification pipeline + authoring core |
-| `src/lib/cad/CLAUDE.md` | Geometry (Z-down), rendering, SVG export, volume component loader |
+| `src/lib/cad/CLAUDE.md` | Geometry (Z-down), rendering, SVG export, builder render helpers |
 | `src/lib/wells/CLAUDE.md` | WSON schema + 5-layer validation pattern |
 | `src/lib/shared/CLAUDE.md` | Dual-backend dispatch + cad↔wells no-cross-import |
 | `tests/CLAUDE.md` | Unit + e2e setup, run modes, per-task recordings |
@@ -25,7 +24,7 @@ files (auto-loaded when working in that subtree):
 ## Rules for Claude (read me first)
 
 1. This repo uses **Bun + SvelteKit + adapter-node**. Never switch to adapter-static or add Python to the runtime.
-2. **Two-product structure** (since commit `55b1f43`, 2026-05-10): the active CAD UI is `/components`, the active Wells UI is `/wells` (stub pending port). The previous implementation lives under `/archive/*` as reference. New product code goes in `src/lib/cad/` or `src/lib/wells/` — these MUST NOT cross-import. Both may import from `src/lib/shared/*`.
+2. **Two-product structure** (since commit `55b1f43`, 2026-05-10): the active CAD UI is **`/primitives`** (the old `/components` route + its whole backing stack — `/api/components/*`, `src/lib/cad/components/`, `server/library.ts`, `component-loader.ts`, the recipe chain — was deleted 2026-05-27; `/primitives` is now the one CAD UI). The active Wells UI is `/wells` (stub pending port). The previous implementation lives under `/archive/*` as reference. New product code goes in `src/lib/cad/` or `src/lib/wells/` — these MUST NOT cross-import. Both may import from `src/lib/shared/*`.
 3. All API endpoints must use `$env/dynamic/private` (not `$env/static/private`) so env vars are read at runtime, not build time.
 4. The training cache at `training_data/cache.jsonl` is the app's long-term memory. Writes must be atomic (temp file + rename). Never delete it without backup.
 5. Follow plan files in `~/.claude/plans/`. Don't add features outside the current plan's scope.
@@ -37,8 +36,8 @@ files (auto-loaded when working in that subtree):
 11. **Prompt for e2e testing after non-trivial UI/route/backend changes.** When the change adds/moves/removes routes, modifies the navbar, alters API contracts, or could break inter-page navigation, ask the user before merging: *"Run e2e tests now? **headless** (fast, ~15s, just verifies routes load and links resolve) or **headed** (slower, opens a real browser at slow_mo 250 so you can watch)?"* Don't auto-run tests for trivial edits.
 12. **Each logical plan step gets a recorded e2e run.** See `tests/CLAUDE.md` for the recording + harvest workflow.
 13. **Persistent data volume.** Production URL: **`https://cadtrain.up.railway.app`** (NOT `.com` — Railway uses `.up.railway.app`). All cadtrain state that must survive redeploys lives on a single volume rooted at `$APP_DATA_DIR` (Dockerfile defaults `/app_data`; local dev falls back to `./.dev-volume/`). **4-dir layout (2026-05-24): `archive/` · `components/` · `ai/` · `primitives/`.** Sub-paths in use:
-    - `$APP_DATA_DIR/components/<category>/<id>/` — the component **library**. Each part is a self-contained directory (`component.ts`, `picture.png`, `mesh.glb`, `instructions.md`, `prompts.json`, `meta.json`); the directory's LOCATION (`test` | `basic` | `parts` | `assemblies`) IS its sidebar category. See `src/lib/server/library.ts` (`resolvePart`). See Rules 17 + 18. (`library/` was renamed to `components/`; the old empty `library/` husk was deleted.)
-    - `$APP_DATA_DIR/primitives/<category>/<id>.prim.ts` — primitive sources as **flat typed files** (file-based layout, 2026-05-26; the **mid-extension is the type**: `.prim.ts` primitive · `.asm.ts` assembly). Profiles live at `primitives/profiles/<id>.prvl.ts` (revolve) / `.prex.ts` (extrude) — meta + `build()` in **one module** (replaced the old `profile.json` + `source.ts` pair). Categories: `basic/`, `industrial/`, `completions/<family>/`, `archive/`. **All path resolution goes through `src/lib/server/primitive-paths.ts`** (the single resolver — `findPrim`/`findProfile`/`listEntitiesIn`); it resolves the new flat files FIRST and still READS the legacy `<id>/source.ts` + `profiles/<id>/{profile.json,source.ts}` folders (dual-read) for any unmigrated volume. See `docs/plans/file-based-architecture.md`.
+    - `$APP_DATA_DIR/components/<category>/<id>/` — **DORMANT** former component **library** (directory-per-part). The reading code (`server/library.ts`, `component-loader.ts`, `/api/components/*`) was deleted with the components product 2026-05-27; the on-volume data may still exist but nothing serves it. Do not build new features on it — use `primitives/` below.
+    - `$APP_DATA_DIR/primitives/<category>/<id>.prim.ts` — primitive sources as **flat typed files** (file-based layout, 2026-05-26; the **mid-extension is the type**: `.prim.ts` primitive · `.asm.ts` assembly). Profiles live at `primitives/profiles/<id>.prvl.ts` (revolve) / `.prex.ts` (extrude) — meta + `build()` in **one module** (replaced the old `profile.json` + `source.ts` pair). Categories: `basic/`, `completions/<family>/`, `archive/` (the `industrial/` category was removed 2026-05-27). **All path resolution goes through `src/lib/server/primitive-paths.ts`** (the single resolver — `findPrim`/`findProfile`/`listEntitiesIn`); it resolves the new flat files FIRST and still READS the legacy `<id>/source.ts` + `profiles/<id>/{profile.json,source.ts}` folders (dual-read) for any unmigrated volume. See `docs/plans/file-based-architecture.md`.
     - `$APP_DATA_DIR/ai/training_data/cache.jsonl` — RAG cache for /api/identify (the in-image `training_data/` working path is symlinked here by `docker-entrypoint.sh`).
     - `$APP_DATA_DIR/ai/training_data/authored_cache.jsonl` — authored-components cache (dormant; backing UI removed)
     - `$APP_DATA_DIR/ai/kb-sources/*.pdf` — vendor reference PDFs served by /api/kb/source-pdf
@@ -51,8 +50,8 @@ files (auto-loaded when working in that subtree):
 
     **Local dev → prod volume**: set `CADTRAIN_VOLUME_REMOTE_URL` + `CADTRAIN_VOLUME_TOKEN` in `.env.local` and every `bun dev` call to `/api/volume` proxies to prod (token gates cross-origin; same-origin browser sessions are trusted; unset locally = open). Operational reference — `.env.local` setup, curl transfer commands (upload/download/list/delete/mkdir), upload ceilings, and the Playwright verification spec — lives in **`docs/VOLUME_TRANSFER.md`**.
 
-14. **Compounding context for drawings — components + assembly recipes.** Before generating a new single-file component or composing a multi-part assembly, check the catalog:
-    - **Per-component specs**: `src/lib/cad/components/<id>.md` — each single-file component should have a sibling `.md` documenting what real-world part it models, vocabulary, validation, derived params. Template: `docs/PRIMITIVE_TEMPLATE.md`. Strong example: `src/lib/cad/components/conn_box.md`.
+14. **Compounding context for drawings — primitive + assembly recipes.** Before authoring a new volume primitive or composing a multi-part assembly, check the catalog:
+    - **Volume primitive authoring**: `docs/CAD_AUTHORING.md` is the canonical guide (param types, apply/save contract, Manifold gotchas, the `r_*` compose pattern — Rule 20). Template: `docs/PRIMITIVE_TEMPLATE.md`. (The old per-bundle-component `src/lib/cad/components/<id>.md` specs were deleted with the components product 2026-05-27.)
     - **Multi-primitive assembly recipes**: `docs/assemblies/<name>.md`. Index + when-to-write rules: `docs/assemblies/README.md`. Template: `docs/assemblies/_TEMPLATE.md`. First worked example: `docs/assemblies/tubing_hanger_spool_stack.md`.
     - **When you build a new assembly or rename a primitive's vocabulary, write/update the corresponding `.md` BEFORE committing** — that's the only durable handoff to future sessions. Conversation memory evaporates; these files don't.
 
@@ -66,23 +65,13 @@ files (auto-loaded when working in that subtree):
       - Anthropic API keys: https://console.anthropic.com/settings/keys.
     - Offer to set up structure (env var name, file location) without ever touching the value.
 
-16. **Sidebar entry classification — two-axis (tab → group → entry).** The `/components` sidebar uses a consistent pattern. New components are placed by editing ONE central map (`src/lib/cad/components/families.ts`); the UI auto-groups, filters, and collapses based on it. Full UI contract in `src/routes/components/CLAUDE.md`.
+16. **`/primitives` sidebar classification — location IS category.** The `/primitives` sidebar groups volume primitives by their on-volume category directory: **Basic** (`primitives/basic/`), **Completions** (nested by family, `primitives/completions/<family>/`), and **Archive** (`primitives/archive/`, soft-deleted). There's no central map to drift — a primitive's directory location IS its sidebar group. Creating with the `+` popup writes into the chosen category dir; the trash button moves to `archive/`. `/api/primitives/list` enumerates these via `src/lib/server/primitive-paths.ts`.
 
-17. **Three layers — primitives ↔ components ↔ recipes.** Post `components/primitives-split` plan (2026-05-18):
-    - **Primitives** (`src/lib/cad/manifold-helpers.ts` — `cyl`, `tube`, `helix_band`, `revolve`, …): backend geometry toolkit. Raw functions returning a `Manifold`. NOT a stable API — signatures can churn. Recipes CANNOT call primitives directly (`STRICT_RECIPE_CALLS = true` in `part-recipe.ts` rejects with a friendly error pointing at the wrapping pattern). Surfaced in the `/primitives` library route for inspection / live editing (in flight).
-    - **Components** — two flavours:
-      - **Bundle** in `src/lib/cad/components/<id>.ts`. Exports `meta` (params schema) + `geom(p)`. Calls primitives directly. Rendered client-side via `buildComponent`. The 26 baseline + new wrappers like `thread_helix`.
-      - **Library** in `<volume>/library/<cat>/<id>/part.json`. JSON recipe — no `.ts`, no sandbox. The ONLY legal `call:` targets are component ids (bundle OR library) + recipe operators (mv, rot).
-    - **Recipes** (the `instances[] + composition[]` model inside library JSON parts) are interpreted by `src/lib/server/part-recipe.ts:buildRecipe`. Tier 1 expression language: arithmetic + `p.<param>` + `<INST>.<argName>` + whitelisted `Math.*`. No conditionals, no loops. Implicit translation: an instance with `top` arg AND non-zero resolved value gets `mv(0, 0, top)` prepended before user transforms.
-    - **renderMode** on `/api/components/list` is still `'client'` (bundle) vs `'server'` (library JSON via `/api/components/geom`).
+17. **Two layers — raw helpers → `r_*` leaf primitives → volume primitives.** (The bundle-component + JSON-library + part-recipe architecture was DELETED with the components product 2026-05-27; what remains is the `/primitives` model.)
+    - **Raw helpers** (`src/lib/cad/manifold-helpers.ts` — `cyl`, `tube`, `helix_band`, `revolve`, …): backend geometry toolkit. Raw functions returning a `Manifold`. NOT a stable API — signatures can churn. Used ONLY inside the `r_*` leaf primitives; the sandbox injects them but volume primitives must NOT call them directly (Rule 20).
+    - **Volume primitives** (`<volume>/primitives/<cat>/<id>.prim.ts`): typed source files that compose the `r_*` library primitives (`r_cylinder`, `r_tube`, `r_cone`, `r_revolve`, `r_rotate`, `r_threads`, …) via `.add`/`.subtract`/`.intersect` + `mv`/`rot`. Authored/edited live in `/primitives`, baked server-side by `src/lib/server/primitive-loader.ts` (`buildPrimitiveGeom`) behind `/api/primitives/{preview,bake-preview}`. See Rule 20 + `docs/CAD_AUTHORING.md`.
 
-    The picture → AI → JSON → volume workflow uses `'server'`. Bundle components stay git-tracked + compiled; library parts live on the volume and never need a bundle rebuild.
-
-    **Name resolution (behavioral rule)**: helpers + operators (`cyl`, `tube`, `mv`, `rot`) are the canonical namespace and win on collision — **never name a library part `tube` or `cyl`**. Suffix library parts with `_part` when the natural name would collide.
-
-    **Full `part.json` shape** — the schema, Tier-1 expression grammar (`{lit}`/`{expr}` + `Math.*` whitelist), `mv`/`rot` transforms, composition order, authoring/refine flow, and the legacy .ts loader path — is in **`docs/LIBRARY_PART.md`**. Read it before generating or editing any `library/<cat>/<id>/part.json`.
-
-18. **The library — directory-per-part, location = category.** A part is a self-contained directory under `<volume>/library/<category>/<id>/`. **Its location IS its classification.** No central index, no metadata map that can drift. `src/lib/server/library.ts` is the resolver (`resolvePart`, `listLibraryParts`, `categoryDir`, `partDirIn`). Flow: create → test → review → move → category. `/api/components/save` with `create: true` writes to `library/test/<id>/`; updates write back into the part's current category dir; `/api/components/move` does an atomic `rename` to promote. `/library/` is gitignored.
+18. _(removed 2026-05-27 — was "The library — directory-per-part." The volume `library/` system + `server/library.ts` + `/api/components/*` were deleted with the components product. Volume primitives now live under `primitives/` — Rule 13 + 17.)_
 
 19. **`/plan` is the single source of truth for the roadmap (one common plan + todo).** The Gantt at `src/routes/plan/+page.svelte` (item rows: `id`/`bundle`/`lane`/`status` ∈ `done|active|open|todo|deferred`/`title`; bundles in `BUNDLES`; optional popups in `details.ts`) is the durable, user-facing plan. The session task-tracker (TaskCreate/TaskList) is ephemeral working state; the memory `todo_*.md` files are a private cache. **Both MUST be reconciled INTO `/plan`** — don't let them diverge. At the end of a work session (and when the user asks "what's done / update the plan"): mark completed items `done`, retitle to reflect reality, and ADD new shipped work + new TODOs as `/plan` items (new bundle when it's a distinct area). Marking `done` is a factual claim — verify before flipping. Editing `/plan` is a source change → commit + push to update prod.
 
@@ -142,14 +131,17 @@ bun run test:e2e:report  # open last HTML report
 | Route | Purpose |
 |---|---|
 | `/` | Landing page — links to Primitives, Wells, Plan, Archive |
-| `/components` | **CAD product UI** — sidebar-of-components + canvas + inspector. See `src/routes/components/CLAUDE.md`. |
+| `/primitives` | **CAD product UI** — sidebar-of-primitives + canvas + inspector. The one CAD UI (see `src/lib/shared/PrimitiveView.svelte`). |
 | `/wells` | Wells product overview — stub pointing at `/archive/wells` until ported |
 | `/volume` | File manager for the persistent data volume (`/api/volume` CRUD UI) |
 | `/archive` | Index of legacy routes — see `src/routes/archive/CLAUDE.md` |
 | `/plan` | Gantt-style roadmap (bundles A–F) with click-through detail popups |
 
-**Removed**: `/cad`, `/author`, `/library`, `/archive/author`,
-`/archive/library` — none of these directories exist any more.
+**Removed**: `/components` + all `/api/components/*` (the components
+product — route, bundle library, JSON-library system; deleted 2026-05-27,
+`/primitives` is now the one CAD UI), `/cad`, `/author`, `/library`,
+`/archive/author`, `/archive/library`, `/archive/components`,
+`/archive/tests/components` — none of these directories exist any more.
 References to them in older CLAUDE.md versions and in
 `src/routes/plan/details.ts` are stale.
 
@@ -177,7 +169,7 @@ src/
     ├── cad/                          # CAD domain (see cad CLAUDE.md)
     ├── wells/                        # Wells domain (see wells CLAUDE.md)
     ├── identify/backend.ts           # CAD identify dispatch — uses shared/
-    ├── server/                       # server-only: volume.ts, library.ts, component-loader.ts
+    ├── server/                       # server-only: volume.ts, primitive-paths.ts, primitive-loader.ts, profile-fn.ts
     ├── authoring/                    # AuthoredComponent schema + compose interpreter (UI removed; schema still used)
     ├── training/                     # cache.ts, phash.ts, embed.ts, image_diff.ts
     ├── tools/                        # bottom-sub/, ratch-latch/ (used by /archive/tools/*)
