@@ -40,10 +40,14 @@ export const POST = async ({ request }) => {
   try { extractMetaFromSource(source); }
   catch (e: any) { throw error(400, `source missing valid meta: ${e?.message ?? e}`); }
 
-  // Write back into the part's CURRENT category dir — findPrim searches the
-  // whole tree (basic/, industrial/, completions/<family>/, archive/, or flat)
-  // so an edit never FORKS a flat duplicate. A new id lands in `dir` (or flat).
-  const existing = await findPrim(id);
+  // Write back into the part's CURRENT ACTIVE category dir — findPrim searches
+  // basic/, industrial/, completions/<family>/, or flat (NOT archive/) so an
+  // edit never FORKS a flat duplicate. A new id lands in `dir` (or flat).
+  // includeArchive:false is load-bearing: a NEW part whose id collides with an
+  // ARCHIVED part (e.g. creating dp_new when archive/dp_new exists) must NOT
+  // resolve to the archived copy and silently save into archive/ (where it's
+  // invisible in the active sidebar — "it's not saving").
+  const existing = await findPrim(id, { includeArchive: false });
   const dir = existing
     ? existing.dir
     : (targetDir ? volumePath(join('primitives', targetDir)) : volumePath('primitives'));

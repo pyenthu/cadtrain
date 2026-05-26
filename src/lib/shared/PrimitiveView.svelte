@@ -811,6 +811,70 @@
     for (const n of names) if (effectiveSchema[n]) out[n] = effectiveSchema[n];
     return out;
   }
+
+  // ── Searchable VISUAL profile picker (change the profile a revolve part uses) ─
+  // The user changes WHICH function profile drives the part from an inline list
+  // (icon + description, two columns) — not a popup. Selecting one RE-LIFTS the
+  // new profile's params onto the part. (Inc 2.)
+  let profileSwapFor = $state<string | null>(null); // inst.name whose picker is open
+  let profileSwapSearch = $state('');
+  interface ProfOpt { id: string; label: string; desc: string; origin: 'builtin' | 'volume' }
+  let revolveProfileOpts = $derived.by<ProfOpt[]>(() => {
+    const cur: ProfOpt[] = Object.values(PROFILE_REGISTRY)
+      .filter((d) => d.set === 'revolve')
+      .map((d) => ({ id: d.id, label: d.label, desc: (d.tags ?? []).join(' · '), origin: 'builtin' }));
+    const vol: ProfOpt[] = volProfiles
+      .filter((v: any) => v.set === 'revolve' && v.hasSource)
+      .map((v: any) => ({ id: v.id, label: v.label ?? v.id, desc: v.description || (v.tags ?? []).join(' · '), origin: 'volume' }));
+    const volIds = new Set(vol.map((v) => v.id)); // a volume ƒ profile wins over the same-named curated
+    return [...vol, ...cur.filter((c) => !volIds.has(c.id))];
+  });
+  let filteredProfileOpts = $derived.by<ProfOpt[]>(() => {
+    const q = profileSwapSearch.trim().toLowerCase();
+    return q ? revolveProfileOpts.filter((o) => o.id.toLowerCase().includes(q) || o.label.toLowerCase().includes(q) || o.desc.toLowerCase().includes(q)) : revolveProfileOpts;
+  });
+  // Mini-shape points for an option's icon (volume → its preview pts; curated → build defaults).
+  function profileOptPts(opt: ProfOpt): [number, number][] | null {
+    if (opt.origin === 'volume') { const v = volProfiles.find((p) => p.id === opt.id) as any; if (v?.points) return v.points; }
+    const def = PROFILE_REGISTRY[opt.id];
+    if (def) { try { return def.build(defaultsFor(def)) as [number, number][]; } catch { /* ignore */ } }
+    return null;
+  }
+  // Regenerate the revolve scaffold source for a new profile — full re-lift
+  // (meta.params + signature + resolveProfile params + kind). Mirrors the cad
+  // stub builder but inlined (shared/ can't import cad/, layering rule).
+  function regenRevolveSource(id: string, kind: string, schema: Record<string, any>): string {
+    const names = Object.keys(schema);
+    const block = names.map((n) => {
+      const s = schema[n] ?? {};
+      const parts = [`label: ${JSON.stringify(s.label ?? n)}`, `min: ${s.min ?? 0}`, `max: ${s.max ?? 100}`, `step: ${s.step ?? 0.1}`, `default: ${typeof s.default === 'number' ? s.default : 1}`];
+      if (s.unit) parts.push(`unit: ${JSON.stringify(s.unit)}`);
+      return `    ${n}: { ${parts.join(', ')} },`;
+    }).join('\n');
+    const sig = names.join(', ');
+    return `/**\n * ${id} — revolved part from the '${kind}' profile FUNCTION. Its params ARE the\n * profile's params (lifted): edit them and the profile re-resolves → r_revolve.\n */\nexport const meta = {\n  id: '${id}', name: '${id}',\n  description: 'Revolved part from the ${kind} profile.',\n  tags: ['revolve'],\n  uses: ['r_revolve'],\n  params: {\n${block}\n  },\n};\nexport function ${id}(${sig}) {\n  const profile = resolveProfile({ kind: '${kind}', params: { ${sig} } });\n  const body = r_revolve(profile, 96);\n  return body;\n}\n`;
+  }
+  // Swap the profile a part uses. For a pristine single-instance revolve scaffold
+  // we regenerate the whole source (clean re-lift of the new param set); otherwise
+  // we only repoint the kind string (the param sets must match).
+  async function swapPartProfile(inst: any, newKind: string) {
+    await loadVolProfiles();
+    const oldKind = partProfileKind(inst);
+    if (!oldKind || oldKind === newKind) { profileSwapFor = null; return; }
+    const schema = profileSchemaForKind(newKind);
+    if (!schema || !Object.keys(schema).length) { recogError = `profile "${newKind}" has no params to lift`; return; }
+    const idM = /export\s+function\s+(\w+)\s*\(/.exec(editedSource);
+    const pristine = parts.length === 1 && idM && /\bresolveProfile\s*\(/.test(editedSource) && /\br_revolve\s*\(/.test(editedSource);
+    if (pristine) {
+      editedSource = regenRevolveSource(idM![1], newKind, schema);
+      pending = {};
+    } else {
+      const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
+      if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + oldKind.length, newKind); }
+    }
+    profileSwapFor = null; profileSwapSearch = '';
+  }
   function leafKindOptions(yd: boolean) {
     const set = yd ? 'revolve' : 'cartesian';
     return Object.values(PROFILE_REGISTRY).filter((def) => def.set === set);
@@ -1591,7 +1655,29 @@
                       {#if partProfileParamNames(inst).length}
                         {@const ppNames = partProfileParamNames(inst)}
                         <div class="pv-profile-params">
-                          <div class="pv-pp-head">profile params · <code>{partProfileKind(inst)}</code></div>
+                          <div class="pv-pp-head">
+                            <span>profile · <code>{partProfileKind(inst)}</code></span>
+                            <div class="pv-spacer"></div>
+                            {#if canEdit}
+                              <button class="pv-pp-btn" type="button" title="Change which profile drives this part" onclick={() => { profileSwapFor = profileSwapFor === inst.name ? null : inst.name; profileSwapSearch = ''; void loadVolProfiles(); }}>{profileSwapFor === inst.name ? 'close' : 'change ▾'}</button>
+                              <button class="pv-pp-btn" type="button" title="Edit this profile's shape in the editor" onclick={() => { const info = profileInfoFor(inst.call); const k = partProfileKind(inst); if (info && k) openInstanceFnEditor(inst, info, k); }}>✎ edit</button>
+                            {/if}
+                          </div>
+                          {#if profileSwapFor === inst.name}
+                            <div class="pv-prof-picker">
+                              <input class="pv-prof-search" bind:value={profileSwapSearch} placeholder="search profiles…" spellcheck="false" />
+                              <div class="pv-prof-list">
+                                {#each filteredProfileOpts as opt (opt.id)}
+                                  <button class="pv-prof-opt" class:sel={opt.id === partProfileKind(inst)} type="button" title={opt.id} onclick={() => swapPartProfile(inst, opt.id)}>
+                                    <span class="pv-prof-ic">{@render shapeIcon(profileOptPts(opt))}</span>
+                                    <span class="pv-prof-meta"><b>{opt.label}</b>{#if opt.desc}<small>{opt.desc}</small>{/if}</span>
+                                    {#if opt.origin === 'volume'}<span class="pv-prof-fx" title="volume function profile">ƒ</span>{/if}
+                                  </button>
+                                {/each}
+                                {#if filteredProfileOpts.length === 0}<div class="pv-prof-empty">no profiles match “{profileSwapSearch}”</div>{/if}
+                              </div>
+                            </div>
+                          {/if}
                           <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
                         </div>
                       {/if}
@@ -2186,8 +2272,23 @@
   .pv-part-profile-lbl { line-height: 1; }
   /* Function-profile params surfaced inside a part row (the "body" instance). */
   .pv-profile-params { margin: 5px 0 2px; padding: 5px 7px; border: 1px dashed #d4e1f5; border-radius: 5px; background: #f7faff; }
-  .pv-pp-head { font: 700 8px Arial; text-transform: uppercase; letter-spacing: .05em; color: #2266cc; margin-bottom: 5px; }
+  .pv-pp-head { display: flex; align-items: center; gap: 6px; font: 700 8px Arial; text-transform: uppercase; letter-spacing: .05em; color: #2266cc; margin-bottom: 5px; }
   .pv-pp-head code { font-family: 'SF Mono', Menlo, monospace; text-transform: none; letter-spacing: 0; color: #1a4fa0; }
+  .pv-pp-btn { font: 600 9px Arial; text-transform: none; letter-spacing: 0; color: #2266cc; background: #eef3fb; border: 1px solid #d4e1f5; border-radius: 4px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
+  .pv-pp-btn:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
+  /* Searchable VISUAL profile picker — two columns (icon | description). */
+  .pv-prof-picker { margin: 0 0 6px; }
+  .pv-prof-search { width: 100%; box-sizing: border-box; font: 11px Arial; padding: 3px 6px; border: 1px solid #d4e1f5; border-radius: 4px; margin-bottom: 4px; }
+  .pv-prof-list { max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .pv-prof-opt { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; text-align: left; background: #fff; border: 1px solid #e4e8ee; border-radius: 5px; padding: 3px 6px; cursor: pointer; }
+  .pv-prof-opt:hover { border-color: #2266cc; background: #f3f8ff; }
+  .pv-prof-opt.sel { border-color: #2266cc; background: #e8f0fd; }
+  .pv-prof-ic { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; }
+  .pv-prof-meta { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .pv-prof-meta b { font: 600 12px Arial; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pv-prof-meta small { font: 10px Arial; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pv-prof-fx { font: 700 11px 'SF Mono', monospace; color: #b8860b; }
+  .pv-prof-empty { font: 11px Arial; color: #999; padding: 6px; text-align: center; }
 
   /* ── Profile shape-icon (draws the polygon) + hover preview ──────────────── */
   .pv-shape-ic { position: relative; display: inline-flex; align-items: center; }
