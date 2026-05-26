@@ -737,8 +737,8 @@ export function ${id}(od, length) {
         </div>
       </div>
       {#if createErr}<div class="prim-create-err">{createErr}</div>{/if}
+      <div class="prim-create-note">→ <code>primitives/{createPanel.dir}/</code></div>
       <div class="prim-create-foot">
-        <span class="prim-create-note">→ <code>primitives/{createPanel.dir}/</code></span>
         <div style="flex:1;"></div>
         <button class="prim-mini-btn" type="button" onclick={closeCreate}>Cancel</button>
         <button class="prim-mini-btn primary" type="button" disabled={createBusy || !createId.trim()} onclick={submitCreate}>{createBusy ? '…' : 'Create'}</button>
@@ -806,8 +806,8 @@ export function ${id}(od, length) {
   .prim-create-opt:hover { border-color: #2266cc; background: #f5f8fe; }
   .prim-create-opt.sel { border-color: #2266cc; background: #2266cc; color: #fff; }
   .prim-create-empty { font: 11px Arial; color: #999; padding: 6px; }
-  .prim-create-foot { display: flex; align-items: center; gap: 6px; }
-  .prim-create-note { font: 10px Arial; color: #999; }
+  .prim-create-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .prim-create-note { font: 10px Arial; color: #999; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .prim-create-note code { font: 10px ui-monospace, monospace; color: #888; }
   .prim-create-err { font: 10px Arial; color: #c0392b; }
   .prim-mini-btn { padding: 3px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 11px Arial; cursor: pointer; }
