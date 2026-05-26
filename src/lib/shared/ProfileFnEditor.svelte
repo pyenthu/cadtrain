@@ -28,8 +28,11 @@
     tags?: string; // comma-separated
     onSaved: (id: string) => void;
     onClose: () => void;
+    /** Page mode: the editor fills its container (full width/height) with a
+     *  large preview, instead of the fixed-size popup geometry. */
+    fill?: boolean;
   }
-  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose }: Props = $props();
+  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false }: Props = $props();
 
   // Seed an editable cylinder so a fresh editor previews immediately.
   // Trace the profile with the pen (mv/line) — readable + editable (insert/
@@ -287,7 +290,7 @@
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && paramPop) paramPop = null; }} />
 
-<div class="fn-ed" use:tipHost>
+<div class="fn-ed" class:fill use:tipHost>
   <!-- slim vertical tabs: Builder (GUI) | Source -->
   <div class="fn-tabs" role="tablist">
     <button class="fn-tab" class:active={tab === 'builder'} onclick={() => (tab = 'builder')} type="button" role="tab" title="Builder — params, expressions, path">
@@ -443,7 +446,7 @@
     </div>
     {#if saveErr}<div class="fn-saveerr" title={saveErr}>{saveErr}</div>{/if}
     <div class="fn-prev">
-      <svg viewBox={view.vb} preserveAspectRatio="xMinYMid meet" class="fn-svg" class:bad={!!err}>
+      <svg viewBox={view.vb} preserveAspectRatio={fill ? 'xMidYMid meet' : 'xMinYMid meet'} class="fn-svg" class:bad={!!err}>
         {#if view.axis !== null}<line x1={view.axis} y1={view.y0} x2={view.axis} y2={view.y1} class="fn-axis" vector-effect="non-scaling-stroke" />{/if}
         {#if view.d}<path d={view.d} class="fn-path" vector-effect="non-scaling-stroke" />{/if}
       </svg>
@@ -504,6 +507,9 @@
      own max-height cap the panel and confine scrolling to the left column. */
   /* FIXED height — the popup doesn't resize with content; only the left column scrolls. */
   .fn-ed { width: 600px; max-width: 94vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px 1fr 130px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
+  /* Page (fill) mode: occupy the host container with a big preview column. */
+  .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 1fr) minmax(300px, 40%); gap: 14px; }
+  .fn-ed.fill .fn-svg { max-height: none; }
   /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
      vertical labels, so the rail stays narrow and reads top-to-bottom. */
   .fn-tabs { display: flex; flex-direction: column; gap: 5px; align-items: stretch; padding-top: 4px; }

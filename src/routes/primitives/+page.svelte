@@ -489,6 +489,7 @@ export function ${id}(od, length) {
       <button class="prim-rail-toggle" type="button" title="Collapse sidebar" onclick={() => railCollapsed = true}>«</button>
       <h2>Primitives</h2>
       <p class="sub">Backend toolkit — raw geometry functions</p>
+      <a class="prim-profiles-link" href="/primitives/profiles" title="Open the full-screen profile builder">ƒ Profile builder ›</a>
     </header>
 
     <!-- Loose top section — only renders when there are uncategorized volume
@@ -764,6 +765,8 @@ export function ${id}(od, length) {
   .prim-rail-expand:hover { color: #cc2222; border-color: #cc2222; }
   .prim-rail h2 { margin: 0; font: 700 14px Arial; color: #cc2222; }
   .prim-rail .sub { margin: 2px 0 0; font: 11px Arial; color: #777; }
+  .prim-profiles-link { display: inline-block; margin-top: 6px; font: 600 11px Arial; color: #c4392f; text-decoration: none; }
+  .prim-profiles-link:hover { text-decoration: underline; }
   .prim-list { padding: 4px 0; flex: 1; }
   .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; }
   .prim-row-wrap:hover { background: #f0e8e8; }

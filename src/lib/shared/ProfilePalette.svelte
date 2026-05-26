@@ -24,8 +24,11 @@
     /** 'grid' = always-visible thumbnail grid; 'dropdown' = a searchable
      *  combobox whose menu shows the shape thumbnail next to each option. */
     layout?: 'grid' | 'dropdown';
+    /** Fill the host container height (uncapped grid) — for the full-page
+     *  profiles route rail, vs the small popup grid. */
+    fill?: boolean;
   }
-  let { set, current, volume = [], onPick, onEdit, layout = 'grid' }: Props = $props();
+  let { set, current, volume = [], onPick, onEdit, layout = 'grid', fill = false }: Props = $props();
   let filter = $state('');
   let open = $state(false);
   // The menu is body-relative (position:fixed, measured from the combo) so it
@@ -125,9 +128,9 @@
     {/if}
   </div>
 {:else}
-  <div class="pp-wrap">
+  <div class="pp-wrap" class:fill>
     <input class="pp-search" placeholder="Search profiles… (label / tag / id)" bind:value={filter} spellcheck="false" />
-    <div class="pp-grid">
+    <div class="pp-grid" class:fill>
       {#each shown as e (e.origin + ':' + e.id)}
         {@const t = thumb(e.pts, e.set === 'revolve')}
         <button class="pp-card" class:sel={e.id === current} type="button" title={`${e.label}${e.tags.length ? ' · ' + e.tags.join(', ') : ''}`} onclick={() => onPick(e.id, e.origin)}>
@@ -146,8 +149,10 @@
 
 <style>
   .pp-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .pp-wrap.fill { height: 100%; min-height: 0; }
   .pp-search { font: 11px Arial; padding: 4px 6px; border: 1px solid #d4d4dc; border-radius: 4px; }
   .pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 6px; max-height: 168px; overflow-y: auto; padding: 2px; }
+  .pp-grid.fill { max-height: none; flex: 1 1 auto; min-height: 0; align-content: start; }
   .pp-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; border: 1px solid #e2e2ea; border-radius: 6px; background: #fff; cursor: pointer; }
   .pp-card:hover { border-color: #2266cc; background: #f5f8fe; }
   .pp-card.sel { border-color: #2266cc; box-shadow: 0 0 0 1px #2266cc inset; }
