@@ -300,7 +300,11 @@
   // clutter). r_extrude stays hidden until it has a function-profile flow (no
   // .prex.ts profiles exist yet) — selecting it would fall back to the retiring
   // polygon-vertex path.
-  const NO_FN_PROFILE_YET = new Set(['r_extrude']);
+  // r_rotate is the FUNCTION-FIRST revolve (pick a profile fn; its params lift).
+  // The low-level r_revolve (points engine — ~10 parts call r_revolve(points,…))
+  // and r_extrude (no fn profiles yet) are hidden from the create picker: they're
+  // not function-first. Create a revolve from r_rotate; r_revolve stays the engine.
+  const NO_FN_PROFILE_YET = new Set(['r_revolve', 'r_extrude']);
   const DEFAULT_REVOLVE_PROFILE = 'cylinder'; // curated revolve profile (r + len)
   let createBaseList = $derived.by(() => {
     const q = createSearch.trim().toLowerCase();
@@ -308,7 +312,7 @@
     return q ? rs.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : rs;
   });
   function baseLabel(b: string): string {
-    if (b === 'r_revolve') return 'r_revolve  ◆ function profile';
+    if (b === 'r_rotate') return 'r_rotate  ◆ function profile';
     if (b.startsWith('profile:')) { const k = b.slice(8); const d = profileDef(k); return `${d?.label ?? k} ◆ profile${PROFILE_REGISTRY[k] ? '' : ' ƒ'}`; }
     return b;
   }
@@ -331,11 +335,11 @@
   }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
-    // r_revolve is born function-first: seed with the default revolve profile,
-    // its params lifted onto the part (NO raw polygon param). The profile is then
-    // changed inside the part (Inc 2). This is why selecting r_revolve never opens
-    // the old vertex editor.
-    if (base === 'r_revolve') return buildStubFromProfile(id, DEFAULT_REVOLVE_PROFILE);
+    // r_rotate is born function-first: seed with the default revolve profile, its
+    // params lifted onto the part (NO raw polygon param). The profile is then
+    // changed inside the part via the picker. This is why r_rotate never opens the
+    // old vertex editor — unlike the low-level r_revolve engine.
+    if (base === 'r_rotate') return buildStubFromProfile(id, DEFAULT_REVOLVE_PROFILE);
     if (base.startsWith('profile:')) return buildStubFromProfile(id, base.slice(8));
     try {
       const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);

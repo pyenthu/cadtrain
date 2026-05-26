@@ -791,10 +791,13 @@
   }
   // The profile's param SCHEMA (curated registry, else a volume ƒ profile).
   function profileSchemaForKind(kind: string): Record<string, any> | null {
-    const def = PROFILE_REGISTRY[kind];
-    if (def) return def.params as any;
+    // VOLUME wins over the same-named curated kind — matches the bake (the loader
+    // resolves a volume ƒ-profile over the curated one), so the lifted params line
+    // up with the build that actually runs.
     const v = volProfiles.find((p) => p.id === kind) as any;
-    return v && v.params && typeof v.params === 'object' ? v.params : null;
+    if (v && v.params && typeof v.params === 'object') return v.params;
+    const def = PROFILE_REGISTRY[kind];
+    return def ? (def.params as any) : null;
   }
   // Profile param names that are ALSO part params (lifted) — those we can show
   // + edit inside the part row. Order follows the profile schema.
@@ -867,7 +870,12 @@
     const pristine = parts.length === 1 && idM && /\bresolveProfile\s*\(/.test(editedSource) && /\br_revolve\s*\(/.test(editedSource);
     if (pristine) {
       editedSource = regenRevolveSource(idM![1], newKind, schema);
-      pending = {};
+      // Reset param state to the NEW profile's defaults so the live bake doesn't
+      // feed the OLD params (r,len) into the new signature (bore,wall,…) — that
+      // mismatch was the "Non-finite vertex" / Bake 400 + vanished params.
+      const defs: Record<string, number> = {};
+      for (const [k, s] of Object.entries(schema)) defs[k] = typeof (s as any)?.default === 'number' ? (s as any).default : 0;
+      applied = defs; pending = {};
     } else {
       const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
@@ -1609,11 +1617,18 @@
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
                     <div class="pv-spacer"></div>
-                    {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call)}
-                      <button
-                        class="pv-part-profile"
-                        type="button"
-                        title="Edit this instance's profile in a popup"
+                    {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call) && partProfileKind(inst)}
+                      <!-- Function-profile instance: SELECTOR + EDIT as toolbar icons.
+                           Params land in the body below; the picker drops under the row. -->
+                      <button class="pv-part-profile" type="button" title={`Change profile (now: ${partProfileKind(inst)})`}
+                        onclick={(e) => { e.stopPropagation(); openPart(inst.name); profileSwapFor = profileSwapFor === inst.name ? null : inst.name; profileSwapSearch = ''; void loadVolProfiles(); }}
+                      >{@render shapeIcon(profilePtsPreview(inst))}<span class="pv-part-profile-lbl">{partProfileKind(inst)} ▾</span></button>
+                      <button class="pv-part-fxedit" type="button" title="Edit this profile's shape"
+                        onclick={(e) => { e.stopPropagation(); openPart(inst.name); const info = profileInfoFor(inst.call); const k = partProfileKind(inst); if (info && k) openInstanceFnEditor(inst, info, k); }}
+                      >✎</button>
+                    {:else if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call)}
+                      <!-- Raw-polygon instance (legacy r_revolve(verts)): keep the popup. -->
+                      <button class="pv-part-profile" type="button" title="Edit this instance's profile"
                         onclick={(e) => { e.stopPropagation(); openPart(inst.name); openProfilePopup(inst, profileInfoFor(inst.call)!, e); }}
                       >{@render shapeIcon(profilePtsPreview(inst))}<span class="pv-part-profile-lbl">profile</span></button>
                     {/if}
@@ -1621,6 +1636,23 @@
                       <button class="pv-part-txdel" type="button" title="Delete this part — removes it from the composition" onclick={(e) => { e.stopPropagation(); deletePart(inst); }}>✕</button>
                     {/if}
                   </div>
+                  {#if profileSwapFor === inst.name}
+                    <!-- Searchable visual profile picker — drops under the row (in
+                         the wrap, NOT the body, so it isn't clipped by overflow). -->
+                    <div class="pv-prof-picker">
+                      <input class="pv-prof-search" bind:value={profileSwapSearch} placeholder="search profiles…" spellcheck="false" />
+                      <div class="pv-prof-list">
+                        {#each filteredProfileOpts as opt (opt.id)}
+                          <button class="pv-prof-opt" class:sel={opt.id === partProfileKind(inst)} type="button" title={opt.id} onclick={() => swapPartProfile(inst, opt.id)}>
+                            <span class="pv-prof-ic">{@render shapeIcon(profileOptPts(opt))}</span>
+                            <span class="pv-prof-meta"><b>{opt.label}</b>{#if opt.desc}<small>{opt.desc}</small>{/if}</span>
+                            {#if opt.origin === 'volume'}<span class="pv-prof-fx" title="volume function profile">ƒ</span>{/if}
+                          </button>
+                        {/each}
+                        {#if filteredProfileOpts.length === 0}<div class="pv-prof-empty">no profiles match “{profileSwapSearch}”</div>{/if}
+                      </div>
+                    </div>
+                  {/if}
                   {#if open}
                     <div class="pg-acc-body pv-part-body">
                       {#if canEdit && inst.argsStart >= 0}
@@ -1654,30 +1686,9 @@
                            applied, so edits live-rebake + mirror the top grid. -->
                       {#if partProfileParamNames(inst).length}
                         {@const ppNames = partProfileParamNames(inst)}
+                        <!-- ONLY the lifted profile params in the body — the
+                             selector + edit live as icons in the accordion head. -->
                         <div class="pv-profile-params">
-                          <div class="pv-pp-head">
-                            <span>profile · <code>{partProfileKind(inst)}</code></span>
-                            <div class="pv-spacer"></div>
-                            {#if canEdit}
-                              <button class="pv-pp-btn" type="button" title="Change which profile drives this part" onclick={() => { profileSwapFor = profileSwapFor === inst.name ? null : inst.name; profileSwapSearch = ''; void loadVolProfiles(); }}>{profileSwapFor === inst.name ? 'close' : 'change ▾'}</button>
-                              <button class="pv-pp-btn" type="button" title="Edit this profile's shape in the editor" onclick={() => { const info = profileInfoFor(inst.call); const k = partProfileKind(inst); if (info && k) openInstanceFnEditor(inst, info, k); }}>✎ edit</button>
-                            {/if}
-                          </div>
-                          {#if profileSwapFor === inst.name}
-                            <div class="pv-prof-picker">
-                              <input class="pv-prof-search" bind:value={profileSwapSearch} placeholder="search profiles…" spellcheck="false" />
-                              <div class="pv-prof-list">
-                                {#each filteredProfileOpts as opt (opt.id)}
-                                  <button class="pv-prof-opt" class:sel={opt.id === partProfileKind(inst)} type="button" title={opt.id} onclick={() => swapPartProfile(inst, opt.id)}>
-                                    <span class="pv-prof-ic">{@render shapeIcon(profileOptPts(opt))}</span>
-                                    <span class="pv-prof-meta"><b>{opt.label}</b>{#if opt.desc}<small>{opt.desc}</small>{/if}</span>
-                                    {#if opt.origin === 'volume'}<span class="pv-prof-fx" title="volume function profile">ƒ</span>{/if}
-                                  </button>
-                                {/each}
-                                {#if filteredProfileOpts.length === 0}<div class="pv-prof-empty">no profiles match “{profileSwapSearch}”</div>{/if}
-                              </div>
-                            </div>
-                          {/if}
                           <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
                         </div>
                       {/if}
@@ -2270,6 +2281,8 @@
   .pv-part-profile:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
   .pv-part-profile:hover :global(.pv-shape-ic path) { stroke: #fff; }
   .pv-part-profile-lbl { line-height: 1; }
+  .pv-part-fxedit { font: 600 12px Arial; color: #2266cc; background: #eef3fb; border: 1px solid #d4e1f5; border-radius: 4px; padding: 2px 7px; cursor: pointer; line-height: 1; }
+  .pv-part-fxedit:hover { background: #2266cc; color: #fff; border-color: #2266cc; }
   /* Function-profile params surfaced inside a part row (the "body" instance). */
   .pv-profile-params { margin: 5px 0 2px; padding: 5px 7px; border: 1px dashed #d4e1f5; border-radius: 5px; background: #f7faff; }
   .pv-pp-head { display: flex; align-items: center; gap: 6px; font: 700 8px Arial; text-transform: uppercase; letter-spacing: .05em; color: #2266cc; margin-bottom: 5px; }

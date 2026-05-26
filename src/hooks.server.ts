@@ -29,6 +29,7 @@ const VOLUME_PROXY_PATHS = new Set([
   '/api/primitives/instructions',
   '/api/primitives/profiles/list',
   '/api/primitives/profiles/save',
+  '/api/primitives/profiles/delete',
   '/api/primitives/profiles/resolve',
   '/api/primitives/profiles/source',
   '/api/components/list',

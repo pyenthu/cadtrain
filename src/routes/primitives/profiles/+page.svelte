@@ -90,6 +90,21 @@
     await loadVolume();
     await loadProfile(id, 'volume');
   }
+
+  // Delete the loaded VOLUME profile (built-ins live in code → not deletable).
+  // Two-click inline confirm: native confirm() freezes the chrome-automation
+  // harness, so the button arms on the first click and deletes on the second.
+  let confirmDelId = $state<string | null>(null);
+  let currentIsVolume = $derived(!!current && volume.some((v) => v.id === current));
+  async function deleteCurrent() {
+    if (!current || !currentIsVolume) return;
+    if (confirmDelId !== current) { confirmDelId = current; return; }
+    const id = current;
+    try {
+      const r = await fetch(`/api/primitives/profiles/delete?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (r.ok) { confirmDelId = null; await loadVolume(); newProfile(); }
+    } catch { /* offline */ }
+  }
 </script>
 
 <svelte:head><title>Profiles — CAD Train</title></svelte:head>
@@ -104,6 +119,9 @@
     </div>
     <span class="prof-count">{volume.filter((v) => v.set === set).length} custom · {Object.values(PROFILE_REGISTRY).filter((d) => d.set === set).length} built-in</span>
     <button type="button" class="prof-new" onclick={newProfile}>+ New profile</button>
+    {#if currentIsVolume}
+      <button type="button" class="prof-del" class:armed={confirmDelId === current} onclick={deleteCurrent}>{confirmDelId === current ? `Confirm delete “${meta.label || current}”` : '🗑 Delete'}</button>
+    {/if}
   </header>
 
   <div class="prof-body">
@@ -150,6 +168,8 @@
   .prof-count { font: 11px Arial; color: #999; }
   .prof-new { margin-left: auto; border: 1px solid #a8302a; background: #c4392f; color: #fff; border-radius: 6px; padding: 5px 14px; font: 600 12px Arial; cursor: pointer; }
   .prof-new:hover { background: #b23329; }
+  .prof-del { border: 1px solid #d9534f; background: #fff; color: #c4392f; border-radius: 6px; padding: 5px 12px; font: 600 12px Arial; cursor: pointer; }
+  .prof-del:hover, .prof-del.armed { background: #c4392f; color: #fff; }
   /* body: rail + main */
   .prof-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 240px 1fr; }
   .prof-rail { border-right: 1px solid #e6e6ec; background: #fcfcfd; padding: 10px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
