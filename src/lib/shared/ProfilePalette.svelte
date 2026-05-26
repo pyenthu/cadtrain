@@ -67,24 +67,32 @@
   });
 
   // Polygon → fitted SVG path in a `size`×`size` box. MUST match
-  // PrimitiveView.pathFor(). REVOLVE halves are MIRRORED across the r=0 axis
-  // (plot +r and −r, r=0 anchored at the icon's horizontal center) so a tube
-  // shows its hollow ID gap and a solid fills the bar. Z-DOWN: z increases
-  // downward (part top = lower z) → NO vertical flip, so the profile is
-  // right-side-up (top at the icon top). Cartesian keeps the +y-up screen flip.
+  // PrimitiveView.pathFor(). REVOLVE half-sections (r, z) are MIRRORED across
+  // the r=0 axis (r=0 anchored at the icon's horizontal center) and emitted as
+  // TWO independent closed subpaths — one per half — so a tube (inner edge at
+  // r>0) keeps a HOLLOW bore between the halves instead of fusing into a solid
+  // bar. A solid (the half reaches r=0) has the two halves meet on the axis and
+  // reads as filled. Y is flipped (+y/-z up the screen) so the profile is
+  // right-side-up. Cartesian: single path, +y-up flip.
   function thumb(pts: Pt[], revolve: boolean): { d: string; axis: number | null } {
     if (!pts.length) return { d: '', axis: null };
-    let poly = pts;
-    if (revolve) poly = [...pts, ...[...pts].reverse().map((p) => [-p[0], p[1]] as Pt)];
-    const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+    const right = pts, left = pts.map((p) => [-p[0], p[1]] as Pt);
+    const all = revolve ? [...right, ...left] : pts;
+    const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
     const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
     const w = (maxX - minX) || 1, h = (maxY - minY) || 1, size = 40, pad = 4;
     const s = (size - 2 * pad) / Math.max(w, h);
     const ox = pad + (size - 2 * pad - w * s) / 2, oy = pad + (size - 2 * pad - h * s) / 2;
     const sx = (x: number) => ox + (x - minX) * s;
-    // Z-down (revolve): no flip. Cartesian: flip y so +y points up on screen.
-    const sy = (y: number) => revolve ? oy + (y - minY) * s : size - (oy + (y - minY) * s);
-    const d = poly.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join(' ') + ' Z';
+    const sy = (y: number) => size - (oy + (y - minY) * s); // flip y → right-side up
+    const sub = (half: Pt[]) => half.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join(' ') + ' Z';
+    // Split into two halves ONLY when the section has a real bore (min r > 0) so
+    // a tube stays hollow; a solid (r reaches the axis) is ONE fused loop — no
+    // seam down the middle.
+    const bore = revolve && Math.min(...pts.map((p) => p[0])) > 1e-6;
+    const d = !revolve ? sub(pts)
+      : bore ? `${sub(right)} ${sub(left)}`
+      : sub([...right, ...[...left].reverse()]);
     return { d, axis: revolve ? sx(0) : null };
   }
 

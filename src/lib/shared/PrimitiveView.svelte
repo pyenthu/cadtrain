@@ -587,37 +587,37 @@
   // `size`×`size` box (with `pad` margin). MUST match ProfilePalette.thumb().
   //
   // REVOLVE (default): the points are a HALF-section in (r, z) where r is the
-  // distance from the revolve axis (r=0). To show the part's true silhouette —
-  // and the ID gap for a tube (inner edge at r_inner > 0) — we MIRROR the
-  // half-section across r=0 (plot both +r and −r) and anchor r=0 at the icon's
-  // horizontal CENTER. A solid (cylinder, r reaches 0) fills the bar; a tube
-  // (r_inner > 0) shows a hollow gap down the middle. We do NOT bbox-normalize
-  // the r-offset away: r=0 maps to center regardless of the section's r range.
-  // Z-DOWN: z increases downward (part top = lower z), so z maps top→bottom with
-  // NO vertical flip — the part is right-side-up (top at the icon top).
+  // distance from the revolve axis (r=0). We MIRROR across r=0 (anchored at the
+  // icon's horizontal CENTER) and emit TWO independent closed subpaths — one per
+  // half — so a tube (inner edge at r>0) keeps a HOLLOW bore down the middle
+  // instead of fusing into a solid bar. A solid (the half reaches r=0) has the
+  // halves meet on the axis and reads as filled. Y is flipped (+y up the screen)
+  // so the profile is right-side-up.
   //
-  // CARTESIAN (revolve=false): a centered cross-section in (x, y); keep the
-  // conventional +y-up screen flip.
+  // CARTESIAN (revolve=false): a centered cross-section in (x, y), single path.
   function pathFor(pts: [number, number][] | null | undefined, size: number, pad = 1.5, revolve = true): string {
     if (!pts || pts.length < 2) return '';
-    // Build the polygon to plot: revolve → half + mirrored(-r) half.
-    const poly: [number, number][] = revolve
-      ? [...pts, ...[...pts].reverse().map((p) => [-p[0], p[1]] as [number, number])]
-      : (pts as [number, number][]);
+    const right = pts as [number, number][];
+    const left = pts.map((p) => [-p[0], p[1]] as [number, number]);
+    const all = revolve ? [...right, ...left] : right;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const [x, y] of poly) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    for (const [x, y] of all) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
     const w = maxX - minX || 1, h = maxY - minY || 1;
     const span = size - pad * 2;
     const s = Math.min(span / w, span / h);
-    // Center the (possibly non-square) shape within the box. For revolve, the
-    // mirror makes the bbox symmetric about r=0, so centering keeps r=0 at the
-    // icon's horizontal center automatically.
+    // Center the shape; the mirror makes the revolve bbox symmetric about r=0,
+    // so centering keeps r=0 at the icon's horizontal center.
     const ox = pad + (span - w * s) / 2, oy = pad + (span - h * s) / 2;
     const tx = (x: number) => ox + (x - minX) * s;
-    // Z-DOWN (revolve): no flip → lower z (part top) at icon top.
-    // Cartesian: flip Y so +y points up on screen.
-    const ty = (y: number) => revolve ? oy + (y - minY) * s : oy + (maxY - y) * s;
-    return poly.map((p, i) => `${i === 0 ? 'M' : 'L'}${tx(p[0]).toFixed(2)},${ty(p[1]).toFixed(2)}`).join(' ') + ' Z';
+    const ty = (y: number) => oy + (maxY - y) * s; // flip Y → +y up, right-side up
+    const sub = (half: [number, number][]) =>
+      half.map((p, i) => `${i === 0 ? 'M' : 'L'}${tx(p[0]).toFixed(2)},${ty(p[1]).toFixed(2)}`).join(' ') + ' Z';
+    // Two halves only for a real bore (min r > 0) → tube stays hollow; a solid
+    // (r reaches the axis) is one fused loop with no center seam.
+    const bore = revolve && Math.min(...right.map((p) => p[0])) > 1e-6;
+    return !revolve ? sub(right)
+      : bore ? `${sub(right)} ${sub(left)}`
+      : sub([...right, ...[...left].reverse()]);
   }
   // Format a coordinate to MAX 2 decimal places (drops trailing zeros).
   function fmt2(n: number): string {
