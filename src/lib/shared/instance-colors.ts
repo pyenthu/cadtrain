@@ -55,3 +55,27 @@ export function colorForInstance(
   if (override && /^#[0-9a-fA-F]{6}$/.test(override)) return override;
   return INSTANCE_PALETTE[hashName(name) % INSTANCE_PALETTE.length];
 }
+
+/** Default INNER (cut/interior) colour — the classic cutaway grey. */
+export const DEFAULT_INNER_COLOR = '#888888';
+
+/** A part's two-colour appearance: `outer` = external skin, `inner` = the
+ *  surface revealed when the part is cut (bore wall / cross-section). */
+export interface InstanceColors { outer: string; inner: string; }
+
+const isHex = (s: unknown): s is string => typeof s === 'string' && /^#[0-9a-fA-F]{6}$/.test(s);
+
+/** Resolve {outer, inner} for an instance. `override` may be a bare hex
+ *  string (legacy — sets outer only) or a `{ outer?, inner? }` object.
+ *  outer falls back to the per-name palette; inner falls back to grey. */
+export function colorsForInstance(
+  name: string,
+  override?: string | { outer?: string; inner?: string } | undefined,
+): InstanceColors {
+  const o = typeof override === 'object' && override ? override : undefined;
+  const outerOverride = typeof override === 'string' ? override : o?.outer;
+  return {
+    outer: isHex(outerOverride) ? outerOverride : INSTANCE_PALETTE[hashName(name) % INSTANCE_PALETTE.length],
+    inner: isHex(o?.inner) ? (o!.inner as string) : DEFAULT_INNER_COLOR,
+  };
+}

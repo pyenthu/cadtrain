@@ -23,6 +23,7 @@
   import ConstructionTree from './ConstructionTree.svelte';
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
+  import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
   import ProfileFnEditor from './ProfileFnEditor.svelte';
   import { dragNumber } from './dragNumber';
   import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
@@ -306,6 +307,79 @@
   // later args' offsets stay correct.
   function spliceArg(inst: any, a: { start: number; end: number }, value: string) {
     spliceSource(inst.argsStart + a.start, inst.argsStart + a.end, ' ' + value.trim());
+  }
+
+  // ── Per-part OUTER / INNER colours (accordion-title swatches) ───────────────
+  // Stored in meta.instanceColors[name] = { outer, inner } (back-compat: a bare
+  // string = outer). The renderer (analyzeParts → builder) reads them: outer =
+  // external skin, inner = the part's cut-surface colour. Edited live by
+  // splicing the instanceColors block in editedSource → source dirty → re-bake.
+  let colorPopup = $state<{ name: string; which: 'outer' | 'inner'; x: number; y: number } | null>(null);
+
+  /** Locate the `instanceColors: { … }` block in editedSource (balanced
+   *  braces). Returns the span from the `instanceColors` key to just past its
+   *  closing `}`, plus the object-literal sub-span. null when absent. */
+  function instanceColorsSpan(): { start: number; end: number; objStart: number } | null {
+    const m = /instanceColors\s*:\s*\{/.exec(editedSource);
+    if (!m) return null;
+    const objStart = editedSource.indexOf('{', m.index);
+    let depth = 0, i = objStart;
+    for (; i < editedSource.length; i++) {
+      const c = editedSource[i];
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
+    }
+    return { start: m.index, end: i, objStart };
+  }
+  function readInstanceColors(): Record<string, { outer?: string; inner?: string }> {
+    const span = instanceColorsSpan();
+    if (!span) return {};
+    try {
+      const obj = new Function('return (' + editedSource.slice(span.objStart, span.end) + ')')();
+      const out: Record<string, { outer?: string; inner?: string }> = {};
+      for (const k of Object.keys(obj || {})) {
+        const v = obj[k];
+        out[k] = typeof v === 'string' ? { outer: v } : (v && typeof v === 'object' ? v : {});
+      }
+      return out;
+    } catch { return {}; }
+  }
+  /** Resolved {outer, inner} for a part — overrides merged over the palette. */
+  function partColors(name: string): { outer: string; inner: string } {
+    return colorsForInstance(name, readInstanceColors()[name]);
+  }
+  function serializeInstanceColors(obj: Record<string, { outer?: string; inner?: string }>): string {
+    const entries = Object.entries(obj)
+      .filter(([, v]) => v && (v.outer || v.inner))
+      .map(([k, v]) => {
+        const parts: string[] = [];
+        if (v.outer) parts.push(`outer: '${v.outer}'`);
+        if (v.inner) parts.push(`inner: '${v.inner}'`);
+        return `${k}: { ${parts.join(', ')} }`;
+      });
+    return `instanceColors: { ${entries.join(', ')} }`;
+  }
+  function setPartColor(name: string, which: 'outer' | 'inner', hex: string) {
+    const cur = readInstanceColors();
+    cur[name] = { ...(cur[name] || {}), [which]: hex };
+    const block = serializeInstanceColors(cur);
+    const span = instanceColorsSpan();
+    if (span) {
+      editedSource = editedSource.slice(0, span.start) + block + editedSource.slice(span.end);
+    } else {
+      const mm = /export\s+const\s+meta\s*=\s*\{/.exec(editedSource);
+      if (!mm) return;
+      const at = mm.index + mm[0].length;
+      editedSource = editedSource.slice(0, at) + `\n  ${block},` + editedSource.slice(at);
+    }
+  }
+  function openColorPopup(name: string, which: 'outer' | 'inner', ev: MouseEvent) {
+    colorPopup = { name, which, x: ev.clientX, y: ev.clientY };
+  }
+  function pickColor(hex: string) {
+    if (!colorPopup) return;
+    setPartColor(colorPopup.name, colorPopup.which, hex);
+    colorPopup = null;
   }
 
   // ── Profile popup for instances of a profile-bearing primitive ──────────────
@@ -1907,6 +1981,17 @@
                     <button class="pv-pin" class:pinned={pinnedParts.has(inst.name)} type="button" title={pinnedParts.has(inst.name) ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin(inst.name); }}>📌</button>
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
+                    {#if canEdit}
+                      {@const pc = partColors(inst.name)}
+                      <button class="pv-swatch" type="button" title={`Outer (skin) colour — ${pc.outer}`}
+                        style="background:{pc.outer}"
+                        onclick={(e) => { e.stopPropagation(); openColorPopup(inst.name, 'outer', e); }}
+                        aria-label={`Outer colour for ${inst.name}`}></button>
+                      <button class="pv-swatch pv-swatch-inner" type="button" title={`Inner (cut) colour — ${pc.inner}`}
+                        style="background:{pc.inner}"
+                        onclick={(e) => { e.stopPropagation(); openColorPopup(inst.name, 'inner', e); }}
+                        aria-label={`Inner colour for ${inst.name}`}></button>
+                    {/if}
                     <div class="pv-spacer"></div>
                     {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call) && partProfileFn(inst)}
                       <!-- FUNCTIONAL profile instance (r_rotate / function-first
@@ -2406,6 +2491,32 @@
     </FloatingPanel>
   {/if}
 
+  {#if colorPopup}
+    <FloatingPanel title={`${colorPopup.which === 'outer' ? 'Outer (skin)' : 'Inner (cut)'} — ${colorPopup.name}`}
+      visible={true} x={colorPopup.x} y={colorPopup.y} width="208px" onClose={() => (colorPopup = null)}>
+      <div style="display:flex; flex-direction:column; gap:8px; padding:4px;">
+        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
+          {#each INSTANCE_PALETTE as c (c)}
+            <button type="button" title={c} onclick={() => pickColor(c)}
+              style="height:22px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer;"
+              aria-label={c}></button>
+          {/each}
+        </div>
+        <label style="display:flex; align-items:center; gap:6px; font:11px Arial; color:#555;">
+          custom
+          <input type="color" oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)}
+            style="width:38px; height:24px; padding:0; border:1px solid #ccc; border-radius:4px; background:none; cursor:pointer;" />
+        </label>
+        {#if colorPopup.which === 'inner'}
+          <button class="pv-btn" type="button" onclick={() => pickColor('#888888')}>Reset to grey</button>
+        {/if}
+        <p style="font:10px Arial; color:#888; margin:0;">
+          {colorPopup.which === 'outer' ? 'External skin of this part.' : 'Shown where this part is cut (bore wall / cross-section).'} <strong>Save source</strong> to persist.
+        </p>
+      </div>
+    </FloatingPanel>
+  {/if}
+
   {#if fxEdit}
     <FloatingPanel title="ƒ function / expression" visible={true} x={fxEdit.px} y={fxEdit.py} width="300px" onClose={closeFx}>
       <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
@@ -2651,6 +2762,10 @@
   .pv-pin { border: 0; background: transparent; cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; opacity: 0.28; filter: grayscale(1); transition: opacity 0.12s; flex: 0 0 auto; }
   .pv-pin:hover { opacity: 0.7; }
   .pv-pin.pinned { opacity: 1; filter: none; }
+  /* Per-part outer/inner colour swatches in the accordion title. */
+  .pv-swatch { flex: 0 0 auto; width: 13px; height: 13px; margin-left: 4px; padding: 0; border: 1px solid rgba(0,0,0,0.35); border-radius: 3px; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4); }
+  .pv-swatch:hover { outline: 1px solid #4a78c0; outline-offset: 1px; }
+  .pv-swatch-inner { margin-left: 2px; border-radius: 50%; }
 
   /* ── Coordinates section in the profile popups ───────────────────────────── */
   .pv-coords { margin: 4px 4px 0; font: 11px Arial; color: #555; }

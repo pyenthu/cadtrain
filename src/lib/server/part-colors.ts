@@ -16,22 +16,33 @@
  */
 import { recognizeComposite } from './recognize-composite';
 import { evalMetaLiteral } from './primitives-meta';
-import { colorForInstance } from '$lib/shared/instance-colors';
+import { colorsForInstance, DEFAULT_INNER_COLOR } from '$lib/shared/instance-colors';
 import { partHashId } from '$lib/cad/part-id';
 
 export interface PartColorLUT {
-  /** hashId → '#rrggbb' (subtractive tools already remapped to body color). */
-  idToColor: Record<number, string>;
-  /** Primary body hashId (first additive part) — the color for unknown /
-   *  anonymous cut surfaces. null when no additive part was recognized. */
+  /** hashId → outer '#rrggbb' (each part's external skin). */
+  outer: Record<number, string>;
+  /** hashId → inner '#rrggbb' (the colour shown on this part's cut surfaces —
+   *  e.g. a subtractive tool's bore wall). */
+  inner: Record<number, string>;
+  /** hashIds used as subtract/intersect tools → their faces are CUT surfaces
+   *  and take the `inner` colour, not `outer`. */
+  subtractive: number[];
+  /** Primary body hashId (first additive part). null when none recognized. */
   bodyId: number | null;
-  /** Body color hex, for the unknown-id fallback. */
+  /** Primary body's inner colour — the cross-section (SECTION_ID) + unknown
+   *  cut-surface fallback. */
+  bodyInner: string;
+  /** Primary body's outer colour — the unknown additive-surface fallback. */
   bodyColor: string;
   /** True when there's a usable table → renderer colors by source. */
   active: boolean;
 }
 
-const INACTIVE: PartColorLUT = { idToColor: {}, bodyId: null, bodyColor: '#cc2222', active: false };
+const INACTIVE: PartColorLUT = {
+  outer: {}, inner: {}, subtractive: [], bodyId: null,
+  bodyInner: DEFAULT_INNER_COLOR, bodyColor: '#cc2222', active: false,
+};
 
 export function analyzeParts(source: string): PartColorLUT {
   let rec: any;
@@ -40,7 +51,7 @@ export function analyzeParts(source: string): PartColorLUT {
   const instances = (rec.instances ?? []).filter((i: any) => uses.has(i.call));
   if (!instances.length) return INACTIVE;
 
-  let instanceColors: Record<string, string> = {};
+  let instanceColors: Record<string, any> = {};
   try {
     const meta = evalMetaLiteral(source);
     if (meta?.instanceColors && typeof meta.instanceColors === 'object') instanceColors = meta.instanceColors;
@@ -48,12 +59,12 @@ export function analyzeParts(source: string): PartColorLUT {
 
   // Roles from the composition chain(s). An operand referenced by name in a
   // `.subtract(X)` / `.intersect(X)` is a tool; base + `.add(X)` are additive.
-  const subtractive = new Set<string>();
+  const subtractiveNames = new Set<string>();
   const additiveOrder: string[] = [];
   const collect = (ops: any[] | undefined) => {
     for (const o of ops ?? []) {
       if (!o?.name) continue;
-      if (o.op === 'subtract' || o.op === 'intersect') subtractive.add(o.name);
+      if (o.op === 'subtract' || o.op === 'intersect') subtractiveNames.add(o.name);
       else additiveOrder.push(o.name); // base (op null) or add
     }
   };
@@ -63,14 +74,17 @@ export function analyzeParts(source: string): PartColorLUT {
   const instNames = new Set<string>(instances.map((i: any) => i.name));
   const bodyName = additiveOrder.find((n) => instNames.has(n)) ?? instances[0].name;
   const bodyId = partHashId(bodyName);
-  const bodyColor = colorForInstance(bodyName, instanceColors[bodyName]);
+  const bodyPair = colorsForInstance(bodyName, instanceColors[bodyName]);
 
-  const idToColor: Record<number, string> = {};
+  const outer: Record<number, string> = {};
+  const inner: Record<number, string> = {};
+  const subtractive: number[] = [];
   for (const inst of instances) {
     const id = partHashId(inst.name);
-    idToColor[id] = subtractive.has(inst.name)
-      ? bodyColor // cut/bore wall reads as the body material
-      : colorForInstance(inst.name, instanceColors[inst.name]);
+    const c = colorsForInstance(inst.name, instanceColors[inst.name]);
+    outer[id] = c.outer;
+    inner[id] = c.inner;
+    if (subtractiveNames.has(inst.name)) subtractive.push(id);
   }
-  return { idToColor, bodyId, bodyColor, active: true };
+  return { outer, inner, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
 }

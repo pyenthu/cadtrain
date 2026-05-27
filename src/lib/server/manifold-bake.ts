@@ -56,8 +56,11 @@ function hexToRgba(hex: string): [number, number, number, number] {
 
 /** Per-part color table (mirrors builder.ts PartColorLUT / analyzeParts). */
 export interface PartColorLUT {
-  idToColor: Record<number, string>;
+  outer: Record<number, string>;
+  inner: Record<number, string>;
+  subtractive: number[];
   bodyId: number | null;
+  bodyInner: string;
   bodyColor: string;
   active: boolean;
 }
@@ -112,11 +115,17 @@ function manifoldToGltf(
       const [r, g, b] = hexToRgba(hex);
       return [r, g, b];
     };
-    const idRgb = new Map<number, [number, number, number]>();
-    for (const k of Object.keys(parts.idToColor)) idRgb.set(Number(k), hexRgb(parts.idToColor[Number(k)]));
-    const bodyRgb: [number, number, number] =
-      (parts.bodyId != null && idRgb.get(parts.bodyId)) || hexRgb(parts.bodyColor);
-    const sectionRgb: [number, number, number] = material ? hexRgb(material.inner.color) : [0.45, 0.45, 0.45];
+    const toRgb = (m: Record<number, string>) => {
+      const out = new Map<number, [number, number, number]>();
+      for (const k of Object.keys(m)) out.set(Number(k), hexRgb(m[Number(k)]));
+      return out;
+    };
+    const outerRgb = toRgb(parts.outer);
+    const innerRgb = toRgb(parts.inner);
+    const subtractive = new Set(parts.subtractive);
+    const bodyInnerRgb = hexRgb(parts.bodyInner);
+    const bodyOuterRgb: [number, number, number] =
+      (parts.bodyId != null && outerRgb.get(parts.bodyId)) || hexRgb(parts.bodyColor);
     const ids = triSourceIds(mesh);
     const cbPositions = new Float32Array(ntp * 9);
     const cbColors = new Float32Array(ntp * 9);
@@ -124,8 +133,9 @@ function manifoldToGltf(
     for (let i = 0; i < ntp; i++) {
       const id = ids[i];
       let rgb: [number, number, number];
-      if (coloured && id === SECTION_ID) rgb = sectionRgb;
-      else rgb = idRgb.get(id) ?? bodyRgb;
+      if (id === SECTION_ID) rgb = bodyInnerRgb;
+      else if (subtractive.has(id)) rgb = innerRgb.get(id) ?? bodyInnerRgb;
+      else rgb = outerRgb.get(id) ?? bodyOuterRgb;
       const idx = i * 9;
       for (let v = 0; v < 3; v++) {
         const vi = tris[i * 3 + v];

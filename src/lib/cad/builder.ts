@@ -13,18 +13,23 @@ export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmen
 
 /** Per-part color table (built server-side by analyzeParts). When present
  *  + active, the renderers color each triangle by its source part via the
- *  Manifold relation instead of the material/heuristic path. */
+ *  Manifold relation instead of the material/heuristic path.
+ *  outer = external skin per part; inner = the part's cut-surface color;
+ *  subtractive ids draw their faces with `inner`; SECTION_ID → bodyInner. */
 export interface PartColorLUT {
-  idToColor: Record<number, string>;
+  outer: Record<number, string>;
+  inner: Record<number, string>;
+  subtractive: number[];
   bodyId: number | null;
+  bodyInner: string;
   bodyColor: string;
   active: boolean;
 }
 
-/** hashId → [r,g,b] floats, from a PartColorLUT. */
-function buildIdRgb(parts: PartColorLUT): Map<number, [number, number, number]> {
+/** hashId → [r,g,b] floats, from a hex map. */
+function rgbMap(hexById: Record<number, string>): Map<number, [number, number, number]> {
   const m = new Map<number, [number, number, number]>();
-  for (const k of Object.keys(parts.idToColor)) m.set(Number(k), hexToRgb(parts.idToColor[Number(k)]));
+  for (const k of Object.keys(hexById)) m.set(Number(k), hexToRgb(hexById[Number(k)]));
   return m;
 }
 
@@ -672,11 +677,10 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
  * read from the Manifold relation (runOriginalID/runIndex). Shared by the
  * full + cutaway renderers' color-by-source path.
  *
- *   hashId ∈ LUT       → that part's color (subtractive parts already
- *                        remapped to the body color upstream)
- *   hashId == SECTION  → cross-section reveal (cut path only): material.inner
- *                        ?? grey. On the full path it's treated as unknown.
- *   anything else      → body color (anonymous inline tools, untagged)
+ *   id == SECTION_ID   → body inner (the half-cutaway cross-section reveal)
+ *   id ∈ subtractive   → that tool's INNER color (the bore/cut wall)
+ *   id ∈ outer         → that part's OUTER color (external skin)
+ *   anything else      → body outer (anonymous tools / untagged)
  *
  * `withNormals` is the post-calculateNormals manifold (numProp ≥ 6 carries
  * per-vertex normals at slots 3..5), so we scatter Manifold's normals into
@@ -685,8 +689,8 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
 function colorBySourceGeo(
   withNormals: any,
   parts: PartColorLUT,
-  material: RenderMaterial | undefined,
-  isCut: boolean,
+  _material: RenderMaterial | undefined,
+  _isCut: boolean,
   _maxOD: number,
 ): THREE.BufferGeometry {
   const mesh = withNormals.getMesh();
@@ -696,10 +700,12 @@ function colorBySourceGeo(
   const nt = tri.length / 3;
   const hasNrm = np >= 6;
   const ids = triSourceIds(mesh);
-  const idRgb = buildIdRgb(parts);
-  const bodyRgb: [number, number, number] =
-    (parts.bodyId != null && idRgb.get(parts.bodyId)) || hexToRgb(parts.bodyColor);
-  const sectionRgb: [number, number, number] = material ? hexToRgb(material.inner.color) : [0.45, 0.45, 0.45];
+  const outerRgb = rgbMap(parts.outer);
+  const innerRgb = rgbMap(parts.inner);
+  const subtractive = new Set(parts.subtractive);
+  const bodyInnerRgb = hexToRgb(parts.bodyInner);
+  const bodyOuterRgb: [number, number, number] =
+    (parts.bodyId != null && outerRgb.get(parts.bodyId)) || hexToRgb(parts.bodyColor);
 
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
@@ -707,8 +713,9 @@ function colorBySourceGeo(
   for (let i = 0; i < nt; i++) {
     const id = ids[i];
     let rgb: [number, number, number];
-    if (isCut && id === SECTION_ID) rgb = sectionRgb;
-    else rgb = idRgb.get(id) ?? bodyRgb;
+    if (id === SECTION_ID) rgb = bodyInnerRgb;          // cross-section reveal
+    else if (subtractive.has(id)) rgb = innerRgb.get(id) ?? bodyInnerRgb; // cut/bore wall
+    else rgb = outerRgb.get(id) ?? bodyOuterRgb;        // external skin
     const idx = i * 9;
     for (let v = 0; v < 3; v++) {
       const vi = tri[i * 3 + v];
