@@ -1965,8 +1965,9 @@
                            HERE (encapsulated with the part that uses them), not
                            only in the top Parameters panel. Shares pending/
                            applied, so edits live-rebake + mirror the top grid. -->
-                      {@const pv = canEdit ? partProfileParamsView(inst) : null}
-                      {#if pv && pv.names.length}
+                      {#if canEdit}
+                        {@const pv = partProfileParamsView(inst)}
+                        {#if pv && pv.names.length}
                         <!-- SELF-CONTAINED profile params — ALL of them, read from
                              the inline resolveProfile descriptor (NOT filtered by
                              meta.params, so a profile param that shares a top-param
@@ -1996,6 +1997,7 @@
                         <div class="pv-profile-params">
                           <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
                         </div>
+                        {/if}
                       {/if}
                       {#each inst.txs as t}
                         <div class="pv-part-tx">
