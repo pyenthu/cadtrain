@@ -69,9 +69,13 @@ function hitInDir(dir: string, id: string): { path: string; kind: PrimKind; lega
 
 /** Resolve a primitive id → its source file. Searches flat (primitives/<id>),
  *  one level (primitives/<cat>/<id>) and two (primitives/<cat>/<family>/<id>).
- *  `includeArchive: false` skips the archive subtree (active-only lookups). */
+ *  ACTIVE-ONLY by default — archive/ is a graveyard that NOTHING resolves into
+ *  unless it explicitly opts in with `includeArchive: true` (only delete +
+ *  restore do). The id is the identity; the folder is just the category, so an
+ *  archived copy must never shadow the active part of the same id (that made
+ *  saves look un-persisted on reload). */
 export async function findPrim(id: string, opts: { includeArchive?: boolean } = {}): Promise<PrimHit | null> {
-  const includeArchive = opts.includeArchive !== false;
+  const includeArchive = opts.includeArchive === true;
   const root = volumePath('primitives');
   if (!existsSync(root)) return null;
   let h = hitInDir(root, id);
