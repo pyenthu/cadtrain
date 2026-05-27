@@ -334,7 +334,7 @@
         const params = data?.params ?? {};
         const keys = Object.keys(params);
         leafMetaCache = { ...leafMetaCache, [call]: keys };
-        const idx = keys.findIndex((k) => params[k]?.type === 'polygon');
+        const idx = keys.findIndex((k) => params[k]?.type === 'polygon' || params[k]?.type === 'profile');
         if (idx >= 0) {
           const ps = params[keys[idx]];
           const yDown = !!ps.yDown;
@@ -1095,7 +1095,14 @@
   });
   function defaultArgFor(ps: any): string {
     const d = ps?.default;
-    return Array.isArray(d) ? JSON.stringify(d) : String(d ?? 0);
+    if (Array.isArray(d)) return JSON.stringify(d);
+    // A profile param's default is a { kind, params } descriptor — emit a
+    // resolveProfile(...) call, NEVER String(obj) → "[object Object]" (which
+    // produced an invalid arg and broke the recognizer/bake).
+    if (d && typeof d === 'object') {
+      return 'kind' in d ? `resolveProfile(${JSON.stringify(d)})` : JSON.stringify(d);
+    }
+    return String(d ?? 0);
   }
   function uniqueInstName(childId: string): string {
     // FORBID names that would shadow an injected function param: the instance
@@ -1347,20 +1354,31 @@
       // named local makes partProfileKind non-null → the profile selector +
       // populated params show in the part's accordion. The resolveProfile local
       // stays a hidden `local` (not its own instance / not in meta.uses).
-      if (child === 'r_rotate') {
-        const inst = uniqueInstName('r_rotate');
-        // Seed from the curated cylinder revolve profile (r + len).
+      // r_revolve / r_extrude are the FUNCTION-FIRST stdlib engines: their
+      // profile arg is resolved from a FUNCTION, not raw vertices. Scaffold a
+      // named `*_profile` local (`const X_profile = resolveProfile({kind})`) and
+      // pass it as the engine's first arg, length dial inline. The named local
+      // makes partProfileKind non-null → the profile SELECTOR shows in the part's
+      // accordion HEAD. NO meta.params edit — the profile + its params live ON
+      // the part, not the top Parameters section (the user lifts later by choice).
+      // Self-contained, so a second revolve/extrude never collides.
+      if (child === 'r_revolve' || child === 'r_extrude') {
+        const inst = uniqueInstName(child);
+        const isRev = child === 'r_revolve';
+        const profDesc = isRev
+          ? `resolveProfile({ kind: 'cylinder', params: { r: 1.2, len: 3 } })`
+          : `resolveProfile({ kind: 'ngon', params: { n: 6, r: 1.5 } })`;
+        const dial = isRev ? '96' : '3';
         const decl =
-          `const ${inst}_profile = resolveProfile({ kind: 'cylinder', params: { r: 1.2, len: 3 } });\n  `
-          + `const ${inst} = r_rotate(${inst}_profile, 96);\n  `;
+          `const ${inst}_profile = ${profDesc};\n  `
+          + `const ${inst} = ${child}(${inst}_profile, ${dial});\n  `;
         const edits = [
           { s: r.compStart, e: r.compEnd, text: src.slice(r.compStart, r.compEnd) + `.add(${inst})` },
           { s: r.returnStart, e: r.returnStart, text: decl },
         ];
-        // Register r_rotate (NOT r_revolve) in meta.uses so it builds + is
-        // classified as a part with a profile selector.
-        if (r.usesInsertPos >= 0 && !(r.uses ?? []).includes('r_rotate')) {
-          edits.push({ s: r.usesInsertPos, e: r.usesInsertPos, text: (r.usesHasElems ? ', ' : '') + `'r_rotate'` });
+        // meta.uses needs the engine ONCE (injected once, callable N times).
+        if (r.usesInsertPos >= 0 && !(r.uses ?? []).includes(child)) {
+          edits.push({ s: r.usesInsertPos, e: r.usesInsertPos, text: (r.usesHasElems ? ', ' : '') + `'${child}'` });
         }
         edits.sort((a, b) => b.s - a.s);
         let out = src;
@@ -1369,9 +1387,8 @@
         loadPick = '';
         return;
       }
-      // (r_revolve — the low-level raw-points engine — falls through to the
-      // generic add path: `const r_revolve_N = r_revolve([[r,z],…], 96)` with
-      // its polygon default inlined, editable via the vertex profile popup.)
+      // Other r_* leaves (r_cylinder, r_tube, r_cube, …) → generic add path:
+      // `const X = r_*(<defaults>)`, mirroring the leaf's params as call args.
 
       const inst = uniqueInstName(child);
       const argList = Object.values(childParams).map(defaultArgFor).join(', ');
@@ -1766,13 +1783,17 @@
               </div>
             {/if}
 
-            {#if recogStatus === 'loading'}
+            {#if recogStatus === 'loading' && !recognized}
               <div class="pv-parts-empty">recognizing…</div>
-            {:else if recogError}
+            {:else if recogError && !recognized}
               <div class="pv-parts-err">{recogError}</div>
             {:else if parts.length === 0}
+              {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source has an error: {recogError}</span></div>{/if}
               <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
             {:else}
+              <!-- Non-fatal recognize error: keep the last-good accordion, show
+                   the error as a banner (don't nuke the parts list). -->
+              {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source error — parts below reflect the last valid version: {recogError}</span></div>{/if}
               {#each resolvedParts as inst (inst.name)}
                 {@const open = isOpen(inst.name)}
                 <div class="pg-acc-wrap instance">

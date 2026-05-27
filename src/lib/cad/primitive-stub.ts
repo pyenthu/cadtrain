@@ -199,32 +199,32 @@ export function ${id}(${sig}) {
  *  point for "begin from a revolve/extrude, then add r_* parts." */
 export function buildFnProfileStub(id: string, base: 'r_revolve' | 'r_extrude'): string {
   const isRev = base === 'r_revolve';
-  const profDefault = isRev
-    ? `{ kind: 'cylinder', params: { r: 1.2, len: 3 } }`
-    : `{ kind: 'ngon', params: { n: 6, r: 1.5 } }`;
-  const profFlags = isRev ? `yDown: true, hLabel: 'r →', vLabel: 'z ↓', ` : ``;
-  const dial = isRev ? 'segments' : 'height';
-  const dialParam = isRev
-    ? `segments: { label: 'segments', min: 8, max: 256, step: 1, default: 96 },`
-    : `height: { label: 'height', min: 0.1, max: 40, step: 0.1, default: 3 },`;
+  const profDesc = isRev
+    ? `resolveProfile({ kind: 'cylinder', params: { r: 1.2, len: 3 } })`
+    : `resolveProfile({ kind: 'ngon', params: { n: 6, r: 1.5 } })`;
+  const dial = isRev ? '96' : '3';
   const word = isRev ? 'revolved' : 'extruded';
+  // SELF-CONTAINED: the profile is an inline resolveProfile() on the instance
+  // (NOT a meta.params param), so the profile + its params live ON THE PART
+  // (selector in the accordion head + ✎ function editor) — nothing is auto-added
+  // to the top Parameters section. The named `${id}_profile` local makes the
+  // part-row recognizer show the profile selector. Empty meta.params by design.
   return `/**
- * ${id} — function-first ${word} part built on ${base} (stdlib). Pick a profile
- * FUNCTION with the selector; its params lift onto the part. Add more r_* parts
- * (.add / .subtract / .intersect + mv / rot) to build a fuller shape.
+ * ${id} — function-first ${word} part built on ${base} (stdlib). The profile is
+ * on the part: pick a profile FUNCTION with the selector in this part's row.
+ * Add more r_* parts (.add / .subtract / .intersect + mv / rot) for a fuller
+ * shape, and lift any param to the Parameters section when you want to drive it.
  */
 export const meta = {
   id: '${id}', name: '${id}',
   description: 'Function-first ${word} part — composed from ${base}.',
   tags: ['new', '${isRev ? 'revolve' : 'extrude'}'],
   uses: ['${base}'],
-  params: {
-    profile: { label: 'profile', type: 'profile', ${profFlags}default: ${profDefault} },
-    ${dialParam}
-  },
+  params: {},
 };
-export function ${id}(profile, ${dial}) {
-  const body = ${base}(profile, ${dial});
+export function ${id}() {
+  const ${id}_profile = ${profDesc};
+  const body = ${base}(${id}_profile, ${dial});
   return body;
 }
 `;
