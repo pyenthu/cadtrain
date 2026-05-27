@@ -164,7 +164,19 @@ function loadProfileBuild(id: string, fetchFn: typeof fetch): Promise<ProfBuild 
       const r = await fetchFn(`/api/primitives/profiles/source?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
       if (!r.ok) return null;
       const d = await r.json();
-      return typeof d?.source === 'string' && d.source ? compileProfileBuild(d.source) : null;
+      if (typeof d?.source !== 'string' || !d.source) return null;
+      const build = compileProfileBuild(d.source);
+      // Merge the profile's OWN param defaults (d.params — the schema returned
+      // alongside the build-only source) UNDER the caller's params, mirroring the
+      // curated resolveProfile (`build({ ...defaultsFor(def), ...d.params })`).
+      // Without this, a part's `resolveProfile({kind})` with partial / no params
+      // fed the volume build an empty object → undefined params → NaN coords →
+      // "Not manifold". Only bit VOLUME profiles (curated already merged);
+      // surfaced by the self-contained inline-profile parts (minimal params).
+      const defaults: Record<string, number> = {};
+      const ps = d.params && typeof d.params === 'object' ? d.params : {};
+      for (const k of Object.keys(ps)) { const dv = ps[k]?.default; if (typeof dv === 'number') defaults[k] = dv; }
+      return (params?: Record<string, number>) => build({ ...defaults, ...(params || {}) });
     } catch { return null; }
   })().catch(() => null);
   profFnCache.set(id, { p, ts: Date.now() });

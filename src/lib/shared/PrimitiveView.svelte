@@ -974,26 +974,19 @@
     await loadVolProfiles();
     const oldKind = partProfileKind(inst);
     if (!oldKind || oldKind === newKind) { profileSwap = null; return; }
-    const schema = profileSchemaForKind(newKind);
-    if (!schema || !Object.keys(schema).length) { profileEditNote = `profile "${newKind}" has no params to lift`; return; }
-    const idM = /export\s+function\s+(\w+)\s*\(/.exec(editedSource);
-    // The revolve engine the body calls — keep it on a full re-lift so an
-    // r_rotate part stays r_rotate (and r_revolve stays r_revolve).
-    const engine: 'r_revolve' | 'r_rotate' = /\br_rotate\s*\(/.test(editedSource) ? 'r_rotate' : 'r_revolve';
-    const pristine = parts.length === 1 && idM && /\bresolveProfile\s*\(/.test(editedSource) && /\br_(revolve|rotate)\s*\(/.test(editedSource);
-    if (pristine) {
-      editedSource = regenRevolveSource(idM![1], newKind, schema, engine);
-      // Reset param state to the NEW profile's defaults so the live bake doesn't
-      // feed the OLD params (r,len) into the new signature (bore,wall,…) — that
-      // mismatch was the "Non-finite vertex" / Bake 400 + vanished params.
-      const defs: Record<string, number> = {};
-      for (const [k, s] of Object.entries(schema)) defs[k] = typeof (s as any)?.default === 'number' ? (s as any).default : 0;
-      applied = defs; pending = {};
-    } else {
-      const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
-      if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + oldKind.length, newKind); }
-    }
+    // Repoint the part's inline resolveProfile({kind}) to the new kind IN PLACE
+    // — keep the part SELF-CONTAINED (no meta.params lift, no whole-source regen).
+    // The old regen path rebuilt the function signature (bore, wall, …) while the
+    // appliedArgs feeding the bake stayed on the load-time paramSchema → mismatch
+    // → the swap "didn't re-render". A kind-string splice keeps source + args in
+    // sync (and re-fires the canvas bake); resolveProfile fills the new kind's
+    // params from its defaults, so the mesh re-bakes correctly. Refine the new
+    // kind's params via the ✎ function editor. (Same pattern as swapEditorProfile
+    // / onFnSaved.)
+    const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
+    if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + oldKind.length, newKind); }
+    else { profileEditNote = `Couldn't locate the '${oldKind}' profile to swap.`; }
     profileSwap = null;
   }
   function leafKindOptions(yd: boolean) {
