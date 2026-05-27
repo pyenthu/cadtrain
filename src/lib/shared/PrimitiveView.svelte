@@ -949,39 +949,56 @@
     );
     return loc ? { argsText: loc.argsText as string, start: loc.argsStart as number, end: loc.argsEnd as number } : null;
   }
-  /** Parse `{ kind:'X', params:{ k: n, … } }` → kind + literal numeric params. */
-  function parseDescriptor(argsText: string): { kind: string | null; params: Record<string, number> } {
-    const km = /\bkind\s*:\s*['"]([^'"]+)['"]/.exec(argsText);
-    const params: Record<string, number> = {};
-    const pm = /\bparams\s*:\s*\{([^}]*)\}/.exec(argsText);
-    if (pm) for (const m of pm[1].matchAll(/([a-zA-Z_$][\w$]*)\s*:\s*(-?\d*\.?\d+)/g)) params[m[1]] = Number(m[2]);
-    return { kind: km ? km[1] : null, params };
+  /** Parse `{ kind:'X', params:{ k: <raw>, … } }` → kind + RAW value text per
+   *  param (a number OR an expression like `od/2`). Uses splitTopLevelArgs so
+   *  commas inside `Math.max(a, b)` etc. don't break the split. */
+  function parseDescriptor(argsText: string): { kind: string | null; raw: Record<string, string> } {
+    const inner = argsText.trim().replace(/^\{/, '').replace(/\}$/, '');
+    const raw: Record<string, string> = {};
+    let kind: string | null = null;
+    for (const seg of splitTopLevelArgs(inner)) {
+      const t = seg.text.trim(); const ci = t.indexOf(':');
+      if (ci < 0) continue;
+      const key = t.slice(0, ci).trim(); const val = t.slice(ci + 1).trim();
+      if (key === 'kind') { const km = /['"]([^'"]+)['"]/.exec(val); kind = km ? km[1] : null; }
+      else if (key === 'params') {
+        const pinner = val.trim().replace(/^\{/, '').replace(/\}$/, '');
+        for (const ps of splitTopLevelArgs(pinner)) {
+          const pt = ps.text.trim(); const pci = pt.indexOf(':');
+          if (pci > 0) raw[pt.slice(0, pci).trim()] = pt.slice(pci + 1).trim();
+        }
+      }
+    }
+    return { kind, raw };
   }
-  /** Render model for the part-row profile params (kind schema + current vals). */
-  function partProfileParamsView(inst: any): { kind: string; names: string[]; schema: Record<string, any>; values: Record<string, number> } | null {
+  /** Render model for the part-row profile params: kind schema + RAW value text
+   *  per param (number or expression), filled from the descriptor or defaults. */
+  function partProfileParamsView(inst: any): { kind: string; names: string[]; schema: Record<string, any>; raw: Record<string, string> } | null {
     const loc = partProfileLoc(inst);
     if (!loc) return null;
-    const { kind, params } = parseDescriptor(loc.argsText);
+    const { kind, raw } = parseDescriptor(loc.argsText);
     if (!kind) return null;
     const schema = profileSchemaForKind(kind);
     if (!schema || !Object.keys(schema).length) return null;
     const names = Object.keys(schema);
-    const values: Record<string, number> = {};
-    for (const n of names) values[n] = typeof params[n] === 'number' ? params[n] : (typeof (schema[n] as any)?.default === 'number' ? (schema[n] as any).default : 0);
-    return { kind, names, schema, values };
+    const out: Record<string, string> = {};
+    for (const n of names) out[n] = (raw[n] ?? '').trim() || String((schema[n] as any)?.default ?? 0);
+    return { kind, names, schema, raw: out };
   }
-  /** Rebuild `{ kind, params:{…} }` from `values` (schema order) + splice it. */
-  function applyPartProfile(inst: any, kind: string, values: Record<string, number>, schema: Record<string, any>): void {
+  /** Rebuild `{ kind, params:{…} }` from RAW value texts (schema order) + splice.
+   *  Values go in AS-IS, so a literal stays a number and an expression (`od/2`,
+   *  referencing the part's meta.params) is preserved + evaluated in scope. */
+  function applyPartProfileRaw(inst: any, kind: string, raw: Record<string, string>, schema: Record<string, any>): void {
     const loc = partProfileLoc(inst);
     if (!loc) return;
-    const body = Object.keys(schema).map((n) => `${n}: ${typeof values[n] === 'number' ? values[n] : ((schema[n] as any)?.default ?? 0)}`).join(', ');
+    const body = Object.keys(schema).map((n) => `${n}: ${(raw[n] ?? '').trim() || String((schema[n] as any)?.default ?? 0)}`).join(', ');
     spliceSource(loc.start, loc.end, `{ kind: '${kind}', params: { ${body} } }`);
   }
-  /** Commit one inline-descriptor profile param (Enter in the part row). */
-  function setPartProfileParam(inst: any, key: string, val: number): void {
+  /** Commit one inline-descriptor profile param (value OR expression). */
+  function setPartProfileParamRaw(inst: any, key: string, text: string): void {
     const v = partProfileParamsView(inst);
-    if (!v || !Number.isFinite(val)) return;
-    applyPartProfile(inst, v.kind, { ...v.values, [key]: val }, v.schema);
+    if (!v) return;
+    applyPartProfileRaw(inst, v.kind, { ...v.raw, [key]: text }, v.schema);
   }
 
   // ── Searchable VISUAL profile picker (change the profile a revolve part uses) ─
@@ -1039,9 +1056,9 @@
       // Stays self-contained (no meta.params lift, no whole-source regen — that
       // desynced appliedArgs and "didn't re-render"); the source change re-fires
       // the canvas bake, and the new kind's params now show in the part row.
-      const defaults: Record<string, number> = {};
-      for (const n of Object.keys(schema)) defaults[n] = typeof (schema[n] as any)?.default === 'number' ? (schema[n] as any).default : 0;
-      applyPartProfile(inst, newKind, defaults, schema);
+      const defaults: Record<string, string> = {};
+      for (const n of Object.keys(schema)) defaults[n] = String(typeof (schema[n] as any)?.default === 'number' ? (schema[n] as any).default : 0);
+      applyPartProfileRaw(inst, newKind, defaults, schema);
     } else {
       // Fallback (inline / unlocatable descriptor): repoint just the kind string.
       const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1334,15 +1351,27 @@
   // Edit an instance arg as an expression: bare param names + Math.* + arithmetic.
   // Param refs resolve at build (params are in the composite's function scope).
   // Cross-instance <INST>.<arg> refs are a later phase (need expandInstancePropRefs).
-  let fxEdit = $state<{ inst: any; a: any; raw: string; px: number; py: number } | null>(null);
+  let fxEdit = $state<{ inst: any; a: any; raw: string; px: number; py: number; pp?: { inst: any; key: string } } | null>(null);
   let fxParams = $derived(paramOrder.filter((k) => effectiveSchema[k]?.type !== 'polygon'));
   function openFx(inst: any, a: any, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     fxEdit = { inst, a, raw: a.text.trim(), px: Math.max(8, Math.min(r.left - 210, window.innerWidth - 320)), py: Math.min(r.bottom + 6, window.innerHeight - 220) };
   }
+  // ƒ on a self-contained profile param → same popup, but Apply rebuilds the
+  // descriptor (link to the part's params via fxParams · Math.*).
+  function openProfileFx(inst: any, key: string, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const v = partProfileParamsView(inst);
+    fxEdit = { inst, a: null, raw: (v?.raw[key] ?? '').trim(), pp: { inst, key }, px: Math.max(8, Math.min(r.left - 210, window.innerWidth - 320)), py: Math.min(r.bottom + 6, window.innerHeight - 220) };
+  }
   function closeFx() { fxEdit = null; }
   function fxAppend(tok: string) { if (fxEdit) fxEdit = { ...fxEdit, raw: fxEdit.raw + tok }; }
-  function applyFx() { if (!fxEdit) return; spliceArg(fxEdit.inst, fxEdit.a, fxEdit.raw); closeFx(); }
+  function applyFx() {
+    if (!fxEdit) return;
+    if (fxEdit.pp) setPartProfileParamRaw(fxEdit.pp.inst, fxEdit.pp.key, fxEdit.raw);
+    else spliceArg(fxEdit.inst, fxEdit.a, fxEdit.raw);
+    closeFx();
+  }
 
   // ── Warp at end (construction-tree Slice 0) ─────────────────────────────
   // Wrap the WHOLE composition in warpSpline(comp, path, {refine}) — bends the
@@ -1932,17 +1961,20 @@
                              Parameters panel). -->
                         {@const pv = partProfileParamsView(inst)}
                         {#if pv && pv.names.length}
-                          <div class="pv-profile-params" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:4px 8px;">
+                          <div class="pv-profile-params" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:4px 8px;">
                             {#each pv.names as pn (pn)}
+                              {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(pv.raw[pn])}
                               <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={(pv.schema[pn]?.label ?? pn) + (pv.schema[pn]?.unit ? ` (${pv.schema[pn].unit})` : '')}>{pv.schema[pn]?.label ?? pn}</span>
+                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pv.schema[pn]?.label ?? pn}>{pv.schema[pn]?.label ?? pn}</span>
                                 <input
-                                  value={pv.values[pn]}
+                                  value={pv.raw[pn]}
                                   spellcheck="false"
-                                  title="number — Enter to commit"
-                                  onkeydown={(e) => { if (e.key === 'Enter') setPartProfileParam(inst, pn, parseFloat((e.currentTarget as HTMLInputElement).value)); }}
-                                  style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid #d8d8e0; border-radius:4px; background:#fff;"
+                                  title={isLit ? 'number — Enter to commit' : 'expression (param names · Math.*) — Enter to commit'}
+                                  onkeydown={(e) => { if (e.key === 'Enter') setPartProfileParamRaw(inst, pn, (e.currentTarget as HTMLInputElement).value); }}
+                                  style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
                                 />
+                                {#if pv.schema[pn]?.unit}<span style="font:10px Arial; color:#999; flex:0 0 auto;">{pv.schema[pn].unit}</span>{/if}
+                                <button type="button" title="Edit as a function / expression — link to params · Math.*" onclick={(e) => openProfileFx(inst, pn, e)} style="border:none; background:transparent; cursor:pointer; font:600 13px Arial; color:{isLit ? '#bbb' : '#2266cc'}; padding:0 2px; line-height:1;">ƒ</button>
                               </div>
                             {/each}
                           </div>
