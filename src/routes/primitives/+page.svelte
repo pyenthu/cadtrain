@@ -294,6 +294,38 @@
     createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
   }
   function closeCreate() { createPanel = null; }
+
+  // ── Move-to-folder popup (FloatingPanel) ──────────────────────────────────
+  // A part's on-volume folder IS its sidebar group (location = category,
+  // Rule 16), so moving the file regroups it. Open a folder picker anchored to
+  // the row's 📁 button; POST /api/primitives/move; refresh.
+  let movePanel = $state<{ id: string; from: string; x: number; y: number } | null>(null);
+  let moveBusy = $state(false);
+  let moveTargets = $derived.by(() => {
+    const all = [
+      { to: 'basic', label: 'Basic' },
+      ...completionFamilies.map((f) => ({ to: `completions/${f.id}`, label: `Completions / ${f.label}` })),
+    ];
+    return movePanel ? all.filter((t) => t.to !== movePanel!.from) : all;
+  });
+  function openMove(id: string, from: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    movePanel = { id, from, x: Math.min(r.right + 6, window.innerWidth - 240), y: Math.min(r.top, window.innerHeight - 320) };
+  }
+  function closeMove() { movePanel = null; }
+  async function moveTo(to: string) {
+    if (!movePanel || moveBusy) return;
+    const id = movePanel.id;
+    moveBusy = true;
+    try {
+      const r = await fetch(`/api/primitives/move?id=${encodeURIComponent(id)}&to=${encodeURIComponent(to)}`, { method: 'POST' });
+      if (!r.ok) { status = `Move failed: ${await r.text()}`; return; }
+      status = `Moved "${id}" → ${to}.`;
+      closeMove();
+      await refreshList();
+    } finally { moveBusy = false; }
+  }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
     // Stdlib function-first bases get a profile-selector wrapper; other r_*
@@ -446,6 +478,13 @@
   </svg>
 {/snippet}
 
+<!-- Row action: file this part into another folder (opens the folder picker). -->
+{#snippet moveBtn(eid: string, from: string)}
+  <button class="prim-move" type="button" title="Move to another folder" aria-label="Move to folder" onclick={(ev) => openMove(eid, from, ev)}>
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/></svg>
+  </button>
+{/snippet}
+
 <div class="prim-page" class:rail-collapsed={railCollapsed} class:rail-resizing={railResizing}
   style={railCollapsed ? '' : `grid-template-columns: ${railWidth}px 1fr;`}>
   {#if !railCollapsed}
@@ -475,6 +514,7 @@
               <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
             </button>
             <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+            {@render moveBtn(e.id, '')}
             {#if e.editable}
               <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
             {/if}
@@ -533,6 +573,7 @@
                 <span class="prim-tag vol">vol</span>
               </button>
               <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+              {@render moveBtn(e.id, 'basic')}
               {#if e.editable}
                 <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
               {/if}
@@ -578,6 +619,7 @@
                         <span class="prim-tag vol">vol</span>
                       </button>
                       <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                      {@render moveBtn(e.id, `completions/${fam.id}`)}
                       {#if e.editable}
                         <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
                       {/if}
@@ -707,6 +749,20 @@
   </FloatingPanel>
 {/if}
 
+{#if movePanel}
+  <FloatingPanel title={`Move "${movePanel.id}" to…`} visible={true} x={movePanel.x} y={movePanel.y} width="220px" maxHeight="60vh" onClose={closeMove}>
+    <div class="prim-move-menu">
+      {#each moveTargets as t (t.to)}
+        <button class="prim-move-opt" type="button" disabled={moveBusy} onclick={() => moveTo(t.to)}>
+          {@render folderIcon(false)}
+          <span>{t.label}</span>
+        </button>
+      {/each}
+      {#if moveTargets.length === 0}<div class="prim-create-empty">nowhere else to move it</div>{/if}
+    </div>
+  </FloatingPanel>
+{/if}
+
 <style>
   .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; position: relative; }
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
@@ -738,6 +794,15 @@
   .prim-trash:hover { color: #cc2222; background: #fff; }
   .prim-dup { background: transparent; border: 0; padding: 2px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
   .prim-dup:hover { color: #2266cc; background: #fff; }
+  .prim-move { background: transparent; border: 0; padding: 2px 5px; color: #aaa; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; }
+  .prim-move svg { width: 13px; height: 13px; }
+  .prim-move:hover { color: #e0a93b; background: #fff; }
+  /* Move-to-folder picker menu (FloatingPanel body). */
+  .prim-move-menu { display: flex; flex-direction: column; gap: 2px; padding: 2px; }
+  .prim-move-opt { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 6px 8px; background: transparent; border: 0; border-radius: 4px; cursor: pointer; font: 600 12px Arial; color: #333; }
+  .prim-move-opt svg { width: 14px; height: 14px; color: #e0a93b; flex: 0 0 auto; }
+  .prim-move-opt:hover { background: #f0f4fb; color: #1a4fa0; }
+  .prim-move-opt:disabled { opacity: 0.5; cursor: default; }
 
   .prim-tests { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
   .prim-empty { padding: 1px 8px 3px; font: italic 11px Arial; color: #bbb; }
