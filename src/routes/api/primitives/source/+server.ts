@@ -65,7 +65,13 @@ export const GET = async ({ url }) => {
   // Volume next — a volume primitive with the same id SHADOWS the bundle.
   // findPrim resolves the new flat <id>.prim.ts/.asm.ts (and the legacy
   // <id>/source.ts folder, until migrated) anywhere in the category tree.
-  const hit = await findPrim(name);
+  // ACTIVE-FIRST: prefer basic/completions/flat over archive/ — an ARCHIVED
+  // copy must NOT shadow the active part of the same id. Save writes
+  // active-only (includeArchive:false); if load resolved the archived copy
+  // instead (delete-then-recreate leaves both), every edit looked un-persisted
+  // (Save → basic/, reload → archive/ stale copy). Fall back to archive so an
+  // archived-only part still loads (for viewing).
+  const hit = (await findPrim(name, { includeArchive: false })) ?? (await findPrim(name, { includeArchive: true }));
   if (hit) {
     const src = await readFile(hit.path, 'utf8');
     // Return the extracted meta too — the list is now a cheap directory
