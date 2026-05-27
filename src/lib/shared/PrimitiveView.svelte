@@ -2408,15 +2408,15 @@
   {#if fxEdit}
     <FloatingPanel title="ƒ function / expression" visible={true} x={fxEdit.px} y={fxEdit.py} width="300px" onClose={closeFx}>
       <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
-        <input bind:value={fxEdit.raw} spellcheck="false" placeholder="e.g. boreR * 2"
+        <input bind:value={fxEdit.raw} spellcheck="false" placeholder="e.g. p.od / 2"
           onkeydown={(e) => { if (e.key === 'Enter') applyFx(); }}
           style="font:11px ui-monospace, monospace; padding:4px 6px; border:1px solid #d4e1f5; border-radius:4px;" />
         {#if fxParams.length}
-          <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;"><span style="font:10px Arial; color:#888;">params:</span>
-            {#each fxParams as p (p)}<button type="button" onclick={() => fxAppend(p)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #d4e1f5; border-radius:3px; background:#eef3fb; cursor:pointer;">{p}</button>{/each}
+          <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;"><span style="font:10px Arial; color:#888;">link a param:</span>
+            {#each fxParams as pn (pn)}<button type="button" title={`insert p.${pn}`} onclick={() => fxAppend('p.' + pn)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #d4e1f5; border-radius:3px; background:#eef3fb; cursor:pointer;">p.{pn}</button>{/each}
           </div>
         {:else}
-          <div style="font:10px Arial; color:#888;">No params yet — add one with <strong>＋ param</strong> to reference it here.</div>
+          <div style="font:10px Arial; color:#888;">No params yet — add one with <strong>＋ param</strong> at the top, then link it here as <code>p.&lt;name&gt;</code>.</div>
         {/if}
         <div style="display:flex; flex-wrap:wrap; gap:4px;">
           {#each ['+', '-', '*', '/', '(', ')', 'Math.PI'] as t (t)}<button type="button" onclick={() => fxAppend(t)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #ddd; border-radius:3px; background:#fafafa; cursor:pointer;">{t}</button>{/each}

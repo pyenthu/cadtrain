@@ -101,6 +101,18 @@ export async function buildPrimitiveGeom(
       injectNames[i] = alias;
     }
   });
+  // Expose the part's params as `p.<name>` inside the geom function so a profile
+  // or arg EXPRESSION can explicitly link to a top-level param (e.g. r: p.od).
+  // The params are the function's positional args; bundle them into a `p` object
+  // at the top of the body. Top params stay INDEPENDENT — a part links only if
+  // its expression references p.<name> (bare <name> still resolves too).
+  body = body.replace(
+    new RegExp(`function\\s+${escapeRe(name)}\\s*\\(([^)]*)\\)\\s*\\{`),
+    (full: string, params: string) => {
+      const ns = String(params).split(',').map((s) => s.trim().split(/[\s=]/)[0].trim()).filter((n) => /^[a-zA-Z_$][\w$]*$/.test(n));
+      return ns.length ? `${full} const p = { ${ns.join(', ')} };` : full;
+    },
+  );
   const wrapper = `"use strict";
     const module = { exports: {} };
     const exports = module.exports;
