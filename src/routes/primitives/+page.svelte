@@ -633,12 +633,6 @@
       <div class="prim-tabviews">
         {#each openTabs as t (t.entry.id)}
           <div class="prim-tabview" class:hidden={activeId !== t.entry.id}>
-            <div class="actions-strip">
-              <button class="prim-btn small" type="button" onclick={() => cloneEntry(t.entry)}>⎘ Duplicate</button>
-              {#if t.entry.editable}
-                <button class="prim-btn danger small" type="button" onclick={() => archiveById(t.entry.id)}>Delete</button>
-              {/if}
-            </div>
             {#if t.loading}
               <div class="prim-loading">Loading <code>{t.entry.id}</code>…</div>
             {:else}
@@ -655,6 +649,8 @@
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
                 onSaveAs={(newId, src) => saveAsEntry(t.entry.id, newId, src)}
                 onReloadSource={() => loadFromServerFor(t)}
+                onDuplicate={() => cloneEntry(t.entry)}
+                onDelete={t.entry.editable ? () => archiveById(t.entry.id) : undefined}
                 catalog={[...entries, ...stdlib, ...basic, ...Object.values(completions).flat()]}
               />
             {/if}
@@ -780,7 +776,6 @@
   .status { font: 10px Arial; color: #777; padding: 6px 8px; border-top: 1px solid #eee; }
 
   .prim-main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  .actions-strip { padding: 2px 8px 0; display: flex; justify-content: flex-end; gap: 6px; }
 
   /* Tab strip — like /components: open primitives as tabs, click to focus,
      × to close. */
@@ -799,10 +794,6 @@
   .prim-loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font: 12px Arial; }
   .prim-loading code { font: 12px monospace; color: #cc2222; background: #f6f6f8; padding: 1px 6px; border-radius: 3px; margin: 0 4px; }
 
-  .prim-btn { padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 12px Arial; cursor: pointer; }
-  .prim-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .prim-btn.small { padding: 3px 8px; font-size: 11px; }
-  .prim-btn.danger { background: #fff; color: #cc2222; border-color: #cc2222; }
 
   .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: #777; }
 </style>

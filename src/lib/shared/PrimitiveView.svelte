@@ -24,6 +24,7 @@
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
   import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
+  import { tipHost } from './floating-tip';
   import ProfileFnEditor from './ProfileFnEditor.svelte';
   import { dragNumber } from './dragNumber';
   import { resolveProfile, PROFILE_REGISTRY, defaultsFor } from './profile-presets';
@@ -77,6 +78,8 @@
     onSaveDefaults,
     onSaveAs,
     onReloadSource,
+    onDuplicate,
+    onDelete,
     catalog = [],
   }: {
     id: string;
@@ -97,6 +100,12 @@
      *  (popup closes), false on rejection (collision / bad id — popup stays). */
     onSaveAs?: (newId: string, editedSource: string) => Promise<boolean> | boolean;
     onReloadSource?: () => Promise<void> | void;
+    /** Duplicate this primitive into a new volume copy (icon button in the tab
+     *  row). */
+    onDuplicate?: () => void;
+    /** Delete (archive) this primitive — omitted when not editable, so the
+     *  trash button only shows for deletable parts. */
+    onDelete?: () => void;
     /** Available primitives for the Parts-tab "Load" action (ids; params
      *  are fetched lazily on Load since the catalog list is id-only). */
     catalog?: Array<{ id: string }>;
@@ -1845,7 +1854,7 @@
   </span>
 {/snippet}
 
-<div class="pv-root">
+<div class="pv-root" use:tipHost>
   <div class="pv-split" style="--side-width: {sideWidth}px;">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pv-canvas-pane"
@@ -1875,21 +1884,45 @@
     ></div>
 
     <aside class="pv-side">
-      <div class="pv-tabs" role="tablist">
-        <button class="pv-tab" class:active={tab === 'build'} onclick={() => (tab = 'build')} type="button" role="tab">
-          <span class="pv-ic">⚙</span> Build
-          {#if paramsDirty || sourceDirty || defaultsDirty}<span class="pv-dot"></span>{/if}
+      <!-- SHARED action bar (one instance, shown on every tab — no per-pane
+           duplication): dirty status + Reload / Save defaults / Save As /
+           Save / Duplicate / Delete as icon buttons w/ tooltips. -->
+      {#snippet actBtn(p: { title: string; d: string; onClick: () => void; disabled?: boolean; danger?: boolean; dirty?: boolean })}
+        <button class="pv-act" class:danger={p.danger} class:dirty={p.dirty} type="button" title={p.title} aria-label={p.title} disabled={p.disabled} onclick={p.onClick}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={p.d} /></svg>
         </button>
-        <button class="pv-tab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab">
-          <span class="pv-ic">🛠</span> Source
-          {#if sourceDirty}<span class="pv-dot"></span>{/if}
-        </button>
-        {#if editable}
-          <button class="pv-tab pv-tab-ai" class:active={tab === 'ai'} onclick={() => (tab = 'ai')} type="button" role="tab">
-            <span class="pv-ic">✦</span> AI
-          </button>
-        {/if}
+      {/snippet}
+      <div class="pv-actionbar">
+        {#if onReloadSource}{@render actBtn({ title: 'Reload from the saved version (discard edits)', d: 'M21 12a9 9 0 1 1-2.64-6.36M21 4v4h-4', onClick: () => onReloadSource?.() })}{/if}
+        {#if onSaveDefaults}{@render actBtn({ title: 'Save current parameter values as the defaults', d: 'M12 3v12m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2', onClick: saveDefaults, disabled: !editable || saving || !defaultsDirty, dirty: defaultsDirty && !sourceDirty })}{/if}
+        {#if onSaveAs}{@render actBtn({ title: 'Save the current edits as a NEW primitive (original untouched)', d: 'M19 13V8l-5-5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h7M17 17v5m2.5-2.5h-5', onClick: openSaveAs })}{/if}
+        {#if canEdit && onSaveSource}{@render actBtn({ title: 'Save source', d: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8', onClick: saveSource, disabled: saving || !sourceDirty, dirty: sourceDirty })}{/if}
+        {#if onDuplicate}{@render actBtn({ title: 'Duplicate to a new editable volume primitive', d: 'M9 8v3a1 1 0 0 1-1 1H5m11 4h2a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v1m4 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7.13a1 1 0 0 1 .24-.65L7.7 8.35A1 1 0 0 1 8.46 8H13a1 1 0 0 1 1 1Z', onClick: () => onDuplicate?.() })}{/if}
+        {#if onDelete}{@render actBtn({ title: 'Delete (archive) this primitive', d: 'M5 7h14m-9 3v8m4-8v8M10 3h4a1 1 0 0 1 1 1v3H9V4a1 1 0 0 1 1-1ZM6 7h12v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7Z', onClick: () => onDelete?.(), danger: true })}{/if}
+        <div class="pv-spacer"></div>
+        <span class="pv-pill" class:dirty={paramsDirty || sourceDirty || defaultsDirty}>
+          {paramsDirty ? 'params pending — Enter to apply' : sourceDirty ? 'source edited' : defaultsDirty ? 'values changed' : 'in sync'}
+        </span>
       </div>
+
+      <!-- Body: VERTICAL tab rail (left) + the active pane (right). -->
+      <div class="pv-body">
+        <div class="pv-tabrail" role="tablist">
+          <button class="pv-vtab" class:active={tab === 'build'} onclick={() => (tab = 'build')} type="button" role="tab" title="Build">
+            <span class="pv-ic">⚙</span><span class="pv-vtab-lbl">Build</span>
+            {#if paramsDirty || sourceDirty || defaultsDirty}<span class="pv-dot"></span>{/if}
+          </button>
+          <button class="pv-vtab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab" title="Source">
+            <span class="pv-ic">🛠</span><span class="pv-vtab-lbl">Source</span>
+            {#if sourceDirty}<span class="pv-dot"></span>{/if}
+          </button>
+          {#if editable}
+            <button class="pv-vtab" class:active={tab === 'ai'} onclick={() => (tab = 'ai')} type="button" role="tab" title="AI">
+              <span class="pv-ic">✦</span><span class="pv-vtab-lbl">AI</span>
+            </button>
+          {/if}
+        </div>
+        <div class="pv-tabcontent">
 
       {#if tab === 'build'}
         <!-- Merged Build tab — Parameters section (ParamGrid + leaf polygon
@@ -1897,18 +1930,6 @@
              recognized part (args + transform chain + ✎ profile inside).
              Mirrors the /components inspector accordion (.pg-acc-* + .pr-card). -->
         <div class="pv-pane pv-build">
-          <div class="pv-pane-head">
-            <span class="pv-pill" class:dirty={paramsDirty || sourceDirty || defaultsDirty}>
-              {paramsDirty ? 'params pending — Enter to apply' : sourceDirty ? 'source edited' : defaultsDirty ? 'values changed — Save defaults' : 'in sync'}
-            </span>
-            <div class="pv-spacer"></div>
-            {#if onSaveDefaults}
-              <button class="pv-btn" class:primary={defaultsDirty && !sourceDirty} onclick={saveDefaults} type="button" disabled={!editable || saving || !defaultsDirty} title="Rewrite the default: literals in source.ts">Save defaults</button>
-            {/if}
-            {#if canEdit && onSaveSource}
-              <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
-            {/if}
-          </div>
 
           {#if !editable}
             <div class="pv-readonly-note">
@@ -2092,7 +2113,7 @@
                           {#each pv.names as pn (pn)}
                             {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(pv.raw[pn])}
                             <div style="display:flex; align-items:center; gap:6px;">
-                              <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pv.schema[pn]?.label ?? pn}>{pv.schema[pn]?.label ?? pn}</span>
+                              <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px ui-monospace, monospace; color:#555;" title={pv.schema[pn]?.label ?? pn}>{pn}</span>
                               <input
                                 value={pv.raw[pn]}
                                 spellcheck="false"
@@ -2219,17 +2240,6 @@
         </div>
       {:else}
         <div class="pv-pane pv-source">
-          <div class="pv-pane-head">
-            <span class="pv-pill" class:dirty={sourceDirty}>{sourceDirty ? 'modified' : 'in sync'}</span>
-            <div class="pv-spacer"></div>
-            {#if onReloadSource}<button class="pv-btn" onclick={onReloadSource} type="button">Reload</button>{/if}
-            {#if onSaveAs}
-              <button class="pv-btn" onclick={openSaveAs} type="button" title="Save the current edits as a NEW primitive (the original is untouched)">Save As…</button>
-            {/if}
-            {#if onSaveSource}
-              <button class="pv-btn primary" onclick={saveSource} type="button" disabled={!editable || saving || !sourceDirty}>Save source</button>
-            {/if}
-          </div>
           <div class="pv-editor-wrap">
             <CodeEditor
               value={editedSource}
@@ -2242,6 +2252,8 @@
           </div>
         </div>
       {/if}
+        </div>
+      </div>
     </aside>
   </div>
 
@@ -2667,10 +2679,26 @@
   .pv-resizer:hover::before, .pv-resizer.dragging::before { background: #cc2222; }
 
   .pv-side { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid #eee; border-radius: 4px; background: #fff; overflow: hidden; }
-  .pv-tabs { display: flex; border-bottom: 1px solid #eee; background: #fafafa; }
-  .pv-tab { background: transparent; border: 0; padding: 8px 14px; font: 600 12px Arial; color: #666; cursor: pointer; display: flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent; }
-  .pv-tab:hover { color: #cc2222; }
-  .pv-tab.active { color: #cc2222; border-bottom-color: #cc2222; background: #fff; }
+  /* Shared top action bar — dirty pill + icon buttons (Reload / Save defaults /
+     Save As / Save / Duplicate / Delete). Shown on every tab. */
+  .pv-actionbar { display: flex; align-items: center; gap: 3px; padding: 1px 4px; border-bottom: 1px solid #eee; background: #fafafa; flex-shrink: 0; }
+  .pv-act { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; border: 1px solid #4a4a4a; background: #fff; cursor: pointer; color: #1f1f1f; border-radius: 4px; flex: 0 0 auto; }
+  .pv-act:hover:not(:disabled) { color: #000; background: #eaeaea; border-color: #000; }
+  .pv-act:disabled { opacity: 0.3; cursor: default; }
+  .pv-act.dirty { color: #cc2222; }
+  .pv-act.danger:hover:not(:disabled) { color: #cc2222; background: #fdecec; }
+  /* Body = vertical tab rail (left) + active pane (right). */
+  .pv-body { display: flex; flex: 1; min-height: 0; }
+  .pv-tabrail { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; padding: 6px 0; border-right: 1px solid #eee; background: #fafafa; }
+  /* Vertical tab: icon on top, label rotated to read bottom→top (vertical
+     text), so the rail is a narrow side strip. */
+  .pv-vtab { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 26px; padding: 14px 1px; border: 0; background: transparent; color: #666; cursor: pointer; clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%); }
+  .pv-vtab:hover { color: #cc2222; background: #f0f0f0; }
+  .pv-vtab.active { color: #cc2222; background: #fff; }
+  .pv-vtab .pv-ic { font-size: 15px; opacity: 0.9; }
+  .pv-vtab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 11px Arial; letter-spacing: 1.5px; line-height: 1; }
+  .pv-vtab .pv-dot { position: absolute; top: 6px; right: 6px; }
+  .pv-tabcontent { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
   .pv-dot { width: 6px; height: 6px; border-radius: 50%; background: #cc2222; }
   .pv-ic { font-size: 11px; opacity: 0.85; line-height: 1; }
 
@@ -2692,7 +2720,9 @@
 
   /* ── Merged Build tab — Parameters section + per-part accordion rows ───── */
   .pv-build { padding: 0; }
-  .pv-build-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .pv-build-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+  /* Dark/white delegated tooltip (via tipHost on .pv-root). */
+  :global(.floating-tip) { position: fixed; z-index: 2000; background: #1a1a1a; color: #fff; padding: 4px 8px; border-radius: 4px; font: 500 11px/1.35 Arial; max-width: 300px; width: max-content; white-space: pre-line; box-shadow: 0 2px 8px rgba(0,0,0,0.4); pointer-events: none; }
 
   /* Accordion shell — adopted from the /components inspector (.pg-acc-*). */
   .pg-acc-wrap { border: 3px solid #d4d4dc; border-radius: 4px; background: #fff; padding: 0 3px 1px; margin: 0; }
@@ -2701,7 +2731,7 @@
   .pg-acc-wrap.instance { border-width: 2px; border-color: #f0c8c8; background: #fff8f8; border-left-width: 4px; border-left-color: var(--inst-color, #f0c8c8); }
   .pg-acc-head {
     display: flex; align-items: center; gap: 6px;
-    padding: 6px 4px; margin: 0;
+    padding: 2px 4px; margin: 0;
     background: transparent; border: 0;
     cursor: pointer;
     border-radius: 3px;
