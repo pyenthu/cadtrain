@@ -531,7 +531,6 @@
       <div class="prim-tests">
         <div class="prim-head-row">
           <button class="prim-arch-head" type="button" onclick={() => (showStdlib = !showStdlib)}>
-            <span class="prim-arch-caret">{showStdlib ? '▾' : '▸'}</span>
             {@render folderIcon(showStdlib)}
             stdlib {#if stdlib.length}({stdlib.length}){/if}
           </button>
@@ -556,7 +555,6 @@
     <div class="prim-tests">
       <div class="prim-head-row">
         <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
-          <span class="prim-arch-caret">{showBasic ? '▾' : '▸'}</span>
           {@render folderIcon(showBasic)}
           Basic {#if basic.length}({basic.length}){/if}
         </button>
@@ -589,7 +587,6 @@
          (structure only) and still show. -->
     <div class="prim-tests">
       <button class="prim-arch-head" type="button" onclick={() => (showCompletions = !showCompletions)}>
-        <span class="prim-arch-caret">{showCompletions ? '▾' : '▸'}</span>
         {@render folderIcon(showCompletions)}
         Completions {#if completionFamilies.length}({completionFamilies.length}){/if}
       </button>
@@ -602,7 +599,6 @@
             <div class="prim-fam">
               <div class="prim-head-row">
                 <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
-                  <span class="prim-arch-caret">{openFamilies[fam.id] ? '▾' : '▸'}</span>
                   {@render folderIcon(openFamilies[fam.id])}
                   {fam.label} {#if parts.length}({parts.length}){/if}
                 </button>
@@ -636,7 +632,6 @@
     {#if archived.length > 0}
       <div class="prim-archive">
         <button class="prim-arch-head" type="button" onclick={() => (showArchive = !showArchive)}>
-          <span class="prim-arch-caret">{showArchive ? '▾' : '▸'}</span>
           {@render folderIcon(showArchive)}
           Archive ({archived.length})
         </button>
@@ -810,7 +805,7 @@
   /* Completions → family sub-folders (one level deeper than the flat
      groups). Caret + label indented; parts indented again. */
   .prim-fam { margin-left: 6px; }
-  .prim-fam-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 2px 8px; font: 700 12px Arial; color: #999; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
+  .prim-fam-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 2px 8px; font: 700 13px Arial; color: #1a1a1a; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 3px; -webkit-font-smoothing: antialiased; }
   /* Folder header row: the collapse toggle (flex:1) + an "＋ add" button that
      creates a new primitive in that folder. */
   .prim-head-row { display: flex; align-items: center; }
@@ -837,14 +832,13 @@
   .prim-mini-btn { padding: 3px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: 11px Arial; cursor: pointer; }
   .prim-mini-btn.primary { background: #2266cc; border-color: #2266cc; color: #fff; }
   .prim-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .prim-fam-head:hover { background: #f0f0f0; color: #555; }
+  .prim-fam-head:hover { background: #f0f0f0; color: #000; }
   .prim-fam-empty { margin-left: 14px; }
   .prim-fam-row { margin-left: 8px; }
 
   .prim-archive { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
-  .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 700 13px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
-  .prim-arch-head:hover { background: #f0f0f0; color: #555; }
-  .prim-arch-caret { font: 10px monospace; width: 10px; }
+  .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 700 14px Arial; color: #1a1a1a; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 3px; -webkit-font-smoothing: antialiased; }
+  .prim-arch-head:hover { background: #f0f0f0; color: #000; }
   /* Folder glyph — amber so the groups read as folders (file-manager look). */
   .prim-folder-ico { width: 13px; height: 13px; flex: 0 0 auto; color: #e0a93b; display: inline-block; vertical-align: middle; }
   .prim-arch-list { padding: 1px 0; }
