@@ -170,38 +170,35 @@ export const PROFILE_REGISTRY: Record<string, ProfileDef> = {
   drill_pipe_pin: {
     id: 'drill_pipe_pin', label: 'Drill-pipe Pin (male)', set: 'revolve',
     tags: ['drill pipe', 'tool joint', 'connection', 'pin', 'male', 'rotary shouldered'],
+    // Reduced to 5 dials (2026-05-27): the upset taper + pin nose are now
+    // STANDARDIZED (fixed angles) instead of separate length/OD params. The
+    // old connLen+threadOff (which only ever summed) became one `tjLen`, and
+    // wall → pipeOD (a direct dimension). The pin nose is a 45° chamfer; the
+    // separately-drawn r_threads overlays the thread region anyway.
     params: {
-      bore:     P('bore ID', 2.75, 0.5, 16, 0.1, 'in'),
-      wall:     P('pipe wall t', 0.5, 0.1, 4, 0.05, 'in'),
-      tjOD:     P('tool-joint OD', 6.5, 1, 24, 0.1, 'in'),
-      pipeLen:  P('pipe body len', 6, 0, 40, 0.5, 'in'),
-      upsetLen: P('upset taper len', 2, 0.1, 12, 0.1, 'in'),
-      connLen:  P('connection len', 3, 0.5, 16, 0.1, 'in'),
-      threadOff: P('thread start offset', 1.5, 0, 8, 0.1, 'in'),
-      pinLen:   P('pin nose len', 5, 0.5, 12, 0.1, 'in'),
-      pinOD:    P('pin nose OD', 4.5, 0.5, 24, 0.1, 'in'),
+      bore:    P('bore ID', 2.75, 0.5, 16, 0.1, 'in'),
+      pipeOD:  P('pipe OD', 3.75, 0.5, 20, 0.1, 'in'),
+      tjOD:    P('tool-joint OD', 6.5, 1, 24, 0.1, 'in'),
+      pipeLen: P('pipe body len', 6, 0, 40, 0.5, 'in'),
+      tjLen:   P('tool-joint len', 5, 0.5, 24, 0.1, 'in'),
     },
-    // Half-section (r,z), Z-down: bore wall · pipe body OD · upset taper to the
-    // tool-joint OD · connection barrel · THREAD-START OFFSET (a straight relief
-    // at the tool-joint OD below the shoulder, before the thread) · PIN NOSE
-    // tapering from tjOD down to pinOD over pinLen · bottom face back to the bore.
-    // The threadOff pushes the pin taper/thread start down from the shoulder
-    // (matches the vendor drawing's relief); pinOD drives the nose cone.
+    // Half-section (r,z), Z-down: bore wall · pipe body OD · STD upset taper
+    // (fixed ~24° from the axis) out to the tool-joint OD · tool-joint barrel
+    // (tjLen) · STD 45° pin-nose chamfer · bottom face back to the bore.
     build: (p) => {
-      const ri = p.bore / 2, pipeRo = ri + p.wall, tjRo = p.tjOD / 2;
-      const noseRo = Math.max(ri + 0.05, Math.min(tjRo, p.pinOD / 2));
-      const z1 = p.pipeLen, z2 = z1 + p.upsetLen;
-      const zt = z2 + p.connLen + (p.threadOff ?? 0);
-      const z4 = zt + p.pinLen;
-      // Traced as a pen path — read it top→bottom down the outer contour:
+      const ri = p.bore / 2, pipeRo = p.pipeOD / 2, tjRo = p.tjOD / 2;
+      const upsetLen = Math.max(0.2, (tjRo - pipeRo) / Math.tan((24 * Math.PI) / 180));
+      const noseRo = Math.max(ri + 0.05, tjRo - 0.75); // std nose drop
+      const z1 = p.pipeLen, z2 = z1 + upsetLen, zt = z2 + p.tjLen;
+      const z4 = zt + (tjRo - noseRo); // 45° nose chamfer: axial run = radial drop
       const t = pen();
       t.mv(ri, 0);          // bore, top
       t.line(pipeRo, 0);    // → pipe OD
       t.line(pipeRo, z1);   // ↓ pipe body
-      t.line(tjRo, z2);     // ↘ upset taper out to tool-joint OD
-      t.line(tjRo, zt);     // ↓ barrel + thread-start offset
-      t.line(noseRo, z4);   // ↙ pin nose taper
-      t.line(ri, z4);       // → bottom face back to bore (closes up the bore)
+      t.line(tjRo, z2);     // ↘ std upset taper out to tool-joint OD
+      t.line(tjRo, zt);     // ↓ tool-joint barrel
+      t.line(noseRo, z4);   // ↙ std 45° pin-nose chamfer
+      t.line(ri, z4);       // → bottom face back to bore
       return t.pts();
     },
   },
