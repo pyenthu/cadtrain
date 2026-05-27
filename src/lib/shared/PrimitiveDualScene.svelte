@@ -81,11 +81,27 @@
     return () => controls.removeEventListener('change', onChange);
   });
 
+  // Z-pan: a vertical slider sets scene.zFocus; the OrbitControls target follows
+  // it (target prop below), and here the CAMERA follows by the same delta so the
+  // view pans along z instead of re-aiming. Delta-based so it composes with orbit
+  // (orbit doesn't touch zFocus). onChange then syncs the panned camera into
+  // scene.cam, keeping the position prop consistent.
+  let _panZ = 0;
+  $effect(() => {
+    const z = scene.zFocus;
+    if (!controls) return;
+    const d = z - _panZ;
+    if (Math.abs(d) < 1e-9) return;
+    controls.object.position.z += d;
+    controls.update();
+    _panZ = z;
+  });
+
   const AX_LEN = 2.2, AX_R = 0.06;
 </script>
 
 <T.PerspectiveCamera makeDefault position={cameraPosition} fov={45} up={DEFAULT_UP}>
-  <OrbitControls bind:ref={controls} target={[0, 0, 0]} enableDamping enableZoom enableRotate enablePan />
+  <OrbitControls bind:ref={controls} target={[0, 0, scene.zFocus]} enableDamping enableZoom enableRotate enablePan />
 </T.PerspectiveCamera>
 
 <!-- White scene background (user pref — easier to see the part). BOTH this

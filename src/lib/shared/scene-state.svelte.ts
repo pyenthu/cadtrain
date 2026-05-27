@@ -9,6 +9,10 @@
 
 export const scene = $state({
   cam: { x: 0,  y:  30, z:  4 },
+  /** Camera/look-at pan along the Z (drilling) axis — a vertical slider in the
+   *  scene scrolls a tall assembly without changing the view angle. Both the
+   *  camera and its target shift by this Z amount (a pure pan). */
+  zFocus: 0,
   l1:  { x: 10, y: 10,  z:  0, i: 500 },
   l2:  { x: -40, y: 20, z:  0, i: 500 },
   /** Render-time Z compression. 1.0 = geom as authored; smaller values

@@ -100,6 +100,13 @@
   </div>
   {#if name}<div class="pd-title">{name}</div>{/if}
   {#if description}<div class="pd-desc">{description}</div>{/if}
+  <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).
+       Top = z 0 (top of the part), drag down to follow it deeper (Z-down). -->
+  <div class="pd-zpan">
+    <input class="pd-zslider" type="range" min="-10" max="80" step="0.5"
+      bind:value={scene.zFocus} aria-label="Pan camera along Z" title="Pan view along Z ({scene.zFocus.toFixed(1)})" />
+    <button class="pd-zreset" type="button" title="Reset Z pan" onclick={() => (scene.zFocus = 0)}>⊙</button>
+  </div>
   {#if Scene}
     {@const S = Scene}
     <Canvas {createRenderer}>
@@ -129,4 +136,9 @@
   .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 6; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
+  /* Vertical Z-pan slider, left edge. */
+  .pd-zpan { position: absolute; left: 6px; top: 56px; bottom: 16px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .pd-zslider { writing-mode: vertical-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical; width: 16px; flex: 1 1 auto; min-height: 0; cursor: ns-resize; accent-color: #cc2222; }
+  .pd-zreset { flex: 0 0 auto; width: 20px; height: 20px; border: 1px solid rgba(0,0,0,0.25); background: rgba(255,255,255,0.85); border-radius: 50%; cursor: pointer; font: 12px Arial; color: #555; line-height: 1; padding: 0; }
+  .pd-zreset:hover { color: #cc2222; border-color: #cc2222; }
 </style>
