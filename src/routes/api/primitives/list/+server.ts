@@ -67,11 +67,13 @@ export const GET = async () => {
     await collectCompletions();
   }
 
-  // Stdlib primitives are git-tracked src parts — canonical + read-only. They
-  // shadow any same-named volume copy: drop the volume dupes everywhere, then
-  // prepend the stdlib entries to Basic. params load lazily via /source (which
-  // also serves stdlib first), consistent with the volume entries.
+  // Stdlib primitives are git-tracked src parts — canonical + read-only — and
+  // get their OWN sidebar group (distinct from volume Basic) so their provenance
+  // (from src/) is obvious. They shadow any same-named volume copy: drop the
+  // volume dupes everywhere first. params load lazily via /source (which also
+  // serves stdlib first), consistent with the volume entries.
   const stdIds = new Set(stdlibIds());
+  const stdlib: PrimEntry[] = [];
   if (stdIds.size) {
     const dropDupes = (arr: PrimEntry[]) => {
       for (let i = arr.length - 1; i >= 0; i--) {
@@ -86,12 +88,13 @@ export const GET = async () => {
       const arr = completions[fam];
       if (arr) dropDupes(arr);
     }
-    const stdEntries: PrimEntry[] = stdlibEntries().map((e) => ({
-      id: e.id, source: 'stdlib' as const, name: e.name, description: e.description, params: {}, editable: false,
-    }));
-    basic.unshift(...stdEntries);
+    stdlib.push(
+      ...stdlibEntries().map((e) => ({
+        id: e.id, source: 'stdlib' as const, name: e.name, description: e.description, params: {}, editable: false,
+      })),
+    );
   }
 
   const merged = [...volume];
-  return json({ basic, completions, archived, merged });
+  return json({ stdlib, basic, completions, archived, merged });
 };

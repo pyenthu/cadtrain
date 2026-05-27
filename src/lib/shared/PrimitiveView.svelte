@@ -30,7 +30,10 @@
 
   type ParamSchema = {
     label?: string;
-    type?: 'number' | 'boolean' | 'polygon' | 'enum';
+    // 'profile' = a FUNCTION-ONLY profile param (a {kind,params} descriptor) —
+    // normalized to 'polygon' + functionOnly in effectiveSchema so it renders
+    // as the profile SELECTOR + lifted params, never a hand-edited vertex grid.
+    type?: 'number' | 'boolean' | 'polygon' | 'enum' | 'profile';
     min?: number;
     max?: number;
     step?: number;
@@ -42,6 +45,9 @@
     yDown?: boolean;
     hLabel?: string;
     vLabel?: string;
+    /** Set when the param was declared `type: 'profile'` — function-only, so
+     *  the vertex-grid affordance is suppressed (selector + lifted params only). */
+    functionOnly?: boolean;
   };
 
   /** A meta.profiles entry — the Svelte-component encapsulated profile
@@ -105,7 +111,19 @@
   // (the `paramSchema` prop is set at load, so it still carries deleted keys).
   let removedParams = $state<Set<string>>(new Set());
   let effectiveSchema = $derived(
-    Object.fromEntries(Object.entries({ ...paramSchema, ...addedParams }).filter(([k]) => !removedParams.has(k))),
+    Object.fromEntries(
+      Object.entries({ ...paramSchema, ...addedParams })
+        .filter(([k]) => !removedParams.has(k))
+        // A `type: 'profile'` param is a function-only profile: render it with
+        // the SAME machinery as a polygon param whose value is a {kind,params}
+        // descriptor (selector + lifted params — exactly how r_rotate behaves),
+        // but flag functionOnly so the vertex-grid affordance stays suppressed.
+        .map(([k, v]) =>
+          (v as ParamSchema)?.type === 'profile'
+            ? [k, { ...(v as ParamSchema), type: 'polygon', functionOnly: true }]
+            : [k, v],
+        ),
+    ),
   );
   let paramOrder = $derived(Object.keys(effectiveSchema));
 
@@ -609,7 +627,9 @@
     // so centering keeps r=0 at the icon's horizontal center.
     const ox = pad + (span - w * s) / 2, oy = pad + (span - h * s) / 2;
     const tx = (x: number) => ox + (x - minX) * s;
-    const ty = (y: number) => oy + (maxY - y) * s; // flip Y → +y up, right-side up
+    // REVOLVE: z-down, z=0 at the top — matches the ProfileEditor / big preview
+    // (do NOT flip). CARTESIAN: +y up.
+    const ty = (y: number) => revolve ? oy + (y - minY) * s : oy + (maxY - y) * s;
     const sub = (half: [number, number][]) =>
       half.map((p, i) => `${i === 0 ? 'M' : 'L'}${tx(p[0]).toFixed(2)},${ty(p[1]).toFixed(2)}`).join(' ') + ' Z';
     // Two halves only for a real bore (min r > 0) → tube stays hollow; a solid
@@ -1668,6 +1688,12 @@
             {/if}
           </div>
 
+          {#if !editable}
+            <div class="pv-readonly-note">
+              🔒 Built-in <strong>stdlib</strong> primitive — read-only. Edit it in <code>src/lib/cad/stdlib/</code> + redeploy, or <strong>Duplicate</strong> to fork an editable volume copy. Tweaking params here just previews (won't save).
+            </div>
+          {/if}
+
           <div class="pv-build-body">
             <!-- Parameters section: scalar/enum/bool via ParamGrid, polygon
                  leaf params get a ✎ popup card. -->
@@ -2431,6 +2457,8 @@
   .pv-part-compose { padding: 6px 9px; font: 12px Arial; color: #444; border-top: 1px dashed #ddd; }
   .pv-part-compose code { font: 11px ui-monospace, monospace; color: #333; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
   .pv-parts-note { font: 10px Arial; color: #999; padding: 2px 0; }
+  .pv-readonly-note { font: 11px Arial; color: #2b4a6b; background: #eaf2fb; border: 1px solid #cfe0f4; border-radius: 6px; padding: 6px 9px; margin: 6px 8px 2px; line-height: 1.4; }
+  .pv-readonly-note code { background: #dce9f8; padding: 0 3px; border-radius: 3px; }
   .pv-parts-empty { font: 12px Arial; color: #999; padding: 14px 4px; line-height: 1.4; }
   .pv-parts-empty code { background: #eee; padding: 0 4px; border-radius: 3px; }
   .pv-parts-err { font: 11px ui-monospace, monospace; color: #c4392f; padding: 10px 4px; white-space: pre-wrap; }

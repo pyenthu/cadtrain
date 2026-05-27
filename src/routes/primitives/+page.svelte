@@ -30,6 +30,9 @@
   // Basic — the raw r_* geometry primitives, parked under primitives/basic/
   // on the volume (location IS the category).
   let basic: Entry[] = $state([]);
+  // Standard library — r_* building blocks served from src/lib/cad/stdlib/
+  // (git-tracked, canonical, read-only). Own sidebar group, above Basic.
+  let stdlib: Entry[] = $state([]);
   // Completions is nested by family: { <family>: Entry[] }. Family dirs
   // may be empty (structure only); the sidebar shows them regardless so
   // the user sees where each family's parts will land.
@@ -86,6 +89,7 @@
   let activeTab = $derived(openTabs.find((t) => t.entry.id === activeId) ?? null);
   let status = $state('');
   let showArchive = $state(false);
+  let showStdlib = $state(true);
   let showBasic = $state(true);
   let showCompletions = $state(true);
   // Per-family collapse state inside Completions, keyed by family id.
@@ -97,6 +101,7 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       entries = data.merged ?? [];
+      stdlib = data.stdlib ?? [];
       basic = data.basic ?? [];
       completions = data.completions ?? {};
       archived = data.archived ?? [];
@@ -105,7 +110,7 @@
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; basic = []; completions = {}; archived = [];
+      entries = []; stdlib = []; basic = []; completions = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -303,7 +308,7 @@
   }
   async function submitCreate() {
     if (!createPanel || createBusy) return;
-    const all = [...entries, ...basic, ...Object.values(completions).flat()];
+    const all = [...entries, ...stdlib, ...basic, ...Object.values(completions).flat()];
     const newId = createId.trim();
     if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { createErr = 'id must be [a-z][a-z0-9_]*'; return; }
     if (all.some((x) => x.id === newId)) { createErr = `"${newId}" already exists`; return; }
@@ -327,7 +332,7 @@
       // open it. The source endpoint is fresh, so the tab loads even mid-lag.
       if (!pendingCreated.some((pc) => pc.id === newId)) pendingCreated = [...pendingCreated, { id: newId, dir }];
       await refreshList();
-      const created = [...entries, ...basic, ...Object.values(completions).flat()].find((x) => x.id === newId)
+      const created = [...entries, ...stdlib, ...basic, ...Object.values(completions).flat()].find((x) => x.id === newId)
         ?? ({ id: newId, source: 'volume', name: newId, description: '', params: {}, editable: true } as Entry);
       openTab(created);
       status = `Created ${newId} in ${label}.`;
@@ -462,6 +467,32 @@
             {/if}
           </div>
         {/each}
+      </div>
+    {/if}
+
+    <!-- Standard library — git-tracked r_* building blocks served from
+         src/lib/cad/stdlib/. Canonical + read-only (edit in src + redeploy);
+         they shadow any same-named volume part. No add / no archive; duplicate
+         forks a stdlib part into a new editable volume primitive. -->
+    {#if stdlib.length}
+      <div class="prim-tests">
+        <div class="prim-head-row">
+          <button class="prim-arch-head" type="button" onclick={() => (showStdlib = !showStdlib)}>
+            <span class="prim-arch-caret">{showStdlib ? '▾' : '▸'}</span>
+            stdlib {#if stdlib.length}({stdlib.length}){/if}
+          </button>
+        </div>
+        {#if showStdlib}
+          {#each stdlib as e (e.id)}
+            <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                <span class="prim-name">{e.id}</span>
+                <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
+              </button>
+              <button class="prim-dup" type="button" title="Duplicate to a new editable volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+            </div>
+          {/each}
+        {/if}
       </div>
     {/if}
 
@@ -624,7 +655,7 @@
                 onSaveDefaults={(a) => saveDefaultsFor(t, a)}
                 onSaveAs={(newId, src) => saveAsEntry(t.entry.id, newId, src)}
                 onReloadSource={() => loadFromServerFor(t)}
-                catalog={[...entries, ...basic, ...Object.values(completions).flat()]}
+                catalog={[...entries, ...stdlib, ...basic, ...Object.values(completions).flat()]}
               />
             {/if}
           </div>
@@ -745,6 +776,7 @@
   .prim-name { font: 600 11px monospace; flex: 1; }
   .prim-tag { font: 9px Arial; padding: 1px 5px; border-radius: 8px; background: #ddd; color: #555; }
   .prim-tag.vol { background: #cc2222; color: #fff; }
+  .prim-tag.src { background: #2b6cb0; color: #fff; }
   .status { font: 10px Arial; color: #777; padding: 6px 8px; border-top: 1px solid #eee; }
 
   .prim-main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
