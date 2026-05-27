@@ -39,13 +39,26 @@ pasted into a transcript. The user provisions their own:
 
 Set locally in `.env` / `.env.local` (user-edited), or in the Railway service Variables tab.
 
-## Next steps (when the user gives go-ahead + keys)
-1. Wire the **mesh** stage in `pipeline.ts`: call FAL Hunyuan-3D with the image, receive `.glb`,
-   write it under the volume (`forge/<runId>/model.glb`), return its `/api/volume` path.
-2. Render the result `.glb` in the page (reuse the existing Threlte GLB viewer, lazy-imported).
+## Cost (FAL, 2026-05) — see also the "free" path below
+Pay-per-generation via FAL: **mini ≈ $0.10 · v2 white-mesh ≈ $0.16 · Rapid ≈ $0.225 · Pro ≈ $0.375**
+(+$0.15 PBR, +$0.45 part-split, +$0.75 retopo). Variant set in `pipeline.ts` (`FAL_MESH_MODEL`).
+**Free alternative:** Hunyuan3D is open-weight + self-hostable — point `falHunyuan3dMesh` at your own
+GPU endpoint (same interface) for $0/gen.
+
+## Status of the chain
+- **mesh — WIRED** (`pipeline.ts` → FAL Hunyuan3D v2 over REST, no SDK dep). Submit→poll→`model_mesh.url`
+  → downloaded + saved to the volume (`forge/<runId>/model.glb`) → returned as the step output (the
+  page shows a ↓ link). **INERT until `FORGE_FAL_KEY` is set; ⚠ NOT yet run end-to-end (no key).**
+- **splat / cleanplate / sfx** — still stubs (`not-configured`).
+
+## Next steps
+1. Set `FORGE_FAL_KEY` (server env) → run a real generation → confirm the FAL contract end-to-end
+   (the one untested piece). Add error/timeout polish from what the live run reveals.
+2. Render the result `.glb` inline in the page (Threlte GLB viewer, lazy-imported) instead of just a
+   download link.
 3. Optional: splat / cleanplate / sfx stages, gated on their keys.
-4. Wire nav (`/forge`) + landing link + a `/plan` roadmap item (R bundle) — coordinate the merge so
-   it doesn't race the concurrent `/primitives` work on `main`.
+4. Wire a `/plan` roadmap item (R bundle) — coordinate the merge so it doesn't race the concurrent
+   `/primitives` work on `main`. (nav + landing `/forge` links already added on this branch.)
 
 ## Isolation note
 Built on the `forge` worktree branch off `main` so it doesn't collide with the active `/primitives`
