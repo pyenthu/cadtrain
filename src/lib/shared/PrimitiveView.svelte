@@ -944,10 +944,28 @@
     if (!seg) return null;
     const name = seg.text.trim();
     if (!/^[a-zA-Z_$][\w$]*$/.test(name)) return null; // not a bare identifier
-    const loc = (recognized?.instances ?? []).find(
-      (x: any) => x.name === name && x.call === 'resolveProfile' && x.argsStart >= 0,
-    );
-    return loc ? { argsText: loc.argsText as string, start: loc.argsStart as number, end: loc.argsEnd as number } : null;
+    // Re-derive the descriptor span from the CURRENT editedSource by NAME +
+    // balanced braces — NOT the recognized offsets, which go STALE the instant a
+    // splice changes editedSource (the async re-recognize lags), so a rapid 2nd
+    // edit/swap spliced at the wrong place → extra-brace corruption. Locating
+    // `const <name> = resolveProfile({…})` fresh each time can't drift; and if
+    // the braces don't balance (already-corrupted source) we bail rather than
+    // compound the damage.
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = new RegExp(`\\b(?:const|let|var)\\s+${esc}\\s*=\\s*resolveProfile\\s*\\(`).exec(editedSource);
+    if (!m) return null;
+    let i = m.index + m[0].length;
+    while (i < editedSource.length && editedSource[i] !== '{') i++;
+    if (editedSource[i] !== '{') return null;
+    const start = i;
+    let depth = 0;
+    for (; i < editedSource.length; i++) {
+      const c = editedSource[i];
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
+    }
+    if (depth !== 0) return null; // unbalanced → refuse to splice (no compounding)
+    return { argsText: editedSource.slice(start, i), start, end: i };
   }
   /** Parse `{ kind:'X', params:{ k: <raw>, … } }` → kind + RAW value text per
    *  param (a number OR an expression like `od/2`). Uses splitTopLevelArgs so
