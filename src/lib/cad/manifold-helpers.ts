@@ -219,23 +219,41 @@ export function cyl(length: number, r1: number, r2?: number) {
 export function tube(outerR: number, innerR: number, length: number) {
   return cyl(length, outerR).subtract(cyl(length + 0.02, innerR));
 }
-/** @op Translate — shift the part by [x, y, z]. */
-export function mv(m: any, v: [number, number, number]) { return m.translate(v); }
+/** @op Translate — shift the part by [x, y, z]. Carries any connection datums
+ *  (set via `ref`) along z so `tail(positionedPart)` keeps working for chaining. */
+export function mv(m: any, v: [number, number, number]) {
+  const r = m.translate(v);
+  if (m._refHead !== undefined) r._refHead = m._refHead + v[2];
+  if (m._refTail !== undefined) r._refTail = m._refTail + v[2];
+  return r;
+}
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
-// ── Axial-extent EXPRESSION helpers (assembling parts along the drilling axis) ──
-// Use these INSIDE a part's mv transform expression so positioning stays in the
-// recognized structure — e.g. `const pipe = mv(r_tube(…), [0, 0, zLen(box)]);`
-// stacks `pipe` below `box`. The offset is just an expression you edit in the GUI
-// (subtract for overlap: `zLen(box) - p.makeup`). Manifold bbox min/max are Vec3
-// arrays → [2] is z. zLen is translation-invariant (it's the part's own extent).
+// ── Axial extent + connection-DATUM helpers (assembling along the drilling axis) ──
+// Stack pieces inside a part's mv transform: `const pipe = mv(r_tube(…), [0,0,
+// tail(box)]);` drops `pipe` at `box`'s tail datum. The offset is the part's OWN
+// connection plane, so flush vs overlap is decided by the PART (via `ref`), not a
+// magic number. Datums default to the bbox faces → flush stacking with no setup.
+// (Manifold bbox min/max are Vec3 arrays → [2] is z.)
 /** Bottom (max z, Z-down) face of a part. */
 export function zMax(m: any): number { return m.boundingBox().max[2]; }
 /** Top (min z, Z-down) face of a part. */
 export function zMin(m: any): number { return m.boundingBox().min[2]; }
 /** Axial length (z-extent) of a part. */
 export function zLen(m: any): number { const b = m.boundingBox(); return b.max[2] - b.min[2]; }
+/** Declare a part's connection datums (z): `head` = top plane, `tail` = bottom
+ *  plane. Returns the same manifold with the datums attached. A part overrides
+ *  the defaults to e.g. a makeup shoulder so connections overlap correctly. */
+export function ref(m: any, head: number, tail: number): any { m._refHead = head; m._refTail = tail; return m; }
+/** Top connection datum (default = top face). */
+export function head(m: any): number { return m._refHead !== undefined ? m._refHead : zMin(m); }
+/** Bottom connection datum (default = bottom face). */
+export function tail(m: any): number { return m._refTail !== undefined ? m._refTail : zMax(m); }
+/** Drop `b` so its head datum meets `a`'s tail datum (+ optional gap). */
+export function mate(a: any, b: any, gap = 0): any { return mv(b, [0, 0, tail(a) - head(b) + gap]); }
+/** Shift `b` so its reference z `bZ` lands on the target z `aZ`. */
+export function align(b: any, aZ: number, bZ: number): any { return mv(b, [0, 0, aZ - bZ]); }
 
 /** @part Profile extrude — sandbox/play primitive. Define a 2D profile (CCW polygon) and extrude it up Z, optionally with twist + taper. Edit the profile array, height, twist, scaleTop to experiment. */
 export function profile_extrude(height: number, twistDegrees: number, scaleTop: number, sides: number): any {
