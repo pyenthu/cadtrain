@@ -84,7 +84,9 @@
     const s = (size - 2 * pad) / Math.max(w, h);
     const ox = pad + (size - 2 * pad - w * s) / 2, oy = pad + (size - 2 * pad - h * s) / 2;
     const sx = (x: number) => ox + (x - minX) * s;
-    const sy = (y: number) => size - (oy + (y - minY) * s); // flip y → right-side up
+    // REVOLVE: z-down, z=0 at the top — matches the ProfileEditor / big preview
+    // (do NOT flip; flipping inverts the icon vs the editor). CARTESIAN: +y up.
+    const sy = (y: number) => revolve ? oy + (y - minY) * s : size - (oy + (y - minY) * s);
     const sub = (half: Pt[]) => half.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join(' ') + ' Z';
     // Split into two halves ONLY when the section has a real bore (min r > 0) so
     // a tube stays hollow; a solid (r reaches the axis) is ONE fused loop — no
