@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
 import { listEntitiesIn } from '$lib/server/primitive-paths';
+import { stdlibIds, stdlibEntries } from '$lib/server/stdlib';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 // (nested completions group, 2026-05-23; industrial category removed 2026-05-27)
@@ -13,7 +14,7 @@ import { listEntitiesIn } from '$lib/server/primitive-paths';
 
 interface PrimEntry {
   id: string;
-  source: 'bundle' | 'volume';
+  source: 'bundle' | 'volume' | 'stdlib';
   name: string;
   description: string;
   params: Record<string, any>;
@@ -64,6 +65,31 @@ export const GET = async () => {
     await collectSub('basic', basic);
     await collectSub('archive', archived);
     await collectCompletions();
+  }
+
+  // Stdlib primitives are git-tracked src parts — canonical + read-only. They
+  // shadow any same-named volume copy: drop the volume dupes everywhere, then
+  // prepend the stdlib entries to Basic. params load lazily via /source (which
+  // also serves stdlib first), consistent with the volume entries.
+  const stdIds = new Set(stdlibIds());
+  if (stdIds.size) {
+    const dropDupes = (arr: PrimEntry[]) => {
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const e = arr[i];
+        if (e && stdIds.has(e.id)) arr.splice(i, 1);
+      }
+    };
+    dropDupes(volume);
+    dropDupes(basic);
+    dropDupes(archived);
+    for (const fam of Object.keys(completions)) {
+      const arr = completions[fam];
+      if (arr) dropDupes(arr);
+    }
+    const stdEntries: PrimEntry[] = stdlibEntries().map((e) => ({
+      id: e.id, source: 'stdlib' as const, name: e.name, description: e.description, params: {}, editable: false,
+    }));
+    basic.unshift(...stdEntries);
   }
 
   const merged = [...volume];

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { findPrim } from '$lib/server/primitive-paths';
+import { stdlibSource } from '$lib/server/stdlib';
 
 // Stage G v1 of the components/primitives split — see
 // ~/.claude/plans/components-primitives-split.md.
@@ -47,7 +48,21 @@ export const GET = async ({ url }) => {
   const name = url.searchParams.get('name');
   if (!name) throw error(400, 'name query param required');
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw error(400, 'invalid primitive name');
-  // Volume first — a volume primitive with the same id SHADOWS the bundle.
+  // Stdlib FIRST — git-tracked src primitives are canonical and read-only, so
+  // they SHADOW any same-named volume part (the opposite of the manifold-helpers
+  // bundle fallback below, which a volume part may override). editable:false is
+  // the GUI's read-only signal.
+  const std = stdlibSource(name);
+  if (std) {
+    let meta: any = null;
+    try { meta = extractMetaFromSource(std); } catch { /* leave null */ }
+    return json({
+      source: std, origin: 'stdlib', editable: false,
+      name: meta?.name, description: meta?.description, params: meta?.params ?? {},
+      profiles: meta?.profiles ?? {},
+    });
+  }
+  // Volume next — a volume primitive with the same id SHADOWS the bundle.
   // findPrim resolves the new flat <id>.prim.ts/.asm.ts (and the legacy
   // <id>/source.ts folder, until migrated) anywhere in the category tree.
   const hit = await findPrim(name);

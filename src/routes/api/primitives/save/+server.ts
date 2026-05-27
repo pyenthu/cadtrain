@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { volumePath } from '$lib/server/volume';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { findPrim, primFilePath } from '$lib/server/primitive-paths';
+import { isStdlib } from '$lib/server/stdlib';
 
 // POST /api/primitives/save
 //   { id: string, source: string, dir?: string }
@@ -24,6 +25,12 @@ export const POST = async ({ request }) => {
   const { id, source, dir: targetDir } = body ?? {};
   if (typeof id !== 'string' || !ID_RE.test(id)) {
     throw error(400, `bad id "${id}" — must match [a-z_][a-z0-9_]*`);
+  }
+  // Stdlib primitives are canonical in git-tracked src/ and read-only here —
+  // refuse to fork one onto the volume (where it would shadow nothing and just
+  // drift). Edit src/lib/cad/stdlib/<id>.ts and redeploy instead.
+  if (isStdlib(id)) {
+    throw error(403, `"${id}" is a built-in (src) primitive — edit src/lib/cad/stdlib/${id}.ts and redeploy; it can't be saved to the volume.`);
   }
   // Optional target folder for a NEW primitive (the sidebar "+ add" affordance).
   // Allowlisted to the known group folders — no traversal. Ignored when the id

@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { volumePath } from '$lib/server/volume';
 import { findPrim, removeIdForms } from '$lib/server/primitive-paths';
+import { isStdlib } from '$lib/server/stdlib';
 
 // Two-step deletion for volume primitives (file-based layout):
 //   DELETE /api/primitives/delete?id=<id>
@@ -24,6 +25,11 @@ export const DELETE = async ({ url }) => {
   const permanent = url.searchParams.get('permanent') === 'true';
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
   if (id === ARCHIVE) throw error(400, 'cannot operate on the archive directory itself');
+  // Stdlib primitives live in git-tracked src/ — they can't be archived or
+  // deleted from the volume. Remove the file in src + redeploy instead.
+  if (isStdlib(id)) {
+    throw error(403, `"${id}" is a built-in (src) primitive — it can't be deleted from the volume; remove src/lib/cad/stdlib/${id}.ts and redeploy.`);
+  }
 
   const archiveDir = volumePath(join('primitives', ARCHIVE));
 
