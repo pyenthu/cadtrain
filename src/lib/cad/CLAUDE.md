@@ -16,6 +16,8 @@ src/lib/cad/
 ├── mesh-serial.ts          # serialize/rehydrate { full, cutVC } mesh-JSON
 ├── mesh-serial.test.ts     # round-trip vitest
 ├── assemblies-l4.ts        # level-4 assembly scaffolding
+├── stdlib/                 # git-tracked STDLIB primitives (r_revolve, r_extrude) — canonical, read-only, served stdlib-first. See root CLAUDE.md Rule 21.
+├── primitive-stub.ts       # source generators for "+ new primitive" (buildFnProfileStub / buildPartStubFromBase / stubSource)
 ├── pipe/                   # pipe-specific composites
 └── rules/                  # tubing + drill_pipe domain rules
 ```
@@ -24,6 +26,12 @@ src/lib/cad/
 from the legacy `library.ts` `ComponentDef` catalog. Its render helpers
 (`finalizeManifold`, `setRenderZScale`, `manifoldToGeo`, `manifoldToCutVC`)
 are used live by `/api/primitives/preview`.
+
+**Stdlib primitives** (`stdlib/`): `r_revolve` + `r_extrude` are git-tracked,
+function-only parametric (`type:'profile'`), read-only in the GUI, served
+BEFORE the volume by the resolver. Registry: `src/lib/server/stdlib.ts`
+(`import.meta.glob('?raw')` → source baked into the build). Full contract in
+root CLAUDE.md Rule 21 + memory `stdlib_primitives_in_src`.
 
 ## Geometry — Z-down convention
 

@@ -35,6 +35,13 @@ are flat typed files on the volume (`<id>.prim.ts` / `.asm.ts`, profiles
 `.prvl.ts` / `.prex.ts`); all path resolution goes through
 `src/lib/server/primitive-paths.ts`. See Rule 13 + Rule 20.
 
+**Stdlib-first (2026-05-27, Rule 21):** before the volume, `source` + `list`
+consult `src/lib/server/stdlib.ts` (the git-tracked `src/lib/cad/stdlib/`
+primitives — `r_revolve`, `r_extrude`). A stdlib id wins (`origin:'stdlib'`,
+`editable:false`) and dedupes its volume twin; `list` returns them in a
+separate `stdlib` group; `save` + `delete` reject stdlib ids (HTTP 403 —
+edit in src + redeploy).
+
 **Single live store (since 2026-05-20): `/api/primitives/*` data
 endpoints ARE proxied to prod** when `CADTRAIN_VOLUME_REMOTE_URL` is set.
 The proxy is centralized in `src/hooks.server.ts` via the
