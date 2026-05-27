@@ -433,6 +433,19 @@
   }
 </script>
 
+<!-- Folder glyph for the sidebar group/family headers — open (expanded) vs
+     closed (collapsed), Heroicons folder / folder-open. Gives the tree a
+     file-manager "these are folders" read. -->
+{#snippet folderIcon(open: boolean)}
+  <svg class="prim-folder-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    {#if open}
+      <path d="M19.906 9c.382 0 .749.057 1.094.162V9a3 3 0 0 0-3-3h-3.879a.75.75 0 0 1-.53-.22L11.47 3.66A2.25 2.25 0 0 0 9.879 3H6a3 3 0 0 0-3 3v3.162A3.756 3.756 0 0 1 4.094 9h15.812ZM4.094 10.5a2.25 2.25 0 0 0-2.227 2.568l.857 6A2.25 2.25 0 0 0 4.951 21H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-2.227-2.568H4.094Z"/>
+    {:else}
+      <path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/>
+    {/if}
+  </svg>
+{/snippet}
+
 <div class="prim-page" class:rail-collapsed={railCollapsed} class:rail-resizing={railResizing}
   style={railCollapsed ? '' : `grid-template-columns: ${railWidth}px 1fr;`}>
   {#if !railCollapsed}
@@ -479,6 +492,7 @@
         <div class="prim-head-row">
           <button class="prim-arch-head" type="button" onclick={() => (showStdlib = !showStdlib)}>
             <span class="prim-arch-caret">{showStdlib ? '▾' : '▸'}</span>
+            {@render folderIcon(showStdlib)}
             stdlib {#if stdlib.length}({stdlib.length}){/if}
           </button>
         </div>
@@ -503,6 +517,7 @@
       <div class="prim-head-row">
         <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
           <span class="prim-arch-caret">{showBasic ? '▾' : '▸'}</span>
+          {@render folderIcon(showBasic)}
           Basic {#if basic.length}({basic.length}){/if}
         </button>
         <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openCreate('basic', 'Basic', e)}>＋</button>
@@ -534,6 +549,7 @@
     <div class="prim-tests">
       <button class="prim-arch-head" type="button" onclick={() => (showCompletions = !showCompletions)}>
         <span class="prim-arch-caret">{showCompletions ? '▾' : '▸'}</span>
+        {@render folderIcon(showCompletions)}
         Completions {#if completionFamilies.length}({completionFamilies.length}){/if}
       </button>
       {#if showCompletions}
@@ -546,6 +562,7 @@
               <div class="prim-head-row">
                 <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
                   <span class="prim-arch-caret">{openFamilies[fam.id] ? '▾' : '▸'}</span>
+                  {@render folderIcon(openFamilies[fam.id])}
                   {fam.label} {#if parts.length}({parts.length}){/if}
                 </button>
                 <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
@@ -578,6 +595,7 @@
       <div class="prim-archive">
         <button class="prim-arch-head" type="button" onclick={() => (showArchive = !showArchive)}>
           <span class="prim-arch-caret">{showArchive ? '▾' : '▸'}</span>
+          {@render folderIcon(showArchive)}
           Archive ({archived.length})
         </button>
         {#if showArchive}
@@ -762,6 +780,8 @@
   .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 700 13px Arial; color: #888; cursor: pointer; display: flex; align-items: center; gap: 4px; border-radius: 3px; }
   .prim-arch-head:hover { background: #f0f0f0; color: #555; }
   .prim-arch-caret { font: 10px monospace; width: 10px; }
+  /* Folder glyph — amber so the groups read as folders (file-manager look). */
+  .prim-folder-ico { width: 13px; height: 13px; flex: 0 0 auto; color: #e0a93b; display: inline-block; vertical-align: middle; }
   .prim-arch-list { padding: 1px 0; }
   .prim-row-arch { padding: 2px 8px; gap: 4px; align-items: center; display: flex; }
   .prim-row-arch:hover { background: #f5f5f5; }
