@@ -224,6 +224,19 @@ export function mv(m: any, v: [number, number, number]) { return m.translate(v);
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
+// ── Axial-extent EXPRESSION helpers (assembling parts along the drilling axis) ──
+// Use these INSIDE a part's mv transform expression so positioning stays in the
+// recognized structure — e.g. `const pipe = mv(r_tube(…), [0, 0, zLen(box)]);`
+// stacks `pipe` below `box`. The offset is just an expression you edit in the GUI
+// (subtract for overlap: `zLen(box) - p.makeup`). Manifold bbox min/max are Vec3
+// arrays → [2] is z. zLen is translation-invariant (it's the part's own extent).
+/** Bottom (max z, Z-down) face of a part. */
+export function zMax(m: any): number { return m.boundingBox().max[2]; }
+/** Top (min z, Z-down) face of a part. */
+export function zMin(m: any): number { return m.boundingBox().min[2]; }
+/** Axial length (z-extent) of a part. */
+export function zLen(m: any): number { const b = m.boundingBox(); return b.max[2] - b.min[2]; }
+
 /** @part Profile extrude — sandbox/play primitive. Define a 2D profile (CCW polygon) and extrude it up Z, optionally with twist + taper. Edit the profile array, height, twist, scaleTop to experiment. */
 export function profile_extrude(height: number, twistDegrees: number, scaleTop: number, sides: number): any {
   if (!G.__cadtrain_manifold__.wasm) {
