@@ -191,3 +191,41 @@ export function ${id}(${sig}) {
 }
 `;
 }
+
+/** Function-first wrapper of a stdlib base (r_revolve or r_extrude): the new
+ *  part exposes a `type: 'profile'` param (so it shows the profile SELECTOR +
+ *  lifted params, exactly like the stdlib base) and a length dial (segments for
+ *  revolve, height for extrude), and calls the base with them. The starting
+ *  point for "begin from a revolve/extrude, then add r_* parts." */
+export function buildFnProfileStub(id: string, base: 'r_revolve' | 'r_extrude'): string {
+  const isRev = base === 'r_revolve';
+  const profDefault = isRev
+    ? `{ kind: 'cylinder', params: { r: 1.2, len: 3 } }`
+    : `{ kind: 'ngon', params: { n: 6, r: 1.5 } }`;
+  const profFlags = isRev ? `yDown: true, hLabel: 'r →', vLabel: 'z ↓', ` : ``;
+  const dial = isRev ? 'segments' : 'height';
+  const dialParam = isRev
+    ? `segments: { label: 'segments', min: 8, max: 256, step: 1, default: 96 },`
+    : `height: { label: 'height', min: 0.1, max: 40, step: 0.1, default: 3 },`;
+  const word = isRev ? 'revolved' : 'extruded';
+  return `/**
+ * ${id} — function-first ${word} part built on ${base} (stdlib). Pick a profile
+ * FUNCTION with the selector; its params lift onto the part. Add more r_* parts
+ * (.add / .subtract / .intersect + mv / rot) to build a fuller shape.
+ */
+export const meta = {
+  id: '${id}', name: '${id}',
+  description: 'Function-first ${word} part — composed from ${base}.',
+  tags: ['new', '${isRev ? 'revolve' : 'extrude'}'],
+  uses: ['${base}'],
+  params: {
+    profile: { label: 'profile', type: 'profile', ${profFlags}default: ${profDefault} },
+    ${dialParam}
+  },
+};
+export function ${id}(profile, ${dial}) {
+  const body = ${base}(profile, ${dial});
+  return body;
+}
+`;
+}

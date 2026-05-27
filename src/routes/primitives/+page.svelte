@@ -10,12 +10,11 @@
   import { onMount } from 'svelte';
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
-  import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
-  import { stubSource, buildPartStubFromBase, buildRotateStubFromProfile } from '$lib/cad/primitive-stub';
+  import { stubSource, buildPartStubFromBase, buildFnProfileStub } from '$lib/cad/primitive-stub';
 
   interface Entry {
     id: string;
-    source: 'bundle' | 'volume';
+    source: 'bundle' | 'volume' | 'stdlib';
     name: string;
     description: string;
     params: Record<string, any>;
@@ -270,35 +269,36 @@
   // follows the r_* authoring model (never raw cyl/tube).
   let createPanel = $state<{ dir: string; label: string; x: number; y: number } | null>(null);
   let createId = $state('');
-  let createBase = $state('r_cylinder');
+  let createBase = $state('r_revolve');
   let createSearch = $state('');
   let createBusy = $state(false);
   let createErr = $state('');
-  // Base options = r_* leaves in Basic. r_revolve / r_extrude are hidden (not
-  // function-first); create a revolve via r_rotate (profile chosen inside the part).
-  const NO_FN_PROFILE_YET = new Set(['r_revolve', 'r_extrude']);
-  const DEFAULT_REVOLVE_PROFILE = 'cylinder'; // curated revolve profile (r + len)
+  // Base options = the stdlib function-first bases (r_revolve / r_extrude — pick
+  // a profile FUNCTION inside the new part) PLUS the simple r_* leaves in Basic.
+  // r_rotate is retired (stdlib r_revolve replaces it), so it's excluded.
   let createBaseList = $derived.by(() => {
     const q = createSearch.trim().toLowerCase();
-    const rs = [...new Set(basic.map((b) => b.id).filter((id) => id.startsWith('r_') && !NO_FN_PROFILE_YET.has(id)))].sort();
+    const fromStdlib = stdlib.map((b) => b.id).filter((id) => id.startsWith('r_'));
+    const fromBasic = basic.map((b) => b.id).filter((id) => id.startsWith('r_') && id !== 'r_rotate');
+    const rs = [...new Set([...fromStdlib, ...fromBasic])].sort();
     return q ? rs.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : rs;
   });
   function baseLabel(b: string): string {
-    if (b === 'r_rotate') return 'r_rotate  ◆ function profile';
+    if (b === 'r_revolve') return 'r_revolve  ◆ function profile (revolve)';
+    if (b === 'r_extrude') return 'r_extrude  ◆ function profile (extrude)';
     return b;
   }
   function openCreate(dir: string, label: string, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    createId = ''; createSearch = ''; createBase = 'r_cylinder'; createErr = '';
+    createId = ''; createSearch = ''; createBase = 'r_revolve'; createErr = '';
     createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
   }
   function closeCreate() { createPanel = null; }
   // Build a composite stub that wraps the chosen base r_* (mirrors its params).
   async function buildStubFromBase(id: string, base: string): Promise<string | null> {
-    if (base === 'r_rotate') {
-      const def = PROFILE_REGISTRY[DEFAULT_REVOLVE_PROFILE];
-      return def ? buildRotateStubFromProfile(id, DEFAULT_REVOLVE_PROFILE, def.params ?? {}) : null;
-    }
+    // Stdlib function-first bases get a profile-selector wrapper; other r_*
+    // leaves mirror their params.
+    if (base === 'r_revolve' || base === 'r_extrude') return buildFnProfileStub(id, base);
     try {
       const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
       if (!res.ok) return null;
