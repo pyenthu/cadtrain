@@ -113,7 +113,12 @@ const patchedShaders = new Set<any>();
 
 export function attachWarpShader(material: THREE.MeshPhongMaterial): void {
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uWarpAmp  = { value: scene.warpAmp };
+    // Initialize with the SAME master-toggle gating the rAF tick uses
+    // (amp = 0 when warp is off). Otherwise the first render — before any
+    // tick/re-render — bakes in the raw warpAmp and the mesh/GLB shows up
+    // warped on load until an orbit forces a redraw (Threlte renders
+    // on-demand, so the tick's uniform write alone doesn't repaint).
+    shader.uniforms.uWarpAmp  = { value: scene.warpEnabled ? scene.warpAmp : 0 };
     shader.uniforms.uWarpFreq = { value: scene.warpFreq };
     // Axis encoded as 0 = x, 1 = y; the shader picks the displacement
     // component via a mix() so we don't branch per-vertex.
