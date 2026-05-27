@@ -88,11 +88,11 @@
   <OrbitControls bind:ref={controls} target={[0, 0, 0]} enableDamping enableZoom enableRotate enablePan />
 </T.PerspectiveCamera>
 
-<!-- Match the dark CSS canvas container (#1f1f1f). The previous white
-     attached only in the dev server — the production build dropped it and
-     fell back to the dark CSS, so dev looked white and prod looked black.
-     A dark value is consistent in both and matches the viewport theme. -->
-<T.Color args={['#1f1f1f']} attach="background" />
+<!-- White scene background (user pref — easier to see the part). BOTH this
+     <T.Color> AND the .pd-stage CSS in PrimitiveDualCanvas are white, so it's
+     consistent whether the Color attaches (dev) or the build drops it and falls
+     back to the CSS (the prior dev-white / prod-black mismatch). -->
+<T.Color args={['#ffffff']} attach="background" />
 <T.AmbientLight intensity={0.3} />
 <T.PointLight position={light1Pos} intensity={scene.l1.i} distance={50} />
 <T.PointLight position={light2Pos} intensity={scene.l2.i} distance={50} />

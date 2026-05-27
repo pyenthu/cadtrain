@@ -114,7 +114,7 @@
 </div>
 
 <style>
-  .pd-stage { position: relative; width: 100%; height: 100%; min-height: 0; background: #1f1f1f; border-radius: 4px; overflow: hidden; }
+  .pd-stage { position: relative; width: 100%; height: 100%; min-height: 0; background: #ffffff; border-radius: 4px; overflow: hidden; }
   .pd-label { position: absolute; top: 6px; z-index: 5; font: 600 10px Arial; color: #fff; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 3px; }
   /* Pushed below the in-canvas title (top-left) so they don't overlap. */
   .pd-label-l { left: 8px; top: 34px; pointer-events: none; }
