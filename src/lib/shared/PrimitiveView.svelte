@@ -2401,8 +2401,11 @@
       onClose={closeProfileSwap}
     >
       <div class="pv-profile-pop">
+        <!-- GRID layout: the search field + thumbnail list show immediately when
+             this popup opens, so picking is one click (no nested combobox to open
+             first). The head's ✎ button covers editing a ƒ profile. -->
         <ProfilePalette
-          layout="dropdown"
+          layout="grid"
           set={swapInst && profileInfoFor(swapInst.call)?.revolve ? 'revolve' : 'cartesian'}
           current={swapInst ? (partProfileKind(swapInst) ?? undefined) : undefined}
           volume={volProfiles}

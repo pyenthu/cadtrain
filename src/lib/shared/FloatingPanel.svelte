@@ -53,7 +53,22 @@
   let offX = 0, offY = 0;
   let rootEl: HTMLElement | undefined = $state();
 
-  $effect(() => { posX = x; posY = y; });
+  // Place at the requested x/y, then clamp into the viewport using the panel's
+  // ACTUAL rendered size (measured next frame) so a popup opened near the right
+  // or bottom edge can't get cut off. Drag still moves it freely afterward (this
+  // only re-runs when a new open position / visibility arrives, not on drag).
+  $effect(() => {
+    posX = x; posY = y;
+    void visible;
+    if (containerRelative || docked || !visible) return;
+    requestAnimationFrame(() => {
+      if (!rootEl) return;
+      const rect = rootEl.getBoundingClientRect();
+      const m = 8;
+      if (rect.width)  posX = Math.max(m, Math.min(posX, window.innerWidth  - rect.width  - m));
+      if (rect.height) posY = Math.max(m, Math.min(posY, window.innerHeight - rect.height - m));
+    });
+  });
 
   /** When contained, drag math is in parent-local coordinates. We use the
    *  parent's bounding rect to translate clientX/Y into local space and clamp
