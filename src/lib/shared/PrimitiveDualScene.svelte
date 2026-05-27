@@ -4,7 +4,7 @@
   // two stacked PrimitiveCanvas + PrimitiveGlbCanvas (was 2 contexts per tab
   // → the WebGL-context leak). Chrome (camera / lights) mirrors ComponentScene.
   import { T } from '@threlte/core';
-  import { OrbitControls } from '@threlte/extras';
+  import { OrbitControls, Edges } from '@threlte/extras';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
@@ -104,6 +104,7 @@
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
       <T.Mesh geometry={cg}>
         <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+        {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
     {:else if full}
       {@const hasVC = !!full?.getAttribute?.('color')}
@@ -114,6 +115,7 @@
         {:else}
           <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {/if}
+        {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
     {/if}
   {/key}

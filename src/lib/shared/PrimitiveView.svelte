@@ -218,6 +218,11 @@
   // Build tab needs the recognized instance spans (Parts accordion) AND the
   // meta.profiles value spans (the ✎ profile popups splice edits back here).
   $effect(() => { if (tab === 'build') { void editedSource; loadRecognition(); } });
+  // Refresh the volume profile list when the Build tab opens (keyed on `tab`
+  // only, NOT editedSource — so it's one fetch per open, not per keystroke).
+  // Fresh each open so a just-saved/renamed profile's schema + palette aren't
+  // shown stale (the cause of the briefly-stale "pink" profile flash).
+  $effect(() => { if (tab === 'build') void loadVolProfiles(true); });
 
   // ── Add-transform palette (mirrors the /components chain-op aid) ──────────
   // A clean visual coding aid: a `+` on each Parts-tab instance row opens a
@@ -1070,9 +1075,16 @@
     if (!loc) return null;
     const { kind, raw } = parseDescriptor(loc.argsText);
     if (!kind) return null;
-    const schema = profileSchemaForKind(kind);
-    if (!schema || !Object.keys(schema).length) return null;
-    const names = Object.keys(schema);
+    // Schema (min/max/step/labels) comes from the kind — but for a VOLUME
+    // profile it lives in the lazily-loaded `volProfiles`, which may not be
+    // loaded yet. FALL BACK to the descriptor's OWN param keys so the part's
+    // params render from the inline values regardless (the bounds fill in once
+    // volProfiles loads). Without this the params blanked out until the user
+    // opened the profile list.
+    const schema = profileSchemaForKind(kind) ?? {};
+    const schemaNames = Object.keys(schema);
+    const names = schemaNames.length ? schemaNames : Object.keys(raw);
+    if (!names.length) return null;
     const out: Record<string, string> = {};
     for (const n of names) out[n] = (raw[n] ?? '').trim() || String((schema[n] as any)?.default ?? 0);
     return { kind, names, schema, raw: out };
@@ -1281,9 +1293,14 @@
       'cyl', 'tube', 'mv', 'rot', 'revolve', 'profile_extrude', 'helix_band', 'empty',
       'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'M', 'G', 'Math',
     ]);
+    // The r_revolve / r_extrude scaffold ALSO declares a `<name>_profile`
+    // companion local, so a candidate name must keep BOTH the instance AND its
+    // `_profile` free — otherwise picking `revolve2` re-declares an existing
+    // `revolve2_profile` ("symbol already declared"). Check the companion too.
+    const free = (n: string) => !taken.has(n) && !taken.has(n + '_profile');
     const base = childId.replace(/^[rt]_/, '') || 'part';
-    if (!taken.has(base)) return base;
-    let i = 2; while (taken.has(base + i)) i++; return base + i;
+    if (free(base)) return base;
+    let i = 2; while (!free(base + i)) i++; return base + i;
   }
 
   // ── Add parameter ("+ param") ───────────────────────────────────────────
@@ -1692,6 +1709,18 @@
     }),
   );
   let sourceDirty = $derived(editedSource !== serverSource);
+  // The APPLIED (committed, live-rendered) values differ from the source's
+  // `default:` literals → "Save defaults" would persist a change. Without this
+  // a param edit committed on Enter (pending===applied) read as "in sync" even
+  // though the rendered value no longer matched the saved default.
+  let defaultsDirty = $derived(
+    paramOrder.some((k) => {
+      const a = applied[k] ?? effectiveSchema[k].default;
+      const d = effectiveSchema[k].default;
+      if (effectiveSchema[k].type === 'polygon') return JSON.stringify(a) !== JSON.stringify(d);
+      return a !== d;
+    }),
+  );
 
   function setPending(k: string, v: number) { pending = { ...pending, [k]: v }; }
   function apply() { applied = { ...pending }; }
@@ -1849,7 +1878,7 @@
       <div class="pv-tabs" role="tablist">
         <button class="pv-tab" class:active={tab === 'build'} onclick={() => (tab = 'build')} type="button" role="tab">
           <span class="pv-ic">⚙</span> Build
-          {#if paramsDirty || sourceDirty}<span class="pv-dot"></span>{/if}
+          {#if paramsDirty || sourceDirty || defaultsDirty}<span class="pv-dot"></span>{/if}
         </button>
         <button class="pv-tab" class:active={tab === 'source'} onclick={() => (tab = 'source')} type="button" role="tab">
           <span class="pv-ic">🛠</span> Source
@@ -1869,12 +1898,12 @@
              Mirrors the /components inspector accordion (.pg-acc-* + .pr-card). -->
         <div class="pv-pane pv-build">
           <div class="pv-pane-head">
-            <span class="pv-pill" class:dirty={paramsDirty || sourceDirty}>
-              {paramsDirty ? 'params pending — Enter to apply' : sourceDirty ? 'source edited' : 'in sync'}
+            <span class="pv-pill" class:dirty={paramsDirty || sourceDirty || defaultsDirty}>
+              {paramsDirty ? 'params pending — Enter to apply' : sourceDirty ? 'source edited' : defaultsDirty ? 'values changed — Save defaults' : 'in sync'}
             </span>
             <div class="pv-spacer"></div>
             {#if onSaveDefaults}
-              <button class="pv-btn" onclick={saveDefaults} type="button" disabled={!editable || saving} title="Rewrite the default: literals in source.ts">Save defaults</button>
+              <button class="pv-btn" class:primary={defaultsDirty && !sourceDirty} onclick={saveDefaults} type="button" disabled={!editable || saving || !defaultsDirty} title="Rewrite the default: literals in source.ts">Save defaults</button>
             {/if}
             {#if canEdit && onSaveSource}
               <button class="pv-btn primary" type="button" onclick={saveSource} disabled={saving || !sourceDirty}>Save source</button>
