@@ -23,7 +23,7 @@ import { warpManifoldAlongSpline } from './warp-spline';
 /** Argument NAMES passed to `new Function(...NAMES, body)`. Must stay
  *  index-aligned with `values()`. */
 export const SANDBOX_ARG_NAMES: string[] = [
-  'M', 'cyl', 'tube', 'mv', 'rot', 'zMin', 'zMax', 'zLen', 'ref', 'head', 'tail', 'mate', 'align', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
+  'M', 'cyl', 'tube', 'mv', 'rot', 'place', 'zMin', 'zMax', 'zLen', 'ref', 'head', 'tail', 'mate', 'align', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
   'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
   'helix_band', 'revolve', 'profile_extrude',
   'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'warpSpline',
@@ -34,7 +34,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
 /** Argument VALUES, index-aligned with `SANDBOX_ARG_NAMES`. */
 export function sandboxArgValues(): any[] {
   return [
-    helpers.M, helpers.cyl, helpers.tube, helpers.mv, helpers.rot, helpers.zMin, helpers.zMax, helpers.zLen, helpers.ref, helpers.head, helpers.tail, helpers.mate, helpers.align,
+    helpers.M, helpers.cyl, helpers.tube, helpers.mv, helpers.rot, helpers.place, helpers.zMin, helpers.zMax, helpers.zLen, helpers.ref, helpers.head, helpers.tail, helpers.mate, helpers.align,
     helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,

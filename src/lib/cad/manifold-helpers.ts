@@ -230,6 +230,21 @@ export function mv(m: any, v: [number, number, number]) {
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
+/** @op Place parts as ONE manifold WITHOUT a boolean union — a purely
+ *  topological combine (Manifold.compose). Parts stay SEPARATE bodies
+ *  ("connected/placed, not fused"), and each one's source originalID is
+ *  preserved so color-by-source still works. MUCH cheaper than .add()/union
+ *  for stacking many instances: build a part ONCE, then `place()` translated
+ *  copies (e.g. an N-joint drill stand). Verified in
+ *  scripts/spike_csg_originalid.ts (TEST 5: ids + cutaway survive, no merge).
+ *  Skips empty/non-Manifold entries so it's safe to spread a mixed list. */
+export function place(parts: any[]): any {
+  const ms = (parts ?? []).filter((p) => p && typeof p.getMesh === 'function');
+  if (ms.length === 0) return empty();
+  if (ms.length === 1) return ms[0];
+  return M.compose(ms);
+}
+
 // ── Axial extent + connection-DATUM helpers (assembling along the drilling axis) ──
 // Stack pieces inside a part's mv transform: `const pipe = mv(r_tube(…), [0,0,
 // tail(box)]);` drops `pipe` at `box`'s tail datum. The offset is the part's OWN

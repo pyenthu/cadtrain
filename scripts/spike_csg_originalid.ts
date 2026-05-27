@@ -109,6 +109,36 @@ async function main() {
   const r4 = relation('after cutbox subtract (untagged tool)', cut);
   console.log(`\n  body/bore still present after cutbox: ${r4.runOrig?.includes(idBody) && r4.runOrig?.includes(idO)}`);
   console.log(`  cutbox introduced a NEW id (the section plane): ${r4.runOrig?.filter(x => x !== idBody && x !== idO)}`);
+
+  console.log('\n\n============ TEST 5: Manifold.compose (instancing — no boolean) ============');
+  // The dp_inst_stand path: build a joint ONCE, place translated copies, then
+  // combine WITHOUT a boolean union. compose is @deprecated in 3.4.x — confirm
+  // it (a) still runs, (b) preserves each body's originalID (color-by-source),
+  // (c) leaves them topologically SEPARATE (decompose → N), (d) survives the
+  // cutaway subtract. Joints placed end-to-end (touching at z=4), as a real
+  // made-up stand would be — NOT fused.
+  const ja = weldCyl(2, 4).asOriginal();
+  const jb = weldCyl(2, 4).asOriginal().translate([0, 0, 4]); // stacked, touching
+  // NOTE: .originalID() reads -1 on jb because .translate() follows .asOriginal()
+  // (the accessor de-originals on transform) — but the mesh RELATION keeps the id.
+  // Read the preserved id from the relation; that's what color-by-source uses.
+  const idJa = ja.originalID();
+  const idJb = (jb.getMesh().runOriginalID?.[0] as number) ?? jb.originalID();
+  console.log(`ja=${idJa} jb(via relation)=${idJb} (jb.originalID()=${jb.originalID()} — de-originaled by translate)`);
+  let comp: any = null;
+  try { comp = (Manifold as any).compose([ja, jb]); }
+  catch (e) { console.log('  ✗ compose threw:', e); }
+  if (comp) {
+    const r5 = relation('compose([ja, jb])', comp);
+    console.log(`\n  ✔ both joints' ids survive compose: ${r5.runOrig?.includes(idJa) && r5.runOrig?.includes(idJb)}`);
+    let nParts = -1; try { nParts = comp.decompose().length; } catch { /* ignore */ }
+    console.log(`  decompose() → ${nParts} bodies (expect 2 — separate, not fused)`);
+    console.log(`  volume: ${comp.volume().toFixed(2)} (≈ 2× single joint = ${(2 * ja.volume()).toFixed(2)})`);
+    const cutBox = Manifold.cube([100, 50, 100], true).translate([0, -25, 0]);
+    const cut = comp.subtract(cutBox);
+    const r5c = relation('compose → cutbox subtract', cut);
+    console.log(`  ✔ ids survive cutaway on composed body: ${r5c.runOrig?.includes(idJa) && r5c.runOrig?.includes(idJb)}`);
+  }
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
