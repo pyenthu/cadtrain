@@ -927,6 +927,63 @@
     return out;
   }
 
+  // ── Self-contained profile params (INLINE descriptor, not meta.params) ─────
+  // A function-profile part's profile is a named local
+  // `const X_profile = resolveProfile({ kind:'…', params:{ …literals… } });`.
+  // Its params are NOT lifted to meta.params, so they render HERE in the part
+  // row (read from the descriptor, spliced back on edit) — keeping the part
+  // self-contained (nothing in the top Parameters panel). The inline
+  // `r_revolve(resolveProfile(…), …)` form (no named local) falls back to ✎.
+
+  /** Source span + text of a part's resolveProfile descriptor object `{…}`
+   *  (via its named `*_profile` local). null when not a locatable named local. */
+  function partProfileLoc(inst: any): { argsText: string; start: number; end: number } | null {
+    const info = profileInfoFor(inst.call);
+    if (!info || inst.argsStart < 0) return null;
+    const seg = splitTopLevelArgs(inst.argsText)[info.argIndex];
+    if (!seg) return null;
+    const name = seg.text.trim();
+    if (!/^[a-zA-Z_$][\w$]*$/.test(name)) return null; // not a bare identifier
+    const loc = (recognized?.instances ?? []).find(
+      (x: any) => x.name === name && x.call === 'resolveProfile' && x.argsStart >= 0,
+    );
+    return loc ? { argsText: loc.argsText as string, start: loc.argsStart as number, end: loc.argsEnd as number } : null;
+  }
+  /** Parse `{ kind:'X', params:{ k: n, … } }` → kind + literal numeric params. */
+  function parseDescriptor(argsText: string): { kind: string | null; params: Record<string, number> } {
+    const km = /\bkind\s*:\s*['"]([^'"]+)['"]/.exec(argsText);
+    const params: Record<string, number> = {};
+    const pm = /\bparams\s*:\s*\{([^}]*)\}/.exec(argsText);
+    if (pm) for (const m of pm[1].matchAll(/([a-zA-Z_$][\w$]*)\s*:\s*(-?\d*\.?\d+)/g)) params[m[1]] = Number(m[2]);
+    return { kind: km ? km[1] : null, params };
+  }
+  /** Render model for the part-row profile params (kind schema + current vals). */
+  function partProfileParamsView(inst: any): { kind: string; names: string[]; schema: Record<string, any>; values: Record<string, number> } | null {
+    const loc = partProfileLoc(inst);
+    if (!loc) return null;
+    const { kind, params } = parseDescriptor(loc.argsText);
+    if (!kind) return null;
+    const schema = profileSchemaForKind(kind);
+    if (!schema || !Object.keys(schema).length) return null;
+    const names = Object.keys(schema);
+    const values: Record<string, number> = {};
+    for (const n of names) values[n] = typeof params[n] === 'number' ? params[n] : (typeof (schema[n] as any)?.default === 'number' ? (schema[n] as any).default : 0);
+    return { kind, names, schema, values };
+  }
+  /** Rebuild `{ kind, params:{…} }` from `values` (schema order) + splice it. */
+  function applyPartProfile(inst: any, kind: string, values: Record<string, number>, schema: Record<string, any>): void {
+    const loc = partProfileLoc(inst);
+    if (!loc) return;
+    const body = Object.keys(schema).map((n) => `${n}: ${typeof values[n] === 'number' ? values[n] : ((schema[n] as any)?.default ?? 0)}`).join(', ');
+    spliceSource(loc.start, loc.end, `{ kind: '${kind}', params: { ${body} } }`);
+  }
+  /** Commit one inline-descriptor profile param (Enter in the part row). */
+  function setPartProfileParam(inst: any, key: string, val: number): void {
+    const v = partProfileParamsView(inst);
+    if (!v || !Number.isFinite(val)) return;
+    applyPartProfile(inst, v.kind, { ...v.values, [key]: val }, v.schema);
+  }
+
   // ── Searchable VISUAL profile picker (change the profile a revolve part uses) ─
   // The user changes WHICH function profile drives the part via the SAME nice
   // popup as a standalone leaf: a FloatingPanel-anchored ProfilePalette dropdown
@@ -974,19 +1031,24 @@
     await loadVolProfiles();
     const oldKind = partProfileKind(inst);
     if (!oldKind || oldKind === newKind) { profileSwap = null; return; }
-    // Repoint the part's inline resolveProfile({kind}) to the new kind IN PLACE
-    // — keep the part SELF-CONTAINED (no meta.params lift, no whole-source regen).
-    // The old regen path rebuilt the function signature (bore, wall, …) while the
-    // appliedArgs feeding the bake stayed on the load-time paramSchema → mismatch
-    // → the swap "didn't re-render". A kind-string splice keeps source + args in
-    // sync (and re-fires the canvas bake); resolveProfile fills the new kind's
-    // params from its defaults, so the mesh re-bakes correctly. Refine the new
-    // kind's params via the ✎ function editor. (Same pattern as swapEditorProfile
-    // / onFnSaved.)
-    const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
-    if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + oldKind.length, newKind); }
-    else { profileEditNote = `Couldn't locate the '${oldKind}' profile to swap.`; }
+    const schema = profileSchemaForKind(newKind);
+    const loc = partProfileLoc(inst);
+    if (loc && schema && Object.keys(schema).length) {
+      // Self-contained named-local descriptor → rebuild it with the new kind +
+      // its OWN defaults (clean inline params, no leftovers from the old kind).
+      // Stays self-contained (no meta.params lift, no whole-source regen — that
+      // desynced appliedArgs and "didn't re-render"); the source change re-fires
+      // the canvas bake, and the new kind's params now show in the part row.
+      const defaults: Record<string, number> = {};
+      for (const n of Object.keys(schema)) defaults[n] = typeof (schema[n] as any)?.default === 'number' ? (schema[n] as any).default : 0;
+      applyPartProfile(inst, newKind, defaults, schema);
+    } else {
+      // Fallback (inline / unlocatable descriptor): repoint just the kind string.
+      const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
+      if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + oldKind.length, newKind); }
+      else profileEditNote = `Couldn't locate the '${oldKind}' profile to swap.`;
+    }
     profileSwap = null;
   }
   function leafKindOptions(yd: boolean) {
@@ -1858,11 +1920,33 @@
                            applied, so edits live-rebake + mirror the top grid. -->
                       {#if partProfileParamNames(inst).length}
                         {@const ppNames = partProfileParamNames(inst)}
-                        <!-- ONLY the lifted profile params in the body — the
-                             selector + edit live as icons in the accordion head. -->
+                        <!-- LIFTED profile params (legacy meta.params parts) -->
                         <div class="pv-profile-params">
                           <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
                         </div>
+                      {:else if canEdit}
+                        <!-- SELF-CONTAINED profile params — read from the inline
+                             resolveProfile descriptor, NOT meta.params; Enter
+                             splices the value back into the descriptor → re-bake.
+                             Keeps the part self-contained (nothing in the top
+                             Parameters panel). -->
+                        {@const pv = partProfileParamsView(inst)}
+                        {#if pv && pv.names.length}
+                          <div class="pv-profile-params" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:4px 8px;">
+                            {#each pv.names as pn (pn)}
+                              <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={(pv.schema[pn]?.label ?? pn) + (pv.schema[pn]?.unit ? ` (${pv.schema[pn].unit})` : '')}>{pv.schema[pn]?.label ?? pn}</span>
+                                <input
+                                  value={pv.values[pn]}
+                                  spellcheck="false"
+                                  title="number — Enter to commit"
+                                  onkeydown={(e) => { if (e.key === 'Enter') setPartProfileParam(inst, pn, parseFloat((e.currentTarget as HTMLInputElement).value)); }}
+                                  style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid #d8d8e0; border-radius:4px; background:#fff;"
+                                />
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
                       {/if}
                       {#each inst.txs as t}
                         <div class="pv-part-tx">
