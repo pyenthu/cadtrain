@@ -170,6 +170,14 @@
     ).join('\n');
     return `export function build(p) {\n${destr}${ex}  return pen()\n${chain}\n    .pts();\n}`;
   }
+  // Dirty = the saved payload (build SOURCE + param schema, incl. defaults)
+  // differs from what we loaded. Baseline captured once per mount
+  // ({#key seedKey} in the parent remounts on profile switch) + reset on a
+  // successful save → drives the red "needs save" Save button.
+  const saveSig = $derived(composeSource() + '' + JSON.stringify(schema()));
+  let baseline = $state<string | null>(null);
+  $effect(() => { const s = saveSig; if (baseline === null) baseline = s; });
+  const dirty = $derived(baseline !== null && saveSig !== baseline);
   // Full profile source.ts (meta block + build) — the unified P6 form, shown in
   // the Source tab the same way a part's source reads: meta (params + calc) on
   // top, the build/composer below.
@@ -281,7 +289,7 @@
           params: schema(), source: composeSource(),
         }),
       });
-      if (r.ok) { saveAs = null; onSaved(targetId); }
+      if (r.ok) { saveAs = null; baseline = saveSig; onSaved(targetId); }
       else saveErr = `save failed: ${(await r.text()).slice(0, 200)}`;
     } catch (e: any) { saveErr = `error: ${e?.message ?? e}`; }
     finally { busy = false; }
@@ -438,11 +446,11 @@
   <!-- RIGHT (fixed): actions on top, then the capped preview -->
   <div class="fn-right">
     <div class="fn-actions">
-      <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
+      <button type="button" class="fn-save" class:dirty disabled={busy || !!err || !slug} onclick={() => save(false)} title={dirty ? 'Unsaved changes — save to the volume' : 'Save to the volume'}>{busy ? '…' : 'Save'}</button>
       {#if seedId}
         <button type="button" class="fn-saveas" disabled={busy || !!err} onclick={(e) => openSaveAs(e)} title="Save as a new custom profile">Save as</button>
       {/if}
-      <button type="button" class="fn-save" disabled={busy || !!err || !slug} onclick={() => save(false)} title="Save to the volume">{busy ? '…' : 'Save'}</button>
+      <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
     </div>
     {#if saveErr}<div class="fn-saveerr" title={saveErr}>{saveErr}</div>{/if}
     <div class="fn-prev">
@@ -522,14 +530,18 @@
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
   /* three buttons in a single row — Cancel · Save as · Save */
-  .fn-actions { display: flex; gap: 5px; align-items: stretch; }
+  .fn-actions { display: flex; gap: 12px; align-items: stretch; }
   .fn-cancel { flex: 1 1 0; min-width: 0; border: 1px solid #d4d4dc; background: #fff; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
   .fn-cancel:hover { background: #f6f6f8; }
   .fn-saveas { flex: 1 1 0; min-width: 0; white-space: nowrap; border: 1px solid #e8c6c1; background: #fff; color: #c4392f; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
   .fn-saveas:hover:not(:disabled) { background: #fceeec; }
   .fn-saveas:disabled { opacity: .5; cursor: not-allowed; }
-  .fn-save { flex: 1 1 0; min-width: 0; border: 1px solid #a8302a; background: #c4392f; color: #fff; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
-  .fn-save:hover:not(:disabled) { background: #b23329; }
+  /* Save: calm/neutral when clean; RED with a WHITE OUTLINE when dirty so an
+     unsaved profile clearly needs saving. */
+  .fn-save { flex: 1 1 0; min-width: 0; border: 1px solid #ccc; background: #efefef; color: #555; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
+  .fn-save:hover:not(:disabled) { background: #e4e4e4; }
+  .fn-save.dirty { background: #c4392f; color: #fff; border-color: #c4392f; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #c4392f; font-weight: 700; }
+  .fn-save.dirty:hover:not(:disabled) { background: #b23329; }
   .fn-save:disabled { opacity: .5; cursor: not-allowed; }
   .fn-saveerr { font-size: 10px; color: #cc2222; line-height: 1.3; }
   /* collapsible section header — distinct bordered chip (toggle | + add),

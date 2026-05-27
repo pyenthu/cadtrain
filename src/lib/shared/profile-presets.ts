@@ -225,6 +225,65 @@ export const PROFILE_REGISTRY: Record<string, ProfileDef> = {
       return [[ri, 0], [pipeRo, 0], [pipeRo, z1], [tjRo, z2], [tjRo, zFace], [mouthRo, zFace], [ri, zCb]];
     },
   },
+  // Spec-driven drill-pipe connection (2026-05-27) — parameterised by pipe OD,
+  // tool-joint OD + wall (→ bore), a flat joint-upset shoulder, a 45° upset
+  // taper and a 5° thread taper; the thread length is DERIVED (terminates at
+  // ri+wall). Pin + box mirror each other so they mate. (Also mirrored on the
+  // prod volume as dp_spec_pin/dp_spec_box; volume copies shadow these.)
+  dp_spec_pin: {
+    id: 'dp_spec_pin', label: 'Drill-pipe Pin (spec)', set: 'revolve',
+    tags: ['drill pipe', 'tool joint', 'pin', 'male', 'spec', 'rotary shouldered'],
+    params: {
+      pipeOD:      P('pipe OD', 4, 1, 12, 0.1, 'in'),
+      jointOD:     P('tool-joint OD', 5.25, 1, 16, 0.1, 'in'),
+      wall:        P('pipe wall t', 0.625, 0.1, 3, 0.05, 'in'),
+      pipeLen:     P('pipe body len', 6, 0, 40, 0.5, 'in'),
+      jointLen:    P('tool-joint barrel', 2, 0, 24, 0.1, 'in'),
+      jtUpset:     P('joint upset (flat)', 0.25, 0, 4, 0.05, 'in'),
+      jointTaper:  P('upset taper', 45, 5, 80, 1, '°'),
+      threadTaper: P('thread taper', 5, 0.5, 20, 0.5, '°'),
+    },
+    build: (p) => {
+      const D2R = Math.PI / 180;
+      const ri = Math.max(0.05, p.pipeOD / 2 - p.wall), pr = p.pipeOD / 2, jr = p.jointOD / 2;
+      const upsetRun = Math.max(0.05, (jr - pr) / Math.tan(p.jointTaper * D2R));
+      const pinR0 = Math.max(ri + 0.05, jr - p.jtUpset);   // pin start, after the flat upset shoulder
+      const termR = ri + p.wall;                           // thread terminates here (= pipe OD/2)
+      const tt = Math.max(0.5, p.threadTaper) * D2R;
+      const thdLen = Math.max(0, Math.min(30, (pinR0 - termR) / Math.tan(tt))); // DERIVED thread length
+      const noseR = pinR0 - thdLen * Math.tan(tt);
+      const z1 = p.pipeLen, z2 = z1 + upsetRun, z3 = z2 + p.jointLen, z4 = z3 + thdLen;
+      return [[ri, 0], [pr, 0], [pr, z1], [jr, z2], [jr, z3], [pinR0, z3], [noseR, z4], [ri, z4]];
+    },
+  },
+  dp_spec_box: {
+    id: 'dp_spec_box', label: 'Drill-pipe Box (spec)', set: 'revolve',
+    tags: ['drill pipe', 'tool joint', 'box', 'female', 'spec', 'rotary shouldered'],
+    params: {
+      pipeOD:      P('pipe OD', 4, 1, 12, 0.1, 'in'),
+      jointOD:     P('tool-joint OD', 5.25, 1, 16, 0.1, 'in'),
+      wall:        P('pipe wall t', 0.5, 0.1, 3, 0.05, 'in'),
+      pipeLen:     P('pipe body len', 6, 0, 40, 0.5, 'in'),
+      jointLen:    P('tool-joint len (box)', 6, 0.5, 24, 0.1, 'in'),
+      jtUpset:     P('joint upset (flat)', 0.25, 0, 4, 0.05, 'in'),
+      jointTaper:  P('upset taper', 45, 5, 80, 1, '°'),
+      threadTaper: P('thread taper', 5, 0.5, 20, 0.5, '°'),
+    },
+    // FACE-UP (counterbore opens at z=0/top). Internal counterbore tapers like
+    // the pin thread; a flat jtUpset makeup shoulder is the pin-nose seat.
+    build: (p) => {
+      const D2R = Math.PI / 180;
+      const ri = Math.max(0.05, p.pipeOD / 2 - p.wall), pr = p.pipeOD / 2, jr = p.jointOD / 2;
+      const upsetRun = Math.max(0.05, (jr - pr) / Math.tan(p.jointTaper * D2R));
+      const mouthR = Math.max(ri + 0.1, jr - p.jtUpset);   // counterbore mouth (= pin shoulder); box face flat = jtUpset
+      const termR = ri + p.wall;
+      const tt = Math.max(0.5, p.threadTaper) * D2R;
+      const thdLen = Math.max(0.1, Math.min((mouthR - termR) / Math.tan(tt), p.jointLen - p.jtUpset - 0.1));
+      const floorR = mouthR - thdLen * Math.tan(tt);
+      const zFloor = thdLen, zSeat = zFloor + p.jtUpset, zPipe = p.jointLen + upsetRun + p.pipeLen;
+      return [[mouthR, 0], [jr, 0], [jr, p.jointLen], [pr, p.jointLen + upsetRun], [pr, zPipe], [ri, zPipe], [ri, zSeat], [floorR, zSeat], [floorR, zFloor]];
+    },
+  },
 };
 
 export function defaultsFor(def: ProfileDef): Record<string, number> {
