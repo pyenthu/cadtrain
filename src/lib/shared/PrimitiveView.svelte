@@ -1965,38 +1965,37 @@
                            HERE (encapsulated with the part that uses them), not
                            only in the top Parameters panel. Shares pending/
                            applied, so edits live-rebake + mirror the top grid. -->
-                      {#if partProfileParamNames(inst).length}
+                      {@const pv = canEdit ? partProfileParamsView(inst) : null}
+                      {#if pv && pv.names.length}
+                        <!-- SELF-CONTAINED profile params — ALL of them, read from
+                             the inline resolveProfile descriptor (NOT filtered by
+                             meta.params, so a profile param that shares a top-param
+                             name like `od` doesn't hide its siblings — that was the
+                             "tube/tapered_tube only show od" bug). Enter / ƒ splice
+                             back into the descriptor → re-bake. -->
+                        <div class="pv-profile-params" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:4px 8px;">
+                          {#each pv.names as pn (pn)}
+                            {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(pv.raw[pn])}
+                            <div style="display:flex; align-items:center; gap:6px;">
+                              <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pv.schema[pn]?.label ?? pn}>{pv.schema[pn]?.label ?? pn}</span>
+                              <input
+                                value={pv.raw[pn]}
+                                spellcheck="false"
+                                title={isLit ? 'number — Enter to commit' : 'expression (p.<param> · Math.*) — Enter to commit'}
+                                onkeydown={(e) => { if (e.key === 'Enter') setPartProfileParamRaw(inst, pn, (e.currentTarget as HTMLInputElement).value); }}
+                                style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
+                              />
+                              {#if pv.schema[pn]?.unit}<span style="font:10px Arial; color:#999; flex:0 0 auto;">{pv.schema[pn].unit}</span>{/if}
+                              <button type="button" title="Edit as a function / expression — link to a param (p.<name>) · Math.*" onclick={(e) => openProfileFx(inst, pn, e)} style="border:none; background:transparent; cursor:pointer; font:600 13px Arial; color:{isLit ? '#bbb' : '#2266cc'}; padding:0 2px; line-height:1;">ƒ</button>
+                            </div>
+                          {/each}
+                        </div>
+                      {:else if partProfileParamNames(inst).length}
                         {@const ppNames = partProfileParamNames(inst)}
                         <!-- LIFTED profile params (legacy meta.params parts) -->
                         <div class="pv-profile-params">
                           <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
                         </div>
-                      {:else if canEdit}
-                        <!-- SELF-CONTAINED profile params — read from the inline
-                             resolveProfile descriptor, NOT meta.params; Enter
-                             splices the value back into the descriptor → re-bake.
-                             Keeps the part self-contained (nothing in the top
-                             Parameters panel). -->
-                        {@const pv = partProfileParamsView(inst)}
-                        {#if pv && pv.names.length}
-                          <div class="pv-profile-params" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:4px 8px;">
-                            {#each pv.names as pn (pn)}
-                              {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(pv.raw[pn])}
-                              <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pv.schema[pn]?.label ?? pn}>{pv.schema[pn]?.label ?? pn}</span>
-                                <input
-                                  value={pv.raw[pn]}
-                                  spellcheck="false"
-                                  title={isLit ? 'number — Enter to commit' : 'expression (param names · Math.*) — Enter to commit'}
-                                  onkeydown={(e) => { if (e.key === 'Enter') setPartProfileParamRaw(inst, pn, (e.currentTarget as HTMLInputElement).value); }}
-                                  style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
-                                />
-                                {#if pv.schema[pn]?.unit}<span style="font:10px Arial; color:#999; flex:0 0 auto;">{pv.schema[pn].unit}</span>{/if}
-                                <button type="button" title="Edit as a function / expression — link to params · Math.*" onclick={(e) => openProfileFx(inst, pn, e)} style="border:none; background:transparent; cursor:pointer; font:600 13px Arial; color:{isLit ? '#bbb' : '#2266cc'}; padding:0 2px; line-height:1;">ƒ</button>
-                              </div>
-                            {/each}
-                          </div>
-                        {/if}
                       {/if}
                       {#each inst.txs as t}
                         <div class="pv-part-tx">
