@@ -27,6 +27,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
   'helix_band', 'revolve', 'profile_extrude',
   'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'warpSpline',
+  '__tag',
   'G', 'Math',
 ];
 
@@ -38,6 +39,7 @@ export function sandboxArgValues(): any[] {
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,
     gridPatch, capFan, weldAndBuild, revolveProfile, resolveProfile, warpManifoldAlongSpline,
+    helpers.tagManifold,
     globalThis, Math,
   ];
 }

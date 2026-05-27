@@ -7,8 +7,26 @@ import { COMPONENTS } from './library';
 // Manifold runtime + small helpers live in their own module so per-primitive
 // component files can import them without depending on builder.ts. Re-exported
 // here for back-compat with anything still importing them from this file.
-import { M, cyl, tube, mv, rot, getCutBox } from './manifold-helpers';
+import { M, cyl, tube, mv, rot, getCutBox, tagManifold } from './manifold-helpers';
+import { SECTION_ID, triSourceIds } from './part-id';
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
+
+/** Per-part color table (built server-side by analyzeParts). When present
+ *  + active, the renderers color each triangle by its source part via the
+ *  Manifold relation instead of the material/heuristic path. */
+export interface PartColorLUT {
+  idToColor: Record<number, string>;
+  bodyId: number | null;
+  bodyColor: string;
+  active: boolean;
+}
+
+/** hashId → [r,g,b] floats, from a PartColorLUT. */
+function buildIdRgb(parts: PartColorLUT): Map<number, [number, number, number]> {
+  const m = new Map<number, [number, number, number]>();
+  for (const k of Object.keys(parts.idToColor)) m.set(Number(k), hexToRgb(parts.idToColor[Number(k)]));
+  return m;
+}
 
 // ═══ BUILDERS ═══
 //
@@ -486,11 +504,16 @@ export function getRenderZScale(): number { return _renderZScale; }
  * the cutaway box and the maxOD-keyed classification work in the
  * geom's natural units.
  */
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT): ComponentResult {
   const scaled = _renderZScale === 1.0 ? manifold : manifold.scale([1, 1, _renderZScale]);
+  const lut = parts?.active ? parts : undefined;
+  // Tag the cut-box with SECTION_ID so the new cross-section faces it
+  // creates are distinguishable (→ inner/section color) from the part
+  // surfaces it reveals. Only matters on the color-by-source path.
+  const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
   return {
-    full: manifoldToGeo(scaled, material),
-    cutVC: manifoldToCutVC(scaled.subtract(getCutBox()), maxOD, material),
+    full: manifoldToGeo(scaled, material, lut),
+    cutVC: manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut),
     manifold: scaled,
   };
 }
@@ -513,10 +536,14 @@ export function buildComponent(componentId: string, params: Record<string, numbe
 // directly, so it doesn't care about winding inversions, and splitting
 // at the 60° threshold keeps hard corners (cylinder caps, hex faces)
 // crisp.
-function manifoldToGeo(manifold: any, material?: RenderMaterial): THREE.BufferGeometry {
+function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartColorLUT): THREE.BufferGeometry {
   let withNormals: any;
   try { withNormals = manifold.calculateNormals(3, 60); }
   catch { withNormals = manifold; }
+  // Color-by-source path: go NON-INDEXED + per-triangle color from the
+  // Manifold relation (parts can't share a vertex color where they meet).
+  // calculateNormals preserves the relation (verified — spike TEST 4).
+  if (parts?.active) return colorBySourceGeo(withNormals, parts, material, false, 0);
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
@@ -553,12 +580,16 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial): THREE.BufferGe
   return geo;
 }
 
-function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial): THREE.BufferGeometry {
+function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT): THREE.BufferGeometry {
   // Same calculateNormals path as manifoldToGeo — keeps shading
   // consistent across the cross-section overlay.
   let withNormals: any;
   try { withNormals = manifold.calculateNormals(3, 60); }
   catch { withNormals = manifold; }
+  // Color-by-source path: per-triangle color from the relation. SECTION_ID
+  // (the cut-box) → cross-section color; subtractive parts already remapped
+  // to the body color upstream; unknown/anonymous tools → body.
+  if (parts?.active) return colorBySourceGeo(withNormals, parts, material, true, maxOD);
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
@@ -633,5 +664,71 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
   } else {
     geo.computeVertexNormals();
   }
+  return geo;
+}
+
+/**
+ * Build a NON-INDEXED BufferGeometry colored per-triangle by source part,
+ * read from the Manifold relation (runOriginalID/runIndex). Shared by the
+ * full + cutaway renderers' color-by-source path.
+ *
+ *   hashId ∈ LUT       → that part's color (subtractive parts already
+ *                        remapped to the body color upstream)
+ *   hashId == SECTION  → cross-section reveal (cut path only): material.inner
+ *                        ?? grey. On the full path it's treated as unknown.
+ *   anything else      → body color (anonymous inline tools, untagged)
+ *
+ * `withNormals` is the post-calculateNormals manifold (numProp ≥ 6 carries
+ * per-vertex normals at slots 3..5), so we scatter Manifold's normals into
+ * the non-indexed buffer just like the legacy cutVC path.
+ */
+function colorBySourceGeo(
+  withNormals: any,
+  parts: PartColorLUT,
+  material: RenderMaterial | undefined,
+  isCut: boolean,
+  _maxOD: number,
+): THREE.BufferGeometry {
+  const mesh = withNormals.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const tri = mesh.triVerts as Uint32Array;
+  const np = mesh.numProp;
+  const nt = tri.length / 3;
+  const hasNrm = np >= 6;
+  const ids = triSourceIds(mesh);
+  const idRgb = buildIdRgb(parts);
+  const bodyRgb: [number, number, number] =
+    (parts.bodyId != null && idRgb.get(parts.bodyId)) || hexToRgb(parts.bodyColor);
+  const sectionRgb: [number, number, number] = material ? hexToRgb(material.inner.color) : [0.45, 0.45, 0.45];
+
+  const outPos = new Float32Array(nt * 9);
+  const outCol = new Float32Array(nt * 9);
+  const outNrm = hasNrm ? new Float32Array(nt * 9) : null;
+  for (let i = 0; i < nt; i++) {
+    const id = ids[i];
+    let rgb: [number, number, number];
+    if (isCut && id === SECTION_ID) rgb = sectionRgb;
+    else rgb = idRgb.get(id) ?? bodyRgb;
+    const idx = i * 9;
+    for (let v = 0; v < 3; v++) {
+      const vi = tri[i * 3 + v];
+      outPos[idx + v * 3]     = vp[vi * np];
+      outPos[idx + v * 3 + 1] = vp[vi * np + 1];
+      outPos[idx + v * 3 + 2] = vp[vi * np + 2];
+      outCol[idx + v * 3]     = rgb[0];
+      outCol[idx + v * 3 + 1] = rgb[1];
+      outCol[idx + v * 3 + 2] = rgb[2];
+      if (outNrm) {
+        outNrm[idx + v * 3]     = vp[vi * np + 3];
+        outNrm[idx + v * 3 + 1] = vp[vi * np + 4];
+        outNrm[idx + v * 3 + 2] = vp[vi * np + 5];
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+  if (outNrm) geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
+  else geo.computeVertexNormals();
   return geo;
 }

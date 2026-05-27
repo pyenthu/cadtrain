@@ -4,6 +4,7 @@ import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
 import { finalizeManifold, setRenderZScale } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
+import { analyzeParts } from '$lib/server/part-colors';
 
 // POST /api/primitives/preview
 //   { source, name, params: number[], zScale?, mode? }
@@ -89,7 +90,12 @@ export const POST = async ({ request, fetch }) => {
   if (!manifold || typeof manifold.getMesh !== 'function') {
     throw error(400, 'primitive did not return a Manifold');
   }
-  const result = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material);
+  // Per-part color table (color-by-source). Matches the hashId stamping
+  // buildPrimitiveGeom applied; inactive for leaves / unrecognized sources
+  // → finalizeManifold falls back to the material / legacy path.
+  let parts: any = undefined;
+  try { parts = analyzeParts(source); } catch { /* legacy color path */ }
+  const result = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, parts);
   mark('finalize', t); t = performance.now();
   const serialized = serializeComponentResult(result);
   mark('serialize', t);

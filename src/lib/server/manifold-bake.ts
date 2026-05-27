@@ -20,7 +20,8 @@ import { join } from 'path';
 // reference that the component geom functions (cyl, tube, mv) close over
 // gets populated. A second-init (private to this module) would leave
 // the helpers' M as null and the geom would throw when called.
-import { initManifold, getCutBox } from '../cad/manifold-helpers';
+import { initManifold, getCutBox, tagManifold } from '../cad/manifold-helpers';
+import { SECTION_ID, triSourceIds } from '../cad/part-id';
 
 const STATIC_DIR = join(process.cwd(), 'static', 'components');
 
@@ -53,11 +54,20 @@ function hexToRgba(hex: string): [number, number, number, number] {
   ];
 }
 
+/** Per-part color table (mirrors builder.ts PartColorLUT / analyzeParts). */
+export interface PartColorLUT {
+  idToColor: Record<number, string>;
+  bodyId: number | null;
+  bodyColor: string;
+  active: boolean;
+}
+
 function manifoldToGltf(
   manifold: any,
   maxOD: number,
   coloured: boolean,
   material?: MaterialPair,
+  parts?: PartColorLUT,
 ): Document {
   // Bake Manifold's calculateNormals so the GLB carries correct shading
   // data — matches the in-browser Mesh pane after the same fix in
@@ -91,6 +101,56 @@ function manifoldToGltf(
 
   const doc = new Document();
   const buf = doc.createBuffer();
+
+  if (parts?.active) {
+    // COLOR-BY-SOURCE — non-indexed COLOR_0, per-triangle color from the
+    // Manifold relation. Takes priority over the material/heuristic paths
+    // so the GLB pane matches the live mesh. `coloured` marks the cut
+    // variant → SECTION_ID faces get the cross-section color.
+    const ntp = tris.length / 3;
+    const hexRgb = (hex: string): [number, number, number] => {
+      const [r, g, b] = hexToRgba(hex);
+      return [r, g, b];
+    };
+    const idRgb = new Map<number, [number, number, number]>();
+    for (const k of Object.keys(parts.idToColor)) idRgb.set(Number(k), hexRgb(parts.idToColor[Number(k)]));
+    const bodyRgb: [number, number, number] =
+      (parts.bodyId != null && idRgb.get(parts.bodyId)) || hexRgb(parts.bodyColor);
+    const sectionRgb: [number, number, number] = material ? hexRgb(material.inner.color) : [0.45, 0.45, 0.45];
+    const ids = triSourceIds(mesh);
+    const cbPositions = new Float32Array(ntp * 9);
+    const cbColors = new Float32Array(ntp * 9);
+    const cbNormals = vnrm ? new Float32Array(ntp * 9) : null;
+    for (let i = 0; i < ntp; i++) {
+      const id = ids[i];
+      let rgb: [number, number, number];
+      if (coloured && id === SECTION_ID) rgb = sectionRgb;
+      else rgb = idRgb.get(id) ?? bodyRgb;
+      const idx = i * 9;
+      for (let v = 0; v < 3; v++) {
+        const vi = tris[i * 3 + v];
+        cbPositions[idx + v * 3] = vpos[vi * 3];
+        cbPositions[idx + v * 3 + 1] = vpos[vi * 3 + 1];
+        cbPositions[idx + v * 3 + 2] = vpos[vi * 3 + 2];
+        cbColors[idx + v * 3] = rgb[0];
+        cbColors[idx + v * 3 + 1] = rgb[1];
+        cbColors[idx + v * 3 + 2] = rgb[2];
+        if (cbNormals && vnrm) {
+          cbNormals[idx + v * 3] = vnrm[vi * 3];
+          cbNormals[idx + v * 3 + 1] = vnrm[vi * 3 + 1];
+          cbNormals[idx + v * 3 + 2] = vnrm[vi * 3 + 2];
+        }
+      }
+    }
+    const posAcc = doc.createAccessor().setType('VEC3').setArray(cbPositions).setBuffer(buf);
+    const colAcc = doc.createAccessor().setType('VEC3').setArray(cbColors).setBuffer(buf);
+    const prim = doc.createPrimitive().setAttribute('POSITION', posAcc).setAttribute('COLOR_0', colAcc);
+    if (cbNormals) prim.setAttribute('NORMAL', doc.createAccessor().setType('VEC3').setArray(cbNormals).setBuffer(buf));
+    prim.setMaterial(doc.createMaterial().setBaseColorFactor([1, 1, 1, 1]).setMetallicFactor(0).setRoughnessFactor(1));
+    const meshNode = doc.createMesh().addPrimitive(prim);
+    doc.createScene().addChild(doc.createNode().setMesh(meshNode));
+    return doc;
+  }
 
   if (!coloured && !material) {
     // INDEXED, positions + (optional) normals. Client renders it as
@@ -328,6 +388,7 @@ export async function buildGlbBytes(
   geom: (p: Record<string, number | string>) => any,
   defaults: Record<string, number | string>,
   material?: MaterialPair,
+  parts?: PartColorLUT,
 ): Promise<GlbBytes | GlbBytesError> {
   try {
     await initManifold();
@@ -337,20 +398,24 @@ export async function buildGlbBytes(
     }
     const io = new NodeIO();
     const maxOD = pickMaxOD(defaults);
+    const lut = parts?.active ? parts : undefined;
     // 1. Full mesh — when `material` is provided the bake splits the
     //    geometry into outer + inner indexed primitives, each carrying
     //    a PBR material so the downloaded GLB renders correctly in
     //    external viewers (Blender, model-viewer, glTF preview). When
     //    no material is provided we fall back to the smallest
     //    positions-only representation.
-    const doc = manifoldToGltf(manifold, maxOD, false, material);
+    const doc = manifoldToGltf(manifold, maxOD, false, material, lut);
     const full = await io.writeBinary(doc);
     const result: GlbBytes = { ok: true, full };
     // 2. Half-sectioned mesh — non-indexed with per-face colours so the
-    //    grey bore reads against the red outer. Best effort.
+    //    grey bore reads against the red outer. Best effort. On the
+    //    color-by-source path tag the cut box with SECTION_ID so the
+    //    cross-section faces it creates get the section color.
     try {
-      const cutManifold = manifold.subtract(getCutBox());
-      const cutDoc = manifoldToGltf(cutManifold, maxOD, true);
+      const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
+      const cutManifold = manifold.subtract(cutBox);
+      const cutDoc = manifoldToGltf(cutManifold, maxOD, true, undefined, lut);
       result.cut = await io.writeBinary(cutDoc);
     } catch {
       // Cut bake failed (component might already be open / one-sided);

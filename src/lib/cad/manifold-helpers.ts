@@ -140,6 +140,38 @@ export function empty(): any {
   return M.cube([0, 0, 0], true);
 }
 
+/**
+ * Stamp a Manifold with a single source `hashId` (color-by-source).
+ *
+ * Collapses the mesh to ONE relation run carrying `hashId` in
+ * `runOriginalID`, so every triangle of this part carries it through
+ * subsequent `.add`/`.subtract`/`.intersect`. After the final boolean,
+ * `getMesh().runOriginalID` lets the renderer map each triangle back to
+ * its part and color it (see `part-id.ts`, `analyzeParts`, `builder.ts`).
+ *
+ * Injected into the /primitives sandbox as `__tag` and wrapped around each
+ * recognized named instance by `buildPrimitiveGeom`. A no-op (returns the
+ * value untouched) on anything that isn't a Manifold — e.g. a
+ * `resolveProfile(...)` instance that returns a point array — so wrapping
+ * is always safe.
+ */
+export function tagManifold(m: any, hashId: number): any {
+  if (!m || typeof m.getMesh !== 'function') return m;
+  const Manifold = G.__cadtrain_manifold__?.wasm?.Manifold;
+  if (!Manifold) return m;
+  try {
+    const mesh = m.getMesh();
+    // One run spanning the whole mesh. runIndex length 1 → Manifold appends
+    // triVerts.size() automatically (Mesh input contract). faceID is
+    // per-triangle and run-independent, so leave it.
+    mesh.runOriginalID = new Uint32Array([hashId >>> 0]);
+    mesh.runIndex = new Uint32Array([0]);
+    return new Manifold(mesh);
+  } catch {
+    return m;
+  }
+}
+
 /** Mutable Manifold accumulator passed as the 2nd arg to the new-form
  *  defineGeom body: `defineGeom(meta, (p, geom) => { geom.add(...); })`.
  *  Each .add(part) unions in place and returns `this` so calls chain.
