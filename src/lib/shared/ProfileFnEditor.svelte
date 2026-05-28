@@ -32,8 +32,17 @@
     /** Page mode: the editor fills its container (full width/height) with a
      *  large preview, instead of the fixed-size popup geometry. */
     fill?: boolean;
+    /** EMBEDDED MODE — when true, this editor is hosted INSIDE a part tab (via
+     *  ExtrudePartBuilder / RevolvePartBuilder), not the standalone /profiles
+     *  route. Hides the Save / Save-as / Cancel action row (the parent owns
+     *  persistence) and emits `onBodyChange` whenever composeSource() produces
+     *  a new body string. The parent splices that body back into the part's
+     *  inline `profile_pts` slot and re-builds the 3D preview off the resulting
+     *  part source. Standalone mode (default) is unchanged. */
+    embedded?: boolean;
+    onBodyChange?: (body: string) => void;
   }
-  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false }: Props = $props();
+  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false, embedded = false, onBodyChange }: Props = $props();
 
   // Seed an editable cylinder so a fresh editor previews immediately.
   // Trace the profile with the pen (mv/line) — readable + editable (insert/
@@ -325,6 +334,19 @@
   let baseline = $state<string | null>(null);
   $effect(() => { const s = saveSig; if (baseline === null) baseline = s; });
   const dirty = $derived(baseline !== null && saveSig !== baseline);
+  // EMBEDDED MODE — emit body changes back to the parent (ExtrudePartBuilder /
+  // RevolvePartBuilder) so the host can splice the new body into the part's
+  // `profile_pts` slot. We hand back the BODY string (not the full export-fn
+  // wrapper) — the host knows the slot context. lastEmitted gate avoids a
+  // re-emit on the initial reactive tick.
+  let lastEmitted = $state<string | null>(null);
+  $effect(() => {
+    if (!embedded || !onBodyChange) return;
+    const body = composeSource();
+    if (body === lastEmitted) return;
+    lastEmitted = body;
+    onBodyChange(body);
+  });
   // Full profile source.ts (meta block + build) — the unified P6 form, shown in
   // the Source tab the same way a part's source reads: meta (params + calc) on
   // top, the build/composer below.
@@ -626,14 +648,16 @@
 
   <!-- RIGHT (fixed): actions on top, then the capped preview -->
   <div class="fn-right">
-    <div class="fn-actions">
-      <button type="button" class="fn-save" class:dirty disabled={busy || !!err || !slug} onclick={() => save(false)} title={dirty ? 'Unsaved changes — save to the volume' : 'Save to the volume'}>{busy ? '…' : 'Save'}</button>
-      {#if seedId}
-        <button type="button" class="fn-saveas" disabled={busy || !!err} onclick={(e) => openSaveAs(e)} title="Save as a new custom profile">Save as</button>
-      {/if}
-      <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
-    </div>
-    {#if saveErr}<div class="fn-saveerr" title={saveErr}>{saveErr}</div>{/if}
+    {#if !embedded}
+      <div class="fn-actions">
+        <button type="button" class="fn-save" class:dirty disabled={busy || !!err || !slug} onclick={() => save(false)} title={dirty ? 'Unsaved changes — save to the volume' : 'Save to the volume'}>{busy ? '…' : 'Save'}</button>
+        {#if seedId}
+          <button type="button" class="fn-saveas" disabled={busy || !!err} onclick={(e) => openSaveAs(e)} title="Save as a new custom profile">Save as</button>
+        {/if}
+        <button type="button" class="fn-cancel" onclick={onClose}>Cancel</button>
+      </div>
+      {#if saveErr}<div class="fn-saveerr" title={saveErr}>{saveErr}</div>{/if}
+    {/if}
     <div class="fn-prev">
       <svg viewBox={view.vb} preserveAspectRatio={fill ? 'xMidYMid meet' : 'xMinYMid meet'} class="fn-svg" class:bad={!!err}>
         {#if view.axis !== null}<line x1={view.axis} y1={view.y0} x2={view.axis} y2={view.y1} class="fn-axis" vector-effect="non-scaling-stroke" />{/if}
