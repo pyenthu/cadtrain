@@ -592,8 +592,8 @@
               </select>
               {#if mv.cmd === 'repeat'}
                 <input class="fn-marg" bind:value={mv.a} placeholder="N" spellcheck="false" title="count expression — number or param ref (uses `i` is auto-bound 0..N-1)" />
-                <input class="fn-marg" bind:value={mv.b} placeholder="x(i)" spellcheck="false" title="x expression — can reference any param and `i`" />
-                <input class="fn-marg" bind:value={mv.c} placeholder="y(i)" spellcheck="false" title="y expression — can reference any param and `i`" />
+                <textarea class="fn-marg fn-marg-tx" bind:value={mv.b} placeholder="x(i)" rows="2" spellcheck="false" wrap="soft" title="x expression — can reference any param and `i`"></textarea>
+                <textarea class="fn-marg fn-marg-tx" bind:value={mv.c} placeholder="y(i)" rows="2" spellcheck="false" wrap="soft" title="y expression — can reference any param and `i`"></textarea>
               {:else}
                 <input class="fn-marg" bind:value={mv.a} placeholder={mv.cmd === 'lineZ' ? 'z' : 'r'} spellcheck="false" title="r / expression" />
                 {#if mv.cmd === 'mv' || mv.cmd === 'line'}
@@ -774,27 +774,40 @@
   .fn-mrow-rep {
     grid-template-columns: 16px 64px 1fr 20px;
     grid-template-rows: auto auto auto;
-    row-gap: 3px;
+    row-gap: 4px;
+    column-gap: 4px;
     align-items: center;
     background: #f7f3ec;
     border-radius: 4px;
-    padding: 3px 2px;
-    margin: 1px 0;
+    padding: 4px 4px 6px;
+    margin: 2px 0;
   }
   .fn-mrow-rep > .fn-mnum     { grid-column: 1; grid-row: 1; }
   .fn-mrow-rep > select.fn-mcmd { grid-column: 2; grid-row: 1; }
-  .fn-mrow-rep > input.fn-marg:nth-of-type(1) { grid-column: 3; grid-row: 1; max-width: 50%; }
-  .fn-mrow-rep > input.fn-marg:nth-of-type(2),
-  .fn-mrow-rep > input.fn-marg:nth-of-type(3) {
-    grid-column: 2 / 4;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-    padding: 4px 6px;
+  .fn-mrow-rep > input.fn-marg { grid-column: 3; grid-row: 1; max-width: 50%; }
+  /* x(i) and y(i) — textareas now, so a long polar expression like
+     `(rBase + amp * Math.cos(teeth * (i * 2 * Math.PI / segments))) * Math.cos(…)`
+     WRAPS and reads on one screen. Span every column (1 / -1) so they hug
+     the yellow box edges, big monospace 14px, drag the corner to grow more. */
+  .fn-mrow-rep > textarea.fn-marg-tx {
+    grid-column: 1 / -1;
+    width: 100%;
+    box-sizing: border-box;
+    font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 7px 10px;
     background: #fff;
-    border: 1px solid #e0d4c8;
-    border-radius: 3px;
+    border: 1px solid #d0b88a;
+    border-radius: 4px;
+    line-height: 1.4;
+    min-height: 64px;
+    resize: vertical;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #1a1a1a;
   }
-  .fn-mrow-rep > input.fn-marg:nth-of-type(2) { grid-row: 2; }
-  .fn-mrow-rep > input.fn-marg:nth-of-type(3) { grid-row: 3; }
+  .fn-mrow-rep > textarea.fn-marg-tx:focus { outline: none; border-color: #c4392f; box-shadow: 0 0 0 2px rgba(196, 57, 47, 0.12); }
+  .fn-mrow-rep > textarea.fn-marg-tx:nth-of-type(1) { grid-row: 2; }   /* x(i) */
+  .fn-mrow-rep > textarea.fn-marg-tx:nth-of-type(2) { grid-row: 3; }   /* y(i) */
   .fn-mrow-rep > .fn-del      { grid-column: 4; grid-row: 1; }
   .fn-mrow-h { font-size: 8px; color: #bbb; }
   .fn-mrow-h span { padding-left: 3px; }
