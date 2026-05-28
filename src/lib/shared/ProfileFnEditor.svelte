@@ -715,12 +715,13 @@
   .fn-tab svg { display: block; transform: rotate(90deg); width: 13px; height: 13px; }
   .fn-tab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 8px Arial; text-transform: uppercase; letter-spacing: .09em; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
-  /* Right column now hosts BOTH previews vertically: actions row · 2D SVG ·
-     3D Threlte. fn-prev + fn-3d-stack each take roughly half the available
-     height so neither one collapses to nothing on a short viewport. */
+  /* Right column hosts BOTH previews vertically: actions row · 2D SVG (35%) ·
+     3D Threlte (65%). The 3D takes the lion's share because the cross-section
+     is small + readable in less space, while the swept solid needs room to
+     read. Min-heights stop either from collapsing on a short viewport. */
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
-  .fn-right .fn-prev { flex: 1 1 0; min-height: 140px; }
-  .fn-3d-stack { flex: 1 1 0; min-height: 160px; display: flex; flex-direction: column; }
+  .fn-right .fn-prev { flex: 35; min-height: 110px; }
+  .fn-3d-stack { flex: 65; min-height: 180px; display: flex; flex-direction: column; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
   /* three buttons in a single row — Cancel · Save as · Save */
   .fn-actions { display: flex; gap: 12px; align-items: stretch; }
