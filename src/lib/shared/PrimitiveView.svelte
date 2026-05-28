@@ -1875,6 +1875,7 @@
       {id} {name} {description}
       source={editedSource}
       args={args as (number | string)[]}
+      paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
       dirty={sourceDirty}
       onSaveRequest={saveSource}
@@ -1886,6 +1887,7 @@
       {id} {name} {description}
       source={editedSource}
       args={args as (number | string)[]}
+      paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
       dirty={sourceDirty}
       onSaveRequest={saveSource}

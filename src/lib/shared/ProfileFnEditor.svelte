@@ -778,13 +778,15 @@
      canvas below in ONE column instead of side-by-side). */
   .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 1.2fr) minmax(260px, 0.85fr); gap: 14px; }
   .fn-ed.fill .fn-svg { max-height: none; }
-  /* EMBEDDED MODE — the host (ExtrudePartBuilder / RevolvePartBuilder) owns
-     the 3D preview pane to the RIGHT of the editor, so we drop the editor's
-     own stacked 2D SVG + ProfileFn3DCanvas previews in the right column.
-     Grid collapses to 2 cols: tab strip + editor widgets. The editor gets all
-     the horizontal space; previews live in the host pane. */
-  .fn-ed.embedded.fill, .fn-ed.embedded { grid-template-columns: 26px 1fr; gap: 12px; }
-  .fn-ed.embedded .fn-right { display: none; }
+  /* EMBEDDED MODE — three columns: tab strip + editor widgets + a SLIM
+     right column holding just the 2D SVG profile preview. The ProfileFn3D
+     duplicate inside .fn-3d-stack is hidden because the host pane already
+     owns the 3D scene. Actions row (Save/Save-as/Cancel) is hidden via
+     {#if !embedded} above. */
+  .fn-ed.embedded.fill, .fn-ed.embedded { grid-template-columns: 26px 1fr 180px; gap: 12px; }
+  .fn-ed.embedded .fn-3d-stack { display: none; }
+  .fn-ed.embedded .fn-right { gap: 6px; }
+  .fn-ed.embedded .fn-prev { flex: 1; min-height: 160px; }
   /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
      vertical labels, so the rail stays narrow and reads top-to-bottom. */
   .fn-tabs { display: flex; flex-direction: column; gap: 5px; align-items: stretch; padding-top: 4px; }

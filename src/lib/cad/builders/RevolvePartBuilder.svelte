@@ -16,11 +16,12 @@
     description?: string;
     source: string;
     args: (number | string)[];
+    paramSchema?: Record<string, any>;
     onSourceChange?: (newSource: string) => void;
     dirty?: boolean;
     onSaveRequest?: () => void;
   }
-  let { id, name = id, description = '', source = $bindable(), args, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
+  let { id, name = id, description = '', source = $bindable(), args, paramSchema = {}, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
 
   const slots = $derived(findProfileSlots(source));
   const primary = $derived(slots[0] ?? null);
@@ -40,7 +41,7 @@
       <ProfileFnEditor
         set="revolve"
         embedded
-        seed={{ id, label: name, description, body: primary.body }}
+        seed={{ id, label: name, description, body: primary.body, params: paramSchema }}
         {id}
         label={name}
         {description}

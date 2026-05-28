@@ -24,6 +24,12 @@
     source: string;
     /** Positional argument values for the part's function (in meta.params order). */
     args: (number | string)[];
+    /** Part's meta.params — passed to the embedded editor as seed.params so
+     *  the Params section in the editor shows the part's dials (points,
+     *  rOuter, rInner, length, twist, divs, segments, etc.). Without this
+     *  the editor renders default empty params and refs like `p.points`
+     *  appear undefined in the calc rows. */
+    paramSchema?: Record<string, any>;
     /** Called when the user edits the profile, with the updated full source. */
     onSourceChange?: (newSource: string) => void;
     /** Dirty signal from the host (PrimitiveView) — true when editedSource
@@ -33,7 +39,7 @@
     /** Save trigger — invoked when the user clicks the save chip. */
     onSaveRequest?: () => void;
   }
-  let { id, name = id, description = '', source = $bindable(), args, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
+  let { id, name = id, description = '', source = $bindable(), args, paramSchema = {}, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
 
   // Resolve the FIRST inline-profile slot (most extrude parts have just one;
   // 2D-CSG parts like r_plate_with_bore can have two — extension follow-up).
@@ -55,7 +61,7 @@
       <ProfileFnEditor
         set="cartesian"
         embedded
-        seed={{ id, label: name, description, body: primary.body }}
+        seed={{ id, label: name, description, body: primary.body, params: paramSchema }}
         {id}
         label={name}
         {description}
