@@ -188,16 +188,29 @@
   interface Calc { name: string; expr: string; }
   // Split the calc block (`const a = X, b = Y; const c = Z;`) into structured
   // { name, expr } entries for the visual 3-column editor.
+  //
+  // Walks the body char by char tracking BRACE DEPTH so that `;` terminators
+  // INSIDE a callback (e.g. Array.from((_, i) => { const a = …; return […]; }))
+  // don't get misread as top-level calcs. Without this, a nested `const r = …`
+  // referencing local `theta` would surface in the calc panel, get re-emitted
+  // by composeSource at the top, and explode at build time with `theta is not
+  // defined`. Top level only, single-declarator form only (skips destructure).
   function parseCalc(body: string): Calc[] {
     const out: Calc[] = [];
-    for (const stmt of (body || '').replace(/\/\/[^\n]*/g, '').split(';')) {
+    const stripped = (body || '').replace(/\/\/[^\n]*/g, '');
+    let depth = 0, start = 0;
+    const emit = (stmt: string) => {
       const decl = stmt.replace(/^\s*(?:const|let|var)\s+/, '');
-      for (const part of splitArgs(decl)) {
-        const eq = part.indexOf('=');
-        if (eq < 0) continue;
-        const name = part.slice(0, eq).trim();
-        const expr = part.slice(eq + 1).trim();
-        if (/^[A-Za-z_$][\w$]*$/.test(name) && expr) out.push({ name, expr });
+      const m = decl.match(/^\s*([A-Za-z_$][\w$]*)\s*=\s*([\s\S]+)$/);
+      if (m && m[2].trim()) out.push({ name: m[1], expr: m[2].trim() });
+    };
+    for (let i = 0; i <= stripped.length; i++) {
+      const ch = stripped[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      else if ((ch === ';' || i === stripped.length) && depth === 0) {
+        emit(stripped.slice(start, i));
+        start = i + 1;
       }
     }
     return out;
