@@ -571,6 +571,18 @@
   </button>
 {/snippet}
 
+<!-- Row action: archive (soft-delete) — leftmost visible icon, only for editable
+     volume parts. Absolute-positioned in the row's left margin so the file name
+     doesn't shift right on non-editable rows; editable rows reserve ~22px of
+     clearance via the :has() rule in .prim-row-wrap CSS. -->
+{#snippet trashBtn(eid: string)}
+  <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={(ev) => { ev.stopPropagation(); archiveById(eid); }}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6"/>
+    </svg>
+  </button>
+{/snippet}
+
 <div class="prim-page" class:rail-collapsed={railCollapsed} class:rail-resizing={railResizing}
   style={railCollapsed ? '' : `grid-template-columns: ${railWidth}px 1fr;`}>
   {#if !railCollapsed}
@@ -617,15 +629,13 @@
             <div class="prim-list">
               {#each entries as e (e.id)}
                 <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                  {#if e.editable}{@render trashBtn(e.id)}{/if}
                   <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                     <span class="prim-name">{e.id}</span>
                     <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
                   </button>
                   <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
                   {@render moveBtn(e.id, '')}
-                  {#if e.editable}
-                    <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                  {/if}
                 </div>
               {/each}
             </div>
@@ -678,15 +688,13 @@
               <!-- Root parts (no subfolder). -->
               {#each basicRoot as e (e.id)}
                 <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                  {#if e.editable}{@render trashBtn(e.id)}{/if}
                   <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                     <span class="prim-name">{e.id}</span>
                     <span class="prim-tag vol">vol</span>
                   </button>
                   <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
                   {@render moveBtn(e.id, 'basic')}
-                  {#if e.editable}
-                    <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                  {/if}
                 </div>
               {/each}
               <!-- Subfolders (Revolved/Extruded/test_primitives/…). -->
@@ -707,15 +715,13 @@
                     {:else}
                       {#each subParts as e (e.id)}
                         <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                          {#if e.editable}{@render trashBtn(e.id)}{/if}
                           <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                             <span class="prim-name">{e.id}</span>
                             <span class="prim-tag vol">vol</span>
                           </button>
                           <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
                           {@render moveBtn(e.id, `basic/${sub}`)}
-                          {#if e.editable}
-                            <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                          {/if}
                         </div>
                       {/each}
                     {/if}
@@ -754,15 +760,13 @@
                   <!-- Parts at the family root (no subfolder). -->
                   {#each rootParts as e (e.id)}
                     <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                      {#if e.editable}{@render trashBtn(e.id)}{/if}
                       <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                         <span class="prim-name">{e.id}</span>
                         <span class="prim-tag vol">vol</span>
                       </button>
                       <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
                       {@render moveBtn(e.id, `completions/${fam.id}`)}
-                      {#if e.editable}
-                        <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                      {/if}
                     </div>
                   {/each}
                   <!-- Subfolders (drill_pipe/tests/, …) as nested folds. -->
@@ -783,15 +787,13 @@
                         {:else}
                           {#each subParts as e (e.id)}
                             <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                              {#if e.editable}{@render trashBtn(e.id)}{/if}
                               <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
                                 <span class="prim-name">{e.id}</span>
                                 <span class="prim-tag vol">vol</span>
                               </button>
                               <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
                               {@render moveBtn(e.id, `completions/${fam.id}/${sub}`)}
-                              {#if e.editable}
-                                <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                              {/if}
                             </div>
                           {/each}
                         {/if}
@@ -983,14 +985,30 @@
   .prim-profiles-link { display: inline-block; margin-top: 6px; font: 600 11px Arial; color: #c4392f; text-decoration: none; }
   .prim-profiles-link:hover { text-decoration: underline; }
   .prim-list { padding: 4px 0; flex: 1; }
-  .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; }
+  .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; position: relative; }
+  /* Editable rows reserve a 22px LEFT gutter where the absolute-positioned trash
+     sits. Non-editable rows (stdlib, archive) have no trash → no gutter →
+     filename stays at its current x. The :has() selector targets only rows
+     that actually have a trash button, so we don't push everything right. */
+  .prim-row-wrap:has(.prim-trash) { padding-left: 22px; }
   .prim-row-wrap:hover { background: #f0e8e8; }
   .prim-row-wrap.active { background: #fef0f0; }
   .prim-row-wrap.active .prim-name { color: #cc2222; }
   .prim-row-wrap.open .prim-name { font-weight: 800; }  /* open in a tab */
   .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 3px 8px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; line-height: 1.3; }
-  .prim-trash { background: transparent; border: 0; padding: 2px 6px; color: #aaa; cursor: pointer; font: 14px monospace; border-radius: 3px; }
+  /* Trash button — absolute-positioned in the left gutter so the row's other
+     content keeps its layout (the gutter is created above on editable rows
+     only). ALWAYS VISIBLE (not hover-revealed); muted #999 idle → red-on-hover.
+     SVG trash icon (Heroicons style). */
+  .prim-trash {
+    position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+    background: transparent; border: 0; padding: 2px;
+    color: #999; cursor: pointer; border-radius: 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
   .prim-trash:hover { color: #cc2222; background: #fff; }
+  .prim-trash svg { width: 14px; height: 14px; }
   .prim-dup { background: transparent; border: 0; padding: 2px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
   .prim-dup:hover { color: #2266cc; background: #fff; }
   .prim-move { background: transparent; border: 0; padding: 2px 5px; color: #aaa; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; }

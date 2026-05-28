@@ -19,6 +19,10 @@
  * STANDARD-LIBRARY PRIMITIVE — git-tracked, read-only in the GUI.
  */
 import { resolveProfile } from '$lib/shared/profile-presets';
+// `resample` lives in cad/csg-2d and is also sandbox-injected for volume parts.
+// Importing here gives r_weld_extrude its own perimeter-densification path so
+// the smoothness/normal experiment works the same way r_extrude callers do.
+import { resample } from '$lib/cad/csg-2d';
 
 declare const G: any;
 
@@ -38,6 +42,12 @@ export const meta = {
     divs:   { label: 'divs',   min: 1,   max: 96, step: 1,   default: 12 },
     twist:  { label: 'twist (°)', min: -360, max: 360, step: 5,    default: 30 },
     taper:  { label: 'taper',     min: -0.9, max: 2.0, step: 0.05, default: 0 },
+    // Perimeter resampling — densifies the input profile to N points before
+    // extruding. Critical for twist: more side vertices → smaller non-planar
+    // quads → less per-triangle normal artifact under flatShading. Same dial
+    // r_extrude + the volume extrude parts expose; added here so r_weld_extrude
+    // gets the same smoothness experiment.
+    segments: { label: 'segments', min: 4, max: 256, step: 1, default: 32 },
   },
   material: {
     outer: { color: '#ff7a00', metallic: 0.6, roughness: 0.4 },
@@ -51,10 +61,15 @@ export function r_weld_extrude(
   divs: number,
   twist: number,
   taper: number,
+  segments?: number,
 ): any {
-  const pts: [number, number][] =
+  const raw: [number, number][] =
     typeof profile === 'string' ? JSON.parse(profile) : resolveProfile(profile);
-  if (!Array.isArray(pts) || pts.length < 3) throw new Error('profile needs ≥ 3 points');
+  if (!Array.isArray(raw) || raw.length < 3) throw new Error('profile needs ≥ 3 points');
+  // Perimeter resample BEFORE the CCW check + extrude. Legacy callers (no
+  // segments arg) get `undefined`, resample() passes through with no work. New
+  // GUI callers supply p.segments and the profile is densified.
+  const pts = resample(raw, Number(segments ?? 0));
   const wasm = G.__cadtrain_manifold__.wasm;
   if (!wasm) throw new Error('manifold not initialised — call initManifold() first');
 
