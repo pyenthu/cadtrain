@@ -76,15 +76,42 @@
     return out;
   }
   // Parse a build body into { expr (calculated values), moves (the pen path) }.
+  // Two body shapes are recognized:
+  //   1. pen() chain — `pen().mv(a,b).line(c,d)…` or `t.mv()/t.line()` calls.
+  //   2. return-array literal — `return [[a,b], [c,d], …]` or `=> [[…]]`.
+  //      Every curated profile uses this shape (rect/l/t/plus/cylinder/tube/
+  //      cone/barrel/drill_pipe_pin) — extract each [a,b] pair as a move so the
+  //      structured editor can decompose them. p.<name> is stripped so the
+  //      destructured bare param names (added by composeSource) match.
+  // Algorithmic bodies (for/Array.from + push) won't match either pattern and
+  // get preserved verbatim by composeSource's no-moves branch.
   function parseBody(b: string): { expr: string; moves: Move[] } {
     const moves: Move[] = [];
-    // Match .mv/.line/… whether written as separate statements (t.mv(…)) OR
-    // chained (pen().mv(…).line(…)) — both have the `.method(` form.
+    // (1) pen-chain moves.
     const re = /\.(mv|line|lineR|lineZ)\s*\(((?:[^()]|\([^()]*\))*)\)/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(b))) {
       const a = splitArgs(m[2]);
       moves.push({ cmd: m[1] as Move['cmd'], a: a[0] ?? '0', b: a[1] ?? '0' });
+    }
+    // (2) return-array literal — only when (1) found nothing. Match the LAST
+    // top-level `return [...]` or `=> [...]` containing 2-element subarrays.
+    if (!moves.length) {
+      const arrMatch = b.match(/(?:return|=>)\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])\s*;?\s*$/);
+      if (arrMatch) {
+        const outer = arrMatch[1];
+        const elemRe = /\[\s*([^\[\]]+?)\s*\]/g;
+        let em: RegExpExecArray | null;
+        while ((em = elemRe.exec(outer))) {
+          const parts = splitArgs(em[1]);
+          if (parts.length !== 2) continue;
+          // Strip `p.` prefix — destr in composeSource exposes bare names so
+          // the move expressions edit naturally as `w / 2`, not `p.w / 2`.
+          const a = parts[0].replace(/\bp\./g, '').trim();
+          const c = parts[1].replace(/\bp\./g, '').trim();
+          moves.push({ cmd: moves.length ? 'line' : 'mv', a, b: c });
+        }
+      }
     }
     // calc = everything before the pen path begins (`const t = pen()` /
     // `return pen()`); a raw `return [...]` profile (no pen) → whole body is calc.
