@@ -124,7 +124,8 @@
   .rev-builder.resizing .rev-split::after { background: #cc2222; width: 2px; }
   .rev-empty { padding: 20px; color: #888; font: 12px Arial; }
   .rev-empty code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; }
-  .rev-svg-overlay { position: absolute; left: 8px; top: 8px; width: 140px; height: 140px; background: rgba(255, 255, 255, 0.88); border: 1px solid #e8d5d2; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); padding: 6px; pointer-events: none; z-index: 10; }
+  /* Pushed below the .pd-title chip (top: 8px) so the SVG doesn't cover it. */
+  .rev-svg-overlay { position: absolute; left: 8px; top: 36px; width: 140px; height: 140px; background: rgba(255, 255, 255, 0.88); border: 1px solid #e8d5d2; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); padding: 6px; pointer-events: none; z-index: 10; }
   .rev-svg-overlay svg { width: 100%; height: 100%; display: block; }
   .rev-svg-path { fill: none; stroke: #cc2222; stroke-width: 1.4; }
   .rev-svg-axis { stroke: #999; stroke-width: 0.8; stroke-dasharray: 2 2; }

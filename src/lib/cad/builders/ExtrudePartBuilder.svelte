@@ -158,7 +158,9 @@
   .ext-svg-overlay {
     position: absolute;
     left: 8px;
-    top: 8px;
+    /* Pushed below the .pd-title chip (which sits at top: 8px in the dual
+       canvas) so the SVG doesn't overlap the part name. */
+    top: 36px;
     width: 140px;
     height: 140px;
     background: rgba(255, 255, 255, 0.88);
