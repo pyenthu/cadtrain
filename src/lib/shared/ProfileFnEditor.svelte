@@ -885,14 +885,18 @@
      so the math is legible at a glance. Capped at the panel width (max-width
      comes from the parent layout); N stays compact via max-width: 50%. */
   .fn-mrow-rep {
-    grid-template-columns: 16px 64px 1fr 20px;
+    /* Tightened: smaller left number gutter + thinner cmd selector +
+       narrower delete column so the FORMULA textareas (which span 1/-1)
+       get more horizontal room. Padding cut so the yellow card hugs the
+       edges of the panel. */
+    grid-template-columns: 12px 52px 1fr 18px;
     grid-template-rows: auto auto auto;
-    row-gap: 4px;
-    column-gap: 4px;
+    row-gap: 3px;
+    column-gap: 3px;
     align-items: center;
     background: #f7f3ec;
     border-radius: 4px;
-    padding: 4px 4px 6px;
+    padding: 3px 4px 5px;
     margin: 2px 0;
   }
   .fn-mrow-rep > .fn-mnum     { grid-column: 1; grid-row: 1; }
@@ -906,13 +910,17 @@
     grid-column: 1 / -1;
     width: 100%;
     box-sizing: border-box;
-    font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
-    padding: 7px 10px;
+    /* Smaller font + tighter padding so long polar formulas (cos/sin with
+       chained calcs) fit on a single line without wrapping. The user can
+       drag the bottom edge to grow the textarea if a formula gets really
+       long; min-height stays a tad bigger to show 2 lines without resize. */
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 5px 7px;
     background: #fff;
     border: 1px solid #d0b88a;
     border-radius: 4px;
-    line-height: 1.4;
-    min-height: 64px;
+    line-height: 1.45;
+    min-height: 44px;
     resize: vertical;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
