@@ -119,6 +119,54 @@
         }
       }
     }
+    // (3) Array.from repeat pattern — recognize curated procedural shapes
+    // (ellipse, etc.) as a single visual repeat row. Two callback forms:
+    //   inline   : (_, i) => [<x>, <y>]
+    //   block    : (_, i) => { const <name> = <expr>; return [<x>, <y>]; }
+    // For the block form with a single local calc, the calc is INLINED into
+    // x/y so the resulting repeat row carries pure expressions of params + i.
+    if (!moves.length) {
+      const afMatch = b.match(/Array\.from\s*\(\s*\{\s*length\s*:\s*([^,}]+?)\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)\s*=>\s*([\s\S]+?)\s*\)\s*;?\s*$/);
+      if (afMatch) {
+        let count = afMatch[1].trim();
+        const cbody = afMatch[2].trim();
+        let x = '', y = '';
+        if (cbody.startsWith('[')) {
+          const close = cbody.lastIndexOf(']');
+          if (close > 0) {
+            const parts = splitArgs(cbody.slice(1, close));
+            if (parts.length === 2) { x = parts[0]; y = parts[1]; }
+          }
+        } else if (cbody.startsWith('{')) {
+          const close = cbody.lastIndexOf('}');
+          const inner = close > 0 ? cbody.slice(1, close) : cbody;
+          // One-pass inline of `const NAME = EXPR;` substitutions.
+          const localCalcs: Record<string, string> = {};
+          for (const stmt of inner.split(';')) {
+            const sm = stmt.match(/^\s*const\s+([a-zA-Z_$][\w$]*)\s*=\s*([\s\S]+?)\s*$/);
+            if (sm) localCalcs[sm[1]] = sm[2].trim();
+          }
+          const ret = inner.match(/return\s*\[([\s\S]+?)\]\s*;?/);
+          if (ret) {
+            const parts = splitArgs(ret[1]);
+            if (parts.length === 2) {
+              const subst = (e: string) => {
+                for (const [k, v] of Object.entries(localCalcs)) {
+                  e = e.replace(new RegExp('\\b' + k + '\\b', 'g'), '(' + v + ')');
+                }
+                return e;
+              };
+              x = subst(parts[0]);
+              y = subst(parts[1]);
+            }
+          }
+        }
+        if (x && y) {
+          const strip = (s: string) => s.replace(/\bp\./g, '').trim();
+          moves.push({ cmd: 'repeat', a: strip(count), b: strip(x), c: strip(y) });
+        }
+      }
+    }
     // calc = everything before the pen path begins (`const t = pen()` /
     // `return pen()`); a raw `return [...]` profile (no pen) → whole body is calc.
     const penIdx = b.search(/\bpen\s*\(/);
