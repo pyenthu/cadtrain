@@ -109,8 +109,13 @@
   </div>
   {#if Scene}
     {@const S = Scene}
+    {@const smoothShade = id === 'r_weld_extrude'}
+    <!-- smoothShade experiment (2026-05-28): r_weld_extrude renders with
+         calculateNormals(3, 60) vertex normals instead of flatShading face
+         normals so twisted prisms lose the non-planar-quad sawtooth. Other
+         primitives unchanged (cubes/hex stay sharp via face-derived normals). -->
     <Canvas {createRenderer}>
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

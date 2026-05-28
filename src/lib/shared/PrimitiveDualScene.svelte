@@ -18,12 +18,19 @@
     glbUrl = null,
     showCutaway = false,
     offset = 4.5,
+    smoothShade = false,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
     glbUrl?: string | null; // blob URL of the baked GLB
     showCutaway?: boolean;  // applies to the LIVE-mesh half (GLB half follows its own cut bake)
     offset?: number;        // half-separation along X
+    smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
+    // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
+    // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
+    // only) so twisted prisms don't show the non-planar-quad sawtooth. See the
+    // analysis in the 2026-05-28 session: cube/hex edges (>60°) stay sharp via
+    // calculateNormals' vertex split; twist's <60° intra-face edges smooth.
   } = $props();
 
   let full = $derived(geo?.full ?? null);
@@ -119,7 +126,7 @@
     {#if showCutaway && cutVC}
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
       <T.Mesh geometry={cg}>
-        <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+        <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
     {:else if full}
@@ -127,9 +134,9 @@
       {@const fg = scene.warpEnabled ? subdivideAlongZ(full) : full}
       <T.Mesh geometry={fg}>
         {#if hasVC}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {:else}
-          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
