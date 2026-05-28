@@ -150,9 +150,19 @@
           if (ret) {
             const parts = splitArgs(ret[1]);
             if (parts.length === 2) {
+              // Inline to fixpoint — handles chained calcs (theta → r(theta)
+              // → return [r·cos(θ), r·sin(θ)]). Capped at 8 passes; each pass
+              // expands one level of indirection so any DAG-shaped calc graph
+              // resolves in a small bounded number of rounds.
               const subst = (e: string) => {
-                for (const [k, v] of Object.entries(localCalcs)) {
-                  e = e.replace(new RegExp('\\b' + k + '\\b', 'g'), '(' + v + ')');
+                for (let pass = 0; pass < 8; pass++) {
+                  let changed = false;
+                  for (const [k, v] of Object.entries(localCalcs)) {
+                    const re = new RegExp('\\b' + k + '\\b', 'g');
+                    const next = e.replace(re, '(' + v + ')');
+                    if (next !== e) { e = next; changed = true; }
+                  }
+                  if (!changed) break;
                 }
                 return e;
               };
