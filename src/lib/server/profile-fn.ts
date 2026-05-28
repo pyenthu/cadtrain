@@ -13,6 +13,13 @@
 import { transformSync } from 'esbuild';
 import { pen } from '$lib/shared/profile-presets';
 import { evalMetaLiteral, metaLiteralRange } from '$lib/server/primitives-meta';
+import * as mathLib from '$lib/cad/math-lib';
+
+// Bare math names — `cos(x)`, `PI`, `tau`, `deg(45)` — injected alongside `Math`
+// so author-friendly profile bodies don't need the `Math.` prefix. Single source
+// of truth in math-lib.ts; the primitive sandbox imports the same module.
+const MATH_NAMES = Object.keys(mathLib);
+const MATH_VALUES = MATH_NAMES.map((n) => (mathLib as any)[n]);
 
 function stripImports(src: string): string {
   return src.replace(/^\s*import\s[^\n]*;?\s*$/gm, '');
@@ -31,8 +38,8 @@ export function compileProfileBuild(source: string): (params?: Record<string, nu
   const body = transformSync(stripped, { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
   const mod = { exports: {} as Record<string, unknown> };
   // eslint-disable-next-line no-new-func
-  const fn = new Function('Math', 'pen', 'exports', 'module', `${body}\nreturn (exports.build || (module.exports && module.exports.build));`);
-  const build = fn(Math, pen, mod.exports, mod) as ((p: Record<string, number>) => unknown) | undefined;
+  const fn = new Function('Math', 'pen', ...MATH_NAMES, 'exports', 'module', `${body}\nreturn (exports.build || (module.exports && module.exports.build));`);
+  const build = fn(Math, pen, ...MATH_VALUES, mod.exports, mod) as ((p: Record<string, number>) => unknown) | undefined;
   if (typeof build !== 'function') throw new Error('profile source must `export function build(p)`');
   return (params: Record<string, number> = {}) => {
     const pts = build(params || {});

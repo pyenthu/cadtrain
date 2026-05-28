@@ -154,7 +154,10 @@
           }
         }
         if (x && y) {
-          const strip = (s: string) => s.replace(/\bp\./g, '').trim();
+          // Strip `p.` (destr'd by composeSource) AND `Math.` (sandbox-injected
+          // bare names — math-lib.ts) so the editor shows clean expressions:
+          // `r * cos(i * 2 * PI / n)` instead of `p.r * Math.cos(i * 2 * Math.PI / p.n)`.
+          const strip = (s: string) => s.replace(/\bp\./g, '').replace(/\bMath\./g, '').trim();
           moves.push({ cmd: 'repeat', a: strip(count), b: strip(x), c: strip(y) });
         }
       }
@@ -170,8 +173,8 @@
         while ((em = elemRe.exec(outer))) {
           const parts = splitArgs(em[1]);
           if (parts.length !== 2) continue;
-          const a = parts[0].replace(/\bp\./g, '').trim();
-          const c = parts[1].replace(/\bp\./g, '').trim();
+          const a = parts[0].replace(/\bp\./g, '').replace(/\bMath\./g, '').trim();
+          const c = parts[1].replace(/\bp\./g, '').replace(/\bMath\./g, '').trim();
           moves.push({ cmd: moves.length ? 'line' : 'mv', a, b: c });
         }
       }

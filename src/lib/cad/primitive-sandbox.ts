@@ -20,6 +20,14 @@ import { gridPatch, capFan, weldAndBuild, revolveProfile } from './manifold-mesh
 import { resolveProfile } from '$lib/shared/profile-presets';
 import { warpManifoldAlongSpline } from './warp-spline';
 import { cs, extrude_csg } from './csg-2d';
+import * as mathLib from './math-lib';
+
+// Math primitives injected as BARE names — `cos(x)`, `sin(x)`, `PI`, etc.
+// Single source of truth in math-lib.ts; the order here is whatever
+// Object.keys returns (stable across same-version Node/Bun, consistent
+// with sandboxArgValues spreading the same keys).
+const MATH_NAMES = Object.keys(mathLib);
+const MATH_VALUES = MATH_NAMES.map((n) => (mathLib as any)[n]);
 
 /** Argument NAMES passed to `new Function(...NAMES, body)`. Must stay
  *  index-aligned with `values()`. */
@@ -31,6 +39,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'cs', 'extrude_csg',
   '__tag',
   'G', 'Math',
+  ...MATH_NAMES,
 ];
 
 /** Argument VALUES, index-aligned with `SANDBOX_ARG_NAMES`. */
@@ -44,5 +53,6 @@ export function sandboxArgValues(): any[] {
     cs, extrude_csg,
     helpers.tagManifold,
     globalThis, Math,
+    ...MATH_VALUES,
   ];
 }
