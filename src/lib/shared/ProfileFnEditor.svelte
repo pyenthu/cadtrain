@@ -38,17 +38,28 @@
   // Trace the profile with the pen (mv/line) — readable + editable (insert/
   // delete a move). `pen` is injected into the profile sandbox.
   // r, len come from the params (auto-destructured in build) — no aliasing.
-  const DEFAULT_BODY = `const t = pen();\nt.mv(0, 0);    // axis, top\nt.line(r, 0);  // → out to radius\nt.line(r, len);// ↓ down the side\nt.line(0, len);// → back to axis\nreturn t.pts();`;
+  // Default scaffold per mode — function-first parametric in both cases, so a
+  // freshly-created profile builds cleanly out of the gate. Revolve = an L-shaped
+  // (r,z) half-section anchored on the axis (Z-down). Cartesian = a centered
+  // (x,y) rectangle, ready to be edited into a richer cross-section.
+  const DEFAULT_BODY = set === 'cartesian'
+    ? `const t = pen();\nt.mv(-w/2, -h/2); // bottom-left\nt.line( w/2, -h/2); // → right\nt.line( w/2,  h/2); // ↑ up\nt.line(-w/2,  h/2); // ← left\nreturn t.pts();`
+    : `const t = pen();\nt.mv(0, 0);    // axis, top\nt.line(r, 0);  // → out to radius\nt.line(r, len);// ↓ down the side\nt.line(0, len);// → back to axis\nreturn t.pts();`;
   function seedRows(s: Seed | null): ParamRow[] {
     if (s?.params && typeof s.params === 'object' && Object.keys(s.params).length) {
       return Object.entries<any>(s.params).map(([key, d]) => ({
         key, label: d?.label ?? key, def: +(d?.default ?? 0), min: +(d?.min ?? 0), max: +(d?.max ?? 100), step: +(d?.step ?? 1), unit: d?.unit ?? '',
       }));
     }
-    return [
-      { key: 'r', label: 'Radius', def: 40, min: 1, max: 300, step: 0.5, unit: 'mm' },
-      { key: 'len', label: 'Length', def: 120, min: 1, max: 600, step: 1, unit: 'mm' },
-    ];
+    return set === 'cartesian'
+      ? [
+          { key: 'w', label: 'Width',  def: 1.5, min: 0.05, max: 20, step: 0.05, unit: '' },
+          { key: 'h', label: 'Height', def: 1.0, min: 0.05, max: 20, step: 0.05, unit: '' },
+        ]
+      : [
+          { key: 'r',   label: 'Radius', def: 40,  min: 1, max: 300, step: 0.5, unit: 'mm' },
+          { key: 'len', label: 'Length', def: 120, min: 1, max: 600, step: 1,   unit: 'mm' },
+        ];
   }
 
   // ── Build = calculated EXPRESSIONS + a visual MOVE list (the pen path) ──────

@@ -36,7 +36,7 @@ export function compileProfileBuild(source: string): (params?: Record<string, nu
   if (typeof build !== 'function') throw new Error('profile source must `export function build(p)`');
   return (params: Record<string, number> = {}) => {
     const pts = build(params || {});
-    if (!Array.isArray(pts) || pts.length < 3) throw new Error('build(p) must return ≥ 3 [r,z] points');
+    if (!Array.isArray(pts) || pts.length < 3) throw new Error('build(p) must return ≥ 3 points (revolve: [r,z] · cartesian: [x,y])');
     return pts.map((q: any) => [Number(q?.[0]), Number(q?.[1])] as [number, number]);
   };
 }
