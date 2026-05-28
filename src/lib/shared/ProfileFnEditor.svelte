@@ -827,14 +827,26 @@
   .fn-box-del { position: absolute; top: 1px; right: 2px; width: 14px; height: 14px; padding: 0; border: 0; background: transparent; color: #bbb; cursor: pointer; font: 700 13px Arial; line-height: 1; border-radius: 3px; opacity: 0; transition: opacity 80ms ease; }
   .fn-box:hover .fn-box-del { opacity: 1; }
   .fn-box-del:hover { color: #cc2222; background: #fff; }
-  /* Repeat box (flow view) reads as "loop body" — amber accent + wider min so
-     the x(i)/y(i) inputs can show long polar expressions. The inputs themselves
-     go monospace and a touch bigger for math legibility. Capped at 50% of the
-     left-panel width so it doesn't dominate when the snake has many boxes. */
-  .fn-box.repeat { border-color: #d9a441; background: #fdf6e3; min-width: 240px; max-width: 50%; }
+  /* Repeat box (flow view) — the loop body. Wide enough for long polar
+     expressions; the box can spread across the snake grid (its own row span
+     handles the snake layout). Inputs USE THE FULL AVAILABLE WIDTH inside
+     the box instead of the 46px default. */
+  .fn-box.repeat { border-color: #d9a441; background: #fdf6e3; min-width: 360px; max-width: none; grid-column: 2 / 5 !important; padding: 5px 8px; }
   .fn-box.repeat .fn-box-i { color: #b07a16; font-weight: 700; }
-  .fn-box.repeat .fn-box-v { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .fn-box.repeat .fn-box-k { color: #8a6a16; font-weight: 700; }
+  .fn-box.repeat .fn-box-k { color: #8a6a16; font-weight: 700; min-width: 30px; flex: 0 0 auto; }
+  .fn-box.repeat .fn-box-rows { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .fn-box.repeat .fn-box-row { width: 100%; }
+  .fn-box.repeat .fn-box-v {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 4px 6px;
+    border: 1px solid #e0c898;
+    background: #fffbef;
+    border-radius: 3px;
+  }
+  .fn-box.repeat .fn-box-v:focus { background: #fff; border-color: #c4392f; }
   /* continuous rail behind a row's boxes → connects them (boxes cover it; the
      line shows through the gaps so adjacent boxes read as joined) */
   .fn-rail { align-self: center; justify-self: stretch; height: 2px; background: #e0cfcb; z-index: 0; }
