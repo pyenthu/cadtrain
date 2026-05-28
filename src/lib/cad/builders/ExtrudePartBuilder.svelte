@@ -26,8 +26,14 @@
     args: (number | string)[];
     /** Called when the user edits the profile, with the updated full source. */
     onSourceChange?: (newSource: string) => void;
+    /** Dirty signal from the host (PrimitiveView) — true when editedSource
+     *  differs from the last server-saved source. Surfaces the save chip
+     *  inside the embedded editor's tab strip. */
+    dirty?: boolean;
+    /** Save trigger — invoked when the user clicks the save chip. */
+    onSaveRequest?: () => void;
   }
-  let { id, name = id, description = '', source = $bindable(), args, onSourceChange }: Props = $props();
+  let { id, name = id, description = '', source = $bindable(), args, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
 
   // Resolve the FIRST inline-profile slot (most extrude parts have just one;
   // 2D-CSG parts like r_plate_with_bore can have two — extension follow-up).
@@ -56,6 +62,8 @@
         onSaved={() => {}}
         onClose={() => {}}
         onBodyChange={handleBodyChange}
+        onSave={onSaveRequest}
+        {dirty}
         fill
       />
     {:else}
@@ -67,7 +75,7 @@
   </div>
 
   <div class="ext-right">
-    <PrimitiveDualCanvas {id} {name} {description} {args} {source} showControls={false} />
+    <PrimitiveDualCanvas {id} {name} {description} {args} {source} showControls={false} showLabels={false} />
   </div>
 </div>
 

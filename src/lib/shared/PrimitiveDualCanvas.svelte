@@ -9,8 +9,12 @@
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+    /** When false, the top 'Mesh (live)' + 'GLB (bake)' label chips are
+     *  hidden — used by the typed-builder panes where the labels add
+     *  visual clutter without information value (only one scene anyway). */
+    showLabels?: boolean;
   } = $props();
 
   let Scene = $state<any>(null);
@@ -93,11 +97,13 @@
 </script>
 
 <div class="pd-stage">
-  <div class="pd-label pd-label-l">Mesh (live){#if meshStatus === 'building'} · …{/if}</div>
-  <div class="pd-label pd-label-r">
-    <span>GLB (bake){#if glbStatus === 'building'} · …{/if}</span>
-    <label class="pd-toggle" title="Half-sectioned bake"><input type="checkbox" bind:checked={glbCut} /> cut</label>
-  </div>
+  {#if showLabels}
+    <div class="pd-label pd-label-l">Mesh (live){#if meshStatus === 'building'} · …{/if}</div>
+    <div class="pd-label pd-label-r">
+      <span>GLB (bake){#if glbStatus === 'building'} · …{/if}</span>
+      <label class="pd-toggle" title="Half-sectioned bake"><input type="checkbox" bind:checked={glbCut} /> cut</label>
+    </div>
+  {/if}
   {#if name}<div class="pd-title">{name}</div>{/if}
   {#if description}<div class="pd-desc">{description}</div>{/if}
   <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).

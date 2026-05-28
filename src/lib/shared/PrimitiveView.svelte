@@ -1866,13 +1866,18 @@
   {#if kind === 'exp'}
     <!-- Typed dispatch: .exp.ts → ExtrudePartBuilder (embedded ProfileFnEditor
          in cartesian mode + dual canvas). Bypasses the AssemblyEditor layout
-         entirely; the builder owns the full pv-root area. -->
+         entirely; the builder owns the full pv-root area.
+         dirty + onSaveRequest wire the existing source-dirty + saveSource
+         machinery through so the embedded editor's save chip works without
+         duplicating that state. -->
     {@const args = Object.values(applied)}
     <ExtrudePartBuilder
       {id} {name} {description}
       source={editedSource}
       args={args as (number | string)[]}
       onSourceChange={(s) => { editedSource = s; }}
+      dirty={sourceDirty}
+      onSaveRequest={saveSource}
     />
   {:else if kind === 'rev'}
     <!-- Typed dispatch: .rev.ts → RevolvePartBuilder. -->
@@ -1882,6 +1887,8 @@
       source={editedSource}
       args={args as (number | string)[]}
       onSourceChange={(s) => { editedSource = s; }}
+      dirty={sourceDirty}
+      onSaveRequest={saveSource}
     />
   {:else}
   <div class="pv-split" style="--side-width: {sideWidth}px;">

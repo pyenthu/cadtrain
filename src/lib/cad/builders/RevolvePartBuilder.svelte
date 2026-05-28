@@ -17,8 +17,10 @@
     source: string;
     args: (number | string)[];
     onSourceChange?: (newSource: string) => void;
+    dirty?: boolean;
+    onSaveRequest?: () => void;
   }
-  let { id, name = id, description = '', source = $bindable(), args, onSourceChange }: Props = $props();
+  let { id, name = id, description = '', source = $bindable(), args, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
 
   const slots = $derived(findProfileSlots(source));
   const primary = $derived(slots[0] ?? null);
@@ -45,6 +47,8 @@
         onSaved={() => {}}
         onClose={() => {}}
         onBodyChange={handleBodyChange}
+        onSave={onSaveRequest}
+        {dirty}
         fill
       />
     {:else}
@@ -56,7 +60,7 @@
   </div>
 
   <div class="rev-right">
-    <PrimitiveDualCanvas {id} {name} {description} {args} {source} showControls={false} />
+    <PrimitiveDualCanvas {id} {name} {description} {args} {source} showControls={false} showLabels={false} />
   </div>
 </div>
 
