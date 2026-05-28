@@ -131,8 +131,11 @@
   /* Title (top-left) + description (bottom) as DOM overlays — NOT a Threlte
      <HTML> overlay, which rendered a pointer-events:auto wrapper at z-index 8
      that swallowed clicks on the ⬇ GLB button + the cut toggle. */
-  .pd-title { position: absolute; top: 8px; left: 12px; z-index: 5; pointer-events: none; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; color: #ff5a5a; letter-spacing: 0.3px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
-  .pd-desc { position: absolute; bottom: 8px; left: 12px; right: 96px; z-index: 5; pointer-events: none; font: 11px Arial; color: #d8d8d8; line-height: 1.35; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
+  /* Overlays were originally light-on-dark; the scene background is now WHITE
+     (per .pd-stage), so the title and description need dark-on-light. Drop
+     the dark drop-shadow and switch to a contrasting deep red / charcoal. */
+  .pd-title { position: absolute; top: 8px; left: 12px; z-index: 5; pointer-events: none; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; color: #a02520; letter-spacing: 0.3px; text-shadow: 0 1px 2px rgba(255,255,255,0.95); }
+  .pd-desc { position: absolute; bottom: 8px; left: 12px; right: 96px; z-index: 5; pointer-events: none; font: 11px Arial; color: #333; line-height: 1.35; text-align: center; text-shadow: 0 1px 2px rgba(255,255,255,0.95); }
   .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 6; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
