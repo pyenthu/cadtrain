@@ -100,35 +100,18 @@
       const a = splitArgs(m[2]);
       moves.push({ cmd: m[1] as Move['cmd'], a: a[0] ?? '0', b: a[1] ?? '0' });
     }
-    // (2) return-array literal — only when (1) found nothing. Match the LAST
-    // top-level `return [...]` or `=> [...]` containing 2-element subarrays.
-    if (!moves.length) {
-      const arrMatch = b.match(/(?:return|=>)\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])\s*;?\s*$/);
-      if (arrMatch) {
-        const outer = arrMatch[1];
-        const elemRe = /\[\s*([^\[\]]+?)\s*\]/g;
-        let em: RegExpExecArray | null;
-        while ((em = elemRe.exec(outer))) {
-          const parts = splitArgs(em[1]);
-          if (parts.length !== 2) continue;
-          // Strip `p.` prefix — destr in composeSource exposes bare names so
-          // the move expressions edit naturally as `w / 2`, not `p.w / 2`.
-          const a = parts[0].replace(/\bp\./g, '').trim();
-          const c = parts[1].replace(/\bp\./g, '').trim();
-          moves.push({ cmd: moves.length ? 'line' : 'mv', a, b: c });
-        }
-      }
-    }
-    // (3) Array.from repeat pattern — recognize curated procedural shapes
-    // (ellipse, etc.) as a single visual repeat row. Two callback forms:
+    // (2) Array.from repeat pattern — recognized BEFORE the literal-array form
+    // so wrapped uses (`return [...Array.from(...)]`) decompose to a single
+    // repeat row instead of being over-eagerly parsed as a one-point literal.
+    // Two callback forms:
     //   inline   : (_, i) => [<x>, <y>]
     //   block    : (_, i) => { const <name> = <expr>; return [<x>, <y>]; }
-    // For the block form with a single local calc, the calc is INLINED into
-    // x/y so the resulting repeat row carries pure expressions of params + i.
+    // Local calcs in the block form are INLINED to fixpoint so the row's
+    // expressions are pure functions of params + i.
     if (!moves.length) {
-      const afMatch = b.match(/Array\.from\s*\(\s*\{\s*length\s*:\s*([^,}]+?)\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)\s*=>\s*([\s\S]+?)\s*\)\s*;?\s*$/);
+      const afMatch = b.match(/Array\.from\s*\(\s*\{\s*length\s*:\s*([^,}]+?)\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)\s*=>\s*(\[[^\[\]]*\]|\{[\s\S]*?\}(?=\s*\)))/);
       if (afMatch) {
-        let count = afMatch[1].trim();
+        const count = afMatch[1].trim();
         const cbody = afMatch[2].trim();
         let x = '', y = '';
         if (cbody.startsWith('[')) {
@@ -140,7 +123,6 @@
         } else if (cbody.startsWith('{')) {
           const close = cbody.lastIndexOf('}');
           const inner = close > 0 ? cbody.slice(1, close) : cbody;
-          // One-pass inline of `const NAME = EXPR;` substitutions.
           const localCalcs: Record<string, string> = {};
           for (const stmt of inner.split(';')) {
             const sm = stmt.match(/^\s*const\s+([a-zA-Z_$][\w$]*)\s*=\s*([\s\S]+?)\s*$/);
@@ -150,10 +132,6 @@
           if (ret) {
             const parts = splitArgs(ret[1]);
             if (parts.length === 2) {
-              // Inline to fixpoint — handles chained calcs (theta → r(theta)
-              // → return [r·cos(θ), r·sin(θ)]). Capped at 8 passes; each pass
-              // expands one level of indirection so any DAG-shaped calc graph
-              // resolves in a small bounded number of rounds.
               const subst = (e: string) => {
                 for (let pass = 0; pass < 8; pass++) {
                   let changed = false;
@@ -174,6 +152,23 @@
         if (x && y) {
           const strip = (s: string) => s.replace(/\bp\./g, '').trim();
           moves.push({ cmd: 'repeat', a: strip(count), b: strip(x), c: strip(y) });
+        }
+      }
+    }
+    // (3) return-array literal — only when (1) and (2) found nothing. Match the
+    // LAST top-level `return [...]` or `=> [...]` containing 2-element subarrays.
+    if (!moves.length) {
+      const arrMatch = b.match(/(?:return|=>)\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])\s*;?\s*$/);
+      if (arrMatch) {
+        const outer = arrMatch[1];
+        const elemRe = /\[\s*([^\[\]]+?)\s*\]/g;
+        let em: RegExpExecArray | null;
+        while ((em = elemRe.exec(outer))) {
+          const parts = splitArgs(em[1]);
+          if (parts.length !== 2) continue;
+          const a = parts[0].replace(/\bp\./g, '').trim();
+          const c = parts[1].replace(/\bp\./g, '').trim();
+          moves.push({ cmd: moves.length ? 'line' : 'mv', a, b: c });
         }
       }
     }
@@ -737,8 +732,36 @@
   /* visual move list */
   .fn-moves { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
   .fn-mrow { display: grid; grid-template-columns: 16px 64px 1fr 1fr 20px; gap: 4px; align-items: center; }
-  /* Repeat rows widen to fit a third expression slot (x, y → N, x(i), y(i)). */
-  .fn-mrow-rep { grid-template-columns: 16px 64px 1fr 1fr 1fr 20px; background: #f7f3ec; border-radius: 4px; }
+  /* Repeat rows STACK — N on the top line with cmd selector + delete; x(i) and
+     y(i) each get a full-width row underneath so long polar expressions like
+     `r * Math.cos(i * 2 * Math.PI / n)` are readable. Monospace + bumped font
+     so the math is legible at a glance. Capped at the panel width (max-width
+     comes from the parent layout); N stays compact via max-width: 50%. */
+  .fn-mrow-rep {
+    grid-template-columns: 16px 64px 1fr 20px;
+    grid-template-rows: auto auto auto;
+    row-gap: 3px;
+    align-items: center;
+    background: #f7f3ec;
+    border-radius: 4px;
+    padding: 3px 2px;
+    margin: 1px 0;
+  }
+  .fn-mrow-rep > .fn-mnum     { grid-column: 1; grid-row: 1; }
+  .fn-mrow-rep > select.fn-mcmd { grid-column: 2; grid-row: 1; }
+  .fn-mrow-rep > input.fn-marg:nth-of-type(1) { grid-column: 3; grid-row: 1; max-width: 50%; }
+  .fn-mrow-rep > input.fn-marg:nth-of-type(2),
+  .fn-mrow-rep > input.fn-marg:nth-of-type(3) {
+    grid-column: 2 / 4;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 4px 6px;
+    background: #fff;
+    border: 1px solid #e0d4c8;
+    border-radius: 3px;
+  }
+  .fn-mrow-rep > input.fn-marg:nth-of-type(2) { grid-row: 2; }
+  .fn-mrow-rep > input.fn-marg:nth-of-type(3) { grid-row: 3; }
+  .fn-mrow-rep > .fn-del      { grid-column: 4; grid-row: 1; }
   .fn-mrow-h { font-size: 8px; color: #bbb; }
   .fn-mrow-h span { padding-left: 3px; }
   .fn-mnum { font: 9px 'SF Mono', Menlo, monospace; color: #bbb; text-align: right; }
@@ -752,9 +775,14 @@
   .fn-snake { display: grid; grid-template-columns: 20px repeat(3, 1fr) 20px; gap: 8px 8px; padding: 8px 2px 2px; align-items: center; overflow-x: hidden; }
   .fn-box { position: relative; z-index: 1; display: inline-flex; align-items: flex-start; gap: 4px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 3px 6px; background: #fff; justify-self: center; }
   .fn-box.start { border-color: #c4392f; background: #fceeec; }
-  /* Repeat box (flow view) reads as "loop body" — amber accent, wider. */
-  .fn-box.repeat { border-color: #d9a441; background: #fdf6e3; min-width: 160px; }
+  /* Repeat box (flow view) reads as "loop body" — amber accent + wider min so
+     the x(i)/y(i) inputs can show long polar expressions. The inputs themselves
+     go monospace and a touch bigger for math legibility. Capped at 50% of the
+     left-panel width so it doesn't dominate when the snake has many boxes. */
+  .fn-box.repeat { border-color: #d9a441; background: #fdf6e3; min-width: 240px; max-width: 50%; }
   .fn-box.repeat .fn-box-i { color: #b07a16; font-weight: 700; }
+  .fn-box.repeat .fn-box-v { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .fn-box.repeat .fn-box-k { color: #8a6a16; font-weight: 700; }
   /* continuous rail behind a row's boxes → connects them (boxes cover it; the
      line shows through the gaps so adjacent boxes read as joined) */
   .fn-rail { align-self: center; justify-self: stretch; height: 2px; background: #e0cfcb; z-index: 0; }
