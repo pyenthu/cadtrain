@@ -16,6 +16,8 @@
   // `export const meta = {...}`. Save callbacks emit upward — this
   // component doesn't talk to the API itself.
   import PrimitiveDualCanvas from './PrimitiveDualCanvas.svelte';
+  import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
+  import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -69,6 +71,7 @@
     id,
     name = id,
     description = '',
+    kind = 'prim',
     paramSchema,
     profileSchema = {},
     editable = false,
@@ -85,6 +88,11 @@
     id: string;
     name?: string;
     description?: string;
+    /** File-kind mid-extension (.exp/.rev/.asm/.prim). Drives the typed-builder
+     *  dispatch — exp/rev mount the dedicated single-shape builders; asm/prim
+     *  fall through to the existing assembly editor. Default 'prim' keeps
+     *  legacy parts on the existing view. */
+    kind?: 'prim' | 'exp' | 'rev' | 'asm';
     paramSchema: Record<string, ParamSchema>;
     /** meta.profiles — encapsulated profile defaults (Svelte-component model).
      *  Rendered as ProfileEditors in the Profiles tab; editing splices the
@@ -1855,6 +1863,27 @@
 {/snippet}
 
 <div class="pv-root" use:tipHost>
+  {#if kind === 'exp'}
+    <!-- Typed dispatch: .exp.ts → ExtrudePartBuilder (embedded ProfileFnEditor
+         in cartesian mode + dual canvas). Bypasses the AssemblyEditor layout
+         entirely; the builder owns the full pv-root area. -->
+    {@const args = Object.values(applied)}
+    <ExtrudePartBuilder
+      {id} {name} {description}
+      source={editedSource}
+      args={args as (number | string)[]}
+      onSourceChange={(s) => { editedSource = s; }}
+    />
+  {:else if kind === 'rev'}
+    <!-- Typed dispatch: .rev.ts → RevolvePartBuilder. -->
+    {@const args = Object.values(applied)}
+    <RevolvePartBuilder
+      {id} {name} {description}
+      source={editedSource}
+      args={args as (number | string)[]}
+      onSourceChange={(s) => { editedSource = s; }}
+    />
+  {:else}
   <div class="pv-split" style="--side-width: {sideWidth}px;">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pv-canvas-pane"
@@ -2652,6 +2681,7 @@
       </div>
     </FloatingPanel>
   {/if}
+  {/if}<!-- end typed-builder dispatch -->
 </div>
 
 <style>

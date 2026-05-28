@@ -96,7 +96,7 @@
   // Multi-tab (like /components): each opened primitive is a tab kept
   // MOUNTED so it stays rendered/loaded when you switch — open several to
   // compare. serverSource is per-tab (dirty tracking + save).
-  type Tab = { entry: Entry; serverSource: string; loading: boolean };
+  type Tab = { entry: Entry; serverSource: string; loading: boolean; kind?: 'prim' | 'exp' | 'rev' | 'asm' };
   let openTabs: Tab[] = $state([]);
   let activeId: string | null = $state(null);
   let activeTab = $derived(openTabs.find((t) => t.entry.id === activeId) ?? null);
@@ -183,7 +183,7 @@
               description: data.description ?? t.entry.description,
             }
           : t.entry;
-        return { ...t, entry, serverSource: data?.source ?? '', loading: false };
+        return { ...t, entry, serverSource: data?.source ?? '', kind: data?.kind, loading: false };
       });
     });
   }
@@ -872,6 +872,7 @@
                 id={t.entry.id}
                 name={t.entry.name}
                 description={t.entry.description}
+                kind={t.kind}
                 paramSchema={t.entry.params}
                 profileSchema={t.entry.profiles ?? {}}
                 editable={t.entry.editable}
@@ -986,11 +987,11 @@
   .prim-profiles-link:hover { text-decoration: underline; }
   .prim-list { padding: 4px 0; flex: 1; }
   .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; position: relative; }
-  /* Editable rows reserve a 22px LEFT gutter where the absolute-positioned trash
-     sits. Non-editable rows (stdlib, archive) have no trash → no gutter →
-     filename stays at its current x. The :has() selector targets only rows
-     that actually have a trash button, so we don't push everything right. */
-  .prim-row-wrap:has(.prim-trash) { padding-left: 22px; }
+  /* Editable rows reserve a TIGHT left gutter for the absolute-positioned
+     trash. 17px = 12px icon + 5px breathing — keeps the filename close to the
+     folder header. Non-editable rows (stdlib, archive) have no trash → no
+     gutter → filename stays at its current x. */
+  .prim-row-wrap:has(.prim-trash) { padding-left: 17px; }
   .prim-row-wrap:hover { background: #f0e8e8; }
   .prim-row-wrap.active { background: #fef0f0; }
   .prim-row-wrap.active .prim-name { color: #cc2222; }
@@ -1001,14 +1002,14 @@
      only). ALWAYS VISIBLE (not hover-revealed); muted #999 idle → red-on-hover.
      SVG trash icon (Heroicons style). */
   .prim-trash {
-    position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
-    background: transparent; border: 0; padding: 2px;
+    position: absolute; left: 1px; top: 50%; transform: translateY(-50%);
+    background: transparent; border: 0; padding: 1px;
     color: #999; cursor: pointer; border-radius: 3px;
     display: inline-flex; align-items: center; justify-content: center;
     line-height: 1;
   }
   .prim-trash:hover { color: #cc2222; background: #fff; }
-  .prim-trash svg { width: 14px; height: 14px; }
+  .prim-trash svg { width: 12px; height: 12px; }
   .prim-dup { background: transparent; border: 0; padding: 2px 6px; color: #aaa; cursor: pointer; font: 12px monospace; border-radius: 3px; }
   .prim-dup:hover { color: #2266cc; background: #fff; }
   .prim-move { background: transparent; border: 0; padding: 2px 5px; color: #aaa; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; }
@@ -1043,7 +1044,10 @@
   /* Subfolder fold inside a family (e.g. drill_pipe/tests/). Indented one
      step under the family root parts; head reads slightly smaller than the
      family title. */
-  .prim-subfolder { margin-left: 4px; }
+  /* Subfolder + family rows: drop the per-level margin-left now that the
+     trash gutter handles the visible offset. Keeps rows aligned with the
+     folder header instead of pushed further right on every nesting level. */
+  .prim-subfolder { margin-left: 0; }
   .prim-sub-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 2px 8px; font: 600 12px Arial; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 3px; }
   .prim-sub-head:hover { background: #f0f0f0; color: #000; }
   /* New-primitive popup (FloatingPanel — replaces the native prompt). */
@@ -1067,8 +1071,8 @@
   .prim-mini-btn.primary { background: #2266cc; border-color: #2266cc; color: #fff; }
   .prim-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .prim-fam-head:hover { background: #f0f0f0; color: #000; }
-  .prim-fam-empty { margin-left: 14px; }
-  .prim-fam-row { margin-left: 8px; }
+  .prim-fam-empty { margin-left: 4px; }
+  .prim-fam-row { margin-left: 0; }
 
   .prim-archive { margin-top: 6px; border-top: 1px solid #eee; padding-top: 3px; }
   .prim-arch-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 3px 8px; font: 700 14px Arial; color: #1a1a1a; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 3px; -webkit-font-smoothing: antialiased; }

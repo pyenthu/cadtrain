@@ -76,6 +76,11 @@ export const GET = async ({ url }) => {
     try { meta = extractMetaFromSource(src); } catch { /* leave null */ }
     return json({
       source: src, origin: 'volume',
+      // File-kind mid-extension — drives the typed-builder dispatch in
+      // PrimitiveView (exp → ExtrudePartBuilder, rev → RevolvePartBuilder,
+      // asm → AssemblyEditor, prim → legacy AssemblyEditor). Comes from
+      // findPrim's PRIM_KINDS-aware resolution.
+      kind: hit.kind,
       name: meta?.name, description: meta?.description, params: meta?.params ?? {},
       profiles: meta?.profiles ?? {},
     });
