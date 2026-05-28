@@ -9,12 +9,19 @@
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x' }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** When false, the top 'Mesh (live)' + 'GLB (bake)' label chips are
      *  hidden — used by the typed-builder panes where the labels add
      *  visual clutter without information value (only one scene anyway). */
     showLabels?: boolean;
+    /** Half-separation between the live mesh (-offset) and the GLB (+offset),
+     *  along the axis chosen by sceneStackAxis. Default 4.5 (side-by-side). */
+    sceneOffset?: number;
+    /** Which axis to stack along. 'x' = side-by-side (default), 'z' = vertical
+     *  along the drilling axis — typed builders use this with a small offset
+     *  so the user can orbit up/down to see mesh vs GLB. */
+    sceneStackAxis?: 'x' | 'z';
   } = $props();
 
   let Scene = $state<any>(null);
@@ -129,7 +136,7 @@
       id === 'r_weld_extrude' ||
       (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
     <Canvas {createRenderer}>
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={sceneOffset} stackAxis={sceneStackAxis} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

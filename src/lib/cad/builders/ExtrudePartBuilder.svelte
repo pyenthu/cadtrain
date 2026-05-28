@@ -12,6 +12,7 @@
   import ProfileFnEditor from '$lib/shared/ProfileFnEditor.svelte';
   import { findProfileSlots, spliceSlot } from '$lib/cad/inline-profile';
   import PrimitiveDualCanvas from '$lib/shared/PrimitiveDualCanvas.svelte';
+  import { templatesFor, type ProfileTemplate } from '$lib/cad/profile-templates';
 
   interface Props {
     id: string;
@@ -49,6 +50,32 @@
     if (saved >= 15 && saved <= 75) canvasPct = saved;
   });
   $effect(() => { try { localStorage.setItem(STORAGE_KEY, String(canvasPct)); } catch { /* ignore */ } });
+
+  // ── Profile search (alternates) ───────────────────────────────────────
+  // Bar above the SVG overlay. Searches curated templates (rect/ngon/star/
+  // gear/L/T/plus + rev variants) by name + tag; future enhancement reads
+  // additional entries from primitives/profiles/ on the volume too. Picking
+  // a result splices its body into the part's profile_pts slot.
+  type ProfileHit = ProfileTemplate & { source: 'curated' };
+  const CURATED: ProfileHit[] = templatesFor('cartesian').map((t) => ({ ...t, source: 'curated' as const }));
+  let profileQuery = $state('');
+  let profileDropdownOpen = $state(false);
+  const profileResults = $derived.by(() => {
+    const q = profileQuery.trim().toLowerCase();
+    if (!q) return CURATED;
+    return CURATED.filter((t) =>
+      t.id.toLowerCase().includes(q) ||
+      t.label.toLowerCase().includes(q) ||
+      (t.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
+    );
+  });
+  function pickProfile(t: ProfileHit) {
+    // Splice the template's body directly via the same handleBodyChange path.
+    // handleBodyChange does the spliceSlot work + onSourceChange notification.
+    handleBodyChange(t.body);
+    profileQuery = '';
+    profileDropdownOpen = false;
+  }
 
   let root: HTMLDivElement | undefined = $state();
   let resizing = $state(false);
@@ -104,9 +131,34 @@
   ></div>
 
   <div class="ext-right">
-    <PrimitiveDualCanvas {id} {name} {description} {args} {source} showControls={false} showLabels={false} />
-    <!-- 2D profile SVG overlay — top-left of the scene. White semi-transparent
-         backing so it reads against any 3D background. Driven by the editor's
+    <PrimitiveDualCanvas {id} {name} {description} {args} {source} showControls={false} showLabels={false} sceneOffset={2.5} sceneStackAxis="z" />
+    <!-- Profile search bar — sits above the SVG overlay. Searches curated
+         templates (rect/ngon/star/gear/L/T/plus/ellipse). Pick replaces the
+         current profile_pts body via spliceSlot through handleBodyChange. -->
+    <div class="ext-prof-search">
+      <input
+        type="search"
+        placeholder="profile…"
+        bind:value={profileQuery}
+        onfocus={() => (profileDropdownOpen = true)}
+        onblur={() => setTimeout(() => (profileDropdownOpen = false), 150)}
+        aria-label="Search profiles"
+      />
+      {#if profileDropdownOpen}
+        <div class="ext-prof-list">
+          {#each profileResults as t (t.id)}
+            <button class="ext-prof-row" type="button" onmousedown={(e) => { e.preventDefault(); pickProfile(t); }}>
+              <span class="ext-prof-label">{t.label}</span>
+              <span class="ext-prof-id">{t.id}</span>
+            </button>
+          {:else}
+            <div class="ext-prof-empty">no matches</div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    <!-- 2D profile SVG overlay — top-left of the scene below the search bar.
+         Transparent backing so the 3D scene shows through. Driven by editor's
          live view state via the onView callback. -->
     {#if view.d}
       <div class="ext-svg-overlay" aria-hidden="true">
@@ -158,22 +210,33 @@
   .ext-svg-overlay {
     position: absolute;
     left: 8px;
-    /* Pushed below the .pd-title chip (which sits at top: 8px in the dual
-       canvas) so the SVG doesn't overlap the part name. */
-    top: 36px;
+    /* Below the search bar (which is anchored at top: 8px). */
+    top: 72px;
     width: 140px;
     height: 140px;
-    background: rgba(255, 255, 255, 0.88);
-    border: 1px solid #e8d5d2;
+    /* Mostly transparent so the 3D scene shows through; thin border keeps
+       the overlay locatable. Subtle shadow disambiguates from the 3D. */
+    background: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(232, 213, 210, 0.55);
     border-radius: 6px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
     padding: 6px;
     pointer-events: none;
     z-index: 10;
   }
   .ext-svg-overlay svg { width: 100%; height: 100%; display: block; }
-  .ext-svg-path { fill: none; stroke: #cc2222; stroke-width: 1.4; }
+  .ext-svg-path { fill: none; stroke: #cc2222; stroke-width: 1.6; }
   .ext-svg-axis { stroke: #999; stroke-width: 0.8; stroke-dasharray: 2 2; }
+  /* Profile search bar sitting at top: 8px, above the SVG overlay. Width
+     matches the SVG underneath. Dropdown appears below the input. */
+  .ext-prof-search { position: absolute; left: 8px; top: 8px; width: 156px; z-index: 12; font: 11px Arial; }
+  .ext-prof-search input { width: 100%; box-sizing: border-box; padding: 4px 8px; border: 1px solid #d8c3c0; border-radius: 4px; background: rgba(255, 255, 255, 0.92); font: 11px Arial; color: #333; }
+  .ext-prof-search input:focus { outline: none; border-color: #cc2222; }
+  .ext-prof-list { background: rgba(255, 255, 255, 0.98); border: 1px solid #d8c3c0; border-radius: 4px; margin-top: 3px; max-height: 240px; overflow-y: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+  .ext-prof-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 4px 8px; border: 0; background: transparent; cursor: pointer; text-align: left; }
+  .ext-prof-row:hover { background: #fceeec; }
+  .ext-prof-label { font: 600 11px Arial; color: #333; }
+  .ext-prof-id { font: 9px ui-monospace, Menlo, monospace; color: #999; }
+  .ext-prof-empty { padding: 6px 8px; color: #aaa; font: 11px Arial; }
 
   /* Responsive — under 720px, stack instead of side-by-side (echoes K.53). */
   @media (max-width: 720px) {

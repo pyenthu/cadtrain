@@ -18,13 +18,20 @@
     glbUrl = null,
     showCutaway = false,
     offset = 4.5,
+    stackAxis = 'x',
     smoothShade = false,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
     glbUrl?: string | null; // blob URL of the baked GLB
     showCutaway?: boolean;  // applies to the LIVE-mesh half (GLB half follows its own cut bake)
-    offset?: number;        // half-separation along X
+    offset?: number;        // half-separation between mesh and GLB
+    /** Which axis the mesh + GLB are separated along.
+     *  * 'x' (default) — side-by-side comparison view: mesh at -offset, GLB at +offset.
+     *  * 'z' — stacked vertically along the drilling axis: mesh at z=-offset,
+     *    GLB at z=+offset. Lets the user orbit up/down to see one above the
+     *    other instead of side-by-side. */
+    stackAxis?: 'x' | 'z';
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -121,7 +128,7 @@
 <T.PointLight position={light2Pos} intensity={scene.l2.i} distance={50} />
 
 <!-- LEFT — live mesh (zScale already baked server-side, so no scale.z here) -->
-<T.Group position={[-offset, 0, 0]}>
+<T.Group position={stackAxis === 'z' ? [0, 0, -offset] : [-offset, 0, 0]}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '')}
     {#if showCutaway && cutVC}
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
@@ -149,7 +156,7 @@
 
 <!-- RIGHT — baked GLB (scaled along Z to match the SceneControls zScale, like ComponentSceneGlb) -->
 {#if loaded}
-  <T.Group position={[offset, 0, 0]} scale.z={scene.zScale}>
+  <T.Group position={stackAxis === 'z' ? [0, 0, offset] : [offset, 0, 0]} scale.z={scene.zScale}>
     <T is={loaded} />
   </T.Group>
 {/if}
