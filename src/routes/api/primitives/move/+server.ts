@@ -17,14 +17,14 @@ import { isStdlib } from '$lib/server/stdlib';
 // Proxied to prod via hooks.server.ts (single live store).
 
 const ID_RE = /^[a-z][a-z0-9_]*$/i;
-// category: a single segment (basic/archive) OR completions/<family>.
-const CAT_RE = /^(basic|archive|completions\/[a-z][a-z0-9_]*)$/i;
+// category: basic | archive | completions/<family> | completions/<family>/<subfolder>
+const CAT_RE = /^(basic|archive|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
 
 export const POST = async ({ url }) => {
   const id = url.searchParams.get('id');
   const to = (url.searchParams.get('to') || '').replace(/\/+$/, '');
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
-  if (!to || !CAT_RE.test(to)) throw error(400, 'to must be: basic | archive | completions/<family>');
+  if (!to || !CAT_RE.test(to)) throw error(400, 'to must be: basic | archive | completions/<family> | completions/<family>/<subfolder>');
   if (isStdlib(id)) {
     throw error(403, `"${id}" is a built-in (src) primitive — it can't be moved; it lives in src/lib/cad/stdlib/.`);
   }

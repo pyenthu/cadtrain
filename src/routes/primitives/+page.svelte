@@ -23,6 +23,10 @@
      *  stay clean. Loaded lazily with the source. */
     profiles?: Record<string, any>;
     editable: boolean;
+    /** Subfolder NAME inside the family (e.g. 'tests') when the part lives at
+     *  primitives/completions/<family>/<subfolder>/<id>.prim.ts. Undefined for
+     *  parts at the family root. */
+    subfolder?: string;
   }
 
   let entries: Entry[] = $state([]);
@@ -36,6 +40,9 @@
   // may be empty (structure only); the sidebar shows them regardless so
   // the user sees where each family's parts will land.
   let completions: Record<string, Entry[]> = $state({});
+  // Subfolder names per family (independent of whether they have parts yet) so
+  // a freshly-mkdir'd folder shows up immediately. Keyed by family id.
+  let completionSubfolders: Record<string, string[]> = $state({});
   let archived: Entry[] = $state([]);
   // Just-created parts the prod list read hasn't caught up to yet (the list is
   // proxied to Railway and can trail the write by seconds). refreshList re-merges
@@ -47,10 +54,12 @@
     // Drop any the server has now caught up to.
     pendingCreated = pendingCreated.filter((pc) => !serverIds.has(pc.id));
     for (const pc of pendingCreated) {
-      const e: Entry = { id: pc.id, source: 'volume', name: pc.id, description: '', params: {}, editable: true };
+      const rel = pc.dir.startsWith('completions/') ? pc.dir.slice('completions/'.length) : null;
+      // Subfolder path: completions/<family>/<sub> → fam + sub.
+      const [fam, sub] = rel ? rel.split('/') : [null, undefined];
+      const e: Entry = { id: pc.id, source: 'volume', name: pc.id, description: '', params: {}, editable: true, subfolder: sub };
       if (pc.dir === 'basic') basic = [...basic, e];
-      else if (pc.dir.startsWith('completions/')) {
-        const fam = pc.dir.slice('completions/'.length);
+      else if (fam) {
         completions = { ...completions, [fam]: [...(completions[fam] ?? []), e] };
       }
     }
@@ -101,6 +110,8 @@
   $effect(() => { try { localStorage.setItem('prim-sidebar-section', section); } catch { /* ignore */ } });
   // Per-family collapse state inside Completions, keyed by family id.
   let openFamilies: Record<string, boolean> = $state({});
+  // Per-subfolder collapse state inside a family, keyed `<family>/<subfolder>`.
+  let openSubfolders: Record<string, boolean> = $state({});
 
   async function refreshList() {
     try {
@@ -111,13 +122,14 @@
       stdlib = data.stdlib ?? [];
       basic = data.basic ?? [];
       completions = data.completions ?? {};
+      completionSubfolders = data.completionSubfolders ?? {};
       archived = data.archived ?? [];
       mergePending(); // keep just-created parts visible until the list catches up
       status = '';
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; stdlib = []; basic = []; completions = {}; archived = [];
+      entries = []; stdlib = []; basic = []; completions = {}; completionSubfolders = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -303,6 +315,45 @@
   }
   function closeCreate() { createPanel = null; }
 
+  // ── New-FOLDER popup (FloatingPanel) ──────────────────────────────────────
+  // Adds a subfolder INSIDE a family: primitives/completions/<family>/<name>/.
+  // Reuses /api/volume's POST ?action=mkdir; no new endpoint. The 3rd-level
+  // resolver walk (primitive-paths.findPrim) makes parts inside the new folder
+  // discoverable; the list endpoint surfaces the subfolder even when empty.
+  let mkdirPanel = $state<{ family: string; label: string; x: number; y: number } | null>(null);
+  let mkdirName = $state('');
+  let mkdirBusy = $state(false);
+  let mkdirErr = $state('');
+  const SUB_RE = /^[a-z][a-z0-9_]*$/;
+  function openMkdir(family: string, label: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    mkdirName = ''; mkdirErr = '';
+    mkdirPanel = { family, label, x: Math.min(r.right + 6, window.innerWidth - 280), y: Math.min(r.top, window.innerHeight - 220) };
+  }
+  function closeMkdir() { mkdirPanel = null; }
+  async function submitMkdir() {
+    if (!mkdirPanel || mkdirBusy) return;
+    const name = mkdirName.trim();
+    if (!SUB_RE.test(name)) { mkdirErr = 'Lowercase letters, digits, underscore. Must start with a letter.'; return; }
+    const family = mkdirPanel.family;
+    const existing = completionSubfolders[family] ?? [];
+    if (existing.includes(name)) { mkdirErr = `"${name}" already exists in ${mkdirPanel.label}.`; return; }
+    const path = `primitives/completions/${family}/${name}`;
+    mkdirBusy = true;
+    try {
+      const r = await fetch(`/api/volume?path=${encodeURIComponent(path)}&action=mkdir`, { method: 'POST' });
+      if (!r.ok) { mkdirErr = `mkdir failed: ${await r.text()}`; return; }
+      status = `Created folder "${name}" in ${mkdirPanel.label}.`;
+      // Optimistic: surface the new folder + auto-open it before the list catches up.
+      completionSubfolders = { ...completionSubfolders, [family]: [...existing, name].sort() };
+      openFamilies = { ...openFamilies, [family]: true };
+      openSubfolders = { ...openSubfolders, [`${family}/${name}`]: true };
+      closeMkdir();
+      await refreshList();
+    } finally { mkdirBusy = false; }
+  }
+
   // ── Move-to-folder popup (FloatingPanel) ──────────────────────────────────
   // A part's on-volume folder IS its sidebar group (location = category,
   // Rule 16), so moving the file regroups it. Open a folder picker anchored to
@@ -310,10 +361,16 @@
   let movePanel = $state<{ id: string; from: string; x: number; y: number } | null>(null);
   let moveBusy = $state(false);
   let moveTargets = $derived.by(() => {
-    const all = [
+    const all: { to: string; label: string }[] = [
       { to: 'basic', label: 'Basic' },
-      ...completionFamilies.map((f) => ({ to: `completions/${f.id}`, label: `Completions / ${f.label}` })),
     ];
+    for (const f of completionFamilies) {
+      all.push({ to: `completions/${f.id}`, label: `Completions / ${f.label}` });
+      // Subfolders inside this family (e.g. drill_pipe/tests/) are also valid targets.
+      for (const sub of completionSubfolders[f.id] ?? []) {
+        all.push({ to: `completions/${f.id}/${sub}`, label: `Completions / ${f.label} / ${sub}` });
+      }
+    }
     return movePanel ? all.filter((t) => t.to !== movePanel!.from) : all;
   });
   function openMove(id: string, from: string, ev: MouseEvent) {
@@ -613,33 +670,72 @@
             <div class="prim-empty">no families yet</div>
           {:else}
             {#each completionFamilies as fam (fam.id)}
-              {@const parts = completions[fam.id] ?? []}
+              {@const allParts = completions[fam.id] ?? []}
+              {@const rootParts = allParts.filter((e) => !e.subfolder)}
+              {@const subs = completionSubfolders[fam.id] ?? []}
               <div class="prim-tests prim-cmp-fam">
                 <div class="prim-head-row">
                   <button class="prim-arch-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
                     {@render folderIcon(openFamilies[fam.id])}
-                    {fam.label} {#if parts.length}({parts.length}){/if}
+                    {fam.label} {#if allParts.length}({allParts.length}){/if}
+                  </button>
+                  <button class="prim-add prim-add-folder" type="button" title={`New folder in ${fam.label}`} aria-label="New folder" onclick={(e) => openMkdir(fam.id, fam.label, e)}>
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/></svg>
+                    <span class="prim-add-folder-plus">+</span>
                   </button>
                   <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
                 </div>
                 {#if openFamilies[fam.id]}
-                  {#if parts.length === 0}
+                  {#if allParts.length === 0 && subs.length === 0}
                     <div class="prim-empty">empty</div>
-                  {:else}
-                    {#each parts as e (e.id)}
-                      <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-                        <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                          <span class="prim-name">{e.id}</span>
-                          <span class="prim-tag vol">vol</span>
-                        </button>
-                        <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-                        {@render moveBtn(e.id, `completions/${fam.id}`)}
-                        {#if e.editable}
-                          <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                        {/if}
-                      </div>
-                    {/each}
                   {/if}
+                  <!-- Parts at the family root (no subfolder). -->
+                  {#each rootParts as e (e.id)}
+                    <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                      <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                        <span class="prim-name">{e.id}</span>
+                        <span class="prim-tag vol">vol</span>
+                      </button>
+                      <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                      {@render moveBtn(e.id, `completions/${fam.id}`)}
+                      {#if e.editable}
+                        <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                      {/if}
+                    </div>
+                  {/each}
+                  <!-- Subfolders (drill_pipe/tests/, …) as nested folds. -->
+                  {#each subs as sub (sub)}
+                    {@const subParts = allParts.filter((e) => e.subfolder === sub)}
+                    {@const subKey = `${fam.id}/${sub}`}
+                    <div class="prim-subfolder">
+                      <div class="prim-head-row">
+                        <button class="prim-sub-head" type="button" onclick={() => (openSubfolders[subKey] = !openSubfolders[subKey])}>
+                          {@render folderIcon(openSubfolders[subKey])}
+                          {sub} {#if subParts.length}({subParts.length}){/if}
+                        </button>
+                        <button class="prim-add" type="button" title={`New primitive in ${fam.label} / ${sub}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}/${sub}`, `${fam.label} / ${sub}`, e)}>＋</button>
+                      </div>
+                      {#if openSubfolders[subKey]}
+                        {#if subParts.length === 0}
+                          <div class="prim-empty prim-fam-empty">empty</div>
+                        {:else}
+                          {#each subParts as e (e.id)}
+                            <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                                <span class="prim-name">{e.id}</span>
+                                <span class="prim-tag vol">vol</span>
+                              </button>
+                              <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                              {@render moveBtn(e.id, `completions/${fam.id}/${sub}`)}
+                              {#if e.editable}
+                                <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                              {/if}
+                            </div>
+                          {/each}
+                        {/if}
+                      {/if}
+                    </div>
+                  {/each}
                 {/if}
               </div>
             {/each}
@@ -775,6 +871,24 @@
   </FloatingPanel>
 {/if}
 
+{#if mkdirPanel}
+  <FloatingPanel title={`New folder in ${mkdirPanel.label}`} visible={true} x={mkdirPanel.x} y={mkdirPanel.y} width="260px" maxHeight="50vh" onClose={closeMkdir}>
+    <div class="prim-create">
+      <label class="prim-create-row">name
+        <input bind:value={mkdirName} placeholder="e.g. tests" spellcheck="false" autofocus
+          onkeydown={(e) => { if (e.key === 'Enter' && mkdirName.trim() && !mkdirBusy) submitMkdir(); }} />
+      </label>
+      {#if mkdirErr}<div class="prim-create-err">{mkdirErr}</div>{/if}
+      <div class="prim-create-note">→ <code>primitives/completions/{mkdirPanel.family}/{mkdirName || '<name>'}/</code></div>
+      <div class="prim-create-foot">
+        <div style="flex:1;"></div>
+        <button class="prim-mini-btn" type="button" onclick={closeMkdir}>Cancel</button>
+        <button class="prim-mini-btn primary" type="button" disabled={mkdirBusy || !mkdirName.trim()} onclick={submitMkdir}>{mkdirBusy ? '…' : 'Create'}</button>
+      </div>
+    </div>
+  </FloatingPanel>
+{/if}
+
 <style>
   .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; position: relative; }
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
@@ -840,6 +954,18 @@
   .prim-head-row > button:first-child { flex: 1; min-width: 0; }
   .prim-add { flex: 0 0 auto; background: transparent; border: 0; color: #bbb; font: 700 14px Arial; cursor: pointer; padding: 0 8px; line-height: 1; border-radius: 3px; }
   .prim-add:hover { color: #2266cc; background: #eef3fb; }
+  /* "📁+" — new-folder button next to the new-primitive ＋. Amber on hover. */
+  .prim-add-folder { padding: 0 5px; display: inline-flex; align-items: center; gap: 1px; position: relative; }
+  .prim-add-folder svg { width: 13px; height: 13px; color: #bbb; }
+  .prim-add-folder .prim-add-folder-plus { font: 700 11px Arial; color: #bbb; line-height: 1; }
+  .prim-add-folder:hover svg, .prim-add-folder:hover .prim-add-folder-plus { color: #e0a93b; }
+  .prim-add-folder:hover { background: #fdf6e3; }
+  /* Subfolder fold inside a family (e.g. drill_pipe/tests/). Indented one
+     step under the family root parts; head reads slightly smaller than the
+     family title. */
+  .prim-subfolder { margin-left: 4px; }
+  .prim-sub-head { background: transparent; border: 0; width: 100%; text-align: left; padding: 2px 8px; font: 600 12px Arial; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 3px; }
+  .prim-sub-head:hover { background: #f0f0f0; color: #000; }
   /* New-primitive popup (FloatingPanel — replaces the native prompt). */
   .prim-create { display: flex; flex-direction: column; gap: 8px; padding: 2px; }
   .prim-create-row { display: flex; align-items: center; gap: 8px; font: 11px Arial; color: #555; }

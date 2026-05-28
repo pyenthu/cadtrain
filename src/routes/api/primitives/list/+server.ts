@@ -19,6 +19,10 @@ interface PrimEntry {
   description: string;
   params: Record<string, any>;
   editable: boolean;
+  /** Set when the part lives in a sub-bucket inside its family
+   *  (primitives/completions/<family>/<subfolder>/). Undefined for parts at
+   *  the family root. Drives the nested "<subfolder> 📁" fold in the sidebar. */
+  subfolder?: string;
 }
 
 const PRIMS_ROOT = 'primitives';
@@ -33,6 +37,9 @@ export const GET = async () => {
   // be empty (structure only) — they still appear so the user can see
   // where each family's parts will land.
   const completions: Record<string, PrimEntry[]> = {};
+  // Subfolder NAMES per family (independent of whether the subfolder holds parts
+  // yet) so the sidebar shows a freshly-mkdir'd folder even when empty.
+  const completionSubfolders: Record<string, string[]> = {};
   const root = volumePath(PRIMS_ROOT);
 
   // CHEAP listing — id only, NO source read. The sidebar shows just the id;
@@ -46,14 +53,32 @@ export const GET = async () => {
   async function collectSub(name: string, into: PrimEntry[]) {
     for (const e of await listEntitiesIn(join(root, name))) into.push(mk(e.id));
   }
-  // Two-level: primitives/completions/<family>/<id>.prim.ts. Each family sub-dir
-  // becomes a key (even when empty) so the sidebar shows where parts will land.
+  // Two-level by default + one OPTIONAL level deeper for user-created
+  // sub-buckets: primitives/completions/<family>/<subfolder?>/<id>.prim.ts.
+  // Each family sub-dir becomes a key (even when empty) so the sidebar shows
+  // where parts will land. Parts in a subfolder carry `subfolder: <name>` so
+  // the sidebar can fold them into a nested 📁 within the family.
   async function collectCompletions() {
     const subRoot = join(root, 'completions');
     if (!existsSync(subRoot)) return;
     for (const fam of await readdir(subRoot, { withFileTypes: true })) {
       if (!fam.isDirectory()) continue;
-      completions[fam.name] = (await listEntitiesIn(join(subRoot, fam.name))).map((e) => mk(e.id));
+      const famDir = join(subRoot, fam.name);
+      const entries: PrimEntry[] = (await listEntitiesIn(famDir)).map((e) => mk(e.id));
+      // Recurse one level for user subfolders (drill_pipe/tests/, etc.).
+      const subs: string[] = [];
+      let kids: any[] = [];
+      try { kids = await readdir(famDir, { withFileTypes: true }); } catch { /* ignore */ }
+      for (const sub of kids) {
+        if (!sub.isDirectory()) continue;
+        subs.push(sub.name);
+        const subDir = join(famDir, sub.name);
+        for (const e of await listEntitiesIn(subDir)) {
+          entries.push({ ...mk(e.id), subfolder: sub.name });
+        }
+      }
+      completions[fam.name] = entries;
+      if (subs.length) { subs.sort(); completionSubfolders[fam.name] = subs; }
     }
   }
   if (existsSync(root)) {
@@ -96,5 +121,5 @@ export const GET = async () => {
   }
 
   const merged = [...volume];
-  return json({ stdlib, basic, completions, archived, merged });
+  return json({ stdlib, basic, completions, completionSubfolders, archived, merged });
 };

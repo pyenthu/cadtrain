@@ -42,6 +42,10 @@ export interface PrimHit {
   category: string;
   /** completions family, when category === 'completions'. */
   family?: string;
+  /** Subfolder NAME inside the family (e.g. 'tests') when the part lives at
+   *  `primitives/<cat>/<family>/<subfolder>/<id>.prim.ts`. The 3rd resolver
+   *  level for user-created sub-buckets (e.g. drill_pipe/tests/). */
+  subfolder?: string;
 }
 
 /** Parse a new-scheme primitive file name → { id, kind }, or null. */
@@ -95,6 +99,16 @@ export async function findPrim(id: string, opts: { includeArchive?: boolean } = 
       const famDir = join(catDir, fam.name);
       h = hitInDir(famDir, id);
       if (h) return { ...h, dir: famDir, category: cat.name, family: fam.name };
+      // 3rd-level walk: subfolders inside a family (e.g. drill_pipe/tests/).
+      // Lets users create per-family sub-buckets via the sidebar 📁+ button.
+      let lvl3;
+      try { lvl3 = await readdir(famDir, { withFileTypes: true }); } catch { continue; }
+      for (const sub of lvl3) {
+        if (!sub.isDirectory()) continue;
+        const subDir = join(famDir, sub.name);
+        h = hitInDir(subDir, id);
+        if (h) return { ...h, dir: subDir, category: cat.name, family: fam.name, subfolder: sub.name };
+      }
     }
   }
   return null;
