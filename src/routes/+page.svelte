@@ -2,6 +2,7 @@
   <div class="menu">
     <div class="menu-header">CAD Train</div>
     <a href="/primitives" class="menu-item">Primitives <span class="hint">parametric CAD editor</span></a>
+    <a href="/forge" class="menu-item">Forge <span class="hint">image → 3D</span></a>
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
     <a href="/archive/tests" class="menu-item">Tests <span class="hint">recordings + cache stats</span></a>
     <a href="/plan" class="menu-item">Plan <span class="hint">Gantt roadmap</span></a>
