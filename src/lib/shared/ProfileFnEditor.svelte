@@ -63,7 +63,13 @@
   }
 
   // ── Build = calculated EXPRESSIONS + a visual MOVE list (the pen path) ──────
-  interface Move { cmd: 'mv' | 'line' | 'lineR' | 'lineZ'; a: string; b: string; }
+  // Move kinds:
+  //   mv / line      — absolute (x, y).
+  //   lineR / lineZ  — relative (radial / axial delta).
+  //   repeat         — Array.from({length: a}, (_, i) => [b, c]) emitting a
+  //                    SEQUENCE of points. a = count expression, b = x(i),
+  //                    c = y(i). The visual loop primitive — D3 join in code.
+  interface Move { cmd: 'mv' | 'line' | 'lineR' | 'lineZ' | 'repeat'; a: string; b: string; c?: string; }
   // Split call args on top-level commas (so `Math.max(a, b), z` → two args).
   function splitArgs(s: string): string[] {
     const out: string[] = []; let depth = 0, cur = '';
@@ -170,7 +176,7 @@
   let paramPop = $state<{ i: number; x: number; y: number } | null>(null);
   // ƒ callout for editing an expression too long for the inline input — a path
   // move's x/y ('move') or a calculated value ('calc').
-  let fxEdit = $state<{ kind: 'move' | 'calc'; i: number; field?: 'a' | 'b'; x: number; y: number } | null>(null);
+  let fxEdit = $state<{ kind: 'move' | 'calc'; i: number; field?: 'a' | 'b' | 'c'; x: number; y: number } | null>(null);
   function fxPos(ev: MouseEvent): { x: number; y: number } {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     const popH = 110; // flip above if opening below would clip the viewport bottom
@@ -178,7 +184,7 @@
     if (y + popH > window.innerHeight - 8) y = Math.max(8, r.top - popH - 8);
     return { x: Math.max(8, Math.min(r.left - 110, window.innerWidth - 266)), y };
   }
-  function openFx(i: number, field: 'a' | 'b', ev: MouseEvent) { fxEdit = { kind: 'move', i, field, ...fxPos(ev) }; }
+  function openFx(i: number, field: 'a' | 'b' | 'c', ev: MouseEvent) { fxEdit = { kind: 'move', i, field, ...fxPos(ev) }; }
   function openFxCalc(i: number, ev: MouseEvent) { fxEdit = { kind: 'calc', i, ...fxPos(ev) }; }
   function openParamPop(i: number, ev: MouseEvent) {
     if (paramPop?.i === i) { paramPop = null; return; }
@@ -215,6 +221,22 @@
       const body = (seed?.body || '').trim();
       if (body) return `export function build(p) {\n  ${body.replace(/\n/g, '\n  ')}\n}`;
       return `export function build(p) {\n${destr}${ex}  return [];\n}`;
+    }
+    // When ANY repeat row is present, emit a RAW point-array body that mixes
+    // static (mv/line) literals with Array.from() expansions for each repeat.
+    // pen()'s relative ops (lineR/lineZ) can't compose cleanly with spread, so
+    // they're flagged as a comment when mixed with repeat — the user can switch
+    // them back to absolute line/mv once they're aware. For pure mv/line/lineR/
+    // lineZ rows (no repeat), keep the pen() chain — that's what loaded sources
+    // round-trip to and what the snake/flow view expects.
+    const hasRepeat = moves.some((m) => m.cmd === 'repeat');
+    if (hasRepeat) {
+      const els = moves.map((m) => {
+        if (m.cmd === 'repeat') return `    ...Array.from({ length: Math.max(0, Math.round(${m.a || '0'})) }, (_, i) => [${m.b || '0'}, ${m.c ?? '0'}])`;
+        if (m.cmd === 'lineR' || m.cmd === 'lineZ') return `    /* ${m.cmd}(${m.a}) — relative ops not supported when a repeat row is present; convert to mv/line */`;
+        return `    [${m.a || '0'}, ${m.b || '0'}]`;
+      }).join(',\n');
+      return `export function build(p) {\n${destr}${ex}  return [\n${els},\n  ];\n}`;
     }
     // Chained pen path: pen().mv(…).line(…)….pts()
     const chain = moves.map((mv) =>
@@ -268,6 +290,11 @@
   function addRow() { rows = [...rows, { key: '', label: '', def: 0, min: 0, max: 100, step: 1, unit: '' }]; }
   function delRow(i: number) { rows = rows.filter((_, j) => j !== i); }
   function addMove() { moves = [...moves, { cmd: 'line', a: '0', b: '0' }]; }
+  function addRepeat() {
+    // Seed a hexagon ring at radius 1. The user edits count + the cos/sin
+    // expressions to taste; reference any param + Math; `i` is the iteration index.
+    moves = [...moves, { cmd: 'repeat', a: '6', b: 'Math.cos(i * 2 * Math.PI / 6)', c: 'Math.sin(i * 2 * Math.PI / 6)' }];
+  }
   function delMove(i: number) { moves = moves.filter((_, j) => j !== i); }
 
   // Live preview: debounce → resolve build(defaults) on the server sandbox.
@@ -422,6 +449,7 @@
       </button>
       <button type="button" class="fn-acc-add" title="Toggle flow / rows view" onclick={() => (pathView = pathView === 'flow' ? 'rows' : 'flow')}>{pathView === 'flow' ? 'rows' : 'flow'}</button>
       <button type="button" class="fn-acc-add" onclick={() => { movesOpen = true; addMove(); }} title="Add a move">+ move</button>
+      <button type="button" class="fn-acc-add" onclick={() => { movesOpen = true; addRepeat(); }} title="Add a repeat — Array.from({length: N}, (_, i) => [x(i), y(i)])">+ repeat</button>
     </div>
     {#if movesOpen}
       {#if pathView === 'flow'}
@@ -433,22 +461,42 @@
           {#each moves as mv, i (i)}
             {@const row = Math.floor(i / 3)}
             {@const col = row % 2 === 0 ? i % 3 : 2 - (i % 3)}
-            <div class="fn-box" class:start={i === 0} style="grid-column:{col + 2};grid-row:{row + 1}">
-              <span class="fn-box-i">{i}</span>
-              <div class="fn-box-rows">
-                <label class="fn-box-row">
-                  <span class="fn-box-k">x</span>
-                  <input class="fn-box-v" bind:value={moves[i].a} spellcheck="false" />
-                  {#if (moves[i].a?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'a', e)} aria-label="Edit expression">ƒ</button>{/if}
-                </label>
-                {#if moves[i].cmd === 'mv' || moves[i].cmd === 'line'}
+            <div class="fn-box" class:start={i === 0} class:repeat={mv.cmd === 'repeat'} style="grid-column:{col + 2};grid-row:{row + 1}">
+              <span class="fn-box-i">{mv.cmd === 'repeat' ? `${i} ⟳` : i}</span>
+              {#if mv.cmd === 'repeat'}
+                <div class="fn-box-rows">
                   <label class="fn-box-row">
-                    <span class="fn-box-k">y</span>
-                    <input class="fn-box-v" bind:value={moves[i].b} spellcheck="false" />
+                    <span class="fn-box-k">×N</span>
+                    <input class="fn-box-v" bind:value={moves[i].a} spellcheck="false" placeholder="6" title="count" />
+                    {#if (moves[i].a?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'a', e)} aria-label="Edit expression">ƒ</button>{/if}
+                  </label>
+                  <label class="fn-box-row">
+                    <span class="fn-box-k">x(i)</span>
+                    <input class="fn-box-v" bind:value={moves[i].b} spellcheck="false" placeholder="r * Math.cos(i*2*Math.PI/N)" title="x as a function of i" />
                     {#if (moves[i].b?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'b', e)} aria-label="Edit expression">ƒ</button>{/if}
                   </label>
-                {/if}
-              </div>
+                  <label class="fn-box-row">
+                    <span class="fn-box-k">y(i)</span>
+                    <input class="fn-box-v" bind:value={moves[i].c} spellcheck="false" placeholder="r * Math.sin(i*2*Math.PI/N)" title="y as a function of i" />
+                    {#if ((moves[i].c?.length ?? 0)) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'c', e)} aria-label="Edit expression">ƒ</button>{/if}
+                  </label>
+                </div>
+              {:else}
+                <div class="fn-box-rows">
+                  <label class="fn-box-row">
+                    <span class="fn-box-k">x</span>
+                    <input class="fn-box-v" bind:value={moves[i].a} spellcheck="false" />
+                    {#if (moves[i].a?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'a', e)} aria-label="Edit expression">ƒ</button>{/if}
+                  </label>
+                  {#if mv.cmd === 'mv' || mv.cmd === 'line'}
+                    <label class="fn-box-row">
+                      <span class="fn-box-k">y</span>
+                      <input class="fn-box-v" bind:value={moves[i].b} spellcheck="false" />
+                      {#if (moves[i].b?.length ?? 0) > 8}<button type="button" class="fn-fx" onclick={(e) => openFx(i, 'b', e)} aria-label="Edit expression">ƒ</button>{/if}
+                    </label>
+                  {/if}
+                </div>
+              {/if}
             </div>
           {/each}
           {#each Array.from({ length: Math.ceil(moves.length / 3) }) as _, r (r)}
@@ -464,16 +512,23 @@
         <div class="fn-moves">
           <div class="fn-mrow fn-mrow-h"><span></span><span>cmd</span><span>r</span><span>z</span><span></span></div>
           {#each moves as mv, i (i)}
-            <div class="fn-mrow">
+            <div class="fn-mrow" class:fn-mrow-rep={mv.cmd === 'repeat'}>
               <span class="fn-mnum">{i}</span>
               <select class="fn-mcmd" bind:value={mv.cmd}>
                 <option value="mv">mv</option><option value="line">line</option>
                 <option value="lineR">lineR</option><option value="lineZ">lineZ</option>
+                <option value="repeat">repeat</option>
               </select>
-              <input class="fn-marg" bind:value={mv.a} placeholder={mv.cmd === 'lineZ' ? 'z' : 'r'} spellcheck="false" title="r / expression" />
-              {#if mv.cmd === 'mv' || mv.cmd === 'line'}
-                <input class="fn-marg" bind:value={mv.b} placeholder="z" spellcheck="false" title="z / expression" />
-              {:else}<span class="fn-marg fn-marg-na">—</span>{/if}
+              {#if mv.cmd === 'repeat'}
+                <input class="fn-marg" bind:value={mv.a} placeholder="N" spellcheck="false" title="count expression — number or param ref (uses `i` is auto-bound 0..N-1)" />
+                <input class="fn-marg" bind:value={mv.b} placeholder="x(i)" spellcheck="false" title="x expression — can reference any param and `i`" />
+                <input class="fn-marg" bind:value={mv.c} placeholder="y(i)" spellcheck="false" title="y expression — can reference any param and `i`" />
+              {:else}
+                <input class="fn-marg" bind:value={mv.a} placeholder={mv.cmd === 'lineZ' ? 'z' : 'r'} spellcheck="false" title="r / expression" />
+                {#if mv.cmd === 'mv' || mv.cmd === 'line'}
+                  <input class="fn-marg" bind:value={mv.b} placeholder="z" spellcheck="false" title="z / expression" />
+                {:else}<span class="fn-marg fn-marg-na">—</span>{/if}
+              {/if}
               <button type="button" class="fn-del" onclick={() => delMove(i)} title="Remove move" aria-label="Remove move">
                 <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M6 2h4l.5 1H13v1.4H3V3h2.5L6 2zm-1.6 3.4h7.2l-.6 8.1a1.1 1.1 0 0 1-1.1 1H6.1a1.1 1.1 0 0 1-1.1-1l-.6-8.1zM7 7v5h1V7H7zm2 0v5h1V7H9z"/></svg>
               </button>
@@ -544,10 +599,10 @@
   {#if fm}
     <div class="fn-pop-back" role="presentation" onclick={() => (fxEdit = null)}></div>
     <div class="fn-pop fn-fx-pop" style={`left:${fxEdit.x}px; top:${fxEdit.y}px`}>
-      <div class="fn-pop-ttl">point <code>{fxEdit.i}</code> · {fxEdit.field === 'a' ? 'x (r)' : 'y (z)'} expression</div>
+      <div class="fn-pop-ttl">{fm.cmd === 'repeat' ? 'repeat' : 'point'} <code>{fxEdit.i}</code> · {fm.cmd === 'repeat' ? (fxEdit.field === 'a' ? 'count (N)' : fxEdit.field === 'b' ? 'x(i)' : 'y(i)') : (fxEdit.field === 'a' ? 'x (r)' : 'y (z)')} expression</div>
       <textarea class="fn-fx-ta" spellcheck="false" rows="3"
-        value={fxEdit.field === 'a' ? fm.a : fm.b}
-        oninput={(e) => { const v = (e.currentTarget as HTMLTextAreaElement).value; if (fxEdit!.field === 'a') fm.a = v; else fm.b = v; }}></textarea>
+        value={fxEdit.field === 'a' ? fm.a : fxEdit.field === 'b' ? fm.b : (fm.c ?? '')}
+        oninput={(e) => { const v = (e.currentTarget as HTMLTextAreaElement).value; if (fxEdit!.field === 'a') fm.a = v; else if (fxEdit!.field === 'b') fm.b = v; else fm.c = v; }}></textarea>
     </div>
   {/if}
 {:else if fxEdit && fxEdit.kind === 'calc'}
@@ -624,6 +679,8 @@
   /* visual move list */
   .fn-moves { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
   .fn-mrow { display: grid; grid-template-columns: 16px 64px 1fr 1fr 20px; gap: 4px; align-items: center; }
+  /* Repeat rows widen to fit a third expression slot (x, y → N, x(i), y(i)). */
+  .fn-mrow-rep { grid-template-columns: 16px 64px 1fr 1fr 1fr 20px; background: #f7f3ec; border-radius: 4px; }
   .fn-mrow-h { font-size: 8px; color: #bbb; }
   .fn-mrow-h span { padding-left: 3px; }
   .fn-mnum { font: 9px 'SF Mono', Menlo, monospace; color: #bbb; text-align: right; }
@@ -637,6 +694,9 @@
   .fn-snake { display: grid; grid-template-columns: 20px repeat(3, 1fr) 20px; gap: 8px 8px; padding: 8px 2px 2px; align-items: center; overflow-x: hidden; }
   .fn-box { position: relative; z-index: 1; display: inline-flex; align-items: flex-start; gap: 4px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 3px 6px; background: #fff; justify-self: center; }
   .fn-box.start { border-color: #c4392f; background: #fceeec; }
+  /* Repeat box (flow view) reads as "loop body" — amber accent, wider. */
+  .fn-box.repeat { border-color: #d9a441; background: #fdf6e3; min-width: 160px; }
+  .fn-box.repeat .fn-box-i { color: #b07a16; font-weight: 700; }
   /* continuous rail behind a row's boxes → connects them (boxes cover it; the
      line shows through the gaps so adjacent boxes read as joined) */
   .fn-rail { align-self: center; justify-self: stretch; height: 2px; background: #e0cfcb; z-index: 0; }
