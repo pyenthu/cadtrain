@@ -94,6 +94,44 @@ caps, the `status()`-returns-a-STRING gotcha — is in `docs/CAD_AUTHORING.md`.*
 Reference primitives: `<volume>/primitives/raw_helix_1..4`. Volume
 primitives reach `CS` + `Mesh` via `G.__cadtrain_manifold__.wasm` directly.
 
+### `CrossSection.extrude(h, nDivisions, twistDegrees)` degenerate slices
+
+In manifold-3d 3.4.1, `extrude(h, nDivisions, 0)` with `nDivisions > 0` AND `twistDegrees === 0` produces a non-manifold mesh — the intermediate slices are IDENTICAL to top + bottom (no morph), so the triangulator emits coincident triangle pairs and rejects with `"Not manifold"`.
+
+**Fix pattern** (used by both `r_extrude` and `r_weld_extrude` in `src/lib/cad/stdlib/`):
+
+```ts
+const tw = Number(twist ?? 0);
+if (Math.abs(tw) < 0.001) return cs.extrude(h);              // bare — no nDivisions
+const nDiv = Math.max(1, Math.min(96, Math.round(divs)));
+return cs.extrude(h, nDiv, tw);                              // morph — twist > 0
+```
+
+The conditional sidesteps the bug AND keeps backward compatibility — existing 2-arg callers get the bare branch.
+
+Combined with `Manifold.warp`: `cs.extrude(h).refineToLength(h/divs).warp(twistFn)` is FOUR TIMES SLOWER than the native morphing path (4 ms vs 1 ms at 64×24 in the 2026-05-28 bench). The `refineToLength` pass subdivides every edge globally; don't pair it with warp. Memory: `bench_extrude_findings`.
+
+### Non-planar twisted quads + `flatShading: true` — sawtooth shading
+
+A twisted prism rendered with `flatShading: true` shows ALTERNATING bright/dark sawtooth stripes along its side faces. NOT a winding bug. The cause:
+
+* Each side face quad is non-planar (twist rotates the bottom edge vs the top).
+* Triangulating the quad with one diagonal produces 2 triangles whose face normals measurably diverge.
+* `flatShading: true` makes the fragment shader derive normals per-triangle (ignoring the buffer's vertex-normal attribute), so adjacent triangles reflect differently → sawtooth.
+
+**Fix (`5582c58`)** — the smooth-shade gate in `src/lib/shared/PrimitiveDualCanvas.svelte`:
+
+```ts
+const twistArg = Number((args as any[])?.[2] ?? 0);
+const smoothShade =
+  id === 'r_weld_extrude' ||
+  (id === 'r_extrude' && Math.abs(twistArg) > 0.001);
+```
+
+Passed to `PrimitiveDualScene` where the three live `MeshPhongMaterial` instances use `flatShading={!smoothShade}`. Twisted prisms use the baked `calculateNormals(3, 60)` normals (60° crease threshold preserves vertical hex seams as sharp; <60° edges within a side smooth). Cubes/hex/everything else keeps `flatShading: true` unchanged. **Don't drop `flatShading` globally** — the cube/hex rendering was a hard-won lesson (commit 8297314 regression).
+
+The complementary lever: cranking the part-level `segments` dial densifies the perimeter via `resample(...)` so each non-planar quad becomes smaller → less per-triangle normal divergence → less sawtooth even at flatShading=true. Memory: `flatshading_twisted_quad_smoothshade_gate`.
+
 ### `CrossSection.extrude(..., scaleTop)` + `Manifold.warp` — scalar collapse
 
 When the manifold returned by `CrossSection.extrude(height, nDivisions, twistDegrees, scaleTop)` will be fed to `Manifold.warp(callback)`, **`scaleTop` MUST be the Vec2 `[1, 1]`, never the scalar `1`** (or any other scalar identity). The TypeScript signature `scaleTop?: Readonly<Vec2> | number` advertises both as valid, but in manifold-3d 3.4.1:
