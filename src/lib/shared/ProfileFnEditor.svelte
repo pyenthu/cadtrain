@@ -109,7 +109,10 @@
     // Local calcs in the block form are INLINED to fixpoint so the row's
     // expressions are pure functions of params + i.
     if (!moves.length) {
-      const afMatch = b.match(/Array\.from\s*\(\s*\{\s*length\s*:\s*([^,}]+?)\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)\s*=>\s*(\[[^\[\]]*\]|\{[\s\S]*?\}(?=\s*\)))/);
+      // count uses [\s\S]+? (non-greedy ANY char) so expressions with commas
+      // inside parens — Math.max(0, Math.round(n)) — match cleanly; the
+      // surrounding `\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)` terminates the capture.
+      const afMatch = b.match(/Array\.from\s*\(\s*\{\s*length\s*:\s*([\s\S]+?)\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)\s*=>\s*(\[[^\[\]]*\]|\{[\s\S]*?\}(?=\s*\)))/);
       if (afMatch) {
         const count = afMatch[1].trim();
         const cbody = afMatch[2].trim();
