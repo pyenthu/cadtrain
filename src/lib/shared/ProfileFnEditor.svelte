@@ -15,6 +15,7 @@
   import type { Pt } from './profile-presets';
   import { dragNumber } from './dragNumber';
   import { tipHost } from './floating-tip';
+  import ProfileFn3DCanvas from './ProfileFn3DCanvas.svelte';
 
   interface ParamRow { key: string; label: string; def: number; min: number; max: number; step: number; unit: string; }
   interface Seed { id?: string; label?: string; description?: string; tags?: string[]; params?: Record<string, any>; body?: string; }
@@ -532,6 +533,7 @@
             {@const col = row % 2 === 0 ? i % 3 : 2 - (i % 3)}
             <div class="fn-box" class:start={i === 0} class:repeat={mv.cmd === 'repeat'} style="grid-column:{col + 2};grid-row:{row + 1}">
               <span class="fn-box-i">{mv.cmd === 'repeat' ? `${i} ⟳` : i}</span>
+              <button type="button" class="fn-box-del" onclick={() => delMove(i)} title="Delete this point" aria-label="Delete point">×</button>
               {#if mv.cmd === 'repeat'}
                 <div class="fn-box-rows">
                   <label class="fn-box-row">
@@ -637,6 +639,14 @@
       {#if err}<div class="fn-err" title={err}>{err}</div>{/if}
     </div>
   </div>
+
+  <!-- 4th column — live 3D preview of the profile swept along its natural axis
+       (extrude for cartesian, revolve for revolve). Shares the WebGL canvas
+       infrastructure with /primitives by going through the same /preview
+       endpoint, so the user sees what their cross-section actually becomes. -->
+  <div class="fn-3d-col">
+    <ProfileFn3DCanvas points={previewPts} {set} />
+  </div>
 </div>
 
 {#if paramPop}
@@ -690,9 +700,12 @@
   /* two columns; LEFT scrolls, RIGHT is fixed. height:100% lets the popup's
      own max-height cap the panel and confine scrolling to the left column. */
   /* FIXED height — the popup doesn't resize with content; only the left column scrolls. */
-  .fn-ed { width: 600px; max-width: 94vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px 1fr 130px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
+  .fn-ed { width: 660px; max-width: 96vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px minmax(0,0.7fr) 100px 130px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
   /* Page (fill) mode: occupy the host container with a big preview column. */
-  .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 1fr) minmax(300px, 40%); gap: 14px; }
+  /* 4-column fill mode: tabs · left (was 1fr, now 0.7fr ≈ −30%) · 2D SVG
+     (was 40%, now 28% ≈ −30%) · NEW 3D Threlte canvas (takes the freed 30%
+     so the editor can show extrude/revolve preview alongside the cross-section). */
+  .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 0.7fr) minmax(220px, 28%) minmax(220px, 1fr); gap: 14px; }
   .fn-ed.fill .fn-svg { max-height: none; }
   /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
      vertical labels, so the rail stays narrow and reads top-to-bottom. */
@@ -704,6 +717,7 @@
   .fn-tab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 8px Arial; text-transform: uppercase; letter-spacing: .09em; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
+  .fn-3d-col { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
   /* three buttons in a single row — Cancel · Save as · Save */
   .fn-actions { display: flex; gap: 12px; align-items: stretch; }
@@ -791,6 +805,11 @@
   .fn-snake { display: grid; grid-template-columns: 20px repeat(3, 1fr) 20px; gap: 8px 8px; padding: 8px 2px 2px; align-items: center; overflow-x: hidden; }
   .fn-box { position: relative; z-index: 1; display: inline-flex; align-items: flex-start; gap: 4px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 3px 6px; background: #fff; justify-self: center; }
   .fn-box.start { border-color: #c4392f; background: #fceeec; }
+  /* Per-box delete — small ✕ in the top-right corner, only visible on hover so
+     it doesn't add visual noise to the snake. */
+  .fn-box-del { position: absolute; top: 1px; right: 2px; width: 14px; height: 14px; padding: 0; border: 0; background: transparent; color: #bbb; cursor: pointer; font: 700 13px Arial; line-height: 1; border-radius: 3px; opacity: 0; transition: opacity 80ms ease; }
+  .fn-box:hover .fn-box-del { opacity: 1; }
+  .fn-box-del:hover { color: #cc2222; background: #fff; }
   /* Repeat box (flow view) reads as "loop body" — amber accent + wider min so
      the x(i)/y(i) inputs can show long polar expressions. The inputs themselves
      go monospace and a touch bigger for math legibility. Capped at 50% of the
