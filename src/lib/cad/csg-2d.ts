@@ -21,6 +21,50 @@
  * internally — so no new WASM surface, just thinner authoring sugar.
  */
 type Pt = [number, number];
+
+/** Resample a closed polygon (Pt[]) to `n` points equally spaced along its
+ *  perimeter. For curves (ellipse) it upsamples to finer chords; for polygons
+ *  (rect, ngon, L, T, +, star) it adds intermediate vertices along each edge.
+ *
+ *  Used by the extrude parts' `segments` dial — cranking it up replaces large
+ *  non-planar twist quads with many smaller (nearly-planar) quads, smoothing
+ *  the per-triangle normal artifact that flatShading would otherwise expose.
+ *  No-op when n <= the natural vertex count.
+ *
+ *  Pass-through (no copy) when n is 0, negative, or already matches input.
+ */
+export function resample(points: Pt[], n: number): Pt[] {
+  if (!Array.isArray(points) || points.length < 3) return points;
+  const target = Math.max(3, Math.round(Number(n) || 0));
+  if (target <= points.length) return points;
+  // Cumulative arc length around the closed polygon.
+  const N = points.length;
+  const seg: number[] = new Array(N);   // length of segment i → (i+1) mod N
+  let total = 0;
+  for (let i = 0; i < N; i++) {
+    const a = points[i]!;
+    const b = points[(i + 1) % N]!;
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    seg[i] = d;
+    total += d;
+  }
+  if (total < 1e-12) return points;
+  const out: Pt[] = new Array(target);
+  const step = total / target;
+  let i = 0;       // current segment index
+  let acc = 0;     // cumulative length up to start of segment i
+  for (let k = 0; k < target; k++) {
+    const s = k * step;
+    // Advance to the segment containing arc length s.
+    while (i < N - 1 && acc + seg[i]! < s) { acc += seg[i]!; i++; }
+    const t = seg[i]! > 0 ? (s - acc) / seg[i]! : 0;
+    const a = points[i]!;
+    const b = points[(i + 1) % N]!;
+    out[k] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  }
+  return out;
+}
+
 type CsgOp = 'base' | 'add' | 'subtract' | 'intersect';
 interface CsgEntry { profile: Pt[]; op?: CsgOp }
 
