@@ -638,14 +638,13 @@
       </svg>
       {#if err}<div class="fn-err" title={err}>{err}</div>{/if}
     </div>
-  </div>
-
-  <!-- 4th column — live 3D preview of the profile swept along its natural axis
-       (extrude for cartesian, revolve for revolve). Shares the WebGL canvas
-       infrastructure with /primitives by going through the same /preview
-       endpoint, so the user sees what their cross-section actually becomes. -->
-  <div class="fn-3d-col">
-    <ProfileFn3DCanvas points={previewPts} {set} />
+    <!-- 3D preview STACKED below the 2D SVG in the same column. The Threlte
+         canvas synthesizes a tiny one-shot r_extrude / r_revolve over the live
+         points (via /api/primitives/preview) so the user sees what the cross-
+         section actually becomes when swept. -->
+    <div class="fn-3d-stack">
+      <ProfileFn3DCanvas points={previewPts} {set} />
+    </div>
   </div>
 </div>
 
@@ -702,10 +701,10 @@
   /* FIXED height — the popup doesn't resize with content; only the left column scrolls. */
   .fn-ed { width: 660px; max-width: 96vw; height: 72vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 24px minmax(0,0.7fr) 100px 130px; gap: 9px; align-items: stretch; font: 11px Arial; color: #222; }
   /* Page (fill) mode: occupy the host container with a big preview column. */
-  /* 4-column fill mode: tabs · left (was 1fr, now 0.7fr ≈ −30%) · 2D SVG
-     (was 40%, now 28% ≈ −30%) · NEW 3D Threlte canvas (takes the freed 30%
-     so the editor can show extrude/revolve preview alongside the cross-section). */
-  .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 0.7fr) minmax(220px, 28%) minmax(220px, 1fr); gap: 14px; }
+  /* 3-column fill mode: tabs · LEFT (≈55% — params/calc/path, where long polar
+     expressions need room) · RIGHT (≈45%, stacking 2D SVG on top + 3D Threlte
+     canvas below in ONE column instead of side-by-side). */
+  .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 1.2fr) minmax(260px, 0.85fr); gap: 14px; }
   .fn-ed.fill .fn-svg { max-height: none; }
   /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
      vertical labels, so the rail stays narrow and reads top-to-bottom. */
@@ -716,8 +715,12 @@
   .fn-tab svg { display: block; transform: rotate(90deg); width: 13px; height: 13px; }
   .fn-tab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 8px Arial; text-transform: uppercase; letter-spacing: .09em; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
+  /* Right column now hosts BOTH previews vertically: actions row · 2D SVG ·
+     3D Threlte. fn-prev + fn-3d-stack each take roughly half the available
+     height so neither one collapses to nothing on a short viewport. */
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
-  .fn-3d-col { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .fn-right .fn-prev { flex: 1 1 0; min-height: 140px; }
+  .fn-3d-stack { flex: 1 1 0; min-height: 160px; display: flex; flex-direction: column; }
   /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
   /* three buttons in a single row — Cancel · Save as · Save */
   .fn-actions { display: flex; gap: 12px; align-items: stretch; }
@@ -839,8 +842,10 @@
   .fn-fx-row input:focus { outline: none; border-color: #c4392f; }
   .fn-saveas-pop { width: 232px; }
   .fn-saveas-go { width: 100%; margin-top: 4px; flex: none; }
-  /* calculated expressions — 3-column grid of {name = expr} boxes (no units) */
-  .fn-calc { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 3px 2px 0; }
+  /* calculated expressions — 2-column grid (was 3) so each {name = expr} cell
+     is ~50% wider; matches the left-panel widening so longer expression bodies
+     don't truncate. */
+  .fn-calc { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px 2px 0; }
   .fn-cbox { display: inline-flex; align-items: center; gap: 2px; border: 1px solid #e3c4bf; border-radius: 6px; padding: 2px 4px; background: #fff; min-width: 0; }
   .fn-cname { width: 48px; flex-shrink: 0; border: 1px solid transparent; background: transparent; font: 700 10px 'SF Mono', Menlo, monospace; color: #1a1a1a; padding: 1px 2px; border-radius: 3px; box-sizing: border-box; }
   .fn-cname:focus { outline: none; border-color: #c4392f; background: #fdf4f3; }
