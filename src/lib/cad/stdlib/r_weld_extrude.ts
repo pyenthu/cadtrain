@@ -11,8 +11,10 @@
  * the two extra dials Manifold already exposes.
  *
  * Z-DOWN: extrudes from z=0 (the TOP face) down to z=length (the BOTTOM
- * face). Default = ngon_v2 hex profile + 30° twist over length 2 — visually
- * unmistakable that it's NOT plain r_extrude.
+ * face). Default = ngon (6-sided) hex profile + 30° twist over length 2
+ * — visually unmistakable that it's NOT plain r_extrude. (Earlier default
+ * used `ngon_v2` — a volume-only profile — which the client `resolveProfile`
+ * can't resolve synchronously; only curated kinds belong as stdlib defaults.)
  *
  * STANDARD-LIBRARY PRIMITIVE — git-tracked, read-only in the GUI.
  */
@@ -30,7 +32,7 @@ export const meta = {
     profile: {
       label: 'profile',
       type: 'profile',
-      default: { kind: 'ngon_v2', params: { n: 6, r: 0.6 } },
+      default: { kind: 'ngon', params: { n: 6, r: 0.6 } },
     },
     length: { label: 'length', min: 0.1, max: 20, step: 0.1, default: 2 },
     divs:   { label: 'divs',   min: 1,   max: 96, step: 1,   default: 12 },

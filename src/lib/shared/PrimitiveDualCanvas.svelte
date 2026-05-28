@@ -141,7 +141,11 @@
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
   /* Vertical Z-pan slider, left edge. */
   .pd-zpan { position: absolute; left: 6px; top: 56px; bottom: 16px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .pd-zslider { writing-mode: vertical-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical; width: 16px; flex: 1 1 auto; min-height: 0; cursor: ns-resize; accent-color: #cc2222; }
+  /* Vertical range slider — modern path: `writing-mode: vertical-lr` alone.
+     Drop `appearance: slider-vertical` (deprecated in Chrome 124+, removal
+     warned via the runtime banner). Default direction:ltr makes top=min
+     bottom=max, which matches Z-down (top of part = z 0 = slider top). */
+  .pd-zslider { writing-mode: vertical-lr; width: 16px; flex: 1 1 auto; min-height: 0; cursor: ns-resize; accent-color: #cc2222; }
   .pd-zreset { flex: 0 0 auto; width: 20px; height: 20px; border: 1px solid rgba(0,0,0,0.25); background: rgba(255,255,255,0.85); border-radius: 50%; cursor: pointer; font: 12px Arial; color: #555; line-height: 1; padding: 0; }
   .pd-zreset:hover { color: #cc2222; border-color: #cc2222; }
 </style>
