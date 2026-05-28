@@ -449,7 +449,7 @@
       </button>
       <button type="button" class="fn-acc-add" title="Toggle flow / rows view" onclick={() => (pathView = pathView === 'flow' ? 'rows' : 'flow')}>{pathView === 'flow' ? 'rows' : 'flow'}</button>
       <button type="button" class="fn-acc-add" onclick={() => { movesOpen = true; addMove(); }} title="Add a move">+ move</button>
-      <button type="button" class="fn-acc-add" onclick={() => { movesOpen = true; addRepeat(); }} title="Add a repeat — Array.from({length: N}, (_, i) => [x(i), y(i)])">+ repeat</button>
+      <button type="button" class="fn-acc-add" onclick={() => { movesOpen = true; addRepeat(); }} title="Add a repeat row — emits N points via i = 0..N-1 (the visual loop)">+ repeat</button>
     </div>
     {#if movesOpen}
       {#if pathView === 'flow'}
