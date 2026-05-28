@@ -22,7 +22,17 @@ export const POST = async ({ request }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { id, source, dir: targetDir } = body ?? {};
+  const { id, source, dir: targetDir, kind: requestedKind } = body ?? {};
+  // Optional kind override — when provided AND different from the existing
+  // file's kind, this re-types the part (e.g. .prim.ts → .exp.ts). Used by the
+  // typed-builder upgrade path: scaffolding a new Extrude Part via the picker
+  // writes kind:'exp'; converting an existing .prim.ts template to .exp.ts
+  // writes the new file + removes the old one to avoid double-listing. Must be
+  // one of the PrimKind values; bad values are rejected before any disk ops.
+  const KIND_RE = /^(prim|exp|rev|asm)$/;
+  if (requestedKind != null && (typeof requestedKind !== 'string' || !KIND_RE.test(requestedKind))) {
+    throw error(400, `bad kind "${requestedKind}" — must be prim | exp | rev | asm`);
+  }
   if (typeof id !== 'string' || !ID_RE.test(id)) {
     throw error(400, `bad id "${id}" — must match [a-z_][a-z0-9_]*`);
   }
@@ -59,7 +69,11 @@ export const POST = async ({ request }) => {
   const dir = existing
     ? existing.dir
     : (targetDir ? volumePath(join('primitives', targetDir)) : volumePath('primitives'));
-  const kind = existing?.kind ?? 'prim';
+  // Kind precedence: explicit override > existing file's kind > default 'prim'.
+  // The override path re-types the file (writes <id>.<newKind>.ts + removes the
+  // old <id>.<existingKind>.ts) so the part appears as exactly ONE entry.
+  const kind = (requestedKind as any) ?? existing?.kind ?? 'prim';
+  const reTyping = existing && requestedKind && existing.kind !== requestedKind;
   await mkdir(dir, { recursive: true });
   const filePath = primFilePath(dir, id, kind);
   await writeFile(filePath, source, 'utf8');
@@ -68,5 +82,12 @@ export const POST = async ({ request }) => {
   if (existing?.legacy) {
     try { await rm(join(dir, id), { recursive: true, force: true }); } catch { /* best-effort */ }
   }
-  return json({ ok: true, id, path: filePath });
+  // Re-typing: drop the OLD typed file so the same id doesn't show up twice
+  // (once as .prim.ts and once as .exp.ts). hitInDir would prefer the new
+  // extension via PRIM_KINDS order, but listEntitiesIn dedupes by id so a
+  // stale old file would still hide the new one if we left it.
+  if (reTyping && existing) {
+    try { await rm(existing.path, { force: true }); } catch { /* best-effort */ }
+  }
+  return json({ ok: true, id, path: filePath, kind });
 };
