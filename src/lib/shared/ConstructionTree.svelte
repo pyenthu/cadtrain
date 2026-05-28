@@ -32,7 +32,8 @@
     | { kind: 'leaf'; name: string; call: string; txs: any[] }
     | { kind: 'csg'; op: string; left: TNode; right: TNode }
     | { kind: 'group'; name: string; child: TNode }   // intermediate composition var
-    | { kind: 'warp'; child: TNode };
+    | { kind: 'warp'; child: TNode }
+    | { kind: 'repeat'; countText: string; stepText: string; child: TNode };  // for-loop + place(ARR) idiom (D)
 
   let partByName = $derived(new Map((parts ?? []).map((p: any) => [p.name, p])));
   let chains = $derived((recognized?.chains ?? {}) as Record<string, any[]>);
@@ -59,6 +60,15 @@
   }
 
   let tree = $derived.by<TNode | null>(() => {
+    // A recognized Repeat (Phase 1 D) takes precedence over the operands path —
+    // when the part is `return place(<arr>)` driven by a for-loop, the chain has
+    // a single name=null base that doesn't visualize usefully. Show Repeat × N
+    // with the inner instance as its child instead.
+    const rep = (recognized?.repeats ?? [])[0];
+    if (rep) {
+      const child: TNode = leafOf(rep.instName || null);
+      return { kind: 'repeat', countText: String(rep.countText ?? '?'), stepText: String(rep.stepText ?? ''), child };
+    }
     const ops = (recognized?.operands ?? []) as any[];
     if (ops.length === 0) return null;
     let node = foldChain(ops, new Set<string>());
@@ -70,13 +80,15 @@
     if (n.kind === 'leaf') return n.name;
     if (n.kind === 'warp') return `⟿(${expr(n.child)})`;
     if (n.kind === 'group') return expr(n.child);  // inline-expand the intermediate var
+    if (n.kind === 'repeat') return `[${expr(n.child)} × ${n.countText}]`;
     return `(${expr(n.left)} ${glyph(n.op)} ${expr(n.right)})`;
   }
   let bodmas = $derived(tree ? expr(tree) : '');
   let opCount = $derived((recognized?.operands ?? []).length);
+  let repeatCount = $derived((recognized?.repeats ?? []).length);
 </script>
 
-{#if tree && opCount >= 1}
+{#if tree && (opCount >= 1 || repeatCount >= 1)}
   <div class="ct-wrap">
     <div class="ct-bodmas" title="CSG subtract/intersect are order-sensitive — brackets show the evaluation order (BODMAS).">
       <span class="ct-tag">BODMAS</span>
@@ -85,7 +97,7 @@
     <div class="ct-tree">
       {@render treeNode(tree)}
     </div>
-    <div class="ct-note"><span class="ct-k">∪</span> union · <span class="ct-k">−</span> subtract · <span class="ct-k">∩</span> intersect · <span class="ct-k">⟿</span> warp — evaluated bottom-up (post-order).</div>
+    <div class="ct-note"><span class="ct-k">∪</span> union · <span class="ct-k">−</span> subtract · <span class="ct-k">∩</span> intersect · <span class="ct-k">⟿</span> warp · <span class="ct-k">⟳</span> repeat — evaluated bottom-up (post-order).</div>
   </div>
 {/if}
 
@@ -101,6 +113,13 @@
     </div>
   {:else if n.kind === 'warp'}
     <div class="ct-node ct-op ct-warp"><span class="ct-glyph">⟿</span><span class="ct-oplbl">warp at end</span></div>
+    <div class="ct-children">{@render treeNode(n.child)}</div>
+  {:else if n.kind === 'repeat'}
+    <div class="ct-node ct-op ct-repeat" title={n.stepText ? `step z = ${n.stepText}` : ''}>
+      <span class="ct-glyph">⟳</span>
+      <span class="ct-oplbl">repeat × <code class="ct-repeat-count">{n.countText}</code></span>
+      {#if n.stepText}<span class="ct-repeat-step" title={`per-iteration Δz = ${n.stepText}`}>Δz: <code>{n.stepText}</code></span>{/if}
+    </div>
     <div class="ct-children">{@render treeNode(n.child)}</div>
   {:else if n.kind === 'group'}
     <div class="ct-node ct-group" role="button" tabindex="0"
@@ -131,6 +150,10 @@
   .ct-glyph { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; font: 700 12px Arial; flex: 0 0 auto; }
   .ct-op .ct-glyph { background: #eceaf8; color: #5a48b8; }
   .ct-warp .ct-glyph { background: #fde8d4; color: #b5651d; }
+  .ct-repeat .ct-glyph { background: #e3f3e6; color: #2e7d4f; }
+  .ct-repeat-count { font: 700 11px ui-monospace, monospace; color: #2e7d4f; background: transparent; padding: 0; }
+  .ct-repeat-step { font: 10px Arial; color: #888; margin-left: 6px; }
+  .ct-repeat-step code { font-family: ui-monospace, monospace; color: #666; }
   .ct-leafglyph { background: transparent; color: #cc2222; font-size: 9px; }
   .ct-group { cursor: pointer; border-radius: 4px; }
   .ct-group:hover { background: #eef9f0; }

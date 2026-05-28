@@ -92,6 +92,34 @@ export interface RecognizedParam {
   sigStart: number;
   sigEnd: number;
 }
+/** A recognized "repeat" idiom: the canonical instanced-assembly pattern
+ *  used by parts like dp_inst_stand. Matches exactly:
+ *      const ARR = [];
+ *      for (let i = 0; i < <count>; i++) ARR.push(<pushExpr>);
+ *      return place(ARR);
+ *  where pushExpr is typically `mv(<inst>, [_, _, <stepText>])` (we pull
+ *  out the inner instance name + the Z-placement expression when it is).
+ *  Phase 1 D recognition — uniform "build once + place N copies" loops. */
+export interface RecognizedRepeat {
+  /** Array variable used as accumulator. */
+  arrayName: string;
+  /** Inner instance referenced inside `mv(<inst>, …)` — '' when the push
+   *  expression isn't a recognized mv-of-named-instance. */
+  instName: string;
+  /** Source text of the loop's COUNT expression (RHS of `i < …`). */
+  countText: string;
+  countStart: number;
+  countEnd: number;
+  /** Source text of the per-iteration Z-step expression — the third element
+   *  of `mv(<inst>, [_, _, …])`. Falls back to the whole push arg when the
+   *  push isn't a canonical mv. */
+  stepText: string;
+  stepStart: number;
+  stepEnd: number;
+  /** Span of the whole for-statement (for future "edit repeat" actions). */
+  declStart: number;
+  declEnd: number;
+}
 export interface RecognizedProfile {
   /** Profile name (object-literal key inside meta.profiles). */
   name: string;
@@ -154,6 +182,11 @@ export interface RecognizedComposite {
   profilesHasElems: boolean;
   metaInsertPos: number;
   profiles: RecognizedProfile[];
+  /** Recognized repeat-loops (Phase 1 D — instanced-assembly idiom). Each
+   *  entry pairs an empty-array decl, a canonical-shape `for` loop pushing
+   *  into it, and a `return place(<arr>)` that materialises the result.
+   *  Drives the "Repeat × N" node in the construction tree. */
+  repeats: RecognizedRepeat[];
 }
 
 const OPERATORS = new Set(['mv', 'rot']);
@@ -257,7 +290,7 @@ export function recognizeComposite(source: string): RecognizedComposite {
       fn = node.declaration; break;
     }
   }
-  if (!fn) return { instances: [], operands: [], warpInnerStart: -1, warpInnerEnd: -1, warpPathStart: -1, warpPathEnd: -1, chains: {}, uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  if (!fn) return { instances: [], operands: [], warpInnerStart: -1, warpInnerEnd: -1, warpPathStart: -1, warpPathEnd: -1, chains: {}, uses, composition: null, unrecognized: 0, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles, repeats: [] };
 
   // Function signature append point — where Promote adds a positional param.
   // After the last param's end, or just inside `(` for a no-arg signature.
@@ -314,11 +347,25 @@ export function recognizeComposite(source: string): RecognizedComposite {
   let warpInnerStart = -1, warpInnerEnd = -1, warpPathStart = -1, warpPathEnd = -1;
   const chainsMap: Record<string, RecognizedCompositionOperand[]> = {};
   let unrecognized = 0;
+  // Repeat-loop recognition (Phase 1 D). We track empty-array decls + canonical
+  // `for(let i=0; i<N; i++) ARR.push(…)` loops + `return place(ARR)`; after the
+  // pass we keep only loops whose ARR is BOTH a declared empty array AND the
+  // identifier returned via place(). Each repeatPushes entry pre-extracts the
+  // inner instance + step expression so we don't re-walk the AST later.
+  const emptyArrays = new Set<string>();
+  const repeatPushes: { arrName: string; instName: string; countText: string; countStart: number; countEnd: number; stepText: string; stepStart: number; stepEnd: number; declStart: number; declEnd: number; }[] = [];
+  let placeReturnArr: string | null = null;
 
   for (const stmt of fn.body.body) {
     if (stmt.type === 'VariableDeclaration') {
       for (const d of stmt.declarations) {
         if (d.id?.type !== 'Identifier' || !d.init) { unrecognized++; continue; }
+        // Empty array accumulator: `const ARR = []` — feeds the repeat idiom.
+        // Idiomatic for instanced assemblies, so don't count it as unrecognized.
+        if (d.init.type === 'ArrayExpression' && d.init.elements.length === 0) {
+          emptyArrays.add(d.id.name);
+          continue;
+        }
         const initStart = d.init.start, initEnd = d.init.end;
         let node: any = d.init;
         const transforms: RecognizedTransform[] = [];
@@ -340,6 +387,55 @@ export function recognizeComposite(source: string): RecognizedComposite {
           unrecognized++;
         }
       }
+    } else if (stmt.type === 'ForStatement') {
+      // Canonical repeat idiom (Phase 1 D):
+      //   for (let i = 0; i < <count>; i++) <arr>.push(<expr>);
+      // Anything off this exact shape stays unrecognized — opaque code path
+      // (still builds; just won't show as a Repeat node in the tree).
+      const init = stmt.init, test = stmt.test, update = stmt.update;
+      const iName = init?.type === 'VariableDeclaration' && init.declarations?.length === 1
+        && init.declarations[0]?.id?.type === 'Identifier' ? init.declarations[0].id.name : null;
+      const shapeOk = iName
+        && test?.type === 'BinaryExpression' && test.operator === '<'
+        && test.left?.type === 'Identifier' && test.left.name === iName
+        && update?.type === 'UpdateExpression' && update.operator === '++';
+      // Body: a single ExpressionStatement (no braces) OR a one-statement block.
+      const exprStmt = stmt.body?.type === 'ExpressionStatement' ? stmt.body
+        : (stmt.body?.type === 'BlockStatement' && stmt.body.body.length === 1 && stmt.body.body[0].type === 'ExpressionStatement' ? stmt.body.body[0] : null);
+      const push = exprStmt?.expression;
+      const isPush = push?.type === 'CallExpression'
+        && push.callee?.type === 'MemberExpression'
+        && push.callee.property?.name === 'push'
+        && push.callee.object?.type === 'Identifier'
+        && push.arguments.length === 1;
+      if (shapeOk && isPush) {
+        const arrName = push.callee.object.name;
+        const pushArg = push.arguments[0];
+        // Default: stepText is the full push expr (when not a canonical mv).
+        let instName = '';
+        let stepText = js.slice(pushArg.start, pushArg.end);
+        let stepStart = pushArg.start, stepEnd = pushArg.end;
+        // Preferred: mv(<inst>, [_, _, <step>]) — pull out the Z-element.
+        if (pushArg.type === 'CallExpression' && pushArg.callee?.type === 'Identifier' && pushArg.callee.name === 'mv'
+            && pushArg.arguments.length >= 2
+            && pushArg.arguments[0]?.type === 'Identifier'
+            && pushArg.arguments[1]?.type === 'ArrayExpression'
+            && pushArg.arguments[1].elements.length === 3) {
+          instName = pushArg.arguments[0].name;
+          const z = pushArg.arguments[1].elements[2];
+          if (z) { stepText = js.slice(z.start, z.end); stepStart = z.start; stepEnd = z.end; }
+        }
+        repeatPushes.push({
+          arrName,
+          instName,
+          countText: js.slice(test.right.start, test.right.end),
+          countStart: test.right.start, countEnd: test.right.end,
+          stepText, stepStart, stepEnd,
+          declStart: stmt.start, declEnd: stmt.end,
+        });
+      } else {
+        unrecognized++;
+      }
     } else if (stmt.type === 'ReturnStatement' && stmt.argument) {
       composition = slice(stmt.argument);
       returnStart = stmt.start;
@@ -356,10 +452,30 @@ export function recognizeComposite(source: string): RecognizedComposite {
         if (path) { warpPathStart = path.start; warpPathEnd = path.end; }
         chainNode = inner;
       }
+      // Detect `return place(<arr>)` — the repeat-pattern's terminator. Keep
+      // walkChain for the existing operands path too (a place(...) base will
+      // be a single name=null operand; the tree just prefers the Repeat node
+      // when one matches).
+      if (stmt.argument.type === 'CallExpression' && stmt.argument.callee?.type === 'Identifier'
+          && stmt.argument.callee.name === 'place' && stmt.argument.arguments.length === 1
+          && stmt.argument.arguments[0]?.type === 'Identifier') {
+        placeReturnArr = stmt.argument.arguments[0].name;
+      }
       compositionOperands = walkChain(chainNode);
     } else {
       unrecognized++;
     }
   }
-  return { instances, operands: compositionOperands, warpInnerStart, warpInnerEnd, warpPathStart, warpPathEnd, chains: chainsMap, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles };
+  // Keep only loops that wire up end-to-end: empty array decl + same-name push +
+  // matching `return place(ARR)`. Anything partial stays opaque (no Repeat node).
+  const repeats: RecognizedRepeat[] = repeatPushes
+    .filter((r) => emptyArrays.has(r.arrName) && r.arrName === placeReturnArr)
+    .map((r) => ({
+      arrayName: r.arrName,
+      instName: r.instName,
+      countText: r.countText, countStart: r.countStart, countEnd: r.countEnd,
+      stepText: r.stepText, stepStart: r.stepStart, stepEnd: r.stepEnd,
+      declStart: r.declStart, declEnd: r.declEnd,
+    }));
+  return { instances, operands: compositionOperands, warpInnerStart, warpInnerEnd, warpPathStart, warpPathEnd, chains: chainsMap, uses, composition, unrecognized, editable, returnStart, compStart, compEnd, usesInsertPos, usesHasElems, paramsInsertPos, paramsHasElems, sigInsertPos, sigHasParams, params, profilesInsertPos, profilesHasElems, metaInsertPos, profiles, repeats };
 }
