@@ -50,8 +50,13 @@
      *  server-source diff (the host owns that state, not the editor). When
      *  truthy AND `embedded` AND `onSave` is provided, the save icon shows. */
     dirty?: boolean;
+    /** EMBEDDED MODE — pushes the live SVG view payload (viewBox + path)
+     *  out so the host can render the SVG as a top-left overlay on the 3D
+     *  scene instead of in the editor's right column. Fires on every change
+     *  to the derived `view`. */
+    onView?: (view: { d: string; vb: string; axis: number | null; y0: number; y1: number }) => void;
   }
-  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false, embedded = false, onBodyChange, onSave, dirty: dirtyProp = false }: Props = $props();
+  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false, embedded = false, onBodyChange, onSave, dirty: dirtyProp = false, onView }: Props = $props();
 
   // Seed an editable cylinder so a fresh editor previews immediately.
   // Trace the profile with the pen (mv/line) — readable + editable (insert/
@@ -380,6 +385,11 @@
     lastEmitted = body;
     onBodyChange(body);
   });
+  // Push the live view payload out for the overlay SVG on the 3D scene.
+  $effect(() => {
+    if (!embedded || !onView) return;
+    onView({ d: view.d, vb: view.vb, axis: view.axis, y0: view.y0, y1: view.y1 });
+  });
   // Full profile source.ts (meta block + build) — the unified P6 form, shown in
   // the Source tab the same way a part's source reads: meta (params + calc) on
   // top, the build/composer below.
@@ -508,11 +518,18 @@
 <div class="fn-ed" class:fill class:embedded use:tipHost>
   <!-- slim vertical tabs: [Save (when dirty)] Builder (GUI) | Source -->
   <div class="fn-tabs" role="tablist">
-    {#if embedded && onSave && dirtyProp}
+    {#if embedded && onSave}
       <!-- Save icon button at the TOP of the vertical tab strip. NOT a tab —
            a regular square icon button (no clip-path, no vertical label).
-           Only shows when the host signals dirty + provides onSave. -->
-      <button class="fn-saveicon" type="button" title="Save changes" aria-label="Save" onclick={() => onSave?.()}>
+           Always present in embedded mode for affordance; RED background
+           only when the host signals dirty (the actionable state). Neutral
+           gray when clean — clicking it is a no-op but the placement stays
+           stable so the user always knows where Save lives. -->
+      <button class="fn-saveicon" class:dirty={dirtyProp} type="button"
+        title={dirtyProp ? 'Save changes' : 'No unsaved changes'}
+        aria-label="Save"
+        disabled={!dirtyProp}
+        onclick={() => onSave?.()}>
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
           <polyline points="17 21 17 13 7 13 7 21"/>
@@ -778,26 +795,25 @@
      canvas below in ONE column instead of side-by-side). */
   .fn-ed.fill { width: 100%; max-width: none; height: 100%; grid-template-columns: 26px minmax(0, 1.2fr) minmax(260px, 0.85fr); gap: 14px; }
   .fn-ed.fill .fn-svg { max-height: none; }
-  /* EMBEDDED MODE — three columns: tab strip + editor widgets + a SLIM
-     right column holding just the 2D SVG profile preview. The ProfileFn3D
-     duplicate inside .fn-3d-stack is hidden because the host pane already
-     owns the 3D scene. Actions row (Save/Save-as/Cancel) is hidden via
-     {#if !embedded} above. */
-  .fn-ed.embedded.fill, .fn-ed.embedded { grid-template-columns: 26px 1fr 180px; gap: 12px; }
-  .fn-ed.embedded .fn-3d-stack { display: none; }
-  .fn-ed.embedded .fn-right { gap: 6px; }
-  .fn-ed.embedded .fn-prev { flex: 1; min-height: 160px; }
+  /* EMBEDDED MODE — TWO columns only (tab strip + editor widgets). The
+     SVG profile preview is rendered by the host (ExtrudePartBuilder /
+     RevolvePartBuilder) as a top-left overlay on the 3D scene via the
+     onView callback; the editor's own .fn-right column is hidden entirely. */
+  .fn-ed.embedded.fill, .fn-ed.embedded { grid-template-columns: 26px 1fr; gap: 12px; }
+  .fn-ed.embedded .fn-right { display: none; }
   /* slim vertical tab rail (Builder | Source) — Excel-style trapezoid tabs with
      vertical labels, so the rail stays narrow and reads top-to-bottom. */
   .fn-tabs { display: flex; flex-direction: column; gap: 5px; align-items: stretch; padding-top: 4px; }
   .fn-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 0; background: #f1e7e5; cursor: pointer; color: #8a8a8a; padding: 14px 0; clip-path: polygon(0 12%, 100% 0, 100% 100%, 0 88%); }
   .fn-tab:hover { background: #f7ddd9; color: #b23329; }
   .fn-tab.active { background: #c4392f; color: #fff; }
-  /* Save icon button at the top of the vertical tab strip — NOT a tab.
-     Plain square, no clip-path, no vertical label; just an icon. Solid red
-     so an unsaved change is unmistakable. */
-  .fn-saveicon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 4px auto 6px; border: 0; border-radius: 4px; background: #c4392f; color: #fff; cursor: pointer; padding: 0; }
-  .fn-saveicon:hover { background: #b23329; }
+  /* Save icon button at the top of the vertical tab strip — always present
+     in embedded mode for stable affordance. Default state: neutral gray,
+     disabled (no-op). Dirty state: solid red, clickable. The user gets a
+     consistent place to look for Save regardless of clean/dirty state. */
+  .fn-saveicon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 4px auto 6px; border: 1px solid #ddd; border-radius: 4px; background: #f3f3f3; color: #999; cursor: not-allowed; padding: 0; }
+  .fn-saveicon.dirty { background: #c4392f; color: #fff; border-color: #c4392f; cursor: pointer; }
+  .fn-saveicon.dirty:hover { background: #b23329; }
   .fn-tab svg { display: block; transform: rotate(90deg); width: 13px; height: 13px; }
   .fn-tab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 8px Arial; text-transform: uppercase; letter-spacing: .09em; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
