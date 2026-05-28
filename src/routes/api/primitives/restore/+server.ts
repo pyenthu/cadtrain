@@ -3,7 +3,7 @@ import { readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
-import { removeIdForms } from '$lib/server/primitive-paths';
+import { removeIdForms, type PrimKind } from '$lib/server/primitive-paths';
 
 // POST /api/primitives/restore?id=<id>
 // Moves an archived part out of <volume>/primitives/archive/ back to the flat
@@ -18,11 +18,15 @@ export const POST = async ({ url }) => {
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
 
   const archiveDir = volumePath(join('primitives', 'archive'));
-  // Locate the archived form: new flat file, then legacy folder.
+  // Locate the archived form: any of the typed flat files (.{prim,exp,rev,asm}.ts),
+  // then fall back to the legacy <id>/source.ts folder. We probe in the same
+  // order as primitive-paths.PRIM_KINDS — typed extensions win over the generic
+  // legacy `prim` if both exist (which shouldn't happen but defensively handled).
   let src: string | null = null;
-  let kind: 'prim' | 'asm' = 'prim';
+  let kind: PrimKind = 'prim';
   let legacyFolder: string | null = null;
-  for (const k of ['prim', 'asm'] as const) {
+  const ARCHIVE_KINDS: PrimKind[] = ['prim', 'exp', 'rev', 'asm'];
+  for (const k of ARCHIVE_KINDS) {
     const p = join(archiveDir, `${id}.${k}.ts`);
     if (existsSync(p)) { src = await readFile(p, 'utf8'); kind = k; break; }
   }

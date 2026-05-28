@@ -6,25 +6,29 @@
  * mapping (pure, no I/O) so the sidebar, tab/app registry, and server routing all
  * agree.
  *
- *   <id>.prvl.ts  revolve profile   → ProfileFnEditor (Z-down)   → resolve
- *   <id>.prex.ts  extrude profile   → ProfileFnEditor (cartesian)→ resolve
- *   <id>.prim.ts  CAD primitive     → PrimitiveView              → bake
- *   <id>.asm.ts   assembly          → PrimitiveView / asm view   → bake
+ *   <id>.prvl.ts  revolve profile          → ProfileFnEditor (Z-down)   → resolve
+ *   <id>.prex.ts  extrude profile          → ProfileFnEditor (cartesian)→ resolve
+ *   <id>.exp.ts   Extrude Part             → ExtrudePartBuilder         → bake
+ *   <id>.rev.ts   Profile (Revolve) Part   → RevolvePartBuilder         → bake
+ *   <id>.asm.ts   Assembly                 → AssemblyEditor             → bake
+ *   <id>.prim.ts  CAD primitive (legacy)   → AssemblyEditor             → bake
  *
  * `kindOf` also bridges the CURRENT (pre-migration) layout — `<id>/source.ts`
  * under a category dir, and `primitives/profiles/<id>/...` — so the registry works
  * before files are renamed.
  */
 
-export type FileKind = 'prvl' | 'prex' | 'prim' | 'asm';
+export type FileKind = 'prvl' | 'prex' | 'prim' | 'exp' | 'rev' | 'asm';
 
-/** Which client editor opens a kind. */
-export type EditorKind = 'profile' | 'primitive';
+/** Which client editor opens a kind. The three single-shape part builders
+ *  (extrude-part / revolve-part) embed the ProfileFnEditor in their right
+ *  mode; the assembly view is the existing PrimitiveView Parts accordion. */
+export type EditorKind = 'profile' | 'extrude-part' | 'revolve-part' | 'assembly';
 
 /** Which server route bakes/resolves a kind. */
 export type ApiKind = 'resolve' | 'bake';
 
-const MID_EXT_RE = /\.(prvl|prex|prim|asm)\.ts$/i;
+const MID_EXT_RE = /\.(prvl|prex|prim|exp|rev|asm)\.ts$/i;
 
 /** The kind of a volume file by path. Prefers the explicit mid-extension; falls
  *  back to the current folder-based layout (location = kind, CLAUDE.md Rule 18).
@@ -48,26 +52,39 @@ export function isProfileKind(k: FileKind): boolean {
   return k === 'prvl' || k === 'prex';
 }
 
-/** The editor a kind opens in. Both profile kinds share ProfileFnEditor; both
- *  geometry kinds share PrimitiveView (assembly view is a PrimitiveView variant). */
+/** The editor a kind opens in.
+ *  * Profile kinds (prvl / prex) → standalone ProfileFnEditor (legacy /profiles route).
+ *  * exp → ExtrudePartBuilder    (embedded cartesian editor + extrude dials)
+ *  * rev → RevolvePartBuilder    (embedded revolve editor + revolve dials)
+ *  * asm → AssemblyEditor        (existing Parts accordion + Builder)
+ *  * prim (legacy) → AssemblyEditor  (pre-typed-builder parts default to the
+ *    composite view; new parts never write .prim.ts) */
 export function editorFor(k: FileKind): EditorKind {
-  return isProfileKind(k) ? 'profile' : 'primitive';
+  if (k === 'prvl' || k === 'prex') return 'profile';
+  if (k === 'exp') return 'extrude-part';
+  if (k === 'rev') return 'revolve-part';
+  return 'assembly';   // 'asm' + 'prim' (legacy) → composite view
 }
 
-/** The server route for a kind: profiles resolve to points; prim/asm bake to a Manifold. */
+/** The server route for a kind: profiles resolve to points; everything else bakes. */
 export function apiFor(k: FileKind): ApiKind {
   return isProfileKind(k) ? 'resolve' : 'bake';
 }
 
-/** The axis convention a profile kind implies (null for non-profiles). The
- *  mid-extension encodes this, so no separate `set` flag is needed post-migration. */
+/** The axis convention a profile-bearing kind implies (null for assemblies).
+ *  Mid-extension encodes the axis for both standalone profiles AND typed parts:
+ *  prvl / rev → revolve; prex / exp → cartesian. */
 export function axisFor(k: FileKind): 'revolve' | 'cartesian' | null {
-  if (k === 'prvl') return 'revolve';
-  if (k === 'prex') return 'cartesian';
+  if (k === 'prvl' || k === 'rev') return 'revolve';
+  if (k === 'prex' || k === 'exp') return 'cartesian';
   return null;
 }
 
 /** Human label for a kind (for the sidebar / tab chrome). */
 export function labelFor(k: FileKind): string {
-  return { prvl: 'revolve profile', prex: 'extrude profile', prim: 'primitive', asm: 'assembly' }[k];
+  return {
+    prvl: 'revolve profile', prex: 'extrude profile',
+    exp: 'extrude part', rev: 'profile part',
+    asm: 'assembly', prim: 'primitive',
+  }[k];
 }

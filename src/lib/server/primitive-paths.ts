@@ -5,10 +5,20 @@
  * the 2026-05-23 category restructure, which broke three flat-path resolvers).
  *
  * File-based layout (docs/plans/file-based-architecture.md) — the new scheme:
- *   primitives/<cat>/<id>.prim.ts   CAD primitive
- *   primitives/<cat>/<id>.asm.ts    assembly
- *   primitives/profiles/<id>.prvl.ts | .prex.ts   profile (function)
+ *   primitives/<cat>/<id>.prim.ts   CAD primitive (legacy / generic — pre-typed-builder)
+ *   primitives/<cat>/<id>.exp.ts    Extrude Part — inline (x,y) profile → r_weld_extrude
+ *   primitives/<cat>/<id>.rev.ts    Profile (Revolve) Part — inline (r,z) profile → r_revolve
+ *   primitives/<cat>/<id>.asm.ts    Assembly — composes other parts via CSG / place()
+ *   primitives/profiles/<id>.prvl.ts | .prex.ts   profile (function) — legacy standalone
  * where <cat> ∈ { '' (flat), basic, archive } or completions/<family>.
+ *
+ * The four primitive kinds + the dispatch they drive in /primitives:
+ *   * exp → ExtrudePartBuilder (cartesian profile editor + extrude dials)
+ *   * rev → RevolvePartBuilder (revolve profile editor + revolve dials)
+ *   * asm → AssemblyEditor (current Parts accordion + Builder)
+ *   * prim → AssemblyEditor (legacy fallback for pre-typed-builder parts; their
+ *           shape can be anything — most are assemblies in practice. New parts
+ *           never write `.prim.ts`; the typed extensions distinguish at filename.)
  *
  * LEGACY (pre-migration) folder scheme — still READ as a fallback so the app
  * keeps working during/after the destructive migration, and so a volume that
@@ -23,9 +33,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { volumePath } from '$lib/server/volume';
 
-export type PrimKind = 'prim' | 'asm';
+/** A primitive's file-type marker. The mid-extension IS the type. */
+export type PrimKind = 'prim' | 'exp' | 'rev' | 'asm';
 
-const PRIM_EXT_RE = /\.(prim|asm)\.ts$/i;
+const PRIM_KINDS: PrimKind[] = ['prim', 'exp', 'rev', 'asm'];
+const PRIM_EXT_RE = /\.(prim|exp|rev|asm)\.ts$/i;
 const PROFILE_EXT_RE = /\.(prvl|prex)\.ts$/i;
 
 // ── Primitives ──────────────────────────────────────────────────────────────
@@ -52,7 +64,9 @@ export interface PrimHit {
 export function primIdFromFile(name: string): { id: string; kind: PrimKind } | null {
   const m = PRIM_EXT_RE.exec(name);
   if (!m) return null;
-  return { id: name.slice(0, m.index), kind: m[1].toLowerCase() === 'asm' ? 'asm' : 'prim' };
+  const tag = m[1].toLowerCase();
+  const kind = (PRIM_KINDS as string[]).includes(tag) ? (tag as PrimKind) : 'prim';
+  return { id: name.slice(0, m.index), kind };
 }
 
 /** Where to WRITE a primitive's source — the new flat file in `dir`. */
@@ -60,9 +74,10 @@ export function primFilePath(dir: string, id: string, kind: PrimKind = 'prim'): 
   return join(dir, `${id}.${kind}.ts`);
 }
 
-// Look in ONE directory for an entity: new flat file first, then legacy folder.
+// Look in ONE directory for an entity: new flat file first (in order — newer
+// typed extensions win over the legacy generic `prim`), then legacy folder.
 function hitInDir(dir: string, id: string): { path: string; kind: PrimKind; legacy: boolean } | null {
-  for (const kind of ['prim', 'asm'] as PrimKind[]) {
+  for (const kind of PRIM_KINDS) {
     const p = join(dir, `${id}.${kind}.ts`);
     if (existsSync(p)) return { path: p, kind, legacy: false };
   }
@@ -114,12 +129,12 @@ export async function findPrim(id: string, opts: { includeArchive?: boolean } = 
   return null;
 }
 
-/** Remove EVERY on-disk form of `id` directly inside `dir` — the new flat files
- *  (<id>.prim.ts / <id>.asm.ts) and the legacy folder (<id>/). Best-effort;
+/** Remove EVERY on-disk form of `id` directly inside `dir` — all flat files
+ *  (`<id>.{prim,exp,rev,asm}.ts`) and the legacy folder (`<id>/`). Best-effort;
  *  used to clear a prior copy before archive/restore writes a fresh one. */
 export async function removeIdForms(dir: string, id: string): Promise<void> {
-  for (const f of [`${id}.prim.ts`, `${id}.asm.ts`]) {
-    const p = join(dir, f);
+  for (const kind of PRIM_KINDS) {
+    const p = join(dir, `${id}.${kind}.ts`);
     if (existsSync(p)) { try { await rm(p, { force: true }); } catch { /* best-effort */ } }
   }
   const folder = join(dir, id);
