@@ -2,6 +2,7 @@ import type { Handle } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { checkRateLimit } from '$lib/rate_limit';
 import { maybeProxy } from '$lib/server/volume';
+import { isStdlib } from '$lib/server/stdlib';
 
 /**
  * Volume-DATA endpoints that route to the single live store (prod) when
@@ -70,10 +71,30 @@ export const handle: Handle = async ({ event, resolve }) => {
   // null when no remote is configured (prod) or X-Volume-Local:1 is set
   // (e2e) — fall through to the local handler in that case.
   if (VOLUME_PROXY_PATHS.has(path)) {
-    const proxied = await maybeProxy(event.request, event.url);
-    if (proxied) {
-      console.log(`[${proxied.status}] ${event.request.method} ${path} — proxied → prod`);
-      return proxied;
+    // STDLIB BYPASS — stdlib primitives (src/lib/cad/stdlib/*.ts) live in src,
+    // are baked into the LOCAL build by import.meta.glob('?raw'), and have
+    // nothing to do with the volume. Proxying them to prod silently masked
+    // local edits — see memory `stdlib_source_proxy_masks_local_edits`. The
+    // /source endpoint already prefers stdlib first when it runs, so we just
+    // skip the proxy when the queried name is a stdlib id and let the
+    // handler serve the local copy.
+    if (path === '/api/primitives/source') {
+      const name = event.url.searchParams.get('name') ?? '';
+      if (isStdlib(name)) {
+        // fall through to local handler — local stdlib wins.
+      } else {
+        const proxied = await maybeProxy(event.request, event.url);
+        if (proxied) {
+          console.log(`[${proxied.status}] ${event.request.method} ${path} — proxied → prod`);
+          return proxied;
+        }
+      }
+    } else {
+      const proxied = await maybeProxy(event.request, event.url);
+      if (proxied) {
+        console.log(`[${proxied.status}] ${event.request.method} ${path} — proxied → prod`);
+        return proxied;
+      }
     }
   }
 
