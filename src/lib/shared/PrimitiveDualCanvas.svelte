@@ -153,7 +153,9 @@
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
   /* Vertical Z-pan slider, left edge. */
-  .pd-zpan { position: absolute; left: 6px; top: 56px; bottom: 16px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  /* Z-pan vertical slider on the RIGHT edge — keeps the left clear for the
+     2D SVG overlay (and the 'Mesh (live)' label sitting top-left). */
+  .pd-zpan { position: absolute; right: 6px; top: 56px; bottom: 16px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   /* Vertical range slider — modern path: `writing-mode: vertical-lr` alone.
      Drop `appearance: slider-vertical` (deprecated in Chrome 124+, removal
      warned via the runtime banner). Default direction:ltr makes top=min
