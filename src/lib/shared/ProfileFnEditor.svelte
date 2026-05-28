@@ -174,7 +174,21 @@
     const usable = keys.filter((k) => !calc.some((c) => c.name === k));
     const destr = usable.length ? `  const { ${usable.join(', ')} } = p;\n` : '';
     const ex = calc.length ? calc.map((c) => `  const ${c.name} = ${c.expr};`).join('\n') + '\n' : '';
-    if (!moves.length) return `export function build(p) {\n${destr}${ex}}`;
+    if (!moves.length) {
+      // No pen moves recognized. Two cases:
+      //  (a) Procedural body (for/while/Array.from + pts.push) like the curated
+      //      ellipse/ngon/star — parseBody returns 0 moves because there's no
+      //      pen chain to extract. Preserve the original body verbatim so it
+      //      still builds. Calc/destr is NOT prepended here (the body already
+      //      contains its own declarations + return; duplicating would double-
+      //      declare). Adding a row to "path" switches to the pen-chain branch
+      //      below, which replaces the body entirely.
+      //  (b) Truly empty (a fresh profile that had its moves deleted) — emit a
+      //      visible empty array so the error surfaces clearly.
+      const body = (seed?.body || '').trim();
+      if (body) return `export function build(p) {\n  ${body.replace(/\n/g, '\n  ')}\n}`;
+      return `export function build(p) {\n${destr}${ex}  return [];\n}`;
+    }
     // Chained pen path: pen().mv(…).line(…)….pts()
     const chain = moves.map((mv) =>
       mv.cmd === 'lineR' || mv.cmd === 'lineZ' ? `    .${mv.cmd}(${mv.a})` : `    .${mv.cmd}(${mv.a}, ${mv.b})`,
