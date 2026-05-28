@@ -521,6 +521,35 @@
     await refreshList();
   }
 
+  // ── Archive: multi-select + bulk permanent delete ──────────────────────
+  // Checkbox set of selected archived ids; cleared whenever the archive
+  // list refreshes or when the user explicitly clears.
+  let archiveSelected: Set<string> = $state(new Set());
+  function toggleArchiveSelect(id: string) {
+    const next = new Set(archiveSelected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    archiveSelected = next;
+  }
+  function selectAllArchive() {
+    archiveSelected = new Set(archived.map((a) => a.id));
+  }
+  function clearArchiveSelection() { archiveSelected = new Set(); }
+  let archiveAllSelected = $derived(archived.length > 0 && archiveSelected.size === archived.length);
+  async function purgeSelected() {
+    const ids = [...archiveSelected];
+    if (ids.length === 0) return;
+    if (!confirm(`Permanently delete ${ids.length} archived part${ids.length > 1 ? 's' : ''}?\n\nThis CANNOT be undone.\n\nIds:\n${ids.slice(0, 20).join(', ')}${ids.length > 20 ? '\n…' : ''}`)) return;
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}&permanent=true`, { method: 'DELETE' });
+      if (r.ok) { ok++; pendingCreated = pendingCreated.filter((pc) => pc.id !== id); }
+      else { fail++; }
+    }
+    status = `Permanently deleted ${ok} of ${ids.length} archived part${ok > 1 ? 's' : ''}${fail ? ` (${fail} failed)` : ''}.`;
+    archiveSelected = new Set();
+    await refreshList();
+  }
+
   // Collapsible sidebar (persisted; mirrors SVTC's home-page sidebar pattern).
   let railCollapsed = $state(typeof localStorage !== 'undefined' && localStorage.getItem('prim-rail-collapsed') === '1');
   $effect(() => { try { localStorage.setItem('prim-rail-collapsed', railCollapsed ? '1' : '0'); } catch { /* ignore */ } });
@@ -811,9 +840,22 @@
             {#if archived.length === 0}
               <div class="prim-empty">no archived parts</div>
             {:else}
+              <!-- Bulk select bar: select-all checkbox + per-row checkboxes
+                   + 'Delete N permanently' button. The button is only enabled
+                   when at least one row is checked. -->
+              <div class="prim-arch-bar">
+                <label class="prim-arch-allcheck" title="Select / deselect all">
+                  <input type="checkbox" checked={archiveAllSelected} indeterminate={archiveSelected.size > 0 && !archiveAllSelected} onchange={() => archiveAllSelected ? clearArchiveSelection() : selectAllArchive()} />
+                  <span>{archiveAllSelected ? 'all' : archiveSelected.size > 0 ? `${archiveSelected.size} selected` : 'select all'}</span>
+                </label>
+                <button class="prim-arch-purge" type="button" disabled={archiveSelected.size === 0} onclick={purgeSelected} title="Delete selected — PERMANENTLY">
+                  delete{archiveSelected.size > 0 ? ` ${archiveSelected.size}` : ''} ×
+                </button>
+              </div>
               <div class="prim-arch-list">
                 {#each archived as a (a.id)}
-                  <div class="prim-row-wrap prim-row-arch">
+                  <div class="prim-row-wrap prim-row-arch" class:selected={archiveSelected.has(a.id)}>
+                    <input class="prim-arch-check" type="checkbox" checked={archiveSelected.has(a.id)} onchange={() => toggleArchiveSelect(a.id)} aria-label={`Select ${a.id}`} />
                     <span class="prim-name prim-name-arch" title={a.description}>{a.id}</span>
                     <button class="prim-mini" type="button" title="Restore to active" onclick={() => restoreById(a.id)}>↶</button>
                     <button class="prim-mini prim-mini-danger" type="button" title="Permanent delete" onclick={() => purgeById(a.id)}>×</button>
@@ -988,10 +1030,10 @@
   .prim-list { padding: 4px 0; flex: 1; }
   .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; position: relative; }
   /* Editable rows reserve a TIGHT left gutter for the absolute-positioned
-     trash. 17px = 12px icon + 5px breathing — keeps the filename close to the
-     folder header. Non-editable rows (stdlib, archive) have no trash → no
-     gutter → filename stays at its current x. */
-  .prim-row-wrap:has(.prim-trash) { padding-left: 17px; }
+     trash. 14px = 12px icon + 2px breathing — filename sits as close to the
+     trash as possible without overlapping. Non-editable rows (stdlib, archive)
+     have no trash → no gutter → filename stays at its current x. */
+  .prim-row-wrap:has(.prim-trash) { padding-left: 14px; }
   .prim-row-wrap:hover { background: #f0e8e8; }
   .prim-row-wrap.active { background: #fef0f0; }
   .prim-row-wrap.active .prim-name { color: #cc2222; }
@@ -1002,8 +1044,8 @@
      only). ALWAYS VISIBLE (not hover-revealed); muted #999 idle → red-on-hover.
      SVG trash icon (Heroicons style). */
   .prim-trash {
-    position: absolute; left: 1px; top: 50%; transform: translateY(-50%);
-    background: transparent; border: 0; padding: 1px;
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    background: transparent; border: 0; padding: 0;
     color: #999; cursor: pointer; border-radius: 3px;
     display: inline-flex; align-items: center; justify-content: center;
     line-height: 1;
@@ -1086,6 +1128,19 @@
   .prim-mini { background: transparent; border: 1px solid #ddd; border-radius: 3px; padding: 2px 6px; font: 11px monospace; color: #888; cursor: pointer; }
   .prim-mini:hover { color: #2266cc; border-color: #2266cc; background: #fff; }
   .prim-mini-danger:hover { color: #cc2222; border-color: #cc2222; }
+  /* Archive bulk-select bar — top of the archive list. select-all checkbox on
+     the left, 'delete N' button (red, disabled when nothing selected) on the
+     right. */
+  .prim-arch-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px 6px; border-bottom: 1px solid #eee; margin-bottom: 4px; }
+  .prim-arch-allcheck { display: inline-flex; align-items: center; gap: 5px; font: 600 10px Arial; color: #666; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; }
+  .prim-arch-allcheck input { cursor: pointer; }
+  .prim-arch-purge { font: 700 10px Arial; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 9px; border: 1px solid #e0bebb; background: #fff; color: #c4392f; border-radius: 4px; cursor: pointer; }
+  .prim-arch-purge:hover:not(:disabled) { background: #c4392f; color: #fff; border-color: #c4392f; }
+  .prim-arch-purge:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* Per-row checkbox sits inline before the name; selected rows get a faint
+     pink background so the chosen set reads at a glance. */
+  .prim-row-wrap.prim-row-arch.selected { background: #fdecea; }
+  .prim-arch-check { margin: 0 4px 0 2px; cursor: pointer; }
   .prim-name { font: 600 11px monospace; flex: 1; }
   .prim-tag { font: 9px Arial; padding: 1px 5px; border-radius: 8px; background: #ddd; color: #555; }
   .prim-tag.vol { background: #cc2222; color: #fff; }
