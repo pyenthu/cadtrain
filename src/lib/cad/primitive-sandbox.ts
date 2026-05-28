@@ -19,7 +19,7 @@ import * as helpers from './manifold-helpers';
 import { gridPatch, capFan, weldAndBuild, revolveProfile } from './manifold-mesh';
 import { resolveProfile } from '$lib/shared/profile-presets';
 import { warpManifoldAlongSpline } from './warp-spline';
-import { cs, extrude_csg } from './csg-2d';
+import { cs, extrude_csg, ext } from './csg-2d';
 import * as mathLib from './math-lib';
 
 // Math primitives injected as BARE names — `cos(x)`, `sin(x)`, `PI`, etc.
@@ -36,7 +36,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
   'helix_band', 'revolve', 'profile_extrude',
   'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'warpSpline',
-  'cs', 'extrude_csg',
+  'cs', 'extrude_csg', 'ext',
   '__tag',
   'G', 'Math',
   ...MATH_NAMES,
@@ -50,7 +50,7 @@ export function sandboxArgValues(): any[] {
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,
     gridPatch, capFan, weldAndBuild, revolveProfile, resolveProfile, warpManifoldAlongSpline,
-    cs, extrude_csg,
+    cs, extrude_csg, ext,
     helpers.tagManifold,
     globalThis, Math,
     ...MATH_VALUES,

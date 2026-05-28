@@ -44,13 +44,19 @@ export function cs(input: Pt[] | any): any {
 /** Declarative 2D-CSG + extrude. Each entry's op is applied in order; the very
  *  first one's op is treated as 'base' regardless. Returns a Manifold solid.
  *
+ *  Optional twist (degrees) + divs (vertical slices) mirror the same params
+ *  on r_extrude. `twist=0` (the default) takes the bare `.extrude(h)` path —
+ *  no behavior change for existing callers AND avoids the manifold-3d
+ *  degeneracy where `extrude(h, n>0, 0)` produces coincident intermediate
+ *  slices ("Not manifold").
+ *
  *  Example:
  *    extrude_csg([
  *      { profile: resolveProfile({kind:'rect',    params:{w:2, h:1}}) },
  *      { profile: resolveProfile({kind:'ellipse', params:{rMajor:0.2, rMinor:0.2, segments:32}}), op:'subtract' },
- *    ], 0.5)
+ *    ], 0.5, 90, 24)   // 90° twist over 0.5 thickness, 24 slices
  */
-export function extrude_csg(spec: CsgEntry[], height: number): any {
+export function extrude_csg(spec: CsgEntry[], height: number, twist?: number, divs?: number): any {
   if (!Array.isArray(spec) || spec.length === 0) {
     throw new Error('extrude_csg needs ≥ 1 entry');
   }
@@ -64,5 +70,23 @@ export function extrude_csg(spec: CsgEntry[], height: number): any {
     else if (op === 'base') acc = next; // explicit replacement; rarely useful past index 0
     else throw new Error(`extrude_csg: unknown op "${op}"`);
   }
-  return acc.extrude(Math.max(0.001, +height || 0));
+  return ext(acc, height, twist, divs);
+}
+
+/** Twist-aware terminal `.extrude(h)` for a CrossSection. Same conditional as
+ *  r_extrude / extrude_csg — bare `extrude(h)` when twist≈0 (sidesteps the
+ *  manifold-3d degeneracy where nDivisions>0 + zero-twist yields coincident
+ *  slices) and `extrude(h, divs, twist)` otherwise. Lets a chain like
+ *  `cs(a).subtract(cs(b))` finish with twist support without inlining a
+ *  ternary in every authored part: `ext(cs(a).subtract(cs(b)), h, twist, divs)`.
+ */
+export function ext(crossSection: any, height: number, twist?: number, divs?: number): any {
+  if (!crossSection || typeof crossSection.extrude !== 'function') {
+    throw new Error('ext() needs a CrossSection (got something without .extrude)');
+  }
+  const h = Math.max(0.001, +height || 0);
+  const tw = Number(twist ?? 0);
+  if (Math.abs(tw) < 0.001) return crossSection.extrude(h);
+  const nDiv = Math.max(1, Math.min(96, Math.round(Number(divs ?? 12))));
+  return crossSection.extrude(h, nDiv, tw);
 }

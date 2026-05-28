@@ -725,17 +725,28 @@
   .fn-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
   .fn-right .fn-prev { flex: 35; min-height: 110px; }
   .fn-3d-stack { flex: 65; min-height: 180px; display: flex; flex-direction: column; }
-  /* actions — Cancel + Save-as-new share a row; Save takes its own full-width row */
-  /* three buttons in a single row — Cancel · Save as · Save */
-  .fn-actions { display: flex; gap: 12px; align-items: stretch; }
-  .fn-cancel { flex: 1 1 0; min-width: 0; border: 1px solid #d4d4dc; background: #fff; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
+  /* actions — Save gets its OWN top row (full-width, leftmost = primary action);
+     Save-as + Cancel share the row below. Roomier gaps so each button reads as
+     a discrete affordance, not a three-button bar. */
+  .fn-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 18px;        /* row gap, column gap */
+    align-items: stretch;
+  }
+  .fn-cancel { min-width: 0; border: 1px solid #d4d4dc; background: #fff; border-radius: 5px; padding: 6px 10px; cursor: pointer; font: 11px Arial; }
   .fn-cancel:hover { background: #f6f6f8; }
-  .fn-saveas { flex: 1 1 0; min-width: 0; white-space: nowrap; border: 1px solid #e8c6c1; background: #fff; color: #c4392f; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
+  /* When the Save-as button is hidden (no seedId), Cancel is the 2nd child of
+     fn-actions instead of the 3rd. Span both columns so it fills row 2 cleanly
+     rather than dangling in the right half. */
+  .fn-actions > .fn-cancel:nth-child(2) { grid-column: 1 / -1; }
+  .fn-saveas { min-width: 0; white-space: nowrap; border: 1px solid #e8c6c1; background: #fff; color: #c4392f; border-radius: 5px; padding: 6px 10px; cursor: pointer; font: 11px Arial; }
   .fn-saveas:hover:not(:disabled) { background: #fceeec; }
   .fn-saveas:disabled { opacity: .5; cursor: not-allowed; }
-  /* Save: calm/neutral when clean; RED with a WHITE OUTLINE when dirty so an
-     unsaved profile clearly needs saving. */
-  .fn-save { flex: 1 1 0; min-width: 0; border: 1px solid #ccc; background: #efefef; color: #555; border-radius: 5px; padding: 4px 6px; cursor: pointer; font: 11px Arial; }
+  /* Save: top row, full width. Leftmost = primary. Calm/neutral when clean;
+     RED with a WHITE OUTLINE when dirty so an unsaved profile clearly needs
+     saving. Slightly taller padding to read as the dominant action. */
+  .fn-save { grid-column: 1 / -1; min-width: 0; border: 1px solid #ccc; background: #efefef; color: #555; border-radius: 5px; padding: 7px 12px; cursor: pointer; font: 700 11px Arial; }
   .fn-save:hover:not(:disabled) { background: #e4e4e4; }
   .fn-save.dirty { background: #c4392f; color: #fff; border-color: #c4392f; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #c4392f; font-weight: 700; }
   .fn-save.dirty:hover:not(:disabled) { background: #b23329; }
