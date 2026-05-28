@@ -485,17 +485,15 @@
   <!-- slim vertical tabs: [Save (when dirty)] Builder (GUI) | Source -->
   <div class="fn-tabs" role="tablist">
     {#if embedded && onSave && dirtyProp}
-      <!-- Save icon at the TOP of the vertical tab strip. Only shows in
-           embedded mode when the host signals dirty + provides onSave. Red
-           background mirrors the existing fn-save.dirty treatment so an
-           unsaved change is impossible to miss. -->
-      <button class="fn-tab fn-tab-save" type="button" title="Save changes" aria-label="Save" onclick={() => onSave?.()}>
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <!-- Save icon button at the TOP of the vertical tab strip. NOT a tab —
+           a regular square icon button (no clip-path, no vertical label).
+           Only shows when the host signals dirty + provides onSave. -->
+      <button class="fn-saveicon" type="button" title="Save changes" aria-label="Save" onclick={() => onSave?.()}>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
           <polyline points="17 21 17 13 7 13 7 21"/>
           <polyline points="7 3 7 8 15 8"/>
         </svg>
-        <span class="fn-tab-lbl">Save</span>
       </button>
     {/if}
     <button class="fn-tab" class:active={tab === 'builder'} onclick={() => (tab = 'builder')} type="button" role="tab" title="Builder — params, expressions, path">
@@ -769,10 +767,11 @@
   .fn-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 0; background: #f1e7e5; cursor: pointer; color: #8a8a8a; padding: 14px 0; clip-path: polygon(0 12%, 100% 0, 100% 100%, 0 88%); }
   .fn-tab:hover { background: #f7ddd9; color: #b23329; }
   .fn-tab.active { background: #c4392f; color: #fff; }
-  /* Save chip at the top of the tab strip — solid red when shown, white
-     icon, with a subtle glow so it reads as "do this now". */
-  .fn-tab-save { background: #c4392f; color: #fff; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #c4392f; }
-  .fn-tab-save:hover { background: #b23329; }
+  /* Save icon button at the top of the vertical tab strip — NOT a tab.
+     Plain square, no clip-path, no vertical label; just an icon. Solid red
+     so an unsaved change is unmistakable. */
+  .fn-saveicon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 4px auto 6px; border: 0; border-radius: 4px; background: #c4392f; color: #fff; cursor: pointer; padding: 0; }
+  .fn-saveicon:hover { background: #b23329; }
   .fn-tab svg { display: block; transform: rotate(90deg); width: 13px; height: 13px; }
   .fn-tab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 8px Arial; text-transform: uppercase; letter-spacing: .09em; }
   .fn-left { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 5px; }
