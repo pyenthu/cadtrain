@@ -67,12 +67,24 @@ export function r_weld_extrude(
 
   const CS = wasm.CrossSection;
   const h = Math.max(0.01, length);
-  const nDiv = Math.max(1, Math.round(divs));
-  // Twist is positional arg 3; passing scaleTop (arg 4) breaks topology in
-  // manifold-3d 3.4.1 even with [1, 1] — likely the same family as the
-  // memory'd scaleTop+warp collapse bug. Drop taper for v1; add it back via
-  // hand-wound rail-weld (gridPatch + caps) in K.50(b)' once we sort the
-  // outward-normal winding so the manifold validates.
-  void taper;
+  // The diagnostic arc:
+  //   * `extrude(h)` alone works (same call r_extrude uses).
+  //   * `extrude(h, nDivisions, 0)` with nDivisions > 0 produces a non-manifold
+  //     mesh — the intermediate slices are IDENTICAL to top + bottom (twist=0,
+  //     scaleTop=1), so manifold-3d sees coincident triangle pairs and rejects.
+  //   * `extrude(h, nDivisions, twistDegrees)` with twistDegrees ≠ 0 IS valid
+  //     because each slice differs by the twist increment.
+  // Branch: only pass nDivisions + twist when there's actual morphing to do.
+  const tw = Math.abs(twist);
+  const tp = Math.abs(taper);
+  void divs;  // divs is meaningless without morph; tied to twist's smoothness if used
+  if (tw < 0.001 && tp < 0.001) {
+    return new CS([loop]).extrude(h);   // straight extrusion — same as r_extrude
+  }
+  // Twist morphing path. Honor the user's divs (cap to 1..96). taper is
+  // dropped for v1 — scaleTop's [s, s] tuple breaks topology in 3.4.1 even
+  // when twist=0 (separate from the divs-with-zero-twist bug above). The
+  // hand-wound rail-weld K.50(b)' brings taper back via per-v scale.
+  const nDiv = Math.max(1, Math.min(96, Math.round(divs)));
   return new CS([loop]).extrude(h, nDiv, twist);
 }
