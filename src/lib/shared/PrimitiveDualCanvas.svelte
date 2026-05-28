@@ -109,11 +109,19 @@
   </div>
   {#if Scene}
     {@const S = Scene}
-    {@const smoothShade = id === 'r_weld_extrude'}
-    <!-- smoothShade experiment (2026-05-28): r_weld_extrude renders with
-         calculateNormals(3, 60) vertex normals instead of flatShading face
-         normals so twisted prisms lose the non-planar-quad sawtooth. Other
-         primitives unchanged (cubes/hex stay sharp via face-derived normals). -->
+    <!-- smoothShade experiment (2026-05-28): rebake whenever the renderer
+         actually NEEDS smooth shading — extrude variants with twist > 0 emit
+         non-planar quads that read as a sawtooth under flatShading; the live
+         mesh switches to calculateNormals(3, 60) vertex normals so the side
+         reads smooth while flat-face creases (>60°) stay sharp.
+         * r_weld_extrude — twist is always present (reserved for morphed).
+         * r_extrude — twist is param index 2 in meta.params order
+           (profile, height, twist, divs). Smooth-shade only when |twist| > 0.
+         All other primitives keep flatShading (cube/hex stay faceted). -->
+    {@const twistArg = Number((args as any[])?.[2] ?? 0)}
+    {@const smoothShade =
+      id === 'r_weld_extrude' ||
+      (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
     <Canvas {createRenderer}>
       <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} />
     </Canvas>
