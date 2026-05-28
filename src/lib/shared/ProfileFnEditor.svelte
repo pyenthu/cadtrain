@@ -349,10 +349,34 @@
   // wrapper) — the host knows the slot context. lastEmitted gate avoids a
   // re-emit on the initial reactive tick.
   let lastEmitted = $state<string | null>(null);
+  /** Convert composeSource()'s `export function build(p) { return [..]; }`
+   *  wrapper into an inline `const <name> = …;` body that splices directly
+   *  into a part's `const profile_pts = …;` slot. Drops the auto-destructure
+   *  (the part has its own param names) and rewrites `return ARRAY;` →
+   *  `const profile_pts = ARRAY` (without trailing `;` — the source's
+   *  existing `;` after the slot range provides it). Preserves any calc
+   *  lines between the destructure and the return.
+   *  Returns null on a procedural body (Array.from + pts.push form) — the
+   *  editor leaves those alone today. */
+  function composeInlineSlotBody(slotName: string): string | null {
+    const full = composeSource();
+    const wrapper = full.match(/^export function build\(p\)\s*\{([\s\S]+)\}\s*$/);
+    if (!wrapper) return null;
+    let inner = wrapper[1];
+    // Drop the auto-destructure (`const { points, rOuter, … } = p;`).
+    inner = inner.replace(/^\s*const\s+\{[^}]+\}\s*=\s*p;\s*\n?/, '');
+    // Rewrite `return X;` → `const slotName = X` (no trailing `;`).
+    const ret = inner.match(/return\s+([\s\S]+?);\s*$/);
+    if (!ret) return null;
+    const arrayRhs = ret[1].trim();
+    const calcPrefix = inner.slice(0, ret.index ?? 0).trimEnd();
+    const calcStr = calcPrefix ? calcPrefix.replace(/^\n+/, '') + '\n  ' : '  ';
+    return `${calcStr}const ${slotName} = ${arrayRhs}`;
+  }
   $effect(() => {
     if (!embedded || !onBodyChange) return;
-    const body = composeSource();
-    if (body === lastEmitted) return;
+    const body = composeInlineSlotBody('profile_pts');
+    if (body === null || body === lastEmitted) return;
     lastEmitted = body;
     onBodyChange(body);
   });
