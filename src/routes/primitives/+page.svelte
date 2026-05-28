@@ -91,6 +91,14 @@
   let showStdlib = $state(true);
   let showBasic = $state(true);
   let showCompletions = $state(true);
+  // Sidebar section tabs (vertical, editor format) — Primitives = profile
+  // builder + stdlib + Basic; Components = Completions families; Archive =
+  // archived parts. Persisted so the user lands back on the same section.
+  type SidebarSection = 'primitives' | 'components' | 'archive';
+  let section = $state<SidebarSection>(
+    (typeof localStorage !== 'undefined' && (localStorage.getItem('prim-sidebar-section') as SidebarSection)) || 'primitives'
+  );
+  $effect(() => { try { localStorage.setItem('prim-sidebar-section', section); } catch { /* ignore */ } });
   // Per-family collapse state inside Completions, keyed by family id.
   let openFamilies: Record<string, boolean> = $state({});
 
@@ -499,155 +507,171 @@
       <button class="prim-rail-toggle" type="button" title="Collapse sidebar" onclick={() => railCollapsed = true}>«</button>
       <h2>Primitives</h2>
       <p class="sub">Backend toolkit — raw geometry functions</p>
-      <a class="prim-profiles-link" href="/primitives/profiles" title="Open the full-screen profile builder">ƒ Profile builder ›</a>
     </header>
 
-    <!-- Loose top section — only renders when there are uncategorized volume
-         primitives. Empty by default now (bundle helpers are hidden; loose
-         primitives are archived), so the category folders start at the top. -->
-    {#if entries.length}
-      <div class="prim-list">
-        {#each entries as e (e.id)}
-          <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-            <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-              <span class="prim-name">{e.id}</span>
-              <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
-            </button>
-            <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-            {@render moveBtn(e.id, '')}
-            {#if e.editable}
-              <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+    <!-- Vertical section tabs (editor format — trapezoidal, vertical-text,
+         tight rail). Three sections own the formerly-stacked groups:
+           Primitives  → Profile builder link + (loose) + stdlib + Basic
+           Components  → Completions families
+           Archive     → archived parts (empty state when none) -->
+    <div class="prim-tabs">
+      <div class="prim-vrail" role="tablist" aria-label="Sidebar sections">
+        <button class="prim-vtab" class:active={section === 'primitives'} type="button" role="tab" aria-selected={section === 'primitives'} title="Primitives — profile builder + stdlib + Basic" onclick={() => (section = 'primitives')}>
+          <span class="prim-vtab-ic">📐</span>
+          <span class="prim-vtab-lbl">Primitives</span>
+        </button>
+        <button class="prim-vtab" class:active={section === 'components'} type="button" role="tab" aria-selected={section === 'components'} title="Components — Completions families" onclick={() => (section = 'components')}>
+          <span class="prim-vtab-ic">🧩</span>
+          <span class="prim-vtab-lbl">Components</span>
+        </button>
+        <button class="prim-vtab" class:active={section === 'archive'} type="button" role="tab" aria-selected={section === 'archive'} title="Archive — soft-deleted parts" onclick={() => (section = 'archive')}>
+          <span class="prim-vtab-ic">🗄</span>
+          <span class="prim-vtab-lbl">Archive{#if archived.length} ({archived.length}){/if}</span>
+        </button>
+      </div>
+
+      <div class="prim-tabpanel">
+        {#if section === 'primitives'}
+          <a class="prim-profiles-link" href="/primitives/profiles" title="Open the full-screen profile builder">ƒ Profile builder ›</a>
+
+          <!-- Loose top section — uncategorized volume primitives (empty by default). -->
+          {#if entries.length}
+            <div class="prim-list">
+              {#each entries as e (e.id)}
+                <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                  <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                    <span class="prim-name">{e.id}</span>
+                    <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
+                  </button>
+                  <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {@render moveBtn(e.id, '')}
+                  {#if e.editable}
+                    <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          <!-- stdlib — git-tracked r_* canonical building blocks (read-only). -->
+          {#if stdlib.length}
+            <div class="prim-tests">
+              <div class="prim-head-row">
+                <button class="prim-arch-head" type="button" onclick={() => (showStdlib = !showStdlib)}>
+                  {@render folderIcon(showStdlib)}
+                  stdlib {#if stdlib.length}({stdlib.length}){/if}
+                </button>
+              </div>
+              {#if showStdlib}
+                {#each stdlib as e (e.id)}
+                  <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                    <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                      <span class="prim-name">{e.id}</span>
+                      <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
+                    </button>
+                    <button class="prim-dup" type="button" title="Duplicate to a new editable volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Basic — r_* volume primitives (primitives/basic/). -->
+          <div class="prim-tests">
+            <div class="prim-head-row">
+              <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
+                {@render folderIcon(showBasic)}
+                Basic {#if basic.length}({basic.length}){/if}
+              </button>
+              <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openCreate('basic', 'Basic', e)}>＋</button>
+            </div>
+            {#if showBasic}
+              {#if basic.length === 0}
+                <div class="prim-empty">none yet</div>
+              {:else}
+                {#each basic as e (e.id)}
+                  <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                    <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                      <span class="prim-name">{e.id}</span>
+                      <span class="prim-tag vol">vol</span>
+                    </button>
+                    <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                    {@render moveBtn(e.id, 'basic')}
+                    {#if e.editable}
+                      <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                    {/if}
+                  </div>
+                {/each}
+              {/if}
             {/if}
           </div>
-        {/each}
-      </div>
-    {/if}
 
-    <!-- Standard library — git-tracked r_* building blocks served from
-         src/lib/cad/stdlib/. Canonical + read-only (edit in src + redeploy);
-         they shadow any same-named volume part. No add / no archive; duplicate
-         forks a stdlib part into a new editable volume primitive. -->
-    {#if stdlib.length}
-      <div class="prim-tests">
-        <div class="prim-head-row">
-          <button class="prim-arch-head" type="button" onclick={() => (showStdlib = !showStdlib)}>
-            {@render folderIcon(showStdlib)}
-            stdlib {#if stdlib.length}({stdlib.length}){/if}
-          </button>
-        </div>
-        {#if showStdlib}
-          {#each stdlib as e (e.id)}
-            <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                <span class="prim-name">{e.id}</span>
-                <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
-              </button>
-              <button class="prim-dup" type="button" title="Duplicate to a new editable volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-            </div>
-          {/each}
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Basic category — the raw r_* geometry primitives, parked under
-         primitives/basic/ on the volume (location IS the category).
-         Collapsible folder. -->
-    <div class="prim-tests">
-      <div class="prim-head-row">
-        <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
-          {@render folderIcon(showBasic)}
-          Basic {#if basic.length}({basic.length}){/if}
-        </button>
-        <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openCreate('basic', 'Basic', e)}>＋</button>
-      </div>
-      {#if showBasic}
-        {#if basic.length === 0}
-          <div class="prim-empty">none yet</div>
-        {:else}
-          {#each basic as e (e.id)}
-            <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-              <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                <span class="prim-name">{e.id}</span>
-                <span class="prim-tag vol">vol</span>
-              </button>
-              <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-              {@render moveBtn(e.id, 'basic')}
-              {#if e.editable}
-                <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-              {/if}
-            </div>
-          {/each}
-        {/if}
-      {/if}
-    </div>
-
-    <!-- Completions category — NESTED by family. primitives/completions/
-         <family>/<id>/ on the volume. Outer collapsible group → per-family
-         collapsible sub-folders → parts. Family dirs may be empty
-         (structure only) and still show. -->
-    <div class="prim-tests">
-      <button class="prim-arch-head" type="button" onclick={() => (showCompletions = !showCompletions)}>
-        {@render folderIcon(showCompletions)}
-        Completions {#if completionFamilies.length}({completionFamilies.length}){/if}
-      </button>
-      {#if showCompletions}
-        {#if completionFamilies.length === 0}
-          <div class="prim-empty">no families yet</div>
-        {:else}
-          {#each completionFamilies as fam (fam.id)}
-            {@const parts = completions[fam.id] ?? []}
-            <div class="prim-fam">
-              <div class="prim-head-row">
-                <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
-                  {@render folderIcon(openFamilies[fam.id])}
-                  {fam.label} {#if parts.length}({parts.length}){/if}
-                </button>
-                <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
-              </div>
-              {#if openFamilies[fam.id]}
-                {#if parts.length === 0}
-                  <div class="prim-empty prim-fam-empty">empty</div>
-                {:else}
-                  {#each parts as e (e.id)}
-                    <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-                      <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                        <span class="prim-name">{e.id}</span>
-                        <span class="prim-tag vol">vol</span>
+        {:else if section === 'components'}
+          <!-- Completions — NESTED by family. primitives/completions/<family>/. -->
+          <div class="prim-tests">
+            <button class="prim-arch-head" type="button" onclick={() => (showCompletions = !showCompletions)}>
+              {@render folderIcon(showCompletions)}
+              Completions {#if completionFamilies.length}({completionFamilies.length}){/if}
+            </button>
+            {#if showCompletions}
+              {#if completionFamilies.length === 0}
+                <div class="prim-empty">no families yet</div>
+              {:else}
+                {#each completionFamilies as fam (fam.id)}
+                  {@const parts = completions[fam.id] ?? []}
+                  <div class="prim-fam">
+                    <div class="prim-head-row">
+                      <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
+                        {@render folderIcon(openFamilies[fam.id])}
+                        {fam.label} {#if parts.length}({parts.length}){/if}
                       </button>
-                      <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-                      {@render moveBtn(e.id, `completions/${fam.id}`)}
-                      {#if e.editable}
-                        <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                      {/if}
+                      <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
                     </div>
-                  {/each}
-                {/if}
+                    {#if openFamilies[fam.id]}
+                      {#if parts.length === 0}
+                        <div class="prim-empty prim-fam-empty">empty</div>
+                      {:else}
+                        {#each parts as e (e.id)}
+                          <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                            <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                              <span class="prim-name">{e.id}</span>
+                              <span class="prim-tag vol">vol</span>
+                            </button>
+                            <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                            {@render moveBtn(e.id, `completions/${fam.id}`)}
+                            {#if e.editable}
+                              <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                            {/if}
+                          </div>
+                        {/each}
+                      {/if}
+                    {/if}
+                  </div>
+                {/each}
               {/if}
-            </div>
-          {/each}
-        {/if}
-      {/if}
-    </div>
+            {/if}
+          </div>
 
-    {#if archived.length > 0}
-      <div class="prim-archive">
-        <button class="prim-arch-head" type="button" onclick={() => (showArchive = !showArchive)}>
-          {@render folderIcon(showArchive)}
-          Archive ({archived.length})
-        </button>
-        {#if showArchive}
-          <div class="prim-arch-list">
-            {#each archived as a (a.id)}
-              <div class="prim-row-wrap prim-row-arch">
-                <span class="prim-name prim-name-arch" title={a.description}>{a.id}</span>
-                <button class="prim-mini" type="button" title="Restore to active" onclick={() => restoreById(a.id)}>↶</button>
-                <button class="prim-mini prim-mini-danger" type="button" title="Permanent delete" onclick={() => purgeById(a.id)}>×</button>
+        {:else if section === 'archive'}
+          <!-- Archive — always shows, empty state when no archived parts. -->
+          <div class="prim-archive prim-archive-tab">
+            {#if archived.length === 0}
+              <div class="prim-empty">no archived parts</div>
+            {:else}
+              <div class="prim-arch-list">
+                {#each archived as a (a.id)}
+                  <div class="prim-row-wrap prim-row-arch">
+                    <span class="prim-name prim-name-arch" title={a.description}>{a.id}</span>
+                    <button class="prim-mini" type="button" title="Restore to active" onclick={() => restoreById(a.id)}>↶</button>
+                    <button class="prim-mini prim-mini-danger" type="button" title="Permanent delete" onclick={() => purgeById(a.id)}>×</button>
+                  </div>
+                {/each}
               </div>
-            {/each}
+            {/if}
           </div>
         {/if}
       </div>
-    {/if}
+    </div>
 
     {#if status}<div class="status">{status}</div>{/if}
   </aside>
@@ -762,7 +786,18 @@
   .prim-page { display: grid; grid-template-columns: 240px 1fr; height: 100%; min-height: 0; font: 13px Arial; color: #222; position: relative; }
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
   .prim-page.rail-collapsed .prim-rail { display: none; }
-  .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow-y: auto; padding: 8px 6px; display: flex; flex-direction: column; line-height: 1.2; }
+  /* Rail OWNS layout but the TABPANEL scrolls (so the vrail stays fixed). */
+  .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow: hidden; padding: 8px 6px 0; display: flex; flex-direction: column; line-height: 1.2; min-height: 0; }
+  /* Vertical section tabs — editor format (trapezoidal, vertical-text), tight rail. */
+  .prim-tabs { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 24px 1fr; margin: 6px -6px 0; border-top: 1px solid #e5e5e5; }
+  .prim-vrail { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-right: 1px solid #e5e5e5; background: #ececec; align-items: stretch; }
+  .prim-vtab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 0; border: 0; background: transparent; color: #444; cursor: pointer; clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%); font: inherit; line-height: 1; }
+  .prim-vtab:hover { color: #cc2222; background: #e2e2e2; }
+  .prim-vtab.active { color: #cc2222; background: #fafafa; }
+  .prim-vtab-ic { font-size: 12px; opacity: 0.95; line-height: 1; }
+  .prim-vtab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11px Arial; letter-spacing: 1.2px; line-height: 1; white-space: nowrap; }
+  .prim-tabpanel { overflow-y: auto; padding: 4px 6px 10px; min-width: 0; }
+  .prim-tabpanel > .prim-tests:first-of-type { margin-top: 4px; border-top: 0; padding-top: 0; }
   /* Drag handle straddling the rail/main boundary (rail is overflow:auto, so
      the handle lives on .prim-page which is position:relative). */
   .prim-rail-resize { position: absolute; top: 0; bottom: 0; width: 7px; margin-left: -3px; z-index: 20; cursor: col-resize; }
