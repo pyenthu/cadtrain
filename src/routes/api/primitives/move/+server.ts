@@ -17,8 +17,8 @@ import { isStdlib } from '$lib/server/stdlib';
 // Proxied to prod via hooks.server.ts (single live store).
 
 const ID_RE = /^[a-z][a-z0-9_]*$/i;
-// category: basic | archive | completions/<family> | completions/<family>/<subfolder>
-const CAT_RE = /^(basic|archive|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
+// basic | basic/<subfolder> | archive | completions/<family>(/<subfolder>)?
+const CAT_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
 
 export const POST = async ({ url }) => {
   const id = url.searchParams.get('id');

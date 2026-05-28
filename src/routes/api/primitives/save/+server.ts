@@ -35,8 +35,8 @@ export const POST = async ({ request }) => {
   // Optional target folder for a NEW primitive (the sidebar "+ add" affordance).
   // Allowlisted to the known group folders — no traversal. Ignored when the id
   // already exists (updates always write back in place).
-  // basic | archive | completions/<family> | completions/<family>/<subfolder>
-  const TARGET_RE = /^(basic|archive|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/;
+  // basic | basic/<subfolder> | archive | completions/<family>(/<subfolder>)?
+  const TARGET_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/;
   if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir))) {
     throw error(400, `bad dir "${targetDir}" — must be basic | archive | completions/<family> | completions/<family>/<subfolder>`);
   }

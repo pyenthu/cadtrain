@@ -43,6 +43,8 @@
   // Subfolder names per family (independent of whether they have parts yet) so
   // a freshly-mkdir'd folder shows up immediately. Keyed by family id.
   let completionSubfolders: Record<string, string[]> = $state({});
+  // Same shape for Basic — surfaces a Revolved/Extruded/test_primitives split.
+  let basicSubfolders: string[] = $state([]);
   let archived: Entry[] = $state([]);
   // Just-created parts the prod list read hasn't caught up to yet (the list is
   // proxied to Railway and can trail the write by seconds). refreshList re-merges
@@ -54,14 +56,17 @@
     // Drop any the server has now caught up to.
     pendingCreated = pendingCreated.filter((pc) => !serverIds.has(pc.id));
     for (const pc of pendingCreated) {
-      const rel = pc.dir.startsWith('completions/') ? pc.dir.slice('completions/'.length) : null;
-      // Subfolder path: completions/<family>/<sub> → fam + sub.
-      const [fam, sub] = rel ? rel.split('/') : [null, undefined];
+      // basic | basic/<sub> | completions/<fam> | completions/<fam>/<sub> — split
+      // to figure out which bucket the just-created part belongs in.
+      let bucket: 'basic' | 'completions' | null = null;
+      let fam: string | null = null;
+      let sub: string | undefined;
+      if (pc.dir === 'basic')                       { bucket = 'basic'; }
+      else if (pc.dir.startsWith('basic/'))         { bucket = 'basic';       sub = pc.dir.slice('basic/'.length); }
+      else if (pc.dir.startsWith('completions/'))   { bucket = 'completions'; [fam, sub] = pc.dir.slice('completions/'.length).split('/') as [string, string|undefined]; }
       const e: Entry = { id: pc.id, source: 'volume', name: pc.id, description: '', params: {}, editable: true, subfolder: sub };
-      if (pc.dir === 'basic') basic = [...basic, e];
-      else if (fam) {
-        completions = { ...completions, [fam]: [...(completions[fam] ?? []), e] };
-      }
+      if (bucket === 'basic') basic = [...basic, e];
+      else if (bucket === 'completions' && fam) completions = { ...completions, [fam]: [...(completions[fam] ?? []), e] };
     }
   }
 
@@ -123,13 +128,14 @@
       basic = data.basic ?? [];
       completions = data.completions ?? {};
       completionSubfolders = data.completionSubfolders ?? {};
+      basicSubfolders = data.basicSubfolders ?? [];
       archived = data.archived ?? [];
       mergePending(); // keep just-created parts visible until the list catches up
       status = '';
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; stdlib = []; basic = []; completions = {}; completionSubfolders = {}; archived = [];
+      entries = []; stdlib = []; basic = []; basicSubfolders = []; completions = {}; completionSubfolders = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -320,35 +326,47 @@
   // Reuses /api/volume's POST ?action=mkdir; no new endpoint. The 3rd-level
   // resolver walk (primitive-paths.findPrim) makes parts inside the new folder
   // discoverable; the list endpoint surfaces the subfolder even when empty.
-  let mkdirPanel = $state<{ family: string; label: string; x: number; y: number } | null>(null);
+  // parent is the path under primitives/ to mkdir INTO — 'basic' for the
+  // Primitives-tab Basic group; 'completions/<family>' for a family folder.
+  let mkdirPanel = $state<{ parent: string; label: string; x: number; y: number } | null>(null);
   let mkdirName = $state('');
   let mkdirBusy = $state(false);
   let mkdirErr = $state('');
   const SUB_RE = /^[a-z][a-z0-9_]*$/;
-  function openMkdir(family: string, label: string, ev: MouseEvent) {
+  function openMkdir(parent: string, label: string, ev: MouseEvent) {
     ev.stopPropagation();
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     mkdirName = ''; mkdirErr = '';
-    mkdirPanel = { family, label, x: Math.min(r.right + 6, window.innerWidth - 280), y: Math.min(r.top, window.innerHeight - 220) };
+    mkdirPanel = { parent, label, x: Math.min(r.right + 6, window.innerWidth - 280), y: Math.min(r.top, window.innerHeight - 220) };
   }
   function closeMkdir() { mkdirPanel = null; }
   async function submitMkdir() {
     if (!mkdirPanel || mkdirBusy) return;
     const name = mkdirName.trim();
     if (!SUB_RE.test(name)) { mkdirErr = 'Lowercase letters, digits, underscore. Must start with a letter.'; return; }
-    const family = mkdirPanel.family;
-    const existing = completionSubfolders[family] ?? [];
+    const parent = mkdirPanel.parent;
+    // Existing subfolders to check for collisions — basic or completions/<fam>.
+    const existing = parent === 'basic' ? basicSubfolders
+      : parent.startsWith('completions/') ? (completionSubfolders[parent.slice('completions/'.length)] ?? [])
+      : [];
     if (existing.includes(name)) { mkdirErr = `"${name}" already exists in ${mkdirPanel.label}.`; return; }
-    const path = `primitives/completions/${family}/${name}`;
+    const path = `primitives/${parent}/${name}`;
     mkdirBusy = true;
     try {
       const r = await fetch(`/api/volume?path=${encodeURIComponent(path)}&action=mkdir`, { method: 'POST' });
       if (!r.ok) { mkdirErr = `mkdir failed: ${await r.text()}`; return; }
       status = `Created folder "${name}" in ${mkdirPanel.label}.`;
       // Optimistic: surface the new folder + auto-open it before the list catches up.
-      completionSubfolders = { ...completionSubfolders, [family]: [...existing, name].sort() };
-      openFamilies = { ...openFamilies, [family]: true };
-      openSubfolders = { ...openSubfolders, [`${family}/${name}`]: true };
+      if (parent === 'basic') {
+        basicSubfolders = [...basicSubfolders, name].sort();
+        showBasic = true;
+        openSubfolders = { ...openSubfolders, [`basic/${name}`]: true };
+      } else if (parent.startsWith('completions/')) {
+        const fam = parent.slice('completions/'.length);
+        completionSubfolders = { ...completionSubfolders, [fam]: [...existing, name].sort() };
+        openFamilies = { ...openFamilies, [fam]: true };
+        openSubfolders = { ...openSubfolders, [`${fam}/${name}`]: true };
+      }
       closeMkdir();
       await refreshList();
     } finally { mkdirBusy = false; }
@@ -364,9 +382,12 @@
     const all: { to: string; label: string }[] = [
       { to: 'basic', label: 'Basic' },
     ];
+    // Subfolders inside Basic (Revolved / Extruded / test_primitives / …).
+    for (const sub of basicSubfolders) {
+      all.push({ to: `basic/${sub}`, label: `Basic / ${sub}` });
+    }
     for (const f of completionFamilies) {
       all.push({ to: `completions/${f.id}`, label: `Completions / ${f.label}` });
-      // Subfolders inside this family (e.g. drill_pipe/tests/) are also valid targets.
       for (const sub of completionSubfolders[f.id] ?? []) {
         all.push({ to: `completions/${f.id}/${sub}`, label: `Completions / ${f.label} / ${sub}` });
       }
@@ -633,33 +654,74 @@
             </div>
           {/if}
 
-          <!-- Basic — r_* volume primitives (primitives/basic/). -->
+          <!-- Basic — r_* volume primitives at primitives/basic/, optionally
+               with nested subfolders (Revolved / Extruded / test_primitives /
+               …). Root parts render directly under Basic; each subfolder is
+               its own collapsible fold one indent deeper, mirroring Components. -->
+          {@const basicRoot = basic.filter((e) => !e.subfolder)}
           <div class="prim-tests">
             <div class="prim-head-row">
               <button class="prim-arch-head" type="button" onclick={() => (showBasic = !showBasic)}>
                 {@render folderIcon(showBasic)}
                 Basic {#if basic.length}({basic.length}){/if}
               </button>
+              <button class="prim-add prim-add-folder" type="button" title="New folder in Basic" aria-label="New folder" onclick={(e) => openMkdir('basic', 'Basic', e)}>
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/></svg>
+                <span class="prim-add-folder-plus">+</span>
+              </button>
               <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openCreate('basic', 'Basic', e)}>＋</button>
             </div>
             {#if showBasic}
-              {#if basic.length === 0}
+              {#if basicRoot.length === 0 && basicSubfolders.length === 0}
                 <div class="prim-empty">none yet</div>
-              {:else}
-                {#each basic as e (e.id)}
-                  <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-                    <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                      <span class="prim-name">{e.id}</span>
-                      <span class="prim-tag vol">vol</span>
-                    </button>
-                    <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-                    {@render moveBtn(e.id, 'basic')}
-                    {#if e.editable}
-                      <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                    {/if}
-                  </div>
-                {/each}
               {/if}
+              <!-- Root parts (no subfolder). -->
+              {#each basicRoot as e (e.id)}
+                <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                  <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                    <span class="prim-name">{e.id}</span>
+                    <span class="prim-tag vol">vol</span>
+                  </button>
+                  <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {@render moveBtn(e.id, 'basic')}
+                  {#if e.editable}
+                    <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                  {/if}
+                </div>
+              {/each}
+              <!-- Subfolders (Revolved/Extruded/test_primitives/…). -->
+              {#each basicSubfolders as sub (sub)}
+                {@const subParts = basic.filter((e) => e.subfolder === sub)}
+                {@const subKey = `basic/${sub}`}
+                <div class="prim-subfolder">
+                  <div class="prim-head-row">
+                    <button class="prim-sub-head" type="button" onclick={() => (openSubfolders[subKey] = !openSubfolders[subKey])}>
+                      {@render folderIcon(openSubfolders[subKey])}
+                      {sub} {#if subParts.length}({subParts.length}){/if}
+                    </button>
+                    <button class="prim-add" type="button" title={`New primitive in Basic / ${sub}`} aria-label="Add primitive" onclick={(e) => openCreate(`basic/${sub}`, `Basic / ${sub}`, e)}>＋</button>
+                  </div>
+                  {#if openSubfolders[subKey]}
+                    {#if subParts.length === 0}
+                      <div class="prim-empty prim-fam-empty">empty</div>
+                    {:else}
+                      {#each subParts as e (e.id)}
+                        <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                          <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                            <span class="prim-name">{e.id}</span>
+                            <span class="prim-tag vol">vol</span>
+                          </button>
+                          <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                          {@render moveBtn(e.id, `basic/${sub}`)}
+                          {#if e.editable}
+                            <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                          {/if}
+                        </div>
+                      {/each}
+                    {/if}
+                  {/if}
+                </div>
+              {/each}
             {/if}
           </div>
 
@@ -679,7 +741,7 @@
                     {@render folderIcon(openFamilies[fam.id])}
                     {fam.label} {#if allParts.length}({allParts.length}){/if}
                   </button>
-                  <button class="prim-add prim-add-folder" type="button" title={`New folder in ${fam.label}`} aria-label="New folder" onclick={(e) => openMkdir(fam.id, fam.label, e)}>
+                  <button class="prim-add prim-add-folder" type="button" title={`New folder in ${fam.label}`} aria-label="New folder" onclick={(e) => openMkdir(`completions/${fam.id}`, fam.label, e)}>
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/></svg>
                     <span class="prim-add-folder-plus">+</span>
                   </button>

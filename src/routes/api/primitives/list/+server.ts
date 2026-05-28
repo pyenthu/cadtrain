@@ -40,6 +40,10 @@ export const GET = async () => {
   // Subfolder NAMES per family (independent of whether the subfolder holds parts
   // yet) so the sidebar shows a freshly-mkdir'd folder even when empty.
   const completionSubfolders: Record<string, string[]> = {};
+  // Same pattern for Basic — flat root parts PLUS subfolder-tagged ones (e.g.
+  // basic/revolved/, basic/extruded/, basic/test_primitives/). Surfaces the
+  // nested fold in the Primitives tab the same way Completions families do.
+  const basicSubfolders: string[] = [];
   const root = volumePath(PRIMS_ROOT);
 
   // CHEAP listing — id only, NO source read. The sidebar shows just the id;
@@ -50,8 +54,21 @@ export const GET = async () => {
   // Rule 18 still holds: derived from the FS, no central index to drift.
   const mk = (id: string): PrimEntry =>
     ({ id, source: 'volume', name: id, description: '', params: {}, editable: true });
-  async function collectSub(name: string, into: PrimEntry[]) {
-    for (const e of await listEntitiesIn(join(root, name))) into.push(mk(e.id));
+  async function collectSub(name: string, into: PrimEntry[], subList?: string[]) {
+    const dir = join(root, name);
+    for (const e of await listEntitiesIn(dir)) into.push(mk(e.id));
+    // Recurse one level into subfolders so basic/ can host Revolved/, Extruded/,
+    // test_primitives/. The 3-level resolver (primitive-paths.findPrim) already
+    // resolves these — this just surfaces them in the list response.
+    if (!subList) return;
+    let kids: any[] = [];
+    try { kids = await readdir(dir, { withFileTypes: true }); } catch { /* ignore */ }
+    for (const sub of kids) {
+      if (!sub.isDirectory()) continue;
+      subList.push(sub.name);
+      for (const e of await listEntitiesIn(join(dir, sub.name))) into.push({ ...mk(e.id), subfolder: sub.name });
+    }
+    subList.sort();
   }
   // Two-level by default + one OPTIONAL level deeper for user-created
   // sub-buckets: primitives/completions/<family>/<subfolder?>/<id>.prim.ts.
@@ -87,7 +104,7 @@ export const GET = async () => {
     // completions/profiles) have no source of their own, so listEntitiesIn
     // skips them — they're recursed explicitly below.
     for (const e of await listEntitiesIn(root)) volume.push(mk(e.id));
-    await collectSub('basic', basic);
+    await collectSub('basic', basic, basicSubfolders);
     await collectSub('archive', archived);
     await collectCompletions();
   }
@@ -121,5 +138,5 @@ export const GET = async () => {
   }
 
   const merged = [...volume];
-  return json({ stdlib, basic, completions, completionSubfolders, archived, merged });
+  return json({ stdlib, basic, basicSubfolders, completions, completionSubfolders, archived, merged });
 };
