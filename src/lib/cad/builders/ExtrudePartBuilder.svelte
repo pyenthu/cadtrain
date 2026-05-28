@@ -24,8 +24,9 @@
     onSourceChange?: (newSource: string) => void;
     dirty?: boolean;
     onSaveRequest?: () => void;
+    onParamsChange?: (values: Record<string, number>) => void;
   }
-  let { id, name = id, description = '', source = $bindable(), args, paramSchema = {}, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
+  let { id, name = id, description = '', source = $bindable(), args, paramSchema = {}, onSourceChange, dirty = false, onSaveRequest, onParamsChange }: Props = $props();
 
   const slots = $derived(findProfileSlots(source));
   const primary = $derived(slots[0] ?? null);
@@ -69,10 +70,15 @@
       (t.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
     );
   });
+  // Increments on picker selection to FORCE the ProfileFnEditor to remount —
+  // it doesn't re-parse seed.body after its initial mount, so just changing
+  // the body via handleBodyChange wouldn't refresh the editor's calc/moves
+  // state (and therefore not the SVG view). Normal user edits leave bodyKey
+  // alone, so the editor stays mounted and the cursor doesn't jump.
+  let bodyKey = $state(0);
   function pickProfile(t: ProfileHit) {
-    // Splice the template's body directly via the same handleBodyChange path.
-    // handleBodyChange does the spliceSlot work + onSourceChange notification.
     handleBodyChange(t.body);
+    bodyKey++;
     profileQuery = '';
     profileDropdownOpen = false;
   }
@@ -102,21 +108,24 @@
 <div class="ext-builder" class:resizing bind:this={root} style="--canvas-pct: {canvasPct}%;">
   <div class="ext-left">
     {#if primary}
-      <ProfileFnEditor
-        set="cartesian"
-        embedded
-        seed={{ id, label: name, description, body: primary.body, params: paramSchema }}
-        {id}
-        label={name}
-        {description}
-        onSaved={() => {}}
-        onClose={() => {}}
-        onBodyChange={handleBodyChange}
-        onSave={onSaveRequest}
-        onView={(v) => (view = v)}
-        {dirty}
-        fill
-      />
+      {#key bodyKey}
+        <ProfileFnEditor
+          set="cartesian"
+          embedded
+          seed={{ id, label: name, description, body: primary.body, params: paramSchema }}
+          {id}
+          label={name}
+          {description}
+          onSaved={() => {}}
+          onClose={() => {}}
+          onBodyChange={handleBodyChange}
+          onSave={onSaveRequest}
+          onView={(v) => (view = v)}
+          {onParamsChange}
+          {dirty}
+          fill
+        />
+      {/key}
     {:else}
       <div class="ext-empty">
         <p>No inline <code>profile_pts</code> slot found in this part's source.</p>

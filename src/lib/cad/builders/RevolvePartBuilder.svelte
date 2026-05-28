@@ -23,8 +23,9 @@
     onSourceChange?: (newSource: string) => void;
     dirty?: boolean;
     onSaveRequest?: () => void;
+    onParamsChange?: (values: Record<string, number>) => void;
   }
-  let { id, name = id, description = '', source = $bindable(), args, paramSchema = {}, onSourceChange, dirty = false, onSaveRequest }: Props = $props();
+  let { id, name = id, description = '', source = $bindable(), args, paramSchema = {}, onSourceChange, dirty = false, onSaveRequest, onParamsChange }: Props = $props();
 
   const slots = $derived(findProfileSlots(source));
   const primary = $derived(slots[0] ?? null);
@@ -62,8 +63,12 @@
       (t.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
     );
   });
+  // Force ProfileFnEditor remount on picker selection so it re-parses the
+  // new seed.body (it doesn't reparse on prop changes after initial mount).
+  let bodyKey = $state(0);
   function pickProfile(t: ProfileHit) {
     handleBodyChange(t.body);
+    bodyKey++;
     profileQuery = '';
     profileDropdownOpen = false;
   }
@@ -93,21 +98,24 @@
 <div class="rev-builder" class:resizing bind:this={root} style="--canvas-pct: {canvasPct}%;">
   <div class="rev-left">
     {#if primary}
-      <ProfileFnEditor
-        set="revolve"
-        embedded
-        seed={{ id, label: name, description, body: primary.body, params: paramSchema }}
-        {id}
-        label={name}
-        {description}
-        onSaved={() => {}}
-        onClose={() => {}}
-        onBodyChange={handleBodyChange}
-        onSave={onSaveRequest}
-        onView={(v) => (view = v)}
-        {dirty}
-        fill
-      />
+      {#key bodyKey}
+        <ProfileFnEditor
+          set="revolve"
+          embedded
+          seed={{ id, label: name, description, body: primary.body, params: paramSchema }}
+          {id}
+          label={name}
+          {description}
+          onSaved={() => {}}
+          onClose={() => {}}
+          onBodyChange={handleBodyChange}
+          onSave={onSaveRequest}
+          onView={(v) => (view = v)}
+          {onParamsChange}
+          {dirty}
+          fill
+        />
+      {/key}
     {:else}
       <div class="rev-empty">
         <p>No inline <code>profile_pts</code> slot found in this part's source.</p>

@@ -1877,6 +1877,7 @@
       args={args as (number | string)[]}
       paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
+      onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
       dirty={sourceDirty}
       onSaveRequest={saveSource}
     />
@@ -1889,6 +1890,7 @@
       args={args as (number | string)[]}
       paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
+      onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
       dirty={sourceDirty}
       onSaveRequest={saveSource}
     />

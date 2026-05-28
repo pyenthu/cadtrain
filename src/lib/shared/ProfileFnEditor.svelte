@@ -55,8 +55,14 @@
      *  scene instead of in the editor's right column. Fires on every change
      *  to the derived `view`. */
     onView?: (view: { d: string; vb: string; axis: number | null; y0: number; y1: number }) => void;
+    /** EMBEDDED MODE — pushes param-value changes back to the host so the
+     *  PART rebuild picks up the user's edits (the editor's `rows` state
+     *  drives previewParams(), but the host's `applied` state drives the
+     *  actual part build; they have to stay in sync). Fires whenever a
+     *  param row's value changes. */
+    onParamsChange?: (values: Record<string, number>) => void;
   }
-  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false, embedded = false, onBodyChange, onSave, dirty: dirtyProp = false, onView }: Props = $props();
+  let { set, seed = null, id = '', label = '', description = '', tags = '', onSaved, onClose, fill = false, embedded = false, onBodyChange, onSave, dirty: dirtyProp = false, onView, onParamsChange }: Props = $props();
 
   // Seed an editable cylinder so a fresh editor previews immediately.
   // Trace the profile with the pen (mv/line) — readable + editable (insert/
@@ -389,6 +395,19 @@
   $effect(() => {
     if (!embedded || !onView) return;
     onView({ d: view.d, vb: view.vb, axis: view.axis, y0: view.y0, y1: view.y1 });
+  });
+  // Push param-value changes back to the host so the part rebuilds when
+  // the user edits e.g. twist or segments in the embedded editor's params
+  // block. Without this the editor's rows.def updates but the host's
+  // applied[] is untouched and the 3D scene keeps using the old args.
+  let lastParamsEmitted = $state<string | null>(null);
+  $effect(() => {
+    if (!embedded || !onParamsChange) return;
+    const values = previewParams();
+    const sig = JSON.stringify(values);
+    if (sig === lastParamsEmitted) return;
+    lastParamsEmitted = sig;
+    onParamsChange(values);
   });
   // Full profile source.ts (meta block + build) — the unified P6 form, shown in
   // the Source tab the same way a part's source reads: meta (params + calc) on
