@@ -607,50 +607,43 @@
           </div>
 
         {:else if section === 'components'}
-          <!-- Completions — NESTED by family. primitives/completions/<family>/. -->
-          <div class="prim-tests">
-            <button class="prim-arch-head" type="button" onclick={() => (showCompletions = !showCompletions)}>
-              {@render folderIcon(showCompletions)}
-              Completions {#if completionFamilies.length}({completionFamilies.length}){/if}
-            </button>
-            {#if showCompletions}
-              {#if completionFamilies.length === 0}
-                <div class="prim-empty">no families yet</div>
-              {:else}
-                {#each completionFamilies as fam (fam.id)}
-                  {@const parts = completions[fam.id] ?? []}
-                  <div class="prim-fam">
-                    <div class="prim-head-row">
-                      <button class="prim-fam-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
-                        {@render folderIcon(openFamilies[fam.id])}
-                        {fam.label} {#if parts.length}({parts.length}){/if}
-                      </button>
-                      <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
-                    </div>
-                    {#if openFamilies[fam.id]}
-                      {#if parts.length === 0}
-                        <div class="prim-empty prim-fam-empty">empty</div>
-                      {:else}
-                        {#each parts as e (e.id)}
-                          <div class="prim-row-wrap prim-fam-row" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
-                            <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
-                              <span class="prim-name">{e.id}</span>
-                              <span class="prim-tag vol">vol</span>
-                            </button>
-                            <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
-                            {@render moveBtn(e.id, `completions/${fam.id}`)}
-                            {#if e.editable}
-                              <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
-                            {/if}
-                          </div>
-                        {/each}
-                      {/if}
-                    {/if}
-                  </div>
-                {/each}
-              {/if}
-            {/if}
-          </div>
+          <!-- Completions families AS the top-level folders (no outer
+               "Completions" wrapper — the Components tab IS the context). -->
+          {#if completionFamilies.length === 0}
+            <div class="prim-empty">no families yet</div>
+          {:else}
+            {#each completionFamilies as fam (fam.id)}
+              {@const parts = completions[fam.id] ?? []}
+              <div class="prim-tests prim-cmp-fam">
+                <div class="prim-head-row">
+                  <button class="prim-arch-head" type="button" onclick={() => (openFamilies[fam.id] = !openFamilies[fam.id])}>
+                    {@render folderIcon(openFamilies[fam.id])}
+                    {fam.label} {#if parts.length}({parts.length}){/if}
+                  </button>
+                  <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
+                </div>
+                {#if openFamilies[fam.id]}
+                  {#if parts.length === 0}
+                    <div class="prim-empty">empty</div>
+                  {:else}
+                    {#each parts as e (e.id)}
+                      <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                        <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                          <span class="prim-name">{e.id}</span>
+                          <span class="prim-tag vol">vol</span>
+                        </button>
+                        <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                        {@render moveBtn(e.id, `completions/${fam.id}`)}
+                        {#if e.editable}
+                          <button class="prim-trash" type="button" title="Archive (soft delete)" aria-label="Archive" onclick={() => archiveById(e.id)}>×</button>
+                        {/if}
+                      </div>
+                    {/each}
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          {/if}
 
         {:else if section === 'archive'}
           <!-- Archive — always shows, empty state when no archived parts. -->
