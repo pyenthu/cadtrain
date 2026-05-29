@@ -309,12 +309,23 @@ ${template.body};
 `;
 }
 
-/** Empty Assembly scaffold — no profile, just a stub the user fills in
- *  with r_* composition (.add / .subtract / .place). */
+/** Empty Assembly scaffold. Returns `empty()` (zero-volume Manifold) so
+ *  the preview pipeline + drag-from-sidebar drop handler have something
+ *  valid to graft new parts onto.
+ *
+ *  Workflow once the file is open:
+ *    1. Drag any sidebar primitive (r_cylinder, r_ball, an Extrude Part,
+ *       another assembly, …) onto the 3D canvas — drops insert a `const
+ *       <name> = r_X(…)` line and `.add(<name>)` to the return chain.
+ *    2. Edit each instance's args + add `mv([0,0,p.offset])` / `rot([…])`
+ *       to position it.
+ *    3. Switch `.add` → `.subtract` / `.intersect` in the Build tab.
+ *    4. Use `+ param` to expose tunable values up to the assembly's meta. */
 export function buildAssemblySource(id: string): string {
   return `/**
  * ${id} — Assembly. Compose other r_* parts via .add / .subtract / .intersect
- * or place([…]) for instancing.
+ * or place([…]) for instancing. Drag from the sidebar onto the 3D canvas to
+ * append a new part instance. Tune offsets with mv([x,y,z]) / rot([rx,ry,rz]).
  */
 export const meta = {
   id: '${id}', name: '${id}',
@@ -325,9 +336,11 @@ export const meta = {
 };
 
 export function ${id}() {
-  // Add r_* parts here and compose them with .add(), .subtract(), .intersect(),
-  // or wrap an Array.from(…) of instances with place([…]) for repetition.
-  return /* your composition */;
+  // Drag a part from the sidebar to add it here, OR write it by hand:
+  //   const rod = r_cylinder(0.4, 2);
+  //   const cap = mv(r_ball(1.0), [0, 0, 2]);
+  //   return rod.add(cap);
+  return empty();
 }
 `;
 }
