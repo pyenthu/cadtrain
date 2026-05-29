@@ -1782,12 +1782,18 @@
    *     source edits in the process.) */
   async function saveTyped() {
     if (!onSaveSource) return;
+    if (!sourceDirty && !defaultsDirty) return;
     saving = true;
     try {
       let src = editedSource;
       if (defaultsDirty) src = rewriteDefaultsInline(src, applied);
-      if (!sourceDirty && !defaultsDirty) return;
       await onSaveSource(src);
+      // Sync editedSource to the persisted shape — otherwise sourceDirty
+      // (editedSource !== serverSource) stays true after a defaults-only
+      // save because we wrote `src` (rewritten) but editedSource still
+      // holds the pre-rewrite version. Parent's saveSourceFor will set
+      // serverSource = src on success; we set editedSource = src here.
+      editedSource = src;
     } finally { saving = false; }
   }
   // Combined dirty signal for the typed-builder save chip — true when EITHER
