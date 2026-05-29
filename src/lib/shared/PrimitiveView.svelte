@@ -374,6 +374,28 @@
     if (start < 0 || end < 0) return;
     editedSource = editedSource.slice(0, start) + replacement + editedSource.slice(end);
   }
+  // ── K.56 Phase 3: per-instance op picker ────────────────────────────────
+  // Reads the CSG op the return-chain composes an instance with. Default
+  // assumption is 'add' (matches what the drag handler emits). The op is
+  // detected by scanning the source's `return …` for `\.(add|subtract|
+  // intersect)\s*\(\s*<NAME>\s*\)` — if found, that's the op. Otherwise
+  // assume add (the typical drag-drop default).
+  function currentOpForInstance(instName: string): 'add' | 'subtract' | 'intersect' {
+    const re = new RegExp(`\\.(add|subtract|intersect)\\s*\\(\\s*${instName}\\s*\\)`);
+    const m = editedSource.match(re);
+    return (m?.[1] as any) ?? 'add';
+  }
+  function setInstanceOp(instName: string, op: 'add' | 'subtract' | 'intersect') {
+    // First, try to rewrite an existing `.X(NAME)`.
+    const re = new RegExp(`\\.(add|subtract|intersect)\\s*\\(\\s*(${instName})\\s*\\)`);
+    if (re.test(editedSource)) {
+      editedSource = editedSource.replace(re, `.${op}($2)`);
+      return;
+    }
+    // No existing composition found for this instance — nothing to do. The
+    // drag-and-drop handler appends `.add(<name>)`; if that doesn't exist,
+    // the instance isn't in the return chain and changing its op is a no-op.
+  }
   // Splice ONE recognized arg (offsets are relative to the instance's argsText).
   // Edit one arg per commit — the recognition $effect re-scans between edits, so
   // later args' offsets stay correct.
@@ -2283,6 +2305,22 @@
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
                     {#if canEdit}
+                      <!-- K.56 Phase 3: change the CSG op this instance is
+                           composed with in the return chain. Reads from the
+                           live source so the picker stays in sync if the user
+                           hand-edits in the Source tab. -->
+                      {@const curOp = currentOpForInstance(inst.name)}
+                      <select class="pv-instop" title="CSG op for this instance in the return chain"
+                        value={curOp}
+                        onclick={(e) => e.stopPropagation()}
+                        onchange={(e) => { e.stopPropagation(); setInstanceOp(inst.name, (e.currentTarget as HTMLSelectElement).value as any); }}
+                      >
+                        <option value="add">▢ add</option>
+                        <option value="subtract">▣ subtract</option>
+                        <option value="intersect">◫ intersect</option>
+                      </select>
+                    {/if}
+                    {#if canEdit}
                       {@const pc = partColors(inst.name)}
                       <button class="pv-swatch" type="button" title={`Outer (skin) colour — ${pc.outer}`}
                         style="background:{pc.outer}"
@@ -2943,6 +2981,12 @@
   .pv-dep-pop-act.primary { background: #c4392f; color: #fff; border-color: #c4392f; }
   .pv-dep-pop-act.primary:hover { background: #b23329; }
   .pv-dep-pop-act:hover:not(.primary) { background: #f4f4f4; }
+  /* Per-instance CSG op picker in the assembly's part-row head. Sits
+     between the call signature and the colour swatches; pointer events
+     stopped on click so it doesn't trip the row's expand/collapse. */
+  .pv-instop { font: 10px Arial; color: #c4392f; background: #fdf8f7; border: 1px solid #e3c4bf; border-radius: 3px; padding: 1px 4px; cursor: pointer; margin-left: 6px; }
+  .pv-instop:hover { background: #fceeec; border-color: #c4392f; }
+  .pv-instop:focus { outline: none; border-color: #c4392f; box-shadow: 0 0 0 1px rgba(196, 57, 47, 0.3); }
 
   .pv-resizer { background: transparent; cursor: col-resize; position: relative; }
   .pv-resizer::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eee; transition: background 0.15s; }
