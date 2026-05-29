@@ -371,23 +371,28 @@ ${template.body};
  *    4. Use `+ param` to expose tunable values up to the assembly's meta. */
 export function buildAssemblySource(id: string): string {
   return `/**
- * ${id} — Assembly. Compose other r_* parts via .add / .subtract / .intersect
- * or place([…]) for instancing. Drag from the sidebar onto the 3D canvas to
- * append a new part instance. Tune offsets with mv([x,y,z]) / rot([rx,ry,rz]).
+ * ${id} — Assembly (ordered-instances model).
+ *
+ * meta.instances is the source of truth. Each row is one part placement:
+ *   mode: 'sequential' → auto-mates to the previous sequential row's tail.
+ *   mode: 'overlay'    → aligns to anchor's chosen datum (head|tail|center),
+ *                         and DOES NOT advance the stacking cursor.
+ *   mode: 'custom'     → uses raw expression (escape hatch for hand-tuned z).
+ *
+ * Drag a part from the sidebar to append a new sequential row. The function
+ * body is auto-generated from meta.instances on every save.
  */
 export const meta = {
   id: '${id}', name: '${id}',
-  description: 'Assembly — compose r_* parts.',
+  description: 'Assembly — composed instances.',
   tags: ['assembly'],
   uses: [],
+  instances: [],
   params: {},
 };
 
 export function ${id}() {
-  // Drag a part from the sidebar to add it here, OR write it by hand:
-  //   const rod = r_cylinder(0.4, 2);
-  //   const cap = mv(r_ball(1.0), [0, 0, 2]);
-  //   return rod.add(cap);
+  // Drag a part from the sidebar to add it here.
   return empty();
 }
 `;

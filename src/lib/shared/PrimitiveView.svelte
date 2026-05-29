@@ -20,6 +20,12 @@
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import { extractMetaParams } from '$lib/cad/inline-profile';
   import {
+    findInstancesLiteralRange, applyAppendToSource as appendAssemblyInstance,
+    parseInstances as parseAsmInstances, removeInstance as removeAsmInstance,
+    moveInstance as moveAsmInstance, updateInstance as updateAsmInstance,
+    applyInstancesToSource, type InstanceMode, type Datum,
+  } from '$lib/cad/assembly-instances';
+  import {
     parseDependencies, diffDependencies, buildSnapshots, writeDependencies,
     parseUses, type DependencyDiff,
   } from '$lib/cad/assembly-deps';
@@ -1516,9 +1522,109 @@
   // composition (mid-chain `.op(X)` removed; base operand → next promoted).
   // Leaves an unused meta.uses dep (harmless). Edits the buffer only —
   // Revert/reload undoes; Save source persists.
+  // ── Drag-reorder (new-style assemblies) ─────────────────────────────────
+  // HTML5 drag inside the Parts accordion. A row drag → drop on another
+  // row → splice the source row to the target row's position in
+  // meta.instances and re-emit. Only active for assemblies that have a
+  // meta.instances block (the new architecture); legacy bodies fall
+  // through and stay non-reorderable.
+  let isAsmInstanced = $derived(!!findInstancesLiteralRange(editedSource));
+  let dragOverInstance = $state<string | null>(null);
+  function moveAssemblyInstance(fromName: string, toName: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const instances = parseAsmInstances(editedSource);
+    const from = instances.findIndex((i) => i.name === fromName);
+    const to = instances.findIndex((i) => i.name === toName);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = moveAsmInstance(instances, from, to);
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
+
+  // ── Per-row mode + anchor + datum (Phase C) ─────────────────────────────
+  // Read directly from meta.instances each call so the picker stays in sync
+  // if the user hand-edits the array in the Source tab.
+  function readInstanceField(name: string, key: 'mode' | 'anchor' | 'at'): string | null {
+    const instances = parseAsmInstances(editedSource);
+    const inst = instances.find((i) => i.name === name);
+    return (inst as any)?.[key] ?? null;
+  }
+  function currentModeForInstance(name: string): InstanceMode {
+    return (readInstanceField(name, 'mode') as InstanceMode) ?? 'sequential';
+  }
+  function currentAnchorForInstance(name: string): string {
+    return readInstanceField(name, 'anchor') ?? '';
+  }
+  function currentAtForInstance(name: string): Datum {
+    return (readInstanceField(name, 'at') as Datum) ?? 'head';
+  }
+  /** List of instance NAMES that PRECEDE the given row — only these are
+   *  valid anchors (you can't overlay onto something that hasn't been
+   *  declared yet at body-emit time). */
+  function anchorChoicesFor(name: string): string[] {
+    const instances = parseAsmInstances(editedSource);
+    const idx = instances.findIndex((i) => i.name === name);
+    if (idx <= 0) return [];
+    return instances.slice(0, idx).map((i) => i.name);
+  }
+  function applyInstancePatch(name: string, patch: Record<string, unknown>) {
+    if (!isAsmInstanced || !canEdit) return;
+    const instances = parseAsmInstances(editedSource);
+    const idx = instances.findIndex((i) => i.name === name);
+    if (idx < 0) return;
+    const next = updateAsmInstance(instances, idx, patch as any);
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
+  function setInstanceMode(name: string, mode: InstanceMode) {
+    // When switching INTO overlay, default the anchor to the prior
+    // instance (closest preceding sequential row) so the row picks up
+    // sensible geometry on first toggle.
+    const patch: any = { mode };
+    if (mode === 'overlay') {
+      const choices = anchorChoicesFor(name);
+      if (choices.length) patch.anchor = currentAnchorForInstance(name) || choices[choices.length - 1];
+      if (!currentAtForInstance(name)) patch.at = 'head';
+    } else if (mode === 'sequential') {
+      // Clear overlay-only fields so the array stays tidy.
+      patch.anchor = undefined; patch.at = undefined;
+    }
+    applyInstancePatch(name, patch);
+  }
+  function setInstanceAnchor(name: string, anchor: string) { applyInstancePatch(name, { anchor }); }
+  function setInstanceAt(name: string, at: Datum) { applyInstancePatch(name, { at }); }
+
   function deletePart(inst: any) {
+    if (!canEdit) return;
+    // New-style assembly: drop the row from meta.instances + re-emit body.
+    // The emitter rewires `tail(prev)` refs automatically, so deleting A from
+    // [A, B] makes B the new first sequential (no offset wrap) instead of
+    // leaving an orphan `tail(A)` reference behind.
+    if (findInstancesLiteralRange(editedSource)) {
+      const instances = parseAsmInstances(editedSource);
+      const idx = instances.findIndex((i) => i.name === inst.name);
+      if (idx < 0) {
+        profileEditNote = `Can't delete ${inst.name} — not found in meta.instances.`;
+        return;
+      }
+      // Block if a custom-row's expr or another row's args mentions this name.
+      const refRe = new RegExp(`(?<![.\\w$])${inst.name}(?![\\w$])`);
+      for (let i = 0; i < instances.length; i++) {
+        if (i === idx) continue;
+        const other = instances[i];
+        if (!other) continue;
+        const text = (other.expr ?? '') + ' ' + other.args.join(' ') + ' ' + (other.anchor ?? '');
+        if (refRe.test(text)) {
+          profileEditNote = `Can't delete ${inst.name} — referenced by ${other.name}. Remove that reference first.`;
+          return;
+        }
+      }
+      const next = removeAsmInstance(instances, idx);
+      editedSource = applyInstancesToSource(editedSource, id, next);
+      pinnedParts = new Set([...pinnedParts].filter((n) => n !== inst.name));
+      return;
+    }
+    // ── Legacy path (recognizer-driven body splice) ─────────────────────────
     const r = recognized;
-    if (!canEdit || !r || inst.declStart < 0) return;
+    if (!r || inst.declStart < 0) return;
     // Block if another instance references this one (cross-instance arg/transform).
     const refRe = new RegExp(`(?<![.\\w$])${inst.name}(?![\\w$])`);
     for (const o of parts as any[]) {
@@ -1625,7 +1731,36 @@
   async function loadPrimitive(childId?: string) {
     const r = recognized;
     const child = childId ?? loadPick;
-    if (!child || !r || r.returnStart < 0 || r.compStart < 0) return;
+    if (!child) return;
+    // New-style assemblies (file has a `meta.instances` block) bypass the
+    // recognizer-driven splice path entirely — the ordered-array data layer
+    // owns the body. Refuse self-references (the bug that produced
+    // `my_assy → my_assy`) up front.
+    const isNewAssembly = !!findInstancesLiteralRange(editedSource);
+    if (isNewAssembly) {
+      if (child === id) {
+        profileEditNote = `Can't add ${child} to itself.`;
+        return;
+      }
+      loadBusy = true;
+      profileEditNote = null;
+      try {
+        const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(child)}`);
+        if (!res.ok) { profileEditNote = `Load failed: ${await res.text()}`; return; }
+        const data = await res.json();
+        const childParams = data.params ?? {};
+        const args = Object.values(childParams).map(defaultArgFor);
+        editedSource = appendAssemblyInstance(editedSource, id, child, args);
+        loadPick = '';
+      } catch (e: any) {
+        profileEditNote = `Load error: ${e?.message ?? e}`;
+      } finally {
+        loadBusy = false;
+      }
+      return;
+    }
+    // ── Legacy path (recognizer + body splice) ───────────────────────────
+    if (!r || r.returnStart < 0 || r.compStart < 0) return;
     loadBusy = true;
     profileEditNote = null;
     try {
@@ -2311,13 +2446,76 @@
                 {@const open = isOpen(inst.name)}
                 <div class="pg-acc-wrap instance">
                   <div class="pg-acc-head instance" class:collapsed={!open}
+                    class:drag-over={dragOverInstance === inst.name}
                     role="button" tabindex="0"
                     aria-expanded={open}
+                    draggable={canEdit && isAsmInstanced}
+                    ondragstart={(e) => {
+                      if (!isAsmInstanced || !canEdit) return;
+                      e.dataTransfer?.setData('application/x-instance-name', inst.name);
+                      e.dataTransfer?.setData('text/plain', inst.name);
+                      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    ondragover={(e) => {
+                      if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
+                      e.preventDefault();
+                      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                    }}
+                    ondragenter={(e) => {
+                      if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
+                      e.preventDefault();
+                      dragOverInstance = inst.name;
+                    }}
+                    ondragleave={() => { if (dragOverInstance === inst.name) dragOverInstance = null; }}
+                    ondrop={(e) => {
+                      if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
+                      e.preventDefault();
+                      const fromName = e.dataTransfer.getData('application/x-instance-name');
+                      dragOverInstance = null;
+                      if (fromName && fromName !== inst.name) moveAssemblyInstance(fromName, inst.name);
+                    }}
                     onclick={() => togglePart(inst.name)}
                     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart(inst.name); } }}>
                     <button class="pv-pin" class:pinned={pinnedParts.has(inst.name)} type="button" title={pinnedParts.has(inst.name) ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin(inst.name); }}>📌</button>
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
+                    {#if canEdit && isAsmInstanced}
+                      <!-- K.56 Phase C: placement mode (Sequential vs Overlay).
+                           Sequential = auto-stacks under prev (mv(prim, tail(prev))).
+                           Overlay = aligns to a chosen anchor's datum (head|tail|center)
+                           and does NOT advance the stacking cursor. -->
+                      {@const curMode = currentModeForInstance(inst.name)}
+                      <select class="pv-instop pv-instmode" title="Placement mode for this row"
+                        value={curMode}
+                        onclick={(e) => e.stopPropagation()}
+                        onchange={(e) => { e.stopPropagation(); setInstanceMode(inst.name, (e.currentTarget as HTMLSelectElement).value as InstanceMode); }}
+                      >
+                        <option value="sequential">↓ seq</option>
+                        <option value="overlay">⤴ overlay</option>
+                      </select>
+                      {#if curMode === 'overlay'}
+                        {@const anchors = anchorChoicesFor(inst.name)}
+                        {@const curAnchor = currentAnchorForInstance(inst.name)}
+                        {@const curAt = currentAtForInstance(inst.name)}
+                        <select class="pv-instop" title="Anchor (the row this overlay sits on)"
+                          value={curAnchor}
+                          onclick={(e) => e.stopPropagation()}
+                          onchange={(e) => { e.stopPropagation(); setInstanceAnchor(inst.name, (e.currentTarget as HTMLSelectElement).value); }}
+                        >
+                          {#each anchors as a}<option value={a}>on {a}</option>{/each}
+                          {#if !anchors.includes(curAnchor) && curAnchor}<option value={curAnchor}>on {curAnchor}</option>{/if}
+                        </select>
+                        <select class="pv-instop" title="Anchor datum — head=top, tail=bottom, center=midpoint (Z-down)"
+                          value={curAt}
+                          onclick={(e) => e.stopPropagation()}
+                          onchange={(e) => { e.stopPropagation(); setInstanceAt(inst.name, (e.currentTarget as HTMLSelectElement).value as Datum); }}
+                        >
+                          <option value="head">@head</option>
+                          <option value="tail">@tail</option>
+                          <option value="center">@center</option>
+                        </select>
+                      {/if}
+                    {/if}
                     {#if canEdit}
                       <!-- K.56 Phase 3: change the CSG op this instance is
                            composed with in the return chain. Reads from the
@@ -3066,6 +3264,13 @@
   }
   .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
   .pg-acc-head.collapsed { background: #fafafa; }
+  /* Drag-reorder visual cue — a 2px top border indicates "drop will land
+   * above this row". Cursor changes to `grab` on the head to signal the
+   * row is draggable. (Only applies for new-style assemblies, where the
+   * `draggable` attribute is dynamically true.) */
+  .pg-acc-head.instance[draggable="true"] { cursor: grab; }
+  .pg-acc-head.instance[draggable="true"]:active { cursor: grabbing; }
+  .pg-acc-head.instance.drag-over { box-shadow: inset 0 2px 0 0 #cc2222; }
   .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
   .pg-acc-head.instance .pg-acc-title { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
   .pg-acc-sig { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; margin-left: -3px; }
