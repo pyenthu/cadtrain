@@ -379,7 +379,20 @@
     // Rewrite `return X;` → `const slotName = X` (no trailing `;`).
     const ret = inner.match(/return\s+([\s\S]+?);\s*$/);
     if (!ret) return null;
-    const arrayRhs = ret[1].trim();
+    let arrayRhs = ret[1].trim();
+    // The composer emits `[\n  ...Array.from(...),\n  ]` for a single-repeat
+    // body. The original part source has bare `Array.from(...)` though, so
+    // emitting the wrapped form would make every mount mark the part dirty
+    // even though the user hasn't touched anything. Unwrap when the entire
+    // array literal is just `[...Array.from(...)]` (single spread element).
+    const lonelySpread = arrayRhs.match(/^\[\s*\.\.\.((?:Array\.from|[\s\S])[\s\S]+?)\s*,?\s*\]$/);
+    if (lonelySpread) {
+      const inside = lonelySpread[1].trim();
+      // Only unwrap if `inside` is balanced on its own (Array.from(...) returns
+      // an array, so direct assignment is equivalent). A literal-array inside
+      // (like `[[1,2], [3,4]]`) keeps the brackets.
+      if (/^Array\.from\b/.test(inside)) arrayRhs = inside;
+    }
     const calcPrefix = inner.slice(0, ret.index ?? 0).trimEnd();
     const calcStr = calcPrefix ? calcPrefix.replace(/^\n+/, '') + '\n  ' : '  ';
     return `${calcStr}const ${slotName} = ${arrayRhs}`;

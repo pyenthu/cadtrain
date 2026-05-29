@@ -1761,6 +1761,27 @@
     saving = true;
     try { await onSaveDefaults(applied); } finally { saving = false; }
   }
+  /** Combined save for the TYPED-BUILDER save chip: persists source edits AND
+   *  param-default changes in one POST. If the user only edited params (no
+   *  source diff), saveDefaults rewrites the source's meta defaults from
+   *  `applied`. If they edited both, we use saveDefaults' rewrite path which
+   *  starts from editedSource and applies the new defaults on top. */
+  async function saveTyped() {
+    if (sourceDirty && defaultsDirty && onSaveSource) {
+      // Both dirty — saveDefaults handles the combined path (rewrites defaults
+      // ON TOP of editedSource via the parent's saveDefaultsFor → applied
+      // merge into editedSource path).
+      await saveDefaults();
+    } else if (defaultsDirty) {
+      await saveDefaults();
+    } else if (sourceDirty) {
+      await saveSource();
+    }
+  }
+  // Combined dirty signal for the typed-builder save chip — true when EITHER
+  // the source diverges from the server OR the user has changed default
+  // param values since open.
+  let combinedDirty = $derived(sourceDirty || defaultsDirty);
 
   // ── Save As… popup ────────────────────────────────────────────────────
   // "File → Save As": persist the CURRENT editor buffer (editedSource —
@@ -1878,8 +1899,8 @@
       paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
       onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
-      dirty={sourceDirty}
-      onSaveRequest={saveSource}
+      dirty={combinedDirty}
+      onSaveRequest={saveTyped}
     />
   {:else if kind === 'rev'}
     <!-- Typed dispatch: .rev.ts → RevolvePartBuilder. -->
@@ -1891,8 +1912,8 @@
       paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
       onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
-      dirty={sourceDirty}
-      onSaveRequest={saveSource}
+      dirty={combinedDirty}
+      onSaveRequest={saveTyped}
     />
   {:else}
   <div class="pv-split" style="--side-width: {sideWidth}px;">
