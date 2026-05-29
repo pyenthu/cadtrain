@@ -400,7 +400,16 @@
   $effect(() => {
     if (!embedded || !onBodyChange) return;
     const body = composeInlineSlotBody('profile_pts');
-    if (body === null || body === lastEmitted) return;
+    if (body === null) return;
+    // FIRST TICK — composeSource is NOT a lossless round-trip (wraps repeat
+    // counts in Math.max(0, Math.round(…)), reflows arrays, …) so the first
+    // body the effect computes on mount almost always differs from the slot
+    // body already in source. Emitting it would mark the part dirty before
+    // the user has touched anything. Capture as baseline (lastEmitted) and
+    // skip the emit; subsequent ticks emit only when body diverges from
+    // that baseline — i.e. only when the USER caused a change.
+    if (lastEmitted === null) { lastEmitted = body; return; }
+    if (body === lastEmitted) return;
     lastEmitted = body;
     onBodyChange(body);
   });

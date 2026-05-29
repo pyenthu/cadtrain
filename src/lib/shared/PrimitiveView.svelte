@@ -1761,22 +1761,34 @@
     saving = true;
     try { await onSaveDefaults(applied); } finally { saving = false; }
   }
-  /** Combined save for the TYPED-BUILDER save chip: persists source edits AND
-   *  param-default changes in one POST. If the user only edited params (no
-   *  source diff), saveDefaults rewrites the source's meta defaults from
-   *  `applied`. If they edited both, we use saveDefaults' rewrite path which
-   *  starts from editedSource and applies the new defaults on top. */
-  async function saveTyped() {
-    if (sourceDirty && defaultsDirty && onSaveSource) {
-      // Both dirty — saveDefaults handles the combined path (rewrites defaults
-      // ON TOP of editedSource via the parent's saveDefaultsFor → applied
-      // merge into editedSource path).
-      await saveDefaults();
-    } else if (defaultsDirty) {
-      await saveDefaults();
-    } else if (sourceDirty) {
-      await saveSource();
+  /** Inline default-rewriter — duplicates the parent's rewriteDefaultsInSource
+   *  so we can build the combined save payload (editedSource + applied
+   *  defaults) without round-tripping through the parent's serverSource path.
+   *  Matches `<paramName>: { …, default: <number>, … }` and swaps the number. */
+  function rewriteDefaultsInline(src: string, applied: Record<string, number | unknown>): string {
+    let out = src;
+    for (const [pname, value] of Object.entries(applied)) {
+      if (typeof value !== 'number') continue;
+      const re = new RegExp(`(\\b${pname}\\s*:\\s*\\{[^}]*\\bdefault\\s*:\\s*)-?\\d+(?:\\.\\d+)?`, 'g');
+      out = out.replace(re, `$1${value}`);
     }
+    return out;
+  }
+  /** Combined save for the TYPED-BUILDER save chip:
+   *   * source-only dirty → write editedSource as-is.
+   *   * defaults-only dirty → write serverSource with applied rewritten in.
+   *   * BOTH dirty → write editedSource with applied rewritten in. (Was
+   *     deferring to saveDefaults which uses serverSource — and dropped the
+   *     source edits in the process.) */
+  async function saveTyped() {
+    if (!onSaveSource) return;
+    saving = true;
+    try {
+      let src = editedSource;
+      if (defaultsDirty) src = rewriteDefaultsInline(src, applied);
+      if (!sourceDirty && !defaultsDirty) return;
+      await onSaveSource(src);
+    } finally { saving = false; }
   }
   // Combined dirty signal for the typed-builder save chip — true when EITHER
   // the source diverges from the server OR the user has changed default
