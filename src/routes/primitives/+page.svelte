@@ -217,7 +217,22 @@
     if (!r.ok) { status = `Save failed: ${await r.text()}`; return; }
     status = `Saved ${tab.entry.id}.`;
     await refreshList();
-    openTabs = openTabs.map((t) => t.entry.id === tab.entry.id ? { ...t, serverSource: newSource } : t);
+    // Refresh the tab's entry from the saved source — params.<>.default
+    // values change when a typed-builder save rewrites defaults, and we
+    // need the new defaults to land in entry.params so PrimitiveView's
+    // effectiveSchema → defaultsDirty resets to false after save.
+    const data = await fetchSourceFor(tab.entry.id);
+    openTabs = openTabs.map((t) => {
+      if (t.entry.id !== tab.entry.id) return t;
+      const entry = data ? {
+        ...t.entry,
+        params: data.params && Object.keys(data.params).length ? data.params : t.entry.params,
+        profiles: data.profiles && Object.keys(data.profiles).length ? data.profiles : t.entry.profiles,
+        name: data.name ?? t.entry.name,
+        description: data.description ?? t.entry.description,
+      } : t.entry;
+      return { ...t, entry, serverSource: data?.source ?? newSource };
+    });
   }
 
   // Rewrite the default literals inside `export const meta = {...}` so
