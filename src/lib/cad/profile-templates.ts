@@ -40,6 +40,12 @@ export interface ProfileTemplate {
  *  across a profile swap so the user keeps their length/twist/divs values. */
 export const ENGINE_PARAM_NAMES = ['length', 'twist', 'divs', 'taper', 'segments'] as const;
 
+// Template bodies use BARE NAMES (length, points, rx, …) — NOT p.X. This
+// way the body resolves against the function arg locals (which the
+// scaffolder's defaults-fallback block normalises) regardless of whether
+// the sandbox-injected `p` carries the values. Without this, callers that
+// pass no args (e.g. bake-preview with args:[]) hit p.X = undefined →
+// Array.from({length: undefined}) → empty profile → 'profile needs ≥ 3 pts'.
 export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
   {
     id: 'rect',
@@ -51,10 +57,10 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
     },
     body:
 `  const profile_pts = [
-    [-p.w / 2, -p.h / 2],
-    [ p.w / 2, -p.h / 2],
-    [ p.w / 2,  p.h / 2],
-    [-p.w / 2,  p.h / 2],
+    [-w / 2, -h / 2],
+    [ w / 2, -h / 2],
+    [ w / 2,  h / 2],
+    [-w / 2,  h / 2],
   ]`,
   },
   {
@@ -66,9 +72,9 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
       r: { label: 'radius', min: 0.05, max: 5,  step: 0.05, default: 0.5 },
     },
     body:
-`  const profile_pts = Array.from({ length: p.n }, (_, i) => {
-    const a = (i / p.n) * 2 * PI;
-    return [cos(a) * p.r, sin(a) * p.r];
+`  const profile_pts = Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * 2 * PI;
+    return [cos(a) * r, sin(a) * r];
   })`,
   },
   {
@@ -80,9 +86,9 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
       ry: { label: 'ry', min: 0.05, max: 10, step: 0.05, default: 1 },
     },
     body:
-`  const profile_pts = Array.from({ length: p.segments }, (_, i) => {
-    const a = (i / p.segments) * 2 * PI;
-    return [cos(a) * p.rx, sin(a) * p.ry];
+`  const profile_pts = Array.from({ length: segments }, (_, i) => {
+    const a = (i / segments) * 2 * PI;
+    return [cos(a) * rx, sin(a) * ry];
   })`,
   },
   {
@@ -95,10 +101,10 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
       rInner: { label: 'rInner', min: 0.02, max: 5,  step: 0.05, default: 0.3 },
     },
     body:
-`  const n = p.points * 2;
+`  const n = points * 2;
   const profile_pts = Array.from({ length: n }, (_, i) => {
     const a = (i / n) * 2 * PI;
-    const r = i % 2 === 0 ? p.rOuter : p.rInner;
+    const r = i % 2 === 0 ? rOuter : rInner;
     return [cos(a) * r, sin(a) * r];
   })`,
   },
@@ -112,9 +118,9 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
       amp:   { label: 'tooth depth', min: 0,    max: 0.5, step: 0.01, default: 0.08 },
     },
     body:
-`  const profile_pts = Array.from({ length: p.segments }, (_, i) => {
-    const a = (i / p.segments) * 2 * PI;
-    const r = p.rBase + p.amp * cos(p.teeth * a);
+`  const profile_pts = Array.from({ length: segments }, (_, i) => {
+    const a = (i / segments) * 2 * PI;
+    const r = rBase + amp * cos(teeth * a);
     return [cos(a) * r, sin(a) * r];
   })`,
   },
@@ -130,11 +136,11 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
     body:
 `  const profile_pts = [
     [0, 0],
-    [p.legX, 0],
-    [p.legX, p.t],
-    [p.t, p.t],
-    [p.t, p.legY],
-    [0, p.legY],
+    [legX, 0],
+    [legX, t],
+    [t, t],
+    [t, legY],
+    [0, legY],
   ]`,
   },
   {
@@ -147,22 +153,25 @@ export const CARTESIAN_TEMPLATES: ProfileTemplate[] = [
     },
     body:
 `  const profile_pts = [
-    [-p.t, -p.arm], [ p.t, -p.arm], [ p.t, -p.t], [ p.arm, -p.t],
-    [ p.arm,  p.t], [ p.t,  p.t], [ p.t,  p.arm], [-p.t,  p.arm],
-    [-p.t,  p.t], [-p.arm,  p.t], [-p.arm, -p.t], [-p.t, -p.t],
+    [-t, -arm], [ t, -arm], [ t, -t], [ arm, -t],
+    [ arm,  t], [ t,  t], [ t,  arm], [-t,  arm],
+    [-t,  t], [-arm,  t], [-arm, -t], [-t, -t],
   ]`,
   },
 ];
 
+// Revolve templates also use bare names — function arg locals win.
 export const REVOLVE_TEMPLATES: ProfileTemplate[] = [
   {
     id: 'cylinder',
     label: 'Cylinder',
     tags: ['rod', 'shaft', 'solid'],
+    partParams: {
+      r:   { label: 'radius', min: 0.05, max: 10, step: 0.05, default: 1.0 },
+      len: { label: 'length', min: 0.1,  max: 30, step: 0.1,  default: 3 },
+    },
     body:
-`  const r = p.r ?? 1.0;
-  const len = p.length ?? 3;
-  const profile_pts = [
+`  const profile_pts = [
     [0, 0],
     [r, 0],
     [r, len],
@@ -173,10 +182,14 @@ export const REVOLVE_TEMPLATES: ProfileTemplate[] = [
     id: 'tube',
     label: 'Tube',
     tags: ['pipe', 'hollow', 'bore', 'annulus'],
+    partParams: {
+      od:  { label: 'OD',     min: 0.1, max: 20, step: 0.05, default: 2 },
+      id_: { label: 'ID',     min: 0.05, max: 19, step: 0.05, default: 1.4 },
+      len: { label: 'length', min: 0.1, max: 30, step: 0.1, default: 3 },
+    },
     body:
-`  const ri = p.id / 2;
-  const ro = p.od / 2;
-  const len = p.length ?? 3;
+`  const ri = id_ / 2;
+  const ro = od / 2;
   const profile_pts = [
     [ri, 0],
     [ro, 0],
@@ -189,10 +202,12 @@ export const REVOLVE_TEMPLATES: ProfileTemplate[] = [
     id: 'cone',
     label: 'Cone',
     tags: ['taper', 'point'],
+    partParams: {
+      r:   { label: 'base radius', min: 0.05, max: 10, step: 0.05, default: 1 },
+      len: { label: 'length',      min: 0.1,  max: 30, step: 0.1,  default: 3 },
+    },
     body:
-`  const r = p.r ?? 1;
-  const len = p.length ?? 3;
-  const profile_pts = [
+`  const profile_pts = [
     [0, 0],
     [r, 0],
     [0, len],
@@ -202,11 +217,13 @@ export const REVOLVE_TEMPLATES: ProfileTemplate[] = [
     id: 'barrel',
     label: 'Barrel',
     tags: ['drum', 'bulge'],
+    partParams: {
+      rEnd: { label: 'end radius', min: 0.05, max: 10, step: 0.05, default: 1.0 },
+      rMid: { label: 'mid radius', min: 0.05, max: 10, step: 0.05, default: 1.4 },
+      len:  { label: 'length',     min: 0.1,  max: 30, step: 0.1,  default: 3 },
+    },
     body:
-`  const rEnd = p.rEnd ?? 1.0;
-  const rMid = p.rMid ?? 1.4;
-  const len = p.length ?? 3;
-  const profile_pts = [
+`  const profile_pts = [
     [0, 0],
     [rEnd, 0],
     [rMid, len / 2],
@@ -299,7 +316,7 @@ export function ${id}(${argList}) {
   // Defaults — protects against drift when used inside an assembly.
 ${defaultsBlock}
 ${template.body};
-  return r_weld_extrude(profile_pts, p.length, p.divs, p.twist, p.taper, p.segments);
+  return r_weld_extrude(profile_pts, length, divs, twist, taper, segments);
 }
 `;
 }
@@ -335,7 +352,7 @@ export function ${id}(${argList}) {
   // Defaults — protects against drift when used inside an assembly.
 ${defaultsBlock}
 ${template.body};
-  return r_revolve(profile_pts, p.segments);
+  return r_revolve(profile_pts, segments);
 }
 `;
 }
