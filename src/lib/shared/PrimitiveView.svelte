@@ -1891,11 +1891,15 @@
          dirty + onSaveRequest wire the existing source-dirty + saveSource
          machinery through so the embedded editor's save chip works without
          duplicating that state. -->
-    {@const args = Object.values(applied)}
+    <!-- IMPORTANT: pass `appliedArgs` (paramOrder-aligned) not
+         `Object.values(applied)` — keys inserted in non-meta order would
+         pass args in the wrong slots and cause downstream errors like
+         'profile needs ≥ 3 points' when sides arrives in the position
+         meant for length. -->
     <ExtrudePartBuilder
       {id} {name} {description}
       source={editedSource}
-      args={args as (number | string)[]}
+      args={appliedArgs as (number | string)[]}
       paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
       onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
@@ -1904,11 +1908,10 @@
     />
   {:else if kind === 'rev'}
     <!-- Typed dispatch: .rev.ts → RevolvePartBuilder. -->
-    {@const args = Object.values(applied)}
     <RevolvePartBuilder
       {id} {name} {description}
       source={editedSource}
-      args={args as (number | string)[]}
+      args={appliedArgs as (number | string)[]}
       paramSchema={paramSchema}
       onSourceChange={(s) => { editedSource = s; }}
       onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
