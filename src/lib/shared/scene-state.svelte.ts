@@ -13,8 +13,12 @@ export const scene = $state({
    *  scene scrolls a tall assembly without changing the view angle. Both the
    *  camera and its target shift by this Z amount (a pure pan). */
   zFocus: 0,
-  l1:  { x: 10, y: 10,  z:  0, i: 500 },
-  l2:  { x: -40, y: 20, z:  0, i: 500 },
+  l1:  { x: 10,  y: 10,  z:  0,   i: 500 },
+  l2:  { x: -40, y: 20,  z:  0,   i: 500 },
+  /** Fill light from the previously-dark quadrant (below origin, pointing
+   *  inward / up). Half-intensity (250 ≈ 0.5 × the others) keeps it as fill
+   *  not key. */
+  l3:  { x: 10,  y: -30, z: -20, i: 250 },
   /** Render-time Z compression. 1.0 = geom as authored; smaller values
    *  squash long primitives so they stay recognisable against their
    *  OD/wall in the viewport. Read by builder.finalizeManifold via

@@ -219,3 +219,115 @@ export const REVOLVE_TEMPLATES: ProfileTemplate[] = [
 export function templatesFor(set: 'cartesian' | 'revolve'): ProfileTemplate[] {
   return set === 'cartesian' ? CARTESIAN_TEMPLATES : REVOLVE_TEMPLATES;
 }
+
+/** Engine params for an EXTRUDE part — appended to every Extrude Part's
+ *  meta.params after the profile-specific keys. Defaults are sensible
+ *  starter values; the user tunes from there. */
+export const EXTRUDE_ENGINE_PARAMS: Record<string, ProfileParamSchema> = {
+  length:   { label: 'length',    min: 0.1,  max: 20,  step: 0.1,  default: 2 },
+  twist:    { label: 'twist (°)', min: -360, max: 360, step: 5,    default: 0 },
+  divs:     { label: 'divs',      min: 1,    max: 96,  step: 1,    default: 12 },
+  segments: { label: 'segments',  min: 4,    max: 256, step: 1,    default: 32 },
+};
+
+/** Engine params for a REVOLVE part — just the around-axis segment count. */
+export const REVOLVE_ENGINE_PARAMS: Record<string, ProfileParamSchema> = {
+  segments: { label: 'segments', min: 8, max: 256, step: 1, default: 64 },
+};
+
+/** Serialize a params record into the meta.params text shape parts use. */
+function serializeParams(params: Record<string, ProfileParamSchema>): string {
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    const fields: string[] = [];
+    if (v.label != null) fields.push(`label: ${JSON.stringify(v.label)}`);
+    if (v.min != null) fields.push(`min: ${v.min}`);
+    if (v.max != null) fields.push(`max: ${v.max}`);
+    if (v.step != null) fields.push(`step: ${v.step}`);
+    fields.push(`default: ${v.default}`);
+    lines.push(`    ${k}: { ${fields.join(', ')} },`);
+  }
+  return lines.join('\n');
+}
+
+/** Build the full source for a NEW Extrude Part from a chosen template +
+ *  the desired id. Body uses `p.<key>` references; r_weld_extrude is
+ *  invoked with the standard engine params at the end. */
+export function buildExtrudeSource(id: string, template: ProfileTemplate): string {
+  const profileParams = template.partParams ?? {};
+  const allParams = { ...profileParams, ...EXTRUDE_ENGINE_PARAMS };
+  const argList = Object.keys(allParams).join(', ');
+  return `/**
+ * ${id} — Extrude Part scaffolded from the "${template.label}" template.
+ *
+ * Edit the params or the profile body to taste. Swap the profile via the
+ * search bar in the scene canvas (top-right). The engine params (length /
+ * twist / divs / segments) are preserved across profile swaps.
+ */
+export const meta = {
+  id: '${id}', name: '${id}',
+  description: 'Extrude Part — ${template.label} cross-section.',
+  tags: ['extrude', 'inline-profile', '${template.id}'],
+  uses: ['r_weld_extrude'],
+  params: {
+${serializeParams(allParams)}
+  },
+};
+
+export function ${id}(${argList}) {
+${template.body};
+  return r_weld_extrude(profile_pts, p.length, p.divs, p.twist, 0, p.segments);
+}
+`;
+}
+
+/** Same shape for a NEW Profile (Revolve) Part. */
+export function buildRevolveSource(id: string, template: ProfileTemplate): string {
+  const profileParams = template.partParams ?? {};
+  const allParams = { ...profileParams, ...REVOLVE_ENGINE_PARAMS };
+  const argList = Object.keys(allParams).join(', ');
+  return `/**
+ * ${id} — Profile (Revolve) Part scaffolded from the "${template.label}" template.
+ *
+ * Edit the params or the (r,z) profile body to taste. Swap the profile via
+ * the search bar in the scene canvas (top-right).
+ */
+export const meta = {
+  id: '${id}', name: '${id}',
+  description: 'Revolve Part — ${template.label} half-section.',
+  tags: ['revolve', 'inline-profile', '${template.id}'],
+  uses: ['r_revolve'],
+  params: {
+${serializeParams(allParams)}
+  },
+};
+
+export function ${id}(${argList}) {
+${template.body};
+  return r_revolve(profile_pts, p.segments);
+}
+`;
+}
+
+/** Empty Assembly scaffold — no profile, just a stub the user fills in
+ *  with r_* composition (.add / .subtract / .place). */
+export function buildAssemblySource(id: string): string {
+  return `/**
+ * ${id} — Assembly. Compose other r_* parts via .add / .subtract / .intersect
+ * or place([…]) for instancing.
+ */
+export const meta = {
+  id: '${id}', name: '${id}',
+  description: 'Assembly — compose r_* parts.',
+  tags: ['assembly'],
+  uses: [],
+  params: {},
+};
+
+export function ${id}() {
+  // Add r_* parts here and compose them with .add(), .subtract(), .intersect(),
+  // or wrap an Array.from(…) of instances with place([…]) for repetition.
+  return /* your composition */;
+}
+`;
+}

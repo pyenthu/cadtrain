@@ -82,6 +82,7 @@
   let cameraPosition = $derived<[number, number, number]>([scene.cam.x, scene.cam.y, scene.cam.z]);
   let light1Pos = $derived<[number, number, number]>([scene.l1.x, scene.l1.y, scene.l1.z]);
   let light2Pos = $derived<[number, number, number]>([scene.l2.x, scene.l2.y, scene.l2.z]);
+  let light3Pos = $derived<[number, number, number]>([scene.l3.x, scene.l3.y, scene.l3.z]);
   let controls = $state<any>(null);
   $effect(() => {
     if (!controls) return;
@@ -126,6 +127,8 @@
 <T.AmbientLight intensity={0.3} />
 <T.PointLight position={light1Pos} intensity={scene.l1.i} distance={50} />
 <T.PointLight position={light2Pos} intensity={scene.l2.i} distance={50} />
+<!-- Fill light from below to lift the previously-shaded quadrant. -->
+<T.PointLight position={light3Pos} intensity={scene.l3.i} distance={50} />
 
 <!-- LEFT — live mesh (zScale already baked server-side, so no scale.z here) -->
 <T.Group position={stackAxis === 'z' ? [0, 0, -offset] : [-offset, 0, 0]}>

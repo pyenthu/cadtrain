@@ -11,6 +11,10 @@
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
   import { stubSource, buildPartStubFromBase, buildFnProfileStub } from '$lib/cad/primitive-stub';
+  import {
+    templatesFor, type ProfileTemplate,
+    buildExtrudeSource, buildRevolveSource, buildAssemblySource,
+  } from '$lib/cad/profile-templates';
 
   interface Entry {
     id: string;
@@ -314,6 +318,79 @@
   let createSearch = $state('');
   let createBusy = $state(false);
   let createErr = $state('');
+
+  // ── Typed-create picker (sidebar `+`) ─────────────────────────────────
+  // Three-step flow: pick TYPE (Extrude/Profile/Assembly), pick TEMPLATE
+  // (curated profile-templates), pick ID. Scaffolds .exp / .rev / .asm
+  // sources from src/lib/cad/profile-templates.ts and POSTs /save with
+  // `kind` so the right typed-builder mounts on first open.
+  type TypedKind = 'exp' | 'rev' | 'asm';
+  let typedCreate = $state<{
+    dir: string; label: string; x: number; y: number;
+    step: 'type' | 'template' | 'name';
+    kind?: TypedKind;
+    templateId?: string;
+    id: string;
+    busy: boolean;
+    err: string;
+  } | null>(null);
+  function openTypedCreate(dir: string, label: string, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    typedCreate = {
+      dir, label,
+      x: Math.min(r.right + 6, window.innerWidth - 340),
+      y: Math.min(r.top, window.innerHeight - 440),
+      step: 'type', id: '', busy: false, err: '',
+    };
+  }
+  function closeTypedCreate() { typedCreate = null; }
+  async function submitTypedCreate() {
+    if (!typedCreate || typedCreate.busy) return;
+    const t = typedCreate;
+    if (!t.kind) { t.err = 'pick a part type'; return; }
+    if (t.kind !== 'asm' && !t.templateId) { t.err = 'pick a template'; return; }
+    const newId = t.id.trim();
+    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { t.err = 'id must be [a-z][a-z0-9_]*'; return; }
+    const all = [...entries, ...stdlib, ...basic, ...Object.values(completions).flat()];
+    if (all.some((x) => x.id === newId)) { t.err = `"${newId}" already exists`; return; }
+    t.busy = true; t.err = '';
+    try {
+      // Look the template up.
+      let source: string;
+      if (t.kind === 'asm') {
+        source = buildAssemblySource(newId);
+      } else {
+        const axis = t.kind === 'exp' ? 'cartesian' : 'revolve';
+        const tpl = templatesFor(axis).find((x) => x.id === t.templateId);
+        if (!tpl) { t.err = 'template not found'; return; }
+        source = t.kind === 'exp' ? buildExtrudeSource(newId, tpl) : buildRevolveSource(newId, tpl);
+      }
+      const r = await fetch('/api/primitives/save', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: newId, source, dir: t.dir, kind: t.kind }),
+      });
+      if (!r.ok) { t.err = `save failed: ${await r.text()}`; return; }
+      status = `Created ${newId} in ${t.label}.`;
+      if (t.dir === 'basic') showBasic = true;
+      // Show immediately + open in a tab. Same pattern the legacy create flow uses.
+      pendingCreated = [...pendingCreated, { id: newId, source: 'volume', name: newId, description: '', params: {}, editable: true }];
+      closeTypedCreate();
+      await refreshList();
+      const newEntry = [...entries, ...basic, ...Object.values(completions).flat()].find((e) => e.id === newId)
+        ?? { id: newId, source: 'volume' as const, name: newId, description: '', params: {}, editable: true };
+      openTab(newEntry);
+    } catch (e: any) {
+      t.err = String(e?.message ?? e);
+    } finally {
+      t.busy = false;
+    }
+  }
+  // Cards shown in the template-pick step. Filter by kind.
+  function templatesForKind(kind: TypedKind): ProfileTemplate[] {
+    if (kind === 'exp') return templatesFor('cartesian');
+    if (kind === 'rev') return templatesFor('revolve');
+    return [];
+  }
   // Base options = the stdlib function-first bases (r_revolve / r_extrude — pick
   // a profile FUNCTION inside the new part) PLUS the simple r_* leaves in Basic.
   // r_rotate is retired (stdlib r_revolve replaces it), so it's excluded.
@@ -723,7 +800,7 @@
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/></svg>
                 <span class="prim-add-folder-plus">+</span>
               </button>
-              <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openCreate('basic', 'Basic', e)}>＋</button>
+              <button class="prim-add" type="button" title="New primitive in Basic" aria-label="Add primitive" onclick={(e) => openTypedCreate('basic', 'Basic', e)}>＋</button>
             </div>
             {#if showBasic}
               {#if basicRoot.length === 0 && basicSubfolders.length === 0}
@@ -751,7 +828,7 @@
                       {@render folderIcon(openSubfolders[subKey])}
                       {sub} {#if subParts.length}({subParts.length}){/if}
                     </button>
-                    <button class="prim-add" type="button" title={`New primitive in Basic / ${sub}`} aria-label="Add primitive" onclick={(e) => openCreate(`basic/${sub}`, `Basic / ${sub}`, e)}>＋</button>
+                    <button class="prim-add" type="button" title={`New primitive in Basic / ${sub}`} aria-label="Add primitive" onclick={(e) => openTypedCreate(`basic/${sub}`, `Basic / ${sub}`, e)}>＋</button>
                   </div>
                   {#if openSubfolders[subKey]}
                     {#if subParts.length === 0}
@@ -795,7 +872,7 @@
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 21a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h15ZM1.5 10.146V6a3 3 0 0 1 3-3h5.379a2.25 2.25 0 0 1 1.59.659l2.122 2.121c.14.141.331.22.53.22H19.5a3 3 0 0 1 3 3v1.146A4.483 4.483 0 0 0 19.5 9h-15a4.483 4.483 0 0 0-3 1.146Z"/></svg>
                     <span class="prim-add-folder-plus">+</span>
                   </button>
-                  <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
+                  <button class="prim-add" type="button" title={`New primitive in ${fam.label}`} aria-label="Add primitive" onclick={(e) => openTypedCreate(`completions/${fam.id}`, fam.label, e)}>＋</button>
                 </div>
                 {#if openFamilies[fam.id]}
                   {#if allParts.length === 0 && subs.length === 0}
@@ -823,7 +900,7 @@
                           {@render folderIcon(openSubfolders[subKey])}
                           {sub} {#if subParts.length}({subParts.length}){/if}
                         </button>
-                        <button class="prim-add" type="button" title={`New primitive in ${fam.label} / ${sub}`} aria-label="Add primitive" onclick={(e) => openCreate(`completions/${fam.id}/${sub}`, `${fam.label} / ${sub}`, e)}>＋</button>
+                        <button class="prim-add" type="button" title={`New primitive in ${fam.label} / ${sub}`} aria-label="Add primitive" onclick={(e) => openTypedCreate(`completions/${fam.id}/${sub}`, `${fam.label} / ${sub}`, e)}>＋</button>
                       </div>
                       {#if openSubfolders[subKey]}
                         {#if subParts.length === 0}
@@ -950,6 +1027,64 @@
     {/if}
   </main>
 </div>
+
+{#if typedCreate}
+  <FloatingPanel title={`New part · ${typedCreate.label}`} visible={true} x={typedCreate.x} y={typedCreate.y} width="340px" maxHeight="75vh" onClose={closeTypedCreate}>
+    <div class="tc-pop">
+      {#if typedCreate.step === 'type'}
+        <p class="tc-q">What kind of part?</p>
+        <div class="tc-types">
+          <button class="tc-type" type="button" onclick={() => { typedCreate!.kind = 'exp'; typedCreate!.step = 'template'; }}>
+            <span class="tc-type-ic">⊞</span>
+            <span class="tc-type-lbl">Extrude Part</span>
+            <span class="tc-type-sub">Inline (x,y) profile · r_weld_extrude</span>
+          </button>
+          <button class="tc-type" type="button" onclick={() => { typedCreate!.kind = 'rev'; typedCreate!.step = 'template'; }}>
+            <span class="tc-type-ic">◯</span>
+            <span class="tc-type-lbl">Profile Part</span>
+            <span class="tc-type-sub">Inline (r,z) half-section · r_revolve</span>
+          </button>
+          <button class="tc-type" type="button" onclick={() => { typedCreate!.kind = 'asm'; typedCreate!.step = 'name'; }}>
+            <span class="tc-type-ic">⛓</span>
+            <span class="tc-type-lbl">Assembly</span>
+            <span class="tc-type-sub">Compose other r_* parts</span>
+          </button>
+        </div>
+      {:else if typedCreate.step === 'template'}
+        <div class="tc-step-head">
+          <button class="tc-back" type="button" onclick={() => { typedCreate!.step = 'type'; }}>← back</button>
+          <span class="tc-q">Pick a template</span>
+        </div>
+        <div class="tc-grid">
+          {#each templatesForKind(typedCreate.kind!) as t (t.id)}
+            <button class="tc-card" type="button"
+              onclick={() => { typedCreate!.templateId = t.id; typedCreate!.step = 'name'; }}>
+              <span class="tc-card-lbl">{t.label}</span>
+              <span class="tc-card-id">{t.id}</span>
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <div class="tc-step-head">
+          <button class="tc-back" type="button" onclick={() => { typedCreate!.step = typedCreate!.kind === 'asm' ? 'type' : 'template'; }}>← back</button>
+          <span class="tc-q">Name your part</span>
+        </div>
+        <div class="tc-name">
+          <input bind:value={typedCreate.id} placeholder="e.g. my_hex_nut" spellcheck="false" autofocus
+            onkeydown={(e) => { if (e.key === 'Enter' && typedCreate!.id.trim() && !typedCreate!.busy) submitTypedCreate(); }} />
+          <button class="tc-create" type="button" disabled={typedCreate.busy || !typedCreate.id.trim()} onclick={() => submitTypedCreate()}>
+            {typedCreate.busy ? '…' : 'Create'}
+          </button>
+        </div>
+        <div class="tc-summary">
+          {typedCreate.kind === 'exp' ? 'Extrude Part' : typedCreate.kind === 'rev' ? 'Profile Part' : 'Assembly'}
+          {typedCreate.templateId ? ` · ${typedCreate.templateId}` : ''}
+        </div>
+        {#if typedCreate.err}<div class="tc-err">{typedCreate.err}</div>{/if}
+      {/if}
+    </div>
+  </FloatingPanel>
+{/if}
 
 {#if createPanel}
   <FloatingPanel title={`New primitive · ${createPanel.label}`} visible={true} x={createPanel.x} y={createPanel.y} width="300px" maxHeight="70vh" onClose={closeCreate}>
@@ -1109,6 +1244,35 @@
   .prim-sub-head:hover { background: #f0f0f0; color: #000; }
   /* New-primitive popup (FloatingPanel — replaces the native prompt). */
   .prim-create { display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+  /* Typed-create picker — 3 stacked steps inside a FloatingPanel. */
+  .tc-pop { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
+  .tc-q { margin: 0; font: 600 12px Arial; color: #444; }
+  .tc-step-head { display: flex; align-items: center; gap: 10px; }
+  .tc-back { font: 10px Arial; color: #c4392f; background: transparent; border: 0; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+  .tc-back:hover { background: #fceeec; }
+  /* Type chooser — 3 big cards stacked. */
+  .tc-types { display: flex; flex-direction: column; gap: 6px; }
+  .tc-type { display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; gap: 1px 10px; align-items: center; padding: 8px 12px; border: 1px solid #e3c4bf; background: #fbf4f3; border-radius: 6px; cursor: pointer; text-align: left; }
+  .tc-type:hover { background: #fceeec; border-color: #c4392f; }
+  .tc-type-ic { grid-row: 1 / 3; font: 22px monospace; color: #c4392f; text-align: center; }
+  .tc-type-lbl { font: 700 13px Arial; color: #222; }
+  .tc-type-sub { font: 10px Arial; color: #888; }
+  /* Template grid — small cards, 2 per row. */
+  .tc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tc-card { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid #e0e0e0; background: #fff; border-radius: 5px; cursor: pointer; text-align: left; }
+  .tc-card:hover { background: #fceeec; border-color: #c4392f; }
+  .tc-card-lbl { font: 600 12px Arial; color: #333; }
+  .tc-card-id { font: 9px ui-monospace, Menlo, monospace; color: #999; }
+  /* Name step. */
+  .tc-name { display: flex; gap: 6px; align-items: center; }
+  .tc-name input { flex: 1; min-width: 0; font: 12px ui-monospace, Menlo, monospace; padding: 5px 8px; border: 1px solid #d4d4dc; border-radius: 4px; }
+  .tc-name input:focus { outline: none; border-color: #c4392f; }
+  .tc-create { font: 700 11px Arial; padding: 5px 12px; background: #c4392f; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  .tc-create:hover:not(:disabled) { background: #b23329; }
+  .tc-create:disabled { opacity: 0.5; cursor: not-allowed; }
+  .tc-summary { font: 10px Arial; color: #888; padding-left: 2px; }
+  .tc-err { font: 11px Arial; color: #c4392f; }
+
   .prim-create-row { display: flex; align-items: center; gap: 8px; font: 11px Arial; color: #555; }
   .prim-create-row input { flex: 1; min-width: 0; font: 12px ui-monospace, monospace; padding: 4px 6px; border: 1px solid #d4d4dc; border-radius: 4px; }
   .prim-create-base { display: flex; flex-direction: column; gap: 4px; }
