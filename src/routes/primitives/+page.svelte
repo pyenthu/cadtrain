@@ -204,10 +204,11 @@
 
   onMount(async () => {
     await refreshList();
-    // Default-open the first VOLUME primitive (bundle ones can 500 on
-    // source-load). The raw r_* primitives now live in the Basic group, so
-    // prefer those, then any root-volume entry, then the first entry.
-    const initial = basic?.[0] ?? entries?.find((e) => e.source === 'volume') ?? entries?.[0];
+    // Default-open my_assy first (testing convenience for the assembly work).
+    // Falls back to the first Basic / volume entry when my_assy doesn't exist.
+    const all = [...entries, ...basic, ...Object.values(completions).flat()];
+    const initial = all.find((e) => e.id === 'my_assy')
+      ?? basic?.[0] ?? entries?.find((e) => e.source === 'volume') ?? entries?.[0];
     if (initial) openTab(initial);
   });
 
