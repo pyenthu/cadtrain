@@ -223,10 +223,15 @@ function rewriteFnSignature(source: string, params: Record<string, ParamSpec>): 
  *  current default values stay, even though their schema fields take the
  *  template's defaults where applicable (engine params keep the part's).
  *  Non-engine params are REPLACED entirely with `template.partParams`. */
+/** Mandatory engine params kept across a profile swap, in display order
+ *  (length first → segments last). Profile-specific params are appended
+ *  AFTER these so the engine dials sit at the top of the part's meta.params. */
+export const EXTRUDE_ENGINE_NAMES = ['length', 'twist', 'divs', 'taper', 'segments'] as const;
+
 export function swapProfileTemplate(
   source: string,
   template: { body: string; partParams?: Record<string, ParamSpec> },
-  enginePrefixOrder: readonly string[] = ['length', 'twist', 'divs', 'taper', 'segments'],
+  enginePrefixOrder: readonly string[] = EXTRUDE_ENGINE_NAMES,
 ): string {
   // 1. Splice the new body into the profile_pts slot first.
   const slots = findProfileSlots(source);
@@ -243,7 +248,9 @@ export function swapProfileTemplate(
   for (const k of enginePrefixOrder) {
     if (k in parsed.params) preserved[k] = parsed.params[k]!;
   }
-  const newParams: Record<string, ParamSpec> = { ...partParams, ...preserved };
+  // ENGINE first so the mandatory dials stay at the TOP of the params
+  // block after a swap. Profile-specific keys append below.
+  const newParams: Record<string, ParamSpec> = { ...preserved, ...partParams };
   const serialized = serializeParams(newParams);
   next = next.slice(0, parsed.range[0]) + '\n' + serialized + '\n  ' + next.slice(parsed.range[1]);
   // 3. Rewrite the function signature to match the new param order.

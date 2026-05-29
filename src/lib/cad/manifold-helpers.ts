@@ -136,8 +136,14 @@ export async function initManifold() {
 /** @part Empty seed — a zero-volume Manifold suitable as the initial
  *  accumulator for the parts-tab pattern. Implementation: a degenerate
  *  cube at the origin. */
+/** "Additive zero" Manifold used as the seed for assembly bodies.
+ *  M.cube([0,0,0]) is degenerate — Manifold's boolean library DROPS its
+ *  union output entirely (empty().add(X) returned empty geometry, NOT X).
+ *  A tiny 1mm cube at the origin is small enough to be visually invisible
+ *  at any typical scene scale yet keeps boolean ops correct: empty().add(X)
+ *  now returns X ∪ tiny_origin_cube ≈ X. */
 export function empty(): any {
-  return M.cube([0, 0, 0], true);
+  return M.cube([0.001, 0.001, 0.001], true);
 }
 
 /**

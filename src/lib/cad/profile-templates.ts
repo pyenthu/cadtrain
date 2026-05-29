@@ -220,13 +220,17 @@ export function templatesFor(set: 'cartesian' | 'revolve'): ProfileTemplate[] {
   return set === 'cartesian' ? CARTESIAN_TEMPLATES : REVOLVE_TEMPLATES;
 }
 
-/** Engine params for an EXTRUDE part — appended to every Extrude Part's
- *  meta.params after the profile-specific keys. Defaults are sensible
- *  starter values; the user tunes from there. */
+/** Engine params for an EXTRUDE part — MANDATORY first dials of every
+ *  Extrude Part's meta.params. Order chosen so the user sees the engine
+ *  controls before the profile-specific knobs. Profile templates' partParams
+ *  append AFTER these. These five (length, twist, divs, taper, segments)
+ *  are persistent across profile swaps; profile-specific params are
+ *  swapped/added/removed by the picker. */
 export const EXTRUDE_ENGINE_PARAMS: Record<string, ProfileParamSchema> = {
   length:   { label: 'length',    min: 0.1,  max: 20,  step: 0.1,  default: 2 },
   twist:    { label: 'twist (°)', min: -360, max: 360, step: 5,    default: 0 },
   divs:     { label: 'divs',      min: 1,    max: 96,  step: 1,    default: 12 },
+  taper:    { label: 'taper',     min: -0.9, max: 2.0, step: 0.05, default: 0 },
   segments: { label: 'segments',  min: 4,    max: 256, step: 1,    default: 32 },
 };
 
@@ -251,18 +255,22 @@ function serializeParams(params: Record<string, ProfileParamSchema>): string {
 }
 
 /** Build the full source for a NEW Extrude Part from a chosen template +
- *  the desired id. Body uses `p.<key>` references; r_weld_extrude is
- *  invoked with the standard engine params at the end. */
+ *  the desired id. Engine params (length/twist/divs/taper/segments) come
+ *  FIRST in meta.params and the signature; profile-specific keys follow.
+ *  Body uses `p.<key>` references; r_weld_extrude wired with `p.taper`. */
 export function buildExtrudeSource(id: string, template: ProfileTemplate): string {
   const profileParams = template.partParams ?? {};
-  const allParams = { ...profileParams, ...EXTRUDE_ENGINE_PARAMS };
+  // ENGINE FIRST so the mandatory dials sit at the top of the params list.
+  const allParams = { ...EXTRUDE_ENGINE_PARAMS, ...profileParams };
   const argList = Object.keys(allParams).join(', ');
   return `/**
  * ${id} — Extrude Part scaffolded from the "${template.label}" template.
  *
  * Edit the params or the profile body to taste. Swap the profile via the
  * search bar in the scene canvas (top-right). The engine params (length /
- * twist / divs / segments) are preserved across profile swaps.
+ * twist / divs / taper / segments) are MANDATORY and preserved across
+ * profile swaps; profile-specific params (below) are added/removed by
+ * the picker.
  */
 export const meta = {
   id: '${id}', name: '${id}',
@@ -276,7 +284,7 @@ ${serializeParams(allParams)}
 
 export function ${id}(${argList}) {
 ${template.body};
-  return r_weld_extrude(profile_pts, p.length, p.divs, p.twist, 0, p.segments);
+  return r_weld_extrude(profile_pts, p.length, p.divs, p.twist, p.taper, p.segments);
 }
 `;
 }
