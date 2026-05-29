@@ -257,12 +257,19 @@ function serializeParams(params: Record<string, ProfileParamSchema>): string {
 /** Build the full source for a NEW Extrude Part from a chosen template +
  *  the desired id. Engine params (length/twist/divs/taper/segments) come
  *  FIRST in meta.params and the signature; profile-specific keys follow.
- *  Body uses `p.<key>` references; r_weld_extrude wired with `p.taper`. */
+ *  Body uses `p.<key>` references; r_weld_extrude wired with `p.taper`.
+ *  Function body starts with `??= default` fallbacks for every param so
+ *  assembly call sites that drift out of sync (e.g. the part gained a
+ *  param after the assembly was created) gracefully use defaults instead
+ *  of producing undefined-related explosions. */
 export function buildExtrudeSource(id: string, template: ProfileTemplate): string {
   const profileParams = template.partParams ?? {};
   // ENGINE FIRST so the mandatory dials sit at the top of the params list.
   const allParams = { ...EXTRUDE_ENGINE_PARAMS, ...profileParams };
   const argList = Object.keys(allParams).join(', ');
+  const defaultsBlock = Object.entries(allParams)
+    .map(([k, v]) => `  ${k} ??= ${v.default};`)
+    .join('\n');
   return `/**
  * ${id} — Extrude Part scaffolded from the "${template.label}" template.
  *
@@ -271,6 +278,12 @@ export function buildExtrudeSource(id: string, template: ProfileTemplate): strin
  * twist / divs / taper / segments) are MANDATORY and preserved across
  * profile swaps; profile-specific params (below) are added/removed by
  * the picker.
+ *
+ * The \`??= default\` block at the top of the function body protects
+ * assembly call sites: if a downstream caller doesn't pass a value
+ * (typically because this part gained a new param), the default kicks
+ * in. Renaming or removing a param still produces a visible failure,
+ * which is the right signal.
  */
 export const meta = {
   id: '${id}', name: '${id}',
@@ -283,22 +296,30 @@ ${serializeParams(allParams)}
 };
 
 export function ${id}(${argList}) {
+  // Defaults — protects against drift when used inside an assembly.
+${defaultsBlock}
 ${template.body};
   return r_weld_extrude(profile_pts, p.length, p.divs, p.twist, p.taper, p.segments);
 }
 `;
 }
 
-/** Same shape for a NEW Profile (Revolve) Part. */
+/** Same shape for a NEW Profile (Revolve) Part. Engine params first,
+ *  defaults-fallback block in the body (see buildExtrudeSource notes). */
 export function buildRevolveSource(id: string, template: ProfileTemplate): string {
   const profileParams = template.partParams ?? {};
-  const allParams = { ...profileParams, ...REVOLVE_ENGINE_PARAMS };
+  const allParams = { ...REVOLVE_ENGINE_PARAMS, ...profileParams };
   const argList = Object.keys(allParams).join(', ');
+  const defaultsBlock = Object.entries(allParams)
+    .map(([k, v]) => `  ${k} ??= ${v.default};`)
+    .join('\n');
   return `/**
  * ${id} — Profile (Revolve) Part scaffolded from the "${template.label}" template.
  *
  * Edit the params or the (r,z) profile body to taste. Swap the profile via
- * the search bar in the scene canvas (top-right).
+ * the search bar in the scene canvas (top-right). The \`??= default\` block
+ * protects this part against drift when it's used inside an assembly that
+ * was created before a param was added.
  */
 export const meta = {
   id: '${id}', name: '${id}',
@@ -311,6 +332,8 @@ ${serializeParams(allParams)}
 };
 
 export function ${id}(${argList}) {
+  // Defaults — protects against drift when used inside an assembly.
+${defaultsBlock}
 ${template.body};
   return r_revolve(profile_pts, p.segments);
 }
