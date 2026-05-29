@@ -99,9 +99,16 @@ export function findProfileSlots(source: string): ProfileSlot[] {
       sweepStart = acc;
     }
 
-    const body = sweptCalcs.length
-      ? sweptCalcs.join('\n') + '\n' + source.slice(s, e)
-      : bodyOnly;
+    // The body handed to the editor must be SHAPED like a profile-build body
+    // (calcs + `return <expr>;`) — the standalone ProfileFnEditor's parseBody
+    // pattern. Wrap the raw RHS in `return … ;` so:
+    //   * parseBody recognizes the Array.from / literal-array form.
+    //   * /api/primitives/profiles/resolve runs build(p) and gets points.
+    // The host's spliceSlot still replaces the slot range with whatever
+    // composeInlineSlotBody emits (which is `const NAME = X` — no `return`),
+    // so the part source on disk is unchanged in shape.
+    const calcsPrefix = sweptCalcs.length ? sweptCalcs.join('\n') + '\n  ' : '  ';
+    const body = `${calcsPrefix}return ${bodyOnly};`;
     const range: [number, number] = sweptCalcs.length
       // When calcs are swept in, the range spans from the first calc's line
       // start through the end of the slot body. Splicing a new body replaces
