@@ -38,7 +38,10 @@
  */
 
 export type InstanceMode = 'sequential' | 'overlay' | 'custom';
-export type CsgOp = 'add' | 'subtract' | 'intersect';
+/** CSG ops do boolean math; `place` skips it entirely — Manifold.compose
+ *  topologically combines without union. Much faster on large strings
+ *  because the boolean phase is the expensive one. */
+export type CsgOp = 'add' | 'subtract' | 'intersect' | 'place';
 export type Datum = 'head' | 'tail' | 'center';
 
 export interface Instance {
@@ -292,10 +295,26 @@ export function emitAssemblyBody(instances: readonly Instance[]): string {
       }
     }
   }
-  const compose = instances
-    .map((inst) => `.${inst.op ?? 'add'}(${inst.name})`)
-    .join('');
-  lines.push(`  return empty()${compose};`);
+  // Composition tail. `place` rows skip the boolean chain and are
+  // appended into a Manifold.compose call (no fuse, no boolean — fast).
+  // Three shapes possible:
+  //   all-csg     → `empty().add(A).subtract(B);`
+  //   all-place   → `place([A, B, C]);`
+  //   mixed       → `place([empty().add(A).subtract(B), C, D]);`
+  // (place is order-agnostic — topological compose is commutative — so
+  // splitting into the two groups doesn't reorder anything meaningful.)
+  const csgOnly = instances.filter((i) => (i.op ?? 'add') !== 'place');
+  const placeOnly = instances.filter((i) => i.op === 'place');
+  const csgChain = csgOnly.length
+    ? `empty()${csgOnly.map((i) => `.${i.op ?? 'add'}(${i.name})`).join('')}`
+    : '';
+  if (placeOnly.length === 0) {
+    lines.push(`  return ${csgChain};`);
+  } else if (csgOnly.length === 0) {
+    lines.push(`  return place([${placeOnly.map((i) => i.name).join(', ')}]);`);
+  } else {
+    lines.push(`  return place([${csgChain}, ${placeOnly.map((i) => i.name).join(', ')}]);`);
+  }
   return '\n' + lines.join('\n') + '\n';
 }
 
@@ -328,14 +347,26 @@ export function rewriteAssemblyFunctionBody(source: string, id: string, newBody:
 
 // ─── Append/mutate helpers ─────────────────────────────────────────────
 
-/** Append a new sequential instance at the end of the array. */
+/** Append a new instance at the end of the array.
+ *  Defaults to `mode: 'sequential'`. When mode is 'overlay', auto-picks
+ *  the last sequential row as anchor + `at: 'head'` so the row is
+ *  immediately valid. */
 export function appendInstance(
   existing: readonly Instance[],
   src: string,
   args: string[],
+  mode: InstanceMode = 'sequential',
 ): Instance[] {
   const name = nextInstanceName(existing.map((e) => e.name));
-  return [...existing, { name, src, args, mode: 'sequential' }];
+  const inst: Instance = { name, src, args, mode };
+  if (mode === 'overlay') {
+    const lastSeq = [...existing].reverse().find((e) => e.mode === 'sequential');
+    if (lastSeq) {
+      inst.anchor = lastSeq.name;
+      inst.at = 'head';
+    }
+  }
+  return [...existing, inst];
 }
 
 /** Move a row by index. delta = -1 (up) | +1 (down). Returns a new array. */
@@ -395,17 +426,20 @@ export function syncUsesToInstances(source: string, instances: readonly Instance
 }
 
 /** Convenience: do an append + write + body-emit + body-rewrite in one shot.
- *  Returns the new source text (or the input unchanged if not an assembly). */
+ *  Returns the new source text (or the input unchanged if not an assembly).
+ *  `initialMode` defaults to 'sequential'; pass 'overlay' to drop into the
+ *  Overlays subtab. */
 export function applyAppendToSource(
   source: string,
   id: string,
   src: string,
   args: string[],
+  initialMode: InstanceMode = 'sequential',
 ): string {
   // Refuse self-reference (the bug that produced `my_assy → my_assy`).
   if (src === id) return source;
   const before = parseInstances(source);
-  const after = appendInstance(before, src, args);
+  const after = appendInstance(before, src, args, initialMode);
   return applyInstancesToSource(source, id, after);
 }
 

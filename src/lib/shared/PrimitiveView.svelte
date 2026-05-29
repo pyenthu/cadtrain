@@ -386,21 +386,37 @@
   // detected by scanning the source's `return …` for `\.(add|subtract|
   // intersect)\s*\(\s*<NAME>\s*\)` — if found, that's the op. Otherwise
   // assume add (the typical drag-drop default).
-  function currentOpForInstance(instName: string): 'add' | 'subtract' | 'intersect' {
+  function currentOpForInstance(instName: string): 'add' | 'subtract' | 'intersect' | 'place' {
+    // New-style assembly: read meta.instances directly so it stays in sync
+    // with the (potentially mixed boolean+place) emitter output.
+    if (findInstancesLiteralRange(editedSource)) {
+      const instances = parseAsmInstances(editedSource);
+      const inst = instances.find((i) => i.name === instName);
+      return (inst?.op ?? 'add');
+    }
+    // Legacy: regex match against the .add/.subtract/.intersect chain.
     const re = new RegExp(`\\.(add|subtract|intersect)\\s*\\(\\s*${instName}\\s*\\)`);
     const m = editedSource.match(re);
     return (m?.[1] as any) ?? 'add';
   }
-  function setInstanceOp(instName: string, op: 'add' | 'subtract' | 'intersect') {
-    // First, try to rewrite an existing `.X(NAME)`.
+  function setInstanceOp(instName: string, op: 'add' | 'subtract' | 'intersect' | 'place') {
+    // New-style: mutate meta.instances + re-emit. The emitter splits place
+    // rows into a separate `place([...])` wrapper from the boolean chain.
+    if (findInstancesLiteralRange(editedSource)) {
+      const instances = parseAsmInstances(editedSource);
+      const idx = instances.findIndex((i) => i.name === instName);
+      if (idx < 0) return;
+      const next = updateAsmInstance(instances, idx, { op });
+      editedSource = applyInstancesToSource(editedSource, id, next);
+      return;
+    }
+    // Legacy: rewrite the existing `.X(NAME)` in source. `place` is not
+    // expressible in the legacy body shape; skip silently.
+    if (op === 'place') return;
     const re = new RegExp(`\\.(add|subtract|intersect)\\s*\\(\\s*(${instName})\\s*\\)`);
     if (re.test(editedSource)) {
       editedSource = editedSource.replace(re, `.${op}($2)`);
-      return;
     }
-    // No existing composition found for this instance — nothing to do. The
-    // drag-and-drop handler appends `.add(<name>)`; if that doesn't exist,
-    // the instance isn't in the return chain and changing its op is a no-op.
   }
   // Splice ONE recognized arg (offsets are relative to the instance's argsText).
   // Edit one arg per commit — the recognition $effect re-scans between edits, so
@@ -1530,6 +1546,51 @@
   // through and stay non-reorderable.
   let isAsmInstanced = $derived(!!findInstancesLiteralRange(editedSource));
   let dragOverInstance = $state<string | null>(null);
+
+  // Sequential / Overlays subtab inside the Parts panel. Sequential is the
+  // spine; Overlays are modifiers that sit on a parent without advancing the
+  // stacking cursor. Defaults to Sequential since most rows are spine rows.
+  let partsSub = $state<'sequential' | 'overlay'>('sequential');
+  let filteredAsmParts = $derived.by(() => {
+    if (!isAsmInstanced) return resolvedParts;
+    const instances = parseAsmInstances(editedSource);
+    const modeByName = new Map(instances.map((i) => [i.name, i.mode]));
+    return resolvedParts.filter((p: any) => {
+      // Custom rows live with the spine — they're escape-hatch sequential
+      // placements. (Overlay rows are the only non-spine kind for now.)
+      const m = modeByName.get(p.name) ?? 'sequential';
+      return partsSub === 'overlay' ? m === 'overlay' : m !== 'overlay';
+    });
+  });
+  function subtabCount(mode: 'sequential' | 'overlay'): number {
+    if (!isAsmInstanced) return 0;
+    const instances = parseAsmInstances(editedSource);
+    return instances.filter((i) => mode === 'overlay' ? i.mode === 'overlay' : i.mode !== 'overlay').length;
+  }
+
+  // ── + Add Part popup (Phase D) ──────────────────────────────────────────
+  // Round + button on the subtabs row opens a searchable FloatingPanel of
+  // all available primitives. Clicking one appends an instance with mode
+  // = the active subtab. Lighter-weight than the old select+button toolbar.
+  let addPartPopup = $state<{ px: number; py: number; query: string } | null>(null);
+  function openAddPartPopup(ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    addPartPopup = {
+      px: Math.max(8, Math.min(r.left, window.innerWidth - 320)),
+      py: Math.min(r.bottom + 6, window.innerHeight - 360),
+      query: '',
+    };
+  }
+  function closeAddPartPopup() { addPartPopup = null; }
+  let addPartFiltered = $derived.by(() => {
+    const q = (addPartPopup?.query ?? '').trim().toLowerCase();
+    if (!q) return loadable;
+    return loadable.filter((e) => e.id.toLowerCase().includes(q));
+  });
+  async function addPartFromPopup(childId: string) {
+    closeAddPartPopup();
+    await loadPrimitive(childId);
+  }
   function moveAssemblyInstance(fromName: string, toName: string) {
     if (!isAsmInstanced || !canEdit) return;
     const instances = parseAsmInstances(editedSource);
@@ -1750,7 +1811,9 @@
         const data = await res.json();
         const childParams = data.params ?? {};
         const args = Object.values(childParams).map(defaultArgFor);
-        editedSource = appendAssemblyInstance(editedSource, id, child, args);
+        // Drops default to the active subtab's mode — drop into Overlays
+        // and the new row is overlay-anchored to the last sequential.
+        editedSource = appendAssemblyInstance(editedSource, id, child, args, partsSub);
         loadPick = '';
       } catch (e: any) {
         profileEditNote = `Load error: ${e?.message ?? e}`;
@@ -2407,19 +2470,9 @@
               {/if}
             </div>
 
-            <!-- Parts — recognized instances. Add/Load + Re-scan controls. -->
-            <div class="pv-parts-tools">
-              {#if canEdit && recognized && recognized.returnStart >= 0}
-                <select class="pv-load-pick" bind:value={loadPick} title="Load a primitive as a new instance">
-                  <option value="">＋ Load…</option>
-                  {#each loadable as e (e.id)}<option value={e.id}>{e.id}</option>{/each}
-                </select>
-                <button class="pv-mini-btn" type="button" disabled={!loadPick || loadBusy} onclick={() => loadPrimitive()}>{loadBusy ? '…' : 'Add'}</button>
-              {/if}
-              <div class="pv-spacer"></div>
-              <span class="pv-parts-count">{parts.length} part{parts.length === 1 ? '' : 's'}</span>
-              <button class="pv-mini-btn" type="button" onclick={loadRecognition}>Re-scan</button>
-            </div>
+            <!-- Parts — recognized instances. Drag from the sidebar onto
+                 the canvas to add new parts; no toolbar needed. -->
+
 
             <!-- SOFT, non-fatal notice (a profile/part action couldn't complete).
                  Shown ABOVE the parts list — it NEVER removes the parts or the
@@ -2442,7 +2495,42 @@
               <!-- Non-fatal recognize error: keep the last-good accordion, show
                    the error as a banner (don't nuke the parts list). -->
               {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source error — parts below reflect the last valid version: {recogError}</span></div>{/if}
-              {#each resolvedParts as inst (inst.name)}
+              {#if isAsmInstanced}
+                <!-- K.56 Phase D: split the parts list into Sequential (the
+                     spine — auto-stacked) and Overlays (modifiers that sit on
+                     a chosen anchor without advancing the cursor). New drops
+                     default to the active subtab's mode. -->
+                {@const seqCount = subtabCount('sequential')}
+                {@const ovrCount = subtabCount('overlay')}
+                <div class="pv-parts-subtabs">
+                  <button class="pv-subtab" type="button"
+                    class:active={partsSub === 'sequential'}
+                    onclick={() => partsSub = 'sequential'}>
+                    <span>↓ Sequential</span>
+                    <span class="pv-subtab-n">{seqCount}</span>
+                  </button>
+                  <button class="pv-subtab" type="button"
+                    class:active={partsSub === 'overlay'}
+                    onclick={() => partsSub = 'overlay'}>
+                    <span>⤴ Overlays</span>
+                    <span class="pv-subtab-n">{ovrCount}</span>
+                  </button>
+                  <div class="pv-spacer"></div>
+                  {#if canEdit}
+                    <button class="pv-add-part" type="button"
+                      title={`Add a part to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
+                      onclick={openAddPartPopup}>＋</button>
+                  {/if}
+                </div>
+                {#if filteredAsmParts.length === 0}
+                  <div class="pv-parts-empty">
+                    {partsSub === 'overlay'
+                      ? 'No overlays. Switch a Sequential row to ⤴ overlay mode, or drag a part from the sidebar with this tab active.'
+                      : 'No Sequential rows. Drag a part from the sidebar to start the spine.'}
+                  </div>
+                {/if}
+              {/if}
+              {#each (isAsmInstanced ? filteredAsmParts : resolvedParts) as inst (inst.name)}
                 {@const open = isOpen(inst.name)}
                 <div class="pg-acc-wrap instance">
                   <div class="pg-acc-head instance" class:collapsed={!open}
@@ -2479,42 +2567,30 @@
                     <button class="pv-pin" class:pinned={pinnedParts.has(inst.name)} type="button" title={pinnedParts.has(inst.name) ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin(inst.name); }}>📌</button>
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
-                    {#if canEdit && isAsmInstanced}
-                      <!-- K.56 Phase C: placement mode (Sequential vs Overlay).
-                           Sequential = auto-stacks under prev (mv(prim, tail(prev))).
-                           Overlay = aligns to a chosen anchor's datum (head|tail|center)
-                           and does NOT advance the stacking cursor. -->
-                      {@const curMode = currentModeForInstance(inst.name)}
-                      <select class="pv-instop pv-instmode" title="Placement mode for this row"
-                        value={curMode}
+                    {#if canEdit && isAsmInstanced && currentModeForInstance(inst.name) === 'overlay'}
+                      <!-- Overlay-only: pick the anchor row + the datum to
+                           align on. The mode itself is implicit (this row is
+                           in the Overlays subtab) so no mode select is shown. -->
+                      {@const anchors = anchorChoicesFor(inst.name)}
+                      {@const curAnchor = currentAnchorForInstance(inst.name)}
+                      {@const curAt = currentAtForInstance(inst.name)}
+                      <select class="pv-instop" title="Anchor — the row this overlay sits on"
+                        value={curAnchor}
                         onclick={(e) => e.stopPropagation()}
-                        onchange={(e) => { e.stopPropagation(); setInstanceMode(inst.name, (e.currentTarget as HTMLSelectElement).value as InstanceMode); }}
+                        onchange={(e) => { e.stopPropagation(); setInstanceAnchor(inst.name, (e.currentTarget as HTMLSelectElement).value); }}
                       >
-                        <option value="sequential">↓ seq</option>
-                        <option value="overlay">⤴ overlay</option>
+                        {#each anchors as a}<option value={a}>on {a}</option>{/each}
+                        {#if !anchors.includes(curAnchor) && curAnchor}<option value={curAnchor}>on {curAnchor}</option>{/if}
                       </select>
-                      {#if curMode === 'overlay'}
-                        {@const anchors = anchorChoicesFor(inst.name)}
-                        {@const curAnchor = currentAnchorForInstance(inst.name)}
-                        {@const curAt = currentAtForInstance(inst.name)}
-                        <select class="pv-instop" title="Anchor (the row this overlay sits on)"
-                          value={curAnchor}
-                          onclick={(e) => e.stopPropagation()}
-                          onchange={(e) => { e.stopPropagation(); setInstanceAnchor(inst.name, (e.currentTarget as HTMLSelectElement).value); }}
-                        >
-                          {#each anchors as a}<option value={a}>on {a}</option>{/each}
-                          {#if !anchors.includes(curAnchor) && curAnchor}<option value={curAnchor}>on {curAnchor}</option>{/if}
-                        </select>
-                        <select class="pv-instop" title="Anchor datum — head=top, tail=bottom, center=midpoint (Z-down)"
-                          value={curAt}
-                          onclick={(e) => e.stopPropagation()}
-                          onchange={(e) => { e.stopPropagation(); setInstanceAt(inst.name, (e.currentTarget as HTMLSelectElement).value as Datum); }}
-                        >
-                          <option value="head">@head</option>
-                          <option value="tail">@tail</option>
-                          <option value="center">@center</option>
-                        </select>
-                      {/if}
+                      <select class="pv-instop" title="Anchor datum — head=top, tail=bottom, center=midpoint (Z-down)"
+                        value={curAt}
+                        onclick={(e) => e.stopPropagation()}
+                        onchange={(e) => { e.stopPropagation(); setInstanceAt(inst.name, (e.currentTarget as HTMLSelectElement).value as Datum); }}
+                      >
+                        <option value="head">@head</option>
+                        <option value="tail">@tail</option>
+                        <option value="center">@center</option>
+                      </select>
                     {/if}
                     {#if canEdit}
                       <!-- K.56 Phase 3: change the CSG op this instance is
@@ -2522,7 +2598,7 @@
                            live source so the picker stays in sync if the user
                            hand-edits in the Source tab. -->
                       {@const curOp = currentOpForInstance(inst.name)}
-                      <select class="pv-instop" title="CSG op for this instance in the return chain"
+                      <select class="pv-instop" title="Composition op — add/subtract/intersect do boolean CSG; place skips the boolean (Manifold.compose) and is much faster"
                         value={curOp}
                         onclick={(e) => e.stopPropagation()}
                         onchange={(e) => { e.stopPropagation(); setInstanceOp(inst.name, (e.currentTarget as HTMLSelectElement).value as any); }}
@@ -2530,6 +2606,7 @@
                         <option value="add">▢ add</option>
                         <option value="subtract">▣ subtract</option>
                         <option value="intersect">◫ intersect</option>
+                        <option value="place">▤ place</option>
                       </select>
                     {/if}
                     {#if canEdit}
@@ -3023,6 +3100,28 @@
     </FloatingPanel>
   {/if}
 
+  {#if addPartPopup}
+    <FloatingPanel
+      title={`Add to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
+      visible={true} x={addPartPopup.px} y={addPartPopup.py} width="320px" maxHeight="60vh"
+      onClose={closeAddPartPopup}>
+      <div class="pv-addpart">
+        <input class="pv-addpart-q" type="text" placeholder="Search primitives…"
+          autofocus
+          bind:value={addPartPopup.query}
+          onkeydown={(e) => { if (e.key === 'Escape') closeAddPartPopup(); }}
+        />
+        <div class="pv-addpart-list">
+          {#each addPartFiltered as e (e.id)}
+            <button type="button" class="pv-addpart-row" onclick={() => addPartFromPopup(e.id)}>{e.id}</button>
+          {:else}
+            <div class="pv-addpart-empty">No matches.</div>
+          {/each}
+        </div>
+      </div>
+    </FloatingPanel>
+  {/if}
+
   {#if delParamPopup}
     <FloatingPanel title="Delete parameter" visible={true} x={delParamPopup.x} y={delParamPopup.y} width="232px" onClose={() => (delParamPopup = null)}>
       <div style="display:flex; flex-direction:column; gap:9px; padding:4px;">
@@ -3271,6 +3370,55 @@
   .pg-acc-head.instance[draggable="true"] { cursor: grab; }
   .pg-acc-head.instance[draggable="true"]:active { cursor: grabbing; }
   .pg-acc-head.instance.drag-over { box-shadow: inset 0 2px 0 0 #cc2222; }
+
+  /* Sequential / Overlays subtabs above the parts list. Compact pill pair
+   * with a count badge on each so the user always sees the split. */
+  .pv-parts-subtabs {
+    display: flex; gap: 4px; padding: 6px 4px 4px; align-items: center;
+    border-bottom: 1px solid #e6e6ec; margin-bottom: 4px;
+  }
+  .pv-subtab {
+    appearance: none; background: transparent; border: 1px solid transparent;
+    border-radius: 6px; padding: 4px 10px;
+    font: 600 12px ui-sans-serif, system-ui, sans-serif; color: #555;
+    cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
+    transition: background 80ms, color 80ms, border-color 80ms;
+  }
+  .pv-subtab:hover { background: #f1f1f5; color: #222; }
+  .pv-subtab.active { background: #1f2937; color: #fff; border-color: #1f2937; }
+  .pv-subtab-n {
+    background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; min-width: 16px; text-align: center;
+  }
+  .pv-subtab.active .pv-subtab-n { background: rgba(255,255,255,0.18); color: #fff; }
+  /* Conspicuous rounded + button on the subtabs row. Opens a searchable
+   * popup that adds a part to whichever subtab is active. */
+  .pv-add-part {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 0; background: #cc2222; color: #fff;
+    font: 700 16px/1 ui-sans-serif, system-ui; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 3px rgba(204,34,34,0.35);
+    transition: transform 80ms, background 80ms;
+  }
+  .pv-add-part:hover { background: #a01818; transform: scale(1.08); }
+  .pv-add-part:active { transform: scale(0.96); }
+  /* Add-part FloatingPanel — search box + scrollable button list. */
+  .pv-addpart { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
+  .pv-addpart-q {
+    padding: 6px 9px; border: 1px solid #ddd; border-radius: 6px;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    outline: none;
+  }
+  .pv-addpart-q:focus { border-color: #cc2222; box-shadow: 0 0 0 2px rgba(204,34,34,0.12); }
+  .pv-addpart-list { display: flex; flex-direction: column; max-height: 44vh; overflow-y: auto; gap: 1px; }
+  .pv-addpart-row {
+    text-align: left; padding: 6px 10px; border: 0; background: transparent;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #222;
+    cursor: pointer; border-radius: 4px;
+  }
+  .pv-addpart-row:hover { background: #f1f1f5; color: #cc2222; }
+  .pv-addpart-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
   .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
   .pg-acc-head.instance .pg-acc-title { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
   .pg-acc-sig { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; margin-left: -3px; }
