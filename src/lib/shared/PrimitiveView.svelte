@@ -1344,11 +1344,16 @@
     return String(d ?? 0);
   }
   function uniqueInstName(childId: string): string {
+    // Per user — use SHORT alphabetical names (A, B, C, ..., Z, AA, AB, …)
+    // instead of long type-derived names (rod_4, my_try_extreude2). Easier
+    // to read in chained .add(A).add(B).subtract(C) expressions and faster
+    // to type when wiring mv/rot offsets that reference other instances.
+    //
     // FORBID names that would shadow an injected function param: the instance
     // name must never equal the primitive it calls (`const X = X()` hits the
-    // temporal-dead-zone → "Cannot access X before initialization"), nor any
-    // OTHER instance's call id, nor a sandbox helper. Strip a leading r_/t_
-    // type prefix so e.g. t_goblet_bored → goblet_bored (≠ the call).
+    // temporal-dead-zone), nor any OTHER instance's call id, nor a sandbox
+    // helper. Also check the `<name>_profile` companion local that the
+    // r_revolve / r_extrude scaffold declares.
     const callIds = [...parts, ...locals].map((i: any) => i.call);
     const taken = new Set<string>([
       ...[...parts, ...locals].map((i: any) => i.name),
@@ -1356,13 +1361,18 @@
       'cyl', 'tube', 'mv', 'rot', 'revolve', 'profile_extrude', 'helix_band', 'empty',
       'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'M', 'G', 'Math',
     ]);
-    // The r_revolve / r_extrude scaffold ALSO declares a `<name>_profile`
-    // companion local, so a candidate name must keep BOTH the instance AND its
-    // `_profile` free — otherwise picking `revolve2` re-declares an existing
-    // `revolve2_profile` ("symbol already declared"). Check the companion too.
     const free = (n: string) => !taken.has(n) && !taken.has(n + '_profile');
+    // Excel-column-style sequence: A, B, …, Z, AA, AB, …, AZ, BA, …
+    for (let i = 0; i < 10000; i++) {
+      let n = i, name = '';
+      do {
+        name = String.fromCharCode(65 + (n % 26)) + name;
+        n = Math.floor(n / 26) - 1;
+      } while (n >= 0);
+      if (free(name)) return name;
+    }
+    // Fall-through (impossibly many instances) — derive from childId.
     const base = childId.replace(/^[rt]_/, '') || 'part';
-    if (free(base)) return base;
     let i = 2; while (!free(base + i)) i++; return base + i;
   }
 
@@ -1997,7 +2007,7 @@
            name differs from the directory id, e.g. dir
            `profile_extrude_v2` containing `export function profile_extrude`).
            The bundle fast-path can't handle that mismatch. -->
-      <PrimitiveDualCanvas {id} {name} {description} args={appliedArgs} source={editedSource} />
+      <PrimitiveDualCanvas {id} {name} {description} args={appliedArgs} source={editedSource} showLabels={false} />
     </div>
 
     <div
