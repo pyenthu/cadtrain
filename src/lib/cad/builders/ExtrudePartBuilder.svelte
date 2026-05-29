@@ -219,12 +219,11 @@
   .ext-svg-overlay {
     position: absolute;
     left: 8px;
-    /* Below the search bar (which is anchored at top: 8px). */
-    top: 72px;
+    /* Below the part title (.pd-title at top: 8px, ~22px tall). */
+    top: 36px;
     width: 140px;
     height: 140px;
-    /* Mostly transparent so the 3D scene shows through; thin border keeps
-       the overlay locatable. Subtle shadow disambiguates from the 3D. */
+    /* Mostly transparent so the 3D scene shows through. */
     background: rgba(255, 255, 255, 0.22);
     border: 1px solid rgba(232, 213, 210, 0.55);
     border-radius: 6px;
@@ -235,9 +234,10 @@
   .ext-svg-overlay svg { width: 100%; height: 100%; display: block; }
   .ext-svg-path { fill: none; stroke: #cc2222; stroke-width: 1.6; }
   .ext-svg-axis { stroke: #999; stroke-width: 0.8; stroke-dasharray: 2 2; }
-  /* Profile search bar sitting at top: 8px, above the SVG overlay. Width
-     matches the SVG underneath. Dropdown appears below the input. */
-  .ext-prof-search { position: absolute; left: 8px; top: 8px; width: 156px; z-index: 12; font: 11px Arial; }
+  /* Profile search bar — TOP RIGHT, clear of the part title (which lives
+     at top-left). 156px wide; the z-pan slider hugs right: 6px starting
+     at top: 56px so the search at top: 8px doesn't conflict. */
+  .ext-prof-search { position: absolute; right: 32px; top: 8px; width: 156px; z-index: 12; font: 11px Arial; }
   .ext-prof-search input { width: 100%; box-sizing: border-box; padding: 4px 8px; border: 1px solid #d8c3c0; border-radius: 4px; background: rgba(255, 255, 255, 0.92); font: 11px Arial; color: #333; }
   .ext-prof-search input:focus { outline: none; border-color: #cc2222; }
   .ext-prof-list { background: rgba(255, 255, 255, 0.98); border: 1px solid #d8c3c0; border-radius: 4px; margin-top: 3px; max-height: 240px; overflow-y: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }

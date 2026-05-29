@@ -176,13 +176,14 @@
   .rev-builder.resizing .rev-split::after { background: #cc2222; width: 2px; }
   .rev-empty { padding: 20px; color: #888; font: 12px Arial; }
   .rev-empty code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, monospace; }
-  /* Below the search bar; mostly transparent so the 3D scene shows through. */
-  .rev-svg-overlay { position: absolute; left: 8px; top: 72px; width: 140px; height: 140px; background: rgba(255, 255, 255, 0.22); border: 1px solid rgba(232, 213, 210, 0.55); border-radius: 6px; padding: 6px; pointer-events: none; z-index: 10; }
+  /* Below the part title (.pd-title at top: 8px); mostly transparent. */
+  .rev-svg-overlay { position: absolute; left: 8px; top: 36px; width: 140px; height: 140px; background: rgba(255, 255, 255, 0.22); border: 1px solid rgba(232, 213, 210, 0.55); border-radius: 6px; padding: 6px; pointer-events: none; z-index: 10; }
   .rev-svg-overlay svg { width: 100%; height: 100%; display: block; }
   .rev-svg-path { fill: none; stroke: #cc2222; stroke-width: 1.6; }
   .rev-svg-axis { stroke: #999; stroke-width: 0.8; stroke-dasharray: 2 2; }
-  /* Profile search bar — above the SVG overlay. */
-  .rev-prof-search { position: absolute; left: 8px; top: 8px; width: 156px; z-index: 12; font: 11px Arial; }
+  /* Profile search bar — TOP RIGHT, clear of the part title. The z-pan
+     slider sits at right: 6px from top: 56px so this doesn't conflict. */
+  .rev-prof-search { position: absolute; right: 32px; top: 8px; width: 156px; z-index: 12; font: 11px Arial; }
   .rev-prof-search input { width: 100%; box-sizing: border-box; padding: 4px 8px; border: 1px solid #d8c3c0; border-radius: 4px; background: rgba(255, 255, 255, 0.92); font: 11px Arial; color: #333; }
   .rev-prof-search input:focus { outline: none; border-color: #cc2222; }
   .rev-prof-list { background: rgba(255, 255, 255, 0.98); border: 1px solid #d8c3c0; border-radius: 4px; margin-top: 3px; max-height: 240px; overflow-y: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
