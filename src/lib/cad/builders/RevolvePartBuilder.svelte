@@ -9,7 +9,7 @@
    */
   import { onMount } from 'svelte';
   import ProfileFnEditor from '$lib/shared/ProfileFnEditor.svelte';
-  import { findProfileSlots, spliceSlot } from '$lib/cad/inline-profile';
+  import { findProfileSlots, spliceSlot, swapProfileTemplate } from '$lib/cad/inline-profile';
   import PrimitiveDualCanvas from '$lib/shared/PrimitiveDualCanvas.svelte';
   import { templatesFor, type ProfileTemplate } from '$lib/cad/profile-templates';
 
@@ -73,7 +73,8 @@
       `Param values for names referenced by the new body are kept; the rest revert to template defaults.`,
     );
     if (!ok) { profileQuery = ''; profileDropdownOpen = false; return; }
-    handleBodyChange(t.body);
+    const updated = swapProfileTemplate(source, { body: t.body, partParams: t.partParams });
+    if (updated !== source) { source = updated; onSourceChange?.(updated); }
     bodyKey++;
     profileQuery = '';
     profileDropdownOpen = false;

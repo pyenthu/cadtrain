@@ -136,3 +136,110 @@ export function spliceSlot(source: string, slot: ProfileSlot, newBody: string): 
 export function hasInlineProfile(source: string): boolean {
   return findProfileSlots(source).length > 0;
 }
+
+// ── Profile swap (picker) ───────────────────────────────────────────────────
+
+interface ParamSpec {
+  label?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  default: number;
+}
+
+/** Serialize a params record into the same shape the part sources use:
+ *  `  KEY: { label: 'X', min: A, max: B, step: C, default: D },` per line. */
+function serializeParams(params: Record<string, ParamSpec>): string {
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    const fields: string[] = [];
+    if (v.label != null) fields.push(`label: ${JSON.stringify(v.label)}`);
+    if (v.min != null) fields.push(`min: ${v.min}`);
+    if (v.max != null) fields.push(`max: ${v.max}`);
+    if (v.step != null) fields.push(`step: ${v.step}`);
+    fields.push(`default: ${v.default}`);
+    lines.push(`    ${k}: { ${fields.join(', ')} },`);
+  }
+  return lines.join('\n');
+}
+
+/** Parse the current source's `params: { … }` block into a Record. Returns
+ *  null when meta or params aren't present in a recognizable shape. */
+function parseMetaParams(source: string): { params: Record<string, ParamSpec>; range: [number, number] } | null {
+  const open = source.match(/\bparams\s*:\s*\{/);
+  if (!open) return null;
+  const start = (open.index ?? 0) + open[0].length;
+  let depth = 1;
+  let i = start;
+  while (i < source.length && depth > 0) {
+    const ch = source[i]!;
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    if (depth === 0) break;
+    i++;
+  }
+  if (depth !== 0) return null;
+  const inner = source.slice(start, i);
+  const out: Record<string, ParamSpec> = {};
+  // Match `KEY: { … }` rows.
+  const rowRe = /([a-zA-Z_$][\w$]*)\s*:\s*\{([^{}]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(inner))) {
+    const key = m[1];
+    const body = m[2];
+    const num = (n: string) => {
+      const r = body.match(new RegExp(`\\b${n}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`));
+      return r ? parseFloat(r[1]) : undefined;
+    };
+    const labelM = body.match(/\blabel\s*:\s*['"]([^'"]+)['"]/);
+    out[key] = {
+      label: labelM ? labelM[1] : undefined,
+      min: num('min'),
+      max: num('max'),
+      step: num('step'),
+      default: num('default') ?? 0,
+    };
+  }
+  return { params: out, range: [start, i] };
+}
+
+/** Rewrite the function signature `export function NAME(args) {` so the
+ *  positional arg list matches the keys of `params` (preserving order). */
+function rewriteFnSignature(source: string, params: Record<string, ParamSpec>): string {
+  const sigRe = /(export\s+function\s+[a-zA-Z_$][\w$]*\s*\()[^)]*(\))/;
+  return source.replace(sigRe, `$1${Object.keys(params).join(', ')}$2`);
+}
+
+/** Swap a part's profile body to a new template's body, and rewrite
+ *  meta.params + the function signature so they match. ENGINE params
+ *  (length/twist/divs/taper/segments) are PRESERVED from the part — their
+ *  current default values stay, even though their schema fields take the
+ *  template's defaults where applicable (engine params keep the part's).
+ *  Non-engine params are REPLACED entirely with `template.partParams`. */
+export function swapProfileTemplate(
+  source: string,
+  template: { body: string; partParams?: Record<string, ParamSpec> },
+  enginePrefixOrder: readonly string[] = ['length', 'twist', 'divs', 'taper', 'segments'],
+): string {
+  // 1. Splice the new body into the profile_pts slot first.
+  const slots = findProfileSlots(source);
+  let next = source;
+  if (slots.length > 0) {
+    next = spliceSlot(next, slots[0]!, template.body);
+  }
+  // 2. Rewrite meta.params: (template.partParams in their order) + (engine
+  //    params from the CURRENT part, in enginePrefixOrder).
+  const parsed = parseMetaParams(next);
+  if (!parsed) return next;
+  const partParams = template.partParams ?? {};
+  const preserved: Record<string, ParamSpec> = {};
+  for (const k of enginePrefixOrder) {
+    if (k in parsed.params) preserved[k] = parsed.params[k]!;
+  }
+  const newParams: Record<string, ParamSpec> = { ...partParams, ...preserved };
+  const serialized = serializeParams(newParams);
+  next = next.slice(0, parsed.range[0]) + '\n' + serialized + '\n  ' + next.slice(parsed.range[1]);
+  // 3. Rewrite the function signature to match the new param order.
+  next = rewriteFnSignature(next, newParams);
+  return next;
+}

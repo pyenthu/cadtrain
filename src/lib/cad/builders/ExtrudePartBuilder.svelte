@@ -10,7 +10,7 @@
    */
   import { onMount } from 'svelte';
   import ProfileFnEditor from '$lib/shared/ProfileFnEditor.svelte';
-  import { findProfileSlots, spliceSlot } from '$lib/cad/inline-profile';
+  import { findProfileSlots, spliceSlot, swapProfileTemplate } from '$lib/cad/inline-profile';
   import PrimitiveDualCanvas from '$lib/shared/PrimitiveDualCanvas.svelte';
   import { templatesFor, type ProfileTemplate } from '$lib/cad/profile-templates';
 
@@ -92,7 +92,15 @@
       profileDropdownOpen = false;
       return;
     }
-    handleBodyChange(t.body);
+    // Swap rewrites meta.params (engine params preserved) + function signature
+    // + body in one shot — keeps everything in sync so the saved source isn't
+    // a frankenstein of old meta + new body. Bypass handleBodyChange (which
+    // would only splice the body and leave meta stale).
+    const updated = swapProfileTemplate(source, { body: t.body, partParams: t.partParams });
+    if (updated !== source) {
+      source = updated;
+      onSourceChange?.(updated);
+    }
     bodyKey++;
     profileQuery = '';
     profileDropdownOpen = false;
