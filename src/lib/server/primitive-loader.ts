@@ -96,37 +96,67 @@ export async function buildPrimitiveGeom(
   fetchFn: typeof fetch,
   visited: Set<string> = new Set(),
 ): Promise<GeomFn> {
-  // Resolve declared deps (skip ones already in the standard sandbox scope,
-  // e.g. a `uses:['tube']` — that's the bundle helper, already injected).
-  // PARALLEL — a composite's deps were resolved one-at-a-time, so each dep's
-  // source.ts fetch (a prod round-trip in dev) blocked the next.
+  // Resolve declared deps. PARALLEL — composites had their deps resolved
+  // one-at-a-time, so each dep's source.ts fetch (a prod round-trip in dev)
+  // blocked the next.
+  //
+  // SANDBOX-COLLISION RESOLUTION (the tube/cyl/mv naming trap):
+  //   Names like `tube`, `cyl`, `mv` exist as raw helpers in SANDBOX_ARG_NAMES
+  //   AND can legitimately exist as user-authored volume primitives. The old
+  //   filter dropped any volume dep matching a sandbox name — silently — so
+  //   the raw helper won and the user's primitive was invisible at runtime.
+  //   New behaviour: try to LOAD every declared dep; if the load fails AND
+  //   the name is a sandbox helper, fall back silently (the raw helper takes
+  //   over); if the load succeeds, the volume version wins via aliasing.
+  //
   // DEDUPE: `new Function(...depNames, body)` throws "Invalid parameters … in
-  // strict mode" on a duplicate param name. meta.uses can legitimately list the
-  // same primitive twice (e.g. adding a 2nd r_extrude part), which otherwise
-  // crashed the whole build with a 400.
-  const depNames = [...new Set(usesOf(source))].filter((d) => !SANDBOX_ARG_NAMES.includes(d));
-  for (const dep of depNames) {
+  // strict mode" on a duplicate param name. meta.uses can legitimately list
+  // the same primitive twice (e.g. adding a 2nd r_extrude part), so we
+  // de-dupe before the Function ctor.
+  const declared = [...new Set(usesOf(source))];
+  for (const dep of declared) {
     if (visited.has(dep)) {
       throw new Error(`circular primitive dependency: ${[...visited, dep].join(' → ')}`);
     }
   }
-  const depFns = await Promise.all(
-    depNames.map((dep) => loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))),
+  const settled = await Promise.allSettled(
+    declared.map((dep) => loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))),
   );
+  // Partition into loaded (volume hit) vs deferred-to-sandbox (sandbox helper
+  // takes over). A failed load for a name that is NOT a sandbox helper is a
+  // real error and gets re-thrown.
+  const depNames: string[] = [];
+  const depFns: GeomFn[] = [];
+  for (let i = 0; i < declared.length; i++) {
+    const dep = declared[i]!;
+    const r = settled[i]!;
+    if (r.status === 'fulfilled') {
+      depNames.push(dep);
+      depFns.push(r.value);
+    } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
+      throw r.reason;
+    }
+    // else: defer to the sandbox helper of the same name (raw helper wins
+    // when there's no volume primitive with this id).
+  }
 
   let body = transpile(tagInstanceSources(source));
-  // A composite instance named after the primitive it calls — `const X = X()`,
-  // produced by older saves before uniqueInstName forbade it — shadows the
-  // injected dep param, so the RHS call hits the temporal-dead-zone ("Cannot
-  // access X before initialization"). When a dep is ALSO declared as a
-  // const/let/var in the body, inject it under a collision-proof alias and
-  // rewrite its CALL sites (`X(` → `__dep_i(`), so the declaration no longer
-  // shadows it. Non-colliding deps are untouched (zero blast radius). This
-  // repairs every already-saved broken composite without a data migration.
+  // ALIAS POLICY — rewrite a dep's call sites in the body to a collision-proof
+  // alias when any of:
+  //   (a) the body declares a `const/let/var <dep>` shadowing the dep arg
+  //       (older saves produced `const X = X()` — a temporal-dead-zone trap);
+  //   (b) the dep name matches a SANDBOX_ARG_NAMES helper (tube / cyl / mv /
+  //       …) — without an alias, `new Function(...SANDBOX_ARG_NAMES, dep,
+  //       body)` throws "duplicate parameter" in strict mode AND the body's
+  //       call site would otherwise resolve to the raw helper, not the user
+  //       primitive.
+  // Non-colliding deps are untouched (zero blast radius).
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const injectNames = [...depNames];
   depNames.forEach((dep, i) => {
-    if (new RegExp(`\\b(?:const|let|var)\\s+${escapeRe(dep)}\\b`).test(body)) {
+    const constCollision = new RegExp(`\\b(?:const|let|var)\\s+${escapeRe(dep)}\\b`).test(body);
+    const sandboxCollision = SANDBOX_ARG_NAMES.includes(dep);
+    if (constCollision || sandboxCollision) {
       const alias = `__dep_${i}`;
       body = body.replace(new RegExp(`(?<![.\\w$])${escapeRe(dep)}\\s*\\(`, 'g'), `${alias}(`);
       injectNames[i] = alias;
@@ -268,18 +298,30 @@ async function profileAwareArgValues(source: string, fetchFn: typeof fetch): Pro
   return out;
 }
 
-/** Resolve a primitive id → geom function. Bundle helpers (cyl, tube, …)
- *  return directly; volume primitives are read from
- *  <volume>/primitives/<id>/source.ts (via fetchFn, cached) and built
- *  recursively. */
+/** Resolve a primitive id → geom function.
+ *
+ *  Resolution order: VOLUME FIRST, bundle helper as fallback. A user who
+ *  authors a volume primitive named `tube` (or `cyl`, `mv`, …) expects
+ *  their primitive to win when something declares `uses: ['tube']` — the
+ *  raw helpers are reachable transparently through the sandbox without
+ *  ever appearing in `meta.uses` (CLAUDE.md Rule 20). The previous order
+ *  silently shadowed the user's volume primitive when a same-named raw
+ *  helper existed; this caused the nested-assembly tube collision bug. */
 export async function loadPrimitiveGeomById(
   id: string,
   fetchFn: typeof fetch,
   visited: Set<string> = new Set(),
 ): Promise<GeomFn> {
-  const bundle = (helpers as any)[id];
-  if (typeof bundle === 'function') return bundle as GeomFn;
-
-  const src = await fetchDepSource(id, fetchFn);
-  return buildPrimitiveGeom(src, id, fetchFn, visited);
+  try {
+    const src = await fetchDepSource(id, fetchFn);
+    return await buildPrimitiveGeom(src, id, fetchFn, visited);
+  } catch (e) {
+    // No volume primitive with this id — fall back to a bundle helper if
+    // one exists by the same name. (The catch path includes the build/
+    // type errors too; re-throw those when there's no helper to fall back
+    // to so the caller sees the real error instead of a silent miss.)
+    const bundle = (helpers as any)[id];
+    if (typeof bundle === 'function') return bundle as GeomFn;
+    throw e;
+  }
 }
