@@ -163,6 +163,13 @@ function serializeParams(params: Record<string, ParamSpec>): string {
   return lines.join('\n');
 }
 
+/** Extract the meta.params block from source as a Record. Returns an empty
+ *  object when meta or params aren't present — host typically falls back
+ *  to a prop or default. */
+export function extractMetaParams(source: string): Record<string, ParamSpec> {
+  return parseMetaParams(source)?.params ?? {};
+}
+
 /** Parse the current source's `params: { … }` block into a Record. Returns
  *  null when meta or params aren't present in a recognizable shape. */
 function parseMetaParams(source: string): { params: Record<string, ParamSpec>; range: [number, number] } | null {

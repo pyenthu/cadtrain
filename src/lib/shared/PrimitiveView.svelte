@@ -18,6 +18,7 @@
   import PrimitiveDualCanvas from './PrimitiveDualCanvas.svelte';
   import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
+  import { extractMetaParams } from '$lib/cad/inline-profile';
   import CodeEditor from './CodeEditor.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -128,9 +129,27 @@
   // primitive — excluded from effectiveSchema so the grid hides them at once
   // (the `paramSchema` prop is set at load, so it still carries deleted keys).
   let removedParams = $state<Set<string>>(new Set());
+  // Live meta.params re-parsed from the CURRENT editedSource. Lets the
+  // typed-builder profile picker rewrite source → params reactively follow
+  // (the parent's t.entry.params only refreshes after a save). Falls back
+  // to paramSchema (prop) when extraction returns nothing — that path stays
+  // valid for parts with non-standard meta shapes.
+  let sourceParamSchema = $derived.by(() => {
+    const fromSource = extractMetaParams(editedSource);
+    if (Object.keys(fromSource).length === 0) return paramSchema;
+    // Merge schemas — sourceParam values take precedence but inherit any
+    // `type: 'profile'`/`type: 'polygon'` markers from paramSchema when the
+    // source-parsed entry doesn't carry a type.
+    const out: Record<string, ParamSchema> = {};
+    for (const [k, v] of Object.entries(fromSource)) {
+      const fromProp = (paramSchema as any)?.[k];
+      out[k] = { ...(fromProp ?? {}), ...(v as any) } as ParamSchema;
+    }
+    return out;
+  });
   let effectiveSchema = $derived(
     Object.fromEntries(
-      Object.entries({ ...paramSchema, ...addedParams })
+      Object.entries({ ...sourceParamSchema, ...addedParams })
         .filter(([k]) => !removedParams.has(k))
         // A `type: 'profile'` param is a function-only profile: render it with
         // the SAME machinery as a polygon param whose value is a {kind,params}
@@ -155,6 +174,33 @@
   );
   let pending = $state<Record<string, number | [number, number][]>>(untrack(() => ({ ...applied })));
   let editedSource = $state(untrack(() => initialSource));
+  // Reconcile applied[] when effectiveSchema's KEYSET changes (typed-builder
+  // picker swap rewrites source.meta.params: old profile keys disappear,
+  // new ones appear). Engine keys (length/twist/divs/taper/segments) and
+  // any matching key keep their existing applied value; newly-added keys
+  // pick up the template default; keys that vanished from the schema get
+  // dropped from applied so args don't carry stale slots.
+  $effect(() => {
+    const schemaKeys = Object.keys(effectiveSchema);
+    const appliedKeys = Object.keys(applied);
+    const next: Record<string, any> = {};
+    let changed = false;
+    for (const k of schemaKeys) {
+      if (k in applied) {
+        next[k] = applied[k];
+      } else {
+        next[k] = (effectiveSchema[k] as any)?.default;
+        changed = true;
+      }
+    }
+    for (const k of appliedKeys) {
+      if (!(k in effectiveSchema)) { changed = true; }
+    }
+    if (changed) {
+      applied = next;
+      pending = { ...next };
+    }
+  });
 
   // Every polygon-typed param, in meta order — the merged Build tab renders a
   // ✎-profile card per entry below the scalar grid (opens the popup editor).
@@ -1918,7 +1964,7 @@
       {id} {name} {description}
       source={editedSource}
       args={appliedArgs as (number | string)[]}
-      paramSchema={paramSchema}
+      paramSchema={effectiveSchema}
       onSourceChange={(s) => { editedSource = s; }}
       onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
       dirty={combinedDirty}
@@ -1930,7 +1976,7 @@
       {id} {name} {description}
       source={editedSource}
       args={appliedArgs as (number | string)[]}
-      paramSchema={paramSchema}
+      paramSchema={effectiveSchema}
       onSourceChange={(s) => { editedSource = s; }}
       onParamsChange={(values) => { applied = { ...applied, ...values }; pending = { ...pending, ...values }; }}
       dirty={combinedDirty}
