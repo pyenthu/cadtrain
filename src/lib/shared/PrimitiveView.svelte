@@ -19,6 +19,10 @@
   import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import { extractMetaParams } from '$lib/cad/inline-profile';
+  import {
+    parseDependencies, diffDependencies, buildSnapshots, writeDependencies,
+    parseUses, type DependencyDiff,
+  } from '$lib/cad/assembly-deps';
   import CodeEditor from './CodeEditor.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -1810,7 +1814,31 @@
   async function saveSource() {
     if (!onSaveSource) return;
     saving = true;
-    try { await onSaveSource(editedSource); } finally { saving = false; }
+    try {
+      // For assemblies — if meta.dependencies is missing or empty AND
+      // meta.uses has entries, capture a baseline snapshot before saving.
+      // Without this baseline the warning chip can never fire (there's
+      // nothing to compare against). Done once per assembly at first save;
+      // subsequent saves leave existing snapshots alone unless the user
+      // explicitly clicks "Update snapshots" on the chip.
+      let toSave = editedSource;
+      if ((kind === 'asm' || kind === 'prim') && parseDependencies(toSave).length === 0) {
+        const ids = parseUses(toSave);
+        if (ids.length > 0) {
+          const liveSources: Record<string, string> = {};
+          for (const id of ids) {
+            try {
+              const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+              if (r.ok) liveSources[id] = (await r.json()).source ?? '';
+            } catch { /* ignore */ }
+          }
+          const fresh = buildSnapshots(ids, liveSources);
+          toSave = writeDependencies(toSave, fresh);
+          editedSource = toSave;
+        }
+      }
+      await onSaveSource(toSave);
+    } finally { saving = false; }
   }
   async function saveDefaults() {
     if (!onSaveDefaults) return;
@@ -1856,6 +1884,55 @@
   // the source diverges from the server OR the user has changed default
   // param values since open.
   let combinedDirty = $derived(sourceDirty || defaultsDirty);
+
+  // ── Assembly dependency-change warnings (K.56 Phase 2) ──────────────────
+  // For kind === 'asm' parts, fetch each component listed in meta.uses,
+  // compare its current source vs the snapshot stored in meta.dependencies,
+  // and surface a yellow chip on the canvas when something drifted (params
+  // added/removed/reordered, body hash changed). Click chip → confirm →
+  // writes a fresh snapshot block via writeDependencies + marks dirty.
+  let depDiffs = $state<DependencyDiff[]>([]);
+  let depWarnPanel = $state<{ x: number; y: number } | null>(null);
+  let depCheckSeq = $state(0);
+  $effect(() => {
+    if (kind !== 'asm' && kind !== 'prim') return;
+    const src = editedSource;
+    if (!src) return;
+    const ids = parseUses(src);
+    if (ids.length === 0) { depDiffs = []; return; }
+    const snapshots = parseDependencies(src);
+    if (snapshots.length === 0) { depDiffs = []; return; }
+    const seq = ++depCheckSeq;
+    (async () => {
+      const liveSources: Record<string, string> = {};
+      for (const id of ids) {
+        try {
+          const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+          if (r.ok) liveSources[id] = (await r.json()).source ?? '';
+        } catch { /* ignore */ }
+      }
+      if (seq !== depCheckSeq) return;     // stale
+      depDiffs = diffDependencies(snapshots, liveSources).filter((d) => !d.ok);
+    })();
+  });
+  // The yellow chip click → confirm → rewrite snapshots.
+  function refreshDepSnapshots() {
+    const ids = parseUses(editedSource);
+    if (ids.length === 0) return;
+    (async () => {
+      const liveSources: Record<string, string> = {};
+      for (const id of ids) {
+        try {
+          const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+          if (r.ok) liveSources[id] = (await r.json()).source ?? '';
+        } catch { /* ignore */ }
+      }
+      const fresh = buildSnapshots(ids, liveSources);
+      editedSource = writeDependencies(editedSource, fresh);
+      depDiffs = [];
+      depWarnPanel = null;
+    })();
+  }
 
   // ── Save As… popup ────────────────────────────────────────────────────
   // "File → Save As": persist the CURRENT editor buffer (editedSource —
@@ -2008,6 +2085,42 @@
            `profile_extrude_v2` containing `export function profile_extrude`).
            The bundle fast-path can't handle that mismatch. -->
       <PrimitiveDualCanvas {id} {name} {description} args={appliedArgs} source={editedSource} showLabels={false} />
+      <!-- Assembly dependency-change warning chip (K.56 Phase 2). Shows when
+           a component referenced in meta.uses has changed since the
+           snapshot recorded in meta.dependencies. Click → mini-panel with
+           per-component drift + an Update-snapshots action that rewrites
+           the assembly source and marks dirty. -->
+      {#if depDiffs.length > 0 && (kind === 'asm' || kind === 'prim')}
+        <button class="pv-dep-warn" type="button"
+          title="{depDiffs.length} component{depDiffs.length > 1 ? 's' : ''} changed since this assembly was created"
+          onclick={(ev) => { const r = (ev.currentTarget as HTMLElement).getBoundingClientRect(); depWarnPanel = { x: r.left, y: r.bottom + 4 }; }}
+        >
+          ⚠ {depDiffs.length}
+        </button>
+        {#if depWarnPanel}
+          <div class="pv-dep-pop-back" role="presentation" onclick={() => (depWarnPanel = null)}></div>
+          <div class="pv-dep-pop" style="left: {depWarnPanel.x}px; top: {depWarnPanel.y}px;">
+            <div class="pv-dep-pop-title">Components changed since snapshot</div>
+            <div class="pv-dep-pop-list">
+              {#each depDiffs as d (d.id)}
+                <div class="pv-dep-row">
+                  <div class="pv-dep-id">{d.id}</div>
+                  <ul class="pv-dep-bullets">
+                    {#if d.paramKeysAdded.length}<li>params added: <code>{d.paramKeysAdded.join(', ')}</code></li>{/if}
+                    {#if d.paramKeysRemoved.length}<li>params removed: <code>{d.paramKeysRemoved.join(', ')}</code></li>{/if}
+                    {#if d.paramKeysReordered}<li>params reordered</li>{/if}
+                    {#if d.bodyHashChanged && !d.paramKeysAdded.length && !d.paramKeysRemoved.length && !d.paramKeysReordered}<li>body changed</li>{/if}
+                  </ul>
+                </div>
+              {/each}
+            </div>
+            <div class="pv-dep-pop-acts">
+              <button class="pv-dep-pop-act primary" type="button" onclick={refreshDepSnapshots}>Update snapshots</button>
+              <button class="pv-dep-pop-act" type="button" onclick={() => (depWarnPanel = null)}>Close</button>
+            </div>
+          </div>
+        {/if}
+      {/if}
     </div>
 
     <div
@@ -2810,8 +2923,26 @@
 
   .pv-split { display: grid; grid-template-columns: 1fr 6px var(--side-width, 420px); min-height: 0; height: 100%; gap: 0; }
 
-  .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 0; }
+  .pv-canvas-pane { background: #1a1a1a; min-height: 0; overflow: hidden; border-radius: 4px; padding: 0; position: relative; }
   .pv-canvas-pane.pv-drop-ok { outline: 2px dashed #2266cc; outline-offset: -2px; }
+  /* Assembly dep-change warning chip — bottom-left, yellow, count shows
+     how many used components drifted since the assembly's last snapshot. */
+  .pv-dep-warn { position: absolute; left: 8px; bottom: 8px; z-index: 20; padding: 4px 10px; font: 700 11px Arial; color: #4a3700; background: #fff3a0; border: 1px solid #e0c200; border-radius: 4px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+  .pv-dep-warn:hover { background: #ffea60; border-color: #c4a800; }
+  .pv-dep-pop-back { position: fixed; inset: 0; z-index: 1000; background: transparent; }
+  .pv-dep-pop { position: fixed; z-index: 1001; min-width: 280px; max-width: 420px; background: #fff; border: 1px solid #d0d0d8; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); padding: 10px 12px; font: 11px Arial; color: #333; }
+  .pv-dep-pop-title { font: 700 12px Arial; color: #4a3700; margin-bottom: 6px; }
+  .pv-dep-pop-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  .pv-dep-row { padding: 4px 6px; background: #fff8d6; border-left: 3px solid #e0c200; border-radius: 3px; }
+  .pv-dep-id { font: 600 11px ui-monospace, Menlo, monospace; color: #222; margin-bottom: 2px; }
+  .pv-dep-bullets { margin: 2px 0 0 14px; padding: 0; }
+  .pv-dep-bullets li { font: 10px Arial; color: #555; }
+  .pv-dep-bullets code { font: 10px ui-monospace, Menlo, monospace; background: #ffeb80; padding: 1px 3px; border-radius: 2px; }
+  .pv-dep-pop-acts { display: flex; gap: 6px; margin-top: 8px; }
+  .pv-dep-pop-act { font: 600 11px Arial; padding: 4px 10px; border: 1px solid #d0d0d8; background: #fff; color: #444; border-radius: 4px; cursor: pointer; }
+  .pv-dep-pop-act.primary { background: #c4392f; color: #fff; border-color: #c4392f; }
+  .pv-dep-pop-act.primary:hover { background: #b23329; }
+  .pv-dep-pop-act:hover:not(.primary) { background: #f4f4f4; }
 
   .pv-resizer { background: transparent; cursor: col-resize; position: relative; }
   .pv-resizer::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eee; transition: background 0.15s; }
