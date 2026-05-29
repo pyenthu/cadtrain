@@ -1916,28 +1916,41 @@
   let depDiffs = $state<DependencyDiff[]>([]);
   let depWarnPanel = $state<{ x: number; y: number } | null>(null);
   let depCheckSeq = $state(0);
+  // Per-session cache of fetched dep sources so repeat checks don't re-hit
+  // the network. Cleared when the user clicks "Update snapshots" so a fresh
+  // probe of the live components fires.
+  let depSourceCache = $state<Record<string, string>>({});
+  // Debounce timer for the editedSource-driven check — without this every
+  // keystroke fires N fetches.
+  let depCheckTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     if (kind !== 'asm' && kind !== 'prim') return;
     const src = editedSource;
     if (!src) return;
-    const ids = parseUses(src);
-    if (ids.length === 0) { depDiffs = []; return; }
-    const snapshots = parseDependencies(src);
-    if (snapshots.length === 0) { depDiffs = []; return; }
-    const seq = ++depCheckSeq;
-    (async () => {
-      const liveSources: Record<string, string> = {};
-      for (const id of ids) {
-        try {
-          const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
-          if (r.ok) liveSources[id] = (await r.json()).source ?? '';
-        } catch { /* ignore */ }
-      }
-      if (seq !== depCheckSeq) return;     // stale
-      depDiffs = diffDependencies(snapshots, liveSources).filter((d) => !d.ok);
-    })();
+    if (depCheckTimer) clearTimeout(depCheckTimer);
+    depCheckTimer = setTimeout(() => {
+      const ids = parseUses(src);
+      if (ids.length === 0) { depDiffs = []; return; }
+      const snapshots = parseDependencies(src);
+      if (snapshots.length === 0) { depDiffs = []; return; }
+      const seq = ++depCheckSeq;
+      (async () => {
+        const liveSources: Record<string, string> = { ...depSourceCache };
+        const missing = ids.filter((id) => !(id in liveSources));
+        for (const id of missing) {
+          try {
+            const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+            if (r.ok) liveSources[id] = (await r.json()).source ?? '';
+          } catch { /* ignore */ }
+        }
+        if (seq !== depCheckSeq) return;     // stale
+        depSourceCache = liveSources;
+        depDiffs = diffDependencies(snapshots, liveSources).filter((d) => !d.ok);
+      })();
+    }, 1200);
   });
-  // The yellow chip click → confirm → rewrite snapshots.
+  // The yellow chip click → confirm → rewrite snapshots. Also clears the
+  // dep-source cache so a fresh probe runs on the next debounced tick.
   function refreshDepSnapshots() {
     const ids = parseUses(editedSource);
     if (ids.length === 0) return;
@@ -1949,6 +1962,7 @@
           if (r.ok) liveSources[id] = (await r.json()).source ?? '';
         } catch { /* ignore */ }
       }
+      depSourceCache = liveSources;
       const fresh = buildSnapshots(ids, liveSources);
       editedSource = writeDependencies(editedSource, fresh);
       depDiffs = [];
