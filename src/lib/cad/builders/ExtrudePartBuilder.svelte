@@ -78,6 +78,20 @@
   // alone, so the editor stays mounted and the cursor doesn't jump.
   let bodyKey = $state(0);
   function pickProfile(t: ProfileHit) {
+    // Profile templates carry their OWN param names which may not match the
+    // part's. Picking a new template effectively REPLACES the profile body;
+    // user-tuned values for the OLD profile's params become irrelevant.
+    // Confirm so the swap isn't a surprise.
+    const ok = confirm(
+      `Replace this part's profile with "${t.label}"?\n\n` +
+      `The current expressions will be overwritten with the template's body. ` +
+      `Param values for names referenced by the new body are kept; the rest revert to template defaults.`,
+    );
+    if (!ok) {
+      profileQuery = '';
+      profileDropdownOpen = false;
+      return;
+    }
     handleBodyChange(t.body);
     bodyKey++;
     profileQuery = '';

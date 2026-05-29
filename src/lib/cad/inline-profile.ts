@@ -109,13 +109,15 @@ export function findProfileSlots(source: string): ProfileSlot[] {
     // so the part source on disk is unchanged in shape.
     const calcsPrefix = sweptCalcs.length ? sweptCalcs.join('\n') + '\n  ' : '  ';
     const body = `${calcsPrefix}return ${bodyOnly};`;
-    const range: [number, number] = sweptCalcs.length
-      // When calcs are swept in, the range spans from the first calc's line
-      // start through the end of the slot body. Splicing a new body replaces
-      // the whole region (calcs + assignment body) — composeSource will emit
-      // the calcs back as part of the body on save.
-      ? [sweepStart, e]
-      : [s, e];
+    // Range MUST include the `const NAME = ` prefix so spliced bodies (which
+    // emit their own `const profile_pts = …`) don't end up double-declared
+    // (`const profile_pts = const profile_pts = Array.from(…)`). Find the
+    // start of the line containing the declaration; in the swept case
+    // sweepStart already covers the preceding calc lines AND the const line.
+    const declLineStart = sweptCalcs.length
+      ? sweepStart
+      : (source.lastIndexOf('\n', declStart - 1) + 1);
+    const range: [number, number] = [declLineStart, e];
     out.push({ name, body, range });
     seen.add(name);
   }

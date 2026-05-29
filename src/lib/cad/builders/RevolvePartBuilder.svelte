@@ -67,6 +67,12 @@
   // new seed.body (it doesn't reparse on prop changes after initial mount).
   let bodyKey = $state(0);
   function pickProfile(t: ProfileHit) {
+    const ok = confirm(
+      `Replace this part's profile with "${t.label}"?\n\n` +
+      `The current expressions will be overwritten with the template's body. ` +
+      `Param values for names referenced by the new body are kept; the rest revert to template defaults.`,
+    );
+    if (!ok) { profileQuery = ''; profileDropdownOpen = false; return; }
     handleBodyChange(t.body);
     bodyKey++;
     profileQuery = '';

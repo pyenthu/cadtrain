@@ -144,7 +144,19 @@
       // surrounding `\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)` terminates the capture.
       const afMatch = b.match(/Array\.from\s*\(\s*\{\s*length\s*:\s*([\s\S]+?)\s*\}\s*,\s*\(\s*_\s*,\s*i\s*\)\s*=>\s*(\[[^\[\]]*\]|\{[\s\S]*?\}(?=\s*\)))/);
       if (afMatch) {
-        const count = afMatch[1].trim();
+        // composeSource wraps the repeat count in `Math.max(0, Math.round(N))`
+        // every emit. Without an unwrap, each parse → compose cycle would
+        // ADD a wrapper layer, producing
+        //   Math.max(0, Math.round(max(0, round(max(0, round(n))))))
+        // on subsequent saves. Strip recursively to the innermost expr.
+        let count = afMatch[1].trim();
+        for (let pass = 0; pass < 8; pass++) {
+          const m1 = count.match(/^Math\.max\s*\(\s*0\s*,\s*Math\.round\s*\(\s*([\s\S]+)\s*\)\s*\)$/);
+          const m2 = !m1 && count.match(/^max\s*\(\s*0\s*,\s*round\s*\(\s*([\s\S]+)\s*\)\s*\)$/);
+          const inner = (m1 ?? m2)?.[1]?.trim();
+          if (!inner) break;
+          count = inner;
+        }
         const cbody = afMatch[2].trim();
         let x = '', y = '';
         if (cbody.startsWith('[')) {
