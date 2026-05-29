@@ -907,7 +907,8 @@
     /* Tightened: smaller left number gutter + thinner cmd selector +
        narrower delete column so the FORMULA textareas (which span 1/-1)
        get more horizontal room. Padding cut so the yellow card hugs the
-       edges of the panel. */
+       edges of the panel. Negative margin pulls the card BEYOND the
+       editor column's right padding for extra width. */
     grid-template-columns: 12px 52px 1fr 18px;
     grid-template-rows: auto auto auto;
     row-gap: 3px;
@@ -916,7 +917,7 @@
     background: #f7f3ec;
     border-radius: 4px;
     padding: 3px 4px 5px;
-    margin: 2px 0;
+    margin: 2px -5px 2px 0;   /* +5px right by stealing the editor column's right padding */
   }
   .fn-mrow-rep > .fn-mnum     { grid-column: 1; grid-row: 1; }
   .fn-mrow-rep > select.fn-mcmd { grid-column: 2; grid-row: 1; }

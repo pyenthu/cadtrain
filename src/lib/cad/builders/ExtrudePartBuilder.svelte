@@ -43,9 +43,10 @@
   let view = $state<{ d: string; vb: string; axis: number | null; y0: number; y1: number }>({ d: '', vb: '0 0 100 100', axis: null, y0: 0, y1: 0 });
 
   // Drag-resizable splitter — % of total width allocated to the canvas pane.
-  // Default 33% (was 50%, halved per user). Persisted across reloads.
+  // Default 25% — gives the editor more horizontal room so the yellow
+  // repeat-row card has space for long formulas. Persisted across reloads.
   const STORAGE_KEY = 'ext-builder-canvas-pct';
-  let canvasPct = $state(33);
+  let canvasPct = $state(25);
   onMount(() => {
     const saved = Number(localStorage.getItem(STORAGE_KEY));
     if (saved >= 15 && saved <= 75) canvasPct = saved;
@@ -136,7 +137,7 @@
   <div class="ext-split" role="separator" aria-orientation="vertical"
     title="Drag to resize · double-click to reset"
     onpointerdown={startResize}
-    ondblclick={() => (canvasPct = 33)}
+    ondblclick={() => (canvasPct = 25)}
   ></div>
 
   <div class="ext-right">

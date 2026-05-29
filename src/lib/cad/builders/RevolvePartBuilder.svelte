@@ -41,7 +41,7 @@
   let view = $state<{ d: string; vb: string; axis: number | null; y0: number; y1: number }>({ d: '', vb: '0 0 100 100', axis: null, y0: 0, y1: 0 });
 
   const STORAGE_KEY = 'rev-builder-canvas-pct';
-  let canvasPct = $state(33);
+  let canvasPct = $state(25);
   onMount(() => {
     const saved = Number(localStorage.getItem(STORAGE_KEY));
     if (saved >= 15 && saved <= 75) canvasPct = saved;
@@ -126,7 +126,7 @@
   <div class="rev-split" role="separator" aria-orientation="vertical"
     title="Drag to resize · double-click to reset"
     onpointerdown={startResize}
-    ondblclick={() => (canvasPct = 33)}
+    ondblclick={() => (canvasPct = 25)}
   ></div>
 
   <div class="rev-right">
