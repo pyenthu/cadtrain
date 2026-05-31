@@ -2653,7 +2653,7 @@
               <div class="pv-parts-empty">recognizing…</div>
             {:else if recogError && !recognized}
               <div class="pv-parts-err">{recogError}</div>
-            {:else if parts.length === 0}
+            {:else if parts.length === 0 && !isAsmInstanced}
               {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source has an error: {recogError}</span></div>{/if}
               <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
             {:else}
