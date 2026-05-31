@@ -23,7 +23,8 @@
     findInstancesLiteralRange, applyAppendToSource as appendAssemblyInstance,
     parseInstances as parseAsmInstances, removeInstance as removeAsmInstance,
     moveInstance as moveAsmInstance, updateInstance as updateAsmInstance,
-    applyInstancesToSource, type InstanceMode, type Datum,
+    applyInstancesToSource, flatInstances as flatAsmInstances,
+    nextInstanceName, type Instance, type InstanceMode, type Datum,
     type CsgOp, type CsgOpStep,
   } from '$lib/cad/assembly-instances';
   import {
@@ -1611,15 +1612,38 @@
   let partsSub = $state<'sequential' | 'overlay'>('sequential');
   let filteredAsmParts = $derived.by(() => {
     if (!isAsmInstanced) return resolvedParts;
-    const instances = parseAsmInstances(editedSource);
-    const modeByName = new Map(instances.map((i) => [i.name, i.mode]));
+    const tree = parseAsmInstances(editedSource);
+    const flat = flatAsmInstances(tree);
+    const modeByName = new Map(flat.map((i) => [i.name, i.mode]));
+    // Phase E.3 — rows that live INSIDE a group are rendered within the
+    // group's accordion, not in the flat list.
+    const groupChildNames = new Set<string>();
+    for (const g of flat) {
+      if (g.children) for (const c of g.children) groupChildNames.add(c.name);
+    }
     return resolvedParts.filter((p: any) => {
-      // Custom rows live with the spine — they're escape-hatch sequential
-      // placements. (Overlay rows are the only non-spine kind for now.)
+      if (groupChildNames.has(p.name)) return false;
       const m = modeByName.get(p.name) ?? 'sequential';
       return partsSub === 'overlay' ? m === 'overlay' : m !== 'overlay';
     });
   });
+  /** Top-level group rows (Phase E.3) — rendered as marker accordions
+   *  alongside the atom rows. Their children show as small chips. */
+  let topLevelGroups = $derived.by(() => {
+    if (!isAsmInstanced) return [] as Instance[];
+    return parseAsmInstances(editedSource).filter((i) => Array.isArray(i.children));
+  });
+  function deleteAssemblyGroup(name: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const tree = parseAsmInstances(editedSource);
+    const idx = tree.findIndex((i) => i.name === name && Array.isArray(i.children));
+    if (idx < 0) return;
+    // Promote the group's children back to top level so they're not lost.
+    const group = tree[idx]!;
+    const promoted = (group.children ?? []);
+    const next = [...tree.slice(0, idx), ...promoted, ...tree.slice(idx + 1)];
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
   function subtabCount(mode: 'sequential' | 'overlay'): number {
     if (!isAsmInstanced) return 0;
     const instances = parseAsmInstances(editedSource);
@@ -1648,6 +1672,18 @@
   async function addPartFromPopup(childId: string) {
     closeAddPartPopup();
     await loadPrimitive(childId);
+  }
+  /** K.62 Phase E.3 — add an empty Group row (Instance.children = []) at
+   *  top level. Children are added by dragging or by opening the +
+   *  popup with the group's row active (future work). */
+  function addEmptyGroupFromPopup() {
+    if (!isAsmInstanced || !canEdit) { closeAddPartPopup(); return; }
+    const tree = parseAsmInstances(editedSource);
+    const usedNames = flatAsmInstances(tree).map((i) => i.name);
+    const name = nextInstanceName(usedNames);
+    const next: Instance[] = [...tree, { name, args: [], mode: 'sequential', children: [] }];
+    editedSource = applyInstancesToSource(editedSource, id, next);
+    closeAddPartPopup();
   }
   function moveAssemblyInstance(fromName: string, toName: string) {
     if (!isAsmInstanced || !canEdit) return;
@@ -2580,12 +2616,34 @@
                       onclick={openAddPartPopup}>＋</button>
                   {/if}
                 </div>
-                {#if filteredAsmParts.length === 0}
+                {#if filteredAsmParts.length === 0 && topLevelGroups.length === 0}
                   <div class="pv-parts-empty">
                     {partsSub === 'overlay'
                       ? 'No overlays. Switch a Sequential row to ⤴ overlay mode, or drag a part from the sidebar with this tab active.'
                       : 'No Sequential rows. Drag a part from the sidebar to start the spine.'}
                   </div>
+                {/if}
+                <!-- Phase E.3 — group marker rows. Children list inline as
+                     small chips. Editing the group (adding/removing children,
+                     drag-into-group) is hand-source for now. Delete promotes
+                     children back to top level so nothing's lost. -->
+                {#if partsSub === 'sequential'}
+                  {#each topLevelGroups as g (g.name)}
+                    <div class="pv-group-row">
+                      <span class="pv-group-glyph">🗂</span>
+                      <span class="pv-group-name">{g.name}</span>
+                      <span class="pv-group-children">
+                        {#each (g.children ?? []) as c (c.name)}
+                          <span class="pv-group-chip" title={c.src ?? 'group'}>{c.name}</span>
+                        {/each}
+                      </span>
+                      <div class="pv-spacer"></div>
+                      {#if canEdit}
+                        <button type="button" class="pv-group-del" title="Remove group (children promoted to top level)"
+                          onclick={() => deleteAssemblyGroup(g.name)}>✕</button>
+                      {/if}
+                    </div>
+                  {/each}
                 {/if}
               {/if}
               {#each (isAsmInstanced ? filteredAsmParts : resolvedParts) as inst (inst.name)}
@@ -3205,6 +3263,12 @@
           onkeydown={(e) => { if (e.key === 'Escape') closeAddPartPopup(); }}
         />
         <div class="pv-addpart-list">
+          <!-- + Group lives at the top: a sub-list that holds nested rows.
+               Drag rows into the group later (Phase E.3.1 drag-into-group)
+               or hand-author via the Source tab. -->
+          <button type="button" class="pv-addpart-row pv-addpart-row-group" onclick={addEmptyGroupFromPopup}>
+            <span class="pv-addpart-group-glyph">▼</span> Group (sub-list)
+          </button>
           {#each addPartFiltered as e (e.id)}
             <button type="button" class="pv-addpart-row" onclick={() => addPartFromPopup(e.id)}>{e.id}</button>
           {:else}
@@ -3511,7 +3575,35 @@
     cursor: pointer; border-radius: 4px;
   }
   .pv-addpart-row:hover { background: #f1f1f5; color: #cc2222; }
+  .pv-addpart-row-group {
+    border-bottom: 1px solid #e6e6ec; padding-bottom: 8px; margin-bottom: 4px;
+    color: #6b21a8; font-weight: 600;
+  }
+  .pv-addpart-row-group:hover { background: #f5f0fa; color: #4b1273; }
+  .pv-addpart-group-glyph { margin-right: 4px; }
   .pv-addpart-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
+
+  /* Phase E.3 — group marker row. Sits in the Sequential subtab's list
+   * alongside atom accordions. Children render as small chips. */
+  .pv-group-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; background: #f5f0fa; border: 1px solid #d4baf0;
+    border-radius: 6px; margin: 4px 0;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #4b1273;
+  }
+  .pv-group-glyph { font-size: 14px; }
+  .pv-group-name { font-weight: 700; }
+  .pv-group-children { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+  .pv-group-chip {
+    background: #fff; border: 1px solid #d4baf0; border-radius: 10px;
+    padding: 0 8px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #4b1273;
+  }
+  .pv-group-del {
+    appearance: none; background: transparent; border: 0; padding: 0 6px;
+    color: #8b5cb9; cursor: pointer; font: 14px/1 sans-serif;
+  }
+  .pv-group-del:hover { color: #4b1273; }
 
   /* K.62 Phase E.2: per-row CSG ops bar — 3 op buttons + the chain of
    * already-applied ops as small chips. Lives inline in the row head. */
