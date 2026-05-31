@@ -188,7 +188,20 @@ export async function buildPrimitiveGeom(
   if (typeof fn !== 'function') {
     throw new Error(`primitive "${name}" did not export a function`);
   }
-  return fn as GeomFn;
+  // K.62 Phase E.1: lists-are-groups. When a geom fn returns an Array, treat
+  // it as a topological compose group — recursively flatten any nested
+  // arrays via place(). Lets assemblies be authored as `return [A, B, [C, D]]`
+  // without explicit place(...) wrappers, matching the user's JSX-style
+  // mental model ("a list IS place"). Manifold returns pass through unchanged.
+  const autoPlace = (v: any): any => {
+    if (Array.isArray(v)) {
+      const placed = v.map(autoPlace);
+      return helpers.place(placed);
+    }
+    return v;
+  };
+  const wrapped: GeomFn = (...args: any[]) => autoPlace((fn as any)(...args));
+  return wrapped;
 }
 
 // Dep-source cache. A composite preview fetches each `uses` dep's source.ts

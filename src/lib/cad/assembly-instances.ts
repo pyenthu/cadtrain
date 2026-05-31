@@ -38,10 +38,13 @@
  */
 
 export type InstanceMode = 'sequential' | 'overlay' | 'custom';
-/** CSG ops do boolean math; `place` skips it entirely — Manifold.compose
- *  topologically combines without union. Much faster on large strings
- *  because the boolean phase is the expensive one. */
-export type CsgOp = 'add' | 'subtract' | 'intersect' | 'place';
+/** Per-row CSG op applied LEFT-to-RIGHT to the row's own manifold:
+ *  `const X = src(args).subtract(C).intersect(D)`.
+ *  Each entry pairs the op with an operand name (a SIBLING row name).
+ *  `add` = boolean union (vs the default "just placed in the scene"
+ *  via the outer list — see emitAssemblyBody). */
+export type CsgOp = 'add' | 'subtract' | 'intersect';
+export interface CsgOpStep { op: CsgOp; arg: string; }
 export type Datum = 'head' | 'tail' | 'center';
 
 export interface Instance {
@@ -59,8 +62,19 @@ export interface Instance {
   at?: Datum;
   /** Custom: raw expression that produces a Manifold. `name` will bind to it. */
   expr?: string;
-  /** CSG op for the composition tail. Defaults to 'add'. */
-  op?: CsgOp;
+  /** Per-row CSG ops chain applied LEFT-to-RIGHT to this row's manifold:
+   *  `const X = src(args).subtract(C).intersect(D);` is `ops: [
+   *      { op: 'subtract', arg: 'C' },
+   *      { op: 'intersect', arg: 'D' },
+   *  ]`. Empty / omitted = the row participates in the scene by being
+   *  placed in the outer return list (no boolean math). */
+  ops?: CsgOpStep[];
+  /** Exclude from the outer return list. Set automatically on legacy
+   *  migration for rows that were boolean OPERANDS of another row
+   *  (`op: 'subtract'` etc.) — those rows weren't meant to be visible
+   *  on their own. Also set explicitly when a row is added purely as an
+   *  operand via the Phase E.2 ops toolbar (TBD UX). */
+  hidden?: boolean;
 }
 
 /** Excel-column-style sequence: A, B, …, Z, AA, AB, …, ZZ, AAA, … */
@@ -113,6 +127,31 @@ export function findInstancesLiteralRange(source: string): { start: number; end:
 /** Parse `meta.instances = [...]` into typed Instance rows.
  *  Returns [] when missing — caller treats absent as "legacy assembly". */
 export function parseInstances(source: string): Instance[] {
+  const rows = parseInstancesRaw(source);
+  // Phase E.1 legacy migration — lift each row's stale `op: 'subtract'|
+  // 'intersect'` onto the PRECEDING row's ops chain. The old semantics was
+  // a chained boolean (`empty().add(A).subtract(B)` = subtract B from
+  // running A); the new model expresses the same as A.subtract(B) — i.e.
+  // an op on A targeting B. Add + place become silent (the new default
+  // IS placed-in-the-outer-list).
+  for (let i = rows.length - 1; i > 0; i--) {
+    const cur = rows[i] as Instance & { __legacyOp?: string };
+    const legacy = cur?.__legacyOp;
+    if (!legacy) continue;
+    const prev = rows[i - 1]!;
+    const step: CsgOpStep = { op: legacy as CsgOp, arg: cur.name };
+    prev.ops = [...(prev.ops ?? []), step];
+    // The legacy operand wasn't meant to be visible on its own — mark it
+    // hidden so the new emit excludes it from the return list.
+    cur.hidden = true;
+    delete cur.__legacyOp;
+  }
+  // Strip the bookkeeping field from every row.
+  for (const r of rows) delete (r as any).__legacyOp;
+  return rows;
+}
+
+function parseInstancesRaw(source: string): Instance[] {
   const range = findInstancesLiteralRange(source);
   if (!range) return [];
   const literal = source.slice(range.start, range.end);
@@ -187,10 +226,36 @@ function parseInstanceRow(row: string): Instance | null {
   }
   const anchor = unquote(get('anchor')) ?? undefined;
   const at = (unquote(get('at')) as Datum | null) ?? undefined;
-  const op = (unquote(get('op')) as CsgOp | null) ?? undefined;
   const exprRaw = get('expr');
   const expr = exprRaw ? unquote(exprRaw) ?? undefined : undefined;
-  return { name, src, args, mode, anchor, at, op, expr: expr ?? undefined };
+  // Legacy: pre-Phase-E.1 rows carried a single `op: 'add'|'subtract'|...`
+  // field that joined the row into a running boolean chain at the return.
+  // We stash it here; parseInstances() post-processes by lifting subtract /
+  // intersect onto the PRECEDING row's ops chain so semantics are
+  // preserved through a save round-trip.
+  const legacyOp = unquote(get('op')) ?? undefined;
+  // ops: [{op:'subtract', arg:'C'}, ...]
+  const opsRaw = get('ops');
+  let ops: CsgOpStep[] | undefined;
+  if (opsRaw) {
+    const inner = opsRaw.replace(/^\[/, '').replace(/\]$/, '');
+    const steps: CsgOpStep[] = [];
+    for (const seg of splitTopLevel(inner)) {
+      const t = seg.trim();
+      if (!t) continue;
+      const opM = t.match(/op\s*:\s*['"`]([a-z]+)['"`]/);
+      const argM = t.match(/arg\s*:\s*['"`]([^'"`]+)['"`]/);
+      if (opM && argM && (opM[1] === 'add' || opM[1] === 'subtract' || opM[1] === 'intersect')) {
+        steps.push({ op: opM[1] as CsgOp, arg: argM[1]! });
+      }
+    }
+    if (steps.length) ops = steps;
+  }
+  const hiddenRaw = get('hidden');
+  const hidden = hiddenRaw ? /^true\b/.test(hiddenRaw.trim()) : false;
+  const out: Instance & { __legacyOp?: string } = { name, src, args, mode, anchor, at, ops, expr: expr ?? undefined, hidden: hidden || undefined };
+  if (legacyOp && legacyOp !== 'add' && legacyOp !== 'place') out.__legacyOp = legacyOp;
+  return out;
 }
 
 /** Split a comma-separated string but only on TOP-LEVEL commas. */
@@ -225,7 +290,13 @@ function serializeRow(inst: Instance): string {
   parts.push(`mode: ${JSON.stringify(inst.mode)}`);
   if (inst.anchor) parts.push(`anchor: ${JSON.stringify(inst.anchor)}`);
   if (inst.at) parts.push(`at: ${JSON.stringify(inst.at)}`);
-  if (inst.op) parts.push(`op: ${JSON.stringify(inst.op)}`);
+  if (inst.ops && inst.ops.length) {
+    const opsLit = inst.ops
+      .map((s) => `{ op: ${JSON.stringify(s.op)}, arg: ${JSON.stringify(s.arg)} }`)
+      .join(', ');
+    parts.push(`ops: [${opsLit}]`);
+  }
+  if (inst.hidden) parts.push(`hidden: true`);
   if (inst.expr) parts.push(`expr: ${JSON.stringify(inst.expr)}`);
   return `    { ${parts.join(', ')} }`;
 }
@@ -253,68 +324,71 @@ export function writeInstances(source: string, instances: readonly Instance[]): 
 /** Generate the assembly's function body from the instances array.
  *  Returns the body text BETWEEN the `{` and `}` of `export function ID() { ... }`.
  *
- *  Wrapping style is deliberately `const X = mv(prim(...), [0,0,...]);` —
- *  the recognizer at `src/lib/server/recognize-composite.ts:192` only unwraps
- *  the `mv` and `rot` outer calls, so emitting `mate(prev, prim(...))` would
- *  hide the inner `prim` instance from the Parts panel. `mv(prim, [..., tail(prev)])`
- *  is the same placement math (since `head(fresh prim) = 0`) and the
- *  recognizer sees both the wrap AND the inner instance. */
+ *  Phase E.1 model — "lists are groups":
+ *    Each row emits `const NAME = src(args).op1(arg).op2(arg)...;` where the
+ *    ops chain is the row's per-row CSG (subtract / intersect / add). The
+ *    body returns `[A, B, C]` — a bare array. The sandbox auto-wraps array
+ *    returns in `place(...)` (recursive for nested arrays), so the user
+ *    never sees `place(...)` in the source.
+ *
+ *  Wrapping style for sequential / overlay stays the same — `mv(prim(...),
+ *  [0, 0, tail(prev)])` — so the recognizer at
+ *  src/lib/server/recognize-composite.ts:192 unwraps mv() and surfaces the
+ *  inner instance in the Parts panel. */
 export function emitAssemblyBody(instances: readonly Instance[]): string {
   if (instances.length === 0) {
-    return '\n  // Drag a part from the sidebar to add it here.\n  return empty();\n';
+    return '\n  // Drag a part from the sidebar to add it here.\n  return [];\n';
   }
+  // Two-pass emit so per-row ops can reference SIBLING rows without hitting
+  // the const TDZ:
+  //   PASS 1 — `const NAME_raw = <placement>` for rows that have ops; plain
+  //            `const NAME = <placement>` otherwise. Sequential / overlay
+  //            datum references use the _raw form when present (mate to the
+  //            pre-CSG bbox so a downstream `.subtract(...)` doesn't crop
+  //            the column's stacking math).
+  //   PASS 2 — `const NAME = NAME_raw.subtract(B).intersect(C)` — all
+  //            sibling names are now in scope, so the chain resolves.
+  //   tail   — `return [N1, N2, …];` (sandbox auto-places arrays).
   const lines: string[] = [];
-  let lastSequential: string | null = null;
+  const hasOps = (i: Instance) => !!i.ops?.length;
+  /** Reference NAME — use NAME_raw when the row has ops so downstream
+   *  rows lock onto the pre-CSG bbox. */
+  const refFor = (i: Instance) => (hasOps(i) ? `${i.name}_raw` : i.name);
+  const renderCall = (inst: Instance): string =>
+    inst.mode === 'custom' ? (inst.expr ?? 'empty()') : `${inst.src ?? 'empty'}(${inst.args.join(', ')})`;
+  const byName = new Map(instances.map((i) => [i.name, i]));
+  let lastSequential: Instance | null = null;
+  // PASS 1: placement declarations.
   for (const inst of instances) {
+    const declName = hasOps(inst) ? `${inst.name}_raw` : inst.name;
     if (inst.mode === 'custom') {
-      lines.push(`  const ${inst.name} = ${inst.expr ?? 'empty()'};`);
+      lines.push(`  const ${declName} = ${renderCall(inst)};`);
       continue;
     }
-    if (!inst.src) {
-      // Defensive: a row missing src can't generate a call. Skip.
-      continue;
-    }
-    const call = `${inst.src}(${inst.args.join(', ')})`;
+    if (!inst.src) continue;
+    const call = renderCall(inst);
+    let placed: string;
     if (inst.mode === 'sequential') {
-      if (lastSequential) {
-        // mv-wrapped so the recognizer sees `const NAME = mv(<prim>(...), …)`.
-        lines.push(`  const ${inst.name} = mv(${call}, [0, 0, tail(${lastSequential})]);`);
-      } else {
-        lines.push(`  const ${inst.name} = ${call};`);
-      }
-      lastSequential = inst.name;
+      placed = lastSequential ? `mv(${call}, [0, 0, tail(${refFor(lastSequential)})])` : call;
+      lastSequential = inst;
     } else { // overlay
       const at = inst.at ?? 'head';
-      if (inst.anchor) {
-        // Place prim's `at` datum at anchor's `at` datum. Fresh primitives
-        // have head=zMin=0 and tail=zMax=length, so the offset is the
-        // anchor's datum value alone — recognizer-friendly mv() wrap.
-        lines.push(`  const ${inst.name} = mv(${call}, [0, 0, ${at}(${inst.anchor})]);`);
-      } else {
-        lines.push(`  const ${inst.name} = ${call};`);
-      }
+      const anchorInst = inst.anchor ? byName.get(inst.anchor) : undefined;
+      const anchorRef = anchorInst ? refFor(anchorInst) : (inst.anchor ?? '');
+      placed = inst.anchor ? `mv(${call}, [0, 0, ${at}(${anchorRef})])` : call;
     }
+    lines.push(`  const ${declName} = ${placed};`);
   }
-  // Composition tail. `place` rows skip the boolean chain and are
-  // appended into a Manifold.compose call (no fuse, no boolean — fast).
-  // Three shapes possible:
-  //   all-csg     → `empty().add(A).subtract(B);`
-  //   all-place   → `place([A, B, C]);`
-  //   mixed       → `place([empty().add(A).subtract(B), C, D]);`
-  // (place is order-agnostic — topological compose is commutative — so
-  // splitting into the two groups doesn't reorder anything meaningful.)
-  const csgOnly = instances.filter((i) => (i.op ?? 'add') !== 'place');
-  const placeOnly = instances.filter((i) => i.op === 'place');
-  const csgChain = csgOnly.length
-    ? `empty()${csgOnly.map((i) => `.${i.op ?? 'add'}(${i.name})`).join('')}`
-    : '';
-  if (placeOnly.length === 0) {
-    lines.push(`  return ${csgChain};`);
-  } else if (csgOnly.length === 0) {
-    lines.push(`  return place([${placeOnly.map((i) => i.name).join(', ')}]);`);
-  } else {
-    lines.push(`  return place([${csgChain}, ${placeOnly.map((i) => i.name).join(', ')}]);`);
+  // PASS 2: ops chains, in declaration order. Safe — all _raw + plain
+  // sibling consts are now bound.
+  for (const inst of instances) {
+    if (!hasOps(inst)) continue;
+    const chain = inst.ops!.map((s) => `.${s.op}(${s.arg})`).join('');
+    lines.push(`  const ${inst.name} = ${inst.name}_raw${chain};`);
   }
+  // Hidden rows participate as operands but don't appear in the scene.
+  const visible = instances.filter((i) => !i.hidden);
+  lines.push(`  return [${visible.map((i) => i.name).join(', ')}];`);
   return '\n' + lines.join('\n') + '\n';
 }
 

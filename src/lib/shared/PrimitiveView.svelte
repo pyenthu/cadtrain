@@ -386,38 +386,10 @@
   // detected by scanning the source's `return …` for `\.(add|subtract|
   // intersect)\s*\(\s*<NAME>\s*\)` — if found, that's the op. Otherwise
   // assume add (the typical drag-drop default).
-  function currentOpForInstance(instName: string): 'add' | 'subtract' | 'intersect' | 'place' {
-    // New-style assembly: read meta.instances directly so it stays in sync
-    // with the (potentially mixed boolean+place) emitter output.
-    if (findInstancesLiteralRange(editedSource)) {
-      const instances = parseAsmInstances(editedSource);
-      const inst = instances.find((i) => i.name === instName);
-      return (inst?.op ?? 'add');
-    }
-    // Legacy: regex match against the .add/.subtract/.intersect chain.
-    const re = new RegExp(`\\.(add|subtract|intersect)\\s*\\(\\s*${instName}\\s*\\)`);
-    const m = editedSource.match(re);
-    return (m?.[1] as any) ?? 'add';
-  }
-  function setInstanceOp(instName: string, op: 'add' | 'subtract' | 'intersect' | 'place') {
-    // New-style: mutate meta.instances + re-emit. The emitter splits place
-    // rows into a separate `place([...])` wrapper from the boolean chain.
-    if (findInstancesLiteralRange(editedSource)) {
-      const instances = parseAsmInstances(editedSource);
-      const idx = instances.findIndex((i) => i.name === instName);
-      if (idx < 0) return;
-      const next = updateAsmInstance(instances, idx, { op });
-      editedSource = applyInstancesToSource(editedSource, id, next);
-      return;
-    }
-    // Legacy: rewrite the existing `.X(NAME)` in source. `place` is not
-    // expressible in the legacy body shape; skip silently.
-    if (op === 'place') return;
-    const re = new RegExp(`\\.(add|subtract|intersect)\\s*\\(\\s*(${instName})\\s*\\)`);
-    if (re.test(editedSource)) {
-      editedSource = editedSource.replace(re, `.${op}($2)`);
-    }
-  }
+  // K.62 Phase E.1: the per-row single-op (add/subtract/intersect/place) is
+  // retired. The new emitter returns a bare `[A, B, C]` (sandbox auto-places
+  // arrays). Per-row CSG is authored as an ops CHAIN on each row — wired in
+  // Phase E.2 via a ⊕ ⊖ ∩ mini-toolbar that builds Instance.ops.
   // Splice ONE recognized arg (offsets are relative to the instance's argsText).
   // Edit one arg per commit — the recognition $effect re-scans between edits, so
   // later args' offsets stay correct.
@@ -2592,23 +2564,11 @@
                         <option value="center">@center</option>
                       </select>
                     {/if}
-                    {#if canEdit}
-                      <!-- K.56 Phase 3: change the CSG op this instance is
-                           composed with in the return chain. Reads from the
-                           live source so the picker stays in sync if the user
-                           hand-edits in the Source tab. -->
-                      {@const curOp = currentOpForInstance(inst.name)}
-                      <select class="pv-instop" title="Composition op — add/subtract/intersect do boolean CSG; place skips the boolean (Manifold.compose) and is much faster"
-                        value={curOp}
-                        onclick={(e) => e.stopPropagation()}
-                        onchange={(e) => { e.stopPropagation(); setInstanceOp(inst.name, (e.currentTarget as HTMLSelectElement).value as any); }}
-                      >
-                        <option value="add">▢ add</option>
-                        <option value="subtract">▣ subtract</option>
-                        <option value="intersect">◫ intersect</option>
-                        <option value="place">▤ place</option>
-                      </select>
-                    {/if}
+                    <!-- K.62 Phase E.1: the single-op pill is gone. The new
+                         model has every row default to "just placed in the
+                         scene" via the outer return list; CSG ops live as a
+                         per-row chain (Phase E.2 toolbar — TBD). -->
+
                     {#if canEdit}
                       {@const pc = partColors(inst.name)}
                       <button class="pv-swatch" type="button" title={`Outer (skin) colour — ${pc.outer}`}
