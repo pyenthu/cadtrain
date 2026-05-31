@@ -1634,6 +1634,25 @@
     if (!isAsmInstanced) return [] as Instance[];
     return parseAsmInstances(editedSource).filter((i) => Array.isArray(i.children));
   });
+  /** Phase E.4 — top-level import rows + expression (custom) rows.
+   *  Both are kept separate from the atom flow because they're
+   *  declarations/expressions, not stacked instances. */
+  let topLevelImports = $derived.by(() => {
+    if (!isAsmInstanced) return [] as Instance[];
+    return parseAsmInstances(editedSource).filter((i) => i.kind === 'import');
+  });
+  let topLevelExpressions = $derived.by(() => {
+    if (!isAsmInstanced) return [] as Instance[];
+    return parseAsmInstances(editedSource).filter((i) => i.mode === 'custom' && i.kind !== 'import');
+  });
+  function deleteImportOrExpression(name: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const tree = parseAsmInstances(editedSource);
+    const idx = tree.findIndex((i) => i.name === name);
+    if (idx < 0) return;
+    const next = removeAsmInstance(tree, idx);
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
   function deleteAssemblyGroup(name: string) {
     if (!isAsmInstanced || !canEdit) return;
     const tree = parseAsmInstances(editedSource);
@@ -1671,13 +1690,18 @@
   // Round + button on the subtabs row opens a searchable FloatingPanel of
   // all available primitives. Clicking one appends an instance with mode
   // = the active subtab. Lighter-weight than the old select+button toolbar.
-  let addPartPopup = $state<{ px: number; py: number; query: string } | null>(null);
+  // Popup mode picks what happens on a primitive click — 'atom' = drop a
+  // concrete instance (existing flow); 'import' = create an alias row.
+  // 'expression' rows don't use the primitive list (they're created
+  // outright); same for 'group'.
+  let addPartPopup = $state<{ px: number; py: number; query: string; mode: 'atom' | 'import' } | null>(null);
   function openAddPartPopup(ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     addPartPopup = {
       px: Math.max(8, Math.min(r.left, window.innerWidth - 320)),
       py: Math.min(r.bottom + 6, window.innerHeight - 360),
       query: '',
+      mode: 'atom',
     };
   }
   function closeAddPartPopup() { addPartPopup = null; }
@@ -1687,8 +1711,38 @@
     return loadable.filter((e) => e.id.toLowerCase().includes(q));
   });
   async function addPartFromPopup(childId: string) {
+    if (addPartPopup?.mode === 'import') {
+      closeAddPartPopup();
+      if (!isAsmInstanced || !canEdit) return;
+      const tree = parseAsmInstances(editedSource);
+      const usedNames = flatAsmInstances(tree).map((i) => i.name);
+      const aliasName = nextInstanceName(usedNames);
+      const next: Instance[] = [...tree, { name: aliasName, kind: 'import', src: childId, args: [], mode: 'sequential' }];
+      editedSource = applyInstancesToSource(editedSource, id, next);
+      return;
+    }
     closeAddPartPopup();
     await loadPrimitive(childId);
+  }
+  /** Phase E.4 — drop an empty Expression row. Body has a placeholder
+   *  comment; the inline editor in the Parts panel is where the user
+   *  fills in the actual expression. */
+  function addExpressionRowFromPopup() {
+    closeAddPartPopup();
+    if (!isAsmInstanced || !canEdit) return;
+    const tree = parseAsmInstances(editedSource);
+    const usedNames = flatAsmInstances(tree).map((i) => i.name);
+    const exprName = nextInstanceName(usedNames);
+    const next: Instance[] = [...tree, { name: exprName, mode: 'custom', expr: '/* expression */ empty()', args: [] }];
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
+  function updateExpressionRow(name: string, expr: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const tree = parseAsmInstances(editedSource);
+    const idx = tree.findIndex((i) => i.name === name);
+    if (idx < 0) return;
+    const next = updateAsmInstance(tree, idx, { expr });
+    editedSource = applyInstancesToSource(editedSource, id, next);
   }
   /** K.62 Phase E.3 — add an empty Group row (Instance.children = []) at
    *  top level. Children are added by dragging or by opening the +
@@ -2640,6 +2694,49 @@
                       : 'No Sequential rows. Drag a part from the sidebar to start the spine.'}
                   </div>
                 {/if}
+                <!-- Phase E.4 — Definitions (import rows) live ABOVE the
+                     subtabs since they're declarations, not stacked
+                     instances. Shown in both subtabs because expression
+                     rows in either tab can reference them. -->
+                {#if partsSub === 'sequential' && topLevelImports.length > 0}
+                  <div class="pv-defs-section">
+                    <div class="pv-defs-title">📥 Definitions (imports)</div>
+                    {#each topLevelImports as imp (imp.name)}
+                      <div class="pv-def-row">
+                        <span class="pv-def-name">{imp.name}</span>
+                        <span class="pv-def-eq">=</span>
+                        <span class="pv-def-src">{imp.src}</span>
+                        <div class="pv-spacer"></div>
+                        {#if canEdit}
+                          <button type="button" class="pv-group-del"
+                            title="Remove this import (existing references will break)"
+                            onclick={() => deleteImportOrExpression(imp.name)}>✕</button>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+                <!-- Phase E.4 — Expression rows (custom mode). The textarea
+                     is inline-editable; updates flow to meta.instances on
+                     blur (avoids re-emit thrash on every keystroke). -->
+                {#if partsSub === 'sequential' && topLevelExpressions.length > 0}
+                  <div class="pv-expr-section">
+                    {#each topLevelExpressions as expr (expr.name)}
+                      <div class="pv-expr-row">
+                        <span class="pv-expr-name">{expr.name}</span>
+                        <span class="pv-expr-eq">=</span>
+                        <textarea class="pv-expr-input" rows="2"
+                          spellcheck="false"
+                          value={expr.expr ?? ''}
+                          onblur={(e) => updateExpressionRow(expr.name, (e.currentTarget as HTMLTextAreaElement).value)}></textarea>
+                        {#if canEdit}
+                          <button type="button" class="pv-group-del" title="Remove this expression row"
+                            onclick={() => deleteImportOrExpression(expr.name)}>✕</button>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
                 <!-- Phase E.3 — group marker rows. Children list inline as
                      small chips. Editing the group (adding/removing children,
                      drag-into-group) is hand-source for now. Delete promotes
@@ -3300,7 +3397,7 @@
 
   {#if addPartPopup}
     <FloatingPanel
-      title={`Add to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
+      title={addPartPopup.mode === 'import' ? '📥 Import (alias) — pick a primitive' : `Add to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
       visible={true} x={addPartPopup.px} y={addPartPopup.py} width="320px" maxHeight="60vh"
       onClose={closeAddPartPopup}>
       <div class="pv-addpart">
@@ -3310,12 +3407,21 @@
           onkeydown={(e) => { if (e.key === 'Escape') closeAddPartPopup(); }}
         />
         <div class="pv-addpart-list">
-          <!-- + Group lives at the top: a sub-list that holds nested rows.
-               Drag rows into the group later (Phase E.3.1 drag-into-group)
-               or hand-author via the Source tab. -->
-          <button type="button" class="pv-addpart-row pv-addpart-row-group" onclick={addEmptyGroupFromPopup}>
-            <span class="pv-addpart-group-glyph">▼</span> Group (sub-list)
-          </button>
+          {#if addPartPopup.mode === 'atom'}
+            <button type="button" class="pv-addpart-row pv-addpart-row-group" onclick={addEmptyGroupFromPopup}>
+              <span class="pv-addpart-group-glyph">🗂</span> Group (sub-list)
+            </button>
+            <button type="button" class="pv-addpart-row pv-addpart-row-import"
+              onclick={() => { if (addPartPopup) addPartPopup = { ...addPartPopup, mode: 'import', query: '' }; }}>
+              <span class="pv-addpart-group-glyph">📥</span> Import (alias) — pick primitive next
+            </button>
+            <button type="button" class="pv-addpart-row pv-addpart-row-expr" onclick={addExpressionRowFromPopup}>
+              <span class="pv-addpart-group-glyph">ƒ</span> Expression (free composition)
+            </button>
+          {:else}
+            <button type="button" class="pv-addpart-row pv-addpart-row-back"
+              onclick={() => { if (addPartPopup) addPartPopup = { ...addPartPopup, mode: 'atom' }; }}>← back</button>
+          {/if}
           {#each addPartFiltered as e (e.id)}
             <button type="button" class="pv-addpart-row" onclick={() => addPartFromPopup(e.id)}>{e.id}</button>
           {:else}
@@ -3629,6 +3735,38 @@
   .pv-addpart-row-group:hover { background: #f5f0fa; color: #4b1273; }
   .pv-addpart-group-glyph { margin-right: 4px; }
   .pv-addpart-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
+
+  /* Phase E.4 — Definitions (imports) section above the subtabs. */
+  .pv-defs-section { margin: 4px 0; padding: 6px 8px; background: #eef5ff; border: 1px solid #bcd3ee; border-radius: 6px; }
+  .pv-defs-title { font: 600 11px ui-sans-serif; color: #1e40af; margin-bottom: 4px; }
+  .pv-def-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e3a8a; }
+  .pv-def-name { font-weight: 700; color: #0c2e6e; }
+  .pv-def-eq { color: #5e88c3; }
+  .pv-def-src { color: #1e3a8a; }
+  /* Phase E.4 — Expression rows with an inline textarea. */
+  .pv-expr-section { margin: 4px 0; }
+  .pv-expr-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 6px; margin: 4px 0;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #92400e;
+  }
+  .pv-expr-name { font-weight: 700; color: #78350f; }
+  .pv-expr-eq { color: #b45309; }
+  .pv-expr-input {
+    flex: 1; min-width: 0; resize: vertical;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #fff; border: 1px solid #fde68a; border-radius: 4px;
+    padding: 4px 6px; color: #78350f; outline: none;
+  }
+  .pv-expr-input:focus { border-color: #b45309; box-shadow: 0 0 0 2px rgba(180,83,9,0.12); }
+  /* Phase E.4 — popup buttons for import + expression authoring. */
+  .pv-addpart-row-import { color: #1e40af; }
+  .pv-addpart-row-import:hover { background: #eef5ff; color: #0c2e6e; }
+  .pv-addpart-row-expr { color: #92400e; }
+  .pv-addpart-row-expr:hover { background: #fffbeb; color: #78350f; }
+  .pv-addpart-row-back { color: #555; font-style: italic; font-weight: 600; padding-left: 8px; }
+  .pv-addpart-row-back:hover { background: #f1f1f5; }
 
   /* Phase E.3 — group marker row. Sits in the Sequential subtab's list
    * alongside atom accordions. Children render as small chips. */

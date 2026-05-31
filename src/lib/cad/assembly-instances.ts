@@ -56,6 +56,17 @@ export interface Instance {
   args: string[];
   /** How the row places into the scene. */
   mode: InstanceMode;
+  /** Phase E.4 — non-atom row kinds. Atom rows (no `kind`) emit
+   *  `const NAME = src(args)` and participate in stacking + ops.
+   *
+   *  `import` — `{ name, kind: 'import', src }` emits `const NAME = src;`
+   *  at the TOP of the body (above any consts that might use it). The
+   *  primitive becomes a callable alias that subsequent expression rows
+   *  can invoke any number of times with different args:
+   *      const A = shaft;
+   *      const core = A(p.od, p.len).subtract(A(p.id, p.len));
+   *  Import rows don't appear in the outer return list. */
+  kind?: 'import';
   /** Overlay: name of the row this overlay is anchored to. */
   anchor?: string;
   /** Overlay: which datum of the anchor to align to (default 'head'). */
@@ -272,9 +283,12 @@ function parseInstanceRow(rawRow: string): Instance | null {
   }
   const hiddenRaw = get('hidden');
   const hidden = hiddenRaw ? /^true\b/.test(hiddenRaw.trim()) : false;
+  // Phase E.4 — `kind: 'import'` marks an alias row.
+  const kindRaw = unquote(get('kind'));
+  const kind = kindRaw === 'import' ? 'import' as const : undefined;
   // children was already extracted + stripped above (so the field-scanner
   // didn't reach into nested rows looking for src/args/etc on the group).
-  const out: Instance & { __legacyOp?: string } = { name, src, args, mode, anchor, at, ops, expr: expr ?? undefined, hidden: hidden || undefined, children };
+  const out: Instance & { __legacyOp?: string } = { name, src, args, mode, anchor, at, ops, expr: expr ?? undefined, hidden: hidden || undefined, children, kind };
   if (legacyOp && legacyOp !== 'add' && legacyOp !== 'place') out.__legacyOp = legacyOp;
   return out;
 }
@@ -335,9 +349,11 @@ function splitTopLevel(s: string): string[] {
 function serializeRow(inst: Instance): string {
   const parts: string[] = [];
   parts.push(`name: ${JSON.stringify(inst.name)}`);
+  if (inst.kind) parts.push(`kind: ${JSON.stringify(inst.kind)}`);
   if (inst.src) parts.push(`src: ${JSON.stringify(inst.src)}`);
   if (inst.args && inst.args.length) parts.push(`args: [${inst.args.join(', ')}]`);
-  if (inst.mode) parts.push(`mode: ${JSON.stringify(inst.mode)}`);
+  // Import rows never carry mode (they're not placed in the scene).
+  if (inst.mode && inst.kind !== 'import') parts.push(`mode: ${JSON.stringify(inst.mode)}`);
   if (inst.anchor) parts.push(`anchor: ${JSON.stringify(inst.anchor)}`);
   if (inst.at) parts.push(`at: ${JSON.stringify(inst.at)}`);
   if (inst.ops && inst.ops.length) {
@@ -389,9 +405,24 @@ export function writeInstances(source: string, instances: readonly Instance[]): 
  *  [0, 0, tail(prev)])` — so the recognizer at
  *  src/lib/server/recognize-composite.ts:192 unwraps mv() and surfaces the
  *  inner instance in the Parts panel. */
+/** Recursive deep walk: are any rows at any depth other than import rows? */
+function hasGeometryRows(rows: readonly Instance[]): boolean {
+  for (const r of rows) {
+    if (r.kind !== 'import') return true;
+    if (r.children && hasGeometryRows(r.children)) return true;
+  }
+  return false;
+}
+
 export function emitAssemblyBody(instances: readonly Instance[]): string {
-  if (instances.length === 0) {
-    return '\n  // Drag a part from the sidebar to add it here.\n  return [];\n';
+  if (instances.length === 0 || !hasGeometryRows(instances)) {
+    // Pure-import rows still emit at the top, but there's no scene; keep
+    // them around (so the alias survives the round-trip) and return [].
+    const importLines = instances
+      .filter((i) => i.kind === 'import' && i.src)
+      .map((i) => `  const ${i.name} = ${i.src};`);
+    const head = importLines.length ? '\n' + importLines.join('\n') + '\n' : '\n';
+    return `${head}  // Drag a part from the sidebar to add it here.\n  return [];\n`;
   }
   // PASS 1 (recursive) — declare each row's placement-wrapped manifold (or,
   // for group rows, declare the inner array literal AFTER its children).
@@ -407,9 +438,20 @@ export function emitAssemblyBody(instances: readonly Instance[]): string {
   const lines: string[] = [];
   const hasOps = (i: Instance) => !!i.ops?.length;
   const isGroup = (i: Instance) => Array.isArray(i.children);
+  const isImport = (i: Instance) => i.kind === 'import';
   const refFor = (i: Instance) => (hasOps(i) ? `${i.name}_raw` : i.name);
   const renderCall = (inst: Instance): string =>
     inst.mode === 'custom' ? (inst.expr ?? 'empty()') : `${inst.src ?? 'empty'}(${inst.args.join(', ')})`;
+  // Phase E.4 — emit IMPORT rows first so subsequent atom / expression
+  // rows can reference the aliased primitive callable. Imports are
+  // top-level only; they're hoisted out of any group they happen to
+  // appear in (rare — a group with an import inside is unusual but
+  // semantically valid).
+  for (const inst of instances) {
+    if (isImport(inst) && inst.src) {
+      lines.push(`  const ${inst.name} = ${inst.src};`);
+    }
+  }
   // Resolve a name to its row via depth-first search across the tree.
   // Cross-group refs (an overlay anchored on a top-level row) are valid.
   const findByName = (nodes: readonly Instance[] | undefined, name: string): Instance | undefined => {
@@ -426,6 +468,7 @@ export function emitAssemblyBody(instances: readonly Instance[]): string {
   const emitLevel = (rows: readonly Instance[]) => {
     let lastSequential: Instance | null = null;
     for (const inst of rows) {
+      if (isImport(inst)) continue; // already emitted at the top
       if (isGroup(inst)) {
         // Children first (recursive). Then declare the group as an inner array.
         emitLevel(inst.children!);
@@ -470,7 +513,8 @@ export function emitAssemblyBody(instances: readonly Instance[]): string {
     }
   };
   walk(instances);
-  const visibleTop = instances.filter((i) => !i.hidden);
+  // Import rows are NEVER in the scene — they're aliases, not geometry.
+  const visibleTop = instances.filter((i) => !i.hidden && !isImport(i));
   lines.push(`  return [${visibleTop.map((i) => i.name).join(', ')}];`);
   return '\n' + lines.join('\n') + '\n';
 }
