@@ -24,6 +24,7 @@
     parseInstances as parseAsmInstances, removeInstance as removeAsmInstance,
     moveInstance as moveAsmInstance, updateInstance as updateAsmInstance,
     applyInstancesToSource, flatInstances as flatAsmInstances,
+    moveIntoGroup as moveIntoAsmGroup, moveToTopLevel as moveToAsmTopLevel,
     nextInstanceName, type Instance, type InstanceMode, type Datum,
     type CsgOp, type CsgOpStep,
   } from '$lib/cad/assembly-instances';
@@ -1644,6 +1645,22 @@
     const next = [...tree.slice(0, idx), ...promoted, ...tree.slice(idx + 1)];
     editedSource = applyInstancesToSource(editedSource, id, next);
   }
+  /** Phase E.3.1 — reparent a row INTO a group (drop target on the group
+   *  marker). Source row is removed from its current parent (top level
+   *  or another group) and appended as the last child of the named group. */
+  function dropInstanceIntoGroup(fromName: string, groupName: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const tree = parseAsmInstances(editedSource);
+    const next = moveIntoAsmGroup(tree, fromName, groupName);
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
+  /** Phase E.3.1 — pull a child OUT of its group to the top level. */
+  function promoteInstanceToTop(name: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const tree = parseAsmInstances(editedSource);
+    const next = moveToAsmTopLevel(tree, name);
+    editedSource = applyInstancesToSource(editedSource, id, next);
+  }
   function subtabCount(mode: 'sequential' | 'overlay'): number {
     if (!isAsmInstanced) return 0;
     const instances = parseAsmInstances(editedSource);
@@ -2629,13 +2646,43 @@
                      children back to top level so nothing's lost. -->
                 {#if partsSub === 'sequential'}
                   {#each topLevelGroups as g (g.name)}
-                    <div class="pv-group-row">
-                      <span class="pv-group-glyph">🗂</span>
+                    <div class="pv-group-row"
+                      class:drag-over={dragOverInstance === g.name}
+                      ondragover={(e) => {
+                        if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
+                        e.preventDefault();
+                        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                      }}
+                      ondragenter={(e) => {
+                        if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
+                        e.preventDefault();
+                        dragOverInstance = g.name;
+                      }}
+                      ondragleave={() => { if (dragOverInstance === g.name) dragOverInstance = null; }}
+                      ondrop={(e) => {
+                        if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
+                        e.preventDefault();
+                        const fromName = e.dataTransfer.getData('application/x-instance-name');
+                        dragOverInstance = null;
+                        if (fromName && fromName !== g.name) dropInstanceIntoGroup(fromName, g.name);
+                      }}
+                    >
+                      <span class="pv-group-glyph" title="Drop a row here to add as child">🗂</span>
                       <span class="pv-group-name">{g.name}</span>
                       <span class="pv-group-children">
                         {#each (g.children ?? []) as c (c.name)}
-                          <span class="pv-group-chip" title={c.src ?? 'group'}>{c.name}</span>
+                          <span class="pv-group-chip" title={c.src ?? 'group'}>
+                            <span class="pv-group-chip-name">{c.name}</span>
+                            {#if canEdit}
+                              <button type="button" class="pv-group-chip-promote"
+                                title={`Promote ${c.name} to top level`}
+                                onclick={() => promoteInstanceToTop(c.name)}>↗</button>
+                            {/if}
+                          </span>
                         {/each}
+                        {#if (g.children ?? []).length === 0}
+                          <span class="pv-group-empty">(drag rows here)</span>
+                        {/if}
                       </span>
                       <div class="pv-spacer"></div>
                       {#if canEdit}
@@ -3595,9 +3642,19 @@
   .pv-group-name { font-weight: 700; }
   .pv-group-children { display: inline-flex; gap: 3px; flex-wrap: wrap; }
   .pv-group-chip {
+    display: inline-flex; align-items: center; gap: 2px;
     background: #fff; border: 1px solid #d4baf0; border-radius: 10px;
-    padding: 0 8px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 0 2px 0 8px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #4b1273;
+  }
+  .pv-group-chip-promote {
+    appearance: none; background: transparent; border: 0; padding: 0 4px;
+    color: #8b5cb9; cursor: pointer; font: 12px/1 sans-serif;
+  }
+  .pv-group-chip-promote:hover { color: #4b1273; }
+  .pv-group-empty { color: #8b5cb9; font-style: italic; font-size: 11px; }
+  .pv-group-row.drag-over {
+    background: #ebd9fa; border-color: #8b5cb9; box-shadow: 0 0 0 2px rgba(139,92,185,0.25);
   }
   .pv-group-del {
     appearance: none; background: transparent; border: 0; padding: 0 6px;

@@ -519,6 +519,75 @@ export function flatInstances(instances: readonly Instance[]): Instance[] {
   return [...walkInstances(instances)];
 }
 
+/** Remove the named row from the tree (top level or any nested group)
+ *  and return both the new tree AND the removed row. When the name
+ *  isn't found, returns `{ tree: input, removed: undefined }` so callers
+ *  can safely short-circuit. */
+export function removeFromTree(
+  tree: readonly Instance[],
+  name: string,
+): { tree: Instance[]; removed: Instance | undefined } {
+  let removed: Instance | undefined;
+  const walk = (rows: readonly Instance[]): Instance[] => {
+    const out: Instance[] = [];
+    for (const r of rows) {
+      if (r.name === name) { removed = r; continue; }
+      if (r.children) {
+        out.push({ ...r, children: walk(r.children) });
+      } else {
+        out.push(r);
+      }
+    }
+    return out;
+  };
+  const next = walk(tree);
+  return { tree: next, removed };
+}
+
+/** Find the row with the given name anywhere in the tree (deep). */
+export function findInTree(tree: readonly Instance[], name: string): Instance | undefined {
+  for (const r of tree) {
+    if (r.name === name) return r;
+    if (r.children) {
+      const hit = findInTree(r.children, name);
+      if (hit) return hit;
+    }
+  }
+  return undefined;
+}
+
+/** Move a row INTO a group as the last child. No-op when the source
+ *  is missing, the target group is missing, or the target isn't a
+ *  group. Returns a new tree (immutable). */
+export function moveIntoGroup(
+  tree: readonly Instance[],
+  fromName: string,
+  groupName: string,
+): Instance[] {
+  if (fromName === groupName) return tree.slice();
+  const { tree: pruned, removed } = removeFromTree(tree, fromName);
+  if (!removed) return tree.slice();
+  const insertChild = (rows: Instance[]): Instance[] => {
+    return rows.map((r) => {
+      if (r.name === groupName && Array.isArray(r.children)) {
+        return { ...r, children: [...r.children, removed] };
+      }
+      if (r.children) {
+        return { ...r, children: insertChild(r.children) };
+      }
+      return r;
+    });
+  };
+  return insertChild(pruned);
+}
+
+/** Move a row OUT of its current group to the top level (appended at end). */
+export function moveToTopLevel(tree: readonly Instance[], name: string): Instance[] {
+  const { tree: pruned, removed } = removeFromTree(tree, name);
+  if (!removed) return tree.slice();
+  return [...pruned, removed];
+}
+
 /** Append a new instance at the end of the array.
  *  Defaults to `mode: 'sequential'`. When mode is 'overlay', auto-picks
  *  the last sequential row as anchor + `at: 'head'` so the row is
