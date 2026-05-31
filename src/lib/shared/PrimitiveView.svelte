@@ -24,6 +24,7 @@
     parseInstances as parseAsmInstances, removeInstance as removeAsmInstance,
     moveInstance as moveAsmInstance, updateInstance as updateAsmInstance,
     applyInstancesToSource, type InstanceMode, type Datum,
+    type CsgOp, type CsgOpStep,
   } from '$lib/cad/assembly-instances';
   import {
     parseDependencies, diffDependencies, buildSnapshots, writeDependencies,
@@ -386,10 +387,95 @@
   // detected by scanning the source's `return …` for `\.(add|subtract|
   // intersect)\s*\(\s*<NAME>\s*\)` — if found, that's the op. Otherwise
   // assume add (the typical drag-drop default).
-  // K.62 Phase E.1: the per-row single-op (add/subtract/intersect/place) is
-  // retired. The new emitter returns a bare `[A, B, C]` (sandbox auto-places
-  // arrays). Per-row CSG is authored as an ops CHAIN on each row — wired in
-  // Phase E.2 via a ⊕ ⊖ ∩ mini-toolbar that builds Instance.ops.
+  // ── K.62 Phase E.2: per-row CSG ops chain (⊕⊖∩ mini-toolbar) ──────────
+  // Each row in the Parts panel exposes 3 small op buttons (⊕ add / ⊖
+  // subtract / ∩ intersect). Click one → a FloatingPanel typeahead opens
+  // listing sibling rows; pick a sibling → it's appended to this row's
+  // ops chain. Existing ops render as chips next to the buttons with × to
+  // remove. Source/parser already round-trip Instance.ops (Phase E.1).
+  let csgOpPopup = $state<{ rowName: string; op: 'add' | 'subtract' | 'intersect'; px: number; py: number; query: string } | null>(null);
+  function currentOpsForInstance(instName: string): CsgOpStep[] {
+    if (!isAsmInstanced) return [];
+    const instances = parseAsmInstances(editedSource);
+    return instances.find((i) => i.name === instName)?.ops ?? [];
+  }
+  function siblingNamesFor(instName: string): string[] {
+    if (!isAsmInstanced) return [];
+    return parseAsmInstances(editedSource)
+      .map((i) => i.name)
+      .filter((n) => n !== instName);
+  }
+  function openCsgOpPicker(rowName: string, op: 'add' | 'subtract' | 'intersect', ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    csgOpPopup = {
+      rowName, op,
+      px: Math.max(8, Math.min(r.left, window.innerWidth - 260)),
+      py: Math.min(r.bottom + 6, window.innerHeight - 280),
+      query: '',
+    };
+  }
+  function closeCsgOpPicker() { csgOpPopup = null; }
+  let csgOpFiltered = $derived.by(() => {
+    if (!csgOpPopup) return [];
+    const q = csgOpPopup.query.trim().toLowerCase();
+    const sibs = siblingNamesFor(csgOpPopup.rowName);
+    return q ? sibs.filter((n) => n.toLowerCase().includes(q)) : sibs;
+  });
+  function appendCsgOp(rowName: string, op: CsgOp, arg: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const instances = parseAsmInstances(editedSource);
+    const idx = instances.findIndex((i) => i.name === rowName);
+    if (idx < 0) return;
+    const cur = instances[idx]!;
+    const next = updateAsmInstance(instances, idx, { ops: [...(cur.ops ?? []), { op, arg }] });
+    // Auto-hide the operand row — it's now a CSG input, not a scene member.
+    // (Surfaced as the matching "Show on its own" toggle on the row head.)
+    const opIdx = next.findIndex((i) => i.name === arg);
+    let after = next;
+    if (opIdx >= 0 && !next[opIdx]!.hidden) {
+      after = updateAsmInstance(next, opIdx, { hidden: true });
+    }
+    editedSource = applyInstancesToSource(editedSource, id, after);
+  }
+  function removeCsgOpStep(rowName: string, stepIdx: number) {
+    if (!isAsmInstanced || !canEdit) return;
+    const instances = parseAsmInstances(editedSource);
+    const idx = instances.findIndex((i) => i.name === rowName);
+    if (idx < 0) return;
+    const cur = instances[idx]!;
+    const ops = (cur.ops ?? []).filter((_, i) => i !== stepIdx);
+    const removed = cur.ops?.[stepIdx]?.arg;
+    let after = updateAsmInstance(instances, idx, { ops: ops.length ? ops : undefined });
+    // If the removed operand is no longer referenced by any ops chain,
+    // un-hide it so it returns to the scene as a placed row.
+    if (removed) {
+      const stillReferenced = after.some((i) => i.ops?.some((s) => s.arg === removed));
+      if (!stillReferenced) {
+        const opIdx = after.findIndex((i) => i.name === removed);
+        if (opIdx >= 0 && after[opIdx]!.hidden) {
+          after = updateAsmInstance(after, opIdx, { hidden: false });
+        }
+      }
+    }
+    editedSource = applyInstancesToSource(editedSource, id, after);
+  }
+  function toggleHiddenForInstance(rowName: string) {
+    if (!isAsmInstanced || !canEdit) return;
+    const instances = parseAsmInstances(editedSource);
+    const idx = instances.findIndex((i) => i.name === rowName);
+    if (idx < 0) return;
+    const cur = instances[idx]!;
+    const after = updateAsmInstance(instances, idx, { hidden: !cur.hidden });
+    editedSource = applyInstancesToSource(editedSource, id, after);
+  }
+  function csgOpGlyph(op: CsgOp): string {
+    return op === 'add' ? '⊕' : op === 'subtract' ? '⊖' : '∩';
+  }
+  function pickCsgOpFromPopup(arg: string) {
+    if (!csgOpPopup) return;
+    appendCsgOp(csgOpPopup.rowName, csgOpPopup.op, arg);
+    closeCsgOpPicker();
+  }
   // Splice ONE recognized arg (offsets are relative to the instance's argsText).
   // Edit one arg per commit — the recognition $effect re-scans between edits, so
   // later args' offsets stay correct.
@@ -2564,10 +2650,35 @@
                         <option value="center">@center</option>
                       </select>
                     {/if}
-                    <!-- K.62 Phase E.1: the single-op pill is gone. The new
-                         model has every row default to "just placed in the
-                         scene" via the outer return list; CSG ops live as a
-                         per-row chain (Phase E.2 toolbar — TBD). -->
+                    {#if canEdit && isAsmInstanced}
+                      <!-- K.62 Phase E.2: per-row CSG ops chain. Three op
+                           buttons (⊕add ⊖subtract ∩intersect) open a
+                           sibling-name typeahead; existing ops show as
+                           chips next to the buttons with × to remove. -->
+                      {@const curOps = currentOpsForInstance(inst.name)}
+                      <span class="pv-opbar" title="CSG ops applied to this row (left-to-right)">
+                        <button type="button" class="pv-opbtn" title="Add (union)"
+                          onclick={(e) => { e.stopPropagation(); openCsgOpPicker(inst.name, 'add', e); }}>⊕</button>
+                        <button type="button" class="pv-opbtn" title="Subtract"
+                          onclick={(e) => { e.stopPropagation(); openCsgOpPicker(inst.name, 'subtract', e); }}>⊖</button>
+                        <button type="button" class="pv-opbtn" title="Intersect"
+                          onclick={(e) => { e.stopPropagation(); openCsgOpPicker(inst.name, 'intersect', e); }}>∩</button>
+                        {#each curOps as step, i}
+                          <span class="pv-opchip" title={`${step.op} ${step.arg} — click × to remove`}>
+                            <span class="pv-opchip-glyph">{csgOpGlyph(step.op)}</span>
+                            <span class="pv-opchip-arg">{step.arg}</span>
+                            <button type="button" class="pv-opchip-x" title={`Remove ${step.op}(${step.arg})`}
+                              onclick={(e) => { e.stopPropagation(); removeCsgOpStep(inst.name, i); }}>×</button>
+                          </span>
+                        {/each}
+                      </span>
+                      {@const isHidden = parseAsmInstances(editedSource).find((i) => i.name === inst.name)?.hidden}
+                      {#if isHidden}
+                        <button type="button" class="pv-opbtn pv-show-on-its-own"
+                          title="This row is hidden (operand only). Click to also show it in the scene."
+                          onclick={(e) => { e.stopPropagation(); toggleHiddenForInstance(inst.name); }}>👁</button>
+                      {/if}
+                    {/if}
 
                     {#if canEdit}
                       {@const pc = partColors(inst.name)}
@@ -3060,6 +3171,28 @@
     </FloatingPanel>
   {/if}
 
+  {#if csgOpPopup}
+    <FloatingPanel
+      title={`${csgOpPopup.op === 'add' ? '⊕ Add' : csgOpPopup.op === 'subtract' ? '⊖ Subtract' : '∩ Intersect'} — pick operand for ${csgOpPopup.rowName}`}
+      visible={true} x={csgOpPopup.px} y={csgOpPopup.py} width="240px" maxHeight="48vh"
+      onClose={closeCsgOpPicker}>
+      <div class="pv-opspicker">
+        <input class="pv-opspicker-q" type="text" placeholder="Search sibling rows…"
+          autofocus
+          bind:value={csgOpPopup.query}
+          onkeydown={(e) => { if (e.key === 'Escape') closeCsgOpPicker(); }}
+        />
+        <div class="pv-opspicker-list">
+          {#each csgOpFiltered as n (n)}
+            <button type="button" class="pv-opspicker-row" onclick={() => pickCsgOpFromPopup(n)}>{n}</button>
+          {:else}
+            <div class="pv-opspicker-empty">No matching rows.</div>
+          {/each}
+        </div>
+      </div>
+    </FloatingPanel>
+  {/if}
+
   {#if addPartPopup}
     <FloatingPanel
       title={`Add to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
@@ -3379,6 +3512,50 @@
   }
   .pv-addpart-row:hover { background: #f1f1f5; color: #cc2222; }
   .pv-addpart-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
+
+  /* K.62 Phase E.2: per-row CSG ops bar — 3 op buttons + the chain of
+   * already-applied ops as small chips. Lives inline in the row head. */
+  .pv-opbar {
+    display: inline-flex; align-items: center; gap: 3px;
+    margin-left: 6px;
+  }
+  .pv-opbtn {
+    appearance: none; background: #fdf8f7; border: 1px solid #e3c4bf;
+    border-radius: 4px; padding: 1px 6px; font: 600 12px/1 ui-sans-serif;
+    color: #c4392f; cursor: pointer;
+  }
+  .pv-opbtn:hover { background: #fceeec; border-color: #c4392f; }
+  .pv-show-on-its-own { margin-left: 4px; color: #555; }
+  .pv-opchip {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: #fff7f5; border: 1px solid #d4a39a;
+    border-radius: 10px; padding: 0 2px 0 6px;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #7a1a14; line-height: 1.8;
+  }
+  .pv-opchip-glyph { font-weight: 700; }
+  .pv-opchip-arg { font-weight: 600; }
+  .pv-opchip-x {
+    appearance: none; background: transparent; border: 0; padding: 0 4px;
+    color: #b25247; cursor: pointer; font: 12px/1 sans-serif;
+  }
+  .pv-opchip-x:hover { color: #7a1a14; }
+
+  /* Ops-picker FloatingPanel — same shape as the add-part picker. */
+  .pv-opspicker { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
+  .pv-opspicker-q {
+    padding: 6px 9px; border: 1px solid #ddd; border-radius: 6px;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; outline: none;
+  }
+  .pv-opspicker-q:focus { border-color: #cc2222; box-shadow: 0 0 0 2px rgba(204,34,34,0.12); }
+  .pv-opspicker-list { display: flex; flex-direction: column; max-height: 36vh; overflow-y: auto; gap: 1px; }
+  .pv-opspicker-row {
+    text-align: left; padding: 6px 10px; border: 0; background: transparent;
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #222;
+    cursor: pointer; border-radius: 4px;
+  }
+  .pv-opspicker-row:hover { background: #f1f1f5; color: #cc2222; }
+  .pv-opspicker-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
   .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
   .pg-acc-head.instance .pg-acc-title { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
   .pg-acc-sig { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; margin-left: -3px; }
