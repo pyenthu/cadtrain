@@ -75,6 +75,13 @@ export interface Instance {
    *  on their own. Also set explicitly when a row is added purely as an
    *  operand via the Phase E.2 ops toolbar (TBD UX). */
   hidden?: boolean;
+  /** Phase E.3 — nested group. When set, this row is a SUB-LIST rather
+   *  than a primitive call: its emit is `const NAME = [...child names];`
+   *  (auto-place'd by the sandbox like any returned array). Sequential
+   *  mate cursors reset PER GROUP; ops chains can still cross groups
+   *  because every binding is in the same function scope. A group row
+   *  ignores `src` / `args` / `mode` / `anchor` / `at` / `expr`. */
+  children?: Instance[];
 }
 
 /** Excel-column-style sequence: A, B, …, Z, AA, AB, …, ZZ, AAA, … */
@@ -155,35 +162,47 @@ function parseInstancesRaw(source: string): Instance[] {
   const range = findInstancesLiteralRange(source);
   if (!range) return [];
   const literal = source.slice(range.start, range.end);
-  // Walk the top-level `{…}` rows inside the outer `[…]`. We can't JSON.parse
-  // because args + expr carry raw JS expressions (template strings, member
-  // access, function calls). Hand-walk and pull each row's fields out.
-  const rows: Instance[] = [];
-  let depth = 0, rowStart = -1;
-  let inStr: string | null = null;
-  for (let i = 1; i < literal.length - 1; i++) {
-    const ch = literal[i]!;
-    if (inStr) {
-      if (ch === '\\') { i++; continue; }
-      if (ch === inStr) inStr = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
-    if (ch === '{') { if (depth === 0) rowStart = i; depth++; }
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0 && rowStart >= 0) {
-        const row = parseInstanceRow(literal.slice(rowStart, i + 1));
-        if (row) rows.push(row);
-        rowStart = -1;
-      }
-    }
-  }
-  return rows;
+  // Strip the outer `[` and `]` then walk top-level `{...}` rows.
+  return scanRows(literal.slice(1, literal.length - 1));
 }
 
-/** Parse a single `{ name: 'A', src: 'X', args: ['1','2'], mode: 'sequential' }` row. */
-function parseInstanceRow(row: string): Instance | null {
+/** Parse a single `{ name: 'A', src: 'X', args: ['1','2'], mode: 'sequential' }` row.
+ *  Group rows look like `{ name: 'G', children: [{…}, {…}] }` — `children`
+ *  is extracted + stripped FIRST so subsequent field lookups don't reach
+ *  into the nested rows. */
+function parseInstanceRow(rawRow: string): Instance | null {
+  // Strip `children: [...]` if present, parse recursively, then continue
+  // with the rest of the row text. Balanced-bracket scan finds the outer `]`.
+  let row = rawRow;
+  let children: Instance[] | undefined;
+  const childM = row.match(/(\bchildren\s*:\s*)\[/);
+  if (childM) {
+    const head = (childM.index ?? 0);
+    const bracketStart = head + childM[0].length - 1; // points AT `[`
+    let depth = 0, j = bracketStart;
+    let inStr: string | null = null;
+    while (j < row.length) {
+      const ch = row[j]!;
+      if (inStr) {
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === inStr) inStr = null;
+        j++;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; j++; continue; }
+      if (ch === '[') depth++;
+      else if (ch === ']') { depth--; if (depth === 0) { j++; break; } }
+      j++;
+    }
+    if (depth === 0) {
+      const childrenLit = row.slice(bracketStart + 1, j - 1); // inside `[...]`
+      children = scanRows(childrenLit);
+      // Splice out the whole `children: [...]` clause + any trailing comma.
+      let tail = j;
+      while (tail < row.length && /[,\s]/.test(row[tail]!)) tail++;
+      row = row.slice(0, head) + row.slice(tail);
+    }
+  }
   const get = (key: string): string | null => {
     // `key: 'value'` | `key: "value"` | `key: [..]` — return the raw text after `:`
     const re = new RegExp(`\\b${key}\\s*:\\s*`);
@@ -253,9 +272,39 @@ function parseInstanceRow(row: string): Instance | null {
   }
   const hiddenRaw = get('hidden');
   const hidden = hiddenRaw ? /^true\b/.test(hiddenRaw.trim()) : false;
-  const out: Instance & { __legacyOp?: string } = { name, src, args, mode, anchor, at, ops, expr: expr ?? undefined, hidden: hidden || undefined };
+  // children was already extracted + stripped above (so the field-scanner
+  // didn't reach into nested rows looking for src/args/etc on the group).
+  const out: Instance & { __legacyOp?: string } = { name, src, args, mode, anchor, at, ops, expr: expr ?? undefined, hidden: hidden || undefined, children };
   if (legacyOp && legacyOp !== 'add' && legacyOp !== 'place') out.__legacyOp = legacyOp;
   return out;
+}
+
+/** Walk top-level `{...}` blocks inside an instances/children body, parsing
+ *  each as an Instance row. Shared between the outer parser and the
+ *  recursive children parse. */
+function scanRows(body: string): Instance[] {
+  const rows: Instance[] = [];
+  let depth = 0, rowStart = -1;
+  let inStr: string | null = null;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!;
+    if (inStr) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+    if (ch === '{') { if (depth === 0) rowStart = i; depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0 && rowStart >= 0) {
+        const row = parseInstanceRow(body.slice(rowStart, i + 1));
+        if (row) rows.push(row);
+        rowStart = -1;
+      }
+    }
+  }
+  return rows;
 }
 
 /** Split a comma-separated string but only on TOP-LEVEL commas. */
@@ -281,13 +330,14 @@ function splitTopLevel(s: string): string[] {
 
 // ─── Serialize: Instance[] → text ──────────────────────────────────────
 
-/** Stringify an Instance row as a single object literal. */
+/** Stringify an Instance row as a single object literal. Group rows
+ *  (with `children`) recursively serialize their nested list. */
 function serializeRow(inst: Instance): string {
   const parts: string[] = [];
   parts.push(`name: ${JSON.stringify(inst.name)}`);
   if (inst.src) parts.push(`src: ${JSON.stringify(inst.src)}`);
-  parts.push(`args: [${inst.args.join(', ')}]`);
-  parts.push(`mode: ${JSON.stringify(inst.mode)}`);
+  if (inst.args && inst.args.length) parts.push(`args: [${inst.args.join(', ')}]`);
+  if (inst.mode) parts.push(`mode: ${JSON.stringify(inst.mode)}`);
   if (inst.anchor) parts.push(`anchor: ${JSON.stringify(inst.anchor)}`);
   if (inst.at) parts.push(`at: ${JSON.stringify(inst.at)}`);
   if (inst.ops && inst.ops.length) {
@@ -298,7 +348,11 @@ function serializeRow(inst: Instance): string {
   }
   if (inst.hidden) parts.push(`hidden: true`);
   if (inst.expr) parts.push(`expr: ${JSON.stringify(inst.expr)}`);
-  return `    { ${parts.join(', ')} }`;
+  if (inst.children && inst.children.length) {
+    const inner = inst.children.map(serializeRow).join(', ');
+    parts.push(`children: [${inner}]`);
+  }
+  return `{ ${parts.join(', ')} }`;
 }
 
 /** Splice a fresh `instances: [...]` literal into source. Replaces an
@@ -306,7 +360,7 @@ function serializeRow(inst: Instance): string {
 export function writeInstances(source: string, instances: readonly Instance[]): string {
   const body = instances.length === 0
     ? '[]'
-    : '[\n' + instances.map(serializeRow).join(',\n') + ',\n  ]';
+    : '[\n' + instances.map((r) => '    ' + serializeRow(r)).join(',\n') + ',\n  ]';
   const range = findInstancesLiteralRange(source);
   if (range) {
     return source.slice(0, range.start) + body + source.slice(range.end);
@@ -339,56 +393,85 @@ export function emitAssemblyBody(instances: readonly Instance[]): string {
   if (instances.length === 0) {
     return '\n  // Drag a part from the sidebar to add it here.\n  return [];\n';
   }
-  // Two-pass emit so per-row ops can reference SIBLING rows without hitting
-  // the const TDZ:
-  //   PASS 1 — `const NAME_raw = <placement>` for rows that have ops; plain
-  //            `const NAME = <placement>` otherwise. Sequential / overlay
-  //            datum references use the _raw form when present (mate to the
-  //            pre-CSG bbox so a downstream `.subtract(...)` doesn't crop
-  //            the column's stacking math).
-  //   PASS 2 — `const NAME = NAME_raw.subtract(B).intersect(C)` — all
-  //            sibling names are now in scope, so the chain resolves.
-  //   tail   — `return [N1, N2, …];` (sandbox auto-places arrays).
+  // PASS 1 (recursive) — declare each row's placement-wrapped manifold (or,
+  // for group rows, declare the inner array literal AFTER its children).
+  // Rows with ops get a `_raw` suffix so siblings can mate to the
+  // pre-CSG bbox. Sequential `lastSequential` is local to each group —
+  // mating happens within a sub-list, not across one.
+  //
+  // PASS 2 (flat across the whole tree) — apply each row's ops chain.
+  // Safe by then because every binding in the body is in scope.
+  //
+  // RETURN — visible top-level rows as a bare array literal; the sandbox
+  // recursively auto-places arrays (including nested ones from groups).
   const lines: string[] = [];
   const hasOps = (i: Instance) => !!i.ops?.length;
-  /** Reference NAME — use NAME_raw when the row has ops so downstream
-   *  rows lock onto the pre-CSG bbox. */
+  const isGroup = (i: Instance) => Array.isArray(i.children);
   const refFor = (i: Instance) => (hasOps(i) ? `${i.name}_raw` : i.name);
   const renderCall = (inst: Instance): string =>
     inst.mode === 'custom' ? (inst.expr ?? 'empty()') : `${inst.src ?? 'empty'}(${inst.args.join(', ')})`;
-  const byName = new Map(instances.map((i) => [i.name, i]));
-  let lastSequential: Instance | null = null;
-  // PASS 1: placement declarations.
-  for (const inst of instances) {
-    const declName = hasOps(inst) ? `${inst.name}_raw` : inst.name;
-    if (inst.mode === 'custom') {
-      lines.push(`  const ${declName} = ${renderCall(inst)};`);
-      continue;
+  // Resolve a name to its row via depth-first search across the tree.
+  // Cross-group refs (an overlay anchored on a top-level row) are valid.
+  const findByName = (nodes: readonly Instance[] | undefined, name: string): Instance | undefined => {
+    if (!nodes) return undefined;
+    for (const n of nodes) {
+      if (n.name === name) return n;
+      if (n.children) {
+        const hit = findByName(n.children, name);
+        if (hit) return hit;
+      }
     }
-    if (!inst.src) continue;
-    const call = renderCall(inst);
-    let placed: string;
-    if (inst.mode === 'sequential') {
-      placed = lastSequential ? `mv(${call}, [0, 0, tail(${refFor(lastSequential)})])` : call;
-      lastSequential = inst;
-    } else { // overlay
-      const at = inst.at ?? 'head';
-      const anchorInst = inst.anchor ? byName.get(inst.anchor) : undefined;
-      const anchorRef = anchorInst ? refFor(anchorInst) : (inst.anchor ?? '');
-      placed = inst.anchor ? `mv(${call}, [0, 0, ${at}(${anchorRef})])` : call;
+    return undefined;
+  };
+  const emitLevel = (rows: readonly Instance[]) => {
+    let lastSequential: Instance | null = null;
+    for (const inst of rows) {
+      if (isGroup(inst)) {
+        // Children first (recursive). Then declare the group as an inner array.
+        emitLevel(inst.children!);
+        const visibleChildren = inst.children!.filter((c) => !c.hidden);
+        const declName = hasOps(inst) ? `${inst.name}_raw` : inst.name;
+        lines.push(`  const ${declName} = [${visibleChildren.map((c) => c.name).join(', ')}];`);
+        // A group's "tail" for downstream sequential rows uses the LAST
+        // visible child's bbox (the deepest extent along z). When there
+        // are no visible children we conservatively keep the cursor.
+        if (visibleChildren.length) lastSequential = visibleChildren[visibleChildren.length - 1]!;
+        continue;
+      }
+      const declName = hasOps(inst) ? `${inst.name}_raw` : inst.name;
+      if (inst.mode === 'custom') {
+        lines.push(`  const ${declName} = ${renderCall(inst)};`);
+        continue;
+      }
+      if (!inst.src) continue;
+      const call = renderCall(inst);
+      let placed: string;
+      if (inst.mode === 'sequential') {
+        placed = lastSequential ? `mv(${call}, [0, 0, tail(${refFor(lastSequential)})])` : call;
+        lastSequential = inst;
+      } else { // overlay
+        const at = inst.at ?? 'head';
+        const anchorInst = inst.anchor ? findByName(instances, inst.anchor) : undefined;
+        const anchorRef = anchorInst ? refFor(anchorInst) : (inst.anchor ?? '');
+        placed = inst.anchor ? `mv(${call}, [0, 0, ${at}(${anchorRef})])` : call;
+      }
+      lines.push(`  const ${declName} = ${placed};`);
     }
-    lines.push(`  const ${declName} = ${placed};`);
-  }
-  // PASS 2: ops chains, in declaration order. Safe — all _raw + plain
-  // sibling consts are now bound.
-  for (const inst of instances) {
-    if (!hasOps(inst)) continue;
-    const chain = inst.ops!.map((s) => `.${s.op}(${s.arg})`).join('');
-    lines.push(`  const ${inst.name} = ${inst.name}_raw${chain};`);
-  }
-  // Hidden rows participate as operands but don't appear in the scene.
-  const visible = instances.filter((i) => !i.hidden);
-  lines.push(`  return [${visible.map((i) => i.name).join(', ')}];`);
+  };
+  emitLevel(instances);
+  // PASS 2 — ops chains across the WHOLE tree.
+  const walk = (rows: readonly Instance[]) => {
+    for (const r of rows) {
+      if (hasOps(r)) {
+        const chain = r.ops!.map((s) => `.${s.op}(${s.arg})`).join('');
+        lines.push(`  const ${r.name} = ${r.name}_raw${chain};`);
+      }
+      if (r.children) walk(r.children);
+    }
+  };
+  walk(instances);
+  const visibleTop = instances.filter((i) => !i.hidden);
+  lines.push(`  return [${visibleTop.map((i) => i.name).join(', ')}];`);
   return '\n' + lines.join('\n') + '\n';
 }
 
@@ -420,6 +503,21 @@ export function rewriteAssemblyFunctionBody(source: string, id: string, newBody:
 }
 
 // ─── Append/mutate helpers ─────────────────────────────────────────────
+
+/** Depth-first iterator over every instance in a possibly-nested tree —
+ *  used by the UI / dep machinery when it needs to see all rows
+ *  regardless of where they sit in the group hierarchy. */
+export function* walkInstances(instances: readonly Instance[]): Generator<Instance> {
+  for (const inst of instances) {
+    yield inst;
+    if (inst.children) yield* walkInstances(inst.children);
+  }
+}
+
+/** Flat array of every instance (atom + group + nested). */
+export function flatInstances(instances: readonly Instance[]): Instance[] {
+  return [...walkInstances(instances)];
+}
 
 /** Append a new instance at the end of the array.
  *  Defaults to `mode: 'sequential'`. When mode is 'overlay', auto-picks
