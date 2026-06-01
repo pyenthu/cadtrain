@@ -243,3 +243,67 @@ The license boundary is more brutal than the code boundary — three of the most
 - [CGAL boolean WASM hang](https://github.com/emscripten-core/emscripten/issues/21580) · [CGALWebAssembly](https://github.com/ademola-lou/CGALWebAssembly)
 - [Emscripten pthreads](https://emscripten.org/docs/porting/pthreads.html)
 - [Peterson NASA report on thread stress concentration](https://ntrs.nasa.gov/api/citations/19800016160/downloads/19800016160.pdf)
+
+---
+
+# Part 4 — FEniCS / DOLFINx evaluation
+
+*Subagent report 2026-06-01. Post-reframe (LGPL acceptable).*
+
+## A) What FEniCS / DOLFINx are
+
+**FEniCS** is an open-source FEA framework built around the **Unified Form Language (UFL)** — a Python DSL for declaring variational forms ("write the math, not the assembly loop"). Forms are JIT-compiled to C kernels by **FFCx** + **Basix** (element library).
+
+**DOLFINx** ([github.com/FEniCS/dolfinx](https://github.com/FEniCS/dolfinx)) is the *current* runtime — C++ core (~58% of repo) + Python bindings (~40%) via nanobind. Replaces legacy DOLFIN. C++20, modular, faster JIT, MPI-native from day one.
+
+**Solver stack**: PETSc (linear/nonlinear, default), SLEPc (eigenvalue), optional SuperLU_DIST.
+
+**Runtime requirements**: C++20 compiler, **MPI-3 (REQUIRED, not optional)**, HDF5-with-MPI, Boost, pugixml, spdlog, ParMETIS/KaHIP/PT-SCOTCH for partitioning. Linux/macOS first-class; Windows via WSL only.
+
+**License**: **LGPL-3.0-or-later** — fully usable under cadtrain's now-open-source stance.
+
+## B) Solid mechanics capability
+
+- **Linear elastic**: first-class.
+- **Hyperelastic** (Mooney-Rivlin, Ogden, Neo-Hookean, Yeoh): native via UFL — write the strain energy, autodiff gives you the residual + tangent. **Excellent for packer rubber.** Tutorial: [jsdokken.com/dolfinx-tutorial/chapter2/hyperelasticity.html](https://jsdokken.com/dolfinx-tutorial/chapter2/hyperelasticity.html).
+- **Plasticity** (J2, Drucker-Prager): NOT built-in; requires `dolfinx-external-operator` ([a-latyshev.github.io/dolfinx-external-operator](https://a-latyshev.github.io/dolfinx-external-operator/)) or `fenics-constitutive` ([github.com/BAMresearch/fenics-constitutive](https://github.com/BAMresearch/fenics-constitutive)). Bolt-on but mature.
+- **Contact**: weakest area. `dolfinx_contact` is less battle-tested than CalculiX's node-to-segment. For thread engagement / makeup torque, CalculiX is more proven.
+- **Elements**: tet (Lagrange any order), hex, prism. No native solid-shell.
+
+**Comparable to CalculiX?** Hyperelastic: BETTER. Plasticity: roughly equal (once external operator is wired). Contact: CalculiX is more mature.
+
+## C) Browser-WASM viability
+
+- **No known DOLFINx WASM port.** Core blocker: **MPI is REQUIRED** — there is no MPI in WASM (no fork, no sockets in single-threaded Wasm). You'd have to gut DOLFINx down to a serial subset before Emscripten could touch it.
+- **PETSc in WASM**: also non-trivial; PETSc assumes MPI ranks.
+- **Pyodide path**: Pyodide ships NumPy/SciPy but **no FEniCS package**. Porting DOLFINx to Pyodide means porting PETSc + MPI shims + Basix + FFCx C kernels — far harder than scikit-fem-via-Pyodide.
+- **UFL as a JS DSL**: most interesting borrow-able idea. UFL is pure Python that emits an IR; reimplementing UFL in TypeScript (form expressions → IR → JS/WASM kernels) is a real architectural option, ~weeks. But you'd be writing your own FEA on top — UFL itself doesn't carry the solver.
+- **Bundle estimate IF DOLFINx WASM were achievable**: 15-30 MB. Worse than the 5-10 MB CalculiX subset estimate.
+
+## D) Integration paths ranked
+
+1. **Server-side DOLFINx subprocess** — moderate effort. Docker layer: `ghcr.io/fenics/dolfinx/dolfinx:stable` (**~2 GB image**, vs ~80 MB for a CalculiX binary). SvelteKit endpoint shells out to `python` with a UFL form template + the cadtrain mesh. **vs server-side `ccx`**: CalculiX is leaner (small binary, simple `.inp` → `.frd`), DOLFINx is more flexible (UFL = you can change the math) but heavier runtime.
+2. **DOLFINx WASM port**: **years, not months.** MPI removal alone is a fork. Not realistic.
+3. **FEniCS via Pyodide**: blocked. Skip.
+4. **Borrow UFL's variational form abstraction** for custom JS FEA: **the genuinely interesting idea**. A TS implementation of UFL (`a*u*v*dx + ...`) emitting kernels that an Eigen-WASM CG solves. Synergizes with the existing Stage 2-3 plan.
+
+## E) MVP recommendation
+
+**FEniCS/DOLFINx is roughly equivalent to CalculiX for cadtrain's needs but strictly heavier to deploy** (LGPL OK, MPI mandatory, 2 GB Docker image, no WASM path) — recommend sticking with the Track A `ccx` server-side plan, **but steal the UFL DSL pattern for Stage 3** (`linear-elastic-3d.ts`) where a JS variational-form layer over Eigen-WASM CG would be more elegant than a hand-coded assembly loop.
+
+## F) Risks
+
+- **Python in the production runtime** (against Rule 1): 2 GB Docker image, MPI on Railway, slower cold starts vs a single static `ccx` binary.
+- **UFL learning curve**: drill engineers think in stress/strain tables, not `Inner(sigma(u), eps(v))*dx`. CalculiX `.inp` decks are closer to vendor mental models.
+- **Maintenance burden**: DOLFINx releases ~quarterly with breaking Python API changes. CalculiX `.inp` is essentially frozen Abaqus-compatible — far stabler.
+
+### FEniCS sources
+
+- [github.com/FEniCS/dolfinx](https://github.com/FEniCS/dolfinx)
+- [docs.fenicsproject.org/dolfinx/main/python/installation.html](https://docs.fenicsproject.org/dolfinx/main/python/installation.html)
+- [jsdokken.com/dolfinx-tutorial/chapter2/hyperelasticity.html](https://jsdokken.com/dolfinx-tutorial/chapter2/hyperelasticity.html)
+- [bleyerj.github.io/comet-fenicsx](https://bleyerj.github.io/comet-fenicsx/intro/linear_elasticity/linear_elasticity.html)
+- [a-latyshev.github.io/dolfinx-external-operator](https://a-latyshev.github.io/dolfinx-external-operator/)
+- [github.com/BAMresearch/fenics-constitutive](https://github.com/BAMresearch/fenics-constitutive)
+
+*(Parts 5 — DOLFINx tutorial deep-dive, 6 — Elmer FEM, and the consolidated comparison matrix will be appended as their agents complete.)*
