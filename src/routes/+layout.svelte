@@ -11,7 +11,8 @@
       label: null,
       items: [
         { href: '/primitives', label: 'Primitives' },
-        { href: '/forge', label: 'Forge' },
+        { href: '/fem',        label: 'FEM' },
+        { href: '/forge',      label: 'Forge' },
       ],
     },
     {
