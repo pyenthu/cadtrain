@@ -122,13 +122,30 @@
   });
 
   // ─── Composition root creation (M3b) ──────────────────────────────────
-
-  let rootPopup = $state<{ x: number; y: number; step: 'kind' | 'fn'; query: string } | null>(null);
+  // parentId is set when this popup is opened from a list/stack's "+ child"
+  // button — the resulting node is appended to that parent's children
+  // rather than replacing the composition root.
+  let rootPopup = $state<{ x: number; y: number; step: 'kind' | 'fn'; query: string; parentId?: string } | null>(null);
   function openRootPopup(ev: MouseEvent) {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'kind', query: '' };
   }
+  function openChildPopup(parentId: string, ev: MouseEvent) {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'kind', query: '', parentId };
+  }
   function closeRootPopup() { rootPopup = null; }
+
+  /** Append `node` as the last child of the list/stack `parentId`. Used
+   *  by the "+ child" flow + drag-drop into a list/stack. */
+  function appendChildToList(parentId: string, node: TreeNode) {
+    if (!composition) return;
+    const parent = findById(composition, parentId);
+    if (!parent || (parent.type !== 'list' && parent.type !== 'stack')) return;
+    const replacement: TreeNode = { ...parent, children: [...parent.children, node] };
+    const next = replaceNode(composition, parentId, replacement);
+    commit(imports, next);
+  }
 
   function makePlaceholder(): TreeNode {
     return { type: 'literal', id: newNodeId(), value: '' };
@@ -157,11 +174,17 @@
       rootPopup = { ...(rootPopup ?? { x: 0, y: 0 } as any), step: 'fn', query: '' };
       return;
     }
-    commit(imports, makeNodeOfKind(type));
+    const node = makeNodeOfKind(type);
+    const pid = rootPopup?.parentId;
+    if (pid) appendChildToList(pid, node);
+    else commit(imports, node);
     closeRootPopup();
   }
   function createCallRoot(fn: string) {
-    commit(imports, makeNodeOfKind('call', fn));
+    const node = makeNodeOfKind('call', fn);
+    const pid = rootPopup?.parentId;
+    if (pid) appendChildToList(pid, node);
+    else commit(imports, node);
     closeRootPopup();
   }
   let fnCandidates = $derived.by(() => {
@@ -320,7 +343,33 @@
   </section>
 
   <!-- ─── Composition ──────────────────────────────────────────────── -->
-  <section class="ce-section ce-composition">
+  <section class="ce-section ce-composition"
+    ondragover={(e) => { if (canEdit && e.dataTransfer?.types.includes('application/x-primitive-id')) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } }}
+    ondrop={(e) => {
+      if (!canEdit) return;
+      if (!e.dataTransfer?.types.includes('application/x-primitive-id')) return;
+      e.preventDefault();
+      const dropped = e.dataTransfer.getData('application/x-primitive-id');
+      if (!dropped) return;
+      // No root yet → create a List with the dropped Call as first child,
+      // matching the user's preferred `return [A]` form.
+      if (composition === null) {
+        const callNode = makeNodeOfKind('call', dropped);
+        const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [callNode] };
+        commit(imports, listRoot);
+        return;
+      }
+      // Already have a root that's a list/stack → append.
+      if (composition.type === 'list' || composition.type === 'stack') {
+        appendChildToList(composition.id, makeNodeOfKind('call', dropped));
+        return;
+      }
+      // Root is something else (call/method/etc.) — wrap in a list so the
+      // dropped item lives alongside the existing root.
+      const callNode = makeNodeOfKind('call', dropped);
+      const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [composition, callNode] };
+      commit(imports, listRoot);
+    }}>
     <header class="ce-section-head">
       <span class="ce-section-title">▼ Composition</span>
       {#if canEdit && composition === null}
@@ -329,7 +378,7 @@
     </header>
     {#if composition === null}
       <div class="ce-empty">
-        {canEdit ? 'No composition yet. Click + Add root to start.' : 'No composition.'}
+        {canEdit ? 'No composition yet. Click + Add root or drag a primitive from the sidebar.' : 'No composition.'}
       </div>
     {:else}
       <div class="ce-tree">{@render node(composition, 0)}</div>
@@ -412,10 +461,25 @@
       </div>
     </div>
   {:else if (n.type === 'list' || n.type === 'stack')}
-    <div class="ce-node-body">
+    <div class="ce-node-body"
+      ondragover={(e) => { if (e.dataTransfer?.types.includes('application/x-primitive-id')) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } }}
+      ondrop={(e) => {
+        if (!e.dataTransfer?.types.includes('application/x-primitive-id')) return;
+        e.preventDefault();
+        const dropped = e.dataTransfer.getData('application/x-primitive-id');
+        if (dropped) appendChildToList(n.id, makeNodeOfKind('call', dropped));
+      }}>
       {#each n.children as c (c.id)}
         {@render node(c, depth + 1)}
       {/each}
+      {#if canEdit}
+        <button class="ce-add-btn ce-add-child" type="button"
+          title={`Add child to ${n.type}`}
+          onclick={(e) => openChildPopup(n.id, e)}>+ child</button>
+      {/if}
+      {#if n.children.length === 0}
+        <div class="ce-drop-hint">Drag a primitive here or click + child</div>
+      {/if}
     </div>
   {:else if n.type === 'overlay'}
     <div class="ce-node-body">
@@ -699,6 +763,12 @@
     padding: 2px 8px; border-radius: 4px; cursor: pointer;
   }
   .ce-add-btn:hover { background: #ddeaff; border-color: #8eb6e6; }
+  .ce-add-child { margin-left: 8px; margin-top: 4px; }
+  .ce-drop-hint {
+    margin-top: 4px; padding: 6px 10px;
+    background: #fafafa; border: 1px dashed #ccc; border-radius: 4px;
+    font: italic 12px ui-sans-serif; color: #888; text-align: center;
+  }
   .ce-empty { color: #888; font-style: italic; padding: 6px 4px; }
 
   /* Imports */
