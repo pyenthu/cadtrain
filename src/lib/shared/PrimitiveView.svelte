@@ -16,6 +16,7 @@
   // `export const meta = {...}`. Save callbacks emit upward — this
   // component doesn't talk to the API itself.
   import PrimitiveDualCanvas from './PrimitiveDualCanvas.svelte';
+  import CompositionEditor from './CompositionEditor.svelte';
   import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import { extractMetaParams } from '$lib/cad/inline-profile';
@@ -2649,7 +2650,14 @@
               </div>
             {/if}
 
-            {#if recogStatus === 'loading' && !recognized}
+            {#if kind === 'asm'}
+              <!-- K.63 — .asm.ts files use the composition-tree editor.
+                   The legacy assembly UI (subtabs, atom rows, ops bar,
+                   group markers, defs/expr sections) is bypassed for
+                   assemblies; M3 will enable editing inside the new
+                   editor. -->
+              <CompositionEditor source={editedSource} />
+            {:else if recogStatus === 'loading' && !recognized}
               <div class="pv-parts-empty">recognizing…</div>
             {:else if recogError && !recognized}
               <div class="pv-parts-err">{recogError}</div>
