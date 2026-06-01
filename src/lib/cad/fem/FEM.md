@@ -307,3 +307,69 @@ The license boundary is more brutal than the code boundary — three of the most
 - [github.com/BAMresearch/fenics-constitutive](https://github.com/BAMresearch/fenics-constitutive)
 
 *(Parts 5 — DOLFINx tutorial deep-dive, 6 — Elmer FEM, and the consolidated comparison matrix will be appended as their agents complete.)*
+
+---
+
+# Part 5 — DOLFINx tutorial deep-dive (jsdokken)
+
+*Subagent report 2026-06-01.*
+
+## A) Workflow stages (linear elasticity "hello world")
+
+1. **Mesh** — native: `mesh.create_box(MPI.COMM_WORLD, ..., cell_type=mesh.CellType.hexahedron)`. No STL/STEP path; complex geometry routes through gmsh (see C).
+2. **Function space** — `V = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))`.
+3. **Variational form (UFL)** — see snippet D.
+4. **BCs** — `locate_entities_boundary` + `locate_dofs_topological` + `fem.dirichletbc(u_D, dofs, V)`.
+5. **Solver** — `LinearProblem(a, L, bcs=[bc], petsc_options={"ksp_type":"preonly","pc_type":"lu"}); uh = problem.solve()`.
+6. **Post-processing** — pyvista in-process AND `io.XDMFFile("deformation.xdmf","w").write_function(uh)` for ParaView.
+
+**Line count for hello-world linear elasticity**: ~50 LOC of real code; ~80 with visualization.
+
+## B) Linear elasticity coverage
+
+Yes — dedicated chapter `chapter2/linearelasticity_code.html`. Output = **XDMF** + **pyvista**. Von Mises computed inline: project `sqrt(3/2·s:s)` into `("DG",0)` via `fem.Expression`. No 100k-DOF benchmark in the tutorial.
+
+## C) Mesh import for Manifold output
+
+The tutorial shows gmsh OCC kernel CAD construction + read-back:
+
+```python
+from dolfinx.io import gmsh as gmshio
+mesh_data = gmshio.read_from_msh("mesh.msh", MPI.COMM_WORLD, gdim=2)
+```
+
+Supported: **`.msh` (gmsh)**, **XDMF + HDF5**, meshio as converter. **STL is NOT shown; STEP only indirectly via gmsh's OCC.** For cadtrain's Manifold output, the realistic hand-off: Manifold → `.stl` → `gmsh.merge("part.stl")` → `gmsh.model.mesh.classifySurfaces` + `generate(3)` → `.msh` → `gmshio.read_from_msh`.
+
+## D) UFL snippets
+
+**Linear elasticity** (verbatim from `linearelasticity_code`):
+
+```python
+def epsilon(u): return ufl.sym(ufl.grad(u))
+def sigma(u):   return lambda_*ufl.nabla_div(u)*ufl.Identity(len(u)) + 2*mu*epsilon(u)
+u = ufl.TrialFunction(V); v = ufl.TestFunction(V)
+a = ufl.inner(sigma(u), epsilon(v)) * ufl.dx
+L = ufl.dot(f, v) * ufl.dx + ufl.dot(T, v) * ds
+```
+
+**Contact**: NOT covered in tutorial. Closest is `chapter2/hyperelasticity` (large-deformation Neo-Hookean, no contact). Contact is a `dolfinx_contact` add-on, off-tutorial.
+
+UFL is a pure symbolic algebra DSL (~10k LOC Python); a JS port is **non-trivial but bounded** — the symbolic part is portable, but UFL feeds into FFCx which generates C code compiled by CFFI/JIT. **That JIT step is the real porting barrier, not UFL itself.**
+
+## E) WASM/Pyodide hostility (concrete imports)
+
+Imports from the elasticity example: `mpi4py.MPI`, `dolfinx.fem.petsc.LinearProblem`, `pyvista`, `gmsh`.
+
+- **`mpi4py` + `petsc4py`** — compile against system MPI + PETSc (C/Fortran, BLAS/LAPACK, often with MUMPS/SuperLU). PETSc has experimental WASM but no production story; MUMPS/SuperLU are Fortran. **Hostile.** `LinearProblem` is the PETSc wrapper — there's no pure-Python solver fallback in the tutorial path.
+- **`gmsh`** — C++ + OCC (OpenCASCADE, very heavy C++). **Hostile** for WASM; CadQuery's OCP wheels are ~80MB.
+- **FFCx JIT** — invokes CFFI + a C compiler at runtime. **Hostile** in browser.
+- **`pyvista`/VTK** — VTK has WASM builds (vtk.js) but pyvista's full Python API doesn't run in Pyodide cleanly.
+- `ufl`, `basix`, `numpy` — portable.
+
+Realistic path: **server-side DOLFINx in Docker**, stream XDMF/glTF results to the browser. WASM port is a multi-quarter effort.
+
+## F) Bottom line
+
+The tutorial assumes a graduate-FEA reader who already speaks UFL, weak forms, PETSc options, and gmsh OCC scripting — **wrong audience for cadtrain's engineers**. It's an excellent reference for *us* to build a server-side stress-check endpoint on top of, but the UI we expose must hide every line shown above behind primitive-aware presets.
+
+*(Part 6 — Elmer FEM, and the consolidated comparison matrix to come.)*
