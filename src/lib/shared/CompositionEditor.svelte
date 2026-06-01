@@ -26,8 +26,8 @@
 -->
 <script lang="ts">
   import {
-    parseImports, parseComposition, applyToSource,
-    replaceNode, deleteNode, newNodeId, childrenOf,
+    parseImports, parseComposition, parseDependencyParamKeys, applyToSource,
+    replaceNode, deleteNode, newNodeId, childrenOf, emitNode,
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -47,7 +47,51 @@
   } = $props();
 
   let imports = $derived<ImportDef[]>(parseImports(source));
+  // src primitive id → ordered paramKeys (snapshot from meta.dependencies).
+  // Drives prop-style arg labelling for Call rows whose fn is an import alias.
+  let depParamKeys = $derived<Map<string, string[]>>(parseDependencyParamKeys(source));
+  // Live fetch cache for primitives missing a dependency snapshot — we
+  // ask /api/primitives/source for each new import.src once and cache its
+  // Object.keys(params) ordering so labels stay in sync as the user adds
+  // imports without saving yet.
+  let livePK = $state<Map<string, string[]>>(new Map());
+  $effect(() => {
+    const wantSrcs = imports.map((i) => i.src);
+    for (const src of wantSrcs) {
+      if (depParamKeys.has(src) || livePK.has(src)) continue;
+      // Mark optimistically so we don't double-fetch.
+      livePK.set(src, []);
+      fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          const keys = data?.params ? Object.keys(data.params) : [];
+          livePK = new Map(livePK).set(src, keys);
+        })
+        .catch(() => { /* leave empty — labels fall back to arg0/arg1 */ });
+    }
+  });
+  // alias → paramKeys: snapshot first, live cache second.
+  let aliasParamKeys = $derived<Map<string, string[]>>(
+    new Map(imports.map((imp) => [
+      imp.name,
+      depParamKeys.get(imp.src) ?? livePK.get(imp.src) ?? [],
+    ]))
+  );
+  function labelForArg(call: Extract<TreeNode, { type: 'call' }>, i: number): string {
+    const keys = aliasParamKeys.get(call.fn);
+    return keys?.[i] ?? `arg${i}`;
+  }
   let composition = $derived<TreeNode | null>(parseComposition(source));
+  let rootKindBadge = $derived<string>(
+    composition === null ? '[ ]'
+      : composition.type === 'list' ? '[ ]'
+      : composition.type === 'stack' ? '↓'
+      : composition.type === 'method' ? '⊖'
+      : composition.type === 'overlay' ? '⤴'
+      : composition.type === 'mv' ? '↦'
+      : composition.type === 'rot' ? '↻'
+      : '·'
+  );
 
   // Common sandbox helpers — typeahead candidates for Call.fn alongside
   // import aliases and volume primitives. The same SANDBOX_FN_NAMES the
@@ -180,8 +224,26 @@
   function createFolder(type: NodeType) {
     const node = makeNodeOfKind(type);
     const pid = rootPopup?.parentId;
-    if (pid) appendChildToList(pid, node);
-    else commit(imports, node);
+    if (pid) {
+      appendChildToList(pid, node);
+    } else if (composition === null) {
+      // Empty root = implicit List. A list/stack folder BECOMES the new root
+      // (the synthetic List collapses into the chosen container kind).
+      // Other folder kinds get wrapped in a List so the root stays a
+      // collection the user can keep adding to.
+      if (type === 'list' || type === 'stack') {
+        commit(imports, node);
+      } else {
+        const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [node] };
+        commit(imports, listRoot);
+      }
+    } else if (composition.type === 'list' || composition.type === 'stack') {
+      appendChildToList(composition.id, node);
+    } else {
+      // Existing scalar root + user adds a sibling folder → promote to List.
+      const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [composition, node] };
+      commit(imports, listRoot);
+    }
     expanded[node.id] = true;
     closeRootPopup();
   }
@@ -189,7 +251,7 @@
     const pid = rootPopup?.parentId;
     const node = await callWithDefaults(fn);
     if (pid) appendChildToList(pid, node);
-    else commit(imports, node);
+    else insertCallIntoComposition(node); // wraps in List when root is empty/scalar
     closeRootPopup();
   }
   // Per user constraint: composition's "+ file" only offers IMPORTS.
@@ -278,6 +340,23 @@
     commit(imports, replaceNode(composition, call.id, next));
   }
   /** Commit a single axis value of a Call's mv or rot. Skips when no change. */
+  /** Edit a Call's positional arg in place. Rewrites the arg as a
+   *  literal carrying the user's text (numbers, expressions, refs all
+   *  serialize via emitNode → `value` verbatim). Empty string clears
+   *  back to the literal placeholder. */
+  function commitCallArg(call: TreeNode & { type: 'call' }, i: number, value: string) {
+    if (!composition) return;
+    const cur = call.args[i];
+    if (!cur) return;
+    const next: TreeNode = (cur.type === 'literal')
+      ? { ...cur, value }
+      : { type: 'literal', id: cur.id, value };
+    const updatedArgs = [...call.args];
+    updatedArgs[i] = next;
+    const replacement: TreeNode = { ...call, args: updatedArgs };
+    commit(imports, replaceNode(composition, call.id, replacement));
+  }
+
   function commitTransformAxis(call: TreeNode & { type: 'call' }, slot: 'mv' | 'rot', axis: 0 | 1 | 2, value: string) {
     if (!composition) return;
     const triplet = (slot === 'mv' ? call.mv : call.rot);
@@ -460,38 +539,52 @@
       if (!dropped) return;
       callWithDefaults(dropped).then(insertCallIntoComposition);
     }}>
-    <header class="ce-section-head"
+    <!-- Compose root row IS the section title. Click to toggle.
+         When the root is a List/Stack the body renders its children
+         directly (so the list itself doesn't double-render); when the
+         root is a single non-folder node it renders as the sole child.
+         rootKindBadge is the $derived above. -->
+    <header class="ce-row ce-folder-row ce-comp-root"
       role="button" tabindex="0"
       aria-expanded={compositionOpen}
       onclick={() => (compositionOpen = !compositionOpen)}
       onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); compositionOpen = !compositionOpen; } }}>
-      <span class="ce-section-twist">{compositionOpen ? '▾' : '▸'}</span>
-      <span class="ce-section-title">📁 Composition</span>
+      <span class="ce-twist">{compositionOpen ? '▾' : '▸'}</span>
+      <span class="ce-glyph">📁</span>
+      <span class="ce-kind-badge">{rootKindBadge}</span>
+      <span class="ce-name">compose</span>
+      <span class="ce-row-spacer"></span>
+      {#if canEdit}
+        <button class="ce-row-btn" type="button" title="Add a file (import)" onclick={(e) => { e.stopPropagation(); openFilePopup(undefined, e); }}>+ file</button>
+        <button class="ce-row-btn" type="button" title="Add a sub-compose (list or operation)" onclick={(e) => { e.stopPropagation(); openFolderPopup(undefined, e); }}>+ compose</button>
+      {/if}
     </header>
     {#if compositionOpen}
-    {#if composition === null}
-      <!-- Empty = implicit empty List ("compose"). The synthetic root row
-           is the only row + its drop hint. -->
-      <div class="ce-tree">
-        <div class="ce-row ce-folder-row" style="--depth: 0">
-          <span class="ce-glyph">📁</span>
-          <span class="ce-kind-badge">[ ]</span>
-          <span class="ce-name">compose</span>
-          <span class="ce-row-spacer"></span>
-          {#if canEdit}
-            <button class="ce-row-btn" type="button" title="Add a file (import)" onclick={(e) => openFilePopup(undefined, e)}>+ file</button>
-            <button class="ce-row-btn" type="button" title="Add a sub-compose (list or operation)" onclick={(e) => openFolderPopup(undefined, e)}>+ compose</button>
+      {#if composition === null}
+        <div class="ce-tree">
+          <div class="ce-row ce-empty-row" style="--depth: 1">
+            <span class="ce-empty-hint">empty — drag an import or click + file / + compose</span>
+          </div>
+        </div>
+      {:else if composition.type === 'list' || composition.type === 'stack'}
+        <!-- Root list/stack — render its children at depth 0; the header IS the list row. -->
+        <div class="ce-tree">
+          {#if composition.children.length === 0}
+            <div class="ce-row ce-empty-row" style="--depth: 1">
+              <span class="ce-empty-hint">empty — drag an import or click + file / + compose</span>
+            </div>
+          {:else}
+            {#each composition.children as child (child.id)}
+              {@render row(child, 0)}
+            {/each}
           {/if}
         </div>
-        <div class="ce-row ce-empty-row" style="--depth: 1">
-          <span class="ce-empty-hint">empty — drag an import or click + file / + compose</span>
+      {:else}
+        <!-- Root is a single non-folder node — render it as the only child. -->
+        <div class="ce-tree">
+          {@render row(composition, 0)}
         </div>
-      </div>
-    {:else}
-      <div class="ce-tree">
-        {@render row(composition, 0)}
-      </div>
-    {/if}
+      {/if}
     {/if}
   </section>
 </div>
@@ -622,12 +715,18 @@
 {/snippet}
 
 {#snippet fileRow(n: TreeNode, depth: number)}
+  {@const callOpen = n.type === 'call' && isExpanded(n.id)}
+  {@const callHasProps = n.type === 'call' && n.args.length > 0}
   <div class="ce-row ce-file-row" style="--depth: {depth}">
-    <span class="ce-twist-spacer"></span>
+    {#if n.type === 'call' && callHasProps}
+      <button class="ce-twist" type="button" title={callOpen ? 'Collapse properties' : 'Expand properties'} onclick={() => toggleExpand(n.id)}>{callOpen ? '▾' : '▸'}</button>
+    {:else}
+      <span class="ce-twist-spacer"></span>
+    {/if}
     <span class="ce-glyph">📄</span>
     {#if n.type === 'call'}
       <span class="ce-file-fn-glyph">ƒ</span>
-      <span class="ce-file-title" title={fileTitle(n)}>{fileTitle(n)}</span>
+      <span class="ce-file-title" title={fileTitle(n)} onclick={() => { if (callHasProps) toggleExpand(n.id); }}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
     {:else if n.type === 'ref'}
       <span class="ce-file-ref-glyph">🔗</span>
       <span class="ce-file-title">{fileTitle(n)}</span>
@@ -723,6 +822,32 @@
         {:else}
           <span class="ce-axis-val">{emitShort(ax)}</span>
         {/if}
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Properties grid — Call's positional args rendered as labeled
+       name/value cells, 2 per row. Labels come from the dependency
+       snapshot (meta.dependencies → src primitive paramKeys). -->
+  {#if n.type === 'call' && callHasProps && callOpen}
+    <div class="ce-props-grid" style="--depth: {depth}">
+      {#each n.args as arg, i (arg.id)}
+        <div class="ce-prop-cell">
+          <span class="ce-prop-label">{labelForArg(n, i)}</span>
+          {#if arg.type === 'literal'}
+            <input
+              class="ce-prop-input"
+              type="text"
+              value={arg.value}
+              placeholder="0"
+              disabled={!canEdit}
+              onblur={(e) => commitCallArg(n as any, i, (e.currentTarget as HTMLInputElement).value)}
+              onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+            />
+          {:else}
+            <span class="ce-prop-val" title={emitNode(arg)}>{emitShort(arg)}</span>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}
@@ -1137,6 +1262,43 @@
     font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #444; padding: 1px 4px;
     min-width: 24px; text-align: center;
+  }
+
+  /* Properties grid — Call args rendered as label/value pairs, 2 per row.
+     Sits in the expanded body of a file (Call) row, indented under it. */
+  .ce-props-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 6px;
+    row-gap: 2px;
+    padding: 2px 6px 4px;
+    padding-left: calc(var(--depth, 0) * 14px + 36px);
+    background: #fafafa;
+    border-left: 2px solid #d4d4dc;
+    margin-left: calc(var(--depth, 0) * 14px + 12px);
+  }
+  .ce-prop-cell {
+    display: grid;
+    grid-template-columns: minmax(48px, 1fr) minmax(60px, 1.4fr);
+    align-items: center;
+    column-gap: 4px;
+    min-width: 0;
+  }
+  .ce-prop-label {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #555;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ce-prop-input {
+    border: 1px solid #d0d0d0; border-radius: 3px;
+    padding: 1px 4px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    width: 100%; min-width: 0; background: #fff;
+  }
+  .ce-prop-input:focus { outline: 2px solid #bcd3ee; border-color: #bcd3ee; }
+  .ce-prop-val {
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #444; padding: 1px 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
   /* Inline literal edit (file row literal) */

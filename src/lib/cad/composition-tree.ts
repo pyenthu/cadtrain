@@ -423,6 +423,29 @@ export function parseImports(source: string): ImportDef[] {
   } catch { return []; }
 }
 
+/** Parse meta.dependencies → Map<id, paramKeys[]>. Dependencies snapshot the
+ *  upstream primitive's parameter list (in order) at the time the assembly
+ *  was last saved. Used by the editor to label positional Call args with
+ *  the corresponding parameter names. Missing / malformed → empty Map. */
+export function parseDependencyParamKeys(source: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const range = findValueRange(source, 'dependencies');
+  if (!range) return out;
+  try {
+    const value = new LitParser(source.slice(range.start, range.end)).parse();
+    if (!Array.isArray(value)) return out;
+    for (const row of value) {
+      if (!row || typeof row !== 'object') continue;
+      const id = (row as any).id;
+      const keys = (row as any).paramKeys;
+      if (typeof id === 'string' && Array.isArray(keys) && keys.every((k) => typeof k === 'string')) {
+        out.set(id, keys);
+      }
+    }
+  } catch { /* tolerate */ }
+  return out;
+}
+
 /** Parse meta.composition → TreeNode. Returns null when missing / null / malformed. */
 export function parseComposition(source: string): TreeNode | null {
   const range = findValueRange(source, 'composition');
