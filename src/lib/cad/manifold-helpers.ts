@@ -276,6 +276,31 @@ export function mate(a: any, b: any, gap = 0): any { return mv(b, [0, 0, tail(a)
 /** Shift `b` so its reference z `bZ` lands on the target z `aZ`. */
 export function align(b: any, aZ: number, bZ: number): any { return mv(b, [0, 0, aZ - bZ]); }
 
+/** @op Stack — auto-mate the children linearly down z. First child stays at
+ *  the origin; each subsequent child gets `mv(c, [0, 0, tail(prev)])` so its
+ *  head meets the previous child's tail. Returns the composed placement.
+ *  Mirror of the Phase F StackNode emit — drives the canonical drilling
+ *  string idiom (joints stacked under joints, no gap). */
+export function stack(children: any[]): any {
+  if (!Array.isArray(children) || children.length === 0) return empty();
+  let prev = children[0];
+  const out: any[] = [prev];
+  for (let i = 1; i < children.length; i++) {
+    const placed = mv(children[i], [0, 0, tail(prev)]);
+    out.push(placed);
+    prev = placed;
+  }
+  return place(out);
+}
+
+/** @op Overlay — translate `child` so its `at` datum meets `anchor`'s `at`
+ *  datum. Does NOT advance any stacking cursor (it's a pure positional
+ *  align). `at` defaults to 'head'; 'tail' or 'center' for other datums. */
+export function overlay(anchor: any, child: any, at: 'head' | 'tail' | 'center' = 'head'): any {
+  const datum = (m: any) => at === 'head' ? head(m) : at === 'tail' ? tail(m) : (head(m) + tail(m)) / 2;
+  return mv(child, [0, 0, datum(anchor) - datum(child)]);
+}
+
 /** @part Profile extrude — sandbox/play primitive. Define a 2D profile (CCW polygon) and extrude it up Z, optionally with twist + taper. Edit the profile array, height, twist, scaleTop to experiment. */
 export function profile_extrude(height: number, twistDegrees: number, scaleTop: number, sides: number): any {
   if (!G.__cadtrain_manifold__.wasm) {

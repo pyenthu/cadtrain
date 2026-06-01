@@ -371,28 +371,27 @@ ${template.body};
  *    4. Use `+ param` to expose tunable values up to the assembly's meta. */
 export function buildAssemblySource(id: string): string {
   return `/**
- * ${id} — Assembly (ordered-instances model).
+ * ${id} — Assembly (K.63 composition-tree model).
  *
- * meta.instances is the source of truth. Each row is one part placement:
- *   mode: 'sequential' → auto-mates to the previous sequential row's tail.
- *   mode: 'overlay'    → aligns to anchor's chosen datum (head|tail|center),
- *                         and DOES NOT advance the stacking cursor.
- *   mode: 'custom'     → uses raw expression (escape hatch for hand-tuned z).
+ * meta.imports declares aliases for primitives — pure declarations
+ *   (\`A = shaft\` → \`const A = shaft;\` at the top of the body).
+ * meta.composition is the single TreeNode root that produces the
+ *   final geometry. The function body is auto-generated from imports
+ *   + composition on every save.
  *
- * Drag a part from the sidebar to append a new sequential row. The function
- * body is auto-generated from meta.instances on every save.
+ * Add imports + build the composition tree in the editor.
  */
 export const meta = {
   id: '${id}', name: '${id}',
-  description: 'Assembly — composed instances.',
+  description: 'Assembly.',
   tags: ['assembly'],
   uses: [],
-  instances: [],
+  imports: [],
+  composition: null,
   params: {},
 };
 
 export function ${id}() {
-  // Drag a part from the sidebar to add it here.
   return empty();
 }
 `;
