@@ -23,8 +23,18 @@ export type Datum = 'head' | 'tail' | 'center';
 
 interface NodeBase { id: string; name?: string; }
 
+/**
+ * NOTE on Call inline transforms: a Call node can carry optional `mv` and
+ * `rot` triplets. Emit wraps the Call in mv(...) / rot(...) when set —
+ * mv inner, rot outer — so the canonical emission with both set is
+ *   rot(mv(fn(arg1, arg2), [...]), [...])
+ * The standalone Mv / Rot folder nodes still exist for the rare case of
+ * transforming a multi-child group; the inline form is the common case
+ * for transforming a single leaf and keeps the tree flat.
+ */
 export type TreeNode =
-  | (NodeBase & { type: 'call';    fn: string; args: TreeNode[] })
+  | (NodeBase & { type: 'call';    fn: string; args: TreeNode[];
+                  mv?: [TreeNode, TreeNode, TreeNode]; rot?: [TreeNode, TreeNode, TreeNode] })
   | (NodeBase & { type: 'method';  obj: TreeNode; op: CsgOp; arg: TreeNode })
   | (NodeBase & { type: 'list';    children: TreeNode[] })
   | (NodeBase & { type: 'stack';   children: TreeNode[] })
@@ -60,7 +70,12 @@ export function walkTree(root: TreeNode | null, fn: (node: TreeNode) => void): v
  *  obj/arg of method, anchor/child of overlay, etc. uniformly). */
 export function childrenOf(node: TreeNode): TreeNode[] {
   switch (node.type) {
-    case 'call':    return node.args;
+    case 'call': {
+      const out = [...node.args];
+      if (node.mv) out.push(...node.mv);
+      if (node.rot) out.push(...node.rot);
+      return out;
+    }
     case 'method':  return [node.obj, node.arg];
     case 'list':
     case 'stack':   return node.children;
@@ -87,7 +102,7 @@ export function findNode(root: TreeNode | null, id: string): TreeNode | null {
  *  it). For array slots (args / children / offset / rot), `index` is set. */
 export interface NodeLocation {
   parent: TreeNode;
-  slot: 'args' | 'children' | 'obj' | 'arg' | 'anchor' | 'child' | 'offset' | 'rot';
+  slot: 'args' | 'children' | 'obj' | 'arg' | 'anchor' | 'child' | 'offset' | 'rot' | 'mvInline' | 'rotInline';
   index?: number;
 }
 export function findParent(root: TreeNode | null, id: string): NodeLocation | null {
@@ -98,6 +113,20 @@ export function findParent(root: TreeNode | null, id: string): NodeLocation | nu
         if (root.args[i]!.id === id) return { parent: root, slot: 'args', index: i };
         const deep = findParent(root.args[i]!, id);
         if (deep) return deep;
+      }
+      if (root.mv) {
+        for (let i = 0; i < 3; i++) {
+          if (root.mv[i]!.id === id) return { parent: root, slot: 'mvInline', index: i };
+          const deep = findParent(root.mv[i]!, id);
+          if (deep) return deep;
+        }
+      }
+      if (root.rot) {
+        for (let i = 0; i < 3; i++) {
+          if (root.rot[i]!.id === id) return { parent: root, slot: 'rotInline', index: i };
+          const deep = findParent(root.rot[i]!, id);
+          if (deep) return deep;
+        }
       }
       return null;
     case 'method':
@@ -143,7 +172,11 @@ export function replaceNode(root: TreeNode, id: string, replacement: TreeNode): 
   if (root.id === id) return replacement;
   switch (root.type) {
     case 'call':
-      return { ...root, args: root.args.map((a) => replaceNode(a, id, replacement)) };
+      return { ...root,
+        args: root.args.map((a) => replaceNode(a, id, replacement)),
+        ...(root.mv ? { mv: root.mv.map((o) => replaceNode(o, id, replacement)) as [TreeNode, TreeNode, TreeNode] } : {}),
+        ...(root.rot ? { rot: root.rot.map((o) => replaceNode(o, id, replacement)) as [TreeNode, TreeNode, TreeNode] } : {}),
+      };
     case 'method':
       return { ...root, obj: replaceNode(root.obj, id, replacement), arg: replaceNode(root.arg, id, replacement) };
     case 'list':
@@ -171,7 +204,11 @@ export function deleteNode(root: TreeNode, id: string): TreeNode | null {
   const placeholder = (): TreeNode => ({ type: 'literal', id: newNodeId(), value: '' });
   switch (root.type) {
     case 'call':
-      return { ...root, args: root.args.filter((a) => a.id !== id).map((a) => deleteOrKeep(a, id) ?? placeholder()) };
+      return { ...root,
+        args: root.args.filter((a) => a.id !== id).map((a) => deleteOrKeep(a, id) ?? placeholder()),
+        ...(root.mv ? { mv: root.mv.map((o) => o.id === id ? placeholder() : (deleteOrKeep(o, id) ?? placeholder())) as [TreeNode, TreeNode, TreeNode] } : {}),
+        ...(root.rot ? { rot: root.rot.map((o) => o.id === id ? placeholder() : (deleteOrKeep(o, id) ?? placeholder())) as [TreeNode, TreeNode, TreeNode] } : {}),
+      };
     case 'method':
       return {
         ...root,
@@ -220,7 +257,13 @@ export function emitImports(imports: readonly ImportDef[]): string {
 /** Emit a single TreeNode as a JS expression. Recursive. */
 export function emitNode(node: TreeNode): string {
   switch (node.type) {
-    case 'call':    return `${node.fn}(${node.args.map(emitNode).join(', ')})`;
+    case 'call': {
+      let expr = `${node.fn}(${node.args.map(emitNode).join(', ')})`;
+      // mv inner, rot outer — composes as `rot(mv(<call>, [...]), [...])`.
+      if (node.mv) expr = `mv(${expr}, [${node.mv.map(emitNode).join(', ')}])`;
+      if (node.rot) expr = `rot(${expr}, [${node.rot.map(emitNode).join(', ')}])`;
+      return expr;
+    }
     case 'method':  return `${emitNode(node.obj)}.${node.op}(${emitNode(node.arg)})`;
     case 'list':    return `[${node.children.map(emitNode).join(', ')}]`;
     case 'stack':   return `stack([${node.children.map(emitNode).join(', ')}])`;
@@ -407,7 +450,15 @@ function rehydrateNode(raw: unknown): TreeNode | null {
     case 'call': {
       const fn = typeof o.fn === 'string' ? o.fn : '';
       const args = Array.isArray(o.args) ? o.args.map((a) => rehydrateNode(a)).filter((x): x is TreeNode => !!x) : [];
-      return { type, id, name, fn, args };
+      const readTriplet = (raw: unknown): [TreeNode, TreeNode, TreeNode] | undefined => {
+        if (!Array.isArray(raw)) return undefined;
+        const arr = raw.slice(0, 3).map((v) => rehydrateNode(v)).filter((x): x is TreeNode => !!x);
+        while (arr.length < 3) arr.push({ type: 'literal', id: newNodeId(), value: '0' });
+        return arr as [TreeNode, TreeNode, TreeNode];
+      };
+      const mv = readTriplet((o as any).mv);
+      const rot = readTriplet((o as any).rot);
+      return { type, id, name, fn, args, ...(mv ? { mv } : {}), ...(rot ? { rot } : {}) };
     }
     case 'method': {
       const op = (['add', 'subtract', 'intersect'].includes(o.op as string) ? o.op : 'subtract') as CsgOp;
@@ -474,6 +525,8 @@ function serializeNode(node: TreeNode, indent: number): string {
     case 'call':
       parts.push(`fn: ${JSON.stringify(node.fn)}`);
       parts.push(`args: [${node.args.length ? '\n' + inner + node.args.map((a) => serializeNode(a, indent + 2)).join(',\n' + inner) + '\n' + pad : ''}]`);
+      if (node.mv)  parts.push(`mv: [${node.mv.map((o) => serializeNode(o, indent + 2)).join(', ')}]`);
+      if (node.rot) parts.push(`rot: [${node.rot.map((o) => serializeNode(o, indent + 2)).join(', ')}]`);
       break;
     case 'method':
       parts.push(`op: ${JSON.stringify(node.op)}`);

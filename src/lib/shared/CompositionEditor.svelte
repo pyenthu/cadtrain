@@ -1,26 +1,33 @@
 <!--
-  CompositionEditor — K.63 .asm.ts editor.
+  CompositionEditor — K.63 .asm.ts editor (folder-tree visual, M3 Options 1+2).
 
-  Renders two sections from the assembly source:
-    1. Imports — flat list of `name = src` alias declarations.
-    2. Composition — nested recursive tree (single root).
+  Renders the assembly source as a file-explorer tree:
 
-  M3 adds EDITING on top of the M2 read-only render:
-    * M3a — `+ Import` button → primitive picker popup; × per row removes.
-    * M3b — `+ Add root` when composition === null → kind picker; for Call
-            shows fn typeahead (import aliases + sandbox helpers).
-    * M3c — per-node hover toolbar (× delete), method op swap (click op),
-            inline literal text edit, ref/literal arg picker.
+    📁 [ ] root                      ← Folder (List, no op)
+     ├ 📁 ⊖ subtract  as bored        ← Folder (Method, op=subtract)
+     │  ├ 📄 ƒ shaft(...)              ← File (Call)
+     │  └ 📄 ƒ shaft(...)              ← File (Call)
+     └ 📄 ƒ collar(...)               ← File (Call) at the top level
+
+  Folder kinds = container nodes (List/Method/Stack/Overlay/Mv/Rot).
+  File kinds = leaves (Call/Ref/Literal). Each row is ONE LINE; indentation
+  is purely padding-left keyed off `depth`. Container folders are
+  expandable; clicking a folder name toggles expand/collapse.
+
+  Call nodes carry OPTIONAL inline mv / rot transforms (Option 1 — data
+  layer in composition-tree.ts wraps the call in `rot(mv(<call>, [...]),
+  [...])` when set). The Mv-folder / Rot-folder kinds still exist for
+  multi-child transforms; the inline form is the common case.
+
+  Imports section remains a flat list of `name = src` alias declarations.
 
   Every mutation funnels through `applyToSource` (the data layer's one-shot
-  entry point) → emits a new source string → calls `onSourceChange(s)`. The
-  parent (PrimitiveView) sets `editedSource ← s`, which triggers re-parse
-  + the existing recognize / preview / bake pipeline.
+  entry point) → emits a new source string → calls `onSourceChange(s)`.
 -->
 <script lang="ts">
   import {
     parseImports, parseComposition, applyToSource,
-    replaceNode, deleteNode, newNodeId,
+    replaceNode, deleteNode, newNodeId, childrenOf,
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -39,24 +46,23 @@
     onSourceChange?: (newSource: string) => void;
   } = $props();
 
-  // Re-parse on every source change. Cheap enough — recursive descent
-  // over a few hundred chars in typical assemblies.
   let imports = $derived<ImportDef[]>(parseImports(source));
   let composition = $derived<TreeNode | null>(parseComposition(source));
 
   // Common sandbox helpers — typeahead candidates for Call.fn alongside
-  // import aliases. Subset of SANDBOX_ARG_NAMES that's actually useful to
-  // call as a top-level geometry expression (no Math/M/CS plumbing).
+  // import aliases and volume primitives. The same SANDBOX_FN_NAMES the
+  // previous nested-card render used.
   const SANDBOX_FN_NAMES = [
     'cyl', 'tube', 'mv', 'rot', 'place', 'stack', 'overlay',
     'helix_band', 'revolve', 'profile_extrude', 'empty',
     'resolveProfile', 'cs', 'extrude_csg', 'ext',
   ];
 
+  // Container kinds = "folder" UI. Leaf kinds = "file" UI.
+  const FOLDER_KINDS = new Set<NodeType>(['list', 'stack', 'method', 'overlay', 'mv', 'rot']);
+  function isFolder(n: TreeNode): boolean { return FOLDER_KINDS.has(n.type); }
+
   // ─── Mutation entry point ─────────────────────────────────────────────
-  // Every edit ends here. Re-parse → mutate in memory → re-emit → push back
-  // to parent. We re-derive `imports`/`composition` from the FRESH source
-  // automatically via $derived once the parent sets editedSource ← out.
   function commit(newImports: readonly ImportDef[], newRoot: TreeNode | null) {
     if (!canEdit) return;
     const out = applyToSource(source, id, newImports, newRoot);
@@ -72,7 +78,6 @@
   }
   function closeImportPopup() { importPopup = null; }
 
-  /** Next free single-letter alias (A, B, …, Z, AA, AB, …). */
   function nextAlias(taken: ReadonlySet<string>): string {
     for (let i = 0; i < 10000; i++) {
       let n = i, name = '';
@@ -85,34 +90,22 @@
   function addImport(primId: string) {
     const taken = new Set(imports.map((i) => i.name));
     const name = nextAlias(taken);
-    const next = [...imports, { name, src: primId }];
-    commit(next, composition);
+    commit([...imports, { name, src: primId }], composition);
     closeImportPopup();
   }
-
   function removeImport(name: string) {
-    const next = imports.filter((i) => i.name !== name);
-    commit(next, composition);
+    commit(imports.filter((i) => i.name !== name), composition);
   }
 
   let importCandidates = $derived.by(() => {
     const q = (importPopup?.query ?? '').toLowerCase();
     const usedSrcs = new Set(imports.map((i) => i.src));
-    // Catalog ids except this assembly itself + already-imported sources.
-    // Allow re-import (a second alias) by NOT filtering used; users may want
-    // two aliases for the same primitive. But default sort = unused first.
     const all = (catalog ?? [])
       .map((e) => e.id)
       .filter((cid) => cid !== id && (!q || cid.toLowerCase().includes(q)));
-    // Dedupe (catalog can carry the same id twice across categories).
     const seen = new Set<string>();
     const uniq: string[] = [];
-    for (const cid of all) {
-      if (seen.has(cid)) continue;
-      seen.add(cid);
-      uniq.push(cid);
-    }
-    // Stable sort: unused first, then alphabetical.
+    for (const cid of all) { if (!seen.has(cid)) { seen.add(cid); uniq.push(cid); } }
     return uniq.sort((a, b) => {
       const ua = usedSrcs.has(a) ? 1 : 0;
       const ub = usedSrcs.has(b) ? 1 : 0;
@@ -122,21 +115,7 @@
   });
 
   // ─── Composition root creation ────────────────────────────────────────
-  // Composition is implicitly a top-level List ("collection"). The user
-  // adds:
-  //   + file   — a Call to a primitive (the catalog typeahead).
-  //   + folder — a container (List/Method/Stack/Overlay/Mv/Rot).
-  //
-  // parentId is set when the popup is opened from a folder's "+ file"
-  // / "+ folder" buttons — the resulting node is appended to that
-  // parent's children. When unset, the new node becomes the
-  // implicit-list root's child.
-  //
-  // step:
-  //   'fn'     — primitive / alias / helper typeahead (the "+ file" flow).
-  //   'folder' — container-kind grid (List/Method/Stack/Overlay/Mv/Rot).
-  //   'kind'   — legacy: full 8-tile kind picker incl. Call + Literal.
-  let rootPopup = $state<{ x: number; y: number; step: 'kind' | 'folder' | 'fn'; query: string; parentId?: string } | null>(null);
+  let rootPopup = $state<{ x: number; y: number; step: 'folder' | 'fn'; query: string; parentId?: string } | null>(null);
   function openFilePopup(parentId: string | undefined, ev: MouseEvent) {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'fn', query: '', parentId };
@@ -147,19 +126,15 @@
   }
   function closeRootPopup() { rootPopup = null; }
 
-  /** Append `node` as the last child of the list/stack `parentId`. Used
-   *  by the "+ child" flow + drag-drop into a list/stack. */
   function appendChildToList(parentId: string, node: TreeNode) {
     if (!composition) return;
     const parent = findById(composition, parentId);
     if (!parent || (parent.type !== 'list' && parent.type !== 'stack')) return;
     const replacement: TreeNode = { ...parent, children: [...parent.children, node] };
-    const next = replaceNode(composition, parentId, replacement);
-    commit(imports, next);
+    commit(imports, replaceNode(composition, parentId, replacement));
+    // Auto-expand the parent so the new child is visible.
+    expanded[parentId] = true;
   }
-  /** Insert a Call node into the composition. Routes match drag-drop:
-   *  empty composition → wrap in List; root is List/Stack → append;
-   *  other → wrap the existing root + the new node in a List. */
   function insertCallIntoComposition(node: TreeNode) {
     if (composition === null) {
       const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [node] };
@@ -173,13 +148,8 @@
     const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [composition, node] };
     commit(imports, listRoot);
   }
-  /** "+ use" button on an Import row: insert `IMPNAME(defaults)` into
-   *  the composition with the source primitive's defaults filled in. */
   async function insertImportUse(imp: ImportDef) {
     const callNode = await callWithDefaults(imp.name);
-    // callWithDefaults fetches via imp.name (the alias). For aliases the
-    // /api/primitives/source endpoint may 404 since the alias isn't a
-    // primitive id. If it fell back to empty args, retry with the src.
     const finalNode = (callNode.type === 'call' && callNode.args.length === 0)
       ? { ...await callWithDefaults(imp.src), fn: imp.name }
       : { ...(callNode as any), fn: imp.name };
@@ -189,6 +159,7 @@
   function makePlaceholder(): TreeNode {
     return { type: 'literal', id: newNodeId(), value: '' };
   }
+  function makeLiteral(v: string): TreeNode { return { type: 'literal', id: newNodeId(), value: v }; }
   function makeNodeOfKind(type: NodeType, fn?: string): TreeNode {
     const nid = newNodeId();
     switch (type) {
@@ -205,21 +176,16 @@
       case 'literal': return { type, id: nid, value: '' };
     }
   }
-  function makeLiteral(v: string): TreeNode { return { type: 'literal', id: newNodeId(), value: v }; }
 
-  function createRoot(type: NodeType) {
-    if (type === 'call') {
-      // Two-step — pick the fn so the new node lands with a real callable.
-      rootPopup = { ...(rootPopup ?? { x: 0, y: 0 } as any), step: 'fn', query: '' };
-      return;
-    }
+  function createFolder(type: NodeType) {
     const node = makeNodeOfKind(type);
     const pid = rootPopup?.parentId;
     if (pid) appendChildToList(pid, node);
     else commit(imports, node);
+    expanded[node.id] = true;
     closeRootPopup();
   }
-  async function createCallRoot(fn: string) {
+  async function createCallNode(fn: string) {
     const pid = rootPopup?.parentId;
     const node = await callWithDefaults(fn);
     if (pid) appendChildToList(pid, node);
@@ -244,10 +210,6 @@
     return { tag: 'helper', cls: 'ce-pop-tag-helper' };
   }
 
-  /** Fetch a primitive's params and produce literal args matching each
-   *  param's default, in declaration order. Used so dropping `shaft`
-   *  via + child or drag-drop gives the user a Call with sensible
-   *  defaults already filled in instead of empty arg slots. */
   async function callWithDefaults(fn: string): Promise<TreeNode> {
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(fn)}`);
@@ -272,8 +234,7 @@
     return makeNodeOfKind('call', fn);
   }
 
-  // ─── Per-node mutations (M3c) ─────────────────────────────────────────
-
+  // ─── Per-node mutations ──────────────────────────────────────────────
   function deleteN(nid: string) {
     if (!composition) return;
     const next = deleteNode(composition, nid);
@@ -282,17 +243,13 @@
 
   function swapOp(node: TreeNode & { type: 'method' }, op: CsgOp) {
     if (!composition) return;
-    const replacement: TreeNode = { ...node, op };
-    const next = replaceNode(composition, node.id, replacement);
-    commit(imports, next);
+    commit(imports, replaceNode(composition, node.id, { ...node, op }));
     opPopup = null;
   }
 
   function commitLiteral(node: TreeNode & { type: 'literal' }, value: string) {
     if (!composition) return;
-    const replacement: TreeNode = { ...node, value };
-    const next = replaceNode(composition, node.id, replacement);
-    commit(imports, next);
+    commit(imports, replaceNode(composition, node.id, { ...node, value }));
     litEdit = null;
   }
 
@@ -302,18 +259,51 @@
     if (choice.kind === 'literal') replacement = makeLiteral(choice.value);
     else if (choice.kind === 'ref') replacement = { type: 'ref', id: newNodeId(), target: choice.value };
     else replacement = makeNodeOfKind('call', choice.value);
-    const next = replaceNode(composition, node.id, replacement);
-    commit(imports, next);
+    commit(imports, replaceNode(composition, node.id, replacement));
     argPicker = null;
   }
 
-  // ─── Local popup state ────────────────────────────────────────────────
+  // ─── Inline transforms on Call (Option 1) ────────────────────────────
+  /** Toggle the inline mv triplet on a Call. Off → add [0,0,0]; on → remove. */
+  function toggleCallMv(call: TreeNode & { type: 'call' }) {
+    if (!composition) return;
+    const next: TreeNode = call.mv
+      ? { ...call, mv: undefined }
+      : { ...call, mv: [makeLiteral('0'), makeLiteral('0'), makeLiteral('0')] };
+    commit(imports, replaceNode(composition, call.id, next));
+  }
+  function toggleCallRot(call: TreeNode & { type: 'call' }) {
+    if (!composition) return;
+    const next: TreeNode = call.rot
+      ? { ...call, rot: undefined }
+      : { ...call, rot: [makeLiteral('0'), makeLiteral('0'), makeLiteral('0')] };
+    commit(imports, replaceNode(composition, call.id, next));
+  }
+  /** Commit a single axis value of a Call's mv or rot. Skips when no change. */
+  function commitTransformAxis(call: TreeNode & { type: 'call' }, slot: 'mv' | 'rot', axis: 0 | 1 | 2, value: string) {
+    if (!composition) return;
+    const triplet = (slot === 'mv' ? call.mv : call.rot);
+    if (!triplet) return;
+    const updated = [...triplet] as [TreeNode, TreeNode, TreeNode];
+    updated[axis] = { ...(triplet[axis] as any), value };
+    const next: TreeNode = slot === 'mv'
+      ? { ...call, mv: updated }
+      : { ...call, rot: updated };
+    commit(imports, replaceNode(composition, call.id, next));
+  }
 
-  // op swap (click a method's op text).
+  // Inline transform editor — which file's mv/rot row is open. Keyed by
+  // node.id. `mv` opens the mv row, `rot` opens the rot row. Both can be
+  // open at once.
+  let openTransform = $state<Record<string, { mv?: boolean; rot?: boolean }>>({});
+  function toggleTransformRow(id: string, slot: 'mv' | 'rot') {
+    const cur = openTransform[id] ?? {};
+    openTransform = { ...openTransform, [id]: { ...cur, [slot]: !cur[slot] } };
+  }
+
+  // ─── Local popup state ────────────────────────────────────────────────
   let opPopup = $state<{ nodeId: string; x: number; y: number } | null>(null);
-  // inline literal edit (click a Literal's value).
   let litEdit = $state<{ nodeId: string; value: string } | null>(null);
-  // generic arg picker (click an empty placeholder Literal).
   let argPicker = $state<{ nodeId: string; x: number; y: number; tab: 'literal' | 'ref' | 'call'; query: string; literalVal: string } | null>(null);
 
   function openOpPopup(ev: MouseEvent, nodeId: string) {
@@ -331,58 +321,89 @@
     argPicker = { nodeId, x: rect.left, y: rect.bottom + 4, tab: 'literal', query: '', literalVal: '' };
   }
 
-  // Method nodes whose op popup is open — find by id for snapshot data.
   let opPopupNode = $derived(opPopup && composition ? findById(composition, opPopup.nodeId) : null);
 
   function findById(root: TreeNode, nid: string): TreeNode | null {
     if (root.id === nid) return root;
-    switch (root.type) {
-      case 'call':    for (const a of root.args)     { const h = findById(a, nid); if (h) return h; } return null;
-      case 'method':  return findById(root.obj, nid) ?? findById(root.arg, nid);
-      case 'list':
-      case 'stack':   for (const c of root.children) { const h = findById(c, nid); if (h) return h; } return null;
-      case 'overlay': return findById(root.anchor, nid) ?? findById(root.child, nid);
-      case 'mv':      return findById(root.child, nid) ?? findById(root.offset[0], nid) ?? findById(root.offset[1], nid) ?? findById(root.offset[2], nid);
-      case 'rot':     return findById(root.child, nid) ?? findById(root.rot[0], nid) ?? findById(root.rot[1], nid) ?? findById(root.rot[2], nid);
-      case 'ref':
-      case 'literal': return null;
+    for (const c of childrenOf(root)) {
+      const h = findById(c, nid);
+      if (h) return h;
     }
+    return null;
   }
 
-  // Sibling refs available for the "ref" arg picker tab — every named
-  // alias is fair game (the emitted body declares `const A = shaft;`).
   let refCandidates = $derived(imports.map((i) => i.name));
 
-  // ─── Glyphs + summaries ───────────────────────────────────────────────
+  // ─── Expansion state ─────────────────────────────────────────────────
+  // Default: all folders expanded. Track per-id collapsed state so user
+  // toggles persist while editing. `expanded[id] === false` = collapsed.
+  let expanded = $state<Record<string, boolean>>({});
+  function isExpanded(id: string): boolean {
+    return expanded[id] !== false; // default to open
+  }
+  function toggleExpand(id: string) {
+    expanded = { ...expanded, [id]: !isExpanded(id) };
+  }
 
-  function glyphFor(type: TreeNode['type']): string {
-    switch (type) {
-      case 'call':    return 'ƒ';
-      case 'method':  return '⊖';
-      case 'list':    return '◫';
-      case 'stack':   return '⫾';
-      case 'overlay': return '⤴';
-      case 'mv':      return '↦';
-      case 'rot':     return '↻';
-      case 'ref':     return '→';
-      case 'literal': return '·';
+  // ─── Glyphs + labels ─────────────────────────────────────────────────
+  /** Container kind → folder-row badge (left of the name). The op chip
+   *  for `method` is rendered separately and is clickable to swap. */
+  function folderKindBadge(n: TreeNode): string {
+    switch (n.type) {
+      case 'list':    return '[ ]';      // place (no op)
+      case 'stack':   return '↓';        // auto-mate
+      case 'method':  return '';         // op chip rendered separately
+      case 'overlay': return '⤴';        // datum align
+      case 'mv':      return '↦';        // translate
+      case 'rot':     return '↻';        // rotate
+      default:        return '';
     }
   }
-  function summaryFor(n: TreeNode): string {
+  function folderKindLabel(n: TreeNode): string {
     switch (n.type) {
-      case 'call':    return `${n.fn || '?'}(${n.args.length === 0 ? '' : '…'})`;
-      case 'method':  return n.op;
-      case 'list':    return `list (${n.children.length})`;
-      case 'stack':   return `stack (${n.children.length})`;
-      case 'overlay': return `overlay @${n.at}`;
+      case 'list':    return 'list';
+      case 'stack':   return 'stack';
+      case 'method':  return 'method';
+      case 'overlay': return 'overlay';
       case 'mv':      return 'mv';
       case 'rot':     return 'rot';
-      case 'ref':     return n.target || '?';
-      case 'literal': return n.value || '·';
+      default:        return '';
     }
+  }
+  function opGlyph(op: CsgOp): string {
+    return op === 'add' ? '⊕' : op === 'intersect' ? '∩' : '⊖';
   }
   function methodOpClass(op: string): string {
     return op === 'add' ? 'op-add' : op === 'intersect' ? 'op-inter' : 'op-sub';
+  }
+  /** File row title for a leaf kind (call / ref / literal). */
+  function fileTitle(n: TreeNode): string {
+    if (n.type === 'call') {
+      const args = n.args.map((a: TreeNode) => emitShort(a)).join(', ');
+      return `${n.fn || '?'}(${args})`;
+    }
+    if (n.type === 'ref') return `→ ${n.target || '?'}`;
+    if (n.type === 'literal') return n.value || '·';
+    return '';
+  }
+  /** Short emitter used to print a Call's arg list inline. Keeps the row
+   *  one line; nested calls collapse to `<fn>(…)`. */
+  function emitShort(n: TreeNode): string {
+    switch (n.type) {
+      case 'literal': return n.value || '·';
+      case 'ref':     return n.target || '?';
+      case 'call':    return `${n.fn || '?'}(${n.args.length ? '…' : ''})`;
+      case 'method':  return `(method)`;
+      case 'list':    return `[${n.children.length}]`;
+      case 'stack':   return `↓[${n.children.length}]`;
+      case 'overlay': return `overlay`;
+      case 'mv':      return `mv(…)`;
+      case 'rot':     return `rot(…)`;
+      default:        return '';
+    }
+  }
+  function triValuePreview(arr: [TreeNode, TreeNode, TreeNode]): string {
+    return `[${arr.map((a) => a.type === 'literal' ? (a.value || '0') : emitShort(a)).join(', ')}]`;
   }
 </script>
 
@@ -419,7 +440,7 @@
     {/if}
   </section>
 
-  <!-- ─── Composition ──────────────────────────────────────────────── -->
+  <!-- ─── Composition (folder tree) ────────────────────────────────── -->
   <section class="ce-section ce-composition"
     ondragover={(e) => { if (canEdit && e.dataTransfer?.types.includes('application/x-primitive-id')) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } }}
     ondrop={(e) => {
@@ -428,118 +449,88 @@
       e.preventDefault();
       const dropped = e.dataTransfer.getData('application/x-primitive-id');
       if (!dropped) return;
-      // Auto-populate args with the dropped primitive's defaults — the
-      // fetched params drive the Call's literal arg list.
       callWithDefaults(dropped).then(insertCallIntoComposition);
     }}>
     <header class="ce-section-head">
       <span class="ce-section-title">▼ Composition</span>
     </header>
     {#if composition === null}
-      <!-- Empty composition = implicit empty List ("collection"). Two
-           explicit affordances: + file (primitive) or + folder (sub-list /
-           method / stack / etc). Either creates an implicit List with
-           the new node as first child. -->
-      <div class="ce-folder ce-folder-root">
-        <div class="ce-folder-head">
-          <span class="ce-folder-glyph">📁</span>
-          <span class="ce-folder-name">root</span>
-          <span class="ce-folder-kind">[ ]</span>
-        </div>
-        <div class="ce-folder-body">
+      <!-- Empty = implicit empty List. One synthetic root folder row. -->
+      <div class="ce-tree">
+        <div class="ce-row ce-folder-row" style="--depth: 0">
+          <span class="ce-glyph">📁</span>
+          <span class="ce-kind-badge">[ ]</span>
+          <span class="ce-name">root</span>
+          <span class="ce-row-spacer"></span>
           {#if canEdit}
-            <div class="ce-folder-empty">empty — add files or folders</div>
-            <div class="ce-folder-actions">
-              <button class="ce-add-btn" type="button" onclick={(e) => openFilePopup(undefined, e)}>+ file</button>
-              <button class="ce-add-btn" type="button" onclick={(e) => openFolderPopup(undefined, e)}>+ folder</button>
-            </div>
-          {:else}
-            <div class="ce-folder-empty">empty</div>
+            <button class="ce-row-btn" type="button" title="Add a primitive file" onclick={(e) => openFilePopup(undefined, e)}>+ file</button>
+            <button class="ce-row-btn" type="button" title="Add a folder (list / stack / method / …)" onclick={(e) => openFolderPopup(undefined, e)}>+ folder</button>
           {/if}
+        </div>
+        <div class="ce-row ce-empty-row" style="--depth: 1">
+          <span class="ce-empty-hint">empty — add files or folders, or drag a primitive here</span>
         </div>
       </div>
     {:else}
-      <div class="ce-tree">{@render node(composition, 0)}</div>
+      <div class="ce-tree">
+        {@render row(composition, 0)}
+      </div>
     {/if}
   </section>
 </div>
 
-<!-- ─── Recursive node render ─────────────────────────────────────── -->
-{#snippet node(n: TreeNode, depth: number)}
-  <div class="ce-node ce-node-{n.type}" style="--depth: {depth}">
-    <header class="ce-node-head">
-      <span class="ce-node-glyph ce-node-glyph-{n.type}">{glyphFor(n.type)}</span>
-      {#if n.type === 'method' && canEdit}
+<!-- ─── Recursive row render ──────────────────────────────────────── -->
+{#snippet row(n: TreeNode, depth: number)}
+  {#if isFolder(n)}
+    {@render folderRow(n, depth)}
+  {:else}
+    {@render fileRow(n, depth)}
+  {/if}
+{/snippet}
+
+{#snippet folderRow(n: TreeNode, depth: number)}
+  {@const open = isExpanded(n.id)}
+  <div class="ce-row ce-folder-row" class:collapsed={!open} style="--depth: {depth}">
+    <button class="ce-twist" type="button" title={open ? 'Collapse' : 'Expand'} onclick={() => toggleExpand(n.id)}>
+      {open ? '▾' : '▸'}
+    </button>
+    <span class="ce-glyph">📁</span>
+    {#if n.type === 'method'}
+      {#if canEdit}
         <button
-          class="ce-node-summary ce-op-btn {methodOpClass(n.op)}"
+          class="ce-op-chip {methodOpClass(n.op)}"
           type="button"
           title="Swap op"
           onclick={(ev) => openOpPopup(ev, n.id)}
-        >{n.op}</button>
-      {:else if n.type === 'literal' && canEdit}
-        {#if litEdit?.nodeId === n.id}
-          <input
-            class="ce-lit-input"
-            value={litEdit.value}
-            oninput={(e) => { if (litEdit) litEdit = { ...litEdit, value: (e.currentTarget as HTMLInputElement).value }; }}
-            onblur={() => { if (litEdit) commitLiteral(n, litEdit.value); }}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-              else if (e.key === 'Escape') litEdit = null;
-            }}
-          />
-        {:else if !n.value}
-          <button
-            class="ce-empty-arg"
-            type="button"
-            title="Set value"
-            onclick={(ev) => openArgPicker(ev, n.id)}
-          >+ value</button>
-        {:else}
-          <button
-            class="ce-node-summary ce-lit-btn"
-            type="button"
-            title="Edit value"
-            onclick={() => openLitEdit(n)}
-          >{n.value}</button>
-        {/if}
+        >{opGlyph(n.op)} {n.op}</button>
       {:else}
-        <span class="ce-node-summary {n.type === 'method' ? methodOpClass(n.op) : ''}">{summaryFor(n)}</span>
+        <span class="ce-op-chip {methodOpClass(n.op)}">{opGlyph(n.op)} {n.op}</span>
       {/if}
-      {#if n.name}
-        <span class="ce-node-name">as {n.name}</span>
+    {:else}
+      <span class="ce-kind-badge">{folderKindBadge(n)}</span>
+    {/if}
+    <span class="ce-name">{folderKindLabel(n)}</span>
+    {#if n.name}
+      <span class="ce-as">as {n.name}</span>
+    {/if}
+    <span class="ce-row-spacer"></span>
+    {#if canEdit}
+      {#if n.type === 'list' || n.type === 'stack'}
+        <button class="ce-row-btn" type="button" title="Add a file" onclick={(e) => openFilePopup(n.id, e)}>+ file</button>
+        <button class="ce-row-btn" type="button" title="Add a folder" onclick={(e) => openFolderPopup(n.id, e)}>+ folder</button>
       {/if}
-      {#if canEdit}
-        <button class="ce-node-del" type="button" title="Delete node" onclick={() => deleteN(n.id)}>×</button>
-      {/if}
-    </header>
-    {@render children(n, depth)}
+      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)}>×</button>
+    {/if}
   </div>
+
+  {#if open}
+    {@render folderChildren(n, depth + 1)}
+  {/if}
 {/snippet}
 
-{#snippet children(n: TreeNode, depth: number)}
-  {#if n.type === 'call' && n.args.length > 0}
-    <div class="ce-node-body">
-      {#each n.args as a, i (a.id)}
-        <div class="ce-arg-row">
-          <span class="ce-arg-label">arg {i}:</span>
-          {@render node(a, depth + 1)}
-        </div>
-      {/each}
-    </div>
-  {:else if n.type === 'method'}
-    <div class="ce-node-body">
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">obj:</span>
-        {@render node(n.obj, depth + 1)}
-      </div>
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">arg:</span>
-        {@render node(n.arg, depth + 1)}
-      </div>
-    </div>
-  {:else if (n.type === 'list' || n.type === 'stack')}
-    <div class="ce-node-body"
+{#snippet folderChildren(n: TreeNode, depth: number)}
+  {#if n.type === 'list' || n.type === 'stack'}
+    <div class="ce-folder-children"
       ondragover={(e) => { if (e.dataTransfer?.types.includes('application/x-primitive-id')) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } }}
       ondrop={(e) => {
         if (!e.dataTransfer?.types.includes('application/x-primitive-id')) return;
@@ -548,65 +539,181 @@
         if (dropped) callWithDefaults(dropped).then((node) => appendChildToList(n.id, node));
       }}>
       {#each n.children as c (c.id)}
-        {@render node(c, depth + 1)}
+        {@render row(c, depth)}
       {/each}
-      {#if canEdit}
-        <div class="ce-folder-actions">
-          <button class="ce-add-btn" type="button" onclick={(e) => openFilePopup(n.id, e)}>+ file</button>
-          <button class="ce-add-btn" type="button" onclick={(e) => openFolderPopup(n.id, e)}>+ folder</button>
+      {#if n.children.length === 0}
+        <div class="ce-row ce-empty-row" style="--depth: {depth}">
+          <span class="ce-empty-hint">empty — drop here or use + file / + folder above</span>
         </div>
       {/if}
-      {#if n.children.length === 0}
-        <div class="ce-drop-hint">Drag a primitive here or click + file / + folder</div>
-      {/if}
+    </div>
+  {:else if n.type === 'method'}
+    <div class="ce-folder-children">
+      {@render slotRow('obj', n.obj, depth)}
+      {@render slotRow('arg', n.arg, depth)}
     </div>
   {:else if n.type === 'overlay'}
-    <div class="ce-node-body">
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">anchor:</span>
-        {@render node(n.anchor, depth + 1)}
-      </div>
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">child:</span>
-        {@render node(n.child, depth + 1)}
-      </div>
+    <div class="ce-folder-children">
+      {@render slotRow('anchor', n.anchor, depth)}
+      {@render slotRow('child',  n.child,  depth)}
     </div>
   {:else if n.type === 'mv'}
-    <div class="ce-node-body">
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">child:</span>
-        {@render node(n.child, depth + 1)}
-      </div>
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">offset:</span>
-        <span class="ce-arg-tuple">
-          {@render node(n.offset[0], depth + 1)}
-          {@render node(n.offset[1], depth + 1)}
-          {@render node(n.offset[2], depth + 1)}
-        </span>
+    <div class="ce-folder-children">
+      {@render slotRow('child', n.child, depth)}
+      <div class="ce-row ce-axis-row" style="--depth: {depth}">
+        <span class="ce-axis-label">offset</span>
+        {#each n.offset as ax, i (ax.id)}
+          {@render axisInput(ax, depth, i)}
+        {/each}
       </div>
     </div>
   {:else if n.type === 'rot'}
-    <div class="ce-node-body">
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">child:</span>
-        {@render node(n.child, depth + 1)}
+    <div class="ce-folder-children">
+      {@render slotRow('child', n.child, depth)}
+      <div class="ce-row ce-axis-row" style="--depth: {depth}">
+        <span class="ce-axis-label">rot</span>
+        {#each n.rot as ax, i (ax.id)}
+          {@render axisInput(ax, depth, i)}
+        {/each}
       </div>
-      <div class="ce-arg-row">
-        <span class="ce-arg-label">rot:</span>
-        <span class="ce-arg-tuple">
-          {@render node(n.rot[0], depth + 1)}
-          {@render node(n.rot[1], depth + 1)}
-          {@render node(n.rot[2], depth + 1)}
-        </span>
-      </div>
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet slotRow(label: string, child: TreeNode, depth: number)}
+  <div class="ce-slot-wrap">
+    <span class="ce-slot-label" style="--depth: {depth}">{label}:</span>
+    {@render row(child, depth)}
+  </div>
+{/snippet}
+
+{#snippet axisInput(ax: TreeNode, depth: number, idx: number)}
+  {#if ax.type === 'literal' && canEdit}
+    <input
+      class="ce-axis-input"
+      type="text"
+      value={ax.value}
+      placeholder="0"
+      onblur={(e) => commitLiteral(ax, (e.currentTarget as HTMLInputElement).value)}
+      onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+    />
+  {:else if ax.type === 'literal'}
+    <span class="ce-axis-val">{ax.value || '0'}</span>
+  {:else}
+    <span class="ce-axis-val">{emitShort(ax)}</span>
+  {/if}
+{/snippet}
+
+{#snippet fileRow(n: TreeNode, depth: number)}
+  <div class="ce-row ce-file-row" style="--depth: {depth}">
+    <span class="ce-twist-spacer"></span>
+    <span class="ce-glyph">📄</span>
+    {#if n.type === 'call'}
+      <span class="ce-file-fn-glyph">ƒ</span>
+      <span class="ce-file-title" title={fileTitle(n)}>{fileTitle(n)}</span>
+    {:else if n.type === 'ref'}
+      <span class="ce-file-ref-glyph">🔗</span>
+      <span class="ce-file-title">{fileTitle(n)}</span>
+    {:else if n.type === 'literal'}
+      <span class="ce-file-lit-glyph">📝</span>
+      {#if canEdit && litEdit && litEdit.nodeId === n.id}
+        <input
+          class="ce-lit-input"
+          value={litEdit.value}
+          oninput={(e) => { if (litEdit) litEdit = { ...litEdit, value: (e.currentTarget as HTMLInputElement).value }; }}
+          onblur={() => { if (litEdit) commitLiteral(n as any, litEdit.value); }}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+            else if (e.key === 'Escape') litEdit = null;
+          }}
+        />
+      {:else if canEdit && !n.value}
+        <button class="ce-empty-arg" type="button" title="Set value" onclick={(ev) => openArgPicker(ev, n.id)}>+ value</button>
+      {:else if canEdit}
+        <button class="ce-file-title ce-lit-btn" type="button" title="Edit value" onclick={() => openLitEdit(n as any)}>{n.value}</button>
+      {:else}
+        <span class="ce-file-title">{n.value || '·'}</span>
+      {/if}
+    {/if}
+
+    <!-- Inline transform chips (Option 1) — visible when set. Reflect
+         current mv / rot triplet. -->
+    {#if n.type === 'call' && n.mv}
+      <button class="ce-tx-chip ce-tx-chip-mv" type="button"
+        title="Edit inline mv triplet"
+        disabled={!canEdit}
+        onclick={() => toggleTransformRow(n.id, 'mv')}
+      >@ mv {triValuePreview(n.mv)}</button>
+    {/if}
+    {#if n.type === 'call' && n.rot}
+      <button class="ce-tx-chip ce-tx-chip-rot" type="button"
+        title="Edit inline rot triplet"
+        disabled={!canEdit}
+        onclick={() => toggleTransformRow(n.id, 'rot')}
+      >↻ rot {triValuePreview(n.rot)}</button>
+    {/if}
+
+    <span class="ce-row-spacer"></span>
+
+    {#if canEdit && n.type === 'call'}
+      <button class="ce-row-btn ce-row-tx" class:active={!!n.mv} type="button"
+        title={n.mv ? 'Remove mv' : 'Add inline mv (translate)'}
+        onclick={() => toggleCallMv(n as any)}>↦</button>
+      <button class="ce-row-btn ce-row-tx" class:active={!!n.rot} type="button"
+        title={n.rot ? 'Remove rot' : 'Add inline rot (rotate)'}
+        onclick={() => toggleCallRot(n as any)}>↻</button>
+    {/if}
+    {#if canEdit}
+      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)}>×</button>
+    {/if}
+  </div>
+
+  <!-- Inline transform editor — expands below the file row when toggled. -->
+  {#if n.type === 'call' && n.mv && openTransform[n.id]?.mv}
+    <div class="ce-row ce-tx-edit-row" style="--depth: {depth}">
+      <span class="ce-tx-edit-label">mv</span>
+      {#each n.mv as ax, i (ax.id)}
+        {#if ax.type === 'literal'}
+          <input
+            class="ce-axis-input"
+            type="text"
+            value={ax.value}
+            placeholder="0"
+            disabled={!canEdit}
+            onblur={(e) => commitTransformAxis(n as any, 'mv', i as 0 | 1 | 2, (e.currentTarget as HTMLInputElement).value)}
+            onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+          />
+        {:else}
+          <span class="ce-axis-val">{emitShort(ax)}</span>
+        {/if}
+      {/each}
+    </div>
+  {/if}
+  {#if n.type === 'call' && n.rot && openTransform[n.id]?.rot}
+    <div class="ce-row ce-tx-edit-row" style="--depth: {depth}">
+      <span class="ce-tx-edit-label">rot</span>
+      {#each n.rot as ax, i (ax.id)}
+        {#if ax.type === 'literal'}
+          <input
+            class="ce-axis-input"
+            type="text"
+            value={ax.value}
+            placeholder="0"
+            disabled={!canEdit}
+            onblur={(e) => commitTransformAxis(n as any, 'rot', i as 0 | 1 | 2, (e.currentTarget as HTMLInputElement).value)}
+            onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+          />
+        {:else}
+          <span class="ce-axis-val">{emitShort(ax)}</span>
+        {/if}
+      {/each}
     </div>
   {/if}
 {/snippet}
 
 <!-- ─── Popups ─────────────────────────────────────────────────────── -->
 
-<!-- M3a — Import picker -->
+<!-- Import picker -->
 {#if importPopup}
   <FloatingPanel
     title="Add import"
@@ -641,13 +748,11 @@
   </FloatingPanel>
 {/if}
 
-<!-- M3b — Root creation -->
+<!-- + file / + folder picker -->
 {#if rootPopup}
   <FloatingPanel
-    title={rootPopup.step === 'fn' ? '+ file' : rootPopup.step === 'folder' ? '+ folder' : 'Add root'}
-    subtitle={rootPopup.step === 'fn' ? 'Primitive, import alias, or sandbox helper'
-              : rootPopup.step === 'folder' ? 'Choose a container kind'
-              : 'Choose a node kind'}
+    title={rootPopup.step === 'fn' ? '+ file' : '+ folder'}
+    subtitle={rootPopup.step === 'fn' ? 'Primitive, import alias, or sandbox helper' : 'Choose a container kind'}
     visible={true}
     x={rootPopup.x}
     y={rootPopup.y}
@@ -657,54 +762,24 @@
   >
     <div class="ce-pop">
       {#if rootPopup.step === 'folder'}
-        <!-- Container kinds only: List / Stack / Method (op-folder),
-             Overlay, Mv, Rot. Excludes the leaf kinds (Call / Literal /
-             Ref) which are added via "+ file" or the arg picker. -->
         <div class="ce-kind-grid">
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('list')}>
-            <span class="ce-kind-glyph">◫</span><span class="ce-kind-lbl">List</span>
+          <button class="ce-kind-btn" type="button" onclick={() => createFolder('list')}>
+            <span class="ce-kind-glyph">[ ]</span><span class="ce-kind-lbl">List</span>
           </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('stack')}>
-            <span class="ce-kind-glyph">⫾</span><span class="ce-kind-lbl">Stack</span>
+          <button class="ce-kind-btn" type="button" onclick={() => createFolder('stack')}>
+            <span class="ce-kind-glyph">↓</span><span class="ce-kind-lbl">Stack</span>
           </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('method')}>
+          <button class="ce-kind-btn" type="button" onclick={() => createFolder('method')}>
             <span class="ce-kind-glyph">⊖</span><span class="ce-kind-lbl">Method</span>
           </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('overlay')}>
+          <button class="ce-kind-btn" type="button" onclick={() => createFolder('overlay')}>
             <span class="ce-kind-glyph">⤴</span><span class="ce-kind-lbl">Overlay</span>
           </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('mv')}>
+          <button class="ce-kind-btn" type="button" onclick={() => createFolder('mv')}>
             <span class="ce-kind-glyph">↦</span><span class="ce-kind-lbl">Mv</span>
           </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('rot')}>
+          <button class="ce-kind-btn" type="button" onclick={() => createFolder('rot')}>
             <span class="ce-kind-glyph">↻</span><span class="ce-kind-lbl">Rot</span>
-          </button>
-        </div>
-      {:else if rootPopup.step === 'kind'}
-        <div class="ce-kind-grid">
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('call')}>
-            <span class="ce-kind-glyph">ƒ</span><span class="ce-kind-lbl">Call</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('method')}>
-            <span class="ce-kind-glyph">⊖</span><span class="ce-kind-lbl">Method</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('list')}>
-            <span class="ce-kind-glyph">◫</span><span class="ce-kind-lbl">List</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('stack')}>
-            <span class="ce-kind-glyph">⫾</span><span class="ce-kind-lbl">Stack</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('overlay')}>
-            <span class="ce-kind-glyph">⤴</span><span class="ce-kind-lbl">Overlay</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('mv')}>
-            <span class="ce-kind-glyph">↦</span><span class="ce-kind-lbl">Mv</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('rot')}>
-            <span class="ce-kind-glyph">↻</span><span class="ce-kind-lbl">Rot</span>
-          </button>
-          <button class="ce-kind-btn" type="button" onclick={() => createRoot('literal')}>
-            <span class="ce-kind-glyph">·</span><span class="ce-kind-lbl">Literal</span>
           </button>
         </div>
       {:else}
@@ -719,7 +794,7 @@
         <div class="ce-pop-list">
           {#each fnCandidates as fn (fn)}
             {@const t = tagFor(fn)}
-            <button class="ce-pop-item" type="button" onclick={() => createCallRoot(fn)}>
+            <button class="ce-pop-item" type="button" onclick={() => createCallNode(fn)}>
               <span class="ce-pop-id">{fn}</span>
               <span class="ce-pop-tag {t.cls}">{t.tag}</span>
             </button>
@@ -733,7 +808,7 @@
   </FloatingPanel>
 {/if}
 
-<!-- M3c — Method op picker -->
+<!-- Method op picker -->
 {#if opPopup && opPopupNode && opPopupNode.type === 'method'}
   <FloatingPanel
     title="Swap op"
@@ -751,14 +826,14 @@
             class="ce-op-pick {methodOpClass(op)}"
             type="button"
             onclick={() => swapOp(opPopupNode as any, op as CsgOp)}
-          >{op}</button>
+          >{opGlyph(op as CsgOp)} {op}</button>
         {/each}
       </div>
     </div>
   </FloatingPanel>
 {/if}
 
-<!-- M3c — Arg picker (empty literal placeholder click) -->
+<!-- Arg picker -->
 {#if argPicker}
   <FloatingPanel
     title="Set value"
@@ -865,41 +940,6 @@
     padding: 2px 8px; border-radius: 4px; cursor: pointer;
   }
   .ce-add-btn:hover { background: #ddeaff; border-color: #8eb6e6; }
-  .ce-add-child { margin-left: 8px; margin-top: 4px; }
-  .ce-folder-root {
-    background: #fafafa; border: 1px solid #d0d0d0; border-radius: 6px;
-    padding: 8px; margin-top: 6px;
-  }
-  .ce-folder-head {
-    display: flex; align-items: center; gap: 6px;
-    font: 600 13px ui-sans-serif; color: #333;
-  }
-  .ce-folder-glyph { font-size: 16px; }
-  .ce-folder-name { font-weight: 700; color: #1f2937; }
-  .ce-folder-kind {
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #888; background: #f0f0f5; padding: 1px 6px; border-radius: 4px;
-  }
-  .ce-folder-empty {
-    color: #888; font-style: italic; font-size: 12px;
-    padding: 8px 4px;
-  }
-  .ce-folder-actions {
-    display: flex; gap: 4px; margin-top: 4px;
-  }
-  .ce-imp-use {
-    appearance: none; background: #eef5ff; border: 1px solid #b8d4f2;
-    border-radius: 4px; padding: 1px 8px;
-    font: 600 11px ui-sans-serif; color: #1e40af; cursor: pointer;
-    margin-left: auto; margin-right: 4px;
-  }
-  .ce-imp-use:hover { background: #ddeaff; border-color: #1e40af; }
-  :global(.ce-pop-tag-primitive) { background: #fef3c7; color: #92400e; }
-  .ce-drop-hint {
-    margin-top: 4px; padding: 6px 10px;
-    background: #fafafa; border: 1px dashed #ccc; border-radius: 4px;
-    font: italic 12px ui-sans-serif; color: #888; text-align: center;
-  }
   .ce-empty { color: #888; font-style: italic; padding: 6px 4px; }
 
   /* Imports */
@@ -911,6 +951,13 @@
   .ce-imp-name { font-weight: 700; color: #0c2e6e; }
   .ce-imp-eq { color: #5e88c3; }
   .ce-imp-src { color: #1e3a8a; flex: 1; }
+  .ce-imp-use {
+    appearance: none; background: #eef5ff; border: 1px solid #b8d4f2;
+    border-radius: 4px; padding: 1px 8px;
+    font: 600 11px ui-sans-serif; color: #1e40af; cursor: pointer;
+    margin-left: auto; margin-right: 4px;
+  }
+  .ce-imp-use:hover { background: #ddeaff; border-color: #1e40af; }
   .ce-imp-del {
     background: transparent; border: none; cursor: pointer;
     color: #888; font-size: 14px; line-height: 1;
@@ -919,93 +966,180 @@
   }
   .ce-imp-del:hover { background: #fdecec; color: #cc2222; }
 
-  /* Composition tree */
+  /* Composition — flat tree */
   .ce-composition { background: #fafafa; }
-  .ce-tree { display: flex; flex-direction: column; gap: 2px; }
-  .ce-node {
-    border-left: 2px solid #e0e0e0;
-    padding-left: 8px;
-    margin-left: calc(var(--depth, 0) * 12px);
+  .ce-tree {
+    display: flex; flex-direction: column;
+    gap: 0;
+    font: 13px ui-sans-serif, system-ui;
   }
-  .ce-node-head {
-    display: flex; align-items: center; gap: 6px;
-    padding: 4px 0;
-    color: #333;
+  .ce-folder-children { display: flex; flex-direction: column; gap: 0; }
+  .ce-slot-wrap { display: flex; flex-direction: column; gap: 0; }
+  .ce-slot-label {
+    font-size: 10px; color: #888;
+    padding: 1px 0 0 calc(var(--depth, 0) * 16px + 32px);
   }
-  .ce-node-glyph {
+
+  /* One-line rows */
+  .ce-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 3px 4px;
+    padding-left: calc(var(--depth, 0) * 16px + 4px);
+    border-radius: 3px;
+    min-height: 22px;
+    line-height: 1.4;
+  }
+  .ce-row:hover { background: #f0f4fa; }
+  .ce-folder-row { font-weight: 600; color: #1f2937; }
+  .ce-folder-row.collapsed { opacity: 0.85; }
+  .ce-file-row { color: #1f2937; }
+
+  .ce-twist {
+    background: transparent; border: none; cursor: pointer;
+    width: 14px; height: 14px;
+    color: #888; font-size: 10px; line-height: 1;
+    padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .ce-twist:hover { color: #1e3a8a; }
+  .ce-twist-spacer { display: inline-block; width: 14px; }
+
+  .ce-glyph { font-size: 14px; line-height: 1; }
+  .ce-kind-badge {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #555; background: #f0f0f5; padding: 0 6px; border-radius: 3px;
+    min-width: 16px; text-align: center;
+  }
+  .ce-name { font-weight: 600; color: #1f2937; }
+  .ce-as { color: #888; font-style: italic; font-size: 11px; margin-left: 2px; }
+
+  /* Method op chip — replaces kind badge, click to swap. */
+  .ce-op-chip {
+    appearance: none;
+    border: 1px solid transparent;
+    background: #f5f5f5;
+    color: #444;
+    font: 600 11px ui-sans-serif, system-ui;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .ce-op-chip:hover { border-color: #bcd3ee; background: #eef5ff; }
+  .ce-op-chip.op-sub   { background: #fce7f3; color: #9d174d; }
+  .ce-op-chip.op-add   { background: #ccfbf1; color: #115e59; }
+  .ce-op-chip.op-inter { background: #fae8ff; color: #6b21a8; }
+
+  /* File row — call / ref / literal */
+  .ce-file-fn-glyph,
+  .ce-file-ref-glyph,
+  .ce-file-lit-glyph {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 18px; height: 18px; border-radius: 4px;
-    font-weight: 700; font-size: 11px;
+    width: 18px; height: 16px; border-radius: 3px;
+    font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  .ce-node-glyph-call    { background: #fef3c7; color: #92400e; }
-  .ce-node-glyph-method  { background: #fce7f3; color: #9d174d; }
-  .ce-node-glyph-list    { background: #e0e7ff; color: #3730a3; }
-  .ce-node-glyph-stack   { background: #ccfbf1; color: #115e59; }
-  .ce-node-glyph-overlay { background: #fae8ff; color: #6b21a8; }
-  .ce-node-glyph-mv      { background: #fef3c7; color: #78350f; }
-  .ce-node-glyph-rot     { background: #fef3c7; color: #78350f; }
-  .ce-node-glyph-ref     { background: #e0f2fe; color: #0c4a6e; }
-  .ce-node-glyph-literal { background: #f5f5f5; color: #525252; }
-  .ce-node-summary { font-weight: 600; }
-  .ce-node-summary.op-sub   { color: #9d174d; }
-  .ce-node-summary.op-add   { color: #115e59; }
-  .ce-node-summary.op-inter { color: #6b21a8; }
-  .ce-node-name {
-    color: #888; font-style: italic; font-size: 11px;
+  .ce-file-fn-glyph  { background: #fef3c7; color: #92400e; }
+  .ce-file-ref-glyph { background: #e0f2fe; color: #0c4a6e; font-size: 12px; }
+  .ce-file-lit-glyph { background: #f5f5f5; color: #525252; font-size: 11px; }
+  .ce-file-title {
+    color: #1f2937; font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-width: 320px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .ce-row-spacer { flex: 1; }
+  .ce-row-btn {
+    background: transparent; border: 1px solid transparent; border-radius: 3px;
+    cursor: pointer; padding: 1px 5px;
+    font: 600 11px ui-sans-serif, system-ui;
+    color: #555;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .ce-row:hover .ce-row-btn { opacity: 1; }
+  .ce-row-btn:hover { background: #eef5ff; border-color: #bcd3ee; color: #0c2e6e; }
+  .ce-row-btn.ce-row-x { color: #b94545; font-weight: 700; }
+  .ce-row-btn.ce-row-x:hover { background: #fdecec; border-color: #f5a5a5; color: #cc2222; }
+  .ce-row-btn.ce-row-tx { font-size: 13px; padding: 0 5px; }
+  .ce-row-btn.ce-row-tx.active {
+    background: #fffbeb; border-color: #fbbf24; color: #92400e; opacity: 1;
+  }
+
+  /* Inline transform chips on file rows */
+  .ce-tx-chip {
+    background: #fffbeb; border: 1px solid #fde68a;
+    color: #92400e;
+    font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 1px 6px; border-radius: 3px;
+    cursor: pointer;
     margin-left: 4px;
   }
-  .ce-node-body {
-    display: flex; flex-direction: column; gap: 2px;
-    margin-top: 2px;
-  }
-  .ce-arg-row {
-    display: flex; align-items: flex-start; gap: 6px;
-    padding-left: 8px;
-  }
-  .ce-arg-label {
-    font-size: 11px; color: #888;
-    min-width: 56px; padding-top: 4px;
-  }
-  .ce-arg-tuple {
-    display: inline-flex; gap: 4px; flex: 1;
-  }
-  .ce-arg-tuple > * { flex: 1; }
+  .ce-tx-chip:hover:not(:disabled) { background: #fef3c7; border-color: #f59e0b; }
+  .ce-tx-chip:disabled { cursor: default; opacity: 0.85; }
+  .ce-tx-chip-rot { background: #fae8ff; border-color: #e9d5ff; color: #6b21a8; }
+  .ce-tx-chip-rot:hover:not(:disabled) { background: #f3e8ff; border-color: #c084fc; }
 
-  /* Per-node controls */
-  .ce-op-btn, .ce-lit-btn {
+  /* Inline 3-input transform editor row */
+  .ce-tx-edit-row {
+    padding-left: calc(var(--depth, 0) * 16px + 36px);
+    background: #fffbeb;
+    border-left: 2px solid #fbbf24;
+    margin-left: calc(var(--depth, 0) * 16px + 12px);
+    padding-left: 6px;
+  }
+  .ce-tx-edit-label {
+    font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #92400e;
+    min-width: 28px;
+  }
+  .ce-axis-row {
+    padding-left: calc(var(--depth, 0) * 16px + 36px);
+  }
+  .ce-axis-label {
+    font-size: 11px; color: #888;
+    min-width: 48px;
+  }
+  .ce-axis-input {
+    border: 1px solid #d0d0d0; border-radius: 3px;
+    padding: 1px 4px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    width: 60px;
+    background: #fff;
+  }
+  .ce-axis-input:focus { outline: 2px solid #bcd3ee; border-color: #bcd3ee; }
+  .ce-axis-val {
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #444; padding: 1px 4px;
+    min-width: 24px; text-align: center;
+  }
+
+  /* Inline literal edit (file row literal) */
+  .ce-lit-input {
+    border: 1px solid #bcd3ee; border-radius: 3px;
+    padding: 1px 4px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #fff; min-width: 80px;
+  }
+  .ce-lit-btn {
     background: transparent; border: 1px dashed transparent;
     cursor: pointer; padding: 1px 4px; font: inherit;
-    border-radius: 3px;
+    border-radius: 3px; color: inherit;
   }
-  .ce-op-btn:hover, .ce-lit-btn:hover {
-    border-color: #bcd3ee; background: #eef5ff;
-  }
+  .ce-lit-btn:hover { border-color: #bcd3ee; background: #eef5ff; }
+
   .ce-empty-arg {
     background: #fffbeb; border: 1px dashed #fbbf24; cursor: pointer;
     color: #92400e; padding: 1px 6px; border-radius: 3px;
     font: 600 11px ui-sans-serif, system-ui;
   }
   .ce-empty-arg:hover { background: #fef3c7; }
-  .ce-lit-input {
-    border: 1px solid #bcd3ee; border-radius: 3px;
-    padding: 1px 4px; font: inherit;
-    background: #fff; min-width: 80px;
-  }
-  .ce-node-del {
-    background: transparent; border: none; cursor: pointer;
-    color: #ccc; font-size: 14px; line-height: 1;
-    width: 18px; height: 18px; border-radius: 3px;
-    margin-left: auto; padding: 0;
-    visibility: hidden;
-  }
-  .ce-node-head:hover .ce-node-del { visibility: visible; }
-  .ce-node-del:hover { background: #fdecec; color: #cc2222; }
 
-  /* Leaf compaction — literal / ref have no body so squeeze them. */
-  .ce-node-literal .ce-node-head,
-  .ce-node-ref     .ce-node-head { padding: 2px 0; }
+  /* Empty hint row */
+  .ce-empty-row {
+    padding-left: calc(var(--depth, 0) * 16px + 32px);
+  }
+  .ce-empty-hint {
+    color: #999; font-style: italic; font-size: 11px;
+  }
+  .ce-empty-row:hover { background: transparent; }
 
-  /* Popup chrome */
+  /* Popup chrome (unchanged from prior render) */
   .ce-pop {
     display: flex; flex-direction: column; gap: 6px;
     padding: 4px;
@@ -1033,6 +1167,7 @@
     font-size: 10px; padding: 1px 5px; border-radius: 8px;
     background: #e0e7ff; color: #3730a3; font-weight: 600;
   }
+  :global(.ce-pop-tag-primitive) { background: #fef3c7; color: #92400e; }
   .ce-pop-tag-helper { background: #ccfbf1; color: #115e59; }
   .ce-pop-empty { color: #888; font-style: italic; padding: 8px; text-align: center; }
   .ce-pop-confirm {
@@ -1043,7 +1178,7 @@
   .ce-pop-confirm:hover { background: #1e40af; }
 
   .ce-kind-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 4px;
   }
   .ce-kind-btn {
