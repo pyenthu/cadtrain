@@ -121,18 +121,29 @@
     });
   });
 
-  // ─── Composition root creation (M3b) ──────────────────────────────────
-  // parentId is set when this popup is opened from a list/stack's "+ child"
-  // button — the resulting node is appended to that parent's children
-  // rather than replacing the composition root.
-  let rootPopup = $state<{ x: number; y: number; step: 'kind' | 'fn'; query: string; parentId?: string } | null>(null);
-  function openRootPopup(ev: MouseEvent) {
+  // ─── Composition root creation ────────────────────────────────────────
+  // Composition is implicitly a top-level List ("collection"). The user
+  // adds:
+  //   + file   — a Call to a primitive (the catalog typeahead).
+  //   + folder — a container (List/Method/Stack/Overlay/Mv/Rot).
+  //
+  // parentId is set when the popup is opened from a folder's "+ file"
+  // / "+ folder" buttons — the resulting node is appended to that
+  // parent's children. When unset, the new node becomes the
+  // implicit-list root's child.
+  //
+  // step:
+  //   'fn'     — primitive / alias / helper typeahead (the "+ file" flow).
+  //   'folder' — container-kind grid (List/Method/Stack/Overlay/Mv/Rot).
+  //   'kind'   — legacy: full 8-tile kind picker incl. Call + Literal.
+  let rootPopup = $state<{ x: number; y: number; step: 'kind' | 'folder' | 'fn'; query: string; parentId?: string } | null>(null);
+  function openFilePopup(parentId: string | undefined, ev: MouseEvent) {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'kind', query: '' };
+    rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'fn', query: '', parentId };
   }
-  function openChildPopup(parentId: string, ev: MouseEvent) {
+  function openFolderPopup(parentId: string | undefined, ev: MouseEvent) {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'kind', query: '', parentId };
+    rootPopup = { x: rect.left, y: rect.bottom + 4, step: 'folder', query: '', parentId };
   }
   function closeRootPopup() { rootPopup = null; }
 
@@ -423,13 +434,29 @@
     }}>
     <header class="ce-section-head">
       <span class="ce-section-title">▼ Composition</span>
-      {#if canEdit && composition === null}
-        <button class="ce-add-btn" type="button" title="Add composition root" onclick={openRootPopup}>+ Add root</button>
-      {/if}
     </header>
     {#if composition === null}
-      <div class="ce-empty">
-        {canEdit ? 'No composition yet. Click + Add root or drag a primitive from the sidebar.' : 'No composition.'}
+      <!-- Empty composition = implicit empty List ("collection"). Two
+           explicit affordances: + file (primitive) or + folder (sub-list /
+           method / stack / etc). Either creates an implicit List with
+           the new node as first child. -->
+      <div class="ce-folder ce-folder-root">
+        <div class="ce-folder-head">
+          <span class="ce-folder-glyph">📁</span>
+          <span class="ce-folder-name">root</span>
+          <span class="ce-folder-kind">[ ]</span>
+        </div>
+        <div class="ce-folder-body">
+          {#if canEdit}
+            <div class="ce-folder-empty">empty — add files or folders</div>
+            <div class="ce-folder-actions">
+              <button class="ce-add-btn" type="button" onclick={(e) => openFilePopup(undefined, e)}>+ file</button>
+              <button class="ce-add-btn" type="button" onclick={(e) => openFolderPopup(undefined, e)}>+ folder</button>
+            </div>
+          {:else}
+            <div class="ce-folder-empty">empty</div>
+          {/if}
+        </div>
       </div>
     {:else}
       <div class="ce-tree">{@render node(composition, 0)}</div>
@@ -524,12 +551,13 @@
         {@render node(c, depth + 1)}
       {/each}
       {#if canEdit}
-        <button class="ce-add-btn ce-add-child" type="button"
-          title={`Add child to ${n.type}`}
-          onclick={(e) => openChildPopup(n.id, e)}>+ child</button>
+        <div class="ce-folder-actions">
+          <button class="ce-add-btn" type="button" onclick={(e) => openFilePopup(n.id, e)}>+ file</button>
+          <button class="ce-add-btn" type="button" onclick={(e) => openFolderPopup(n.id, e)}>+ folder</button>
+        </div>
       {/if}
       {#if n.children.length === 0}
-        <div class="ce-drop-hint">Drag a primitive here or click + child</div>
+        <div class="ce-drop-hint">Drag a primitive here or click + file / + folder</div>
       {/if}
     </div>
   {:else if n.type === 'overlay'}
@@ -616,8 +644,10 @@
 <!-- M3b — Root creation -->
 {#if rootPopup}
   <FloatingPanel
-    title={rootPopup.step === 'kind' ? 'Add root' : 'Pick a function'}
-    subtitle={rootPopup.step === 'kind' ? 'Choose a node kind' : 'Import alias, volume primitive, or sandbox helper'}
+    title={rootPopup.step === 'fn' ? '+ file' : rootPopup.step === 'folder' ? '+ folder' : 'Add root'}
+    subtitle={rootPopup.step === 'fn' ? 'Primitive, import alias, or sandbox helper'
+              : rootPopup.step === 'folder' ? 'Choose a container kind'
+              : 'Choose a node kind'}
     visible={true}
     x={rootPopup.x}
     y={rootPopup.y}
@@ -626,7 +656,31 @@
     onClose={closeRootPopup}
   >
     <div class="ce-pop">
-      {#if rootPopup.step === 'kind'}
+      {#if rootPopup.step === 'folder'}
+        <!-- Container kinds only: List / Stack / Method (op-folder),
+             Overlay, Mv, Rot. Excludes the leaf kinds (Call / Literal /
+             Ref) which are added via "+ file" or the arg picker. -->
+        <div class="ce-kind-grid">
+          <button class="ce-kind-btn" type="button" onclick={() => createRoot('list')}>
+            <span class="ce-kind-glyph">◫</span><span class="ce-kind-lbl">List</span>
+          </button>
+          <button class="ce-kind-btn" type="button" onclick={() => createRoot('stack')}>
+            <span class="ce-kind-glyph">⫾</span><span class="ce-kind-lbl">Stack</span>
+          </button>
+          <button class="ce-kind-btn" type="button" onclick={() => createRoot('method')}>
+            <span class="ce-kind-glyph">⊖</span><span class="ce-kind-lbl">Method</span>
+          </button>
+          <button class="ce-kind-btn" type="button" onclick={() => createRoot('overlay')}>
+            <span class="ce-kind-glyph">⤴</span><span class="ce-kind-lbl">Overlay</span>
+          </button>
+          <button class="ce-kind-btn" type="button" onclick={() => createRoot('mv')}>
+            <span class="ce-kind-glyph">↦</span><span class="ce-kind-lbl">Mv</span>
+          </button>
+          <button class="ce-kind-btn" type="button" onclick={() => createRoot('rot')}>
+            <span class="ce-kind-glyph">↻</span><span class="ce-kind-lbl">Rot</span>
+          </button>
+        </div>
+      {:else if rootPopup.step === 'kind'}
         <div class="ce-kind-grid">
           <button class="ce-kind-btn" type="button" onclick={() => createRoot('call')}>
             <span class="ce-kind-glyph">ƒ</span><span class="ce-kind-lbl">Call</span>
@@ -812,6 +866,27 @@
   }
   .ce-add-btn:hover { background: #ddeaff; border-color: #8eb6e6; }
   .ce-add-child { margin-left: 8px; margin-top: 4px; }
+  .ce-folder-root {
+    background: #fafafa; border: 1px solid #d0d0d0; border-radius: 6px;
+    padding: 8px; margin-top: 6px;
+  }
+  .ce-folder-head {
+    display: flex; align-items: center; gap: 6px;
+    font: 600 13px ui-sans-serif; color: #333;
+  }
+  .ce-folder-glyph { font-size: 16px; }
+  .ce-folder-name { font-weight: 700; color: #1f2937; }
+  .ce-folder-kind {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #888; background: #f0f0f5; padding: 1px 6px; border-radius: 4px;
+  }
+  .ce-folder-empty {
+    color: #888; font-style: italic; font-size: 12px;
+    padding: 8px 4px;
+  }
+  .ce-folder-actions {
+    display: flex; gap: 4px; margin-top: 4px;
+  }
   .ce-imp-use {
     appearance: none; background: #eef5ff; border: 1px solid #b8d4f2;
     border-radius: 4px; padding: 1px 8px;
