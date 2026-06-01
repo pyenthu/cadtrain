@@ -1152,7 +1152,7 @@
   .prim-page.rail-collapsed { grid-template-columns: 0 1fr; }
   .prim-page.rail-collapsed .prim-rail { display: none; }
   /* Rail OWNS layout but the TABPANEL scrolls (so the vrail stays fixed). */
-  .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow: hidden; padding: 8px 6px 0; display: flex; flex-direction: column; line-height: 1.2; min-height: 0; }
+  .prim-rail { border-right: 1px solid #ddd; background: #fafafa; overflow: hidden; padding: 4px 3px 0; display: flex; flex-direction: column; line-height: 1.15; min-height: 0; }
   /* Vertical section tabs — editor format (trapezoidal, vertical-text), tight rail. */
   .prim-tabs { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 24px 1fr; margin: 6px -6px 0; border-top: 1px solid #e5e5e5; }
   .prim-vrail { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-right: 1px solid #e5e5e5; background: #ececec; align-items: stretch; }
@@ -1161,7 +1161,7 @@
   .prim-vtab.active { color: #cc2222; background: #fafafa; }
   .prim-vtab-ic { font-size: 12px; opacity: 0.95; line-height: 1; }
   .prim-vtab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11px Arial; letter-spacing: 1.2px; line-height: 1; white-space: nowrap; }
-  .prim-tabpanel { overflow-y: auto; padding: 4px 6px 10px; min-width: 0; }
+  .prim-tabpanel { overflow-y: auto; padding: 2px 3px 6px; min-width: 0; }
   .prim-tabpanel > .prim-tests:first-of-type { margin-top: 4px; border-top: 0; padding-top: 0; }
   /* Drag handle straddling the rail/main boundary (rail is overflow:auto, so
      the handle lives on .prim-page which is position:relative). */
@@ -1169,7 +1169,7 @@
   .prim-rail-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; }
   .prim-rail-resize:hover::after, .prim-page.rail-resizing .prim-rail-resize::after { background: #2266cc; width: 2px; left: 2px; }
   .prim-page.rail-resizing { cursor: col-resize; user-select: none; }
-  .prim-rail header { padding: 0 6px 6px; border-bottom: 1px solid #eee; position: relative; }
+  .prim-rail header { padding: 0 3px 3px; border-bottom: 1px solid #eee; position: relative; }
   .prim-rail-toggle { position: absolute; top: -2px; right: 0; border: none; background: transparent; color: #999; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
   .prim-rail-toggle:hover { color: #cc2222; }
   .prim-rail-expand { position: absolute; top: 8px; left: 8px; z-index: 20; border: 1px solid #ddd; background: #fff; color: #555; font-size: 14px; line-height: 1; cursor: pointer; padding: 5px 9px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
@@ -1178,7 +1178,7 @@
   .prim-rail .sub { margin: 2px 0 0; font: 11px Arial; color: #777; }
   .prim-profiles-link { display: inline-block; margin-top: 6px; font: 600 11px Arial; color: #c4392f; text-decoration: none; }
   .prim-profiles-link:hover { text-decoration: underline; }
-  .prim-list { padding: 4px 0; flex: 1; }
+  .prim-list { padding: 2px 0; flex: 1; }
   .prim-row-wrap { display: flex; align-items: center; gap: 2px; margin: 0; border-radius: 4px; position: relative; }
   /* Editable rows reserve a TIGHT left gutter for the absolute-positioned
      trash. 14px = 12px icon + 2px breathing — filename sits as close to the
@@ -1189,7 +1189,7 @@
   .prim-row-wrap.active { background: #fef0f0; }
   .prim-row-wrap.active .prim-name { color: #cc2222; }
   .prim-row-wrap.open .prim-name { font-weight: 800; }  /* open in a tab */
-  .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 3px 8px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; line-height: 1.3; }
+  .prim-row { display: flex; align-items: center; gap: 6px; flex: 1; padding: 2px 6px; background: transparent; border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; color: inherit; line-height: 1.25; }
   /* Trash button — absolute-positioned in the left gutter so the row's other
      content keeps its layout (the gutter is created above on editable rows
      only). ALWAYS VISIBLE (not hover-revealed); muted #999 idle → red-on-hover.
