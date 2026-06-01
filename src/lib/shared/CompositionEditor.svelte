@@ -146,6 +146,34 @@
     const next = replaceNode(composition, parentId, replacement);
     commit(imports, next);
   }
+  /** Insert a Call node into the composition. Routes match drag-drop:
+   *  empty composition → wrap in List; root is List/Stack → append;
+   *  other → wrap the existing root + the new node in a List. */
+  function insertCallIntoComposition(node: TreeNode) {
+    if (composition === null) {
+      const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [node] };
+      commit(imports, listRoot);
+      return;
+    }
+    if (composition.type === 'list' || composition.type === 'stack') {
+      appendChildToList(composition.id, node);
+      return;
+    }
+    const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [composition, node] };
+    commit(imports, listRoot);
+  }
+  /** "+ use" button on an Import row: insert `IMPNAME(defaults)` into
+   *  the composition with the source primitive's defaults filled in. */
+  async function insertImportUse(imp: ImportDef) {
+    const callNode = await callWithDefaults(imp.name);
+    // callWithDefaults fetches via imp.name (the alias). For aliases the
+    // /api/primitives/source endpoint may 404 since the alias isn't a
+    // primitive id. If it fell back to empty args, retry with the src.
+    const finalNode = (callNode.type === 'call' && callNode.args.length === 0)
+      ? { ...await callWithDefaults(imp.src), fn: imp.name }
+      : { ...(callNode as any), fn: imp.name };
+    insertCallIntoComposition(finalNode as TreeNode);
+  }
 
   function makePlaceholder(): TreeNode {
     return { type: 'literal', id: newNodeId(), value: '' };
@@ -180,9 +208,9 @@
     else commit(imports, node);
     closeRootPopup();
   }
-  function createCallRoot(fn: string) {
-    const node = makeNodeOfKind('call', fn);
+  async function createCallRoot(fn: string) {
     const pid = rootPopup?.parentId;
+    const node = await callWithDefaults(fn);
     if (pid) appendChildToList(pid, node);
     else commit(imports, node);
     closeRootPopup();
@@ -191,12 +219,47 @@
     const q = (rootPopup?.query ?? '').toLowerCase();
     const aliases = imports.map((i) => i.name);
     const helpers = SANDBOX_FN_NAMES;
-    const merged = [...aliases, ...helpers];
+    const cat = (catalog ?? []).map((e) => e.id).filter((cid) => cid !== id);
+    const merged = [...aliases, ...cat, ...helpers];
     const seen = new Set<string>();
     return merged
       .filter((n) => !seen.has(n) && (seen.add(n), true))
       .filter((n) => !q || n.toLowerCase().includes(q));
   });
+
+  function tagFor(fn: string): { tag: string; cls: string } {
+    if (imports.find((i) => i.name === fn)) return { tag: 'alias', cls: '' };
+    if ((catalog ?? []).some((e) => e.id === fn)) return { tag: 'primitive', cls: 'ce-pop-tag-primitive' };
+    return { tag: 'helper', cls: 'ce-pop-tag-helper' };
+  }
+
+  /** Fetch a primitive's params and produce literal args matching each
+   *  param's default, in declaration order. Used so dropping `shaft`
+   *  via + child or drag-drop gives the user a Call with sensible
+   *  defaults already filled in instead of empty arg slots. */
+  async function callWithDefaults(fn: string): Promise<TreeNode> {
+    try {
+      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(fn)}`);
+      if (r.ok) {
+        const data = await r.json();
+        const params = data?.params ?? {};
+        const args: TreeNode[] = Object.entries(params).map(([_, p]: [string, any]) => {
+          const def = p?.default;
+          const value =
+            def == null ? ''
+            : typeof def === 'number' ? String(def)
+            : typeof def === 'string' ? def
+            : Array.isArray(def) ? JSON.stringify(def)
+            : typeof def === 'object' && 'kind' in def
+              ? `resolveProfile(${JSON.stringify(def)})`
+              : '';
+          return makeLiteral(value);
+        });
+        return { type: 'call', id: newNodeId(), fn, args };
+      }
+    } catch { /* fall through to empty-args Call */ }
+    return makeNodeOfKind('call', fn);
+  }
 
   // ─── Per-node mutations (M3c) ─────────────────────────────────────────
 
@@ -334,6 +397,9 @@
             <span class="ce-imp-eq">=</span>
             <span class="ce-imp-src">{imp.src}</span>
             {#if canEdit}
+              <button class="ce-imp-use" type="button"
+                title={`Insert ${imp.name}() into the composition with ${imp.src}'s defaults`}
+                onclick={() => insertImportUse(imp)}>+ use</button>
               <button class="ce-imp-del" type="button" title="Remove import" onclick={() => removeImport(imp.name)}>×</button>
             {/if}
           </div>
@@ -351,24 +417,9 @@
       e.preventDefault();
       const dropped = e.dataTransfer.getData('application/x-primitive-id');
       if (!dropped) return;
-      // No root yet → create a List with the dropped Call as first child,
-      // matching the user's preferred `return [A]` form.
-      if (composition === null) {
-        const callNode = makeNodeOfKind('call', dropped);
-        const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [callNode] };
-        commit(imports, listRoot);
-        return;
-      }
-      // Already have a root that's a list/stack → append.
-      if (composition.type === 'list' || composition.type === 'stack') {
-        appendChildToList(composition.id, makeNodeOfKind('call', dropped));
-        return;
-      }
-      // Root is something else (call/method/etc.) — wrap in a list so the
-      // dropped item lives alongside the existing root.
-      const callNode = makeNodeOfKind('call', dropped);
-      const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [composition, callNode] };
-      commit(imports, listRoot);
+      // Auto-populate args with the dropped primitive's defaults — the
+      // fetched params drive the Call's literal arg list.
+      callWithDefaults(dropped).then(insertCallIntoComposition);
     }}>
     <header class="ce-section-head">
       <span class="ce-section-title">▼ Composition</span>
@@ -467,7 +518,7 @@
         if (!e.dataTransfer?.types.includes('application/x-primitive-id')) return;
         e.preventDefault();
         const dropped = e.dataTransfer.getData('application/x-primitive-id');
-        if (dropped) appendChildToList(n.id, makeNodeOfKind('call', dropped));
+        if (dropped) callWithDefaults(dropped).then((node) => appendChildToList(n.id, node));
       }}>
       {#each n.children as c (c.id)}
         {@render node(c, depth + 1)}
@@ -566,7 +617,7 @@
 {#if rootPopup}
   <FloatingPanel
     title={rootPopup.step === 'kind' ? 'Add root' : 'Pick a function'}
-    subtitle={rootPopup.step === 'kind' ? 'Choose a node kind' : 'Import alias or sandbox helper'}
+    subtitle={rootPopup.step === 'kind' ? 'Choose a node kind' : 'Import alias, volume primitive, or sandbox helper'}
     visible={true}
     x={rootPopup.x}
     y={rootPopup.y}
@@ -613,13 +664,10 @@
         />
         <div class="ce-pop-list">
           {#each fnCandidates as fn (fn)}
+            {@const t = tagFor(fn)}
             <button class="ce-pop-item" type="button" onclick={() => createCallRoot(fn)}>
               <span class="ce-pop-id">{fn}</span>
-              {#if imports.find((i) => i.name === fn)}
-                <span class="ce-pop-tag">alias</span>
-              {:else}
-                <span class="ce-pop-tag ce-pop-tag-helper">helper</span>
-              {/if}
+              <span class="ce-pop-tag {t.cls}">{t.tag}</span>
             </button>
           {/each}
           {#if fnCandidates.length === 0}
@@ -764,6 +812,14 @@
   }
   .ce-add-btn:hover { background: #ddeaff; border-color: #8eb6e6; }
   .ce-add-child { margin-left: 8px; margin-top: 4px; }
+  .ce-imp-use {
+    appearance: none; background: #eef5ff; border: 1px solid #b8d4f2;
+    border-radius: 4px; padding: 1px 8px;
+    font: 600 11px ui-sans-serif; color: #1e40af; cursor: pointer;
+    margin-left: auto; margin-right: 4px;
+  }
+  .ce-imp-use:hover { background: #ddeaff; border-color: #1e40af; }
+  :global(.ce-pop-tag-primitive) { background: #fef3c7; color: #92400e; }
   .ce-drop-hint {
     margin-top: 4px; padding: 6px 10px;
     background: #fafafa; border: 1px dashed #ccc; border-radius: 4px;
