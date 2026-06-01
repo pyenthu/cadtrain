@@ -373,3 +373,101 @@ Realistic path: **server-side DOLFINx in Docker**, stream XDMF/glTF results to t
 The tutorial assumes a graduate-FEA reader who already speaks UFL, weak forms, PETSc options, and gmsh OCC scripting — **wrong audience for cadtrain's engineers**. It's an excellent reference for *us* to build a server-side stress-check endpoint on top of, but the UI we expose must hide every line shown above behind primitive-aware presets.
 
 *(Part 6 — Elmer FEM, and the consolidated comparison matrix to come.)*
+
+---
+
+# Part 6 — Elmer FEM evaluation
+
+*Subagent report 2026-06-01.*
+
+## A) What Elmer FEM is
+
+Multiphysics FEM suite developed by **CSC – IT Center for Science (Finland)** since 1995. Primary language **Fortran 90 (~72%)** with C++/C glue (~25%). **Dual-licensed GPLv2 / LGPLv2.1** (libraries LGPL). Modular: **ElmerSolver** (compute), **ElmerGrid** (mesh I/O), **ElmerGUI** (Qt frontend). v26.2 released April 2026 — actively maintained. Runtime: **MPI** for HPC, **OpenMP** for shared-memory, BLAS/LAPACK/MUMPS/Hypre deps. ElmerIce (glaciology) is the marquee user.
+
+## B) Capabilities for cadtrain
+
+Elmer has **two pairs** of solid-mechanics modules: **StressSolve** (linear, small-displacement) and **ElasticSolve** (geometric nonlinearity + nonlinear material laws):
+
+- **Linear elastic 3D**: yes — axial/torsion/bending/pressure trivially expressible.
+- **Hyperelastic**: partial — neo-Hookean and St. Venant-Kirchhoff in `ElasticSolve`; **weaker than CalculiX's Mooney-Rivlin/Ogden** for packer rubber.
+- **Plasticity**: J2/von Mises present but **considered immature vs CalculiX**.
+- **Contact**: **Mortar method** is a strength — multiple mortar BCs, weighted, well-tested. Suits thread engagement and seal-to-bore.
+- **Thermal-mechanical**: native — `HeatSolve` ↔ `StressSolve` coupling is one of Elmer's flagship multiphysics paths.
+- **Mesh**: tet/hex/prism/shell all supported; default is **linear elements** (forum warns to bump to quadratic). **No built-in mesher** — uses `gmsh`/external.
+
+## C) Browser-WASM viability
+
+**No public WASM port of ElmerSolver exists.** Fortran→WASM via [r-wasm/flang-wasm](https://github.com/r-wasm/flang-wasm) is alpha — runs numerical kernels but **no MPI, no OpenMP, no file I/O**, patches unmerged. Piecewise port of `StressSolve.F90` + `ElasticSolve.F90` + sparse solver (~30–50k LOC subset) is **theoretically possible** but pioneering; bundle estimate **8–15 MB gz** for a meaningful subset. Realistic: **infeasible within 12–18 months**.
+
+## D) Integration paths
+
+1. **Server-side ElmerSolver subprocess** — ~1 week. Docker layer ~150–200 MB. Perf parity with CalculiX `ccx`; slower for pure solids, faster on coupled thermal-mech.
+2. **Borrow `.sif` as portable IR** — low effort, keeps backend options open; `.sif` is human-readable, well-documented.
+3. **ElmerGUI as desktop companion** — zero dev work; users export `.sif` from cadtrain, refine in ElmerGUI.
+4. **Subset WASM port** — 6–12 engineer-months, pioneering risk.
+
+## E) Vs CalculiX vs FEniCS
+
+**CalculiX** wins solid-mechanics maturity (Abaqus-compatible, best plasticity/contact, PrePoMax docs). **FEniCSx** wins for custom PDEs + has working browser/JupyterLite demos. **Elmer** shines at **coupled multiphysics** (thermal-mech, fluid-structure) and **mortar contact**, lags on pure solid plasticity docs and has **zero WASM precedent**.
+
+For cadtrain's drill-pipe stress, Elmer is the **3rd choice**.
+
+## F) MVP recommendation
+
+**CalculiX server-side `ccx` remains best** (Abaqus syntax + PrePoMax docs + mature plasticity); Elmer is a backup only if thermal-mechanical at 350°F becomes the dominant requirement.
+
+## G) Risks
+
+- **Fortran-WASM is alpha** — flang-wasm patches unmerged, no I/O, no MPI; piecewise port is research-grade.
+- **Steep learning curve** — `.sif` syntax + sparse forum-only support (no Stack Overflow tag); CalculiX/Abaqus knowledge transfers better.
+- **Maintenance burden** — Elmer's solid-mech modules less battle-tested than CalculiX; bug isolation against 500k-LOC Fortran codebase is costly.
+
+### Elmer sources
+
+- [github.com/ElmerCSC/elmerfem](https://github.com/ElmerCSC/elmerfem)
+- [ElasticSolve.F90 source](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/src/modules/ElasticSolve.F90)
+- [Elmer forum: StressSolver vs ElasticSolver](https://www.elmerfem.org/forum/viewtopic.php?t=4053)
+- [Compiling ElmerFEM via LFortran (failed)](https://fortran-lang.discourse.group/t/compiling-elmerfem-using-lfortran/6880)
+
+---
+
+# Part 7 — Consolidated FEA evaluation matrix (final verdict)
+
+Synthesizing Parts 2-6 against the cadtrain objective (browser-WASM FEA on parametric drill-pipe parts, incremental rollout, GPL/LGPL acceptable post-reframe).
+
+## The matrix
+
+| Backend | License | Solver maturity (solids) | Contact | Hyperelastic | WASM realistic? | Server-side image | Vs cadtrain objective |
+|---|---|---|---|---|---|---|---|
+| **CalculiX (`ccx`)** | GPLv2+ | ★★★★★ Abaqus-compatible, plasticity & contact mature | ★★★★ node-to-segment + mortar | ★★ Mooney-Rivlin/Ogden | ❌ Fortran wall, multi-quarter port | **~80 MB** | **WINNER (server-side)** — fastest path to real engineering numbers |
+| **FEniCS/DOLFINx** | LGPL-3+ | ★★★★ excellent for custom PDEs | ★★ `dolfinx_contact` add-on | ★★★★★ UFL autodiff = best-in-class | ❌ MPI mandatory, WASM has no MPI | **~2 GB** | **2nd choice** — heavier deploy than CalculiX, but UFL DSL pattern worth borrowing for Stage 3 |
+| **Elmer FEM** | GPLv2 / LGPL-2.1 | ★★★ solids are not Elmer's specialty | ★★★★ mortar is a strength | ★★ neo-Hookean / SVK only | ❌ Fortran wall + research-grade port | ~150–200 MB | **3rd choice** — only if coupled thermal-mech becomes dominant |
+| **scikit-fem (Pyodide)** | BSD | ★★ educational | n/a | n/a | ✅ Pyodide-ready | n/a (browser) | Demo-able but bundle-prohibitive (~10 MB Pyodide) |
+| **FEAScript** (pure JS) | MIT | ★★ no solid mech yet | n/a | n/a | ✅ already JS | ~50 KB | Track upstream; useful when elasticity module lands |
+| **Eigen-WASM + custom** | MPL2 | depends on you | depends | depends | ✅ proven | ~500 KB - 2 MB | **Foundation for Stage 2-3** of cadtrain's roadmap |
+| **fTetWild (meshing)** | MPL2 | tet meshing only | n/a | n/a | ⚠️ no port yet — months to compile | ~2-4 MB | **The Stage 3 meshing layer** when ready |
+| **Closed-form (Stage 1)** | n/a (our code) | analytical only | n/a | n/a | ✅ pure JS | 0 | **LANDED** — `/fem` is live |
+
+## Final verdict — dual-track recommendation reconfirmed
+
+**The K.62-era dual-track plan stands and is now the official cadtrain FEA roadmap:**
+
+**Track A — Server-side CalculiX for engineering CAPABILITY (weeks)**
+- `ccx` binary in the Docker image (~80 MB).
+- Manifold mesh → STL → `gmsh` (sidecar, also GPL OK now) → `.msh` → typed `.inp` builder in `src/lib/cad/fem/inp-builder.ts` → spawn `ccx` → parse `.frd` in `src/lib/cad/fem/frd-parser.ts` → render in Threlte.
+- Validates the engineering use cases (drill pipe burst, packer seal squeeze, thread makeup) on REAL geometry with REAL plasticity + contact.
+- This is what gets cadtrain to "ship validated designs" first.
+
+**Track B — Incremental browser-WASM for the FUTURE (months, in parallel)**
+- Stage 2: pure-JS linear FEA in `src/lib/cad/fem/beam-1d.ts` + `plane-stress.ts` (1-2 weeks; <10k DOF).
+- Stage 3: Eigen-WASM CG + fTetWild WASM build for 3D linear elastic (~100k DOF). **Borrow UFL's variational-form pattern** in TypeScript — a `Inner(sigma(u), eps(v)) * dx`-style DSL emitting kernels that the WASM CG consumes.
+- Stage 4: contact / nonlinear. Open question whether to extend the custom WASM stack OR port a CalculiX subset (linear-static path only, no Fortran sparse-solver dep — substitute Eigen-WASM CG).
+
+**Rejected for now:**
+- FEniCS/DOLFINx server-side (heavier than CalculiX without enough engineering payoff for our use cases).
+- Elmer server-side (solid-mech less mature than CalculiX).
+- DOLFINx WASM port (MPI is fundamental to its architecture; "years not months").
+- PrePoMax embedded (Windows-only).
+- Pyodide-based FEA (10 MB+ runtime cost).
+
+The closed-form Stage 1 widget (already shipped) is the user-facing scaffolding that Tracks A and B BOTH plug into. Same `/fem/[id]` page; deeper analysis tabs land as each track delivers.
