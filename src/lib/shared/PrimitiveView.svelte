@@ -2308,7 +2308,13 @@
                    group markers, defs/expr sections) is bypassed for
                    assemblies; M3 will enable editing inside the new
                    editor. -->
-              <CompositionEditor source={editedSource} />
+              <CompositionEditor
+                source={editedSource}
+                {id}
+                {canEdit}
+                {catalog}
+                onSourceChange={(s) => editedSource = s}
+              />
             {:else if recogStatus === 'loading' && !recognized}
               <div class="pv-parts-empty">recognizing…</div>
             {:else if recogError && !recognized}
