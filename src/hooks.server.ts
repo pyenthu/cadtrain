@@ -47,12 +47,10 @@ const VOLUME_PROXY_PATHS = new Set([
   '/api/components/bake-preview',
 ]);
 
-/** Routes subject to rate limiting (prefix match). */
-const RATE_LIMITED_PREFIXES = [
-  '/api/identify',
-  '/api/refine',
-  '/api/wells/extract',
-];
+/** Routes subject to rate limiting (prefix match).
+ *  The identify/refine/wells endpoints were archived 2026-06-01 — the
+ *  prefix list is empty now; kept as a stable extension point. */
+const RATE_LIMITED_PREFIXES: string[] = [];
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 

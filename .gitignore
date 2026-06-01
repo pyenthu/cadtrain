@@ -32,11 +32,14 @@ training_data/synthetic_cache.jsonl.bak.*
 *.glb
 *.gltf
 
-# Archived legacy work (kept locally, not committed) — root-level only.
-# Note: src/routes/archive/ is the in-app reference for the previous
-# implementation and IS committed; this rule targets only ./archive at
-# the repo root (BOTTOM_SUB_legacy/, HAL_PACKERS/, etc.).
-/archive/
+# Legacy raw assets (BOTTOM_SUB_legacy/, HAL_PACKERS/, HAL_WPS/, etc.) used
+# to live at /archive and were gitignored. After the 2026-06-01 cleanup the
+# top-level /archive directory holds the COMMITTED archived src/ + routes/
+# tree (moved out of the active codebase) — keep it tracked. Re-add narrow
+# subpath ignores below if raw legacy folders ever return.
+# /archive/BOTTOM_SUB_legacy/
+# /archive/HAL_PACKERS/
+# /archive/HAL_WPS/
 
 # Playwright video staging — transient, renamed to canonical path post-run
 static/tests/_video_staging/
