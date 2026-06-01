@@ -1,4 +1,4 @@
-# `src/lib/cad/fem/` — FEM engine module
+# `src/lib/fem/` — FEM engine module
 
 The engine half of the FEM domain. Pure logic — no Svelte, no DOM, no
 component code. Stage 1 = closed-form analytical stress; future stages
@@ -10,7 +10,7 @@ The UI sits in `src/routes/fem/` and imports from here.
 ## Layout
 
 ```
-src/lib/cad/fem/
+src/lib/fem/
 ├── CLAUDE.md                 — this file
 ├── FEM.md                    — research dossier (FreeCAD, PrePoMax, CalculiX, browser-WASM options + dual-track recommendation)
 ├── closed-form-stress.ts     — Stage 1: axial + torsion + bending + von Mises on annular sections
@@ -47,5 +47,5 @@ See `FEM.md` for the full research dossier. Update sections C/D when a new stage
 Use a `FEM-` subagent (per root `CLAUDE.md` Rule 22) when the change is
 substantial — multiple files, new stage, library port. The encapsulated
 module + route are designed so a worktree-isolated agent can build
-within `src/lib/cad/fem/` and `src/routes/fem/` without touching the
+within `src/lib/fem/` and `src/routes/fem/` without touching the
 rest of the project.

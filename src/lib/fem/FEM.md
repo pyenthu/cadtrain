@@ -454,12 +454,12 @@ Synthesizing Parts 2-6 against the cadtrain objective (browser-WASM FEA on param
 
 **Track A — Server-side CalculiX for engineering CAPABILITY (weeks)**
 - `ccx` binary in the Docker image (~80 MB).
-- Manifold mesh → STL → `gmsh` (sidecar, also GPL OK now) → `.msh` → typed `.inp` builder in `src/lib/cad/fem/inp-builder.ts` → spawn `ccx` → parse `.frd` in `src/lib/cad/fem/frd-parser.ts` → render in Threlte.
+- Manifold mesh → STL → `gmsh` (sidecar, also GPL OK now) → `.msh` → typed `.inp` builder in `src/lib/fem/inp-builder.ts` → spawn `ccx` → parse `.frd` in `src/lib/fem/frd-parser.ts` → render in Threlte.
 - Validates the engineering use cases (drill pipe burst, packer seal squeeze, thread makeup) on REAL geometry with REAL plasticity + contact.
 - This is what gets cadtrain to "ship validated designs" first.
 
 **Track B — Incremental browser-WASM for the FUTURE (months, in parallel)**
-- Stage 2: pure-JS linear FEA in `src/lib/cad/fem/beam-1d.ts` + `plane-stress.ts` (1-2 weeks; <10k DOF).
+- Stage 2: pure-JS linear FEA in `src/lib/fem/beam-1d.ts` + `plane-stress.ts` (1-2 weeks; <10k DOF).
 - Stage 3: Eigen-WASM CG + fTetWild WASM build for 3D linear elastic (~100k DOF). **Borrow UFL's variational-form pattern** in TypeScript — a `Inner(sigma(u), eps(v)) * dx`-style DSL emitting kernels that the WASM CG consumes.
 - Stage 4: contact / nonlinear. Open question whether to extend the custom WASM stack OR port a CalculiX subset (linear-static path only, no Fortran sparse-solver dep — substitute Eigen-WASM CG).
 

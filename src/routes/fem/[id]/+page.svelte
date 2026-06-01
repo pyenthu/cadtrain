@@ -12,7 +12,7 @@
     computeStress, MATERIAL_GRADES, DEFAULT_YIELD_KSI,
     stressColor, fmtNum,
     type StressInputs, type StressResults,
-  } from '$lib/cad/fem/closed-form-stress';
+  } from '$lib/fem/closed-form-stress';
 
   let id = $derived(page.params.id);
 

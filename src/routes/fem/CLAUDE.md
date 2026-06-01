@@ -1,7 +1,7 @@
 # `src/routes/fem/` — FEM UI
 
 The UI half of the FEM domain. Pages here import the engine from
-`$lib/cad/fem/*`. Stage 1 ships an index + per-primitive stress page.
+`$lib/fem/*`. Stage 1 ships an index + per-primitive stress page.
 
 ## Layout
 
@@ -19,7 +19,7 @@ src/routes/fem/
 
 ## Patterns
 
-- **Engine imports**: `import { ... } from '$lib/cad/fem/closed-form-stress'`. NEVER duplicate equations in the route — formulas live in the engine module.
+- **Engine imports**: `import { ... } from '$lib/fem/closed-form-stress'`. NEVER duplicate equations in the route — formulas live in the engine module.
 - **Primitive data**: fetch from existing endpoints (`/api/primitives/list`, `/api/primitives/source`). No new server endpoints for Stage 1.
 - **Unit display**: ksi for stress, lbf for axial, ft-lbf for torque/moment, inches for section dimensions. Drill-pipe engineers read these directly.
 - **Material grades**: pull from `MATERIAL_GRADES` in the engine module. Default = G-105.
@@ -46,4 +46,4 @@ the 3D viewer with per-element stress because the variation is real.
 Use a `FEM-` subagent (per root `CLAUDE.md` Rule 22) for substantial
 changes (new stage page, new visualization, new input flow). The
 encapsulated module + route are designed so a worktree-isolated agent
-can build entirely within `src/lib/cad/fem/` and `src/routes/fem/`.
+can build entirely within `src/lib/fem/` and `src/routes/fem/`.
