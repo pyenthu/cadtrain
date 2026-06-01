@@ -192,22 +192,20 @@
     else commit(imports, node);
     closeRootPopup();
   }
+  // Per user constraint: composition's "+ file" only offers IMPORTS.
+  // The Imports section is the vocabulary of this assembly; the composition
+  // can only use what's been declared. No catalog primitives or sandbox
+  // helpers in the file picker — those are how you populate IMPORTS.
   let fnCandidates = $derived.by(() => {
     const q = (rootPopup?.query ?? '').toLowerCase();
-    const aliases = imports.map((i) => i.name);
-    const helpers = SANDBOX_FN_NAMES;
-    const cat = (catalog ?? []).map((e) => e.id).filter((cid) => cid !== id);
-    const merged = [...aliases, ...cat, ...helpers];
-    const seen = new Set<string>();
-    return merged
-      .filter((n) => !seen.has(n) && (seen.add(n), true))
+    return imports
+      .map((i) => i.name)
       .filter((n) => !q || n.toLowerCase().includes(q));
   });
 
-  function tagFor(fn: string): { tag: string; cls: string } {
-    if (imports.find((i) => i.name === fn)) return { tag: 'alias', cls: '' };
-    if ((catalog ?? []).some((e) => e.id === fn)) return { tag: 'primitive', cls: 'ce-pop-tag-primitive' };
-    return { tag: 'helper', cls: 'ce-pop-tag-helper' };
+  function tagFor(_fn: string): { tag: string; cls: string } {
+    // Everything in the picker is an import alias by definition now.
+    return { tag: 'import', cls: '' };
   }
 
   async function callWithDefaults(fn: string): Promise<TreeNode> {
@@ -338,6 +336,10 @@
   // Default: all folders expanded. Track per-id collapsed state so user
   // toggles persist while editing. `expanded[id] === false` = collapsed.
   let expanded = $state<Record<string, boolean>>({});
+
+  // Top-level accordion sections (Imports + Composition). Both default open.
+  let importsOpen = $state(true);
+  let compositionOpen = $state(true);
   function isExpanded(id: string): boolean {
     return expanded[id] !== false; // default to open
   }
@@ -409,14 +411,20 @@
 
 <div class="ce-root">
   <!-- ─── Imports ──────────────────────────────────────────────────── -->
-  <section class="ce-section ce-imports">
-    <header class="ce-section-head">
+  <section class="ce-section ce-imports" class:collapsed={!importsOpen}>
+    <header class="ce-section-head"
+      role="button" tabindex="0"
+      aria-expanded={importsOpen}
+      onclick={() => (importsOpen = !importsOpen)}
+      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); importsOpen = !importsOpen; } }}>
+      <span class="ce-section-twist">{importsOpen ? '▾' : '▸'}</span>
       <span class="ce-section-title">📥 Imports</span>
       <span class="ce-section-count">{imports.length}</span>
       {#if canEdit}
-        <button class="ce-add-btn" type="button" title="Add import" onclick={openImportPopup}>+ Import</button>
+        <button class="ce-add-btn" type="button" title="Add import" onclick={(e) => { e.stopPropagation(); openImportPopup(e); }}>+ Import</button>
       {/if}
     </header>
+    {#if importsOpen}
     {#if imports.length === 0}
       <div class="ce-empty">
         {canEdit ? 'No imports. Click + Import to alias a primitive.' : 'No imports.'}
@@ -438,10 +446,11 @@
         {/each}
       </div>
     {/if}
+    {/if}
   </section>
 
   <!-- ─── Composition (folder tree) ────────────────────────────────── -->
-  <section class="ce-section ce-composition"
+  <section class="ce-section ce-composition" class:collapsed={!compositionOpen}
     ondragover={(e) => { if (canEdit && e.dataTransfer?.types.includes('application/x-primitive-id')) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } }}
     ondrop={(e) => {
       if (!canEdit) return;
@@ -451,30 +460,38 @@
       if (!dropped) return;
       callWithDefaults(dropped).then(insertCallIntoComposition);
     }}>
-    <header class="ce-section-head">
-      <span class="ce-section-title">▼ Composition</span>
+    <header class="ce-section-head"
+      role="button" tabindex="0"
+      aria-expanded={compositionOpen}
+      onclick={() => (compositionOpen = !compositionOpen)}
+      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); compositionOpen = !compositionOpen; } }}>
+      <span class="ce-section-twist">{compositionOpen ? '▾' : '▸'}</span>
+      <span class="ce-section-title">📁 Composition</span>
     </header>
+    {#if compositionOpen}
     {#if composition === null}
-      <!-- Empty = implicit empty List. One synthetic root folder row. -->
+      <!-- Empty = implicit empty List ("compose"). The synthetic root row
+           is the only row + its drop hint. -->
       <div class="ce-tree">
         <div class="ce-row ce-folder-row" style="--depth: 0">
           <span class="ce-glyph">📁</span>
           <span class="ce-kind-badge">[ ]</span>
-          <span class="ce-name">root</span>
+          <span class="ce-name">compose</span>
           <span class="ce-row-spacer"></span>
           {#if canEdit}
-            <button class="ce-row-btn" type="button" title="Add a primitive file" onclick={(e) => openFilePopup(undefined, e)}>+ file</button>
-            <button class="ce-row-btn" type="button" title="Add a folder (list / stack / method / …)" onclick={(e) => openFolderPopup(undefined, e)}>+ folder</button>
+            <button class="ce-row-btn" type="button" title="Add a file (import)" onclick={(e) => openFilePopup(undefined, e)}>+ file</button>
+            <button class="ce-row-btn" type="button" title="Add a sub-compose (list or operation)" onclick={(e) => openFolderPopup(undefined, e)}>+ compose</button>
           {/if}
         </div>
         <div class="ce-row ce-empty-row" style="--depth: 1">
-          <span class="ce-empty-hint">empty — add files or folders, or drag a primitive here</span>
+          <span class="ce-empty-hint">empty — drag an import or click + file / + compose</span>
         </div>
       </div>
     {:else}
       <div class="ce-tree">
         {@render row(composition, 0)}
       </div>
+    {/if}
     {/if}
   </section>
 </div>
@@ -516,8 +533,8 @@
     <span class="ce-row-spacer"></span>
     {#if canEdit}
       {#if n.type === 'list' || n.type === 'stack'}
-        <button class="ce-row-btn" type="button" title="Add a file" onclick={(e) => openFilePopup(n.id, e)}>+ file</button>
-        <button class="ce-row-btn" type="button" title="Add a folder" onclick={(e) => openFolderPopup(n.id, e)}>+ folder</button>
+        <button class="ce-row-btn" type="button" title="Add a file (import)" onclick={(e) => openFilePopup(n.id, e)}>+ file</button>
+        <button class="ce-row-btn" type="button" title="Add a sub-compose (list or operation)" onclick={(e) => openFolderPopup(n.id, e)}>+ compose</button>
       {/if}
       <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)}>×</button>
     {/if}
@@ -751,8 +768,10 @@
 <!-- + file / + folder picker -->
 {#if rootPopup}
   <FloatingPanel
-    title={rootPopup.step === 'fn' ? '+ file' : '+ folder'}
-    subtitle={rootPopup.step === 'fn' ? 'Primitive, import alias, or sandbox helper' : 'Choose a container kind'}
+    title={rootPopup.step === 'fn' ? '+ file (import)' : '+ compose (list / operation)'}
+    subtitle={rootPopup.step === 'fn'
+      ? (imports.length === 0 ? 'No imports yet — add one in the Imports section first' : 'Pick an import alias')
+      : 'List = collection. Method = boolean op. Others are advanced containers.'}
     visible={true}
     x={rootPopup.x}
     y={rootPopup.y}
@@ -786,21 +805,24 @@
         <input
           class="ce-search"
           type="search"
-          placeholder="Filter functions…"
+          placeholder="Filter imports…"
           autofocus
           value={rootPopup.query}
           oninput={(e) => { if (rootPopup) rootPopup = { ...rootPopup, query: (e.currentTarget as HTMLInputElement).value }; }}
         />
         <div class="ce-pop-list">
           {#each fnCandidates as fn (fn)}
-            {@const t = tagFor(fn)}
             <button class="ce-pop-item" type="button" onclick={() => createCallNode(fn)}>
               <span class="ce-pop-id">{fn}</span>
-              <span class="ce-pop-tag {t.cls}">{t.tag}</span>
+              <span class="ce-pop-tag">import</span>
             </button>
           {/each}
           {#if fnCandidates.length === 0}
-            <div class="ce-pop-empty">No matches</div>
+            <div class="ce-pop-empty">
+              {imports.length === 0
+                ? 'No imports declared. Add a primitive in the Imports section above first.'
+                : 'No matches'}
+            </div>
           {/if}
         </div>
       {/if}
@@ -916,16 +938,16 @@
 
 <style>
   .ce-root {
-    display: flex; flex-direction: column; gap: 8px; padding: 6px;
+    display: flex; flex-direction: column; gap: 4px; padding: 2px 3px;
     font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .ce-section {
     background: #fff; border: 1px solid #ddd; border-radius: 6px;
-    padding: 8px;
+    padding: 3px 5px;
   }
   .ce-section-head {
-    display: flex; align-items: center; gap: 6px;
-    margin-bottom: 6px; padding-bottom: 4px;
+    display: flex; align-items: center; gap: 5px;
+    margin-bottom: 2px; padding-bottom: 2px;
     border-bottom: 1px solid #eee;
   }
   .ce-section-title { font: 600 12px ui-sans-serif, system-ui; color: #333; }
@@ -940,13 +962,20 @@
     padding: 2px 8px; border-radius: 4px; cursor: pointer;
   }
   .ce-add-btn:hover { background: #ddeaff; border-color: #8eb6e6; }
-  .ce-empty { color: #888; font-style: italic; padding: 6px 4px; }
+  .ce-empty { color: #888; font-style: italic; padding: 3px 4px; }
+
+  /* Accordion section twist + collapsed visuals */
+  .ce-section-head { cursor: pointer; user-select: none; }
+  .ce-section-head:hover { background: rgba(0,0,0,0.02); }
+  .ce-section-twist { color: #888; font-size: 10px; width: 12px; text-align: center; }
+  .ce-section.collapsed .ce-section-head { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 
   /* Imports */
   .ce-imports { background: #eef5ff; border-color: #bcd3ee; }
+  .ce-imports-list { display: flex; flex-direction: column; gap: 0; }
   .ce-import-row {
-    display: flex; align-items: center; gap: 6px; padding: 3px 0;
-    color: #1e3a8a;
+    display: flex; align-items: center; gap: 5px; padding: 1px 2px;
+    color: #1e3a8a; min-height: 20px; line-height: 1.4;
   }
   .ce-imp-name { font-weight: 700; color: #0c2e6e; }
   .ce-imp-eq { color: #5e88c3; }
@@ -983,10 +1012,10 @@
   /* One-line rows */
   .ce-row {
     display: flex; align-items: center; gap: 4px;
-    padding: 3px 4px;
-    padding-left: calc(var(--depth, 0) * 16px + 4px);
+    padding: 1px 4px;
+    padding-left: calc(var(--depth, 0) * 14px + 2px);
     border-radius: 3px;
-    min-height: 22px;
+    min-height: 20px;
     line-height: 1.4;
   }
   .ce-row:hover { background: #f0f4fa; }
