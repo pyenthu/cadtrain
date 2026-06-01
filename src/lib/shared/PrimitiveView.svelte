@@ -20,15 +20,10 @@
   import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import { extractMetaParams } from '$lib/cad/inline-profile';
-  import {
-    findInstancesLiteralRange, applyAppendToSource as appendAssemblyInstance,
-    parseInstances as parseAsmInstances, removeInstance as removeAsmInstance,
-    moveInstance as moveAsmInstance, updateInstance as updateAsmInstance,
-    applyInstancesToSource, flatInstances as flatAsmInstances,
-    moveIntoGroup as moveIntoAsmGroup, moveToTopLevel as moveToAsmTopLevel,
-    nextInstanceName, type Instance, type InstanceMode, type Datum,
-    type CsgOp, type CsgOpStep,
-  } from '$lib/cad/assembly-instances';
+  // K.63 M2.5: the assembly-instances data layer is deleted. .asm.ts files
+  // route to CompositionEditor (kind === 'asm' branch in the Parts panel
+  // body); the old subtabs / atom rows / per-row ops / group markers /
+  // definitions / expression sections are gone.
   import {
     parseDependencies, diffDependencies, buildSnapshots, writeDependencies,
     parseUses, type DependencyDiff,
@@ -390,95 +385,8 @@
   // detected by scanning the source's `return …` for `\.(add|subtract|
   // intersect)\s*\(\s*<NAME>\s*\)` — if found, that's the op. Otherwise
   // assume add (the typical drag-drop default).
-  // ── K.62 Phase E.2: per-row CSG ops chain (⊕⊖∩ mini-toolbar) ──────────
-  // Each row in the Parts panel exposes 3 small op buttons (⊕ add / ⊖
-  // subtract / ∩ intersect). Click one → a FloatingPanel typeahead opens
-  // listing sibling rows; pick a sibling → it's appended to this row's
-  // ops chain. Existing ops render as chips next to the buttons with × to
-  // remove. Source/parser already round-trip Instance.ops (Phase E.1).
-  let csgOpPopup = $state<{ rowName: string; op: 'add' | 'subtract' | 'intersect'; px: number; py: number; query: string } | null>(null);
-  function currentOpsForInstance(instName: string): CsgOpStep[] {
-    if (!isAsmInstanced) return [];
-    const instances = parseAsmInstances(editedSource);
-    return instances.find((i) => i.name === instName)?.ops ?? [];
-  }
-  function siblingNamesFor(instName: string): string[] {
-    if (!isAsmInstanced) return [];
-    return parseAsmInstances(editedSource)
-      .map((i) => i.name)
-      .filter((n) => n !== instName);
-  }
-  function openCsgOpPicker(rowName: string, op: 'add' | 'subtract' | 'intersect', ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    csgOpPopup = {
-      rowName, op,
-      px: Math.max(8, Math.min(r.left, window.innerWidth - 260)),
-      py: Math.min(r.bottom + 6, window.innerHeight - 280),
-      query: '',
-    };
-  }
-  function closeCsgOpPicker() { csgOpPopup = null; }
-  let csgOpFiltered = $derived.by(() => {
-    if (!csgOpPopup) return [];
-    const q = csgOpPopup.query.trim().toLowerCase();
-    const sibs = siblingNamesFor(csgOpPopup.rowName);
-    return q ? sibs.filter((n) => n.toLowerCase().includes(q)) : sibs;
-  });
-  function appendCsgOp(rowName: string, op: CsgOp, arg: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const instances = parseAsmInstances(editedSource);
-    const idx = instances.findIndex((i) => i.name === rowName);
-    if (idx < 0) return;
-    const cur = instances[idx]!;
-    const next = updateAsmInstance(instances, idx, { ops: [...(cur.ops ?? []), { op, arg }] });
-    // Auto-hide the operand row — it's now a CSG input, not a scene member.
-    // (Surfaced as the matching "Show on its own" toggle on the row head.)
-    const opIdx = next.findIndex((i) => i.name === arg);
-    let after = next;
-    if (opIdx >= 0 && !next[opIdx]!.hidden) {
-      after = updateAsmInstance(next, opIdx, { hidden: true });
-    }
-    editedSource = applyInstancesToSource(editedSource, id, after);
-  }
-  function removeCsgOpStep(rowName: string, stepIdx: number) {
-    if (!isAsmInstanced || !canEdit) return;
-    const instances = parseAsmInstances(editedSource);
-    const idx = instances.findIndex((i) => i.name === rowName);
-    if (idx < 0) return;
-    const cur = instances[idx]!;
-    const ops = (cur.ops ?? []).filter((_, i) => i !== stepIdx);
-    const removed = cur.ops?.[stepIdx]?.arg;
-    let after = updateAsmInstance(instances, idx, { ops: ops.length ? ops : undefined });
-    // If the removed operand is no longer referenced by any ops chain,
-    // un-hide it so it returns to the scene as a placed row.
-    if (removed) {
-      const stillReferenced = after.some((i) => i.ops?.some((s) => s.arg === removed));
-      if (!stillReferenced) {
-        const opIdx = after.findIndex((i) => i.name === removed);
-        if (opIdx >= 0 && after[opIdx]!.hidden) {
-          after = updateAsmInstance(after, opIdx, { hidden: false });
-        }
-      }
-    }
-    editedSource = applyInstancesToSource(editedSource, id, after);
-  }
-  function toggleHiddenForInstance(rowName: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const instances = parseAsmInstances(editedSource);
-    const idx = instances.findIndex((i) => i.name === rowName);
-    if (idx < 0) return;
-    const cur = instances[idx]!;
-    const after = updateAsmInstance(instances, idx, { hidden: !cur.hidden });
-    editedSource = applyInstancesToSource(editedSource, id, after);
-  }
-  function csgOpGlyph(op: CsgOp): string {
-    return op === 'add' ? '⊕' : op === 'subtract' ? '⊖' : '∩';
-  }
-  function pickCsgOpFromPopup(arg: string) {
-    if (!csgOpPopup) return;
-    appendCsgOp(csgOpPopup.rowName, csgOpPopup.op, arg);
-    closeCsgOpPicker();
-  }
+  // K.63 M2.5: the per-row ⊕⊖∩ CSG ops toolbar + csgOpPopup picker were
+  // assembly-only chrome. Deleted — .asm.ts files route to CompositionEditor.
   // Splice ONE recognized arg (offsets are relative to the instance's argsText).
   // Edit one arg per commit — the recognition $effect re-scans between edits, so
   // later args' offsets stay correct.
@@ -1605,251 +1513,21 @@
   // meta.instances and re-emit. Only active for assemblies that have a
   // meta.instances block (the new architecture); legacy bodies fall
   // through and stay non-reorderable.
-  let isAsmInstanced = $derived(!!findInstancesLiteralRange(editedSource));
-  let dragOverInstance = $state<string | null>(null);
-
-  // Sequential / Overlays subtab inside the Parts panel. Sequential is the
-  // spine; Overlays are modifiers that sit on a parent without advancing the
-  // stacking cursor. Defaults to Sequential since most rows are spine rows.
-  let partsSub = $state<'sequential' | 'overlay'>('sequential');
-  let filteredAsmParts = $derived.by(() => {
-    if (!isAsmInstanced) return resolvedParts;
-    const tree = parseAsmInstances(editedSource);
-    const flat = flatAsmInstances(tree);
-    const modeByName = new Map(flat.map((i) => [i.name, i.mode]));
-    // Phase E.3 — rows that live INSIDE a group are rendered within the
-    // group's accordion, not in the flat list.
-    const groupChildNames = new Set<string>();
-    for (const g of flat) {
-      if (g.children) for (const c of g.children) groupChildNames.add(c.name);
-    }
-    return resolvedParts.filter((p: any) => {
-      if (groupChildNames.has(p.name)) return false;
-      const m = modeByName.get(p.name) ?? 'sequential';
-      return partsSub === 'overlay' ? m === 'overlay' : m !== 'overlay';
-    });
-  });
-  /** Top-level group rows (Phase E.3) — rendered as marker accordions
-   *  alongside the atom rows. Their children show as small chips. */
-  let topLevelGroups = $derived.by(() => {
-    if (!isAsmInstanced) return [] as Instance[];
-    return parseAsmInstances(editedSource).filter((i) => Array.isArray(i.children));
-  });
-  /** Phase E.4 — top-level import rows + expression (custom) rows.
-   *  Both are kept separate from the atom flow because they're
-   *  declarations/expressions, not stacked instances. */
-  let topLevelImports = $derived.by(() => {
-    if (!isAsmInstanced) return [] as Instance[];
-    return parseAsmInstances(editedSource).filter((i) => i.kind === 'import');
-  });
-  let topLevelExpressions = $derived.by(() => {
-    if (!isAsmInstanced) return [] as Instance[];
-    return parseAsmInstances(editedSource).filter((i) => i.mode === 'custom' && i.kind !== 'import');
-  });
-  function deleteImportOrExpression(name: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const tree = parseAsmInstances(editedSource);
-    const idx = tree.findIndex((i) => i.name === name);
-    if (idx < 0) return;
-    const next = removeAsmInstance(tree, idx);
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  function deleteAssemblyGroup(name: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const tree = parseAsmInstances(editedSource);
-    const idx = tree.findIndex((i) => i.name === name && Array.isArray(i.children));
-    if (idx < 0) return;
-    // Promote the group's children back to top level so they're not lost.
-    const group = tree[idx]!;
-    const promoted = (group.children ?? []);
-    const next = [...tree.slice(0, idx), ...promoted, ...tree.slice(idx + 1)];
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  /** Phase E.3.1 — reparent a row INTO a group (drop target on the group
-   *  marker). Source row is removed from its current parent (top level
-   *  or another group) and appended as the last child of the named group. */
-  function dropInstanceIntoGroup(fromName: string, groupName: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const tree = parseAsmInstances(editedSource);
-    const next = moveIntoAsmGroup(tree, fromName, groupName);
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  /** Phase E.3.1 — pull a child OUT of its group to the top level. */
-  function promoteInstanceToTop(name: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const tree = parseAsmInstances(editedSource);
-    const next = moveToAsmTopLevel(tree, name);
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  function subtabCount(mode: 'sequential' | 'overlay'): number {
-    if (!isAsmInstanced) return 0;
-    const instances = parseAsmInstances(editedSource);
-    return instances.filter((i) => mode === 'overlay' ? i.mode === 'overlay' : i.mode !== 'overlay').length;
-  }
-
-  // ── + Add Part popup (Phase D) ──────────────────────────────────────────
-  // Round + button on the subtabs row opens a searchable FloatingPanel of
-  // all available primitives. Clicking one appends an instance with mode
-  // = the active subtab. Lighter-weight than the old select+button toolbar.
-  // Popup mode picks what happens on a primitive click — 'atom' = drop a
-  // concrete instance (existing flow); 'import' = create an alias row.
-  // 'expression' rows don't use the primitive list (they're created
-  // outright); same for 'group'.
-  let addPartPopup = $state<{ px: number; py: number; query: string; mode: 'atom' | 'import' } | null>(null);
-  function openAddPartPopup(ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    addPartPopup = {
-      px: Math.max(8, Math.min(r.left, window.innerWidth - 320)),
-      py: Math.min(r.bottom + 6, window.innerHeight - 360),
-      query: '',
-      mode: 'atom',
-    };
-  }
-  function closeAddPartPopup() { addPartPopup = null; }
-  let addPartFiltered = $derived.by(() => {
-    const q = (addPartPopup?.query ?? '').trim().toLowerCase();
-    if (!q) return loadable;
-    return loadable.filter((e) => e.id.toLowerCase().includes(q));
-  });
-  async function addPartFromPopup(childId: string) {
-    if (addPartPopup?.mode === 'import') {
-      closeAddPartPopup();
-      if (!isAsmInstanced || !canEdit) return;
-      const tree = parseAsmInstances(editedSource);
-      const usedNames = flatAsmInstances(tree).map((i) => i.name);
-      const aliasName = nextInstanceName(usedNames);
-      const next: Instance[] = [...tree, { name: aliasName, kind: 'import', src: childId, args: [], mode: 'sequential' }];
-      editedSource = applyInstancesToSource(editedSource, id, next);
-      return;
-    }
-    closeAddPartPopup();
-    await loadPrimitive(childId);
-  }
-  /** Phase E.4 — drop an empty Expression row. Body has a placeholder
-   *  comment; the inline editor in the Parts panel is where the user
-   *  fills in the actual expression. */
-  function addExpressionRowFromPopup() {
-    closeAddPartPopup();
-    if (!isAsmInstanced || !canEdit) return;
-    const tree = parseAsmInstances(editedSource);
-    const usedNames = flatAsmInstances(tree).map((i) => i.name);
-    const exprName = nextInstanceName(usedNames);
-    const next: Instance[] = [...tree, { name: exprName, mode: 'custom', expr: '/* expression */ empty()', args: [] }];
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  function updateExpressionRow(name: string, expr: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const tree = parseAsmInstances(editedSource);
-    const idx = tree.findIndex((i) => i.name === name);
-    if (idx < 0) return;
-    const next = updateAsmInstance(tree, idx, { expr });
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  /** K.62 Phase E.3 — add an empty Group row (Instance.children = []) at
-   *  top level. Children are added by dragging or by opening the +
-   *  popup with the group's row active (future work). */
-  function addEmptyGroupFromPopup() {
-    if (!isAsmInstanced || !canEdit) { closeAddPartPopup(); return; }
-    const tree = parseAsmInstances(editedSource);
-    const usedNames = flatAsmInstances(tree).map((i) => i.name);
-    const name = nextInstanceName(usedNames);
-    const next: Instance[] = [...tree, { name, args: [], mode: 'sequential', children: [] }];
-    editedSource = applyInstancesToSource(editedSource, id, next);
-    closeAddPartPopup();
-  }
-  function moveAssemblyInstance(fromName: string, toName: string) {
-    if (!isAsmInstanced || !canEdit) return;
-    const instances = parseAsmInstances(editedSource);
-    const from = instances.findIndex((i) => i.name === fromName);
-    const to = instances.findIndex((i) => i.name === toName);
-    if (from < 0 || to < 0 || from === to) return;
-    const next = moveAsmInstance(instances, from, to);
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-
-  // ── Per-row mode + anchor + datum (Phase C) ─────────────────────────────
-  // Read directly from meta.instances each call so the picker stays in sync
-  // if the user hand-edits the array in the Source tab.
-  function readInstanceField(name: string, key: 'mode' | 'anchor' | 'at'): string | null {
-    const instances = parseAsmInstances(editedSource);
-    const inst = instances.find((i) => i.name === name);
-    return (inst as any)?.[key] ?? null;
-  }
-  function currentModeForInstance(name: string): InstanceMode {
-    return (readInstanceField(name, 'mode') as InstanceMode) ?? 'sequential';
-  }
-  function currentAnchorForInstance(name: string): string {
-    return readInstanceField(name, 'anchor') ?? '';
-  }
-  function currentAtForInstance(name: string): Datum {
-    return (readInstanceField(name, 'at') as Datum) ?? 'head';
-  }
-  /** List of instance NAMES that PRECEDE the given row — only these are
-   *  valid anchors (you can't overlay onto something that hasn't been
-   *  declared yet at body-emit time). */
-  function anchorChoicesFor(name: string): string[] {
-    const instances = parseAsmInstances(editedSource);
-    const idx = instances.findIndex((i) => i.name === name);
-    if (idx <= 0) return [];
-    return instances.slice(0, idx).map((i) => i.name);
-  }
-  function applyInstancePatch(name: string, patch: Record<string, unknown>) {
-    if (!isAsmInstanced || !canEdit) return;
-    const instances = parseAsmInstances(editedSource);
-    const idx = instances.findIndex((i) => i.name === name);
-    if (idx < 0) return;
-    const next = updateAsmInstance(instances, idx, patch as any);
-    editedSource = applyInstancesToSource(editedSource, id, next);
-  }
-  function setInstanceMode(name: string, mode: InstanceMode) {
-    // When switching INTO overlay, default the anchor to the prior
-    // instance (closest preceding sequential row) so the row picks up
-    // sensible geometry on first toggle.
-    const patch: any = { mode };
-    if (mode === 'overlay') {
-      const choices = anchorChoicesFor(name);
-      if (choices.length) patch.anchor = currentAnchorForInstance(name) || choices[choices.length - 1];
-      if (!currentAtForInstance(name)) patch.at = 'head';
-    } else if (mode === 'sequential') {
-      // Clear overlay-only fields so the array stays tidy.
-      patch.anchor = undefined; patch.at = undefined;
-    }
-    applyInstancePatch(name, patch);
-  }
-  function setInstanceAnchor(name: string, anchor: string) { applyInstancePatch(name, { anchor }); }
-  function setInstanceAt(name: string, at: Datum) { applyInstancePatch(name, { at }); }
+  // K.63 M2.5: the entire assembly-instances state + helpers block lived
+  // here (isAsmInstanced, filteredAsmParts, topLevelGroups, topLevelImports,
+  // topLevelExpressions, partsSub, dragOverInstance, csgOpPopup,
+  // addPartPopup, subtabCount, deleteImportOrExpression, deleteAssemblyGroup,
+  // dropInstanceIntoGroup, promoteInstanceToTop, moveAssemblyInstance,
+  // addPartFromPopup, addExpressionRowFromPopup, updateExpressionRow,
+  // addEmptyGroupFromPopup, currentModeForInstance, anchorChoicesFor,
+  // setInstanceMode/Anchor/At, applyInstancePatch, readInstanceField).
+  // All deleted — .asm.ts files route to CompositionEditor.
 
   function deletePart(inst: any) {
     if (!canEdit) return;
-    // New-style assembly: drop the row from meta.instances + re-emit body.
-    // The emitter rewires `tail(prev)` refs automatically, so deleting A from
-    // [A, B] makes B the new first sequential (no offset wrap) instead of
-    // leaving an orphan `tail(A)` reference behind.
-    if (findInstancesLiteralRange(editedSource)) {
-      const instances = parseAsmInstances(editedSource);
-      const idx = instances.findIndex((i) => i.name === inst.name);
-      if (idx < 0) {
-        profileEditNote = `Can't delete ${inst.name} — not found in meta.instances.`;
-        return;
-      }
-      // Block if a custom-row's expr or another row's args mentions this name.
-      const refRe = new RegExp(`(?<![.\\w$])${inst.name}(?![\\w$])`);
-      for (let i = 0; i < instances.length; i++) {
-        if (i === idx) continue;
-        const other = instances[i];
-        if (!other) continue;
-        const text = (other.expr ?? '') + ' ' + other.args.join(' ') + ' ' + (other.anchor ?? '');
-        if (refRe.test(text)) {
-          profileEditNote = `Can't delete ${inst.name} — referenced by ${other.name}. Remove that reference first.`;
-          return;
-        }
-      }
-      const next = removeAsmInstance(instances, idx);
-      editedSource = applyInstancesToSource(editedSource, id, next);
-      pinnedParts = new Set([...pinnedParts].filter((n) => n !== inst.name));
-      return;
-    }
-    // ── Legacy path (recognizer-driven body splice) ─────────────────────────
+    // K.63 M2.5: assembly delete went via the new-style meta.instances
+    // branch; that block is gone. Composite leaf parts (.exp.ts, .rev.ts)
+    // still hit the recognizer-driven body splice below.
     const r = recognized;
     if (!r || inst.declStart < 0) return;
     // Block if another instance references this one (cross-instance arg/transform).
@@ -1959,36 +1637,10 @@
     const r = recognized;
     const child = childId ?? loadPick;
     if (!child) return;
-    // New-style assemblies (file has a `meta.instances` block) bypass the
-    // recognizer-driven splice path entirely — the ordered-array data layer
-    // owns the body. Refuse self-references (the bug that produced
-    // `my_assy → my_assy`) up front.
-    const isNewAssembly = !!findInstancesLiteralRange(editedSource);
-    if (isNewAssembly) {
-      if (child === id) {
-        profileEditNote = `Can't add ${child} to itself.`;
-        return;
-      }
-      loadBusy = true;
-      profileEditNote = null;
-      try {
-        const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(child)}`);
-        if (!res.ok) { profileEditNote = `Load failed: ${await res.text()}`; return; }
-        const data = await res.json();
-        const childParams = data.params ?? {};
-        const args = Object.values(childParams).map(defaultArgFor);
-        // Drops default to the active subtab's mode — drop into Overlays
-        // and the new row is overlay-anchored to the last sequential.
-        editedSource = appendAssemblyInstance(editedSource, id, child, args, partsSub);
-        loadPick = '';
-      } catch (e: any) {
-        profileEditNote = `Load error: ${e?.message ?? e}`;
-      } finally {
-        loadBusy = false;
-      }
-      return;
-    }
-    // ── Legacy path (recognizer + body splice) ───────────────────────────
+    // K.63 M2.5: the new-style assembly branch (which routed through
+    // appendAssemblyInstance + meta.instances) is gone. Assemblies go
+    // through CompositionEditor instead. Composite leaf parts still hit
+    // the recognizer-driven splice path below.
     if (!r || r.returnStart < 0 || r.compStart < 0) return;
     loadBusy = true;
     profileEditNote = null;
@@ -2661,235 +2313,32 @@
               <div class="pv-parts-empty">recognizing…</div>
             {:else if recogError && !recognized}
               <div class="pv-parts-err">{recogError}</div>
-            {:else if parts.length === 0 && !isAsmInstanced}
+            {:else if parts.length === 0}
               {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source has an error: {recogError}</span></div>{/if}
               <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
             {:else}
               <!-- Non-fatal recognize error: keep the last-good accordion, show
                    the error as a banner (don't nuke the parts list). -->
               {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source error — parts below reflect the last valid version: {recogError}</span></div>{/if}
-              {#if isAsmInstanced}
-                <!-- K.56 Phase D: split the parts list into Sequential (the
-                     spine — auto-stacked) and Overlays (modifiers that sit on
-                     a chosen anchor without advancing the cursor). New drops
-                     default to the active subtab's mode. -->
-                {@const seqCount = subtabCount('sequential')}
-                {@const ovrCount = subtabCount('overlay')}
-                <div class="pv-parts-subtabs">
-                  <button class="pv-subtab" type="button"
-                    class:active={partsSub === 'sequential'}
-                    onclick={() => partsSub = 'sequential'}>
-                    <span>↓ Sequential</span>
-                    <span class="pv-subtab-n">{seqCount}</span>
-                  </button>
-                  <button class="pv-subtab" type="button"
-                    class:active={partsSub === 'overlay'}
-                    onclick={() => partsSub = 'overlay'}>
-                    <span>⤴ Overlays</span>
-                    <span class="pv-subtab-n">{ovrCount}</span>
-                  </button>
-                  <div class="pv-spacer"></div>
-                  {#if canEdit}
-                    <button class="pv-add-part" type="button"
-                      title={`Add a part to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
-                      onclick={openAddPartPopup}>＋</button>
-                  {/if}
-                </div>
-                {#if filteredAsmParts.length === 0 && topLevelGroups.length === 0}
-                  <div class="pv-parts-empty">
-                    {partsSub === 'overlay'
-                      ? 'No overlays. Switch a Sequential row to ⤴ overlay mode, or drag a part from the sidebar with this tab active.'
-                      : 'No Sequential rows. Drag a part from the sidebar to start the spine.'}
-                  </div>
-                {/if}
-                <!-- Phase E.4 — Definitions (import rows) live ABOVE the
-                     subtabs since they're declarations, not stacked
-                     instances. Shown in both subtabs because expression
-                     rows in either tab can reference them. -->
-                {#if partsSub === 'sequential' && topLevelImports.length > 0}
-                  <div class="pv-defs-section">
-                    <div class="pv-defs-title">📥 Definitions (imports)</div>
-                    {#each topLevelImports as imp (imp.name)}
-                      <div class="pv-def-row">
-                        <span class="pv-def-name">{imp.name}</span>
-                        <span class="pv-def-eq">=</span>
-                        <span class="pv-def-src">{imp.src}</span>
-                        <div class="pv-spacer"></div>
-                        {#if canEdit}
-                          <button type="button" class="pv-group-del"
-                            title="Remove this import (existing references will break)"
-                            onclick={() => deleteImportOrExpression(imp.name)}>✕</button>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-                <!-- Phase E.4 — Expression rows (custom mode). The textarea
-                     is inline-editable; updates flow to meta.instances on
-                     blur (avoids re-emit thrash on every keystroke). -->
-                {#if partsSub === 'sequential' && topLevelExpressions.length > 0}
-                  <div class="pv-expr-section">
-                    {#each topLevelExpressions as expr (expr.name)}
-                      <div class="pv-expr-row">
-                        <span class="pv-expr-name">{expr.name}</span>
-                        <span class="pv-expr-eq">=</span>
-                        <textarea class="pv-expr-input" rows="2"
-                          spellcheck="false"
-                          value={expr.expr ?? ''}
-                          onblur={(e) => updateExpressionRow(expr.name, (e.currentTarget as HTMLTextAreaElement).value)}></textarea>
-                        {#if canEdit}
-                          <button type="button" class="pv-group-del" title="Remove this expression row"
-                            onclick={() => deleteImportOrExpression(expr.name)}>✕</button>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-                <!-- Phase E.3 — group marker rows. Children list inline as
-                     small chips. Editing the group (adding/removing children,
-                     drag-into-group) is hand-source for now. Delete promotes
-                     children back to top level so nothing's lost. -->
-                {#if partsSub === 'sequential'}
-                  {#each topLevelGroups as g (g.name)}
-                    <div class="pv-group-row"
-                      class:drag-over={dragOverInstance === g.name}
-                      ondragover={(e) => {
-                        if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
-                        e.preventDefault();
-                        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-                      }}
-                      ondragenter={(e) => {
-                        if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
-                        e.preventDefault();
-                        dragOverInstance = g.name;
-                      }}
-                      ondragleave={() => { if (dragOverInstance === g.name) dragOverInstance = null; }}
-                      ondrop={(e) => {
-                        if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
-                        e.preventDefault();
-                        const fromName = e.dataTransfer.getData('application/x-instance-name');
-                        dragOverInstance = null;
-                        if (fromName && fromName !== g.name) dropInstanceIntoGroup(fromName, g.name);
-                      }}
-                    >
-                      <span class="pv-group-glyph" title="Drop a row here to add as child">🗂</span>
-                      <span class="pv-group-name">{g.name}</span>
-                      <span class="pv-group-children">
-                        {#each (g.children ?? []) as c (c.name)}
-                          <span class="pv-group-chip" title={c.src ?? 'group'}>
-                            <span class="pv-group-chip-name">{c.name}</span>
-                            {#if canEdit}
-                              <button type="button" class="pv-group-chip-promote"
-                                title={`Promote ${c.name} to top level`}
-                                onclick={() => promoteInstanceToTop(c.name)}>↗</button>
-                            {/if}
-                          </span>
-                        {/each}
-                        {#if (g.children ?? []).length === 0}
-                          <span class="pv-group-empty">(drag rows here)</span>
-                        {/if}
-                      </span>
-                      <div class="pv-spacer"></div>
-                      {#if canEdit}
-                        <button type="button" class="pv-group-del" title="Remove group (children promoted to top level)"
-                          onclick={() => deleteAssemblyGroup(g.name)}>✕</button>
-                      {/if}
-                    </div>
-                  {/each}
-                {/if}
-              {/if}
-              {#each (isAsmInstanced ? filteredAsmParts : resolvedParts) as inst (inst.name)}
+              <!-- K.63 M2.5: the assembly subtabs / Definitions / Expressions
+                   / group-marker section all lived here. Assemblies route to
+                   CompositionEditor; this branch is for composite leaf parts
+                   only. -->
+              {#each resolvedParts as inst (inst.name)}
                 {@const open = isOpen(inst.name)}
                 <div class="pg-acc-wrap instance">
                   <div class="pg-acc-head instance" class:collapsed={!open}
-                    class:drag-over={dragOverInstance === inst.name}
                     role="button" tabindex="0"
                     aria-expanded={open}
-                    draggable={canEdit && isAsmInstanced}
-                    ondragstart={(e) => {
-                      if (!isAsmInstanced || !canEdit) return;
-                      e.dataTransfer?.setData('application/x-instance-name', inst.name);
-                      e.dataTransfer?.setData('text/plain', inst.name);
-                      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-                    }}
-                    ondragover={(e) => {
-                      if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
-                      e.preventDefault();
-                      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-                    }}
-                    ondragenter={(e) => {
-                      if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
-                      e.preventDefault();
-                      dragOverInstance = inst.name;
-                    }}
-                    ondragleave={() => { if (dragOverInstance === inst.name) dragOverInstance = null; }}
-                    ondrop={(e) => {
-                      if (!e.dataTransfer?.types.includes('application/x-instance-name')) return;
-                      e.preventDefault();
-                      const fromName = e.dataTransfer.getData('application/x-instance-name');
-                      dragOverInstance = null;
-                      if (fromName && fromName !== inst.name) moveAssemblyInstance(fromName, inst.name);
-                    }}
                     onclick={() => togglePart(inst.name)}
                     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart(inst.name); } }}>
                     <button class="pv-pin" class:pinned={pinnedParts.has(inst.name)} type="button" title={pinnedParts.has(inst.name) ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin(inst.name); }}>📌</button>
                     <span class="pg-acc-title">{inst.name}</span>
                     <span class="pg-acc-sig">:{inst.call}</span>
-                    {#if canEdit && isAsmInstanced && currentModeForInstance(inst.name) === 'overlay'}
-                      <!-- Overlay-only: pick the anchor row + the datum to
-                           align on. The mode itself is implicit (this row is
-                           in the Overlays subtab) so no mode select is shown. -->
-                      {@const anchors = anchorChoicesFor(inst.name)}
-                      {@const curAnchor = currentAnchorForInstance(inst.name)}
-                      {@const curAt = currentAtForInstance(inst.name)}
-                      <select class="pv-instop" title="Anchor — the row this overlay sits on"
-                        value={curAnchor}
-                        onclick={(e) => e.stopPropagation()}
-                        onchange={(e) => { e.stopPropagation(); setInstanceAnchor(inst.name, (e.currentTarget as HTMLSelectElement).value); }}
-                      >
-                        {#each anchors as a}<option value={a}>on {a}</option>{/each}
-                        {#if !anchors.includes(curAnchor) && curAnchor}<option value={curAnchor}>on {curAnchor}</option>{/if}
-                      </select>
-                      <select class="pv-instop" title="Anchor datum — head=top, tail=bottom, center=midpoint (Z-down)"
-                        value={curAt}
-                        onclick={(e) => e.stopPropagation()}
-                        onchange={(e) => { e.stopPropagation(); setInstanceAt(inst.name, (e.currentTarget as HTMLSelectElement).value as Datum); }}
-                      >
-                        <option value="head">@head</option>
-                        <option value="tail">@tail</option>
-                        <option value="center">@center</option>
-                      </select>
-                    {/if}
-                    {#if canEdit && isAsmInstanced}
-                      <!-- K.62 Phase E.2: per-row CSG ops chain. Three op
-                           buttons (⊕add ⊖subtract ∩intersect) open a
-                           sibling-name typeahead; existing ops show as
-                           chips next to the buttons with × to remove. -->
-                      {@const curOps = currentOpsForInstance(inst.name)}
-                      <span class="pv-opbar" title="CSG ops applied to this row (left-to-right)">
-                        <button type="button" class="pv-opbtn" title="Add (union)"
-                          onclick={(e) => { e.stopPropagation(); openCsgOpPicker(inst.name, 'add', e); }}>⊕</button>
-                        <button type="button" class="pv-opbtn" title="Subtract"
-                          onclick={(e) => { e.stopPropagation(); openCsgOpPicker(inst.name, 'subtract', e); }}>⊖</button>
-                        <button type="button" class="pv-opbtn" title="Intersect"
-                          onclick={(e) => { e.stopPropagation(); openCsgOpPicker(inst.name, 'intersect', e); }}>∩</button>
-                        {#each curOps as step, i}
-                          <span class="pv-opchip" title={`${step.op} ${step.arg} — click × to remove`}>
-                            <span class="pv-opchip-glyph">{csgOpGlyph(step.op)}</span>
-                            <span class="pv-opchip-arg">{step.arg}</span>
-                            <button type="button" class="pv-opchip-x" title={`Remove ${step.op}(${step.arg})`}
-                              onclick={(e) => { e.stopPropagation(); removeCsgOpStep(inst.name, i); }}>×</button>
-                          </span>
-                        {/each}
-                      </span>
-                      {@const isHidden = parseAsmInstances(editedSource).find((i) => i.name === inst.name)?.hidden}
-                      {#if isHidden}
-                        <button type="button" class="pv-opbtn pv-show-on-its-own"
-                          title="This row is hidden (operand only). Click to also show it in the scene."
-                          onclick={(e) => { e.stopPropagation(); toggleHiddenForInstance(inst.name); }}>👁</button>
-                      {/if}
-                    {/if}
-
+                    <!-- K.63 M2.5: assembly-specific row extras (drag-reorder,
+                         overlay anchor/datum pickers, per-row ⊕⊖∩ ops, hidden
+                         toggle) were here. Deleted — composite leaf rows keep
+                         the rest of the head + body markup. -->
                     {#if canEdit}
                       {@const pc = partColors(inst.name)}
                       <button class="pv-swatch" type="button" title={`Outer (skin) colour — ${pc.outer}`}
@@ -3381,64 +2830,10 @@
     </FloatingPanel>
   {/if}
 
-  {#if csgOpPopup}
-    <FloatingPanel
-      title={`${csgOpPopup.op === 'add' ? '⊕ Add' : csgOpPopup.op === 'subtract' ? '⊖ Subtract' : '∩ Intersect'} — pick operand for ${csgOpPopup.rowName}`}
-      visible={true} x={csgOpPopup.px} y={csgOpPopup.py} width="240px" maxHeight="48vh"
-      onClose={closeCsgOpPicker}>
-      <div class="pv-opspicker">
-        <input class="pv-opspicker-q" type="text" placeholder="Search sibling rows…"
-          autofocus
-          bind:value={csgOpPopup.query}
-          onkeydown={(e) => { if (e.key === 'Escape') closeCsgOpPicker(); }}
-        />
-        <div class="pv-opspicker-list">
-          {#each csgOpFiltered as n (n)}
-            <button type="button" class="pv-opspicker-row" onclick={() => pickCsgOpFromPopup(n)}>{n}</button>
-          {:else}
-            <div class="pv-opspicker-empty">No matching rows.</div>
-          {/each}
-        </div>
-      </div>
-    </FloatingPanel>
-  {/if}
-
-  {#if addPartPopup}
-    <FloatingPanel
-      title={addPartPopup.mode === 'import' ? '📥 Import (alias) — pick a primitive' : `Add to ${partsSub === 'overlay' ? 'Overlays' : 'Sequential'}`}
-      visible={true} x={addPartPopup.px} y={addPartPopup.py} width="320px" maxHeight="60vh"
-      onClose={closeAddPartPopup}>
-      <div class="pv-addpart">
-        <input class="pv-addpart-q" type="text" placeholder="Search primitives…"
-          autofocus
-          bind:value={addPartPopup.query}
-          onkeydown={(e) => { if (e.key === 'Escape') closeAddPartPopup(); }}
-        />
-        <div class="pv-addpart-list">
-          {#if addPartPopup.mode === 'atom'}
-            <button type="button" class="pv-addpart-row pv-addpart-row-group" onclick={addEmptyGroupFromPopup}>
-              <span class="pv-addpart-group-glyph">🗂</span> Group (sub-list)
-            </button>
-            <button type="button" class="pv-addpart-row pv-addpart-row-import"
-              onclick={() => { if (addPartPopup) addPartPopup = { ...addPartPopup, mode: 'import', query: '' }; }}>
-              <span class="pv-addpart-group-glyph">📥</span> Import (alias) — pick primitive next
-            </button>
-            <button type="button" class="pv-addpart-row pv-addpart-row-expr" onclick={addExpressionRowFromPopup}>
-              <span class="pv-addpart-group-glyph">ƒ</span> Expression (free composition)
-            </button>
-          {:else}
-            <button type="button" class="pv-addpart-row pv-addpart-row-back"
-              onclick={() => { if (addPartPopup) addPartPopup = { ...addPartPopup, mode: 'atom' }; }}>← back</button>
-          {/if}
-          {#each addPartFiltered as e (e.id)}
-            <button type="button" class="pv-addpart-row" onclick={() => addPartFromPopup(e.id)}>{e.id}</button>
-          {:else}
-            <div class="pv-addpart-empty">No matches.</div>
-          {/each}
-        </div>
-      </div>
-    </FloatingPanel>
-  {/if}
+  <!-- K.63 M2.5: csgOpPopup + addPartPopup FloatingPanels removed. The
+       former was the ⊕⊖∩ ops picker; the latter the + popup for atom /
+       group / import / expression. Both are assembly-only and have moved
+       to CompositionEditor (M3). -->
 
   {#if delParamPopup}
     <FloatingPanel title="Delete parameter" visible={true} x={delParamPopup.x} y={delParamPopup.y} width="232px" onClose={() => (delParamPopup = null)}>
@@ -3689,168 +3084,10 @@
   .pg-acc-head.instance[draggable="true"]:active { cursor: grabbing; }
   .pg-acc-head.instance.drag-over { box-shadow: inset 0 2px 0 0 #cc2222; }
 
-  /* Sequential / Overlays subtabs above the parts list. Compact pill pair
-   * with a count badge on each so the user always sees the split. */
-  .pv-parts-subtabs {
-    display: flex; gap: 4px; padding: 6px 4px 4px; align-items: center;
-    border-bottom: 1px solid #e6e6ec; margin-bottom: 4px;
-  }
-  .pv-subtab {
-    appearance: none; background: transparent; border: 1px solid transparent;
-    border-radius: 6px; padding: 4px 10px;
-    font: 600 12px ui-sans-serif, system-ui, sans-serif; color: #555;
-    cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
-    transition: background 80ms, color 80ms, border-color 80ms;
-  }
-  .pv-subtab:hover { background: #f1f1f5; color: #222; }
-  .pv-subtab.active { background: #1f2937; color: #fff; border-color: #1f2937; }
-  .pv-subtab-n {
-    background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 999px;
-    font-size: 11px; font-weight: 700; min-width: 16px; text-align: center;
-  }
-  .pv-subtab.active .pv-subtab-n { background: rgba(255,255,255,0.18); color: #fff; }
-  /* Conspicuous rounded + button on the subtabs row. Opens a searchable
-   * popup that adds a part to whichever subtab is active. */
-  .pv-add-part {
-    width: 24px; height: 24px; border-radius: 50%;
-    border: 0; background: #cc2222; color: #fff;
-    font: 700 16px/1 ui-sans-serif, system-ui; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center;
-    box-shadow: 0 1px 3px rgba(204,34,34,0.35);
-    transition: transform 80ms, background 80ms;
-  }
-  .pv-add-part:hover { background: #a01818; transform: scale(1.08); }
-  .pv-add-part:active { transform: scale(0.96); }
-  /* Add-part FloatingPanel — search box + scrollable button list. */
-  .pv-addpart { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
-  .pv-addpart-q {
-    padding: 6px 9px; border: 1px solid #ddd; border-radius: 6px;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-    outline: none;
-  }
-  .pv-addpart-q:focus { border-color: #cc2222; box-shadow: 0 0 0 2px rgba(204,34,34,0.12); }
-  .pv-addpart-list { display: flex; flex-direction: column; max-height: 44vh; overflow-y: auto; gap: 1px; }
-  .pv-addpart-row {
-    text-align: left; padding: 6px 10px; border: 0; background: transparent;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #222;
-    cursor: pointer; border-radius: 4px;
-  }
-  .pv-addpart-row:hover { background: #f1f1f5; color: #cc2222; }
-  .pv-addpart-row-group {
-    border-bottom: 1px solid #e6e6ec; padding-bottom: 8px; margin-bottom: 4px;
-    color: #6b21a8; font-weight: 600;
-  }
-  .pv-addpart-row-group:hover { background: #f5f0fa; color: #4b1273; }
-  .pv-addpart-group-glyph { margin-right: 4px; }
-  .pv-addpart-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
-
-  /* Phase E.4 — Definitions (imports) section above the subtabs. */
-  .pv-defs-section { margin: 4px 0; padding: 6px 8px; background: #eef5ff; border: 1px solid #bcd3ee; border-radius: 6px; }
-  .pv-defs-title { font: 600 11px ui-sans-serif; color: #1e40af; margin-bottom: 4px; }
-  .pv-def-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e3a8a; }
-  .pv-def-name { font-weight: 700; color: #0c2e6e; }
-  .pv-def-eq { color: #5e88c3; }
-  .pv-def-src { color: #1e3a8a; }
-  /* Phase E.4 — Expression rows with an inline textarea. */
-  .pv-expr-section { margin: 4px 0; }
-  .pv-expr-row {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 8px; background: #fffbeb; border: 1px solid #fde68a;
-    border-radius: 6px; margin: 4px 0;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #92400e;
-  }
-  .pv-expr-name { font-weight: 700; color: #78350f; }
-  .pv-expr-eq { color: #b45309; }
-  .pv-expr-input {
-    flex: 1; min-width: 0; resize: vertical;
-    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: #fff; border: 1px solid #fde68a; border-radius: 4px;
-    padding: 4px 6px; color: #78350f; outline: none;
-  }
-  .pv-expr-input:focus { border-color: #b45309; box-shadow: 0 0 0 2px rgba(180,83,9,0.12); }
-  /* Phase E.4 — popup buttons for import + expression authoring. */
-  .pv-addpart-row-import { color: #1e40af; }
-  .pv-addpart-row-import:hover { background: #eef5ff; color: #0c2e6e; }
-  .pv-addpart-row-expr { color: #92400e; }
-  .pv-addpart-row-expr:hover { background: #fffbeb; color: #78350f; }
-  .pv-addpart-row-back { color: #555; font-style: italic; font-weight: 600; padding-left: 8px; }
-  .pv-addpart-row-back:hover { background: #f1f1f5; }
-
-  /* Phase E.3 — group marker row. Sits in the Sequential subtab's list
-   * alongside atom accordions. Children render as small chips. */
-  .pv-group-row {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 8px; background: #f5f0fa; border: 1px solid #d4baf0;
-    border-radius: 6px; margin: 4px 0;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #4b1273;
-  }
-  .pv-group-glyph { font-size: 14px; }
-  .pv-group-name { font-weight: 700; }
-  .pv-group-children { display: inline-flex; gap: 3px; flex-wrap: wrap; }
-  .pv-group-chip {
-    display: inline-flex; align-items: center; gap: 2px;
-    background: #fff; border: 1px solid #d4baf0; border-radius: 10px;
-    padding: 0 2px 0 8px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #4b1273;
-  }
-  .pv-group-chip-promote {
-    appearance: none; background: transparent; border: 0; padding: 0 4px;
-    color: #8b5cb9; cursor: pointer; font: 12px/1 sans-serif;
-  }
-  .pv-group-chip-promote:hover { color: #4b1273; }
-  .pv-group-empty { color: #8b5cb9; font-style: italic; font-size: 11px; }
-  .pv-group-row.drag-over {
-    background: #ebd9fa; border-color: #8b5cb9; box-shadow: 0 0 0 2px rgba(139,92,185,0.25);
-  }
-  .pv-group-del {
-    appearance: none; background: transparent; border: 0; padding: 0 6px;
-    color: #8b5cb9; cursor: pointer; font: 14px/1 sans-serif;
-  }
-  .pv-group-del:hover { color: #4b1273; }
-
-  /* K.62 Phase E.2: per-row CSG ops bar — 3 op buttons + the chain of
-   * already-applied ops as small chips. Lives inline in the row head. */
-  .pv-opbar {
-    display: inline-flex; align-items: center; gap: 3px;
-    margin-left: 6px;
-  }
-  .pv-opbtn {
-    appearance: none; background: #fdf8f7; border: 1px solid #e3c4bf;
-    border-radius: 4px; padding: 1px 6px; font: 600 12px/1 ui-sans-serif;
-    color: #c4392f; cursor: pointer;
-  }
-  .pv-opbtn:hover { background: #fceeec; border-color: #c4392f; }
-  .pv-show-on-its-own { margin-left: 4px; color: #555; }
-  .pv-opchip {
-    display: inline-flex; align-items: center; gap: 2px;
-    background: #fff7f5; border: 1px solid #d4a39a;
-    border-radius: 10px; padding: 0 2px 0 6px;
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #7a1a14; line-height: 1.8;
-  }
-  .pv-opchip-glyph { font-weight: 700; }
-  .pv-opchip-arg { font-weight: 600; }
-  .pv-opchip-x {
-    appearance: none; background: transparent; border: 0; padding: 0 4px;
-    color: #b25247; cursor: pointer; font: 12px/1 sans-serif;
-  }
-  .pv-opchip-x:hover { color: #7a1a14; }
-
-  /* Ops-picker FloatingPanel — same shape as the add-part picker. */
-  .pv-opspicker { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
-  .pv-opspicker-q {
-    padding: 6px 9px; border: 1px solid #ddd; border-radius: 6px;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; outline: none;
-  }
-  .pv-opspicker-q:focus { border-color: #cc2222; box-shadow: 0 0 0 2px rgba(204,34,34,0.12); }
-  .pv-opspicker-list { display: flex; flex-direction: column; max-height: 36vh; overflow-y: auto; gap: 1px; }
-  .pv-opspicker-row {
-    text-align: left; padding: 6px 10px; border: 0; background: transparent;
-    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #222;
-    cursor: pointer; border-radius: 4px;
-  }
-  .pv-opspicker-row:hover { background: #f1f1f5; color: #cc2222; }
-  .pv-opspicker-empty { padding: 8px 10px; color: #888; font: 12px sans-serif; }
+  /* K.63 M2.5: assembly-only CSS deleted (.pv-parts-subtabs, .pv-subtab*,
+   * .pv-add-part, .pv-addpart*, .pv-defs-section, .pv-def-*,
+   * .pv-expr-*, .pv-group-*, .pv-opbar, .pv-opbtn, .pv-opchip*,
+   * .pv-opspicker*, .pv-show-on-its-own). All moved to CompositionEditor.svelte. */
   .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
   .pg-acc-head.instance .pg-acc-title { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
   .pg-acc-sig { font: bold 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; margin-left: -3px; }
