@@ -14,6 +14,7 @@ src/lib/fem/
 ├── CLAUDE.md                 — this file
 ├── FEM.md                    — research dossier (FreeCAD, PrePoMax, CalculiX, browser-WASM options + dual-track recommendation)
 ├── closed-form-stress.ts     — Stage 1: axial + torsion + bending + von Mises on annular sections
+├── tension-stress-3d.ts      — Stage 2 visualization layer: pure-tension σ + ε + ΔL + viridis/traffic-light LUT
 └── (future)
     ├── beam-1d.ts            — Stage 2 pure-JS linear beam FEA
     ├── linear-elastic-3d.ts  — Stage 3 sparse-CG linear elastic

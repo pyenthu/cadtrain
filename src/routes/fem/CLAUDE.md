@@ -11,10 +11,17 @@ src/routes/fem/
 ├── +page.svelte        — index. Lists tubular primitives (drill-pipe,
 │                         tubing, joints). Links to /fem/[id].
 └── [id]/
-    └── +page.svelte    — per-primitive stress page. Inputs (axial F,
-                          torque T, bending M, material grade);
-                          outputs (σ_a, σ_b, τ, σ_vm, SF, verdict);
-                          color-coded stress bar.
+    ├── +page.svelte    — per-primitive stress page. Inputs (axial F,
+    │                     torque T, bending M, material grade);
+    │                     outputs (σ_a, σ_b, τ, σ_vm, SF, verdict);
+    │                     color-coded stress bar.
+    └── tension/
+        ├── +page.svelte    — Stage 2 (Track B). 3D tension-test viewer:
+        │                     equal axial F at each end, GLB rendered
+        │                     in Threlte, σ_vm color overlay + ε-driven
+        │                     z-stretch (× user-amplified slider).
+        │                     Method dropdown for future FEA backends.
+        └── TensionScene.svelte — Threlte scene used by the page above.
 ```
 
 ## Patterns

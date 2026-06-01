@@ -79,6 +79,11 @@
         {#each primTags as t (t)}<span class="fem-tag">{t}</span>{/each}
       </div>
     {/if}
+    <div class="fem-actions">
+      <a href={`/fem/${encodeURIComponent(id)}/tension`} class="fem-action">
+        Try 3D tension test →
+      </a>
+    </div>
   </header>
 
   {#if loadStatus === 'loading'}
@@ -201,6 +206,16 @@
     margin: 4px 0 6px; color: #0c2e6e;
   }
   .fem-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .fem-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .fem-action {
+    display: inline-block; padding: 6px 12px;
+    background: #1e40af; color: #fff;
+    border-radius: 6px;
+    font: 600 12px ui-sans-serif; letter-spacing: 0.02em;
+    text-decoration: none;
+    transition: background 80ms;
+  }
+  .fem-action:hover { background: #1e3a8a; }
   .fem-tag {
     background: #f0f0f5; color: #555;
     font: 11px ui-monospace; padding: 2px 6px; border-radius: 6px;
