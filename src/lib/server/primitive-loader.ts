@@ -29,6 +29,7 @@ import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox'
 import { compileProfileBuild } from './profile-fn';
 import { recognizeComposite } from './recognize-composite';
 import { partHashId } from '$lib/cad/part-id';
+import { paramKeysOf } from '$lib/cad/assembly-deps';
 
 /**
  * Wrap each recognized named PART instance's init with `__tag(<init>,
@@ -167,11 +168,40 @@ export async function buildPrimitiveGeom(
   // The params are the function's positional args; bundle them into a `p` object
   // at the top of the body. Top params stay INDEPENDENT — a part links only if
   // its expression references p.<name> (bare <name> still resolves too).
+  //
+  // ROBUSTNESS: derive the bundle keys from META.PARAMS (the canonical schema)
+  // instead of the function signature. Older / hand-authored assemblies sometimes
+  // ship a `(p: any)` signature that doesn't match meta.params {od, id, length, …};
+  // in that case the old regex extracted `p` as the ONLY positional name and
+  // emitted `const p = { p }`, which collides with the parameter and throws
+  // "Identifier 'p' has already been declared" before the body even runs.
+  // The new pass:
+  //   1. Reads meta.params for the canonical key list.
+  //   2. Rewrites the function signature to those keys, in order — so the
+  //      positional args the caller sends (one per meta.params row) actually
+  //      bind to named locals the body can use.
+  //   3. Injects `const _p = { …keys }` and aliases `const p = _p` ONLY when
+  //      `p` isn't already a positional name (the rewritten signature decides).
+  //      Either way the body's `p.X` works without a duplicate declaration.
+  const metaKeys = paramKeysOf(source);
   body = body.replace(
     new RegExp(`function\\s+${escapeRe(name)}\\s*\\(([^)]*)\\)\\s*\\{`),
     (full: string, params: string) => {
-      const ns = String(params).split(',').map((s) => s.trim().split(/[\s=]/)[0].trim()).filter((n) => /^[a-zA-Z_$][\w$]*$/.test(n));
-      return ns.length ? `${full} const p = { ${ns.join(', ')} };` : full;
+      const sigNames = String(params).split(',').map((s) => s.trim().split(/[\s=:]/)[0].trim()).filter((n) => /^[a-zA-Z_$][\w$]*$/.test(n));
+      // Canonical positional name list = meta.params keys when available
+      // (so signature drift can't break the call); fall back to the source's
+      // signature otherwise (leaf primitives with no meta.params).
+      const ns = metaKeys.length ? metaKeys : sigNames;
+      if (!ns.length) return full;
+      // Rewrite the signature to canonical positional names so `fn(...args)` at
+      // the call site binds each `args[i]` to `ns[i]` regardless of what the
+      // source happens to spell.
+      const rewrittenHead = full.replace(/\(([^)]*)\)/, `(${ns.join(', ')})`);
+      // Skip the `const p = …` line when `p` is already a positional name
+      // (would shadow). If `p` is in meta.params (unusual but legal), the
+      // bundling becomes a no-op and the user's `p` wins.
+      if (ns.includes('p')) return rewrittenHead;
+      return `${rewrittenHead} const p = { ${ns.join(', ')} };`;
     },
   );
   const wrapper = `"use strict";

@@ -61,15 +61,56 @@ export function hashComponent(source: string): string {
 }
 
 /** Return Object.keys of meta.params, in declaration order. Empty array when
- *  no params block is found. */
+ *  no params block is found.
+ *
+ *  Walks the block char by char tracking brace depth + string state so a
+ *  param row whose `default:` is a nested descriptor
+ *  (`profile: { ..., default: { kind, params: { r, len } } }`) doesn't yield
+ *  the inner `default` / `params` / `kind` as fake top-level param keys
+ *  (which then either rename the loader's signature to `(profile, default,
+ *  params, segments)` — a syntax error on the reserved word — or just
+ *  return the wrong keys). */
 export function paramKeysOf(source: string): string[] {
   const block = extractParamsBlock(source);
   if (!block) return [];
-  // Match top-level `KEY: { … }` rows. Same regex as inline-profile.ts.
-  const rowRe = /([a-zA-Z_$][\w$]*)\s*:\s*\{/g;
   const out: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(block))) out.push(m[1]);
+  const keyRe = /([a-zA-Z_$][\w$]*)\s*:\s*\{/g;
+  let km: RegExpExecArray | null;
+  while ((km = keyRe.exec(block))) {
+    // Bail if this match isn't at depth 0.
+    let depth = 0, inStr: string | null = null;
+    for (let p = 0; p < km.index; p++) {
+      const ch = block[p]!;
+      if (inStr) {
+        if (ch === '\\') { p++; continue; }
+        if (ch === inStr) inStr = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+    }
+    if (depth !== 0) continue;
+    out.push(km[1]!);
+    // Skip past this row's matching close brace so the next regex match
+    // starts AFTER the body — `default: { ... }` inside won't surface.
+    const bodyStart = km.index + km[0].length;
+    let d = 1, j = bodyStart;
+    let s: string | null = null;
+    while (j < block.length && d > 0) {
+      const ch = block[j]!;
+      if (s) {
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === s) s = null;
+        j++; continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { s = ch; j++; continue; }
+      if (ch === '{') d++;
+      else if (ch === '}') { d--; if (d === 0) break; }
+      j++;
+    }
+    if (d === 0) keyRe.lastIndex = j + 1;
+  }
   return out;
 }
 
