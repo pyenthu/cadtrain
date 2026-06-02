@@ -31,6 +31,7 @@
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
   import FloatingPanel from './FloatingPanel.svelte';
+  import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
 
   let {
     source = '',
@@ -82,6 +83,81 @@
     return keys?.[i] ?? `arg${i}`;
   }
   let composition = $derived<TreeNode | null>(parseComposition(source));
+
+  // ─── Per-instance colours (outer / inner) ─────────────────────────────
+  // Mirror PrimitiveView's `meta.instanceColors[name] = { outer, inner }`
+  // shape — same parse + serialize so the bake pipeline picks the colours
+  // up the same way it does for primitive composites. Keyed by the Call's
+  // alias (A, B, C, …); two Calls with the same fn but different aliases
+  // can carry different colours.
+  function instanceColorsSpan(): { start: number; end: number; objStart: number } | null {
+    const m = /instanceColors\s*:\s*\{/.exec(source);
+    if (!m) return null;
+    const objStart = source.indexOf('{', m.index);
+    let depth = 0, i = objStart;
+    for (; i < source.length; i++) {
+      const c = source[i];
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
+    }
+    return { start: m.index, end: i, objStart };
+  }
+  function readInstanceColors(): Record<string, { outer?: string; inner?: string }> {
+    const span = instanceColorsSpan();
+    if (!span) return {};
+    try {
+      const obj = new Function('return (' + source.slice(span.objStart, span.end) + ')')();
+      const out: Record<string, { outer?: string; inner?: string }> = {};
+      for (const k of Object.keys(obj || {})) {
+        const v = obj[k];
+        out[k] = typeof v === 'string' ? { outer: v } : (v && typeof v === 'object' ? v : {});
+      }
+      return out;
+    } catch { return {}; }
+  }
+  /** Resolved {outer, inner} for a Call alias — merges any override over the
+   *  fallback INSTANCE_PALETTE colour. */
+  function instanceColors(name: string): { outer: string; inner: string } {
+    return colorsForInstance(name, readInstanceColors()[name]);
+  }
+  function serializeInstanceColors(obj: Record<string, { outer?: string; inner?: string }>): string {
+    const entries = Object.entries(obj)
+      .filter(([, v]) => v && (v.outer || v.inner))
+      .map(([k, v]) => {
+        const parts: string[] = [];
+        if (v.outer) parts.push(`outer: '${v.outer}'`);
+        if (v.inner) parts.push(`inner: '${v.inner}'`);
+        return `${k}: { ${parts.join(', ')} }`;
+      });
+    return `instanceColors: { ${entries.join(', ')} }`;
+  }
+  function setInstanceColor(name: string, which: 'outer' | 'inner', hex: string) {
+    if (!canEdit) return;
+    const cur = readInstanceColors();
+    cur[name] = { ...(cur[name] || {}), [which]: hex };
+    const block = serializeInstanceColors(cur);
+    const span = instanceColorsSpan();
+    let out = source;
+    if (span) {
+      out = source.slice(0, span.start) + block + source.slice(span.end);
+    } else {
+      const mm = /export\s+const\s+meta\s*=\s*\{/.exec(source);
+      if (!mm) return;
+      const at = mm.index + mm[0].length;
+      out = source.slice(0, at) + `\n  ${block},` + source.slice(at);
+    }
+    onSourceChange?.(out);
+  }
+  let colorPopup = $state<{ name: string; which: 'outer' | 'inner'; x: number; y: number } | null>(null);
+  function openColorPopup(name: string, which: 'outer' | 'inner', ev: MouseEvent) {
+    ev.stopPropagation();
+    colorPopup = { name, which, x: ev.clientX, y: ev.clientY };
+  }
+  function pickColor(hex: string) {
+    if (!colorPopup) return;
+    setInstanceColor(colorPopup.name, colorPopup.which, hex);
+    colorPopup = null;
+  }
   let rootKindBadge = $derived<string>(
     composition === null ? '[ ]'
       : composition.type === 'list' ? '[ ]'
@@ -890,9 +966,23 @@
     {/if}
     {#if n.type === 'call'}
       {@const callSrc = imports.find((i) => i.name === n.fn)?.src}
+      {@const pc = instanceColors(n.fn)}
       <span class="ce-file-title" title={fileTitle(n)}>
         {n.fn}{#if callSrc}<span class="ce-file-src">: {callSrc}</span>{/if}
       </span>
+      {#if canEdit}
+        <!-- Per-instance OUTER (skin) + INNER (cut) colour swatches.
+             Same shape PrimitiveView already uses, stored on this assembly's
+             meta.instanceColors keyed by the Call alias. -->
+        <button class="ce-swatch" type="button" title={`Outer (skin) — ${pc.outer}`}
+          style="background:{pc.outer}"
+          onclick={(e) => openColorPopup(n.fn, 'outer', e)}
+          aria-label={`Outer colour for ${n.fn}`}></button>
+        <button class="ce-swatch ce-swatch-inner" type="button" title={`Inner (cut) — ${pc.inner}`}
+          style="background:{pc.inner}"
+          onclick={(e) => openColorPopup(n.fn, 'inner', e)}
+          aria-label={`Inner colour for ${n.fn}`}></button>
+      {/if}
       <!-- mv/rot indicator dots — terse status, no triplet preview. The
            edit surface lives in the expanded body below. -->
       {#if n.mv}<span class="ce-tx-dot ce-tx-dot-mv" title="mv set">↦</span>{/if}
@@ -1193,6 +1283,42 @@
   </FloatingPanel>
 {/if}
 
+<!-- Per-instance colour picker — outer (skin) and inner (cut) swatches
+     for each Call row. Persists to meta.instanceColors on this assembly's
+     source so the bake pipeline picks the colour up the same way it does
+     for primitive composites. -->
+{#if colorPopup}
+  <FloatingPanel
+    title={`${colorPopup.which === 'outer' ? 'Outer (skin)' : 'Inner (cut)'} — ${colorPopup.name}`}
+    visible={true}
+    x={colorPopup.x}
+    y={colorPopup.y}
+    width="208px"
+    onClose={() => (colorPopup = null)}
+  >
+    <div style="display:flex; flex-direction:column; gap:8px; padding:4px;">
+      <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
+        {#each INSTANCE_PALETTE as c (c)}
+          <button type="button" title={c} onclick={() => pickColor(c)}
+            style="height:22px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer;"
+            aria-label={c}></button>
+        {/each}
+      </div>
+      <label style="display:flex; align-items:center; gap:6px; font:11px Arial; color:#555;">
+        custom
+        <input type="color" oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)}
+          style="width:38px; height:24px; padding:0; border:1px solid #ccc; border-radius:4px; background:none; cursor:pointer;" />
+      </label>
+      {#if colorPopup.which === 'inner'}
+        <button class="ce-btn" type="button" onclick={() => pickColor('#888888')}>Reset to grey</button>
+      {/if}
+      <p style="font:10px Arial; color:#888; margin:0;">
+        {colorPopup.which === 'outer' ? 'External skin of this instance.' : 'Shown where this instance is cut (bore wall / cross-section).'}
+      </p>
+    </div>
+  </FloatingPanel>
+{/if}
+
 <!-- Arg picker -->
 {#if argPicker}
   <FloatingPanel
@@ -1478,6 +1604,33 @@
   /* `: shaft` tail — same colon-as-labeller as the import pill, lighter
      so the alias `A` reads as the primary identifier. */
   .ce-file-src { color: #5e88c3; font-weight: 400; margin-left: 1px; }
+
+  /* Per-instance OUTER (skin) + INNER (cut) colour swatches. Outer is a
+     square, inner a circle — mirrors PrimitiveView's pv-swatch shape so
+     the visual language stays consistent across product surfaces. */
+  .ce-swatch {
+    flex: 0 0 auto;
+    width: 12px; height: 12px;
+    margin-left: 4px;
+    padding: 0;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    border-radius: 3px;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  }
+  .ce-swatch:hover { outline: 1px solid #4a78c0; outline-offset: 1px; }
+  .ce-swatch-inner { margin-left: 2px; border-radius: 50%; }
+
+  /* Reused for the inner-reset button inside the colour popup. */
+  .ce-btn {
+    background: #eef5ff; border: 1px solid #b8d4f2;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font: 600 11px ui-sans-serif, system-ui;
+    color: #1e40af;
+    cursor: pointer;
+  }
+  .ce-btn:hover { background: #ddeaff; border-color: #1e40af; }
 
   .ce-row-spacer { flex: 1; }
   .ce-row-btn {
