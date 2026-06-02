@@ -327,57 +327,36 @@
     commitWithLifts(newImports, root, lifted);
   }
 
-  /** Take callWithDefaults' result + a fresh alias, rewrite each lifted-param
-   *  arg from a literal value to a FLAT `p.<key>` reference, and stamp the
-   *  alias on .fn. Engine params (segments / divs) keep their snapshot
-   *  literal. The assembly's meta.params holds ONE shared row per key
-   *  across all instances — adding a second instance of the same primitive
-   *  reuses the existing top-level knob rather than splitting into
-   *  per-instance namespaces. The user can manually replace a specific
-   *  Call's `p.od` with a literal or different expression when they want
-   *  per-instance overrides. */
+  /** Unwrap callWithDefaults' result, stamp the fresh alias on .fn, and
+   *  carry paramKeys onto the Call so emitNode produces the object form
+   *  `B({k1: v1, k2: v2, ...})` — each slot visibly named, args are the
+   *  child primitive's DEFAULT VALUES as literals. The assembly's
+   *  meta.params is NOT auto-modified — the user decides which child
+   *  params to surface as assembly knobs by adding them through the
+   *  Parameters panel + editing the corresponding Call arg from a
+   *  literal default to `p.<key>`. */
   function buildLiftedCall(fetched: TreeNode | { node: TreeNode; paramKeys: string[]; specs: any[] }, alias: string): TreeNode {
     if ('node' in (fetched as any)) {
-      const { node, paramKeys, specs } = fetched as { node: TreeNode; paramKeys: string[]; specs: { key: string }[] };
+      const { node, paramKeys } = fetched as { node: TreeNode; paramKeys: string[]; specs: { key: string }[] };
       if (node.type !== 'call') return { ...node, fn: alias } as any;
-      const liftedKeys = new Set(specs.map((s) => s.key));
-      const args = node.args.map((a, i) => {
-        const k = paramKeys[i];
-        if (k && liftedKeys.has(k)) return makeLiteral(`p.${k}`);
-        return a;
-      });
-      return { ...node, fn: alias, args };
+      return { ...node, fn: alias, paramKeys };
     }
     const node = fetched as TreeNode;
     return node.type === 'call' ? { ...node, fn: alias } : node;
   }
-  function liftedSpecs(fetched: TreeNode | { specs: any[] }, _alias: string): Array<{ name: string; label: string; min: number; max: number; step: number; default: number }> {
-    if (!('specs' in (fetched as any))) return [];
-    return (fetched as { specs: any[] }).specs.map((s) => ({
-      // FLAT name + label: no alias prefix. Multiple instances of the same
-      // primitive share the assembly-level row. addAssemblyParam is
-      // idempotent on existing names, so a second insert is a no-op for
-      // the param (it only adds the new Call referencing the existing
-      // shared row).
-      name: s.key,
-      label: s.key,
-      min: s.min, max: s.max, step: s.step, default: s.default,
-    }));
+  /** Stub kept for callers — auto-lift is gone, so this always returns []. */
+  function liftedSpecs(_fetched: TreeNode | { specs: any[] }, _alias: string): Array<{ name: string; label: string; min: number; max: number; step: number; default: number }> {
+    return [];
   }
-  /** Commit a composition mutation + lifted assembly params in one shot
-   *  so the editor only fires one onSourceChange. Uses addAssemblyParam
-   *  (idempotent — re-adding the same name is a no-op) after applyToSource
-   *  emits the new body. */
+  /** Commit a composition mutation. Auto-lift removed; meta.params edits
+   *  are user-driven via the Parameters panel. */
   function commitWithLifts(
     newImports: readonly ImportDef[],
     newRoot: TreeNode | null,
-    lifts: Array<{ name: string; label: string; min: number; max: number; step: number; default: number }>,
+    _lifts: Array<{ name: string; label: string; min: number; max: number; step: number; default: number }>,
   ) {
     if (!canEdit) return;
-    let out = applyToSource(source, id, newImports, newRoot);
-    for (const spec of lifts) {
-      out = addAssemblyParam(out, id, spec);
-    }
+    const out = applyToSource(source, id, newImports, newRoot);
     onSourceChange?.(out);
   }
 
@@ -583,11 +562,22 @@
     const imp = imports.find((i) => i.name === call.fn);
     const fetched = imp ? await callWithDefaults(imp.src) : await callWithDefaults(call.fn);
     // `fetched` is either a bare TreeNode (network failure path) or the
-    // rich {node, paramKeys, specs} envelope. Unwrap to the Call node.
+    // rich {node, paramKeys, specs} envelope. Unwrap to the Call node +
+    // capture paramKeys so the sibling emits in object form too.
     const fNode: TreeNode = ('node' in (fetched as any))
       ? (fetched as any).node
       : (fetched as TreeNode);
-    const sibling: TreeNode = (fNode.type === 'call') ? { ...fNode, fn: call.fn } : fNode;
+    const fParamKeys: string[] | undefined = ('node' in (fetched as any))
+      ? (fetched as any).paramKeys
+      : undefined;
+    // Stamp the alias + lift args to `p.<key>` references (same default
+    // as the primary insert) + carry paramKeys so emitNode produces
+    // `B({k1: p.k1, ...})` for the sibling as well.
+    const sibling: TreeNode = (fNode.type === 'call' && fParamKeys && fParamKeys.length)
+      ? { ...fNode, fn: call.fn,
+          args: fNode.args.map((a, i) => fParamKeys[i] ? makeLiteral(`p.${fParamKeys[i]}`) : a),
+          paramKeys: fParamKeys }
+      : (fNode.type === 'call' ? { ...fNode, fn: call.fn } : fNode);
     const wrapped: TreeNode = {
       type: 'method',
       id: newNodeId(),

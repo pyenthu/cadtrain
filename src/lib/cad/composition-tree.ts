@@ -36,6 +36,11 @@ interface NodeBase { id: string; name?: string; }
  */
 export type TreeNode =
   | (NodeBase & { type: 'call';    fn: string; args: TreeNode[];
+                  /** When present, emit as object form `fn({k1: arg1, k2: arg2, ...})`
+                   *  with `paramKeys[i]` keying `args[i]`. Set on every Call inserted
+                   *  via the new editor flow; omitted only for hand-written legacy
+                   *  positional Calls. */
+                  paramKeys?: string[];
                   mv?: [TreeNode, TreeNode, TreeNode]; rot?: [TreeNode, TreeNode, TreeNode] })
   | (NodeBase & { type: 'method';  obj: TreeNode; op: CsgOp; arg: TreeNode })
   | (NodeBase & { type: 'list';    children: TreeNode[] })
@@ -260,7 +265,21 @@ export function emitImports(imports: readonly ImportDef[]): string {
 export function emitNode(node: TreeNode): string {
   switch (node.type) {
     case 'call': {
-      let expr = `${node.fn}(${node.args.map(emitNode).join(', ')})`;
+      // Object-form when paramKeys present — `B({k1: v1, k2: v2})`. Each arg slot
+      // is visibly tied to its named child param in the source, so the user can
+      // wire any expression (`p.od`, `5`, `p.od - 2*p.wall`) into a known slot.
+      // Falls back to positional `B(v1, v2)` only for legacy hand-authored Calls
+      // (paramKeys undefined).
+      let expr: string;
+      if (node.paramKeys && node.paramKeys.length) {
+        const parts = node.paramKeys.map((k, i) => {
+          const v = node.args[i];
+          return v ? `${k}: ${emitNode(v)}` : `${k}: 0`;
+        });
+        expr = `${node.fn}({ ${parts.join(', ')} })`;
+      } else {
+        expr = `${node.fn}(${node.args.map(emitNode).join(', ')})`;
+      }
       // mv inner, rot outer — composes as `rot(mv(<call>, [...]), [...])`.
       if (node.mv) expr = `mv(${expr}, [${node.mv.map(emitNode).join(', ')}])`;
       if (node.rot) expr = `rot(${expr}, [${node.rot.map(emitNode).join(', ')}])`;
@@ -480,6 +499,9 @@ function rehydrateNode(raw: unknown): TreeNode | null {
     case 'call': {
       const fn = typeof o.fn === 'string' ? o.fn : '';
       const args = Array.isArray(o.args) ? o.args.map((a) => rehydrateNode(a)).filter((x): x is TreeNode => !!x) : [];
+      const paramKeys = Array.isArray((o as any).paramKeys)
+        ? (o as any).paramKeys.filter((k: unknown): k is string => typeof k === 'string')
+        : undefined;
       const readTriplet = (raw: unknown): [TreeNode, TreeNode, TreeNode] | undefined => {
         if (!Array.isArray(raw)) return undefined;
         const arr = raw.slice(0, 3).map((v) => rehydrateNode(v)).filter((x): x is TreeNode => !!x);
@@ -488,7 +510,9 @@ function rehydrateNode(raw: unknown): TreeNode | null {
       };
       const mv = readTriplet((o as any).mv);
       const rot = readTriplet((o as any).rot);
-      return { type, id, name, fn, args, ...(mv ? { mv } : {}), ...(rot ? { rot } : {}) };
+      return { type, id, name, fn, args,
+        ...(paramKeys && paramKeys.length ? { paramKeys } : {}),
+        ...(mv ? { mv } : {}), ...(rot ? { rot } : {}) };
     }
     case 'method': {
       const op = (['add', 'subtract', 'intersect'].includes(o.op as string) ? o.op : 'subtract') as CsgOp;
@@ -555,6 +579,9 @@ function serializeNode(node: TreeNode, indent: number): string {
     case 'call':
       parts.push(`fn: ${JSON.stringify(node.fn)}`);
       parts.push(`args: [${node.args.length ? '\n' + inner + node.args.map((a) => serializeNode(a, indent + 2)).join(',\n' + inner) + '\n' + pad : ''}]`);
+      if (node.paramKeys && node.paramKeys.length) {
+        parts.push(`paramKeys: [${node.paramKeys.map((k) => JSON.stringify(k)).join(', ')}]`);
+      }
       if (node.mv)  parts.push(`mv: [${node.mv.map((o) => serializeNode(o, indent + 2)).join(', ')}]`);
       if (node.rot) parts.push(`rot: [${node.rot.map((o) => serializeNode(o, indent + 2)).join(', ')}]`);
       break;
@@ -710,7 +737,9 @@ export function addAssemblyParam(source: string, id: string, spec: AssemblyParam
   const label = spec.label ?? name;
   const min = spec.min ?? 0, max = spec.max ?? 10, step = spec.step ?? 0.1, def = spec.default ?? 1;
   const entry = `${name}: { label: '${label}', min: ${min}, max: ${max}, step: ${step}, default: ${def} }`;
-  // 1) Insert into meta.params block (before the closing brace).
+  // Insert into meta.params block (before the closing brace). The function
+  // signature stays `(p)` — the object-arg style means meta.params keys
+  // surface only on `p` at runtime, never on the signature itself.
   let out = source;
   if (range) {
     const inside = out.slice(range.start + 1, range.end - 1);
@@ -723,15 +752,6 @@ export function addAssemblyParam(source: string, id: string, spec: AssemblyParam
     // No params block — synthesize one after the tags / name anchor.
     out = insertMetaField(out, 'params', `{ ${entry} }`);
   }
-  // 2) Insert into the function signature.
-  const fnRe = new RegExp(`(export\\s+function\\s+${id}\\s*\\()([^)]*)(\\))`);
-  out = out.replace(fnRe, (full, head, params, tail) => {
-    const trimmed = String(params).trim();
-    const ns = trimmed ? trimmed.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-    if (ns.includes(name)) return full;
-    const next = [...ns, name].join(', ');
-    return `${head}${next}${tail}`;
-  });
   return out;
 }
 
@@ -741,19 +761,13 @@ export function addAssemblyParam(source: string, id: string, spec: AssemblyParam
 export function removeAssemblyParam(source: string, id: string, name: string): string {
   if (!/^[a-zA-Z_$][\w$]*$/.test(name)) return source;
   let out = source;
-  // 1) Drop from meta.params block. Match `<name>: { ... }` with one
-  //    adjacent comma (leading or trailing) — same idea as PrimitiveView's
-  //    spanWithComma.
+  // Drop from meta.params block. Match `<name>: { ... }` with one adjacent
+  // comma (leading or trailing) — same idea as PrimitiveView's spanWithComma.
+  // The function signature stays `(p)`; no signature edit needed.
   const rowRe = new RegExp(`\\b${name}\\s*:\\s*\\{[^}]*\\}\\s*,?\\s*`);
   out = out.replace(rowRe, '');
   // Tidy a stray leading comma left by removing the first entry.
   out = out.replace(/params\s*:\s*\{\s*,/, 'params: {');
-  // 2) Drop from signature.
-  const fnRe = new RegExp(`(export\\s+function\\s+${id}\\s*\\()([^)]*)(\\))`);
-  out = out.replace(fnRe, (_full, head, params, tail) => {
-    const ns = String(params).split(',').map((s: string) => s.trim()).filter(Boolean).filter((n: string) => n !== name);
-    return `${head}${ns.join(', ')}${tail}`;
-  });
   return out;
 }
 

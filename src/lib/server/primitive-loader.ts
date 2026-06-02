@@ -197,13 +197,25 @@ export async function buildPrimitiveGeom(
   //      `p` isn't already a positional name (the rewritten signature decides).
   //      Either way the body's `p.X` works without a duplicate declaration.
   const metaKeys = paramKeysOf(source);
+  // Detect object-arg style: signature `function id(p)` (single param, any
+  // name). When detected, leave the signature ALONE — no rewrite, no `const p`
+  // injection. The caller will pass a single object built from meta.params,
+  // and the body uses `p.<key>` (or destructures) directly. Set during the
+  // .replace pass; consumed by the adaptive `wrapped` boundary below.
+  let isObjectStyle = false;
   body = body.replace(
     new RegExp(`function\\s+${escapeRe(name)}\\s*\\(([^)]*)\\)\\s*\\{`),
     (full: string, params: string) => {
       const sigNames = String(params).split(',').map((s) => s.trim().split(/[\s=:]/)[0].trim()).filter((n) => /^[a-zA-Z_$][\w$]*$/.test(n));
-      // Canonical positional name list = meta.params keys when available
-      // (so signature drift can't break the call); fall back to the source's
-      // signature otherwise (leaf primitives with no meta.params).
+      // Single-positional + has meta.params keys → object-arg style. Leave
+      // signature unchanged so `fn(obj)` binds obj to the function's `p`.
+      if (sigNames.length === 1 && metaKeys.length > 0) {
+        isObjectStyle = true;
+        return full;
+      }
+      // Legacy positional path — rewrite signature to canonical positional
+      // names so `fn(...args)` at the call site binds each `args[i]` to
+      // `ns[i]` regardless of what the source happens to spell.
       const base = metaKeys.length ? metaKeys : sigNames;
       if (!base.length) return full;
       // PRESERVE TRAILING POSITIONAL ARGS — a function may declare params
@@ -214,9 +226,6 @@ export async function buildPrimitiveGeom(
       // `scaleTopOverride` throws "is not defined" at runtime.
       const extras = sigNames.slice(base.length).filter((n) => !base.includes(n));
       const ns = [...base, ...extras];
-      // Rewrite the signature to canonical positional names so `fn(...args)` at
-      // the call site binds each `args[i]` to `ns[i]` regardless of what the
-      // source happens to spell.
       const rewrittenHead = full.replace(/\(([^)]*)\)/, `(${ns.join(', ')})`);
       // Skip the `const p = …` line when `p` is already a positional name
       // (would shadow). If `p` is in meta.params (unusual but legal), the
@@ -253,7 +262,42 @@ export async function buildPrimitiveGeom(
     }
     return v;
   };
-  const wrapped: GeomFn = (...args: any[]) => autoPlace((fn as any)(...args));
+  // Adaptive call boundary — makes positional-style and object-style parts
+  // interoperate without the caller having to know which style this fn uses.
+  //
+  // Possible inbound call shapes:
+  //   * positional args (legacy /preview, legacy assembly calls): args = [4.5, 0.5, 5]
+  //   * single object arg (new assembly calls): args = [{od: 4.5, wall: 0.5, length: 5}]
+  //
+  // Possible internal fn signatures:
+  //   * object-style `function id(p)` (isObjectStyle = true) — expects ONE
+  //     object arg.
+  //   * positional `function id(od, wall, length)` (rewritten to metaKeys) —
+  //     expects N args in metaKeys order.
+  //
+  // We bridge by detecting the single-object inbound shape and the fn's style,
+  // then translating as needed. metaKeys is the ground truth for both
+  // directions when present (canonical key list).
+  const wrapped: GeomFn = (...args: any[]) => {
+    const objectInbound = args.length === 1 && args[0] && typeof args[0] === 'object'
+      && !Array.isArray(args[0]) && (args[0] as any).__cadtrain_manifold__ === undefined
+      && !(args[0] as any).constructor?.name?.startsWith?.('Manifold');
+    if (isObjectStyle) {
+      // fn expects a single object. Pass through when already object; bundle
+      // positional args into an object via metaKeys when not.
+      const obj = objectInbound
+        ? args[0]
+        : Object.fromEntries(metaKeys.map((k, i) => [k, args[i]]));
+      return autoPlace((fn as any)(obj));
+    }
+    // fn expects positional args. Pass through when already positional;
+    // spread an object via metaKeys when single-object inbound.
+    if (objectInbound && metaKeys.length > 0) {
+      const positional = metaKeys.map((k) => (args[0] as any)[k]);
+      return autoPlace((fn as any)(...positional));
+    }
+    return autoPlace((fn as any)(...args));
+  };
   return wrapped;
 }
 

@@ -458,15 +458,18 @@ ${template.body};
  *    4. Use `+ param` to expose tunable values up to the assembly's meta. */
 export function buildAssemblySource(id: string): string {
   return `/**
- * ${id} — Assembly (K.63 composition-tree model).
+ * ${id} — Assembly (K.63 composition-tree model, object-arg style).
+ *
+ * The assembly takes a SINGLE object \`p\` whose keys are listed in
+ * meta.params. Inserting a primitive grows meta.params to match the
+ * child's params and emits a Call as \`B({k1: p.k1, k2: p.k2, ...})\`
+ * — every slot visibly tied to its named child param.
  *
  * meta.imports declares aliases for primitives — pure declarations
- *   (\`A = shaft\` → \`const A = shaft;\` at the top of the body).
+ *   (\`B = tube_new\` → \`const B = tube_new;\` at the top of the body).
  * meta.composition is the single TreeNode root that produces the
  *   final geometry. The function body is auto-generated from imports
  *   + composition on every save.
- *
- * Add imports + build the composition tree in the editor.
  */
 export const meta = {
   id: '${id}', name: '${id}',
@@ -478,7 +481,7 @@ export const meta = {
   params: {},
 };
 
-export function ${id}() {
+export function ${id}(p) {
   return empty();
 }
 `;
