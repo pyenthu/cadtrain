@@ -26,7 +26,7 @@
 -->
 <script lang="ts">
   import {
-    parseImports, parseComposition, parseDependencyParamKeys, applyToSource,
+    parseImports, parseComposition, parseDependencyParamKeys, applyToSource, addAssemblyParam,
     replaceNode, deleteNode, newNodeId, childrenOf, emitNode, walkTree,
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
@@ -311,23 +311,66 @@
     const freshAlias = nextAlias(taken);
     const newImports = [...imports, { name: freshAlias, src: imp.src }];
     const fetched = await callWithDefaults(imp.src);
-    const callNode: TreeNode = (fetched.type === 'call')
-      ? { ...fetched, fn: freshAlias }
-      : fetched;
-    // Commit the import + composition in one go so the editor's `imports`
-    // derived state sees both at once (avoids a momentary state where the
-    // Call references an alias the imports list hasn't added yet).
+    const callNode = buildLiftedCall(fetched, freshAlias);
+    const lifted = liftedSpecs(fetched, freshAlias);
+    // Commit the import + composition + lifted params in one go.
+    let root: TreeNode;
     if (composition === null) {
-      const root: TreeNode = { type: 'list', id: newNodeId(), children: [callNode] };
-      commit(newImports, root);
+      root = { type: 'list', id: newNodeId(), children: [callNode] };
     } else if (composition.type === 'list' || composition.type === 'stack') {
       const replacement: TreeNode = { ...composition, children: [...composition.children, callNode] };
-      commit(newImports, replaceNode(composition, composition.id, replacement));
+      root = replaceNode(composition, composition.id, replacement);
       expanded[composition.id] = true;
     } else {
-      const root: TreeNode = { type: 'list', id: newNodeId(), children: [composition, callNode] };
-      commit(newImports, root);
+      root = { type: 'list', id: newNodeId(), children: [composition, callNode] };
     }
+    commitWithLifts(newImports, root, lifted);
+  }
+
+  /** Take callWithDefaults' result + a fresh alias, rewrite each lifted-param
+   *  arg from a literal value to a `p.<alias>_<key>` REFERENCE, and stamp
+   *  the alias on .fn. Engine params (segments / divs) keep their snapshot
+   *  literal so the user isn't forced to lift them. */
+  function buildLiftedCall(fetched: TreeNode | { node: TreeNode; paramKeys: string[]; specs: any[] }, alias: string): TreeNode {
+    if ('node' in (fetched as any)) {
+      const { node, paramKeys, specs } = fetched as { node: TreeNode; paramKeys: string[]; specs: { key: string }[] };
+      if (node.type !== 'call') return { ...node, fn: alias } as any;
+      const liftedKeys = new Set(specs.map((s) => s.key));
+      const args = node.args.map((a, i) => {
+        const k = paramKeys[i];
+        if (k && liftedKeys.has(k)) return makeLiteral(`p.${alias}_${k}`);
+        return a;
+      });
+      return { ...node, fn: alias, args };
+    }
+    const node = fetched as TreeNode;
+    return node.type === 'call' ? { ...node, fn: alias } : node;
+  }
+  function liftedSpecs(fetched: TreeNode | { specs: any[] }, alias: string): Array<{ name: string; label: string; min: number; max: number; step: number; default: number }> {
+    if (!('specs' in (fetched as any))) return [];
+    return (fetched as { specs: any[] }).specs.map((s) => ({
+      name: `${alias}_${s.key}`,
+      // Display label uses dot notation so the user sees "B.od" / "B.wall"
+      // in the Parameters panel — natural read for "B's od".
+      label: `${alias}.${s.key}`,
+      min: s.min, max: s.max, step: s.step, default: s.default,
+    }));
+  }
+  /** Commit a composition mutation + lifted assembly params in one shot
+   *  so the editor only fires one onSourceChange. Uses addAssemblyParam
+   *  (idempotent — re-adding the same name is a no-op) after applyToSource
+   *  emits the new body. */
+  function commitWithLifts(
+    newImports: readonly ImportDef[],
+    newRoot: TreeNode | null,
+    lifts: Array<{ name: string; label: string; min: number; max: number; step: number; default: number }>,
+  ) {
+    if (!canEdit) return;
+    let out = applyToSource(source, id, newImports, newRoot);
+    for (const spec of lifts) {
+      out = addAssemblyParam(out, id, spec);
+    }
+    onSourceChange?.(out);
   }
 
   function makePlaceholder(): TreeNode {
@@ -387,25 +430,26 @@
     const freshAlias = nextAlias(taken);
     const newImports = [...imports, { name: freshAlias, src }];
     const fetched = await callWithDefaults(src);
-    const node: TreeNode = (fetched.type === 'call')
-      ? { ...fetched, fn: freshAlias }
-      : fetched;
+    const node = buildLiftedCall(fetched, freshAlias);
+    const lifted = liftedSpecs(fetched, freshAlias);
+    let newRoot: TreeNode | null = composition;
     if (pid) {
       const parent = composition && findById(composition, pid);
       if (parent && (parent.type === 'list' || parent.type === 'stack')) {
         const replacement: TreeNode = { ...parent, children: [...parent.children, node] };
-        commit(newImports, replaceNode(composition!, pid, replacement));
+        newRoot = replaceNode(composition!, pid, replacement);
         expanded[pid] = true;
       }
     } else if (composition === null) {
-      commit(newImports, { type: 'list', id: newNodeId(), children: [node] });
+      newRoot = { type: 'list', id: newNodeId(), children: [node] };
     } else if (composition.type === 'list' || composition.type === 'stack') {
       const replacement: TreeNode = { ...composition, children: [...composition.children, node] };
-      commit(newImports, replaceNode(composition, composition.id, replacement));
+      newRoot = replaceNode(composition, composition.id, replacement);
       expanded[composition.id] = true;
     } else {
-      commit(newImports, { type: 'list', id: newNodeId(), children: [composition, node] });
+      newRoot = { type: 'list', id: newNodeId(), children: [composition, node] };
     }
+    commitWithLifts(newImports, newRoot, lifted);
     closeRootPopup();
   }
   // Composition's "+ file" offers each imported PRIMITIVE (deduped by src) —
@@ -423,13 +467,30 @@
     return { tag: 'import', cls: '' };
   }
 
-  async function callWithDefaults(fn: string): Promise<TreeNode> {
+  /** Engine-style param names that get SNAPSHOTTED as literals rather than
+   *  lifted to assembly params. Pure resolution dials — the user almost
+   *  never wants to drive them from the assembly's top-level knobs. */
+  const ENGINE_PARAM_KEYS = new Set(['segments', 'divs']);
+
+  /** Fetch the child primitive's source, extract param defaults, and return
+   *  BOTH a Call node (with args as snapshot literals) AND the param specs
+   *  the caller can lift onto the assembly. Each non-engine param gets
+   *  contributed to `liftSpecs`; the caller decides whether to lift them
+   *  and replace the literals with `p.<alias>_<key>` references. */
+  async function callWithDefaults(fn: string): Promise<{
+    node: TreeNode;
+    paramKeys: string[];
+    specs: Array<{ key: string; default: number; min: number; max: number; step: number; label: string }>;
+  } | TreeNode> {
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(fn)}`);
       if (r.ok) {
         const data = await r.json();
         const params = data?.params ?? {};
-        const args: TreeNode[] = Object.entries(params).map(([_, p]: [string, any]) => {
+        const paramKeys = Object.keys(params);
+        const specs: Array<{ key: string; default: number; min: number; max: number; step: number; label: string }> = [];
+        const args: TreeNode[] = paramKeys.map((key) => {
+          const p: any = params[key];
           const def = p?.default;
           const value =
             def == null ? ''
@@ -439,9 +500,18 @@
             : typeof def === 'object' && 'kind' in def
               ? `resolveProfile(${JSON.stringify(def)})`
               : '';
+          if (!ENGINE_PARAM_KEYS.has(key) && typeof def === 'number') {
+            specs.push({
+              key, default: def,
+              min: typeof p?.min === 'number' ? p.min : 0,
+              max: typeof p?.max === 'number' ? p.max : 10,
+              step: typeof p?.step === 'number' ? p.step : 0.1,
+              label: typeof p?.label === 'string' ? p.label : key,
+            });
+          }
           return makeLiteral(value);
         });
-        return { type: 'call', id: newNodeId(), fn, args };
+        return { node: { type: 'call', id: newNodeId(), fn, args }, paramKeys, specs };
       }
     } catch { /* fall through to empty-args Call */ }
     return makeNodeOfKind('call', fn);
@@ -504,7 +574,12 @@
     // the alias. Same path createCallNode + insertImportUse follow.
     const imp = imports.find((i) => i.name === call.fn);
     const fetched = imp ? await callWithDefaults(imp.src) : await callWithDefaults(call.fn);
-    const sibling: TreeNode = (fetched.type === 'call') ? { ...fetched, fn: call.fn } : fetched;
+    // `fetched` is either a bare TreeNode (network failure path) or the
+    // rich {node, paramKeys, specs} envelope. Unwrap to the Call node.
+    const fNode: TreeNode = ('node' in (fetched as any))
+      ? (fetched as any).node
+      : (fetched as TreeNode);
+    const sibling: TreeNode = (fNode.type === 'call') ? { ...fNode, fn: call.fn } : fNode;
     const wrapped: TreeNode = {
       type: 'method',
       id: newNodeId(),
@@ -768,7 +843,7 @@
       e.preventDefault();
       const dropped = e.dataTransfer.getData('application/x-primitive-id');
       if (!dropped) return;
-      callWithDefaults(dropped).then(insertCallIntoComposition);
+      callWithDefaults(dropped).then((f) => insertCallIntoComposition(('node' in (f as any)) ? (f as any).node : (f as TreeNode)));
     }}>
     <!-- Compose root row IS the section title. Click to toggle.
          When the root is a List/Stack the body renders its children
@@ -880,7 +955,7 @@
         if (!e.dataTransfer?.types.includes('application/x-primitive-id')) return;
         e.preventDefault();
         const dropped = e.dataTransfer.getData('application/x-primitive-id');
-        if (dropped) callWithDefaults(dropped).then((node) => appendChildToList(n.id, node));
+        if (dropped) callWithDefaults(dropped).then((f) => appendChildToList(n.id, ('node' in (f as any)) ? (f as any).node : (f as TreeNode)));
       }}>
       {#each n.children as c (c.id)}
         {@render row(c, depth)}
