@@ -125,7 +125,8 @@ export async function buildPrimitiveGeom(
   );
   // Partition into loaded (volume hit) vs deferred-to-sandbox (sandbox helper
   // takes over). A failed load for a name that is NOT a sandbox helper is a
-  // real error and gets re-thrown.
+  // real error and gets re-thrown with the parent's name + chain attached so
+  // the user can see WHICH part needed the missing dependency.
   const depNames: string[] = [];
   const depFns: GeomFn[] = [];
   for (let i = 0; i < declared.length; i++) {
@@ -135,7 +136,19 @@ export async function buildPrimitiveGeom(
       depNames.push(dep);
       depFns.push(r.value);
     } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
-      throw r.reason;
+      // Decorate the underlying "dependency primitive 'X' not found" with
+      // the calling part's name, the full dep chain (parent → child),
+      // and an action hint. Avoids the user seeing a bare "shaft not
+      // found" with no clue what brought it in.
+      const chain = visited.size
+        ? [...visited, dep].join(' → ')
+        : `${name} → ${dep}`;
+      const inner = (r.reason as Error)?.message ?? String(r.reason);
+      const looksMissing = /not found|HTTP 404/i.test(inner);
+      const hint = looksMissing
+        ? ` (the primitive doesn't exist on the volume — either restore it from the archive, drop it from "${name}"'s meta.uses if the body doesn't actually call it, or re-create it)`
+        : '';
+      throw new Error(`primitive "${name}" needs dependency "${dep}" but it failed to load: ${inner} [dep chain: ${chain}]${hint}`);
     }
     // else: defer to the sandbox helper of the same name (raw helper wins
     // when there's no volume primitive with this id).
