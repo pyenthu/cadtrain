@@ -588,6 +588,27 @@
   // Soft-delete: trash button moves to archive/ (recoverable). Two-step
   // delete protects against accidental loss of a primitive that took
   // effort to build.
+  async function renameById(id: string) {
+    const raw = prompt(`Rename "${id}" to:`, id);
+    if (!raw) return;
+    const newId = raw.trim();
+    if (!newId || newId === id) return;
+    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) {
+      alert(`Invalid name "${newId}". Use lowercase letters, digits, underscore; must start with a letter.`);
+      return;
+    }
+    const r = await fetch(`/api/primitives/rename?id=${encodeURIComponent(id)}&to=${encodeURIComponent(newId)}`, { method: 'POST' });
+    if (!r.ok) { status = `Rename failed: ${await r.text()}`; return; }
+    const data = await r.json().catch(() => ({}));
+    const deps: string[] = data?.dependents ?? [];
+    status = deps.length
+      ? `Renamed "${id}" → "${newId}". ⚠ ${deps.length} assemblies still reference the old id: ${deps.join(', ')}`
+      : `Renamed "${id}" → "${newId}".`;
+    // Close any tab open under the old id (its source is stale anyway).
+    closeTab(id);
+    await refreshList();
+  }
+
   async function archiveById(id: string) {
     if (!confirm(`Archive volume primitive "${id}"?\n\nIt will move to the Archive section — use the trash icon there to permanently delete.`)) return;
     const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -686,6 +707,16 @@
   </svg>
 {/snippet}
 
+<!-- Row action: rename a volume part / assembly in place. Prompts for
+     the new id, calls /api/primitives/rename. -->
+{#snippet renameBtn(eid: string)}
+  <button class="prim-rename" type="button" title="Rename" aria-label="Rename" onclick={(ev) => { ev.stopPropagation(); renameById(eid); }}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"/>
+    </svg>
+  </button>
+{/snippet}
+
 <!-- Row action: file this part into another folder (opens the folder picker). -->
 {#snippet moveBtn(eid: string, from: string)}
   <button class="prim-move" type="button" title="Move to another folder" aria-label="Move to folder" onclick={(ev) => openMove(eid, from, ev)}>
@@ -757,6 +788,7 @@
                     <span class="prim-tag" class:vol={e.source === 'volume'}>{e.source === 'volume' ? 'vol' : 'bnd'}</span>
                   </button>
                   <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {#if e.editable}{@render renameBtn(e.id)}{/if}
                   {@render moveBtn(e.id, '')}
                 </div>
               {/each}
@@ -816,6 +848,7 @@
                     <span class="prim-tag vol">vol</span>
                   </button>
                   <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {#if e.editable}{@render renameBtn(e.id)}{/if}
                   {@render moveBtn(e.id, 'basic')}
                 </div>
               {/each}
@@ -843,6 +876,7 @@
                             <span class="prim-tag vol">vol</span>
                           </button>
                           <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {#if e.editable}{@render renameBtn(e.id)}{/if}
                           {@render moveBtn(e.id, `basic/${sub}`)}
                         </div>
                       {/each}
@@ -888,6 +922,7 @@
                         <span class="prim-tag vol">vol</span>
                       </button>
                       <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {#if e.editable}{@render renameBtn(e.id)}{/if}
                       {@render moveBtn(e.id, `completions/${fam.id}`)}
                     </div>
                   {/each}
@@ -915,6 +950,7 @@
                                 <span class="prim-tag vol">vol</span>
                               </button>
                               <button class="prim-dup" type="button" title="Duplicate to a new volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  {#if e.editable}{@render renameBtn(e.id)}{/if}
                               {@render moveBtn(e.id, `completions/${fam.id}/${sub}`)}
                             </div>
                           {/each}
@@ -1208,6 +1244,9 @@
   .prim-move { background: transparent; border: 0; padding: 2px 5px; color: #aaa; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; }
   .prim-move svg { width: 13px; height: 13px; }
   .prim-move:hover { color: #e0a93b; background: #fff; }
+  .prim-rename { background: transparent; border: 0; padding: 2px 5px; color: #aaa; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; }
+  .prim-rename svg { width: 12px; height: 12px; }
+  .prim-rename:hover { color: #2266cc; background: #fff; }
   /* Move-to-folder picker menu (FloatingPanel body). */
   .prim-move-menu { display: flex; flex-direction: column; gap: 2px; padding: 2px; }
   .prim-move-opt { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 6px 8px; background: transparent; border: 0; border-radius: 4px; cursor: pointer; font: 600 12px Arial; color: #333; }
