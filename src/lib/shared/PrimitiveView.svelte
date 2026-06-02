@@ -17,6 +17,7 @@
   // component doesn't talk to the API itself.
   import PrimitiveDualCanvas from './PrimitiveDualCanvas.svelte';
   import CompositionEditor from './CompositionEditor.svelte';
+  import { addAssemblyParam, removeAssemblyParam } from '$lib/cad/composition-tree';
   import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import { extractMetaParams } from '$lib/cad/inline-profile';
@@ -1417,10 +1418,29 @@
   }
   function closeAddParam() { addParamPanel = null; }
   function submitAddParam() {
-    const r = recognized;
     const n = apName.trim();
-    if (!n || addParamError || !r || r.paramsInsertPos < 0 || r.sigInsertPos < 0) return;
+    if (!n || addParamError) return;
     const def = Number(apDefault) || 0, mn = Number(apMin) || 0, mx = Number(apMax) || 10, st = Number(apStep) || 0.1;
+
+    // ASM path — no recognize-composite output. Use the composition-tree
+    // helper which knows the assembly source shape (meta.params block +
+    // `export function <id>(p0, …)` signature). The compose body is
+    // auto-regenerated on every save but rewriteAssemblyFunctionBody
+    // preserves whatever signature it finds, so this edit sticks.
+    if (kind === 'asm') {
+      editedSource = addAssemblyParam(editedSource, id, {
+        name: n, label: n, min: mn, max: mx, step: st, default: def,
+      });
+      addedParams = { ...addedParams, [n]: { label: n, type: 'number', min: mn, max: mx, step: st, default: def } };
+      applied = { ...applied, [n]: def };
+      pending = { ...pending, [n]: def };
+      closeAddParam();
+      return;
+    }
+
+    // PRIM path — original recognized-driven splices.
+    const r = recognized;
+    if (!r || r.paramsInsertPos < 0 || r.sigInsertPos < 0) return;
     const entry = `${r.paramsHasElems ? ', ' : ''}${n}: { label: '${n}', min: ${mn}, max: ${mx}, step: ${st}, default: ${def} }`;
     const sigParam = `${r.sigHasParams ? ', ' : ''}${n}`;
     // Two splices, applied high→low so the earlier offset stays valid.
@@ -1485,8 +1505,24 @@
     };
   }
   function performDeleteParam(name: string) {
+    if (!canEdit || paramBlockedReason(name)) { delParamPopup = null; return; }
+    const drop = <T extends Record<string, any>>(o: T) => { const { [name]: _x, ...rest } = o; return rest as T; };
+
+    // ASM path — composition-tree helper drops both the meta.params row
+    // and the matching signature token.
+    if (kind === 'asm') {
+      editedSource = removeAssemblyParam(editedSource, id, name);
+      addedParams = drop(addedParams);
+      pending = drop(pending);
+      applied = drop(applied);
+      removedParams = new Set([...removedParams, name]);
+      delParamPopup = null;
+      return;
+    }
+
+    // PRIM path — recognized-driven splices.
     const r = recognized;
-    if (!canEdit || !r || paramBlockedReason(name)) { delParamPopup = null; return; }
+    if (!r) { delParamPopup = null; return; }
     const rp = (r.params ?? []).find((p: any) => p.name === name)!;
     const edits = [spanWithComma(rp.entryStart, rp.entryEnd)];
     if (rp.sigStart >= 0) edits.push(spanWithComma(rp.sigStart, rp.sigEnd));
@@ -1494,7 +1530,6 @@
     let out = editedSource;
     for (const ed of edits) out = out.slice(0, ed.s) + out.slice(ed.e);
     editedSource = out; // → Source dirty; recognition $effect re-scans + re-bake
-    const drop = <T extends Record<string, any>>(o: T) => { const { [name]: _x, ...rest } = o; return rest as T; };
     addedParams = drop(addedParams);
     pending = drop(pending);
     applied = drop(applied);
@@ -2255,7 +2290,7 @@
                 <div class="pv-spacer"></div>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); apply(); }} disabled={!paramsDirty} title="Apply pending params → re-bake">Apply</button>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); revert(); }} disabled={!paramsDirty} title="Discard pending param edits">Revert</button>
-                {#if canEdit && recognized && recognized.paramsInsertPos >= 0 && recognized.sigInsertPos >= 0}
+                {#if canEdit && ((recognized && recognized.paramsInsertPos >= 0 && recognized.sigInsertPos >= 0) || kind === 'asm')}
                   <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); openAddParam(e); }} title="Add a parameter — exposes a knob a parent assembly can drive">＋ param</button>
                 {/if}
               </div>

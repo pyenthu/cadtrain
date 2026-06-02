@@ -674,6 +674,82 @@ export function rewriteAssemblyFunctionBody(source: string, id: string, newBody:
   return source.slice(0, headEnd) + newBody + source.slice(i);
 }
 
+/** Spec for an assembly param entry — same shape as primitive params.
+ *  The editor uses this to add a knob the assembly can drive into its
+ *  child Calls. */
+export interface AssemblyParamSpec {
+  name: string;
+  label?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  default?: number;
+}
+
+/** Splice a new param entry into the assembly source — adds the row to
+ *  `meta.params { ... }` AND the param name to the function signature.
+ *  Returns the new source text. Idempotent — re-adding an existing name
+ *  is a no-op. */
+export function addAssemblyParam(source: string, id: string, spec: AssemblyParamSpec): string {
+  const name = spec.name.trim();
+  if (!/^[a-zA-Z_$][\w$]*$/.test(name)) return source;
+  // Collision check against meta.params keys.
+  const range = findValueRange(source, 'params');
+  if (range) {
+    const inside = source.slice(range.start + 1, range.end - 1);
+    const hadKey = new RegExp(`(^|[\\s,{])${name}\\s*:`).test(inside);
+    if (hadKey) return source;
+  }
+  const label = spec.label ?? name;
+  const min = spec.min ?? 0, max = spec.max ?? 10, step = spec.step ?? 0.1, def = spec.default ?? 1;
+  const entry = `${name}: { label: '${label}', min: ${min}, max: ${max}, step: ${step}, default: ${def} }`;
+  // 1) Insert into meta.params block (before the closing brace).
+  let out = source;
+  if (range) {
+    const inside = out.slice(range.start + 1, range.end - 1);
+    const hasElems = inside.trim().length > 0;
+    // Insert just before the closing brace.
+    const closePos = range.end - 1;
+    const sep = hasElems ? ', ' : '';
+    out = out.slice(0, closePos) + `${sep}${entry}` + out.slice(closePos);
+  } else {
+    // No params block — synthesize one after the tags / name anchor.
+    out = insertMetaField(out, 'params', `{ ${entry} }`);
+  }
+  // 2) Insert into the function signature.
+  const fnRe = new RegExp(`(export\\s+function\\s+${id}\\s*\\()([^)]*)(\\))`);
+  out = out.replace(fnRe, (full, head, params, tail) => {
+    const trimmed = String(params).trim();
+    const ns = trimmed ? trimmed.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+    if (ns.includes(name)) return full;
+    const next = [...ns, name].join(', ');
+    return `${head}${next}${tail}`;
+  });
+  return out;
+}
+
+/** Remove a param entry from the assembly source — both the meta.params
+ *  row AND the matching signature token. No-op when the name isn't
+ *  present. */
+export function removeAssemblyParam(source: string, id: string, name: string): string {
+  if (!/^[a-zA-Z_$][\w$]*$/.test(name)) return source;
+  let out = source;
+  // 1) Drop from meta.params block. Match `<name>: { ... }` with one
+  //    adjacent comma (leading or trailing) — same idea as PrimitiveView's
+  //    spanWithComma.
+  const rowRe = new RegExp(`\\b${name}\\s*:\\s*\\{[^}]*\\}\\s*,?\\s*`);
+  out = out.replace(rowRe, '');
+  // Tidy a stray leading comma left by removing the first entry.
+  out = out.replace(/params\s*:\s*\{\s*,/, 'params: {');
+  // 2) Drop from signature.
+  const fnRe = new RegExp(`(export\\s+function\\s+${id}\\s*\\()([^)]*)(\\))`);
+  out = out.replace(fnRe, (_full, head, params, tail) => {
+    const ns = String(params).split(',').map((s: string) => s.trim()).filter(Boolean).filter((n: string) => n !== name);
+    return `${head}${ns.join(', ')}${tail}`;
+  });
+  return out;
+}
+
 /** One-shot: apply imports + composition mutations + sync uses + re-emit
  *  the body, returning the new source text. The canonical mutation path
  *  for the editor — every edit goes through here. */
