@@ -326,5 +326,59 @@ export function swapProfileTemplate(
   next = next.slice(0, parsed.range[0]) + '\n' + serialized + '\n  ' + next.slice(parsed.range[1]);
   // 3. Rewrite the function signature to match the new param order.
   next = rewriteFnSignature(next, newParams);
+  // 4. Rewrite the `??= default` drift-protection block that
+  //    buildRevolveSource / buildExtrudeSource emit at the top of the body.
+  //    findProfileSlots scoops up preceding `const X = …;` calc lines but
+  //    NOT bare `X ??= N;` assignments, so the old block (e.g. `r ??= 1;`
+  //    from a Cone) survives the splice while the function signature loses
+  //    `r`. The body then references undeclared `r` and the loader throws
+  //    "r is not defined" in strict mode at bake time. Replacing the block
+  //    with one keyed off the NEW meta.params keeps drift protection
+  //    intact across swaps.
+  next = rewriteDefaultsBlock(next, newParams);
   return next;
+}
+
+/** Replace the `name ??= literal;` drift-protection block emitted by the
+ *  Profile-Part scaffolders. Walks line-by-line from the function opener
+ *  forward and replaces any contiguous run of `<ident> ??= <expr>;` lines
+ *  with one fresh row per `meta.params` key. Idempotent — if no `??=`
+ *  block exists (custom-authored bodies), the source is returned
+ *  unchanged. */
+function rewriteDefaultsBlock(source: string, params: Record<string, ParamSpec>): string {
+  const keys = Object.keys(params);
+  // Find the first function body opener `... ) {` — works for both
+  // `export function foo(...)` and arrow bodies via `... ) {`.
+  const openM = source.match(/\)\s*\{[^\n]*\n/);
+  if (!openM) return source;
+  const openEnd = (openM.index ?? 0) + openM[0].length;
+  let i = openEnd;
+  // Skip blank lines + comment-only lines at the top of the body.
+  const lineRe = /[ \t]*([^\n]*)\n/y;
+  // Find the FIRST contiguous block of `IDENT ??= …;` lines.
+  const defaultLineRe = /^[ \t]*([a-zA-Z_$][\w$]*)\s*\?\?=\s*[^\n;]+;[ \t]*$/;
+  let blockStart = -1, blockEnd = -1;
+  while (i < source.length) {
+    lineRe.lastIndex = i;
+    const lm = lineRe.exec(source);
+    if (!lm) break;
+    const line = lm[1]!;
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
+      i = lineRe.lastIndex;
+      continue;
+    }
+    if (defaultLineRe.test(line)) {
+      if (blockStart < 0) blockStart = lm.index;
+      blockEnd = lineRe.lastIndex;
+      i = lineRe.lastIndex;
+      continue;
+    }
+    break;
+  }
+  if (blockStart < 0) return source; // no ??= block — nothing to rewrite
+  const newBlock = keys
+    .map((k) => `  ${k} ??= ${JSON.stringify(params[k]?.default ?? 0)};`)
+    .join('\n') + '\n';
+  return source.slice(0, blockStart) + newBlock + source.slice(blockEnd);
 }
