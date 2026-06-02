@@ -328,9 +328,14 @@
   }
 
   /** Take callWithDefaults' result + a fresh alias, rewrite each lifted-param
-   *  arg from a literal value to a `p.<alias>_<key>` REFERENCE, and stamp
-   *  the alias on .fn. Engine params (segments / divs) keep their snapshot
-   *  literal so the user isn't forced to lift them. */
+   *  arg from a literal value to a FLAT `p.<key>` reference, and stamp the
+   *  alias on .fn. Engine params (segments / divs) keep their snapshot
+   *  literal. The assembly's meta.params holds ONE shared row per key
+   *  across all instances — adding a second instance of the same primitive
+   *  reuses the existing top-level knob rather than splitting into
+   *  per-instance namespaces. The user can manually replace a specific
+   *  Call's `p.od` with a literal or different expression when they want
+   *  per-instance overrides. */
   function buildLiftedCall(fetched: TreeNode | { node: TreeNode; paramKeys: string[]; specs: any[] }, alias: string): TreeNode {
     if ('node' in (fetched as any)) {
       const { node, paramKeys, specs } = fetched as { node: TreeNode; paramKeys: string[]; specs: { key: string }[] };
@@ -338,7 +343,7 @@
       const liftedKeys = new Set(specs.map((s) => s.key));
       const args = node.args.map((a, i) => {
         const k = paramKeys[i];
-        if (k && liftedKeys.has(k)) return makeLiteral(`p.${alias}_${k}`);
+        if (k && liftedKeys.has(k)) return makeLiteral(`p.${k}`);
         return a;
       });
       return { ...node, fn: alias, args };
@@ -346,13 +351,16 @@
     const node = fetched as TreeNode;
     return node.type === 'call' ? { ...node, fn: alias } : node;
   }
-  function liftedSpecs(fetched: TreeNode | { specs: any[] }, alias: string): Array<{ name: string; label: string; min: number; max: number; step: number; default: number }> {
+  function liftedSpecs(fetched: TreeNode | { specs: any[] }, _alias: string): Array<{ name: string; label: string; min: number; max: number; step: number; default: number }> {
     if (!('specs' in (fetched as any))) return [];
     return (fetched as { specs: any[] }).specs.map((s) => ({
-      name: `${alias}_${s.key}`,
-      // Display label uses dot notation so the user sees "B.od" / "B.wall"
-      // in the Parameters panel — natural read for "B's od".
-      label: `${alias}.${s.key}`,
+      // FLAT name + label: no alias prefix. Multiple instances of the same
+      // primitive share the assembly-level row. addAssemblyParam is
+      // idempotent on existing names, so a second insert is a no-op for
+      // the param (it only adds the new Call referencing the existing
+      // shared row).
+      name: s.key,
+      label: s.key,
       min: s.min, max: s.max, step: s.step, default: s.default,
     }));
   }
