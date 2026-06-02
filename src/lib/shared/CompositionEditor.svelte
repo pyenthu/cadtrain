@@ -249,7 +249,14 @@
   }
   async function createCallNode(fn: string) {
     const pid = rootPopup?.parentId;
-    const node = await callWithDefaults(fn);
+    // `fn` is an import alias (file-picker is imports-only). Defaults must
+    // come from the alias's SOURCE primitive, not the alias name — the
+    // alias is never a fetch-able primitive id, so callWithDefaults(fn)
+    // alone falls through to an empty-args Call. Resolve to imp.src for
+    // the defaults fetch, then re-stamp fn to the alias.
+    const imp = imports.find((i) => i.name === fn);
+    const fetched = imp ? await callWithDefaults(imp.src) : await callWithDefaults(fn);
+    const node = (fetched.type === 'call') ? { ...fetched, fn } : fetched;
     if (pid) appendChildToList(pid, node);
     else insertCallIntoComposition(node); // wraps in List when root is empty/scalar
     closeRootPopup();
