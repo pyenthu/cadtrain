@@ -548,12 +548,13 @@
           <div class="ce-import-row">
             <span class="ce-imp-name">{imp.name}</span>
             <span class="ce-imp-eq">=</span>
-            <span class="ce-imp-src">{imp.src}</span>
+            <span class="ce-imp-src" title={imp.src}>{imp.src}</span>
             {#if canEdit}
-              <button class="ce-imp-use" type="button"
-                title={`Insert ${imp.name}() into the composition with ${imp.src}'s defaults`}
-                onclick={() => insertImportUse(imp)}>+ use</button>
-              <button class="ce-imp-del" type="button" title="Remove import" onclick={() => removeImport(imp.name)}>×</button>
+              <button class="ce-imp-add" type="button"
+                title={`Add ${imp.name}() to the composition with ${imp.src}'s defaults`}
+                aria-label={`Add ${imp.name} to composition`}
+                onclick={() => insertImportUse(imp)}>+</button>
+              <button class="ce-imp-del" type="button" title="Remove import" aria-label={`Remove import ${imp.name}`} onclick={() => removeImport(imp.name)}>×</button>
             {/if}
           </div>
         {/each}
@@ -1160,28 +1161,44 @@
   .ce-file-row.open { background: #eef5ff; }
   .ce-file-row[role="button"] { cursor: pointer; }
 
-  /* Imports */
+  /* Imports — 2-column compact grid so the alias=src pairs read like
+     a directory of available primitives. */
   .ce-imports { background: #eef5ff; border-color: #bcd3ee; }
-  .ce-imports-list { display: flex; flex-direction: column; gap: 0; }
+  .ce-imports-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 6px;
+    row-gap: 1px;
+  }
   .ce-import-row {
-    display: flex; align-items: center; gap: 5px; padding: 1px 2px;
+    display: flex; align-items: center; gap: 4px;
+    padding: 1px 2px;
     color: #1e3a8a; min-height: 20px; line-height: 1.4;
+    min-width: 0; /* let truncation kick in */
   }
-  .ce-imp-name { font-weight: 700; color: #0c2e6e; }
-  .ce-imp-eq { color: #5e88c3; }
-  .ce-imp-src { color: #1e3a8a; flex: 1; }
-  .ce-imp-use {
+  .ce-imp-name { font-weight: 700; color: #0c2e6e; flex: 0 0 auto; }
+  .ce-imp-eq { color: #5e88c3; flex: 0 0 auto; }
+  .ce-imp-src {
+    color: #1e3a8a; flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Rounded + insert-into-composition button. Tooltip explains the
+     action; an aria-label keeps screen readers informed. */
+  .ce-imp-add {
     appearance: none; background: #eef5ff; border: 1px solid #b8d4f2;
-    border-radius: 4px; padding: 1px 8px;
-    font: 600 11px ui-sans-serif; color: #1e40af; cursor: pointer;
-    margin-left: auto; margin-right: 4px;
+    border-radius: 50%;
+    width: 16px; height: 16px; padding: 0;
+    font: 700 12px ui-sans-serif; color: #1e40af; cursor: pointer;
+    line-height: 14px; text-align: center;
+    flex: 0 0 auto;
   }
-  .ce-imp-use:hover { background: #ddeaff; border-color: #1e40af; }
+  .ce-imp-add:hover { background: #1e40af; color: #fff; border-color: #1e40af; }
   .ce-imp-del {
     background: transparent; border: none; cursor: pointer;
     color: #888; font-size: 14px; line-height: 1;
-    width: 18px; height: 18px; border-radius: 3px;
+    width: 16px; height: 16px; border-radius: 3px;
     padding: 0;
+    flex: 0 0 auto;
   }
   .ce-imp-del:hover { background: #fdecec; color: #cc2222; }
 
