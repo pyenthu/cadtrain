@@ -587,8 +587,7 @@
         title={compositionPinned ? 'Unpin' : 'Pin open (visual cue)'}
         onclick={(e) => { e.stopPropagation(); compositionPinned = !compositionPinned; if (compositionPinned) compositionOpen = true; }}>📌</button>
       <span class="ce-twist">{compositionOpen ? '▾' : '▸'}</span>
-      <span class="ce-glyph">📁</span>
-      <span class="ce-kind-badge">{rootKindBadge}</span>
+        <span class="ce-kind-badge">{rootKindBadge}</span>
       <span class="ce-name">compose</span>
       <span class="ce-row-spacer"></span>
       {#if canEdit}
@@ -604,7 +603,8 @@
           </div>
         </div>
       {:else if composition.type === 'list' || composition.type === 'stack'}
-        <!-- Root list/stack — render its children at depth 0; the header IS the list row. -->
+        <!-- Root list/stack — header IS the list row; children render at
+             depth 1 so the parent→child relationship reads visually. -->
         <div class="ce-tree">
           {#if composition.children.length === 0}
             <div class="ce-row ce-empty-row" style="--depth: 1">
@@ -612,14 +612,15 @@
             </div>
           {:else}
             {#each composition.children as child (child.id)}
-              {@render row(child, 0)}
+              {@render row(child, 1)}
             {/each}
           {/if}
         </div>
       {:else}
-        <!-- Root is a single non-folder node — render it as the only child. -->
+        <!-- Root is a single non-folder node — render it at depth 1 so it
+             still reads as a child of the compose header. -->
         <div class="ce-tree">
-          {@render row(composition, 0)}
+          {@render row(composition, 1)}
         </div>
       {/if}
     {/if}
@@ -641,7 +642,6 @@
     <button class="ce-twist" type="button" title={open ? 'Collapse' : 'Expand'} onclick={() => toggleExpand(n.id)}>
       {open ? '▾' : '▸'}
     </button>
-    <span class="ce-glyph">📁</span>
     {#if n.type === 'method'}
       {#if canEdit}
         <button
@@ -767,7 +767,6 @@
     {:else}
       <span class="ce-twist-spacer"></span>
     {/if}
-    <span class="ce-glyph">📄</span>
     {#if n.type === 'call'}
       <span class="ce-file-fn-glyph">ƒ</span>
       <span class="ce-file-title" title={fileTitle(n)}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
@@ -1200,14 +1199,29 @@
     padding: 1px 0 0 calc(var(--depth, 0) * 16px + 32px);
   }
 
-  /* One-line rows */
+  /* One-line rows. The indent step (18px) is wide enough to read at a
+     glance + light dotted guide line draws the parent → child arrow
+     visually. */
   .ce-row {
     display: flex; align-items: center; gap: 4px;
     padding: 1px 4px;
-    padding-left: calc(var(--depth, 0) * 14px + 2px);
+    padding-left: calc(var(--depth, 0) * 18px + 2px);
     border-radius: 3px;
     min-height: 20px;
     line-height: 1.4;
+    position: relative;
+  }
+  .ce-row[style*="--depth: 1"]::before,
+  .ce-row[style*="--depth: 2"]::before,
+  .ce-row[style*="--depth: 3"]::before,
+  .ce-row[style*="--depth: 4"]::before,
+  .ce-row[style*="--depth: 5"]::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: calc(var(--depth, 0) * 18px - 10px);
+    width: 1px;
+    background: #d4d4dc;
   }
   .ce-row:hover { background: #f0f4fa; }
   .ce-folder-row { font-weight: 600; color: #1f2937; }
@@ -1299,10 +1313,10 @@
 
   /* Inline 3-input transform editor row */
   .ce-tx-edit-row {
-    padding-left: calc(var(--depth, 0) * 16px + 36px);
+    padding-left: calc(var(--depth, 0) * 18px + 36px);
     background: #fffbeb;
     border-left: 2px solid #fbbf24;
-    margin-left: calc(var(--depth, 0) * 16px + 12px);
+    margin-left: calc(var(--depth, 0) * 18px + 12px);
     padding-left: 6px;
   }
   .ce-tx-edit-label {
@@ -1311,7 +1325,7 @@
     min-width: 28px;
   }
   .ce-axis-row {
-    padding-left: calc(var(--depth, 0) * 16px + 36px);
+    padding-left: calc(var(--depth, 0) * 18px + 36px);
   }
   .ce-axis-label {
     font-size: 11px; color: #888;
@@ -1338,10 +1352,10 @@
     column-gap: 6px;
     row-gap: 2px;
     padding: 2px 6px 4px;
-    padding-left: calc(var(--depth, 0) * 14px + 36px);
+    padding-left: calc(var(--depth, 0) * 18px + 36px);
     background: #fafafa;
     border-left: 2px solid #d4d4dc;
-    margin-left: calc(var(--depth, 0) * 14px + 12px);
+    margin-left: calc(var(--depth, 0) * 18px + 12px);
   }
   .ce-prop-cell {
     display: grid;
@@ -1383,7 +1397,7 @@
   .ce-tx-toolbar {
     display: flex; gap: 6px;
     padding: 2px 6px 4px;
-    padding-left: calc(var(--depth, 0) * 14px + 36px);
+    padding-left: calc(var(--depth, 0) * 18px + 36px);
   }
   .ce-tx-add {
     font: 600 11px ui-sans-serif, system-ui;
