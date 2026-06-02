@@ -519,6 +519,14 @@
   }
 </script>
 
+<!-- Trash glyph snippet — same outlined SVG as the sidebar prim-trash
+     button. Reused everywhere we used to render "×" for delete/remove. -->
+{#snippet trashGlyph()}
+  <svg class="ce-trash-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6"/>
+  </svg>
+{/snippet}
+
 <div class="ce-root">
   <!-- ─── Imports ──────────────────────────────────────────────────── -->
   <section class="ce-section ce-imports" class:collapsed={!importsOpen}>
@@ -546,15 +554,19 @@
       <div class="ce-imports-list">
         {#each imports as imp (imp.name)}
           <div class="ce-import-row">
-            <span class="ce-imp-name">{imp.name}</span>
-            <span class="ce-imp-eq">=</span>
-            <span class="ce-imp-src" title={imp.src}>{imp.src}</span>
             {#if canEdit}
               <button class="ce-imp-add" type="button"
                 title={`Add ${imp.name}() to the composition with ${imp.src}'s defaults`}
                 aria-label={`Add ${imp.name} to composition`}
                 onclick={() => insertImportUse(imp)}>+</button>
-              <button class="ce-imp-del" type="button" title="Remove import" aria-label={`Remove import ${imp.name}`} onclick={() => removeImport(imp.name)}>×</button>
+            {/if}
+            <div class="ce-imp-pill" title={`${imp.name} = ${imp.src}`}>
+              <span class="ce-imp-name">{imp.name}</span>
+              <span class="ce-imp-eq">=</span>
+              <span class="ce-imp-src">{imp.src}</span>
+            </div>
+            {#if canEdit}
+              <button class="ce-imp-del" type="button" title="Remove import" aria-label={`Remove import ${imp.name}`} onclick={() => removeImport(imp.name)}>{@render trashGlyph()}</button>
             {/if}
           </div>
         {/each}
@@ -667,7 +679,7 @@
         <button class="ce-row-btn" type="button" title="Add a file (import)" onclick={(e) => openFilePopup(n.id, e)}>+ file</button>
         <button class="ce-row-btn" type="button" title="Add a sub-compose (list or operation)" onclick={(e) => openFolderPopup(n.id, e)}>+ compose</button>
       {/if}
-      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)}>×</button>
+      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)} aria-label="Delete">{@render trashGlyph()}</button>
     {/if}
   </div>
 
@@ -803,7 +815,7 @@
     <span class="ce-row-spacer"></span>
 
     {#if canEdit}
-      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={(e) => { e.stopPropagation(); deleteN(n.id); }}>×</button>
+      <button class="ce-row-btn ce-row-x" type="button" title="Delete" aria-label="Delete" onclick={(e) => { e.stopPropagation(); deleteN(n.id); }}>{@render trashGlyph()}</button>
     {/if}
   </div>
 
@@ -855,7 +867,7 @@
           {/if}
         {/each}
         {#if canEdit}
-          <button class="ce-row-btn ce-row-x" type="button" title="Remove mv" onclick={() => toggleCallMv(n as any)}>×</button>
+          <button class="ce-row-btn ce-row-x" type="button" title="Remove mv" aria-label="Remove mv" onclick={() => toggleCallMv(n as any)}>{@render trashGlyph()}</button>
         {/if}
       </div>
     {/if}
@@ -879,7 +891,7 @@
           {/if}
         {/each}
         {#if canEdit}
-          <button class="ce-row-btn ce-row-x" type="button" title="Remove rot" onclick={() => toggleCallRot(n as any)}>×</button>
+          <button class="ce-row-btn ce-row-x" type="button" title="Remove rot" aria-label="Remove rot" onclick={() => toggleCallRot(n as any)}>{@render trashGlyph()}</button>
         {/if}
       </div>
     {/if}
@@ -1161,20 +1173,32 @@
   .ce-file-row.open { background: #eef5ff; }
   .ce-file-row[role="button"] { cursor: pointer; }
 
-  /* Imports — 2-column compact grid so the alias=src pairs read like
-     a directory of available primitives. */
+  /* Imports — 2-column compact grid. Each row is [+] [pill] [🗑] so the
+     primary insert action lives on the LEFT (the user's natural read
+     direction) and the destructive delete sits at the right edge. */
   .ce-imports { background: #eef5ff; border-color: #bcd3ee; }
   .ce-imports-list {
     display: grid;
     grid-template-columns: 1fr 1fr;
     column-gap: 6px;
-    row-gap: 1px;
+    row-gap: 2px;
   }
   .ce-import-row {
     display: flex; align-items: center; gap: 4px;
     padding: 1px 2px;
-    color: #1e3a8a; min-height: 20px; line-height: 1.4;
-    min-width: 0; /* let truncation kick in */
+    color: #1e3a8a; min-height: 22px; line-height: 1.4;
+    min-width: 0;
+  }
+  /* Outlined alias=src pill — reads like a chip in a directory. */
+  .ce-imp-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: 1px solid #bcd3ee;
+    background: #fff;
+    border-radius: 9px;
+    padding: 1px 8px;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .ce-imp-name { font-weight: 700; color: #0c2e6e; flex: 0 0 auto; }
   .ce-imp-eq { color: #5e88c3; flex: 0 0 auto; }
@@ -1182,8 +1206,7 @@
     color: #1e3a8a; flex: 1 1 auto; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  /* Rounded + insert-into-composition button. Tooltip explains the
-     action; an aria-label keeps screen readers informed. */
+  /* Rounded + insert-into-composition button (LEFT of the pill). */
   .ce-imp-add {
     appearance: none; background: #eef5ff; border: 1px solid #b8d4f2;
     border-radius: 50%;
@@ -1193,11 +1216,14 @@
     flex: 0 0 auto;
   }
   .ce-imp-add:hover { background: #1e40af; color: #fff; border-color: #1e40af; }
+  /* Trash button (RIGHT of the pill) — outlined SVG, grey idle → red on
+     hover. Same visual language as the sidebar's prim-trash. */
   .ce-imp-del {
     background: transparent; border: none; cursor: pointer;
-    color: #888; font-size: 14px; line-height: 1;
-    width: 16px; height: 16px; border-radius: 3px;
+    color: #888;
+    width: 18px; height: 18px; border-radius: 3px;
     padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
     flex: 0 0 auto;
   }
   .ce-imp-del:hover { background: #fdecec; color: #cc2222; }
@@ -1307,8 +1333,19 @@
   }
   .ce-row:hover .ce-row-btn { opacity: 1; }
   .ce-row-btn:hover { background: #eef5ff; border-color: #bcd3ee; color: #0c2e6e; }
-  .ce-row-btn.ce-row-x { color: #b94545; font-weight: 700; }
-  .ce-row-btn.ce-row-x:hover { background: #fdecec; border-color: #f5a5a5; color: #cc2222; }
+  /* Trash button in tree rows + mv/rot remove. SVG-only, no border —
+     keeps a quiet look until hover (red tint matches the sidebar's
+     prim-trash). */
+  .ce-row-btn.ce-row-x {
+    color: #888;
+    border: none; background: transparent;
+    padding: 0;
+    width: 20px; height: 20px;
+    display: inline-flex; align-items: center; justify-content: center;
+    opacity: 0.7;
+  }
+  .ce-row-btn.ce-row-x:hover { background: #fdecec; color: #cc2222; opacity: 1; }
+  .ce-trash-svg { width: 12px; height: 12px; }
   .ce-row-btn.ce-row-tx { font-size: 13px; padding: 0 5px; }
   .ce-row-btn.ce-row-tx.active {
     background: #fffbeb; border-color: #fbbf24; color: #92400e; opacity: 1;
