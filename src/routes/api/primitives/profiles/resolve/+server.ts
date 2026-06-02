@@ -31,6 +31,15 @@ export const POST = async ({ request }) => {
   try {
     return json({ points: buildProfileFromSource(src, p) });
   } catch (e) {
+    // Temporary debug log — surfaces in the dev server stdout. Capture
+    // EXACTLY what the client sent on the failures the user reproduces.
+    console.error('[resolve 400]', {
+      idOrSource: id ?? `<inline source ${src.length}b>`,
+      paramKeys: Object.keys(p),
+      params: p,
+      sourceHead: src.slice(0, 200),
+      err: (e as Error)?.message ?? String(e),
+    });
     throw error(400, `build() failed: ${(e as Error)?.message ?? e}`);
   }
 };
