@@ -164,6 +164,73 @@ export const PROFILE_REGISTRY: Record<string, ProfileDef> = {
     params: { rEnd: P('endR', 1.0, 0.05, 20, 0.05), rMid: P('midR', 1.4, 0.05, 20, 0.05), len: P('length', 3, 0.1, 40, 0.1) },
     build: (p) => [[0, 0], [p.rEnd, 0], [p.rMid, p.len / 2], [p.rEnd, p.len], [0, p.len]],
   },
+  // Collar (3 outer-profile flavours). Cylindrical band with optional
+  // inner bore. Z-down: top at z=0. Set bore=0 for a solid collar.
+  collar_flat: {
+    id: 'collar_flat', label: 'Collar (flat)', set: 'revolve', tags: ['collar', 'band', 'flat'],
+    params: {
+      od:   P('outerD', 2.0, 0.2, 20, 0.05),
+      bore: P('boreD',  0.6, 0,   20, 0.05),
+      len:  P('length', 1.5, 0.1, 20, 0.05),
+    },
+    build: (p) => {
+      const ro = Math.max(0.01, p.od / 2);
+      const ri = Math.max(0,    Math.min(p.bore / 2, ro - 0.01));
+      const L  = Math.max(0.01, p.len);
+      return [[ri, 0], [ri, L], [ro, L], [ro, 0]];
+    },
+  },
+  collar_tapered: {
+    id: 'collar_tapered', label: 'Collar (tapered shoulders)', set: 'revolve', tags: ['collar', 'band', 'chamfer', 'taper'],
+    params: {
+      od:    P('outerD',     2.0, 0.2, 20, 0.05),
+      bore:  P('boreD',      0.6, 0,   20, 0.05),
+      len:   P('length',     1.5, 0.1, 20, 0.05),
+      taper: P('taper depth', 0.3, 0,   5,  0.05),
+    },
+    build: (p) => {
+      const ro = Math.max(0.01, p.od / 2);
+      const ri = Math.max(0,    Math.min(p.bore / 2, ro - 0.01));
+      const L  = Math.max(0.01, p.len);
+      const t  = Math.max(0,    Math.min(p.taper, L / 2, ro - ri));
+      return [
+        [ri,     0    ],
+        [ri,     L    ],
+        [ro - t, L    ],
+        [ro,     L - t],
+        [ro,     t    ],
+        [ro - t, 0    ],
+      ];
+    },
+  },
+  collar_rounded: {
+    id: 'collar_rounded', label: 'Collar (rounded shoulders)', set: 'revolve', tags: ['collar', 'band', 'fillet', 'rounded'],
+    params: {
+      od:           P('outerD',          2.0, 0.2, 20,  0.05),
+      bore:         P('boreD',           0.6, 0,   20,  0.05),
+      len:          P('length',          1.5, 0.1, 20,  0.05),
+      fillet:       P('fillet radius',   0.3, 0,   5,   0.05),
+      filletSteps:  P('fillet steps',    8,   2,   64,  1),
+    },
+    build: (p) => {
+      const ro = Math.max(0.01, p.od / 2);
+      const ri = Math.max(0,    Math.min(p.bore / 2, ro - 0.01));
+      const L  = Math.max(0.01, p.len);
+      const f  = Math.max(0,    Math.min(p.fillet, L / 2, ro - ri));
+      const steps = Math.max(2, Math.round(p.filletSteps));
+      // Top shoulder arc: (ro - f, 0) → (ro, f), center (ro - f, f).
+      const topArc = Array.from({ length: steps + 1 }, (_, i) => {
+        const ang = -Math.PI / 2 + (i / steps) * (Math.PI / 2);
+        return [ro - f + f * Math.cos(ang), f + f * Math.sin(ang)] as [number, number];
+      });
+      // Bottom shoulder arc: (ro, L - f) → (ro - f, L), center (ro - f, L - f).
+      const botArc = Array.from({ length: steps + 1 }, (_, i) => {
+        const ang = (i / steps) * (Math.PI / 2);
+        return [ro - f + f * Math.cos(ang), L - f + f * Math.sin(ang)] as [number, number];
+      });
+      return [[ri, 0] as [number, number], ...topArc, ...botArc, [ri, L] as [number, number]];
+    },
+  },
   // Drill-pipe tool-joint connection half-sections (Z-down: z=0 = pipe-body
   // end, increasing toward the connection). Parametric so the profile is
   // shaped entirely from the params in the GUI.
