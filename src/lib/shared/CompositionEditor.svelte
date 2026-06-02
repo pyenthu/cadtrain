@@ -816,7 +816,10 @@
       <span class="ce-twist-spacer"></span>
     {/if}
     {#if n.type === 'call'}
-      <span class="ce-file-title" title={fileTitle(n)}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
+      {@const callSrc = imports.find((i) => i.name === n.fn)?.src}
+      <span class="ce-file-title" title={fileTitle(n)}>
+        {n.fn}{#if callSrc}<span class="ce-file-src">: {callSrc}</span>{/if}
+      </span>
       <!-- mv/rot indicator dots — terse status, no triplet preview. The
            edit surface lives in the expanded body below. -->
       {#if n.mv}<span class="ce-tx-dot ce-tx-dot-mv" title="mv set">↦</span>{/if}
@@ -1399,6 +1402,9 @@
     max-width: 320px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* `: shaft` tail — same colon-as-labeller as the import pill, lighter
+     so the alias `A` reads as the primary identifier. */
+  .ce-file-src { color: #5e88c3; font-weight: 400; margin-left: 1px; }
 
   .ce-row-spacer { flex: 1; }
   .ce-row-btn {
