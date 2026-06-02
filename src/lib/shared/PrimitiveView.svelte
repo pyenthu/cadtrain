@@ -35,7 +35,8 @@
   import ParamGrid from './ParamGrid.svelte';
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
-  import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
+  // INSTANCE_PALETTE + colorsForInstance were used by the old composite UI's
+  // per-instance swatch popup; that's owned by CompositionEditor now.
   import { tipHost } from './floating-tip';
   import ProfileFnEditor from './ProfileFnEditor.svelte';
   import { dragNumber } from './dragNumber';
