@@ -563,20 +563,17 @@
     const fetched = imp ? await callWithDefaults(imp.src) : await callWithDefaults(call.fn);
     // `fetched` is either a bare TreeNode (network failure path) or the
     // rich {node, paramKeys, specs} envelope. Unwrap to the Call node +
-    // capture paramKeys so the sibling emits in object form too.
+    // capture paramKeys so the sibling emits in object form. Args stay
+    // as the child's DEFAULT LITERALS — same rule as buildLiftedCall:
+    // assembly knobs are user-decided, not auto-wired on wrap.
     const fNode: TreeNode = ('node' in (fetched as any))
       ? (fetched as any).node
       : (fetched as TreeNode);
     const fParamKeys: string[] | undefined = ('node' in (fetched as any))
       ? (fetched as any).paramKeys
       : undefined;
-    // Stamp the alias + lift args to `p.<key>` references (same default
-    // as the primary insert) + carry paramKeys so emitNode produces
-    // `B({k1: p.k1, ...})` for the sibling as well.
     const sibling: TreeNode = (fNode.type === 'call' && fParamKeys && fParamKeys.length)
-      ? { ...fNode, fn: call.fn,
-          args: fNode.args.map((a, i) => fParamKeys[i] ? makeLiteral(`p.${fParamKeys[i]}`) : a),
-          paramKeys: fParamKeys }
+      ? { ...fNode, fn: call.fn, paramKeys: fParamKeys }
       : (fNode.type === 'call' ? { ...fNode, fn: call.fn } : fNode);
     const wrapped: TreeNode = {
       type: 'method',
