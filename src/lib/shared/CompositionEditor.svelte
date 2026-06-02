@@ -346,6 +346,30 @@
       : { ...call, rot: [makeLiteral('0'), makeLiteral('0'), makeLiteral('0')] };
     commit(imports, replaceNode(composition, call.id, next));
   }
+
+  /** Wrap a Call in a method node, in place. The Call becomes the .obj
+   *  side; a fresh sibling Call of the same import alias (cloned defaults)
+   *  becomes the .arg side. Op defaults to 'subtract' — the most common
+   *  bore-it-out case A(od).subtract(A(id)); user can swap to add /
+   *  intersect via the op chip on the method folder row. */
+  async function wrapCallInMethod(call: TreeNode & { type: 'call' }, op: CsgOp = 'subtract') {
+    if (!composition) return;
+    // Sibling: resolve fn alias → src, fetch defaults, restamp fn back to
+    // the alias. Same path createCallNode + insertImportUse follow.
+    const imp = imports.find((i) => i.name === call.fn);
+    const fetched = imp ? await callWithDefaults(imp.src) : await callWithDefaults(call.fn);
+    const sibling: TreeNode = (fetched.type === 'call') ? { ...fetched, fn: call.fn } : fetched;
+    const wrapped: TreeNode = {
+      type: 'method',
+      id: newNodeId(),
+      op,
+      obj: call,
+      arg: sibling,
+    };
+    commit(imports, replaceNode(composition, call.id, wrapped));
+    expanded[wrapped.id] = true;
+    if (sibling.type === 'call') expanded[sibling.id] = true;
+  }
   /** Commit a single axis value of a Call's mv or rot. Skips when no change. */
   /** Edit a Call's positional arg in place. Rewrites the arg as a
    *  literal carrying the user's text (numbers, expressions, refs all
@@ -389,6 +413,17 @@
   let opPopup = $state<{ nodeId: string; x: number; y: number } | null>(null);
   let litEdit = $state<{ nodeId: string; value: string } | null>(null);
   let argPicker = $state<{ nodeId: string; x: number; y: number; tab: 'literal' | 'ref' | 'call'; query: string; literalVal: string } | null>(null);
+  // Bottom-toolbar 'Transform' / 'Method' mini-pickers for a Call row.
+  let callActionPopup = $state<{ nodeId: string; x: number; y: number; kind: 'transform' | 'method' } | null>(null);
+  function openCallActionPopup(ev: MouseEvent, nodeId: string, kind: 'transform' | 'method') {
+    if (!canEdit) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    callActionPopup = { nodeId, x: rect.left, y: rect.bottom + 4, kind };
+  }
+  function closeCallActionPopup() { callActionPopup = null; }
+  let callActionPopupNode = $derived(
+    callActionPopup && composition ? findById(composition, callActionPopup.nodeId) : null
+  );
 
   function openOpPopup(ev: MouseEvent, nodeId: string) {
     if (!canEdit) return;
@@ -895,17 +930,19 @@
       </div>
     {/if}
 
-    <!-- Transform toolbar — add mv/rot when not yet set. Sits at the
-         BOTTOM of the body so the user's eye finds it after scanning
-         props. -->
-    {#if canEdit && (!n.mv || !n.rot)}
+    <!-- Action toolbar — two grouped buttons: Transform opens a
+         mini-picker with mv / rot; Method opens a mini-picker with
+         subtract / add / intersect. The popups commit immediately on
+         pick; sits at the BOTTOM of the body. -->
+    {#if canEdit}
       <div class="ce-tx-toolbar" style="--depth: {depth}">
-        {#if !n.mv}
-          <button class="ce-row-btn ce-tx-add" type="button" title="Add inline mv (translate)" onclick={() => toggleCallMv(n as any)}>↦ mv</button>
-        {/if}
-        {#if !n.rot}
-          <button class="ce-row-btn ce-tx-add" type="button" title="Add inline rot (rotate)" onclick={() => toggleCallRot(n as any)}>↻ rot</button>
-        {/if}
+        <button class="ce-row-btn ce-tx-add" type="button"
+          title="Attach a transform (mv / rot)"
+          disabled={!!n.mv && !!n.rot}
+          onclick={(ev) => openCallActionPopup(ev, n.id, 'transform')}>↦ Transform ▾</button>
+        <button class="ce-row-btn ce-tx-add" type="button"
+          title="Wrap in a CSG method (subtract / add / intersect)"
+          onclick={(ev) => openCallActionPopup(ev, n.id, 'method')}>⊖ Method ▾</button>
       </div>
     {/if}
   {/if}
@@ -1009,6 +1046,48 @@
           {/if}
         </div>
       {/if}
+    </div>
+  </FloatingPanel>
+{/if}
+
+<!-- Call-row bottom-toolbar action picker — Transform (mv/rot) and
+     Method (subtract/add/intersect). Closes on pick. -->
+{#if callActionPopup && callActionPopupNode && callActionPopupNode.type === 'call'}
+  <FloatingPanel
+    title={callActionPopup.kind === 'transform' ? 'Attach transform' : 'Wrap in method'}
+    subtitle={callActionPopup.kind === 'transform'
+      ? 'Translate or rotate this part'
+      : `${callActionPopupNode.fn}.op(${callActionPopupNode.fn})`}
+    visible={true}
+    x={callActionPopup.x}
+    y={callActionPopup.y}
+    width="200px"
+    maxHeight="40vh"
+    onClose={closeCallActionPopup}
+  >
+    <div class="ce-pop">
+      <div class="ce-op-list">
+        {#if callActionPopup.kind === 'transform'}
+          {#if !callActionPopupNode.mv}
+            <button class="ce-op-pick" type="button"
+              onclick={() => { toggleCallMv(callActionPopupNode as any); closeCallActionPopup(); }}>↦ mv (translate)</button>
+          {/if}
+          {#if !callActionPopupNode.rot}
+            <button class="ce-op-pick" type="button"
+              onclick={() => { toggleCallRot(callActionPopupNode as any); closeCallActionPopup(); }}>↻ rot (rotate)</button>
+          {/if}
+          {#if callActionPopupNode.mv && callActionPopupNode.rot}
+            <div class="ce-pop-empty">Both already attached. Remove one above to re-add.</div>
+          {/if}
+        {:else}
+          <button class="ce-op-pick" type="button"
+            onclick={() => { wrapCallInMethod(callActionPopupNode as any, 'subtract'); closeCallActionPopup(); }}>⊖ subtract — bore out / cut</button>
+          <button class="ce-op-pick" type="button"
+            onclick={() => { wrapCallInMethod(callActionPopupNode as any, 'add'); closeCallActionPopup(); }}>⊕ add — union</button>
+          <button class="ce-op-pick" type="button"
+            onclick={() => { wrapCallInMethod(callActionPopupNode as any, 'intersect'); closeCallActionPopup(); }}>⊗ intersect — common volume</button>
+        {/if}
+      </div>
     </div>
   </FloatingPanel>
 {/if}
