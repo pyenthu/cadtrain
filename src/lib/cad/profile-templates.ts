@@ -325,7 +325,11 @@ export const EXTRUDE_ENGINE_PARAMS: Record<string, ProfileParamSchema> = {
   length:   { label: 'length',    min: 0.1,  max: 20,  step: 0.1,  default: 2 },
   twist:    { label: 'twist (°)', min: -360, max: 360, step: 5,    default: 0 },
   divs:     { label: 'divs',      min: 1,    max: 96,  step: 1,    default: 12 },
-  taper:    { label: 'taper',     min: -0.9, max: 2.0, step: 0.05, default: 0 },
+  // taper is DIMENSIONLESS — a scale factor `1 - taper` is applied to the
+  // bottom face. Positive narrows (shaft / drill-bit convention); negative
+  // flares. Explicit `unit: ''` so the param card doesn't tag it with the
+  // ambient `mm` default.
+  taper:    { label: 'taper',     min: -1.0, max: 1.0, step: 0.05, default: 0, unit: '' },
   segments: { label: 'segments',  min: 4,    max: 256, step: 1,    default: 32 },
 };
 
@@ -394,7 +398,12 @@ export function ${id}(${argList}) {
   // Defaults — protects against drift when used inside an assembly.
 ${defaultsBlock}
 ${template.body};
-  return r_weld_extrude(profile_pts, length, divs, twist, taper, segments);
+  // Taper as a function of vertical position (Z-down: z=0 top, z=length
+  // bottom). Linear default: bottom face scaled by (1 - taper). EDIT this
+  // line to make taper non-linear (e.g. quadratic, two-stage, asymmetric
+  // x vs y) — r_weld_extrude takes the resulting Vec2 directly.
+  const scaleTop = [1 - taper, 1 - taper];
+  return r_weld_extrude(profile_pts, length, divs, twist, taper, segments, scaleTop);
 }
 `;
 }

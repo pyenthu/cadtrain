@@ -191,17 +191,27 @@ export async function buildPrimitiveGeom(
       // Canonical positional name list = meta.params keys when available
       // (so signature drift can't break the call); fall back to the source's
       // signature otherwise (leaf primitives with no meta.params).
-      const ns = metaKeys.length ? metaKeys : sigNames;
-      if (!ns.length) return full;
+      const base = metaKeys.length ? metaKeys : sigNames;
+      if (!base.length) return full;
+      // PRESERVE TRAILING POSITIONAL ARGS — a function may declare params
+      // BEYOND meta.params (e.g. r_weld_extrude has an optional
+      // `scaleTopOverride` 7th arg that the part body passes but
+      // meta.params doesn't surface in the GUI). Without this, the
+      // rewritten signature drops those, and the body's reference to
+      // `scaleTopOverride` throws "is not defined" at runtime.
+      const extras = sigNames.slice(base.length).filter((n) => !base.includes(n));
+      const ns = [...base, ...extras];
       // Rewrite the signature to canonical positional names so `fn(...args)` at
       // the call site binds each `args[i]` to `ns[i]` regardless of what the
       // source happens to spell.
       const rewrittenHead = full.replace(/\(([^)]*)\)/, `(${ns.join(', ')})`);
       // Skip the `const p = …` line when `p` is already a positional name
       // (would shadow). If `p` is in meta.params (unusual but legal), the
-      // bundling becomes a no-op and the user's `p` wins.
+      // bundling becomes a no-op and the user's `p` wins. The `const p`
+      // bundle uses BASE keys only — extras (overrides) aren't exposed
+      // as `p.X`.
       if (ns.includes('p')) return rewrittenHead;
-      return `${rewrittenHead} const p = { ${ns.join(', ')} };`;
+      return `${rewrittenHead} const p = { ${base.join(', ')} };`;
     },
   );
   const wrapper = `"use strict";

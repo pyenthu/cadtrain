@@ -62,6 +62,13 @@ export function r_weld_extrude(
   twist: number,
   taper: number,
   segments?: number,
+  /** Optional Vec2 `[sx, sy]` — overrides the internal `1 - taper` math.
+   *  When supplied (the new builder default), the part body is the source
+   *  of truth for the taper formula; r_weld_extrude becomes a thin
+   *  wrapper around CrossSection.extrude. When omitted (legacy 6-arg
+   *  callers), we derive `[1 - taper, 1 - taper]` here so older parts
+   *  shipped before the formula moved still taper correctly. */
+  scaleTopOverride?: [number, number],
 ): any {
   const raw: [number, number][] =
     typeof profile === 'string' ? JSON.parse(profile) : resolveProfile(profile);
@@ -104,8 +111,15 @@ export function r_weld_extrude(
   // (classic shaft taper). Clamp s to a small positive floor so dialing
   // taper near -1 doesn't collapse the bottom to zero.
   const tw = Math.abs(twist);
-  const tp = Math.abs(taper);
-  const s = Math.max(0.001, 1 + taper);
+  // Resolve scaleTop: prefer the explicit Vec2 override from the part body
+  // when supplied (new builder default), otherwise derive from the legacy
+  // taper scalar. Sign: `s = 1 - taper` matches the drilling convention —
+  // taper > 0 narrows the BOTTOM (z = length in cadtrain's Z-down), the
+  // standard shaft / drill-bit shape. Negative taper flares the bottom.
+  const stop = scaleTopOverride
+    ? [Math.max(0.001, scaleTopOverride[0]), Math.max(0.001, scaleTopOverride[1])] as [number, number]
+    : (() => { const s = Math.max(0.001, 1 - taper); return [s, s] as [number, number]; })();
+  const tp = Math.abs(stop[0] - 1) + Math.abs(stop[1] - 1);
   if (tw < 0.001 && tp < 0.001) {
     void divs;
     return new CS([loop]).extrude(h);
@@ -114,11 +128,11 @@ export function r_weld_extrude(
     // Taper-only path. nDivisions = 1 keeps the morph shallow but
     // present, avoiding both the coincident-slice bug and unnecessary
     // intermediate triangles when there's no twist.
-    return new CS([loop]).extrude(h, 1, 0, [s, s] as any);
+    return new CS([loop]).extrude(h, 1, 0, stop as any);
   }
   const nDiv = Math.max(1, Math.min(96, Math.round(divs)));
   if (tp < 0.001) {
     return new CS([loop]).extrude(h, nDiv, twist);
   }
-  return new CS([loop]).extrude(h, nDiv, twist, [s, s] as any);
+  return new CS([loop]).extrude(h, nDiv, twist, stop as any);
 }
