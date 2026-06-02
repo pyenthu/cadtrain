@@ -1474,6 +1474,29 @@
   // Why `name` can't be deleted — referenced in the geom body, or not found.
   // null = deletable. (Deleting a body-referenced param leaves a dangling ref.)
   function paramBlockedReason(name: string): string | null {
+    // ASM path — assemblies don't run through recognize-composite. Scan
+    // the function body (between the open `{` after the sig and the
+    // closing `}`) for an unguarded `<name>` token; if found, refuse so
+    // the user clears the reference first.
+    if (kind === 'asm') {
+      const fnRe = new RegExp(`export\\s+function\\s+${id}\\s*\\(([^)]*)\\)\\s*\\{`);
+      const m = editedSource.match(fnRe);
+      if (!m) return null; // signature missing — let removeAssemblyParam handle it
+      const start = (m.index ?? 0) + m[0].length;
+      let depth = 1, i = start;
+      while (i < editedSource.length && depth > 0) {
+        const ch = editedSource[i++];
+        if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+      }
+      const body = editedSource.slice(start, i - 1);
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(?<![.\\w$])${esc}(?![\\w$])`).test(body)) {
+        return `"${name}" — still referenced in the composition; clear those Call args first`;
+      }
+      return null;
+    }
+    // PRIM path — recognize-driven.
     const r = recognized;
     if (!r) return 'the primitive isn\'t editable';
     const rp = (r.params ?? []).find((p: any) => p.name === name);
