@@ -560,9 +560,9 @@
                 aria-label={`Add ${imp.name} to composition`}
                 onclick={() => insertImportUse(imp)}>+</button>
             {/if}
-            <div class="ce-imp-pill" title={`${imp.name} = ${imp.src}`}>
+            <div class="ce-imp-pill" title={`${imp.name}: ${imp.src}`}>
               <span class="ce-imp-name">{imp.name}</span>
-              <span class="ce-imp-eq">=</span>
+              <span class="ce-imp-eq">:</span>
               <span class="ce-imp-src">{imp.src}</span>
             </div>
             {#if canEdit}
@@ -781,7 +781,6 @@
       <span class="ce-twist-spacer"></span>
     {/if}
     {#if n.type === 'call'}
-      <span class="ce-file-fn-glyph">ƒ</span>
       <span class="ce-file-title" title={fileTitle(n)}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
       <!-- mv/rot indicator dots — terse status, no triplet preview. The
            edit surface lives in the expanded body below. -->
