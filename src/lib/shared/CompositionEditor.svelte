@@ -423,9 +423,33 @@
   // toggles persist while editing. `expanded[id] === false` = collapsed.
   let expanded = $state<Record<string, boolean>>({});
 
-  // Top-level accordion sections (Imports + Composition). Both default open.
+  // Exclusive-accordion for FILE (Call) rows — only one body open at a
+  // time, except 📌-pinned rows stay open alongside. Mirrors
+  // PrimitiveView's pinnedParts model so the inspector feel is uniform.
+  let activeCall = $state<string | null>(null);
+  let pinnedCalls = $state<Set<string>>(new Set());
+  function isCallOpen(id: string): boolean {
+    return pinnedCalls.has(id) || activeCall === id;
+  }
+  function toggleCallOpen(id: string) {
+    if (pinnedCalls.has(id)) return; // unpin first to close
+    activeCall = activeCall === id ? null : id;
+  }
+  function togglePinCall(id: string) {
+    const next = new Set(pinnedCalls);
+    if (next.has(id)) { next.delete(id); if (activeCall === id) activeCall = null; }
+    else { next.add(id); if (activeCall === id) activeCall = null; }
+    pinnedCalls = next;
+  }
+
+  // Top-level accordion sections (Imports + Composition). Both default
+  // open. The 📌 pin is informational here — these don't auto-collapse
+  // when other rows open. Carried for visual consistency with the rest
+  // of the inspector.
   let importsOpen = $state(true);
+  let importsPinned = $state(false);
   let compositionOpen = $state(true);
+  let compositionPinned = $state(false);
   function isExpanded(id: string): boolean {
     return expanded[id] !== false; // default to open
   }
@@ -503,6 +527,9 @@
       aria-expanded={importsOpen}
       onclick={() => (importsOpen = !importsOpen)}
       onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); importsOpen = !importsOpen; } }}>
+      <button class="ce-pin" class:pinned={importsPinned} type="button"
+        title={importsPinned ? 'Unpin' : 'Pin open (visual cue)'}
+        onclick={(e) => { e.stopPropagation(); importsPinned = !importsPinned; if (importsPinned) importsOpen = true; }}>📌</button>
       <span class="ce-section-twist">{importsOpen ? '▾' : '▸'}</span>
       <span class="ce-section-title">📥 Imports</span>
       <span class="ce-section-count">{imports.length}</span>
@@ -556,6 +583,9 @@
       aria-expanded={compositionOpen}
       onclick={() => (compositionOpen = !compositionOpen)}
       onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); compositionOpen = !compositionOpen; } }}>
+      <button class="ce-pin" class:pinned={compositionPinned} type="button"
+        title={compositionPinned ? 'Unpin' : 'Pin open (visual cue)'}
+        onclick={(e) => { e.stopPropagation(); compositionPinned = !compositionPinned; if (compositionPinned) compositionOpen = true; }}>📌</button>
       <span class="ce-twist">{compositionOpen ? '▾' : '▸'}</span>
       <span class="ce-glyph">📁</span>
       <span class="ce-kind-badge">{rootKindBadge}</span>
@@ -722,18 +752,25 @@
 {/snippet}
 
 {#snippet fileRow(n: TreeNode, depth: number)}
-  {@const callOpen = n.type === 'call' && isExpanded(n.id)}
+  {@const callOpen = n.type === 'call' && isCallOpen(n.id)}
   {@const callExpandable = n.type === 'call'}
-  <div class="ce-row ce-file-row" style="--depth: {depth}">
+  <div class="ce-row ce-file-row" class:open={callOpen} style="--depth: {depth}"
+    role={callExpandable ? 'button' : undefined}
+    tabindex={callExpandable ? 0 : -1}
+    onclick={callExpandable ? () => toggleCallOpen(n.id) : undefined}
+    onkeydown={callExpandable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCallOpen(n.id); } } : undefined}>
     {#if callExpandable}
-      <button class="ce-twist" type="button" title={callOpen ? 'Collapse' : 'Expand'} onclick={() => toggleExpand(n.id)}>{callOpen ? '▾' : '▸'}</button>
+      <button class="ce-pin" class:pinned={pinnedCalls.has(n.id)} type="button"
+        title={pinnedCalls.has(n.id) ? 'Unpin (allow auto-collapse)' : 'Pin open (stays open while other rows open)'}
+        onclick={(e) => { e.stopPropagation(); togglePinCall(n.id); }}>📌</button>
+      <button class="ce-twist" type="button" title={callOpen ? 'Collapse' : 'Expand'} onclick={(e) => { e.stopPropagation(); toggleCallOpen(n.id); }}>{callOpen ? '▾' : '▸'}</button>
     {:else}
       <span class="ce-twist-spacer"></span>
     {/if}
     <span class="ce-glyph">📄</span>
     {#if n.type === 'call'}
       <span class="ce-file-fn-glyph">ƒ</span>
-      <span class="ce-file-title" title={fileTitle(n)} onclick={() => toggleExpand(n.id)}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
+      <span class="ce-file-title" title={fileTitle(n)}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
       <!-- mv/rot indicator dots — terse status, no triplet preview. The
            edit surface lives in the expanded body below. -->
       {#if n.mv}<span class="ce-tx-dot ce-tx-dot-mv" title="mv set">↦</span>{/if}
@@ -766,7 +803,7 @@
     <span class="ce-row-spacer"></span>
 
     {#if canEdit}
-      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)}>×</button>
+      <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={(e) => { e.stopPropagation(); deleteN(n.id); }}>×</button>
     {/if}
   </div>
 
@@ -1104,6 +1141,25 @@
   .ce-section-head:hover { background: rgba(0,0,0,0.02); }
   .ce-section-twist { color: #888; font-size: 10px; width: 12px; text-align: center; }
   .ce-section.collapsed .ce-section-head { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+
+  /* 📌 pin — same affordance as PrimitiveView's pinnedParts model.
+     Pinned rows tint amber to signal "stays open". */
+  .ce-pin {
+    background: transparent; border: none; cursor: pointer;
+    width: 16px; height: 16px;
+    opacity: 0.35;
+    font-size: 11px; line-height: 1;
+    padding: 0;
+    border-radius: 3px;
+  }
+  .ce-pin:hover { opacity: 0.85; background: #f0e7d5; }
+  .ce-pin.pinned { opacity: 1; background: #fbbf24; }
+  .ce-pin.pinned:hover { background: #f59e0b; }
+
+  /* Open Call file row — subtle background tint so the user sees which
+     row is the active inspector. */
+  .ce-file-row.open { background: #eef5ff; }
+  .ce-file-row[role="button"] { cursor: pointer; }
 
   /* Imports */
   .ce-imports { background: #eef5ff; border-color: #bcd3ee; }
