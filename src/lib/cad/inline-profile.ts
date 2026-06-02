@@ -77,26 +77,73 @@ export function findProfileSlots(source: string): ProfileSlot[] {
     // body opener `{`. Stop at the first non-calc line (a return, a non-const
     // statement, the function opener itself, etc.). The collected calcs prefix
     // the body so the editor's parseBody sees them as Calc rows.
+    //
+    // MULTI-LINE CONSTS — the simple single-line regex
+    //   ^[ \t]*const\s+(\w+)\s*=\s*…;[ \t]*$
+    // can't see past a `const X = Array.from({…}, (_, i) => { … });` that
+    // spans multiple lines. When the current line ends a balanced
+    // multi-line block ('}', '})', '});', ',', ')', or any combination
+    // thereof), we walk backward over the rest of the block until brace
+    // depth balances AND the run starts with `const X = `. That whole run
+    // becomes one swept calc. This unblocks the Collar (rounded shoulders)
+    // template — its body has two Array.from arc declarations plus the
+    // literal-corner profile_pts — which previously surfaced as a
+    // /resolve 400 ("ri is not defined") because the editor sent just the
+    // bare `return [[ri, 0], …topArc, …botArc, [ri, L]];` with no consts.
     const startLine = source.lastIndexOf('\n', declStart - 1);
     const head = source.slice(0, startLine >= 0 ? startLine : 0);
     const lines = head.split('\n');
     const sweptCalcs: string[] = [];
     let sweepStart = declStart;
-    for (let li = lines.length - 1; li >= 0; li--) {
+    let li = lines.length - 1;
+    while (li >= 0) {
       const line = lines[li]!;
       const trimmed = line.trim();
-      if (trimmed === '') continue;   // skip blank — keep walking
-      PRECEDING_CALC_RE.lastIndex = 0;
-      const c = /^[ \t]*const\s+([a-zA-Z_$][\w$]*)\s*=\s*([^;\n][^;]*?);[ \t]*$/.exec(line);
-      if (!c) break;                  // not a calc — stop the sweep
-      sweptCalcs.unshift(c[0]);
-      // sweepStart is the index of THIS line's first char (so the slot's
-      // range starts there, replacing the calc line on splice).
-      // index = sum of lengths of lines[0..li-1] + li newlines (one per line
-      // up to and including the preceding line's `\n`).
-      let acc = 0;
-      for (let k = 0; k < li; k++) acc += lines[k]!.length + 1;
-      sweepStart = acc;
+      if (trimmed === '') { li--; continue; }
+      const single = /^[ \t]*const\s+([a-zA-Z_$][\w$]*)\s*=\s*([^;\n][^;]*?);[ \t]*$/.exec(line);
+      if (single) {
+        sweptCalcs.unshift(single[0]);
+        let acc = 0;
+        for (let k = 0; k < li; k++) acc += lines[k]!.length + 1;
+        sweepStart = acc;
+        li--;
+        continue;
+      }
+      // Maybe we're at the closer of a multi-line `const X = (…){ … };`. The
+      // line should contain only closers + optional `;`/`,` (and may sit
+      // after the closer of an arrow body). Try to balance braces+parens+
+      // brackets walking backward.
+      if (/^[ \t]*[\}\)\]][\s\)\]\};,]*$/.test(line)) {
+        let depth = 0;
+        for (const ch of line) {
+          if (ch === '}' || ch === ')' || ch === ']') depth++;
+          else if (ch === '{' || ch === '(' || ch === '[') depth--;
+        }
+        let k = li - 1;
+        let firstLine = li;
+        while (k >= 0 && depth > 0) {
+          const ln = lines[k]!;
+          for (const ch of ln) {
+            if (ch === '{' || ch === '(' || ch === '[') depth--;
+            else if (ch === '}' || ch === ')' || ch === ']') depth++;
+          }
+          firstLine = k;
+          k--;
+        }
+        if (depth === 0) {
+          const startsConst = /^[ \t]*const\s+([a-zA-Z_$][\w$]*)\s*=\s*/.test(lines[firstLine]!);
+          if (startsConst) {
+            const block = lines.slice(firstLine, li + 1).join('\n');
+            sweptCalcs.unshift(block);
+            let acc = 0;
+            for (let kk = 0; kk < firstLine; kk++) acc += lines[kk]!.length + 1;
+            sweepStart = acc;
+            li = firstLine - 1;
+            continue;
+          }
+        }
+      }
+      break; // not a recognisable calc — stop the sweep
     }
 
     // The body handed to the editor must be SHAPED like a profile-build body

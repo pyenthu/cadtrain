@@ -33,7 +33,10 @@ const VOLUME_PROXY_PATHS = new Set([
   '/api/primitives/profiles/list',
   '/api/primitives/profiles/save',
   '/api/primitives/profiles/delete',
-  '/api/primitives/profiles/resolve',
+  // /resolve runs build(source, params) — pure code path, no volume read
+  // beyond an optional id fetch. Keep it local so debug logs surface here
+  // and so the dev box can iterate without a prod redeploy.
+  // '/api/primitives/profiles/resolve',
   '/api/primitives/profiles/source',
   '/api/components/list',
   '/api/components/save',
