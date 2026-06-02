@@ -33,7 +33,6 @@
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import ParamGrid from './ParamGrid.svelte';
-  import ConstructionTree from './ConstructionTree.svelte';
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
   import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
@@ -276,16 +275,12 @@
   // sidebar is untouched. Cleared on the next successful recognition.
   let profileEditNote = $state<string | null>(null);
   async function loadRecognition() {
-    recogStatus = 'loading'; recogError = null; profileEditNote = null;
-    try {
-      const r = await fetch('/api/primitives/recognize', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source: editedSource }),
-      });
-      if (!r.ok) { recogError = await r.text(); recogStatus = 'error'; return; }
-      recognized = await r.json();
-      recogStatus = 'idle';
-    } catch (e: any) { recogError = e?.message ?? String(e); recogStatus = 'error'; }
+    // recognize-composite + /api/primitives/recognize were removed with the
+    // old composite editor. The composite UI (Parts subtabs, args edit,
+    // construction tree, profile-swap) is gone for `.prim.ts` parts —
+    // they keep only the Parameters accordion + Source tab + 3D viewer.
+    recogStatus = 'idle'; recogError = null; profileEditNote = null;
+    recognized = null;
   }
   // Re-recognize whenever the Build tab is open and the source changes. The
   // Build tab needs the recognized instance spans (Parts accordion) AND the
@@ -2578,9 +2573,8 @@
                     <button class="pv-mini-btn" class:on={showTree} type="button" title="Show the construction tree + BODMAS evaluation order for this composition" onclick={() => (showTree = !showTree)}>🌳 tree</button>
                   {/if}
                 </div>
-                {#if showTree}
-                  <ConstructionTree {recognized} parts={resolvedParts} onPick={(name) => openPart(name)} />
-                {/if}
+                <!-- ConstructionTree removed (composite UI strip) -->
+                {#if showTree}<div class="pv-parts-note">construction tree no longer available — see source tab</div>{/if}
               {/if}
               {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
               {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
