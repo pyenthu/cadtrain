@@ -27,7 +27,7 @@
 <script lang="ts">
   import {
     parseImports, parseComposition, parseDependencyParamKeys, applyToSource,
-    replaceNode, deleteNode, newNodeId, childrenOf, emitNode,
+    replaceNode, deleteNode, newNodeId, childrenOf, emitNode, walkTree,
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -140,6 +140,39 @@
   function removeImport(name: string) {
     commit(imports.filter((i) => i.name !== name), composition);
   }
+  /** Remove EVERY import that points to this src (used by the row trash —
+   *  rows are deduped by src, so the user expects "remove this primitive
+   *  from my available list"). Only safe when no Call references those
+   *  aliases; we guard with hasInstancesOf below. */
+  function removeImportSrc(src: string) {
+    commit(imports.filter((i) => i.src !== src), composition);
+  }
+  /** Imports list deduplicated by src. Display-only — the underlying
+   *  `imports` array can carry multiple `{name, src}` rows for the same
+   *  src (one per dropped instance in the compose), but the section
+   *  shows ONE row per primitive. */
+  let uniqueImports = $derived.by<ImportDef[]>(() => {
+    const out: ImportDef[] = [];
+    const seen = new Set<string>();
+    for (const imp of imports) {
+      if (seen.has(imp.src)) continue;
+      seen.add(imp.src);
+      out.push(imp);
+    }
+    return out;
+  });
+  /** True when ANY Call in the tree references one of this src's aliases.
+   *  Disables the trash button so the user can't orphan a Call mid-compose. */
+  function hasInstancesOf(src: string): boolean {
+    if (!composition) return false;
+    const aliases = new Set(imports.filter((i) => i.src === src).map((i) => i.name));
+    let hit = false;
+    walkTree(composition, (n) => {
+      if (hit) return;
+      if (n.type === 'call' && aliases.has(n.fn)) hit = true;
+    });
+    return hit;
+  }
 
   let importCandidates = $derived.by(() => {
     const q = (importPopup?.query ?? '').toLowerCase();
@@ -192,12 +225,33 @@
     const listRoot: TreeNode = { type: 'list', id: newNodeId(), children: [composition, node] };
     commit(imports, listRoot);
   }
+  /** Drop a new INSTANCE of this primitive into the composition. Each call
+   *  allocates a FRESH letter alias so the compose tree reads
+   *  `A: spiral, B: spiral, C: spiral` even when they're the same import.
+   *  The imports section displays one row per unique src (deduplicated),
+   *  so the proliferating aliases stay invisible there. */
   async function insertImportUse(imp: ImportDef) {
-    const callNode = await callWithDefaults(imp.name);
-    const finalNode = (callNode.type === 'call' && callNode.args.length === 0)
-      ? { ...await callWithDefaults(imp.src), fn: imp.name }
-      : { ...(callNode as any), fn: imp.name };
-    insertCallIntoComposition(finalNode as TreeNode);
+    const taken = new Set(imports.map((i) => i.name));
+    const freshAlias = nextAlias(taken);
+    const newImports = [...imports, { name: freshAlias, src: imp.src }];
+    const fetched = await callWithDefaults(imp.src);
+    const callNode: TreeNode = (fetched.type === 'call')
+      ? { ...fetched, fn: freshAlias }
+      : fetched;
+    // Commit the import + composition in one go so the editor's `imports`
+    // derived state sees both at once (avoids a momentary state where the
+    // Call references an alias the imports list hasn't added yet).
+    if (composition === null) {
+      const root: TreeNode = { type: 'list', id: newNodeId(), children: [callNode] };
+      commit(newImports, root);
+    } else if (composition.type === 'list' || composition.type === 'stack') {
+      const replacement: TreeNode = { ...composition, children: [...composition.children, callNode] };
+      commit(newImports, replaceNode(composition, composition.id, replacement));
+      expanded[composition.id] = true;
+    } else {
+      const root: TreeNode = { type: 'list', id: newNodeId(), children: [composition, callNode] };
+      commit(newImports, root);
+    }
   }
 
   function makePlaceholder(): TreeNode {
@@ -247,33 +301,49 @@
     expanded[node.id] = true;
     closeRootPopup();
   }
-  async function createCallNode(fn: string) {
+  /** Add a new Call into the composition for the picked SRC. Always
+   *  allocates a fresh letter alias (so two adds of `spiral` produce
+   *  `A: spiral` + `B: spiral`). Mirrors insertImportUse — same alias
+   *  allocation, but driven by the file-picker popup. */
+  async function createCallNode(src: string) {
     const pid = rootPopup?.parentId;
-    // `fn` is an import alias (file-picker is imports-only). Defaults must
-    // come from the alias's SOURCE primitive, not the alias name — the
-    // alias is never a fetch-able primitive id, so callWithDefaults(fn)
-    // alone falls through to an empty-args Call. Resolve to imp.src for
-    // the defaults fetch, then re-stamp fn to the alias.
-    const imp = imports.find((i) => i.name === fn);
-    const fetched = imp ? await callWithDefaults(imp.src) : await callWithDefaults(fn);
-    const node = (fetched.type === 'call') ? { ...fetched, fn } : fetched;
-    if (pid) appendChildToList(pid, node);
-    else insertCallIntoComposition(node); // wraps in List when root is empty/scalar
+    const taken = new Set(imports.map((i) => i.name));
+    const freshAlias = nextAlias(taken);
+    const newImports = [...imports, { name: freshAlias, src }];
+    const fetched = await callWithDefaults(src);
+    const node: TreeNode = (fetched.type === 'call')
+      ? { ...fetched, fn: freshAlias }
+      : fetched;
+    if (pid) {
+      const parent = composition && findById(composition, pid);
+      if (parent && (parent.type === 'list' || parent.type === 'stack')) {
+        const replacement: TreeNode = { ...parent, children: [...parent.children, node] };
+        commit(newImports, replaceNode(composition!, pid, replacement));
+        expanded[pid] = true;
+      }
+    } else if (composition === null) {
+      commit(newImports, { type: 'list', id: newNodeId(), children: [node] });
+    } else if (composition.type === 'list' || composition.type === 'stack') {
+      const replacement: TreeNode = { ...composition, children: [...composition.children, node] };
+      commit(newImports, replaceNode(composition, composition.id, replacement));
+      expanded[composition.id] = true;
+    } else {
+      commit(newImports, { type: 'list', id: newNodeId(), children: [composition, node] });
+    }
     closeRootPopup();
   }
-  // Per user constraint: composition's "+ file" only offers IMPORTS.
-  // The Imports section is the vocabulary of this assembly; the composition
-  // can only use what's been declared. No catalog primitives or sandbox
-  // helpers in the file picker — those are how you populate IMPORTS.
+  // Composition's "+ file" offers each imported PRIMITIVE (deduped by src) —
+  // not every alias. Picking creates a new Call with a fresh letter alias
+  // (the imports section stays a single row per primitive; the compose
+  // tree carries the alphabet labels).
   let fnCandidates = $derived.by(() => {
     const q = (rootPopup?.query ?? '').toLowerCase();
-    return imports
-      .map((i) => i.name)
-      .filter((n) => !q || n.toLowerCase().includes(q));
+    return uniqueImports
+      .map((i) => i.src)
+      .filter((s) => !q || s.toLowerCase().includes(q));
   });
 
   function tagFor(_fn: string): { tag: string; cls: string } {
-    // Everything in the picker is an import alias by definition now.
     return { tag: 'import', cls: '' };
   }
 
@@ -575,33 +645,36 @@
         onclick={(e) => { e.stopPropagation(); importsPinned = !importsPinned; if (importsPinned) importsOpen = true; }}>📌</button>
       <span class="ce-section-twist">{importsOpen ? '▾' : '▸'}</span>
       <span class="ce-section-title">📥 Imports</span>
-      <span class="ce-section-count">{imports.length}</span>
+      <span class="ce-section-count">{uniqueImports.length}</span>
       {#if canEdit}
         <button class="ce-add-btn" type="button" title="Add import" onclick={(e) => { e.stopPropagation(); openImportPopup(e); }}>+ Import</button>
       {/if}
     </header>
     {#if importsOpen}
-    {#if imports.length === 0}
+    {#if uniqueImports.length === 0}
       <div class="ce-empty">
-        {canEdit ? 'No imports. Click + Import to alias a primitive.' : 'No imports.'}
+        {canEdit ? 'No imports. Click + Import to add a primitive.' : 'No imports.'}
       </div>
     {:else}
       <div class="ce-imports-list">
-        {#each imports as imp (imp.name)}
+        {#each uniqueImports as imp (imp.src)}
+          {@const hasInstances = hasInstancesOf(imp.src)}
           <div class="ce-import-row">
             {#if canEdit}
               <button class="ce-imp-add" type="button"
-                title={`Add ${imp.name}() to the composition with ${imp.src}'s defaults`}
-                aria-label={`Add ${imp.name} to composition`}
+                title={`Drop a new instance of ${imp.src} into the composition (gets a fresh letter alias)`}
+                aria-label={`Add ${imp.src} instance to composition`}
                 onclick={() => insertImportUse(imp)}>+</button>
             {/if}
-            <div class="ce-imp-pill" title={`${imp.name}: ${imp.src}`}>
-              <span class="ce-imp-name">{imp.name}</span>
-              <span class="ce-imp-eq">:</span>
+            <div class="ce-imp-pill" title={imp.src}>
               <span class="ce-imp-src">{imp.src}</span>
             </div>
             {#if canEdit}
-              <button class="ce-imp-del" type="button" title="Remove import" aria-label={`Remove import ${imp.name}`} onclick={() => removeImport(imp.name)}>{@render trashGlyph()}</button>
+              <button class="ce-imp-del" type="button"
+                title={hasInstances ? `Remove all instances from the composition before removing ${imp.src} from imports` : `Remove ${imp.src} from imports`}
+                aria-label={`Remove import ${imp.src}`}
+                disabled={hasInstances}
+                onclick={() => removeImportSrc(imp.src)}>{@render trashGlyph()}</button>
             {/if}
           </div>
         {/each}
