@@ -231,6 +231,84 @@ export const REVOLVE_TEMPLATES: ProfileTemplate[] = [
     [0, len],
   ]`,
   },
+  // Collar variants — cylindrical band with optional inner bore.
+  // Three flavours pick the outer-corner treatment: square / chamfered /
+  // filleted. Set bore=0 for a solid collar. Z-down: top at z=0.
+  {
+    id: 'collar_flat',
+    label: 'Collar (flat)',
+    tags: ['collar', 'band', 'flat'],
+    partParams: {
+      od:   { label: 'OD',         min: 0.2, max: 20, step: 0.05, default: 2.0 },
+      bore: { label: 'bore (ID)',  min: 0,   max: 20, step: 0.05, default: 0.6 },
+      len:  { label: 'length',     min: 0.1, max: 20, step: 0.05, default: 1.5 },
+    },
+    body:
+`  const ro = Math.max(0.01, od / 2);
+  const ri = Math.max(0,    Math.min(bore / 2, ro - 0.01));
+  const L  = Math.max(0.01, len);
+  const profile_pts = [
+    [ri, 0],
+    [ri, L],
+    [ro, L],
+    [ro, 0],
+  ]`,
+  },
+  {
+    id: 'collar_tapered',
+    label: 'Collar (tapered shoulders)',
+    tags: ['collar', 'band', 'chamfer', 'taper'],
+    partParams: {
+      od:    { label: 'OD',           min: 0.2, max: 20, step: 0.05, default: 2.0 },
+      bore:  { label: 'bore (ID)',    min: 0,   max: 20, step: 0.05, default: 0.6 },
+      len:   { label: 'length',       min: 0.1, max: 20, step: 0.05, default: 1.5 },
+      taper: { label: 'taper depth',  min: 0,   max: 5,  step: 0.05, default: 0.3 },
+    },
+    body:
+`  const ro = Math.max(0.01, od / 2);
+  const ri = Math.max(0,    Math.min(bore / 2, ro - 0.01));
+  const L  = Math.max(0.01, len);
+  const t  = Math.max(0,    Math.min(taper, L / 2, ro - ri));
+  const profile_pts = [
+    [ri,     0    ],
+    [ri,     L    ],
+    [ro - t, L    ],
+    [ro,     L - t],
+    [ro,     t    ],
+    [ro - t, 0    ],
+  ]`,
+  },
+  {
+    id: 'collar_rounded',
+    label: 'Collar (rounded shoulders)',
+    tags: ['collar', 'band', 'fillet', 'rounded'],
+    partParams: {
+      od:           { label: 'OD',             min: 0.2, max: 20, step: 0.05, default: 2.0 },
+      bore:         { label: 'bore (ID)',      min: 0,   max: 20, step: 0.05, default: 0.6 },
+      len:          { label: 'length',         min: 0.1, max: 20, step: 0.05, default: 1.5 },
+      fillet:       { label: 'fillet radius',  min: 0,   max: 5,  step: 0.05, default: 0.3 },
+      filletSteps:  { label: 'fillet steps',   min: 2,   max: 64, step: 1,    default: 8 },
+    },
+    // Two Array.from arcs + corner points → the profile editor's parseBody
+    // now flags this as "too complex to decompose" and preserves the body
+    // verbatim on Save (see ProfileFnEditor bodyTooComplexToDecompose +
+    // memory: profile_editor_composeSource_bug).
+    body:
+`  const ro = Math.max(0.01, od / 2);
+  const ri = Math.max(0,    Math.min(bore / 2, ro - 0.01));
+  const L  = Math.max(0.01, len);
+  const f  = Math.max(0,    Math.min(fillet, L / 2, ro - ri));
+  const steps = Math.max(2, Math.round(filletSteps));
+  const topArc = Array.from({ length: steps + 1 }, (_, i) => {
+    const ang = -Math.PI / 2 + (i / steps) * (Math.PI / 2);
+    return [ro - f + f * Math.cos(ang), f + f * Math.sin(ang)];
+  });
+  const botArc = Array.from({ length: steps + 1 }, (_, i) => {
+    const ang = (i / steps) * (Math.PI / 2);
+    return [ro - f + f * Math.cos(ang), L - f + f * Math.sin(ang)];
+  });
+  const profile_pts = [[ri, 0], ...topArc, ...botArc, [ri, L]]`,
+  },
 ];
 
 export function templatesFor(set: 'cartesian' | 'revolve'): ProfileTemplate[] {
