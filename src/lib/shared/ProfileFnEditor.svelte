@@ -382,7 +382,22 @@
       //  (c) Truly empty (a fresh profile that had its moves deleted) — emit a
       //      visible empty array so the error surfaces clearly.
       const body = (seed?.body || '').trim();
-      if (body) return `export function build(p) {\n  ${body.replace(/\n/g, '\n  ')}\n}`;
+      if (body) {
+        // The body was extracted from a part where the same names existed as
+        // FUNCTION ARGS (e.g. `function name(segments, od, bore, …)`), so it
+        // uses bare `od / bore / …`. Inside `build(p)` those names don't
+        // exist unless we destructure. Prepend `const { od, bore, … } = p;`
+        // — but ONLY for names the body actually references AND that aren't
+        // already declared in it (avoid double-declaring a name the body's
+        // own `const X = …` block introduces, like `len` reused as a var).
+        const declRe = /\b(?:const|let|var)\s+([a-zA-Z_$][\w$]*)/g;
+        const declared = new Set<string>();
+        let dm: RegExpExecArray | null;
+        while ((dm = declRe.exec(body))) declared.add(dm[1]!);
+        const needed = usable.filter((k) => !declared.has(k) && new RegExp(`\\b${k}\\b`).test(body));
+        const verbatimDestr = needed.length ? `  const { ${needed.join(', ')} } = p;\n` : '';
+        return `export function build(p) {\n${verbatimDestr}  ${body.replace(/\n/g, '\n  ')}\n}`;
+      }
       return `export function build(p) {\n${destr}${ex}  return [];\n}`;
     }
     // When ANY repeat row is present, emit a RAW point-array body that mixes
