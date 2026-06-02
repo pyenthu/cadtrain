@@ -84,24 +84,41 @@ export function r_weld_extrude(
 
   const CS = wasm.CrossSection;
   const h = Math.max(0.01, length);
-  // The diagnostic arc:
-  //   * `extrude(h)` alone works (same call r_extrude uses).
-  //   * `extrude(h, nDivisions, 0)` with nDivisions > 0 produces a non-manifold
-  //     mesh — the intermediate slices are IDENTICAL to top + bottom (twist=0,
-  //     scaleTop=1), so manifold-3d sees coincident triangle pairs and rejects.
-  //   * `extrude(h, nDivisions, twistDegrees)` with twistDegrees ≠ 0 IS valid
-  //     because each slice differs by the twist increment.
-  // Branch: only pass nDivisions + twist when there's actual morphing to do.
+  // Branch matrix on (twist, taper). Uses CrossSection.extrude's NATIVE
+  // scaleTop parameter — the cross-section is multiplied by [sx, sy] at
+  // the top slice and linearly interpolated to (1, 1) at the bottom. We
+  // pass the Vec2 `[1 + taper, 1 + taper]` (not the scalar form — the
+  // scalar+warp combo collapses the top in manifold-3d 3.4.1; memory:
+  // manifold_extrude_scaletop_warp_bug). No warp post-pass, so the
+  // collapse-with-warp boundary case doesn't apply.
+  //
+  //   tw == 0, tp == 0   → bare extrude(h). No morph at all.
+  //   tw == 0, tp != 0   → extrude(h, 1, 0, [s, s]). Single slice top-to-bottom
+  //                        keyed off scaleTop only; nDivisions = 1 + non-1
+  //                        scaleTop means slices aren't coincident so the
+  //                        twist=0 degeneracy bug doesn't trigger.
+  //   tw != 0, tp == 0   → extrude(h, divs, twist). Twist morph only.
+  //   both               → extrude(h, divs, twist, [s, s]). One pass.
+  //
+  // Sign convention: taper > 0 flares (bottom wider), taper < 0 narrows
+  // (classic shaft taper). Clamp s to a small positive floor so dialing
+  // taper near -1 doesn't collapse the bottom to zero.
   const tw = Math.abs(twist);
   const tp = Math.abs(taper);
-  void divs;  // divs is meaningless without morph; tied to twist's smoothness if used
+  const s = Math.max(0.001, 1 + taper);
   if (tw < 0.001 && tp < 0.001) {
-    return new CS([loop]).extrude(h);   // straight extrusion — same as r_extrude
+    void divs;
+    return new CS([loop]).extrude(h);
   }
-  // Twist morphing path. Honor the user's divs (cap to 1..96). taper is
-  // dropped for v1 — scaleTop's [s, s] tuple breaks topology in 3.4.1 even
-  // when twist=0 (separate from the divs-with-zero-twist bug above). The
-  // hand-wound rail-weld K.50(b)' brings taper back via per-v scale.
+  if (tw < 0.001) {
+    // Taper-only path. nDivisions = 1 keeps the morph shallow but
+    // present, avoiding both the coincident-slice bug and unnecessary
+    // intermediate triangles when there's no twist.
+    return new CS([loop]).extrude(h, 1, 0, [s, s] as any);
+  }
   const nDiv = Math.max(1, Math.min(96, Math.round(divs)));
-  return new CS([loop]).extrude(h, nDiv, twist);
+  if (tp < 0.001) {
+    return new CS([loop]).extrude(h, nDiv, twist);
+  }
+  return new CS([loop]).extrude(h, nDiv, twist, [s, s] as any);
 }
