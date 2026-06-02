@@ -27,38 +27,13 @@ import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { compileProfileBuild } from './profile-fn';
-import { recognizeComposite } from './recognize-composite';
-import { partHashId } from '$lib/cad/part-id';
 import { paramKeysOf } from '$lib/cad/assembly-deps';
 
-/**
- * Wrap each recognized named PART instance's init with `__tag(<init>,
- * <hashId>)` so its geometry carries a stable source id through CSG
- * (color-by-source — see part-id.ts). Operates on the ORIGINAL source
- * (recognizer offsets map to it) and splices in reverse offset order so
- * earlier edits don't shift later spans. Only "parts" (instances whose
- * call is a declared `uses` dependency) are tagged — a `resolveProfile`
- * local is skipped, and `__tag` is a no-op on non-Manifolds anyway.
- * Returns the source unchanged when recognition isn't position-mapped
- * (type-stripped) → falls back to a single uniform color.
- */
-function tagInstanceSources(source: string): string {
-  let rec: any;
-  try { rec = recognizeComposite(source); } catch { return source; }
-  if (!rec.editable || !Array.isArray(rec.instances) || !rec.instances.length) return source;
-  const uses = new Set<string>(rec.uses ?? []);
-  const targets = rec.instances
-    .filter((i: any) => uses.has(i.call) && i.initStart >= 0 && i.initEnd > i.initStart)
-    .sort((a: any, b: any) => b.initStart - a.initStart);
-  let out = source;
-  for (const inst of targets) {
-    const id = partHashId(inst.name);
-    out = out.slice(0, inst.initStart)
-      + `__tag(${out.slice(inst.initStart, inst.initEnd)}, ${id})`
-      + out.slice(inst.initEnd);
-  }
-  return out;
-}
+// Color-by-source stamping is owned by the K.63 assembly emit path
+// (composition-tree.ts wraps each Call with `__tag(...)` at compose time).
+// Old primitive composites (.prim.ts that rely on recognize-composite) no
+// longer get per-part tagging in the loader — they fall back to a single
+// uniform color through CSG.
 
 type GeomFn = (...args: any[]) => any;
 
@@ -154,7 +129,7 @@ export async function buildPrimitiveGeom(
     // when there's no volume primitive with this id).
   }
 
-  let body = transpile(tagInstanceSources(source));
+  let body = transpile(source);
   // ALIAS POLICY — rewrite a dep's call sites in the body to a collision-proof
   // alias when any of:
   //   (a) the body declares a `const/let/var <dep>` shadowing the dep arg

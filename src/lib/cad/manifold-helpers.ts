@@ -153,13 +153,14 @@ export function empty(): any {
  * `runOriginalID`, so every triangle of this part carries it through
  * subsequent `.add`/`.subtract`/`.intersect`. After the final boolean,
  * `getMesh().runOriginalID` lets the renderer map each triangle back to
- * its part and color it (see `part-id.ts`, `analyzeParts`, `builder.ts`).
+ * its part and color it (see `part-id.ts`, `analyzeAssembly` in
+ * `server/part-colors.ts`, `builder.ts`).
  *
  * Injected into the /primitives sandbox as `__tag` and wrapped around each
- * recognized named instance by `buildPrimitiveGeom`. A no-op (returns the
- * value untouched) on anything that isn't a Manifold — e.g. a
- * `resolveProfile(...)` instance that returns a point array — so wrapping
- * is always safe.
+ * Call node by `composition-tree.emitNode` at compose time (K.63 assembly
+ * path). A no-op (returns the value untouched) on anything that isn't a
+ * Manifold — e.g. a `resolveProfile(...)` instance that returns a point
+ * array — so wrapping is always safe.
  */
 export function tagManifold(m: any, hashId: number): any {
   if (!m || typeof m.getMesh !== 'function') return m;

@@ -1,12 +1,17 @@
 /**
  * part-colors — build the per-part color lookup for a composite's render.
  *
- * Pairs with `tagInstanceSources` (primitive-loader): the loader stamps
- * each named part with `partHashId(name)`; this derives the matching
- * `hashId → color` table the renderer applies after CSG. The hashId is
- * the transport (survives boolean ops via Manifold's mesh relation); the
- * color is a CLIENT-OWNED, editable prop (`meta.instanceColors[name]`),
- * falling back to the deterministic per-name palette.
+ * The K.63 emit path (composition-tree.ts) stamps each Call node with
+ * `__tag(<call>, partHashId(alias))` at compose time, so the rendered
+ * mesh carries the alias's hashId through Manifold's relation. This
+ * module walks the source's `meta.composition` TreeNode and derives the
+ * matching `hashId → color` table the renderer applies after CSG.
+ *
+ * The OLD primitive-composite branch (recognizeComposite-driven, for
+ * pre-K.63 `.prim.ts` files with `const X = …` + `return X.add(Y)` chains)
+ * was deleted with the old composite editor — primitives without
+ * `meta.composition` fall through to the INACTIVE LUT and the renderer
+ * uses its material/heuristic path for them.
  *
  * Role rule (user spec): a part used as a SUBTRACT / INTERSECT tool does
  * not own a color — the surface it creates (the cut/bore wall) takes the
@@ -14,7 +19,6 @@
  * differently-colored plug. We implement that by mapping a subtractive
  * part's hashId straight to the body color.
  */
-import { recognizeComposite } from './recognize-composite';
 import { evalMetaLiteral } from './primitives-meta';
 import { colorsForInstance, DEFAULT_INNER_COLOR } from '$lib/shared/instance-colors';
 import { partHashId } from '$lib/cad/part-id';
@@ -46,72 +50,25 @@ const INACTIVE: PartColorLUT = {
 
 export function analyzeParts(source: string): PartColorLUT {
   // K.63 ASSEMBLY PATH — `.asm.ts` files carry meta.composition (a TreeNode)
-  // instead of the older `const X = …;` instance declarations
-  // recognizeComposite scans for. Detect the assembly shape and walk the
-  // composition tree separately so the per-instance colour swatches in
-  // CompositionEditor actually drive the bake. Without this branch, the
-  // K.63 source path 0-instances → INACTIVE → colours are written to
-  // meta.instanceColors but never applied at render time.
-  let metaForAsm: any = null;
-  try { metaForAsm = evalMetaLiteral(source); } catch { /* fall through */ }
-  if (metaForAsm?.composition && typeof metaForAsm.composition === 'object') {
-    return analyzeAssembly(metaForAsm);
-  }
-
-  let rec: any;
-  try { rec = recognizeComposite(source); } catch { return INACTIVE; }
-  const uses = new Set<string>(rec.uses ?? []);
-  const instances = (rec.instances ?? []).filter((i: any) => uses.has(i.call));
-  if (!instances.length) return INACTIVE;
-
-  let instanceColors: Record<string, any> = {};
-  try {
-    const meta = evalMetaLiteral(source);
-    if (meta?.instanceColors && typeof meta.instanceColors === 'object') instanceColors = meta.instanceColors;
-  } catch { /* meta-less / unparseable → palette only */ }
-
-  // Roles from the composition chain(s). An operand referenced by name in a
-  // `.subtract(X)` / `.intersect(X)` is a tool; base + `.add(X)` are additive.
-  const subtractiveNames = new Set<string>();
-  const additiveOrder: string[] = [];
-  const collect = (ops: any[] | undefined) => {
-    for (const o of ops ?? []) {
-      if (!o?.name) continue;
-      if (o.op === 'subtract' || o.op === 'intersect') subtractiveNames.add(o.name);
-      else additiveOrder.push(o.name); // base (op null) or add
-    }
-  };
-  collect(rec.operands);
-  for (const k of Object.keys(rec.chains ?? {})) collect(rec.chains[k]);
-
-  const instNames = new Set<string>(instances.map((i: any) => i.name));
-  const bodyName = additiveOrder.find((n) => instNames.has(n)) ?? instances[0].name;
-  const bodyId = partHashId(bodyName);
-  const bodyPair = colorsForInstance(bodyName, instanceColors[bodyName]);
-
-  const outer: Record<number, string> = {};
-  const inner: Record<number, string> = {};
-  const subtractive: number[] = [];
-  for (const inst of instances) {
-    const id = partHashId(inst.name);
-    const c = colorsForInstance(inst.name, instanceColors[inst.name]);
-    outer[id] = c.outer;
-    inner[id] = c.inner;
-    if (subtractiveNames.has(inst.name)) subtractive.push(id);
-  }
-  return { outer, inner, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
+  // and the loader's emit wraps each Call with `__tag(..., partHashId(alias))`.
+  // Walk the composition tree to enumerate aliases + their CSG role and
+  // build the LUT the renderer keys off. Non-assembly sources have no
+  // meta.composition → INACTIVE (renderer falls back to material colours).
+  let meta: any = null;
+  try { meta = evalMetaLiteral(source); } catch { /* unparseable meta — fall through */ }
+  if (!meta?.composition || typeof meta.composition !== 'object') return INACTIVE;
+  return analyzeAssembly(meta);
 }
 
 /** Per-instance colour LUT for a K.63 .asm.ts source. Each Call node in
  *  meta.composition is an instance — keyed by the alphabetic alias the
  *  CompositionEditor assigned (`A`, `B`, `C`, …) — and the alias is
- *  hashed via partHashId to match the loader's tagInstanceSources stamp.
+ *  hashed via partHashId to match the loader's tag stamp.
  *
  *  Subtract/intersect roles are derived by walking the tree: any Call
  *  that sits on the `.arg` side of a method node (or as a child of an
  *  intersect/subtract op anywhere on the tree) is a CSG tool. Tools
- *  take the body colour on their cut surfaces — same rule the primitive
- *  composite path uses. */
+ *  take the body colour on their cut surfaces. */
 function analyzeAssembly(meta: any): PartColorLUT {
   const instanceColors: Record<string, any> =
     (meta?.instanceColors && typeof meta.instanceColors === 'object') ? meta.instanceColors : {};

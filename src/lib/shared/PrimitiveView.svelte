@@ -33,10 +33,10 @@
   import ProfileEditor from './ProfileEditor.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import ParamGrid from './ParamGrid.svelte';
-  import ConstructionTree from './ConstructionTree.svelte';
   import ProfilePalette from './ProfilePalette.svelte';
   import type { VolProfile } from './ProfilePalette.svelte';
-  import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
+  // INSTANCE_PALETTE + colorsForInstance were used by the old composite UI's
+  // per-instance swatch popup; that's owned by CompositionEditor now.
   import { tipHost } from './floating-tip';
   import ProfileFnEditor from './ProfileFnEditor.svelte';
   import { dragNumber } from './dragNumber';
@@ -260,213 +260,29 @@
     pinnedParts = next;
   }
 
-  // ── Parts recognition ───────────────────────────────────────────────────
-  // Dual-control: the source.ts is the source of truth; the GUI introspects
-  // it to recognize the individual instances (parts). Read-only for now.
-  // A recognized instance is a PART when its call is in meta.uses; instances
-  // calling the weld toolkit (weldAndBuild, …) are leaf locals, not parts.
-  let recognized = $state<any>(null);
-  let recogStatus = $state<'idle' | 'loading' | 'error'>('idle');
-  // FATAL recognition error (the parse/recognize endpoint failed — there are no
-  // parts to show). This is the ONLY error that replaces the parts list.
-  let recogError = $state<string | null>(null);
-  // SOFT, non-fatal notice raised by an action on an ALREADY-recognized part
-  // (e.g. a profile arg we can't edit visually). It is shown inline ABOVE the
-  // parts accordion and NEVER removes the parts — the part stays listed + the
-  // sidebar is untouched. Cleared on the next successful recognition.
+  // SOFT, non-fatal notice raised by an action (e.g. a profile we can't edit
+  // visually). Shown inline above the Parameters accordion. Dismissible;
+  // cleared by callers when the action retries.
   let profileEditNote = $state<string | null>(null);
-  async function loadRecognition() {
-    recogStatus = 'loading'; recogError = null; profileEditNote = null;
-    try {
-      const r = await fetch('/api/primitives/recognize', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source: editedSource }),
-      });
-      if (!r.ok) { recogError = await r.text(); recogStatus = 'error'; return; }
-      recognized = await r.json();
-      recogStatus = 'idle';
-    } catch (e: any) { recogError = e?.message ?? String(e); recogStatus = 'error'; }
-  }
-  // Re-recognize whenever the Build tab is open and the source changes. The
-  // Build tab needs the recognized instance spans (Parts accordion) AND the
-  // meta.profiles value spans (the ✎ profile popups splice edits back here).
-  $effect(() => { if (tab === 'build') { void editedSource; loadRecognition(); } });
-  // Refresh the volume profile list when the Build tab opens (keyed on `tab`
-  // only, NOT editedSource — so it's one fetch per open, not per keystroke).
-  // Fresh each open so a just-saved/renamed profile's schema + palette aren't
-  // shown stale (the cause of the briefly-stale "pink" profile flash).
+
+  // Refresh the volume profile list when the Build tab opens (one fetch per
+  // open, not per keystroke). Fresh each open so a just-saved/renamed profile's
+  // schema + palette aren't shown stale (the cause of the briefly-stale "pink"
+  // profile flash).
   $effect(() => { if (tab === 'build') void loadVolProfiles(true); });
 
-  // ── Add-transform palette (mirrors the /components chain-op aid) ──────────
-  // A clean visual coding aid: a `+` on each Parts-tab instance row opens a
-  // palette of transforms. Picking one WRAPS the instance's init expression
-  // with that operator in editedSource — `const X = cyl(…)` becomes
-  // `const X = mv(cyl(…), [0, 0, 0])`. Extensible: add an entry here for each
-  // new transform helper (it just emits `op(<inner>, <args>)`).
-  type TxDef = { id: string; label: string; glyph: string; op: string; args: string; hint: string };
-  const TRANSFORMS: TxDef[] = [
-    { id: 'translate', label: 'Translate', glyph: '↔', op: 'mv',  args: '[0, 0, 0]',  hint: 'Move along X / Y / Z (Z-down: +z is deeper).' },
-    { id: 'rotate',    label: 'Rotate',    glyph: '⟳', op: 'rot', args: '[0, 0, 0]',  hint: 'Rotate about X / Y / Z in degrees.' },
-    // Future transforms (scale, mirror, twist, …) drop in here — each just
-    // emits `op(<inner>, <args>)` and the recognizer renders the new ↳ row.
-  ];
-  let txAdd = $state<{ instName: string; initStart: number; initEnd: number; px: number; py: number } | null>(null);
-  function openTxAdd(inst: any, ev: MouseEvent) {
-    if (!canEdit || inst.initStart < 0) return;
-    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    txAdd = {
-      instName: inst.name, initStart: inst.initStart, initEnd: inst.initEnd,
-      px: Math.max(8, Math.min(rect.left - 40, window.innerWidth - 240)),
-      py: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 220)),
-    };
-  }
-  function closeTxAdd() { txAdd = null; }
-  function addTransform(t: TxDef) {
-    if (!txAdd) return;
-    const inner = editedSource.slice(txAdd.initStart, txAdd.initEnd);
-    // Wrap the WHOLE init expr → the new op becomes the OUTERMOST transform
-    // (applied last), matching how the recognizer reads the chain.
-    spliceSource(txAdd.initStart, txAdd.initEnd, `${t.op}(${inner}, ${t.args})`);
-    closeTxAdd();
-  }
-  // Delete a transform = UNWRAP it: replace `op(inner, args)` with just `inner`.
-  function deleteTransform(t: any) {
-    if (!t || typeof t.callStart !== 'number' || t.callStart < 0) return;
-    spliceSource(t.callStart, t.callEnd, editedSource.slice(t.innerStart, t.innerEnd));
-  }
-
-  let usesSet = $derived(new Set<string>(recognized?.uses ?? []));
-  let parts = $derived((recognized?.instances ?? []).filter((i: any) => usesSet.has(i.call)));
-  let locals = $derived((recognized?.instances ?? []).filter((i: any) => !usesSet.has(i.call)));
-
-  // Option A — the client-generated "rune" layer. Resolve a part's arg
-  // expression (recognized source text) against the LIVE params so the GUI
-  // shows the parts LINKED to the params: drag a param and the resolved
-  // values update instantly (the geometry then re-bakes on Apply). Refs to
-  // non-param locals can't resolve client-side → returns null (raw text shown).
-  function fmtVal(v: any): string {
-    if (Array.isArray(v)) {
-      // Short numeric vec (e.g. mv's [x,y,z]) → inline; nested/long arrays
-      // (polygon profiles) → collapse so the row stays readable.
-      if (v.length <= 4 && v.every((x) => typeof x === 'number')) {
-        return '[' + v.map((n) => Math.round(n * 1000) / 1000).join(', ') + ']';
-      }
-      return '[…]';
-    }
-    if (typeof v === 'number') return String(Math.round(v * 1000) / 1000);
-    return String(v);
-  }
-  function resolveArgsText(argsText: string, p: Record<string, any>): string | null {
-    try {
-      const names = Object.keys(p);
-      const out = new Function(...names, `return [${argsText}]`)(...names.map((n) => p[n]));
-      return out.map(fmtVal).join(', ');
-    } catch { return null; }
-  }
-  // Reactive over `pending` — re-derives the instant a slider/input changes.
-  let resolvedParts = $derived(parts.map((inst: any) => ({
-    ...inst,
-    resolvedArgs: resolveArgsText(inst.argsText, pending),
-    txs: (inst.transforms ?? []).map((t: any) => ({ ...t, resolved: resolveArgsText(t.argsText, pending) })),
-  })));
-
-  // Round-trip: editable only when this is a volume primitive AND the
-  // source parsed from the ORIGINAL (positions map back). Editing an arg
-  // splices the new text into editedSource at the recognized offsets,
-  // making the Source dirty (Save persists). The recognition $effect then
-  // re-scans editedSource → fresh offsets.
-  let canEdit = $derived(editable && !!recognized?.editable);
+  // ── Editing ─────────────────────────────────────────────────────────────
+  // Editable when the part is a volume part (server says editable=true).
+  // Stdlib (r_revolve, r_extrude, …) ship with editable=false.
+  let canEdit = $derived(editable);
   function spliceSource(start: number, end: number, replacement: string) {
     if (start < 0 || end < 0) return;
     editedSource = editedSource.slice(0, start) + replacement + editedSource.slice(end);
   }
-  // ── K.56 Phase 3: per-instance op picker ────────────────────────────────
-  // Reads the CSG op the return-chain composes an instance with. Default
-  // assumption is 'add' (matches what the drag handler emits). The op is
-  // detected by scanning the source's `return …` for `\.(add|subtract|
-  // intersect)\s*\(\s*<NAME>\s*\)` — if found, that's the op. Otherwise
-  // assume add (the typical drag-drop default).
-  // K.63 M2.5: the per-row ⊕⊖∩ CSG ops toolbar + csgOpPopup picker were
-  // assembly-only chrome. Deleted — .asm.ts files route to CompositionEditor.
-  // Splice ONE recognized arg (offsets are relative to the instance's argsText).
-  // Edit one arg per commit — the recognition $effect re-scans between edits, so
-  // later args' offsets stay correct.
-  function spliceArg(inst: any, a: { start: number; end: number }, value: string) {
-    spliceSource(inst.argsStart + a.start, inst.argsStart + a.end, ' ' + value.trim());
-  }
 
-  // ── Per-part OUTER / INNER colours (accordion-title swatches) ───────────────
-  // Stored in meta.instanceColors[name] = { outer, inner } (back-compat: a bare
-  // string = outer). The renderer (analyzeParts → builder) reads them: outer =
-  // external skin, inner = the part's cut-surface colour. Edited live by
-  // splicing the instanceColors block in editedSource → source dirty → re-bake.
-  let colorPopup = $state<{ name: string; which: 'outer' | 'inner'; x: number; y: number } | null>(null);
-
-  /** Locate the `instanceColors: { … }` block in editedSource (balanced
-   *  braces). Returns the span from the `instanceColors` key to just past its
-   *  closing `}`, plus the object-literal sub-span. null when absent. */
-  function instanceColorsSpan(): { start: number; end: number; objStart: number } | null {
-    const m = /instanceColors\s*:\s*\{/.exec(editedSource);
-    if (!m) return null;
-    const objStart = editedSource.indexOf('{', m.index);
-    let depth = 0, i = objStart;
-    for (; i < editedSource.length; i++) {
-      const c = editedSource[i];
-      if (c === '{') depth++;
-      else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
-    }
-    return { start: m.index, end: i, objStart };
-  }
-  function readInstanceColors(): Record<string, { outer?: string; inner?: string }> {
-    const span = instanceColorsSpan();
-    if (!span) return {};
-    try {
-      const obj = new Function('return (' + editedSource.slice(span.objStart, span.end) + ')')();
-      const out: Record<string, { outer?: string; inner?: string }> = {};
-      for (const k of Object.keys(obj || {})) {
-        const v = obj[k];
-        out[k] = typeof v === 'string' ? { outer: v } : (v && typeof v === 'object' ? v : {});
-      }
-      return out;
-    } catch { return {}; }
-  }
-  /** Resolved {outer, inner} for a part — overrides merged over the palette. */
-  function partColors(name: string): { outer: string; inner: string } {
-    return colorsForInstance(name, readInstanceColors()[name]);
-  }
-  function serializeInstanceColors(obj: Record<string, { outer?: string; inner?: string }>): string {
-    const entries = Object.entries(obj)
-      .filter(([, v]) => v && (v.outer || v.inner))
-      .map(([k, v]) => {
-        const parts: string[] = [];
-        if (v.outer) parts.push(`outer: '${v.outer}'`);
-        if (v.inner) parts.push(`inner: '${v.inner}'`);
-        return `${k}: { ${parts.join(', ')} }`;
-      });
-    return `instanceColors: { ${entries.join(', ')} }`;
-  }
-  function setPartColor(name: string, which: 'outer' | 'inner', hex: string) {
-    const cur = readInstanceColors();
-    cur[name] = { ...(cur[name] || {}), [which]: hex };
-    const block = serializeInstanceColors(cur);
-    const span = instanceColorsSpan();
-    if (span) {
-      editedSource = editedSource.slice(0, span.start) + block + editedSource.slice(span.end);
-    } else {
-      const mm = /export\s+const\s+meta\s*=\s*\{/.exec(editedSource);
-      if (!mm) return;
-      const at = mm.index + mm[0].length;
-      editedSource = editedSource.slice(0, at) + `\n  ${block},` + editedSource.slice(at);
-    }
-  }
-  function openColorPopup(name: string, which: 'outer' | 'inner', ev: MouseEvent) {
-    colorPopup = { name, which, x: ev.clientX, y: ev.clientY };
-  }
-  function pickColor(hex: string) {
-    if (!colorPopup) return;
-    setPartColor(colorPopup.name, colorPopup.which, hex);
-    colorPopup = null;
-  }
+  // Per-part instanceColors swatches lived here for the old composite UI
+  // (.prim.ts). The strip removed that path; CompositionEditor owns
+  // per-instance colours for .asm.ts files now (its own swatch helpers).
 
   // ── Profile popup for instances of a profile-bearing primitive ──────────────
   // When a part's `call` resolves to a primitive that declares a `polygon`
@@ -478,288 +294,11 @@
   //
   // The leaf's param schema (which arg index is the polygon, plus its
   // yDown/labels) is fetched lazily + cached, keyed by the call id.
-  type LeafProfile = { argIndex: number; yDown: boolean; hLabel: string; vLabel: string; revolve: boolean };
-  let leafProfileCache = $state<Record<string, LeafProfile | null>>({});
-  // Ordered param NAMES per leaf call → labels for the per-arg cards in the
-  // Parts tab. Populated by fetchLeafProfile (same fetch as the profile cache).
-  let leafMetaCache = $state<Record<string, string[]>>({});
-
-  async function fetchLeafProfile(call: string): Promise<LeafProfile | null> {
-    if (call in leafProfileCache) return leafProfileCache[call];
-    let result: LeafProfile | null = null;
-    try {
-      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(call)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const params = data?.params ?? {};
-        const keys = Object.keys(params);
-        leafMetaCache = { ...leafMetaCache, [call]: keys };
-        const idx = keys.findIndex((k) => params[k]?.type === 'polygon' || params[k]?.type === 'profile');
-        if (idx >= 0) {
-          const ps = params[keys[idx]];
-          const yDown = !!ps.yDown;
-          result = {
-            argIndex: idx,
-            yDown,
-            hLabel: ps.hLabel ?? (yDown ? 'r →' : 'x →'),
-            vLabel: ps.vLabel ?? (yDown ? 'z ↓' : 'y ↑'),
-            revolve: yDown, // revolve profiles use the Z-down (r,z) editor
-          };
-        }
-      }
-    } catch { /* leaf unavailable → no profile button */ }
-    leafProfileCache = { ...leafProfileCache, [call]: result };
-    return result;
-  }
-
-  // Whether a recognized part exposes a profile we can edit in the popup.
-  // Derives from the lazily-populated cache; the load $effect below fills it.
-  function profileInfoFor(call: string): LeafProfile | null {
-    return leafProfileCache[call] ?? null;
-  }
-  // Prefetch leaf-profile metadata for every editable part so the ✎ button
-  // appears without a click. Runs whenever the recognized parts change.
-  $effect(() => {
-    if (!canEdit) return;
-    for (const inst of parts as any[]) void fetchLeafProfile(inst.call);
-  });
-
-  // Split an arg-list string into its top-level argument substrings, ignoring
-  // commas nested inside (), [], {}, or quotes. Returns each segment's TEXT
-  // plus its [start, end) offset WITHIN argsText so we can splice precisely.
-  function splitTopLevelArgs(argsText: string): Array<{ text: string; start: number; end: number }> {
-    const out: Array<{ text: string; start: number; end: number }> = [];
-    let depth = 0, segStart = 0, quote = '';
-    for (let i = 0; i < argsText.length; i++) {
-      const c = argsText[i];
-      if (quote) { if (c === quote && argsText[i - 1] !== '\\') quote = ''; continue; }
-      if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
-      if (c === '(' || c === '[' || c === '{') depth++;
-      else if (c === ')' || c === ']' || c === '}') depth--;
-      else if (c === ',' && depth === 0) { out.push({ text: argsText.slice(segStart, i), start: segStart, end: i }); segStart = i + 1; }
-    }
-    out.push({ text: argsText.slice(segStart), start: segStart, end: argsText.length });
-    return out;
-  }
-
-  // ── Profile popup state ──────────────────────────────────────────────────
-  // The profile arg of an instance (Parts tab) can be one of two editable
-  // shapes under the Svelte-component (meta.profiles) model:
-  //   - 'profile' — `meta.profiles.<name>.value` (the encapsulated default,
-  //     already extracted). The popup edits THAT value literal in the buffer.
-  //   - 'literal' — an inline `[[x,y],…]` array. The popup edits it in place
-  //     AND offers "Promote to profile" (extract the literal into a named
-  //     meta.profiles entry + replace the inline arg with meta.profiles.<n>.value).
-  // Anything else (other expression) → refuse.
-  let profileEdit = $state<{
-    instName: string;
-    call: string;
-    info: LeafProfile;
-    mode: 'literal' | 'profile';
-    /** Absolute offsets in editedSource of the value to splice on Apply:
-     *  the inline array literal ('literal') or the meta.profiles value ('profile'). */
-    profStart: number;
-    profEnd: number;
-    /** 'profile' mode only — the profile name being edited. */
-    profileName: string | null;
-    /** True when this 'literal' arg can be promoted to a meta.profiles entry. */
-    canPromote: boolean;
-    px: number;
-    py: number;
-  } | null>(null);
-  let profilePts = $state<[number, number][]>([]);
-  let profileBaseline = ''; // JSON of pts at open → dirty detection
-  let promoteBusy = $state(false);
-
-  // Match `meta.profiles.<name>.value` (or a `P.<name>` merge ref) → the
-  // profile name. Returns null when the segment isn't a profile reference.
-  function profileRefName(segText: string): string | null {
-    let m = /^meta\s*\.\s*profiles\s*\.\s*([a-z_$][a-z0-9_$]*)\s*\.\s*value$/i.exec(segText);
-    if (m) return m[1];
-    m = /^[A-Za-z_$][\w$]*\s*\.\s*([a-z_$][a-z0-9_$]*)$/i.exec(segText); // P.body
-    if (m && (recognized?.profiles ?? []).some((p: any) => p.name === m![1])) return m[1];
-    return null;
-  }
-
-  // ── Functional profile detection (r_rotate / function-first r_revolve) ──────
-  // A FUNCTIONAL parametric profile arg looks like
-  //   resolveProfile({ kind: 'cylinder', params: { … } })
-  // The OLD `[^{}]*` regex broke whenever a brace appeared before `kind` (e.g.
-  // `{ params: {…}, kind: 'x' }` — params first). Pull the `kind` literal out of
-  // the FULL `resolveProfile(...)` argument object regardless of property order
-  // or nested braces, so the function path is detected for EVERY ordering — the
-  // "isn't a literal array" error must NEVER fire for a functional profile.
-  function kindFromResolveCall(text: string): string | null {
-    // Find the first `kind:` after a `resolveProfile(` opener. We don't depend
-    // on brace nesting — just locate the resolveProfile call, then the first
-    // `kind: '…'` that follows it.
-    const open = /resolveProfile\s*\(/i.exec(text);
-    if (!open) return null;
-    const after = text.slice(open.index + open[0].length);
-    const m = /\bkind\s*:\s*['"`]([a-z_$][\w$]*)['"`]/i.exec(after);
-    return m ? m[1] : null;
-  }
-  // True when `text` references resolveProfile at all (even if we can't read the
-  // kind) — used to route to the functional editor instead of erroring.
-  function hasResolveProfile(text: string): boolean {
-    return /resolveProfile\s*\(/i.test(text);
-  }
-  // Resolve a profile-arg SEGMENT (the text of an instance's profile arg) to its
-  // function-profile kind: either an inline `resolveProfile({kind})` OR a bare
-  // local var bound to one (`const X_profile = resolveProfile({kind})`). Returns
-  // { kind } when functional (kind may be null if unreadable but a resolveProfile
-  // IS present), or null when the segment is not a functional profile at all.
-  function functionalProfileForSeg(segText: string): { kind: string | null } | null {
-    if (hasResolveProfile(segText)) return { kind: kindFromResolveCall(segText) };
-    // A bare identifier → look up its `const <id> = resolveProfile(...)` decl.
-    if (/^[A-Za-z_$][\w$]*$/.test(segText)) {
-      const esc = segText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const declM = new RegExp(`\\b(?:const|let|var)\\s+${esc}\\s*=\\s*([\\s\\S]*?)(?:;|\\n)`).exec(editedSource);
-      if (declM && hasResolveProfile(declM[1])) return { kind: kindFromResolveCall(declM[1]) };
-    }
-    return null;
-  }
-
-  // Open the popup for a recognized instance. We re-locate the profile arg
-  // against the LIVE editedSource (offsets shift as the user edits) by reading
-  // the recognized argsStart/argsEnd then sub-splitting the arg list.
-  function openProfilePopup(inst: any, info: LeafProfile, ev: MouseEvent) {
-    if (inst.argsStart < 0 || inst.argsEnd < 0) return;
-    const argsText = editedSource.slice(inst.argsStart, inst.argsEnd);
-    const segs = splitTopLevelArgs(argsText);
-    const seg = segs[info.argIndex];
-    if (!seg) return;
-    const segText = seg.text.trim();
-    const lead = seg.text.length - seg.text.trimStart().length;
-    const segStart = inst.argsStart + seg.start + lead;
-    const segEnd = inst.argsStart + seg.end - (seg.text.length - seg.text.trimEnd().length);
-    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    const px = Math.max(8, Math.min(rect.left - 380, window.innerWidth - 480));
-    const py = Math.max(8, Math.min(rect.top, window.innerHeight - 360));
-
-    // Case 1 — a meta.profiles reference → edit that profile's value literal.
-    const refName = profileRefName(segText);
-    if (refName) {
-      const rp = (recognized?.profiles ?? []).find((p: any) => p.name === refName);
-      if (rp && rp.valueStart >= 0) {
-        let pts: [number, number][] | null = null;
-        try {
-          const parsed = JSON.parse(editedSource.slice(rp.valueStart, rp.valueEnd).trim());
-          if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
-        } catch { /* value isn't a literal array */ }
-        if (pts) {
-          profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
-          profileBaseline = JSON.stringify(profilePts);
-          profileEdit = { instName: inst.name, call: inst.call, info, mode: 'profile', profStart: rp.valueStart, profEnd: rp.valueEnd, profileName: refName, canPromote: false, px, py };
-          return;
-        }
-      }
-      profileEditNote = `Can't edit ${inst.name}'s profile — "${segText}" references a profile with no literal value. (Edit it in the Profiles tab.)`;
-      return;
-    }
-
-    // Case 2 — inline literal array → edit in place + offer Promote.
-    let pts: [number, number][] | null = null;
-    try {
-      const parsed = JSON.parse(segText);
-      if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) pts = parsed as [number, number][];
-    } catch { /* not a literal array (expression) → can't edit visually */ }
-    if (!pts) {
-      // Case 3 — a resolveProfile({kind,params}) FUNCTIONAL parametric profile
-      // (function-first parts: r_rotate, and function-first r_revolve). You
-      // NEVER drag vertices on a function — its params ARE the part's params
-      // (edited in the Parameters panel / part accordion). So editing the
-      // profile of a functional part opens the FUNCTIONAL editor (the profile
-      // SELECTOR + param editor), NOT the vertex ProfileEditor. Matches both the
-      // inline call AND a local var (`const profile = resolveProfile({kind:'X'})`),
-      // in ANY property order. The "isn't a literal array" error must NEVER fire
-      // for a functional profile.
-      const fn = functionalProfileForSeg(segText);
-      if (fn) {
-        // Open the unified functional editor directly (selector in its title
-        // repoints the part). If the kind literal couldn't be read (unusual
-        // hand-edit), fall back to the default revolve profile so we STILL open
-        // the functional editor instead of erroring — never the vertex path.
-        void openInstanceFnEditor(inst, info, fn.kind ?? 'cylinder');
-        return;
-      }
-      profileEditNote = `Can't edit ${inst.name}'s profile visually — arg ${info.argIndex} isn't a literal [[x,y],…] array, a meta.profiles reference, or a resolveProfile function.`; return;
-    }
-    profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
-    profileBaseline = JSON.stringify(profilePts);
-    const canPromote = !!recognized?.editable && (recognized.profilesInsertPos >= 0 || recognized.metaInsertPos >= 0);
-    profileEdit = { instName: inst.name, call: inst.call, info, mode: 'literal', profStart: segStart, profEnd: segEnd, profileName: null, canPromote, px, py };
-  }
-  let profileDirty = $derived(profileEdit !== null && JSON.stringify(profilePts) !== profileBaseline);
-  function closeProfilePopup() { profileEdit = null; }
-  // Apply: serialize the edited polygon and splice it over the target (inline
-  // literal or meta.profiles value) in editedSource. → Source dirty; canvases
-  // re-bake off editedSource; the recognition $effect re-scans.
-  function applyProfile() {
-    if (!profileEdit) return;
-    const json = JSON.stringify(profilePts);
-    spliceSource(profileEdit.profStart, profileEdit.profEnd, json);
-    profileBaseline = json;
-    closeProfilePopup();
-  }
-  // Composite popup: the inline profile is a raw point literal (not a {kind}
-  // descriptor), so the searchable dropdown loads the chosen shape's polygon
-  // into the editor (like the old preset chips, but searchable + thumbnailed).
-  // Apply then splices these points back into the call.
-  function pickProfileShape(id: string, origin: 'builtin' | 'volume') {
-    let pts: [number, number][] | null = null;
-    const def = PROFILE_REGISTRY[id];
-    if (origin === 'builtin' && def) {
-      try { pts = def.build(defaultsFor(def)) as [number, number][]; } catch { /* ignore */ }
-    } else {
-      const v = volProfiles.find((x) => x.id === id);
-      if (v) {
-        try { pts = resolveProfile(Array.isArray(v.points) ? v.points : { kind: v.kind!, params: v.params ?? {} }) as [number, number][]; } catch { /* ignore */ }
-      }
-    }
-    if (pts && pts.length) profilePts = pts.map((p) => [p[0], p[1]] as [number, number]);
-  }
-
-  // ── Profile shape extraction (for the shape-icon previews) ───────────────
-  // Pull the polygon points for a recognized part instance WITHOUT opening the
-  // popup — mirrors openProfilePopup's locate logic (meta.profiles ref OR inline
-  // literal). Returns null when the arg isn't a literal/profile we can draw.
-  function profilePtsPreview(inst: any): [number, number][] | null {
-    const info = profileInfoFor(inst.call);
-    if (!info || inst.argsStart < 0 || inst.argsEnd < 0) return null;
-    try {
-      const argsText = editedSource.slice(inst.argsStart, inst.argsEnd);
-      const seg = splitTopLevelArgs(argsText)[info.argIndex];
-      if (!seg) return null;
-      const segText = seg.text.trim();
-      const refName = profileRefName(segText);
-      if (refName) {
-        const rp = (recognized?.profiles ?? []).find((p: any) => p.name === refName);
-        if (rp && rp.valueStart >= 0) {
-          const parsed = JSON.parse(editedSource.slice(rp.valueStart, rp.valueEnd).trim());
-          if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) return parsed as [number, number][];
-        }
-        return null;
-      }
-      const fn = functionalProfileForSeg(segText);
-      if (fn?.kind) {
-        const schema = profileSchemaForKind(fn.kind);
-        if (schema) {
-          const params: Record<string, number> = {};
-          for (const n of Object.keys(schema)) {
-            if (n in effectiveSchema && effectiveSchema[n]?.type !== 'polygon') {
-              const v = applied[n] ?? pending[n] ?? effectiveSchema[n]?.default;
-              if (typeof v === 'number') params[n] = v;
-            }
-          }
-          return resolveProfile({ kind: fn.kind, params });
-        }
-      }
-      const parsed = JSON.parse(segText);
-      if (Array.isArray(parsed) && parsed.every((p) => Array.isArray(p) && p.length === 2)) return parsed as [number, number][];
-    } catch { /* not a literal we can draw */ }
-    return null;
-  }
+  // The leaf-profile cache (fetchLeafProfile / profileInfoFor / leafMetaCache
+  // / splitTopLevelArgs) + composite popup state (profileEdit, profileRefName,
+  // kindFromResolveCall, functionalProfileForSeg, …) all served the old
+  // composite UI's per-instance profile editor. Removed with the strip.
+  // Leaf polygon-param popups (`openLeafProfile`) still live below.
 
   // Build an SVG path `d` from profile polygon points, fitted into a
   // `size`×`size` box (with `pad` margin). MUST match ProfilePalette.thumb().
@@ -896,11 +435,8 @@
   // target 'leaf' = a standalone leaf primitive's polygon param (pickPaletteProfile);
   // 'instance' = a composite Parts-list instance's profile arg (pickProfileShape).
   let fnEditor = $state<{
-    target: 'leaf' | 'instance'; pname: string | null;
+    target: 'leaf'; pname: string | null;
     set: 'revolve' | 'cartesian'; seed: any;
-    /** When editing a PART's function profile: the binding used by the title
-     *  selector to repoint the part (swap which profile drives it). */
-    bind?: { instName: string; kind: string; revolve: boolean } | null;
     px: number; py: number;
   } | null>(null);
   // Profile identity (id/name/description/tags) is owned here so the title-bar ⚙
@@ -931,9 +467,9 @@
   function editorOpenPos() {
     return { px: Math.max(258, Math.round(window.innerWidth - 1010)), py: 64 };
   }
-  function openFnEditor(target: 'leaf' | 'instance', pname: string | null, set: 'revolve' | 'cartesian', ev: MouseEvent) {
+  function openFnEditor(pname: string | null, set: 'revolve' | 'cartesian', ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    fnEditor = { target, pname, set, seed: null, ...fnEditorPos(r.left, r.bottom) };
+    fnEditor = { target: 'leaf', pname, set, seed: null, ...fnEditorPos(r.left, r.bottom) };
   }
   // EDIT-EXISTING (K.22 D): fetch a saved function profile's source + params and
   // open the editor seeded from it. Save then UPDATES it (same id overwrites).
@@ -971,14 +507,14 @@
     const i = source.indexOf('{'), j = source.lastIndexOf('}');
     return i >= 0 && j > i ? source.slice(i + 1, j).replace(/^\n/, '').replace(/\n\s*$/, '') : source;
   }
-  async function editFnProfile(target: 'leaf' | 'instance', pname: string | null, id: string) {
+  async function editFnProfile(pname: string | null, id: string) {
     try {
       const r = await fetch(`/api/primitives/profiles/source?id=${encodeURIComponent(id)}`);
       if (!r.ok) return;
       const p = await r.json();
       if (!p.source) return; // configured/drawn profile — no build() to edit
       fnEditor = {
-        target, pname, set: p.set ?? 'revolve',
+        target: 'leaf', pname, set: p.set ?? 'revolve',
         seed: { id: p.id, label: p.label, description: p.description, tags: p.tags, params: p.params, body: bodyOf(p.source) },
         ...editorOpenPos(),
       };
@@ -1020,41 +556,17 @@
     }
     return curatedSeed(kind);
   }
-  // Open the editor bound to an instance's function profile (`resolveProfile({kind})`).
-  async function openInstanceFnEditor(inst: any, info: LeafProfile, kind: string) {
-    const set: 'revolve' | 'cartesian' = info.revolve ? 'revolve' : 'cartesian';
-    const pos = editorOpenPos();
-    const bind = { instName: inst.name, kind, revolve: !!info.revolve };
-    const seed = await seedForKind(kind);
-    fnEditor = { target: 'instance', pname: null, set, seed, bind, ...pos };
-  }
-  // Title selector → swap WHICH profile drives the part: repoint the part's
-  // source (kind string, regex-relocated so it survives offset shifts) then
-  // reseed the editor from the picked profile. Volume kinds resolve via the P6
-  // bake path, so both curated + volume swaps work.
-  async function swapEditorProfile(id: string, _origin: 'builtin' | 'volume') {
-    const b = fnEditor?.bind;
-    if (!b || id === b.kind) return;
-    const esc = b.kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
-    if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + b.kind.length, id); }
-    const pos = { px: fnEditor!.px, py: fnEditor!.py };
-    const nb = { ...b, kind: id };
-    const seed = await seedForKind(id);
-    fnEditor = { target: 'instance', pname: null, set: fnEditor!.set, seed, bind: nb, ...pos };
-  }
+  // openInstanceFnEditor / swapEditorProfile / partProfile{Kind,Fn,Loc,
+  // ParamsView,Names}, profileSchemaForKind, parseDescriptor, applyPart-
+  // ProfileRaw, setPartProfileParamRaw, openProfileSwap / closeProfileSwap /
+  // regenRevolveSource / swapPartProfile / leafKindOptions — all served
+  // the old composite UI's part-row profile selector + functional editor
+  // binding. Removed with the strip.
+
   async function onFnSaved(id: string) {
     const ed = fnEditor;
     await loadVolProfiles(true);
-    // Repoint the bound part's function profile to the saved id (so editing a
-    // profile OR saving it as a new custom one actually drives the part).
-    if (ed?.bind && id !== ed.bind.kind) {
-      const esc = ed.bind.kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
-      if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + ed.bind.kind.length, id); }
-    } else if (ed?.target === 'leaf' && ed.pname) {
-      pickPaletteProfile(ed.pname, id, 'volume');
-    }
+    if (ed?.target === 'leaf' && ed.pname) pickPaletteProfile(ed.pname, id, 'volume');
     fnEditor = null;
   }
 
@@ -1067,226 +579,6 @@
     return d && typeof d === 'object' && !Array.isArray(d) && 'kind' in d ? d.kind : '';
   }
 
-  // ── Function-profile params shown INSIDE the part row ─────────────────────
-  // A revolve part driven by a function profile (`resolveProfile({kind})`,
-  // inline or via a named local) has the profile's params LIFTED into the
-  // part's meta.params. Surface those params right inside the part's accordion
-  // (not only the top Parameters panel) so they're encapsulated with the part
-  // that uses them — editable there, sharing the same pending/applied state.
-  // The function-profile kind a part instance is driven by (null if none).
-  // Routes through functionalProfileForSeg so it's robust to property order +
-  // nested braces (the old `[^{}]*` regex failed when params preceded kind).
-  function partProfileKind(inst: any): string | null {
-    const fn = partProfileFn(inst);
-    return fn ? fn.kind : null;
-  }
-  // The FUNCTIONAL profile descriptor a part instance is driven by, or null when
-  // the profile arg is NOT a resolveProfile function (e.g. legacy raw vertices).
-  // `kind` may be null when the kind literal couldn't be read but a resolveProfile
-  // IS present — the part is STILL functional and must use the functional editor.
-  function partProfileFn(inst: any): { kind: string | null } | null {
-    const info = profileInfoFor(inst.call);
-    if (!info || inst.argsStart < 0) return null;
-    const seg = splitTopLevelArgs(inst.argsText)[info.argIndex];
-    if (!seg) return null;
-    return functionalProfileForSeg(seg.text.trim());
-  }
-  // The profile's param SCHEMA (curated registry, else a volume ƒ profile).
-  function profileSchemaForKind(kind: string): Record<string, any> | null {
-    // VOLUME wins over the same-named curated kind — matches the bake (the loader
-    // resolves a volume ƒ-profile over the curated one), so the lifted params line
-    // up with the build that actually runs.
-    const v = volProfiles.find((p) => p.id === kind) as any;
-    if (v && v.params && typeof v.params === 'object') return v.params;
-    const def = PROFILE_REGISTRY[kind];
-    return def ? (def.params as any) : null;
-  }
-  // Profile param names that are ALSO part params (lifted) — those we can show
-  // + edit inside the part row. Order follows the profile schema.
-  function partProfileParamNames(inst: any): string[] {
-    const kind = partProfileKind(inst);
-    if (!kind) return [];
-    const schema = profileSchemaForKind(kind);
-    if (!schema) return [];
-    return Object.keys(schema).filter((n) => n in effectiveSchema && effectiveSchema[n]?.type !== 'polygon');
-  }
-  // A filtered schema (just the named params) to feed ParamGrid in the part row.
-  function pickSchema(names: string[]): Record<string, any> {
-    const out: Record<string, any> = {};
-    for (const n of names) if (effectiveSchema[n]) out[n] = effectiveSchema[n];
-    return out;
-  }
-
-  // ── Self-contained profile params (INLINE descriptor, not meta.params) ─────
-  // A function-profile part's profile is a named local
-  // `const X_profile = resolveProfile({ kind:'…', params:{ …literals… } });`.
-  // Its params are NOT lifted to meta.params, so they render HERE in the part
-  // row (read from the descriptor, spliced back on edit) — keeping the part
-  // self-contained (nothing in the top Parameters panel). The inline
-  // `r_revolve(resolveProfile(…), …)` form (no named local) falls back to ✎.
-
-  /** Source span + text of a part's resolveProfile descriptor object `{…}`
-   *  (via its named `*_profile` local). null when not a locatable named local. */
-  function partProfileLoc(inst: any): { argsText: string; start: number; end: number } | null {
-    const info = profileInfoFor(inst.call);
-    if (!info || inst.argsStart < 0) return null;
-    const seg = splitTopLevelArgs(inst.argsText)[info.argIndex];
-    if (!seg) return null;
-    const name = seg.text.trim();
-    if (!/^[a-zA-Z_$][\w$]*$/.test(name)) return null; // not a bare identifier
-    // Re-derive the descriptor span from the CURRENT editedSource by NAME +
-    // balanced braces — NOT the recognized offsets, which go STALE the instant a
-    // splice changes editedSource (the async re-recognize lags), so a rapid 2nd
-    // edit/swap spliced at the wrong place → extra-brace corruption. Locating
-    // `const <name> = resolveProfile({…})` fresh each time can't drift; and if
-    // the braces don't balance (already-corrupted source) we bail rather than
-    // compound the damage.
-    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const m = new RegExp(`\\b(?:const|let|var)\\s+${esc}\\s*=\\s*resolveProfile\\s*\\(`).exec(editedSource);
-    if (!m) return null;
-    let i = m.index + m[0].length;
-    while (i < editedSource.length && editedSource[i] !== '{') i++;
-    if (editedSource[i] !== '{') return null;
-    const start = i;
-    let depth = 0;
-    for (; i < editedSource.length; i++) {
-      const c = editedSource[i];
-      if (c === '{') depth++;
-      else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
-    }
-    if (depth !== 0) return null; // unbalanced → refuse to splice (no compounding)
-    return { argsText: editedSource.slice(start, i), start, end: i };
-  }
-  /** Parse `{ kind:'X', params:{ k: <raw>, … } }` → kind + RAW value text per
-   *  param (a number OR an expression like `od/2`). Uses splitTopLevelArgs so
-   *  commas inside `Math.max(a, b)` etc. don't break the split. */
-  function parseDescriptor(argsText: string): { kind: string | null; raw: Record<string, string> } {
-    const inner = argsText.trim().replace(/^\{/, '').replace(/\}$/, '');
-    const raw: Record<string, string> = {};
-    let kind: string | null = null;
-    for (const seg of splitTopLevelArgs(inner)) {
-      const t = seg.text.trim(); const ci = t.indexOf(':');
-      if (ci < 0) continue;
-      const key = t.slice(0, ci).trim(); const val = t.slice(ci + 1).trim();
-      if (key === 'kind') { const km = /['"]([^'"]+)['"]/.exec(val); kind = km ? km[1] : null; }
-      else if (key === 'params') {
-        const pinner = val.trim().replace(/^\{/, '').replace(/\}$/, '');
-        for (const ps of splitTopLevelArgs(pinner)) {
-          const pt = ps.text.trim(); const pci = pt.indexOf(':');
-          if (pci > 0) raw[pt.slice(0, pci).trim()] = pt.slice(pci + 1).trim();
-        }
-      }
-    }
-    return { kind, raw };
-  }
-  /** Render model for the part-row profile params: kind schema + RAW value text
-   *  per param (number or expression), filled from the descriptor or defaults. */
-  function partProfileParamsView(inst: any): { kind: string; names: string[]; schema: Record<string, any>; raw: Record<string, string> } | null {
-    const loc = partProfileLoc(inst);
-    if (!loc) return null;
-    const { kind, raw } = parseDescriptor(loc.argsText);
-    if (!kind) return null;
-    // Schema (min/max/step/labels) comes from the kind — but for a VOLUME
-    // profile it lives in the lazily-loaded `volProfiles`, which may not be
-    // loaded yet. FALL BACK to the descriptor's OWN param keys so the part's
-    // params render from the inline values regardless (the bounds fill in once
-    // volProfiles loads). Without this the params blanked out until the user
-    // opened the profile list.
-    const schema = profileSchemaForKind(kind) ?? {};
-    const schemaNames = Object.keys(schema);
-    const names = schemaNames.length ? schemaNames : Object.keys(raw);
-    if (!names.length) return null;
-    const out: Record<string, string> = {};
-    for (const n of names) out[n] = (raw[n] ?? '').trim() || String((schema[n] as any)?.default ?? 0);
-    return { kind, names, schema, raw: out };
-  }
-  /** Rebuild `{ kind, params:{…} }` from RAW value texts (schema order) + splice.
-   *  Values go in AS-IS, so a literal stays a number and an expression (`od/2`,
-   *  referencing the part's meta.params) is preserved + evaluated in scope. */
-  function applyPartProfileRaw(inst: any, kind: string, raw: Record<string, string>, schema: Record<string, any>): void {
-    const loc = partProfileLoc(inst);
-    if (!loc) return;
-    const body = Object.keys(schema).map((n) => `${n}: ${(raw[n] ?? '').trim() || String((schema[n] as any)?.default ?? 0)}`).join(', ');
-    spliceSource(loc.start, loc.end, `{ kind: '${kind}', params: { ${body} } }`);
-  }
-  /** Commit one inline-descriptor profile param (value OR expression). */
-  function setPartProfileParamRaw(inst: any, key: string, text: string): void {
-    const v = partProfileParamsView(inst);
-    if (!v) return;
-    applyPartProfileRaw(inst, v.kind, { ...v.raw, [key]: text }, v.schema);
-  }
-
-  // ── Searchable VISUAL profile picker (change the profile a revolve part uses) ─
-  // The user changes WHICH function profile drives the part via the SAME nice
-  // popup as a standalone leaf: a FloatingPanel-anchored ProfilePalette dropdown
-  // (searchable, icon + description). Selecting one RE-LIFTS the new profile's
-  // full param schema onto the part. (D2 — visual + functional parity.)
-  // Carries the inst name + the anchor position (under the ▾ button) so the
-  // popup drops under the row, like the standalone leaf-profile popup.
-  let profileSwap = $state<{ instName: string; px: number; py: number } | null>(null);
-  function openProfileSwap(inst: any, ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    openPart(inst.name);
-    void loadVolProfiles();
-    profileSwap = {
-      instName: inst.name,
-      px: Math.max(8, Math.min(r.left - 40, window.innerWidth - 320)),
-      py: Math.min(r.bottom + 6, window.innerHeight - 320),
-    };
-  }
-  function closeProfileSwap() { profileSwap = null; }
-  // Regenerate the revolve scaffold source for a new profile — full re-lift
-  // (meta.params + signature + resolveProfile params + kind). Mirrors the cad
-  // stub builder but inlined (shared/ can't import cad/, layering rule). `engine`
-  // is the revolve primitive the body calls — 'r_revolve' (raw engine) or
-  // 'r_rotate' (function-first clone) — so an r_rotate part re-lifts as r_rotate.
-  function regenRevolveSource(id: string, kind: string, schema: Record<string, any>, engine: 'r_revolve' | 'r_rotate' = 'r_revolve'): string {
-    const names = Object.keys(schema);
-    const block = names.map((n) => {
-      const s = schema[n] ?? {};
-      const parts = [`label: ${JSON.stringify(s.label ?? n)}`, `min: ${s.min ?? 0}`, `max: ${s.max ?? 100}`, `step: ${s.step ?? 0.1}`, `default: ${typeof s.default === 'number' ? s.default : 1}`];
-      if (s.unit) parts.push(`unit: ${JSON.stringify(s.unit)}`);
-      return `    ${n}: { ${parts.join(', ')} },`;
-    }).join('\n');
-    const segBlock = engine === 'r_rotate'
-      ? `\n    segments: { label: 'segments', min: 8, max: 256, step: 1, default: 96 },`
-      : '';
-    const profSig = names.join(', ');
-    const sig = engine === 'r_rotate' ? `${profSig}, segments` : profSig;
-    const segsArg = engine === 'r_rotate' ? 'segments' : '96';
-    return `/**\n * ${id} — revolved part from the '${kind}' profile FUNCTION. Its params ARE the\n * profile's params (lifted): edit them and the profile re-resolves → ${engine}.\n */\nexport const meta = {\n  id: '${id}', name: '${id}',\n  description: 'Revolved part from the ${kind} profile.',\n  tags: ['revolve'],\n  uses: ['${engine}'],\n  params: {\n${block}${segBlock}\n  },\n};\nexport function ${id}(${sig}) {\n  const profile = resolveProfile({ kind: '${kind}', params: { ${profSig} } });\n  const body = ${engine}(profile, ${segsArg});\n  return body;\n}\n`;
-  }
-  // Swap the profile a part uses. For a pristine single-instance revolve scaffold
-  // we regenerate the whole source (clean re-lift of the new param set); otherwise
-  // we only repoint the kind string (the param sets must match).
-  async function swapPartProfile(inst: any, newKind: string) {
-    await loadVolProfiles();
-    const oldKind = partProfileKind(inst);
-    if (!oldKind || oldKind === newKind) { profileSwap = null; return; }
-    const schema = profileSchemaForKind(newKind);
-    const loc = partProfileLoc(inst);
-    if (loc && schema && Object.keys(schema).length) {
-      // Self-contained named-local descriptor → rebuild it with the new kind +
-      // its OWN defaults (clean inline params, no leftovers from the old kind).
-      // Stays self-contained (no meta.params lift, no whole-source regen — that
-      // desynced appliedArgs and "didn't re-render"); the source change re-fires
-      // the canvas bake, and the new kind's params now show in the part row.
-      const defaults: Record<string, string> = {};
-      for (const n of Object.keys(schema)) defaults[n] = String(typeof (schema[n] as any)?.default === 'number' ? (schema[n] as any).default : 0);
-      applyPartProfileRaw(inst, newKind, defaults, schema);
-    } else {
-      // Fallback (inline / unlocatable descriptor): repoint just the kind string.
-      const esc = oldKind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const m = new RegExp(`(\\bkind\\s*:\\s*['"])${esc}(['"])`).exec(editedSource);
-      if (m) { const kStart = m.index + m[1].length; spliceSource(kStart, kStart + oldKind.length, newKind); }
-      else profileEditNote = `Couldn't locate the '${oldKind}' profile to swap.`;
-    }
-    profileSwap = null;
-  }
-  function leafKindOptions(yd: boolean) {
-    const set = yd ? 'revolve' : 'cartesian';
-    return Object.values(PROFILE_REGISTRY).filter((def) => def.set === set);
-  }
   // Switch parametric kind. '' = detach to a custom point list (resolve the
   // current shape so the hand-editor starts from what's on screen).
   function setLeafKind(pname: string, kind: string) {
@@ -1311,118 +603,15 @@
     pending = { ...pending, [pname]: gen ? { points: next, _gen: gen } : { points: next } };
   }
 
-  // Promote an inline profile literal → an encapsulated meta.profiles entry
-  // (the Svelte-component model). Two edits, high→low offset:
-  //   1. replace the inline literal in the body with `meta.profiles.<name>.value`
-  //   2. add a `<name>: { …flags, value: <literal> }` entry to meta.profiles
-  //      (creating the `profiles: {…}` block if the meta has none)
-  // The flags mirror the leaf's polygon flags so the Profiles-tab ProfileEditor
-  // renders it the same way as the leaf.
-  function suggestProfileName(instName: string): string {
-    const taken = new Set<string>((recognized?.profiles ?? []).map((p: any) => p.name));
-    let base = instName || 'profile';
-    if (!taken.has(base)) return base;
-    let i = 2; while (taken.has(`${base}${i}`)) i++; return `${base}${i}`;
-  }
-  function promoteProfile() {
-    if (!profileEdit || profileEdit.mode !== 'literal' || !profileEdit.canPromote || promoteBusy) return;
-    const r = recognized;
-    if (!r) return;
-    promoteBusy = true;
-    try {
-      const pname = suggestProfileName(profileEdit.instName);
-      const info = profileEdit.info;
-      const literal = JSON.stringify(profilePts);
-      const flags: string[] = [`label: '${profileEdit.instName} section'`, `type: 'polygon'`];
-      if (info.yDown) flags.push(`yDown: true`, `hLabel: '${info.hLabel}'`, `vLabel: '${info.vLabel}'`);
-      flags.push(`value: ${literal}`);
-      const entryBody = `${pname}: { ${flags.join(', ')} }`;
-      const edits: Array<{ s: number; e: number; text: string }> = [
-        { s: profileEdit.profStart, e: profileEdit.profEnd, text: `meta.profiles.${pname}.value` },
-      ];
-      if (r.profilesInsertPos >= 0) {
-        // meta.profiles already exists → append an entry.
-        edits.push({ s: r.profilesInsertPos, e: r.profilesInsertPos, text: `${r.profilesHasElems ? ', ' : ''}${entryBody}` });
-      } else {
-        // No profiles block → synthesise one at the end of meta.
-        edits.push({ s: r.metaInsertPos, e: r.metaInsertPos, text: `, profiles: { ${entryBody} }` });
-      }
-      edits.sort((a, b) => b.s - a.s);
-      let out = editedSource;
-      for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
-      editedSource = out; // → Source dirty; the recognition $effect re-scans
-      closeProfilePopup();
-    } finally {
-      promoteBusy = false;
-    }
-  }
+  // promoteProfile (inline literal → meta.profiles entry) was removed with
+  // the old composite editor.
 
-  // ── Load primitive → scaffold an instance ────────────────────────────────
-  // Pick a primitive; we fetch its params (the catalog list is id-only/lazy),
-  // scaffold `const <inst> = <call>(<default args>)` before the return, wire
-  // it into the composition (`.add(<inst>)`) + meta.uses, and write it into
-  // the source. The inlined defaults are then editable via the rows above.
-  let loadPick = $state('');
-  let dragOverCanvas = $state(false);  // sidebar→canvas drag-to-add highlight
-  let loadBusy = $state(false);
-  // Dedupe by id — the merged catalog can legitimately contain the same id
-  // twice (e.g. a primitive present at both the flat location and a category
-  // sub-folder on the volume). A duplicate KEY in the {#each (e.id)} below
-  // throws `each_key_duplicate`, which crashes the whole inspector render
-  // (parts stuck on "recognizing…"). Dedupe so a volume inconsistency can
-  // never break the UI.
-  let loadable = $derived.by(() => {
-    const seen = new Set<string>();
-    const out: Array<{ id: string }> = [];
-    for (const e of catalog ?? []) {
-      if (e.id === id || seen.has(e.id)) continue;
-      seen.add(e.id); out.push(e);
-    }
-    return out;
-  });
-  function defaultArgFor(ps: any): string {
-    const d = ps?.default;
-    if (Array.isArray(d)) return JSON.stringify(d);
-    // A profile param's default is a { kind, params } descriptor — emit a
-    // resolveProfile(...) call, NEVER String(obj) → "[object Object]" (which
-    // produced an invalid arg and broke the recognizer/bake).
-    if (d && typeof d === 'object') {
-      return 'kind' in d ? `resolveProfile(${JSON.stringify(d)})` : JSON.stringify(d);
-    }
-    return String(d ?? 0);
-  }
-  function uniqueInstName(childId: string): string {
-    // Per user — use SHORT alphabetical names (A, B, C, ..., Z, AA, AB, …)
-    // instead of long type-derived names (rod_4, my_try_extreude2). Easier
-    // to read in chained .add(A).add(B).subtract(C) expressions and faster
-    // to type when wiring mv/rot offsets that reference other instances.
-    //
-    // FORBID names that would shadow an injected function param: the instance
-    // name must never equal the primitive it calls (`const X = X()` hits the
-    // temporal-dead-zone), nor any OTHER instance's call id, nor a sandbox
-    // helper. Also check the `<name>_profile` companion local that the
-    // r_revolve / r_extrude scaffold declares.
-    const callIds = [...parts, ...locals].map((i: any) => i.call);
-    const taken = new Set<string>([
-      ...[...parts, ...locals].map((i: any) => i.name),
-      ...callIds, childId,
-      'cyl', 'tube', 'mv', 'rot', 'revolve', 'profile_extrude', 'helix_band', 'empty',
-      'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'M', 'G', 'Math',
-    ]);
-    const free = (n: string) => !taken.has(n) && !taken.has(n + '_profile');
-    // Excel-column-style sequence: A, B, …, Z, AA, AB, …, AZ, BA, …
-    for (let i = 0; i < 10000; i++) {
-      let n = i, name = '';
-      do {
-        name = String.fromCharCode(65 + (n % 26)) + name;
-        n = Math.floor(n / 26) - 1;
-      } while (n >= 0);
-      if (free(name)) return name;
-    }
-    // Fall-through (impossibly many instances) — derive from childId.
-    const base = childId.replace(/^[rt]_/, '') || 'part';
-    let i = 2; while (!free(base + i)) i++; return base + i;
-  }
+  // The sidebar Load + drag-from-sidebar-to-canvas part scaffolding
+  // (loadPrimitive, loadPick, loadable, loadBusy, uniqueInstName,
+  // defaultArgFor) — and the per-part delete (deletePart) — were the old
+  // composite UI's only entry points; all gone with the strip. .asm.ts
+  // assemblies still grow via CompositionEditor's own catalog row.
+  let dragOverCanvas = $state(false); // retained as a no-op for the canvas-drop chrome
 
   // ── Add parameter ("+ param") ───────────────────────────────────────────
   // Splice a new meta.params entry + a function-signature param into the source
@@ -1447,12 +636,49 @@
     };
   }
   function closeAddParam() { addParamPanel = null; }
+  // For `.prim.ts` parts: find the `params: { … }` block in meta + the
+  // function signature, return their insert positions (just before each
+  // closing brace) so add-param can splice in the new entry + sig token.
+  // Returns null when either span can't be located.
+  function primParamInsertSpans(): {
+    paramsInsertPos: number; paramsHasElems: boolean;
+    sigInsertPos: number; sigHasParams: boolean;
+  } | null {
+    // meta.params { ... } — find the open brace, walk to the matching close.
+    const pm = /\bparams\s*:\s*\{/.exec(editedSource);
+    if (!pm) return null;
+    let i = pm.index + pm[0].length, depth = 1;
+    while (i < editedSource.length && depth > 0) {
+      const c = editedSource[i++];
+      if (c === '{') depth++;
+      else if (c === '}') depth--;
+    }
+    if (depth !== 0) return null;
+    const paramsCloseIdx = i - 1;
+    const paramsBody = editedSource.slice(pm.index + pm[0].length, paramsCloseIdx);
+    const paramsHasElems = /\S/.test(paramsBody) && !/^[\s,]*$/.test(paramsBody);
+
+    // export function <id>(...) — locate the signature's closing paren.
+    const fm = new RegExp(`export\\s+function\\s+${id}\\s*\\(`).exec(editedSource);
+    if (!fm) return null;
+    let j = fm.index + fm[0].length, pdepth = 1;
+    while (j < editedSource.length && pdepth > 0) {
+      const c = editedSource[j++];
+      if (c === '(') pdepth++;
+      else if (c === ')') pdepth--;
+    }
+    if (pdepth !== 0) return null;
+    const sigCloseIdx = j - 1;
+    const sigBody = editedSource.slice(fm.index + fm[0].length, sigCloseIdx);
+    const sigHasParams = /\S/.test(sigBody);
+    return { paramsInsertPos: paramsCloseIdx, paramsHasElems, sigInsertPos: sigCloseIdx, sigHasParams };
+  }
   function submitAddParam() {
     const n = apName.trim();
     if (!n || addParamError) return;
     const def = Number(apDefault) || 0, mn = Number(apMin) || 0, mx = Number(apMax) || 10, st = Number(apStep) || 0.1;
 
-    // ASM path — no recognize-composite output. Use the composition-tree
+    // ASM path — no source-offset recognition. Use the composition-tree
     // helper which knows the assembly source shape (meta.params block +
     // `export function <id>(p0, …)` signature). The compose body is
     // auto-regenerated on every save but rewriteAssemblyFunctionBody
@@ -1468,12 +694,12 @@
       return;
     }
 
-    // PRIM path — original recognized-driven splices.
-    const r = recognized;
-    if (!r || r.paramsInsertPos < 0 || r.sigInsertPos < 0) return;
+    // PRIM path — regex-locate meta.params + function signature, splice in
+    // the new entry + sig token (high→low so earlier offsets stay valid).
+    const r = primParamInsertSpans();
+    if (!r) return;
     const entry = `${r.paramsHasElems ? ', ' : ''}${n}: { label: '${n}', min: ${mn}, max: ${mx}, step: ${st}, default: ${def} }`;
     const sigParam = `${r.sigHasParams ? ', ' : ''}${n}`;
-    // Two splices, applied high→low so the earlier offset stays valid.
     const edits = [
       { s: r.paramsInsertPos, e: r.paramsInsertPos, text: entry },
       { s: r.sigInsertPos, e: r.sigInsertPos, text: sigParam },
@@ -1526,21 +752,62 @@
       }
       return null;
     }
-    // PRIM path — recognize-driven.
-    const r = recognized;
-    if (!r) return 'the primitive isn\'t editable';
-    const rp = (r.params ?? []).find((p: any) => p.name === name);
-    if (!rp || rp.entryStart < 0) return `"${name}" — not found in the source meta`;
+    // PRIM path — locate the `name: { … }` meta entry + the function body via
+    // regex, then refuse if the body still references the name.
+    const loc = primParamLoc(name);
+    if (!loc) return `"${name}" — not found in the source meta`;
+    const fnSig = new RegExp(`export\\s+function\\s+${id}\\s*\\(([^)]*)\\)\\s*\\{`).exec(editedSource);
+    if (!fnSig) return null;
+    const bodyStart = (fnSig.index ?? 0) + fnSig[0].length;
+    let bodyDepth = 1, bi = bodyStart;
+    while (bi < editedSource.length && bodyDepth > 0) {
+      const ch = editedSource[bi++];
+      if (ch === '{') bodyDepth++;
+      else if (ch === '}') bodyDepth--;
+    }
+    const body = editedSource.slice(bodyStart, bi - 1);
     const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`(?<![.\\w$])${esc}(?![\\w$])`, 'g');
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(editedSource))) {
-      const i = m.index;
-      const inEntry = i >= rp.entryStart && i < rp.entryEnd;
-      const inSig = rp.sigStart >= 0 && i >= rp.sigStart && i < rp.sigEnd;
-      if (!inEntry && !inSig) return `"${name}" — still used in the function body; remove those references first`;
+    if (new RegExp(`(?<![.\\w$])${esc}(?![\\w$])`).test(body)) {
+      return `"${name}" — still used in the function body; remove those references first`;
     }
     return null;
+  }
+  // For `.prim.ts`: locate the meta.params entry `<name>: { … }` + the
+  // matching signature token (just the bare identifier between `(` and `)`).
+  // Returns null when either side can't be located.
+  function primParamLoc(name: string): {
+    entryStart: number; entryEnd: number;
+    sigStart: number; sigEnd: number;
+  } | null {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // meta.params entry — find `name: {` then balance braces.
+    const em = new RegExp(`(^|[\\s,{])(${esc})\\s*:\\s*\\{`, 'm').exec(editedSource);
+    if (!em) return null;
+    const entryStart = em.index + em[1].length;
+    let i = em.index + em[0].length, depth = 1;
+    while (i < editedSource.length && depth > 0) {
+      const c = editedSource[i++];
+      if (c === '{') depth++;
+      else if (c === '}') depth--;
+    }
+    if (depth !== 0) return null;
+    const entryEnd = i;
+    // Signature token — find `<name>` between the function's `(...)`.
+    const fm = new RegExp(`export\\s+function\\s+${id}\\s*\\(`).exec(editedSource);
+    if (!fm) return null;
+    const sigOpen = fm.index + fm[0].length;
+    let j = sigOpen, pdepth = 1;
+    while (j < editedSource.length && pdepth > 0) {
+      const c = editedSource[j++];
+      if (c === '(') pdepth++;
+      else if (c === ')') pdepth--;
+    }
+    if (pdepth !== 0) return null;
+    const sigCloseIdx = j - 1;
+    const sigBody = editedSource.slice(sigOpen, sigCloseIdx);
+    const sm = new RegExp(`(?<![.\\w$])${esc}(?![\\w$])`).exec(sigBody);
+    if (!sm) return { entryStart, entryEnd, sigStart: -1, sigEnd: -1 };
+    return { entryStart, entryEnd, sigStart: sigOpen + sm.index, sigEnd: sigOpen + sm.index + name.length };
   }
   // ✕ on a param card → confirm popup (a native alert/confirm freezes the
   // in-browser automation, so we use a FloatingPanel). Blocked params surface
@@ -1573,16 +840,16 @@
       return;
     }
 
-    // PRIM path — recognized-driven splices.
-    const r = recognized;
-    if (!r) { delParamPopup = null; return; }
-    const rp = (r.params ?? []).find((p: any) => p.name === name)!;
-    const edits = [spanWithComma(rp.entryStart, rp.entryEnd)];
-    if (rp.sigStart >= 0) edits.push(spanWithComma(rp.sigStart, rp.sigEnd));
-    edits.sort((a, b) => b.s - a.s); // high→low so earlier offsets stay valid
+    // PRIM path — regex-locate the entry + sig token, splice them out
+    // (high→low so earlier offsets stay valid).
+    const loc = primParamLoc(name);
+    if (!loc) { delParamPopup = null; return; }
+    const edits = [spanWithComma(loc.entryStart, loc.entryEnd)];
+    if (loc.sigStart >= 0) edits.push(spanWithComma(loc.sigStart, loc.sigEnd));
+    edits.sort((a, b) => b.s - a.s);
     let out = editedSource;
     for (const ed of edits) out = out.slice(0, ed.s) + out.slice(ed.e);
-    editedSource = out; // → Source dirty; recognition $effect re-scans + re-bake
+    editedSource = out;
     addedParams = drop(addedParams);
     pending = drop(pending);
     applied = drop(applied);
@@ -1611,202 +878,10 @@
   // setInstanceMode/Anchor/At, applyInstancePatch, readInstanceField).
   // All deleted — .asm.ts files route to CompositionEditor.
 
-  function deletePart(inst: any) {
-    if (!canEdit) return;
-    // K.63 M2.5: assembly delete went via the new-style meta.instances
-    // branch; that block is gone. Composite leaf parts (.exp.ts, .rev.ts)
-    // still hit the recognizer-driven body splice below.
-    const r = recognized;
-    if (!r || inst.declStart < 0) return;
-    // Block if another instance references this one (cross-instance arg/transform).
-    const refRe = new RegExp(`(?<![.\\w$])${inst.name}(?![\\w$])`);
-    for (const o of parts as any[]) {
-      if (o.name === inst.name) continue;
-      if (refRe.test(o.argsText ?? '') || (o.transforms ?? []).some((t: any) => refRe.test(t.argsText ?? ''))) {
-        profileEditNote = `Can't delete ${inst.name} — referenced by ${o.name}. Remove that reference first.`;
-        return;
-      }
-    }
-    const ops = (r.operands ?? []) as any[];
-    const idx = ops.findIndex((o) => o.name === inst.name);
-    const edits: Array<{ s: number; e: number; text: string }> = [];
-    // 1. remove the declaration + trailing whitespace/newline.
-    let dEnd = inst.declEnd;
-    while (dEnd < editedSource.length && /\s/.test(editedSource[dEnd])) dEnd++;
-    edits.push({ s: inst.declStart, e: dEnd, text: '' });
-    // 2. remove from the composition.
-    if (idx >= 0) {
-      const op = ops[idx];
-      if (!op.isBase) {
-        edits.push({ s: op.segStart, e: op.segEnd, text: '' });
-      } else if (ops.length >= 2) {
-        const next = ops[1];
-        edits.push({ s: op.segStart, e: next.segEnd, text: editedSource.slice(next.argStart, next.argEnd) });
-      } else {
-        profileEditNote = `Can't delete ${inst.name} — it's the only part (the composite must return something).`;
-        return;
-      }
-    }
-    edits.sort((a, b) => b.s - a.s);
-    let out = editedSource;
-    for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
-    editedSource = out;
-    pinnedParts = new Set([...pinnedParts].filter((n) => n !== inst.name));
-  }
-
-  // ── ƒ function / expression picker for a part arg ───────────────────────
-  // Edit an instance arg as an expression: bare param names + Math.* + arithmetic.
-  // Param refs resolve at build (params are in the composite's function scope).
-  // Cross-instance <INST>.<arg> refs are a later phase (need expandInstancePropRefs).
-  let fxEdit = $state<{ inst: any; a: any; raw: string; px: number; py: number; pp?: { inst: any; key: string } } | null>(null);
-  let fxParams = $derived(paramOrder.filter((k) => effectiveSchema[k]?.type !== 'polygon'));
-  function openFx(inst: any, a: any, ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    fxEdit = { inst, a, raw: a.text.trim(), px: Math.max(8, Math.min(r.left - 210, window.innerWidth - 320)), py: Math.min(r.bottom + 6, window.innerHeight - 220) };
-  }
-  // ƒ on a self-contained profile param → same popup, but Apply rebuilds the
-  // descriptor (link to the part's params via fxParams · Math.*).
-  function openProfileFx(inst: any, key: string, ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    const v = partProfileParamsView(inst);
-    fxEdit = { inst, a: null, raw: (v?.raw[key] ?? '').trim(), pp: { inst, key }, px: Math.max(8, Math.min(r.left - 210, window.innerWidth - 320)), py: Math.min(r.bottom + 6, window.innerHeight - 220) };
-  }
-  function closeFx() { fxEdit = null; }
-  function fxAppend(tok: string) { if (fxEdit) fxEdit = { ...fxEdit, raw: fxEdit.raw + tok }; }
-  function applyFx() {
-    if (!fxEdit) return;
-    if (fxEdit.pp) setPartProfileParamRaw(fxEdit.pp.inst, fxEdit.pp.key, fxEdit.raw);
-    else spliceArg(fxEdit.inst, fxEdit.a, fxEdit.raw);
-    closeFx();
-  }
-
-  // ── Warp at end (construction-tree Slice 0) ─────────────────────────────
-  // Wrap the WHOLE composition in warpSpline(comp, path, {refine}) — bends the
-  // assembled solid along an (x,z) spline as the final transform. The
-  // recognizer exposes warpInnerStart/End (the inner comp) + warpPathStart/End
-  // (the path arg) so the toggle round-trips and delete-part still sees the
-  // inner chain. Edits the buffer only; Save source persists.
-  // A ~quarter-arc (radius ≈ 2.5) so a typical part bends visibly over its own
-  // length WITHOUT stretching (warpSpline maps z→arc-length 1:1 by default).
-  const DEFAULT_WARP_PATH: number[][] = [[0, 0], [0.34, 1.25], [1.25, 2.17], [2.5, 2.5]];
-  let isWarped = $derived((recognized?.warpInnerStart ?? -1) >= 0);
-  let showTree = $state(false);
-  let warpPathEdit = $state<{ pts: number[][] } | null>(null);
-  function toggleWarpEnd() {
-    const r = recognized;
-    if (!canEdit || !r || r.compStart < 0 || r.compEnd < 0) return;
-    if ((r.warpInnerStart ?? -1) >= 0) {
-      const inner = editedSource.slice(r.warpInnerStart, r.warpInnerEnd);
-      editedSource = editedSource.slice(0, r.compStart) + inner + editedSource.slice(r.compEnd);
-    } else {
-      const comp = editedSource.slice(r.compStart, r.compEnd);
-      editedSource = editedSource.slice(0, r.compStart)
-        + `warpSpline(${comp}, ${JSON.stringify(DEFAULT_WARP_PATH)}, { refine: 4 })`
-        + editedSource.slice(r.compEnd);
-    }
-  }
-  function openWarpPath() {
-    const r = recognized;
-    if (!r || (r.warpPathStart ?? -1) < 0) return;
-    let pts: number[][];
-    try { pts = JSON.parse(editedSource.slice(r.warpPathStart, r.warpPathEnd)); } catch { pts = DEFAULT_WARP_PATH; }
-    if (!Array.isArray(pts) || pts.length < 2) pts = DEFAULT_WARP_PATH;
-    warpPathEdit = { pts };
-  }
-  function closeWarpPath() { warpPathEdit = null; }
-  function applyWarpPath() {
-    const r = recognized;
-    if (!warpPathEdit || !r || (r.warpPathStart ?? -1) < 0) return;
-    const txt = JSON.stringify(warpPathEdit.pts.map((p) => [p[0], p[1]]));
-    editedSource = editedSource.slice(0, r.warpPathStart) + txt + editedSource.slice(r.warpPathEnd);
-    warpPathEdit = null;
-  }
-  async function loadPrimitive(childId?: string) {
-    const r = recognized;
-    const child = childId ?? loadPick;
-    if (!child) return;
-    // K.63 M2.5: the new-style assembly branch (which routed through
-    // appendAssemblyInstance + meta.instances) is gone. Assemblies go
-    // through CompositionEditor instead. Composite leaf parts still hit
-    // the recognizer-driven splice path below.
-    if (!r || r.returnStart < 0 || r.compStart < 0) return;
-    loadBusy = true;
-    profileEditNote = null;
-    try {
-      // Fetch the chosen primitive's params (defaults) — the list is lazy.
-      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(child)}`);
-      if (!res.ok) { profileEditNote = `Load failed: ${await res.text()}`; return; }
-      const data = await res.json();
-      const childParams = data.params ?? {};
-      const src = editedSource;
-
-      // r_rotate is the FUNCTION-FIRST revolve: its first arg is a profile
-      // resolved from a FUNCTION (`resolveProfile({kind})`), not raw vertices.
-      // A black-box `const x = r_rotate(profile, 96)` with an inline literal
-      // would hide the function profile, so scaffold a named `*_profile` local
-      // (`const X_profile = resolveProfile({kind:'cylinder', params:{…}})`) and
-      // pass it as r_rotate's first arg. r_rotate (in meta.uses) declares a
-      // polygon `profile` param → profileInfoFor('r_rotate') is truthy; the
-      // named local makes partProfileKind non-null → the profile selector +
-      // populated params show in the part's accordion. The resolveProfile local
-      // stays a hidden `local` (not its own instance / not in meta.uses).
-      // r_revolve / r_extrude are the FUNCTION-FIRST stdlib engines: their
-      // profile arg is resolved from a FUNCTION, not raw vertices. Scaffold a
-      // named `*_profile` local (`const X_profile = resolveProfile({kind})`) and
-      // pass it as the engine's first arg, length dial inline. The named local
-      // makes partProfileKind non-null → the profile SELECTOR shows in the part's
-      // accordion HEAD. NO meta.params edit — the profile + its params live ON
-      // the part, not the top Parameters section (the user lifts later by choice).
-      // Self-contained, so a second revolve/extrude never collides.
-      if (child === 'r_revolve' || child === 'r_extrude') {
-        const inst = uniqueInstName(child);
-        const isRev = child === 'r_revolve';
-        const profDesc = isRev
-          ? `resolveProfile({ kind: 'cylinder', params: { r: 1.2, len: 3 } })`
-          : `resolveProfile({ kind: 'ngon', params: { n: 6, r: 1.5 } })`;
-        const dial = isRev ? '96' : '3';
-        const decl =
-          `const ${inst}_profile = ${profDesc};\n  `
-          + `const ${inst} = ${child}(${inst}_profile, ${dial});\n  `;
-        const edits = [
-          { s: r.compStart, e: r.compEnd, text: src.slice(r.compStart, r.compEnd) + `.add(${inst})` },
-          { s: r.returnStart, e: r.returnStart, text: decl },
-        ];
-        // meta.uses needs the engine ONCE (injected once, callable N times).
-        if (r.usesInsertPos >= 0 && !(r.uses ?? []).includes(child)) {
-          edits.push({ s: r.usesInsertPos, e: r.usesInsertPos, text: (r.usesHasElems ? ', ' : '') + `'${child}'` });
-        }
-        edits.sort((a, b) => b.s - a.s);
-        let out = src;
-        for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
-        editedSource = out;
-        loadPick = '';
-        return;
-      }
-      // Other r_* leaves (r_cylinder, r_tube, r_cube, …) → generic add path:
-      // `const X = r_*(<defaults>)`, mirroring the leaf's params as call args.
-
-      const inst = uniqueInstName(child);
-      const argList = Object.values(childParams).map(defaultArgFor).join(', ');
-      // Three edits, applied high→low offset so earlier offsets stay valid.
-      const edits = [
-        { s: r.compStart, e: r.compEnd, text: src.slice(r.compStart, r.compEnd) + `.add(${inst})` },
-        { s: r.returnStart, e: r.returnStart, text: `const ${inst} = ${child}(${argList});\n  ` },
-      ];
-      if (r.usesInsertPos >= 0) {
-        edits.push({ s: r.usesInsertPos, e: r.usesInsertPos, text: (r.usesHasElems ? ', ' : '') + `'${child}'` });
-      }
-      edits.sort((a, b) => b.s - a.s);
-      let out = src;
-      for (const ed of edits) out = out.slice(0, ed.s) + ed.text + out.slice(ed.e);
-      editedSource = out;       // → Source dirty; the recognition $effect re-scans
-      loadPick = '';
-    } catch (e: any) {
-      profileEditNote = `Load error: ${e?.message ?? e}`;
-    } finally {
-      loadBusy = false;
-    }
-  }
+  // deletePart, the per-arg ƒ expression picker (fxEdit / openFx /
+  // openProfileFx / applyFx), the warp-at-end tools, and loadPrimitive (the
+  // sidebar-drag-to-canvas scaffolder) were all owned by the old composite
+  // UI. Removed with the strip.
 
   // ── AI tab ───────────────────────────────────────────────────────────
   // Mirrors the /components inspector AI tab. Talks directly to the
@@ -2215,9 +1290,7 @@
     <div class="pv-canvas-pane"
       class:pv-drop-ok={dragOverCanvas}
       role="application"
-      ondragover={(ev) => { if (canEdit && recognized && recognized.returnStart >= 0 && ev.dataTransfer?.types.includes('application/x-primitive-id')) { ev.preventDefault(); dragOverCanvas = true; } }}
       ondragleave={() => { dragOverCanvas = false; }}
-      ondrop={(ev) => { dragOverCanvas = false; const dropped = ev.dataTransfer?.getData('application/x-primitive-id'); if (dropped && canEdit && recognized && recognized.returnStart >= 0) { ev.preventDefault(); loadPrimitive(dropped); } }}
     >
       <!-- Always pass `source` so the preview runs through the sandbox
            path (which has a first-export fallback when the function
@@ -2343,7 +1416,7 @@
                 <div class="pv-spacer"></div>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); apply(); }} disabled={!paramsDirty} title="Apply pending params → re-bake">Apply</button>
                 <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); revert(); }} disabled={!paramsDirty} title="Discard pending param edits">Revert</button>
-                {#if canEdit && ((recognized && recognized.paramsInsertPos >= 0 && recognized.sigInsertPos >= 0) || kind === 'asm')}
+                {#if canEdit}
                   <button class="pv-mini-btn" type="button" onclick={(e) => { e.stopPropagation(); openAddParam(e); }} title="Add a parameter — exposes a knob a parent assembly can drive">＋ param</button>
                 {/if}
               </div>
@@ -2376,13 +1449,8 @@
               {/if}
             </div>
 
-            <!-- Parts — recognized instances. Drag from the sidebar onto
-                 the canvas to add new parts; no toolbar needed. -->
-
-
-            <!-- SOFT, non-fatal notice (a profile/part action couldn't complete).
-                 Shown ABOVE the parts list — it NEVER removes the parts or the
-                 sidebar entry. Dismissible; auto-clears on the next re-scan. -->
+            <!-- SOFT, non-fatal notice (e.g. a leaf profile we can't draw).
+                 Shown above whatever comes next; dismissible. -->
             {#if profileEditNote}
               <div class="pv-parts-note pv-soft-note" role="status">
                 <span>{profileEditNote}</span>
@@ -2391,11 +1459,7 @@
             {/if}
 
             {#if kind === 'asm'}
-              <!-- K.63 — .asm.ts files use the composition-tree editor.
-                   The legacy assembly UI (subtabs, atom rows, ops bar,
-                   group markers, defs/expr sections) is bypassed for
-                   assemblies; M3 will enable editing inside the new
-                   editor. -->
+              <!-- K.63 — .asm.ts files use the composition-tree editor. -->
               <CompositionEditor
                 source={editedSource}
                 {id}
@@ -2403,189 +1467,12 @@
                 {catalog}
                 onSourceChange={(s) => editedSource = s}
               />
-            {:else if recogStatus === 'loading' && !recognized}
-              <div class="pv-parts-empty">recognizing…</div>
-            {:else if recogError && !recognized}
-              <div class="pv-parts-err">{recogError}</div>
-            {:else if parts.length === 0}
-              {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source has an error: {recogError}</span></div>{/if}
-              <div class="pv-parts-empty">No parts recognized — this is a leaf (no <code>meta.uses</code> instances). Parts appear for composites that call other primitives.</div>
-            {:else}
-              <!-- Non-fatal recognize error: keep the last-good accordion, show
-                   the error as a banner (don't nuke the parts list). -->
-              {#if recogError}<div class="pv-parts-note pv-soft-note pv-recog-err" role="status"><span>⚠ source error — parts below reflect the last valid version: {recogError}</span></div>{/if}
-              <!-- K.63 M2.5: the assembly subtabs / Definitions / Expressions
-                   / group-marker section all lived here. Assemblies route to
-                   CompositionEditor; this branch is for composite leaf parts
-                   only. -->
-              {#each resolvedParts as inst (inst.name)}
-                {@const open = isOpen(inst.name)}
-                <div class="pg-acc-wrap instance">
-                  <div class="pg-acc-head instance" class:collapsed={!open}
-                    role="button" tabindex="0"
-                    aria-expanded={open}
-                    onclick={() => togglePart(inst.name)}
-                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePart(inst.name); } }}>
-                    <button class="pv-pin" class:pinned={pinnedParts.has(inst.name)} type="button" title={pinnedParts.has(inst.name) ? 'Unpin (allow collapse)' : 'Pin open (stays open while other rows open)'} onclick={(e) => { e.stopPropagation(); togglePin(inst.name); }}>📌</button>
-                    <span class="pg-acc-title">{inst.name}</span>
-                    <span class="pg-acc-sig">:{inst.call}</span>
-                    <!-- K.63 M2.5: assembly-specific row extras (drag-reorder,
-                         overlay anchor/datum pickers, per-row ⊕⊖∩ ops, hidden
-                         toggle) were here. Deleted — composite leaf rows keep
-                         the rest of the head + body markup. -->
-                    {#if canEdit}
-                      {@const pc = partColors(inst.name)}
-                      <button class="pv-swatch" type="button" title={`Outer (skin) colour — ${pc.outer}`}
-                        style="background:{pc.outer}"
-                        onclick={(e) => { e.stopPropagation(); openColorPopup(inst.name, 'outer', e); }}
-                        aria-label={`Outer colour for ${inst.name}`}></button>
-                      <button class="pv-swatch pv-swatch-inner" type="button" title={`Inner (cut) colour — ${pc.inner}`}
-                        style="background:{pc.inner}"
-                        onclick={(e) => { e.stopPropagation(); openColorPopup(inst.name, 'inner', e); }}
-                        aria-label={`Inner colour for ${inst.name}`}></button>
-                    {/if}
-                    <div class="pv-spacer"></div>
-                    {#if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call) && partProfileFn(inst)}
-                      <!-- FUNCTIONAL profile instance (r_rotate / function-first
-                           r_revolve): SELECTOR + EDIT as toolbar icons. The ✎ ALWAYS
-                           opens the FUNCTIONAL editor (never the vertex editor) — its
-                           params ARE the part's params (shown in the body below).
-                           `kind` may be null (unreadable literal) → label degrades to
-                           'profile' and the editor seeds the default revolve profile. -->
-                      {@const pk = partProfileKind(inst)}
-                      <button class="pv-part-profile" type="button" title={`Change profile${pk ? ` (now: ${pk})` : ''}`}
-                        onclick={(e) => { e.stopPropagation(); openProfileSwap(inst, e); }}
-                      >{@render shapeIcon(profilePtsPreview(inst), !!profileInfoFor(inst.call)?.revolve)}<span class="pv-part-profile-lbl">{pk ?? 'profile'} ▾</span></button>
-                      <button class="pv-part-fxedit" type="button" title="Edit this profile's shape (function editor)"
-                        onclick={(e) => { e.stopPropagation(); openPart(inst.name); const info = profileInfoFor(inst.call); if (info) openInstanceFnEditor(inst, info, pk ?? 'cylinder'); }}
-                      >✎</button>
-                    {:else if canEdit && inst.argsStart >= 0 && profileInfoFor(inst.call)}
-                      <!-- Raw-polygon instance (legacy r_revolve(verts)): keep the popup
-                           (openProfilePopup also routes functional args to the function
-                           editor as a final safety net — never throws for a function). -->
-                      <button class="pv-part-profile" type="button" title="Edit this instance's profile"
-                        onclick={(e) => { e.stopPropagation(); openPart(inst.name); openProfilePopup(inst, profileInfoFor(inst.call)!, e); }}
-                      >{@render shapeIcon(profilePtsPreview(inst), !!profileInfoFor(inst.call)?.revolve)}<span class="pv-part-profile-lbl">profile</span></button>
-                    {/if}
-                    {#if canEdit && inst.declStart >= 0}
-                      <button class="pv-part-txdel" type="button" title="Delete this part — removes it from the composition" onclick={(e) => { e.stopPropagation(); deletePart(inst); }}>✕</button>
-                    {/if}
-                  </div>
-                  {#if open}
-                    <div class="pg-acc-body pv-part-body">
-                      {#if canEdit && inst.argsStart >= 0}
-                        {@const argSpans = splitTopLevelArgs(inst.argsText)}
-                        {@const pnames = leafMetaCache[inst.call] ?? []}
-                        {@const polyIdx = profileInfoFor(inst.call)?.argIndex ?? -1}
-                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:4px 8px;">
-                          {#each argSpans as a, i (i)}
-                            {#if i !== polyIdx}
-                              {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(a.text)}
-                              <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px Arial; color:#555;" title={pnames[i] ?? `arg${i}`}>{pnames[i] ?? `arg${i}`}</span>
-                                <input
-                                  value={a.text.trim()}
-                                  spellcheck="false"
-                                  title={isLit ? 'number — Enter to commit' : 'expression (param names · Math.*) — Enter to commit'}
-                                  onkeydown={(e) => { if (e.key === 'Enter') spliceArg(inst, a, (e.currentTarget as HTMLInputElement).value); }}
-                                  style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
-                                />
-                                <button type="button" title="Edit as a function / expression (param names · Math.*)" onclick={(e) => openFx(inst, a, e)} style="border:none; background:transparent; cursor:pointer; font:600 13px Arial; color:{isLit ? '#bbb' : '#2266cc'}; padding:0 2px; line-height:1;">ƒ</button>
-                              </div>
-                            {/if}
-                          {/each}
-                        </div>
-                      {:else}
-                        <div class="pv-part-args">{inst.argsText}</div>
-                      {/if}
-                      <!-- Function-profile params lifted into the part — shown
-                           HERE (encapsulated with the part that uses them), not
-                           only in the top Parameters panel. Shares pending/
-                           applied, so edits live-rebake + mirror the top grid. -->
-                      {#if canEdit}
-                        {@const pv = partProfileParamsView(inst)}
-                        {#if pv && pv.names.length}
-                        <!-- SELF-CONTAINED profile params — ALL of them, read from
-                             the inline resolveProfile descriptor (NOT filtered by
-                             meta.params, so a profile param that shares a top-param
-                             name like `od` doesn't hide its siblings — that was the
-                             "tube/tapered_tube only show od" bug). Enter / ƒ splice
-                             back into the descriptor → re-bake. -->
-                        <div class="pv-profile-params" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:4px 8px;">
-                          {#each pv.names as pn (pn)}
-                            {@const isLit = /^\s*-?\d*\.?\d+\s*$/.test(pv.raw[pn])}
-                            <div style="display:flex; align-items:center; gap:6px;">
-                              <span style="min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 11px ui-monospace, monospace; color:#555;" title={pv.schema[pn]?.label ?? pn}>{pn}</span>
-                              <input
-                                value={pv.raw[pn]}
-                                spellcheck="false"
-                                title={isLit ? 'number — Enter to commit' : 'expression (p.<param> · Math.*) — Enter to commit'}
-                                onkeydown={(e) => { if (e.key === 'Enter') setPartProfileParamRaw(inst, pn, (e.currentTarget as HTMLInputElement).value); }}
-                                style="flex:1; min-width:0; font:11px ui-monospace, monospace; padding:2px 5px; border:1px solid {isLit ? '#d8d8e0' : '#d4e1f5'}; border-radius:4px; background:{isLit ? '#fff' : '#eef3fb'};"
-                              />
-                              {#if pv.schema[pn]?.unit}<span style="font:10px Arial; color:#999; flex:0 0 auto;">{pv.schema[pn].unit}</span>{/if}
-                              <button type="button" title="Edit as a function / expression — link to a param (p.<name>) · Math.*" onclick={(e) => openProfileFx(inst, pn, e)} style="border:none; background:transparent; cursor:pointer; font:600 13px Arial; color:{isLit ? '#bbb' : '#2266cc'}; padding:0 2px; line-height:1;">ƒ</button>
-                            </div>
-                          {/each}
-                        </div>
-                      {:else if partProfileParamNames(inst).length}
-                        {@const ppNames = partProfileParamNames(inst)}
-                        <!-- LIFTED profile params (legacy meta.params parts) -->
-                        <div class="pv-profile-params">
-                          <ParamGrid schema={pickSchema(ppNames)} {pending} {applied} onPending={setPending} onCommit={commitOne} variant="fn" />
-                        </div>
-                        {/if}
-                      {/if}
-                      {#each inst.txs as t}
-                        <div class="pv-part-tx">
-                          ↳ {t.op}(
-                          {#if canEdit && t.argsStart >= 0}
-                            <input
-                              class="pv-part-edit pv-part-edit-tx"
-                              value={t.argsText}
-                              spellcheck="false"
-                              onkeydown={(e) => { if (e.key === 'Enter') spliceSource(t.argsStart, t.argsEnd, (e.currentTarget as HTMLInputElement).value); }}
-                            />
-                          {:else}{t.argsText}{/if}
-                          )
-                          {#if canEdit && t.callStart >= 0}<button class="pv-part-txdel" type="button" title="Delete this transform" onclick={() => deleteTransform(t)}>✕</button>{/if}
-                        </div>
-                      {/each}
-                      {#if canEdit && inst.initStart >= 0}
-                        <button
-                          class="pv-part-addtx"
-                          type="button"
-                          title="Add a transform (translate / rotate) — appended below, applied in sequence"
-                          onclick={(e) => openTxAdd(inst, e)}
-                        >＋ transform</button>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-              {#if recognized?.composition}
-                <div class="pv-part-compose"><span class="pv-part-name">return</span> <code>{recognized.composition}</code></div>
-              {/if}
-              {#if canEdit && recognized && recognized.returnStart >= 0 && recognized.compStart >= 0}
-                <div class="pv-warp-row">
-                  <button class="pv-mini-btn" class:on={isWarped} type="button"
-                    title="Wrap the whole composition in warpSpline(...) — bends the assembled solid along an (x,z) spline as the final transform. Toggle off to un-warp."
-                    onclick={toggleWarpEnd}>⟿ warp at end{isWarped ? ' ✓' : ''}</button>
-                  {#if isWarped && recognized.warpPathStart >= 0}
-                    <button class="pv-mini-btn" type="button" title="Edit the spline path the solid bends along" onclick={openWarpPath}>✎ path</button>
-                  {/if}
-                  {#if (recognized?.operands?.length ?? 0) >= 1}
-                    <button class="pv-mini-btn" class:on={showTree} type="button" title="Show the construction tree + BODMAS evaluation order for this composition" onclick={() => (showTree = !showTree)}>🌳 tree</button>
-                  {/if}
-                </div>
-                {#if showTree}
-                  <ConstructionTree {recognized} parts={resolvedParts} onPick={(name) => openPart(name)} />
-                {/if}
-              {/if}
-              {#if locals.length}<div class="pv-parts-note">+ {locals.length} local{locals.length === 1 ? '' : 's'} (non-part calls)</div>{/if}
-              {#if recognized?.unrecognized}<div class="pv-parts-note">+ {recognized.unrecognized} statement{recognized.unrecognized === 1 ? '' : 's'} not decomposed (opaque code)</div>{/if}
-              {#if editable && recognized && !recognized.editable}<div class="pv-parts-note">read-only — remove TS type annotations from the params to edit args inline.</div>{/if}
             {/if}
+            <!-- For .prim.ts + stdlib (default kind branch) the Parameters
+                 accordion above is the entire Build pane. The old composite
+                 Parts panel (recognized instances + per-row swatches /
+                 transforms / profile selector / delete / construction tree /
+                 warp) is gone — view the body in the Source tab to edit it. -->
           </div>
         </div>
       {:else if tab === 'ai'}
@@ -2659,89 +1546,8 @@
     </aside>
   </div>
 
-  {#if profileEdit}
-    <FloatingPanel
-      title={`Profile · ${profileEdit.instName} (${profileEdit.call})`}
-      visible={true}
-      x={profileEdit.px}
-      y={profileEdit.py}
-      width="min(360px, 92vw)"
-      maxHeight="70vh"
-      onClose={closeProfilePopup}
-    >
-      <div class="pv-profile-pop">
-        <!-- One bar: searchable shape dropdown + actions (no separate head). -->
-        <div class="pv-prof-bar">
-          <div class="pv-prof-combo">
-            <ProfilePalette layout="dropdown" set={profileEdit.info.revolve ? 'revolve' : 'cartesian'} volume={volProfiles} onPick={(id, origin) => pickProfileShape(id, origin)} onEdit={(id) => editFnProfile('instance', null, id)} />
-          </div>
-          {#if profileEdit.mode === 'literal' && profileEdit.canPromote}
-            <button class="pv-iconbtn" type="button" disabled={promoteBusy} title="Promote to meta.profiles (clean composition)" onclick={promoteProfile}>{promoteBusy ? '…' : '↥'}</button>
-          {/if}
-          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor('instance', null, profileEdit!.info.revolve ? 'revolve' : 'cartesian', e)}>ƒ+</button>
-          <button class="pv-iconbtn" type="button" disabled={!profileDirty} title="Revert" onclick={() => { profilePts = JSON.parse(profileBaseline); }}>↺</button>
-          <button class="pv-btn primary" type="button" disabled={!profileDirty} onclick={applyProfile}>Apply</button>
-        </div>
-        <div class="pv-prof-split">
-          <ProfileEditor
-            value={profilePts}
-            width={232}
-            height={200}
-            yDown={profileEdit.info.yDown}
-            hLabel={profileEdit.info.hLabel}
-            vLabel={profileEdit.info.vLabel}
-            presetSet={profileEdit.info.revolve ? 'revolve' : 'cartesian'}
-            showAxis={profileEdit.info.revolve}
-            showPresets={false}
-            onChange={(next) => { profilePts = next; }}
-          />
-          <div class="pv-coords-col">
-            <div class="pv-coords-head"><span>#</span><span>{profileEdit.info.revolve ? 'r' : 'x'}</span><span>{profileEdit.info.revolve ? 'z' : 'y'}</span></div>
-            <ol class="pv-coords-list pv-coords-tbl">
-              {#each profilePts as pt, i (i)}
-                <li><span class="pv-coords-i">{i}</span><span class="pv-coords-n">{fmt2(pt[0])}</span><span class="pv-coords-n">{fmt2(pt[1])}</span></li>
-              {/each}
-            </ol>
-          </div>
-        </div>
-      </div>
-    </FloatingPanel>
-  {/if}
-
-  {#if warpPathEdit}
-    <FloatingPanel
-      title="Warp path · (x, z) spline"
-      visible={true}
-      x={Math.max(8, window.innerWidth - 470)}
-      y={120}
-      width="min(440px, 90vw)"
-      maxHeight="70vh"
-      onClose={closeWarpPath}
-    >
-      <div class="pv-profile-pop">
-        <div class="pv-profile-pop-head">
-          <span class="pv-pill">{warpPathEdit.pts.length} pts</span>
-          <div class="pv-spacer"></div>
-          <button class="pv-btn primary" type="button" onclick={applyWarpPath}>Apply → source</button>
-        </div>
-        <ProfileEditor
-          value={warpPathEdit.pts}
-          width={400}
-          height={300}
-          yDown={true}
-          hLabel="x"
-          vLabel="z"
-          presetSet="revolve"
-          showAxis={true}
-          onChange={(next) => { if (warpPathEdit) warpPathEdit = { pts: next }; }}
-        />
-        <p class="pv-profile-pop-note">
-          The assembled solid's z-extent is mapped onto this spline (z → arc-length);
-          x becomes the in-plane radial offset. Edits <code>warpSpline(…)</code>'s path arg on Apply. Save source to persist.
-        </p>
-      </div>
-    </FloatingPanel>
-  {/if}
+  <!-- The composite per-instance profileEdit FloatingPanel + warpPathEdit
+       FloatingPanel were removed with the strip. -->
 
   {#if saveProfilePanel}
     <FloatingPanel title="Save profile → volume" visible={true} x={saveProfilePanel.px} y={saveProfilePanel.py} width="280px" onClose={closeSaveProfile}>
@@ -2777,10 +1583,10 @@
         <!-- One bar: searchable shape dropdown + actions (no separate head). -->
         <div class="pv-prof-bar">
           <div class="pv-prof-combo">
-            <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} onEdit={(id) => editFnProfile('leaf', leafEdit!.pname, id)} />
+            <ProfilePalette layout="dropdown" set={yd ? 'revolve' : 'cartesian'} current={lkind} volume={volProfiles} onPick={(id, origin) => pickPaletteProfile(leafEdit!.pname, id, origin)} onEdit={(id) => editFnProfile(leafEdit!.pname, id)} />
           </div>
           <button class="pv-iconbtn" type="button" title="Save this profile to the volume" onclick={(e) => openSaveProfile(leafEdit!.pname, e)}>＋</button>
-          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor('leaf', leafEdit!.pname, yd ? 'revolve' : 'cartesian', e)}>ƒ+</button>
+          <button class="pv-iconbtn" type="button" title="Author a function profile (params + build())" onclick={(e) => openFnEditor(leafEdit!.pname, yd ? 'revolve' : 'cartesian', e)}>ƒ+</button>
           <button class="pv-iconbtn" type="button" disabled={!paramsDirty} title="Revert" onclick={revert}>↺</button>
           <button class="pv-btn primary" type="button" disabled={!paramsDirty} onclick={applyLeafProfile}>Apply</button>
         </div>
@@ -2827,37 +1633,8 @@
     </FloatingPanel>
   {/if}
 
-  {#if profileSwap}
-    <!-- Profile SELECTOR for a functional part instance — the SAME searchable
-         ProfilePalette dropdown a standalone leaf uses (icon + description),
-         anchored under the part's ▾ button. Picking RE-LIFTS the new profile's
-         params onto the part (swapPartProfile); ✎ on a ƒ row opens the function
-         editor. -->
-    {@const swapInst = parts.find((p: any) => p.name === profileSwap!.instName)}
-    <FloatingPanel
-      title="Change profile"
-      visible={true}
-      x={profileSwap.px}
-      y={profileSwap.py}
-      width="min(320px, 92vw)"
-      maxHeight="70vh"
-      onClose={closeProfileSwap}
-    >
-      <div class="pv-profile-pop">
-        <!-- GRID layout: the search field + thumbnail list show immediately when
-             this popup opens, so picking is one click (no nested combobox to open
-             first). The head's ✎ button covers editing a ƒ profile. -->
-        <ProfilePalette
-          layout="grid"
-          set={swapInst && profileInfoFor(swapInst.call)?.revolve ? 'revolve' : 'cartesian'}
-          current={swapInst ? (partProfileKind(swapInst) ?? undefined) : undefined}
-          volume={volProfiles}
-          onPick={(id) => { if (swapInst) swapPartProfile(swapInst, id); closeProfileSwap(); }}
-          onEdit={(id) => { const info = swapInst && profileInfoFor(swapInst.call); if (swapInst && info) { openInstanceFnEditor(swapInst, info, id); closeProfileSwap(); } }}
-        />
-      </div>
-    </FloatingPanel>
-  {/if}
+  <!-- profileSwap FloatingPanel (per-instance profile picker) was removed
+       with the composite UI strip. -->
 
   {#if fnEditor}
     <!-- key on the fnEditor object so the editor REMOUNTS each open — its state
@@ -2866,15 +1643,9 @@
     {#key fnEditor}
       <FloatingPanel
         title=""
-        subtitle={fnEditor.bind ? (fnMeta.description || fnAutoDesc) : `${fnMeta.label || fnMeta.id || 'New profile'} · ${fnMeta.description || fnAutoDesc}`}
+        subtitle={`${fnMeta.label || fnMeta.id || 'New profile'} · ${fnMeta.description || fnAutoDesc}`}
         visible={true} x={fnEditor.px} y={fnEditor.py} width="auto" maxHeight="86vh" onClose={closeFnEditor}>
         {#snippet titleAction()}
-          {#if fnEditor.bind}
-            <!-- selector: swap WHICH profile drives the part, in the title itself -->
-            <div class="pv-fn-sel" role="presentation" onmousedown={(e) => e.stopPropagation()}>
-              <ProfilePalette layout="dropdown" set={fnEditor.set} current={fnMeta.id} volume={volProfiles} onPick={(id, origin) => swapEditorProfile(id, origin)} />
-            </div>
-          {/if}
           <button
             class="pv-meta-gear" type="button"
             title={`Edit name · description · tags\nname: ${fnMeta.label || '(unnamed)'}\ndescription: ${fnMeta.description || fnAutoDesc}\ntags: ${fnMeta.tags || '(none)'}`}
@@ -2942,79 +1713,9 @@
     </FloatingPanel>
   {/if}
 
-  {#if colorPopup}
-    <FloatingPanel title={`${colorPopup.which === 'outer' ? 'Outer (skin)' : 'Inner (cut)'} — ${colorPopup.name}`}
-      visible={true} x={colorPopup.x} y={colorPopup.y} width="208px" onClose={() => (colorPopup = null)}>
-      <div style="display:flex; flex-direction:column; gap:8px; padding:4px;">
-        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
-          {#each INSTANCE_PALETTE as c (c)}
-            <button type="button" title={c} onclick={() => pickColor(c)}
-              style="height:22px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer;"
-              aria-label={c}></button>
-          {/each}
-        </div>
-        <label style="display:flex; align-items:center; gap:6px; font:11px Arial; color:#555;">
-          custom
-          <input type="color" oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)}
-            style="width:38px; height:24px; padding:0; border:1px solid #ccc; border-radius:4px; background:none; cursor:pointer;" />
-        </label>
-        {#if colorPopup.which === 'inner'}
-          <button class="pv-btn" type="button" onclick={() => pickColor('#888888')}>Reset to grey</button>
-        {/if}
-        <p style="font:10px Arial; color:#888; margin:0;">
-          {colorPopup.which === 'outer' ? 'External skin of this part.' : 'Shown where this part is cut (bore wall / cross-section).'} <strong>Save source</strong> to persist.
-        </p>
-      </div>
-    </FloatingPanel>
-  {/if}
-
-  {#if fxEdit}
-    <FloatingPanel title="ƒ function / expression" visible={true} x={fxEdit.px} y={fxEdit.py} width="300px" onClose={closeFx}>
-      <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
-        <input bind:value={fxEdit.raw} spellcheck="false" placeholder="e.g. p.od / 2"
-          onkeydown={(e) => { if (e.key === 'Enter') applyFx(); }}
-          style="font:11px ui-monospace, monospace; padding:4px 6px; border:1px solid #d4e1f5; border-radius:4px;" />
-        {#if fxParams.length}
-          <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;"><span style="font:10px Arial; color:#888;">link a param:</span>
-            {#each fxParams as pn (pn)}<button type="button" title={`insert p.${pn}`} onclick={() => fxAppend('p.' + pn)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #d4e1f5; border-radius:3px; background:#eef3fb; cursor:pointer;">p.{pn}</button>{/each}
-          </div>
-        {:else}
-          <div style="font:10px Arial; color:#888;">No params yet — add one with <strong>＋ param</strong> at the top, then link it here as <code>p.&lt;name&gt;</code>.</div>
-        {/if}
-        <div style="display:flex; flex-wrap:wrap; gap:4px;">
-          {#each ['+', '-', '*', '/', '(', ')', 'Math.PI'] as t (t)}<button type="button" onclick={() => fxAppend(t)} style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #ddd; border-radius:3px; background:#fafafa; cursor:pointer;">{t}</button>{/each}
-        </div>
-        <div style="display:flex; justify-content:flex-end; gap:6px;">
-          <button class="pv-btn" type="button" onclick={closeFx}>Cancel</button>
-          <button class="pv-btn primary" type="button" onclick={applyFx}>Apply</button>
-        </div>
-        <p style="font:10px Arial; color:#888; margin:2px 0 0;">Param names + <code>Math.*</code> resolve at build. <strong>Save source</strong> to persist.</p>
-      </div>
-    </FloatingPanel>
-  {/if}
-
-  {#if txAdd}
-    <FloatingPanel
-      title={`Add transform · ${txAdd.instName}`}
-      visible={true}
-      x={txAdd.px}
-      y={txAdd.py}
-      width="min(240px, 90vw)"
-      maxHeight="60vh"
-      onClose={closeTxAdd}
-    >
-      <div class="pv-txadd-pop">
-        {#each TRANSFORMS as t (t.id)}
-          <button class="pv-txadd-item" type="button" title={t.hint} onclick={() => addTransform(t)}>
-            <span class="pv-txadd-glyph">{t.glyph}</span>
-            <span class="pv-txadd-label">{t.label}</span>
-            <span class="pv-txadd-op">{t.op}(…)</span>
-          </button>
-        {/each}
-        <p class="pv-txadd-note">Wraps <code>{txAdd.instName}</code>'s call. Edit the values on the new <code>↳</code> row; Save source to persist.</p>
-      </div>
-    </FloatingPanel>
-  {/if}
+  <!-- colorPopup (per-instance outer/inner swatch picker), fxEdit (ƒ
+       expression picker for a part arg), and txAdd (add-transform picker)
+       FloatingPanels were removed with the composite UI strip. -->
 
   {#if saveAsOpen}
     <FloatingPanel
