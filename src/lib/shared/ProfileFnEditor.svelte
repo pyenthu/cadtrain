@@ -121,7 +121,51 @@
   //      destructured bare param names (added by composeSource) match.
   // Algorithmic bodies (for/Array.from + push) won't match either pattern and
   // get preserved verbatim by composeSource's no-moves branch.
+  /** Heuristic — does this body use constructs the editor's structured
+   *  rows can't represent without information loss? If so, parseBody
+   *  returns ZERO moves so composeSource falls into the verbatim
+   *  branch (line 335 — emits `seed.body` unchanged).
+   *
+   *  Triggers:
+   *    - more than one `Array.from(...)` call (the editor models exactly
+   *      ONE repeat row),
+   *    - a named spread `...<identifier>` inside the return array
+   *      (the editor can't reconstruct named consts at compose-time).
+   *
+   *  Without this guard, complex curated profiles like `collar_rounded`
+   *  (two shoulder arcs + literal corners) parse as a single 'repeat'
+   *  row, then composeSource re-emits a return that collapses to one
+   *  Array.from and DROPS the second arc + the corner points →
+   *  malformed `.prvl.ts` shadow on the volume. Memory:
+   *  `[[profile_editor_composeSource_bug]]`. */
+  function bodyTooComplexToDecompose(b: string): boolean {
+    const arrFromCount = (b.match(/Array\.from\s*\(/g) ?? []).length;
+    if (arrFromCount > 1) return true;
+    // Spread of a named identifier inside any return-array literal.
+    // Look at the LAST top-level return [...] / => [...] block — same
+    // anchor the (3) literal-array branch uses.
+    const arrMatch = b.match(/(?:return|=>)\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])\s*;?\s*$/);
+    if (arrMatch) {
+      // `...identifier` (NOT `...Array.from(...)` and NOT `...[...]`).
+      if (/\.\.\.\s*[A-Za-z_$][\w$]*\b(?!\s*\.from\s*\()/.test(arrMatch[1])) return true;
+    }
+    return false;
+  }
+
   function parseBody(b: string): { expr: string; moves: Move[] } {
+    // Bail to verbatim when the body uses constructs the structured editor
+    // would round-trip lossily. Empty moves → composeSource keeps the
+    // original body (line 335). Top-level destr `const { ... } = p;` stays
+    // intact via the verbatim wrapping.
+    if (bodyTooComplexToDecompose(b)) {
+      const penIdx = b.search(/\bpen\s*\(/);
+      const expr = (penIdx >= 0 ? b.slice(0, penIdx) : b)
+        .replace(/[,;]?\s*(?:\b(?:const|let|var)\s+)?[A-Za-z_$][\w$]*\s*=\s*$/, '')
+        .replace(/\breturn\s+$/, '')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
+      return { expr, moves: [] };
+    }
     const moves: Move[] = [];
     // (1) pen-chain moves.
     const re = /\.(mv|line|lineR|lineZ)\s*\(((?:[^()]|\([^()]*\))*)\)/g;
@@ -322,7 +366,7 @@
     const destr = usable.length ? `  const { ${usable.join(', ')} } = p;\n` : '';
     const ex = calc.length ? calc.map((c) => `  const ${c.name} = ${c.expr};`).join('\n') + '\n' : '';
     if (!moves.length) {
-      // No pen moves recognized. Two cases:
+      // No pen moves recognized. Three cases:
       //  (a) Procedural body (for/while/Array.from + pts.push) like the curated
       //      ellipse/ngon/star — parseBody returns 0 moves because there's no
       //      pen chain to extract. Preserve the original body verbatim so it
@@ -330,7 +374,12 @@
       //      contains its own declarations + return; duplicating would double-
       //      declare). Adding a row to "path" switches to the pen-chain branch
       //      below, which replaces the body entirely.
-      //  (b) Truly empty (a fresh profile that had its moves deleted) — emit a
+      //  (b) Body too complex for the editor's structured rows (multiple
+      //      Array.from arcs, named spreads in the return — see
+      //      `bodyTooComplexToDecompose`). parseBody intentionally returned
+      //      zero moves so we land here and round-trip the original verbatim
+      //      instead of recomposing a lossy version.
+      //  (c) Truly empty (a fresh profile that had its moves deleted) — emit a
       //      visible empty array so the error surfaces clearly.
       const body = (seed?.body || '').trim();
       if (body) return `export function build(p) {\n  ${body.replace(/\n/g, '\n  ')}\n}`;
