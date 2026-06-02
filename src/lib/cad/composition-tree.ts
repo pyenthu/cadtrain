@@ -13,6 +13,8 @@
  * relies on identity changes; mutations would otherwise miss the diff.)
  */
 
+import { partHashId } from './part-id';
+
 // ─── Types ──────────────────────────────────────────────────────────────
 
 export type NodeType =
@@ -262,6 +264,11 @@ export function emitNode(node: TreeNode): string {
       // mv inner, rot outer — composes as `rot(mv(<call>, [...]), [...])`.
       if (node.mv) expr = `mv(${expr}, [${node.mv.map(emitNode).join(', ')}])`;
       if (node.rot) expr = `rot(${expr}, [${node.rot.map(emitNode).join(', ')}])`;
+      // STAMP per-instance hashId so analyzeAssembly's LUT keyed by
+      // partHashId(alias) matches the bake's mesh-relation originalIDs.
+      // Without this, K.63 assemblies bake as one fused colour and the
+      // CompositionEditor swatches do nothing.
+      if (node.fn) expr = `__tag(${expr}, ${partHashId(node.fn)})`;
       return expr;
     }
     case 'method':  return `${emitNode(node.obj)}.${node.op}(${emitNode(node.arg)})`;

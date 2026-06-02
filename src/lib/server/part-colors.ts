@@ -45,6 +45,19 @@ const INACTIVE: PartColorLUT = {
 };
 
 export function analyzeParts(source: string): PartColorLUT {
+  // K.63 ASSEMBLY PATH — `.asm.ts` files carry meta.composition (a TreeNode)
+  // instead of the older `const X = …;` instance declarations
+  // recognizeComposite scans for. Detect the assembly shape and walk the
+  // composition tree separately so the per-instance colour swatches in
+  // CompositionEditor actually drive the bake. Without this branch, the
+  // K.63 source path 0-instances → INACTIVE → colours are written to
+  // meta.instanceColors but never applied at render time.
+  let metaForAsm: any = null;
+  try { metaForAsm = evalMetaLiteral(source); } catch { /* fall through */ }
+  if (metaForAsm?.composition && typeof metaForAsm.composition === 'object') {
+    return analyzeAssembly(metaForAsm);
+  }
+
   let rec: any;
   try { rec = recognizeComposite(source); } catch { return INACTIVE; }
   const uses = new Set<string>(rec.uses ?? []);
@@ -85,6 +98,70 @@ export function analyzeParts(source: string): PartColorLUT {
     outer[id] = c.outer;
     inner[id] = c.inner;
     if (subtractiveNames.has(inst.name)) subtractive.push(id);
+  }
+  return { outer, inner, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
+}
+
+/** Per-instance colour LUT for a K.63 .asm.ts source. Each Call node in
+ *  meta.composition is an instance — keyed by the alphabetic alias the
+ *  CompositionEditor assigned (`A`, `B`, `C`, …) — and the alias is
+ *  hashed via partHashId to match the loader's tagInstanceSources stamp.
+ *
+ *  Subtract/intersect roles are derived by walking the tree: any Call
+ *  that sits on the `.arg` side of a method node (or as a child of an
+ *  intersect/subtract op anywhere on the tree) is a CSG tool. Tools
+ *  take the body colour on their cut surfaces — same rule the primitive
+ *  composite path uses. */
+function analyzeAssembly(meta: any): PartColorLUT {
+  const instanceColors: Record<string, any> =
+    (meta?.instanceColors && typeof meta.instanceColors === 'object') ? meta.instanceColors : {};
+
+  // Walk the composition tree to enumerate Call nodes + their role.
+  const additiveOrder: string[] = [];
+  const subtractiveNames = new Set<string>();
+  const seen = new Set<string>();
+  const walk = (n: any, parentOp: 'subtract' | 'intersect' | null): void => {
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'call' && typeof n.fn === 'string') {
+      if (!seen.has(n.fn)) {
+        seen.add(n.fn);
+        if (parentOp) subtractiveNames.add(n.fn);
+        else additiveOrder.push(n.fn);
+      }
+    }
+    if (n.type === 'method') {
+      const op: 'subtract' | 'intersect' | null =
+        (n.op === 'subtract' || n.op === 'intersect') ? n.op : null;
+      walk(n.obj, null);          // base of the method (additive)
+      walk(n.arg, op);            // arg side is the CSG tool
+      return;
+    }
+    if (n.type === 'list' || n.type === 'stack') {
+      for (const c of (n.children ?? [])) walk(c, parentOp);
+      return;
+    }
+    if (n.type === 'overlay') { walk(n.anchor, parentOp); walk(n.child, parentOp); return; }
+    if (n.type === 'mv' || n.type === 'rot') { walk(n.child, parentOp); return; }
+    // call args may carry nested Calls (rare) — recurse for safety
+    if (n.type === 'call') for (const a of (n.args ?? [])) walk(a, parentOp);
+  };
+  walk(meta.composition, null);
+
+  if (additiveOrder.length === 0 && subtractiveNames.size === 0) return INACTIVE;
+
+  const bodyName = additiveOrder[0] ?? [...subtractiveNames][0]!;
+  const bodyId = partHashId(bodyName);
+  const bodyPair = colorsForInstance(bodyName, instanceColors[bodyName]);
+
+  const outer: Record<number, string> = {};
+  const inner: Record<number, string> = {};
+  const subtractive: number[] = [];
+  for (const name of seen) {
+    const id = partHashId(name);
+    const c = colorsForInstance(name, instanceColors[name]);
+    outer[id] = c.outer;
+    inner[id] = c.inner;
+    if (subtractiveNames.has(name)) subtractive.push(id);
   }
   return { outer, inner, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
 }
