@@ -294,10 +294,30 @@
       .replace(fnRe, `$1${newId}$2`)
       .replace(idRe, `$1${newId}$2`)
       .replace(nameRe, `$1${newId}$2`);
+    // Preserve the source's TYPE + LOCATION on clone. Without these, save
+    // defaulted to kind:'prim' in basic/ root — the user got a .prim.ts
+    // file (old composite editor + "No parts recognized" empty state) in
+    // the wrong folder. The source endpoint surfaces kind directly;
+    // the Entry carries subfolder + (for completions) family. Mirror the
+    // source's location exactly so a clone sits next to its sibling.
+    const cloneKind = (data as any).kind ?? undefined;
+    // Entry doesn't carry the family — walk completions[] to find the
+    // bucket (if any). Falls back to basic/ root for stdlib + un-bucketed
+    // entries. The save endpoint refuses stdlib ids anyway.
+    let family: string | undefined;
+    for (const [fam, list] of Object.entries(completions)) {
+      if (list.some((x) => x.id === e.id)) { family = fam; break; }
+    }
+    let cloneDir: string;
+    if (family) {
+      cloneDir = e.subfolder ? `completions/${family}/${e.subfolder}` : `completions/${family}`;
+    } else {
+      cloneDir = e.subfolder ? `basic/${e.subfolder}` : 'basic';
+    }
     const r = await fetch('/api/primitives/save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: newId, source: src }),
+      body: JSON.stringify({ id: newId, source: src, dir: cloneDir, kind: cloneKind }),
     });
     if (!r.ok) { status = `Clone failed: ${await r.text()}`; return; }
     status = `Duplicated ${e.id} → ${newId}.`;
