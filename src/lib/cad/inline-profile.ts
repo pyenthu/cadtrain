@@ -188,17 +188,62 @@ function parseMetaParams(source: string): { params: Record<string, ParamSpec>; r
   if (depth !== 0) return null;
   const inner = source.slice(start, i);
   const out: Record<string, ParamSpec> = {};
-  // Match `KEY: { … }` rows.
-  const rowRe = /([a-zA-Z_$][\w$]*)\s*:\s*\{([^{}]+)\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(inner))) {
-    const key = m[1];
-    const body = m[2];
+  // Walk inner char by char tracking brace depth. At depth 0 we look for
+  // `KEY: {` openers, then balance braces to find the matching close so
+  // we capture the FULL param body — including nested objects in
+  // `default:` like `{ kind: 'cylinder', params: { r, len } }`. The old
+  // regex `[^{}]+` couldn't see past nested braces, so a profile param's
+  // descriptor default shadowed the whole row and the inner `params: {…}`
+  // got mis-extracted as a top-level numeric param (default 0) — UI then
+  // rendered `params` + `segments` instead of `profile` + `segments`,
+  // POSTed [0, 96] to /preview, and the sandbox bailed with "invalid
+  // profile descriptor" (HTTP 400).
+  const keyRe = /([a-zA-Z_$][\w$]*)\s*:\s*\{/g;
+  let km: RegExpExecArray | null;
+  while ((km = keyRe.exec(inner))) {
+    const key = km[1]!;
+    // Skip when this match is inside a nested object (depth > 0).
+    let depthHere = 0;
+    let inStr: string | null = null;
+    for (let p = 0; p < km.index; p++) {
+      const ch = inner[p]!;
+      if (inStr) {
+        if (ch === '\\') { p++; continue; }
+        if (ch === inStr) inStr = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+      if (ch === '{') depthHere++;
+      else if (ch === '}') depthHere--;
+    }
+    if (depthHere !== 0) continue; // nested — not a top-level param row
+    // Balance braces from the opening `{` to find the matching close.
+    const bodyStart = km.index + km[0].length;
+    let d = 1, j = bodyStart;
+    let s: string | null = null;
+    while (j < inner.length && d > 0) {
+      const ch = inner[j]!;
+      if (s) {
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === s) s = null;
+        j++; continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { s = ch; j++; continue; }
+      if (ch === '{') d++;
+      else if (ch === '}') { d--; if (d === 0) break; }
+      j++;
+    }
+    if (d !== 0) continue;
+    const body = inner.slice(bodyStart, j);
+    // Extract scalar fields from the top level of `body` only — anything
+    // inside a nested `{ }` (a profile descriptor's `default`, e.g.) is
+    // walked over so it doesn't shadow the row's own scalars.
+    const topLevel = stripNested(body);
     const num = (n: string) => {
-      const r = body.match(new RegExp(`\\b${n}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`));
+      const r = topLevel.match(new RegExp(`\\b${n}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`));
       return r ? parseFloat(r[1]) : undefined;
     };
-    const labelM = body.match(/\blabel\s*:\s*['"]([^'"]+)['"]/);
+    const labelM = topLevel.match(/\blabel\s*:\s*['"]([^'"]+)['"]/);
     out[key] = {
       label: labelM ? labelM[1] : undefined,
       min: num('min'),
@@ -206,8 +251,34 @@ function parseMetaParams(source: string): { params: Record<string, ParamSpec>; r
       step: num('step'),
       default: num('default') ?? 0,
     };
+    // Advance the outer regex past this row's closing brace so the next
+    // keyRe match starts after, not inside it.
+    keyRe.lastIndex = j + 1;
   }
   return { params: out, range: [start, i] };
+}
+
+/** Replace anything inside a nested `{…}` with spaces, preserving offsets
+ *  so the trailing `default: 0` of a row doesn't bleed in from a nested
+ *  default descriptor. String contents are kept (rare edge case where a
+ *  label string contains braces). */
+function stripNested(s: string): string {
+  const out: string[] = [];
+  let d = 0, inStr: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (inStr) {
+      out.push(ch);
+      if (ch === '\\' && i + 1 < s.length) { out.push(s[i + 1]!); i++; continue; }
+      if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; out.push(ch); continue; }
+    if (ch === '{') { d++; out.push(' '); continue; }
+    if (ch === '}') { d--; out.push(' '); continue; }
+    out.push(d > 0 ? ' ' : ch);
+  }
+  return out.join('');
 }
 
 /** Rewrite the function signature `export function NAME(args) {` so the
