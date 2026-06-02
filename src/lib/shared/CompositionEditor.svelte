@@ -723,17 +723,21 @@
 
 {#snippet fileRow(n: TreeNode, depth: number)}
   {@const callOpen = n.type === 'call' && isExpanded(n.id)}
-  {@const callHasProps = n.type === 'call' && n.args.length > 0}
+  {@const callExpandable = n.type === 'call'}
   <div class="ce-row ce-file-row" style="--depth: {depth}">
-    {#if n.type === 'call' && callHasProps}
-      <button class="ce-twist" type="button" title={callOpen ? 'Collapse properties' : 'Expand properties'} onclick={() => toggleExpand(n.id)}>{callOpen ? '▾' : '▸'}</button>
+    {#if callExpandable}
+      <button class="ce-twist" type="button" title={callOpen ? 'Collapse' : 'Expand'} onclick={() => toggleExpand(n.id)}>{callOpen ? '▾' : '▸'}</button>
     {:else}
       <span class="ce-twist-spacer"></span>
     {/if}
     <span class="ce-glyph">📄</span>
     {#if n.type === 'call'}
       <span class="ce-file-fn-glyph">ƒ</span>
-      <span class="ce-file-title" title={fileTitle(n)} onclick={() => { if (callHasProps) toggleExpand(n.id); }}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
+      <span class="ce-file-title" title={fileTitle(n)} onclick={() => toggleExpand(n.id)}>{n.fn}{n.args.length > 0 ? `(${n.args.length})` : '()'}</span>
+      <!-- mv/rot indicator dots — terse status, no triplet preview. The
+           edit surface lives in the expanded body below. -->
+      {#if n.mv}<span class="ce-tx-dot ce-tx-dot-mv" title="mv set">↦</span>{/if}
+      {#if n.rot}<span class="ce-tx-dot ce-tx-dot-rot" title="rot set">↻</span>{/if}
     {:else if n.type === 'ref'}
       <span class="ce-file-ref-glyph">🔗</span>
       <span class="ce-file-title">{fileTitle(n)}</span>
@@ -759,104 +763,103 @@
       {/if}
     {/if}
 
-    <!-- Inline transform chips (Option 1) — visible when set. Reflect
-         current mv / rot triplet. -->
-    {#if n.type === 'call' && n.mv}
-      <button class="ce-tx-chip ce-tx-chip-mv" type="button"
-        title="Edit inline mv triplet"
-        disabled={!canEdit}
-        onclick={() => toggleTransformRow(n.id, 'mv')}
-      >@ mv {triValuePreview(n.mv)}</button>
-    {/if}
-    {#if n.type === 'call' && n.rot}
-      <button class="ce-tx-chip ce-tx-chip-rot" type="button"
-        title="Edit inline rot triplet"
-        disabled={!canEdit}
-        onclick={() => toggleTransformRow(n.id, 'rot')}
-      >↻ rot {triValuePreview(n.rot)}</button>
-    {/if}
-
     <span class="ce-row-spacer"></span>
 
-    {#if canEdit && n.type === 'call'}
-      <button class="ce-row-btn ce-row-tx" class:active={!!n.mv} type="button"
-        title={n.mv ? 'Remove mv' : 'Add inline mv (translate)'}
-        onclick={() => toggleCallMv(n as any)}>↦</button>
-      <button class="ce-row-btn ce-row-tx" class:active={!!n.rot} type="button"
-        title={n.rot ? 'Remove rot' : 'Add inline rot (rotate)'}
-        onclick={() => toggleCallRot(n as any)}>↻</button>
-    {/if}
     {#if canEdit}
       <button class="ce-row-btn ce-row-x" type="button" title="Delete" onclick={() => deleteN(n.id)}>×</button>
     {/if}
   </div>
 
-  <!-- Inline transform editor — expands below the file row when toggled. -->
-  {#if n.type === 'call' && n.mv && openTransform[n.id]?.mv}
-    <div class="ce-row ce-tx-edit-row" style="--depth: {depth}">
-      <span class="ce-tx-edit-label">mv</span>
-      {#each n.mv as ax, i (ax.id)}
-        {#if ax.type === 'literal'}
-          <input
-            class="ce-axis-input"
-            type="text"
-            value={ax.value}
-            placeholder="0"
-            disabled={!canEdit}
-            onblur={(e) => commitTransformAxis(n as any, 'mv', i as 0 | 1 | 2, (e.currentTarget as HTMLInputElement).value)}
-            onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
-          />
-        {:else}
-          <span class="ce-axis-val">{emitShort(ax)}</span>
-        {/if}
-      {/each}
-    </div>
-  {/if}
-  {#if n.type === 'call' && n.rot && openTransform[n.id]?.rot}
-    <div class="ce-row ce-tx-edit-row" style="--depth: {depth}">
-      <span class="ce-tx-edit-label">rot</span>
-      {#each n.rot as ax, i (ax.id)}
-        {#if ax.type === 'literal'}
-          <input
-            class="ce-axis-input"
-            type="text"
-            value={ax.value}
-            placeholder="0"
-            disabled={!canEdit}
-            onblur={(e) => commitTransformAxis(n as any, 'rot', i as 0 | 1 | 2, (e.currentTarget as HTMLInputElement).value)}
-            onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
-          />
-        {:else}
-          <span class="ce-axis-val">{emitShort(ax)}</span>
-        {/if}
-      {/each}
-    </div>
-  {/if}
+  <!-- Expanded body — properties grid + mv/rot editors + transform
+       add-buttons. All transform editing surfaces moved into the
+       collapsible body so the title stays compact. -->
+  {#if n.type === 'call' && callOpen}
+    {#if n.args.length > 0}
+      <!-- Properties grid — Call's positional args, 2 per row. -->
+      <div class="ce-props-grid" style="--depth: {depth}">
+        {#each n.args as arg, i (arg.id)}
+          <div class="ce-prop-cell">
+            <span class="ce-prop-label">{labelForArg(n, i)}</span>
+            {#if arg.type === 'literal'}
+              <input
+                class="ce-prop-input"
+                type="text"
+                value={arg.value}
+                placeholder="0"
+                disabled={!canEdit}
+                onblur={(e) => commitCallArg(n as any, i, (e.currentTarget as HTMLInputElement).value)}
+                onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+              />
+            {:else}
+              <span class="ce-prop-val" title={emitNode(arg)}>{emitShort(arg)}</span>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
 
-  <!-- Properties grid — Call's positional args rendered as labeled
-       name/value cells, 2 per row. Labels come from the dependency
-       snapshot (meta.dependencies → src primitive paramKeys). -->
-  {#if n.type === 'call' && callHasProps && callOpen}
-    <div class="ce-props-grid" style="--depth: {depth}">
-      {#each n.args as arg, i (arg.id)}
-        <div class="ce-prop-cell">
-          <span class="ce-prop-label">{labelForArg(n, i)}</span>
-          {#if arg.type === 'literal'}
+    <!-- mv editor row + inline remove. Shown when n.mv is set. -->
+    {#if n.mv}
+      <div class="ce-row ce-tx-edit-row" style="--depth: {depth}">
+        <span class="ce-tx-edit-label">mv</span>
+        {#each n.mv as ax, i (ax.id)}
+          {#if ax.type === 'literal'}
             <input
-              class="ce-prop-input"
+              class="ce-axis-input"
               type="text"
-              value={arg.value}
+              value={ax.value}
               placeholder="0"
               disabled={!canEdit}
-              onblur={(e) => commitCallArg(n as any, i, (e.currentTarget as HTMLInputElement).value)}
+              onblur={(e) => commitTransformAxis(n as any, 'mv', i as 0 | 1 | 2, (e.currentTarget as HTMLInputElement).value)}
               onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
             />
           {:else}
-            <span class="ce-prop-val" title={emitNode(arg)}>{emitShort(arg)}</span>
+            <span class="ce-axis-val">{emitShort(ax)}</span>
           {/if}
-        </div>
-      {/each}
-    </div>
+        {/each}
+        {#if canEdit}
+          <button class="ce-row-btn ce-row-x" type="button" title="Remove mv" onclick={() => toggleCallMv(n as any)}>×</button>
+        {/if}
+      </div>
+    {/if}
+    <!-- rot editor row + inline remove. Shown when n.rot is set. -->
+    {#if n.rot}
+      <div class="ce-row ce-tx-edit-row" style="--depth: {depth}">
+        <span class="ce-tx-edit-label">rot</span>
+        {#each n.rot as ax, i (ax.id)}
+          {#if ax.type === 'literal'}
+            <input
+              class="ce-axis-input"
+              type="text"
+              value={ax.value}
+              placeholder="0"
+              disabled={!canEdit}
+              onblur={(e) => commitTransformAxis(n as any, 'rot', i as 0 | 1 | 2, (e.currentTarget as HTMLInputElement).value)}
+              onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+            />
+          {:else}
+            <span class="ce-axis-val">{emitShort(ax)}</span>
+          {/if}
+        {/each}
+        {#if canEdit}
+          <button class="ce-row-btn ce-row-x" type="button" title="Remove rot" onclick={() => toggleCallRot(n as any)}>×</button>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Transform toolbar — add mv/rot when not yet set. Sits at the
+         BOTTOM of the body so the user's eye finds it after scanning
+         props. -->
+    {#if canEdit && (!n.mv || !n.rot)}
+      <div class="ce-tx-toolbar" style="--depth: {depth}">
+        {#if !n.mv}
+          <button class="ce-row-btn ce-tx-add" type="button" title="Add inline mv (translate)" onclick={() => toggleCallMv(n as any)}>↦ mv</button>
+        {/if}
+        {#if !n.rot}
+          <button class="ce-row-btn ce-tx-add" type="button" title="Add inline rot (rotate)" onclick={() => toggleCallRot(n as any)}>↻ rot</button>
+        {/if}
+      </div>
+    {/if}
   {/if}
 {/snippet}
 
@@ -1307,6 +1310,30 @@
     color: #444; padding: 1px 4px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+
+  /* Title-row mv/rot indicator dots — terse "this Call has a transform
+     set" cue. The actual editing surface lives in the expanded body. */
+  .ce-tx-dot {
+    font-size: 10px;
+    padding: 0 3px;
+    border-radius: 8px;
+    line-height: 1;
+  }
+  .ce-tx-dot-mv  { color: #92400e; background: #fef3c7; }
+  .ce-tx-dot-rot { color: #6b21a8; background: #f3e8ff; }
+
+  /* Transform toolbar — sits at the BOTTOM of the expanded body,
+     offers ↦ mv / ↻ rot add buttons when those slots are still empty. */
+  .ce-tx-toolbar {
+    display: flex; gap: 6px;
+    padding: 2px 6px 4px;
+    padding-left: calc(var(--depth, 0) * 14px + 36px);
+  }
+  .ce-tx-add {
+    font: 600 11px ui-sans-serif, system-ui;
+    opacity: 0.9;
+  }
+  .ce-tx-add:hover { opacity: 1; }
 
   /* Inline literal edit (file row literal) */
   .ce-lit-input {
