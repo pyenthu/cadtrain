@@ -938,6 +938,36 @@
   // EDIT-EXISTING (K.22 D): fetch a saved function profile's source + params and
   // open the editor seeded from it. Save then UPDATES it (same id overwrites).
   function bodyOf(source: string): string {
+    // Volume profile sources are full modules — meta + `export function
+    // build(p) { ... }`. We want JUST the build body to seed the editor.
+    // The old indexOf('{') + lastIndexOf('}') grabbed from the META opener
+    // through the function closer, so seed.body ended up containing the
+    // meta declarations AND the build wrapper itself; composeSource then
+    // wrapped that mess in another `export function build(p) { ... }`,
+    // and /api/primitives/profiles/resolve bailed with
+    //   Transform failed: Expected ";" but found ":"
+    // (the JSON-shaped meta object inside a function body is invalid JS).
+    const m = source.match(/export\s+function\s+build\s*\(\s*p\s*\)\s*\{/);
+    if (m) {
+      const start = (m.index ?? 0) + m[0].length;
+      let depth = 1, i = start;
+      let inStr: string | null = null;
+      while (i < source.length && depth > 0) {
+        const ch = source[i]!;
+        if (inStr) {
+          if (ch === '\\') { i += 2; continue; }
+          if (ch === inStr) inStr = null;
+          i++; continue;
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; i++; continue; }
+        if (ch === '{') depth++;
+        else if (ch === '}') { depth--; if (depth === 0) break; }
+        i++;
+      }
+      if (depth === 0) return source.slice(start, i).replace(/^\n/, '').replace(/\n\s*$/, '');
+    }
+    // Legacy fallback — bare bodies (no `export function build(p) { … }`
+    // wrapper) saved by older versions of the editor.
     const i = source.indexOf('{'), j = source.lastIndexOf('}');
     return i >= 0 && j > i ? source.slice(i + 1, j).replace(/^\n/, '').replace(/\n\s*$/, '') : source;
   }
