@@ -1093,31 +1093,29 @@
     onclick={callExpandable ? () => toggleCallOpen(n.id) : undefined}
     onkeydown={callExpandable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCallOpen(n.id); } } : undefined}>
     {#if callExpandable}
+      <!-- 📌 pin only — the twist arrow was dropped because clicking the row
+           itself toggles open/close (same UX as the rest of the editor). -->
       <button class="ce-pin" class:pinned={pinnedCalls.has(n.id)} type="button"
         title={pinnedCalls.has(n.id) ? 'Unpin (allow auto-collapse)' : 'Pin open (stays open while other rows open)'}
         onclick={(e) => { e.stopPropagation(); togglePinCall(n.id); }}>📌</button>
-      <button class="ce-twist" type="button" title={callOpen ? 'Collapse' : 'Expand'} onclick={(e) => { e.stopPropagation(); toggleCallOpen(n.id); }}>{callOpen ? '▾' : '▸'}</button>
-    {:else}
-      <span class="ce-twist-spacer"></span>
     {/if}
     {#if n.type === 'call'}
       {@const callSrc = imports.find((i) => i.name === n.fn)?.src}
       {@const pc = instanceColors(n.fn)}
-      <span class="ce-file-title" title={fileTitle(n)}>
-        {n.fn}{#if callSrc}<span class="ce-file-src">: {callSrc}</span>{/if}
-      </span>
       {#if canEdit}
-        <!-- One ⚙ Settings button consolidates per-instance settings (outer +
-             inner colour swatches today, room for rename / pinning / future
-             knobs). Keeps the title bar from getting crowded — the toolbar
-             stays a "name + status + delete" line; details live in the
-             popup. -->
+        <!-- ⚙ Settings BEFORE the title — consolidates per-instance knobs
+             (outer + inner colours today, room for rename / freeze later).
+             Sits to the LEFT of the name so the title-bar reads
+             pin · twist · ⚙ · name : src · status · trash. -->
         <button class="ce-gear" type="button"
           class:open={settingsPopup?.name === n.fn}
           title={`Settings — ${n.fn}`}
           onclick={(e) => openSettingsPopup(n.fn, e)}
           aria-label={`Settings for ${n.fn}`}>⚙</button>
       {/if}
+      <span class="ce-file-title" title={fileTitle(n)}>
+        {n.fn}{#if callSrc}<span class="ce-file-src">: {callSrc}</span>{/if}
+      </span>
       <!-- mv/rot indicator dots — terse status, no triplet preview. The
            edit surface lives in the expanded body below. -->
       {#if n.mv}<span class="ce-tx-dot ce-tx-dot-mv" title="mv set">↦</span>{/if}
@@ -1439,37 +1437,33 @@
      source so the bake pipeline picks the colour up the same way it does
      for primitive composites. -->
 <!-- Consolidated per-instance settings — one popup, ⚙ button opens it.
-     Outer + inner colour pickers stacked; pick-to-commit inline (no
-     second popup). Room here for future per-instance knobs (rename,
-     mv/rot freeze, …). -->
+     Two clean colour chips (outer + inner) in a Tailwind-ish card. Each
+     chip shows the current colour + a native picker on click. Tiny ⟲
+     resets inner to grey. -->
 {#if settingsPopup}
   {@const sname = settingsPopup.name}
   {@const spc = instanceColors(sname)}
-  <FloatingPanel title={`Settings — ${sname}`} visible={true} x={settingsPopup.x} y={settingsPopup.y} width="240px" onClose={closeSettingsPopup}>
-    <div style="display:flex; flex-direction:column; gap:10px; padding:4px;">
-      <div>
-        <div style="font:600 11px Arial; color:#555; margin-bottom:4px;">Outer <span style="font:11px ui-monospace,monospace; color:#888;">— {spc.outer}</span></div>
-        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
-          {#each INSTANCE_PALETTE as c (c)}
-            <button type="button" title={c} onclick={() => setInstanceColor(sname, 'outer', c)}
-              style="height:20px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer; {spc.outer === c ? 'box-shadow:0 0 0 2px #2266cc;' : ''}"
-              aria-label={c}></button>
-          {/each}
-        </div>
+  <FloatingPanel title={`Settings — ${sname}`} visible={true} x={settingsPopup.x} y={settingsPopup.y} width="220px" onClose={closeSettingsPopup}>
+    <div class="ce-set-card">
+      <!-- Both colour pickers on one row to conserve vertical space. The
+           chip's background is the colour swatch; the hidden <input
+           type="color"> overlays so click anywhere on the chip opens
+           the OS picker. ⟲ resets inner to grey. -->
+      <div class="ce-set-row">
+        <label class="ce-set-chip" style="background:{spc.outer}"
+          title={`Outer — ${spc.outer}. External skin of this instance.`}>
+          <input type="color" value={spc.outer}
+            oninput={(e) => setInstanceColor(sname, 'outer', (e.currentTarget as HTMLInputElement).value)} />
+          <span class="ce-set-tag">Outer</span>
+        </label>
+        <label class="ce-set-chip" style="background:{spc.inner}"
+          title={`Inner — ${spc.inner}. Shown where this instance is cut.`}>
+          <input type="color" value={spc.inner}
+            oninput={(e) => setInstanceColor(sname, 'inner', (e.currentTarget as HTMLInputElement).value)} />
+          <span class="ce-set-tag">Inner</span>
+        </label>
+        <button type="button" class="ce-set-reset" title="Reset inner to grey (#888888)" onclick={() => setInstanceColor(sname, 'inner', '#888888')}>⟲</button>
       </div>
-      <div>
-        <div style="font:600 11px Arial; color:#555; margin-bottom:4px;">Inner (cut) <span style="font:11px ui-monospace,monospace; color:#888;">— {spc.inner}</span></div>
-        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
-          {#each INSTANCE_PALETTE as c (c)}
-            <button type="button" title={c} onclick={() => setInstanceColor(sname, 'inner', c)}
-              style="height:20px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer; {spc.inner === c ? 'box-shadow:0 0 0 2px #2266cc;' : ''}"
-              aria-label={c}></button>
-          {/each}
-          <button type="button" title="Reset to grey" onclick={() => setInstanceColor(sname, 'inner', '#888888')}
-            style="height:20px; border-radius:4px; border:1px dashed #999; background:#fff; cursor:pointer; font:10px Arial; color:#666;">×</button>
-        </div>
-      </div>
-      <p style="font:10px Arial; color:#888; margin:0;">Colours live on this assembly's <code>meta.instanceColors[{sname}]</code> — Save source to persist.</p>
     </div>
   </FloatingPanel>
 {/if}
@@ -1660,28 +1654,74 @@
      Pinned rows tint amber to signal "stays open". */
   .ce-pin {
     background: transparent; border: none; cursor: pointer;
-    width: 16px; height: 16px;
+    width: 14px; height: 14px;
     opacity: 0.35;
-    font-size: 11px; line-height: 1;
+    font-size: 10px; line-height: 1;
     padding: 0;
+    margin-right: -2px;
     border-radius: 3px;
+    flex: 0 0 auto;
   }
   .ce-pin:hover { opacity: 0.85; background: #f0e7d5; }
   .ce-pin.pinned { opacity: 1; background: #fbbf24; }
   .ce-pin.pinned:hover { background: #f59e0b; }
 
   /* Per-instance ⚙ Settings button — consolidates the outer/inner colour
-     swatches (and future per-instance knobs). Toned-down resting state
-     so it doesn't compete with the file title; engaged state when its
-     popup is open mirrors the .ce-tx-add.open pattern. */
+     swatches (and future per-instance knobs). Conspicuous resting state
+     with a SOLID outline so the user sees it; gear glyph is bumped a
+     notch larger but the button frame stays compact via tighter
+     padding. Engaged state mirrors .ce-tx-add.open. */
   .ce-gear {
-    background: transparent; border: 1px solid transparent;
-    cursor: pointer; padding: 0 4px;
-    font: 13px ui-sans-serif, system-ui; line-height: 1;
-    color: #999; border-radius: 3px;
+    background: #fff; border: 1px solid #c4c4cc;
+    cursor: pointer; padding: 0 2px;
+    font: 15px ui-sans-serif, system-ui; line-height: 1;
+    color: #666; border-radius: 3px;
+    height: 18px; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
   }
-  .ce-gear:hover { color: #2266cc; background: #eef5ff; border-color: #bcd3ee; }
-  .ce-gear.open { color: #2266cc; background: #eef5ff; border-color: #bcd3ee; }
+  .ce-gear:hover { color: #2266cc; background: #eef5ff; border-color: #2266cc; }
+  .ce-gear.open { color: #2266cc; background: #eef5ff; border-color: #2266cc; }
+
+  /* Per-instance Settings popup — single-row card with two colour
+     chips. Each chip's background IS the swatch; the native <input
+     type="color"> sits invisibly on top so clicking the chip anywhere
+     opens the OS picker. Conservative on vertical space. */
+  .ce-set-card { padding: 4px; }
+  .ce-set-row {
+    display: flex; align-items: stretch; gap: 6px;
+  }
+  .ce-set-chip {
+    position: relative; flex: 1 1 0; min-width: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 36px;
+    border: 1px solid #d0d0d0; border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    cursor: pointer; overflow: hidden;
+    transition: transform 0.05s ease, box-shadow 0.05s ease;
+  }
+  .ce-set-chip:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.12); }
+  .ce-set-chip:active { transform: translateY(1px); }
+  .ce-set-chip input[type="color"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    padding: 0; border: 0; background: none;
+  }
+  /* The Outer / Inner label sits on the swatch; subtle white tint with
+     a dark text shadow so it stays readable on any background colour. */
+  .ce-set-tag {
+    font: 600 11px ui-sans-serif, system-ui;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+    padding: 0 6px; pointer-events: none;
+    background: rgba(0,0,0,0.18); border-radius: 4px;
+  }
+  .ce-set-reset {
+    flex: 0 0 auto; width: 28px; height: 36px;
+    border: 1px solid #d0d0d0; border-radius: 8px;
+    background: #fafafa; cursor: pointer;
+    font: 14px ui-sans-serif, system-ui; color: #888;
+    transition: background 0.05s ease, color 0.05s ease;
+  }
+  .ce-set-reset:hover { background: #f0f0f0; color: #2266cc; }
 
   /* Open Call file row — subtle background tint so the user sees which
      row is the active inspector. */
@@ -1761,9 +1801,9 @@
      glance + light dotted guide line draws the parent → child arrow
      visually. */
   .ce-row {
-    display: flex; align-items: center; gap: 4px;
+    display: flex; align-items: center; gap: 2px;
     padding: 1px 4px;
-    padding-left: calc(var(--depth, 0) * 18px + 2px);
+    padding-left: calc(var(--depth, 0) * 18px + 0px);
     border-radius: 3px;
     min-height: 20px;
     line-height: 1.4;
