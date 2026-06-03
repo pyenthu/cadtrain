@@ -692,6 +692,70 @@
   // Assembly's own meta.params keys — drives the `p.<name>` chip list.
   // Updates reactively as the user adds / removes assembly params.
   let assemblyParamKeys = $derived<string[]>(paramKeysOf(source));
+  // Wired vs unwired: a meta.params key is "wired" when something in the
+  // composition tree references `p.<key>` (in any Call arg literal or
+  // mv/rot triplet). An UNWIRED key is a knob that does NOTHING when
+  // dialed — the classic silent bug the user hit on e_tube.length. The
+  // chip below surfaces those + offers an Auto-wire shortcut that walks
+  // every Call and swaps a matching-paramKey LITERAL DEFAULT for `p.<key>`.
+  // (Until the K.67 graph promotion lands, this is a hand-rolled
+  // string-substitution diff; matches what the user would do via the ƒ
+  // popup but in one click.)
+  let wiredParamRefs = $derived<Set<string>>(() => {
+    const out = new Set<string>();
+    if (!composition) return out;
+    const RE = /\bp\.(\w+)/g;
+    walkTree(composition, (n) => {
+      const visit = (lit: TreeNode | undefined) => {
+        if (!lit || lit.type !== 'literal') return;
+        const v = lit.value || '';
+        let m: RegExpExecArray | null;
+        RE.lastIndex = 0;
+        while ((m = RE.exec(v)) !== null) out.add(m[1]!);
+      };
+      if (n.type === 'call') {
+        for (const a of n.args) visit(a);
+        if (n.mv) for (const a of n.mv) visit(a);
+        if (n.rot) for (const a of n.rot) visit(a);
+      } else if (n.type === 'mv') {
+        for (const a of n.offset) visit(a);
+      } else if (n.type === 'rot') {
+        for (const a of n.rot) visit(a);
+      } else if (n.type === 'literal') {
+        visit(n);
+      }
+    });
+    return out;
+  }) as unknown as Set<string>;
+  let unwiredParams = $derived<string[]>(
+    assemblyParamKeys.filter((k) => !(wiredParamRefs as Set<string>).has(k))
+  );
+
+  /** Walk every Call and replace LITERAL DEFAULT arg slots whose
+   *  paramKey matches one of the assembly's meta.params keys with a
+   *  `p.<key>` reference. Idempotent — slots already containing a
+   *  `p.<...>` expression are left alone. Mirrors what the user
+   *  would do through the ƒ popup on each slot, in one click. */
+  function autoWireUnwired() {
+    if (!canEdit || !composition) return;
+    const wantWired = new Set(unwiredParams);
+    if (wantWired.size === 0) return;
+    let nextRoot: TreeNode = composition;
+    walkTree(composition, (n) => {
+      if (n.type !== 'call' || !n.paramKeys) return;
+      for (let i = 0; i < n.args.length; i++) {
+        const k = n.paramKeys[i];
+        if (!k || !wantWired.has(k)) continue;
+        const a = n.args[i];
+        if (!a || a.type !== 'literal') continue;
+        // Skip slots already carrying a `p.X` expression.
+        if (/\bp\.\w+/.test(a.value)) continue;
+        const newLit: TreeNode = { ...a, value: `p.${k}` };
+        nextRoot = replaceNode(nextRoot, a.id, newLit);
+      }
+    });
+    if (nextRoot !== composition) commit(imports, nextRoot);
+  }
   function openFx(call: TreeNode & { type: 'call' }, argIdx: number, ev: MouseEvent) {
     if (!canEdit) return;
     const arg = call.args[argIdx];
@@ -845,6 +909,27 @@
 {/snippet}
 
 <div class="ce-root">
+  <!-- ─── Unwired-param alert (tactical fix; K.67 graph promotion will
+       make this impossible by construction) — surfaces meta.params keys
+       that no Call slot reads. Dialing them silently does nothing today;
+       Auto-wire substitutes `p.<key>` into every matching unwired slot
+       in one click. -->
+  {#if unwiredParams.length > 0}
+    <div class="ce-unwired-chip" role="status">
+      <span class="ce-unwired-icon">⚠</span>
+      <span class="ce-unwired-msg">
+        {unwiredParams.length === 1 ? 'Param' : 'Params'}
+        {#each unwiredParams as k, i (k)}<code class="ce-unwired-key">{k}</code>{#if i < unwiredParams.length - 1}, {/if}{/each}
+        not wired — dialing does nothing.
+      </span>
+      {#if canEdit}
+        <button class="ce-unwired-fix" type="button"
+          title="Substitute `p.<key>` into every matching unwired Call slot"
+          onclick={autoWireUnwired}>Auto-wire</button>
+      {/if}
+    </div>
+  {/if}
+
   <!-- ─── Imports ──────────────────────────────────────────────────── -->
   <section class="ce-section ce-imports" class:collapsed={!importsOpen}>
     <header class="ce-section-head"
@@ -1621,6 +1706,33 @@
     display: flex; flex-direction: column; gap: 4px; padding: 2px 3px;
     font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+
+  /* Unwired-param alert chip — sits at the very top of the editor when
+     meta.params has knobs that nothing in the composition reads. Yellow
+     attention bar with an Auto-wire shortcut. */
+  .ce-unwired-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px; margin: 0 0 2px 0;
+    background: #fffbeb; border: 1px solid #fbbf24;
+    border-radius: 4px;
+    font: 11px ui-sans-serif, system-ui;
+    color: #92400e;
+  }
+  .ce-unwired-icon { font-size: 13px; flex: 0 0 auto; }
+  .ce-unwired-msg { flex: 1 1 auto; min-width: 0; line-height: 1.3; }
+  .ce-unwired-key {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(146, 64, 14, 0.1); padding: 0 4px;
+    border-radius: 3px; color: #92400e;
+  }
+  .ce-unwired-fix {
+    flex: 0 0 auto;
+    padding: 2px 8px; border: 1px solid #f59e0b;
+    background: #fbbf24; color: #78350f; cursor: pointer;
+    border-radius: 3px;
+    font: 600 11px ui-sans-serif, system-ui;
+  }
+  .ce-unwired-fix:hover { background: #f59e0b; color: #fff; }
   .ce-section {
     background: #fff; border: 1px solid #ddd; border-radius: 6px;
     padding: 3px 5px;
