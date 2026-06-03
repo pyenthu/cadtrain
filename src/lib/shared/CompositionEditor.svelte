@@ -701,41 +701,40 @@
   // (Until the K.67 graph promotion lands, this is a hand-rolled
   // string-substitution diff; matches what the user would do via the ƒ
   // popup but in one click.)
-  let wiredParamRefs = $derived<Set<string>>(() => {
+  // $derived.by is the multi-statement form — using bare $derived(() => {...})
+  // would bind the FUNCTION itself as the value (Svelte 5 runes treat the arg
+  // as an expression, not a getter), so `.has` would fail on a function ref.
+  //
+  // We scan THE FUNCTION BODY TEXT (not the composition tree). The body is
+  // what the bake actually evaluates — and on legacy assemblies the body
+  // can drift from `meta.composition` (the tree has `value: "p.length"`
+  // but the body still emits `length: 2`). A tree-only check would report
+  // "wired" while the dial silently does nothing. Scanning the body
+  // matches what the bake sees and surfaces the real drift.
+  let wiredParamRefs = $derived.by<Set<string>>(() => {
     const out = new Set<string>();
-    if (!composition) return out;
+    // Extract the `export function <id>(...) { ... }` body span; skip the
+    // surrounding `meta = {...}` (which holds composition-tree literal
+    // references that may have drifted from the real body).
+    const fnMatch = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*?)\n\}\s*$/);
+    const body = fnMatch?.[1] ?? '';
+    if (!body) return out;
     const RE = /\bp\.(\w+)/g;
-    walkTree(composition, (n) => {
-      const visit = (lit: TreeNode | undefined) => {
-        if (!lit || lit.type !== 'literal') return;
-        const v = lit.value || '';
-        let m: RegExpExecArray | null;
-        RE.lastIndex = 0;
-        while ((m = RE.exec(v)) !== null) out.add(m[1]!);
-      };
-      if (n.type === 'call') {
-        for (const a of n.args) visit(a);
-        if (n.mv) for (const a of n.mv) visit(a);
-        if (n.rot) for (const a of n.rot) visit(a);
-      } else if (n.type === 'mv') {
-        for (const a of n.offset) visit(a);
-      } else if (n.type === 'rot') {
-        for (const a of n.rot) visit(a);
-      } else if (n.type === 'literal') {
-        visit(n);
-      }
-    });
+    let m: RegExpExecArray | null;
+    while ((m = RE.exec(body)) !== null) out.add(m[1]!);
     return out;
-  }) as unknown as Set<string>;
+  });
   let unwiredParams = $derived<string[]>(
-    assemblyParamKeys.filter((k) => !(wiredParamRefs as Set<string>).has(k))
+    assemblyParamKeys.filter((k) => !wiredParamRefs.has(k))
   );
 
   /** Walk every Call and replace LITERAL DEFAULT arg slots whose
    *  paramKey matches one of the assembly's meta.params keys with a
-   *  `p.<key>` reference. Idempotent — slots already containing a
-   *  `p.<...>` expression are left alone. Mirrors what the user
-   *  would do through the ƒ popup on each slot, in one click. */
+   *  `p.<key>` reference. Idempotent on the tree — slots already
+   *  carrying a `p.X` expression are left alone. ALWAYS commits when
+   *  there are unwired params so the body gets re-emitted from the
+   *  tree (handles the drift case where the tree already says
+   *  `p.length` but the body still has the old literal). */
   function autoWireUnwired() {
     if (!canEdit || !composition) return;
     const wantWired = new Set(unwiredParams);
@@ -754,7 +753,10 @@
         nextRoot = replaceNode(nextRoot, a.id, newLit);
       }
     });
-    if (nextRoot !== composition) commit(imports, nextRoot);
+    // Always commit — `applyToSource` re-emits the body from the tree,
+    // healing the case where the tree was already wired but the body
+    // had stale literals.
+    commit(imports, nextRoot);
   }
   function openFx(call: TreeNode & { type: 'call' }, argIdx: number, ev: MouseEvent) {
     if (!canEdit) return;

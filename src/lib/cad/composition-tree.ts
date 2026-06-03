@@ -685,8 +685,18 @@ function insertMetaField(source: string, key: string, value: string): string {
 
 /** Replace the body of `export function ID() { ... }` with newBody. */
 export function rewriteAssemblyFunctionBody(source: string, id: string, newBody: string): string {
-  const fnRe = new RegExp(`(export\\s+function\\s+${id}\\s*\\([^)]*\\)\\s*\\{)`);
-  const m = source.match(fnRe);
+  // Tolerate function-name vs id mismatch (file got renamed but the body's
+  // `export function <name>` lagged): try id-named first, then fall back to
+  // the FIRST exported function declaration. Mirrors the same tolerance the
+  // loader applies in primitive-loader.ts; without it, applyToSource silently
+  // returns source unchanged for renamed assemblies and the Auto-wire / save
+  // path appears to do nothing.
+  let fnRe = new RegExp(`(export\\s+function\\s+${id}\\s*\\([^)]*\\)\\s*\\{)`);
+  let m = source.match(fnRe);
+  if (!m) {
+    const anyFn = source.match(/(export\s+function\s+\w+\s*\([^)]*\)\s*\{)/);
+    if (anyFn) m = anyFn;
+  }
   if (!m) return source;
   const headEnd = (m.index ?? 0) + m[0].length;
   let depth = 1, i = headEnd;
