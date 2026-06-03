@@ -1745,13 +1745,12 @@
   .ce-tx-chip-rot { background: #fae8ff; border-color: #e9d5ff; color: #6b21a8; }
   .ce-tx-chip-rot:hover:not(:disabled) { background: #f3e8ff; border-color: #c084fc; }
 
-  /* Inline 3-input transform editor row */
+  /* Inline 3-input transform editor row — flat indent (matches .ce-props-grid). */
   .ce-tx-edit-row {
-    padding-left: calc(var(--depth, 0) * 18px + 36px);
     background: #fffbeb;
     border-left: 2px solid #fbbf24;
-    margin-left: calc(var(--depth, 0) * 18px + 12px);
-    padding-left: 6px;
+    margin-left: 6px;
+    padding-left: 8px;
   }
   .ce-tx-edit-label {
     font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1759,7 +1758,7 @@
     min-width: 28px;
   }
   .ce-axis-row {
-    padding-left: calc(var(--depth, 0) * 18px + 36px);
+    padding-left: 36px;
   }
   .ce-axis-label {
     font-size: 11px; color: #888;
@@ -1779,17 +1778,19 @@
   }
 
   /* Properties grid — Call args rendered as label/value pairs, 2 per row.
-     Sits in the expanded body of a file (Call) row, indented under it. */
+     Sits in the expanded body of a file (Call) row. Indentation is FLAT
+     (no depth multiplier) so prop cells at every level of the composition
+     line up vertically — same left edge regardless of how deeply the
+     parent Call is nested. */
   .ce-props-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     column-gap: 6px;
     row-gap: 2px;
-    padding: 2px 6px 4px;
-    padding-left: calc(var(--depth, 0) * 18px + 36px);
+    padding: 2px 6px 4px 8px;
     background: #fafafa;
     border-left: 2px solid #d4d4dc;
-    margin-left: calc(var(--depth, 0) * 18px + 12px);
+    margin-left: 6px;
   }
   .ce-prop-cell {
     display: grid;
@@ -1827,11 +1828,11 @@
   .ce-tx-dot-rot { color: #6b21a8; background: #f3e8ff; }
 
   /* Transform toolbar — sits at the BOTTOM of the expanded body,
-     offers ↦ mv / ↻ rot add buttons when those slots are still empty. */
+     offers ↦ mv / ↻ rot add buttons when those slots are still empty.
+     Flat indent so it lines up with the prop grid above. */
   .ce-tx-toolbar {
     display: flex; gap: 6px;
-    padding: 2px 6px 4px;
-    padding-left: calc(var(--depth, 0) * 18px + 36px);
+    padding: 2px 6px 4px 36px;
   }
   .ce-tx-add {
     font: 600 11px ui-sans-serif, system-ui;
