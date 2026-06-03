@@ -17,7 +17,12 @@
   // component doesn't talk to the API itself.
   import PrimitiveDualCanvas from './PrimitiveDualCanvas.svelte';
   import CompositionEditor from './CompositionEditor.svelte';
-  import { addAssemblyParam, removeAssemblyParam } from '$lib/cad/composition-tree';
+  import {
+    addAssemblyParam, removeAssemblyParam,
+    parseImports as ctParseImports, parseComposition as ctParseComposition,
+    applyToSource as ctApplyToSource, newNodeId as ctNewNodeId,
+    type TreeNode as CtTreeNode,
+  } from '$lib/cad/composition-tree';
   import ExtrudePartBuilder from '$lib/cad/builders/ExtrudePartBuilder.svelte';
   import RevolvePartBuilder from '$lib/cad/builders/RevolvePartBuilder.svelte';
   import { extractMetaParams } from '$lib/cad/inline-profile';
@@ -1725,11 +1730,6 @@
     const r = recognized;
     const child = childId ?? loadPick;
     if (!child) return;
-    // K.63 M2.5: the new-style assembly branch (which routed through
-    // appendAssemblyInstance + meta.instances) is gone. Assemblies go
-    // through CompositionEditor instead. Composite leaf parts still hit
-    // the recognizer-driven splice path below.
-    if (!r || r.returnStart < 0 || r.compStart < 0) return;
     loadBusy = true;
     profileEditNote = null;
     try {
@@ -1738,6 +1738,61 @@
       if (!res.ok) { profileEditNote = `Load failed: ${await res.text()}`; return; }
       const data = await res.json();
       const childParams = data.params ?? {};
+      const childKeys = Object.keys(childParams);
+      // ── New K.63 assembly path — composition-tree + object-args ─────────
+      // For assemblies (.asm.ts), bypass the legacy splice path entirely.
+      // The recognizer-based splice writes positional `const A = e_tube(4.5,
+      // 0.75)` + `empty().add(A)` directly into the body, leaves meta.imports
+      // + meta.composition empty, and gets stuck in the OLD vocabulary the
+      // user is moving away from. Route through ctApplyToSource so we emit
+      // object-args (`A({od: 4.5, wall: 0.75})`) AND surface the new Call
+      // in the CompositionEditor (which only renders meta.composition).
+      if (kind === 'asm') {
+        const imports = ctParseImports(editedSource);
+        const composition = ctParseComposition(editedSource);
+        // Allocate a fresh letter alias (A, B, …, Z, AA, …) that isn't already
+        // taken. Matches CompositionEditor.nextAlias's monotone scheme.
+        const taken = new Set(imports.map((i) => i.name));
+        let freshAlias = '';
+        for (let i = 0; ; i++) {
+          const letters: string[] = [];
+          let nn = i;
+          do { letters.unshift(String.fromCharCode(65 + (nn % 26))); nn = Math.floor(nn / 26) - 1; } while (nn >= 0);
+          const a = letters.join('');
+          if (!taken.has(a)) { freshAlias = a; break; }
+        }
+        // Build a Call node carrying the child's default values as literals
+        // + paramKeys so emitNode produces object form. NO auto-lift to
+        // meta.params — user-decided (matches CompositionEditor's flow).
+        const args: CtTreeNode[] = childKeys.map((k) => {
+          const def = (childParams[k] as any)?.default;
+          const value =
+            def == null ? '0'
+            : typeof def === 'number' ? String(def)
+            : typeof def === 'string' ? def
+            : Array.isArray(def) ? JSON.stringify(def)
+            : typeof def === 'object' && 'kind' in def
+              ? `resolveProfile(${JSON.stringify(def)})`
+              : '0';
+          return { type: 'literal', id: ctNewNodeId(), value } as CtTreeNode;
+        });
+        const callNode: CtTreeNode = {
+          type: 'call', id: ctNewNodeId(), fn: freshAlias, args, paramKeys: childKeys,
+        };
+        const newImports = [...imports, { name: freshAlias, src: child }];
+        let newRoot: CtTreeNode;
+        if (!composition) {
+          newRoot = { type: 'list', id: ctNewNodeId(), children: [callNode] };
+        } else if (composition.type === 'list' || composition.type === 'stack') {
+          newRoot = { ...composition, children: [...composition.children, callNode] };
+        } else {
+          newRoot = { type: 'list', id: ctNewNodeId(), children: [composition, callNode] };
+        }
+        editedSource = ctApplyToSource(editedSource, id, newImports, newRoot);
+        loadPick = '';
+        return;
+      }
+      if (!r || r.returnStart < 0 || r.compStart < 0) return;
       const src = editedSource;
 
       // r_rotate is the FUNCTION-FIRST revolve: its first arg is a profile

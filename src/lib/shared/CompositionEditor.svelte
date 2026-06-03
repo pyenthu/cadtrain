@@ -30,6 +30,7 @@
     replaceNode, deleteNode, newNodeId, childrenOf, emitNode, walkTree,
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
+  import { paramKeysOf } from '$lib/cad/assembly-deps';
   import FloatingPanel from './FloatingPanel.svelte';
   import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
 
@@ -158,6 +159,22 @@
     setInstanceColor(colorPopup.name, colorPopup.which, hex);
     colorPopup = null;
   }
+  // Settings popup — one ⚙ button per Call replaces the cluster of inline
+  // chips (outer/inner swatches, future per-instance rename/lock). Click
+  // toggle: same button closes the popup; clicking on a different Call's
+  // gear retargets the popup without an intermediate close.
+  let settingsPopup = $state<{ name: string; x: number; y: number } | null>(null);
+  function openSettingsPopup(name: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    if (settingsPopup && settingsPopup.name === name) { settingsPopup = null; return; }
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    settingsPopup = {
+      name,
+      x: Math.min(rect.left, window.innerWidth - 280),
+      y: Math.min(rect.bottom + 4, window.innerHeight - 200),
+    };
+  }
+  function closeSettingsPopup() { settingsPopup = null; }
   let rootKindBadge = $derived<string>(
     composition === null ? '[ ]'
       : composition.type === 'list' ? '[ ]'
@@ -633,6 +650,14 @@
   let callActionPopup = $state<{ nodeId: string; x: number; y: number; kind: 'transform' | 'method' } | null>(null);
   function openCallActionPopup(ev: MouseEvent, nodeId: string, kind: 'transform' | 'method') {
     if (!canEdit) return;
+    // Toggle: clicking the same button while it's already open closes it.
+    // Matches the accordion-style open/close behaviour the rest of the
+    // editor uses (file rows, gear icons, etc.) — uniform "click to
+    // toggle" feel instead of "click to open, click outside to close".
+    if (callActionPopup && callActionPopup.nodeId === nodeId && callActionPopup.kind === kind) {
+      callActionPopup = null;
+      return;
+    }
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     callActionPopup = { nodeId, x: rect.left, y: rect.bottom + 4, kind };
   }
@@ -654,6 +679,47 @@
     if (!canEdit) return;
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     argPicker = { nodeId, x: rect.left, y: rect.bottom + 4, tab: 'literal', query: '', literalVal: '' };
+  }
+
+  // ─── ƒ function / expression editor popup ────────────────────────────
+  // The prop-cell input is wide enough for short literals (`4.5`, `p.od`)
+  // but cramped for longer expressions (`p.od/2 - p.wall`,
+  // `Math.PI * p.od`). The ƒ chip beside each cell opens a FloatingPanel
+  // with a wider input + clickable chips for assembly param refs (`p.x`)
+  // and common operators / Math constants. Apply commits via
+  // commitCallArg → same path as the inline input.
+  let fxEdit = $state<{ callId: string; argIdx: number; raw: string; px: number; py: number } | null>(null);
+  // Assembly's own meta.params keys — drives the `p.<name>` chip list.
+  // Updates reactively as the user adds / removes assembly params.
+  let assemblyParamKeys = $derived<string[]>(paramKeysOf(source));
+  function openFx(call: TreeNode & { type: 'call' }, argIdx: number, ev: MouseEvent) {
+    if (!canEdit) return;
+    const arg = call.args[argIdx];
+    if (!arg) return;
+    const raw = arg.type === 'literal' ? arg.value : emitNode(arg);
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    fxEdit = {
+      callId: call.id, argIdx, raw,
+      // Clamp into viewport so a deep-nested chip's popup doesn't fall off-screen.
+      px: Math.min(rect.left, window.innerWidth - 320),
+      py: Math.min(rect.bottom + 4, window.innerHeight - 260),
+    };
+  }
+  function closeFx() { fxEdit = null; }
+  function fxAppend(token: string) {
+    if (!fxEdit) return;
+    // Append with a sensible separator: bare names / numbers get a space;
+    // operators slot in directly. Mirrors PrimitiveView's openFx pattern.
+    const cur = fxEdit.raw;
+    const sep = cur && !cur.endsWith(' ') && !/[+\-*/(]\s*$/.test(cur) && !/^[+\-*/)]/.test(token) ? ' ' : '';
+    fxEdit = { ...fxEdit, raw: cur + sep + token };
+  }
+  function applyFx() {
+    if (!fxEdit || !composition) return;
+    const call = findById(composition, fxEdit.callId);
+    if (!call || call.type !== 'call') { fxEdit = null; return; }
+    commitCallArg(call, fxEdit.argIdx, fxEdit.raw.trim());
+    fxEdit = null;
   }
 
   let opPopupNode = $derived(opPopup && composition ? findById(composition, opPopup.nodeId) : null);
@@ -1041,17 +1107,16 @@
         {n.fn}{#if callSrc}<span class="ce-file-src">: {callSrc}</span>{/if}
       </span>
       {#if canEdit}
-        <!-- Per-instance OUTER (skin) + INNER (cut) colour swatches.
-             Same shape PrimitiveView already uses, stored on this assembly's
-             meta.instanceColors keyed by the Call alias. -->
-        <button class="ce-swatch" type="button" title={`Outer (skin) — ${pc.outer}`}
-          style="background:{pc.outer}"
-          onclick={(e) => openColorPopup(n.fn, 'outer', e)}
-          aria-label={`Outer colour for ${n.fn}`}></button>
-        <button class="ce-swatch ce-swatch-inner" type="button" title={`Inner (cut) — ${pc.inner}`}
-          style="background:{pc.inner}"
-          onclick={(e) => openColorPopup(n.fn, 'inner', e)}
-          aria-label={`Inner colour for ${n.fn}`}></button>
+        <!-- One ⚙ Settings button consolidates per-instance settings (outer +
+             inner colour swatches today, room for rename / pinning / future
+             knobs). Keeps the title bar from getting crowded — the toolbar
+             stays a "name + status + delete" line; details live in the
+             popup. -->
+        <button class="ce-gear" type="button"
+          class:open={settingsPopup?.name === n.fn}
+          title={`Settings — ${n.fn}`}
+          onclick={(e) => openSettingsPopup(n.fn, e)}
+          aria-label={`Settings for ${n.fn}`}>⚙</button>
       {/if}
       <!-- mv/rot indicator dots — terse status, no triplet preview. The
            edit surface lives in the expanded body below. -->
@@ -1099,19 +1164,33 @@
         {#each n.args as arg, i (arg.id)}
           <div class="ce-prop-cell">
             <span class="ce-prop-label">{labelForArg(n, i)}</span>
-            {#if arg.type === 'literal'}
-              <input
-                class="ce-prop-input"
-                type="text"
-                value={arg.value}
-                placeholder="0"
+            <div class="ce-prop-value-wrap">
+              {#if arg.type === 'literal'}
+                <input
+                  class="ce-prop-input"
+                  type="text"
+                  value={arg.value}
+                  placeholder="0"
+                  disabled={!canEdit}
+                  onblur={(e) => commitCallArg(n as any, i, (e.currentTarget as HTMLInputElement).value)}
+                  onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+                />
+              {:else}
+                <span class="ce-prop-val" title={emitNode(arg)}>{emitShort(arg)}</span>
+              {/if}
+              <!-- ƒ chip — opens the popup for longer expressions (more
+                   room than the inline input + clickable param refs +
+                   operator shortcuts). Tinted blue when the slot already
+                   carries a non-literal / multi-token expression. -->
+              <button
+                type="button"
+                class="ce-fx-chip"
+                class:hot={arg.type !== 'literal' || (arg.type === 'literal' && arg.value && (arg.value.length > 6 || /[a-zA-Z]/.test(arg.value)))}
+                title="Edit as a function / expression (param names · Math.*)"
                 disabled={!canEdit}
-                onblur={(e) => commitCallArg(n as any, i, (e.currentTarget as HTMLInputElement).value)}
-                onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
-              />
-            {:else}
-              <span class="ce-prop-val" title={emitNode(arg)}>{emitShort(arg)}</span>
-            {/if}
+                onclick={(e) => openFx(n as any, i, e as MouseEvent)}
+              >ƒ</button>
+            </div>
           </div>
         {/each}
       </div>
@@ -1173,11 +1252,13 @@
     {#if canEdit}
       <div class="ce-tx-toolbar" style="--depth: {depth}">
         <button class="ce-row-btn ce-tx-add" type="button"
-          title="Attach a transform (mv / rot)"
+          class:open={callActionPopup?.nodeId === n.id && callActionPopup?.kind === 'transform'}
+          title="Attach a transform (mv / rot) — click again to close"
           disabled={!!n.mv && !!n.rot}
           onclick={(ev) => openCallActionPopup(ev, n.id, 'transform')}>↦ Transform ▾</button>
         <button class="ce-row-btn ce-tx-add" type="button"
-          title="Wrap in a CSG method (subtract / add / intersect)"
+          class:open={callActionPopup?.nodeId === n.id && callActionPopup?.kind === 'method'}
+          title="Wrap in a CSG method (subtract / add / intersect) — click again to close"
           onclick={(ev) => openCallActionPopup(ev, n.id, 'method')}>⊖ Method ▾</button>
       </div>
     {/if}
@@ -1357,6 +1438,42 @@
      for each Call row. Persists to meta.instanceColors on this assembly's
      source so the bake pipeline picks the colour up the same way it does
      for primitive composites. -->
+<!-- Consolidated per-instance settings — one popup, ⚙ button opens it.
+     Outer + inner colour pickers stacked; pick-to-commit inline (no
+     second popup). Room here for future per-instance knobs (rename,
+     mv/rot freeze, …). -->
+{#if settingsPopup}
+  {@const sname = settingsPopup.name}
+  {@const spc = instanceColors(sname)}
+  <FloatingPanel title={`Settings — ${sname}`} visible={true} x={settingsPopup.x} y={settingsPopup.y} width="240px" onClose={closeSettingsPopup}>
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px;">
+      <div>
+        <div style="font:600 11px Arial; color:#555; margin-bottom:4px;">Outer <span style="font:11px ui-monospace,monospace; color:#888;">— {spc.outer}</span></div>
+        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
+          {#each INSTANCE_PALETTE as c (c)}
+            <button type="button" title={c} onclick={() => setInstanceColor(sname, 'outer', c)}
+              style="height:20px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer; {spc.outer === c ? 'box-shadow:0 0 0 2px #2266cc;' : ''}"
+              aria-label={c}></button>
+          {/each}
+        </div>
+      </div>
+      <div>
+        <div style="font:600 11px Arial; color:#555; margin-bottom:4px;">Inner (cut) <span style="font:11px ui-monospace,monospace; color:#888;">— {spc.inner}</span></div>
+        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:5px;">
+          {#each INSTANCE_PALETTE as c (c)}
+            <button type="button" title={c} onclick={() => setInstanceColor(sname, 'inner', c)}
+              style="height:20px; border-radius:4px; border:1px solid #ccc; background:{c}; cursor:pointer; {spc.inner === c ? 'box-shadow:0 0 0 2px #2266cc;' : ''}"
+              aria-label={c}></button>
+          {/each}
+          <button type="button" title="Reset to grey" onclick={() => setInstanceColor(sname, 'inner', '#888888')}
+            style="height:20px; border-radius:4px; border:1px dashed #999; background:#fff; cursor:pointer; font:10px Arial; color:#666;">×</button>
+        </div>
+      </div>
+      <p style="font:10px Arial; color:#888; margin:0;">Colours live on this assembly's <code>meta.instanceColors[{sname}]</code> — Save source to persist.</p>
+    </div>
+  </FloatingPanel>
+{/if}
+
 {#if colorPopup}
   <FloatingPanel
     title={`${colorPopup.which === 'outer' ? 'Outer (skin)' : 'Inner (cut)'} — ${colorPopup.name}`}
@@ -1470,6 +1587,41 @@
   </FloatingPanel>
 {/if}
 
+<!-- ƒ function / expression editor — wider input for long expressions
+     + clickable assembly-param chips + common operator/Math shortcuts.
+     Mirrors PrimitiveView's fxEdit popup so the inspector feel is uniform. -->
+{#if fxEdit}
+  <FloatingPanel title="ƒ function / expression" visible={true} x={fxEdit.px} y={fxEdit.py} width="320px" onClose={closeFx}>
+    <div style="display:flex; flex-direction:column; gap:6px; padding:4px;">
+      <input bind:value={fxEdit.raw} spellcheck="false" placeholder="e.g. p.od / 2 - p.wall"
+        onkeydown={(e) => { if (e.key === 'Enter') applyFx(); }}
+        style="font:11px ui-monospace, monospace; padding:4px 6px; border:1px solid #d4e1f5; border-radius:4px;" />
+      {#if assemblyParamKeys.length}
+        <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+          <span style="font:10px Arial; color:#888;">link a param:</span>
+          {#each assemblyParamKeys as pn (pn)}
+            <button type="button" title={`insert p.${pn}`} onclick={() => fxAppend('p.' + pn)}
+              style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #d4e1f5; border-radius:3px; background:#eef3fb; cursor:pointer;">p.{pn}</button>
+          {/each}
+        </div>
+      {:else}
+        <div style="font:10px Arial; color:#888;">No assembly params yet — add one in the Parameters panel, then link it here as <code>p.&lt;name&gt;</code>.</div>
+      {/if}
+      <div style="display:flex; flex-wrap:wrap; gap:4px;">
+        {#each ['+', '-', '*', '/', '(', ')', 'Math.PI'] as t (t)}
+          <button type="button" onclick={() => fxAppend(t)}
+            style="font:10px ui-monospace,monospace; padding:1px 6px; border:1px solid #ddd; border-radius:3px; background:#fafafa; cursor:pointer;">{t}</button>
+        {/each}
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:6px;">
+        <button class="ce-btn" type="button" onclick={closeFx}>Cancel</button>
+        <button class="ce-btn ce-btn-primary" type="button" onclick={applyFx}>Apply</button>
+      </div>
+      <p style="font:10px Arial; color:#888; margin:2px 0 0;">Param names + <code>Math.*</code> resolve at build. Enter to apply.</p>
+    </div>
+  </FloatingPanel>
+{/if}
+
 <style>
   .ce-root {
     display: flex; flex-direction: column; gap: 4px; padding: 2px 3px;
@@ -1517,6 +1669,19 @@
   .ce-pin:hover { opacity: 0.85; background: #f0e7d5; }
   .ce-pin.pinned { opacity: 1; background: #fbbf24; }
   .ce-pin.pinned:hover { background: #f59e0b; }
+
+  /* Per-instance ⚙ Settings button — consolidates the outer/inner colour
+     swatches (and future per-instance knobs). Toned-down resting state
+     so it doesn't compete with the file title; engaged state when its
+     popup is open mirrors the .ce-tx-add.open pattern. */
+  .ce-gear {
+    background: transparent; border: 1px solid transparent;
+    cursor: pointer; padding: 0 4px;
+    font: 13px ui-sans-serif, system-ui; line-height: 1;
+    color: #999; border-radius: 3px;
+  }
+  .ce-gear:hover { color: #2266cc; background: #eef5ff; border-color: #bcd3ee; }
+  .ce-gear.open { color: #2266cc; background: #eef5ff; border-color: #bcd3ee; }
 
   /* Open Call file row — subtle background tint so the user sees which
      row is the active inspector. */
@@ -1799,6 +1964,34 @@
     column-gap: 4px;
     min-width: 0;
   }
+  /* Value side of a prop cell wraps the input/value + the ƒ chip. Flex so
+     the input takes whatever's left after the chip claims its 18px. */
+  .ce-prop-value-wrap {
+    display: flex; align-items: center; gap: 2px; min-width: 0;
+  }
+  .ce-prop-value-wrap > .ce-prop-input,
+  .ce-prop-value-wrap > .ce-prop-val { flex: 1 1 auto; min-width: 0; }
+  /* ƒ chip — tiny, sits to the right of the input. Tinted blue when the
+     slot carries a non-trivial expression (long literal, ref, or call)
+     so the user sees at a glance "this one's wired to something". */
+  .ce-fx-chip {
+    flex: 0 0 auto;
+    background: transparent; border: 1px solid transparent;
+    cursor: pointer; padding: 0 3px; font: 600 11px Arial;
+    color: #bbb; border-radius: 3px; line-height: 1;
+  }
+  .ce-fx-chip:hover:not(:disabled) { color: #2266cc; background: #eef5ff; border-color: #d4e1f5; }
+  .ce-fx-chip.hot { color: #2266cc; }
+  .ce-fx-chip:disabled { cursor: default; opacity: 0.5; }
+  /* Popup-shared button styles — Cancel + Apply on the fx popup. */
+  .ce-btn {
+    font: 11px ui-sans-serif, system-ui; padding: 2px 8px;
+    border: 1px solid #d0d0d0; background: #fff; cursor: pointer;
+    border-radius: 3px;
+  }
+  .ce-btn:hover { background: #f5f5f8; }
+  .ce-btn-primary { background: #2266cc; color: #fff; border-color: #2266cc; }
+  .ce-btn-primary:hover { background: #1a4ea0; border-color: #1a4ea0; }
   .ce-prop-label {
     font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #555;
@@ -1839,6 +2032,11 @@
     opacity: 0.9;
   }
   .ce-tx-add:hover { opacity: 1; }
+  /* Active-state when its popup is open — same chip's caret reads as "engaged"
+     so the user knows clicking again will close. */
+  .ce-tx-add.open {
+    background: #eef5ff; border-color: #bcd3ee; color: #2266cc; opacity: 1;
+  }
 
   /* Inline literal edit (file row literal) */
   .ce-lit-input {
