@@ -163,16 +163,40 @@ export function empty(): any {
  */
 export function tagManifold(m: any, hashId: number): any {
   if (!m || typeof m.getMesh !== 'function') return m;
-  const Manifold = G.__cadtrain_manifold__?.wasm?.Manifold;
-  if (!Manifold) return m;
+  const wasm = G.__cadtrain_manifold__?.wasm;
+  const Manifold = wasm?.Manifold;
+  const Mesh = wasm?.Mesh;
+  if (!Manifold || !Mesh) return m;
   try {
-    const mesh = m.getMesh();
-    // One run spanning the whole mesh. runIndex length 1 → Manifold appends
-    // triVerts.size() automatically (Mesh input contract). faceID is
-    // per-triangle and run-independent, so leave it.
-    mesh.runOriginalID = new Uint32Array([hashId >>> 0]);
-    mesh.runIndex = new Uint32Array([0]);
-    return new Manifold(mesh);
+    const old = m.getMesh();
+    // CONSTRUCT a FRESH Mesh with our runOriginalID baked in via the
+    // MeshOptions constructor — mutating .runOriginalID on the returned
+    // mesh object DID NOT propagate to the underlying WASM state, so the
+    // outer __tag silently inherited the input manifold's existing
+    // relation. With nested asm calls (assembly imports another assembly)
+    // every part ended up sharing the inner asm's tag → single colour
+    // across all parts. Building a new Mesh with explicit MeshOptions
+    // makes the override actually stick. Discovered 2026-06-03.
+    //
+    // One run spanning every triangle: runIndex = [0, triVerts.length],
+    // runOriginalID = [hashId]. Manifold accepts runIndex shorter by one
+    // and auto-appends, but supplying the full pair is the documented
+    // canonical form.
+    // COPY the typed-array data into fresh buffers — passing through the
+    // old.* references can put the new Mesh in a weird state where it
+    // silently produces an empty manifold (observed 2026-06-03: parts
+    // disappeared from the bake instead of getting recoloured). Fresh
+    // Float32Array(old.vertProperties) + Uint32Array(old.triVerts) are
+    // structurally identical but owned by the new Mesh.
+    const tvLen = (old.triVerts as ArrayLike<number>).length;
+    const fresh = new Mesh({
+      numProp: old.numProp,
+      vertProperties: new Float32Array(old.vertProperties),
+      triVerts: new Uint32Array(old.triVerts),
+      runOriginalID: new Uint32Array([hashId >>> 0]),
+      runIndex: new Uint32Array([0, tvLen]),
+    });
+    return new Manifold(fresh);
   } catch {
     return m;
   }
