@@ -592,10 +592,32 @@
     // not the source dir-id, so it works regardless of the old value).
     let src = editedSource.replace(idRe, `$1${newId}$2`);
     if (nameRe.test(src)) src = src.replace(nameRe, `$1${newId}$2`);
+    // Preserve the SOURCE entry's TYPE + LOCATION so Save As lands next
+    // to the original (not at primitives/ root). Mirrors cloneEntry's
+    // family walk + subfolder + kind preservation. Without this, every
+    // Save As silently created a flat <id>.prim.ts at the volume root,
+    // invisible in the sidebar's category groups.
+    const srcEntry = [...entries, ...basic, ...Object.values(completions).flat(), ...archived]
+      .find((x) => x.id === srcId);
+    let family: string | undefined;
+    for (const [fam, list] of Object.entries(completions)) {
+      if (list.some((x) => x.id === srcId)) { family = fam; break; }
+    }
+    const sub = srcEntry?.subfolder;
+    const targetDir = family
+      ? (sub ? `completions/${family}/${sub}` : `completions/${family}`)
+      : (sub ? `basic/${sub}` : 'basic');
+    // Read the source's KIND so a Save As on an assembly stays an
+    // assembly (.asm.ts), not silently typed as a plain prim.
+    let srcKind: string | undefined;
+    try {
+      const d = await fetchSourceFor(srcId);
+      srcKind = (d as any)?.kind;
+    } catch { /* fall back to default 'prim' on the server side */ }
     const r = await fetch('/api/primitives/save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: newId, source: src }),
+      body: JSON.stringify({ id: newId, source: src, dir: targetDir, kind: srcKind }),
     });
     if (!r.ok) { status = `Save As failed: ${await r.text()}`; return false; }
     status = `Saved ${srcId} as → ${newId}.`;

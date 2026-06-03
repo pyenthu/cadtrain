@@ -203,8 +203,21 @@ export async function buildPrimitiveGeom(
   // and the body uses `p.<key>` (or destructures) directly. Set during the
   // .replace pass; consumed by the adaptive `wrapped` boundary below.
   let isObjectStyle = false;
+  // Be tolerant of a name MISMATCH between the requested primitive id and the
+  // function declared in the source. Happens after a rename where the file
+  // got renamed (e_tube.asm.ts) but the body still says `export function
+  // my_assy(p)`. Without this, the regex below would miss, the signature
+  // would never be rewritten or detected as object-style, and calls would
+  // misbind. Resolve to the source's ACTUAL exported function name when the
+  // requested id has no match.
+  const reqMatchesBody = new RegExp(`function\\s+${escapeRe(name)}\\s*\\(`).test(body);
+  let actualFnName = name;
+  if (!reqMatchesBody) {
+    const m = body.match(/(?:export\s+)?function\s+(\w+)\s*\(/);
+    if (m) actualFnName = m[1]!;
+  }
   body = body.replace(
-    new RegExp(`function\\s+${escapeRe(name)}\\s*\\(([^)]*)\\)\\s*\\{`),
+    new RegExp(`function\\s+${escapeRe(actualFnName)}\\s*\\(([^)]*)\\)\\s*\\{`),
     (full: string, params: string) => {
       const sigNames = String(params).split(',').map((s) => s.trim().split(/[\s=:]/)[0].trim()).filter((n) => /^[a-zA-Z_$][\w$]*$/.test(n));
       // Single-positional + has meta.params keys → object-arg style. Leave
