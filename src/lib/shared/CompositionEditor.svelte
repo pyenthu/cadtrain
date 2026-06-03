@@ -1678,6 +1678,8 @@
     color: #666; border-radius: 3px;
     height: 18px; flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
+    /* Breathing room between the chip and the alias text that follows. */
+    margin-right: 6px;
   }
   .ce-gear:hover { color: #2266cc; background: #eef5ff; border-color: #2266cc; }
   .ce-gear.open { color: #2266cc; background: #eef5ff; border-color: #2266cc; }
@@ -1878,7 +1880,7 @@
   }
   /* `: shaft` tail — same colon-as-labeller as the import pill, lighter
      so the alias `A` reads as the primary identifier. */
-  .ce-file-src { color: #5e88c3; font-weight: 400; margin-left: 1px; }
+  .ce-file-src { color: #5e88c3; font-weight: 400; margin-left: 4px; }
 
   /* Per-instance OUTER (skin) + INNER (cut) colour swatches. Outer is a
      square, inner a circle — mirrors PrimitiveView's pv-swatch shape so
