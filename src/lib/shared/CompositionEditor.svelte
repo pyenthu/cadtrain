@@ -1658,7 +1658,7 @@
     opacity: 0.35;
     font-size: 10px; line-height: 1;
     padding: 0;
-    margin-right: -2px;
+    margin-right: 6px;
     border-radius: 3px;
     flex: 0 0 auto;
   }
