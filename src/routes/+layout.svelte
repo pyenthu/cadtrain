@@ -25,6 +25,7 @@
       label: 'Meta',
       items: [
         { href: '/volume', label: 'Volume' },
+        { href: '/vocab',  label: 'Vocab' },
         { href: '/plan',   label: 'Plan' },
       ],
     },
