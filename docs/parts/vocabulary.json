@@ -377,18 +377,34 @@
       },
       "rule": {
         "kind": "primitive",
-        "template": "dp_spec_pin",
+        "template": "polygon_inline",
         "engine": "r_revolve",
-        "profile_params_map": {
-          "pipeOD": "p.pipeOD",
-          "jointOD": "p.jointOD",
-          "wall": "p.wall",
-          "pipeLen": "p.pipeLen",
-          "jointLen": "p.jointLen",
-          "jtUpset": "p.jtUpset",
-          "jointTaper": "p.jointTaper",
-          "threadTaper": "p.threadTaper"
-        }
+        "_note": "INLINE polygon (same coordinates dp_spec_pin computes). Encoded as preamble + polygon expressions so the ProfileFnEditor renders the half-section + lets the user dial individual vertices. Math extracted from dp_spec_pin's pen API: .mv(ri,0).line(pr,0).line(pr,z1).line(jr,z2).line(jr,z3).line(pinR0,z3).line(noseR,z4).line(ri,z4).",
+        "preamble": [
+          "const D2R = Math.PI / 180;",
+          "const ri = Math.max(0.05, pipeOD / 2 - wall);",
+          "const pr = pipeOD / 2;",
+          "const jr = jointOD / 2;",
+          "const upsetRun = Math.max(0.05, (jr - pr) / Math.tan(jointTaper * D2R));",
+          "const thdLen = jointLen - jtUpset;",
+          "const barrel = jtUpset;",
+          "const pinR0 = Math.max(ri + 0.05, jr - jtUpset);",
+          "const noseR = Math.max(ri + 0.05, pinR0 - thdLen * Math.tan(threadTaper * D2R));",
+          "const z1 = pipeLen;",
+          "const z2 = z1 + upsetRun;",
+          "const z3 = z2 + barrel;",
+          "const z4 = z3 + thdLen;"
+        ],
+        "polygon": [
+          "[ri, 0]",
+          "[pr, 0]",
+          "[pr, z1]",
+          "[jr, z2]",
+          "[jr, z3]",
+          "[pinR0, z3]",
+          "[noseR, z4]",
+          "[ri, z4]"
+        ]
       },
       "exemplar": "dt_pin",
       "expects_bake": {
@@ -474,17 +490,36 @@
       },
       "rule": {
         "kind": "primitive",
-        "template": "dp_spec_box",
+        "template": "polygon_inline",
         "engine": "r_revolve",
-        "profile_params_map": {
-          "pipeOD": "p.pipeOD",
-          "jointOD": "p.jointOD",
-          "wall": "p.wall",
-          "pipeLen": "p.pipeLen",
-          "jointLen": "p.jointLen",
-          "jtUpset": "p.jtUpset",
-          "jointTaper": "p.jointTaper"
-        }
+        "_note": "INLINE polygon — same coordinates dp_spec_box computes. Editor renders + lets the user dial each vertex. Math from dp_spec_box's pen API: .mv(mouthR,0).line(jr,0).line(jr,jointLen).line(pr,jointLen+upsetRun).line(pr,zPipe).line(ri,zPipe).line(ri,zSeat).line(floorR,zSeat).line(floorR,zFloor).",
+        "preamble": [
+          "const D2R = Math.PI / 180;",
+          "const ri = Math.max(0.05, pipeOD / 2 - wall);",
+          "const pr = pipeOD / 2;",
+          "const jr = jointOD / 2;",
+          "const upsetRun = Math.max(0.05, (jr - pr) / Math.tan(jointTaper * D2R));",
+          "const mouthR = Math.max(ri + 0.1, jr - jtUpset);",
+          "const termR = ri + wall;",
+          "const threadTaper = 5;",
+          "const tt = Math.max(0.5, threadTaper) * D2R;",
+          "const thdLen = Math.max(0.1, Math.min((mouthR - termR) / Math.tan(tt), jointLen - jtUpset - 0.1));",
+          "const floorR = mouthR - thdLen * Math.tan(tt);",
+          "const zFloor = thdLen;",
+          "const zSeat = zFloor + jtUpset;",
+          "const zPipe = jointLen + upsetRun + pipeLen;"
+        ],
+        "polygon": [
+          "[mouthR, 0]",
+          "[jr, 0]",
+          "[jr, jointLen]",
+          "[pr, jointLen + upsetRun]",
+          "[pr, zPipe]",
+          "[ri, zPipe]",
+          "[ri, zSeat]",
+          "[floorR, zSeat]",
+          "[floorR, zFloor]"
+        ]
       },
       "exemplar": "dt_box",
       "expects_bake": {

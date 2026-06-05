@@ -45,6 +45,13 @@ export interface VocabPrimitiveRule {
   template: string;                                  // profile-template id (cylinder, collar_flat, dp_spec_pin, …)
   engine?: string;                                   // r_revolve etc. — informational only here
   profile_params_map?: Record<string, string>;       // profileParamKey → expression (e.g. "p.od")
+  /** template === 'polygon_inline' path: preamble const declarations
+   *  (computed-once intermediate values like ri, pr, jr, …) followed by
+   *  the polygon vertex expressions (each evaluates to `[r, z]`). Emitted
+   *  inline so the ProfileFnEditor renders + lets the user dial each
+   *  vertex. Same shape as the curated templates' bodies but vocab-supplied. */
+  preamble?: string[];
+  polygon?: string[];
 }
 
 export interface VocabComposeRule {
@@ -95,18 +102,24 @@ function translateRev(entry: VocabEntry, partId: string, traceTag: any): string 
   const rule = entry.rule as VocabPrimitiveRule;
   if (rule.kind !== 'primitive') throw new Error('translateRev: rule.kind must be "primitive"');
 
-  // Find the template. If it's not in the curated set (cylinder, collar_flat
-  // etc.), it must be a FUNCTION PROFILE on the volume (dp_spec_pin,
-  // drill_pipe_box, …). For function profiles, scaffold from `cylinder` then
-  // re-point the profile and the params.
   const curated = templatesFor('revolve').find((t) => t.id === rule.template);
   let src: string;
   if (curated) {
     src = buildRevolveSource(partId, curated);
     src = overridePartParams(src, partId, entry.params);
+  } else if (rule.template === 'polygon_inline' && rule.polygon) {
+    // INLINE polygon path — vocab supplies the preamble (intermediate consts
+    // like ri, pr, jr, …) + the polygon vertex expressions. The translator
+    // scaffolds via the cylinder template then REWRITES the body so the
+    // editor sees a normal polygon half-section (PATH section editable).
+    const cylinder = templatesFor('revolve').find((t) => t.id === 'cylinder')!;
+    src = buildRevolveSource(partId, cylinder);
+    src = overridePartParams(src, partId, entry.params);
+    src = rewriteRevBodyToInlinePolygon(src, partId, rule, entry.params);
   } else {
-    // Function-profile path — scaffold with cylinder as a placeholder, then
-    // rewrite the body to use `resolveProfile({ kind: <template>, params })`.
+    // Function-profile fallback path (resolveProfile call) — still works,
+    // but the editor can't visualize the points. Used when the vocab rule
+    // doesn't supply an inline polygon.
     const cylinder = templatesFor('revolve').find((t) => t.id === 'cylinder')!;
     src = buildRevolveSource(partId, cylinder);
     src = overridePartParams(src, partId, entry.params);
@@ -114,6 +127,32 @@ function translateRev(entry: VocabEntry, partId: string, traceTag: any): string 
   }
   src = injectTraceTag(src, traceTag);
   return src;
+}
+
+/** Rewrite the .rev.ts body to use an INLINE polygon (preamble + vertex
+ *  expressions from the vocab rule). The ProfileFnEditor can parse this
+ *  shape — it's exactly what the curated templates emit. */
+function rewriteRevBodyToInlinePolygon(
+  src: string,
+  partId: string,
+  rule: VocabPrimitiveRule,
+  params: Record<string, VocabParam>,
+): string {
+  const paramKeys = Object.keys(params);
+  const headRe = new RegExp(`(export\\s+function\\s+${partId}\\s*\\([^)]*\\)\\s*\\{)([\\s\\S]*?)(\\n\\}\\s*$)`);
+  const m = src.match(headRe);
+  if (!m) return src;
+  const head = m[1]!, tail = m[3]!;
+  const defaultsBlock = paramKeys.map((k) => `  ${k} ??= ${literal(params[k]!.default)};`).join('\n');
+  const preambleBlock = (rule.preamble ?? []).map((line) => `  ${line}`).join('\n');
+  const polygonBlock =
+    `  const profile_pts = [\n` +
+    (rule.polygon ?? []).map((p) => `    ${p},`).join('\n') +
+    `\n  ];`;
+  const segArg = paramKeys.includes('segments') ? 'p.segments' : '96';
+  const ret = `  return r_revolve(profile_pts, ${segArg});`;
+  const body = `\n${defaultsBlock}\n${preambleBlock ? preambleBlock + '\n' : ''}${polygonBlock}\n${ret}\n`;
+  return src.replace(headRe, `${head}${body}${tail}`);
 }
 
 /** Replace a scaffolded part's `params: { … }` + signature with the vocab's. */
