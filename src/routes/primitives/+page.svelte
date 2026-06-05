@@ -10,7 +10,9 @@
   import { onMount } from 'svelte';
   import PrimitiveView from '$lib/shared/PrimitiveView.svelte';
   import FloatingPanel from '$lib/shared/FloatingPanel.svelte';
-  import { stubSource, buildPartStubFromBase, buildFnProfileStub } from '$lib/cad/primitive-stub';
+  // (Legacy stub helpers — stubSource / buildPartStubFromBase / buildFnProfileStub —
+  // imported here for the removed createPanel flow. Dropped along with it on
+  // 2026-06-05; the typed-create flow uses build{Extrude,Revolve,Assembly}Source.)
   import {
     templatesFor, type ProfileTemplate,
     buildExtrudeSource, buildRevolveSource, buildAssemblySource,
@@ -342,12 +344,9 @@
   // Name + a searchable "start from" picker of r_* base primitives. The new
   // part is a composite that wraps the chosen r_* (meta.uses + a call), so it
   // follows the r_* authoring model (never raw cyl/tube).
-  let createPanel = $state<{ dir: string; label: string; x: number; y: number } | null>(null);
-  let createId = $state('');
-  let createBase = $state('r_revolve');
-  let createSearch = $state('');
-  let createBusy = $state(false);
-  let createErr = $state('');
+  // (Legacy r_*-base create popup state removed 2026-06-05 — the typed
+  // create flow below replaces it. Folder + buttons all call
+  // openTypedCreate, never openCreate.)
 
   // ── Typed-create picker (sidebar `+`) ─────────────────────────────────
   // Three-step flow: pick TYPE (Extrude/Profile/Assembly), pick TEMPLATE
@@ -421,27 +420,8 @@
     if (kind === 'rev') return templatesFor('revolve');
     return [];
   }
-  // Base options = the stdlib function-first bases (r_revolve / r_extrude — pick
-  // a profile FUNCTION inside the new part) PLUS the simple r_* leaves in Basic.
-  // r_rotate is retired (stdlib r_revolve replaces it), so it's excluded.
-  let createBaseList = $derived.by(() => {
-    const q = createSearch.trim().toLowerCase();
-    const fromStdlib = stdlib.map((b) => b.id).filter((id) => id.startsWith('r_'));
-    const fromBasic = basic.map((b) => b.id).filter((id) => id.startsWith('r_') && id !== 'r_rotate');
-    const rs = [...new Set([...fromStdlib, ...fromBasic])].sort();
-    return q ? rs.filter((b) => b.toLowerCase().includes(q) || baseLabel(b).toLowerCase().includes(q)) : rs;
-  });
-  function baseLabel(b: string): string {
-    if (b === 'r_revolve') return 'r_revolve  ◆ function profile (revolve)';
-    if (b === 'r_extrude') return 'r_extrude  ◆ function profile (extrude)';
-    return b;
-  }
-  function openCreate(dir: string, label: string, ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    createId = ''; createSearch = ''; createBase = 'r_revolve'; createErr = '';
-    createPanel = { dir, label, x: Math.min(r.right + 6, window.innerWidth - 320), y: Math.min(r.top, window.innerHeight - 360) };
-  }
-  function closeCreate() { createPanel = null; }
+  // (Legacy createBaseList / baseLabel / openCreate / closeCreate removed
+  // 2026-06-05 — see typedCreate flow below.)
 
   // ── New-FOLDER popup (FloatingPanel) ──────────────────────────────────────
   // Adds a subfolder INSIDE a family: primitives/completions/<family>/<name>/.
@@ -534,51 +514,10 @@
       await refreshList();
     } finally { moveBusy = false; }
   }
-  // Build a composite stub that wraps the chosen base r_* (mirrors its params).
-  async function buildStubFromBase(id: string, base: string): Promise<string | null> {
-    // Stdlib function-first bases get a profile-selector wrapper; other r_*
-    // leaves mirror their params.
-    if (base === 'r_revolve' || base === 'r_extrude') return buildFnProfileStub(id, base);
-    try {
-      const res = await fetch(`/api/primitives/source?name=${encodeURIComponent(base)}`);
-      if (!res.ok) return null;
-      const params: Record<string, any> = (await res.json()).params ?? {};
-      return buildPartStubFromBase(id, base, params);
-    } catch { return null; }
-  }
-  async function submitCreate() {
-    if (!createPanel || createBusy) return;
-    const all = [...entries, ...stdlib, ...basic, ...Object.values(completions).flat()];
-    const newId = createId.trim();
-    if (!/^[a-z][a-z0-9_]*$/i.test(newId)) { createErr = 'id must be [a-z][a-z0-9_]*'; return; }
-    if (all.some((x) => x.id === newId)) { createErr = `"${newId}" already exists`; return; }
-    if (!createBase) { createErr = 'pick a base primitive'; return; }
-    createBusy = true; createErr = '';
-    const { dir, label } = createPanel;
-    try {
-      const source = await buildStubFromBase(newId, createBase) ?? stubSource(newId);
-      const r = await fetch('/api/primitives/save', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: newId, source, dir }),
-      });
-      if (!r.ok) { createErr = `save failed: ${await r.text()}`; return; }
-      status = `Created ${newId} in ${label}.`;
-      if (dir === 'basic') showBasic = true;
-      else if (dir.startsWith('completions/')) { showCompletions = true; openFamilies[dir.slice('completions/'.length)] = true; }
-      closeCreate();
-      // Show the new part IMMEDIATELY — the prod list read (proxied to Railway)
-      // can trail the write, so don't gate the UI on it. Track it as pending +
-      // refresh (mergePending keeps it visible until the server catches up), then
-      // open it. The source endpoint is fresh, so the tab loads even mid-lag.
-      if (!pendingCreated.some((pc) => pc.id === newId)) pendingCreated = [...pendingCreated, { id: newId, dir }];
-      await refreshList();
-      const created = [...entries, ...stdlib, ...basic, ...Object.values(completions).flat()].find((x) => x.id === newId)
-        ?? ({ id: newId, source: 'volume', name: newId, description: '', params: {}, editable: true } as Entry);
-      openTab(created);
-      status = `Created ${newId} in ${label}.`;
-    } catch (e: any) { createErr = `error: ${e?.message ?? e}`; }
-    finally { createBusy = false; }
-  }
+  // (Legacy buildStubFromBase + submitCreate removed 2026-06-05 with the
+  // r_* create popup; the typed-create flow scaffolds via
+  // buildExtrudeSource / buildRevolveSource / buildAssemblySource and
+  // POSTs /api/primitives/save inline in submitTypedCreate.)
 
   /** Save As… — persist the CURRENT (live, possibly-unsaved) editor buffer
    *  under a NEW id, creating a new volume primitive without touching the
@@ -1152,17 +1091,17 @@
           <button class="tc-type" type="button" onclick={() => { typedCreate!.kind = 'exp'; typedCreate!.step = 'template'; }}>
             <span class="tc-type-ic">⊞</span>
             <span class="tc-type-lbl">Extrude Part</span>
-            <span class="tc-type-sub">Inline (x,y) profile · r_weld_extrude</span>
+            <span class="tc-type-sub">Inline (x,y) profile · linear extrusion along z</span>
           </button>
           <button class="tc-type" type="button" onclick={() => { typedCreate!.kind = 'rev'; typedCreate!.step = 'template'; }}>
             <span class="tc-type-ic">◯</span>
             <span class="tc-type-lbl">Profile Part</span>
-            <span class="tc-type-sub">Inline (r,z) half-section · r_revolve</span>
+            <span class="tc-type-sub">Inline (r,z) half-section · revolved around z</span>
           </button>
           <button class="tc-type" type="button" onclick={() => { typedCreate!.kind = 'asm'; typedCreate!.step = 'name'; }}>
             <span class="tc-type-ic">⛓</span>
             <span class="tc-type-lbl">Assembly</span>
-            <span class="tc-type-sub">Compose other r_* parts</span>
+            <span class="tc-type-sub">Compose other parts</span>
           </button>
         </div>
       {:else if typedCreate.step === 'template'}
@@ -1201,33 +1140,8 @@
   </FloatingPanel>
 {/if}
 
-{#if createPanel}
-  <FloatingPanel title={`New primitive · ${createPanel.label}`} visible={true} x={createPanel.x} y={createPanel.y} width="300px" maxHeight="70vh" onClose={closeCreate}>
-    <div class="prim-create">
-      <label class="prim-create-row">id
-        <input bind:value={createId} placeholder="e.g. dp_pin" spellcheck="false" autofocus
-          onkeydown={(e) => { if (e.key === 'Enter' && createId.trim() && !createBusy) submitCreate(); }} />
-      </label>
-      <div class="prim-create-base">
-        <div class="prim-create-baselabel">start from <code>{baseLabel(createBase)}</code></div>
-        <input class="prim-create-search" bind:value={createSearch} placeholder="search r_*…" spellcheck="false" />
-        <div class="prim-create-list">
-          {#each createBaseList as b (b)}
-            <button class="prim-create-opt" class:sel={b === createBase} type="button" onclick={() => (createBase = b)}>{baseLabel(b)}</button>
-          {/each}
-          {#if createBaseList.length === 0}<div class="prim-create-empty">no base matches</div>{/if}
-        </div>
-      </div>
-      {#if createErr}<div class="prim-create-err">{createErr}</div>{/if}
-      <div class="prim-create-note">→ <code>primitives/{createPanel.dir}/</code></div>
-      <div class="prim-create-foot">
-        <div style="flex:1;"></div>
-        <button class="prim-mini-btn" type="button" onclick={closeCreate}>Cancel</button>
-        <button class="prim-mini-btn primary" type="button" disabled={createBusy || !createId.trim()} onclick={submitCreate}>{createBusy ? '…' : 'Create'}</button>
-      </div>
-    </div>
-  </FloatingPanel>
-{/if}
+<!-- (Legacy createPanel FloatingPanel mount removed 2026-06-05 — the
+     typedCreate popup below is the sole create surface.) -->
 
 {#if movePanel}
   <FloatingPanel title={`Move "${movePanel.id}" to…`} visible={true} x={movePanel.x} y={movePanel.y} width="220px" maxHeight="60vh" onClose={closeMove}>
