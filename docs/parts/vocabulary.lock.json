@@ -1,0 +1,95 @@
+{
+  "vocab_version": "0.2.0",
+  "terms": {
+    "shaft": {
+      "rule_hash": "3e02ec9a",
+      "source_hash": "6f4f76aa",
+      "bake": {
+        "verts": 258,
+        "z_extent": 3,
+        "outer_r": 1
+      }
+    },
+    "collar": {
+      "rule_hash": "3b84cec3",
+      "source_hash": "4745c8db",
+      "bake": {
+        "verts": 512,
+        "z_extent": 1.5,
+        "outer_r": 2.5
+      }
+    },
+    "cone": {
+      "rule_hash": "4702c465",
+      "source_hash": "d9ae897e",
+      "bake": {
+        "verts": 130,
+        "z_extent": 3,
+        "outer_r": 1
+      }
+    },
+    "frustum": {
+      "rule_hash": "6f6a3118",
+      "source_hash": "3652abdf",
+      "bake": {
+        "verts": 322,
+        "z_extent": 3,
+        "outer_r": 1.4
+      }
+    },
+    "pin": {
+      "rule_hash": "ef41b0c1",
+      "source_hash": "16e6c93c",
+      "bake": {
+        "verts": 1344,
+        "z_extent": 9.625,
+        "outer_r": 2.625
+      }
+    },
+    "box": {
+      "rule_hash": "cb63dd4f",
+      "source_hash": "d3bd3ad3",
+      "bake": {
+        "verts": 1440,
+        "z_extent": 9.625,
+        "outer_r": 2.625
+      }
+    },
+    "tube": {
+      "rule_hash": "9974539d",
+      "source_hash": "5691272e",
+      "bake": {
+        "verts": 1536,
+        "z_extent": 3,
+        "outer_r": 2.25
+      }
+    },
+    "sub": {
+      "rule_hash": "aac06e99",
+      "source_hash": "92fdd5b0",
+      "bake": {
+        "verts": 8640,
+        "z_extent": 19.25,
+        "outer_r": 2.625
+      }
+    },
+    "xover": {
+      "rule_hash": "7cd6aafa",
+      "source_hash": "2abbcda0",
+      "bake": {
+        "verts": 8640,
+        "z_extent": 19.25,
+        "outer_r": 2.625
+      }
+    },
+    "joint": {
+      "rule_hash": "10d8359a",
+      "source_hash": "05985ac1",
+      "bake": {
+        "verts": 11328,
+        "z_extent": 49.25,
+        "outer_r": 2.625
+      }
+    }
+  }
+}

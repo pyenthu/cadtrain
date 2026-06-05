@@ -248,6 +248,16 @@ function treeFromRuleNode(node: any, vocab: Vocabulary, imports: Array<{ alias: 
         children: (node.children ?? []).map((c: any) => treeFromRuleNode(c, vocab, imports)),
       };
     }
+    case 'stack': {
+      // Sequential end-to-end mate via manifold-helpers.stack() — each
+      // child's head lands on the prior child's tail at runtime. Avoids
+      // the tail(A) compose-rule footgun where A is the import alias
+      // (a function) rather than a manifold instance.
+      return {
+        type: 'stack', id: newNodeId(),
+        children: (node.children ?? []).map((c: any) => treeFromRuleNode(c, vocab, imports)),
+      };
+    }
     case 'mv': {
       const child = treeFromRuleNode(node.child, vocab, imports);
       const ox = String(node.offset_x ?? 0);

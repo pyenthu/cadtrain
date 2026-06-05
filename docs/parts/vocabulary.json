@@ -165,13 +165,12 @@
           { "alias": "C", "term": "pin" }
         ],
         "composition": {
-          "type": "list",
+          "type": "stack",
+          "_note": "Sequential end-to-end stack — handles tail() at runtime via manifold-helpers.stack().",
           "children": [
-            { "type": "call", "fn": "A", "args": "(use box defaults — hidden, see param_lifting)" },
-            { "type": "mv", "offset_z": "tail(A)",
-              "child": { "type": "call", "fn": "B", "args": { "od": "p.od", "wall": "p.wall", "length": "p.body_len" } } },
-            { "type": "mv", "offset_z": "tail(B)",
-              "child": { "type": "call", "fn": "C", "args": "(use pin defaults — hidden, see param_lifting)" } }
+            { "type": "call", "fn": "A", "args": {} },
+            { "type": "call", "fn": "B", "args": { "od": "p.od", "wall": "p.wall", "length": "p.body_len" } },
+            { "type": "call", "fn": "C", "args": {} }
           ]
         }
       },
@@ -181,12 +180,12 @@
 
     "cone": {
       "kind": "rev",
-      "definition": "Tapered cylindrical solid — different radii at top and bottom. The basic tapered primitive.",
-      "synonyms": ["taper", "tapered cylinder", "frustum-like nose"],
+      "definition": "Tapered cylindrical solid — radius r at base, narrowing to a point at top over length len. The basic tapered primitive.",
+      "synonyms": ["taper", "tapered cylinder", "pointed cone"],
       "extends": "shaft",
+      "_note": "Params match the curated `cone` template's names (r, len) so the translator can scaffold without remapping. If we later want r_top/r_bot semantics (frustum-like), use the `frustum` term below or add a `template_param_map` to the rule.",
       "params": {
-        "r_top":    { "default": 0.5, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
-        "r_bot":    { "default": 1,   "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "r":        { "default": 1,   "min": 0.05,"max": 10, "step": 0.05, "unit": "in" },
         "len":      { "default": 3,   "min": 0.1, "max": 50, "step": 0.1,  "unit": "in" },
         "segments": { "default": 64,  "min": 8,   "max": 256,"step": 1 }
       },
@@ -201,13 +200,13 @@
 
     "frustum": {
       "kind": "rev",
-      "definition": "Generic tapered solid via the barrel template — same as cone but uses barrel scaffolding for asymmetric or curved tapers.",
-      "synonyms": ["barrel", "asymmetric taper"],
+      "definition": "Barrel-shape via the curated `barrel` template — two end radii (rEnd) bulging or pinching to a mid radius (rMid).",
+      "synonyms": ["barrel", "bulged solid", "drum"],
       "extends": "shaft",
+      "_note": "Params match the curated `barrel` template's names (rEnd, rMid, len). Set rMid > rEnd → barrel bulge; rMid < rEnd → waisted hourglass.",
       "params": {
-        "r_top":    { "default": 1.2, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
-        "r_bot":    { "default": 1.5, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
-        "r_mid":    { "default": 1.6, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "rEnd":     { "default": 1,   "min": 0.05,"max": 10, "step": 0.05, "unit": "in" },
+        "rMid":     { "default": 1.4, "min": 0.05,"max": 10, "step": 0.05, "unit": "in" },
         "len":      { "default": 3,   "min": 0.1, "max": 50, "step": 0.1,  "unit": "in" },
         "segments": { "default": 64,  "min": 8,   "max": 256,"step": 1 }
       },
@@ -237,11 +236,11 @@
           { "alias": "B", "term": "pin" }
         ],
         "composition": {
-          "type": "list",
+          "type": "stack",
+          "_note": "type:'stack' = sequential end-to-end mate via manifold-helpers.stack(). Each child's HEAD lands on the prior child's TAIL — handles the tail() math at runtime.",
           "children": [
             { "type": "call", "fn": "A", "args": {} },
-            { "type": "mv", "offset_z": "tail(A)",
-              "child": { "type": "call", "fn": "B", "args": {} } }
+            { "type": "call", "fn": "B", "args": {} }
           ]
         }
       },
@@ -270,11 +269,10 @@
           { "alias": "B", "term": "pin" }
         ],
         "composition": {
-          "type": "list",
+          "type": "stack",
           "children": [
             { "type": "call", "fn": "A", "args": {} },
-            { "type": "mv", "offset_z": "tail(A)",
-              "child": { "type": "call", "fn": "B", "args": {} } }
+            { "type": "call", "fn": "B", "args": {} }
           ]
         }
       },

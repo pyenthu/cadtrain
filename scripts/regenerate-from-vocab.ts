@@ -140,6 +140,58 @@ async function main() {
       `${r.verts ?? '-'} | ${r.z_extent ?? '-'} | ${r.outer_r ?? '-'} | ${r.expects_match ?? '-'} |`,
     );
   }
+
+  // Lock file pass — package-lock.json / Cargo.lock equivalent for the
+  // vocabulary. Git-tracked snapshot of (rule_hash, source_hash, bake)
+  // per term so PR diffs surface every regeneration change.
+  const updateLock = process.argv.includes('--update-lock');
+  const lockPath = 'docs/parts/vocabulary.lock.json';
+  let prevLock: any = {};
+  try { prevLock = JSON.parse(await Bun.file(lockPath).text()); } catch { /* none yet */ }
+  const newLock: any = { vocab_version: vocab.version, terms: {} };
+  const drift: string[] = [];
+  for (const r of rows) {
+    if (r.translate !== 'ok' || r.bake !== 'ok') continue;
+    // Re-fetch the saved source to hash it (the runner already POSTed it).
+    const d = await fetchJSON<{ source: string }>(`${BASE}/api/primitives/source?name=${r.exemplar}`);
+    const sourceHash = hashStr(d.source);
+    const entry = vocab.terms[r.term]!;
+    const ruleHash = hashStr(JSON.stringify(entry.rule));
+    newLock.terms[r.term] = {
+      rule_hash: ruleHash,
+      source_hash: sourceHash,
+      bake: { verts: r.verts, z_extent: r.z_extent, outer_r: r.outer_r },
+    };
+    const prev = prevLock?.terms?.[r.term];
+    if (prev) {
+      const changes: string[] = [];
+      if (prev.rule_hash !== ruleHash) changes.push(`rule_hash ${prev.rule_hash} → ${ruleHash}`);
+      if (prev.source_hash !== sourceHash) changes.push(`source_hash ${prev.source_hash.slice(0, 8)} → ${sourceHash.slice(0, 8)}`);
+      if (prev.bake?.verts !== r.verts) changes.push(`verts ${prev.bake?.verts} → ${r.verts}`);
+      if (Math.abs((prev.bake?.z_extent ?? 0) - (r.z_extent ?? 0)) > 0.001) changes.push(`z ${prev.bake?.z_extent} → ${r.z_extent}`);
+      if (Math.abs((prev.bake?.outer_r ?? 0) - (r.outer_r ?? 0)) > 0.001) changes.push(`r ${prev.bake?.outer_r} → ${r.outer_r}`);
+      if (changes.length) drift.push(`  ${r.term}: ${changes.join('; ')}`);
+    } else if (Object.keys(prevLock?.terms ?? {}).length > 0) {
+      drift.push(`  ${r.term}: new term (no prior lock entry)`);
+    }
+  }
+  if (drift.length) {
+    console.log('\n## Drift vs vocabulary.lock.json\n');
+    for (const d of drift) console.log(d);
+    if (!updateLock) {
+      console.log('\nRun with --update-lock to refresh the lock file (intentional changes).');
+    }
+  }
+  if (updateLock || Object.keys(prevLock?.terms ?? {}).length === 0) {
+    await Bun.write(lockPath, JSON.stringify(newLock, null, 2) + '\n');
+    console.log(`\n→ wrote ${lockPath}`);
+  }
+}
+
+function hashStr(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 main().catch((e) => { console.error('runner failed:', e); process.exit(1); });
