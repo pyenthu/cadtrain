@@ -30,7 +30,10 @@
     replaceNode, deleteNode, newNodeId, childrenOf, emitNode, walkTree,
     type TreeNode, type ImportDef, type CsgOp, type NodeType,
   } from '$lib/cad/composition-tree';
-  import { paramKeysOf } from '$lib/cad/assembly-deps';
+  import {
+    paramKeysOf, parseDependencies, diffDependencies, buildSnapshots, writeDependencies,
+    type DependencyDiff,
+  } from '$lib/cad/assembly-deps';
   import FloatingPanel from './FloatingPanel.svelte';
   import { INSTANCE_PALETTE, colorsForInstance } from './instance-colors';
 
@@ -52,26 +55,135 @@
   // src primitive id → ordered paramKeys (snapshot from meta.dependencies).
   // Drives prop-style arg labelling for Call rows whose fn is an import alias.
   let depParamKeys = $derived<Map<string, string[]>>(parseDependencyParamKeys(source));
-  // Live fetch cache for primitives missing a dependency snapshot — we
-  // ask /api/primitives/source for each new import.src once and cache its
-  // Object.keys(params) ordering so labels stay in sync as the user adds
-  // imports without saving yet.
-  let livePK = $state<Map<string, string[]>>(new Map());
+  // Live fetch cache for primitives — we ask /api/primitives/source for
+  // each import.src once and cache the FULL response (source text +
+  // params object). Two derived views: `livePK` (paramKeys list, used
+  // for labels + existing aliasParamKeys), and `liveSrcs` (full source
+  // text used by diffDependencies to detect drift). The source text is
+  // also what the K.66 drift refresh uses to pull updated paramKeys +
+  // default values when the user clicks ↻.
+  type LiveMeta = { source: string; params: Record<string, any> };
+  let liveMeta = $state<Map<string, LiveMeta>>(new Map());
+  /** Force a re-fetch for a single src, bypassing the in-process cache. */
+  async function refetchLiveMeta(src: string): Promise<LiveMeta | null> {
+    try {
+      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}&_nocache=${Date.now()}`);
+      if (!r.ok) return null;
+      const data = await r.json();
+      const next: LiveMeta = { source: data.source ?? '', params: data.params ?? {} };
+      liveMeta = new Map(liveMeta).set(src, next);
+      return next;
+    } catch {
+      return null;
+    }
+  }
   $effect(() => {
     const wantSrcs = imports.map((i) => i.src);
     for (const src of wantSrcs) {
-      if (depParamKeys.has(src) || livePK.has(src)) continue;
+      if (depParamKeys.has(src) || liveMeta.has(src)) continue;
       // Mark optimistically so we don't double-fetch.
-      livePK.set(src, []);
-      fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`)
-        .then((r) => r.ok ? r.json() : null)
-        .then((data) => {
-          const keys = data?.params ? Object.keys(data.params) : [];
-          livePK = new Map(livePK).set(src, keys);
-        })
-        .catch(() => { /* leave empty — labels fall back to arg0/arg1 */ });
+      liveMeta.set(src, { source: '', params: {} });
+      refetchLiveMeta(src);
     }
   });
+  let livePK = $derived<Map<string, string[]>>(
+    new Map(Array.from(liveMeta.entries()).map(([k, v]) => [k, Object.keys(v.params ?? {})]))
+  );
+
+  // ─── Drift detection (K.66) ──────────────────────────────────────────
+  // Compare stored meta.dependencies snapshots vs the live primitives.
+  // diffDependencies returns one DependencyDiff per snapshot — `ok:false`
+  // when paramKeys differ or body hash changed. The badge + per-row
+  // chip below light up while drifted; the ↻ button rewrites the
+  // affected Calls + bumps the snapshot.
+  let depSnapshots = $derived(parseDependencies(source));
+  let importDriftMap = $derived.by<Map<string, DependencyDiff>>(() => {
+    const liveSources: Record<string, string> = {};
+    for (const [k, v] of liveMeta.entries()) if (v.source) liveSources[k] = v.source;
+    const out = new Map<string, DependencyDiff>();
+    if (!depSnapshots.length) return out;
+    for (const d of diffDependencies(depSnapshots, liveSources)) {
+      if (!d.ok) out.set(d.id, d);
+    }
+    return out;
+  });
+  let driftedImportSrcs = $derived<string[]>(Array.from(importDriftMap.keys()));
+  /** Human-readable single-line summary of what changed for one drifted src. */
+  function driftSummary(d: DependencyDiff): string {
+    const bits: string[] = [];
+    if (d.paramKeysAdded.length) bits.push(`added: ${d.paramKeysAdded.join(', ')}`);
+    if (d.paramKeysRemoved.length) bits.push(`removed: ${d.paramKeysRemoved.join(', ')}`);
+    if (d.paramKeysReordered) bits.push('reordered');
+    if (d.bodyHashChanged && !bits.length) bits.push('body changed');
+    return bits.join(' · ') || 'changed';
+  }
+
+  /** Format a primitive-default value as a Call-arg LITERAL string.
+   *  Mirrors the format used by callWithDefaults — number/string/array,
+   *  or `resolveProfile({kind})` for polygon descriptors. */
+  function defaultLiteralFor(paramSchema: any): string {
+    const def = paramSchema?.default;
+    if (def == null) return '0';
+    if (typeof def === 'number') return String(def);
+    if (typeof def === 'string') return def;
+    if (Array.isArray(def)) return JSON.stringify(def);
+    if (typeof def === 'object' && 'kind' in def) return `resolveProfile(${JSON.stringify(def)})`;
+    return '0';
+  }
+
+  /** Pull the live source for `src`, rewrite every Call whose .fn maps
+   *  to an alias importing this src so its `args` + `paramKeys` match
+   *  the live primitive's params (added keys get default literals;
+   *  removed keys drop their slot; reordered just reorders). Refreshes
+   *  the matching `meta.dependencies` snapshot. ALL through one commit
+   *  so the user sees one source mutation. */
+  async function refreshImport(src: string): Promise<boolean> {
+    if (!canEdit) return false;
+    const meta = (await refetchLiveMeta(src)) ?? liveMeta.get(src);
+    if (!meta || !meta.source) return false;
+    const liveKeys = Object.keys(meta.params ?? {});
+    // Map old → new args for any Call that imports this src.
+    const aliasesForSrc = new Set(imports.filter((i) => i.src === src).map((i) => i.name));
+    let nextRoot: TreeNode | null = composition;
+    if (nextRoot) {
+      const updates: Array<{ id: string; replacement: TreeNode }> = [];
+      walkTree(nextRoot, (n) => {
+        if (n.type !== 'call' || !aliasesForSrc.has(n.fn)) return;
+        const oldKeys = n.paramKeys ?? [];
+        const oldArgs = n.args ?? [];
+        const newArgs: TreeNode[] = liveKeys.map((k) => {
+          const idx = oldKeys.indexOf(k);
+          if (idx >= 0 && oldArgs[idx]) return oldArgs[idx];
+          // New paramKey — seed with the child's default literal.
+          return {
+            type: 'literal', id: newNodeId(),
+            value: defaultLiteralFor(meta.params?.[k]),
+          };
+        });
+        updates.push({ id: n.id, replacement: { ...n, args: newArgs, paramKeys: liveKeys } });
+      });
+      for (const u of updates) nextRoot = replaceNode(nextRoot, u.id, u.replacement);
+    }
+    // Write the updated tree + bump meta.dependencies snapshot for this src.
+    let out = applyToSource(source, id, imports, nextRoot);
+    const liveSourcesAll: Record<string, string> = {};
+    for (const [k, v] of liveMeta.entries()) if (v.source) liveSourcesAll[k] = v.source;
+    // Take ALL current snapshots' ids + ensure src is included.
+    const allSrcs = new Set([...depSnapshots.map((s) => s.id), src, ...imports.map((i) => i.src)]);
+    const fresh = buildSnapshots(Array.from(allSrcs), liveSourcesAll);
+    out = writeDependencies(out, fresh);
+    onSourceChange?.(out);
+    return true;
+  }
+
+  /** Refresh every drifted import in sequence; collapses to ONE commit
+   *  by chaining onto the latest emitted source. */
+  async function refreshAllDriftedImports(): Promise<void> {
+    if (!canEdit) return;
+    for (const src of driftedImportSrcs) {
+      await refreshImport(src);
+    }
+  }
   // alias → paramKeys: snapshot first, live cache second.
   let aliasParamKeys = $derived<Map<string, string[]>>(
     new Map(imports.map((imp) => [
@@ -945,6 +1057,17 @@
       <span class="ce-section-twist">{importsOpen ? '▾' : '▸'}</span>
       <span class="ce-section-title">📥 Imports</span>
       <span class="ce-section-count">{uniqueImports.length}</span>
+      {#if driftedImportSrcs.length > 0}
+        <span class="ce-import-drift-badge"
+          title={`Drifted imports: ${driftedImportSrcs.map((s) => `${s} (${driftSummary(importDriftMap.get(s)!)})`).join(' · ')}`}>
+          ⚠ {driftedImportSrcs.length}
+        </span>
+        {#if canEdit}
+          <button class="ce-imports-refresh-all" type="button"
+            title="Re-pull every drifted import + bump snapshots in one shot"
+            onclick={(e) => { e.stopPropagation(); refreshAllDriftedImports(); }}>↻ Refresh all</button>
+        {/if}
+      {/if}
       {#if canEdit}
         <button class="ce-add-btn" type="button" title="Add import" onclick={(e) => { e.stopPropagation(); openImportPopup(e); }}>+ Import</button>
       {/if}
@@ -958,16 +1081,24 @@
       <div class="ce-imports-list">
         {#each uniqueImports as imp (imp.src)}
           {@const hasInstances = hasInstancesOf(imp.src)}
-          <div class="ce-import-row">
+          {@const drift = importDriftMap.get(imp.src)}
+          <div class="ce-import-row" class:drifted={!!drift}>
             {#if canEdit}
               <button class="ce-imp-add" type="button"
                 title={`Drop a new instance of ${imp.src} into the composition (gets a fresh letter alias)`}
                 aria-label={`Add ${imp.src} instance to composition`}
                 onclick={() => insertImportUse(imp)}>+</button>
             {/if}
-            <div class="ce-imp-pill" title={imp.src}>
+            <div class="ce-imp-pill" title={drift ? `${imp.src} — ${driftSummary(drift)}` : imp.src}>
+              {#if drift}<span class="ce-imp-drift-icon" title={driftSummary(drift)}>⚠</span>{/if}
               <span class="ce-imp-src">{imp.src}</span>
             </div>
+            {#if drift && canEdit}
+              <button class="ce-imp-refresh" type="button"
+                title={`Re-pull ${imp.src} (${driftSummary(drift)}) + grow/shrink/reorder every Call referencing it`}
+                aria-label={`Refresh ${imp.src}`}
+                onclick={() => refreshImport(imp.src)}>↻</button>
+            {/if}
             {#if canEdit}
               <button class="ce-imp-del" type="button"
                 title={hasInstances ? `Remove all instances from the composition before removing ${imp.src} from imports` : `Remove ${imp.src} from imports`}
@@ -1860,6 +1991,33 @@
     color: #1e3a8a; min-height: 22px; line-height: 1.4;
     min-width: 0;
   }
+  /* Drifted import row tinted amber so the warning reads at a glance. */
+  .ce-import-row.drifted .ce-imp-pill { background: #fffbeb; border-color: #fbbf24; color: #92400e; }
+  .ce-imp-drift-icon { color: #92400e; font-size: 11px; flex: 0 0 auto; }
+  .ce-imp-refresh {
+    flex: 0 0 auto;
+    background: #fbbf24; color: #78350f; cursor: pointer;
+    border: 1px solid #f59e0b; border-radius: 3px;
+    padding: 0 6px; font: 600 11px ui-sans-serif, system-ui;
+    height: 18px;
+  }
+  .ce-imp-refresh:hover { background: #f59e0b; color: #fff; }
+  /* Section-header drift badge — yellow chip after the count, listing
+     how many imports drifted. Tooltip enumerates them. */
+  .ce-import-drift-badge {
+    display: inline-flex; align-items: center;
+    background: #fffbeb; border: 1px solid #fbbf24;
+    color: #92400e; padding: 0 6px; border-radius: 8px;
+    font: 600 10px ui-sans-serif, system-ui;
+    margin-left: 4px;
+  }
+  .ce-imports-refresh-all {
+    background: #fbbf24; color: #78350f; cursor: pointer;
+    border: 1px solid #f59e0b; border-radius: 3px;
+    padding: 1px 6px; font: 600 10px ui-sans-serif, system-ui;
+    margin-left: 4px;
+  }
+  .ce-imports-refresh-all:hover { background: #f59e0b; color: #fff; }
   /* Outlined alias=src pill — reads like a chip in a directory. */
   .ce-imp-pill {
     display: inline-flex; align-items: center; gap: 3px;
