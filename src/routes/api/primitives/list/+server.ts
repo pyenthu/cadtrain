@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { volumePath } from '$lib/server/volume';
 import { listEntitiesIn } from '$lib/server/primitive-paths';
-import { stdlibIds, stdlibEntries } from '$lib/server/stdlib';
+import { stdlibIds, stdlibActiveEntries, stdstaleEntries } from '$lib/server/stdlib';
 
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 // (nested completions group, 2026-05-23; industrial category removed 2026-05-27)
@@ -14,7 +14,7 @@ import { stdlibIds, stdlibEntries } from '$lib/server/stdlib';
 
 interface PrimEntry {
   id: string;
-  source: 'bundle' | 'volume' | 'stdlib';
+  source: 'bundle' | 'volume' | 'stdlib' | 'stdstale';
   name: string;
   description: string;
   params: Record<string, any>;
@@ -114,8 +114,14 @@ export const GET = async () => {
   // (from src/) is obvious. They shadow any same-named volume copy: drop the
   // volume dupes everywhere first. params load lazily via /source (which also
   // serves stdlib first), consistent with the volume entries.
+  // src-side primitives (stdlib + stdstale) are git-tracked, canonical, read-only.
+  // They shadow any same-named volume copy → drop the volume dupes first.
+  // The sidebar renders stdlib + stdstale as SEPARATE groups so the deprecation
+  // signal is visible. stdstale entries carry `source: 'stdstale'` so the
+  // client can tag them visually + warn against creating new uses.
   const stdIds = new Set(stdlibIds());
   const stdlib: PrimEntry[] = [];
+  const stdstale: PrimEntry[] = [];
   if (stdIds.size) {
     const dropDupes = (arr: PrimEntry[]) => {
       for (let i = arr.length - 1; i >= 0; i--) {
@@ -131,12 +137,17 @@ export const GET = async () => {
       if (arr) dropDupes(arr);
     }
     stdlib.push(
-      ...stdlibEntries().map((e) => ({
+      ...stdlibActiveEntries().map((e) => ({
         id: e.id, source: 'stdlib' as const, name: e.name, description: e.description, params: {}, editable: false,
+      })),
+    );
+    stdstale.push(
+      ...stdstaleEntries().map((e) => ({
+        id: e.id, source: 'stdstale' as const, name: e.name, description: e.description, params: {}, editable: false,
       })),
     );
   }
 
   const merged = [...volume];
-  return json({ stdlib, basic, basicSubfolders, completions, completionSubfolders, archived, merged });
+  return json({ stdlib, stdstale, basic, basicSubfolders, completions, completionSubfolders, archived, merged });
 };

@@ -18,7 +18,7 @@
 
   interface Entry {
     id: string;
-    source: 'bundle' | 'volume' | 'stdlib';
+    source: 'bundle' | 'volume' | 'stdlib' | 'stdstale';
     name: string;
     description: string;
     params: Record<string, any>;
@@ -40,6 +40,11 @@
   // Standard library — r_* building blocks served from src/lib/cad/stdlib/
   // (git-tracked, canonical, read-only). Own sidebar group, above Basic.
   let stdlib: Entry[] = $state([]);
+  // stdstale — deprecated stdlib engines (r_extrude / r_revolve as of
+  // 2026-06-05). Still resolvable so legacy parts keep baking, but the
+  // sidebar renders them in their own group with a yellow tint so the
+  // user knows to author NEW parts via the folder + button instead.
+  let stdstale: Entry[] = $state([]);
   // Completions is nested by family: { <family>: Entry[] }. Family dirs
   // may be empty (structure only); the sidebar shows them regardless so
   // the user sees where each family's parts will land.
@@ -107,6 +112,9 @@
   let status = $state('');
   let showArchive = $state(false);
   let showStdlib = $state(true);
+  // stdstale group default-collapsed — it's reference-only, not the
+  // primary surface a user reaches for.
+  let showStdstale = $state(false);
   let showBasic = $state(true);
   let showCompletions = $state(true);
   // Sidebar section tabs (vertical, editor format) — Primitives = profile
@@ -129,6 +137,7 @@
       const data = await r.json();
       entries = data.merged ?? [];
       stdlib = data.stdlib ?? [];
+      stdstale = data.stdstale ?? [];
       basic = data.basic ?? [];
       completions = data.completions ?? {};
       completionSubfolders = data.completionSubfolders ?? {};
@@ -139,7 +148,7 @@
     } catch (e: any) {
       // Volume proxy unreachable (e.g. ISP DNS-blocks the prod host) — degrade
       // gracefully instead of leaving `entries` undefined and crashing onMount.
-      entries = []; stdlib = []; basic = []; basicSubfolders = []; completions = {}; completionSubfolders = {}; archived = [];
+      entries = []; stdlib = []; stdstale = []; basic = []; basicSubfolders = []; completions = {}; completionSubfolders = {}; archived = [];
       status = `⚠ Volume unreachable — couldn't load primitives (${e?.message ?? e}). Check your network/DNS, then reload.`;
     }
   }
@@ -860,6 +869,33 @@
             </div>
           {/if}
 
+          <!-- stdstale — deprecated stdlib engines (still resolvable so
+               legacy parts keep baking) tinted yellow. Authoring new parts
+               should go via the folder + button instead. -->
+          {#if stdstale.length}
+            <div class="prim-tests prim-stdstale">
+              <div class="prim-head-row">
+                <button class="prim-arch-head" type="button"
+                  title="Deprecated stdlib engines — kept resolvable for legacy parts only. Create new parts via the + button in Basic / Completions."
+                  onclick={() => (showStdstale = !showStdstale)}>
+                  {@render folderIcon(showStdstale)}
+                  stdstale {#if stdstale.length}({stdstale.length}){/if}
+                </button>
+              </div>
+              {#if showStdstale}
+                {#each stdstale as e (e.id)}
+                  <div class="prim-row-wrap" class:active={activeId === e.id} class:open={openTabs.some((t) => t.entry.id === e.id)}>
+                    <button class="prim-row" type="button" draggable={true} ondragstart={(ev) => ev.dataTransfer?.setData('application/x-primitive-id', e.id)} onclick={() => openTab(e)}>
+                      <span class="prim-name">{e.id}</span>
+                      <span class="prim-tag stale" title="Deprecated — kept resolvable from src/lib/cad/stdstale for legacy parts only">stale</span>
+                    </button>
+                    <button class="prim-dup" type="button" title="Duplicate to a new editable volume primitive" aria-label="Duplicate" onclick={() => cloneEntry(e)}>⎘</button>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          {/if}
+
           <!-- Basic — r_* volume primitives at primitives/basic/, optionally
                with nested subfolders (Revolved / Extruded / test_primitives /
                …). Root parts render directly under Basic; each subfolder is
@@ -1406,6 +1442,10 @@
   .prim-tag { font: 9px Arial; padding: 1px 5px; border-radius: 8px; background: #ddd; color: #555; }
   .prim-tag.vol { background: #cc2222; color: #fff; }
   .prim-tag.src { background: #2b6cb0; color: #fff; }
+  /* stdstale entries — yellow chip so the deprecation signal carries
+     visually even when scanning the sidebar quickly. */
+  .prim-tag.stale { background: #fbbf24; color: #78350f; }
+  .prim-stdstale .prim-arch-head { color: #92400e; }
   .status { font: 10px Arial; color: #777; padding: 6px 8px; border-top: 1px solid #eee; }
 
   .prim-main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
