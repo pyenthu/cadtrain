@@ -442,6 +442,47 @@
     mkdirPanel = { parent, label, x: Math.min(r.right + 6, window.innerWidth - 280), y: Math.min(r.top, window.innerHeight - 220) };
   }
   function closeMkdir() { mkdirPanel = null; }
+  /** Delete an EMPTY subfolder on the volume. Refuses when non-empty
+   *  (the trash button is disabled in that case, but we re-check
+   *  defensively to guard against drift between the in-memory list and
+   *  the on-disk state). Parents supported: 'basic' or
+   *  'completions/<fam>'. After success, optimistically prune the
+   *  in-memory subfolder list so the sidebar fold disappears before
+   *  the next refreshList finishes. */
+  async function deleteSubfolder(parent: 'basic' | string, sub: string) {
+    const partsHere = parent === 'basic'
+      ? basic.filter((e) => e.subfolder === sub)
+      : completions[parent.slice('completions/'.length)]?.filter((e) => e.subfolder === sub) ?? [];
+    if (partsHere.length > 0) {
+      status = `Cannot delete "${sub}" — ${partsHere.length} part(s) inside. Move or delete them first.`;
+      return;
+    }
+    if (!confirm(`Delete empty folder "${sub}"?`)) return;
+    const path = `primitives/${parent}/${sub}`;
+    try {
+      const r = await fetch(`/api/volume?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      if (!r.ok) { status = `Delete folder failed: ${await r.text()}`; return; }
+      status = `Deleted folder "${sub}".`;
+      // Prune optimistically + drop any related open-fold state.
+      if (parent === 'basic') {
+        basicSubfolders = basicSubfolders.filter((s) => s !== sub);
+        const k = `basic/${sub}`;
+        if (k in openSubfolders) { const { [k]: _, ...rest } = openSubfolders; openSubfolders = rest; }
+      } else if (parent.startsWith('completions/')) {
+        const fam = parent.slice('completions/'.length);
+        completionSubfolders = {
+          ...completionSubfolders,
+          [fam]: (completionSubfolders[fam] ?? []).filter((s) => s !== sub),
+        };
+        const k = `${fam}/${sub}`;
+        if (k in openSubfolders) { const { [k]: _, ...rest } = openSubfolders; openSubfolders = rest; }
+      }
+      await refreshList();
+    } catch (e: any) {
+      status = `Delete folder error: ${e?.message ?? e}`;
+    }
+  }
+
   async function submitMkdir() {
     if (!mkdirPanel || mkdirBusy) return;
     const name = mkdirName.trim();
@@ -880,6 +921,13 @@
                       {sub} {#if subParts.length}({subParts.length}){/if}
                     </button>
                     <button class="prim-add" type="button" title={`New primitive in Basic / ${sub}`} aria-label="Add primitive" onclick={(e) => openTypedCreate(`basic/${sub}`, `Basic / ${sub}`, e)}>＋</button>
+                    <button class="prim-folder-del" type="button"
+                      title={subParts.length > 0
+                        ? `Remove all ${subParts.length} parts from ${sub} first, then delete the folder`
+                        : `Delete empty folder ${sub}`}
+                      disabled={subParts.length > 0}
+                      aria-label={`Delete folder ${sub}`}
+                      onclick={(e) => { e.stopPropagation(); deleteSubfolder('basic', sub); }}>🗑</button>
                   </div>
                   {#if openSubfolders[subKey]}
                     {#if subParts.length === 0}
@@ -954,6 +1002,13 @@
                           {sub} {#if subParts.length}({subParts.length}){/if}
                         </button>
                         <button class="prim-add" type="button" title={`New primitive in ${fam.label} / ${sub}`} aria-label="Add primitive" onclick={(e) => openTypedCreate(`completions/${fam.id}/${sub}`, `${fam.label} / ${sub}`, e)}>＋</button>
+                        <button class="prim-folder-del" type="button"
+                          title={subParts.length > 0
+                            ? `Remove all ${subParts.length} parts from ${sub} first, then delete the folder`
+                            : `Delete empty folder ${sub}`}
+                          disabled={subParts.length > 0}
+                          aria-label={`Delete folder ${sub}`}
+                          onclick={(e) => { e.stopPropagation(); deleteSubfolder(`completions/${fam.id}`, sub); }}>🗑</button>
                       </div>
                       {#if openSubfolders[subKey]}
                         {#if subParts.length === 0}
@@ -1259,6 +1314,11 @@
   .prim-head-row > button:first-child { flex: 1; min-width: 0; }
   .prim-add { flex: 0 0 auto; background: transparent; border: 0; color: #bbb; font: 700 14px Arial; cursor: pointer; padding: 0 8px; line-height: 1; border-radius: 3px; }
   .prim-add:hover { color: #2266cc; background: #eef3fb; }
+  /* Subfolder trash — refuses when non-empty (disabled state).
+     Tinted grey resting, red on hover when enabled. */
+  .prim-folder-del { flex: 0 0 auto; background: transparent; border: 0; color: #bbb; font: 11px Arial; cursor: pointer; padding: 0 6px; line-height: 1; border-radius: 3px; opacity: 0.55; }
+  .prim-folder-del:hover:not(:disabled) { color: #cc2222; background: #fdecec; opacity: 1; }
+  .prim-folder-del:disabled { cursor: not-allowed; opacity: 0.25; }
   /* "📁+" — new-folder button next to the new-primitive ＋. Amber on hover. */
   .prim-add-folder { padding: 0 5px; display: inline-flex; align-items: center; gap: 1px; position: relative; }
   .prim-add-folder svg { width: 13px; height: 13px; color: #bbb; }
