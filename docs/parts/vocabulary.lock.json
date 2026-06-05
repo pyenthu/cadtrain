@@ -56,8 +56,8 @@
       }
     },
     "pin": {
-      "rule_hash": "5a6812ed",
-      "source_hash": "2bd45731",
+      "rule_hash": "b0587565",
+      "source_hash": "218b7d4f",
       "bake": {
         "verts": 1344,
         "z_extent": 9.625,
@@ -65,8 +65,8 @@
       }
     },
     "box": {
-      "rule_hash": "765d43d6",
-      "source_hash": "5269942b",
+      "rule_hash": "9493a1b0",
+      "source_hash": "6cc8f85b",
       "bake": {
         "verts": 1440,
         "z_extent": 9.625,
@@ -75,7 +75,7 @@
     },
     "tube": {
       "rule_hash": "9974539d",
-      "source_hash": "facaffa5",
+      "source_hash": "e683cdc2",
       "bake": {
         "verts": 1536,
         "z_extent": 3,
@@ -84,7 +84,7 @@
     },
     "sub": {
       "rule_hash": "aac06e99",
-      "source_hash": "b64bb825",
+      "source_hash": "c6d98fb4",
       "bake": {
         "verts": 8640,
         "z_extent": 19.25,
@@ -93,7 +93,7 @@
     },
     "xover": {
       "rule_hash": "7cd6aafa",
-      "source_hash": "48be756f",
+      "source_hash": "9353f574",
       "bake": {
         "verts": 8640,
         "z_extent": 19.25,
@@ -102,7 +102,7 @@
     },
     "joint": {
       "rule_hash": "10d8359a",
-      "source_hash": "056c71dd",
+      "source_hash": "ecd30980",
       "bake": {
         "verts": 11328,
         "z_extent": 49.25,

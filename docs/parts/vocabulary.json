@@ -411,7 +411,8 @@
           "[pinR0, z3]",
           "[noseR, z4]",
           "[ri, z4]"
-        ]
+        ],
+        "derived_from_profile": "dp_spec_pin"
       },
       "exemplar": "dt_pin",
       "expects_bake": {
@@ -526,7 +527,8 @@
           "[ri, zSeat]",
           "[floorR, zSeat]",
           "[floorR, zFloor]"
-        ]
+        ],
+        "derived_from_profile": "dp_spec_box"
       },
       "exemplar": "dt_box",
       "expects_bake": {

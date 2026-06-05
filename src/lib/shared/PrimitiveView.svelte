@@ -1083,7 +1083,15 @@
   // nested braces (the old `[^{}]*` regex failed when params preceded kind).
   function partProfileKind(inst: any): string | null {
     const fn = partProfileFn(inst);
-    return fn ? fn.kind : null;
+    if (fn) return fn.kind;
+    // Fallback for inline-polygon parts (K.68 translator stamps
+    // `meta.profile_kind` so the swap picker can open even though the body
+    // has no resolveProfile(...) call). Read directly from editedSource.
+    try {
+      const m = editedSource.match(/\bprofile_kind\s*:\s*['"]([^'"]+)['"]/);
+      if (m) return m[1] ?? null;
+    } catch { /* fall through */ }
+    return null;
   }
   // The FUNCTIONAL profile descriptor a part instance is driven by, or null when
   // the profile arg is NOT a resolveProfile function (e.g. legacy raw vertices).

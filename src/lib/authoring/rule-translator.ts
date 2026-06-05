@@ -52,6 +52,11 @@ export interface VocabPrimitiveRule {
    *  vertex. Same shape as the curated templates' bodies but vocab-supplied. */
   preamble?: string[];
   polygon?: string[];
+  /** Canonical profile id this polygon was DERIVED from (e.g. dp_spec_pin
+   *  for the pin term). Stamped on `meta.profile_kind` so the editor's
+   *  profile-swap picker can open on polygon_inline parts even though
+   *  the body doesn't contain a resolveProfile() call. */
+  derived_from_profile?: string;
 }
 
 export interface VocabComposeRule {
@@ -126,6 +131,14 @@ function translateRev(entry: VocabEntry, partId: string, traceTag: any): string 
     src = rewriteRevBodyToFunctionProfile(src, partId, rule, entry.params);
   }
   src = injectTraceTag(src, traceTag);
+  // For polygon_inline parts, stamp `meta.profile_kind` so the editor's
+  // profile-swap picker (which reads partProfileKind via a resolveProfile
+  // body sniff) ALSO recognizes inline-polygon parts as having a
+  // canonical profile origin. Without this, the swap ▾ button stays
+  // hidden because the body has no resolveProfile(...) call.
+  if (rule.template === 'polygon_inline' && rule.derived_from_profile) {
+    src = insertMetaField(src, `profile_kind: '${rule.derived_from_profile}'`);
+  }
   return src;
 }
 
