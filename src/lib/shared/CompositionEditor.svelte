@@ -78,9 +78,15 @@
     }
   }
   $effect(() => {
+    // K.66: we need the LIVE SOURCE for every import (drift comparison),
+    // not just imports without a stored snapshot. Without this, an import
+    // that DOES have a `meta.dependencies` snapshot never lands in
+    // `liveMeta`, `diffDependencies` sees `liveSources[src] === undefined`,
+    // and falls into the "live missing → ok:false" branch → false-positive
+    // drift on every snapshotted import → Refresh all silently no-ops.
     const wantSrcs = imports.map((i) => i.src);
     for (const src of wantSrcs) {
-      if (depParamKeys.has(src) || liveMeta.has(src)) continue;
+      if (liveMeta.has(src)) continue;
       // Mark optimistically so we don't double-fetch.
       liveMeta.set(src, { source: '', params: {} });
       refetchLiveMeta(src);
