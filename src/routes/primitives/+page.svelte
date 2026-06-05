@@ -214,7 +214,7 @@
   }
 
   onMount(async () => {
-    await refreshList();
+    await Promise.all([refreshList(), loadVolProfiles()]);
     // Default-open my_assy first (testing convenience for the assembly work).
     // Falls back to the first Basic / volume entry when my_assy doesn't exist.
     const all = [...entries, ...basic, ...Object.values(completions).flat()];
@@ -371,6 +371,9 @@
       y: Math.min(r.top, window.innerHeight - 440),
       step: 'type', id: '', busy: false, err: '',
     };
+    // Refresh volume profiles in the background so newly-built profiles in the
+    // Profile builder show up in the picker without requiring a page reload.
+    void loadVolProfiles();
   }
   function closeTypedCreate() { typedCreate = null; }
   async function submitTypedCreate() {
@@ -414,10 +417,56 @@
       t.busy = false;
     }
   }
-  // Cards shown in the template-pick step. Filter by kind.
+  // Volume-authored profiles (loaded on mount via /api/primitives/profiles/list).
+  // Merged into the typed-create picker alongside the curated templates so
+  // anything authored in the Profile builder (or imported into the volume)
+  // also shows up when creating a new Profile Part / Extrude Part.
+  let volProfiles = $state<Array<{ id: string; label: string; set: string; tags?: string[]; params?: Record<string, any>; hasSource?: boolean; points?: number[][] }>>([]);
+  async function loadVolProfiles() {
+    try {
+      const r = await fetch('/api/primitives/profiles/list');
+      if (r.ok) { const d = await r.json(); volProfiles = (d?.profiles ?? d ?? []) as any[]; }
+    } catch { /* offline — empty list */ }
+  }
+
+  /** Synthesize a ProfileTemplate from a volume profile so the typed-create
+   *  picker can scaffold a Profile Part / Extrude Part directly from any
+   *  authored profile (dp_spec_pin, drill_pipe_pin, anything the user
+   *  builds in the Profile builder, etc.). Body is a `resolveProfile(…)`
+   *  call routed to the profile's id; partParams mirror the profile's
+   *  own param schema. */
+  function volProfileToTemplate(p: any): ProfileTemplate {
+    const paramKeys = Object.keys(p.params ?? {});
+    const paramsMap = paramKeys.map((k) => `${k}: p.${k}`).join(', ');
+    return {
+      id: p.id,
+      label: p.label ?? p.id,
+      tags: [...(p.tags ?? []), 'volume', 'function-profile'],
+      partParams: p.params ?? {},
+      body:
+        `  const profile_pts = resolveProfile({\n` +
+        `    kind: '${p.id}',\n` +
+        `    params: { ${paramsMap} },\n` +
+        `  })`,
+    };
+  }
+
+  // Cards shown in the template-pick step. Curated templates FIRST (the
+  // canonical 7 / 8), then volume function-profiles below. Filtered by
+  // kind ↔ profile set.
   function templatesForKind(kind: TypedKind): ProfileTemplate[] {
-    if (kind === 'exp') return templatesFor('cartesian');
-    if (kind === 'rev') return templatesFor('revolve');
+    if (kind === 'exp') {
+      const curated = templatesFor('cartesian');
+      const fromVol = volProfiles.filter((p) => p.set === 'cartesian').map(volProfileToTemplate);
+      const curatedIds = new Set(curated.map((t) => t.id));
+      return [...curated, ...fromVol.filter((t) => !curatedIds.has(t.id))];
+    }
+    if (kind === 'rev') {
+      const curated = templatesFor('revolve');
+      const fromVol = volProfiles.filter((p) => p.set === 'revolve').map(volProfileToTemplate);
+      const curatedIds = new Set(curated.map((t) => t.id));
+      return [...curated, ...fromVol.filter((t) => !curatedIds.has(t.id))];
+    }
     return [];
   }
   // (Legacy createBaseList / baseLabel / openCreate / closeCreate removed
