@@ -18,8 +18,12 @@ const BASE = process.env.CADTRAIN_BASE ?? 'http://localhost:3333';
 // Compose terms have to wait for their dep exemplars to be on the volume since the
 // loader needs to resolve them at bake time.
 const BUILD_ORDER = [
-  'shaft', 'collar', 'cone', 'frustum', 'pin', 'box', // rev primitives
-  'tube', 'sub', 'xover', 'joint',                    // asm composes
+  // rev primitives first (asm composes depend on them being live)
+  'shaft', 'cone', 'frustum',
+  'collar_flat', 'collar_tapered', 'collar_rounded',
+  'pin', 'box',
+  // asm composes
+  'tube', 'sub', 'xover', 'joint',
   // 'stand'  // deferred — needs repeat node support (K.54)
 ];
 
