@@ -1,0 +1,323 @@
+/**
+ * rule-translator — compile a vocabulary entry (or any rule matching the
+ * schema) into a runnable `.rev.ts` / `.asm.ts` source string.
+ *
+ * Deterministic. No LLM. Pure function `Rule → Source`. Used by:
+ *   - Phase 1/2: regenerate dt_* parts from `docs/parts/vocabulary.json`
+ *   - Phase 4: WebGPU LLM emits a rule matching the same schema, this
+ *     translator compiles it (constrained generation)
+ *   - Phase 5/6: chat + chatbot use the same path
+ *
+ * Two rule kinds today:
+ *   - `primitive` — scaffolds a `.rev.ts` via the existing
+ *     `buildRevolveSource` pipeline, then overrides params + (optionally)
+ *     re-points the profile to a function-profile id with a param map.
+ *   - `compose` — scaffolds an `.asm.ts` via `buildAssemblySource`, then
+ *     applies imports + composition tree + assembly params using the
+ *     K.62 data-layer APIs (`applyToSource`, `addAssemblyParam`).
+ *
+ * Every generated source gets a `meta.generated_from` trace tag so the
+ * supervision flow can later regenerate-and-diff if the vocabulary
+ * version moves.
+ */
+
+import {
+  applyToSource, addAssemblyParam, newNodeId,
+  type TreeNode, type ImportDef,
+} from '../cad/composition-tree';
+import {
+  buildAssemblySource, buildRevolveSource, templatesFor,
+} from '../cad/profile-templates';
+
+// ─── Schema types ──────────────────────────────────────────────────────
+
+export interface VocabParam {
+  default: number | string;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  label?: string;
+}
+
+export interface VocabPrimitiveRule {
+  kind: 'primitive';
+  template: string;                                  // profile-template id (cylinder, collar_flat, dp_spec_pin, …)
+  engine?: string;                                   // r_revolve etc. — informational only here
+  profile_params_map?: Record<string, string>;       // profileParamKey → expression (e.g. "p.od")
+}
+
+export interface VocabComposeRule {
+  kind: 'compose';
+  imports: Array<{ alias: string; term: string }>;
+  composition: any;                                  // shape: see treeFromRuleNode below
+}
+
+export interface VocabEntry {
+  kind: 'rev' | 'asm';
+  definition?: string;
+  synonyms?: string[];
+  extends?: string;
+  params: Record<string, VocabParam>;
+  param_lifting?: 'hidden' | 'flat';
+  rule: VocabPrimitiveRule | VocabComposeRule;
+  exemplar: string;
+  thread_spec?: any;
+  expects_bake?: Record<string, number | null | string>;
+}
+
+export interface Vocabulary {
+  version: string;
+  terms: Record<string, VocabEntry>;
+}
+
+// ─── Public API ────────────────────────────────────────────────────────
+
+/** Translate a single vocabulary term into runnable source.
+ *  Throws when the term is unknown or the rule references a missing dep. */
+export function translate(term: string, vocab: Vocabulary, opts?: { partId?: string }): string {
+  const entry = vocab.terms[term];
+  if (!entry) throw new Error(`translate: unknown vocabulary term "${term}"`);
+  const partId = opts?.partId ?? entry.exemplar;
+  const traceTag = {
+    term,
+    vocab_version: vocab.version,
+    rule_hash: hashRule(entry.rule),
+  };
+  if (entry.kind === 'rev') return translateRev(entry, partId, traceTag);
+  if (entry.kind === 'asm') return translateAsm(entry, vocab, partId, traceTag);
+  throw new Error(`translate: unsupported kind "${(entry as any).kind}"`);
+}
+
+// ─── Primitive (.rev.ts) ───────────────────────────────────────────────
+
+function translateRev(entry: VocabEntry, partId: string, traceTag: any): string {
+  const rule = entry.rule as VocabPrimitiveRule;
+  if (rule.kind !== 'primitive') throw new Error('translateRev: rule.kind must be "primitive"');
+
+  // Find the template. If it's not in the curated set (cylinder, collar_flat
+  // etc.), it must be a FUNCTION PROFILE on the volume (dp_spec_pin,
+  // drill_pipe_box, …). For function profiles, scaffold from `cylinder` then
+  // re-point the profile and the params.
+  const curated = templatesFor('revolve').find((t) => t.id === rule.template);
+  let src: string;
+  if (curated) {
+    src = buildRevolveSource(partId, curated);
+    src = overridePartParams(src, partId, entry.params);
+  } else {
+    // Function-profile path — scaffold with cylinder as a placeholder, then
+    // rewrite the body to use `resolveProfile({ kind: <template>, params })`.
+    const cylinder = templatesFor('revolve').find((t) => t.id === 'cylinder')!;
+    src = buildRevolveSource(partId, cylinder);
+    src = overridePartParams(src, partId, entry.params);
+    src = rewriteRevBodyToFunctionProfile(src, partId, rule, entry.params);
+  }
+  src = injectTraceTag(src, traceTag);
+  return src;
+}
+
+/** Replace a scaffolded part's `params: { … }` + signature with the vocab's. */
+function overridePartParams(src: string, partId: string, params: Record<string, VocabParam>): string {
+  const paramKeys = Object.keys(params);
+  // Just the brace block — spliceMetaField will prepend `params: `.
+  const paramsBlock =
+    '{\n' +
+    paramKeys.map((k) => {
+      const p = params[k]!;
+      const fields: string[] = [];
+      fields.push(`label: '${p.label ?? k}'`);
+      if (p.min  != null) fields.push(`min: ${p.min}`);
+      if (p.max  != null) fields.push(`max: ${p.max}`);
+      if (p.step != null) fields.push(`step: ${p.step}`);
+      const def = typeof p.default === 'string' ? `'${p.default}'` : p.default;
+      fields.push(`default: ${def}`);
+      if (p.unit) fields.push(`unit: '${p.unit}'`);
+      return `    ${k}: { ${fields.join(', ')} },`;
+    }).join('\n') +
+    '\n  }';
+  // Splice into meta — find existing `params: { … }` and replace via
+  // balanced brace scan (regex would mis-handle nested braces).
+  src = spliceMetaField(src, 'params', paramsBlock);
+  // Replace the function signature with the new positional arg list.
+  src = src.replace(
+    new RegExp(`(export\\s+function\\s+${partId}\\s*\\()([^)]*)(\\))`),
+    `$1${paramKeys.join(', ')}$3`,
+  );
+  return src;
+}
+
+/** Rewrite the .rev.ts body's `profile_pts = …` initializer + the final
+ *  `r_revolve(…)` call to use `resolveProfile({ kind, params })`. */
+function rewriteRevBodyToFunctionProfile(
+  src: string,
+  partId: string,
+  rule: VocabPrimitiveRule,
+  params: Record<string, VocabParam>,
+): string {
+  const paramKeys = Object.keys(params);
+  // Build the `params: {…}` literal mapping profile-side keys → expressions.
+  const mapEntries = Object.entries(rule.profile_params_map ?? {})
+    .map(([profileKey, expr]) => `${profileKey}: ${expr}`)
+    .join(', ');
+  // Replace the body's profile_pts construction + r_revolve call.
+  // The scaffold has shape:
+  //   export function id(args…) { defaults… const profile_pts = […]; return r_revolve(profile_pts, ?); }
+  const headRe = new RegExp(`(export\\s+function\\s+${partId}\\s*\\([^)]*\\)\\s*\\{)([\\s\\S]*?)(\\n\\}\\s*$)`);
+  const m = src.match(headRe);
+  if (!m) return src;
+  const head = m[1]!, tail = m[3]!;
+  const defaultsBlock = paramKeys.map((k) => `  ${k} ??= ${literal(params[k]!.default)};`).join('\n');
+  const profileLine = `  const profile_pts = resolveProfile({ kind: '${rule.template}', params: { ${mapEntries} } });`;
+  // Use `segments` if it's a vocab param, otherwise 96.
+  const segArg = paramKeys.includes('segments') ? 'p.segments' : '96';
+  const ret = `  return r_revolve(profile_pts, ${segArg});`;
+  const body = `\n${defaultsBlock}\n${profileLine}\n${ret}\n`;
+  return src.replace(headRe, `${head}${body}${tail}`);
+}
+
+// ─── Compose (.asm.ts) ─────────────────────────────────────────────────
+
+function translateAsm(entry: VocabEntry, vocab: Vocabulary, partId: string, traceTag: any): string {
+  const rule = entry.rule as VocabComposeRule;
+  if (rule.kind !== 'compose') throw new Error('translateAsm: rule.kind must be "compose"');
+
+  // Resolve imports — each `term` maps to a deployed part id (the exemplar
+  // of that vocabulary entry). Errors propagate if the term is unknown.
+  const imports: ImportDef[] = (rule.imports ?? []).map((imp) => {
+    const childEntry = vocab.terms[imp.term];
+    if (!childEntry) throw new Error(`translateAsm: import term "${imp.term}" not in vocabulary (alias ${imp.alias})`);
+    return { name: imp.alias, src: childEntry.exemplar };
+  });
+
+  // Build the empty asm scaffold then apply the composition tree + params.
+  let src = buildAssemblySource(partId);
+  const root = treeFromRuleNode(rule.composition, vocab, rule.imports);
+  src = applyToSource(src, partId, imports, root);
+  for (const [name, p] of Object.entries(entry.params)) {
+    src = addAssemblyParam(src, partId, {
+      name,
+      label: p.label ?? name,
+      min:   p.min,
+      max:   p.max,
+      step:  p.step,
+      default: typeof p.default === 'number' ? p.default : Number(p.default) || 0,
+    });
+  }
+  src = injectTraceTag(src, traceTag);
+  return src;
+}
+
+/** Recursive rule-node → TreeNode. The rule schema uses a JSON-friendly
+ *  shape; this expands to the runtime composition-tree IR. */
+function treeFromRuleNode(node: any, vocab: Vocabulary, imports: Array<{ alias: string; term: string }>): TreeNode {
+  if (!node || typeof node !== 'object') throw new Error('treeFromRuleNode: node is not an object');
+  switch (node.type) {
+    case 'call': {
+      // Resolve paramKeys: look up the child term's params (from the alias)
+      // to get the canonical ordering. The rule's `args` is an object
+      // {paramKey: expression}; we align it to the child's param order.
+      const alias = node.fn;
+      const importEntry = imports.find((i) => i.alias === alias);
+      const childTerm = importEntry ? vocab.terms[importEntry.term] : undefined;
+      const childKeys = childTerm ? Object.keys(childTerm.params) : Object.keys(node.args ?? {});
+      const argsObj: Record<string, any> = node.args ?? {};
+      const args: TreeNode[] = childKeys.map((k) => {
+        const v = argsObj[k];
+        // If the rule didn't provide a value for this param, leave it as the
+        // child's DEFAULT (hidden — per Q1 param_lifting:"hidden" decision).
+        const raw = v != null ? String(v) : (childTerm && literal(childTerm.params[k]!.default));
+        return { type: 'literal', id: newNodeId(), value: String(raw ?? '0') };
+      });
+      const callNode: TreeNode = {
+        type: 'call', id: newNodeId(), fn: alias,
+        args, paramKeys: childKeys,
+      };
+      return callNode;
+    }
+    case 'method': {
+      return {
+        type: 'method', id: newNodeId(),
+        op: node.op,
+        obj: treeFromRuleNode(node.obj, vocab, imports),
+        arg: treeFromRuleNode(node.arg, vocab, imports),
+      };
+    }
+    case 'list': {
+      return {
+        type: 'list', id: newNodeId(),
+        children: (node.children ?? []).map((c: any) => treeFromRuleNode(c, vocab, imports)),
+      };
+    }
+    case 'mv': {
+      const child = treeFromRuleNode(node.child, vocab, imports);
+      const ox = String(node.offset_x ?? 0);
+      const oy = String(node.offset_y ?? 0);
+      const oz = String(node.offset_z ?? 0);
+      return {
+        type: 'mv', id: newNodeId(),
+        child,
+        offset: [
+          { type: 'literal', id: newNodeId(), value: ox },
+          { type: 'literal', id: newNodeId(), value: oy },
+          { type: 'literal', id: newNodeId(), value: oz },
+        ],
+      };
+    }
+    case 'repeat': {
+      // Defer to Phase 4 (with K.54 visual repeat block). For now, throw —
+      // surfaces the unsupported shape clearly.
+      throw new Error('treeFromRuleNode: "repeat" node not yet supported (K.54 / K.68 Phase 4)');
+    }
+    default:
+      throw new Error(`treeFromRuleNode: unknown node type "${node.type}"`);
+  }
+}
+
+// ─── Trace tag + helpers ───────────────────────────────────────────────
+
+function injectTraceTag(src: string, tag: { term: string; vocab_version: string; rule_hash: string }): string {
+  const tagLiteral = `generated_from: { term: '${tag.term}', vocab_version: '${tag.vocab_version}', rule_hash: '${tag.rule_hash}' }`;
+  return insertMetaField(src, tagLiteral);
+}
+
+/** Insert a field at the top of `meta = { … }`. Does not de-dupe — the
+ *  caller is responsible for not double-applying. */
+function insertMetaField(src: string, fieldLiteral: string): string {
+  // Find `export const meta = {` and inject right after the opening brace.
+  const m = src.match(/(export\s+const\s+meta\s*=\s*\{)/);
+  if (!m) return src;
+  const pos = (m.index ?? 0) + m[0].length;
+  return src.slice(0, pos) + `\n  ${fieldLiteral},` + src.slice(pos);
+}
+
+/** Replace a top-level `meta.<field>: { … }` block with a new value. */
+function spliceMetaField(src: string, field: string, newValue: string): string {
+  const re = new RegExp(`\\b${field}\\s*:\\s*\\{`);
+  const m = src.match(re);
+  if (!m) return src;
+  const start = (m.index ?? 0) + m[0].length - 1; // points AT the `{`
+  let depth = 0, i = start;
+  while (i < src.length) {
+    const ch = src[i]!;
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) { i++; break; } }
+    i++;
+  }
+  if (depth !== 0) return src;
+  return src.slice(0, m.index!) + `${field}: ${newValue}` + src.slice(i);
+}
+
+/** Format a default value as a JS literal. Strings → quoted; numbers → number. */
+function literal(v: number | string | undefined): string {
+  if (v == null) return '0';
+  if (typeof v === 'number') return String(v);
+  return `'${v}'`;
+}
+
+/** Stable djb2 hash for a rule object (for the trace tag). */
+function hashRule(rule: any): string {
+  const s = JSON.stringify(rule);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
+  return (h >>> 0).toString(16);
+}

@@ -1,0 +1,313 @@
+{
+  "$schema": "./vocabulary.schema.json",
+  "version": "0.2.0",
+  "notes": [
+    "K.68 Phase 1 draft, 2026-06-05.",
+    "Each entry is a TERM in the compositional grammar.",
+    "A rule compiles deterministically to AsmSource via rule-translator.ts (Phase 2).",
+    "Synonyms are aliases the RAG retrieval treats as the same term."
+  ],
+  "terms": {
+    "shaft": {
+      "kind": "rev",
+      "definition": "Cylindrical profile, half-section (r, len). The atomic primitive — every other rotational shape extends this.",
+      "synonyms": ["cylinder", "solid rod", "round bar"],
+      "params": {
+        "r":   { "default": 1, "min": 0.05, "max": 10, "step": 0.05, "unit": "in" },
+        "len": { "default": 3, "min": 0.1,  "max": 50, "step": 0.1,  "unit": "in" },
+        "segments": { "default": 64, "min": 8, "max": 256, "step": 1 }
+      },
+      "rule": {
+        "kind": "primitive",
+        "template": "cylinder",
+        "engine": "r_revolve"
+      },
+      "exemplar": "dt_shaft",
+      "expects_bake": { "verts": 258, "z_extent": 3.0, "outer_r": 1.0 }
+    },
+
+    "tube": {
+      "kind": "asm",
+      "definition": "Open tube — a smaller shaft subtracted from a larger shaft. Outer radius = od/2; inner radius = od/2 - wall.",
+      "synonyms": ["pipe", "hollow shaft", "open cylinder"],
+      "params": {
+        "od":     { "default": 4.5, "min": 0.1, "max": 24, "step": 0.05, "unit": "in" },
+        "wall":   { "default": 0.5, "min": 0.05, "max": 5, "step": 0.05, "unit": "in" },
+        "length": { "default": 3,   "min": 0.1, "max": 50, "step": 0.1, "unit": "in" }
+      },
+      "rule": {
+        "kind": "compose",
+        "imports": [
+          { "alias": "A", "term": "shaft" },
+          { "alias": "B", "term": "shaft" }
+        ],
+        "composition": {
+          "type": "method",
+          "op": "subtract",
+          "obj": { "type": "call", "fn": "A", "args": { "segments": 64, "r": "p.od / 2",       "len": "p.length" } },
+          "arg": { "type": "call", "fn": "B", "args": { "segments": 64, "r": "p.od/2 - p.wall", "len": "p.length" } }
+        }
+      },
+      "exemplar": "dt_tube",
+      "expects_bake": { "verts": 1536, "z_extent": 3.0, "outer_r": 2.25, "min_r": 1.75 }
+    },
+
+    "collar": {
+      "kind": "rev",
+      "definition": "Locally-larger OD over a portion of length, revolved. A flange / shoulder / sleeve.",
+      "synonyms": ["flange", "shoulder", "sleeve", "ring"],
+      "params": {
+        "od":     { "default": 5,   "min": 0.1, "max": 24, "step": 0.05, "unit": "in" },
+        "bore":   { "default": 4.5, "min": 0,   "max": 24, "step": 0.05, "unit": "in" },
+        "len":    { "default": 1.5, "min": 0.1, "max": 10, "step": 0.05, "unit": "in" },
+        "segments": { "default": 64, "min": 8, "max": 256, "step": 1 }
+      },
+      "rule": {
+        "kind": "primitive",
+        "template": "collar_flat",
+        "engine": "r_revolve"
+      },
+      "exemplar": "dt_collar",
+      "expects_bake": { "verts": 512, "z_extent": 1.5 }
+    },
+
+    "pin": {
+      "kind": "rev",
+      "definition": "Male tapered connection — shaft body + upset joint shoulder + tapered nose. Used as the male end of a tool joint.",
+      "synonyms": ["male connection", "tapered pin", "drill-pipe pin"],
+      "extends": "shaft",
+      "thread_spec": {
+        "_note": "Inline for v0.1. Will move to docs/parts/thread_specs.json when that KB exists. Translator reads `name` first, falls back to the raw fields below.",
+        "name": "NC50",
+        "pitch": 0.25,
+        "taper_in_per_ft": 2,
+        "thread_starts": 1,
+        "thread_form": "V"
+      },
+      "params": {
+        "pipeOD":      { "default": 4,    "min": 0.5, "max": 24,  "step": 0.05, "unit": "in" },
+        "jointOD":     { "default": 5.25, "min": 0.5, "max": 24,  "step": 0.05, "unit": "in" },
+        "wall":        { "default": 0.5,  "min": 0.05,"max": 5,   "step": 0.05, "unit": "in" },
+        "pipeLen":     { "default": 3,    "min": 0.1, "max": 50,  "step": 0.1,  "unit": "in" },
+        "jointLen":    { "default": 6,    "min": 0.1, "max": 20,  "step": 0.1,  "unit": "in" },
+        "jtUpset":     { "default": 0.25, "min": 0,   "max": 2,   "step": 0.05, "unit": "in" },
+        "jointTaper":  { "default": 45,   "min": 0,   "max": 90,  "step": 1,    "unit": "deg" },
+        "threadTaper": { "default": 5,    "min": 0,   "max": 30,  "step": 0.5,  "unit": "deg" },
+        "segments":    { "default": 96,   "min": 8,   "max": 256, "step": 1 }
+      },
+      "rule": {
+        "kind": "primitive",
+        "template": "dp_spec_pin",
+        "engine": "r_revolve",
+        "profile_params_map": {
+          "pipeOD": "p.pipeOD", "jointOD": "p.jointOD", "wall": "p.wall",
+          "pipeLen": "p.pipeLen", "jointLen": "p.jointLen", "jtUpset": "p.jtUpset",
+          "jointTaper": "p.jointTaper", "threadTaper": "p.threadTaper"
+        }
+      },
+      "exemplar": "dt_pin",
+      "expects_bake": { "verts": 1344, "z_extent": 9.625, "outer_r": 2.625, "min_r": 1.5 }
+    },
+
+    "box": {
+      "kind": "rev",
+      "definition": "Female complement of pin — counterbored receptacle; the female end of a tool joint mating with a pin.",
+      "synonyms": ["female connection", "box-end", "drill-pipe box"],
+      "extends": "tube",
+      "thread_spec": {
+        "_note": "Metadata-only for v0.1 — geometry doesn't render threads yet (that needs r_threads overlay or similar, future work). Mates with pin of the same `name`.",
+        "name": "NC50",
+        "pitch": 0.25,
+        "taper_in_per_ft": 2,
+        "thread_starts": 1,
+        "thread_form": "V"
+      },
+      "params": {
+        "pipeOD":   { "default": 4,    "min": 0.5, "max": 24, "step": 0.05, "unit": "in" },
+        "jointOD":  { "default": 5.25, "min": 0.5, "max": 24, "step": 0.05, "unit": "in" },
+        "wall":     { "default": 0.5,  "min": 0.05,"max": 5,  "step": 0.05, "unit": "in" },
+        "pipeLen":  { "default": 3,    "min": 0.1, "max": 50, "step": 0.1,  "unit": "in" },
+        "jointLen": { "default": 6,    "min": 0.1, "max": 20, "step": 0.1,  "unit": "in" },
+        "jtUpset":  { "default": 0.25, "min": 0,   "max": 2,  "step": 0.05, "unit": "in" },
+        "jointTaper":{ "default": 45,  "min": 0,   "max": 90, "step": 1,    "unit": "deg" },
+        "segments": { "default": 96,   "min": 8,   "max": 256, "step": 1 }
+      },
+      "rule": {
+        "kind": "primitive",
+        "template": "dp_spec_box",
+        "engine": "r_revolve",
+        "profile_params_map": {
+          "pipeOD": "p.pipeOD", "jointOD": "p.jointOD", "wall": "p.wall",
+          "pipeLen": "p.pipeLen", "jointLen": "p.jointLen", "jtUpset": "p.jtUpset",
+          "jointTaper": "p.jointTaper"
+        }
+      },
+      "exemplar": "dt_box",
+      "expects_bake": { "verts": null, "_note": "to populate after first translator pass + bake validation" }
+    },
+
+    "joint": {
+      "kind": "asm",
+      "definition": "A box + tube body + pin stacked end-to-end via tail() datums. The unit drill-pipe joint.",
+      "synonyms": ["tool joint", "pipe joint", "drill-pipe joint", "single"],
+      "params": {
+        "od":      { "default": 4.5, "min": 0.5, "max": 24, "step": 0.05, "unit": "in" },
+        "wall":    { "default": 0.5, "min": 0.05,"max": 5,  "step": 0.05, "unit": "in" },
+        "body_len":{ "default": 30,  "min": 1,   "max": 120,"step": 0.5,  "unit": "ft" }
+      },
+      "param_lifting": "hidden",
+      "param_lifting_note": "Box / Pin's deep params (pipeOD, jointOD, jtUpset, jointTaper, threadTaper, …) stay as STATIC defaults inside the rule — NOT lifted to joint.params. Joint exposes only {od, wall, body_len}. Deep-dial overrides go through editing the joint's rule, not through assembly-level params.",
+      "rule": {
+        "kind": "compose",
+        "imports": [
+          { "alias": "A", "term": "box" },
+          { "alias": "B", "term": "tube" },
+          { "alias": "C", "term": "pin" }
+        ],
+        "composition": {
+          "type": "list",
+          "children": [
+            { "type": "call", "fn": "A", "args": "(use box defaults — hidden, see param_lifting)" },
+            { "type": "mv", "offset_z": "tail(A)",
+              "child": { "type": "call", "fn": "B", "args": { "od": "p.od", "wall": "p.wall", "length": "p.body_len" } } },
+            { "type": "mv", "offset_z": "tail(B)",
+              "child": { "type": "call", "fn": "C", "args": "(use pin defaults — hidden, see param_lifting)" } }
+          ]
+        }
+      },
+      "exemplar": "dt_joint",
+      "expects_bake": { "verts": null, "_note": "to populate after first translator pass + bake validation" }
+    },
+
+    "cone": {
+      "kind": "rev",
+      "definition": "Tapered cylindrical solid — different radii at top and bottom. The basic tapered primitive.",
+      "synonyms": ["taper", "tapered cylinder", "frustum-like nose"],
+      "extends": "shaft",
+      "params": {
+        "r_top":    { "default": 0.5, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "r_bot":    { "default": 1,   "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "len":      { "default": 3,   "min": 0.1, "max": 50, "step": 0.1,  "unit": "in" },
+        "segments": { "default": 64,  "min": 8,   "max": 256,"step": 1 }
+      },
+      "rule": {
+        "kind": "primitive",
+        "template": "cone",
+        "engine": "r_revolve"
+      },
+      "exemplar": "dt_cone",
+      "expects_bake": { "verts": null, "_note": "first translator pass populates" }
+    },
+
+    "frustum": {
+      "kind": "rev",
+      "definition": "Generic tapered solid via the barrel template — same as cone but uses barrel scaffolding for asymmetric or curved tapers.",
+      "synonyms": ["barrel", "asymmetric taper"],
+      "extends": "shaft",
+      "params": {
+        "r_top":    { "default": 1.2, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "r_bot":    { "default": 1.5, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "r_mid":    { "default": 1.6, "min": 0,   "max": 10, "step": 0.05, "unit": "in" },
+        "len":      { "default": 3,   "min": 0.1, "max": 50, "step": 0.1,  "unit": "in" },
+        "segments": { "default": 64,  "min": 8,   "max": 256,"step": 1 }
+      },
+      "rule": {
+        "kind": "primitive",
+        "template": "barrel",
+        "engine": "r_revolve"
+      },
+      "exemplar": "dt_frustum",
+      "expects_bake": { "verts": null, "_note": "first translator pass populates" }
+    },
+
+    "sub": {
+      "kind": "asm",
+      "definition": "Short connection piece — box + pin with no body between. A 'crossover sub' but with the SAME thread spec on both ends. Used widely in BHA.",
+      "synonyms": ["adapter", "short sub", "pony sub"],
+      "params": {
+        "od":   { "default": 4.5, "min": 0.5, "max": 24, "step": 0.05, "unit": "in" },
+        "wall": { "default": 0.5, "min": 0.05,"max": 5,  "step": 0.05, "unit": "in" }
+      },
+      "param_lifting": "hidden",
+      "param_lifting_note": "Pin / Box deep params (pipeOD, jointOD, jtUpset, …) stay as static defaults inside the sub's rule. Sub exposes only {od, wall}.",
+      "rule": {
+        "kind": "compose",
+        "imports": [
+          { "alias": "A", "term": "box" },
+          { "alias": "B", "term": "pin" }
+        ],
+        "composition": {
+          "type": "list",
+          "children": [
+            { "type": "call", "fn": "A", "args": {} },
+            { "type": "mv", "offset_z": "tail(A)",
+              "child": { "type": "call", "fn": "B", "args": {} } }
+          ]
+        }
+      },
+      "exemplar": "dt_sub",
+      "expects_bake": { "verts": null, "_note": "first translator pass populates" }
+    },
+
+    "xover": {
+      "kind": "asm",
+      "definition": "Crossover — different thread specs on each end (e.g. NC50 pin × NC46 box). Same composition as sub but with explicit thread metadata per end.",
+      "synonyms": ["crossover", "cross-over", "thread adapter"],
+      "params": {
+        "od":   { "default": 4.5, "min": 0.5, "max": 24, "step": 0.05, "unit": "in" },
+        "wall": { "default": 0.5, "min": 0.05,"max": 5,  "step": 0.05, "unit": "in" }
+      },
+      "param_lifting": "hidden",
+      "thread_spec": {
+        "_note": "Different threads each end. Geometry currently same as sub — thread spec is metadata-only until r_threads overlay ships.",
+        "box_thread": "NC50",
+        "pin_thread": "NC46"
+      },
+      "rule": {
+        "kind": "compose",
+        "imports": [
+          { "alias": "A", "term": "box" },
+          { "alias": "B", "term": "pin" }
+        ],
+        "composition": {
+          "type": "list",
+          "children": [
+            { "type": "call", "fn": "A", "args": {} },
+            { "type": "mv", "offset_z": "tail(A)",
+              "child": { "type": "call", "fn": "B", "args": {} } }
+          ]
+        }
+      },
+      "exemplar": "dt_xover",
+      "expects_bake": { "verts": null, "_note": "first translator pass populates" }
+    },
+
+    "stand": {
+      "kind": "asm",
+      "definition": "N joints stacked end-to-end via tail() — typically 3 for a 'triple' stand.",
+      "synonyms": ["triple", "drill-pipe stand"],
+      "params": {
+        "od":      { "default": 4.5, "min": 0.5, "max": 24, "step": 0.05, "unit": "in" },
+        "wall":    { "default": 0.5, "min": 0.05,"max": 5,  "step": 0.05, "unit": "in" },
+        "body_len":{ "default": 30,  "min": 1,   "max": 120,"step": 0.5,  "unit": "ft" },
+        "n":       { "default": 3,   "min": 1,   "max": 12, "step": 1 }
+      },
+      "param_lifting": "hidden",
+      "param_lifting_note": "Same model as joint — pin/box/tube deep params stay static inside joint's rule. Stand exposes only {n, od, wall, body_len}.",
+      "rule": {
+        "kind": "compose",
+        "imports": [
+          { "alias": "J", "term": "joint" }
+        ],
+        "composition": {
+          "type": "repeat",
+          "count": "p.n",
+          "child": { "type": "call", "fn": "J", "args": { "od": "p.od", "wall": "p.wall", "body_len": "p.body_len" } },
+          "mate": "tail(prev)"
+        }
+      },
+      "exemplar": "dt_stand",
+      "expects_bake": { "verts": null, "_note": "to populate after first translator pass + bake validation" }
+    }
+  }
+}
