@@ -89,6 +89,15 @@ files (auto-loaded when working in that subtree):
     - **Units**: oilfield (lbf / ft-lbf / in / ksi) end-to-end. Engine modules convert internally as needed.
     - **Future stages 2-4** (full plan in `FEM.md`): each lands as a NEW sub-route (`/fem/[id]/beam`, `/fem/[id]/elastic-3d`, `/fem/[id]/ccx`) — never a tab on the existing page. Keeps URL state simple.
 
+23. **Repeatable testing — non-trivial UI flow rebuilds ship with a subagent test spec (2026-06-05).** Whenever a session builds or rebuilds a multi-step authoring flow (drill-pipe parts, profile editor, assembly composition, …), encode the test plan as a Claude-Chrome subagent spec in **`.claude/agents/<name>.md`** BEFORE declaring the work done. The spec must:
+    - Be invokable as a leaf subagent via `Agent(subagent_type: '<name>')` (no Agent recursion).
+    - Drive the real UI via the `mcp__claude-in-chrome__*` tools (browser_batch / computer / find / javascript_tool / gif_creator) AND verify each step server-side via `Bash` + `curl` against the actual endpoints (`/api/primitives/source`, `/api/primitives/preview`, `/api/volume`, …).
+    - Output a markdown summary table (id · scaffold · bake · verts · z-extent · …) on completion, AND a GIF via `gif_creator`.
+    - **Run twice and produce identical output** — the second run is the repeatability check. Any divergence in numbers, click targets, or scaffold paths is a finding the spec must absorb before the work is "done".
+    - Patch the spec in-place when a run surfaces a wrinkle (e.g. /preview body requires `source`, /list endpoint caches after mkdir, gif_creator needs `stop → clear → start` preflight). The spec is the durable artefact — agent runs are ephemeral.
+    
+    Pattern reference: `.claude/agents/test-dp-build.md` (drives the drill-pipe rebuild pipeline — dt_shaft, dt_collar, dt_box, dt_pin, dt_joint, dt_stand — through the typed-create popup; ran identically twice on first-day stress test). Project-local agents live in `.claude/agents/` (gitignored — local infra). Pair with Rule 12 (Playwright recordings) for headless CI runs; the subagent path is for Chrome-driven smoke tests that need the real WASM bake + the live MCP browser.
+
 ## Open TODOs (out-of-scope findings)
 
 Research findings (default-param pHash/CLIP collapse, the cold-classification
