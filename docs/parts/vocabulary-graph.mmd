@@ -1,0 +1,55 @@
+graph TD
+  %% Auto-generated from vocabulary.json v0.3.0
+
+  subgraph PRIMITIVES["Primitives (.rev.ts)"]
+    shaft["shaft"]
+    collar_flat["collar_flat<br/><i>collar_flat</i>"]
+    collar_tapered["collar_tapered<br/><i>collar_tapered</i>"]
+    collar_rounded["collar_rounded<br/><i>collar_rounded</i>"]
+    pin["pin<br/><i>dp_spec_pin</i>"]
+    box["box<br/><i>dp_spec_box</i>"]
+    cone["cone<br/><i>cone</i>"]
+    frustum["frustum<br/><i>barrel</i>"]
+  end
+
+  subgraph ASSEMBLIES["Assemblies (.asm.ts)"]
+    tube["tube"]
+    joint["joint"]
+    sub["sub"]
+    xover["xover"]
+    stand["stand"]
+  end
+
+  %% extends (inheritance) — dashed
+  shaft -.extends.-> pin
+  tube -.extends.-> box
+  shaft -.extends.-> cone
+  shaft -.extends.-> frustum
+
+  %% imports (composition) — solid
+  shaft --> tube
+  shaft --> tube
+  box --> joint
+  tube --> joint
+  pin --> joint
+  box --> sub
+  pin --> sub
+  box --> xover
+  pin --> xover
+  joint --> stand
+
+  classDef prim fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e
+  classDef asm  fill:#dcfce7,stroke:#15803d,color:#14532d
+  class shaft prim
+  class tube asm
+  class collar_flat prim
+  class collar_tapered prim
+  class collar_rounded prim
+  class pin prim
+  class box prim
+  class joint asm
+  class cone prim
+  class frustum prim
+  class sub asm
+  class xover asm
+  class stand asm

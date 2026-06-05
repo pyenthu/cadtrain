@@ -98,6 +98,19 @@ files (auto-loaded when working in that subtree):
     
     Pattern reference: `.claude/agents/test-dp-build.md` (drives the drill-pipe rebuild pipeline — dt_shaft, dt_collar, dt_box, dt_pin, dt_joint, dt_stand — through the typed-create popup; ran identically twice on first-day stress test). Project-local agents live in `.claude/agents/` (gitignored — local infra). Pair with Rule 12 (Playwright recordings) for headless CI runs; the subagent path is for Chrome-driven smoke tests that need the real WASM bake + the live MCP browser.
 
+24. **Generative authoring — RAG-then-translate against the vocabulary first; no ad-hoc scripts when a vocab path exists (2026-06-05).** When the user describes a new part in chat ("give me X", "build a Y like Z but with W", "I want a new drill collar", …), Claude MUST retrieve from **`docs/parts/vocabulary.json`** FIRST and compose via the deterministic translator pipeline BEFORE doing anything else. Order of operations:
+
+    1. **Synonym match** → reuse an existing term, adjust params only (`generate-from-vocab` produces a fresh dt_<name> with the requested dial values; vocabulary itself unchanged). No new vocab entry.
+    2. **`extends` parent match** → propose a new vocab term inheriting from the parent (e.g. `hwdp` extends `tube`). Author the new entry, run translator, save.
+    3. **Composition match** → propose a new vocab term composing existing terms via `kind: 'compose'` (e.g. `hwdp_joint` composes `box + hwdp + pin`). Author + translate + save.
+    4. **Fall-through hand-author** ONLY when none of the above fit — and SURFACE this in chat as "this doesn't fit any current vocab pattern; should we add a new template (rule kind, primitive template, schema field)?" Wait for confirmation before extending the schema.
+
+    Always run via `src/lib/authoring/rule-translator.ts` (`translate(term, vocab)`). Always save through `/api/primitives/save` under `basic/dp_test/` (or the appropriate target dir). Always bake-verify via `/api/primitives/preview` with the canonical default params + report verts/z-extent/outer-r. Surface vocab patches via **`scripts/promote-to-vocab.ts`** (diff vs translator output, propose JSON patch, apply on confirm). Update **`docs/parts/vocabulary-graph.mmd`** when terms change (via `bun scripts/render-vocab-graph.ts > docs/parts/vocabulary-graph.mmd`).
+
+    **NEVER hand-author a `/tmp/<id>_swap.ts` ad-hoc script when a vocab path exists.** That was the anti-pattern of the 2026-06-05 dp_test session — each non-curated profile triggered a one-off `/tmp/dt_pin_swap.ts`-style rewrite, ungoverned and unrepeatable. Rule 24 codifies the alternative: the vocabulary IS the source of truth; every "new part" request becomes vocabulary + translator + save + verify, deterministically.
+
+    Reference: `docs/parts/vocabulary.json` (current rule set), `docs/parts/vocabulary-graph.mmd` (auto-rendered Mermaid topology), `docs/parts/vocabulary.lock.json` (regression net), `K.68` in `/plan` (full 6-phase rollout including L4 WebGPU LLM + L5 Claude fallback). Pair with Rule 23 (subagent test specs) — every new vocab term gains an exemplar that the smoke test pipeline can validate.
+
 ## Open TODOs (out-of-scope findings)
 
 Research findings (default-param pHash/CLIP collapse, the cold-classification
