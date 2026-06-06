@@ -38,9 +38,9 @@
   let selected = $state<Term | null>(null);
   let search = $state('');
 
-  // Resizable diagram|detail split — defaults 40/60 (left lighter, right
-  // pane gets more room since it hosts the 2D + 3D + sliders).
-  let splitPct = $state(40);
+  // Resizable diagram|detail split — defaults 30/70 (left rail thin, right
+  // pane gets most of the floor for params + canvas + rule details).
+  let splitPct = $state(30);
   let gridEl: HTMLElement | undefined = $state();
   let dragging = false;
   function startDrag() {
@@ -115,9 +115,17 @@
     }
   }
   // Right-pane top-tab (seed-only) — Inferred (auto-derived 2D→r_revolve)
-  // vs Proposed (rich hand-drafted entry). Each tab carries its own
-  // definition + 2D + 3D + actions. Curated terms skip the tabs.
-  let detailTab = $state<'inferred' | 'proposed'>('inferred');
+  // vs Proposed (rich hand-drafted entry). Default to Proposed since it's
+  // the primary workflow (rich rule + sliders); $effect below flips to
+  // Inferred when the selection has no proposed entry.
+  let detailTab = $state<'inferred' | 'proposed'>('proposed');
+  $effect(() => {
+    // When the selected term changes, prefer Proposed if it has an entry,
+    // else Inferred. Runs reactively on `selected` change.
+    if (!selected) return;
+    if (!selectedIsSeed) return;
+    detailTab = getProposed(selected) ? 'proposed' : 'inferred';
+  });
   // Definition / tags popover state — encapsulates the rich verbiage
   // (definition + synonyms / function / form / variants / references) into a
   // single ⓘ button so the tab body focuses on params + 3D bake (matching
@@ -835,9 +843,8 @@
                 </div>
               {/if}
 
-              <!-- Proposed 3D — full width (no 2D drawing; the inferred tab
-                   has the vendor reference if you need it). -->
-              <div class="view-row solo">
+              <!-- Two-column row: 30% canvas (left) | 70% rule/details (right). -->
+              <div class="canvas-rule-row">
                 <div class="bake-card">
                   <header class="bake-head">
                     <div class="bake-title">Proposed 3D · {prop.rule?.kind ?? '?'}</div>
@@ -857,7 +864,6 @@
                     {#if !pb}
                       <div class="bake-cta">
                         Click <strong>Bake</strong> to render the hand-drafted <code>{prop.rule?.kind}</code> rule.
-                        <br>Drag the sliders below to re-bake with different params.
                       </div>
                     {:else if pb === 'loading'}
                       <div class="empty">baking proposed source…</div>
@@ -881,42 +887,47 @@
                     {/if}
                   </div>
                 </div>
-              </div>
 
-              <!-- Rule + raw JSON, collapsed -->
-              {#if prop.rule}
-                <details class="block">
-                  <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
-                  {#if prop.rule.body?.preamble?.length}
-                    <div class="rule-section">
-                      <div class="prop-label">body · preamble</div>
-                      <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
-                    </div>
+                <div class="rule-details-col">
+                  {#if prop.rule}
+                    <details class="block" open>
+                      <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
+                      {#if prop.rule.body?.preamble?.length}
+                        <div class="rule-section">
+                          <div class="prop-label">body · preamble</div>
+                          <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
+                        </div>
+                      {/if}
+                      {#if prop.rule.body?.polygon?.length}
+                        <div class="rule-section">
+                          <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
+                          <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
+                        </div>
+                      {/if}
+                      {#if prop.rule.modifiers?.length}
+                        <div class="rule-section">
+                          <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
+                          <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
+                        </div>
+                      {/if}
+                    </details>
                   {/if}
-                  {#if prop.rule.body?.polygon?.length}
-                    <div class="rule-section">
-                      <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
-                      <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-                    </div>
+                  <details class="block">
+                    <summary>definition</summary>
+                    <p class="def-line rich">{prop.definition}</p>
+                  </details>
+                  {#if prop.expects_bake}
+                    <details class="block">
+                      <summary>expects bake</summary>
+                      <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
+                    </details>
                   {/if}
-                  {#if prop.rule.modifiers?.length}
-                    <div class="rule-section">
-                      <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
-                      <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
-                    </div>
-                  {/if}
-                </details>
-              {/if}
-              {#if prop.expects_bake}
-                <details class="block">
-                  <summary>expects bake</summary>
-                  <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
-                </details>
-              {/if}
-              <details class="block">
-                <summary>raw proposed JSON</summary>
-                <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
-              </details>
+                  <details class="block">
+                    <summary>raw proposed JSON</summary>
+                    <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
+                  </details>
+                </div>
+              </div>
 
               <!-- Promote footer -->
               <div class="promote-footer">
@@ -1405,6 +1416,10 @@
   .view-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; min-height: 320px; }
   .view-row.solo { grid-template-columns: 1fr; min-height: 420px; }
   .view-row > * { min-width: 0; }
+  /* 30/70 canvas | rule-details row in the Proposed tab. */
+  .canvas-rule-row { display: grid; grid-template-columns: 3fr 7fr; gap: 12px; align-items: stretch; min-height: 360px; }
+  .canvas-rule-row > * { min-width: 0; }
+  .rule-details-col { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: 600px; }
   .bake-card {
     display: grid; grid-template-rows: auto 1fr;
     background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
