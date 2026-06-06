@@ -575,6 +575,21 @@
         <div class="detail-head">
           <span class="detail-kind" class:asm={!selectedIsSeed && e.kind === 'asm'} class:seed={selectedIsSeed}>{selectedIsSeed ? 'seed' : e.kind}</span>
           <h2>{selected}</h2>
+          <!-- Bake-info inlined into the title row (Proposed tab only). -->
+          {#if selectedIsSeed && detailTab === 'proposed' && proposedEntry}
+            {@const _pb = proposedBakeCache[selected!]}
+            <span class="head-bake-info">· Proposed 3D · <code>{proposedEntry.rule?.kind ?? '?'}</code></span>
+            {#if !_pb}
+              <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake</button>
+            {:else if _pb === 'loading'}
+              <span class="head-bake-stat">baking…</span>
+            {:else if 'error' in (_pb as any)}
+              <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
+              <span class="head-bake-stat err">err: {(_pb as any).error}</span>
+            {:else}
+              <span class="head-bake-stat">· {(_pb as ProposedBake).bake?.verts ?? '?'} verts · z={(_pb as ProposedBake).bake?.z_extent ?? '?'} · r={(_pb as ProposedBake).bake?.outer_r ?? '?'}</span>
+            {/if}
+          {/if}
           <span class="head-spacer"></span>
           <!-- Definition & tags popover — opens a wide panel with the rich
                definition, synonyms / function / form / variants / references.
@@ -817,21 +832,7 @@
                    RIGHT = parameters on top, rule + details below. -->
               <div class="proposed-grid">
                 <div class="proposed-canvas-col">
-                  <div class="bake-card">
-                    <header class="bake-head">
-                      <div class="bake-title">Proposed 3D · {prop.rule?.kind ?? '?'}</div>
-                      <span class="spacer"></span>
-                      {#if !pb}
-                        <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake</button>
-                      {:else if pb === 'loading'}
-                        <span class="bar-status">baking…</span>
-                      {:else if 'error' in (pb as any)}
-                        <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
-                        <span class="bar-status err">err: {(pb as any).error}</span>
-                      {:else}
-                        <span class="bar-meta">{(pb as ProposedBake).bake?.verts ?? '?'} verts · z={(pb as ProposedBake).bake?.z_extent ?? '?'} · r={(pb as ProposedBake).bake?.outer_r ?? '?'}</span>
-                      {/if}
-                    </header>
+                  <div class="bake-card no-head">
                     <div class="bake-body">
                       {#if !pb}
                         <div class="bake-cta">
@@ -1276,8 +1277,8 @@
   .prop-actions-hint { font: 11px Arial; color: #78350f; flex: 1; }
   .prop-actions-hint code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
 
-  .block { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
-  .block summary { padding: 8px 12px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
+  .block { margin-top: 2px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
+  .block summary { padding: 3px 10px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
   .block summary:hover { background: #f9fafb; }
   .block[open] summary { border-bottom: 1px solid #f1f5f9; }
   .code { padding: 10px 12px; margin: 0; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; overflow: auto; max-height: 320px; }
@@ -1289,7 +1290,8 @@
   /* === K.69 right-pane redesign — Inferred/Proposed top tabs ============ */
   .detail-pane { padding: 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
   .detail-pane > .tab-body { flex: 1 1 auto; }
-  .detail-pane .detail-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 16px 6px; border-bottom: 1px solid #f1f5f9; }
+  .detail-pane .detail-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 12px 0; border-bottom: 1px solid #f1f5f9; min-height: 0; }
+  .detail-pane .detail-head h2 { margin: 0; font: 700 16px ui-monospace, monospace; }
   .head-spacer { flex: 1; }
   .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
   /* Status line above the tabs (for promote success/failure). */
@@ -1297,14 +1299,14 @@
   /* Vertical trapezoidal Inferred|Proposed rail (restored 2026-06-06). */
   .vocab-tabs { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 28px 1fr; overflow: hidden; }
   .vocab-vrail {
-    display: flex; flex-direction: column; gap: 2px;
-    padding: 8px 0; background: #ececec;
+    display: flex; flex-direction: column; gap: 0;
+    padding: 0; background: #ececec;
     border-right: 1px solid #e5e5e5;
     align-items: stretch;
   }
   .vocab-vtab {
     position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 6px; padding: 16px 0;
+    gap: 3px; padding: 6px 0;
     border: 0; background: transparent; color: #444;
     cursor: pointer;
     clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
@@ -1339,8 +1341,8 @@
   /* Accordion shell — copied from /primitives PrimitiveView (.pg-acc-*). */
   .pg-acc-wrap { border: 3px solid #d4d4dc; border-radius: 4px; background: #fff; padding: 0 3px 1px; margin: 0; }
   .pg-acc-head {
-    display: flex; align-items: center; gap: 6px;
-    padding: 4px 6px; margin: 0;
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 6px; margin: 0;
     background: transparent; border: 0;
     cursor: pointer;
     border-radius: 3px;
@@ -1351,7 +1353,7 @@
   .pg-acc-count { font: 11px ui-monospace, monospace; color: #6b7280; }
   .pg-acc-hint { font: 11px Arial; color: #9ca3af; }
   .pv-spacer { flex: 1; }
-  .pg-acc-body { padding: 6px 4px 4px; max-height: 320px; overflow-y: auto; }
+  .pg-acc-body { padding: 2px 4px 2px; max-height: 320px; overflow-y: auto; }
   /* Seed-tab host — full-width container; the switcher lives as a popover in
      the detail-head, not as a vertical rail. */
   .seed-tab-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -1427,12 +1429,22 @@
   .rule-details-col { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
   /* New 2-col layout: LEFT = canvas (full height of column); RIGHT =
      params (top) + rule + details (below). */
-  .proposed-grid { display: grid; grid-template-columns: 4fr 6fr; gap: 12px; align-items: stretch; min-height: 560px; }
+  .proposed-grid { display: grid; grid-template-columns: 4fr 6fr; gap: 10px; align-items: stretch; min-height: 560px; }
   .proposed-grid > * { min-width: 0; }
   .proposed-canvas-col { display: flex; flex-direction: column; }
   .proposed-canvas-col .bake-card { flex: 1 1 auto; }
-  .proposed-right-col { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-  .proposed-right-col .rule-details-col { max-height: none; flex: 1 1 auto; }
+  .proposed-canvas-col .bake-card.no-head { display: block; }
+  .proposed-canvas-col .bake-card.no-head .bake-body { padding: 4px; height: 100%; }
+  .proposed-right-col { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .proposed-right-col .rule-details-col { max-height: none; flex: 1 1 auto; gap: 2px; }
+  /* Inline bake-info in the title row (replaces the in-card bake-head). */
+  .head-bake-info { font: 11px Arial; color: #6b7280; margin-left: 6px; }
+  .head-bake-info code { font: 11px ui-monospace, monospace; color: #0c4a6e; background: #f0f9ff; padding: 1px 5px; border-radius: 3px; }
+  .head-bake-stat { font: 11px ui-monospace, monospace; color: #57534e; margin-left: 4px; }
+  .head-bake-stat.err { color: #b91c1c; }
+  /* Compact accordions in the right column. */
+  .proposed-right-col .block { margin: 0; }
+  .proposed-right-col .pg-acc-wrap { margin: 0; padding: 0 2px 1px; }
   .bake-card {
     display: grid; grid-template-rows: auto 1fr;
     background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
