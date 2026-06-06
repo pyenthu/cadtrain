@@ -112,6 +112,15 @@
   // vs Proposed (rich hand-drafted entry). Each tab carries its own
   // definition + 2D + 3D + actions. Curated terms skip the tabs.
   let detailTab = $state<'inferred' | 'proposed'>('inferred');
+  // Tab-switcher popover state — replaces the vertical rail. Tap the
+  // chevron-button at the top-right of the active tab to flip modes.
+  let tabPopoverOpen = $state(false);
+  function setTab(t: 'inferred' | 'proposed') { detailTab = t; tabPopoverOpen = false; }
+  function tabPopoverOutside(e: MouseEvent) {
+    if (!tabPopoverOpen) return;
+    const t = e.target as HTMLElement | null;
+    if (!t?.closest('.tab-popover-wrap')) tabPopoverOpen = false;
+  }
   // Lazy-loaded scene canvas (Threlte WebGL — SSR-incompatible, dynamic).
   let PrimitiveDualCanvas = $state<any>(null);
   // Per-term cache of (source, defaultArgs) so flipping back to Scene
@@ -415,6 +424,8 @@
   <title>Vocab · CAD Train</title>
 </svelte:head>
 
+<svelte:window onclick={tabPopoverOutside} />
+
 <div class="vocab-root">
   <header class="vocab-bar">
     <h1>Vocab</h1>
@@ -532,7 +543,28 @@
           <span class="detail-kind" class:asm={!selectedIsSeed && e.kind === 'asm'} class:seed={selectedIsSeed}>{selectedIsSeed ? 'seed' : e.kind}</span>
           <h2>{selected}</h2>
           <span class="head-spacer"></span>
-          {#if !selectedIsSeed}
+          {#if selectedIsSeed}
+            <!-- Inferred|Proposed popover switcher (replaces the vertical rail). -->
+            <div class="tab-popover-wrap">
+              <button class="tab-pop-btn" type="button" aria-haspopup="menu" aria-expanded={tabPopoverOpen}
+                onclick={(ev) => { ev.stopPropagation(); tabPopoverOpen = !tabPopoverOpen; }}
+              >
+                {detailTab === 'inferred' ? '∿ Inferred' : '◆ Proposed'}
+                <span class="tab-pop-caret">▾</span>
+              </button>
+              {#if tabPopoverOpen}
+                <div class="tab-pop-menu" role="menu">
+                  <button class="tab-pop-item" class:active={detailTab === 'inferred'} role="menuitem"
+                    type="button" onclick={() => setTab('inferred')}
+                  ><span class="tab-pop-ic">∿</span> Inferred <span class="tab-pop-sub">auto-derived from 2D</span></button>
+                  <button class="tab-pop-item" class:active={detailTab === 'proposed'} role="menuitem"
+                    type="button" disabled={!proposedEntry}
+                    onclick={() => setTab('proposed')}
+                  ><span class="tab-pop-ic">◆</span> Proposed <span class="tab-pop-sub">rich hand-drafted rule</span></button>
+                </div>
+              {/if}
+            </div>
+          {:else}
             <button class="tab-refresh" type="button"
               disabled={regenBusy[selected!]}
               title={`Regenerate ${selected} from vocab + re-bake.`}
@@ -545,27 +577,9 @@
           {@const prop = proposedEntry}
           {#if detailTab === 'inferred' && promoteStatus}<div class="vocab-tab-status">{promoteStatus}</div>{/if}
           {#if detailTab === 'proposed' && promoteProposedStatus}<div class="vocab-tab-status">{promoteProposedStatus}</div>{/if}
-          <!-- Vertical trapezoidal tabs (same pattern as /primitives sidebar):
-               24px rail on the LEFT, tab body fills remaining width. Inferred =
-               auto-derived 2D→r_revolve; Proposed = rich hand-drafted rule. -->
-          <div class="vocab-tabs">
-            <div class="vocab-vrail" role="tablist" aria-label="Bake interpretation">
-              <button class="vocab-vtab" class:active={detailTab === 'inferred'}
-                type="button" role="tab" aria-selected={detailTab === 'inferred'}
-                title="Inferred — auto-derived from the 2D drawing"
-                onclick={() => (detailTab = 'inferred')}>
-                <span class="vocab-vtab-ic">∿</span>
-                <span class="vocab-vtab-lbl">Inferred</span>
-              </button>
-              <button class="vocab-vtab" class:active={detailTab === 'proposed'}
-                type="button" role="tab" aria-selected={detailTab === 'proposed'}
-                disabled={!prop}
-                title={prop ? 'Proposed — rich hand-drafted rule (boolean_modify / compose / primitive)' : 'no proposed entry yet'}
-                onclick={() => (detailTab = 'proposed')}>
-                <span class="vocab-vtab-ic">◆</span>
-                <span class="vocab-vtab-lbl">Proposed</span>
-              </button>
-            </div>
+          <!-- Tab body fills full width; switcher is a popover button in the
+               top-right of the body (next to the H2 / actions row). -->
+          <div class="seed-tab-host">
 
           {#if detailTab === 'inferred'}
             {@const inf = inferCache[selected!]}
@@ -703,6 +717,35 @@
               <!-- Rich definition -->
               <p class="def-line rich">{prop.definition}</p>
 
+              <!-- Param sliders — promoted to top, 2-column grid for compact scan. -->
+              {#if prop.params}
+                <div class="param-sliders top-2col">
+                  <div class="ps-cap">params · drag to re-bake live</div>
+                  {#each Object.entries(prop.params) as [pk, pdef], idx (pk)}
+                    {@const cur = (paramOverrides[selected!] ?? defaultParams(selected!))[idx] ?? (pdef as any).default}
+                    <div class="ps-tile">
+                      <div class="ps-tile-head"><span class="ps-key">{pk}</span><span class="ps-unit">{(pdef as any).unit ?? ''}</span></div>
+                      <div class="ps-tile-ctrls">
+                        <input class="ps-slider" type="range"
+                          min={(pdef as any).min ?? 0}
+                          max={(pdef as any).max ?? 100}
+                          step={(pdef as any).step ?? 0.1}
+                          value={cur}
+                          oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
+                        />
+                        <input class="ps-num" type="number"
+                          min={(pdef as any).min ?? 0}
+                          max={(pdef as any).max ?? 100}
+                          step={(pdef as any).step ?? 0.1}
+                          value={cur}
+                          oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
+                        />
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
               <!-- kind + extends + category -->
               <div class="info-row">
                 <span class="prop-chip kind">{prop.kind}</span>
@@ -792,34 +835,6 @@
                   </div>
                 </div>
               </div>
-
-              <!-- Param sliders driving the proposed bake live -->
-              {#if prop.params}
-                <div class="param-sliders">
-                  <div class="ps-cap">params · drag to re-bake live</div>
-                  {#each Object.entries(prop.params) as [pk, pdef], idx (pk)}
-                    {@const cur = (paramOverrides[selected!] ?? defaultParams(selected!))[idx] ?? (pdef as any).default}
-                    <div class="ps-row">
-                      <span class="ps-key">{pk}</span>
-                      <input class="ps-slider" type="range"
-                        min={(pdef as any).min ?? 0}
-                        max={(pdef as any).max ?? 100}
-                        step={(pdef as any).step ?? 0.1}
-                        value={cur}
-                        oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
-                      />
-                      <input class="ps-num" type="number"
-                        min={(pdef as any).min ?? 0}
-                        max={(pdef as any).max ?? 100}
-                        step={(pdef as any).step ?? 0.1}
-                        value={cur}
-                        oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
-                      />
-                      <span class="ps-unit">{(pdef as any).unit ?? ''}</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
 
               <!-- Rule + raw JSON, collapsed -->
               {#if prop.rule}
@@ -1214,33 +1229,55 @@
   .detail-pane .detail-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 16px 6px; border-bottom: 1px solid #f1f5f9; }
   .head-spacer { flex: 1; }
   .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
-  /* Vertical trapezoidal Inferred|Proposed tabs — mirrors the /primitives
-     sidebar rail (clip-path trapezoid + writing-mode: vertical-rl). 24px
-     rail OWNS the left column of the right-pane content area; the tab body
-     fills the rest. */
-  .vocab-tabs { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 28px 1fr; overflow: hidden; }
-  .vocab-vrail {
-    display: flex; flex-direction: column; gap: 2px;
-    padding: 8px 0; background: #ececec;
-    border-right: 1px solid #e5e5e5;
-    align-items: stretch;
-  }
-  .vocab-vtab {
-    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 6px; padding: 16px 0;
-    border: 0; background: transparent; color: #444;
-    cursor: pointer;
-    clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
-    font: inherit; line-height: 1;
-    transition: color 0.1s, background 0.1s;
-  }
-  .vocab-vtab:hover:not(:disabled) { color: #cc2222; background: #e2e2e2; }
-  .vocab-vtab.active { color: #cc2222; background: #fafafa; }
-  .vocab-vtab:disabled { color: #c0c0c0; cursor: not-allowed; opacity: 0.5; }
-  .vocab-vtab-ic { font-size: 13px; opacity: 0.95; line-height: 1; }
-  .vocab-vtab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11px Arial; letter-spacing: 1.2px; line-height: 1; white-space: nowrap; }
   /* Status line above the tabs (for promote success/failure). */
   .vocab-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 4px 16px; background: #f0fdf4; border-bottom: 1px solid #86efac; }
+  /* Seed-tab host — full-width container; the switcher lives as a popover in
+     the detail-head, not as a vertical rail. */
+  .seed-tab-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  /* Tab-switcher popover (replaces the vertical rail). Button sits in the
+     detail-head; click opens a floating panel with the two options. */
+  .tab-popover-wrap { position: relative; }
+  .tab-pop-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
+    font: 600 12px Arial; color: #1f2937;
+    cursor: pointer;
+  }
+  .tab-pop-btn:hover { border-color: #cc2222; color: #cc2222; }
+  .tab-pop-caret { font-size: 9px; color: #6b7280; }
+  .tab-pop-menu {
+    position: absolute; top: calc(100% + 4px); right: 0;
+    min-width: 220px;
+    background: #fff; border: 1px solid #cc2222; border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    padding: 4px 0; z-index: 50;
+  }
+  .tab-pop-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 6px 12px;
+    background: transparent; border: 0;
+    font: 13px Arial; color: #1f2937;
+    cursor: pointer; text-align: left;
+  }
+  .tab-pop-item:hover:not(:disabled) { background: #fef0f0; color: #cc2222; }
+  .tab-pop-item.active { background: #fee2e2; color: #991b1b; font-weight: 600; }
+  .tab-pop-item:disabled { color: #d1d5db; cursor: not-allowed; }
+  .tab-pop-ic { font-size: 14px; }
+  .tab-pop-sub { font: 10px Arial; color: #9ca3af; margin-left: auto; }
+  /* 2-column params tiles when promoted to the top. */
+  .param-sliders.top-2col {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px;
+    background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px;
+  }
+  .param-sliders.top-2col .ps-cap { grid-column: 1 / -1; font: 600 10px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; border-bottom: 1px solid #fbbf24; margin: 0; }
+  .ps-tile { display: grid; gap: 4px; padding: 6px 8px; background: #fff; border: 1px solid #fde68a; border-radius: 4px; }
+  .ps-tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+  .ps-tile-head .ps-key { font: 600 11px ui-monospace, monospace; color: #1f2937; }
+  .ps-tile-head .ps-unit { font: 10px Arial; color: #92400e; }
+  .ps-tile-ctrls { display: grid; grid-template-columns: 1fr 60px; gap: 4px; align-items: center; }
+  .ps-tile-ctrls .ps-slider { width: 100%; min-width: 0; }
+  .ps-tile-ctrls .ps-num { width: 100%; padding: 2px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
   /* Tab body — scrollable inner column. */
   .tab-body { padding: 16px 20px; overflow-y: auto; display: grid; gap: 12px; align-content: start; min-height: 0; }
   .tab-body .def-line { font: 13px/1.55 Arial; color: #374151; margin: 0; }
