@@ -28,6 +28,7 @@
     setMethodInput,
     setTransformChild,
     setTransformAxis,
+    setTransformAxisValue,
     setCallArg,
     removeNode,
     setLayout,
@@ -175,6 +176,24 @@
       graph = setCallArg(graph, callId, key, asParam(wireFrom.paramName));
     }
     wireFrom = null; wireMouse = null;
+  }
+  /** Wire a param's output onto one of a mv/rot's three xyz slots. */
+  function endWireOnTransformAxis(ev: PointerEvent, transformId: NodeId, axis: 0 | 1 | 2) {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'param-out') {
+      graph = setTransformAxisValue(graph, transformId, axis, asParam(wireFrom.paramName));
+    }
+    wireFrom = null; wireMouse = null;
+  }
+  /** Replace a param-wired transform axis with a literal default. */
+  function unwireTransformAxis(transformId: NodeId, axis: 0 | 1 | 2, fallback = 0) {
+    const node = graph.nodes[transformId];
+    if (!node || (node.type !== 'mv' && node.type !== 'rot')) return;
+    const field = node.type === 'mv' ? (node as MvNode).offset : (node as RotNode).rot;
+    const cur = field[axis];
+    const literal = cur?.kind === 'literal' ? cur.value : (cur?.kind === 'param' ? (graph.params[cur.param]?.default ?? fallback) : fallback);
+    graph = setTransformAxis(graph, transformId, axis, typeof literal === 'number' ? literal : fallback);
   }
   function bezier(x1: number, y1: number, x2: number, y2: number): string {
     const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
@@ -448,9 +467,9 @@
             <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
           {/if}
 
-          <!-- PARAM WIRES — for every Call.args[k].kind === 'param', draw a
-               bezier from the param chip's output socket to the Call's arg
-               input socket. -->
+          <!-- PARAM WIRES — for every {Call.args[k] OR mv.offset[i] OR rot.rot[i]}
+               with kind 'param', draw a bezier from the param chip's output
+               socket to the consumer's input socket. -->
           {#each allNodes as n (n.id)}
             {#if n.type === 'call'}
               {#each Object.entries((n as any).args ?? {}) as [k, v], argIdx (k)}
@@ -461,10 +480,44 @@
                     {@const psy = 10 + 20}
                     {@const pos = nodePos(n.id)}
                     {@const argY = pos.y + 36 + 14 + argIdx * 22}
-                    <path class="ge-wire param" d={bezier(psx, psy, pos.x, argY)} fill="none"/>
+                    <path class="ge-wire param" d={bezier(psx, psy, pos.x, argY)}/>
                   {/if}
                 {/if}
               {/each}
+              <!-- Inline transform axis wires (mv/rot wrapping this Call) -->
+              {@const cSize = nodeSize(n)}
+              {@const inlMv  = inlineTransformOf(graph, n.id, 'mv')}
+              {@const inlRot = inlineTransformOf(graph, n.id, 'rot')}
+              {#if inlMv}
+                {@const mvN = graph.nodes[inlMv] as MvNode}
+                {#each [0,1,2] as i (i)}
+                  {#if (mvN.offset[i] as any).kind === 'param'}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
+                    {#if pIdx >= 0}
+                      {@const psx = 40 + pIdx * 150 + 130}
+                      {@const psy = 10 + 20}
+                      {@const pos = nodePos(n.id)}
+                      {@const axisY = pos.y + cSize.h + 4 + 18 + i * 18}
+                      <path class="ge-wire param" d={bezier(psx, psy, pos.x, axisY)}/>
+                    {/if}
+                  {/if}
+                {/each}
+              {/if}
+              {#if inlRot}
+                {@const rotN = graph.nodes[inlRot] as RotNode}
+                {#each [0,1,2] as i (i)}
+                  {#if (rotN.rot[i] as any).kind === 'param'}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
+                    {#if pIdx >= 0}
+                      {@const psx = 40 + pIdx * 150 + 130}
+                      {@const psy = 10 + 20}
+                      {@const pos = nodePos(n.id)}
+                      {@const rotY = pos.y + cSize.h + 4 + (inlMv ? 80 : 0) + 18 + i * 18}
+                      <path class="ge-wire param" d={bezier(psx, psy, pos.x, rotY)}/>
+                    {/if}
+                  {/if}
+                {/each}
+              {/if}
             {/if}
           {/each}
 
@@ -559,42 +612,75 @@
                     <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
                       <div class="ge-inline-label">⇄ mv</div>
                       {#each ['x','y','z'] as axis, i (axis)}
+                        {@const av = mvNode.offset[i] as any}
                         <div class="ge-arg-row tight">
                           <span class="ge-arg-key">{axis}</span>
-                          <input class="ge-arg-input" type="number" step="0.5"
-                            value={(mvNode.offset[i] as any).kind === 'literal' ? (mvNode.offset[i] as any).value : 0}
-                            use:dragNumber={{
-                              step: 0.5,
-                              get: () => Number((mvNode.offset[i] as any).value ?? 0),
-                              set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val),
-                            }}
-                            oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                          />
+                          {#if av.kind === 'param'}
+                            <span class="ge-arg-pchip" title="Wired to param">
+                              p.{av.param}
+                              <button class="ge-arg-pchip-x" type="button"
+                                onclick={() => unwireTransformAxis(inlineMv!, i as 0|1|2)}>×</button>
+                            </span>
+                          {:else}
+                            <input class="ge-arg-input" type="number" step="0.5"
+                              value={av.kind === 'literal' ? av.value : 0}
+                              use:dragNumber={{
+                                step: 0.5,
+                                get: () => Number(av.value ?? 0),
+                                set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val),
+                              }}
+                              oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                            />
+                          {/if}
                         </div>
                       {/each}
                     </div>
                   </foreignObject>
+                  <!-- Per-axis input sockets on the LEFT edge — drag a param chip
+                       output socket onto one to wire that axis. -->
+                  {#each [0,1,2] as i (i)}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1" class="ge-sock in param tiny"
+                      cx="0" cy={size.h + 4 + 18 + i * 18} r="4"
+                      onpointerup={(ev) => endWireOnTransformAxis(ev, inlineMv!, i as 0|1|2)}/>
+                  {/each}
                 {/if}
                 {#if rotNode}
-                  <foreignObject x="6" y={size.h + 4 + (inlineMv ? 80 : 0)} width={size.w - 12} height="72">
+                  {@const rotY = size.h + 4 + (inlineMv ? 80 : 0)}
+                  <foreignObject x="6" y={rotY} width={size.w - 12} height="72">
                     <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
                       <div class="ge-inline-label">↻ rot</div>
                       {#each ['rx','ry','rz'] as axis, i (axis)}
+                        {@const av = rotNode.rot[i] as any}
                         <div class="ge-arg-row tight">
                           <span class="ge-arg-key">{axis}</span>
-                          <input class="ge-arg-input" type="number" step="1"
-                            value={(rotNode.rot[i] as any).kind === 'literal' ? (rotNode.rot[i] as any).value : 0}
-                            use:dragNumber={{
-                              step: 1,
-                              get: () => Number((rotNode.rot[i] as any).value ?? 0),
-                              set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val),
-                            }}
-                            oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                          />
+                          {#if av.kind === 'param'}
+                            <span class="ge-arg-pchip" title="Wired to param">
+                              p.{av.param}
+                              <button class="ge-arg-pchip-x" type="button"
+                                onclick={() => unwireTransformAxis(inlineRot!, i as 0|1|2)}>×</button>
+                            </span>
+                          {:else}
+                            <input class="ge-arg-input" type="number" step="1"
+                              value={av.kind === 'literal' ? av.value : 0}
+                              use:dragNumber={{
+                                step: 1,
+                                get: () => Number(av.value ?? 0),
+                                set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val),
+                              }}
+                              oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                            />
+                          {/if}
                         </div>
                       {/each}
                     </div>
                   </foreignObject>
+                  {#each [0,1,2] as i (i)}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1" class="ge-sock in param tiny"
+                      cx="0" cy={rotY + 18 + i * 18} r="4"
+                      onpointerup={(ev) => endWireOnTransformAxis(ev, inlineRot!, i as 0|1|2)}/>
+                  {/each}
                 {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={cardH / 2} r="6"
@@ -874,6 +960,7 @@
   .ge-sock.in.param { stroke: #d97706; }
   .ge-sock.out.param { stroke: #d97706; fill: #fef3c7; }
   .ge-sock.in.param:hover, .ge-sock.out.param:hover { fill: #fde68a; }
+  .ge-sock.tiny { stroke-width: 1.5; }
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
   .ge-pane-head { padding: 6px 12px; font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; }

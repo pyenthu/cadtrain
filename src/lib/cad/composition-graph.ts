@@ -321,12 +321,19 @@ export function setTransformChild(graph: Graph, transformId: NodeId, childId: No
 
 /** Edit one of a transform's three xyz literal values. */
 export function setTransformAxis(graph: Graph, transformId: NodeId, axis: 0 | 1 | 2, value: number): Graph {
+  return setTransformAxisValue(graph, transformId, axis, asLiteral(value));
+}
+
+/** Replace one of a transform's three xyz slots with any ArgValue —
+ *  literal, param-wire, or expression. Used by the editor's drag-to-wire
+ *  on mv/rot axes (analogous to setCallArg for Call slots). */
+export function setTransformAxisValue(graph: Graph, transformId: NodeId, axis: 0 | 1 | 2, value: ArgValue): Graph {
   const node = graph.nodes[transformId];
   if (!node || (node.type !== 'mv' && node.type !== 'rot')) return graph;
   const field = node.type === 'mv' ? 'offset' : 'rot';
   const current = (node as any)[field] as [ArgValue, ArgValue, ArgValue];
   const updated = [...current] as [ArgValue, ArgValue, ArgValue];
-  updated[axis] = asLiteral(value);
+  updated[axis] = value;
   const newNode = { ...node, [field]: updated } as MvNode | RotNode;
   return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: newNode } });
 }
