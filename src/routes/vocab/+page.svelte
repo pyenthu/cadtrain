@@ -912,25 +912,70 @@
                   <!-- Rule + details below parameters -->
                   <div class="rule-details-col">
                     {#if prop.rule}
+                      <!-- Composition tree (visual) — mirrors CompositionEditor's
+                           folder+file row style. boolean_modify renders as a
+                           Subtract/Add/Intersect folder containing the body
+                           call + each modifier shape as a child file. -->
                       <details class="block" open>
-                        <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
-                        {#if prop.rule.body?.preamble?.length}
-                          <div class="rule-section">
-                            <div class="prop-label">body · preamble</div>
-                            <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
+                        <summary>composition · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
+                        {#if prop.rule.kind === 'boolean_modify' && prop.rule.modifiers?.length}
+                          {@const firstOp = prop.rule.modifiers[0].op}
+                          {@const opGlyph = firstOp === 'subtract' ? '⊖' : firstOp === 'add' ? '⊕' : '⊗'}
+                          {@const bodyVerts = prop.rule.body?.polygon?.length ?? 0}
+                          {@const bodyEngine = (prop.rule.engine as string[])[0] ?? 'r_revolve'}
+                          <div class="ce-tree" role="tree" aria-label="Composition tree">
+                            <div class="ce-row ce-folder" style="--depth: 0">
+                              <span class="ce-icon">📁</span>
+                              <span class="ce-op-chip" data-op={firstOp}>{opGlyph} {firstOp}</span>
+                              <span class="ce-folder-meta">{1 + prop.rule.modifiers.length} operands</span>
+                            </div>
+                            <div class="ce-folder-children">
+                              <details class="ce-row-wrap" open>
+                                <summary class="ce-row ce-file" style="--depth: 1">
+                                  <span class="ce-icon">📄</span>
+                                  <span class="ce-call-name">ƒ {bodyEngine}</span>
+                                  <span class="ce-call-args">(profile, segments)</span>
+                                  <span class="ce-spacer"></span>
+                                  <span class="ce-call-meta">{bodyVerts} verts</span>
+                                </summary>
+                                <div class="ce-detail" style="--depth: 1">
+                                  {#if prop.rule.body?.preamble?.length}
+                                    <div class="ce-detail-label">preamble</div>
+                                    <pre class="ce-detail-code">{prop.rule.body.preamble.join('\n')}</pre>
+                                  {/if}
+                                  {#if prop.rule.body?.polygon?.length}
+                                    <div class="ce-detail-label">polygon · {bodyVerts} verts</div>
+                                    <pre class="ce-detail-code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
+                                  {/if}
+                                </div>
+                              </details>
+
+                              <!-- Modifier calls — one row per shape. -->
+                              {#each prop.rule.modifiers as mod, i (i)}
+                                {@const mGlyph = mod.op === 'subtract' ? '⊖' : mod.op === 'add' ? '⊕' : '⊗'}
+                                <details class="ce-row-wrap" open>
+                                  <summary class="ce-row ce-file" style="--depth: 1" data-op={mod.op}>
+                                    <span class="ce-icon">📄</span>
+                                    <span class="ce-mod-op">{mGlyph}</span>
+                                    <span class="ce-call-name">{mod.shape.kind}</span>
+                                    <span class="ce-call-args">({(Object.entries(mod.shape).filter(([k]) => k !== 'kind').map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', '))})</span>
+                                  </summary>
+                                  <div class="ce-detail" style="--depth: 1">
+                                    {#each Object.entries(mod.shape).filter(([k]) => k !== 'kind') as [k, v] (k)}
+                                      <div class="ce-detail-row">
+                                        <span class="ce-detail-key">{k}</span>
+                                        <span class="ce-detail-val">{typeof v === 'string' ? v : JSON.stringify(v)}</span>
+                                      </div>
+                                    {/each}
+                                  </div>
+                                </details>
+                              {/each}
+                            </div>
+                            <div class="ce-result">= Result</div>
                           </div>
-                        {/if}
-                        {#if prop.rule.body?.polygon?.length}
-                          <div class="rule-section">
-                            <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
-                            <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-                          </div>
-                        {/if}
-                        {#if prop.rule.modifiers?.length}
-                          <div class="rule-section">
-                            <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
-                            <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
-                          </div>
+                        {:else}
+                          <!-- Fallback for non-boolean_modify rules: show the JSON. -->
+                          <pre class="code">{JSON.stringify(prop.rule, null, 2)}</pre>
                         {/if}
                       </details>
                     {/if}
@@ -1232,6 +1277,33 @@
   .prop-ref { font: 11px Arial; color: #1d4ed8; text-decoration: none; padding: 2px 8px; background: #fff; border: 1px solid #93c5fd; border-radius: 4px; }
   .prop-ref:hover { background: #dbeafe; }
   .rule-section { margin: 8px 12px 4px; }
+  /* Composition-tree visual — mirrors CompositionEditor's folder/file row look. */
+  .ce-tree { padding: 4px 0; font: 12px Arial; color: #1f2937; }
+  .ce-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px 2px calc(6px + var(--depth, 0) * 16px); border-radius: 3px; }
+  .ce-row.ce-folder { background: #fff8e6; border: 1px solid #fbbf24; font-weight: 600; }
+  .ce-row.ce-file { background: #f8fafc; border: 1px solid #e2e8f0; cursor: pointer; }
+  .ce-row.ce-file:hover { background: #e0f2fe; }
+  .ce-folder-children { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 2px solid #fbbf24; margin-top: 2px; }
+  .ce-row-wrap { display: flex; flex-direction: column; }
+  .ce-row-wrap summary { list-style: none; }
+  .ce-row-wrap summary::-webkit-details-marker { display: none; }
+  .ce-icon { font-size: 12px; opacity: 0.8; }
+  .ce-op-chip { padding: 1px 8px; border-radius: 9999px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; font: 600 11px Arial; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ce-folder-meta { font: 10px Arial; color: #92400e; margin-left: auto; }
+  .ce-call-name { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
+  .ce-call-args { font: 11px ui-monospace, monospace; color: #6b7280; }
+  .ce-call-meta { font: 10px Arial; color: #9ca3af; }
+  .ce-spacer { flex: 1; }
+  .ce-mod-op { display: inline-block; min-width: 16px; text-align: center; font: 600 13px Arial; color: #b91c1c; }
+  .ce-row.ce-file[data-op="add"] .ce-mod-op { color: #15803d; }
+  .ce-row.ce-file[data-op="intersect"] .ce-mod-op { color: #6d28d9; }
+  .ce-detail { padding: 6px 8px 8px calc(8px + (var(--depth, 0) + 1) * 16px); background: #fff; border-left: 2px dashed #e2e8f0; margin: 2px 0 2px 14px; display: grid; gap: 3px; }
+  .ce-detail-label { font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ce-detail-code { margin: 0; padding: 6px 8px; font: 11px ui-monospace, monospace; color: #1f2937; background: #fafaf9; border: 1px solid #e5e7eb; border-radius: 3px; overflow: auto; max-height: 220px; }
+  .ce-detail-row { display: grid; grid-template-columns: 130px 1fr; gap: 6px; font: 11px Arial; }
+  .ce-detail-key { font: 11px ui-monospace, monospace; color: #6b7280; }
+  .ce-detail-val { font: 11px ui-monospace, monospace; color: #0c4a6e; }
+  .ce-result { margin: 4px 0 0 16px; padding: 3px 10px; font: 600 11px Arial; color: #14532d; background: #dcfce7; border: 1px solid #86efac; border-radius: 9999px; display: inline-block; }
   .prop-footer {
     font: 12px Arial; color: #78350f; line-height: 1.55;
     padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px;
