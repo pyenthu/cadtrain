@@ -132,9 +132,11 @@
   }
 
   // ─── drag-to-wire ───────────────────────────────────────────────────────
-  // wireFrom: started from a node's output socket; on release over an input
-  // socket, set that socket to point at wireFrom.nodeId.
-  type WireSource = { nodeId: NodeId; kind: 'out' };
+  // wireFrom is either a node's output socket OR a param's output chip. On
+  // release over an input socket, the connection is committed.
+  type WireSource =
+    | { kind: 'out'; nodeId: NodeId }
+    | { kind: 'param-out'; paramName: string };
   let wireFrom = $state<WireSource | null>(null);
   let wireMouse = $state<{ x: number; y: number } | null>(null);
   function clientToGraph(cx: number, cy: number) {
@@ -144,17 +146,31 @@
   }
   function startWire(ev: PointerEvent, nodeId: NodeId) {
     ev.stopPropagation();
-    wireFrom = { nodeId, kind: 'out' };
+    wireFrom = { kind: 'out', nodeId };
+    wireMouse = clientToGraph(ev.clientX, ev.clientY);
+  }
+  function startParamWire(ev: PointerEvent, paramName: string) {
+    ev.stopPropagation();
+    wireFrom = { kind: 'param-out', paramName };
     wireMouse = clientToGraph(ev.clientX, ev.clientY);
   }
   function endWireOnInput(ev: PointerEvent, targetId: NodeId, slot: 'obj' | 'arg' | 'child') {
     ev.stopPropagation();
     if (!wireFrom) return;
-    if (wireFrom.nodeId === targetId) { wireFrom = null; wireMouse = null; return; }
+    // Only node-output wires fit method/transform sockets (those carry shapes).
+    if (wireFrom.kind !== 'out' || wireFrom.nodeId === targetId) { wireFrom = null; wireMouse = null; return; }
     if (slot === 'obj' || slot === 'arg') {
       graph = setMethodInput(graph, targetId, slot, wireFrom.nodeId);
     } else {
       graph = setTransformChild(graph, targetId, wireFrom.nodeId);
+    }
+    wireFrom = null; wireMouse = null;
+  }
+  function endWireOnCallArg(ev: PointerEvent, callId: NodeId, key: string) {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'param-out') {
+      graph = setCallArg(graph, callId, key, asParam(wireFrom.paramName));
     }
     wireFrom = null; wireMouse = null;
   }
@@ -398,6 +414,42 @@
           </defs>
           <rect x="-2000" y="-2000" width="4000" height="4000" fill="url(#ge-grid)"/>
 
+          <!-- PARAM CHIPS — render each meta.params row as a small chip at
+               the top of the canvas with an output socket. Drag from the
+               socket onto any Call's arg input socket to wire. -->
+          {#each paramEntries as [name, p], i (name)}
+            {@const px = 40 + i * 150}
+            {@const py = 10}
+            <g class="ge-param-card" transform="translate({px},{py})">
+              <rect class="ge-param-card-bg" width="130" height="40" rx="20"/>
+              <text x="65" y="18" class="ge-param-card-name" text-anchor="middle">p.{name}</text>
+              <text x="65" y="32" class="ge-param-card-val" text-anchor="middle">{(p as any).default}{(p as any).unit ?? ''}</text>
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <circle role="button" tabindex="-1" class="ge-sock out param" cx="130" cy="20" r="6"
+                onpointerdown={(ev) => startParamWire(ev, name)}/>
+            </g>
+          {/each}
+
+          <!-- PARAM WIRES — for every Call.args[k].kind === 'param', draw a
+               bezier from the param chip's output socket to the Call's arg
+               input socket. -->
+          {#each allNodes as n (n.id)}
+            {#if n.type === 'call'}
+              {#each Object.entries((n as any).args ?? {}) as [k, v], argIdx (k)}
+                {#if (v as any).kind === 'param'}
+                  {@const pIdx = paramEntries.findIndex(([nm]) => nm === (v as any).param)}
+                  {#if pIdx >= 0}
+                    {@const psx = 40 + pIdx * 150 + 130}
+                    {@const psy = 10 + 20}
+                    {@const pos = nodePos(n.id)}
+                    {@const argY = pos.y + 36 + 14 + argIdx * 22}
+                    <path class="ge-wire param" d={bezier(psx, psy, pos.x, argY)} fill="none"/>
+                  {/if}
+                {/if}
+              {/each}
+            {/if}
+          {/each}
+
           <!-- WIRES: render method.obj/arg + transform.child as bezier paths. -->
           {#each allNodes as n (n.id)}
             {#if n.type === 'method'}
@@ -514,6 +566,14 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={cardH / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
+                <!-- Per-arg input sockets on the left edge of the Call card.
+                     Drag a param chip's output socket onto one to wire. -->
+                {#each Object.keys(call.args ?? {}) as ak, ai (ak)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in param"
+                    cx="0" cy={36 + 14 + ai * 22} r="5"
+                    onpointerup={(ev) => endWireOnCallArg(ev, n.id, ak)}/>
+                {/each}
 
               {:else if n.type === 'method'}
                 {@const m = n as any}
@@ -733,11 +793,21 @@
   .ge-sock:hover { fill: #fef3c7; }
   .ge-sock-label { font: 10px ui-monospace, monospace; fill: #6b7280; pointer-events: none; }
 
-  .ge-wire { stroke-width: 2; stroke-linecap: round; }
+  .ge-wire { stroke-width: 2; stroke-linecap: round; fill: none; }
   .ge-wire.obj { stroke: #b91c1c; }
   .ge-wire.arg { stroke: #d97706; }
   .ge-wire.child { stroke: #6d28d9; }
+  .ge-wire.param { stroke: #d97706; stroke-dasharray: 2 2; opacity: 0.85; }
   .ge-wire.in-flight { stroke: #15803d; stroke-dasharray: 6 4; }
+  /* Param chips on canvas — small amber rounded rectangles at the top with
+     output socket. The HTML strip above stays for adding/removing; these
+     mirror the same data for visual wiring. */
+  .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+  .ge-param-card-name { font: 700 11px ui-monospace, monospace; fill: #78350f; pointer-events: none; }
+  .ge-param-card-val { font: 10px ui-monospace, monospace; fill: #92400e; pointer-events: none; }
+  .ge-sock.in.param { stroke: #d97706; }
+  .ge-sock.out.param { stroke: #d97706; fill: #fef3c7; }
+  .ge-sock.in.param:hover, .ge-sock.out.param:hover { fill: #fde68a; }
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
   .ge-pane-head { padding: 6px 12px; font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; }
