@@ -681,6 +681,15 @@
               onclick={() => refreshTerm(selected!)}
             >{regenBusy[selected!] ? '↻ …' : '↻ Refresh'}</button>
             <code class="head-exemplar">{e.exemplar}</code>
+            <!-- K.63 graph editor link — opens the exemplar in /graph-editor
+                 with ?id=<exemplar>. If the source has meta.graph (built via
+                 the editor or translated to graph format) it hydrates onto
+                 the canvas; otherwise an amber legacy banner explains and
+                 the user can author a fresh graph-format part to overwrite. -->
+            <a class="head-graph-link" href={`/graph-editor?id=${e.exemplar}`}
+              title="Open this exemplar in the graph editor (K.63 composition model)">
+              🧬 Graph editor
+            </a>
           {/if}
         </div>
         {#if selectedIsSeed}
@@ -1369,6 +1378,8 @@
   .detail-pane .detail-head h2 { margin: 0; font: 700 16px ui-monospace, monospace; }
   .head-spacer { flex: 1; }
   .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
+  .head-graph-link { font: 600 11px Arial; color: #6d28d9; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 4px; padding: 3px 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .head-graph-link:hover { background: #ddd6fe; color: #4c1d95; border-color: #a78bfa; }
   /* Status line above the tabs (for promote success/failure). */
   .vocab-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 4px 16px; background: #f0fdf4; border-bottom: 1px solid #86efac; }
   /* Vertical trapezoidal Inferred|Proposed rail (restored 2026-06-06). */

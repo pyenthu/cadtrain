@@ -40,7 +40,7 @@ click `+ Drop`, scrub a slider, drag a wire from the param chip to
 changes (canvas drag mechanics, SVG socket positions, popover anchors,
 keyboard shortcuts).
 
-## Phase rollout (4 phases shipped, more coming)
+## Phase rollout (7 phases shipped, more coming)
 
 ### Phase 1 — `mv` axis param wiring (single-Call)
 
@@ -129,34 +129,122 @@ Verifies the "one dial drives N instances" promise of typed wires.
 **File**: `tests/e2e/graph-editor.spec.ts::smoke`
 **Runtime**: ~5 s headless
 
+### Phase 5 — Vocabulary replication (dt_tube via the editor)
+
+Proves the new graph editor can express the canonical K.68 vocabulary
+compose pattern: `A.subtract(B)` where each arg is one of:
+literal | param-wire | free-text expression (`p.od / 2 - p.wall`).
+
+| Step | Action | Assert |
+|---|---|---|
+| 1 | Add params: `od=4.5`, `wall=0.5`, `length=3` | 3 × `.ge-param-card` |
+| 2 | Drop two `dt_shaft` Calls (A, B) | 2 × `.ge-node-bg.call` |
+| 3 | Click A.r ƒ toggle → fill `p.od / 2` | A's r row has `input.ge-arg-input.expr` with that value |
+| 4 | Drag p.length → A.len input socket | A.len becomes `kind:'param'` chip |
+| 5 | Click B.r ƒ toggle → fill `p.od / 2 - p.wall` | B's r row has the expression |
+| 6 | Drag p.length → B.len input socket | shared dial works |
+| 7 | Drop ⊖ subtract method node | 1 × `.ge-node-bg.method` |
+| 8 | Wire A.out → method.obj; B.out → method.arg | 2 × wires |
+| 9-11 | Source has `A.subtract(B)` + expressions + 0 bake errors | regex matches |
+| 12 | Save | `.ge-save-stat` confirms |
+| 13 | Fetch back via `/api/primitives/source`; assert meta.graph + kind:'expr' + kind:'param' + `(p)` signature | proves round-trip |
+
+**Doubles as a part generator** — every run writes `dt_tube_v2.asm.ts`
+to the volume.
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 5`
+**Runtime**: ~10 s headless
+
+**Test note**: ƒ-toggle clicks use `dispatchEvent('click')` because the
+3D bake pane can intercept pointer events when the second Call card
+overlaps with it at small viewport widths — same workaround as
+`dragBetween` for SVG wires.
+
+### Phase 6 — URL load (`?id=<name>`) + legacy banner
+
+The editor's load-from-URL path proves the data layer's round-trip
+through the volume. Two tests:
+
+**6a — hydrates `dt_tube_v2`** (the part Phase 5 saved):
+
+| Step | Assert |
+|---|---|
+| `goto('/graph-editor?id=dt_tube_v2')` | page loads |
+| `input.ge-id` value | `dt_tube_v2` |
+| `.ge-node-bg.call` count | 2 |
+| `.ge-node-bg.method` count | 1 |
+| `.ge-param-card` count | 3 |
+| first `input.ge-arg-input.expr` value | `p.od / 2` |
+| `.ge-err` count | 0 (bake compiles) |
+| source has `A.subtract(B)` + both expressions | regex |
+| `.ge-legacy-banner` count | 0 (has meta.graph) |
+
+**6b — legacy banner for `dt_tube`** (translator-generated text body):
+
+| Step | Assert |
+|---|---|
+| `goto('/graph-editor?id=dt_tube')` | page loads |
+| canvas stays empty | 0 calls / 0 methods |
+| `.ge-legacy-banner` visible | contains `dt_tube` + 'legacy' |
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 6`
+**Runtime**: ~10 s headless (depends on prod-volume fetch latency)
+
+### Phase 7 — `/vocab` launches the graph editor
+
+The user-facing K.68 integration. From the vocabulary GUI, select a
+term → 🧬 Graph editor link appears → click navigates with
+`?id=<exemplar>` pre-loaded.
+
+| Step | Action | Assert |
+|---|---|---|
+| 1 | `goto('/vocab')` | `.vocab-bar` visible |
+| 2 | Open `Browse` tab | term list rendered |
+| 3 | Click `tube` row | term-detail header rendered |
+| 4 | `a.head-graph-link` visible | href matches `/graph-editor?id=dt_` |
+| 5 | Navigate to that href | `.ge-bar h1` says "Graph editor"; `.ge-id` has `dt_<exemplar>` |
+| 6 | Either canvas hydrates OR legacy banner | `hasNodes + hasBanner > 0` |
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 7`
+**Runtime**: ~7 s headless
+
 ## Phases queued (not yet written)
 
-### Phase 5 — Inline transforms compose with CSG
+### Phase 8 — Embedded graph editor in /vocab right pane
+Phase 7 ships a link out — next is extracting the editor as a reusable
+component (`<GraphEditor graph={...} onsave={...} />`) and embedding it
+as a 3rd vertical tab next to Inferred / Proposed in /vocab. Same
+hydration logic, no navigation jump.
+
+### Phase 9 — Inline transforms compose with CSG
 Drop A and B, drop `⊖ subtract`, wire them. Toggle `⇄` on A → inline mv
 appears. Edit mv.z. Verify source emits `mv(A, [0, 0, N]).subtract(B)`.
 
-### Phase 6 — Multi-axis wiring on a single transform
+### Phase 10 — Multi-axis wiring on a single transform
 Wire `p.x` to mv.x, `p.y` to mv.y, `p.z` to mv.z all on the same Call.
 Verify 3 wires, 3 chips, source has `mv(A, [p.x, p.y, p.z])`.
 
-### Phase 7 — Param schema drift detection
+### Phase 11 — Param schema drift detection
 Set up a Call wired to a param. Edit the underlying primitive's source
 (adds a new arg). Reopen the editor — verify the drift badge fires + the
 refresh action grows the Call's arg list.
 
-### Phase 8 — Legacy load + amber banner
-Open an old-format `.asm.ts` (no `meta.graph`). Verify amber legacy
-banner + read-only source pane below the empty canvas.
-
-### Phase 9 — Standalone wrapper nodes
+### Phase 12 — Standalone wrapper nodes
 Drop a Call. Drop a standalone mv wrapper node from the picker (not
 inline). Drag-wire the Call's output to the mv's child input. Edit
 mv.xyz. Verify source emits the wrapped form correctly.
 
-### Phase 10 — CSG chain (A ⊖ B ⊖ C)
+### Phase 13 — CSG chain (A ⊖ B ⊖ C)
 Three Calls + two subtract method nodes chained. Verify the source
 emits `A.subtract(B).subtract(C)` and bake renders. Tests transitive
 output→input wiring.
+
+### Phase 14 — Translator round-trip (vocab.json → graph editor)
+Modify `rule-translator.ts` to emit `meta.graph` instead of (or
+alongside) the text body for `kind:'compose'` rules. Then: regenerate
+`dt_tube` from vocab, load via `?id=`, assert hydrates into the same
+shape as the editor-built `dt_tube_v2`. The point at which the K.68
+authoring loop closes.
 
 ## Maintaining this suite
 

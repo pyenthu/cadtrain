@@ -82,6 +82,11 @@ export interface PrimMeta {
      *  per-use by passing `props.<name>`. */
     value: [number, number][];
   }>;
+  /** K.63 composition graph (new graph-editor format). Present on assemblies
+   *  built via /graph-editor; absent on leaves and legacy assemblies.
+   *  Pure JSON (Graph from $lib/cad/composition-graph) — the load path in
+   *  /graph-editor reads this directly without re-parsing the body. */
+  graph?: any;
 }
 
 const META_DECL_RE = /export\s+const\s+meta\s*=\s*\{/;
@@ -162,6 +167,9 @@ export function extractMetaFromSource(src: string): PrimMeta {
     params: meta.params,
     material,
     profiles: meta.profiles && typeof meta.profiles === 'object' ? meta.profiles : undefined,
+    // Pass through the K.63 composition graph as-is — used by /graph-editor
+    // to hydrate the canvas when loading an existing assembly.
+    graph: meta.graph && typeof meta.graph === 'object' ? meta.graph : undefined,
   };
 }
 

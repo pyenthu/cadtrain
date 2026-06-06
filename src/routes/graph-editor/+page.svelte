@@ -41,6 +41,7 @@
     wrapInTransform,
     unwrapTransform,
     inlineTransformOf,
+    hydrateGraph,
     type Graph,
     type NodeId,
     type CsgOp,
@@ -72,12 +73,66 @@
   });
 
   let PrimitiveDualCanvas = $state<any>(null);
+  /** Set when a URL `?id=<name>` is given but the loaded source has no
+   *  meta.graph (legacy text-format assembly OR a leaf primitive). The
+   *  canvas stays empty + a banner surfaces above the source pane explaining
+   *  why. The user can still Save a NEW graph alongside the legacy file —
+   *  but we don't fight the user with auto-translation. */
+  let legacyLoad = $state<{ id: string; reason: 'no-graph' | 'fetch-failed' } | null>(null);
   onMount(async () => {
     try {
       const mod = await import('$lib/shared/PrimitiveDualCanvas.svelte');
       PrimitiveDualCanvas = mod.default;
     } catch { /* canvas unavailable */ }
+
+    // URL load: `/graph-editor?id=<name>` fetches the part's source from the
+    // volume + hydrates meta.graph into the canvas. If the source is missing
+    // or has no meta.graph, we surface a banner instead of fabricating state.
+    //
+    // graph extraction: we look at `data.graph` (preferred — the server
+    // extracts it via extractMetaFromSource) BUT fall back to a client-side
+    // brace-walking parser on `data.source` so the load path works against
+    // a prod endpoint that hasn't been redeployed with the graph field yet.
+    try {
+      const u = new URL(window.location.href);
+      const id = u.searchParams.get('id');
+      if (id && /^[a-z_][a-z0-9_]*$/i.test(id)) {
+        const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+        if (!r.ok) { legacyLoad = { id, reason: 'fetch-failed' }; exemplarId = id; return; }
+        const d = await r.json();
+        const graphJson = d.graph ?? extractGraphFromSource(d.source ?? '');
+        if (graphJson && typeof graphJson === 'object') {
+          graph = hydrateGraph(graphJson);
+          exemplarId = id;
+        } else {
+          legacyLoad = { id, reason: 'no-graph' };
+          exemplarId = id;
+        }
+      }
+    } catch { /* URL parse / network failures are non-fatal */ }
   });
+
+  /** Client-side graph-block extractor — walks balanced braces to isolate
+   *  the `graph: {...}` literal inside the meta block, then evals as plain
+   *  data via `new Function`. Pure object/array literals → safe.
+   *  Returns undefined when the source has no graph block (legacy part). */
+  function extractGraphFromSource(src: string): any | undefined {
+    if (!src) return undefined;
+    const m = /(^|[\s,{])graph\s*:\s*\{/m.exec(src);
+    if (!m) return undefined;
+    const startBrace = src.indexOf('{', m.index + m[0].length - 1);
+    if (startBrace < 0) return undefined;
+    let depth = 0;
+    let end = -1;
+    for (let i = startBrace; i < src.length; i++) {
+      const c = src[i];
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end < 0) return undefined;
+    const block = src.slice(startBrace, end + 1);
+    try { return new Function(`return (${block});`)(); } catch { return undefined; }
+  }
 
   // ─── canvas state — pan + zoom ─────────────────────────────────────────
   let pan = $state({ x: 0, y: 0 });
@@ -834,6 +889,20 @@
     <!-- RIGHT — live emitted source -->
     <section class="ge-source-pane">
       <div class="ge-pane-head">live source · <code>{exemplarId}.asm.ts</code></div>
+      {#if legacyLoad}
+        <div class="ge-legacy-banner">
+          {#if legacyLoad.reason === 'no-graph'}
+            <strong>{legacyLoad.id}</strong> opened in legacy mode — its source has
+            no <code>meta.graph</code> block, so the canvas can't hydrate. Save
+            here to overwrite with a graph-format part, or
+            <a href="/primitives?id={legacyLoad.id}">open it in /primitives</a>
+            to edit the original text body.
+          {:else}
+            Could not fetch <strong>{legacyLoad.id}</strong> from the volume.
+            Check the id + your volume connection.
+          {/if}
+        </div>
+      {/if}
       <pre class="ge-source">{sourceText}</pre>
     </section>
   </main>
@@ -1008,6 +1077,10 @@
   .ge-sock.tiny { stroke-width: 1.5; }
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+  .ge-source-pane:has(.ge-legacy-banner) { grid-template-rows: auto auto 1fr; }
+  .ge-legacy-banner { padding: 8px 12px; font: 11px ui-monospace, monospace; line-height: 1.5; color: #78350f; background: #fef3c7; border-bottom: 1px solid #fbbf24; }
+  .ge-legacy-banner strong { color: #92400e; }
+  .ge-legacy-banner a { color: #0369a1; }
   .ge-pane-head { padding: 6px 12px; font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; }
   .ge-pane-head code { font: 11px ui-monospace, monospace; color: #0c4a6e; text-transform: none; letter-spacing: 0; }
   .ge-bake-body { overflow: hidden; min-height: 0; }

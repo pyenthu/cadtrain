@@ -543,3 +543,114 @@ test.describe('graph-editor — phase 5: vocab replication (dt_tube)', () => {
     expect(data.source).toMatch(/export function dt_tube_v2\(p\)/);
   });
 });
+
+// ─── Phase 6 — URL load (?id=<...>) + legacy banner ──────────────────────
+//
+// Two cases:
+//   (a) Loading dt_tube_v2 (built by phase 5) hydrates the canvas — 2 Calls,
+//       1 method, the right expressions, the right params. Proves round-trip
+//       through the serialize → save → hydrate path.
+//   (b) Loading dt_tube (the LEGACY text-format part on the volume, no
+//       meta.graph) surfaces the amber legacy banner. Proves the editor
+//       refuses to silently translate; the user knows when they're on
+//       legacy ground.
+
+test.describe('graph-editor — phase 6: URL load + legacy banner', () => {
+  test('hydrates dt_tube_v2 from ?id= URL param — full graph rebuilt', async ({ page }) => {
+    test.setTimeout(30_000);
+    // Direct navigation with the load param. The phase 5 test must have run
+    // earlier in the same suite to deposit dt_tube_v2.asm.ts on the volume.
+    await page.goto('/graph-editor?id=dt_tube_v2');
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
+
+    // 1. Exemplar id picked up from the URL.
+    await expect(page.locator('input.ge-id')).toHaveValue('dt_tube_v2');
+
+    // 2. Two Call cards + one method node (A.subtract(B)).
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+    await expect(page.locator('.ge-node-bg.method')).toHaveCount(1);
+
+    // 3. Three params on the canvas.
+    await expect(page.locator('.ge-param-card')).toHaveCount(3);
+
+    // 4. The expression args round-tripped — visible as ƒ-styled inputs.
+    await expect(page.locator('input.ge-arg-input.expr').first()).toHaveValue('p.od / 2');
+
+    // 5. No bake error — the hydrated graph compiles + previews.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+
+    // 6. Live source pane mirrors the loaded graph.
+    await expect(page.locator('.ge-source')).toContainText(/A\.subtract\(B\)/);
+    await expect(page.locator('.ge-source')).toContainText('p.od / 2');
+    await expect(page.locator('.ge-source')).toContainText('p.od / 2 - p.wall');
+
+    // 7. No legacy banner — meta.graph is present.
+    await expect(page.locator('.ge-legacy-banner')).toHaveCount(0);
+  });
+
+  test('shows legacy banner when ?id= points at a part without meta.graph', async ({ page }) => {
+    test.setTimeout(30_000);
+    // dt_tube is the K.68-translator-generated part — text body only, no
+    // meta.graph. The editor refuses to hallucinate graph state and surfaces
+    // the banner.
+    await page.goto('/graph-editor?id=dt_tube');
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+
+    // 1. Exemplar id picked up from the URL.
+    await expect(page.locator('input.ge-id')).toHaveValue('dt_tube');
+
+    // 2. Canvas stays empty — no node cards hydrated.
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(0);
+    await expect(page.locator('.ge-node-bg.method')).toHaveCount(0);
+
+    // 3. Amber legacy banner surfaced above the source pane.
+    await expect(page.locator('.ge-legacy-banner')).toBeVisible();
+    await expect(page.locator('.ge-legacy-banner')).toContainText('dt_tube');
+    await expect(page.locator('.ge-legacy-banner')).toContainText('legacy');
+  });
+});
+
+// ─── Phase 7 — /vocab → /graph-editor cross-page launch ──────────────────
+//
+// The K.69 vocab GUI gains a 🧬 Graph editor link per term — click it and
+// you arrive at the graph editor with the term's exemplar pre-loaded.
+// This is the user-facing integration: 'go from "I'm looking at the tube
+// vocabulary entry" → "I'm editing tube's graph" in one click'.
+
+test.describe('graph-editor — phase 7: /vocab launches the graph editor', () => {
+  test('selecting a term in /vocab shows the graph-editor link + navigates correctly', async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.goto('/vocab');
+    await expect(page.locator('.vocab-bar')).toBeVisible();
+
+    // 1. Open the Browse tab (the term list — Topology is the Mermaid graph).
+    await page.locator('.left-tab', { hasText: 'Browse' }).click();
+
+    // 2. Select the `tube` term — its exemplar is dt_tube, the canonical
+    //    compose example used by the rule-translator. Click the row directly.
+    await page.locator('.browser-row', { hasText: 'tube' }).first().click();
+
+    // 3. The 🧬 Graph editor link appears in the term detail header.
+    const link = page.locator('a.head-graph-link');
+    await expect(link).toBeVisible();
+    await expect(link).toContainText('Graph editor');
+    await expect(link).toHaveAttribute('href', /\/graph-editor\?id=dt_/);
+
+    // 4. Read the href + navigate (a real click would open a new tab if the
+    //    link had target=_blank; here it's same-tab — assert the URL change).
+    const href = await link.getAttribute('href');
+    await page.goto(href!);
+
+    // 5. Lands on /graph-editor with the exemplar pre-filled.
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await expect(page.locator('input.ge-id')).toHaveValue(/^dt_/);
+
+    // 6. Either hydrates or shows the legacy banner — both are acceptable;
+    //    this test cares that the cross-page contract holds, not which
+    //    branch the loaded part hits.
+    const hasNodes  = await page.locator('.ge-node-bg.call').count();
+    const hasBanner = await page.locator('.ge-legacy-banner').count();
+    expect(hasNodes + hasBanner).toBeGreaterThan(0);
+  });
+});

@@ -83,6 +83,9 @@ export const GET = async ({ url }) => {
       kind: hit.kind,
       name: meta?.name, description: meta?.description, params: meta?.params ?? {},
       profiles: meta?.profiles ?? {},
+      // K.63 composition graph — present on assemblies built via /graph-editor,
+      // undefined on leaves + legacy assemblies. Drives the editor's load flow.
+      graph: meta?.graph,
     });
   }
   // Bundle fallback — reads the compiled-in helpers source. This file is NOT

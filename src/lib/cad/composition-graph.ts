@@ -127,6 +127,45 @@ export function newGraph(): Graph {
   return { nodes: { [rootId]: rootNode }, root: rootId, params: {}, edges: [], imports: [], layout: {} };
 }
 
+/** Hydrate a serialised meta.graph block back into a runnable Graph.
+ *
+ *  serialiseGraph(g) drops `edges` (rebuildable from args) and `layout`
+ *  (a visual concern, not part of the contract). This inverse rebuilds
+ *  both — edges via collectEdges, layout via a default rough-grid pass
+ *  so a loaded assembly has its nodes visible immediately even though
+ *  the user never positioned them on this client.
+ *
+ *  Tolerant of partial data (returns newGraph() on missing/invalid
+ *  nodes/root) so legacy or hand-edited sources fall through gracefully
+ *  to the empty-canvas state. */
+export function hydrateGraph(serialised: any): Graph {
+  if (!serialised || typeof serialised !== 'object' || !serialised.nodes || !serialised.root) {
+    return newGraph();
+  }
+  let g: Graph = {
+    nodes: serialised.nodes,
+    root: serialised.root,
+    params: serialised.params ?? {},
+    edges: [],
+    imports: serialised.imports ?? [],
+    layout: {},
+  };
+  // Auto-layout: each non-root, non-inline-wrapper node gets a default position
+  // via the same heuristic used at create-time. Inline mv/rot wrappers don't
+  // render on the main canvas (they surface inside their child Call), so skip.
+  for (const id of Object.keys(g.nodes)) {
+    const n = g.nodes[id];
+    if (n.type === 'list') continue;
+    if ((n.type === 'mv' || n.type === 'rot') && n.child) {
+      const child = g.nodes[n.child];
+      if (child?.type === 'call') continue; // inline wrapper, no own card
+    }
+    g = setLayout(g, id, defaultCallPosition(g));
+  }
+  g = { ...g, edges: collectEdges(g) };
+  return g;
+}
+
 /** Update a node's canvas position. Pure (returns new graph). */
 export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {
   return { ...graph, layout: { ...graph.layout, [id]: xy } };
