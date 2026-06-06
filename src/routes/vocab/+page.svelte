@@ -729,7 +729,7 @@
                       <PrimitiveDualCanvas
                         id={inferredI.exemplar}
                         name={inferredI.exemplar}
-                        description={`Inferred from ${e.compjson_ref}`}
+                        description=""
                         args={[]}
                         source={inferredI.source}
                         showControls={true}
@@ -876,7 +876,7 @@
                       <PrimitiveDualCanvas
                         id={proposedPb.exemplar}
                         name={proposedPb.exemplar}
-                        description={prop.definition}
+                        description=""
                         args={paramOverrides[selected!] ?? defaultParams(selected!)}
                         source={proposedPb.source}
                         showControls={true}
@@ -1000,7 +1000,7 @@
                     <PrimitiveDualCanvas
                       id={e.exemplar}
                       name={e.exemplar}
-                      description={e.definition}
+                      description=""
                       args={params.args}
                       source={params.source}
                       showControls={true}
