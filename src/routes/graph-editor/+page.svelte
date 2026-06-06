@@ -197,8 +197,15 @@
       try {
         const r = await fetch('/api/primitives/list');
         const d = await r.json() as any;
-        const all = [...(d.basic ?? []), ...(d.stdlib ?? []), ...(d.completions ?? [])];
-        pickerSrcs = [...new Set(all.map((p: any) => p.id))].sort();
+        // completions is an OBJECT keyed by family ({drill_pipe: [...], packers: [...]}) —
+        // flatten its values; basic + stdlib are flat arrays of {id, …}.
+        const basicItems = Array.isArray(d.basic) ? d.basic : [];
+        const stdlibItems = Array.isArray(d.stdlib) ? d.stdlib : [];
+        const completionItems: any[] = d.completions && typeof d.completions === 'object'
+          ? (Object.values(d.completions) as any[][]).flat()
+          : [];
+        const all = [...basicItems, ...stdlibItems, ...completionItems];
+        pickerSrcs = [...new Set(all.map((p: any) => p.id).filter(Boolean))].sort();
       } catch { /* fall through */ }
     }
   }
