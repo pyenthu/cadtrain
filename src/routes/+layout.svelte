@@ -10,9 +10,10 @@
     {
       label: null,
       items: [
-        { href: '/primitives', label: 'Primitives' },
-        { href: '/fem',        label: 'FEM' },
-        { href: '/forge',      label: 'Forge' },
+        { href: '/primitives',   label: 'Primitives' },
+        { href: '/graph-editor', label: 'Graph editor' },
+        { href: '/fem',          label: 'FEM' },
+        { href: '/forge',        label: 'Forge' },
       ],
     },
     {
