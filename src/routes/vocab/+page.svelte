@@ -813,119 +813,124 @@
                    popover (top-right of detail-head). Tab body focuses on
                    params + 3D bake — /primitives format. -->
 
-              <!-- Parameters accordion — mirrors /primitives' .pg-acc-wrap +
-                   ParamGrid layout (single component, identical params chrome). -->
-              {#if prop.params}
-                {@const pmap = paramMap(selected!)}
-                <div class="pg-acc-wrap">
-                  <div class="pg-acc-head" class:collapsed={!isParamsOpen(selected!)}
-                    role="button" tabindex="0"
-                    aria-expanded={isParamsOpen(selected!)}
-                    onclick={() => toggleParamsOpen(selected!)}
-                    onkeydown={(ek) => { if (ek.key === 'Enter' || ek.key === ' ') { ek.preventDefault(); toggleParamsOpen(selected!); } }}>
-                    <span class="pg-acc-title">Parameters</span>
-                    <span class="pg-acc-count">({Object.keys(prop.params).length})</span>
-                    <div class="pv-spacer"></div>
-                    <span class="pg-acc-hint">drag to re-bake</span>
+              <!-- 2-col layout: LEFT = canvas (full height of column);
+                   RIGHT = parameters on top, rule + details below. -->
+              <div class="proposed-grid">
+                <div class="proposed-canvas-col">
+                  <div class="bake-card">
+                    <header class="bake-head">
+                      <div class="bake-title">Proposed 3D · {prop.rule?.kind ?? '?'}</div>
+                      <span class="spacer"></span>
+                      {#if !pb}
+                        <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake</button>
+                      {:else if pb === 'loading'}
+                        <span class="bar-status">baking…</span>
+                      {:else if 'error' in (pb as any)}
+                        <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
+                        <span class="bar-status err">err: {(pb as any).error}</span>
+                      {:else}
+                        <span class="bar-meta">{(pb as ProposedBake).bake?.verts ?? '?'} verts · z={(pb as ProposedBake).bake?.z_extent ?? '?'} · r={(pb as ProposedBake).bake?.outer_r ?? '?'}</span>
+                      {/if}
+                    </header>
+                    <div class="bake-body">
+                      {#if !pb}
+                        <div class="bake-cta">
+                          Click <strong>Bake</strong> to render the hand-drafted <code>{prop.rule?.kind}</code> rule.
+                        </div>
+                      {:else if pb === 'loading'}
+                        <div class="empty">baking proposed source…</div>
+                      {:else if 'error' in (pb as any)}
+                        <div class="error">bake failed: {(pb as any).error}</div>
+                      {:else if !(pb as ProposedBake).bake?.ok}
+                        <div class="error">bake failed: {(pb as ProposedBake).bake?.message ?? 'no bake result'}</div>
+                      {:else if PrimitiveDualCanvas}
+                        {@const proposedPb = pb as ProposedBake}
+                        <PrimitiveDualCanvas
+                          id={proposedPb.exemplar}
+                          name={proposedPb.exemplar}
+                          description=""
+                          args={paramOverrides[selected!] ?? defaultParams(selected!)}
+                          source={proposedPb.source}
+                          showControls={true}
+                          showLabels={false}
+                        />
+                      {:else}
+                        <div class="empty">3D canvas loading…</div>
+                      {/if}
+                    </div>
                   </div>
-                  {#if isParamsOpen(selected!)}
-                    <div class="pg-acc-body">
-                      <ParamGrid
-                        schema={prop.params as any}
-                        pending={pmap}
-                        applied={pmap}
-                        onPending={(k, v) => paramUpdateByKey(selected!, k, v)}
-                        onCommit={(k, v) => paramUpdateByKey(selected!, k, v)}
-                        variant="fn"
-                      />
+                </div>
+
+                <div class="proposed-right-col">
+                  <!-- Parameters at top of the right column -->
+                  {#if prop.params}
+                    {@const pmap = paramMap(selected!)}
+                    <div class="pg-acc-wrap">
+                      <div class="pg-acc-head" class:collapsed={!isParamsOpen(selected!)}
+                        role="button" tabindex="0"
+                        aria-expanded={isParamsOpen(selected!)}
+                        onclick={() => toggleParamsOpen(selected!)}
+                        onkeydown={(ek) => { if (ek.key === 'Enter' || ek.key === ' ') { ek.preventDefault(); toggleParamsOpen(selected!); } }}>
+                        <span class="pg-acc-title">Parameters</span>
+                        <span class="pg-acc-count">({Object.keys(prop.params).length})</span>
+                        <div class="pv-spacer"></div>
+                        <span class="pg-acc-hint">drag to re-bake</span>
+                      </div>
+                      {#if isParamsOpen(selected!)}
+                        <div class="pg-acc-body">
+                          <ParamGrid
+                            schema={prop.params as any}
+                            pending={pmap}
+                            applied={pmap}
+                            onPending={(k, v) => paramUpdateByKey(selected!, k, v)}
+                            onCommit={(k, v) => paramUpdateByKey(selected!, k, v)}
+                            variant="fn"
+                          />
+                        </div>
+                      {/if}
                     </div>
                   {/if}
-                </div>
-              {/if}
 
-              <!-- Two-column row: 30% canvas (left) | 70% rule/details (right). -->
-              <div class="canvas-rule-row">
-                <div class="bake-card">
-                  <header class="bake-head">
-                    <div class="bake-title">Proposed 3D · {prop.rule?.kind ?? '?'}</div>
-                    <span class="spacer"></span>
-                    {#if !pb}
-                      <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake</button>
-                    {:else if pb === 'loading'}
-                      <span class="bar-status">baking…</span>
-                    {:else if 'error' in (pb as any)}
-                      <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
-                      <span class="bar-status err">err: {(pb as any).error}</span>
-                    {:else}
-                      <span class="bar-meta">{(pb as ProposedBake).bake?.verts ?? '?'} verts · z={(pb as ProposedBake).bake?.z_extent ?? '?'} · r={(pb as ProposedBake).bake?.outer_r ?? '?'}</span>
+                  <!-- Rule + details below parameters -->
+                  <div class="rule-details-col">
+                    {#if prop.rule}
+                      <details class="block" open>
+                        <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
+                        {#if prop.rule.body?.preamble?.length}
+                          <div class="rule-section">
+                            <div class="prop-label">body · preamble</div>
+                            <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
+                          </div>
+                        {/if}
+                        {#if prop.rule.body?.polygon?.length}
+                          <div class="rule-section">
+                            <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
+                            <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
+                          </div>
+                        {/if}
+                        {#if prop.rule.modifiers?.length}
+                          <div class="rule-section">
+                            <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
+                            <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
+                          </div>
+                        {/if}
+                      </details>
                     {/if}
-                  </header>
-                  <div class="bake-body">
-                    {#if !pb}
-                      <div class="bake-cta">
-                        Click <strong>Bake</strong> to render the hand-drafted <code>{prop.rule?.kind}</code> rule.
-                      </div>
-                    {:else if pb === 'loading'}
-                      <div class="empty">baking proposed source…</div>
-                    {:else if 'error' in (pb as any)}
-                      <div class="error">bake failed: {(pb as any).error}</div>
-                    {:else if !(pb as ProposedBake).bake?.ok}
-                      <div class="error">bake failed: {(pb as ProposedBake).bake?.message ?? 'no bake result'}</div>
-                    {:else if PrimitiveDualCanvas}
-                      {@const proposedPb = pb as ProposedBake}
-                      <PrimitiveDualCanvas
-                        id={proposedPb.exemplar}
-                        name={proposedPb.exemplar}
-                        description=""
-                        args={paramOverrides[selected!] ?? defaultParams(selected!)}
-                        source={proposedPb.source}
-                        showControls={true}
-                        showLabels={false}
-                      />
-                    {:else}
-                      <div class="empty">3D canvas loading…</div>
-                    {/if}
-                  </div>
-                </div>
-
-                <div class="rule-details-col">
-                  {#if prop.rule}
-                    <details class="block" open>
-                      <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
-                      {#if prop.rule.body?.preamble?.length}
-                        <div class="rule-section">
-                          <div class="prop-label">body · preamble</div>
-                          <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
-                        </div>
-                      {/if}
-                      {#if prop.rule.body?.polygon?.length}
-                        <div class="rule-section">
-                          <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
-                          <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-                        </div>
-                      {/if}
-                      {#if prop.rule.modifiers?.length}
-                        <div class="rule-section">
-                          <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
-                          <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
-                        </div>
-                      {/if}
-                    </details>
-                  {/if}
-                  <details class="block">
-                    <summary>definition</summary>
-                    <p class="def-line rich">{prop.definition}</p>
-                  </details>
-                  {#if prop.expects_bake}
                     <details class="block">
-                      <summary>expects bake</summary>
-                      <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
+                      <summary>definition</summary>
+                      <p class="def-line rich">{prop.definition}</p>
                     </details>
-                  {/if}
-                  <details class="block">
-                    <summary>raw proposed JSON</summary>
-                    <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
-                  </details>
+                    {#if prop.expects_bake}
+                      <details class="block">
+                        <summary>expects bake</summary>
+                        <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
+                      </details>
+                    {/if}
+                    <details class="block">
+                      <summary>raw proposed JSON</summary>
+                      <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
+                    </details>
+                  </div>
                 </div>
               </div>
 
@@ -1419,7 +1424,15 @@
   /* 30/70 canvas | rule-details row in the Proposed tab. */
   .canvas-rule-row { display: grid; grid-template-columns: 3fr 7fr; gap: 12px; align-items: stretch; min-height: 360px; }
   .canvas-rule-row > * { min-width: 0; }
-  .rule-details-col { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: 600px; }
+  .rule-details-col { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  /* New 2-col layout: LEFT = canvas (full height of column); RIGHT =
+     params (top) + rule + details (below). */
+  .proposed-grid { display: grid; grid-template-columns: 3fr 7fr; gap: 12px; align-items: stretch; min-height: 560px; }
+  .proposed-grid > * { min-width: 0; }
+  .proposed-canvas-col { display: flex; flex-direction: column; }
+  .proposed-canvas-col .bake-card { flex: 1 1 auto; }
+  .proposed-right-col { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+  .proposed-right-col .rule-details-col { max-height: none; flex: 1 1 auto; }
   .bake-card {
     display: grid; grid-template-rows: auto 1fr;
     background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
