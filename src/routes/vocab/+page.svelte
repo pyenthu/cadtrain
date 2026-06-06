@@ -112,14 +112,15 @@
   // vs Proposed (rich hand-drafted entry). Each tab carries its own
   // definition + 2D + 3D + actions. Curated terms skip the tabs.
   let detailTab = $state<'inferred' | 'proposed'>('inferred');
-  // Tab-switcher popover state — replaces the vertical rail. Tap the
-  // chevron-button at the top-right of the active tab to flip modes.
-  let tabPopoverOpen = $state(false);
-  function setTab(t: 'inferred' | 'proposed') { detailTab = t; tabPopoverOpen = false; }
-  function tabPopoverOutside(e: MouseEvent) {
-    if (!tabPopoverOpen) return;
+  // Definition / tags popover state — encapsulates the rich verbiage
+  // (definition + synonyms / function / form / variants / references) into a
+  // single ⓘ button so the tab body focuses on params + 3D bake (matching
+  // /primitives' layout).
+  let infoPopoverOpen = $state(false);
+  function infoPopoverOutside(e: MouseEvent) {
+    if (!infoPopoverOpen) return;
     const t = e.target as HTMLElement | null;
-    if (!t?.closest('.tab-popover-wrap')) tabPopoverOpen = false;
+    if (!t?.closest('.info-popover-wrap')) infoPopoverOpen = false;
   }
   // Lazy-loaded scene canvas (Threlte WebGL — SSR-incompatible, dynamic).
   let PrimitiveDualCanvas = $state<any>(null);
@@ -424,7 +425,7 @@
   <title>Vocab · CAD Train</title>
 </svelte:head>
 
-<svelte:window onclick={tabPopoverOutside} />
+<svelte:window onclick={infoPopoverOutside} />
 
 <div class="vocab-root">
   <header class="vocab-bar">
@@ -543,28 +544,73 @@
           <span class="detail-kind" class:asm={!selectedIsSeed && e.kind === 'asm'} class:seed={selectedIsSeed}>{selectedIsSeed ? 'seed' : e.kind}</span>
           <h2>{selected}</h2>
           <span class="head-spacer"></span>
-          {#if selectedIsSeed}
-            <!-- Inferred|Proposed popover switcher (replaces the vertical rail). -->
-            <div class="tab-popover-wrap">
-              <button class="tab-pop-btn" type="button" aria-haspopup="menu" aria-expanded={tabPopoverOpen}
-                onclick={(ev) => { ev.stopPropagation(); tabPopoverOpen = !tabPopoverOpen; }}
-              >
-                {detailTab === 'inferred' ? '∿ Inferred' : '◆ Proposed'}
-                <span class="tab-pop-caret">▾</span>
-              </button>
-              {#if tabPopoverOpen}
-                <div class="tab-pop-menu" role="menu">
-                  <button class="tab-pop-item" class:active={detailTab === 'inferred'} role="menuitem"
-                    type="button" onclick={() => setTab('inferred')}
-                  ><span class="tab-pop-ic">∿</span> Inferred <span class="tab-pop-sub">auto-derived from 2D</span></button>
-                  <button class="tab-pop-item" class:active={detailTab === 'proposed'} role="menuitem"
-                    type="button" disabled={!proposedEntry}
-                    onclick={() => setTab('proposed')}
-                  ><span class="tab-pop-ic">◆</span> Proposed <span class="tab-pop-sub">rich hand-drafted rule</span></button>
-                </div>
-              {/if}
-            </div>
-          {:else}
+          <!-- Definition & tags popover — opens a wide panel with the rich
+               definition, synonyms / function / form / variants / references.
+               Encapsulates the verbiage out of the tab body so the body
+               focuses on params + 3D bake (/primitives-style). -->
+          <div class="info-popover-wrap">
+            <button class="info-pop-btn" type="button" aria-haspopup="dialog" aria-expanded={infoPopoverOpen}
+              title="Definition · synonyms · function · form · references"
+              onclick={(ev) => { ev.stopPropagation(); infoPopoverOpen = !infoPopoverOpen; }}
+            >ⓘ Definition & tags</button>
+            {#if infoPopoverOpen}
+              <div class="info-pop-panel" role="dialog" aria-label="Definition and tags">
+                {#if selectedIsSeed && proposedEntry}
+                  <p class="def-line rich">{proposedEntry.definition}</p>
+                  <div class="info-row">
+                    <span class="prop-chip kind">{proposedEntry.kind}</span>
+                    {#if proposedEntry.extends}
+                      <span class="prop-arrow">extends</span>
+                      <span class="prop-chip ext">{proposedEntry.extends}</span>
+                    {/if}
+                    <span class="prop-cat">{proposedEntry.category} · {proposedEntry.sub_category}</span>
+                  </div>
+                  {#if proposedEntry.synonyms?.length}
+                    <div class="chips-row"><span class="chips-label">synonyms</span>
+                      {#each proposedEntry.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
+                    </div>
+                  {/if}
+                  {#if proposedEntry.function?.length}
+                    <div class="chips-row"><span class="chips-label">function</span>
+                      {#each proposedEntry.function as f (f)}<span class="prop-chip fn">{f}</span>{/each}
+                    </div>
+                  {/if}
+                  {#if proposedEntry.form?.length}
+                    <div class="chips-row"><span class="chips-label">form</span>
+                      {#each proposedEntry.form as f (f)}<span class="prop-chip form">{f}</span>{/each}
+                    </div>
+                  {/if}
+                  {#if proposedEntry.variants?.length}
+                    <div class="chips-row"><span class="chips-label">variants</span>
+                      {#each proposedEntry.variants as v (v)}<span class="prop-chip variant">{v}</span>{/each}
+                    </div>
+                  {/if}
+                  {#if proposedEntry.references?.length}
+                    <div class="chips-row"><span class="chips-label">references</span>
+                      {#each proposedEntry.references as r (r)}<a class="prop-ref" href={r} target="_blank" rel="noopener">{r.replace(/^https?:\/\//, '')}</a>{/each}
+                    </div>
+                  {/if}
+                {:else if selectedIsSeed}
+                  <p class="def-line">{e.description ?? '(no description)'}</p>
+                  <div class="info-row">
+                    <span class="info-chip cat">{e.category} · {e.sub_category}</span>
+                    {#if e.metadata?.tool_comp}<code class="info-code">{e.metadata.tool_comp}</code>{/if}
+                  </div>
+                {:else}
+                  <p class="def-line rich">{e.definition ?? '(no definition)'}</p>
+                  {#if e.synonyms?.length}
+                    <div class="chips-row"><span class="chips-label">synonyms</span>
+                      {#each e.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
+                    </div>
+                  {/if}
+                  {#if e.extends}
+                    <div class="chips-row"><span class="chips-label">extends</span><span class="prop-chip ext">{e.extends}</span></div>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+          </div>
+          {#if !selectedIsSeed}
             <button class="tab-refresh" type="button"
               disabled={regenBusy[selected!]}
               title={`Regenerate ${selected} from vocab + re-bake.`}
@@ -577,9 +623,26 @@
           {@const prop = proposedEntry}
           {#if detailTab === 'inferred' && promoteStatus}<div class="vocab-tab-status">{promoteStatus}</div>{/if}
           {#if detailTab === 'proposed' && promoteProposedStatus}<div class="vocab-tab-status">{promoteProposedStatus}</div>{/if}
-          <!-- Tab body fills full width; switcher is a popover button in the
-               top-right of the body (next to the H2 / actions row). -->
-          <div class="seed-tab-host">
+          <!-- Vertical trapezoidal rail (left, /primitives pattern) + tab body
+               that hosts a PrimitiveView for /primitives-style chrome. -->
+          <div class="vocab-tabs">
+            <div class="vocab-vrail" role="tablist" aria-label="Bake interpretation">
+              <button class="vocab-vtab" class:active={detailTab === 'inferred'}
+                type="button" role="tab" aria-selected={detailTab === 'inferred'}
+                title="Inferred — auto-derived from the 2D drawing"
+                onclick={() => (detailTab = 'inferred')}>
+                <span class="vocab-vtab-ic">∿</span>
+                <span class="vocab-vtab-lbl">Inferred</span>
+              </button>
+              <button class="vocab-vtab" class:active={detailTab === 'proposed'}
+                type="button" role="tab" aria-selected={detailTab === 'proposed'}
+                disabled={!prop}
+                title={prop ? 'Proposed — rich hand-drafted rule' : 'no proposed entry yet'}
+                onclick={() => (detailTab = 'proposed')}>
+                <span class="vocab-vtab-ic">◆</span>
+                <span class="vocab-vtab-lbl">Proposed</span>
+              </button>
+            </div>
 
           {#if detailTab === 'inferred'}
             {@const inf = inferCache[selected!]}
@@ -714,10 +777,11 @@
             <!-- PROPOSED tab body -->
             {@const pb = proposedBakeCache[selected!]}
             <div class="tab-body">
-              <!-- Rich definition -->
-              <p class="def-line rich">{prop.definition}</p>
+              <!-- Definition + chips encapsulated in the ⓘ Definition & tags
+                   popover (top-right of detail-head). Tab body focuses on
+                   params + 3D bake — /primitives format. -->
 
-              <!-- Param sliders — promoted to top, 2-column grid for compact scan. -->
+              <!-- Param sliders at top — 2-column grid. -->
               {#if prop.params}
                 <div class="param-sliders top-2col">
                   <div class="ps-cap">params · drag to re-bake live</div>
@@ -743,48 +807,6 @@
                       </div>
                     </div>
                   {/each}
-                </div>
-              {/if}
-
-              <!-- kind + extends + category -->
-              <div class="info-row">
-                <span class="prop-chip kind">{prop.kind}</span>
-                {#if prop.extends}
-                  <span class="prop-arrow">extends</span>
-                  <span class="prop-chip ext">{prop.extends}</span>
-                {/if}
-                <span class="prop-cat">{prop.category} · {prop.sub_category}</span>
-              </div>
-
-              <!-- chip groups -->
-              {#if prop.synonyms?.length}
-                <div class="chips-row">
-                  <span class="chips-label">synonyms ({prop.synonyms.length})</span>
-                  {#each prop.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
-                </div>
-              {/if}
-              {#if prop.function?.length}
-                <div class="chips-row">
-                  <span class="chips-label">function</span>
-                  {#each prop.function as f (f)}<span class="prop-chip fn">{f}</span>{/each}
-                </div>
-              {/if}
-              {#if prop.form?.length}
-                <div class="chips-row">
-                  <span class="chips-label">form</span>
-                  {#each prop.form as f (f)}<span class="prop-chip form">{f}</span>{/each}
-                </div>
-              {/if}
-              {#if prop.variants?.length}
-                <div class="chips-row">
-                  <span class="chips-label">variants</span>
-                  {#each prop.variants as v (v)}<span class="prop-chip variant">{v}</span>{/each}
-                </div>
-              {/if}
-              {#if prop.references?.length}
-                <div class="chips-row">
-                  <span class="chips-label">references</span>
-                  {#each prop.references as r (r)}<a class="prop-ref" href={r} target="_blank" rel="noopener">{r.replace(/^https?:\/\//, '')}</a>{/each}
                 </div>
               {/if}
 
@@ -1231,6 +1253,48 @@
   .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
   /* Status line above the tabs (for promote success/failure). */
   .vocab-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 4px 16px; background: #f0fdf4; border-bottom: 1px solid #86efac; }
+  /* Vertical trapezoidal Inferred|Proposed rail (restored 2026-06-06). */
+  .vocab-tabs { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 28px 1fr; overflow: hidden; }
+  .vocab-vrail {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 0; background: #ececec;
+    border-right: 1px solid #e5e5e5;
+    align-items: stretch;
+  }
+  .vocab-vtab {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 16px 0;
+    border: 0; background: transparent; color: #444;
+    cursor: pointer;
+    clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
+    font: inherit; line-height: 1;
+    transition: color 0.1s, background 0.1s;
+  }
+  .vocab-vtab:hover:not(:disabled) { color: #cc2222; background: #e2e2e2; }
+  .vocab-vtab.active { color: #cc2222; background: #fafafa; }
+  .vocab-vtab:disabled { color: #c0c0c0; cursor: not-allowed; opacity: 0.5; }
+  .vocab-vtab-ic { font-size: 13px; opacity: 0.95; line-height: 1; }
+  .vocab-vtab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11px Arial; letter-spacing: 1.2px; line-height: 1; white-space: nowrap; }
+  /* ⓘ Definition & tags popover (encapsulates rich verbiage out of tab body). */
+  .info-popover-wrap { position: relative; }
+  .info-pop-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
+    font: 600 12px Arial; color: #0c4a6e;
+    cursor: pointer;
+  }
+  .info-pop-btn:hover { border-color: #0369a1; background: #e0f2fe; }
+  .info-pop-panel {
+    position: absolute; top: calc(100% + 6px); right: 0;
+    width: 420px; max-width: 90vw; max-height: 75vh;
+    background: #fff; border: 1px solid #0369a1; border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+    padding: 14px 16px; z-index: 50;
+    overflow-y: auto;
+    display: grid; gap: 10px; align-content: start;
+  }
+  .info-pop-panel .def-line.rich { margin: 0; }
   /* Seed-tab host — full-width container; the switcher lives as a popover in
      the detail-head, not as a vertical rail. */
   .seed-tab-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
