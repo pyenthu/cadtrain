@@ -591,14 +591,37 @@ test.describe('graph-editor — phase 6: URL load + legacy banner', () => {
 
   test('shows legacy banner when ?id= points at a part without meta.graph', async ({ page }) => {
     test.setTimeout(30_000);
-    // dt_tube is the K.68-translator-generated part — text body only, no
-    // meta.graph. The editor refuses to hallucinate graph state and surfaces
-    // the banner.
-    await page.goto('/graph-editor?id=dt_tube');
+    // Phase 14 regenerates dt_tube into graph format — so to test the legacy
+    // banner reliably we own the fixture: write a hand-crafted text-body
+    // source (no meta.graph block) to a dedicated id, then load.
+    const legacyId = 'dt_test_legacy_banner';
+    const legacySource = `
+export const meta = {
+  id: '${legacyId}',
+  name: '${legacyId}',
+  kind: 'asm',
+  uses: ['dt_shaft'],
+  params: {
+    r: { default: 2, min: 0.5, max: 10, step: 0.05 },
+    len: { default: 3, min: 0.5, max: 20, step: 0.1 },
+  },
+};
+
+export function ${legacyId}(p) {
+  return dt_shaft(p.r, p.len);
+}
+`.trim();
+
+    const save = await page.request.post('/api/primitives/save', {
+      data: { id: legacyId, source: legacySource, kind: 'asm', dir: 'basic' },
+    });
+    expect(save.ok()).toBe(true);
+
+    await page.goto(`/graph-editor?id=${legacyId}`);
     await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
 
     // 1. Exemplar id picked up from the URL.
-    await expect(page.locator('input.ge-id')).toHaveValue('dt_tube');
+    await expect(page.locator('input.ge-id')).toHaveValue(legacyId);
 
     // 2. Canvas stays empty — no node cards hydrated.
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(0);
@@ -606,8 +629,70 @@ test.describe('graph-editor — phase 6: URL load + legacy banner', () => {
 
     // 3. Amber legacy banner surfaced above the source pane.
     await expect(page.locator('.ge-legacy-banner')).toBeVisible();
-    await expect(page.locator('.ge-legacy-banner')).toContainText('dt_tube');
+    await expect(page.locator('.ge-legacy-banner')).toContainText(legacyId);
     await expect(page.locator('.ge-legacy-banner')).toContainText('legacy');
+  });
+});
+
+// ─── Phase 14 — translator round-trip (vocab.json → graph editor) ────────
+//
+// The K.68 authoring loop closes here. The rule-translator now emits
+// meta.graph as its default for compose rules (kind:'asm'). Regenerating
+// a term via /api/vocab/regenerate writes a graph-format part to the
+// volume; loading via /graph-editor?id= then hydrates it.
+//
+// Before Phase 14: regen wrote a text body → /graph-editor showed the
+// amber legacy banner.
+// After  Phase 14: regen writes meta.graph → /graph-editor hydrates +
+// shows the actual composition.
+
+test.describe('graph-editor — phase 14: vocab.json → translator → editor', () => {
+  test('regenerates `tube` as meta.graph + hydrates in the editor', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // 1. Regenerate the `tube` vocab term — this now emits meta.graph by default.
+    //    The endpoint returns `{ ok, regenerated: [{term, bake}], failures }`
+    //    after filtering — successful runs land in regenerated[], errors in failures[].
+    const regen = await page.request.post('/api/vocab/regenerate?term=tube');
+    expect(regen.ok()).toBe(true);
+    const regenJson = await regen.json();
+    expect(regenJson.ok).toBe(true);
+    expect(regenJson.regenerated?.[0]?.term).toBe('tube');
+    expect(regenJson.regenerated?.[0]?.bake?.verts).toBeGreaterThan(0);
+    expect(regenJson.failures ?? []).toHaveLength(0);
+
+    // 2. Fetch the regenerated source — verify it carries the new format.
+    const srcResp = await page.request.get('/api/primitives/source?name=dt_tube');
+    expect(srcResp.ok()).toBe(true);
+    const srcData = await srcResp.json();
+    expect(srcData.source).toContain('graph: {');
+    expect(srcData.source).toMatch(/alias:\s*['"]A['"]/);
+    expect(srcData.source).toMatch(/alias:\s*['"]B['"]/);
+    expect(srcData.source).toMatch(/op:\s*['"]subtract['"]/);
+    expect(srcData.source).toContain('p.od / 2');
+    expect(srcData.source).toContain('p.od/2 - p.wall');
+    expect(srcData.source).toMatch(/export function dt_tube\(p\)/);
+
+    // 3. Load in /graph-editor — canvas should hydrate, NO legacy banner.
+    await page.goto('/graph-editor?id=dt_tube');
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await expect(page.locator('input.ge-id')).toHaveValue('dt_tube');
+
+    // 4. Two Call cards + one method node — A.subtract(B) shape.
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+    await expect(page.locator('.ge-node-bg.method')).toHaveCount(1);
+
+    // 5. Three params — od, wall, length.
+    await expect(page.locator('.ge-param-card')).toHaveCount(3);
+
+    // 6. Expression args round-tripped — first ƒ input shows `p.od / 2`.
+    await expect(page.locator('input.ge-arg-input.expr').first()).toHaveValue('p.od / 2');
+
+    // 7. NO legacy banner — Phase 6b's banner case is closed for tube now.
+    await expect(page.locator('.ge-legacy-banner')).toHaveCount(0);
+
+    // 8. No bake error — the hydrated graph compiles + renders.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
   });
 });
 

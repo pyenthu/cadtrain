@@ -40,7 +40,7 @@ click `+ Drop`, scrub a slider, drag a wire from the param chip to
 changes (canvas drag mechanics, SVG socket positions, popover anchors,
 keyboard shortcuts).
 
-## Phase rollout (7 phases shipped, more coming)
+## Phase rollout (8 phases shipped, more coming)
 
 ### Phase 1 — `mv` axis param wiring (single-Call)
 
@@ -239,12 +239,33 @@ Three Calls + two subtract method nodes chained. Verify the source
 emits `A.subtract(B).subtract(C)` and bake renders. Tests transitive
 output→input wiring.
 
-### Phase 14 — Translator round-trip (vocab.json → graph editor)
-Modify `rule-translator.ts` to emit `meta.graph` instead of (or
-alongside) the text body for `kind:'compose'` rules. Then: regenerate
-`dt_tube` from vocab, load via `?id=`, assert hydrates into the same
-shape as the editor-built `dt_tube_v2`. The point at which the K.68
-authoring loop closes.
+### ✅ Phase 14 — Translator round-trip (vocab.json → graph editor) — SHIPPED
+
+`src/lib/authoring/rule-translator.ts` gained a `format` option that
+defaults to `'graph'` for `kind:'compose'` rules. The legacy text-body
+path (`format:'text'`) is kept for back-compat.
+
+| Step | Action | Assert |
+|---|---|---|
+| 1 | POST `/api/vocab/regenerate?term=tube` | response `ok: true`, regenerated[0].bake.verts > 0, no failures |
+| 2 | GET `/api/primitives/source?name=dt_tube` | source contains `graph: {` + `A`/`B` aliases + `op: 'subtract'` + the two expressions + `export function dt_tube(p)` |
+| 3 | `goto('/graph-editor?id=dt_tube')` | id pre-filled |
+| 4 | Canvas hydrates | 2 calls + 1 method + 3 params + first `.expr` input shows `p.od / 2` |
+| 5 | No legacy banner | 0 |
+| 6 | No bake error | 0 |
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 14`
+**Runtime**: ~6 s headless
+
+Plus 4 vitest unit tests in `src/lib/authoring/rule-translator-graph.test.ts`
+covering: (a) full graph block + correct ArgValue kinds, (b) idempotency
+modulo random node ids, (c) text-format opt-in still works, (d) default
+is graph-format.
+
+**Important side effect**: this test PERMANENTLY rewrites `dt_tube` on
+the prod volume into graph format. Phase 6b therefore writes its OWN
+legacy fixture (`dt_test_legacy_banner.asm.ts`) rather than relying on
+`dt_tube` still being legacy.
 
 ## Maintaining this suite
 

@@ -28,6 +28,17 @@ import {
 import {
   buildAssemblySource, buildRevolveSource, templatesFor,
 } from '../cad/profile-templates';
+// K.63 graph-based compose-rule emitter (Phase 14). The legacy text-body
+// translator (`translateAsm`) is kept for back-compat; new compositions
+// emit `meta.graph` via `translateAsmGraph`.
+import {
+  newGraph, addCall, addMethod, addContainer, addMv,
+  addParam as gAddParam,
+  setMethodInput, setTransformChild, setTransformAxisValue,
+  asLiteral, asExpr, asParam,
+  type Graph, type NodeId, type ArgValue, type CsgOp,
+} from '../cad/composition-graph';
+import { emitGraph } from '../cad/composition-emit';
 
 // ─── Schema types ──────────────────────────────────────────────────────
 
@@ -86,8 +97,22 @@ export interface Vocabulary {
 // ─── Public API ────────────────────────────────────────────────────────
 
 /** Translate a single vocabulary term into runnable source.
- *  Throws when the term is unknown or the rule references a missing dep. */
-export function translate(term: string, vocab: Vocabulary, opts?: { partId?: string }): string {
+ *  Throws when the term is unknown or the rule references a missing dep.
+ *
+ *  `opts.format` (default `'graph'` for `kind:'asm'`) picks the emitter for
+ *  compose rules:
+ *    - `'graph'` (new, Phase 14) — emits `meta.graph` JSON literal that
+ *      `/graph-editor` can hydrate with hydrateGraph(). Body is the
+ *      machine-generated projection of the graph.
+ *    - `'text'` (legacy) — emits the old TreeNode-based text body via
+ *      applyToSource. Kept so existing dt_* files don't churn unless
+ *      explicitly regenerated.
+ *  `kind:'rev'` (primitive) is unaffected — leaves don't have compositions. */
+export function translate(
+  term: string,
+  vocab: Vocabulary,
+  opts?: { partId?: string; format?: 'graph' | 'text' },
+): string {
   const entry = vocab.terms[term];
   if (!entry) throw new Error(`translate: unknown vocabulary term "${term}"`);
   const partId = opts?.partId ?? entry.exemplar;
@@ -97,7 +122,12 @@ export function translate(term: string, vocab: Vocabulary, opts?: { partId?: str
     rule_hash: hashRule(entry.rule),
   };
   if (entry.kind === 'rev') return translateRev(entry, partId, traceTag);
-  if (entry.kind === 'asm') return translateAsm(entry, vocab, partId, traceTag);
+  if (entry.kind === 'asm') {
+    const fmt = opts?.format ?? 'graph';
+    return fmt === 'graph'
+      ? translateAsmGraph(entry, vocab, partId, traceTag)
+      : translateAsm(entry, vocab, partId, traceTag);
+  }
   throw new Error(`translate: unsupported kind "${(entry as any).kind}"`);
 }
 
@@ -333,6 +363,152 @@ function treeFromRuleNode(node: any, vocab: Vocabulary, imports: Array<{ alias: 
     default:
       throw new Error(`treeFromRuleNode: unknown node type "${node.type}"`);
   }
+}
+
+// ─── Compose (.asm.ts) — K.63 graph emit path (Phase 14) ─────────────
+//
+// Same VocabComposeRule input as translateAsm, different output: emits
+// `meta.graph` (the new editor's data model) instead of the legacy text
+// body. The body is the machine-generated projection — what /graph-editor
+// re-emits whenever the user changes the graph. Loading this part in
+// /graph-editor produces the same canvas state as building it interactively.
+
+function translateAsmGraph(entry: VocabEntry, vocab: Vocabulary, partId: string, traceTag: any): string {
+  const rule = entry.rule as VocabComposeRule;
+  if (rule.kind !== 'compose') throw new Error('translateAsmGraph: rule.kind must be "compose"');
+
+  // 1. Start fresh + add assembly params first so wired args can reference them.
+  let g: Graph = newGraph();
+  for (const [name, p] of Object.entries(entry.params)) {
+    g = gAddParam(g, name, {
+      label: p.label ?? name,
+      min: p.min,
+      max: p.max,
+      step: p.step,
+      default: typeof p.default === 'number' ? p.default : Number(p.default) || 0,
+      unit: p.unit,
+    });
+  }
+
+  // 2. Build a map alias → exemplar id so calls resolve their import.
+  const aliasToSrc = new Map<string, string>();
+  for (const imp of rule.imports ?? []) {
+    const childEntry = vocab.terms[imp.term];
+    if (!childEntry) throw new Error(`translateAsmGraph: import term "${imp.term}" not in vocabulary (alias ${imp.alias})`);
+    aliasToSrc.set(imp.alias, childEntry.exemplar);
+  }
+
+  // 3. Walk the composition tree, building Graph nodes as we go.
+  const built = ruleToGraph(g, rule.composition, rule.imports, vocab, aliasToSrc);
+  g = built.graph;
+
+  // 4. Emit + trace-tag.
+  const { source } = emitGraph(g, { id: partId, description: entry.definition });
+  return injectTraceTag(source, traceTag);
+}
+
+/** Recursive vocab-rule-node → Graph builder. Returns the new graph + the
+ *  ID of the node that was just added (so the parent can wire to it).
+ *
+ *  Call nodes: aliased to the rule's import alias (A, B, …) — overriding
+ *  addCall's auto-generated alias to keep the user-facing labels matching
+ *  the vocabulary entry.
+ *  Method nodes: dropped as placeholders, then setMethodInput wires obj+arg
+ *  AFTER the children are built. The downside (a brief intermediate state
+ *  where the method points at empty ids) is invisible — only the final
+ *  graph is observable. */
+function ruleToGraph(
+  g: Graph,
+  node: any,
+  imports: Array<{ alias: string; term: string }>,
+  vocab: Vocabulary,
+  aliasToSrc: Map<string, string>,
+): { graph: Graph; nodeId: NodeId } {
+  if (!node || typeof node !== 'object') throw new Error('ruleToGraph: node is not an object');
+  switch (node.type) {
+    case 'call': {
+      const alias = node.fn;
+      const src = aliasToSrc.get(alias) ?? alias;
+      const importEntry = imports.find((i) => i.alias === alias);
+      const childTerm = importEntry ? vocab.terms[importEntry.term] : undefined;
+      const childKeys = childTerm ? Object.keys(childTerm.params) : Object.keys(node.args ?? {});
+      const argsObj: Record<string, any> = node.args ?? {};
+      const args: Record<string, ArgValue> = {};
+      for (const k of childKeys) {
+        const v = argsObj[k];
+        const raw = v != null ? String(v) : (childTerm ? String(childTerm.params[k]!.default) : '0');
+        args[k] = exprOrLiteralOrParam(raw);
+      }
+      const r = addCall(g, src, args);
+      // Override the auto-generated alias to match the rule's import alias.
+      const callNode = r.graph.nodes[r.id];
+      if (callNode && callNode.type === 'call') {
+        callNode.alias = alias;
+      }
+      return { graph: r.graph, nodeId: r.id };
+    }
+    case 'method': {
+      const op = node.op as CsgOp;
+      // Build children first so they're root-level nodes.
+      const objR = ruleToGraph(g, node.obj, imports, vocab, aliasToSrc);
+      const argR = ruleToGraph(objR.graph, node.arg, imports, vocab, aliasToSrc);
+      // Now drop a method node + wire its obj/arg.
+      const mAdded = addMethod(argR.graph, op, objR.nodeId, argR.nodeId);
+      return { graph: mAdded.graph, nodeId: mAdded.id };
+    }
+    case 'list': {
+      // Build the children flat at the root (the graph's root list is
+      // already a list — we don't need a nested container for a top-level
+      // list rule). Returns the LAST built nodeId as the "rooted" anchor.
+      let g2 = g; let lastId: NodeId | null = null;
+      for (const child of node.children ?? []) {
+        const r = ruleToGraph(g2, child, imports, vocab, aliasToSrc);
+        g2 = r.graph; lastId = r.nodeId;
+      }
+      if (!lastId) {
+        // Empty list — produce a placeholder container so emit doesn't crash.
+        const c = addContainer(g2, 'list');
+        return { graph: c.graph, nodeId: c.id };
+      }
+      return { graph: g2, nodeId: lastId };
+    }
+    case 'mv': {
+      // Build the child first so we have its id.
+      const childR = ruleToGraph(g, node.child, imports, vocab, aliasToSrc);
+      const ox = exprOrLiteralOrParam(String(node.offset_x ?? 0));
+      const oy = exprOrLiteralOrParam(String(node.offset_y ?? 0));
+      const oz = exprOrLiteralOrParam(String(node.offset_z ?? 0));
+      const m = addMv(childR.graph, childR.nodeId, [ox, oy, oz]);
+      return { graph: m.graph, nodeId: m.id };
+    }
+    case 'stack': {
+      // The new graph model doesn't have stack as a native type — surface
+      // this clearly until we model it (likely Phase 15).
+      throw new Error('ruleToGraph: stack-type composition not yet supported in graph format (Phase 15 — use format:"text")');
+    }
+    case 'repeat': {
+      throw new Error('ruleToGraph: repeat-type composition not yet supported in graph format');
+    }
+    default:
+      throw new Error(`ruleToGraph: unknown node type "${node.type}"`);
+  }
+}
+
+/** Classify an arg expression string into the right ArgValue shape:
+ *    "1.5" / "0"   → literal number
+ *    "p.foo"        → wired param (param chip)
+ *    anything else  → expression (e.g. "p.od / 2 - p.wall", "Math.PI/4")
+ *  Pure literals MUST round-trip via `Number(str)` (no NaN) AND the trimmed
+ *  string MUST look like a number to avoid mis-classifying `'A'` etc. as 0. */
+function exprOrLiteralOrParam(raw: string): ArgValue {
+  const s = raw.trim();
+  if (/^-?\d+(\.\d+)?$/.test(s)) {
+    const n = Number(s);
+    if (!isNaN(n)) return asLiteral(n);
+  }
+  const pm = /^p\.([a-zA-Z_]\w*)$/.exec(s);
+  if (pm) return asParam(pm[1]!);
+  return asExpr(s);
 }
 
 // ─── Trace tag + helpers ───────────────────────────────────────────────
