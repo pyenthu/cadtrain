@@ -433,3 +433,113 @@ test.describe('graph-editor — generates parts via UI', () => {
     expect(data.source).toContain('p.outerR');
   });
 });
+
+// ─── Phase 5 — vocabulary replication (dt_tube) ──────────────────────────
+//
+// This is the first proof that the new graph editor can express the
+// vocabulary's canonical compose pattern: A.subtract(B) where each arg
+// is either a literal, a param wire, or a free-text expression
+// (e.g. `p.od / 2 - p.wall`). Matches the on-disk shape of `dt_tube`
+// (the vocab term `tube` translated to a flat .asm.ts).
+//
+// If this test passes, the graph editor is structurally capable of
+// expressing every K.68 vocab compose-rule. The next slice can either
+//   (a) port the rule-translator to emit meta.graph natively, OR
+//   (b) leave the translator alone and use the editor as the authoring
+//       surface for new vocab terms.
+
+test.describe('graph-editor — phase 5: vocab replication (dt_tube)', () => {
+  test('rebuilds dt_tube — A.subtract(B) with expressions + shared length param', async ({ page }) => {
+    test.setTimeout(60_000);
+    await openEditor(page);
+    await setExemplar(page, 'dt_tube_v2');
+
+    // ── 1. Add params: od (outer dia), wall, length — vocab `tube` schema.
+    await addParam(page, 'od', 4.5);
+    await addParam(page, 'wall', 0.5);
+    await addParam(page, 'length', 3);
+    await expect(page.locator('.ge-param-card')).toHaveCount(3);
+
+    // ── 2. Drop two dt_shaft Calls — A (outer body), B (inner bore).
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0);
+    const callB = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(1);
+
+    // ── 3. A.r := expression `p.od / 2` — flip the r-arg to expr mode + fill.
+    //    Arg rows render in meta.params order (dt_shaft: r, len, segments)
+    //    so .nth(0) targets the r row.
+    //    `dispatchEvent('click')` routes the event directly to the ƒ button
+    //    bypassing the 3D bake pane that can intercept pointer events when the
+    //    Call card overlaps with it at small viewport widths. Same pattern as
+    //    dragBetween for SVG wires — we're testing data flow, not actionability.
+    const aRowR = callA.locator('.ge-arg-row').nth(0);
+    await aRowR.locator('.ge-arg-fx').dispatchEvent('click');
+    await aRowR.locator('input.ge-arg-input.expr').fill('p.od / 2', { force: true });
+
+    // ── 4. Wire p.length output → A.len input (socket index 1).
+    const pLenOut = page.locator('.ge-param-card', { hasText: 'length' })
+      .locator('circle.ge-sock.out.param').first();
+    const aLenIn = callA.locator('circle.ge-sock.in.param:not(.tiny)').nth(1);
+    await dragBetween(page, pLenOut, aLenIn);
+
+    // ── 5. B.r := expression `p.od / 2 - p.wall` — inner bore radius.
+    const bRowR = callB.locator('.ge-arg-row').nth(0);
+    await bRowR.locator('.ge-arg-fx').dispatchEvent('click');
+    await bRowR.locator('input.ge-arg-input.expr').fill('p.od / 2 - p.wall', { force: true });
+
+    // ── 6. Wire p.length → B.len.
+    const bLenIn = callB.locator('circle.ge-sock.in.param:not(.tiny)').nth(1);
+    await dragBetween(page, pLenOut, bLenIn);
+
+    // ── 7. Drop the subtract method node.
+    await pickCsg(page, 'subtract');
+    await expect(page.locator('.ge-node-bg.method')).toHaveCount(1);
+
+    // ── 8. Wire A → method.obj (subject) and B → method.arg (cutter).
+    const method = page.locator('g.ge-node:has(rect.ge-node-bg.method)').first();
+    const aOut   = callA.locator('circle.ge-sock.out:not(.in)').first();
+    const bOut   = callB.locator('circle.ge-sock.out:not(.in)').first();
+    const mObj   = method.locator('circle.ge-sock.in.obj').first();
+    const mArg   = method.locator('circle.ge-sock.in.arg').first();
+    await dragBetween(page, aOut, mObj);
+    await dragBetween(page, bOut, mArg);
+
+    // ── 9. Source assertions — the live source pane has the full vocab pattern.
+    const src = page.locator('.ge-source');
+    await expect(src).toContainText(/A\.subtract\(B\)/);
+    await expect(src).toContainText('p.od / 2');
+    await expect(src).toContainText('p.od / 2 - p.wall');
+    await expect(src).toContainText('p.length');
+
+    // ── 10. No bake error.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+
+    // ── 11. Save → volume.
+    await page.getByRole('button', { name: /Save/ }).click();
+    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+
+    // ── 12. Fetch back from volume; the on-disk source carries:
+    //       (a) meta.graph block (proof of new format)
+    //       (b) kind: 'expr' for the two r-args
+    //       (c) kind: 'param' for the len wires
+    //       (d) all three params in the params schema.
+    const r = await page.request.get('/api/primitives/source?name=dt_tube_v2');
+    expect(r.ok()).toBe(true);
+    const data = await r.json();
+    expect(data.source).toContain('graph: {');
+    expect(data.source).toMatch(/kind:\s*['"]expr['"]/);
+    expect(data.source).toMatch(/kind:\s*['"]param['"]/);
+    expect(data.source).toContain('p.od / 2');
+    expect(data.source).toContain('p.od / 2 - p.wall');
+    expect(data.params?.od).toBeTruthy();
+    expect(data.params?.wall).toBeTruthy();
+    expect(data.params?.length).toBeTruthy();
+    // Function signature must take `p` since the body references p.od + p.wall
+    // + p.length — without it, the loader can't evaluate the assembly.
+    // (Render-correctness is covered by the in-editor .ge-err assertion above.)
+    expect(data.source).toMatch(/export function dt_tube_v2\(p\)/);
+  });
+});

@@ -33,6 +33,7 @@
     removeNode,
     setLayout,
     asLiteral,
+    asExpr,
     asParam,
     addParam,
     removeParam,
@@ -275,6 +276,29 @@
   function deleteNode(id: string) { graph = removeNode(graph, id); }
   function onArgEdit(id: string, key: string, value: number) {
     graph = setCallArg(graph, id, key, asLiteral(value));
+  }
+  /** Convert an arg between literal and expression modes (ƒ toggle).
+   *  literal → expr seeded with the literal value as text (e.g. 1.5 → "1.5")
+   *  expr → literal parsed via parseFloat, falling back to 0 if unparseable
+   *  param  → expr seeded as "p.<paramName>" (no-op for the user — they could
+   *           click × to fully unwire, but starting from the live binding is
+   *           a natural way to compose `p.od / 2`). */
+  function toggleArgExprMode(id: string, key: string) {
+    const node = graph.nodes[id];
+    if (!node || node.type !== 'call') return;
+    const cur = (node as any).args[key];
+    if (cur?.kind === 'expr') {
+      const n = parseFloat(String(cur.expr));
+      graph = setCallArg(graph, id, key, asLiteral(isNaN(n) ? 0 : n));
+    } else if (cur?.kind === 'param') {
+      graph = setCallArg(graph, id, key, asExpr(`p.${cur.param}`));
+    } else {
+      const seed = cur?.kind === 'literal' ? String(cur.value) : '0';
+      graph = setCallArg(graph, id, key, asExpr(seed));
+    }
+  }
+  function onArgExprEdit(id: string, key: string, expr: string) {
+    graph = setCallArg(graph, id, key, asExpr(expr));
   }
   function onTransformAxis(id: string, axis: 0 | 1 | 2, value: number) {
     graph = setTransformAxis(graph, id, axis, value);
@@ -585,15 +609,19 @@
                         <button class="ge-arg-key wire-btn" type="button" title="Wire to outer param"
                           onclick={(ev) => openWirePop(ev, n.id, k)}>{k}</button>
                         {#if (v as any).kind === 'literal'}
-                          <input class="ge-arg-input" type="number" step="0.05"
-                            value={(v as any).value}
-                            use:dragNumber={{
-                              step: 0.05,
-                              get: () => Number((v as any).value) || 0,
-                              set: (val) => onArgEdit(n.id, k, val),
-                            }}
-                            oninput={(e) => onArgEdit(n.id, k, Number((e.target as HTMLInputElement).value))}
-                          />
+                          <span class="ge-arg-cell">
+                            <input class="ge-arg-input" type="number" step="0.05"
+                              value={(v as any).value}
+                              use:dragNumber={{
+                                step: 0.05,
+                                get: () => Number((v as any).value) || 0,
+                                set: (val) => onArgEdit(n.id, k, val),
+                              }}
+                              oninput={(e) => onArgEdit(n.id, k, Number((e.target as HTMLInputElement).value))}
+                            />
+                            <button class="ge-arg-fx" type="button" title="Switch to expression (ƒ)"
+                              onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                          </span>
                         {:else if (v as any).kind === 'param'}
                           <span class="ge-arg-pchip" title="Wired to param">
                             p.{(v as any).param}
@@ -601,7 +629,15 @@
                               onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
                           </span>
                         {:else}
-                          <span class="ge-arg-pchip ƒ">ƒ {(v as any).expr}</span>
+                          <span class="ge-arg-cell">
+                            <input class="ge-arg-input expr" type="text"
+                              placeholder="e.g. p.od / 2"
+                              value={(v as any).expr}
+                              oninput={(e) => onArgExprEdit(n.id, k, (e.target as HTMLInputElement).value)}
+                            />
+                            <button class="ge-arg-fx on" type="button" title="Back to literal"
+                              onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                          </span>
                         {/if}
                       </div>
                     {/each}
@@ -916,6 +952,15 @@
   .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; cursor: ew-resize; }
   .ge-arg-input:hover { background: #f0f9ff; }
   .ge-arg-input:focus { cursor: text; outline: 1px solid #0369a1; background: #fff; }
+  .ge-arg-input.expr { cursor: text; background: #faf5ff; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-arg-input.expr:focus { background: #fff; outline-color: #6d28d9; }
+  /* Two-element cell: [ input | ƒ ] — keeps the grid 70px-key + 1fr-value
+     layout intact while giving each arg row a literal/expr mode toggle. */
+  .ge-arg-cell { display: flex; align-items: stretch; gap: 2px; }
+  .ge-arg-cell > input { flex: 1 1 auto; min-width: 0; }
+  .ge-arg-fx { flex: 0 0 auto; padding: 0 5px; font: 700 11px serif; background: transparent; border: 1px solid #e5e7eb; border-radius: 2px; color: #6b7280; cursor: pointer; line-height: 1; }
+  .ge-arg-fx:hover { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-arg-fx.on { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
   .ge-param-card-input { cursor: ew-resize; }
   .ge-param-card-input:focus { cursor: text; }
   :global(body.dragnum-active) { cursor: ew-resize !important; }

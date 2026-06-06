@@ -94,10 +94,15 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   };
 
   const metaText = `export const meta = ${stringifyTyped(meta, 0)};`;
+  // The assembly contract (K.63) is `fn(p)` where `p` is the params object —
+  // `p.<name>` refs in expression ArgValues + the loader's param expansion
+  // both assume it. Emit the signature with `p` whenever ANY param is declared,
+  // otherwise omit (a paramless assembly is also valid for the trivial case).
+  const sig = Object.keys(graph.params).length > 0 ? 'p' : '';
   const fnText =
     `// AUTO-GENERATED from meta.graph by composition-emit.ts.\n` +
     `// Edits to this body are DISCARDED — the editor regenerates from the graph on every save.\n` +
-    `export function ${opts.id}() {\n${lines.join('\n')}\n}\n`;
+    `export function ${opts.id}(${sig}) {\n${lines.join('\n')}\n}\n`;
 
   const source = `${metaText}\n\n${fnText}`;
   return { source, meta, body: lines.join('\n'), rootVar };
