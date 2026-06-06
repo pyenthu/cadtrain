@@ -15,6 +15,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "PWHEAD=1 playwright test",
+    "test:graph": "playwright test tests/e2e/graph-editor.spec.ts",
+    "test:graph:headed": "PWHEAD=1 playwright test tests/e2e/graph-editor.spec.ts",
     "test:volume": "playwright test tests/e2e/volume.spec.ts",
     "test:e2e:report": "playwright show-report tests/results/playwright-report",
     "record:task": "bun run scripts/harvest_e2e_videos.ts --task"
