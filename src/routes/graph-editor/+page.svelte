@@ -32,9 +32,17 @@
     removeNode,
     setLayout,
     asLiteral,
+    asParam,
+    addParam,
+    removeParam,
+    wrapInTransform,
+    unwrapTransform,
+    inlineTransformOf,
     type Graph,
     type NodeId,
     type CsgOp,
+    type MvNode,
+    type RotNode,
   } from '$lib/cad/composition-graph';
   import { emitGraph } from '$lib/cad/composition-emit';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
@@ -236,6 +244,65 @@
   }
   function resetGraph() { graph = newGraph(); }
 
+  // ─── inline transforms on Call cards ────────────────────────────────────
+  function toggleInlineTransform(callId: NodeId, kind: 'mv' | 'rot') {
+    const existing = inlineTransformOf(graph, callId, kind);
+    if (existing) {
+      graph = unwrapTransform(graph, existing);
+    } else {
+      graph = wrapInTransform(graph, callId, kind).graph;
+    }
+  }
+  /** Inline wrappers should NOT render on the main canvas — their xyz inputs
+   *  surface inside their child's Call card instead. */
+  function isInlineWrapper(nodeId: NodeId): boolean {
+    const n = graph.nodes[nodeId];
+    if (!n || (n.type !== 'mv' && n.type !== 'rot')) return false;
+    const childId = (n as MvNode | RotNode).child;
+    if (!childId) return false;
+    const child = graph.nodes[childId];
+    return child?.type === 'call' && inlineTransformOf(graph, childId, n.type) === nodeId;
+  }
+
+  // ─── assembly-level params (Slice 3 first cut) ──────────────────────────
+  let newParamName = $state('');
+  let newParamDefault = $state(0);
+  function onAddParam() {
+    const name = newParamName.trim();
+    if (!name) return;
+    graph = addParam(graph, name, { default: newParamDefault, step: 0.05 });
+    newParamName = ''; newParamDefault = 0;
+  }
+  function onRemoveParam(name: string) {
+    const r = removeParam(graph, name);
+    if (r.orphans.length > 0) {
+      // Surface to the user — the editor refuses, expects them to unwire first.
+      alert(`Can't remove ${name}: ${r.orphans.length} call arg${r.orphans.length === 1 ? '' : 's'} still wired to it. Unwire first.`);
+      return;
+    }
+    graph = r.graph;
+  }
+  /** Wire popover state — when the user clicks an arg's wire icon, this opens
+   *  a small menu with param choices. */
+  let wirePop = $state<{ callId: NodeId; key: string; x: number; y: number } | null>(null);
+  function openWirePop(ev: MouseEvent, callId: NodeId, key: string) {
+    ev.stopPropagation();
+    wirePop = { callId, key, x: ev.clientX, y: ev.clientY };
+  }
+  function closeWirePop() { wirePop = null; }
+  function wireArgToParam(callId: NodeId, key: string, paramName: string) {
+    graph = setCallArg(graph, callId, key, asParam(paramName));
+    wirePop = null;
+  }
+  function unwireArgToLiteral(callId: NodeId, key: string) {
+    const node = graph.nodes[callId];
+    if (!node || node.type !== 'call') return;
+    const cur = (node as any).args[key];
+    const literal = cur?.kind === 'literal' ? cur.value : (graph.params[cur?.param]?.default ?? 0);
+    graph = setCallArg(graph, callId, key, asLiteral(typeof literal === 'number' ? literal : 0));
+    wirePop = null;
+  }
+
   // ─── Save ─────────────────────────────────────────────────────────────
   let saveBusy = $state(false);
   async function saveGraph() {
@@ -266,7 +333,8 @@
   }
 
   // Derived view-helpers.
-  let allNodes = $derived(Object.values(graph.nodes).filter((n) => n.type !== 'list'));
+  let allNodes = $derived(Object.values(graph.nodes).filter((n) => n.type !== 'list' && !isInlineWrapper(n.id)));
+  let paramEntries = $derived(Object.entries(graph.params));
   let filteredSrcs = $derived.by(() => {
     const q = pickerFilter.trim().toLowerCase();
     if (!q) return pickerSrcs;
@@ -290,6 +358,24 @@
   <main class="ge-grid">
     <!-- LEFT — graph canvas -->
     <section class="ge-canvas-pane">
+      <!-- Parameters strip — assembly-level dials. Click +Param to add;
+           click an arg's wire icon on a Call to wire to a param. -->
+      <div class="ge-param-strip">
+        <span class="ge-param-strip-label">Params</span>
+        {#each paramEntries as [name, p] (name)}
+          <span class="ge-param-chip">
+            <span class="ge-param-chip-name">{name}</span>
+            <span class="ge-param-chip-val">{(p as any).default}</span>
+            <button class="ge-param-chip-x" type="button" title="Remove param" onclick={() => onRemoveParam(name)}>×</button>
+          </span>
+        {/each}
+        <input class="ge-param-input" type="text" placeholder="name" bind:value={newParamName}/>
+        <input class="ge-param-input num" type="number" step="0.05" placeholder="0" bind:value={newParamDefault}/>
+        <button class="ge-param-add" type="button" onclick={onAddParam}>+ Param</button>
+        {#if paramEntries.length === 0}
+          <span class="ge-param-hint">Add an outer dial that multiple Calls share. Click an arg's ƒ icon to wire.</span>
+        {/if}
+      </div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <svg
@@ -347,26 +433,45 @@
             <g transform="translate({pos.x},{pos.y})" class="ge-node">
               {#if n.type === 'call'}
                 {@const call = n as any}
+                {@const inlineMv  = inlineTransformOf(graph, n.id, 'mv')}
+                {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
+                {@const mvNode    = inlineMv  ? (graph.nodes[inlineMv]  as MvNode)  : null}
+                {@const rotNode   = inlineRot ? (graph.nodes[inlineRot] as RotNode) : null}
+                {@const cardH     = size.h + (inlineMv ? 80 : 0) + (inlineRot ? 80 : 0)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={size.h} rx="6"
+                <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={cardH} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
                 />
                 <text x="10" y="22" class="ge-node-title">{call.alias} · {call.src}</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 56} y="22" class="ge-xform-btn" class:on={!!inlineMv}
+                  onpointerdown={(ev) => { ev.stopPropagation(); toggleInlineTransform(n.id, 'mv'); }}>⇄</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 38} y="22" class="ge-xform-btn" class:on={!!inlineRot}
+                  onpointerdown={(ev) => { ev.stopPropagation(); toggleInlineTransform(n.id, 'rot'); }}>↻</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
+                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
                     {#each Object.entries(call.args ?? {}) as [k, v] (k)}
                       <div class="ge-arg-row">
-                        <span class="ge-arg-key">{k}</span>
+                        <button class="ge-arg-key wire-btn" type="button" title="Wire to outer param"
+                          onclick={(ev) => openWirePop(ev, n.id, k)}>{k}</button>
                         {#if (v as any).kind === 'literal'}
                           <input class="ge-arg-input" type="number" step="0.05"
                             value={(v as any).value}
                             oninput={(e) => onArgEdit(n.id, k, Number((e.target as HTMLInputElement).value))}
                           />
                         {:else if (v as any).kind === 'param'}
-                          <span class="ge-arg-pchip">p.{(v as any).param}</span>
+                          <span class="ge-arg-pchip" title="Wired to param">
+                            p.{(v as any).param}
+                            <button class="ge-arg-pchip-x" type="button"
+                              onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
+                          </span>
                         {:else}
                           <span class="ge-arg-pchip ƒ">ƒ {(v as any).expr}</span>
                         {/if}
@@ -374,13 +479,41 @@
                     {/each}
                   </div>
                 </foreignObject>
-                <!-- Output socket -->
+                {#if mvNode}
+                  <foreignObject x="6" y={size.h + 4} width={size.w - 12} height="72">
+                    <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
+                      <div class="ge-inline-label">⇄ mv</div>
+                      {#each ['x','y','z'] as axis, i (axis)}
+                        <div class="ge-arg-row tight">
+                          <span class="ge-arg-key">{axis}</span>
+                          <input class="ge-arg-input" type="number" step="0.5"
+                            value={(mvNode.offset[i] as any).kind === 'literal' ? (mvNode.offset[i] as any).value : 0}
+                            oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                          />
+                        </div>
+                      {/each}
+                    </div>
+                  </foreignObject>
+                {/if}
+                {#if rotNode}
+                  <foreignObject x="6" y={size.h + 4 + (inlineMv ? 80 : 0)} width={size.w - 12} height="72">
+                    <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
+                      <div class="ge-inline-label">↻ rot</div>
+                      {#each ['rx','ry','rz'] as axis, i (axis)}
+                        <div class="ge-arg-row tight">
+                          <span class="ge-arg-key">{axis}</span>
+                          <input class="ge-arg-input" type="number" step="1"
+                            value={(rotNode.rot[i] as any).kind === 'literal' ? (rotNode.rot[i] as any).value : 0}
+                            oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                          />
+                        </div>
+                      {/each}
+                    </div>
+                  </foreignObject>
+                {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={cardH / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
 
               {:else if n.type === 'method'}
                 {@const m = n as any}
@@ -485,6 +618,23 @@
     </section>
   </main>
 
+  {#if wirePop}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeWirePop}></div>
+    <div class="ge-wire-pop" style="left: {wirePop.x}px; top: {wirePop.y}px">
+      <div class="ge-wire-head">wire <code>{wirePop.key}</code> to:</div>
+      {#if paramEntries.length === 0}
+        <div class="ge-empty">no params yet — add one in the strip above</div>
+      {/if}
+      {#each paramEntries as [name, p] (name)}
+        <button class="ge-wire-item" type="button"
+          onclick={() => wireArgToParam(wirePop!.callId, wirePop!.key, name)}>p.{name} <span class="ge-wire-default">({(p as any).default})</span></button>
+      {/each}
+      <button class="ge-wire-item literal" type="button"
+        onclick={() => unwireArgToLiteral(wirePop!.callId, wirePop!.key)}>← back to literal</button>
+    </div>
+  {/if}
   {#if pickerOpen}
     <div class="ge-picker-shade" onclick={closePicker}></div>
     <div class="ge-picker">
@@ -530,6 +680,19 @@
   .ge-stat { font: 11px ui-monospace, monospace; color: #6b7280; margin-left: auto; }
   .ge-grid { display: grid; grid-template-columns: 40% 35% 25%; overflow: hidden; }
   .ge-canvas-pane { border-right: 1px solid #e5e7eb; overflow: hidden; position: relative; }
+  /* Parameters strip above the canvas. */
+  .ge-param-strip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid #e7e5e4; background: #fffbeb; flex-wrap: wrap; min-height: 32px; }
+  .ge-param-strip-label { font: 600 11px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.6px; margin-right: 4px; }
+  .ge-param-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 8px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; font: 11px Arial; }
+  .ge-param-chip-name { font: 600 11px ui-monospace, monospace; }
+  .ge-param-chip-val { font: 10px ui-monospace, monospace; color: #92400e; }
+  .ge-param-chip-x { background: transparent; border: 0; font: 12px Arial; color: #b91c1c; cursor: pointer; padding: 0 2px; }
+  .ge-param-input { padding: 2px 6px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; width: 90px; }
+  .ge-param-input.num { width: 60px; }
+  .ge-param-add { padding: 2px 10px; font: 600 11px Arial; background: #fbbf24; color: #78350f; border: 0; border-radius: 3px; cursor: pointer; }
+  .ge-param-add:hover { background: #d97706; color: #fff; }
+  .ge-param-hint { font: 11px Arial; color: #92400e; flex: 1; }
+
   .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none; }
   .ge-canvas.dragging { cursor: grabbing; }
 
@@ -547,8 +710,19 @@
   .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 1px 0; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
   .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; }
-  .ge-arg-pchip { padding: 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; }
+  .ge-arg-pchip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; }
   .ge-arg-pchip.ƒ { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-arg-pchip-x { background: transparent; border: 0; font: 11px Arial; color: #b91c1c; cursor: pointer; padding: 0 2px; line-height: 1; }
+  .ge-arg-key.wire-btn { background: transparent; border: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; color: #6b7280; cursor: pointer; text-align: left; border-radius: 2px; }
+  .ge-arg-key.wire-btn:hover { background: #fef3c7; color: #78350f; }
+  .ge-xform-btn { font: 13px Arial; fill: #6b7280; cursor: pointer; user-select: none; }
+  .ge-xform-btn:hover { fill: #6d28d9; }
+  .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }
+  .ge-inline-xform { font: 11px Arial; color: #1f2937; line-height: 1.4; padding: 4px 0 0; border-top: 1px dashed #c4b5fd; }
+  .ge-inline-xform.mv  { color: #5b21b6; }
+  .ge-inline-xform.rot { color: #831843; border-top-color: #f9a8d4; }
+  .ge-inline-label { font: 600 10px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 2px; }
+  .ge-arg-row.tight { padding: 0; }
   .ge-canvas-hint { font: 13px Arial; fill: #9ca3af; }
 
   .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; }
@@ -575,6 +749,14 @@
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 
   .ge-picker-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.2); z-index: 100; }
+  .ge-wire-shade { position: fixed; inset: 0; background: transparent; z-index: 99; }
+  .ge-wire-pop { position: fixed; min-width: 200px; background: #fff; border: 1px solid #fbbf24; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); padding: 4px 0; z-index: 100; }
+  .ge-wire-head { padding: 6px 10px; font: 600 11px Arial; color: #78350f; border-bottom: 1px solid #fef3c7; }
+  .ge-wire-head code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
+  .ge-wire-item { width: 100%; padding: 5px 12px; background: transparent; border: 0; text-align: left; font: 12px ui-monospace, monospace; color: #78350f; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+  .ge-wire-item:hover { background: #fef3c7; }
+  .ge-wire-item.literal { color: #6b7280; border-top: 1px solid #f1f5f9; }
+  .ge-wire-default { font: 10px ui-monospace, monospace; color: #92400e; }
   .ge-picker {
     position: fixed; top: 60px; left: 16px; width: 340px; max-height: 70vh;
     background: #fff; border: 1px solid #0369a1; border-radius: 6px;

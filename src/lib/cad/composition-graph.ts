@@ -331,6 +331,81 @@ export function setTransformAxis(graph: Graph, transformId: NodeId, axis: 0 | 1 
   return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: newNode } });
 }
 
+/** Find the parent container (list/stack/group) whose children include nodeId.
+ *  Returns null if none (e.g. root or an orphan). */
+export function findParentContainer(graph: Graph, nodeId: NodeId): NodeId | null {
+  for (const n of Object.values(graph.nodes)) {
+    if ((n.type === 'list' || n.type === 'stack' || n.type === 'group') && n.children.includes(nodeId)) {
+      return n.id;
+    }
+  }
+  return null;
+}
+
+/** Wrap an existing Call (or any node) in a fresh mv/rot transform that takes
+ *  its place in the parent container's children. Used by inline-transform UI:
+ *  clicking ⇄ on a Call card wraps the Call in a mv node and the wrapper is
+ *  then rendered as part of the Call's visual card. */
+export function wrapInTransform(graph: Graph, targetId: NodeId, kind: 'mv' | 'rot'): { graph: Graph; id: NodeId } {
+  const parentId = findParentContainer(graph, targetId);
+  if (!parentId) return { graph, id: '' };
+  const parent = graph.nodes[parentId];
+  if (!parent || (parent.type !== 'list' && parent.type !== 'stack' && parent.type !== 'group')) {
+    return { graph, id: '' };
+  }
+  const id = newNodeId();
+  const defOffset: [ArgValue, ArgValue, ArgValue] = [asLiteral(0), asLiteral(0), asLiteral(0)];
+  const wrapper: GraphNode = kind === 'mv'
+    ? { id, type: 'mv',  child: targetId, offset: defOffset }
+    : { id, type: 'rot', child: targetId, rot:    defOffset };
+  // Replace targetId with id in the parent's children, preserving position.
+  const newChildren = parent.children.map((c) => (c === targetId ? id : c));
+  const newParent = { ...parent, children: newChildren } as typeof parent;
+  return {
+    graph: finalize({
+      ...graph,
+      nodes: { ...graph.nodes, [id]: wrapper, [parentId]: newParent },
+      // No layout slot for inline wrappers — they render inside their child.
+    }),
+    id,
+  };
+}
+
+/** Inverse of wrapInTransform — drop the wrapper, hoist its child back into
+ *  the parent at the wrapper's position. */
+export function unwrapTransform(graph: Graph, wrapperId: NodeId): Graph {
+  const wrapper = graph.nodes[wrapperId];
+  if (!wrapper || (wrapper.type !== 'mv' && wrapper.type !== 'rot')) return graph;
+  const childId = (wrapper as MvNode | RotNode).child;
+  if (!childId) return removeNode(graph, wrapperId);
+  const parentId = findParentContainer(graph, wrapperId);
+  if (!parentId) return graph;
+  const parent = graph.nodes[parentId];
+  if (!parent || (parent.type !== 'list' && parent.type !== 'stack' && parent.type !== 'group')) return graph;
+  const newChildren = parent.children.map((c) => (c === wrapperId ? childId : c));
+  const { [wrapperId]: _, ...rest } = graph.nodes;
+  const { [wrapperId]: __, ...restLayout } = graph.layout;
+  return finalize({
+    ...graph,
+    nodes: { ...rest, [parentId]: { ...parent, children: newChildren } as typeof parent },
+    layout: restLayout,
+  });
+}
+
+/** Look up an inline mv/rot wrapper for a node — used by the editor to detect
+ *  "this Call has an inline transform" and render the xyz row inside the Call
+ *  card instead of as a standalone canvas node. */
+export function inlineTransformOf(graph: Graph, nodeId: NodeId, kind: 'mv' | 'rot'): NodeId | null {
+  for (const n of Object.values(graph.nodes)) {
+    if (n.type === kind && (n as MvNode | RotNode).child === nodeId) {
+      // Inline only if this wrapper has a parent container (i.e. it's in the
+      // composition tree, not orphan) — bake/emit pick it up regardless.
+      if (findParentContainer(graph, n.id) !== null) return n.id;
+    }
+  }
+  return null;
+}
+
 /** Append a child reference to a container. Idempotent. */
 function appendChild(graph: Graph, parentId: NodeId, childId: NodeId): Graph {
   const parent = graph.nodes[parentId];
