@@ -153,6 +153,78 @@ test.describe('graph-editor — smoke', () => {
 
 // ─── build (mule_shoe-ish) — generates a real .asm.ts via the UI ────────
 
+// ─── Phase 1 acceptance — mv axis param wiring ──────────────────────────
+//
+// The user-confirmed flow from 2026-06-06 — every step here corresponds 1:1
+// to a step in the manual verification list. If a step fails, the
+// regression is structural; the GUI lost a piece of the param→transform
+// wiring contract.
+//
+// Run visually with: PWHEAD=1 bun run test:graph:headed
+//   — slow_mo 250 ms lets you watch every click + drag.
+
+test.describe('graph-editor — phase 1: mv axis param wiring', () => {
+  test('p.outerOD → A.mv.z renders + bakes end-to-end', async ({ page }) => {
+    test.setTimeout(40_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase1_mv_wire');
+
+    // Step 1 — drop a Call (dt_box).
+    await pickPrimitive(page, 'dt_box');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
+    await expect(page.locator('.ge-node-title').first()).toContainText('A · dt_box');
+
+    // Step 2 — toggle ⇄ on the Call card. The toggle is an SVG <text>
+    // with class .ge-xform-btn and the glyph ⇄.
+    const mvToggle = page.locator('.ge-xform-btn', { hasText: '⇄' }).first();
+    await expect(mvToggle).toBeVisible();
+    await mvToggle.click({ position: { x: 5, y: 5 } });
+    // The inline mv label appears in the card.
+    await expect(page.locator('.ge-inline-label', { hasText: 'mv' })).toBeVisible();
+
+    // Step 3 — three tiny amber axis sockets appear on the LEFT edge.
+    const axisSockets = page.locator('.ge-sock.in.param.tiny');
+    await expect(axisSockets).toHaveCount(3);
+
+    // Step 0 of params — add the dial we'll wire from.
+    await addParam(page, 'outerOD', 4);
+    await expect(page.locator('.ge-param-card')).toHaveCount(1);
+
+    // Step 4 — drag from param output socket → release on mv.z (3rd axis socket).
+    const paramOut = page.locator('.ge-param-card .ge-sock.out.param').first();
+    const mvZ = axisSockets.nth(2); // z is index 2
+    await dragBetween(page, paramOut, mvZ);
+
+    // Step 5 — z slot now renders as the amber p.outerOD chip with × to unwire.
+    const zChip = page.locator('.ge-inline-xform.mv .ge-arg-pchip', { hasText: 'p.outerOD' });
+    await expect(zChip).toBeVisible();
+    await expect(zChip.locator('.ge-arg-pchip-x')).toBeVisible();
+
+    // Step 6 — a param wire bezier renders (class .ge-wire.param). At least
+    // one — there could be more if other args got wired too.
+    await expect(page.locator('path.ge-wire.param')).toHaveCount(1);
+
+    // Step 7 — emitted source contains `mv(A, [0, 0, p.outerOD])` (or
+    // equivalent — exact spacing is up to the emitter, but the call shape
+    // is invariant).
+    await expect(page.locator('.ge-source')).toContainText('p.outerOD');
+    // The mv() function call should sit in the function body.
+    await expect(page.locator('.ge-source')).toContainText(/mv\(\s*A,\s*\[/);
+
+    // Step 8 — editing the param's default value drives a re-bake.
+    // The param chip's foreignObject input — we fill via .ge-param-card-input.
+    const defaultInput = page.locator('.ge-param-card-input').first();
+    await defaultInput.fill('6.5');
+    // Source pane reflects the new default.
+    await expect(page.locator('.ge-source')).toContainText('default: 6.5');
+
+    // Sanity — unwiring restores a literal slot + drops the wire from canvas.
+    await zChip.locator('.ge-arg-pchip-x').click();
+    await expect(page.locator('.ge-inline-xform.mv .ge-arg-pchip')).toHaveCount(0);
+    await expect(page.locator('path.ge-wire.param')).toHaveCount(0);
+  });
+});
+
 test.describe('graph-editor — generates parts via UI', () => {
   test('builds_dt_box_with_param_wired and saves to volume', async ({ page }) => {
     test.setTimeout(40_000);
