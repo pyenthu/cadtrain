@@ -23,7 +23,9 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false, // dev server is single-threaded; serial avoids flake
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // Retry once locally too — the first dev-server response can lose a race
+  // with the first test's page.goto, leading to a stale-browser flake.
+  retries: process.env.CI ? 2 : 1,
   workers: 1,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'tests/results/playwright-report' }]],
   outputDir: 'tests/results/playwright-output',
