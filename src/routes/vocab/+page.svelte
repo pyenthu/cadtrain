@@ -28,6 +28,36 @@
   let renderError = $state<string | null>(null);
   let selected = $state<Term | null>(null);
   let search = $state('');
+  // Right-pane tab — Definition (default) shows the rule + params + lock;
+  // Scene mounts PrimitiveDualCanvas for the selected term's exemplar.
+  let detailTab = $state<'definition' | 'scene'>('definition');
+  // Lazy-loaded scene canvas (Threlte WebGL — SSR-incompatible, dynamic).
+  let PrimitiveDualCanvas = $state<any>(null);
+  // Per-term cache of (source, defaultArgs) so flipping back to Scene
+  // doesn't refetch. Keyed by exemplar id.
+  let sceneCache = $state<Record<string, { source: string; args: (number | string)[] } | 'loading' | 'error'>>({});
+  // When a term is selected + the Scene tab is active, fetch its
+  // source + default params once. The component shows a loading state
+  // until ready.
+  $effect(() => {
+    if (detailTab !== 'scene') return;
+    if (!selectedEntry) return;
+    const exemplarId = selectedEntry.exemplar as string;
+    if (!exemplarId) return;
+    if (sceneCache[exemplarId]) return;
+    sceneCache = { ...sceneCache, [exemplarId]: 'loading' };
+    (async () => {
+      try {
+        const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(exemplarId)}`);
+        if (!r.ok) throw new Error(`source ${exemplarId}: ${r.status}`);
+        const d = await r.json();
+        const args = Object.values(d.params ?? {}).map((p: any) => p.default);
+        sceneCache = { ...sceneCache, [exemplarId]: { source: d.source, args } };
+      } catch {
+        sceneCache = { ...sceneCache, [exemplarId]: 'error' };
+      }
+    })();
+  });
 
   const vocab = data.vocab as { version: string; terms: Record<Term, VocabEntry> } | null;
   const lock  = data.lock as { vocab_version: string; terms: Record<Term, any> } | null;
@@ -58,6 +88,14 @@
   // the authoritative source of drift. Future: hit the live source endpoint
   // here and re-hash for in-page diffs.
   let lockTermCount = $derived(lock ? Object.keys(lock.terms ?? {}).length : 0);
+
+  // Lazy-load PrimitiveDualCanvas — WebGL / threlte → SSR-incompatible.
+  onMount(async () => {
+    try {
+      const mod = await import('$lib/shared/PrimitiveDualCanvas.svelte');
+      PrimitiveDualCanvas = mod.default;
+    } catch { /* fall back to "scene unavailable" message */ }
+  });
 
   // Render Mermaid on mount + when mmd changes.
   onMount(async () => {
@@ -208,6 +246,38 @@
           <span class="detail-kind {e.kind}">{e.kind}</span>
           <h2>{selected}</h2>
         </div>
+        <!-- Tab strip — Definition (rule + params + lock) | Scene (live 3D). -->
+        <div class="tab-strip" role="tablist">
+          <button class="tab-btn" class:active={detailTab === 'definition'} role="tab" aria-selected={detailTab === 'definition'}
+            type="button" onclick={() => (detailTab = 'definition')}>Definition</button>
+          <button class="tab-btn" class:active={detailTab === 'scene'} role="tab" aria-selected={detailTab === 'scene'}
+            type="button" onclick={() => (detailTab = 'scene')}>Scene</button>
+          <span class="tab-spacer"></span>
+          <span class="tab-exemplar"><code>{e.exemplar}</code></span>
+        </div>
+        {#if detailTab === 'scene'}
+          {@const sc = sceneCache[e.exemplar]}
+          <div class="scene-pane">
+            {#if !PrimitiveDualCanvas}
+              <div class="empty">scene component loading…</div>
+            {:else if !sc || sc === 'loading'}
+              <div class="empty">fetching {e.exemplar}…</div>
+            {:else if sc === 'error'}
+              <div class="error">couldn't load {e.exemplar} — does it exist on the volume? (Run <code>bun scripts/regenerate-from-vocab.ts</code>)</div>
+            {:else}
+              {@const params = sc as { source: string; args: (number | string)[] }}
+              <PrimitiveDualCanvas
+                id={e.exemplar}
+                name={e.exemplar}
+                description={e.definition}
+                args={params.args}
+                source={params.source}
+                showControls={true}
+                showLabels={false}
+              />
+            {/if}
+          </div>
+        {:else}
         <p class="detail-def">{e.definition ?? '(no definition)'}</p>
         {#if e.synonyms?.length}
           <div class="syn-row">
@@ -271,6 +341,7 @@
           <summary>full rule JSON</summary>
           <pre class="code">{JSON.stringify(e.rule, null, 2)}</pre>
         </details>
+        {/if}
       {/if}
     </aside>
   </main>
@@ -335,6 +406,17 @@
   .kv-key { color: #6b7280; }
   .kv-val { color: #1f2937; font-family: ui-monospace, monospace; }
   .kv-val.link { color: #2563eb; text-decoration: underline; cursor: pointer; }
+
+  /* Tab strip between detail-head and the tabbed body. */
+  .tab-strip { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #e5e7eb; margin: 8px 0 12px; padding-bottom: 2px; }
+  .tab-btn { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 6px 10px; font: 600 12px Arial; color: #6b7280; cursor: pointer; }
+  .tab-btn:hover { color: #1f2937; }
+  .tab-btn.active { color: #0c4a6e; border-bottom-color: #0369a1; }
+  .tab-spacer { flex: 1; }
+  .tab-exemplar { font: 11px Arial; color: #6b7280; }
+  .tab-exemplar code { font: 11px ui-monospace, monospace; color: #1f2937; }
+  /* Scene pane — sized to the detail pane's remaining height so the WebGL canvas fills it. */
+  .scene-pane { min-height: 420px; height: calc(100vh - 220px); background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; }
 
   .block { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
   .block summary { padding: 8px 12px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
