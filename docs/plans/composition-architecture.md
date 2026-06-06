@@ -287,35 +287,22 @@ no-backward-compat directive.
   — under this plan it stays as a static visualisation since
   `boolean_modify` is a primitive-kind rule, not an asm.
 
-## Open questions (worth your sign-off before I start)
+## Resolved questions (signed off 2026-06-06)
 
-1. **NodeId scheme**: short random ids (`n_abc123`) per the doc above,
-   OR human-readable derived from alias (`call_A`, `list_root`)?
-   Random is more refactor-stable; readable is easier in JSON diffs.
-   Defaulting to random unless you prefer readable.
+1. **NodeId scheme**: random short id `n_<6 chars>` (e.g. `n_abc123`).
+   Decoupled from the alias so renames don't cascade through edges.
+   Aliases are user-facing labels; ids are internal identity.
+2. **GraphArg/GraphExpr**: **unified** as a single `ArgValue` tagged
+   union (`{kind: 'literal'|'expr'|'param', ...}`). Whether the parent
+   holds them by key or by position is the parent's concern, not the
+   value's.
+3. **Volume migration**: **hybrid** — leave legacy `.asm.ts` files on
+   disk; opening one shows an empty graph + a banner + a read-only
+   source pane below for transcription. No destructive operation in
+   Phase A; user self-paces the migration.
+4. **Sidebar treatment of empty-graph asms**: **amber "legacy" chip**.
+   Matches the existing palette for "attention without alarm". Tooltip
+   explains; the read-only banner inside the editor is the workflow.
 
-2. **GraphArg vs GraphExpr split**: keep two separate types (Call args
-   are records keyed by string; mv/rot offsets are positional triples
-   of expressions), OR unify into a single ArgValue tagged union?
-   Currently the doc has two types for type safety; could collapse.
-
-3. **Volume migration**: should Phase A include a script that walks the
-   volume and DELETES every `.asm.ts` without `meta.graph`, OR should
-   it silently leave them on disk (opening shows empty)? Latter is
-   safer; former is honest about "no compat".
-
-4. **`/api/primitives/list` and the sidebar**: when the sidebar shows
-   an asm part, today it can render a preview thumbnail. After Phase A,
-   empty-graph asms render nothing. Do we mark them as "broken" in the
-   sidebar UI, or just silently show the empty bake?
-
-## What I want from you before I start writing code
-
-The plan is the cleanest "no-compat graph model" I can write that
-captures the user's stated direction. If the four open questions
-above are settled, Phase A is ~2 days of mechanical work and then
-we can iterate Phases B+C+D with each step independently shippable.
-
-The case-study contract is `mule_shoe` end-to-end (the 12-step list
-above). If a step doesn't behave as described, the plan has a bug
-and the test fails.
+Recommendations + pros/cons table for each — see the session
+2026-06-06 message exchange.
