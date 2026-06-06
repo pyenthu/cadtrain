@@ -35,6 +35,7 @@
     asParam,
     addParam,
     removeParam,
+    setParamSchema,
     wrapInTransform,
     unwrapTransform,
     inlineTransformOf,
@@ -293,6 +294,11 @@
     newParamName = ''; newParamDefault = 0;
     addParamPop = null;
   }
+  function onParamDefault(name: string, value: number) {
+    const cur = graph.params[name];
+    if (!cur) return;
+    graph = setParamSchema(graph, name, { ...cur, default: value });
+  }
   function onRemoveParam(name: string) {
     const r = removeParam(graph, name);
     if (r.orphans.length > 0) {
@@ -408,8 +414,13 @@
             {@const py = 10}
             <g class="ge-param-card" transform="translate({px},{py})">
               <rect class="ge-param-card-bg" width="130" height="40" rx="20"/>
-              <text x="58" y="18" class="ge-param-card-name" text-anchor="middle">p.{name}</text>
-              <text x="58" y="32" class="ge-param-card-val" text-anchor="middle">{(p as any).default}{(p as any).unit ?? ''}</text>
+              <text x="58" y="16" class="ge-param-card-name" text-anchor="middle">p.{name}</text>
+              <foreignObject x="10" y="20" width="96" height="16">
+                <input class="ge-param-card-input" type="number" step="0.05"
+                  xmlns="http://www.w3.org/1999/xhtml"
+                  value={(p as any).default}
+                  oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
+              </foreignObject>
               <!-- × delete on the chip -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <text role="button" tabindex="-1" class="ge-param-card-x" x="116" y="14"
@@ -826,6 +837,8 @@
   .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
   .ge-param-card-name { font: 700 11px ui-monospace, monospace; fill: #78350f; pointer-events: none; }
   .ge-param-card-val { font: 10px ui-monospace, monospace; fill: #92400e; pointer-events: none; }
+  .ge-param-card-input { width: 100%; padding: 0 4px; font: 10px ui-monospace, monospace; background: rgba(255,255,255,0.85); border: 1px solid #fbbf24; border-radius: 2px; color: #92400e; text-align: center; box-sizing: border-box; }
+  .ge-param-card-input:focus { outline: 1px solid #d97706; background: #fff; }
   .ge-sock.in.param { stroke: #d97706; }
   .ge-sock.out.param { stroke: #d97706; fill: #fef3c7; }
   .ge-sock.in.param:hover, .ge-sock.out.param:hover { fill: #fde68a; }
