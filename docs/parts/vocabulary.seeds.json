@@ -1,0 +1,1889 @@
+{
+  "$schema": "./vocabulary.schema.json",
+  "version": "0.1.0",
+  "source": "SVTC static/comp_list.xlsx",
+  "ingested": "2026-06-06",
+  "notes": [
+    "K.68 Phase 2 SEED file — completion components ingested from SVTC.",
+    "These are NOT translated by the rule-translator until status flips from \"seed\" to \"promoted\".",
+    "compjson_ref points at static/svtc-compjson/<TOOL_COMP>.json — 2D vendor silhouette for visual review.",
+    "Promotion path: review in /vocab → propose rule: {...} → bake-verify → flip status → translator picks it up."
+  ],
+  "stats": {
+    "rows_total": 57,
+    "seeds": 41,
+    "skipped": 0,
+    "with_compjson": 39,
+    "total_variants": 57
+  },
+  "skipped": [],
+  "terms": {
+    "flow_coupling": {
+      "kind": "rev",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Flow Coupling",
+      "description": "Flow Coupling",
+      "synonyms": [
+        "Flow Coupling",
+        "Steel",
+        "Coupling",
+        "Iron",
+        "head"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.FLOW_COUPLING",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 1,
+          "description": "Flow Coupling",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 18,
+          "description": "Flow Coupling",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 3,
+          "weight_lb": 20,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (3-1/8\")",
+          "bot_thread": "Vam Pin (2-7/8\")",
+          "grade": "CR-13"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.FLOW_COUPLING.json",
+      "rule": null
+    },
+    "flow_pup_lower": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Flow Pup",
+      "description": "Flow Pup Lower",
+      "synonyms": [
+        "Flow Pup Lower",
+        "Flow Pup",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.FLOW_PUP_LOWER",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 2,
+          "description": "Flow Pup Lower",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.FLOW_PUP_LOWER.json",
+      "rule": null
+    },
+    "flow_pup_upper": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Flow Pup",
+      "description": "Flow Pup Upper",
+      "synonyms": [
+        "Flow Pup Upper",
+        "Flow Pup",
+        "Steel",
+        "Flow Control Pup - Upper",
+        "Pup Joint",
+        "Iron",
+        "head",
+        "Flow Control Pup - Lower"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.FLOW_PUP_UPPER",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 3,
+          "description": "Flow Pup Upper",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 16,
+          "description": "Flow Control Pup - Upper",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 3,
+          "weight_lb": 20,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (3-1/8\")",
+          "bot_thread": "Vam Pin (2-7/8\")",
+          "grade": "CR-13"
+        },
+        {
+          "comp_id": 17,
+          "description": "Flow Control Pup - Lower",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 3,
+          "weight_lb": 20,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (3-1/8\")",
+          "bot_thread": "Vam Pin (2-7/8\")",
+          "grade": "CR-13"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.FLOW_PUP_UPPER.json",
+      "rule": null
+    },
+    "nipple_ar_no_go": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Nipple",
+      "description": "Nipple AR No-Go",
+      "synonyms": [
+        "Nipple AR No-Go",
+        "Nipple",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.NIPPLE_AR_NO_GO",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 4,
+          "description": "Nipple AR No-Go",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.NIPPLE_AR_NO_GO.json",
+      "rule": null
+    },
+    "nipple_bn": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Nipple",
+      "description": "Nipple BN",
+      "synonyms": [
+        "Nipple BN",
+        "Nipple",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.NIPPLE_BN",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 5,
+          "description": "Nipple BN",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.NIPPLE_BN.json",
+      "rule": null
+    },
+    "nipple_bx": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Nipple",
+      "description": "Nipple BX",
+      "synonyms": [
+        "Nipple BX",
+        "Nipple",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.NIPPLE_BX",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 6,
+          "description": "Nipple BX",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.NIPPLE_BX.json",
+      "rule": null
+    },
+    "nipple_bxn": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Nipple",
+      "description": "Nipple BXN",
+      "synonyms": [
+        "Nipple BXN",
+        "Nipple",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.NIPPLE_BXN",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 7,
+          "description": "Nipple BXN",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.NIPPLE_BXN.json",
+      "rule": null
+    },
+    "nipple_r_landing": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Nipple",
+      "description": "Nipple R Landing",
+      "synonyms": [
+        "Nipple R Landing",
+        "Nipple",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.NIPPLE_R_LANDING",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 8,
+          "description": "Nipple R Landing",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.NIPPLE_R_LANDING.json",
+      "rule": null
+    },
+    "ssd_1": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Sliding Sleeve",
+      "description": "SSD Sliding Sleeve",
+      "synonyms": [
+        "SSD Sliding Sleeve",
+        "Sliding Sleeve",
+        "Steel",
+        "Iron",
+        "head"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.SSD_1",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 9,
+          "description": "SSD Sliding Sleeve",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 13,
+          "description": "SSD Sliding Sleeve",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 0.5,
+          "weight_lb": 5,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (1 1/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 14,
+          "description": "SSD Sliding Sleeve",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 0.5,
+          "weight_lb": 5,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (1 1/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.SSD_1.json",
+      "rule": null
+    },
+    "trsssv_sp": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "TRSSSV",
+      "description": "TRSSSV SP",
+      "synonyms": [
+        "TRSSSV SP",
+        "TRSSSV",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.TRSSSV_SP",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 10,
+          "description": "TRSSSV SP",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.TRSSSV_SP.json",
+      "rule": null
+    },
+    "trssv_ball": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "TRSSSV",
+      "description": "TRSSSV BALL",
+      "synonyms": [
+        "TRSSSV BALL",
+        "TRSSSV",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.TRSSV_BALL",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 11,
+          "description": "TRSSSV BALL",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.TRSSV_BALL.json",
+      "rule": null
+    },
+    "trssv_flapper": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "TRSSSV",
+      "description": "TRSSSV FLAPPER",
+      "synonyms": [
+        "TRSSSV FLAPPER",
+        "TRSSSV",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "FLOW_CONTROL.TRSSV_FLAPPER",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 12,
+          "description": "TRSSSV FLAPPER",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/FLOW_CONTROL.TRSSV_FLAPPER.json",
+      "rule": null
+    },
+    "tubing": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Flow Control",
+      "sub_category": "Screen",
+      "description": "Baker Screen",
+      "synonyms": [
+        "Baker Screen",
+        "Screen",
+        "Iron",
+        "head",
+        "Tubing Joints",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 4.5,
+        "id_in": 3.688,
+        "length_ft": 5,
+        "weight_lb": 20
+      },
+      "metadata": {
+        "tool_comp": "MISC.TUBING",
+        "tags": [
+          "Iron",
+          "head"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 15,
+          "description": "Baker Screen",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 5,
+          "weight_lb": 20,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (3-1/8\")",
+          "bot_thread": "Vam Pin (2-7/8\")",
+          "grade": "CR-13"
+        },
+        {
+          "comp_id": 36,
+          "description": "Tubing Joints",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 54,
+          "description": "Tubing Joints",
+          "od_in": 2.875,
+          "id_in": 2.25,
+          "length_ft": 9,
+          "weight_lb": 40,
+          "company": "General",
+          "top_thread": "Eue Box (15/16-10)",
+          "bot_thread": "Eue Pin (1 1/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.TUBING.json",
+      "rule": null
+    },
+    "liner_hanger_red": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Hanger",
+      "sub_category": "Liner Hanger",
+      "description": "My Liner Hanger",
+      "synonyms": [
+        "My Liner Hanger",
+        "Liner Hanger",
+        "HES Versaflex",
+        "head",
+        "Your Liner Hanger",
+        "Composite",
+        "His Liner Hanger",
+        "Their Liner Hanger",
+        "Iron",
+        "Baker Liner Hanger",
+        "Liner"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 8.21,
+        "id_in": 6.78,
+        "length_ft": 5.7,
+        "weight_lb": 2000
+      },
+      "metadata": {
+        "tool_comp": "liner_hanger_red",
+        "tags": [
+          "HES Versaflex",
+          "head"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 19,
+          "description": "My Liner Hanger",
+          "od_in": 8.21,
+          "id_in": 6.78,
+          "length_ft": 5.7,
+          "weight_lb": 2000,
+          "company": "Halliburton",
+          "top_thread": "Eue Box (15/16-10)",
+          "bot_thread": "Eue Pin (1 1/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 20,
+          "description": "Your Liner Hanger",
+          "od_in": 7.5,
+          "id_in": 6,
+          "length_ft": 5,
+          "weight_lb": 2000,
+          "company": "Schlumberger",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (1 1/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 21,
+          "description": "His Liner Hanger",
+          "od_in": 8,
+          "id_in": 6,
+          "length_ft": 6,
+          "weight_lb": 2000,
+          "company": "Halliburton",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (1 1/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 22,
+          "description": "Their Liner Hanger",
+          "od_in": 8.6,
+          "id_in": 6,
+          "length_ft": 4,
+          "weight_lb": 2000,
+          "company": "Weatherford",
+          "top_thread": "Eue Box (15/16-10)",
+          "bot_thread": "Eue Pin (1 1/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 23,
+          "description": "Baker Liner Hanger",
+          "od_in": 7.1,
+          "id_in": 5,
+          "length_ft": 8,
+          "weight_lb": 2000,
+          "company": "Superior",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (1 1/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "rule": null
+    },
+    "bell_guide": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Shoe",
+      "description": "Bell Guide",
+      "synonyms": [
+        "Bell Guide",
+        "Shoe",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.BELL_GUIDE",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 24,
+          "description": "Bell Guide",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.BELL_GUIDE.json",
+      "rule": null
+    },
+    "crossover": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Crossover",
+      "description": "Crossover",
+      "synonyms": [
+        "Crossover",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.CROSSOVER",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 25,
+          "description": "Crossover",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.CROSSOVER.json",
+      "rule": null
+    },
+    "expansion_joint": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Joint",
+      "description": "Expansion Joint",
+      "synonyms": [
+        "Expansion Joint",
+        "Joint",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.EXPANSION_JOINT",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 26,
+          "description": "Expansion Joint",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.EXPANSION_JOINT.json",
+      "rule": null
+    },
+    "gas_lift_mandrel": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Gas Lift",
+      "description": "Gas Lift Mandrel",
+      "synonyms": [
+        "Gas Lift Mandrel",
+        "Gas Lift",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.GAS_LIFT_MANDREL",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 27,
+          "description": "Gas Lift Mandrel",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.GAS_LIFT_MANDREL.json",
+      "rule": null
+    },
+    "gauge_mandrel": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Mandrel",
+      "description": "Gauge Mandrel",
+      "synonyms": [
+        "Gauge Mandrel",
+        "Mandrel",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.GAUGE_MANDREL",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 28,
+          "description": "Gauge Mandrel",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.GAUGE_MANDREL.json",
+      "rule": null
+    },
+    "mule_shoe_reciprocating": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Shoe",
+      "description": "Mule Shoe Reciprocating",
+      "synonyms": [
+        "Mule Shoe Reciprocating",
+        "Shoe",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.MULE_SHOE_RECIPROCATING",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 29,
+          "description": "Mule Shoe Reciprocating",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.MULE_SHOE_RECIPROCATING.json",
+      "rule": null
+    },
+    "mule_shoe_shearable": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Shoe",
+      "description": "Mule Shoe Shearable",
+      "synonyms": [
+        "Mule Shoe Shearable",
+        "Shoe",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.MULE_SHOE_SHEARABLE",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 30,
+          "description": "Mule Shoe Shearable",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.MULE_SHOE_SHEARABLE.json",
+      "rule": null
+    },
+    "mule_shoe": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Shoe",
+      "description": "Mule Shoe",
+      "synonyms": [
+        "Mule Shoe",
+        "Shoe",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.MULE_SHOE",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 31,
+          "description": "Mule Shoe",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.MULE_SHOE.json",
+      "rule": null
+    },
+    "perf_pup": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Joint",
+      "description": "Perforated Pup Joint",
+      "synonyms": [
+        "Perforated Pup Joint",
+        "Joint",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.PERF_PUP",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 32,
+          "description": "Perforated Pup Joint",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "rule": null
+    },
+    "side_pocket_mandrel": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Mandrel",
+      "description": "Side Pocket Mandrel",
+      "synonyms": [
+        "Side Pocket Mandrel",
+        "Mandrel",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.SIDE_POCKET_MANDREL",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 33,
+          "description": "Side Pocket Mandrel",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.SIDE_POCKET_MANDREL.json",
+      "rule": null
+    },
+    "travel_joint": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Joint",
+      "description": "Travel Joint",
+      "synonyms": [
+        "Travel Joint",
+        "Joint",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.TRAVEL_JOINT",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 34,
+          "description": "Travel Joint",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.TRAVEL_JOINT.json",
+      "rule": null
+    },
+    "tubing_pup": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Joint",
+      "description": "Tubing Pup Joint",
+      "synonyms": [
+        "Tubing Pup Joint",
+        "Joint",
+        "Steel",
+        "Tubing Pup",
+        "Pup Joint"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.TUBING_PUP",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 35,
+          "description": "Tubing Pup Joint",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 55,
+          "description": "Tubing Pup",
+          "od_in": 2.875,
+          "id_in": 2.25,
+          "length_ft": 2,
+          "weight_lb": 40,
+          "company": "General",
+          "top_thread": "Eue Box (15/16-10)",
+          "bot_thread": "Eue Pin (1 1/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.TUBING_PUP.json",
+      "rule": null
+    },
+    "union_adjustable": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Miscellaneous",
+      "sub_category": "Union",
+      "description": "Adjustable Union",
+      "synonyms": [
+        "Adjustable Union",
+        "Union",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "MISC.UNION_ADJUSTABLE",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 37,
+          "description": "Adjustable Union",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 5,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/MISC.UNION_ADJUSTABLE.json",
+      "rule": null
+    },
+    "ahc_packer": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "AHC Packer",
+      "synonyms": [
+        "AHC Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.AHC_PACKER",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 38,
+          "description": "AHC Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.AHC_PACKER.json",
+      "rule": null
+    },
+    "packer_ahr_ahc": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "AHC  AHR Packer",
+      "synonyms": [
+        "AHC  AHR Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_AHR_AHC",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 39,
+          "description": "AHC  AHR Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_AHR_AHC.json",
+      "rule": null
+    },
+    "packer_asv": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "ASV Packer",
+      "synonyms": [
+        "ASV Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_ASV",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 40,
+          "description": "ASV Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_ASV.json",
+      "rule": null
+    },
+    "packer_baker_permanent": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "Baker Permanent Packer",
+      "synonyms": [
+        "Baker Permanent Packer",
+        "Packer",
+        "Steel",
+        "Permanent Packer",
+        "Iron",
+        "head"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_BAKER_PERMANENT",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 41,
+          "description": "Baker Permanent Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 52,
+          "description": "Permanent Packer",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 0.75,
+          "weight_lb": 20,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (3-1/8\")",
+          "bot_thread": "Vam Pin (2-7/8\")",
+          "grade": "CR-13"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_BAKER_PERMANENT.json",
+      "rule": null
+    },
+    "packer_baker_signature_df": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "Baker Signature DF Packer",
+      "synonyms": [
+        "Baker Signature DF Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_BAKER_SIGNATURE_DF",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 42,
+          "description": "Baker Signature DF Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_BAKER_SIGNATURE_DF.json",
+      "rule": null
+    },
+    "packer_direct": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "Baker Direct Packer",
+      "synonyms": [
+        "Baker Direct Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_DIRECT",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 43,
+          "description": "Baker Direct Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_DIRECT.json",
+      "rule": null
+    },
+    "packer_mhr_ratch": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "MHR Ratch Packer",
+      "synonyms": [
+        "MHR Ratch Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_MHR_RATCH",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 44,
+          "description": "MHR Ratch Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_MHR_RATCH.json",
+      "rule": null
+    },
+    "packer_rdh": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "RDH Packer",
+      "synonyms": [
+        "RDH Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_RDH",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 45,
+          "description": "RDH Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_RDH.json",
+      "rule": null
+    },
+    "packer_rh": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "RH Packer",
+      "synonyms": [
+        "RH Packer",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_RH",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 46,
+          "description": "RH Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 49,
+          "description": "RH Packer",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_RH.json",
+      "rule": null
+    },
+    "packer_sand_control_pin_down": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "Baker Sand Control Packer Pin Down",
+      "synonyms": [
+        "Baker Sand Control Packer Pin Down",
+        "Packer",
+        "Steel",
+        "Sand Control Packer",
+        "Sand Control",
+        "Iron",
+        "head"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_SAND_CONTROL_PIN_DOWN",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 47,
+          "description": "Baker Sand Control Packer Pin Down",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 51,
+          "description": "Sand Control Packer",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 0.75,
+          "weight_lb": 20,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (3-1/8\")",
+          "bot_thread": "Vam Pin (2-7/8\")",
+          "grade": "CR-13"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_SAND_CONTROL_PIN_DOWN.json",
+      "rule": null
+    },
+    "packer_sand_ctrol_ctrl_bx_dn": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Packer",
+      "description": "Baker Sand Control Packer Control Box Down",
+      "synonyms": [
+        "Baker Sand Control Packer Control Box Down",
+        "Packer",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 6.98,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PACKER_SAND_CTROL_CTRL_BX_DN",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 48,
+          "description": "Baker Sand Control Packer Control Box Down",
+          "od_in": 6.98,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PACKER_SAND_CTROL_CTRL_BX_DN.json",
+      "rule": null
+    },
+    "plug_frac": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Packer",
+      "sub_category": "Plug",
+      "description": "Frac Plug",
+      "synonyms": [
+        "Frac Plug",
+        "Plug",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 5,
+        "id_in": 0,
+        "length_ft": 0.75,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "PACKERS.PLUG_FRAC",
+        "tags": [
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 50,
+          "description": "Frac Plug",
+          "od_in": 5,
+          "id_in": 0,
+          "length_ft": 0.75,
+          "weight_lb": 10,
+          "company": "Generic",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "NA"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/PACKERS.PLUG_FRAC.json",
+      "rule": null
+    },
+    "bridgeplugred": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Plugs",
+      "sub_category": "Bridge Plug",
+      "description": "Baker Bridge Plug",
+      "synonyms": [
+        "Baker Bridge Plug",
+        "Bridge Plug",
+        "Composite",
+        "head",
+        "Completions",
+        "Tubing",
+        "Iron"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 3.56,
+        "id_in": 0,
+        "length_ft": 0.5,
+        "weight_lb": 10
+      },
+      "metadata": {
+        "tool_comp": "bridgePlugRed",
+        "tags": [
+          "Composite",
+          "head"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 53,
+          "description": "Baker Bridge Plug",
+          "od_in": 3.56,
+          "id_in": 0,
+          "length_ft": 0.5,
+          "weight_lb": 10,
+          "company": "Baker",
+          "top_thread": "Vam Box (15/16-10)",
+          "bot_thread": "Vam Pin (15/16-10)",
+          "grade": "L-80"
+        },
+        {
+          "comp_id": 56,
+          "description": "Completions",
+          "od_in": 4.5,
+          "id_in": 3.688,
+          "length_ft": 20,
+          "weight_lb": 9,
+          "company": "Baker Hughes",
+          "top_thread": "Vam Box (2-15/16-10)",
+          "bot_thread": "Vam Pin (2-15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/bridgePlugRed.json",
+      "rule": null
+    },
+    "tbghanger": {
+      "kind": "asm",
+      "status": "seed",
+      "category": "Tubing",
+      "sub_category": "Hanger",
+      "description": "Completions",
+      "synonyms": [
+        "Completions",
+        "Hanger",
+        "Iron",
+        "Steel"
+      ],
+      "dims_from_catalogue": {
+        "od_in": 7,
+        "id_in": 2.3,
+        "length_ft": 2,
+        "weight_lb": 9
+      },
+      "metadata": {
+        "tool_comp": "tbgHanger",
+        "tags": [
+          "Iron",
+          "Steel"
+        ]
+      },
+      "variants": [
+        {
+          "comp_id": 57,
+          "description": "Completions",
+          "od_in": 7,
+          "id_in": 2.3,
+          "length_ft": 2,
+          "weight_lb": 9,
+          "company": "Baker Hughes",
+          "top_thread": "Eue Box (2-15/16-10)",
+          "bot_thread": "Eue Pin (2-15/16-10)",
+          "grade": "L-80"
+        }
+      ],
+      "compjson_ref": "/svtc-compjson/tbgHanger.json",
+      "rule": null
+    }
+  }
+}
