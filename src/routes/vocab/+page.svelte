@@ -735,13 +735,9 @@
                 </div>
               {/if}
 
-              <!-- 2D + Proposed 3D side-by-side -->
-              <div class="view-row">
-                {#if e.compjson_ref && CompJsonSilhouette}
-                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
-                {:else}
-                  <div class="empty-card">no compjson_ref on file</div>
-                {/if}
+              <!-- Proposed 3D — full width (no 2D drawing; the inferred tab
+                   has the vendor reference if you need it). -->
+              <div class="view-row solo">
                 <div class="bake-card">
                   <header class="bake-head">
                     <div class="bake-title">Proposed 3D · {prop.rule?.kind ?? '?'}</div>
@@ -1239,6 +1235,7 @@
   .chips-label { font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.6px; min-width: 80px; }
   /* 2D drawing + 3D bake side-by-side. */
   .view-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; min-height: 320px; }
+  .view-row.solo { grid-template-columns: 1fr; min-height: 420px; }
   .view-row > * { min-width: 0; }
   .bake-card {
     display: grid; grid-template-rows: auto 1fr;
