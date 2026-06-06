@@ -19,9 +19,14 @@ export const load: PageServerLoad = async () => {
   const vocabRaw = safeRead(resolve(root, 'docs/parts/vocabulary.json'));
   const lockRaw  = safeRead(resolve(root, 'docs/parts/vocabulary.lock.json'));
   const mmd      = safeRead(resolve(root, 'docs/parts/vocabulary-graph.mmd'));
+  // K.69 — seed completions ingested from SVTC's comp_list.xlsx. Treated
+  // separately from the curated v0.3 vocabulary; each seed gets a
+  // status:'seed' chip in the browser + only the silhouette in Scene.
+  const seedsRaw = safeRead(resolve(root, 'docs/parts/vocabulary.seeds.json'));
   return {
     vocab: vocabRaw ? JSON.parse(vocabRaw) : null,
     lock:  lockRaw  ? JSON.parse(lockRaw)  : null,
     mmd:   mmd ?? null,
+    seeds: seedsRaw ? JSON.parse(seedsRaw) : null,
   };
 };

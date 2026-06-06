@@ -21,6 +21,9 @@
   let { data } = $props();
   type Term = string;
   type VocabEntry = any;
+  type SeedEntry  = any;
+  // Lazy reference-silhouette renderer — used when an entry has compjson_ref.
+  let CompJsonSilhouette = $state<any>(null);
 
   // Top-level state
   let mermaid: any = null;
@@ -118,11 +121,24 @@
   const vocab = data.vocab as { version: string; terms: Record<Term, VocabEntry> } | null;
   const lock  = data.lock as { vocab_version: string; terms: Record<Term, any> } | null;
   const mmd   = data.mmd as string | null;
+  const seeds = data.seeds as { version: string; terms: Record<Term, SeedEntry>; stats: any } | null;
 
-  // Derived view models
-  let termList = $derived<Array<{ term: Term; entry: VocabEntry }>>(() => {
-    if (!vocab) return [];
-    return Object.entries(vocab.terms).map(([term, entry]) => ({ term, entry }));
+  // Derived view models — curated and seed terms walk through the same
+  // browser/detail UI. Seeds get a distinct `seed` chip + a different
+  // Scene tab body (silhouette only, no 3D bake — they have no rule
+  // and no exemplar to load).
+  function isSeed(term: Term): boolean {
+    return !!seeds?.terms?.[term] && !vocab?.terms?.[term];
+  }
+  function lookup(term: Term): VocabEntry | SeedEntry | null {
+    return vocab?.terms?.[term] ?? seeds?.terms?.[term] ?? null;
+  }
+
+  let termList = $derived<Array<{ term: Term; entry: any; seed: boolean }>>(() => {
+    const out: Array<{ term: Term; entry: any; seed: boolean }> = [];
+    if (vocab) for (const [t, e] of Object.entries(vocab.terms)) out.push({ term: t, entry: e, seed: false });
+    if (seeds) for (const [t, e] of Object.entries(seeds.terms)) if (!vocab?.terms?.[t]) out.push({ term: t, entry: e, seed: true });
+    return out;
   });
   let filteredTerms = $derived(() => {
     const q = search.trim().toLowerCase();
@@ -130,14 +146,16 @@
     if (!q) return list;
     return list.filter(({ term, entry }) => {
       if (term.toLowerCase().includes(q)) return true;
-      if ((entry.definition ?? '').toLowerCase().includes(q)) return true;
+      if ((entry.definition ?? entry.description ?? '').toLowerCase().includes(q)) return true;
       const syns = (entry.synonyms ?? []) as string[];
       return syns.some((s) => s.toLowerCase().includes(q));
     });
   });
-  let primCount  = $derived(termList().filter((x) => x.entry.kind === 'rev').length);
-  let asmCount   = $derived(termList().filter((x) => x.entry.kind === 'asm').length);
-  let selectedEntry = $derived<VocabEntry | null>(selected && vocab ? vocab.terms[selected] : null);
+  let primCount  = $derived(termList().filter((x) => !x.seed && x.entry.kind === 'rev').length);
+  let asmCount   = $derived(termList().filter((x) => !x.seed && x.entry.kind === 'asm').length);
+  let seedCount  = $derived(termList().filter((x) =>  x.seed).length);
+  let selectedEntry = $derived<any>(selected ? lookup(selected) : null);
+  let selectedIsSeed = $derived<boolean>(selected ? isSeed(selected) : false);
 
   // Drift detection — compare lock.source_hash to whatever's "current".
   // For v0.1, we just count terms where the lock exists; the runner is
@@ -151,6 +169,10 @@
       const mod = await import('$lib/shared/PrimitiveDualCanvas.svelte');
       PrimitiveDualCanvas = mod.default;
     } catch { /* fall back to "scene unavailable" message */ }
+    try {
+      const mod = await import('$lib/shared/CompJsonSilhouette.svelte');
+      CompJsonSilhouette = mod.default;
+    } catch { /* silhouette renderer optional */ }
   });
 
   // Render Mermaid on mount + when mmd changes.
@@ -224,6 +246,7 @@
       <span class="bar-meta">{termList().length} terms</span>
       <span class="bar-chip prim">{primCount} primitives</span>
       <span class="bar-chip asm">{asmCount} assemblies</span>
+      {#if seedCount}<span class="bar-chip seed">{seedCount} seeds</span>{/if}
       {#if lock}
         <span class="bar-meta">lock: v{lock.vocab_version}, {lockTermCount} entries</span>
       {:else}
@@ -276,17 +299,20 @@
           bind:value={search}
         />
         <div class="browser-list">
-          {#each filteredTerms() as { term, entry } (term)}
+          {#each filteredTerms() as { term, entry, seed } (term)}
             <button
               class="browser-row"
               class:active={selected === term}
-              class:asm={entry.kind === 'asm'}
+              class:asm={!seed && entry.kind === 'asm'}
+              class:seed
               type="button"
               onclick={() => selectTerm(term)}
             >
-              <span class="row-kind">{entry.kind === 'asm' ? 'asm' : 'rev'}</span>
+              <span class="row-kind">{seed ? 'seed' : (entry.kind === 'asm' ? 'asm' : 'rev')}</span>
               <span class="row-name">{term}</span>
-              <span class="row-rule">{ruleSummary(entry)}</span>
+              <span class="row-rule">{seed
+                ? `${entry.category} · ${entry.sub_category}${entry.variants?.length > 1 ? ` · ${entry.variants.length} variants` : ''}`
+                : ruleSummary(entry)}</span>
             </button>
           {/each}
           {#if filteredTerms().length === 0}
@@ -307,45 +333,131 @@
       {:else}
         {@const e = selectedEntry}
         <div class="detail-head">
-          <span class="detail-kind {e.kind}">{e.kind}</span>
+          <span class="detail-kind" class:asm={!selectedIsSeed && e.kind === 'asm'} class:seed={selectedIsSeed}>{selectedIsSeed ? 'seed' : e.kind}</span>
           <h2>{selected}</h2>
         </div>
-        <!-- Tab strip — Definition (rule + params + lock) | Scene (live 3D). -->
+        <!-- Tab strip — Definition (rule + params + lock) | Scene (live 3D
+             for curated terms, silhouette + variants table for seeds). -->
         <div class="tab-strip" role="tablist">
           <button class="tab-btn" class:active={detailTab === 'definition'} role="tab" aria-selected={detailTab === 'definition'}
             type="button" onclick={() => (detailTab = 'definition')}>Definition</button>
           <button class="tab-btn" class:active={detailTab === 'scene'} role="tab" aria-selected={detailTab === 'scene'}
             type="button" onclick={() => (detailTab = 'scene')}>Scene</button>
           <span class="tab-spacer"></span>
-          <button class="tab-refresh" type="button"
-            disabled={regenBusy[selected!]}
-            title={`Regenerate ${selected} from vocab + re-bake. Invalidates the Scene cache so the next mount picks up the fresh source.`}
-            onclick={() => refreshTerm(selected!)}
-          >{regenBusy[selected!] ? '↻ …' : '↻ Refresh'}</button>
-          <span class="tab-exemplar"><code>{e.exemplar}</code></span>
+          {#if !selectedIsSeed}
+            <button class="tab-refresh" type="button"
+              disabled={regenBusy[selected!]}
+              title={`Regenerate ${selected} from vocab + re-bake. Invalidates the Scene cache so the next mount picks up the fresh source.`}
+              onclick={() => refreshTerm(selected!)}
+            >{regenBusy[selected!] ? '↻ …' : '↻ Refresh'}</button>
+            <span class="tab-exemplar"><code>{e.exemplar}</code></span>
+          {:else}
+            <span class="tab-exemplar"><code>seed · no rule yet</code></span>
+          {/if}
         </div>
         {#if detailTab === 'scene'}
-          {@const sc = sceneCache[e.exemplar]}
           <div class="scene-pane">
-            {#if !PrimitiveDualCanvas}
-              <div class="empty">scene component loading…</div>
-            {:else if !sc || sc === 'loading'}
-              <div class="empty">fetching {e.exemplar}…</div>
-            {:else if sc === 'error'}
-              <div class="error">couldn't load {e.exemplar} — does it exist on the volume? (Run <code>bun scripts/regenerate-from-vocab.ts</code>)</div>
+            {#if selectedIsSeed}
+              <!-- Seeds have no rule / exemplar yet, so the Scene tab is just
+                   the 2D vendor silhouette + the size variants table. The
+                   point is visual review before promotion. -->
+              <div class="seed-scene">
+                {#if e.compjson_ref && CompJsonSilhouette}
+                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={320} />
+                {:else}
+                  <div class="empty">no compjson_ref — this seed has no 2D silhouette on file.</div>
+                {/if}
+                <div class="seed-meta">
+                  <div class="kv-row"><span class="kv-key">category</span><span class="kv-val">{e.category} · {e.sub_category}</span></div>
+                  {#if e.metadata?.tool_comp}
+                    <div class="kv-row"><span class="kv-key">tool_comp</span><span class="kv-val"><code>{e.metadata.tool_comp}</code></span></div>
+                  {/if}
+                  <div class="kv-row"><span class="kv-key">defaults (1st row)</span>
+                    <span class="kv-val">OD {e.dims_from_catalogue?.od_in ?? '—'}" · ID {e.dims_from_catalogue?.id_in ?? '—'}" · L {e.dims_from_catalogue?.length_ft ?? '—'} ft</span>
+                  </div>
+                  {#if e.variants?.length}
+                    <details class="block" open>
+                      <summary>{e.variants.length} catalogue variant{e.variants.length === 1 ? '' : 's'}</summary>
+                      <table class="params-table">
+                        <thead><tr><th>#</th><th>OD"</th><th>ID"</th><th>L ft</th><th>weight</th><th>company</th><th>top thread</th><th>bot thread</th><th>grade</th></tr></thead>
+                        <tbody>
+                          {#each e.variants as v (v.comp_id)}
+                            <tr>
+                              <td><code>{v.comp_id}</code></td>
+                              <td>{v.od_in ?? '—'}</td>
+                              <td>{v.id_in ?? '—'}</td>
+                              <td>{v.length_ft ?? '—'}</td>
+                              <td>{v.weight_lb ?? '—'}</td>
+                              <td>{v.company ?? '—'}</td>
+                              <td>{v.top_thread ?? '—'}</td>
+                              <td>{v.bot_thread ?? '—'}</td>
+                              <td>{v.grade ?? '—'}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </details>
+                  {/if}
+                  <div class="seed-promote">
+                    <strong>promote:</strong> write a <code>rule: {`{ kind:'primitive'|'compose', ... }`}</code> block into <code>vocabulary.seeds.json</code>,
+                    flip <code>status</code> to <code>'promoted'</code>, and the translator will pick it up. Mid-term we'll lift promoted seeds into <code>vocabulary.json</code>.
+                  </div>
+                </div>
+              </div>
             {:else}
-              {@const params = sc as { source: string; args: (number | string)[] }}
-              <PrimitiveDualCanvas
-                id={e.exemplar}
-                name={e.exemplar}
-                description={e.definition}
-                args={params.args}
-                source={params.source}
-                showControls={true}
-                showLabels={false}
-              />
+              {@const sc = sceneCache[e.exemplar]}
+              <div class="curated-scene" class:with-ref={!!e.compjson_ref && CompJsonSilhouette}>
+                <div class="bake-3d">
+                  {#if !PrimitiveDualCanvas}
+                    <div class="empty">scene component loading…</div>
+                  {:else if !sc || sc === 'loading'}
+                    <div class="empty">fetching {e.exemplar}…</div>
+                  {:else if sc === 'error'}
+                    <div class="error">couldn't load {e.exemplar} — does it exist on the volume? (Run <code>bun scripts/regenerate-from-vocab.ts</code>)</div>
+                  {:else}
+                    {@const params = sc as { source: string; args: (number | string)[] }}
+                    <PrimitiveDualCanvas
+                      id={e.exemplar}
+                      name={e.exemplar}
+                      description={e.definition}
+                      args={params.args}
+                      source={params.source}
+                      showControls={true}
+                      showLabels={false}
+                    />
+                  {/if}
+                </div>
+                {#if e.compjson_ref && CompJsonSilhouette}
+                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
+                {/if}
+              </div>
             {/if}
           </div>
+        {:else if selectedIsSeed}
+        <!-- Seed definition tab: catalogue metadata, synonyms, dims, variants
+             count. No rule / params / lock — those land on promotion. -->
+        <p class="detail-def">{e.description ?? '(no description)'}</p>
+        {#if e.synonyms?.length}
+          <div class="syn-row">
+            <span class="syn-label">synonyms</span>
+            {#each e.synonyms as s (s)}<span class="syn-chip">{s}</span>{/each}
+          </div>
+        {/if}
+        <div class="kv-row"><span class="kv-key">category</span><span class="kv-val">{e.category} · {e.sub_category}</span></div>
+        {#if e.metadata?.tool_comp}
+          <div class="kv-row"><span class="kv-key">tool_comp</span><span class="kv-val"><code>{e.metadata.tool_comp}</code></span></div>
+        {/if}
+        {#if e.metadata?.tags?.length}
+          <div class="kv-row"><span class="kv-key">tags</span><span class="kv-val">{e.metadata.tags.join(', ')}</span></div>
+        {/if}
+        <div class="kv-row"><span class="kv-key">variants</span><span class="kv-val">{e.variants?.length ?? 0} catalogue row{(e.variants?.length ?? 0) === 1 ? '' : 's'}</span></div>
+        {#if e.compjson_ref}
+          <div class="kv-row"><span class="kv-key">silhouette</span><span class="kv-val"><code>{e.compjson_ref}</code></span></div>
+        {/if}
+        <details class="block">
+          <summary>raw seed JSON</summary>
+          <pre class="code">{JSON.stringify(e, null, 2)}</pre>
+        </details>
         {:else}
         <p class="detail-def">{e.definition ?? '(no definition)'}</p>
         {#if e.synonyms?.length}
@@ -429,6 +541,7 @@
   .bar-chip { padding: 2px 8px; border-radius: 9999px; font: 600 11px Arial; }
   .bar-chip.prim { background: #e0f2fe; color: #0c4a6e; border: 1px solid #0369a1; }
   .bar-chip.asm { background: #dcfce7; color: #14532d; border: 1px solid #15803d; }
+  .bar-chip.seed { background: #fef3c7; color: #78350f; border: 1px solid #d97706; }
   .bar-spacer { flex: 1; }
   .bar-link { font: 12px Arial; color: #2563eb; text-decoration: none; }
   .bar-link:hover { text-decoration: underline; }
@@ -455,6 +568,8 @@
   .browser-row:hover { background: #f9fafb; }
   .browser-row.active { background: #e0f2fe; }
   .browser-row.asm .row-kind { background: #dcfce7; color: #14532d; }
+  .browser-row.seed .row-kind { background: #fef3c7; color: #78350f; }
+  .browser-row.seed.active { background: #fffbeb; }
   .row-kind { padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0c4a6e; font: 600 10px Arial; text-transform: uppercase; text-align: center; }
   .row-name { font: 600 12px ui-monospace, monospace; color: #1f2937; }
   .row-rule { color: #6b7280; font: 11px Arial; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -465,8 +580,9 @@
   .detail-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
   .detail-head h2 { font: 700 18px ui-monospace, monospace; margin: 0; color: #1f2937; }
   .detail-kind { padding: 2px 8px; border-radius: 4px; font: 600 11px Arial; text-transform: uppercase; }
-  .detail-kind.rev { background: #e0f2fe; color: #0c4a6e; }
+  .detail-kind { background: #e0f2fe; color: #0c4a6e; }
   .detail-kind.asm { background: #dcfce7; color: #14532d; }
+  .detail-kind.seed { background: #fef3c7; color: #78350f; }
   .detail-def { color: #374151; font: 13px Arial; line-height: 1.45; margin: 4px 0 12px; }
   .syn-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
   .syn-label { font: 11px Arial; color: #6b7280; }
@@ -488,8 +604,18 @@
   .tab-refresh:hover:not(:disabled), .bar-btn:hover:not(:disabled) { background: #bae6fd; }
   .tab-refresh:disabled, .bar-btn:disabled { opacity: 0.5; cursor: default; }
   .bar-status { font: 11px ui-monospace, monospace; color: #475569; padding: 0 8px; }
-  /* Scene pane — sized to the detail pane's remaining height so the WebGL canvas fills it. */
-  .scene-pane { min-height: 420px; height: calc(100vh - 220px); background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; }
+  /* Scene pane — sized to the detail pane's remaining height so the WebGL canvas fills it.
+     Curated terms with a compjson_ref show the 3D bake left + 2D silhouette right.
+     Seed terms (no rule yet) show only silhouette + variants table. */
+  .scene-pane { min-height: 420px; background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; }
+  .curated-scene { display: grid; grid-template-rows: 1fr; height: calc(100vh - 220px); }
+  .curated-scene.with-ref { grid-template-columns: 1.4fr 1fr; }
+  .bake-3d { overflow: hidden; min-width: 0; }
+  /* Seed scene — silhouette on top, metadata + variants table below. Scrolls. */
+  .seed-scene { display: grid; grid-template-rows: auto 1fr; gap: 12px; padding: 12px; height: calc(100vh - 220px); overflow: auto; }
+  .seed-meta { display: grid; gap: 4px; align-content: start; }
+  .seed-promote { margin-top: 12px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; font: 12px Arial; color: #78350f; line-height: 1.5; }
+  .seed-promote code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
 
   .block { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
   .block summary { padding: 8px 12px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
