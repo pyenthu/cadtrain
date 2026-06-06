@@ -1400,7 +1400,7 @@
   .ps-tile-ctrls .ps-slider { width: 100%; min-width: 0; }
   .ps-tile-ctrls .ps-num { width: 100%; padding: 2px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
   /* Tab body — scrollable inner column. */
-  .tab-body { padding: 16px 20px; overflow-y: auto; display: grid; gap: 12px; align-content: start; min-height: 0; }
+  .tab-body { padding: 6px 14px 14px; overflow-y: auto; display: grid; gap: 8px; align-content: start; min-height: 0; }
   .tab-body .def-line { font: 13px/1.55 Arial; color: #374151; margin: 0; }
   .tab-body .def-line.rich { font-size: 14px; color: #1f2937; padding: 10px 12px; background: #f8fafc; border-left: 3px solid #0369a1; border-radius: 0 4px 4px 0; }
   /* Compact info-chip row beneath the definition. */
@@ -1427,7 +1427,7 @@
   .rule-details-col { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
   /* New 2-col layout: LEFT = canvas (full height of column); RIGHT =
      params (top) + rule + details (below). */
-  .proposed-grid { display: grid; grid-template-columns: 3fr 7fr; gap: 12px; align-items: stretch; min-height: 560px; }
+  .proposed-grid { display: grid; grid-template-columns: 4fr 6fr; gap: 12px; align-items: stretch; min-height: 560px; }
   .proposed-grid > * { min-width: 0; }
   .proposed-canvas-col { display: flex; flex-direction: column; }
   .proposed-canvas-col .bake-card { flex: 1 1 auto; }
