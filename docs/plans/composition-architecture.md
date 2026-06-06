@@ -233,27 +233,62 @@ Step-by-step acceptance test (run in `/primitives` after this plan ships):
 If any step doesn't behave as described, the plan has a bug. The
 mule_shoe case study is the **acceptance contract** for the architecture.
 
-## Rollout — vertical slices, NOT horizontal phases
+## Rollout — visual vertical slices
 
 **Principle (user direction, 2026-06-06):** the visual builder, the
-bake interpretation, and the data structure MUST stay in sync. Doing
-one layer at a time silos them; bugs surface late; the GUI feels
-disconnected. Each slice ships **data + emit + bake + GUI together for
-ONE feature**. After each slice, the model is verifiable end-to-end
-in the GUI. ~1-2 days per slice, 6 slices total.
+bake interpretation, and the data structure MUST stay in sync. Each
+slice ships **data + emit + bake + GUI together for ONE feature**.
+After each slice, the model is verifiable end-to-end in the GUI.
 
-| # | Slice | Days | Data | Bake | GUI | mule_shoe steps |
-|---|---|---|---|---|---|---|
-| ✅ | **Foundation** (was Phase A) | done | `composition-graph.ts` + `composition-emit.ts` shipped. `addCall`, `setCallArg`, `addParam`, `wireArg`, `unwireArg`, `removeParam`, `removeNode`, `addContainer`, `addMethod`, `addMv`, `addRot`, `topoOrder`, `collectEdges`. 10/10 tests pass. | — | — | (data-layer coverage of 1-12) |
-| **1** | **Hello graph — one Call renders** | 1.5 | already in foundation | NEW `composition-bake.ts` — single Call → `loadPrim(src)` → apply args → `Manifold`. | `/primitives` extension: opening `.asm.ts` with `meta.graph` shows a small Graph view next to the existing editor (NOT replacing). Sole control: "+ Call" picker dropping an instance of any src. Canvas renders. | Step 1 |
-| **2** | **Two instances + per-Call edit** | 1.5 | (already there) — second `addCall` + `setCallArg` | List children compose; only re-bake the changed Call. | Per-Call accordion with `ArgValue` editors (literal number/text). Live re-bake on edit. | Steps 2-5 |
-| **3** | **Outer params + wiring** | 1.5 | already in foundation | Resolve `kind:'param'` from `paramValues`. Orphan check at remove time. | Parameters accordion (matches `/primitives` style). "Wire to outer" per slot. Orphan warning chip on params with 0 edges. Remove modal lists orphans. | Steps 6-12 |
-| **4** | **CSG operators** | 1.5 | `addMethod` (already there) | `.subtract(arg)` / `.add(arg)` / `.intersect(arg)` chain on the bake. | ⊖ ⊕ ⊗ toolbar in the Graph view; click pairs of nodes. | n/a — extends mule_shoe to multi-instance CSG |
-| **5** | **mv / rot wrappers** | 1.0 | already there | `mv(child, [x,y,z])` / `rot(child, [rx,ry,rz])`. | Position + rotation inputs on each Call's row. | n/a — positioning |
-| **6** | **Legacy banner + cutover** | 1.0 | — | drop the text-eval bake path for asm parts | Old `.asm.ts` without `meta.graph` open with amber "legacy — rebuild or delete" banner + read-only source pane. Save-as creates `meta.graph` version. Existing `CompositionEditor.svelte` is REPLACED by the Graph view; `composition-tree.ts` + `assembly-deps.ts` deleted. | (hybrid migration: Q3+Q4 resolved) |
+**Visual concepts borrowed from Rete.js examples** (without taking the
+library — pure Svelte 5 + SVG, no lock-in):
+- **`allmatter` example**: 3D preview *alongside* the node graph.
+- **`codegen` example**: live source pane that updates as the graph mutates.
+- **Rete core UX**: pan / zoom / drag-to-position / drag-to-wire on an SVG canvas.
 
-**Total: ~7.5 days across 6 slices** (foundation already shipped).
-Each slice is independently shippable + verifiable in the GUI.
+Three-pane editor layout for every slice ≥ 1:
+
+```
+┌─ Graph canvas (SVG, pan + zoom + drag) ─┬─ 3D Threlte preview ─┬─ Live .asm.ts source ─┐
+│ NodeCards · Param strip · Wires         │ live bake             │ read-only pane          │
+└─────────────────────────────────────────┴───────────────────────┴─────────────────────────┘
+   LEFT (40%)                                MIDDLE (35%)          RIGHT (25%)
+```
+
+| # | Slice | Days | What you see in the GUI |
+|---|---|---|---|
+| ✅ | **Foundation** (data + emit + tests + demo) | done | CLI only — `bun scripts/demo-composition-graph.ts` prints the model behaviour for every mule_shoe contract step. |
+| **1** | **Hello visual graph — one Call renders** | 2.0 | `/primitives` opens an `.asm.ts` with `meta.graph` → 3-pane visual editor. "+ Call" picker drops one `dt_mule_shoe` onto the SVG canvas. MIDDLE pane bakes the mule_shoe via the new `composition-bake.ts`. RIGHT pane shows the live `.asm.ts` source updating as the graph mutates. |
+| **2** | **Two Calls + per-Call args + live edit** | 2.0 | Canvas shows A and B as separate cards with embedded param tables. Edit A's `pipeOD` inline → MIDDLE re-bakes only A's piece → RIGHT pane refreshes the `A = dt_mule_shoe({...})` line. Drag node cards to reposition (saved in `meta.graph.layout`). |
+| **3** | **Outer params + drag-to-wire** | 2.0 | Top of canvas: Parameters strip with `meta.params` as connectable badges. Drag from a param badge to a Call's arg slot → typed edge renders as SVG bezier curve. Orphan warning chip on params with 0 edges. Remove modal lists orphan slots. |
+| **4** | **CSG operators as method nodes** | 2.0 | New picker entries: ⊖ ⊕ ⊗. Drop `⊖ subtract` node, drag its `obj` socket to A's output, `arg` socket to B's output. Canvas shows the bezier curves. MIDDLE renders the boolean. RIGHT emits `A.subtract(B)`. |
+| **5** | **mv / rot wrapper nodes** | 1.5 | mv / rot show as small wrapper nodes around a child. Inline xyz inputs. MIDDLE shows positioned shape. |
+| **6** | **Legacy banner + cutover** | 1.5 | Old `.asm.ts` without `meta.graph` opens with amber legacy banner over an empty canvas + read-only original source pane below for transcription. Existing `CompositionEditor.svelte` (row-based) is REPLACED by the visual graph editor; `composition-tree.ts` + `assembly-deps.ts` deleted. |
+
+**Total ~11 days across 6 slices** (foundation already shipped). Each
+slice is independently shippable + verifiable end-to-end in the GUI.
+
+### Data layer additions for the visual layer
+
+`composition-graph.ts` gains:
+
+```ts
+export type LayoutXY = { x: number; y: number };
+
+export type Graph = {
+  // … existing fields …
+  layout: Record<NodeId, LayoutXY>;   // per-node canvas position (px relative to graph origin)
+};
+
+// new mutation
+export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph;
+```
+
+`newGraph()` initialises `layout: {}`. Newly-added Calls get a default
+position computed from the count of existing Calls (e.g.
+`{x: 100 + i * 220, y: 100}`). The emitter stores `layout` in the JSON
+graph literal. `composition-bake.ts` IGNORES layout — it's visual only,
+zero geometry impact.
 
 ## Why vertical slices
 

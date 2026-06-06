@@ -100,6 +100,8 @@ export type Edge = {
   to:   string;   // '<nodeId>.args.<key>' | '<nodeId>.offset.<i>' | '<nodeId>.rot.<i>'
 };
 
+export type LayoutXY = { x: number; y: number };
+
 export type Graph = {
   nodes: Record<NodeId, GraphNode>;
   root: NodeId;
@@ -113,12 +115,28 @@ export type Graph = {
    *  explicit here so the user can "import without instantiating" if they
    *  want a primitive in the picker without dropping a call yet. */
   imports: string[];
+  /** Per-node visual canvas position (px). Set by the editor's drag-to-move
+   *  affordance; ignored by composition-bake. Allows the visual editor to
+   *  restore positions across opens. */
+  layout: Record<NodeId, LayoutXY>;
 };
 
 export function newGraph(): Graph {
   const rootId = newNodeId();
   const rootNode: ContainerNode = { id: rootId, type: 'list', children: [] };
-  return { nodes: { [rootId]: rootNode }, root: rootId, params: {}, edges: [], imports: [] };
+  return { nodes: { [rootId]: rootNode }, root: rootId, params: {}, edges: [], imports: [], layout: {} };
+}
+
+/** Update a node's canvas position. Pure (returns new graph). */
+export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {
+  return { ...graph, layout: { ...graph.layout, [id]: xy } };
+}
+
+/** Compute a default position for a newly-added Call based on how many Calls
+ *  already exist — rough grid so a freshly-dropped node doesn't overlap. */
+export function defaultCallPosition(graph: Graph): LayoutXY {
+  const calls = Object.values(graph.nodes).filter((n) => n.type === 'call').length;
+  return { x: 80 + (calls % 4) * 240, y: 80 + Math.floor(calls / 4) * 180 };
 }
 
 // ─── aliases ──────────────────────────────────────────────────────────────
@@ -194,7 +212,8 @@ function finalize(graph: Graph): Graph {
 }
 
 /** Add a Call node to a parent container. Returns the new graph + the
- *  new node id. If parentId is omitted, appends to the root. */
+ *  new node id. If parentId is omitted, appends to the root. The Call gets
+ *  a default canvas layout position so the visual editor can place it. */
 export function addCall(
   graph: Graph,
   src: string,
@@ -204,7 +223,8 @@ export function addCall(
   const id = newNodeId();
   const alias = nextAlias(takenAliases(graph));
   const callNode: CallNode = { id, type: 'call', src, alias, args: { ...defaultArgs } };
-  const next = withNodes(graph, { [id]: callNode });
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: callNode }), layout: { ...graph.layout, [id]: xy } };
   const finalGraph = appendChild(next, parentId ?? graph.root, id);
   return { graph: finalize(finalGraph), id };
 }
