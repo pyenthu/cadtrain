@@ -233,18 +233,51 @@ Step-by-step acceptance test (run in `/primitives` after this plan ships):
 If any step doesn't behave as described, the plan has a bug. The
 mule_shoe case study is the **acceptance contract** for the architecture.
 
-## Phase rollout
+## Rollout — vertical slices, NOT horizontal phases
 
-| Phase | Days | Lands | UX-visible? |
-|---|---|---|---|
-| **A** | 2 | `composition-graph.ts` + `composition-emit.ts` shipped. NEW asms get the `meta.graph` block on save. Old `.asm.ts` files without `meta.graph` are NOT migrated — opening one shows an empty composition (the user rebuilds or deletes). | Yes — old assemblies become "empty" until rebuilt. |
-| **B** | 3 | `composition-bake.ts` interpreter shipped. `/api/primitives/preview` routes asm parts with `meta.graph` through it. The text-eval path for asm is deleted. | No (same renders, different engine). |
-| **C** | 4 | `CompositionEditor.svelte` rewritten to work on the graph directly (`$state` graph, drag-to-wire UI, typed edges, alias-at-instantiation). Auto-wire chip + tree-body-drift auto-fire deleted. K.66 drift becomes a node-property hash diff. mule_shoe case study passes end-to-end. | Yes — the model the user wanted. |
-| **D** | 1 | Cleanup: delete `composition-tree.ts`, `assembly-deps.ts`, the `p`-injection regex in primitive-loader for asm parts, the K.66 chrome that's no longer needed, `liftedSpecs`/`commitWithLifts` stubs. Update CLAUDE.md files. | No. |
+**Principle (user direction, 2026-06-06):** the visual builder, the
+bake interpretation, and the data structure MUST stay in sync. Doing
+one layer at a time silos them; bugs surface late; the GUI feels
+disconnected. Each slice ships **data + emit + bake + GUI together for
+ONE feature**. After each slice, the model is verifiable end-to-end
+in the GUI. ~1-2 days per slice, 6 slices total.
 
-**Total: ~10 days.** Each phase ships independently. After Phase A old
-assemblies are broken (read empty); user accepts this per the
-no-backward-compat directive.
+| # | Slice | Days | Data | Bake | GUI | mule_shoe steps |
+|---|---|---|---|---|---|---|
+| ✅ | **Foundation** (was Phase A) | done | `composition-graph.ts` + `composition-emit.ts` shipped. `addCall`, `setCallArg`, `addParam`, `wireArg`, `unwireArg`, `removeParam`, `removeNode`, `addContainer`, `addMethod`, `addMv`, `addRot`, `topoOrder`, `collectEdges`. 10/10 tests pass. | — | — | (data-layer coverage of 1-12) |
+| **1** | **Hello graph — one Call renders** | 1.5 | already in foundation | NEW `composition-bake.ts` — single Call → `loadPrim(src)` → apply args → `Manifold`. | `/primitives` extension: opening `.asm.ts` with `meta.graph` shows a small Graph view next to the existing editor (NOT replacing). Sole control: "+ Call" picker dropping an instance of any src. Canvas renders. | Step 1 |
+| **2** | **Two instances + per-Call edit** | 1.5 | (already there) — second `addCall` + `setCallArg` | List children compose; only re-bake the changed Call. | Per-Call accordion with `ArgValue` editors (literal number/text). Live re-bake on edit. | Steps 2-5 |
+| **3** | **Outer params + wiring** | 1.5 | already in foundation | Resolve `kind:'param'` from `paramValues`. Orphan check at remove time. | Parameters accordion (matches `/primitives` style). "Wire to outer" per slot. Orphan warning chip on params with 0 edges. Remove modal lists orphans. | Steps 6-12 |
+| **4** | **CSG operators** | 1.5 | `addMethod` (already there) | `.subtract(arg)` / `.add(arg)` / `.intersect(arg)` chain on the bake. | ⊖ ⊕ ⊗ toolbar in the Graph view; click pairs of nodes. | n/a — extends mule_shoe to multi-instance CSG |
+| **5** | **mv / rot wrappers** | 1.0 | already there | `mv(child, [x,y,z])` / `rot(child, [rx,ry,rz])`. | Position + rotation inputs on each Call's row. | n/a — positioning |
+| **6** | **Legacy banner + cutover** | 1.0 | — | drop the text-eval bake path for asm parts | Old `.asm.ts` without `meta.graph` open with amber "legacy — rebuild or delete" banner + read-only source pane. Save-as creates `meta.graph` version. Existing `CompositionEditor.svelte` is REPLACED by the Graph view; `composition-tree.ts` + `assembly-deps.ts` deleted. | (hybrid migration: Q3+Q4 resolved) |
+
+**Total: ~7.5 days across 6 slices** (foundation already shipped).
+Each slice is independently shippable + verifiable in the GUI.
+
+## Why vertical slices
+
+- **Drift impossible**: each slice forces all three layers to agree
+  before merging. A data-layer change that breaks the bake or the GUI
+  stops the slice; horizontal phases don't notice until late.
+- **Verifiable cadence**: you can poke at the GUI every 1-2 days, not 7+
+  days from now when three horizontal layers finally converge.
+- **Smaller backtrack**: a bad slice = revert one commit + redo 1.5
+  days. With horizontal phases a bake bug surfacing in the editor
+  phase rewinds days of editor work.
+- **mule_shoe contract walks naturally**: steps 1 / 2-5 / 6-12 map to
+  slices 1 / 2 / 3 respectively. Acceptance becomes a natural
+  milestone, not an end-of-phase audit.
+- **Comprehensible per slice**: data + bake + GUI for ONE feature is
+  one sitting; the whole architecture for none of them isn't.
+
+## What the foundation (former Phase A) bought
+
+The 10 tests in `composition-graph.test.ts` already cover the
+mutations Slices 1-3 will exercise. The demo script
+`scripts/demo-composition-graph.ts` prints the model behaviour for
+every mule_shoe step. Nothing from Phase A gets thrown away — Slice 1
+just adds the bake interpreter + a minimal GUI on top.
 
 ## What we delete (no compat)
 
