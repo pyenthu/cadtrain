@@ -543,19 +543,29 @@
         </div>
         {#if selectedIsSeed}
           {@const prop = proposedEntry}
-          <!-- Top tabs: Inferred (auto-derived) vs Proposed (rich draft).
-               Each tab carries its own definition + 2D + 3D + actions. -->
-          <div class="top-tabs" role="tablist">
-            <button class="top-tab" class:active={detailTab === 'inferred'} role="tab" aria-selected={detailTab === 'inferred'}
-              type="button" onclick={() => (detailTab = 'inferred')}>Inferred</button>
-            <button class="top-tab" class:active={detailTab === 'proposed'} role="tab" aria-selected={detailTab === 'proposed'}
-              type="button" disabled={!prop}
-              title={prop ? 'Rich hand-drafted entry (boolean_modify / compose / primitive)' : 'no proposed entry yet'}
-              onclick={() => (detailTab = 'proposed')}>Proposed</button>
-            <span class="top-tab-spacer"></span>
-            {#if detailTab === 'inferred' && promoteStatus}<span class="top-tab-status">{promoteStatus}</span>{/if}
-            {#if detailTab === 'proposed' && promoteProposedStatus}<span class="top-tab-status">{promoteProposedStatus}</span>{/if}
-          </div>
+          {#if detailTab === 'inferred' && promoteStatus}<div class="vocab-tab-status">{promoteStatus}</div>{/if}
+          {#if detailTab === 'proposed' && promoteProposedStatus}<div class="vocab-tab-status">{promoteProposedStatus}</div>{/if}
+          <!-- Vertical trapezoidal tabs (same pattern as /primitives sidebar):
+               24px rail on the LEFT, tab body fills remaining width. Inferred =
+               auto-derived 2D→r_revolve; Proposed = rich hand-drafted rule. -->
+          <div class="vocab-tabs">
+            <div class="vocab-vrail" role="tablist" aria-label="Bake interpretation">
+              <button class="vocab-vtab" class:active={detailTab === 'inferred'}
+                type="button" role="tab" aria-selected={detailTab === 'inferred'}
+                title="Inferred — auto-derived from the 2D drawing"
+                onclick={() => (detailTab = 'inferred')}>
+                <span class="vocab-vtab-ic">∿</span>
+                <span class="vocab-vtab-lbl">Inferred</span>
+              </button>
+              <button class="vocab-vtab" class:active={detailTab === 'proposed'}
+                type="button" role="tab" aria-selected={detailTab === 'proposed'}
+                disabled={!prop}
+                title={prop ? 'Proposed — rich hand-drafted rule (boolean_modify / compose / primitive)' : 'no proposed entry yet'}
+                onclick={() => (detailTab = 'proposed')}>
+                <span class="vocab-vtab-ic">◆</span>
+                <span class="vocab-vtab-lbl">Proposed</span>
+              </button>
+            </div>
 
           {#if detailTab === 'inferred'}
             {@const inf = inferCache[selected!]}
@@ -873,6 +883,7 @@
               </div>
             </div>
           {/if}
+          </div>
         {:else}
           <!-- CURATED term — no top tabs, single stacked body. -->
           {@const sc = sceneCache[e.exemplar]}
@@ -1198,23 +1209,38 @@
   .params-table td code { font: 600 11px ui-monospace, monospace; color: #0c4a6e; }
 
   /* === K.69 right-pane redesign — Inferred/Proposed top tabs ============ */
-  .detail-pane { padding: 0; display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+  .detail-pane { padding: 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .detail-pane > .tab-body { flex: 1 1 auto; }
   .detail-pane .detail-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 16px 6px; border-bottom: 1px solid #f1f5f9; }
   .head-spacer { flex: 1; }
   .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
-  /* Inferred | Proposed top tabs strip */
-  .top-tabs { display: flex; align-items: center; gap: 2px; padding: 0 16px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
-  .top-tab {
-    background: transparent; border: 0; padding: 8px 18px;
-    font: 600 13px Arial; color: #6b7280; cursor: pointer;
-    border-bottom: 3px solid transparent;
-    transition: color 0.1s, border-color 0.1s;
+  /* Vertical trapezoidal Inferred|Proposed tabs — mirrors the /primitives
+     sidebar rail (clip-path trapezoid + writing-mode: vertical-rl). 24px
+     rail OWNS the left column of the right-pane content area; the tab body
+     fills the rest. */
+  .vocab-tabs { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 28px 1fr; overflow: hidden; }
+  .vocab-vrail {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 0; background: #ececec;
+    border-right: 1px solid #e5e5e5;
+    align-items: stretch;
   }
-  .top-tab:hover:not(:disabled) { color: #1f2937; }
-  .top-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; background: #fff; }
-  .top-tab:disabled { color: #d1d5db; cursor: not-allowed; }
-  .top-tab-spacer { flex: 1; }
-  .top-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 0 8px; }
+  .vocab-vtab {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 16px 0;
+    border: 0; background: transparent; color: #444;
+    cursor: pointer;
+    clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
+    font: inherit; line-height: 1;
+    transition: color 0.1s, background 0.1s;
+  }
+  .vocab-vtab:hover:not(:disabled) { color: #cc2222; background: #e2e2e2; }
+  .vocab-vtab.active { color: #cc2222; background: #fafafa; }
+  .vocab-vtab:disabled { color: #c0c0c0; cursor: not-allowed; opacity: 0.5; }
+  .vocab-vtab-ic { font-size: 13px; opacity: 0.95; line-height: 1; }
+  .vocab-vtab-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11px Arial; letter-spacing: 1.2px; line-height: 1; white-space: nowrap; }
+  /* Status line above the tabs (for promote success/failure). */
+  .vocab-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 4px 16px; background: #f0fdf4; border-bottom: 1px solid #86efac; }
   /* Tab body — scrollable inner column. */
   .tab-body { padding: 16px 20px; overflow-y: auto; display: grid; gap: 12px; align-content: start; min-height: 0; }
   .tab-body .def-line { font: 13px/1.55 Arial; color: #374151; margin: 0; }
