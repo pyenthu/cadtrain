@@ -95,6 +95,67 @@
   // Per-term cache of (source, defaultArgs) so flipping back to Scene
   // doesn't refetch. Keyed by exemplar id.
   let sceneCache = $state<Record<string, { source: string; args: (number | string)[] } | 'loading' | 'error'>>({});
+  // Inference cache for seeds — keyed by term. The Scene tab kicks off the
+  // /api/vocab/infer call on first view; the result feeds both the
+  // inferred-polygon list AND a live PrimitiveDualCanvas bake. Promote()
+  // then writes the polygon back into vocabulary.seeds.json.
+  interface InferResult {
+    polygon: Array<[number, number]>;
+    source: string;
+    bbox: { r_max: number; z_max: number };
+    axisymmetric: boolean;
+    warnings: string[];
+    internal_features: Array<{ kind: string; fill_color: string; polygon: number[][] }>;
+    bake?: { ok: boolean; verts?: number; z_extent?: number; outer_r?: number; message?: string };
+    exemplar: string;
+  }
+  let inferCache = $state<Record<string, InferResult | 'loading' | 'error' | { error: string }>>({});
+  let promoteBusy = $state<Record<string, boolean>>({});
+  let promoteStatus = $state<string | null>(null);
+
+  async function runInfer(term: Term) {
+    if (inferCache[term] && inferCache[term] !== 'error') return;
+    inferCache = { ...inferCache, [term]: 'loading' };
+    try {
+      const r = await fetch(`/api/vocab/infer?term=${encodeURIComponent(term)}`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok || !data?.ok) {
+        inferCache = { ...inferCache, [term]: { error: data?.message ?? `HTTP ${r.status}` } };
+        return;
+      }
+      inferCache = { ...inferCache, [term]: data as InferResult };
+    } catch (e: any) {
+      inferCache = { ...inferCache, [term]: { error: e?.message ?? String(e) } };
+    }
+  }
+  async function promote(term: Term) {
+    const inf = inferCache[term];
+    if (!inf || typeof inf !== 'object' || 'error' in inf) {
+      promoteStatus = `✗ ${term}: nothing to promote — run Infer first`;
+      return;
+    }
+    if (promoteBusy[term]) return;
+    promoteBusy = { ...promoteBusy, [term]: true };
+    promoteStatus = `promoting ${term}…`;
+    try {
+      const r = await fetch(`/api/vocab/promote?term=${encodeURIComponent(term)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ polygon: inf.polygon, source: 'inferred' }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        promoteStatus = `✓ ${term} promoted — status flipped to 'promoted'. Reload to see the rule in vocabulary.seeds.json.`;
+      } else {
+        promoteStatus = `✗ ${term}: ${data.message ?? 'promotion failed'}`;
+      }
+    } catch (e: any) {
+      promoteStatus = `✗ ${term}: ${e?.message ?? e}`;
+    } finally {
+      promoteBusy = { ...promoteBusy, [term]: false };
+    }
+  }
+
   // When a term is selected + the Scene tab is active, fetch its
   // source + default params once. The component shows a loading state
   // until ready.
@@ -358,15 +419,97 @@
         {#if detailTab === 'scene'}
           <div class="scene-pane">
             {#if selectedIsSeed}
-              <!-- Seeds have no rule / exemplar yet, so the Scene tab is just
-                   the 2D vendor silhouette + the size variants table. The
-                   point is visual review before promotion. -->
+              <!-- Seeds: top row = 2D drawing + Inferred 3D side-by-side.
+                   Below = inferred polygon + bake numbers + Promote button.
+                   At the bottom = metadata + variants table. -->
+              {@const inf = inferCache[selected!]}
               <div class="seed-scene">
-                {#if e.compjson_ref && CompJsonSilhouette}
-                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={320} />
-                {:else}
-                  <div class="empty">no compjson_ref — this seed has no 2D silhouette on file.</div>
+                <div class="seed-row">
+                  {#if e.compjson_ref && CompJsonSilhouette}
+                    <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
+                  {:else}
+                    <div class="silhouette empty-card">no compjson_ref on file</div>
+                  {/if}
+
+                  <div class="infer-card">
+                    <div class="cap-row">
+                      <div class="caption">Inferred 3D · r_revolve</div>
+                      <span class="spacer"></span>
+                      {#if !inf || inf === 'error'}
+                        <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>Infer</button>
+                      {:else if inf === 'loading'}
+                        <span class="bar-status">inferring…</span>
+                      {:else if 'error' in inf}
+                        <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>retry</button>
+                      {:else}
+                        <span class="bar-meta">{inf.bake?.verts ?? '?'} verts · z={inf.bake?.z_extent ?? '?'} · r={inf.bake?.outer_r ?? '?'}</span>
+                      {/if}
+                    </div>
+                    {#if !inf}
+                      <div class="infer-cta">
+                        Click <strong>Infer</strong> to derive an axisymmetric profile from the 2D drawing.
+                        <br>Deterministic — half-section + OD-calibration → <code>r_revolve</code> polygon.
+                      </div>
+                    {:else if inf === 'loading'}
+                      <div class="empty">inferring polygon + bake…</div>
+                    {:else if 'error' in inf}
+                      <div class="error">inference failed: {inf.error}</div>
+                    {:else if !inf.bake?.ok}
+                      <div class="error">bake failed: {inf.bake?.message ?? 'no bake result'}</div>
+                      <details class="block"><summary>polygon ({inf.polygon.length} verts)</summary>
+                        <pre class="code">{inf.polygon.map(([r, z]: [number, number], i: number) => `  [${i}] r=${r}, z=${z}`).join('\n')}</pre>
+                      </details>
+                    {:else if PrimitiveDualCanvas}
+                      <PrimitiveDualCanvas
+                        id={inf.exemplar}
+                        name={inf.exemplar}
+                        description={`Inferred from ${e.compjson_ref}`}
+                        args={[]}
+                        source={inf.source}
+                        showControls={true}
+                        showLabels={false}
+                      />
+                    {:else}
+                      <div class="empty">3D canvas loading…</div>
+                    {/if}
+                  </div>
+                </div>
+
+                {#if inf && typeof inf === 'object' && !('error' in inf) && inf.polygon?.length}
+                  <div class="infer-details">
+                    <div class="cap-row">
+                      <div class="caption">Profile polygon — {inf.polygon.length} verts · axisymmetric: {inf.axisymmetric ? 'yes' : 'no'}</div>
+                      <span class="spacer"></span>
+                      <button class="bar-btn promote-btn" type="button" disabled={promoteBusy[selected!]}
+                        title="Write this polygon into vocabulary.seeds.json as the seed's rule and flip status to promoted."
+                        onclick={() => promote(selected!)}
+                      >{promoteBusy[selected!] ? 'promoting…' : '✓ Promote → vocabulary'}</button>
+                    </div>
+                    <details class="block">
+                      <summary>polygon vertices · [r in, z in]</summary>
+                      <pre class="code">{inf.polygon.map(([r, z]: [number, number], i: number) => `  [${i.toString().padStart(2)}]  r=${r.toFixed(4).padStart(8)}  z=${z.toFixed(4).padStart(8)}`).join('\n')}</pre>
+                    </details>
+                    {#if inf.internal_features?.length}
+                      <details class="block">
+                        <summary>{inf.internal_features.length} internal feature{inf.internal_features.length === 1 ? '' : 's'} (seats / elastomer / marks)</summary>
+                        <pre class="code">{inf.internal_features.map((f: any, i: number) => `[${i}] ${f.kind} (fill ${f.fill_color}) — ${f.polygon.length} verts`).join('\n')}</pre>
+                      </details>
+                    {/if}
+                    {#if inf.warnings?.length}
+                      <details class="block" open>
+                        <summary>{inf.warnings.length} warning{inf.warnings.length === 1 ? '' : 's'}</summary>
+                        <ul class="warn-list">
+                          {#each inf.warnings as w (w)}<li>⚠ {w}</li>{/each}
+                        </ul>
+                      </details>
+                    {/if}
+                    <details class="block">
+                      <summary>generated source (.rev.ts)</summary>
+                      <pre class="code">{inf.source}</pre>
+                    </details>
+                  </div>
                 {/if}
+
                 <div class="seed-meta">
                   <div class="kv-row"><span class="kv-key">category</span><span class="kv-val">{e.category} · {e.sub_category}</span></div>
                   {#if e.metadata?.tool_comp}
@@ -376,7 +519,7 @@
                     <span class="kv-val">OD {e.dims_from_catalogue?.od_in ?? '—'}" · ID {e.dims_from_catalogue?.id_in ?? '—'}" · L {e.dims_from_catalogue?.length_ft ?? '—'} ft</span>
                   </div>
                   {#if e.variants?.length}
-                    <details class="block" open>
+                    <details class="block">
                       <summary>{e.variants.length} catalogue variant{e.variants.length === 1 ? '' : 's'}</summary>
                       <table class="params-table">
                         <thead><tr><th>#</th><th>OD"</th><th>ID"</th><th>L ft</th><th>weight</th><th>company</th><th>top thread</th><th>bot thread</th><th>grade</th></tr></thead>
@@ -398,11 +541,8 @@
                       </table>
                     </details>
                   {/if}
-                  <div class="seed-promote">
-                    <strong>promote:</strong> write a <code>rule: {`{ kind:'primitive'|'compose', ... }`}</code> block into <code>vocabulary.seeds.json</code>,
-                    flip <code>status</code> to <code>'promoted'</code>, and the translator will pick it up. Mid-term we'll lift promoted seeds into <code>vocabulary.json</code>.
-                  </div>
                 </div>
+                {#if promoteStatus}<div class="promote-status">{promoteStatus}</div>{/if}
               </div>
             {:else}
               {@const sc = sceneCache[e.exemplar]}
@@ -611,11 +751,46 @@
   .curated-scene { display: grid; grid-template-rows: 1fr; height: calc(100vh - 220px); }
   .curated-scene.with-ref { grid-template-columns: 1.4fr 1fr; }
   .bake-3d { overflow: hidden; min-width: 0; }
-  /* Seed scene — silhouette on top, metadata + variants table below. Scrolls. */
-  .seed-scene { display: grid; grid-template-rows: auto 1fr; gap: 12px; padding: 12px; height: calc(100vh - 220px); overflow: auto; }
+  /* Seed scene — 2D drawing + Inferred 3D side-by-side, polygon details
+     below, metadata + variants table at the bottom. Scrolls vertically. */
+  .seed-scene { display: grid; gap: 12px; padding: 12px; height: calc(100vh - 220px); overflow: auto; }
+  .seed-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
+  .seed-row > * { min-width: 0; }
   .seed-meta { display: grid; gap: 4px; align-content: start; }
-  .seed-promote { margin-top: 12px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; font: 12px Arial; color: #78350f; line-height: 1.5; }
-  .seed-promote code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
+  /* Inferred-3D card — mirrors CompJsonSilhouette card styling so the two
+     panels read as a balanced pair. The PrimitiveDualCanvas takes the
+     remaining vertical space. */
+  .infer-card {
+    display: grid; grid-template-rows: auto 1fr;
+    gap: 4px;
+    background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
+    padding: 8px;
+    min-height: 320px;
+    overflow: hidden;
+  }
+  .infer-card .cap-row { display: flex; align-items: center; gap: 8px; }
+  .infer-card .caption {
+    font: 600 11px Arial; color: #57534e;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .infer-card .spacer { flex: 1; }
+  .infer-card .bar-meta { font: 10px ui-monospace, monospace; color: #57534e; }
+  .infer-cta { padding: 24px 16px; text-align: center; color: #57534e; font: 12px Arial; line-height: 1.6; }
+  .infer-cta code { font: 11px ui-monospace, monospace; color: #1e40af; }
+  .empty-card { display: flex; align-items: center; justify-content: center; color: #a8a29e; font: 11px Arial; min-height: 320px; background: #fafaf9; border: 1px dashed #e7e5e4; border-radius: 6px; }
+  .infer-details { display: grid; gap: 6px; padding: 8px 12px; background: #fff; border: 1px solid #e7e5e4; border-radius: 6px; }
+  .infer-details .cap-row { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid #f5f5f4; margin-bottom: 4px; }
+  .infer-details .caption { font: 600 12px Arial; color: #1f2937; }
+  .infer-details .spacer { flex: 1; }
+  .warn-list { margin: 4px 0 0 16px; padding: 0; }
+  .warn-list li { font: 11px Arial; color: #78350f; padding: 2px 0; }
+  .promote-btn { background: #dcfce7; border-color: #15803d; color: #14532d; }
+  .promote-btn:hover:not(:disabled) { background: #bbf7d0; }
+  .promote-status {
+    padding: 8px 12px; margin-top: 8px;
+    background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px;
+    font: 12px Arial; color: #78350f;
+  }
 
   .block { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
   .block summary { padding: 8px 12px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
