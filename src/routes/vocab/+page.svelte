@@ -31,6 +31,26 @@
   let renderError = $state<string | null>(null);
   let selected = $state<Term | null>(null);
   let search = $state('');
+
+  // Resizable diagram|detail split — flexible divider, defaults to 50/50.
+  let splitPct = $state(50);
+  let gridEl: HTMLElement | undefined = $state();
+  let dragging = false;
+  function startDrag() {
+    dragging = true;
+    window.addEventListener('pointermove', onDrag);
+    window.addEventListener('pointerup', stopDrag);
+  }
+  function onDrag(e: PointerEvent) {
+    if (!dragging || !gridEl) return;
+    const r = gridEl.getBoundingClientRect();
+    splitPct = Math.max(18, Math.min(82, ((e.clientX - r.left) / r.width) * 100));
+  }
+  function stopDrag() {
+    dragging = false;
+    window.removeEventListener('pointermove', onDrag);
+    window.removeEventListener('pointerup', stopDrag);
+  }
   // Refresh state — per-term + global. While a regen is in flight, the
   // matching button shows ↻… and is disabled. After completion the
   // Scene cache for the affected exemplar is invalidated so the next
@@ -110,6 +130,92 @@
     exemplar: string;
   }
   let inferCache = $state<Record<string, InferResult | 'loading' | 'error' | { error: string }>>({});
+  // K.69 — proposed-bake cache. Distinct from inferCache: this is the
+  // PROPOSED (hand-drafted) rule baked via /api/vocab/bake-proposed, NOT
+  // the auto-derived single-revolve. The amber proposal card shows it
+  // next to the 2D drawing for direct comparison.
+  interface ProposedBake {
+    exemplar: string;
+    source: string;
+    bake: { ok: boolean; verts?: number; z_extent?: number; outer_r?: number; message?: string };
+  }
+  let proposedBakeCache = $state<Record<string, ProposedBake | 'loading' | { error: string }>>({});
+  // Left pane: Topology | Browse tabs — share the vertical space instead of stacking.
+  let leftTab = $state<'topology' | 'browse'>('topology');
+  // Per-term bake tab in the Scene right pane: Inferred | Proposed (vertical tabs).
+  let bakeTab = $state<Record<string, 'inferred' | 'proposed'>>({});
+  function setBakeTab(term: Term, t: 'inferred' | 'proposed') {
+    bakeTab = { ...bakeTab, [term]: t };
+    if (t === 'proposed' && !proposedBakeCache[term]) runProposedBake(term);
+  }
+  // Per-term parameter overrides (drives the proposed bake via slider input).
+  // Stored as positional [number, number, …] in meta.params declaration order
+  // so it matches what the function signature expects.
+  let paramOverrides = $state<Record<string, number[]>>({});
+  // Debounce slider input → bake re-fetch by 250ms so dragging is smooth.
+  let bakeDebounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  function updateParam(term: Term, idx: number, value: number) {
+    const cur = paramOverrides[term] ?? defaultParams(term);
+    const next = cur.slice(); next[idx] = value;
+    paramOverrides = { ...paramOverrides, [term]: next };
+    clearTimeout(bakeDebounceTimers[term]);
+    bakeDebounceTimers[term] = setTimeout(() => runProposedBake(term, next), 250);
+  }
+  function defaultParams(term: Term): number[] {
+    const entry = getProposed(term);
+    if (!entry?.params) return [];
+    return Object.values(entry.params).map((p: any) => p.default);
+  }
+  // Derived view-models referenced from the markup — Svelte5 strict about
+  // {@const} placement, so the inline derivations live up here.
+  let activeBakeTab = $derived<'inferred' | 'proposed'>(selected ? (bakeTab[selected] ?? 'inferred') : 'inferred');
+  let proposedEntry = $derived(selected ? getProposed(selected) : null);
+  let currentParams = $derived(selected ? (paramOverrides[selected] ?? defaultParams(selected)) : []);
+  let promoteProposedBusy = $state<Record<string, boolean>>({});
+  let promoteProposedStatus = $state<string | null>(null);
+  async function promoteProposed(term: Term) {
+    if (promoteProposedBusy[term]) return;
+    promoteProposedBusy = { ...promoteProposedBusy, [term]: true };
+    promoteProposedStatus = `promoting ${term} → vocabulary.json…`;
+    try {
+      const r = await fetch(`/api/vocab/promote-proposed?term=${encodeURIComponent(term)}`, { method: 'POST' });
+      const data = await r.json();
+      if (data.ok) {
+        promoteProposedStatus = `✓ ${term} promoted to vocabulary.json v${data.new_vocab_version}` +
+          (data.exemplar_saved ? ` · exemplar ${data.exemplar} saved to volume` : ` · ⚠ exemplar save: ${data.exemplar_save_error ?? 'unknown'}`) +
+          (data.seed_marked ? ' · seed flipped to status:promoted' : '');
+      } else {
+        promoteProposedStatus = `✗ ${term}: ${data.message ?? 'promote failed'}`;
+      }
+    } catch (e: any) {
+      promoteProposedStatus = `✗ ${term}: ${e?.message ?? e}`;
+    } finally {
+      promoteProposedBusy = { ...promoteProposedBusy, [term]: false };
+    }
+  }
+  async function runProposedBake(term: Term, params?: number[]) {
+    // params undefined → first bake or refresh with current overrides;
+    // params explicit → slider-driven re-bake, skip the early-return so each
+    // tick lands a fresh bake.
+    const explicit = Array.isArray(params);
+    if (!explicit && proposedBakeCache[term] && proposedBakeCache[term] !== 'loading') return;
+    if (!explicit) proposedBakeCache = { ...proposedBakeCache, [term]: 'loading' };
+    try {
+      const r = await fetch(`/api/vocab/bake-proposed?term=${encodeURIComponent(term)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ params: params ?? [] }),
+      });
+      const data = await r.json();
+      if (!r.ok || !data?.ok) {
+        proposedBakeCache = { ...proposedBakeCache, [term]: { error: data?.message ?? `HTTP ${r.status}` } };
+        return;
+      }
+      proposedBakeCache = { ...proposedBakeCache, [term]: { exemplar: data.exemplar, source: data.source, bake: data.bake } };
+    } catch (e: any) {
+      proposedBakeCache = { ...proposedBakeCache, [term]: { error: e?.message ?? String(e) } };
+    }
+  }
   let promoteBusy = $state<Record<string, boolean>>({});
   let promoteStatus = $state<string | null>(null);
 
@@ -337,58 +443,77 @@
     <a class="bar-link" href="https://github.com/pyenthu/cadtrain/blob/main/docs/parts/vocabulary.md" target="_blank" rel="noopener">md ↗</a>
   </header>
 
-  <main class="vocab-grid">
-    <!-- LEFT: diagram + term browser -->
+  <main class="vocab-grid" bind:this={gridEl} style="grid-template-columns: {splitPct}fr 7px {100 - splitPct}fr">
+    <!-- LEFT: Topology | Browse tabs (share vertical space, switch freely). -->
     <section class="diagram-pane">
-      <div class="diagram-head">
-        <h2>Topology</h2>
-        <span class="hint">click a node →</span>
+      <div class="left-tabs" role="tablist">
+        <button class="left-tab" class:active={leftTab === 'topology'} role="tab" aria-selected={leftTab === 'topology'}
+          type="button" onclick={() => (leftTab = 'topology')}>Topology</button>
+        <button class="left-tab" class:active={leftTab === 'browse'} role="tab" aria-selected={leftTab === 'browse'}
+          type="button" onclick={() => (leftTab = 'browse')}>Browse <span class="tab-count">{termList().length}</span></button>
+        <span class="tab-spacer"></span>
+        {#if leftTab === 'topology'}<span class="hint">click a node →</span>{/if}
       </div>
-      {#if mmd}
-        <div id="vocab-diagram" class="diagram">
-          {#if renderedSvg}
-            {@html renderedSvg}
-          {:else if renderError}
-            <pre class="error">Mermaid render failed: {renderError}</pre>
-            <pre class="raw">{mmd}</pre>
-          {:else}
-            <div class="loading">rendering…</div>
-          {/if}
-        </div>
-      {:else}
-        <div class="empty">no vocabulary-graph.mmd on disk — run <code>bun scripts/render-vocab-graph.ts &gt; docs/parts/vocabulary-graph.mmd</code></div>
-      {/if}
 
-      <div class="browser">
-        <input
-          type="text"
-          class="browser-search"
-          placeholder="search terms · synonyms · definitions"
-          bind:value={search}
-        />
-        <div class="browser-list">
-          {#each filteredTerms() as { term, entry, seed } (term)}
-            <button
-              class="browser-row"
-              class:active={selected === term}
-              class:asm={!seed && entry.kind === 'asm'}
-              class:seed
-              type="button"
-              onclick={() => selectTerm(term)}
-            >
-              <span class="row-kind">{seed ? 'seed' : (entry.kind === 'asm' ? 'asm' : 'rev')}</span>
-              <span class="row-name">{term}</span>
-              <span class="row-rule">{seed
-                ? `${entry.category} · ${entry.sub_category}${entry.variants?.length > 1 ? ` · ${entry.variants.length} variants` : ''}`
-                : ruleSummary(entry)}</span>
-            </button>
-          {/each}
-          {#if filteredTerms().length === 0}
-            <div class="empty">no terms match "{search}"</div>
-          {/if}
+      {#if leftTab === 'topology'}
+        {#if mmd}
+          <div id="vocab-diagram" class="diagram">
+            {#if renderedSvg}
+              {@html renderedSvg}
+            {:else if renderError}
+              <pre class="error">Mermaid render failed: {renderError}</pre>
+              <pre class="raw">{mmd}</pre>
+            {:else}
+              <div class="loading">rendering…</div>
+            {/if}
+          </div>
+        {:else}
+          <div class="empty">no vocabulary-graph.mmd on disk — run <code>bun scripts/render-vocab-graph.ts &gt; docs/parts/vocabulary-graph.mmd</code></div>
+        {/if}
+      {:else}
+        <div class="browser browser-full">
+          <input
+            type="text"
+            class="browser-search"
+            placeholder="search terms · synonyms · definitions"
+            bind:value={search}
+          />
+          <div class="browser-list">
+            {#each filteredTerms() as { term, entry, seed } (term)}
+              <button
+                class="browser-row"
+                class:active={selected === term}
+                class:asm={!seed && entry.kind === 'asm'}
+                class:seed
+                type="button"
+                onclick={() => selectTerm(term)}
+              >
+                <span class="row-kind">{seed ? 'seed' : (entry.kind === 'asm' ? 'asm' : 'rev')}</span>
+                <span class="row-name">{term}</span>
+                <span class="row-rule">{seed
+                  ? `${entry.category} · ${entry.sub_category}${entry.variants?.length > 1 ? ` · ${entry.variants.length} variants` : ''}`
+                  : ruleSummary(entry)}</span>
+              </button>
+            {/each}
+            {#if filteredTerms().length === 0}
+              <div class="empty">no terms match "{search}"</div>
+            {/if}
+          </div>
         </div>
-      </div>
+      {/if}
     </section>
+
+    <!-- draggable divider -->
+    <div
+      class="vdivider"
+      class:dragging
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panels"
+      onpointerdown={startDrag}
+      ondblclick={() => (splitPct = 50)}
+      title="Drag to resize · double-click for 50/50"
+    ></div>
 
     <!-- RIGHT: term details -->
     <aside class="detail-pane">
@@ -433,52 +558,132 @@
               <div class="seed-scene">
                 <div class="seed-row">
                   {#if e.compjson_ref && CompJsonSilhouette}
-                    <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
+                    <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={320} />
                   {:else}
                     <div class="silhouette empty-card">no compjson_ref on file</div>
                   {/if}
 
-                  <div class="infer-card">
-                    <div class="cap-row">
-                      <div class="caption">Inferred 3D · r_revolve</div>
-                      <span class="spacer"></span>
-                      {#if !inf || inf === 'error'}
-                        <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>Infer</button>
-                      {:else if inf === 'loading'}
-                        <span class="bar-status">inferring…</span>
-                      {:else if 'error' in inf}
-                        <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>retry</button>
+                  <!-- VERTICAL TABS: Inferred vs Proposed bake. Each tab's
+                       content swaps in this single canvas pane. -->
+                  <div class="bake-vtabs">
+                    <div class="vtab-strip" role="tablist">
+                      <button class="vtab" class:active={activeBakeTab === 'inferred'} role="tab" aria-selected={activeBakeTab === 'inferred'}
+                        type="button" onclick={() => setBakeTab(selected!, 'inferred')}>Inferred</button>
+                      <button class="vtab" class:active={activeBakeTab === 'proposed'} role="tab" aria-selected={activeBakeTab === 'proposed'}
+                        type="button" disabled={!proposedEntry}
+                        title={proposedEntry ? 'Proposed rich rule (boolean_modify)' : 'no proposed entry for this term'}
+                        onclick={() => setBakeTab(selected!, 'proposed')}>Proposed</button>
+                    </div>
+
+                    <div class="vtab-content">
+                      {#if activeBakeTab === 'inferred'}
+                        <div class="bake-head">
+                          <div class="bake-title">Inferred 3D · r_revolve</div>
+                          <span class="spacer"></span>
+                          {#if !inf || inf === 'error'}
+                            <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>Infer</button>
+                          {:else if inf === 'loading'}
+                            <span class="bar-status">inferring…</span>
+                          {:else if 'error' in inf}
+                            <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>retry</button>
+                          {:else}
+                            <span class="bar-meta">{inf.bake?.verts ?? '?'} verts · z={inf.bake?.z_extent ?? '?'} · r={inf.bake?.outer_r ?? '?'}</span>
+                          {/if}
+                        </div>
+                        {#if !inf}
+                          <div class="infer-cta">
+                            Click <strong>Infer</strong> to derive an axisymmetric profile from the 2D drawing.
+                            <br>Deterministic — half-section + OD-calibration → <code>r_revolve</code> polygon.
+                          </div>
+                        {:else if inf === 'loading'}
+                          <div class="empty">inferring polygon + bake…</div>
+                        {:else if 'error' in inf}
+                          <div class="error">inference failed: {inf.error}</div>
+                        {:else if !inf.bake?.ok}
+                          <div class="error">bake failed: {inf.bake?.message ?? 'no bake result'}</div>
+                        {:else if PrimitiveDualCanvas}
+                          <PrimitiveDualCanvas
+                            id={inf.exemplar}
+                            name={inf.exemplar}
+                            description={`Inferred from ${e.compjson_ref}`}
+                            args={[]}
+                            source={inf.source}
+                            showControls={true}
+                            showLabels={false}
+                          />
+                        {:else}
+                          <div class="empty">3D canvas loading…</div>
+                        {/if}
                       {:else}
-                        <span class="bar-meta">{inf.bake?.verts ?? '?'} verts · z={inf.bake?.z_extent ?? '?'} · r={inf.bake?.outer_r ?? '?'}</span>
+                        <!-- Proposed tab -->
+                        {@const pb = proposedBakeCache[selected!]}
+                        <div class="bake-head">
+                          <div class="bake-title">Proposed 3D · {proposedEntry?.rule?.kind ?? '?'}</div>
+                          <span class="spacer"></span>
+                          {#if !pb}
+                            <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake proposed</button>
+                          {:else if pb === 'loading'}
+                            <span class="bar-status">baking…</span>
+                          {:else if 'error' in (pb as any)}
+                            <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
+                            <span class="bar-status err">err: {(pb as any).error}</span>
+                          {:else}
+                            <span class="bar-meta">{(pb as ProposedBake).bake?.verts ?? '?'} verts · z={(pb as ProposedBake).bake?.z_extent ?? '?'} · r={(pb as ProposedBake).bake?.outer_r ?? '?'}</span>
+                          {/if}
+                        </div>
+                        {#if !pb}
+                          <div class="infer-cta">
+                            Click <strong>Bake proposed</strong> to render the hand-drafted rule (e.g. <code>boolean_modify</code> with the angled cut).
+                            <br>Drag the sliders below the canvas to re-bake with different params.
+                          </div>
+                        {:else if pb === 'loading'}
+                          <div class="empty">baking proposed source…</div>
+                        {:else if 'error' in (pb as any)}
+                          <div class="error">bake failed: {(pb as any).error}</div>
+                        {:else if !(pb as ProposedBake).bake?.ok}
+                          <div class="error">bake failed: {(pb as ProposedBake).bake?.message ?? 'no bake result'}</div>
+                        {:else if PrimitiveDualCanvas}
+                          {@const proposedPb = pb as ProposedBake}
+                          <PrimitiveDualCanvas
+                            id={proposedPb.exemplar}
+                            name={proposedPb.exemplar}
+                            description={proposedEntry?.definition}
+                            args={paramOverrides[selected!] ?? defaultParams(selected!)}
+                            source={proposedPb.source}
+                            showControls={true}
+                            showLabels={false}
+                          />
+                          {#if proposedEntry?.params}
+                            <div class="param-sliders">
+                              <div class="ps-cap">params · drag to re-bake live</div>
+                              {#each Object.entries(proposedEntry.params) as [pk, pdef], idx (pk)}
+                                {@const cur = (paramOverrides[selected!] ?? defaultParams(selected!))[idx] ?? (pdef as any).default}
+                                <div class="ps-row">
+                                  <span class="ps-key">{pk}</span>
+                                  <input class="ps-slider" type="range"
+                                    min={(pdef as any).min ?? 0}
+                                    max={(pdef as any).max ?? 100}
+                                    step={(pdef as any).step ?? 0.1}
+                                    value={cur}
+                                    oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
+                                  />
+                                  <input class="ps-num" type="number"
+                                    min={(pdef as any).min ?? 0}
+                                    max={(pdef as any).max ?? 100}
+                                    step={(pdef as any).step ?? 0.1}
+                                    value={cur}
+                                    oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
+                                  />
+                                  <span class="ps-unit">{(pdef as any).unit ?? ''}</span>
+                                </div>
+                              {/each}
+                            </div>
+                          {/if}
+                        {:else}
+                          <div class="empty">3D canvas loading…</div>
+                        {/if}
                       {/if}
                     </div>
-                    {#if !inf}
-                      <div class="infer-cta">
-                        Click <strong>Infer</strong> to derive an axisymmetric profile from the 2D drawing.
-                        <br>Deterministic — half-section + OD-calibration → <code>r_revolve</code> polygon.
-                      </div>
-                    {:else if inf === 'loading'}
-                      <div class="empty">inferring polygon + bake…</div>
-                    {:else if 'error' in inf}
-                      <div class="error">inference failed: {inf.error}</div>
-                    {:else if !inf.bake?.ok}
-                      <div class="error">bake failed: {inf.bake?.message ?? 'no bake result'}</div>
-                      <details class="block"><summary>polygon ({inf.polygon.length} verts)</summary>
-                        <pre class="code">{inf.polygon.map(([r, z]: [number, number], i: number) => `  [${i}] r=${r}, z=${z}`).join('\n')}</pre>
-                      </details>
-                    {:else if PrimitiveDualCanvas}
-                      <PrimitiveDualCanvas
-                        id={inf.exemplar}
-                        name={inf.exemplar}
-                        description={`Inferred from ${e.compjson_ref}`}
-                        args={[]}
-                        source={inf.source}
-                        showControls={true}
-                        showLabels={false}
-                      />
-                    {:else}
-                      <div class="empty">3D canvas loading…</div>
-                    {/if}
                   </div>
                 </div>
 
@@ -517,13 +722,13 @@
                   </div>
                 {/if}
 
-                {#if getProposed(selected!)}
-                  {@const prop = getProposed(selected!)}
+                {#if proposedEntry}
+                  {@const prop = proposedEntry}
                   <div class="proposal-card">
                     <div class="cap-row">
                       <div class="caption">Proposed vocab entry — review before promoting</div>
                       <span class="spacer"></span>
-                      <span class="prop-status">draft · review only</span>
+                      <span class="prop-status">draft · review only · bake in the <em>Proposed</em> tab above</span>
                     </div>
 
                     <div class="prop-grid">
@@ -640,11 +845,26 @@
                       </details>
                     </div>
 
+                    <div class="prop-actions">
+                      <button
+                        class="bar-btn promote-btn"
+                        type="button"
+                        disabled={promoteProposedBusy[selected!] || !proposedBakeCache[selected!] || proposedBakeCache[selected!] === 'loading' || (proposedBakeCache[selected!] && 'error' in (proposedBakeCache[selected!] as any))}
+                        title="Lift this proposed entry into vocabulary.json (curated terms) AND save dt_<term>.prim.ts to the volume. Bake the proposal first."
+                        onclick={() => promoteProposed(selected!)}
+                      >{promoteProposedBusy[selected!] ? 'promoting…' : '✓ Promote to vocabulary.json'}</button>
+                      <span class="prop-actions-hint">
+                        {#if !proposedBakeCache[selected!] || proposedBakeCache[selected!] === 'loading'}
+                          bake the proposed 3D first (button at top right of this card)
+                        {:else}
+                          writes vocabulary.json + saves <code>{prop.exemplar ?? `dt_${selected}`}</code> to volume
+                        {/if}
+                      </span>
+                    </div>
+                    {#if promoteProposedStatus}<div class="promote-status">{promoteProposedStatus}</div>{/if}
                     <div class="prop-footer">
                       Editing is by chat — tell me what to change and I'll update
                       <code>docs/parts/proposed-vocab-entries.json</code>.
-                      When this looks right, say <strong>ship it</strong> and the Promote
-                      button writes the full entry into <code>vocabulary.json</code>.
                     </div>
                   </div>
                 {/if}
@@ -825,9 +1045,12 @@
   .bar-link { font: 12px Arial; color: #2563eb; text-decoration: none; }
   .bar-link:hover { text-decoration: underline; }
 
-  .vocab-grid { display: grid; grid-template-columns: 1.6fr 1fr; overflow: hidden; }
+  .vocab-grid { display: grid; overflow: hidden; }
+  /* flexible divider between diagram | detail (default 50/50, drag to resize) */
+  .vdivider { cursor: col-resize; background: #e5e7eb; transition: background 0.1s; touch-action: none; }
+  .vdivider:hover, .vdivider.dragging { background: #cc2222; }
 
-  .diagram-pane { display: grid; grid-template-rows: auto 1fr auto; border-right: 1px solid #e5e7eb; overflow: hidden; }
+  .diagram-pane { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
   .diagram-head { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #f1f5f9; }
   .diagram-head h2 { margin: 0; font: 600 13px Arial; color: #1f2937; }
   .diagram-head .hint { font: 11px Arial; color: #9ca3af; }
@@ -967,6 +1190,45 @@
     padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px;
   }
   .prop-footer code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
+  .proposed-3d { display: grid; gap: 4px; background: #fff; padding: 8px; border: 1px solid #fde68a; border-radius: 4px; margin: 4px 0; }
+  .proposed-3d-canvas { height: 380px; overflow: hidden; }
+  /* Vertical-tabs container for Inferred|Proposed bakes in the seed scene. */
+  .bake-vtabs { display: grid; grid-template-columns: 88px 1fr; gap: 0; background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px; overflow: hidden; min-height: 360px; }
+  .vtab-strip { display: flex; flex-direction: column; background: #f5f5f4; border-right: 1px solid #e7e5e4; padding: 6px 0; gap: 4px; }
+  .vtab {
+    background: transparent; border: 0; border-left: 3px solid transparent;
+    padding: 10px 12px; font: 600 12px Arial; color: #57534e;
+    cursor: pointer; text-align: left;
+    transition: background 0.1s;
+  }
+  .vtab:hover:not(:disabled) { background: #e7e5e4; }
+  .vtab.active { background: #fff; color: #0c4a6e; border-left-color: #0369a1; }
+  .vtab:disabled { color: #d6d3d1; cursor: not-allowed; }
+  .vtab-content { padding: 8px 10px; overflow: auto; display: grid; gap: 6px; align-content: start; }
+  .bake-head { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid #f5f5f4; }
+  .bake-head .spacer { flex: 1; }
+  .bake-title { font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .bake-head .bar-meta { font: 10px ui-monospace, monospace; color: #57534e; }
+  .bake-head .bar-status { font: 11px Arial; color: #6b7280; }
+  .bake-head .bar-status.err { color: #b91c1c; }
+  /* Param sliders driving the proposed bake live. */
+  .param-sliders { display: grid; gap: 4px; padding: 8px; background: #fff; border: 1px solid #e7e5e4; border-radius: 4px; }
+  .ps-cap { font: 600 10px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; border-bottom: 1px solid #f5f5f4; }
+  .ps-row { display: grid; grid-template-columns: 90px 1fr 70px 30px; gap: 6px; align-items: center; }
+  .ps-key { font: 600 11px ui-monospace, monospace; color: #1f2937; }
+  .ps-slider { width: 100%; }
+  .ps-num { width: 100%; padding: 2px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
+  .ps-unit { font: 10px Arial; color: #6b7280; }
+  /* Left-pane tab strip — Topology | Browse. */
+  .left-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 12px 0; border-bottom: 1px solid #f1f5f9; }
+  .left-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 6px 12px; font: 600 12px Arial; color: #6b7280; cursor: pointer; }
+  .left-tab:hover { color: #1f2937; }
+  .left-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; }
+  .left-tab .tab-count { font: 10px ui-monospace, monospace; color: #6b7280; margin-left: 4px; }
+  .browser-full { max-height: none !important; border-top: 0 !important; }
+  .prop-actions { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; margin-top: 8px; }
+  .prop-actions-hint { font: 11px Arial; color: #78350f; flex: 1; }
+  .prop-actions-hint code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
 
   .block { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
   .block summary { padding: 8px 12px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
