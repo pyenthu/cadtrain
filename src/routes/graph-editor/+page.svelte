@@ -283,11 +283,15 @@
   // ─── assembly-level params (Slice 3 first cut) ──────────────────────────
   let newParamName = $state('');
   let newParamDefault = $state(0);
+  let addParamPop = $state<{ x: number; y: number } | null>(null);
+  function openAddParamPop(ev: PointerEvent) { addParamPop = { x: ev.clientX, y: ev.clientY }; }
+  function closeAddParamPop() { addParamPop = null; }
   function onAddParam() {
     const name = newParamName.trim();
     if (!name) return;
     graph = addParam(graph, name, { default: newParamDefault, step: 0.05 });
     newParamName = ''; newParamDefault = 0;
+    addParamPop = null;
   }
   function onRemoveParam(name: string) {
     const r = removeParam(graph, name);
@@ -374,24 +378,6 @@
   <main class="ge-grid">
     <!-- LEFT — graph canvas -->
     <section class="ge-canvas-pane">
-      <!-- Parameters strip — assembly-level dials. Click +Param to add;
-           click an arg's wire icon on a Call to wire to a param. -->
-      <div class="ge-param-strip">
-        <span class="ge-param-strip-label">Params</span>
-        {#each paramEntries as [name, p] (name)}
-          <span class="ge-param-chip">
-            <span class="ge-param-chip-name">{name}</span>
-            <span class="ge-param-chip-val">{(p as any).default}</span>
-            <button class="ge-param-chip-x" type="button" title="Remove param" onclick={() => onRemoveParam(name)}>×</button>
-          </span>
-        {/each}
-        <input class="ge-param-input" type="text" placeholder="name" bind:value={newParamName}/>
-        <input class="ge-param-input num" type="number" step="0.05" placeholder="0" bind:value={newParamDefault}/>
-        <button class="ge-param-add" type="button" onclick={onAddParam}>+ Param</button>
-        {#if paramEntries.length === 0}
-          <span class="ge-param-hint">Add an outer dial that multiple Calls share. Click an arg's ƒ icon to wire.</span>
-        {/if}
-      </div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <svg
@@ -415,20 +401,35 @@
           <rect x="-2000" y="-2000" width="4000" height="4000" fill="url(#ge-grid)"/>
 
           <!-- PARAM CHIPS — render each meta.params row as a small chip at
-               the top of the canvas with an output socket. Drag from the
-               socket onto any Call's arg input socket to wire. -->
+               the top of the canvas with an output socket + ×-delete + a
+               trailing + button to add a new param. -->
           {#each paramEntries as [name, p], i (name)}
             {@const px = 40 + i * 150}
             {@const py = 10}
             <g class="ge-param-card" transform="translate({px},{py})">
               <rect class="ge-param-card-bg" width="130" height="40" rx="20"/>
-              <text x="65" y="18" class="ge-param-card-name" text-anchor="middle">p.{name}</text>
-              <text x="65" y="32" class="ge-param-card-val" text-anchor="middle">{(p as any).default}{(p as any).unit ?? ''}</text>
+              <text x="58" y="18" class="ge-param-card-name" text-anchor="middle">p.{name}</text>
+              <text x="58" y="32" class="ge-param-card-val" text-anchor="middle">{(p as any).default}{(p as any).unit ?? ''}</text>
+              <!-- × delete on the chip -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <text role="button" tabindex="-1" class="ge-param-card-x" x="116" y="14"
+                onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>×</text>
+              <!-- output socket for drag-to-wire -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <circle role="button" tabindex="-1" class="ge-sock out param" cx="130" cy="20" r="6"
                 onpointerdown={(ev) => startParamWire(ev, name)}/>
             </g>
           {/each}
+          <!-- + add-param button at the end of the chip row -->
+          <g class="ge-param-add-card" transform="translate({40 + paramEntries.length * 150},{10})">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <rect role="button" tabindex="-1" class="ge-param-add-bg" width="60" height="40" rx="20"
+              onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
+            <text x="30" y="26" class="ge-param-add-glyph" text-anchor="middle" pointer-events="none">+ param</text>
+          </g>
+          {#if paramEntries.length === 0}
+            <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
+          {/if}
 
           <!-- PARAM WIRES — for every Call.args[k].kind === 'param', draw a
                bezier from the param chip's output socket to the Call's arg
@@ -678,6 +679,26 @@
     </section>
   </main>
 
+  {#if addParamPop}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeAddParamPop}></div>
+    <div class="ge-wire-pop" style="left: {addParamPop.x}px; top: {addParamPop.y}px; min-width: 220px">
+      <div class="ge-wire-head">+ new param</div>
+      <div class="ge-addparam-row">
+        <input class="ge-addparam-input" type="text" placeholder="name (e.g. outerOD)" bind:value={newParamName}
+          onkeydown={(e) => { if (e.key === 'Enter') onAddParam(); }}/>
+      </div>
+      <div class="ge-addparam-row">
+        <input class="ge-addparam-input num" type="number" step="0.05" placeholder="default" bind:value={newParamDefault}
+          onkeydown={(e) => { if (e.key === 'Enter') onAddParam(); }}/>
+      </div>
+      <div class="ge-addparam-row">
+        <button class="ge-param-add" type="button" onclick={onAddParam}>add</button>
+        <button class="ge-param-add ghost" type="button" onclick={closeAddParamPop}>cancel</button>
+      </div>
+    </div>
+  {/if}
   {#if wirePop}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -740,18 +761,18 @@
   .ge-stat { font: 11px ui-monospace, monospace; color: #6b7280; margin-left: auto; }
   .ge-grid { display: grid; grid-template-columns: 40% 35% 25%; overflow: hidden; }
   .ge-canvas-pane { border-right: 1px solid #e5e7eb; overflow: hidden; position: relative; }
-  /* Parameters strip above the canvas. */
-  .ge-param-strip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid #e7e5e4; background: #fffbeb; flex-wrap: wrap; min-height: 32px; }
-  .ge-param-strip-label { font: 600 11px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.6px; margin-right: 4px; }
-  .ge-param-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 8px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; font: 11px Arial; }
-  .ge-param-chip-name { font: 600 11px ui-monospace, monospace; }
-  .ge-param-chip-val { font: 10px ui-monospace, monospace; color: #92400e; }
-  .ge-param-chip-x { background: transparent; border: 0; font: 12px Arial; color: #b91c1c; cursor: pointer; padding: 0 2px; }
-  .ge-param-input { padding: 2px 6px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; width: 90px; }
-  .ge-param-input.num { width: 60px; }
-  .ge-param-add { padding: 2px 10px; font: 600 11px Arial; background: #fbbf24; color: #78350f; border: 0; border-radius: 3px; cursor: pointer; }
+  /* + param button + delete × on canvas chip + add-param popover rows. */
+  .ge-param-card-x { font: 13px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  .ge-param-add-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; stroke-dasharray: 4 3; cursor: pointer; }
+  .ge-param-add-bg:hover { fill: #fde68a; }
+  .ge-param-add-glyph { font: 600 10px Arial; fill: #92400e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ge-addparam-row { padding: 6px 10px; display: flex; gap: 6px; }
+  .ge-addparam-input { flex: 1; padding: 3px 8px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
+  .ge-addparam-input.num { max-width: 100px; }
+  .ge-param-add { padding: 3px 12px; font: 600 11px Arial; background: #fbbf24; color: #78350f; border: 0; border-radius: 3px; cursor: pointer; }
   .ge-param-add:hover { background: #d97706; color: #fff; }
-  .ge-param-hint { font: 11px Arial; color: #92400e; flex: 1; }
+  .ge-param-add.ghost { background: #e5e7eb; color: #1f2937; }
+  .ge-param-add.ghost:hover { background: #d1d5db; }
 
   .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none; }
   .ge-canvas.dragging { cursor: grabbing; }
