@@ -1050,7 +1050,7 @@
   .vdivider { cursor: col-resize; background: #e5e7eb; transition: background 0.1s; touch-action: none; }
   .vdivider:hover, .vdivider.dragging { background: #cc2222; }
 
-  .diagram-pane { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+  .diagram-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; min-height: 0; }
   .diagram-head { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #f1f5f9; }
   .diagram-head h2 { margin: 0; font: 600 13px Arial; color: #1f2937; }
   .diagram-head .hint { font: 11px Arial; color: #9ca3af; }
@@ -1225,7 +1225,10 @@
   .left-tab:hover { color: #1f2937; }
   .left-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; }
   .left-tab .tab-count { font: 10px ui-monospace, monospace; color: #6b7280; margin-left: 4px; }
-  .browser-full { max-height: none !important; border-top: 0 !important; }
+  /* Browse tab — fills the diagram-pane's 1fr row. min-height: 0 lets the
+     inner list overflow properly inside the grid track. */
+  .browser-full { max-height: none !important; border-top: 0 !important; height: 100%; min-height: 0; }
+  .browser-full .browser-list { min-height: 0; overflow-y: auto; }
   .prop-actions { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; margin-top: 8px; }
   .prop-actions-hint { font: 11px Arial; color: #78350f; flex: 1; }
   .prop-actions-hint code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
