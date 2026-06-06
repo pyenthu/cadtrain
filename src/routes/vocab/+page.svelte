@@ -183,6 +183,13 @@
   const lock  = data.lock as { vocab_version: string; terms: Record<Term, any> } | null;
   const mmd   = data.mmd as string | null;
   const seeds = data.seeds as { version: string; terms: Record<Term, SeedEntry>; stats: any } | null;
+  // K.69 — proposed promoted entries, keyed by seed slug. Renders in the
+  // seed Scene tab as a "Proposed vocab entry — review before promoting"
+  // preview card. Edits land in docs/parts/proposed-vocab-entries.json
+  // (out-of-band for now — chat-driven; promote takes the whole entry once
+  // the user approves).
+  const proposed = data.proposed as { version: string; entries: Record<Term, any> } | null;
+  function getProposed(term: Term): any | null { return proposed?.entries?.[term] ?? null; }
 
   // Derived view models — curated and seed terms walk through the same
   // browser/detail UI. Seeds get a distinct `seed` chip + a different
@@ -510,6 +517,138 @@
                   </div>
                 {/if}
 
+                {#if getProposed(selected!)}
+                  {@const prop = getProposed(selected!)}
+                  <div class="proposal-card">
+                    <div class="cap-row">
+                      <div class="caption">Proposed vocab entry — review before promoting</div>
+                      <span class="spacer"></span>
+                      <span class="prop-status">draft · review only</span>
+                    </div>
+
+                    <div class="prop-grid">
+                      <div class="prop-field">
+                        <div class="prop-label">definition</div>
+                        <p class="prop-definition">{prop.definition}</p>
+                      </div>
+
+                      <div class="prop-field">
+                        <div class="prop-label">kind · extends</div>
+                        <div class="prop-val">
+                          <span class="prop-chip kind">{prop.kind}</span>
+                          {#if prop.extends}
+                            <span class="prop-arrow">extends</span>
+                            <span class="prop-chip ext">{prop.extends}</span>
+                          {/if}
+                          <span class="prop-cat">{prop.category} · {prop.sub_category}</span>
+                        </div>
+                      </div>
+
+                      {#if prop.synonyms?.length}
+                        <div class="prop-field">
+                          <div class="prop-label">synonyms ({prop.synonyms.length})</div>
+                          <div class="prop-chips">
+                            {#each prop.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if prop.function?.length}
+                        <div class="prop-field">
+                          <div class="prop-label">function · intent</div>
+                          <div class="prop-chips">
+                            {#each prop.function as f (f)}<span class="prop-chip fn">{f}</span>{/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if prop.form?.length}
+                        <div class="prop-field">
+                          <div class="prop-label">form · shape</div>
+                          <div class="prop-chips">
+                            {#each prop.form as f (f)}<span class="prop-chip form">{f}</span>{/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if prop.variants?.length}
+                        <div class="prop-field">
+                          <div class="prop-label">variants ({prop.variants.length})</div>
+                          <div class="prop-chips">
+                            {#each prop.variants as v (v)}<span class="prop-chip variant">{v}</span>{/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if prop.references?.length}
+                        <div class="prop-field">
+                          <div class="prop-label">references</div>
+                          <div class="prop-chips">
+                            {#each prop.references as r (r)}<a class="prop-ref" href={r} target="_blank" rel="noopener">{r.replace(/^https?:\/\//, '')}</a>{/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if prop.params}
+                        <details class="block">
+                          <summary>params ({Object.keys(prop.params).length})</summary>
+                          <table class="params-table">
+                            <thead><tr><th>key</th><th>default</th><th>min</th><th>max</th><th>step</th><th>unit</th></tr></thead>
+                            <tbody>
+                              {#each Object.entries(prop.params) as [k, p] (k)}
+                                <tr><td><code>{k}</code></td><td>{(p as any).default}</td><td>{(p as any).min ?? '—'}</td><td>{(p as any).max ?? '—'}</td><td>{(p as any).step ?? '—'}</td><td>{(p as any).unit ?? '—'}</td></tr>
+                              {/each}
+                            </tbody>
+                          </table>
+                        </details>
+                      {/if}
+
+                      {#if prop.rule}
+                        <details class="block" open>
+                          <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
+                          {#if prop.rule.body?.preamble?.length}
+                            <div class="rule-section">
+                              <div class="prop-label">body · preamble</div>
+                              <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
+                            </div>
+                          {/if}
+                          {#if prop.rule.body?.polygon?.length}
+                            <div class="rule-section">
+                              <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
+                              <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
+                            </div>
+                          {/if}
+                          {#if prop.rule.modifiers?.length}
+                            <div class="rule-section">
+                              <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
+                              <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
+                            </div>
+                          {/if}
+                        </details>
+                      {/if}
+
+                      {#if prop.expects_bake}
+                        <details class="block">
+                          <summary>expects bake</summary>
+                          <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
+                        </details>
+                      {/if}
+
+                      <details class="block">
+                        <summary>raw proposed JSON</summary>
+                        <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
+                      </details>
+                    </div>
+
+                    <div class="prop-footer">
+                      Editing is by chat — tell me what to change and I'll update
+                      <code>docs/parts/proposed-vocab-entries.json</code>.
+                      When this looks right, say <strong>ship it</strong> and the Promote
+                      button writes the full entry into <code>vocabulary.json</code>.
+                    </div>
+                  </div>
+                {/if}
+
                 <div class="seed-meta">
                   <div class="kv-row"><span class="kv-key">category</span><span class="kv-val">{e.category} · {e.sub_category}</span></div>
                   {#if e.metadata?.tool_comp}
@@ -791,6 +930,43 @@
     background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px;
     font: 12px Arial; color: #78350f;
   }
+  /* K.69 — proposed-vocab-entry preview card. Reads as a focused review
+     surface: definition front-and-center, then chips for the structured
+     retrieval fields (synonyms / function / form / variants / references),
+     then the rule + params under collapsible details. Read-only. */
+  .proposal-card {
+    display: grid; grid-template-rows: auto 1fr auto;
+    gap: 8px;
+    padding: 12px 14px;
+    background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px;
+  }
+  .proposal-card .cap-row { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid #fbbf24; }
+  .proposal-card .caption { font: 600 12px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.5px; }
+  .proposal-card .spacer { flex: 1; }
+  .prop-status { font: 11px Arial; color: #92400e; }
+  .prop-grid { display: grid; gap: 10px; }
+  .prop-field { display: grid; gap: 4px; }
+  .prop-label { font: 600 10px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.6px; }
+  .prop-definition { font: 13px/1.55 Arial; color: #1f2937; margin: 0; background: #fff; padding: 8px 10px; border-radius: 4px; border: 1px solid #fde68a; }
+  .prop-val { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .prop-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .prop-chip { padding: 2px 8px; border-radius: 9999px; font: 11px Arial; background: #fff; border: 1px solid #fde68a; color: #78350f; }
+  .prop-chip.kind    { background: #dcfce7; color: #14532d; border-color: #15803d; font-weight: 600; }
+  .prop-chip.ext     { background: #e0f2fe; color: #0c4a6e; border-color: #0369a1; font-weight: 600; }
+  .prop-chip.syn     { background: #f3f4f6; color: #475569; border-color: #e5e7eb; }
+  .prop-chip.fn      { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .prop-chip.form    { background: #fef3c7; color: #78350f; border-color: #fbbf24; }
+  .prop-chip.variant { background: #fce7f3; color: #831843; border-color: #f9a8d4; }
+  .prop-cat { font: 11px Arial; color: #92400e; margin-left: 4px; }
+  .prop-arrow { font: 11px Arial; color: #92400e; }
+  .prop-ref { font: 11px Arial; color: #1d4ed8; text-decoration: none; padding: 2px 8px; background: #fff; border: 1px solid #93c5fd; border-radius: 4px; }
+  .prop-ref:hover { background: #dbeafe; }
+  .rule-section { margin: 8px 12px 4px; }
+  .prop-footer {
+    font: 12px Arial; color: #78350f; line-height: 1.55;
+    padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px;
+  }
+  .prop-footer code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
 
   .block { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
   .block summary { padding: 8px 12px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }

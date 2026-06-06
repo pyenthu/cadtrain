@@ -23,10 +23,15 @@ export const load: PageServerLoad = async () => {
   // separately from the curated v0.3 vocabulary; each seed gets a
   // status:'seed' chip in the browser + only the silhouette in Scene.
   const seedsRaw = safeRead(resolve(root, 'docs/parts/vocabulary.seeds.json'));
+  // K.69 review-before-promote — hand-drafted rich entries the seeds will
+  // become if approved. Keyed by term. Renders next to the inferred polygon
+  // in /vocab Scene so the user can read every field before clicking Promote.
+  const proposedRaw = safeRead(resolve(root, 'docs/parts/proposed-vocab-entries.json'));
   return {
     vocab: vocabRaw ? JSON.parse(vocabRaw) : null,
     lock:  lockRaw  ? JSON.parse(lockRaw)  : null,
     mmd:   mmd ?? null,
     seeds: seedsRaw ? JSON.parse(seedsRaw) : null,
+    proposed: proposedRaw ? JSON.parse(proposedRaw) : null,
   };
 };
