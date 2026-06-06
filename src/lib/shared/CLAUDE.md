@@ -5,14 +5,29 @@ They must NOT import from each other (Rule 2).
 
 ```
 src/lib/shared/
-├── anthropic-api.ts      # SDK key check + client factory
-├── claude-cli.ts         # `claude --print` args + spawn + envelope parse
-├── temp-file.ts          # withTempFile(prefix, ext, buf, fn) wrapper
-├── mime.ts               # guessImageExt(mime)
-├── instance-colors.ts    # INSTANCE_PALETTE + colorForInstance(name) FNV-1a hash
-├── scene-state.svelte.ts # shared scene state (zScale, etc.)
-└── ComponentScene.svelte # shared Threlte scene for component viewer
+├── anthropic-api.ts        # SDK key check + client factory
+├── claude-cli.ts           # `claude --print` args + spawn + envelope parse
+├── temp-file.ts            # withTempFile(prefix, ext, buf, fn) wrapper
+├── mime.ts                 # guessImageExt(mime)
+├── instance-colors.ts      # INSTANCE_PALETTE + colorForInstance(name) FNV-1a hash
+├── scene-state.svelte.ts   # shared scene state (zScale, etc.)
+├── ComponentScene.svelte   # shared Threlte scene for component viewer
+├── PrimitiveDualCanvas.svelte  # mesh + GLB dual canvas (mounted by /primitives + /vocab)
+├── PrimitiveView.svelte    # primitive editor (Build/Parts tabs, used by /primitives)
+├── ParamGrid.svelte        # ParamSchema-driven param card grid (Parameters accordion body)
+└── CompJsonSilhouette.svelte  # K.69 — render an SVTC compjson half-section as inline SVG
 ```
+
+## Pattern: shared components rendered in two routes
+
+The `/primitives` and `/vocab` pages SHARE the same chrome where
+possible (`PrimitiveDualCanvas` for the 3D bake, `ParamGrid` inside
+`.pg-acc-wrap` for parameters). When you restyle one, restyle the
+other so a user fluent in one is fluent in the other.
+
+`CompJsonSilhouette` is `/vocab`-specific today (Inferred tab), but
+lives here so any future page that wants to render SVTC's vector
+drawings can mount it.
 
 ## Pattern: Dual-backend dispatch (API vs CLI)
 

@@ -55,6 +55,17 @@ API key). `/api/volume` + `/api/kb/*` self-proxy in-endpoint. The
 prior "a save shouldn't silently mutate prod" stance — the user chose prod
 as the single store.
 
+### Vocabulary (K.68 / K.69 — `/vocab` backing API)
+
+Full catalog + design notes in `src/routes/api/vocab/CLAUDE.md`.
+Five endpoints — `regenerate`, `infer`, `bake-proposed`, `promote`,
+`promote-proposed` — that compile vocabulary entries via the
+deterministic translators in `src/lib/authoring/` and round-trip
+through `/api/primitives/{save,preview}` for the volume side.
+Sources of truth: `docs/parts/vocabulary.json` (curated),
+`vocabulary.seeds.json` (41 catalogue seeds), `proposed-vocab-entries.json`
+(hand-drafted rich entries with the new `boolean_modify` rule kind).
+
 ### Volume + KB
 
 | Route | Method | Purpose |
