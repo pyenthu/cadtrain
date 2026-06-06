@@ -28,6 +28,62 @@
   let renderError = $state<string | null>(null);
   let selected = $state<Term | null>(null);
   let search = $state('');
+  // Refresh state — per-term + global. While a regen is in flight, the
+  // matching button shows ↻… and is disabled. After completion the
+  // Scene cache for the affected exemplar is invalidated so the next
+  // tab switch re-fetches the live bake.
+  let regenBusy = $state<Record<string, boolean>>({});
+  let regenAllBusy = $state(false);
+  let regenStatus = $state<string | null>(null);
+
+  async function refreshTerm(term: Term) {
+    if (regenBusy[term]) return;
+    regenBusy = { ...regenBusy, [term]: true };
+    regenStatus = `regenerating ${term}…`;
+    try {
+      const r = await fetch(`/api/vocab/regenerate?term=${encodeURIComponent(term)}`, { method: 'POST' });
+      const data = await r.json();
+      if (data.ok) {
+        const b = data.regenerated?.[0]?.bake;
+        regenStatus = b
+          ? `✓ ${term} regenerated · ${b.verts} verts · z=${b.z_extent} · r=${b.outer_r}`
+          : `✓ ${term} regenerated`;
+        // Invalidate the Scene cache so the next mount picks up the fresh bake.
+        const exemplar = vocab?.terms?.[term]?.exemplar;
+        if (exemplar) {
+          const { [exemplar]: _, ...rest } = sceneCache;
+          sceneCache = rest;
+        }
+      } else {
+        regenStatus = `✗ ${term}: ${data.failures?.[0]?.error ?? 'unknown error'}`;
+      }
+    } catch (e: any) {
+      regenStatus = `✗ ${term}: ${e?.message ?? e}`;
+    } finally {
+      regenBusy = { ...regenBusy, [term]: false };
+    }
+  }
+  async function refreshAll() {
+    if (regenAllBusy) return;
+    regenAllBusy = true;
+    regenStatus = 'regenerating all terms…';
+    try {
+      const r = await fetch('/api/vocab/regenerate?all=1', { method: 'POST' });
+      const data = await r.json();
+      if (data.ok) {
+        regenStatus = `✓ regenerated ${data.regenerated?.length ?? 0} terms`;
+      } else {
+        const failed = (data.failures ?? []).map((f: any) => `${f.term}: ${f.error}`).join(' · ');
+        regenStatus = `✗ ${data.failures?.length ?? '?'} failed — ${failed}`;
+      }
+      // Invalidate every Scene cache entry — anything could have changed.
+      sceneCache = {};
+    } catch (e: any) {
+      regenStatus = `✗ ${e?.message ?? e}`;
+    } finally {
+      regenAllBusy = false;
+    }
+  }
   // Right-pane tab — Definition (default) shows the rule + params + lock;
   // Scene mounts PrimitiveDualCanvas for the selected term's exemplar.
   let detailTab = $state<'definition' | 'scene'>('definition');
@@ -177,6 +233,14 @@
       <span class="bar-meta error">no vocabulary loaded</span>
     {/if}
     <span class="bar-spacer"></span>
+    {#if regenStatus}<span class="bar-status">{regenStatus}</span>{/if}
+    <button
+      class="bar-btn"
+      type="button"
+      disabled={regenAllBusy}
+      title="Regenerate every term from the vocabulary + re-bake on the volume"
+      onclick={refreshAll}
+    >{regenAllBusy ? '↻ …' : '↻ Refresh all'}</button>
     <a class="bar-link" href="https://github.com/pyenthu/cadtrain/blob/main/docs/parts/vocabulary.json" target="_blank" rel="noopener">vocab.json ↗</a>
     <a class="bar-link" href="https://github.com/pyenthu/cadtrain/blob/main/docs/parts/vocabulary.lock.json" target="_blank" rel="noopener">lock ↗</a>
     <a class="bar-link" href="https://github.com/pyenthu/cadtrain/blob/main/docs/parts/vocabulary.md" target="_blank" rel="noopener">md ↗</a>
@@ -253,6 +317,11 @@
           <button class="tab-btn" class:active={detailTab === 'scene'} role="tab" aria-selected={detailTab === 'scene'}
             type="button" onclick={() => (detailTab = 'scene')}>Scene</button>
           <span class="tab-spacer"></span>
+          <button class="tab-refresh" type="button"
+            disabled={regenBusy[selected!]}
+            title={`Regenerate ${selected} from vocab + re-bake. Invalidates the Scene cache so the next mount picks up the fresh source.`}
+            onclick={() => refreshTerm(selected!)}
+          >{regenBusy[selected!] ? '↻ …' : '↻ Refresh'}</button>
           <span class="tab-exemplar"><code>{e.exemplar}</code></span>
         </div>
         {#if detailTab === 'scene'}
@@ -413,8 +482,12 @@
   .tab-btn:hover { color: #1f2937; }
   .tab-btn.active { color: #0c4a6e; border-bottom-color: #0369a1; }
   .tab-spacer { flex: 1; }
-  .tab-exemplar { font: 11px Arial; color: #6b7280; }
+  .tab-exemplar { font: 11px Arial; color: #6b7280; margin-left: 8px; }
   .tab-exemplar code { font: 11px ui-monospace, monospace; color: #1f2937; }
+  .tab-refresh, .bar-btn { font: 600 11px Arial; padding: 3px 10px; border: 1px solid #0369a1; background: #e0f2fe; color: #0c4a6e; border-radius: 4px; cursor: pointer; }
+  .tab-refresh:hover:not(:disabled), .bar-btn:hover:not(:disabled) { background: #bae6fd; }
+  .tab-refresh:disabled, .bar-btn:disabled { opacity: 0.5; cursor: default; }
+  .bar-status { font: 11px ui-monospace, monospace; color: #475569; padding: 0 8px; }
   /* Scene pane — sized to the detail pane's remaining height so the WebGL canvas fills it. */
   .scene-pane { min-height: 420px; height: calc(100vh - 220px); background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; }
 
