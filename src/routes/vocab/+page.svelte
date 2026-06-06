@@ -215,6 +215,17 @@
   let activeBakeTab = $derived<'inferred' | 'proposed'>(selected ? (bakeTab[selected] ?? 'inferred') : 'inferred');
   let proposedEntry = $derived(selected ? getProposed(selected) : null);
   let currentParams = $derived(selected ? (paramOverrides[selected] ?? defaultParams(selected)) : []);
+  // STABLE args reference for PrimitiveDualCanvas. Without this, the inline
+  // `paramOverrides[selected] ?? defaultParams(selected)` returns a fresh
+  // array each render → canvas re-mounts → auto-fit loops indefinitely.
+  // $derived memoises by computed value identity, so consumers get the
+  // same array reference until paramOverrides[selected] actually changes.
+  let stableProposedArgs = $derived.by((): number[] => {
+    if (!selected) return [];
+    const override = paramOverrides[selected];
+    if (override) return override;          // user-edited array kept as-is
+    return defaultParams(selected);          // fresh defaults only on (re-)select
+  });
   let promoteProposedBusy = $state<Record<string, boolean>>({});
   let promoteProposedStatus = $state<string | null>(null);
   async function promoteProposed(term: Term) {
@@ -850,7 +861,7 @@
                           id={proposedPb.exemplar}
                           name={proposedPb.exemplar}
                           description=""
-                          args={paramOverrides[selected!] ?? defaultParams(selected!)}
+                          args={stableProposedArgs}
                           source={proposedPb.source}
                           showControls={true}
                           showLabels={false}
