@@ -586,7 +586,7 @@
         <div class="detail-head">
           <span class="detail-kind" class:asm={!selectedIsSeed && e.kind === 'asm'} class:seed={selectedIsSeed}>{selectedIsSeed ? 'seed' : e.kind}</span>
           <h2>{selected}</h2>
-          <!-- Bake-info inlined into the title row (Proposed tab only). -->
+          <!-- Bake-info + Bake/Promote inlined into the title row (Proposed tab only). -->
           {#if selectedIsSeed && detailTab === 'proposed' && proposedEntry}
             {@const _pb = proposedBakeCache[selected!]}
             <span class="head-bake-info">· Proposed 3D · <code>{proposedEntry.rule?.kind ?? '?'}</code></span>
@@ -600,6 +600,12 @@
             {:else}
               <span class="head-bake-stat">· {(_pb as ProposedBake).bake?.verts ?? '?'} verts · z={(_pb as ProposedBake).bake?.z_extent ?? '?'} · r={(_pb as ProposedBake).bake?.outer_r ?? '?'}</span>
             {/if}
+            <!-- Promote button — disabled until a successful bake is in cache. -->
+            <button class="promote-btn primary head-promote" type="button"
+              disabled={promoteProposedBusy[selected!] || !_pb || _pb === 'loading' || (typeof _pb === 'object' && 'error' in (_pb as any)) || !((_pb as ProposedBake)?.bake?.ok)}
+              title="Lift this proposed entry into vocabulary.json AND save dt_<term>.prim.ts to the volume."
+              onclick={() => promoteProposed(selected!)}
+            >{promoteProposedBusy[selected!] ? 'promoting…' : '✓ Promote'}</button>
           {/if}
           <span class="head-spacer"></span>
           <!-- Definition & tags popover — opens a wide panel with the rich
@@ -946,23 +952,9 @@
                 </div>
               </div>
 
-              <!-- Promote footer -->
-              <div class="promote-footer">
-                <button class="promote-btn primary" type="button"
-                  disabled={promoteProposedBusy[selected!] || !pb || pb === 'loading' || (typeof pb === 'object' && 'error' in (pb as any)) || !((pb as ProposedBake)?.bake?.ok)}
-                  title="Lift this proposed entry into vocabulary.json AND save dt_<term>.prim.ts to the volume."
-                  onclick={() => promoteProposed(selected!)}
-                >{promoteProposedBusy[selected!] ? 'promoting…' : '✓ Promote to vocabulary.json'}</button>
-                <span class="promote-hint">
-                  {#if !pb || pb === 'loading'}
-                    bake the proposed 3D first
-                  {:else if (pb as ProposedBake)?.bake?.ok}
-                    writes vocabulary.json + saves <code>{prop.exemplar ?? `dt_${selected}`}</code> to volume
-                  {:else}
-                    fix the bake error first
-                  {/if}
-                </span>
-              </div>
+              <!-- Promote button now lives inline in the title row alongside
+                   Bake — see the detail-head block above. -->
+              {#if promoteProposedStatus}<div class="promote-status">{promoteProposedStatus}</div>{/if}
             </div>
           {:else}
             <!-- Proposed tab but no entry on file -->
@@ -1444,8 +1436,11 @@
   .proposed-grid > * { min-width: 0; }
   .proposed-canvas-col { display: flex; flex-direction: column; }
   .proposed-canvas-col .bake-card { flex: 1 1 auto; }
-  .proposed-canvas-col .bake-card.no-head { display: block; }
-  .proposed-canvas-col .bake-card.no-head .bake-body { padding: 4px; height: 100%; }
+  /* Keep the bake-card a flex column so .bake-body has a defined height,
+     otherwise the inner canvas collapses to 0 → auto-fit fires → bake-card
+     grows → loop ("magnification keeps going indefinitely"). */
+  .proposed-canvas-col .bake-card.no-head { display: flex; flex-direction: column; }
+  .proposed-canvas-col .bake-card.no-head .bake-body { flex: 1 1 auto; min-height: 480px; padding: 4px; overflow: hidden; }
   .proposed-right-col { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
   .proposed-right-col .rule-details-col { max-height: none; flex: 1 1 auto; gap: 2px; }
   /* Inline bake-info in the title row (replaces the in-card bake-head). */
@@ -1453,6 +1448,7 @@
   .head-bake-info code { font: 11px ui-monospace, monospace; color: #0c4a6e; background: #f0f9ff; padding: 1px 5px; border-radius: 3px; }
   .head-bake-stat { font: 11px ui-monospace, monospace; color: #57534e; margin-left: 4px; }
   .head-bake-stat.err { color: #b91c1c; }
+  .head-promote { padding: 2px 10px; font: 600 11px Arial; margin-left: 8px; }
   /* Compact accordions in the right column. */
   .proposed-right-col .block { margin: 0; }
   .proposed-right-col .pg-acc-wrap { margin: 0; padding: 0 2px 1px; }
