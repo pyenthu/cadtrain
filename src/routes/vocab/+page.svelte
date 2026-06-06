@@ -32,8 +32,9 @@
   let selected = $state<Term | null>(null);
   let search = $state('');
 
-  // Resizable diagram|detail split — flexible divider, defaults to 50/50.
-  let splitPct = $state(50);
+  // Resizable diagram|detail split — defaults 40/60 (left lighter, right
+  // pane gets more room since it hosts the 2D + 3D + sliders).
+  let splitPct = $state(40);
   let gridEl: HTMLElement | undefined = $state();
   let dragging = false;
   function startDrag() {
@@ -107,9 +108,10 @@
       regenAllBusy = false;
     }
   }
-  // Right-pane tab — Definition (default) shows the rule + params + lock;
-  // Scene mounts PrimitiveDualCanvas for the selected term's exemplar.
-  let detailTab = $state<'definition' | 'scene'>('definition');
+  // Right-pane top-tab (seed-only) — Inferred (auto-derived 2D→r_revolve)
+  // vs Proposed (rich hand-drafted entry). Each tab carries its own
+  // definition + 2D + 3D + actions. Curated terms skip the tabs.
+  let detailTab = $state<'inferred' | 'proposed'>('inferred');
   // Lazy-loaded scene canvas (Threlte WebGL — SSR-incompatible, dynamic).
   let PrimitiveDualCanvas = $state<any>(null);
   // Per-term cache of (source, defaultArgs) so flipping back to Scene
@@ -262,12 +264,13 @@
     }
   }
 
-  // When a term is selected + the Scene tab is active, fetch its
-  // source + default params once. The component shows a loading state
-  // until ready.
+  // When a curated term is selected, fetch its source + default params
+  // once. Triggers regardless of tab (curated has no top-tabs). Seeds
+  // ignore this — they use inferCache / proposedBakeCache for their
+  // own per-tab canvas mounts.
   $effect(() => {
-    if (detailTab !== 'scene') return;
     if (!selectedEntry) return;
+    if (selectedIsSeed) return;
     const exemplarId = selectedEntry.exemplar as string;
     if (!exemplarId) return;
     if (sceneCache[exemplarId]) return;
@@ -528,391 +531,390 @@
         <div class="detail-head">
           <span class="detail-kind" class:asm={!selectedIsSeed && e.kind === 'asm'} class:seed={selectedIsSeed}>{selectedIsSeed ? 'seed' : e.kind}</span>
           <h2>{selected}</h2>
-        </div>
-        <!-- Tab strip — Definition (rule + params + lock) | Scene (live 3D
-             for curated terms, silhouette + variants table for seeds). -->
-        <div class="tab-strip" role="tablist">
-          <button class="tab-btn" class:active={detailTab === 'definition'} role="tab" aria-selected={detailTab === 'definition'}
-            type="button" onclick={() => (detailTab = 'definition')}>Definition</button>
-          <button class="tab-btn" class:active={detailTab === 'scene'} role="tab" aria-selected={detailTab === 'scene'}
-            type="button" onclick={() => (detailTab = 'scene')}>Scene</button>
-          <span class="tab-spacer"></span>
+          <span class="head-spacer"></span>
           {#if !selectedIsSeed}
             <button class="tab-refresh" type="button"
               disabled={regenBusy[selected!]}
-              title={`Regenerate ${selected} from vocab + re-bake. Invalidates the Scene cache so the next mount picks up the fresh source.`}
+              title={`Regenerate ${selected} from vocab + re-bake.`}
               onclick={() => refreshTerm(selected!)}
             >{regenBusy[selected!] ? '↻ …' : '↻ Refresh'}</button>
-            <span class="tab-exemplar"><code>{e.exemplar}</code></span>
-          {:else}
-            <span class="tab-exemplar"><code>seed · no rule yet</code></span>
+            <code class="head-exemplar">{e.exemplar}</code>
           {/if}
         </div>
-        {#if detailTab === 'scene'}
-          <div class="scene-pane">
-            {#if selectedIsSeed}
-              <!-- Seeds: top row = 2D drawing + Inferred 3D side-by-side.
-                   Below = inferred polygon + bake numbers + Promote button.
-                   At the bottom = metadata + variants table. -->
-              {@const inf = inferCache[selected!]}
-              <div class="seed-scene">
-                <div class="seed-row">
-                  {#if e.compjson_ref && CompJsonSilhouette}
-                    <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={320} />
-                  {:else}
-                    <div class="silhouette empty-card">no compjson_ref on file</div>
-                  {/if}
+        {#if selectedIsSeed}
+          {@const prop = proposedEntry}
+          <!-- Top tabs: Inferred (auto-derived) vs Proposed (rich draft).
+               Each tab carries its own definition + 2D + 3D + actions. -->
+          <div class="top-tabs" role="tablist">
+            <button class="top-tab" class:active={detailTab === 'inferred'} role="tab" aria-selected={detailTab === 'inferred'}
+              type="button" onclick={() => (detailTab = 'inferred')}>Inferred</button>
+            <button class="top-tab" class:active={detailTab === 'proposed'} role="tab" aria-selected={detailTab === 'proposed'}
+              type="button" disabled={!prop}
+              title={prop ? 'Rich hand-drafted entry (boolean_modify / compose / primitive)' : 'no proposed entry yet'}
+              onclick={() => (detailTab = 'proposed')}>Proposed</button>
+            <span class="top-tab-spacer"></span>
+            {#if detailTab === 'inferred' && promoteStatus}<span class="top-tab-status">{promoteStatus}</span>{/if}
+            {#if detailTab === 'proposed' && promoteProposedStatus}<span class="top-tab-status">{promoteProposedStatus}</span>{/if}
+          </div>
 
-                  <!-- VERTICAL TABS: Inferred vs Proposed bake. Each tab's
-                       content swaps in this single canvas pane. -->
-                  <div class="bake-vtabs">
-                    <div class="vtab-strip" role="tablist">
-                      <button class="vtab" class:active={activeBakeTab === 'inferred'} role="tab" aria-selected={activeBakeTab === 'inferred'}
-                        type="button" onclick={() => setBakeTab(selected!, 'inferred')}>Inferred</button>
-                      <button class="vtab" class:active={activeBakeTab === 'proposed'} role="tab" aria-selected={activeBakeTab === 'proposed'}
-                        type="button" disabled={!proposedEntry}
-                        title={proposedEntry ? 'Proposed rich rule (boolean_modify)' : 'no proposed entry for this term'}
-                        onclick={() => setBakeTab(selected!, 'proposed')}>Proposed</button>
-                    </div>
-
-                    <div class="vtab-content">
-                      {#if activeBakeTab === 'inferred'}
-                        <div class="bake-head">
-                          <div class="bake-title">Inferred 3D · r_revolve</div>
-                          <span class="spacer"></span>
-                          {#if !inf || inf === 'error'}
-                            <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>Infer</button>
-                          {:else if inf === 'loading'}
-                            <span class="bar-status">inferring…</span>
-                          {:else if 'error' in inf}
-                            <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>retry</button>
-                          {:else}
-                            <span class="bar-meta">{inf.bake?.verts ?? '?'} verts · z={inf.bake?.z_extent ?? '?'} · r={inf.bake?.outer_r ?? '?'}</span>
-                          {/if}
-                        </div>
-                        {#if !inf}
-                          <div class="infer-cta">
-                            Click <strong>Infer</strong> to derive an axisymmetric profile from the 2D drawing.
-                            <br>Deterministic — half-section + OD-calibration → <code>r_revolve</code> polygon.
-                          </div>
-                        {:else if inf === 'loading'}
-                          <div class="empty">inferring polygon + bake…</div>
-                        {:else if 'error' in inf}
-                          <div class="error">inference failed: {inf.error}</div>
-                        {:else if !inf.bake?.ok}
-                          <div class="error">bake failed: {inf.bake?.message ?? 'no bake result'}</div>
-                        {:else if PrimitiveDualCanvas}
-                          <PrimitiveDualCanvas
-                            id={inf.exemplar}
-                            name={inf.exemplar}
-                            description={`Inferred from ${e.compjson_ref}`}
-                            args={[]}
-                            source={inf.source}
-                            showControls={true}
-                            showLabels={false}
-                          />
-                        {:else}
-                          <div class="empty">3D canvas loading…</div>
-                        {/if}
-                      {:else}
-                        <!-- Proposed tab -->
-                        {@const pb = proposedBakeCache[selected!]}
-                        <div class="bake-head">
-                          <div class="bake-title">Proposed 3D · {proposedEntry?.rule?.kind ?? '?'}</div>
-                          <span class="spacer"></span>
-                          {#if !pb}
-                            <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake proposed</button>
-                          {:else if pb === 'loading'}
-                            <span class="bar-status">baking…</span>
-                          {:else if 'error' in (pb as any)}
-                            <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
-                            <span class="bar-status err">err: {(pb as any).error}</span>
-                          {:else}
-                            <span class="bar-meta">{(pb as ProposedBake).bake?.verts ?? '?'} verts · z={(pb as ProposedBake).bake?.z_extent ?? '?'} · r={(pb as ProposedBake).bake?.outer_r ?? '?'}</span>
-                          {/if}
-                        </div>
-                        {#if !pb}
-                          <div class="infer-cta">
-                            Click <strong>Bake proposed</strong> to render the hand-drafted rule (e.g. <code>boolean_modify</code> with the angled cut).
-                            <br>Drag the sliders below the canvas to re-bake with different params.
-                          </div>
-                        {:else if pb === 'loading'}
-                          <div class="empty">baking proposed source…</div>
-                        {:else if 'error' in (pb as any)}
-                          <div class="error">bake failed: {(pb as any).error}</div>
-                        {:else if !(pb as ProposedBake).bake?.ok}
-                          <div class="error">bake failed: {(pb as ProposedBake).bake?.message ?? 'no bake result'}</div>
-                        {:else if PrimitiveDualCanvas}
-                          {@const proposedPb = pb as ProposedBake}
-                          <PrimitiveDualCanvas
-                            id={proposedPb.exemplar}
-                            name={proposedPb.exemplar}
-                            description={proposedEntry?.definition}
-                            args={paramOverrides[selected!] ?? defaultParams(selected!)}
-                            source={proposedPb.source}
-                            showControls={true}
-                            showLabels={false}
-                          />
-                          {#if proposedEntry?.params}
-                            <div class="param-sliders">
-                              <div class="ps-cap">params · drag to re-bake live</div>
-                              {#each Object.entries(proposedEntry.params) as [pk, pdef], idx (pk)}
-                                {@const cur = (paramOverrides[selected!] ?? defaultParams(selected!))[idx] ?? (pdef as any).default}
-                                <div class="ps-row">
-                                  <span class="ps-key">{pk}</span>
-                                  <input class="ps-slider" type="range"
-                                    min={(pdef as any).min ?? 0}
-                                    max={(pdef as any).max ?? 100}
-                                    step={(pdef as any).step ?? 0.1}
-                                    value={cur}
-                                    oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
-                                  />
-                                  <input class="ps-num" type="number"
-                                    min={(pdef as any).min ?? 0}
-                                    max={(pdef as any).max ?? 100}
-                                    step={(pdef as any).step ?? 0.1}
-                                    value={cur}
-                                    oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
-                                  />
-                                  <span class="ps-unit">{(pdef as any).unit ?? ''}</span>
-                                </div>
-                              {/each}
-                            </div>
-                          {/if}
-                        {:else}
-                          <div class="empty">3D canvas loading…</div>
-                        {/if}
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-
-                {#if inf && typeof inf === 'object' && !('error' in inf) && inf.polygon?.length}
-                  <div class="infer-details">
-                    <div class="cap-row">
-                      <div class="caption">Profile polygon — {inf.polygon.length} verts · axisymmetric: {inf.axisymmetric ? 'yes' : 'no'}</div>
-                      <span class="spacer"></span>
-                      <button class="bar-btn promote-btn" type="button" disabled={promoteBusy[selected!]}
-                        title="Write this polygon into vocabulary.seeds.json as the seed's rule and flip status to promoted."
-                        onclick={() => promote(selected!)}
-                      >{promoteBusy[selected!] ? 'promoting…' : '✓ Promote → vocabulary'}</button>
-                    </div>
-                    <details class="block">
-                      <summary>polygon vertices · [r in, z in]</summary>
-                      <pre class="code">{inf.polygon.map(([r, z]: [number, number], i: number) => `  [${i.toString().padStart(2)}]  r=${r.toFixed(4).padStart(8)}  z=${z.toFixed(4).padStart(8)}`).join('\n')}</pre>
-                    </details>
-                    {#if inf.internal_features?.length}
-                      <details class="block">
-                        <summary>{inf.internal_features.length} internal feature{inf.internal_features.length === 1 ? '' : 's'} (seats / elastomer / marks)</summary>
-                        <pre class="code">{inf.internal_features.map((f: any, i: number) => `[${i}] ${f.kind} (fill ${f.fill_color}) — ${f.polygon.length} verts`).join('\n')}</pre>
-                      </details>
-                    {/if}
-                    {#if inf.warnings?.length}
-                      <details class="block" open>
-                        <summary>{inf.warnings.length} warning{inf.warnings.length === 1 ? '' : 's'}</summary>
-                        <ul class="warn-list">
-                          {#each inf.warnings as w (w)}<li>⚠ {w}</li>{/each}
-                        </ul>
-                      </details>
-                    {/if}
-                    <details class="block">
-                      <summary>generated source (.rev.ts)</summary>
-                      <pre class="code">{inf.source}</pre>
-                    </details>
-                  </div>
+          {#if detailTab === 'inferred'}
+            {@const inf = inferCache[selected!]}
+            <div class="tab-body">
+              <!-- Terse seed description + catalogue chips -->
+              <p class="def-line">{e.description ?? '(no description)'}</p>
+              <div class="info-row">
+                <span class="info-chip cat">{e.category} · {e.sub_category}</span>
+                {#if e.metadata?.tool_comp}
+                  <code class="info-code">{e.metadata.tool_comp}</code>
                 {/if}
-
-                {#if proposedEntry}
-                  {@const prop = proposedEntry}
-                  <div class="proposal-card">
-                    <div class="cap-row">
-                      <div class="caption">Proposed vocab entry — review before promoting</div>
-                      <span class="spacer"></span>
-                      <span class="prop-status">draft · review only · bake in the <em>Proposed</em> tab above</span>
-                    </div>
-
-                    <div class="prop-grid">
-                      <div class="prop-field">
-                        <div class="prop-label">definition</div>
-                        <p class="prop-definition">{prop.definition}</p>
-                      </div>
-
-                      <div class="prop-field">
-                        <div class="prop-label">kind · extends</div>
-                        <div class="prop-val">
-                          <span class="prop-chip kind">{prop.kind}</span>
-                          {#if prop.extends}
-                            <span class="prop-arrow">extends</span>
-                            <span class="prop-chip ext">{prop.extends}</span>
-                          {/if}
-                          <span class="prop-cat">{prop.category} · {prop.sub_category}</span>
-                        </div>
-                      </div>
-
-                      {#if prop.synonyms?.length}
-                        <div class="prop-field">
-                          <div class="prop-label">synonyms ({prop.synonyms.length})</div>
-                          <div class="prop-chips">
-                            {#each prop.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if prop.function?.length}
-                        <div class="prop-field">
-                          <div class="prop-label">function · intent</div>
-                          <div class="prop-chips">
-                            {#each prop.function as f (f)}<span class="prop-chip fn">{f}</span>{/each}
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if prop.form?.length}
-                        <div class="prop-field">
-                          <div class="prop-label">form · shape</div>
-                          <div class="prop-chips">
-                            {#each prop.form as f (f)}<span class="prop-chip form">{f}</span>{/each}
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if prop.variants?.length}
-                        <div class="prop-field">
-                          <div class="prop-label">variants ({prop.variants.length})</div>
-                          <div class="prop-chips">
-                            {#each prop.variants as v (v)}<span class="prop-chip variant">{v}</span>{/each}
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if prop.references?.length}
-                        <div class="prop-field">
-                          <div class="prop-label">references</div>
-                          <div class="prop-chips">
-                            {#each prop.references as r (r)}<a class="prop-ref" href={r} target="_blank" rel="noopener">{r.replace(/^https?:\/\//, '')}</a>{/each}
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if prop.params}
-                        <details class="block">
-                          <summary>params ({Object.keys(prop.params).length})</summary>
-                          <table class="params-table">
-                            <thead><tr><th>key</th><th>default</th><th>min</th><th>max</th><th>step</th><th>unit</th></tr></thead>
-                            <tbody>
-                              {#each Object.entries(prop.params) as [k, p] (k)}
-                                <tr><td><code>{k}</code></td><td>{(p as any).default}</td><td>{(p as any).min ?? '—'}</td><td>{(p as any).max ?? '—'}</td><td>{(p as any).step ?? '—'}</td><td>{(p as any).unit ?? '—'}</td></tr>
-                              {/each}
-                            </tbody>
-                          </table>
-                        </details>
-                      {/if}
-
-                      {#if prop.rule}
-                        <details class="block" open>
-                          <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
-                          {#if prop.rule.body?.preamble?.length}
-                            <div class="rule-section">
-                              <div class="prop-label">body · preamble</div>
-                              <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
-                            </div>
-                          {/if}
-                          {#if prop.rule.body?.polygon?.length}
-                            <div class="rule-section">
-                              <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
-                              <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-                            </div>
-                          {/if}
-                          {#if prop.rule.modifiers?.length}
-                            <div class="rule-section">
-                              <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
-                              <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
-                            </div>
-                          {/if}
-                        </details>
-                      {/if}
-
-                      {#if prop.expects_bake}
-                        <details class="block">
-                          <summary>expects bake</summary>
-                          <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
-                        </details>
-                      {/if}
-
-                      <details class="block">
-                        <summary>raw proposed JSON</summary>
-                        <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
-                      </details>
-                    </div>
-
-                    <div class="prop-actions">
-                      <button
-                        class="bar-btn promote-btn"
-                        type="button"
-                        disabled={promoteProposedBusy[selected!] || !proposedBakeCache[selected!] || proposedBakeCache[selected!] === 'loading' || (proposedBakeCache[selected!] && 'error' in (proposedBakeCache[selected!] as any))}
-                        title="Lift this proposed entry into vocabulary.json (curated terms) AND save dt_<term>.prim.ts to the volume. Bake the proposal first."
-                        onclick={() => promoteProposed(selected!)}
-                      >{promoteProposedBusy[selected!] ? 'promoting…' : '✓ Promote to vocabulary.json'}</button>
-                      <span class="prop-actions-hint">
-                        {#if !proposedBakeCache[selected!] || proposedBakeCache[selected!] === 'loading'}
-                          bake the proposed 3D first (button at top right of this card)
-                        {:else}
-                          writes vocabulary.json + saves <code>{prop.exemplar ?? `dt_${selected}`}</code> to volume
-                        {/if}
-                      </span>
-                    </div>
-                    {#if promoteProposedStatus}<div class="promote-status">{promoteProposedStatus}</div>{/if}
-                    <div class="prop-footer">
-                      Editing is by chat — tell me what to change and I'll update
-                      <code>docs/parts/proposed-vocab-entries.json</code>.
-                    </div>
-                  </div>
-                {/if}
-
-                <div class="seed-meta">
-                  <div class="kv-row"><span class="kv-key">category</span><span class="kv-val">{e.category} · {e.sub_category}</span></div>
-                  {#if e.metadata?.tool_comp}
-                    <div class="kv-row"><span class="kv-key">tool_comp</span><span class="kv-val"><code>{e.metadata.tool_comp}</code></span></div>
-                  {/if}
-                  <div class="kv-row"><span class="kv-key">defaults (1st row)</span>
-                    <span class="kv-val">OD {e.dims_from_catalogue?.od_in ?? '—'}" · ID {e.dims_from_catalogue?.id_in ?? '—'}" · L {e.dims_from_catalogue?.length_ft ?? '—'} ft</span>
-                  </div>
-                  {#if e.variants?.length}
-                    <details class="block">
-                      <summary>{e.variants.length} catalogue variant{e.variants.length === 1 ? '' : 's'}</summary>
-                      <table class="params-table">
-                        <thead><tr><th>#</th><th>OD"</th><th>ID"</th><th>L ft</th><th>weight</th><th>company</th><th>top thread</th><th>bot thread</th><th>grade</th></tr></thead>
-                        <tbody>
-                          {#each e.variants as v (v.comp_id)}
-                            <tr>
-                              <td><code>{v.comp_id}</code></td>
-                              <td>{v.od_in ?? '—'}</td>
-                              <td>{v.id_in ?? '—'}</td>
-                              <td>{v.length_ft ?? '—'}</td>
-                              <td>{v.weight_lb ?? '—'}</td>
-                              <td>{v.company ?? '—'}</td>
-                              <td>{v.top_thread ?? '—'}</td>
-                              <td>{v.bot_thread ?? '—'}</td>
-                              <td>{v.grade ?? '—'}</td>
-                            </tr>
-                          {/each}
-                        </tbody>
-                      </table>
-                    </details>
-                  {/if}
-                </div>
-                {#if promoteStatus}<div class="promote-status">{promoteStatus}</div>{/if}
+                <span class="info-chip dim">OD {e.dims_from_catalogue?.od_in ?? '—'}" · ID {e.dims_from_catalogue?.id_in ?? '—'}" · L {e.dims_from_catalogue?.length_ft ?? '—'} ft</span>
+                {#if (e.variants?.length ?? 0) > 1}<span class="info-chip variant">{e.variants.length} variants</span>{/if}
               </div>
-            {:else}
-              {@const sc = sceneCache[e.exemplar]}
-              <div class="curated-scene" class:with-ref={!!e.compjson_ref && CompJsonSilhouette}>
-                <div class="bake-3d">
+
+              <!-- 2D drawing + Inferred 3D side-by-side -->
+              <div class="view-row">
+                {#if e.compjson_ref && CompJsonSilhouette}
+                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
+                {:else}
+                  <div class="empty-card">no compjson_ref on file</div>
+                {/if}
+                <div class="bake-card">
+                  <header class="bake-head">
+                    <div class="bake-title">Inferred 3D · r_revolve</div>
+                    <span class="spacer"></span>
+                    {#if !inf}
+                      <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>Infer</button>
+                    {:else if inf === 'loading'}
+                      <span class="bar-status">inferring…</span>
+                    {:else if 'error' in (inf as any)}
+                      <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>retry</button>
+                      <span class="bar-status err">err: {(inf as any).error}</span>
+                    {:else}
+                      <span class="bar-meta">{(inf as InferResult).bake?.verts ?? '?'} verts · z={(inf as InferResult).bake?.z_extent ?? '?'} · r={(inf as InferResult).bake?.outer_r ?? '?'}</span>
+                    {/if}
+                  </header>
+                  <div class="bake-body">
+                    {#if !inf}
+                      <div class="bake-cta">
+                        Click <strong>Infer</strong> to derive an axisymmetric profile from the 2D drawing.
+                        <br>Deterministic — half-section + OD-calibration → <code>r_revolve</code> polygon.
+                      </div>
+                    {:else if inf === 'loading'}
+                      <div class="empty">inferring polygon + bake…</div>
+                    {:else if 'error' in (inf as any)}
+                      <div class="error">inference failed: {(inf as any).error}</div>
+                    {:else if !(inf as InferResult).bake?.ok}
+                      <div class="error">bake failed: {(inf as InferResult).bake?.message ?? 'no bake result'}</div>
+                    {:else if PrimitiveDualCanvas}
+                      {@const inferredI = inf as InferResult}
+                      <PrimitiveDualCanvas
+                        id={inferredI.exemplar}
+                        name={inferredI.exemplar}
+                        description={`Inferred from ${e.compjson_ref}`}
+                        args={[]}
+                        source={inferredI.source}
+                        showControls={true}
+                        showLabels={false}
+                      />
+                    {:else}
+                      <div class="empty">3D canvas loading…</div>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Inferred details: polygon vertices · warnings · source -->
+              {#if inf && typeof inf === 'object' && !('error' in (inf as any)) && (inf as InferResult).polygon?.length}
+                {@const inf2 = inf as InferResult}
+                <details class="block">
+                  <summary>polygon vertices ({inf2.polygon.length}) · axisymmetric: {inf2.axisymmetric ? 'yes' : 'no'}</summary>
+                  <pre class="code">{inf2.polygon.map(([r, z]: [number, number], i: number) => `  [${i.toString().padStart(2)}]  r=${r.toFixed(4).padStart(8)}  z=${z.toFixed(4).padStart(8)}`).join('\n')}</pre>
+                </details>
+                {#if inf2.internal_features?.length}
+                  <details class="block">
+                    <summary>{inf2.internal_features.length} internal feature{inf2.internal_features.length === 1 ? '' : 's'} (seats / elastomer / marks)</summary>
+                    <pre class="code">{inf2.internal_features.map((f: any, i: number) => `[${i}] ${f.kind} (fill ${f.fill_color}) — ${f.polygon.length} verts`).join('\n')}</pre>
+                  </details>
+                {/if}
+                {#if inf2.warnings?.length}
+                  <details class="block" open>
+                    <summary>{inf2.warnings.length} warning{inf2.warnings.length === 1 ? '' : 's'}</summary>
+                    <ul class="warn-list">
+                      {#each inf2.warnings as w (w)}<li>⚠ {w}</li>{/each}
+                    </ul>
+                  </details>
+                {/if}
+                <details class="block">
+                  <summary>generated source (.rev.ts)</summary>
+                  <pre class="code">{inf2.source}</pre>
+                </details>
+                <div class="promote-footer">
+                  <button class="promote-btn" type="button" disabled={promoteBusy[selected!]}
+                    title="Write the inferred polygon back into vocabulary.seeds.json as the seed's rule and flip status to promoted."
+                    onclick={() => promote(selected!)}
+                  >{promoteBusy[selected!] ? 'promoting…' : '✓ Promote inferred polygon → seeds.json'}</button>
+                  <span class="promote-hint">cheap promotion: stores the auto-polygon (no rich definition)</span>
+                </div>
+              {/if}
+
+              <!-- Catalogue variants table -->
+              {#if e.variants?.length}
+                <details class="block">
+                  <summary>{e.variants.length} catalogue variant{e.variants.length === 1 ? '' : 's'}</summary>
+                  <table class="params-table">
+                    <thead><tr><th>#</th><th>OD"</th><th>ID"</th><th>L ft</th><th>weight</th><th>company</th><th>top thread</th><th>bot thread</th><th>grade</th></tr></thead>
+                    <tbody>
+                      {#each e.variants as v (v.comp_id)}
+                        <tr>
+                          <td><code>{v.comp_id}</code></td>
+                          <td>{v.od_in ?? '—'}</td>
+                          <td>{v.id_in ?? '—'}</td>
+                          <td>{v.length_ft ?? '—'}</td>
+                          <td>{v.weight_lb ?? '—'}</td>
+                          <td>{v.company ?? '—'}</td>
+                          <td>{v.top_thread ?? '—'}</td>
+                          <td>{v.bot_thread ?? '—'}</td>
+                          <td>{v.grade ?? '—'}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </details>
+              {/if}
+              <details class="block">
+                <summary>raw seed JSON</summary>
+                <pre class="code">{JSON.stringify(e, null, 2)}</pre>
+              </details>
+            </div>
+          {:else if prop}
+            <!-- PROPOSED tab body -->
+            {@const pb = proposedBakeCache[selected!]}
+            <div class="tab-body">
+              <!-- Rich definition -->
+              <p class="def-line rich">{prop.definition}</p>
+
+              <!-- kind + extends + category -->
+              <div class="info-row">
+                <span class="prop-chip kind">{prop.kind}</span>
+                {#if prop.extends}
+                  <span class="prop-arrow">extends</span>
+                  <span class="prop-chip ext">{prop.extends}</span>
+                {/if}
+                <span class="prop-cat">{prop.category} · {prop.sub_category}</span>
+              </div>
+
+              <!-- chip groups -->
+              {#if prop.synonyms?.length}
+                <div class="chips-row">
+                  <span class="chips-label">synonyms ({prop.synonyms.length})</span>
+                  {#each prop.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
+                </div>
+              {/if}
+              {#if prop.function?.length}
+                <div class="chips-row">
+                  <span class="chips-label">function</span>
+                  {#each prop.function as f (f)}<span class="prop-chip fn">{f}</span>{/each}
+                </div>
+              {/if}
+              {#if prop.form?.length}
+                <div class="chips-row">
+                  <span class="chips-label">form</span>
+                  {#each prop.form as f (f)}<span class="prop-chip form">{f}</span>{/each}
+                </div>
+              {/if}
+              {#if prop.variants?.length}
+                <div class="chips-row">
+                  <span class="chips-label">variants</span>
+                  {#each prop.variants as v (v)}<span class="prop-chip variant">{v}</span>{/each}
+                </div>
+              {/if}
+              {#if prop.references?.length}
+                <div class="chips-row">
+                  <span class="chips-label">references</span>
+                  {#each prop.references as r (r)}<a class="prop-ref" href={r} target="_blank" rel="noopener">{r.replace(/^https?:\/\//, '')}</a>{/each}
+                </div>
+              {/if}
+
+              <!-- 2D + Proposed 3D side-by-side -->
+              <div class="view-row">
+                {#if e.compjson_ref && CompJsonSilhouette}
+                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
+                {:else}
+                  <div class="empty-card">no compjson_ref on file</div>
+                {/if}
+                <div class="bake-card">
+                  <header class="bake-head">
+                    <div class="bake-title">Proposed 3D · {prop.rule?.kind ?? '?'}</div>
+                    <span class="spacer"></span>
+                    {#if !pb}
+                      <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>Bake</button>
+                    {:else if pb === 'loading'}
+                      <span class="bar-status">baking…</span>
+                    {:else if 'error' in (pb as any)}
+                      <button class="bar-btn" type="button" onclick={() => runProposedBake(selected!)}>retry</button>
+                      <span class="bar-status err">err: {(pb as any).error}</span>
+                    {:else}
+                      <span class="bar-meta">{(pb as ProposedBake).bake?.verts ?? '?'} verts · z={(pb as ProposedBake).bake?.z_extent ?? '?'} · r={(pb as ProposedBake).bake?.outer_r ?? '?'}</span>
+                    {/if}
+                  </header>
+                  <div class="bake-body">
+                    {#if !pb}
+                      <div class="bake-cta">
+                        Click <strong>Bake</strong> to render the hand-drafted <code>{prop.rule?.kind}</code> rule.
+                        <br>Drag the sliders below to re-bake with different params.
+                      </div>
+                    {:else if pb === 'loading'}
+                      <div class="empty">baking proposed source…</div>
+                    {:else if 'error' in (pb as any)}
+                      <div class="error">bake failed: {(pb as any).error}</div>
+                    {:else if !(pb as ProposedBake).bake?.ok}
+                      <div class="error">bake failed: {(pb as ProposedBake).bake?.message ?? 'no bake result'}</div>
+                    {:else if PrimitiveDualCanvas}
+                      {@const proposedPb = pb as ProposedBake}
+                      <PrimitiveDualCanvas
+                        id={proposedPb.exemplar}
+                        name={proposedPb.exemplar}
+                        description={prop.definition}
+                        args={paramOverrides[selected!] ?? defaultParams(selected!)}
+                        source={proposedPb.source}
+                        showControls={true}
+                        showLabels={false}
+                      />
+                    {:else}
+                      <div class="empty">3D canvas loading…</div>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Param sliders driving the proposed bake live -->
+              {#if prop.params}
+                <div class="param-sliders">
+                  <div class="ps-cap">params · drag to re-bake live</div>
+                  {#each Object.entries(prop.params) as [pk, pdef], idx (pk)}
+                    {@const cur = (paramOverrides[selected!] ?? defaultParams(selected!))[idx] ?? (pdef as any).default}
+                    <div class="ps-row">
+                      <span class="ps-key">{pk}</span>
+                      <input class="ps-slider" type="range"
+                        min={(pdef as any).min ?? 0}
+                        max={(pdef as any).max ?? 100}
+                        step={(pdef as any).step ?? 0.1}
+                        value={cur}
+                        oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
+                      />
+                      <input class="ps-num" type="number"
+                        min={(pdef as any).min ?? 0}
+                        max={(pdef as any).max ?? 100}
+                        step={(pdef as any).step ?? 0.1}
+                        value={cur}
+                        oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
+                      />
+                      <span class="ps-unit">{(pdef as any).unit ?? ''}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              <!-- Rule + raw JSON, collapsed -->
+              {#if prop.rule}
+                <details class="block">
+                  <summary>rule · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
+                  {#if prop.rule.body?.preamble?.length}
+                    <div class="rule-section">
+                      <div class="prop-label">body · preamble</div>
+                      <pre class="code">{prop.rule.body.preamble.join('\n')}</pre>
+                    </div>
+                  {/if}
+                  {#if prop.rule.body?.polygon?.length}
+                    <div class="rule-section">
+                      <div class="prop-label">body · polygon ({prop.rule.body.polygon.length} verts)</div>
+                      <pre class="code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
+                    </div>
+                  {/if}
+                  {#if prop.rule.modifiers?.length}
+                    <div class="rule-section">
+                      <div class="prop-label">modifiers ({prop.rule.modifiers.length})</div>
+                      <pre class="code">{JSON.stringify(prop.rule.modifiers, null, 2)}</pre>
+                    </div>
+                  {/if}
+                </details>
+              {/if}
+              {#if prop.expects_bake}
+                <details class="block">
+                  <summary>expects bake</summary>
+                  <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
+                </details>
+              {/if}
+              <details class="block">
+                <summary>raw proposed JSON</summary>
+                <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
+              </details>
+
+              <!-- Promote footer -->
+              <div class="promote-footer">
+                <button class="promote-btn primary" type="button"
+                  disabled={promoteProposedBusy[selected!] || !pb || pb === 'loading' || (typeof pb === 'object' && 'error' in (pb as any)) || !((pb as ProposedBake)?.bake?.ok)}
+                  title="Lift this proposed entry into vocabulary.json AND save dt_<term>.prim.ts to the volume."
+                  onclick={() => promoteProposed(selected!)}
+                >{promoteProposedBusy[selected!] ? 'promoting…' : '✓ Promote to vocabulary.json'}</button>
+                <span class="promote-hint">
+                  {#if !pb || pb === 'loading'}
+                    bake the proposed 3D first
+                  {:else if (pb as ProposedBake)?.bake?.ok}
+                    writes vocabulary.json + saves <code>{prop.exemplar ?? `dt_${selected}`}</code> to volume
+                  {:else}
+                    fix the bake error first
+                  {/if}
+                </span>
+              </div>
+            </div>
+          {:else}
+            <!-- Proposed tab but no entry on file -->
+            <div class="tab-body">
+              <div class="empty cta-empty">
+                No proposed entry for <code>{selected}</code> yet.<br>
+                Switch to <strong>Inferred</strong> for the auto-derived polygon, or hand-write an entry in <code>docs/parts/proposed-vocab-entries.json</code>.
+              </div>
+            </div>
+          {/if}
+        {:else}
+          <!-- CURATED term — no top tabs, single stacked body. -->
+          {@const sc = sceneCache[e.exemplar]}
+          <div class="tab-body">
+            <p class="def-line rich">{e.definition ?? '(no definition)'}</p>
+            {#if e.synonyms?.length}
+              <div class="chips-row">
+                <span class="chips-label">synonyms</span>
+                {#each e.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
+              </div>
+            {/if}
+            <div class="info-row">
+              {#if e.extends}
+                <span class="info-chip ext-info">extends {e.extends}</span>
+              {/if}
+              <a class="info-chip link" href="/primitives" onclick={(ev) => { ev.preventDefault(); if (typeof window !== 'undefined') window.open(`/primitives?open=${e.exemplar}`, '_blank'); }}>open <code>{e.exemplar}</code> in /primitives ↗</a>
+              <span class="info-chip rule">{ruleSummary(e)}</span>
+            </div>
+
+            <!-- 2D (when ref) + 3D side-by-side -->
+            <div class="view-row">
+              {#if e.compjson_ref && CompJsonSilhouette}
+                <CompJsonSilhouette ref={e.compjson_ref} title="2D reference" height={300} />
+              {:else}
+                <div class="empty-card faded">no 2D reference</div>
+              {/if}
+              <div class="bake-card">
+                <header class="bake-head">
+                  <div class="bake-title">3D · {e.kind}</div>
+                  <span class="spacer"></span>
+                </header>
+                <div class="bake-body">
                   {#if !PrimitiveDualCanvas}
                     <div class="empty">scene component loading…</div>
                   {:else if !sc || sc === 'loading'}
                     <div class="empty">fetching {e.exemplar}…</div>
                   {:else if sc === 'error'}
-                    <div class="error">couldn't load {e.exemplar} — does it exist on the volume? (Run <code>bun scripts/regenerate-from-vocab.ts</code>)</div>
+                    <div class="error">couldn't load {e.exemplar} — does it exist on the volume?</div>
                   {:else}
                     {@const params = sc as { source: string; args: (number | string)[] }}
                     <PrimitiveDualCanvas
@@ -926,101 +928,57 @@
                     />
                   {/if}
                 </div>
-                {#if e.compjson_ref && CompJsonSilhouette}
-                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
-                {/if}
               </div>
+            </div>
+
+            {#if e.params}
+              <details class="block" open>
+                <summary>params ({Object.keys(e.params).length})</summary>
+                <table class="params-table">
+                  <thead><tr><th>key</th><th>default</th><th>min</th><th>max</th><th>step</th><th>unit</th></tr></thead>
+                  <tbody>
+                    {#each Object.entries(e.params) as [k, p] (k)}
+                      <tr><td><code>{k}</code></td><td>{(p as any).default}</td><td>{(p as any).min ?? '—'}</td><td>{(p as any).max ?? '—'}</td><td>{(p as any).step ?? '—'}</td><td>{(p as any).unit ?? '—'}</td></tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </details>
             {/if}
+            {#if e.rule?.kind === 'primitive' && e.rule?.preamble}
+              <details class="block">
+                <summary>preamble ({e.rule.preamble.length} lines)</summary>
+                <pre class="code">{e.rule.preamble.join('\n')}</pre>
+              </details>
+            {/if}
+            {#if e.rule?.kind === 'primitive' && e.rule?.polygon}
+              <details class="block">
+                <summary>polygon ({e.rule.polygon.length} vertices)</summary>
+                <pre class="code">{e.rule.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
+              </details>
+            {/if}
+            {#if e.rule?.kind === 'compose'}
+              <details class="block">
+                <summary>composition</summary>
+                <pre class="code">{JSON.stringify(e.rule.composition, null, 2)}</pre>
+              </details>
+            {/if}
+            {#if e.expects_bake}
+              <details class="block">
+                <summary>expects bake</summary>
+                <pre class="code">{JSON.stringify(e.expects_bake, null, 2)}</pre>
+              </details>
+            {/if}
+            {#if lock?.terms?.[selected]}
+              <details class="block">
+                <summary>lock entry · drift</summary>
+                <pre class="code">{JSON.stringify(lock.terms[selected], null, 2)}</pre>
+              </details>
+            {/if}
+            <details class="block">
+              <summary>full rule JSON</summary>
+              <pre class="code">{JSON.stringify(e.rule, null, 2)}</pre>
+            </details>
           </div>
-        {:else if selectedIsSeed}
-        <!-- Seed definition tab: catalogue metadata, synonyms, dims, variants
-             count. No rule / params / lock — those land on promotion. -->
-        <p class="detail-def">{e.description ?? '(no description)'}</p>
-        {#if e.synonyms?.length}
-          <div class="syn-row">
-            <span class="syn-label">synonyms</span>
-            {#each e.synonyms as s (s)}<span class="syn-chip">{s}</span>{/each}
-          </div>
-        {/if}
-        <div class="kv-row"><span class="kv-key">category</span><span class="kv-val">{e.category} · {e.sub_category}</span></div>
-        {#if e.metadata?.tool_comp}
-          <div class="kv-row"><span class="kv-key">tool_comp</span><span class="kv-val"><code>{e.metadata.tool_comp}</code></span></div>
-        {/if}
-        {#if e.metadata?.tags?.length}
-          <div class="kv-row"><span class="kv-key">tags</span><span class="kv-val">{e.metadata.tags.join(', ')}</span></div>
-        {/if}
-        <div class="kv-row"><span class="kv-key">variants</span><span class="kv-val">{e.variants?.length ?? 0} catalogue row{(e.variants?.length ?? 0) === 1 ? '' : 's'}</span></div>
-        {#if e.compjson_ref}
-          <div class="kv-row"><span class="kv-key">silhouette</span><span class="kv-val"><code>{e.compjson_ref}</code></span></div>
-        {/if}
-        <details class="block">
-          <summary>raw seed JSON</summary>
-          <pre class="code">{JSON.stringify(e, null, 2)}</pre>
-        </details>
-        {:else}
-        <p class="detail-def">{e.definition ?? '(no definition)'}</p>
-        {#if e.synonyms?.length}
-          <div class="syn-row">
-            <span class="syn-label">synonyms</span>
-            {#each e.synonyms as s (s)}<span class="syn-chip">{s}</span>{/each}
-          </div>
-        {/if}
-        {#if e.extends}
-          <div class="kv-row"><span class="kv-key">extends</span><span class="kv-val">{e.extends}</span></div>
-        {/if}
-        <div class="kv-row"><span class="kv-key">exemplar</span>
-          <a class="kv-val link" href="/primitives" onclick={(ev) => { ev.preventDefault(); if (typeof window !== 'undefined') window.open(`/primitives?open=${e.exemplar}`, '_blank'); }}>{e.exemplar}</a>
-        </div>
-        <div class="kv-row"><span class="kv-key">rule</span><span class="kv-val">{ruleSummary(e)}</span></div>
-
-        {#if e.params}
-          <details class="block" open>
-            <summary>params ({Object.keys(e.params).length})</summary>
-            <table class="params-table">
-              <thead><tr><th>key</th><th>default</th><th>min</th><th>max</th><th>step</th><th>unit</th></tr></thead>
-              <tbody>
-                {#each Object.entries(e.params) as [k, p] (k)}
-                  <tr><td><code>{k}</code></td><td>{(p as any).default}</td><td>{(p as any).min ?? '—'}</td><td>{(p as any).max ?? '—'}</td><td>{(p as any).step ?? '—'}</td><td>{(p as any).unit ?? '—'}</td></tr>
-                {/each}
-              </tbody>
-            </table>
-          </details>
-        {/if}
-
-        {#if e.rule?.kind === 'primitive' && e.rule?.preamble}
-          <details class="block">
-            <summary>preamble ({e.rule.preamble.length} lines)</summary>
-            <pre class="code">{e.rule.preamble.join('\n')}</pre>
-          </details>
-        {/if}
-        {#if e.rule?.kind === 'primitive' && e.rule?.polygon}
-          <details class="block">
-            <summary>polygon ({e.rule.polygon.length} vertices)</summary>
-            <pre class="code">{e.rule.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-          </details>
-        {/if}
-        {#if e.rule?.kind === 'compose'}
-          <details class="block" open>
-            <summary>composition</summary>
-            <pre class="code">{JSON.stringify(e.rule.composition, null, 2)}</pre>
-          </details>
-        {/if}
-        {#if e.expects_bake}
-          <details class="block">
-            <summary>expects bake</summary>
-            <pre class="code">{JSON.stringify(e.expects_bake, null, 2)}</pre>
-          </details>
-        {/if}
-        {#if lock?.terms?.[selected]}
-          <details class="block">
-            <summary>lock entry · drift</summary>
-            <pre class="code">{JSON.stringify(lock.terms[selected], null, 2)}</pre>
-          </details>
-        {/if}
-        <details class="block">
-          <summary>full rule JSON</summary>
-          <pre class="code">{JSON.stringify(e.rule, null, 2)}</pre>
-        </details>
         {/if}
       {/if}
     </aside>
@@ -1242,4 +1200,70 @@
   .params-table th, .params-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; text-align: left; }
   .params-table th { background: #f9fafb; font-weight: 600; color: #475569; }
   .params-table td code { font: 600 11px ui-monospace, monospace; color: #0c4a6e; }
+
+  /* === K.69 right-pane redesign — Inferred/Proposed top tabs ============ */
+  .detail-pane { padding: 0; display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+  .detail-pane .detail-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 16px 6px; border-bottom: 1px solid #f1f5f9; }
+  .head-spacer { flex: 1; }
+  .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
+  /* Inferred | Proposed top tabs strip */
+  .top-tabs { display: flex; align-items: center; gap: 2px; padding: 0 16px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
+  .top-tab {
+    background: transparent; border: 0; padding: 8px 18px;
+    font: 600 13px Arial; color: #6b7280; cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: color 0.1s, border-color 0.1s;
+  }
+  .top-tab:hover:not(:disabled) { color: #1f2937; }
+  .top-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; background: #fff; }
+  .top-tab:disabled { color: #d1d5db; cursor: not-allowed; }
+  .top-tab-spacer { flex: 1; }
+  .top-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 0 8px; }
+  /* Tab body — scrollable inner column. */
+  .tab-body { padding: 16px 20px; overflow-y: auto; display: grid; gap: 12px; align-content: start; min-height: 0; }
+  .tab-body .def-line { font: 13px/1.55 Arial; color: #374151; margin: 0; }
+  .tab-body .def-line.rich { font-size: 14px; color: #1f2937; padding: 10px 12px; background: #f8fafc; border-left: 3px solid #0369a1; border-radius: 0 4px 4px 0; }
+  /* Compact info-chip row beneath the definition. */
+  .info-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .info-chip { padding: 2px 8px; border-radius: 9999px; font: 11px Arial; background: #f3f4f6; color: #475569; border: 1px solid #e5e7eb; }
+  .info-chip.cat       { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .info-chip.dim       { background: #e0f2fe; color: #0c4a6e; border-color: #0369a1; font-family: ui-monospace, monospace; }
+  .info-chip.variant   { background: #fef3c7; color: #78350f; border-color: #fbbf24; }
+  .info-chip.ext-info  { background: #fce7f3; color: #831843; border-color: #f9a8d4; }
+  .info-chip.link      { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; text-decoration: none; }
+  .info-chip.link:hover { background: #bfdbfe; }
+  .info-chip.rule      { background: #f3f4f6; font-family: ui-monospace, monospace; }
+  .info-code { font: 11px ui-monospace, monospace; background: #fef3c7; color: #78350f; padding: 2px 6px; border-radius: 3px; border: 1px solid #fbbf24; }
+  /* Chip groups — synonyms, function, form, variants, references. */
+  .chips-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .chips-label { font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.6px; min-width: 80px; }
+  /* 2D drawing + 3D bake side-by-side. */
+  .view-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; min-height: 320px; }
+  .view-row > * { min-width: 0; }
+  .bake-card {
+    display: grid; grid-template-rows: auto 1fr;
+    background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
+    overflow: hidden;
+  }
+  .bake-card .bake-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #e7e5e4; background: #fff; }
+  .bake-card .bake-head .spacer { flex: 1; }
+  .bake-card .bake-title { font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .bake-card .bake-body { padding: 6px; overflow: hidden; min-height: 0; }
+  .bake-cta { padding: 24px 16px; text-align: center; color: #57534e; font: 12px Arial; line-height: 1.6; }
+  .bake-cta code { font: 11px ui-monospace, monospace; color: #1e40af; }
+  .empty-card.faded { opacity: 0.6; }
+  .cta-empty { padding: 40px 20px; text-align: center; color: #6b7280; font: 13px/1.6 Arial; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; }
+  /* Promote footer at the bottom of the active tab body. */
+  .promote-footer { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-top: 6px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; }
+  .promote-btn {
+    font: 600 12px Arial; padding: 6px 14px;
+    background: #dcfce7; color: #14532d; border: 1px solid #15803d; border-radius: 4px;
+    cursor: pointer;
+  }
+  .promote-btn:hover:not(:disabled) { background: #bbf7d0; }
+  .promote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .promote-btn.primary { background: #16a34a; color: #fff; border-color: #15803d; }
+  .promote-btn.primary:hover:not(:disabled) { background: #15803d; }
+  .promote-hint { font: 11px Arial; color: #166534; flex: 1; }
+  .promote-hint code { font: 11px ui-monospace, monospace; background: #dcfce7; padding: 1px 4px; border-radius: 2px; }
 </style>
