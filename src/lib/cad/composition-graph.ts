@@ -252,9 +252,24 @@ export function addMethod(
 ): { graph: Graph; id: NodeId } {
   const id = newNodeId();
   const node: MethodNode = { id, type: 'method', op, obj, arg };
-  const next = withNodes(graph, { [id]: node });
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
   const final = appendChild(next, parentId ?? graph.root, id);
   return { graph: finalize(final), id };
+}
+
+/** Drop an UNWIRED method node — its obj + arg are empty strings until the
+ *  user drags wires onto them. Emitter renders empty refs as the missing-comment. */
+export function addMethodPlaceholder(graph: Graph, op: CsgOp, parentId?: NodeId) {
+  return addMethod(graph, op, '', '', parentId);
+}
+
+/** Rebind a method node's obj or arg socket to point at another node. */
+export function setMethodInput(graph: Graph, methodId: NodeId, slot: 'obj' | 'arg', targetId: NodeId): Graph {
+  const node = graph.nodes[methodId];
+  if (!node || node.type !== 'method') return graph;
+  const updated: MethodNode = { ...node, [slot]: targetId } as MethodNode;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [methodId]: updated } });
 }
 
 /** Add a mv transform around a child. */
@@ -266,7 +281,8 @@ export function addMv(
 ): { graph: Graph; id: NodeId } {
   const id = newNodeId();
   const node: MvNode = { id, type: 'mv', child, offset };
-  const next = withNodes(graph, { [id]: node });
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
   const final = appendChild(next, parentId ?? graph.root, id);
   return { graph: finalize(final), id };
 }
@@ -280,9 +296,39 @@ export function addRot(
 ): { graph: Graph; id: NodeId } {
   const id = newNodeId();
   const node: RotNode = { id, type: 'rot', child, rot };
-  const next = withNodes(graph, { [id]: node });
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
   const final = appendChild(next, parentId ?? graph.root, id);
   return { graph: finalize(final), id };
+}
+
+/** Drop an UNWIRED mv node — child is empty string until wired. */
+export function addMvPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addMv(graph, '', undefined, parentId);
+}
+/** Drop an UNWIRED rot node — child is empty string until wired. */
+export function addRotPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addRot(graph, '', undefined, parentId);
+}
+
+/** Rebind a transform node's child to point at another node. */
+export function setTransformChild(graph: Graph, transformId: NodeId, childId: NodeId): Graph {
+  const node = graph.nodes[transformId];
+  if (!node || (node.type !== 'mv' && node.type !== 'rot')) return graph;
+  const updated = { ...node, child: childId } as MvNode | RotNode;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: updated } });
+}
+
+/** Edit one of a transform's three xyz literal values. */
+export function setTransformAxis(graph: Graph, transformId: NodeId, axis: 0 | 1 | 2, value: number): Graph {
+  const node = graph.nodes[transformId];
+  if (!node || (node.type !== 'mv' && node.type !== 'rot')) return graph;
+  const field = node.type === 'mv' ? 'offset' : 'rot';
+  const current = (node as any)[field] as [ArgValue, ArgValue, ArgValue];
+  const updated = [...current] as [ArgValue, ArgValue, ArgValue];
+  updated[axis] = asLiteral(value);
+  const newNode = { ...node, [field]: updated } as MvNode | RotNode;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: newNode } });
 }
 
 /** Append a child reference to a container. Idempotent. */
