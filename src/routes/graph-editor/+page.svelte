@@ -47,6 +47,7 @@
   } from '$lib/cad/composition-graph';
   import { emitGraph } from '$lib/cad/composition-emit';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
+  import { dragNumber } from '$lib/shared/dragNumber';
 
   let graph = $state<Graph>(newGraph());
   let exemplarId = $state('test_graph_a');
@@ -419,6 +420,11 @@
                 <input class="ge-param-card-input" type="number" step="0.05"
                   xmlns="http://www.w3.org/1999/xhtml"
                   value={(p as any).default}
+                  use:dragNumber={{
+                    step: 0.05,
+                    get: () => Number((p as any).default) || 0,
+                    set: (val) => onParamDefault(name, val),
+                  }}
                   oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
               </foreignObject>
               <!-- × delete on the chip -->
@@ -528,6 +534,11 @@
                         {#if (v as any).kind === 'literal'}
                           <input class="ge-arg-input" type="number" step="0.05"
                             value={(v as any).value}
+                            use:dragNumber={{
+                              step: 0.05,
+                              get: () => Number((v as any).value) || 0,
+                              set: (val) => onArgEdit(n.id, k, val),
+                            }}
                             oninput={(e) => onArgEdit(n.id, k, Number((e.target as HTMLInputElement).value))}
                           />
                         {:else if (v as any).kind === 'param'}
@@ -552,6 +563,11 @@
                           <span class="ge-arg-key">{axis}</span>
                           <input class="ge-arg-input" type="number" step="0.5"
                             value={(mvNode.offset[i] as any).kind === 'literal' ? (mvNode.offset[i] as any).value : 0}
+                            use:dragNumber={{
+                              step: 0.5,
+                              get: () => Number((mvNode.offset[i] as any).value ?? 0),
+                              set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val),
+                            }}
                             oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
                           />
                         </div>
@@ -568,6 +584,11 @@
                           <span class="ge-arg-key">{axis}</span>
                           <input class="ge-arg-input" type="number" step="1"
                             value={(rotNode.rot[i] as any).kind === 'literal' ? (rotNode.rot[i] as any).value : 0}
+                            use:dragNumber={{
+                              step: 1,
+                              get: () => Number((rotNode.rot[i] as any).value ?? 0),
+                              set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val),
+                            }}
                             oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
                           />
                         </div>
@@ -632,11 +653,16 @@
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="20" y="42" width={size.w - 24} height={size.h - 50}>
                   <div class="ge-xyz" xmlns="http://www.w3.org/1999/xhtml">
-                    {#each ['x','y','z'] as axisLabel, i}
+                    {#each ['x','y','z'] as axisLabel, i (axisLabel)}
                       <div class="ge-arg-row">
                         <span class="ge-arg-key">{n.type === 'mv' ? '' : 'r'}{axisLabel}</span>
-                        <input class="ge-arg-input" type="number" step="0.5"
+                        <input class="ge-arg-input" type="number" step={n.type === 'mv' ? 0.5 : 1}
                           value={((t as any)[fieldName][i].kind === 'literal') ? (t as any)[fieldName][i].value : 0}
+                          use:dragNumber={{
+                            step: n.type === 'mv' ? 0.5 : 1,
+                            get: () => Number((t as any)[fieldName][i].value ?? 0),
+                            set: (val) => onTransformAxis(n.id, i as 0|1|2, val),
+                          }}
                           oninput={(e) => onTransformAxis(n.id, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
                         />
                       </div>
@@ -801,7 +827,13 @@
   .ge-args, .ge-xyz { font: 11px Arial; color: #1f2937; line-height: 1.5; }
   .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 1px 0; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
-  .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; }
+  .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; cursor: ew-resize; }
+  .ge-arg-input:hover { background: #f0f9ff; }
+  .ge-arg-input:focus { cursor: text; outline: 1px solid #0369a1; background: #fff; }
+  .ge-param-card-input { cursor: ew-resize; }
+  .ge-param-card-input:focus { cursor: text; }
+  :global(body.dragnum-active) { cursor: ew-resize !important; }
+  :global(body.dragnum-active *) { cursor: ew-resize !important; }
   .ge-arg-pchip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; }
   .ge-arg-pchip.ƒ { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
   .ge-arg-pchip-x { background: transparent; border: 0; font: 11px Arial; color: #b91c1c; cursor: pointer; padding: 0 2px; line-height: 1; }
