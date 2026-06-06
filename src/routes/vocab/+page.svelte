@@ -18,12 +18,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import ParamGrid from '$lib/shared/ParamGrid.svelte';
+
   let { data } = $props();
   type Term = string;
   type VocabEntry = any;
   type SeedEntry  = any;
   // Lazy reference-silhouette renderer — used when an entry has compjson_ref.
   let CompJsonSilhouette = $state<any>(null);
+  // Per-term open/closed state for the Parameters accordion in the Proposed tab.
+  let paramsOpen = $state<Record<string, boolean>>({});
+  function isParamsOpen(term: Term): boolean { return paramsOpen[term] !== false; }
+  function toggleParamsOpen(term: Term) { paramsOpen = { ...paramsOpen, [term]: !isParamsOpen(term) }; }
 
   // Top-level state
   let mermaid: any = null;
@@ -177,6 +183,24 @@
     const entry = getProposed(term);
     if (!entry?.params) return [];
     return Object.values(entry.params).map((p: any) => p.default);
+  }
+  // Build a {paramKey: value} map for ParamGrid (it expects keyed records, not arrays).
+  function paramMap(term: Term): Record<string, number> {
+    const entry = getProposed(term);
+    if (!entry?.params) return {};
+    const arr = paramOverrides[term] ?? defaultParams(term);
+    const out: Record<string, number> = {};
+    Object.keys(entry.params).forEach((k, i) => { out[k] = arr[i] ?? (entry.params[k].default as number); });
+    return out;
+  }
+  // ParamGrid onPending / onCommit handlers — convert (key, value) back to the
+  // positional override array used by /api/vocab/bake-proposed.
+  function paramUpdateByKey(term: Term, key: string, value: number) {
+    const entry = getProposed(term);
+    if (!entry?.params) return;
+    const idx = Object.keys(entry.params).indexOf(key);
+    if (idx < 0) return;
+    updateParam(term, idx, value);
   }
   // Derived view-models referenced from the markup — Svelte5 strict about
   // {@const} placement, so the inline derivations live up here.
@@ -781,32 +805,33 @@
                    popover (top-right of detail-head). Tab body focuses on
                    params + 3D bake — /primitives format. -->
 
-              <!-- Param sliders at top — 2-column grid. -->
+              <!-- Parameters accordion — mirrors /primitives' .pg-acc-wrap +
+                   ParamGrid layout (single component, identical params chrome). -->
               {#if prop.params}
-                <div class="param-sliders top-2col">
-                  <div class="ps-cap">params · drag to re-bake live</div>
-                  {#each Object.entries(prop.params) as [pk, pdef], idx (pk)}
-                    {@const cur = (paramOverrides[selected!] ?? defaultParams(selected!))[idx] ?? (pdef as any).default}
-                    <div class="ps-tile">
-                      <div class="ps-tile-head"><span class="ps-key">{pk}</span><span class="ps-unit">{(pdef as any).unit ?? ''}</span></div>
-                      <div class="ps-tile-ctrls">
-                        <input class="ps-slider" type="range"
-                          min={(pdef as any).min ?? 0}
-                          max={(pdef as any).max ?? 100}
-                          step={(pdef as any).step ?? 0.1}
-                          value={cur}
-                          oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
-                        />
-                        <input class="ps-num" type="number"
-                          min={(pdef as any).min ?? 0}
-                          max={(pdef as any).max ?? 100}
-                          step={(pdef as any).step ?? 0.1}
-                          value={cur}
-                          oninput={(ev) => updateParam(selected!, idx, Number((ev.target as HTMLInputElement).value))}
-                        />
-                      </div>
+                {@const pmap = paramMap(selected!)}
+                <div class="pg-acc-wrap">
+                  <div class="pg-acc-head" class:collapsed={!isParamsOpen(selected!)}
+                    role="button" tabindex="0"
+                    aria-expanded={isParamsOpen(selected!)}
+                    onclick={() => toggleParamsOpen(selected!)}
+                    onkeydown={(ek) => { if (ek.key === 'Enter' || ek.key === ' ') { ek.preventDefault(); toggleParamsOpen(selected!); } }}>
+                    <span class="pg-acc-title">Parameters</span>
+                    <span class="pg-acc-count">({Object.keys(prop.params).length})</span>
+                    <div class="pv-spacer"></div>
+                    <span class="pg-acc-hint">drag to re-bake</span>
+                  </div>
+                  {#if isParamsOpen(selected!)}
+                    <div class="pg-acc-body">
+                      <ParamGrid
+                        schema={prop.params as any}
+                        pending={pmap}
+                        applied={pmap}
+                        onPending={(k, v) => paramUpdateByKey(selected!, k, v)}
+                        onCommit={(k, v) => paramUpdateByKey(selected!, k, v)}
+                        variant="fn"
+                      />
                     </div>
-                  {/each}
+                  {/if}
                 </div>
               {/if}
 
@@ -1295,6 +1320,22 @@
     display: grid; gap: 10px; align-content: start;
   }
   .info-pop-panel .def-line.rich { margin: 0; }
+  /* Accordion shell — copied from /primitives PrimitiveView (.pg-acc-*). */
+  .pg-acc-wrap { border: 3px solid #d4d4dc; border-radius: 4px; background: #fff; padding: 0 3px 1px; margin: 0; }
+  .pg-acc-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 6px; margin: 0;
+    background: transparent; border: 0;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
+  .pg-acc-head.collapsed { background: #fafafa; }
+  .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
+  .pg-acc-count { font: 11px ui-monospace, monospace; color: #6b7280; }
+  .pg-acc-hint { font: 11px Arial; color: #9ca3af; }
+  .pv-spacer { flex: 1; }
+  .pg-acc-body { padding: 6px 4px 4px; max-height: 320px; overflow-y: auto; }
   /* Seed-tab host — full-width container; the switcher lives as a popover in
      the detail-head, not as a vertical rail. */
   .seed-tab-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
