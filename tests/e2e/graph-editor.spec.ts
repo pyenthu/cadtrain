@@ -72,9 +72,19 @@ async function addParam(page: Page, name: string, defaultValue: number) {
   await page.locator('.ge-wire-pop').waitFor({ state: 'detached' });
 }
 
-/** Drag from one element's center to another's center via mouse events.
- *  Used for the canvas socket → socket wire mechanic. */
+/** Drag from one element's center to another's center.
+ *
+ *  Strategy: dispatch pointerdown DIRECTLY on the source element + pointerup
+ *  DIRECTLY on the target element via .dispatchEvent(). Browser-native mouse
+ *  hit-testing inside SVG circles is unreliable when the circle is small
+ *  (radius 4–6) and the page is zoomed — by dispatching on the locator we
+ *  guarantee the handlers fire on the right elements.
+ *
+ *  Mouse position is still moved so the editor's wireMouse state tracks
+ *  during the drag (cosmetic bezier rendering, not required for state).
+ */
 async function dragBetween(page: Page, from: Locator, to: Locator) {
+  await from.scrollIntoViewIfNeeded();
   const f = await from.boundingBox();
   const t = await to.boundingBox();
   if (!f || !t) throw new Error('socket missing bounding box');
@@ -82,14 +92,11 @@ async function dragBetween(page: Page, from: Locator, to: Locator) {
   const fy = f.y + f.height / 2;
   const tx = t.x + t.width / 2;
   const ty = t.y + t.height / 2;
+
   await page.mouse.move(fx, fy);
-  await page.mouse.down();
-  // Multi-step move so the drag overlay animation has time to track.
-  for (let i = 1; i <= 6; i++) {
-    await page.mouse.move(fx + ((tx - fx) * i) / 6, fy + ((ty - fy) * i) / 6, { steps: 2 });
-  }
-  await page.mouse.move(tx, ty);
-  await page.mouse.up();
+  await from.dispatchEvent('pointerdown', { button: 0, clientX: fx, clientY: fy, pointerId: 1, pointerType: 'mouse', bubbles: true });
+  await page.mouse.move(tx, ty, { steps: 10 });
+  await to.dispatchEvent('pointerup', { button: 0, clientX: tx, clientY: ty, pointerId: 1, pointerType: 'mouse', bubbles: true });
 }
 
 // ─── smoke ──────────────────────────────────────────────────────────────
@@ -101,8 +108,9 @@ test.describe('graph-editor — smoke', () => {
     await expect(page.locator('.ge-bar h1')).toBeVisible();
     await expect(page.getByRole('button', { name: '+ Drop' })).toBeVisible();
     await expect(page.locator('.ge-bar', { hasText: /Save/ })).toBeVisible();
-    // Canvas hint + zero nodes.
-    await expect(page.locator('.ge-canvas-hint')).toContainText('+ Drop');
+    // Canvas hint + zero nodes. Two .ge-canvas-hint elements render in the
+    // empty state (one for params, one for nodes); pick the +Drop one.
+    await expect(page.locator('.ge-canvas-hint', { hasText: '+ Drop' })).toBeVisible();
     expect(await callCount(page)).toBe(0);
     expect(await methodCount(page)).toBe(0);
     expect(await paramChipCount(page)).toBe(0);
@@ -144,10 +152,11 @@ test.describe('graph-editor — smoke', () => {
   test('reset clears the canvas', async ({ page }) => {
     await openEditor(page);
     await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
     await pickPrimitive(page, 'dt_shaft');
-    expect(await callCount(page)).toBe(2);
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
     await page.getByRole('button', { name: 'Reset' }).click();
-    expect(await callCount(page)).toBe(0);
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(0);
   });
 });
 
@@ -225,6 +234,168 @@ test.describe('graph-editor — phase 1: mv axis param wiring', () => {
   });
 });
 
+// ─── Phase 2 acceptance — CSG composition (drag-wire two Calls into a method) ─
+//
+// Drops two Calls A and B, drops a ⊖ subtract method node, drag-wires
+// A's output to method.obj and B's output to method.arg, then asserts:
+//   • both wires render (red for obj, amber for arg)
+//   • source emits A.subtract(B) somewhere in the function body
+//   • bake pane shows no error (canvas mounts or is still loading)
+//
+// Then repeats for add (⊕) and intersect (⊗) as quick variants — covers
+// the full CSG family without redundant assertion bloat.
+//
+// Run visually: PWHEAD=1 bun run test:graph:headed -- --grep 'phase 2'
+
+test.describe('graph-editor — phase 2: CSG composition', () => {
+  for (const { op, glyph, wireClass, methodCall } of [
+    { op: 'subtract'  as const, glyph: '⊖', wireClass: 'arg', methodCall: 'subtract' },
+    { op: 'add'       as const, glyph: '⊕', wireClass: 'arg', methodCall: 'add' },
+    { op: 'intersect' as const, glyph: '⊗', wireClass: 'arg', methodCall: 'intersect' },
+  ]) {
+    test(`A ${glyph} B (${op}) — drag-wire renders + emits source`, async ({ page }) => {
+      test.setTimeout(40_000);
+      await openEditor(page);
+      await setExemplar(page, `test_phase2_${op}`);
+
+      // Step 1 — drop two Calls.
+      await pickPrimitive(page, 'dt_box');
+      await pickPrimitive(page, 'dt_pin');
+      await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+      // Step 2 — drop a method node for this op.
+      await pickCsg(page, op);
+      await expect(page.locator('.ge-node-bg.method')).toHaveCount(1);
+
+      // Step 3 — drag A's output socket → method.obj input socket.
+      const callAGroup  = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+      const callAOut    = callAGroup.locator('circle.ge-sock.out');
+      const methodGroup = page.locator('g.ge-node:has(rect.ge-node-bg.method)').first();
+      const methodObj   = methodGroup.locator('circle.ge-sock.in.obj');
+      await dragBetween(page, callAOut, methodObj);
+      await expect(page.locator('path.ge-wire.obj')).toHaveCount(1);
+
+      // Step 4 — drag B's output → method.arg.
+      const callBGroup = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(1);
+      const callBOut   = callBGroup.locator('circle.ge-sock.out');
+      const methodArg  = methodGroup.locator('circle.ge-sock.in.arg');
+      await dragBetween(page, callBOut, methodArg);
+      await expect(page.locator(`path.ge-wire.${wireClass}`)).toHaveCount(1);
+
+      // Step 5 — source contains A.<op>(B).
+      const callRe = new RegExp(`A\\.${methodCall}\\(B\\)`);
+      await expect(page.locator('.ge-source')).toContainText(callRe);
+
+      // Step 6 — bake pane has no error (canvas mounting OR baking are both OK).
+      await expect(page.locator('.ge-bake-pane .ge-err')).toHaveCount(0);
+    });
+  }
+});
+
+// ─── Phase 3 acceptance — save round-trip ───────────────────────────────
+//
+// Builds a small graph, clicks Save, fetches the saved .asm.ts via the
+// /api/primitives/source endpoint, and asserts the on-disk source carries
+// the meta.graph + meta.params + the wired-param emit pattern.
+//
+// Doubles as a part generator — `test_phase3_save.asm.ts` lands on the
+// volume on every passing run.
+//
+// Run visually: PWHEAD=1 bun run test:graph:headed -- --grep 'phase 3'
+
+test.describe('graph-editor — phase 3: save round-trip', () => {
+  test('build → save → re-fetch — disk file has meta.graph + p.outerR wire', async ({ page }) => {
+    test.setTimeout(40_000);
+    await openEditor(page);
+    const exId = 'test_phase3_save';
+    await setExemplar(page, exId);
+
+    // Build a small graph: one Call, one param, wired.
+    await pickPrimitive(page, 'dt_shaft');
+    await addParam(page, 'outerR', 1.5);
+    const paramOut    = page.locator('.ge-param-card .ge-sock.out.param').first();
+    const callAGroup  = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+    const callAArg0   = callAGroup.locator('circle.ge-sock.in.param:not(.tiny)').first();
+    await dragBetween(page, paramOut, callAArg0);
+
+    // Click Save → status confirms.
+    await page.getByRole('button', { name: /Save/ }).click();
+    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+
+    // Re-fetch via API — verify the source file round-tripped.
+    const r = await page.request.get(`/api/primitives/source?name=${exId}`);
+    expect(r.ok()).toBe(true);
+    const data = await r.json();
+
+    // The on-disk meta object MUST carry:
+    //   1. a graph JSON literal — proof the new architecture is the on-disk format
+    //   2. the wired param — proof the visual edit reached disk faithfully
+    //   3. the param schema in meta.params for runtime resolution
+    expect(data.source).toContain('graph: {');
+    expect(data.source).toMatch(/outerR/);
+    expect(data.source).toContain('p.outerR');
+    expect(data.params).toBeDefined();
+    expect(Object.keys(data.params)).toContain('outerR');
+  });
+});
+
+// ─── Phase 4 acceptance — shared dial across multiple Calls ────────────
+//
+// Drops two instances of the same primitive (A and B = dt_shaft), adds
+// p.outerR, drag-wires BOTH Calls' first arg to the same param, edits the
+// dial. Verifies:
+//   • two param wires render on canvas
+//   • both Calls show the p.outerR chip
+//   • source contains p.outerR TWICE (once per Call's args block)
+//   • editing the dial bubbles through (source's params.outerR.default changes)
+//
+// Run visually: PWHEAD=1 bun run test:graph:headed -- --grep 'phase 4'
+
+test.describe('graph-editor — phase 4: shared dial across multiple Calls', () => {
+  test('A.r + B.r both wired to p.outerR — single dial', async ({ page }) => {
+    test.setTimeout(40_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase4_shared');
+
+    // Two dt_shaft Calls — A and B.
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    // Add the dial.
+    await addParam(page, 'outerR', 1.5);
+
+    // Wire A.r → p.outerR.
+    const paramOut = page.locator('.ge-param-card .ge-sock.out.param').first();
+    const callA    = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+    const callB    = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(1);
+    const aArg0    = callA.locator('circle.ge-sock.in.param:not(.tiny)').first();
+    const bArg0    = callB.locator('circle.ge-sock.in.param:not(.tiny)').first();
+    await dragBetween(page, paramOut, aArg0);
+    await expect(page.locator('path.ge-wire.param')).toHaveCount(1);
+
+    // Wire B.r → p.outerR.
+    await dragBetween(page, paramOut, bArg0);
+    await expect(page.locator('path.ge-wire.param')).toHaveCount(2);
+
+    // Both Call cards carry a p.outerR chip in their first arg row.
+    await expect(callA.locator('.ge-arg-pchip', { hasText: 'p.outerR' })).toBeVisible();
+    await expect(callB.locator('.ge-arg-pchip', { hasText: 'p.outerR' })).toBeVisible();
+
+    // Edit the dial — both Calls should keep referencing p.outerR (the literal
+    // value bubbles through the param resolution at bake time).
+    const defaultInput = page.locator('.ge-param-card-input').first();
+    await defaultInput.fill('7.5');
+    await expect(page.locator('.ge-source')).toContainText('default: 7.5');
+
+    // p.outerR appears AT LEAST TWICE in the emitted source — once per
+    // Call's args block.
+    const src = await page.locator('.ge-source').textContent();
+    const occurrences = (src?.match(/p\.outerR/g) ?? []).length;
+    expect(occurrences).toBeGreaterThanOrEqual(2);
+  });
+});
+
 test.describe('graph-editor — generates parts via UI', () => {
   test('builds_dt_box_with_param_wired and saves to volume', async ({ page }) => {
     test.setTimeout(40_000);
@@ -233,17 +404,17 @@ test.describe('graph-editor — generates parts via UI', () => {
 
     // 1. Drop a Call.
     await pickPrimitive(page, 'dt_shaft');
-    expect(await callCount(page)).toBe(1);
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
 
     // 2. Add an outer param.
     await addParam(page, 'outerR', 1.5);
-    expect(await paramChipCount(page)).toBe(1);
+    await expect(page.locator('.ge-param-card')).toHaveCount(1);
 
     // 3. Wire the param chip → A.r via drag from param output socket
-    //    onto A's r input socket. The 'r' arg is the first row of the
-    //    Call card, so its input socket is the first .ge-sock.in.param.
-    const paramOut = page.locator('.ge-param-card .ge-sock.out.param');
-    const callArgIn = page.locator('.ge-node-bg.call ~ .ge-sock.in.param, .ge-sock.in.param').first();
+    //    onto A's r input socket (the first NON-TINY param-input on A's left edge).
+    const paramOut = page.locator('.ge-param-card .ge-sock.out.param').first();
+    const callA    = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+    const callArgIn = callA.locator('circle.ge-sock.in.param:not(.tiny)').first();
     await dragBetween(page, paramOut, callArgIn);
 
     // 4. Source should show p.outerR in the call's r arg.
