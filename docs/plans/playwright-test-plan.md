@@ -40,7 +40,7 @@ click `+ Drop`, scrub a slider, drag a wire from the param chip to
 changes (canvas drag mechanics, SVG socket positions, popover anchors,
 keyboard shortcuts).
 
-## Phase rollout (8 phases shipped, more coming)
+## Phase rollout (9 phases shipped, more coming)
 
 ### Phase 1 — `mv` axis param wiring (single-Call)
 
@@ -210,11 +210,31 @@ term → 🧬 Graph editor link appears → click navigates with
 
 ## Phases queued (not yet written)
 
-### Phase 8 — Embedded graph editor in /vocab right pane
-Phase 7 ships a link out — next is extracting the editor as a reusable
-component (`<GraphEditor graph={...} onsave={...} />`) and embedding it
-as a 3rd vertical tab next to Inferred / Proposed in /vocab. Same
-hydration logic, no navigation jump.
+### ✅ Phase 8 — Embedded graph editor in /vocab — SHIPPED
+
+The 🧬 Graph editor chip is now a TOGGLE (button, not anchor). Click it
+and an inline iframe panel opens below the term-detail header with the
+editor mounted in `?embed=1` mode (SvelteKit nav hidden inside).
+
+| Step | Assert |
+|---|---|
+| 1 | `goto('/vocab')` + Browse + click `tube` | term selected, no embed panel yet |
+| 2 | Click `button.head-graph-link` | `.vocab-graph-embed` visible with src `/graph-editor?id=dt_tube&embed=1` |
+| 3 | switch to `frameLocator('iframe.vge-iframe')` | inside the iframe: 2 calls, 1 method, 3 params, canvas visible |
+| 4 | `#nav-menu-wrapper` inside iframe | hidden (embed=1 CSS in `<svelte:head>`) |
+| 5 | Click `.vge-close` | panel removed from DOM |
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 8`
+**Runtime**: ~5 s headless
+
+**Trade-off vs full component extraction**: iframe keeps the editor's
+state self-contained (no prop drilling, no callback bridge for save).
+Phase 14's translator already lands graph format on the volume + the
+editor's own save flow writes back to the same volume — the iframe
+boundary doesn't hide anything the user needs to act on. If/when we
+want parent-page reactivity (e.g. closing the iframe should re-bake
+the Proposed canvas), that's the moment to do the component-extraction
+refactor. For now, iframe ships the user-facing flow.
 
 ### Phase 9 — Inline transforms compose with CSG
 Drop A and B, drop `⊖ subtract`, wire them. Toggle `⇄` on A → inline mv

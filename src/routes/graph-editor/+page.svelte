@@ -55,6 +55,11 @@
   let graph = $state<Graph>(newGraph());
   let exemplarId = $state('test_graph_a');
   let saveStatus = $state<string | null>(null);
+  /** Embed mode (`?embed=1`) — when the editor is iframed inside another
+   *  surface (e.g. the /vocab Editor tab), hide the global layout nav so
+   *  the chrome doesn't double-up. The page's own .ge-bar stays since it
+   *  hosts Save / + Drop / id input — the in-context controls. */
+  let embed = $state(false);
 
   let emitted = $derived(emitGraph(graph, { id: exemplarId }));
   let sourceText = $derived(emitted.source);
@@ -95,6 +100,7 @@
     // a prod endpoint that hasn't been redeployed with the graph field yet.
     try {
       const u = new URL(window.location.href);
+      embed = u.searchParams.get('embed') === '1';
       const id = u.searchParams.get('id');
       if (id && /^[a-z_][a-z0-9_]*$/i.test(id)) {
         const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
@@ -467,9 +473,21 @@
   });
 </script>
 
-<svelte:head><title>Graph editor · CAD Train</title></svelte:head>
+<svelte:head>
+  <title>Graph editor · CAD Train</title>
+  {#if embed}
+    <!-- Hide the outer SvelteKit layout chrome when iframed. Injected as
+         raw CSS in <head> so it can reach across scoped boundaries. -->
+    {@html `<style>
+      #nav-menu-wrapper { display: none !important; }
+      .layout { padding: 0 !important; height: 100% !important; }
+      .layout .content { padding: 0 !important; height: 100% !important; }
+      html, body { height: 100%; margin: 0; overflow: hidden; }
+    </style>`}
+  {/if}
+</svelte:head>
 
-<div class="ge-root">
+<div class="ge-root" class:embed>
   <header class="ge-bar">
     <h1>Graph editor</h1>
     <input class="ge-id" type="text" bind:value={exemplarId} placeholder="exemplar id" />
@@ -975,6 +993,9 @@
 
 <style>
   .ge-root { display: grid; grid-template-rows: auto 1fr; height: 100vh; font-family: Arial; color: #1f2937; }
+  /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
+     Override the 100vh so the iframe parent controls the height. */
+  .ge-root.embed { height: 100%; }
   .ge-bar { display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
   .ge-bar h1 { font: 700 15px Arial; margin: 0; color: #0c4a6e; }
   .ge-id { padding: 4px 10px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; width: 180px; }

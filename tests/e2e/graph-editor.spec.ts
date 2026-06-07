@@ -696,6 +696,51 @@ test.describe('graph-editor — phase 14: vocab.json → translator → editor',
   });
 });
 
+// ─── Phase 8 — /vocab embeds the graph editor in an iframe panel ─────────
+//
+// The chip now toggles an inline iframe panel below the term-detail header
+// (mounts /graph-editor?id=<exemplar>&embed=1). The iframe's embed=1 mode
+// hides the SvelteKit nav inside so the iframe is just the editor chrome.
+// Phase 14's dt_tube graph format hydrates inside the iframe — the user
+// stays in /vocab the whole time.
+
+test.describe('graph-editor — phase 8: /vocab inline iframe embed', () => {
+  test('toggling 🧬 Graph editor opens an iframe + the editor hydrates inside', async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.goto('/vocab');
+    await expect(page.locator('.vocab-bar')).toBeVisible();
+
+    // 1. Open Browse + select `tube` (whose exemplar dt_tube is graph format after Phase 14).
+    await page.locator('.left-tab', { hasText: 'Browse' }).click();
+    await page.locator('.browser-row', { hasText: 'tube' }).first().click();
+
+    // 2. No iframe panel by default.
+    await expect(page.locator('.vocab-graph-embed')).toHaveCount(0);
+
+    // 3. Click the 🧬 Graph editor button (now a toggle, not a link).
+    await page.locator('button.head-graph-link').click();
+
+    // 4. Embed panel appears; iframe has the right src.
+    const embed = page.locator('.vocab-graph-embed');
+    await expect(embed).toBeVisible();
+    await expect(embed.locator('iframe.vge-iframe')).toHaveAttribute('src', /\/graph-editor\?id=dt_tube&embed=1/);
+
+    // 5. Switch into the iframe and verify the editor hydrated inside it.
+    const frame = page.frameLocator('iframe.vge-iframe');
+    await expect(frame.locator('.ge-canvas')).toBeVisible();
+    await expect(frame.locator('.ge-node-bg.call')).toHaveCount(2);
+    await expect(frame.locator('.ge-node-bg.method')).toHaveCount(1);
+    await expect(frame.locator('.ge-param-card')).toHaveCount(3);
+
+    // 6. The global SvelteKit nav-menu-wrapper is hidden inside the iframe.
+    await expect(frame.locator('#nav-menu-wrapper')).toBeHidden();
+
+    // 7. Closing the panel via ✕ removes the iframe.
+    await page.locator('.vge-close').click();
+    await expect(embed).toHaveCount(0);
+  });
+});
+
 // ─── Phase 7 — /vocab → /graph-editor cross-page launch ──────────────────
 //
 // The K.69 vocab GUI gains a 🧬 Graph editor link per term — click it and
@@ -716,15 +761,20 @@ test.describe('graph-editor — phase 7: /vocab launches the graph editor', () =
     //    compose example used by the rule-translator. Click the row directly.
     await page.locator('.browser-row', { hasText: 'tube' }).first().click();
 
-    // 3. The 🧬 Graph editor link appears in the term detail header.
-    const link = page.locator('a.head-graph-link');
-    await expect(link).toBeVisible();
-    await expect(link).toContainText('Graph editor');
-    await expect(link).toHaveAttribute('href', /\/graph-editor\?id=dt_/);
+    // 3. The 🧬 Graph editor toggle appears in the term detail header.
+    //    (Was an <a> link before Phase 8; now a <button> that opens an
+    //    inline iframe panel — Phase 8 covers that flow. This test asserts
+    //    the cross-page launch is still available via the panel's open-full link.)
+    const toggle = page.locator('button.head-graph-link');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toContainText('Graph editor');
 
-    // 4. Read the href + navigate (a real click would open a new tab if the
-    //    link had target=_blank; here it's same-tab — assert the URL change).
-    const href = await link.getAttribute('href');
+    // 4. Click the toggle → embed panel appears with an "open full" link
+    //    that holds the cross-page href. Navigate via that link.
+    await toggle.click();
+    const fullLink = page.locator('.vge-link');
+    await expect(fullLink).toHaveAttribute('href', /\/graph-editor\?id=dt_/);
+    const href = await fullLink.getAttribute('href');
     await page.goto(href!);
 
     // 5. Lands on /graph-editor with the exemplar pre-filled.

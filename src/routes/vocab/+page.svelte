@@ -28,6 +28,10 @@
   let CompJsonSilhouette = $state<any>(null);
   // Per-term open/closed state for the Parameters accordion in the Proposed tab.
   let paramsOpen = $state<Record<string, boolean>>({});
+  // K.63 graph editor inline-iframe panel toggle (Phase 8). One panel max,
+  // global state — when the user picks a different term we keep the panel
+  // open but the iframe's src changes to the new exemplar (reactive).
+  let editorOpen = $state(false);
   function isParamsOpen(term: Term): boolean { return paramsOpen[term] !== false; }
   function toggleParamsOpen(term: Term) { paramsOpen = { ...paramsOpen, [term]: !isParamsOpen(term) }; }
 
@@ -681,17 +685,38 @@
               onclick={() => refreshTerm(selected!)}
             >{regenBusy[selected!] ? '↻ …' : '↻ Refresh'}</button>
             <code class="head-exemplar">{e.exemplar}</code>
-            <!-- K.63 graph editor link — opens the exemplar in /graph-editor
-                 with ?id=<exemplar>. If the source has meta.graph (built via
-                 the editor or translated to graph format) it hydrates onto
-                 the canvas; otherwise an amber legacy banner explains and
-                 the user can author a fresh graph-format part to overwrite. -->
-            <a class="head-graph-link" href={`/graph-editor?id=${e.exemplar}`}
+            <!-- K.63 graph editor — toggles an inline iframe panel that mounts
+                 /graph-editor?id=<exemplar>&embed=1 below the rest of the
+                 term detail. embed=1 hides the SvelteKit nav so the iframe
+                 is just the editor chrome. Click again (or the ✕ on the
+                 panel) to close. -->
+            <button class="head-graph-link" type="button"
+              class:on={editorOpen}
+              onclick={() => (editorOpen = !editorOpen)}
               title="Open this exemplar in the graph editor (K.63 composition model)">
-              🧬 Graph editor
-            </a>
+              🧬 Graph editor {editorOpen ? '▾' : ''}
+            </button>
           {/if}
         </div>
+
+        {#if editorOpen && selected && e.exemplar}
+          <section class="vocab-graph-embed">
+            <header class="vge-bar">
+              <strong>🧬 Graph editor</strong>
+              <code>{e.exemplar}</code>
+              <span class="vge-sp"></span>
+              <a class="vge-link" href={`/graph-editor?id=${e.exemplar}`} target="_blank"
+                title="Open in a full /graph-editor tab">↗ open full</a>
+              <button class="vge-close" type="button"
+                onclick={() => (editorOpen = false)} title="Close editor panel">✕</button>
+            </header>
+            <iframe
+              class="vge-iframe"
+              src={`/graph-editor?id=${e.exemplar}&embed=1`}
+              title={`Graph editor — ${e.exemplar}`}>
+            </iframe>
+          </section>
+        {/if}
         {#if selectedIsSeed}
           {@const prop = proposedEntry}
           {#if detailTab === 'inferred' && promoteStatus}<div class="vocab-tab-status">{promoteStatus}</div>{/if}
@@ -1378,8 +1403,24 @@
   .detail-pane .detail-head h2 { margin: 0; font: 700 16px ui-monospace, monospace; }
   .head-spacer { flex: 1; }
   .head-exemplar { font: 11px ui-monospace, monospace; color: #6b7280; }
-  .head-graph-link { font: 600 11px Arial; color: #6d28d9; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 4px; padding: 3px 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .head-graph-link { font: 600 11px Arial; color: #6d28d9; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 4px; padding: 3px 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
   .head-graph-link:hover { background: #ddd6fe; color: #4c1d95; border-color: #a78bfa; }
+  .head-graph-link.on { background: #6d28d9; color: #fff; border-color: #4c1d95; }
+  .head-graph-link.on:hover { background: #4c1d95; }
+
+  /* Inline iframe panel — sits below the term-detail header when the
+     toggle is on. Height-sized to give the editor real estate without
+     stealing the whole pane (so the user can still scroll back up to
+     the params + rule details + bake). */
+  .vocab-graph-embed { display: flex; flex-direction: column; height: 70vh; margin-top: 14px; border: 2px solid #c4b5fd; border-radius: 6px; overflow: hidden; background: #fff; box-shadow: 0 2px 8px rgba(109, 40, 217, 0.1); }
+  .vge-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #faf5ff; border-bottom: 1px solid #e9d5ff; font: 600 12px Arial; color: #4c1d95; }
+  .vge-bar code { font: 11px ui-monospace, monospace; color: #6b7280; background: #ede9fe; padding: 2px 6px; border-radius: 3px; }
+  .vge-sp { flex: 1; }
+  .vge-link { font: 600 11px Arial; color: #6d28d9; text-decoration: none; padding: 3px 8px; border: 1px solid #c4b5fd; border-radius: 4px; }
+  .vge-link:hover { background: #ede9fe; }
+  .vge-close { background: transparent; border: 0; font: 16px Arial; color: #6b7280; cursor: pointer; padding: 0 6px; line-height: 1; }
+  .vge-close:hover { color: #b91c1c; }
+  .vge-iframe { flex: 1 1 auto; width: 100%; border: 0; background: #fafaf9; }
   /* Status line above the tabs (for promote success/failure). */
   .vocab-tab-status { font: 11px ui-monospace, monospace; color: #15803d; padding: 4px 16px; background: #f0fdf4; border-bottom: 1px solid #86efac; }
   /* Vertical trapezoidal Inferred|Proposed rail (restored 2026-06-06). */
