@@ -792,8 +792,13 @@
                   {/each}
                 {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <!-- Output: if a Call has an inline mv/rot wrapper, the visible
+                     output is the WRAPPER's output (the transformed result), so
+                     wires from this socket originate from the wrapper id. Without
+                     this, downstream methods would bypass the inline transform —
+                     emit would be `A.subtract(B)` instead of `mv(A,...).subtract(B)`. -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={cardH / 2} r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => startWire(ev, inlineRot ?? inlineMv ?? n.id)}/>
                 <!-- Per-arg input sockets on the left edge of the Call card.
                      Drag a param chip's output socket onto one to wire. -->
                 {#each Object.keys(call.args ?? {}) as ak, ai (ak)}

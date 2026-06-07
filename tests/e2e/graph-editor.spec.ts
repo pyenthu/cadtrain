@@ -696,6 +696,69 @@ test.describe('graph-editor — phase 14: vocab.json → translator → editor',
   });
 });
 
+// ─── Phase 9 — inline transforms compose with CSG ────────────────────────
+//
+// Toggling ⇄ on a Call wraps it in an inline mv. When that Call's output
+// then feeds a method, the method's subject is the TRANSFORMED result —
+// not the bare Call. Emit becomes `mv(A, [0,0,N]).subtract(B)` rather
+// than `A.subtract(B)`. Tests the "inline xform survives downstream wiring"
+// contract; without the same-card-output-uses-wrapper-id fix, the mv would
+// stand orphaned in the source and the cut would happen in the wrong frame.
+
+test.describe('graph-editor — phase 9: inline transforms compose with CSG', () => {
+  test('⇄ mv on A + ⊖ subtract B emits mv(A, [...]).subtract(B)', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase9_mv_csg');
+
+    // 1. Two dt_shaft Calls A + B.
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    const callA   = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0);
+    const callB   = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(1);
+
+    // 2. Toggle ⇄ on A — inline mv block appears inside A's card.
+    //    .ge-xform-btn renders BOTH ⇄ and ↻ as siblings; nth(0) = ⇄.
+    //    Uses onpointerdown (NOT onclick), so dispatchEvent('pointerdown')
+    //    fires the handler directly — sidesteps any bake-pane hit-test.
+    await callA.locator('text.ge-xform-btn').nth(0).dispatchEvent('pointerdown',
+      { button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true });
+    await expect(callA.locator('.ge-inline-label')).toHaveText(/mv/);
+
+    // 3. Edit mv.z to 3 — the third axis input on the inline mv block.
+    const mvZ = callA.locator('.ge-inline-xform.mv .ge-arg-row').nth(2).locator('input.ge-arg-input');
+    await mvZ.fill('3', { force: true });
+
+    // 4. Drop a ⊖ subtract method node.
+    await pickCsg(page, 'subtract');
+    await expect(page.locator('.ge-node-bg.method')).toHaveCount(1);
+
+    // 5. Wire A.out → method.obj and B.out → method.arg. A.out now reports
+    //    the inline mv's id (not A's), so the wire targets the wrapper.
+    const method = page.locator('g.ge-node:has(rect.ge-node-bg.method)').first();
+    const aOut   = callA.locator('circle.ge-sock.out:not(.in)').first();
+    const bOut   = callB.locator('circle.ge-sock.out:not(.in)').first();
+    const mObj   = method.locator('circle.ge-sock.in.obj').first();
+    const mArg   = method.locator('circle.ge-sock.in.arg').first();
+    await dragBetween(page, aOut, mObj);
+    await dragBetween(page, bOut, mArg);
+
+    // 6. Source has the transformed subject + the cutter.
+    const src = page.locator('.ge-source');
+    await expect(src).toContainText(/mv\(\s*A,/);
+    await expect(src).toContainText(/\.subtract\(/);
+    // The method's obj should be the mv variable, not bare A.
+    await expect(src).toContainText(/subtract\(\s*B\s*\)/);
+    // Source carries the z=3 offset.
+    await expect(src).toContainText(/\b3\b/);
+
+    // 7. No bake error — the mv-wrapped subtraction compiles end-to-end.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+  });
+});
+
 // ─── Phase 8 — /vocab embeds the graph editor in an iframe panel ─────────
 //
 // The chip now toggles an inline iframe panel below the term-detail header

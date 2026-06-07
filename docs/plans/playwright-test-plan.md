@@ -40,7 +40,7 @@ click `+ Drop`, scrub a slider, drag a wire from the param chip to
 changes (canvas drag mechanics, SVG socket positions, popover anchors,
 keyboard shortcuts).
 
-## Phase rollout (9 phases shipped, more coming)
+## Phase rollout (10 phases shipped, more coming)
 
 ### Phase 1 — `mv` axis param wiring (single-Call)
 
@@ -236,9 +236,26 @@ want parent-page reactivity (e.g. closing the iframe should re-bake
 the Proposed canvas), that's the moment to do the component-extraction
 refactor. For now, iframe ships the user-facing flow.
 
-### Phase 9 — Inline transforms compose with CSG
-Drop A and B, drop `⊖ subtract`, wire them. Toggle `⇄` on A → inline mv
-appears. Edit mv.z. Verify source emits `mv(A, [0, 0, N]).subtract(B)`.
+### ✅ Phase 9 — Inline transforms compose with CSG — SHIPPED
+
+| Step | Action | Assert |
+|---|---|---|
+| 1 | Drop two `dt_shaft` Calls (A, B) | 2 × `.ge-node-bg.call` |
+| 2 | dispatchEvent('pointerdown') on A's first `text.ge-xform-btn` (⇄) | A's `.ge-inline-label` shows `mv` |
+| 3 | Fill mv.z input with `3` | mv block has 3 in z slot |
+| 4 | Drop ⊖ subtract method | 1 × `.ge-node-bg.method` |
+| 5 | Drag A.out → method.obj; B.out → method.arg | wires commit |
+| 6 | Source contains `mv(A, [...])` + `.subtract(B)` + `3` | regex matches |
+| 7 | `.ge-err` count | 0 |
+
+**Editor fix that landed alongside the test**: when a Call has an inline
+mv/rot wrapper, the Call's output socket now reports the WRAPPER's id
+(not the Call's). Without this, downstream methods would have bypassed
+the transform — emit would be `A.subtract(B)` with an orphan `mv(...)`
+sitting unused in the source.
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 9`
+**Runtime**: ~7 s headless
 
 ### Phase 10 — Multi-axis wiring on a single transform
 Wire `p.x` to mv.x, `p.y` to mv.y, `p.z` to mv.z all on the same Call.
