@@ -262,4 +262,24 @@ describe('forceSeparate (Phase 22)', () => {
     expect(twice.layout[a.id]).toEqual(once.layout[a.id]);
     expect(twice.layout[b.id]).toEqual(once.layout[b.id]);
   });
+
+  it('pushes nodes away from viewport-fixed obstacles (params card)', () => {
+    // Simulate a node landing right on top of where the params card would be
+    // in viewport-mapped graph space. Obstacle: 140 x 100 at (0, 0).
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    g = setLayout(g, a.id, { x: 10, y: 10 });
+    const out = forceSeparate(g, {
+      nodeSize: size,
+      padding: 10,
+      obstacles: [{ id: '__obs_params_card', x: 0, y: 0, w: 140, h: 100 }],
+    });
+    const aPos = out.layout[a.id]!;
+    // a should have moved clear of the 140x100 obstacle anchored at origin.
+    const overlapX = Math.min(aPos.x + 100, 140) - Math.max(aPos.x, 0);
+    const overlapY = Math.min(aPos.y + 60, 100) - Math.max(aPos.y, 0);
+    expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+    // The obstacle id is NOT in graph.layout — it's a virtual reference only.
+    expect(out.layout['__obs_params_card']).toBeUndefined();
+  });
 });

@@ -661,13 +661,28 @@
     undoLayout = null;
   }
   // Phase 22 — 🧲 Push apart. Resolves overlapping cards via pairwise
-  // bounding-box separation. The same undoLayout snapshot is reused so
-  // the user can ↶ undo this just like an auto-layout.
+  // bounding-box separation. Includes the tacked params card as a
+  // viewport-fixed obstacle so nodes get pushed clear of it too.
+  // The same undoLayout snapshot is reused so the user can ↶ undo this
+  // just like an auto-layout.
   function pushApart() {
     undoLayout = { ...graph.layout };
+    // Convert the params card's viewport rect to graph space so it
+    // participates in the force iteration. As the user pans, the card's
+    // graph-space position shifts inversely; we recompute on each click.
+    const pcardSize = paramCardSize(paramEntries.length);
+    const obstacles = [{
+      id: '__obs_params_card',
+      x: (CARD_X0 - pan.x) / zoom,
+      y: (CARD_Y0 - pan.y) / zoom,
+      // socket spills past the card's right edge by ~12 px — pad accordingly
+      w: (pcardSize.w + 14) / zoom,
+      h: pcardSize.h / zoom,
+    }];
     graph = forceSeparate(graph, {
       nodeSize: (id) => nodeSize(graph.nodes[id]),
       padding: 24,
+      obstacles,
     });
   }
 

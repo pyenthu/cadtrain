@@ -213,17 +213,23 @@ export interface ForceSeparateOptions {
   nodeSize: (id: NodeId) => { w: number; h: number };
   /** Map of nodeId → true for nodes whose layout MUST NOT move. */
   pinned?: Record<NodeId, boolean>;
+  /** Extra virtual obstacles in GRAPH space — used for viewport-tacked
+   *  elements (params card, future fixed legends) that aren't part of
+   *  graph.layout but should still push other nodes away. Treated as
+   *  permanently pinned. The id prefix `__obs_` is reserved for these;
+   *  no graph node can ever collide. */
+  obstacles?: { id: string; x: number; y: number; w: number; h: number }[];
 }
 
 export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
   const iterations = opts.iterations ?? 50;
   const padding = opts.padding ?? 20;
-  const pinned = opts.pinned ?? {};
+  const pinned: Record<string, boolean> = { ...(opts.pinned ?? {}) };
 
   // Snapshot positions for the visible nodes (skip inline xform wrappers).
-  const ids: NodeId[] = [];
-  const pos: Record<NodeId, LayoutXY> = {};
-  const size: Record<NodeId, { w: number; h: number }> = {};
+  const ids: string[] = [];
+  const pos: Record<string, LayoutXY> = {};
+  const size: Record<string, { w: number; h: number }> = {};
   for (const id of Object.keys(graph.nodes)) {
     const n = graph.nodes[id]!;
     // Inline-wrapper test mirrors hydrateGraph's check.
@@ -236,6 +242,15 @@ export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
     ids.push(id);
     pos[id] = { ...layoutXY };
     size[id] = opts.nodeSize(id);
+  }
+  // Merge in virtual obstacles — viewport-tacked elements (params card,
+  // future fixed legends). They participate in pair iteration so nodes
+  // get pushed away, but they're always pinned so they never move.
+  for (const obs of opts.obstacles ?? []) {
+    ids.push(obs.id);
+    pos[obs.id] = { x: obs.x, y: obs.y };
+    size[obs.id] = { w: obs.w, h: obs.h };
+    pinned[obs.id] = true;
   }
   if (ids.length < 2) return graph;
 
@@ -301,9 +316,12 @@ export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
     if (!moved) break; // converged
   }
 
-  // Apply via setLayout (immutable).
+  // Apply via setLayout (immutable). Skip obstacle ids — they're not in
+  // graph.nodes; setLayout would still write the entry but it's wasted.
   let out = graph;
   for (const id of ids) {
+    if (id.startsWith('__obs_')) continue;
+    if (!graph.nodes[id]) continue;
     out = setLayout(out, id, pos[id]!);
   }
   return out;
