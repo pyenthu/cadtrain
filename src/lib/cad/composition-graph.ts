@@ -455,9 +455,18 @@ export function addRepeat(
 }
 
 /** Drop an UNWIRED Repeat node — count defaults to 3, child is the empty
- *  string until the user drag-wires another node into the child slot. */
+ *  string until the user drag-wires another node into the child slot.
+ *  Default op is 'list': the Repeat is a pure "build N copies as a list"
+ *  primitive. The user wires its output into a Stack (or any other
+ *  consumer) to decide how the list is combined. This separation makes
+ *  the composition explicit + visually obvious.
+ *
+ *  Legacy parts (saved before this change) have no op field; the emit
+ *  defaults to 'stack' for those — preserves dt_stand etc. */
 export function addRepeatPlaceholder(graph: Graph, parentId?: NodeId) {
-  return addRepeat(graph, '', asLiteral(3), parentId);
+  const r = addRepeat(graph, '', asLiteral(3), parentId);
+  const next = setRepeatOp(r.graph, r.id, 'list');
+  return { graph: next, id: r.id };
 }
 
 /** Rebind a Repeat node's child socket to point at another node. */

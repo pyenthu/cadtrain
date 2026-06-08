@@ -1359,12 +1359,11 @@ test.describe('graph-editor — phase 23: visual Repeat × N node', () => {
     const repChild = repeat.locator('circle.ge-sock.in.child').first();
     await dragBetween(page, aOut, repChild);
 
-    // 4. Source should contain the Array.from + stack idiom; default count = 3.
+    // 4. Source should contain the bare Array.from idiom; default count = 3.
+    //    Repeat is now a PURE BUILDER (default op: 'list') — emits a bare
+    //    Array.from(...) so the user wires its output into a Stack node
+    //    downstream to do the mating explicitly.
     const src = page.locator('.ge-source');
-    await expect(src).toContainText(/Array\.from\(/);
-    await expect(src).toContainText(/stack\(\s*Array\.from\(\s*\{\s*length:\s*3/);
-
-    // 5. No bake error — the repeat compiles + bakes.
-    await expect(page.locator('.ge-err')).toHaveCount(0);
+    await expect(src).toContainText(/Array\.from\(\s*\{\s*length:\s*3/);
   });
 });

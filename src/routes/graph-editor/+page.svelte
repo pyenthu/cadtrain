@@ -387,7 +387,7 @@
     }
     if (node.type === 'method') return { w: 180, h: 100 };
     if (node.type === 'mv' || node.type === 'rot') return { w: 200, h: 120 };
-    if (node.type === 'repeat') return { w: 220, h: 130 };
+    if (node.type === 'repeat') return { w: 230, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
       const slots = (node.children?.length ?? 0) + 1;
@@ -1406,67 +1406,60 @@
                 {@const rep = n as any}
                 {@const countLiteral = rep.count?.kind === 'literal' ? Number(rep.count.value) : 1}
                 {@const repOp = (rep.op ?? 'stack') as 'stack' | 'list' | 'place'}
-                {@const opIcon = repOp === 'stack' ? '≣' : repOp === 'place' ? '⊞' : '[ ]'}
+                {@const childNode = rep.child ? graph.nodes[rep.child] : null}
+                {@const childLabel = !childNode ? '(drop a node into the child socket)'
+                  : childNode.type === 'call' ? `${childNode.alias} · ${childNode.src}`
+                  : childNode.type === 'method' ? `${childNode.op}(…)`
+                  : childNode.type === 'repeat' ? `repeat × ${childNode.count?.kind === 'literal' ? childNode.count.value : '…'}`
+                  : childNode.type}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg repeat"
                   width={size.w} height={size.h} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="14" y="22" class="ge-node-title">↻ Repeat <tspan class="ge-repeat-op-badge" dx="6">{opIcon} {repOp}</tspan></text>
+                <!-- Title row: ↻ Repeat × [N]  — count inline, prominently
+                     in the toolbar so the user sees N at a glance. ⚙ +
+                     × on the right edge. -->
+                <text x="14" y="22" class="ge-node-title">↻ Repeat ×</text>
+                <foreignObject x="92" y="6" width="46" height="22">
+                  <input class="ge-repeat-count-inline" type="number" min="1" step="1"
+                    xmlns="http://www.w3.org/1999/xhtml"
+                    value={countLiteral}
+                    use:dragNumber={{
+                      step: 1,
+                      get: () => countLiteral,
+                      set: (val) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(val)))); },
+                    }}
+                    oninput={(e) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(Number((e.target as HTMLInputElement).value))))); }}/>
+                </foreignObject>
+                {#if rep.count?.kind === 'param'}
+                  <text x={size.w - 96} y="22" class="ge-repeat-bound">{`(p.${rep.count.param})`}</text>
+                {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <foreignObject x="20" y="40" width={size.w - 24} height="68">
-                  <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
-                    <div class="ge-arg-row">
-                      <span class="ge-arg-key">count</span>
-                      <span class="ge-arg-cell">
-                        {#if rep.count?.kind === 'param'}
-                          <span class="ge-arg-pchip" title="Wired to param">
-                            p.{rep.count.param}
-                            <button class="ge-arg-pchip-x" type="button"
-                              onclick={() => { graph = setRepeatCount(graph, n.id, asLiteral(graph.params[rep.count.param]?.default ?? 1)); }}>×</button>
-                          </span>
-                        {:else if rep.count?.kind === 'expr'}
-                          <input class="ge-arg-input expr" type="text"
-                            placeholder="e.g. p.n"
-                            value={rep.count.expr}
-                            oninput={(e) => { graph = setRepeatCount(graph, n.id, asExpr((e.target as HTMLInputElement).value)); }}/>
-                        {:else}
-                          <input class="ge-arg-input" type="number" min="1" step="1"
-                            value={countLiteral}
-                            use:dragNumber={{
-                              step: 1,
-                              get: () => countLiteral,
-                              set: (val) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(val)))); },
-                            }}
-                            oninput={(e) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(Number((e.target as HTMLInputElement).value))))); }}/>
-                        {/if}
-                      </span>
-                    </div>
-                    <!-- op selector — explicit choice of how the N copies
-                         are combined. stack (mate end-to-end, the default)
-                         · list (bare array, caller decides) · place
-                         (combined without mating). Source emit switches
-                         on this; UI shows the active choice in the title. -->
-                    <div class="ge-arg-row">
-                      <span class="ge-arg-key">→ op</span>
-                      <span class="ge-repeat-op-group">
-                        <button class="ge-repeat-op-btn" class:active={repOp === 'stack'}
-                          type="button" title="stack(Array.from(...)) — mate end-to-end"
-                          onclick={() => { graph = setRepeatOp(graph, n.id, 'stack'); }}>≣ stack</button>
-                        <button class="ge-repeat-op-btn" class:active={repOp === 'list'}
-                          type="button" title="Array.from(...) — bare list"
-                          onclick={() => { graph = setRepeatOp(graph, n.id, 'list'); }}>[ ] list</button>
-                        <button class="ge-repeat-op-btn" class:active={repOp === 'place'}
-                          type="button" title="place(Array.from(...)) — overlap at origin"
-                          onclick={() => { graph = setRepeatOp(graph, n.id, 'place'); }}>⊞ place</button>
-                      </span>
-                    </div>
-                  </div>
-                </foreignObject>
+                <!-- Repeat is a pure BUILDER — produces a list of N copies of
+                     its child. To combine the list (mate, stack, overlap),
+                     wire the output into a Stack / other consumer. Source
+                     emit defaults to a bare Array.from(...). Legacy parts
+                     without an `op` field still emit stack(Array.from(...))
+                     for backward compat. -->
+                <text x={size.w / 2} y="56" class="ge-repeat-sub" text-anchor="middle">
+                  builds a list of {countLiteral} ×
+                </text>
+                <text x={size.w / 2} y="78" class="ge-repeat-child" text-anchor="middle">
+                  {childLabel}
+                </text>
+                {#if repOp !== 'list'}
+                  <!-- Legacy parts may have op='stack' or 'place'; show a hint
+                       so the user knows what the existing emit does. They
+                       can ⚙ open the popover (future) to change it. -->
+                  <text x={size.w / 2} y="94" class="ge-repeat-op-hint" text-anchor="middle">
+                    legacy emit: {repOp}(Array.from(…))
+                  </text>
+                {/if}
                 <!-- Child input socket — drop any node's output here to repeat it. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={size.h - 18} r="6"
@@ -1888,11 +1881,14 @@
   .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
   /* Repeat × N — distinct color so it reads as "iteration", not "container". */
   .ge-node-bg.repeat { fill: #fdf2f8; stroke: #be185d; stroke-width: 2; }
-  .ge-repeat-op-badge { font: 600 10px ui-monospace, monospace; fill: #be185d; }
-  .ge-repeat-op-group { display: inline-flex; gap: 2px; flex: 1 1 auto; }
-  .ge-repeat-op-btn { flex: 1 1 0; padding: 1px 4px; font: 600 9px Arial; background: #fff; color: #831843; border: 1px solid #fbcfe8; border-radius: 3px; cursor: pointer; transition: background 0.1s; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ge-repeat-op-btn:hover { background: #fbcfe8; }
-  .ge-repeat-op-btn.active { background: #be185d; color: #fff; border-color: #9d174d; }
+  /* Repeat count input — inline in the title row, big + editable. */
+  .ge-repeat-count-inline { width: 100%; box-sizing: border-box; padding: 2px 6px; font: 700 14px ui-monospace, monospace; color: #be185d; background: #fff; border: 1px solid #fbcfe8; border-radius: 4px; text-align: center; cursor: ew-resize; }
+  .ge-repeat-count-inline:focus { outline: 1px solid #be185d; cursor: text; }
+  .ge-repeat-bound { font: 10px ui-monospace, monospace; fill: #be185d; pointer-events: none; }
+  /* Body labels — "builds a list of N ×" + child name */
+  .ge-repeat-sub { font: 11px Arial; fill: #831843; opacity: 0.85; }
+  .ge-repeat-child { font: 600 12px ui-monospace, monospace; fill: #831843; }
+  .ge-repeat-op-hint { font: 9px ui-monospace, monospace; fill: #9d174d; opacity: 0.6; }
   .ge-container-slot-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-container-slot-x:hover { fill: #7f1d1d; }
   .ge-container-cog { font: 13px Arial; fill: #047857; cursor: pointer; user-select: none; }
