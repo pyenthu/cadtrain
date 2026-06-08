@@ -58,24 +58,41 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   const order = topoOrder(graph);
   const varNames = assignVarNames(graph, order);
 
+  // OUTPUT FILTERING: a node referenced as input to ANOTHER node (method's
+  // obj/arg, mv/rot/method's child, etc.) is an intermediate value — emitted
+  // as a const but NOT part of the returned list. The root list's natural
+  // output is the set of root children NOT consumed by anything else, which
+  // matches the user's intent: A and B feeding A.subtract(B) means the cut
+  // is the output, not [A, B, cut]. Singleton outputs unwrap to the bare
+  // value (no [x] wrapper).
+  const consumed = computeConsumedSet(graph);
+
   const lines: string[] = [];
+  let returnExpr = 'undefined';
   for (const id of order) {
     const node = graph.nodes[id];
     if (!node) continue;
     const v = varNames.get(id);
     if (!v) continue;
+    if (id === graph.root && node.type === 'list') {
+      // Skip the root-list's const entirely. Instead, derive the return
+      // statement from its UNCONSUMED children:
+      //   0 children → return undefined; (legal but unusual)
+      //   1 child    → return <varName>; (singleton — no [x] wrapper)
+      //   N children → return [v1, v2, ...]; (multi-output composition)
+      const visible = node.children.filter((c) => !consumed.has(c));
+      const exprs = visible.map((c) => varNames.get(c) ?? '/* missing */');
+      if (exprs.length === 0)      returnExpr = 'undefined';
+      else if (exprs.length === 1) returnExpr = exprs[0]!;
+      else                         returnExpr = `[${exprs.join(', ')}]`;
+      continue;
+    }
     const expr = emitNodeExpr(node, varNames);
     if (expr == null) continue;
-    if (id === graph.root) {
-      // The root variable is what gets returned — emit it but the return
-      // statement is appended below.
-      lines.push(`  const ${v} = ${expr};`);
-    } else {
-      lines.push(`  const ${v} = ${expr};`);
-    }
+    lines.push(`  const ${v} = ${expr};`);
   }
-  const rootVar = varNames.get(graph.root) ?? 'root';
-  lines.push(`  return ${rootVar};`);
+  lines.push(`  return ${returnExpr};`);
+  const rootVar = returnExpr;
 
   const usesSet = new Set<string>();
   for (const n of Object.values(graph.nodes)) {
@@ -158,6 +175,30 @@ function emitValueExpr(v: ArgValue): string {
     case 'param':
       return `p.${v.param}`;
   }
+}
+
+// ─── consumed-set (output filtering) ──────────────────────────────────────
+//
+// A node is "consumed" when another node references it as an input slot:
+//   method.obj / method.arg
+//   mv.child   / rot.child
+// Nodes consumed by a CONTAINER (root list, group, stack) are NOT counted —
+// container membership is structural, not a value-consumption. The set is
+// used to filter the root list's children: only unconsumed nodes are the
+// composition's outputs.
+
+function computeConsumedSet(graph: Graph): Set<NodeId> {
+  const consumed = new Set<NodeId>();
+  for (const n of Object.values(graph.nodes)) {
+    if (n.type === 'method') {
+      if (n.obj) consumed.add(n.obj);
+      if (n.arg) consumed.add(n.arg);
+    } else if (n.type === 'mv' || n.type === 'rot') {
+      if (n.child) consumed.add(n.child);
+    }
+    // list / group / stack: children NOT counted — see comment above.
+  }
+  return consumed;
 }
 
 // ─── variable name assignment ────────────────────────────────────────────

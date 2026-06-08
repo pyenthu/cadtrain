@@ -85,7 +85,11 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(r.source).toContain('export function dt_mule_compose()');
     expect(r.source).toContain('const A = dt_mule_shoe({ pipeOD: 3.56, boxOD: 4 })');
     expect(r.source).toContain('const B = dt_mule_shoe({ pipeOD: 4.5, boxOD: 5.25 })');
-    expect(r.source).toMatch(/return\s+_list_\d+/);   // root list var
+    // Output filter: A + B are both unconsumed (no method/transform wraps
+    // them), so the root list inlines into `return [A, B]` directly — no
+    // intermediate _list_<n> variable. See computeConsumedSet in
+    // composition-emit.ts.
+    expect(r.source).toMatch(/return\s+\[A,\s*B\]/);
   });
 
   it('adding meta.params row with no edges is structurally legal but orphan-detectable (Step 8)', () => {
