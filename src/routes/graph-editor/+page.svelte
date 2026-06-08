@@ -1061,8 +1061,15 @@
                               onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
                           </span>
                         {:else if (v as any).kind === 'param'}
+                          <!-- Wired param chip. ƒ promotes the bare wire to an
+                               expression seeded with `p.<name>` so the user
+                               can add math (e.g. `p.wall / 2`) without losing
+                               the wire visualisation. × unwires back to literal. -->
                           <span class="ge-arg-pchip" title="Wired to param">
                             p.{(v as any).param}
+                            <button class="ge-arg-pchip-fx" type="button"
+                              title="Make this an expression (e.g. p.wall / 2)"
+                              onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
                             <button class="ge-arg-pchip-x" type="button"
                               onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
                           </span>
@@ -1630,6 +1637,11 @@
   .ge-arg-pchip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; }
   .ge-arg-pchip.ƒ { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
   .ge-arg-pchip-x { background: transparent; border: 0; font: 11px Arial; color: #b91c1c; cursor: pointer; padding: 0 2px; line-height: 1; }
+  /* ƒ promote-to-expression on a wired param chip. Smaller + violet to
+     differentiate from the × (unwire) and from the .ge-arg-fx (literal→expr
+     toggle on literal inputs). */
+  .ge-arg-pchip-fx { background: transparent; border: 0; font: 700 11px serif; color: #6d28d9; cursor: pointer; padding: 0 3px; line-height: 1; }
+  .ge-arg-pchip-fx:hover { color: #4c1d95; background: rgba(109, 40, 217, 0.1); border-radius: 3px; }
   .ge-arg-key.wire-btn { background: transparent; border: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; color: #6b7280; cursor: pointer; text-align: left; border-radius: 2px; }
   .ge-arg-key.wire-btn:hover { background: #fef3c7; color: #78350f; }
   .ge-xform-btn { font: 13px Arial; fill: #6b7280; cursor: pointer; user-select: none; }
