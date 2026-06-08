@@ -1031,6 +1031,58 @@ test.describe('graph-editor — phase 8: /vocab inline iframe embed', () => {
   });
 });
 
+// ─── Phase 15 — stack composition (sub / xover / joint) hydrates ─────────
+//
+// Vocab terms `sub`, `xover`, `joint` all use `kind:'stack'` composition
+// — end-to-end mate via manifold-helpers.stack(). Phase 14 wired the
+// translator's graph emit path for `call` / `method` / `mv` / `list`;
+// Phase 15 widens it to `stack`, closing the gap. After this lands, all
+// 4 K.68 compose-rule assemblies (tube + sub + xover + joint) regen as
+// graph format and hydrate in the editor.
+
+test.describe('graph-editor — phase 15: stack composition round-trip', () => {
+  test('regenerates `sub` as graph format + hydrates (3 Calls + stack node)', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // 1. Regenerate `sub` — should now emit graph format, NOT fall back to text.
+    const regen = await page.request.post('/api/vocab/regenerate?term=sub');
+    expect(regen.ok()).toBe(true);
+    const data = await regen.json();
+    expect(data.ok).toBe(true);
+    expect(data.regenerated?.[0]?.format).toBe('graph');
+    // Bake numbers should match the historical text-format output —
+    // ~8640 verts, z≈19.25 for the box+pin stack.
+    expect(data.regenerated?.[0]?.bake?.verts).toBeGreaterThan(5000);
+    expect(data.regenerated?.[0]?.bake?.z_extent).toBeGreaterThan(15);
+
+    // 2. Fetch the saved source — verify it carries the stack-array form.
+    const srcResp = await page.request.get('/api/primitives/source?name=dt_sub');
+    expect(srcResp.ok()).toBe(true);
+    const srcData = await srcResp.json();
+    expect(srcData.source).toContain('graph: {');
+    // Emit MUST use the array form `stack([A, B])` — positional `stack(A, B)`
+    // collapses to an empty manifold (the helper signature is array-of-children).
+    expect(srcData.source).toMatch(/stack\(\[/);
+
+    // 3. Load in /graph-editor — canvas hydrates with the box + pin Calls
+    //    + the stack container. NO legacy banner.
+    await page.goto('/graph-editor?id=dt_sub');
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await expect(page.locator('input.ge-id')).toHaveValue('dt_sub');
+
+    // Two Call cards (box + pin). The stack container itself is a list-like
+    // node — it currently has no visible card on the canvas (renders only
+    // its children + the stack(...) expression in source).
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    // No legacy banner — graph block was present + hydrated cleanly.
+    await expect(page.locator('.ge-legacy-banner')).toHaveCount(0);
+
+    // No bake error either — the hydrated graph compiles + renders.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+  });
+});
+
 // ─── Phase 7 — /vocab → /graph-editor cross-page launch ──────────────────
 //
 // The K.69 vocab GUI gains a 🧬 Graph editor link per term — click it and

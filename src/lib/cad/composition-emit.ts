@@ -135,10 +135,11 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>): string | 
     case 'group':
       return `[${node.children.map((c) => varNames.get(c) ?? '/* missing */').join(', ')}]`;
     case 'stack': {
-      // Sequential stack — mate via tail/head datum. For now emit as a place()
-      // composition; bake interpreter handles the cumulative offset.
+      // Sequential stack — mate via tail/head datum (manifold-helpers.stack
+      // takes an ARRAY of children, not positional args; see
+      // src/lib/cad/manifold-helpers.ts line 308: `function stack(children: any[])`).
       const args = node.children.map((c) => varNames.get(c) ?? '/* missing */').join(', ');
-      return `stack(${args})`;
+      return `stack([${args}])`;
     }
     case 'method': {
       const obj = varNames.get(node.obj) ?? '/* missing */';
@@ -195,8 +196,17 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
       if (n.arg) consumed.add(n.arg);
     } else if (n.type === 'mv' || n.type === 'rot') {
       if (n.child) consumed.add(n.child);
+    } else if (n.type === 'stack' || n.type === 'group') {
+      // Stack + group are EXPRESSIONS that operate on their children
+      // (`stack(a, b, c)` / `group(a, b, c)`). The children are inputs,
+      // not outputs — mark them consumed so the root-list filter drops them.
+      for (const c of n.children) consumed.add(c);
+    } else if (n.type === 'list' && n.id !== graph.root) {
+      // A NESTED list literal is also a single expression `[a, b, c]` whose
+      // children are inputs. The ROOT list is special — its children ARE
+      // the function's return value (filtered downstream).
+      for (const c of n.children) consumed.add(c);
     }
-    // list / group / stack: children NOT counted — see comment above.
   }
   return consumed;
 }

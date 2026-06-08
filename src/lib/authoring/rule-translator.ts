@@ -423,6 +423,7 @@ function ruleToGraph(
   imports: Array<{ alias: string; term: string }>,
   vocab: Vocabulary,
   aliasToSrc: Map<string, string>,
+  parentId?: NodeId,
 ): { graph: Graph; nodeId: NodeId } {
   if (!node || typeof node !== 'object') throw new Error('ruleToGraph: node is not an object');
   switch (node.type) {
@@ -439,7 +440,7 @@ function ruleToGraph(
         const raw = v != null ? String(v) : (childTerm ? String(childTerm.params[k]!.default) : '0');
         args[k] = exprOrLiteralOrParam(raw);
       }
-      const r = addCall(g, src, args);
+      const r = addCall(g, src, args, parentId);
       // Override the auto-generated alias to match the rule's import alias.
       const callNode = r.graph.nodes[r.id];
       if (callNode && callNode.type === 'call') {
@@ -449,42 +450,54 @@ function ruleToGraph(
     }
     case 'method': {
       const op = node.op as CsgOp;
-      // Build children first so they're root-level nodes.
-      const objR = ruleToGraph(g, node.obj, imports, vocab, aliasToSrc);
-      const argR = ruleToGraph(objR.graph, node.arg, imports, vocab, aliasToSrc);
-      // Now drop a method node + wire its obj/arg.
-      const mAdded = addMethod(argR.graph, op, objR.nodeId, argR.nodeId);
+      // Build children at the SAME parent as the method — method.obj/arg are
+      // by-reference, not by-containment. Both children + the method end up
+      // as siblings under parentId; output filtering keeps the method as
+      // visible + hides the children (they're consumed by the method).
+      const objR = ruleToGraph(g, node.obj, imports, vocab, aliasToSrc, parentId);
+      const argR = ruleToGraph(objR.graph, node.arg, imports, vocab, aliasToSrc, parentId);
+      const mAdded = addMethod(argR.graph, op, objR.nodeId, argR.nodeId, parentId);
       return { graph: mAdded.graph, nodeId: mAdded.id };
     }
     case 'list': {
-      // Build the children flat at the root (the graph's root list is
+      // Build the children flat at parentId (the graph's root list is
       // already a list — we don't need a nested container for a top-level
       // list rule). Returns the LAST built nodeId as the "rooted" anchor.
       let g2 = g; let lastId: NodeId | null = null;
       for (const child of node.children ?? []) {
-        const r = ruleToGraph(g2, child, imports, vocab, aliasToSrc);
+        const r = ruleToGraph(g2, child, imports, vocab, aliasToSrc, parentId);
         g2 = r.graph; lastId = r.nodeId;
       }
       if (!lastId) {
         // Empty list — produce a placeholder container so emit doesn't crash.
-        const c = addContainer(g2, 'list');
+        const c = addContainer(g2, 'list', parentId);
         return { graph: c.graph, nodeId: c.id };
       }
       return { graph: g2, nodeId: lastId };
     }
+    case 'stack': {
+      // Sequential end-to-end mate via manifold-helpers.stack() — each
+      // child's head lands on the prior child's tail at runtime. Graph
+      // model: the stack is a Container node whose `type` is 'stack';
+      // the emit pattern (in composition-emit.ts) renders it as
+      // `stack(child1, child2, ...)`. Output-filter (computeConsumedSet)
+      // marks stack children as consumed, so they don't pollute the return.
+      const stackR = addContainer(g, 'stack', parentId);
+      let g2 = stackR.graph;
+      for (const child of node.children ?? []) {
+        const cr = ruleToGraph(g2, child, imports, vocab, aliasToSrc, stackR.id);
+        g2 = cr.graph;
+      }
+      return { graph: g2, nodeId: stackR.id };
+    }
     case 'mv': {
-      // Build the child first so we have its id.
-      const childR = ruleToGraph(g, node.child, imports, vocab, aliasToSrc);
+      // Build the child first so we have its id (same parentId — sibling).
+      const childR = ruleToGraph(g, node.child, imports, vocab, aliasToSrc, parentId);
       const ox = exprOrLiteralOrParam(String(node.offset_x ?? 0));
       const oy = exprOrLiteralOrParam(String(node.offset_y ?? 0));
       const oz = exprOrLiteralOrParam(String(node.offset_z ?? 0));
-      const m = addMv(childR.graph, childR.nodeId, [ox, oy, oz]);
+      const m = addMv(childR.graph, childR.nodeId, [ox, oy, oz], parentId);
       return { graph: m.graph, nodeId: m.id };
-    }
-    case 'stack': {
-      // The new graph model doesn't have stack as a native type — surface
-      // this clearly until we model it (likely Phase 15).
-      throw new Error('ruleToGraph: stack-type composition not yet supported in graph format (Phase 15 — use format:"text")');
     }
     case 'repeat': {
       throw new Error('ruleToGraph: repeat-type composition not yet supported in graph format');
