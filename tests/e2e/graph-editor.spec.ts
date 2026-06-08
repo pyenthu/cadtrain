@@ -1398,3 +1398,74 @@ test.describe('graph-editor — phase 24: drop Repeat auto-creates Stack', () =>
     await expect(src).toContainText(/stack\(\[\s*\.\.\./);
   });
 });
+
+// ─── Phase 25 — bake cache + rebuild button ──────────────────────────────
+//
+// Phase 1 + 1.5 of docs/plans/bake-cache.md. Same source + params → instant
+// cache hit instead of full re-bake (1.4 s → 73 ms in local bench).
+// 🔄 Rebuild button wipes the part's cache, forces a fresh bake.
+
+test.describe('graph-editor — phase 25: bake cache', () => {
+  test('cold bake writes cache; second call same params hits; bust=1 forces fresh', async ({ page }) => {
+    test.setTimeout(45_000);
+    const id = 'dt_tube';
+    // Pull source + defaults once.
+    const srcResp = await page.request.get(`/api/primitives/source?name=${id}`);
+    expect(srcResp.ok()).toBe(true);
+    const d = await srcResp.json();
+    const params = Object.values((d.params ?? {}) as Record<string, { default: number }>).map((p) => p.default);
+
+    // Clear first so we start cold.
+    await page.request.post(`/api/cache/clear?id=${id}`);
+
+    // 1st call — cold.
+    const r1 = await page.request.post('/api/primitives/preview', {
+      data: { source: d.source, name: id, params },
+    });
+    expect(r1.ok()).toBe(true);
+    const bake1 = await r1.json();
+    expect(bake1.ok).toBe(true);
+    expect(bake1.cached).toBe(false);
+    expect(typeof bake1.cacheHash).toBe('string');
+    expect(bake1.cacheHash.length).toBe(16);
+
+    // 2nd call — same source + params → cache hit.
+    const r2 = await page.request.post('/api/primitives/preview', {
+      data: { source: d.source, name: id, params },
+    });
+    const bake2 = await r2.json();
+    expect(bake2.cached).toBe(true);
+    expect(bake2.cacheHash).toBe(bake1.cacheHash);
+    // Same vertices come back from cache.
+    expect(bake2.full.positions.length).toBe(bake1.full.positions.length);
+
+    // 3rd call with ?bust=1 — forced fresh.
+    const r3 = await page.request.post('/api/primitives/preview?bust=1', {
+      data: { source: d.source, name: id, params },
+    });
+    const bake3 = await r3.json();
+    expect(bake3.cached).toBe(false);
+    expect(bake3.cacheHash).toBe(bake1.cacheHash);
+  });
+
+  test('clear endpoint wipes the part directory', async ({ page }) => {
+    // Bake something to populate the cache.
+    const id = 'dt_tube';
+    const src = await (await page.request.get(`/api/primitives/source?name=${id}`)).json();
+    const params = Object.values((src.params ?? {}) as Record<string, { default: number }>).map((p) => p.default);
+    await page.request.post('/api/primitives/preview', {
+      data: { source: src.source, name: id, params },
+    });
+    // Clear it.
+    const r = await page.request.post(`/api/cache/clear?id=${id}`);
+    expect(r.ok()).toBe(true);
+    const d = await r.json();
+    expect(d.ok).toBe(true);
+    expect(d.cleared).toBeGreaterThanOrEqual(1);
+    // After clear, next call is cold again.
+    const baked = await (await page.request.post('/api/primitives/preview', {
+      data: { source: src.source, name: id, params },
+    })).json();
+    expect(baked.cached).toBe(false);
+  });
+});

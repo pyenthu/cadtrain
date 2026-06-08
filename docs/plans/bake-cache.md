@@ -1,6 +1,27 @@
-# Bake cache — `$APP_DATA_DIR/cache/<hash>.{json,glb}`
+# Bake cache — `$APP_DATA_DIR/cache/<part>/<hash>.{json,glb}`
 
-Status: PLAN, not yet implemented. User reviewing.
+Status: PLAN. Q1 + Q2 locked. Q3 + Q4 still up for decision.
+
+## Decisions made — ALL LOCKED
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Cache scope | Per-part subdirectory: `cache/<part_id>/<hash>.json` |
+| 2 | Volume placement | Top-level `$APP_DATA_DIR/cache/` — 5th top-level dir; update Rule 13 from 4-dir to 5-dir contract |
+| 3 | Auto-bust on translator regen via rule_hash | **Option A — body-only hash**. Rule changes that affect geometry change the body; the cache invalidates correctly via the body delta. Rule changes that don't affect the body (e.g. doc edits) produce correct cache hits. |
+| 4 | Phase ordering | Phase 1 + 1.5 ship together; evaluate before 2/3/4 |
+
+## Phase 1 + 1.5 scope
+
+| Sub-step | What | LOC |
+|---|---|---|
+| 1.0 | `src/lib/server/bake-cache.ts`: `hashBakeKey`, per-part dirs, read/write | ~100 |
+| 1.0 | Wire into `/api/primitives/preview` — check cache; write on miss | ~20 |
+| 1.5 | `/api/cache/clear?id=<part>` + `?hash=<x>` endpoint | ~30 |
+| 1.5 | 🔄 Rebuild button in bake panel + cached badge | ~30 |
+| —   | E2E phase 25: bake → cached → clear → re-bake | ~40 |
+
+Target: ~220 LOC + tests. Ships in one session.
 
 ## Why
 

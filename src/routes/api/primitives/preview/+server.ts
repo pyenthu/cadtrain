@@ -5,6 +5,7 @@ import { finalizeManifold, setRenderZScale } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { analyzeParts } from '$lib/server/part-colors';
+import { hashBakeKey, readBakeCache, writeBakeCache, type BakeCacheOptions } from '$lib/server/bake-cache';
 
 // POST /api/primitives/preview
 //   { source, name, params: number[], zScale?, mode? }
@@ -32,6 +33,44 @@ export const POST = async ({ request, fetch }) => {
   const args: (number | string)[] = Array.isArray(params)
     ? params.map((p) => typeof p === 'string' ? p : Number(p))
     : [];
+
+  // ─── Bake cache lookup ──────────────────────────────────────────────────
+  // Hash(body, params, options). If hit, serve immediately and skip the
+  // whole buildPrimitiveGeom → primFn → finalize → serialize chain.
+  // Only the numeric/string params bake-relevant — skip hashing for the
+  // mode==='bundle' fast path (different code path entirely).
+  // ?bust=1 query bypasses the cache lookup (forces a fresh bake).
+  const url = new URL(request.url);
+  const bust = url.searchParams.get('bust') === '1';
+  const cacheOpts: BakeCacheOptions = {
+    cutaway: typeof cutaway === 'boolean' ? cutaway : undefined,
+    zScale: typeof zScale === 'number' ? zScale : undefined,
+    mode: typeof mode === 'string' ? mode : undefined,
+  };
+  // Numeric params only — string params (e.g. JSON polygons) don't round
+  // trip identically across calls.
+  const cacheableParams = args.every((a) => typeof a === 'number') ? (args as number[]) : null;
+  let cacheHash: string | null = null;
+  const cacheable = cacheableParams !== null && /^[a-z_][a-z0-9_]*$/i.test(name) && mode !== 'bundle';
+  if (cacheable) {
+    cacheHash = hashBakeKey(source, name, cacheableParams as number[], cacheOpts);
+    // bust=1 skips the lookup but we still compute the hash + write to cache
+    // so the rebuild flow leaves the next call ready for a cache hit.
+    if (!bust) {
+      const hit = await readBakeCache(name, cacheHash);
+      if (hit) {
+        return json({
+          ok: true,
+          full: hit.full,
+          cutVC: hit.cutVC,
+          cutawaySkipped: hit.cutawaySkipped === true,
+          cached: true,
+          cacheHash,
+          _t: { cache_hit: 0 },
+        });
+      }
+    }
+  }
 
   // Pull the optional appearance block from the source meta — same way
   // bake-preview does — so the live Mesh pane honours material.outer /
@@ -108,11 +147,28 @@ export const POST = async ({ request, fetch }) => {
   mark('finalize', t); t = performance.now();
   const serialized = serializeComponentResult(result);
   mark('serialize', t);
+  const cutawaySkipped = (result as any).cutawaySkipped === true;
+
+  // Best-effort cache write. Errors here don't break the response — we'd
+  // rather serve the bake and miss the cache than fail the whole call.
+  if (cacheHash && cacheableParams !== null) {
+    writeBakeCache(name, cacheHash, {
+      full: serialized.full,
+      cutVC: serialized.cutVC,
+      cutawaySkipped,
+      _t: T,
+    }, cacheableParams, cacheOpts).catch((e) => {
+      console.warn('[bake-cache] write failed:', e?.message ?? e);
+    });
+  }
+
   return json({
     ok: true,
     full: serialized.full,
     cutVC: serialized.cutVC,
-    cutawaySkipped: (result as any).cutawaySkipped === true,
+    cutawaySkipped,
+    cached: false,
+    cacheHash,
     _t: T,
   });
 };

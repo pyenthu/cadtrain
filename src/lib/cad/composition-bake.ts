@@ -47,6 +47,9 @@ export interface BakeOptions {
   paramValues?: Record<string, number | string | boolean>;
   /** When true, the server is asked for full + cut meshes (cutaway preview). */
   cutaway?: boolean;
+  /** When true, bypass the bake cache for this call (forces a fresh
+   *  /api/primitives/preview?bust=1). Used by the 🔄 Rebuild button. */
+  bust?: boolean;
 }
 
 /** Bake a graph by emitting source + routing through /api/primitives/preview.
@@ -58,7 +61,7 @@ export async function bakeGraphPreview(graph: Graph, opts: BakeOptions): Promise
     const v = opts.paramValues?.[k];
     return v ?? graph.params[k]!.default;
   });
-  const resp = await fetch('/api/primitives/preview', {
+  const resp = await fetch(`/api/primitives/preview${opts.bust ? '?bust=1' : ''}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

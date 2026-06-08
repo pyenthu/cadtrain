@@ -82,16 +82,44 @@
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Re-bake nonce — increment to force a fresh /api/primitives/preview
+   *  call even when the graph hasn't changed (used by the 🔄 Rebuild
+   *  button after clearing this part's cache). */
+  let bakeNonce = $state(0);
   $effect(() => {
+    // touch bakeNonce so the effect re-runs when the rebuild button bumps it
+    bakeNonce;
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
     if (!hasNode) { bake = null; return; }
     bake = 'loading';
     clearTimeout(bakeTimer);
     bakeTimer = setTimeout(async () => {
-      const r = await bakeGraphPreview(graph, { id: exemplarId });
+      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 0 });
       bake = { ok: r.ok, source: emitted.source, bake: r, message: r.message as string | undefined };
     }, 250);
   });
+
+  // 🔄 Rebuild this part's cache + re-bake (Phase 1.5 of bake-cache.md).
+  // Wipes cache/<exemplarId>/ then bumps the bake nonce to force a fresh
+  // /api/primitives/preview that repopulates the cache on the cold path.
+  let rebuildBusy = $state(false);
+  let rebuildStatus = $state<string | null>(null);
+  async function rebuildCache() {
+    if (rebuildBusy) return;
+    rebuildBusy = true;
+    rebuildStatus = '🔄 clearing cache…';
+    try {
+      const r = await fetch(`/api/cache/clear?id=${encodeURIComponent(exemplarId)}`, { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) rebuildStatus = `✓ cleared ${d.cleared} · re-baking…`;
+      else      rebuildStatus = `⚠ ${d.error ?? 'clear failed'}`;
+      bakeNonce++;
+      setTimeout(() => { rebuildStatus = null; rebuildBusy = false; }, 2000);
+    } catch (e: any) {
+      rebuildStatus = `✗ ${e?.message ?? String(e)}`;
+      rebuildBusy = false;
+    }
+  }
 
   let PrimitiveDualCanvas = $state<any>(null);
   /** Set when a URL `?id=<name>` is given but the loaded source has no
@@ -1709,6 +1737,26 @@
               args={Object.values(graph.params).map((p) => p.default)}
               source={bake.source}
               showControls={true} showLabels={false}/>
+            <!-- Cache status row + Rebuild button (Phase 1.5) -->
+            {@const bakeMeta = (bake as any).bake ?? {}}
+            <div class="ge-bake-meta">
+              {#if bakeMeta.cached}
+                <span class="ge-cache-badge cached" title={`hash: ${bakeMeta.cacheHash ?? '?'}`}>✓ cached</span>
+              {:else if bakeMeta.cacheHash}
+                {@const totalMs = Object.values(bakeMeta._t ?? {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0)}
+                <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(totalMs as number)} ms</span>
+              {/if}
+              {#if bakeMeta.cutawaySkipped}
+                <span class="ge-cache-badge skipped">cutaway off (perf)</span>
+              {/if}
+              <span class="ge-bake-meta-spacer"></span>
+              <button class="ge-rebuild-btn" type="button"
+                disabled={rebuildBusy} onclick={rebuildCache}
+                title="Clear this part's cache then re-bake from scratch">
+                {rebuildBusy ? '🔄 …' : '🔄 Rebuild'}
+              </button>
+              {#if rebuildStatus}<span class="ge-rebuild-stat">{rebuildStatus}</span>{/if}
+            </div>
           {:else}<div class="ge-empty">3D canvas loading…</div>
           {/if}
         </div>
@@ -2109,6 +2157,17 @@
   .ge-err-restart-btn:hover:not(:disabled) { background: #b45309; }
   .ge-err-restart-btn:disabled { opacity: 0.7; cursor: progress; }
   .ge-err-restart-stat { margin-top: 6px; font: 11px ui-monospace, monospace; color: #92400e; }
+  /* Bake cache status row + Rebuild button */
+  .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
+  .ge-bake-meta-spacer { flex: 1 1 auto; }
+  .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
+  .ge-cache-badge.cached { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+  .ge-cache-badge.fresh { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .ge-cache-badge.skipped { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .ge-rebuild-btn { font: 600 11px Arial; color: #1c1917; background: #fff; border: 1px solid #d6d3d1; border-radius: 4px; padding: 3px 10px; cursor: pointer; transition: background 0.12s; }
+  .ge-rebuild-btn:hover:not(:disabled) { background: #f5f5f4; }
+  .ge-rebuild-btn:disabled { opacity: 0.7; cursor: progress; }
+  .ge-rebuild-stat { font: 11px ui-monospace, monospace; color: #57534e; }
   .ge-source { margin: 0; padding: 10px 14px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; background: #fafaf9; overflow: auto; white-space: pre; }
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 
