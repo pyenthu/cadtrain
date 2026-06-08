@@ -121,6 +121,19 @@
         const graphJson = d.graph ?? extractGraphFromSource(d.source ?? '');
         if (graphJson && typeof graphJson === 'object') {
           graph = hydrateGraph(graphJson);
+          // A — auto-layout on first load. When a freshly-translated part
+          // (e.g. dt_stand, dt_joint) lands without saved layout entries
+          // for its node cards, the visible nodes pile at the default-grid
+          // position. Run autoLayoutGraph once so the user arrives at an
+          // arranged canvas. Skip when the file HAS saved positions
+          // (= the user already arranged + saved; respect their layout).
+          const visibleIds = Object.values(graph.nodes)
+            .filter((n) => !isInlineWrapper(n.id) && n.id !== graph.root)
+            .map((n) => n.id);
+          const savedCount = visibleIds.filter((id) => !!graphJson.layout?.[id]).length;
+          if (visibleIds.length > 0 && savedCount === 0) {
+            graph = autoLayoutGraph(graph);
+          }
           // Restore canvas viewport — pan + zoom were captured at save time.
           if (graph.viewport) {
             pan = { ...graph.viewport.pan };
@@ -130,6 +143,9 @@
         } else {
           legacyLoad = { id, reason: 'no-graph' };
           exemplarId = id;
+          // Banner lives in the source tab — auto-switch so the explanation
+          // is visible by default rather than hidden behind the bake tab.
+          rightTab = 'source';
         }
       }
     } catch { /* URL parse / network failures are non-fatal */ }
@@ -523,53 +539,45 @@
     g = { ...g, nodes: { ...g.nodes, [callId]: updated } };
     graph = g;
   }
-  // ─── Resizable 3-pane dividers ──────────────────────────────────────────
-  // The editor's main area is split canvas / bake / source. Default ratios
-  // (40 / 35 / 25 %) live in splitA + splitB; the source pane takes the
-  // remainder. Both dividers are 6 px draggable strips. Persisted as client
-  // state (localStorage) so the user's preferred layout survives reloads
-  // without bloating meta.graph.
-  let splitA = $state(40);          // canvas pane %
-  let splitB = $state(35);          // bake pane %
+  // ─── Resizable 2-pane divider ──────────────────────────────────────────
+  // The editor's main area is split canvas | (bake/source tabs). Default
+  // ratio is canvas 70 % / right 30 %, giving the graph 7/10 of the width.
+  // Persisted as client state (localStorage) so the user's preferred split
+  // survives reloads without bloating meta.graph.
+  let splitA = $state(70);          // canvas pane %
   let gridEl: HTMLElement | undefined = $state();
-  let splitDragging: 'a' | 'b' | null = null;
+  let splitDragging = false;
+  /** Right-pane tab: 3D bake or live source. */
+  let rightTab = $state<'bake' | 'source'>('bake');
   onMount(() => {
     try {
-      const a = Number(localStorage.getItem('ge-splitA'));
-      const b = Number(localStorage.getItem('ge-splitB'));
-      if (a > 10 && a < 80) splitA = a;
-      if (b > 10 && b < 80) splitB = b;
+      const a = Number(localStorage.getItem('ge-splitA-v2'));
+      if (a >= 30 && a <= 85) splitA = a;
+      const t = localStorage.getItem('ge-right-tab');
+      if (t === 'bake' || t === 'source') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
-  function startSplitDrag(which: 'a' | 'b') {
-    return (ev: PointerEvent) => {
-      if (ev.button !== 0) return;
-      splitDragging = which;
-      (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
-      ev.preventDefault();
-    };
+  function startSplitDrag(ev: PointerEvent) {
+    if (ev.button !== 0) return;
+    splitDragging = true;
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ev.preventDefault();
   }
   function onSplitMove(ev: PointerEvent) {
     if (!splitDragging || !gridEl) return;
     const r = gridEl.getBoundingClientRect();
     const pct = ((ev.clientX - r.left) / r.width) * 100;
-    if (splitDragging === 'a') {
-      const next = Math.max(15, Math.min(70, pct));
-      splitA = next;
-      if (splitA + splitB > 85) splitB = 85 - splitA;
-    } else {
-      const next = Math.max(15, Math.min(70, pct - splitA));
-      splitB = next;
-    }
+    splitA = Math.max(30, Math.min(85, pct));
   }
   function endSplitDrag(ev: PointerEvent) {
     if (!splitDragging) return;
     (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
-    splitDragging = null;
-    try {
-      localStorage.setItem('ge-splitA', String(splitA));
-      localStorage.setItem('ge-splitB', String(splitB));
-    } catch { /* ignore */ }
+    splitDragging = false;
+    try { localStorage.setItem('ge-splitA-v2', String(splitA)); } catch { /* ignore */ }
+  }
+  function setRightTab(t: 'bake' | 'source') {
+    rightTab = t;
+    try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
 
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
@@ -820,7 +828,7 @@
   </header>
 
   <main class="ge-grid" bind:this={gridEl}
-    style="grid-template-columns: {splitA}% 6px {splitB}% 6px 1fr">
+    style="grid-template-columns: {splitA}% 6px 1fr">
     <!-- LEFT — graph canvas -->
     <section class="ge-canvas-pane">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -982,7 +990,11 @@
           {#each allNodes as n (n.id)}
             {@const pos = nodePos(n.id)}
             {@const size = nodeSize(n)}
-            <g transform="translate({pos.x},{pos.y})" class="ge-node">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <g transform="translate({pos.x},{pos.y})" class="ge-node"
+              role="group"
+              onpointerdown={() => bringToFront(n.id)}>
               {#if n.type === 'call'}
                 {@const call = n as any}
                 {@const inlineMv  = inlineTransformOf(graph, n.id, 'mv')}
@@ -1355,57 +1367,56 @@
       </svg>
     </section>
 
-    <!-- Divider A: canvas ↔ bake -->
+    <!-- Divider: canvas ↔ right pane -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="ge-divider" role="separator" tabindex="-1" aria-orientation="vertical"
-      onpointerdown={startSplitDrag('a')}
+      onpointerdown={startSplitDrag}
       onpointermove={onSplitMove}
       onpointerup={endSplitDrag}></div>
 
-    <!-- MIDDLE — 3D bake -->
-    <section class="ge-bake-pane">
-      <div class="ge-pane-head">3D bake</div>
-      <div class="ge-bake-body">
-        {#if !bake}<div class="ge-empty">Drop nodes to bake.</div>
-        {:else if bake === 'loading'}<div class="ge-empty">baking…</div>
-        {:else if !bake.ok}<div class="ge-err">{bake.message ?? 'bake failed'}</div>
-        {:else if PrimitiveDualCanvas}
-          <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-            args={Object.values(graph.params).map((p) => p.default)}
-            source={bake.source}
-            showControls={true} showLabels={false}/>
-        {:else}<div class="ge-empty">3D canvas loading…</div>
-        {/if}
+    <!-- RIGHT pane — tabbed: 3D bake / live source. One tab visible at a
+         time; both keep their state mounted so switching is instant. -->
+    <section class="ge-right-pane">
+      <div class="ge-pane-tabs" role="tablist">
+        <button class="ge-pane-tab" class:active={rightTab === 'bake'}
+          type="button" role="tab" aria-selected={rightTab === 'bake'}
+          onclick={() => setRightTab('bake')}>3D bake</button>
+        <button class="ge-pane-tab" class:active={rightTab === 'source'}
+          type="button" role="tab" aria-selected={rightTab === 'source'}
+          onclick={() => setRightTab('source')}>live source · <code>{exemplarId}.asm.ts</code></button>
       </div>
-    </section>
-
-    <!-- Divider B: bake ↔ source -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="ge-divider" role="separator" tabindex="-1" aria-orientation="vertical"
-      onpointerdown={startSplitDrag('b')}
-      onpointermove={onSplitMove}
-      onpointerup={endSplitDrag}></div>
-
-    <!-- RIGHT — live emitted source -->
-    <section class="ge-source-pane">
-      <div class="ge-pane-head">live source · <code>{exemplarId}.asm.ts</code></div>
-      {#if legacyLoad}
-        <div class="ge-legacy-banner">
-          {#if legacyLoad.reason === 'no-graph'}
-            <strong>{legacyLoad.id}</strong> opened in legacy mode — its source has
-            no <code>meta.graph</code> block, so the canvas can't hydrate. Save
-            here to overwrite with a graph-format part, or
-            <a href="/primitives?id={legacyLoad.id}">open it in /primitives</a>
-            to edit the original text body.
-          {:else}
-            Could not fetch <strong>{legacyLoad.id}</strong> from the volume.
-            Check the id + your volume connection.
+      <div class="ge-pane-bodies">
+        <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
+          {#if !bake}<div class="ge-empty">Drop nodes to bake.</div>
+          {:else if bake === 'loading'}<div class="ge-empty">baking…</div>
+          {:else if !bake.ok}<div class="ge-err">{bake.message ?? 'bake failed'}</div>
+          {:else if PrimitiveDualCanvas}
+            <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
+              args={Object.values(graph.params).map((p) => p.default)}
+              source={bake.source}
+              showControls={true} showLabels={false}/>
+          {:else}<div class="ge-empty">3D canvas loading…</div>
           {/if}
         </div>
-      {/if}
-      <pre class="ge-source">{sourceText}</pre>
+        <div class="ge-source-body" class:hidden={rightTab !== 'source'}>
+          {#if legacyLoad}
+            <div class="ge-legacy-banner">
+              {#if legacyLoad.reason === 'no-graph'}
+                <strong>{legacyLoad.id}</strong> opened in legacy mode — its source has
+                no <code>meta.graph</code> block, so the canvas can't hydrate. Save
+                here to overwrite with a graph-format part, or
+                <a href="/primitives?id={legacyLoad.id}">open it in /primitives</a>
+                to edit the original text body.
+              {:else}
+                Could not fetch <strong>{legacyLoad.id}</strong> from the volume.
+                Check the id + your volume connection.
+              {/if}
+            </div>
+          {/if}
+          <pre class="ge-source">{sourceText}</pre>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -1568,7 +1579,12 @@
   .ge-method-name { font: 11px Arial; fill: #92400e; text-transform: uppercase; letter-spacing: 0.5px; pointer-events: none; }
   .ge-fo { overflow: visible; }
   .ge-args, .ge-xyz { font: 11px Arial; color: #1f2937; line-height: 1.5; }
-  .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 1px 0; }
+  /* IMPORTANT: row height is 22 px to match the input-socket spacing
+     math in the SVG (cy = 36 + 14 + i * 22). Don't change without
+     updating ALL three sites: the cy expression on socket circles,
+     argY computation for the param/expr wires, and inline mv/rot axis
+     positions. Misalignment of even 3-4 px per row stacks visibly. */
+  .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 0; height: 22px; box-sizing: border-box; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
   .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; cursor: ew-resize; }
   .ge-arg-input:hover { background: #f0f9ff; }
@@ -1659,6 +1675,19 @@
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
   .ge-source-pane:has(.ge-legacy-banner) { grid-template-rows: auto auto 1fr; }
+  /* Combined right pane (tabbed): bake + source in one column with a tab strip.
+     30 % default width gives the canvas 70 % to show the graph. */
+  .ge-right-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border-left: 1px solid #e5e7eb; }
+  .ge-pane-tabs { display: flex; gap: 0; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; }
+  .ge-pane-tab { flex: 1 1 auto; padding: 6px 12px; font: 600 11px Arial; color: #78716c; background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+  .ge-pane-tab code { font: 11px ui-monospace, monospace; color: #57534e; text-transform: none; letter-spacing: 0; }
+  .ge-pane-tab:hover { background: #fafaf9; color: #1c1917; }
+  .ge-pane-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; background: #fff; }
+  .ge-pane-tab.active code { color: #0c4a6e; }
+  .ge-pane-bodies { position: relative; display: grid; min-height: 0; overflow: hidden; }
+  .ge-pane-bodies > .ge-bake-body,
+  .ge-pane-bodies > .ge-source-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  .ge-pane-bodies > .hidden { display: none; }
   .ge-legacy-banner { padding: 8px 12px; font: 11px ui-monospace, monospace; line-height: 1.5; color: #78350f; background: #fef3c7; border-bottom: 1px solid #fbbf24; }
   .ge-legacy-banner strong { color: #92400e; }
   .ge-legacy-banner a { color: #0369a1; }
