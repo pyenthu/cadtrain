@@ -1097,6 +1097,25 @@
                   {/if}
                 {/each}
               {/if}
+            {:else if n.type === 'repeat'}
+              <!-- Repeat count param-wire — chip → top-left count socket -->
+              {#if (n as any).count?.kind === 'param'}
+                {@const pIdx = paramEntries.findIndex(([nm]) => nm === (n as any).count.param)}
+                {#if pIdx >= 0}
+                  {@const ps = paramSocketPos((n as any).count.param, pIdx)}
+                  {@const pos = nodePos(n.id)}
+                  <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, pos.y + 17)}/>
+                {/if}
+              {:else if (n as any).count?.kind === 'expr'}
+                {#each extractParamRefs((n as any).count.expr) as refName (refName)}
+                  {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                  {#if pIdx >= 0}
+                    {@const ps = paramSocketPos(refName, pIdx)}
+                    {@const pos = nodePos(n.id)}
+                    <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, pos.y + 17)}/>
+                  {/if}
+                {/each}
+              {/if}
             {/if}
           {/each}
 
@@ -1449,12 +1468,12 @@
                   onpointerup={onNodePointerUp}/>
                 <!-- Title row: ↻ Repeat × N — N renders as a number input
                      when literal, OR a clickable chip when wired to a
-                     param OR an expression. Small INPUT socket above the
-                     count lets the user drag-wire a param chip onto it. -->
+                     param OR an expression. INPUT socket at the LEFT EDGE
+                     of the count row lets the user drag-wire a param chip
+                     onto it — same pattern as Call args. -->
                 <text x="14" y="22" class="ge-node-title">↻ Repeat ×</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                  cx={countKind === 'literal' ? 120 : 100} cy="-2" r="4"
+                <circle role="button" tabindex="-1" class="ge-sock in param" cx="0" cy="17" r="5"
                   onpointerup={(ev) => endWireOnRepeatCount(ev, n.id)}/>
                 {#if countKind === 'literal'}
                   <foreignObject x="92" y="6" width="56" height="22">
