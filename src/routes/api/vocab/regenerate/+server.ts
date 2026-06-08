@@ -24,6 +24,12 @@ interface RegenResult {
   term: string;
   exemplar: string;
   status: 'ok' | 'error';
+  /** Translator output format actually used. `graph` is the default for
+   *  compose rules (K.63 / Phase 14); `text` is the legacy body output —
+   *  used either when explicitly requested OR when graph emit hit an
+   *  unsupported rule shape (stack, repeat, …). `n/a` for primitive parts
+   *  whose translator has only one output path. */
+  format?: 'graph' | 'text' | 'n/a';
   message?: string;
   bake?: { verts: number; z_extent: number; outer_r: number };
 }
@@ -52,7 +58,25 @@ async function regenerateOne(
   const entry = vocab.terms[term];
   if (!entry) return { term, exemplar: '?', status: 'error', message: `unknown term: ${term}` };
   try {
-    const source = translate(term, vocab);
+    // Graceful fallback: try graph format first (default for kind:'asm'
+    // since Phase 14). If the translator throws because the rule uses a
+    // shape ruleToGraph doesn't support yet (`stack`, `repeat`, future
+    // additions), retry with format:'text' so the part still regenerates
+    // — just stays in legacy form. Format used is surfaced in the result
+    // so the caller can see which terms fell back.
+    let source: string;
+    let format: 'graph' | 'text' | 'n/a' = entry.kind === 'asm' ? 'graph' : 'n/a';
+    try {
+      source = translate(term, vocab);
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      if (entry.kind === 'asm' && /not yet supported in graph format/i.test(msg)) {
+        source = translate(term, vocab, { format: 'text' });
+        format = 'text';
+      } else {
+        throw e;
+      }
+    }
     // Save to the volume via the existing endpoint (handles dir + validation).
     const saveResp = await fetch(`${origin}/api/primitives/save`, {
       method: 'POST',
@@ -93,7 +117,7 @@ async function regenerateOne(
       if (r > rMax) rMax = r;
     }
     return {
-      term, exemplar: entry.exemplar, status: 'ok',
+      term, exemplar: entry.exemplar, status: 'ok', format,
       bake: { verts: pos.length / 3, z_extent: +(zMax - zMin).toFixed(3), outer_r: +rMax.toFixed(3) },
     };
   } catch (e: any) {
@@ -114,8 +138,10 @@ export const POST: RequestHandler = async ({ url, request }) => {
     for (const t of BUILD_ORDER) results.push(await regenerateOne(origin, vocab, t));
     return json({
       ok: results.every((r) => r.status === 'ok'),
-      regenerated: results.filter((r) => r.status === 'ok').map((r) => ({ term: r.term, bake: r.bake })),
-      failures: results.filter((r) => r.status === 'error').map((r) => ({ term: r.term, error: r.message })),
+      regenerated: results.filter((r) => r.status === 'ok')
+        .map((r) => ({ term: r.term, format: r.format, bake: r.bake })),
+      failures: results.filter((r) => r.status === 'error')
+        .map((r) => ({ term: r.term, error: r.message })),
     });
   }
 
@@ -125,7 +151,9 @@ export const POST: RequestHandler = async ({ url, request }) => {
   const result = await regenerateOne(origin, vocab, term!);
   return json({
     ok: result.status === 'ok',
-    regenerated: result.status === 'ok' ? [{ term: result.term, bake: result.bake }] : [],
+    regenerated: result.status === 'ok'
+      ? [{ term: result.term, format: result.format, bake: result.bake }]
+      : [],
     failures: result.status === 'error' ? [{ term: result.term, error: result.message }] : [],
   });
 };
