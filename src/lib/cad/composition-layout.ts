@@ -190,3 +190,121 @@ export function autoLayoutGraph(graph: Graph, opts: AutoLayoutOptions = {}): Gra
   }
   return out;
 }
+
+// ─── force-separate ──────────────────────────────────────────────────────
+// Phase 22 — pairwise overlap resolver. Pure function. Walks every pair of
+// visible nodes; when two overlap (their bounding boxes intersect), pushes
+// them apart along the center-to-center vector until they no longer
+// overlap. Iterates up to `iterations` times — for small graphs (typical
+// editor case, N < 30) usually converges in 3–10 passes.
+//
+// Doesn't try to be a real physics simulator (no force model, no momentum,
+// no edge tension). Just untangles overlaps. Use after the user clicks
+// 📐 Auto-layout but two columns still got cramped, OR after a series of
+// manual drags piled cards on top of each other.
+
+export interface ForceSeparateOptions {
+  /** Max iterations. Default 50; usually converges far sooner. */
+  iterations?: number;
+  /** Padding (px in graph space) to keep between nodes after separation. */
+  padding?: number;
+  /** Per-node bounding sizes in graph space. Required since this file has
+   *  no Svelte deps — the editor passes nodeSize from its own helper. */
+  nodeSize: (id: NodeId) => { w: number; h: number };
+  /** Map of nodeId → true for nodes whose layout MUST NOT move. */
+  pinned?: Record<NodeId, boolean>;
+}
+
+export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
+  const iterations = opts.iterations ?? 50;
+  const padding = opts.padding ?? 20;
+  const pinned = opts.pinned ?? {};
+
+  // Snapshot positions for the visible nodes (skip inline xform wrappers).
+  const ids: NodeId[] = [];
+  const pos: Record<NodeId, LayoutXY> = {};
+  const size: Record<NodeId, { w: number; h: number }> = {};
+  for (const id of Object.keys(graph.nodes)) {
+    const n = graph.nodes[id]!;
+    // Inline-wrapper test mirrors hydrateGraph's check.
+    if ((n.type === 'mv' || n.type === 'rot') && n.child) {
+      const child = graph.nodes[n.child];
+      if (child?.type === 'call' && inlineTransformOf(graph, n.child, n.type) === id) continue;
+    }
+    const layoutXY = graph.layout[id];
+    if (!layoutXY) continue; // no position to push around
+    ids.push(id);
+    pos[id] = { ...layoutXY };
+    size[id] = opts.nodeSize(id);
+  }
+  if (ids.length < 2) return graph;
+
+  // Tiny deterministic jitter for nodes occupying the EXACT same position
+  // (otherwise the center-to-center vector is zero and they never separate).
+  // 13/17 prime spread keeps jitter spread-out modulo i, no two nodes share.
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = pos[ids[i]!]!, b = pos[ids[j]!]!;
+      if (Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5) {
+        b.x += ((j * 13) % 17) - 8;
+        b.y += ((j * 17) % 13) - 6;
+      }
+    }
+  }
+
+  for (let iter = 0; iter < iterations; iter++) {
+    let moved = false;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const ai = ids[i]!, bj = ids[j]!;
+        const a = pos[ai]!, b = pos[bj]!;
+        const aw = size[ai]!.w, ah = size[ai]!.h;
+        const bw = size[bj]!.w, bh = size[bj]!.h;
+        // Axis-aligned bounding box overlap test.
+        const ax2 = a.x + aw, ay2 = a.y + ah;
+        const bx2 = b.x + bw, by2 = b.y + bh;
+        const overlapX = Math.min(ax2, bx2) - Math.max(a.x, b.x);
+        const overlapY = Math.min(ay2, by2) - Math.max(a.y, b.y);
+        if (overlapX <= -padding || overlapY <= -padding) continue;
+        // Separate along the smaller axis to minimise displacement.
+        const ax = a.x + aw / 2, ay = a.y + ah / 2;
+        const bx = b.x + bw / 2, by = b.y + bh / 2;
+        const aPinned = !!pinned[ai];
+        const bPinned = !!pinned[bj];
+        if (aPinned && bPinned) continue; // can't move either
+        // Distribute the push: half each, or full if one is pinned.
+        const share = (aPinned || bPinned) ? 1 : 0.5;
+        if (overlapX + padding < overlapY + padding) {
+          // push along X
+          const push = overlapX + padding;
+          if (bx >= ax) {
+            if (!aPinned) a.x -= push * share;
+            if (!bPinned) b.x += push * share;
+          } else {
+            if (!aPinned) a.x += push * share;
+            if (!bPinned) b.x -= push * share;
+          }
+        } else {
+          // push along Y
+          const push = overlapY + padding;
+          if (by >= ay) {
+            if (!aPinned) a.y -= push * share;
+            if (!bPinned) b.y += push * share;
+          } else {
+            if (!aPinned) a.y += push * share;
+            if (!bPinned) b.y -= push * share;
+          }
+        }
+        moved = true;
+      }
+    }
+    if (!moved) break; // converged
+  }
+
+  // Apply via setLayout (immutable).
+  let out = graph;
+  for (const id of ids) {
+    out = setLayout(out, id, pos[id]!);
+  }
+  return out;
+}

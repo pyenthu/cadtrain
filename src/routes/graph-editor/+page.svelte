@@ -54,7 +54,7 @@
   } from '$lib/cad/composition-graph';
   import { emitGraph } from '$lib/cad/composition-emit';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
-  import { autoLayoutGraph } from '$lib/cad/composition-layout';
+  import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
   import { dragNumber } from '$lib/shared/dragNumber';
 
   let graph = $state<Graph>(newGraph());
@@ -660,6 +660,16 @@
     graph = { ...graph, layout: { ...undoLayout } };
     undoLayout = null;
   }
+  // Phase 22 — 🧲 Push apart. Resolves overlapping cards via pairwise
+  // bounding-box separation. The same undoLayout snapshot is reused so
+  // the user can ↶ undo this just like an auto-layout.
+  function pushApart() {
+    undoLayout = { ...graph.layout };
+    graph = forceSeparate(graph, {
+      nodeSize: (id) => nodeSize(graph.nodes[id]),
+      padding: 24,
+    });
+  }
 
   // ─── inline transforms on Call cards ────────────────────────────────────
   function toggleInlineTransform(callId: NodeId, kind: 'mv' | 'rot') {
@@ -819,6 +829,8 @@
     <button class="ge-btn ghost" type="button" onclick={resetGraph}>Reset</button>
     <button class="ge-btn ghost auto-layout" type="button" onclick={autoLayout}
       title="Rearrange nodes left-to-right by depth (Phase 20 heuristic)">📐 Auto-layout</button>
+    <button class="ge-btn ghost push-apart" type="button" onclick={pushApart}
+      title="Resolve overlapping cards via pairwise separation (Phase 22)">🧲 Push apart</button>
     {#if undoLayout}
       <button class="ge-btn ghost undo-layout" type="button" onclick={undoAutoLayout}
         title="Restore the prior layout">↶ Undo</button>
@@ -1390,7 +1402,20 @@
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
           {#if !bake}<div class="ge-empty">Drop nodes to bake.</div>
           {:else if bake === 'loading'}<div class="ge-empty">baking…</div>
-          {:else if !bake.ok}<div class="ge-err">{bake.message ?? 'bake failed'}</div>
+          {:else if !bake.ok}
+            <div class="ge-err">
+              <div>{bake.message ?? 'bake failed'}</div>
+              {#if /parameter 0 has unknown type|memory access out of bounds/.test(bake.message ?? '')}
+                <!-- Stale-server-modules trap — Vite HMR doesn't reload server-side
+                     modules (primitive-loader / composition-graph / emit). Surface
+                     the symptom + the fix instead of letting the user wonder. -->
+                <div class="ge-err-hint">
+                  ⚠ Looks like a stale dev server (Vite HMR skips server modules after
+                  edits to composition-graph / composition-emit / primitive-loader).
+                  Restart the dev server: <code>pkill -f 'bun run dev' && bun run dev</code>
+                </div>
+              {/if}
+            </div>
           {:else if PrimitiveDualCanvas}
             <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
               args={Object.values(graph.params).map((p) => p.default)}
@@ -1695,7 +1720,9 @@
   .ge-pane-head code { font: 11px ui-monospace, monospace; color: #0c4a6e; text-transform: none; letter-spacing: 0; }
   .ge-bake-body { overflow: hidden; min-height: 0; }
   .ge-empty { padding: 20px; text-align: center; color: #9ca3af; font: 12px Arial; }
-  .ge-err { padding: 20px; color: #b91c1c; font: 12px ui-monospace, monospace; }
+  .ge-err { padding: 20px; color: #b91c1c; font: 12px ui-monospace, monospace; display: flex; flex-direction: column; gap: 10px; }
+  .ge-err-hint { padding: 10px 12px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 4px; font: 11px Arial; line-height: 1.4; }
+  .ge-err-hint code { font: 11px ui-monospace, monospace; background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 2px; }
   .ge-source { margin: 0; padding: 10px 14px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; background: #fafaf9; overflow: auto; white-space: pre; }
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 

@@ -23,7 +23,7 @@ import {
   type Graph,
   type NodeId,
 } from './composition-graph';
-import { autoLayoutGraph } from './composition-layout';
+import { autoLayoutGraph, forceSeparate } from './composition-layout';
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -183,5 +183,83 @@ describe('composition-layout — phase 20 heuristic layered layout', () => {
     expect(laid.layout[m.id]!.x).toBe(400);
     // Root is depth 2 → x = 100 + 600 = 700.
     expect(laid.layout[laid.root]!.x).toBe(700);
+  });
+});
+
+describe('forceSeparate (Phase 22)', () => {
+  const size = () => ({ w: 100, h: 60 });
+
+  it('does nothing when nodes don\'t overlap', () => {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    g = setLayout(g, a.id, { x: 0, y: 0 });
+    const b = addCall(g, 'src_b'); g = b.graph;
+    g = setLayout(g, b.id, { x: 500, y: 500 });
+    const out = forceSeparate(g, { nodeSize: size });
+    expect(out.layout[a.id]).toEqual({ x: 0, y: 0 });
+    expect(out.layout[b.id]).toEqual({ x: 500, y: 500 });
+  });
+
+  it('separates two overlapping nodes', () => {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    g = setLayout(g, a.id, { x: 0, y: 0 });
+    const b = addCall(g, 'src_b'); g = b.graph;
+    // Heavy overlap — boxes are 100x60, b at (40, 0) overlaps a by 60 px in X.
+    g = setLayout(g, b.id, { x: 40, y: 0 });
+    const out = forceSeparate(g, { nodeSize: size, padding: 10 });
+    const aPos = out.layout[a.id]!, bPos = out.layout[b.id]!;
+    // After separation no overlap (allow the padding gap).
+    const overlapX = Math.min(aPos.x + 100, bPos.x + 100) - Math.max(aPos.x, bPos.x);
+    const overlapY = Math.min(aPos.y + 60, bPos.y + 60) - Math.max(aPos.y, bPos.y);
+    // Either no x-overlap or no y-overlap means the boxes are separated.
+    expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+  });
+
+  it('respects pinned nodes (they don\'t move)', () => {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    g = setLayout(g, a.id, { x: 0, y: 0 });
+    const b = addCall(g, 'src_b'); g = b.graph;
+    g = setLayout(g, b.id, { x: 40, y: 0 });
+    const out = forceSeparate(g, {
+      nodeSize: size,
+      pinned: { [a.id]: true },
+    });
+    // a is pinned, can't move.
+    expect(out.layout[a.id]).toEqual({ x: 0, y: 0 });
+    // b moved away from a — could be in either direction (algorithm picks
+    // the smaller-overlap axis), so check displacement magnitude.
+    const bAfter = out.layout[b.id]!;
+    const moved = Math.hypot(bAfter.x - 40, bAfter.y - 0);
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it('handles 3+ overlapping nodes (cluster spread)', () => {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph; g = setLayout(g, a.id, { x: 0, y: 0 });
+    const b = addCall(g, 'src_b'); g = b.graph; g = setLayout(g, b.id, { x: 10, y: 10 });
+    const c = addCall(g, 'src_c'); g = c.graph; g = setLayout(g, c.id, { x: 20, y: 20 });
+    const out = forceSeparate(g, { nodeSize: size, padding: 10, iterations: 100 });
+    // All 3 should be pairwise non-overlapping after enough iterations.
+    const ids = [a.id, b.id, c.id];
+    for (let i = 0; i < 3; i++) {
+      for (let j = i + 1; j < 3; j++) {
+        const ai = out.layout[ids[i]!]!, bi = out.layout[ids[j]!]!;
+        const overlapX = Math.min(ai.x + 100, bi.x + 100) - Math.max(ai.x, bi.x);
+        const overlapY = Math.min(ai.y + 60, bi.y + 60) - Math.max(ai.y, bi.y);
+        expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+      }
+    }
+  });
+
+  it('idempotent — no overlap means no change on second call', () => {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph; g = setLayout(g, a.id, { x: 0, y: 0 });
+    const b = addCall(g, 'src_b'); g = b.graph; g = setLayout(g, b.id, { x: 40, y: 0 });
+    const once = forceSeparate(g, { nodeSize: size });
+    const twice = forceSeparate(once, { nodeSize: size });
+    expect(twice.layout[a.id]).toEqual(once.layout[a.id]);
+    expect(twice.layout[b.id]).toEqual(once.layout[b.id]);
   });
 });
