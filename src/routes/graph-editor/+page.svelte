@@ -29,6 +29,7 @@
     setTransformChild,
     setTransformAxis,
     setTransformAxisValue,
+    setViewport,
     addStackPlaceholder,
     appendContainerChild,
     removeContainerChildAt,
@@ -119,6 +120,11 @@
         const graphJson = d.graph ?? extractGraphFromSource(d.source ?? '');
         if (graphJson && typeof graphJson === 'object') {
           graph = hydrateGraph(graphJson);
+          // Restore canvas viewport — pan + zoom were captured at save time.
+          if (graph.viewport) {
+            pan = { ...graph.viewport.pan };
+            zoom = graph.viewport.zoom;
+          }
           exemplarId = id;
         } else {
           legacyLoad = { id, reason: 'no-graph' };
@@ -370,6 +376,14 @@
     if (slot === 'arg')  return { x: p.x, y: p.y + 70 };
     /* child */          return { x: p.x, y: p.y + 50 };
   }
+  /** Container slot input socket position — the i-th child slot of a
+   *  list/stack/group container's card. Used to draw the visible "piped
+   *  into output" wires from each child node's output socket to its slot
+   *  in the Output (root list) card. */
+  function containerSlotInputAt(containerId: NodeId, i: number): { x: number; y: number } {
+    const p = nodePos(containerId);
+    return { x: p.x, y: p.y + containerSlotY(i) };
+  }
 
   // ─── picker — drops Calls, CSG ops, transforms ──────────────────────────
   let pickerOpen = $state(false);
@@ -483,6 +497,55 @@
     g = { ...g, nodes: { ...g.nodes, [callId]: updated } };
     graph = g;
   }
+  // ─── Resizable 3-pane dividers ──────────────────────────────────────────
+  // The editor's main area is split canvas / bake / source. Default ratios
+  // (40 / 35 / 25 %) live in splitA + splitB; the source pane takes the
+  // remainder. Both dividers are 6 px draggable strips. Persisted as client
+  // state (localStorage) so the user's preferred layout survives reloads
+  // without bloating meta.graph.
+  let splitA = $state(40);          // canvas pane %
+  let splitB = $state(35);          // bake pane %
+  let gridEl: HTMLElement | undefined = $state();
+  let splitDragging: 'a' | 'b' | null = null;
+  onMount(() => {
+    try {
+      const a = Number(localStorage.getItem('ge-splitA'));
+      const b = Number(localStorage.getItem('ge-splitB'));
+      if (a > 10 && a < 80) splitA = a;
+      if (b > 10 && b < 80) splitB = b;
+    } catch { /* localStorage blocked — fine */ }
+  });
+  function startSplitDrag(which: 'a' | 'b') {
+    return (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      splitDragging = which;
+      (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    };
+  }
+  function onSplitMove(ev: PointerEvent) {
+    if (!splitDragging || !gridEl) return;
+    const r = gridEl.getBoundingClientRect();
+    const pct = ((ev.clientX - r.left) / r.width) * 100;
+    if (splitDragging === 'a') {
+      const next = Math.max(15, Math.min(70, pct));
+      splitA = next;
+      if (splitA + splitB > 85) splitB = 85 - splitA;
+    } else {
+      const next = Math.max(15, Math.min(70, pct - splitA));
+      splitB = next;
+    }
+  }
+  function endSplitDrag(ev: PointerEvent) {
+    if (!splitDragging) return;
+    (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
+    splitDragging = null;
+    try {
+      localStorage.setItem('ge-splitA', String(splitA));
+      localStorage.setItem('ge-splitB', String(splitB));
+    } catch { /* ignore */ }
+  }
+
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
@@ -594,6 +657,11 @@
     if (saveBusy) return;
     saveBusy = true;
     saveStatus = `saving ${exemplarId}…`;
+    // Capture current viewport into the graph BEFORE serialising so the
+    // emitted meta.graph carries the canvas state we want to restore on
+    // reload. `emitted.source` is reactive — assigning graph re-runs the
+    // emit chain to include the new viewport.
+    graph = setViewport(graph, pan, zoom);
     try {
       const r = await fetch('/api/primitives/save', {
         method: 'POST',
@@ -659,7 +727,8 @@
     <span class="ge-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
   </header>
 
-  <main class="ge-grid">
+  <main class="ge-grid" bind:this={gridEl}
+    style="grid-template-columns: {splitA}% 6px {splitB}% 6px 1fr">
     <!-- LEFT — graph canvas -->
     <section class="ge-canvas-pane">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -767,6 +836,19 @@
                 {@const tgt = inputSocketAt(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
+            {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
+              <!-- Container wires: each child of a container shows as a bezier
+                   from the child's output socket → the container's i-th slot
+                   input socket. Makes it visually obvious which parts are
+                   "piped into" the Output card. -->
+              {#each (n as any).children as childId, i (childId)}
+                {#if graph.nodes[childId]}
+                  {@const src = outputSocketAt(childId)}
+                  {@const tgt = containerSlotInputAt(n.id, i)}
+                  <path class="ge-wire output" class:root={n.id === graph.root}
+                    d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                {/if}
+              {/each}
             {/if}
           {/each}
 
@@ -1135,6 +1217,14 @@
       </svg>
     </section>
 
+    <!-- Divider A: canvas ↔ bake -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="ge-divider" role="separator" tabindex="-1" aria-orientation="vertical"
+      onpointerdown={startSplitDrag('a')}
+      onpointermove={onSplitMove}
+      onpointerup={endSplitDrag}></div>
+
     <!-- MIDDLE — 3D bake -->
     <section class="ge-bake-pane">
       <div class="ge-pane-head">3D bake</div>
@@ -1151,6 +1241,14 @@
         {/if}
       </div>
     </section>
+
+    <!-- Divider B: bake ↔ source -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="ge-divider" role="separator" tabindex="-1" aria-orientation="vertical"
+      onpointerdown={startSplitDrag('b')}
+      onpointermove={onSplitMove}
+      onpointerup={endSplitDrag}></div>
 
     <!-- RIGHT — live emitted source -->
     <section class="ge-source-pane">
@@ -1260,8 +1358,12 @@
   .ge-btn.ghost:hover { background: #d1d5db; }
   .ge-save-stat { font: 11px ui-monospace, monospace; color: #15803d; }
   .ge-stat { font: 11px ui-monospace, monospace; color: #6b7280; margin-left: auto; }
-  .ge-grid { display: grid; grid-template-columns: 40% 35% 25%; overflow: hidden; }
-  .ge-canvas-pane { border-right: 1px solid #e5e7eb; overflow: hidden; position: relative; }
+  /* grid-template-columns set inline (splitA% 6px splitB% 6px 1fr) — both
+     dividers live between sections; the source pane gets the remainder. */
+  .ge-grid { display: grid; overflow: hidden; }
+  .ge-divider { background: #e5e7eb; cursor: col-resize; touch-action: none; transition: background 0.12s; }
+  .ge-divider:hover, .ge-divider:active { background: #0369a1; }
+  .ge-canvas-pane { overflow: hidden; position: relative; }
   /* + param button + delete × on canvas chip + add-param popover rows. */
   .ge-param-card-x { font: 13px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-param-add-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; stroke-dasharray: 4 3; cursor: pointer; }
@@ -1345,6 +1447,11 @@
   .ge-wire.child { stroke: #6d28d9; }
   .ge-wire.param { stroke: #d97706; stroke-dasharray: 2 2; opacity: 0.85; }
   .ge-wire.in-flight { stroke: #15803d; stroke-dasharray: 6 4; }
+  /* output: piping a node into a container's slot. Green = "this is what the
+     function returns / what gets stacked". root variant is slightly thicker
+     to mark "this lands in the function's final return". */
+  .ge-wire.output { stroke: #15803d; opacity: 0.7; }
+  .ge-wire.output.root { stroke: #047857; stroke-width: 2.5; opacity: 0.85; }
   /* Param chips on canvas — small amber rounded rectangles at the top with
      output socket. The HTML strip above stays for adding/removing; these
      mirror the same data for visual wiring. */

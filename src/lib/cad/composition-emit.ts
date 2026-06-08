@@ -268,6 +268,9 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     params: graph.params,
     imports: graph.imports,
     layout: graph.layout,
+    // Viewport ALWAYS round-trips so canvas pan + zoom restore on reload.
+    // Default fallback (0, 0, zoom=1) lives in hydrateGraph for legacy files.
+    ...(graph.viewport ? { viewport: graph.viewport } : {}),
   };
 }
 

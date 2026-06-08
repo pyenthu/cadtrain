@@ -111,6 +111,11 @@ export type Edge = {
 
 export type LayoutXY = { x: number; y: number };
 
+/** Canvas viewport — the pan offset + zoom level the editor was at when
+ *  this graph was last saved. Persists alongside layout so the user lands
+ *  back on the same view region (not just node positions) on reload. */
+export type Viewport = { pan: LayoutXY; zoom: number };
+
 export type Graph = {
   nodes: Record<NodeId, GraphNode>;
   root: NodeId;
@@ -128,6 +133,8 @@ export type Graph = {
    *  affordance; ignored by composition-bake. Allows the visual editor to
    *  restore positions across opens. */
   layout: Record<NodeId, LayoutXY>;
+  /** Canvas-level state — captured at save time, restored at hydrate time. */
+  viewport?: Viewport;
 };
 
 export function newGraph(): Graph {
@@ -144,7 +151,14 @@ export function newGraph(): Graph {
     edges: [],
     imports: [],
     layout: { [rootId]: { x: 600, y: 80 } },
+    viewport: { pan: { x: 0, y: 0 }, zoom: 1 },
   };
+}
+
+/** Update the canvas viewport (pan + zoom). Called from the editor at save
+ *  time so the next hydrate restores the same view region. */
+export function setViewport(graph: Graph, pan: LayoutXY, zoom: number): Graph {
+  return { ...graph, viewport: { pan: { ...pan }, zoom } };
 }
 
 /** Hydrate a serialised meta.graph block back into a runnable Graph.
@@ -168,6 +182,15 @@ export function hydrateGraph(serialised: any): Graph {
   // get the default-grid auto-layout, so legacy files open cleanly.
   const savedLayout =
     (serialised.layout && typeof serialised.layout === 'object') ? { ...serialised.layout } : {};
+  // Hydrate viewport too. Default falls back to (0, 0, zoom=1) — same as
+  // newGraph() — so files saved before viewport landed open at the origin
+  // view, preserving the prior behavior.
+  const savedViewport: Viewport =
+    (serialised.viewport && typeof serialised.viewport === 'object' &&
+     serialised.viewport.pan && typeof serialised.viewport.zoom === 'number')
+      ? { pan: { x: Number(serialised.viewport.pan.x) || 0, y: Number(serialised.viewport.pan.y) || 0 },
+          zoom: Number(serialised.viewport.zoom) || 1 }
+      : { pan: { x: 0, y: 0 }, zoom: 1 };
   let g: Graph = {
     nodes: serialised.nodes,
     root: serialised.root,
@@ -175,6 +198,7 @@ export function hydrateGraph(serialised: any): Graph {
     edges: [],
     imports: serialised.imports ?? [],
     layout: savedLayout,
+    viewport: savedViewport,
   };
   // Fill missing positions only — preserves any saved entry, populates the
   // rest via the same rough-grid heuristic used at create-time. Inline
