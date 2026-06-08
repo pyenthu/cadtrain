@@ -35,6 +35,7 @@ import {
   newGraph, addCall, addMethod, addContainer, addMv, addRepeat,
   addParam as gAddParam,
   setMethodInput, setTransformChild, setTransformAxisValue,
+  setRepeatOp, appendContainerChild,
   asLiteral, asExpr, asParam,
   type Graph, type NodeId, type ArgValue, type CsgOp,
 } from '../cad/composition-graph';
@@ -500,16 +501,19 @@ function ruleToGraph(
       return { graph: m.graph, nodeId: m.id };
     }
     case 'repeat': {
-      // Instantiate the child N times + stack via end-to-end mate. Count is
-      // typed as ArgValue so it survives as a literal, param wire, or
-      // expression (e.g. `p.n`, 3, or `p.layers * 2`). The vocab rule's
-      // `mate: 'tail(prev)'` field is the default semantic of stack() —
-      // nothing extra to encode for now (future repeats with custom mate
-      // points would extend this).
+      // Instantiate the child N times + stack via end-to-end mate. Emits
+      // as the canonical Repeat→Stack pattern (Phase 24 model):
+      //   Repeat (op='list')  →  Stack  →  output
+      // Visually splits the iteration FROM the mating, so the user sees
+      // two distinct steps on the canvas instead of an implicit stacking
+      // inside Repeat.
       const childR = ruleToGraph(g, node.child, imports, vocab, aliasToSrc, parentId);
       const count  = exprOrLiteralOrParam(String(node.count ?? 1));
       const r = addRepeat(childR.graph, childR.nodeId, count, parentId);
-      return { graph: r.graph, nodeId: r.id };
+      let g2 = setRepeatOp(r.graph, r.id, 'list');
+      const s = addContainer(g2, 'stack', parentId);
+      g2 = appendContainerChild(s.graph, s.id, r.id);
+      return { graph: g2, nodeId: s.id };
     }
     default:
       throw new Error(`ruleToGraph: unknown node type "${node.type}"`);

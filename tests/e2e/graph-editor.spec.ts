@@ -1178,12 +1178,15 @@ test.describe('graph-editor — phase 17: repeat composition (stand)', () => {
     expect(data.regenerated?.[0]?.bake?.verts).toBeGreaterThan(30000);
     expect(data.regenerated?.[0]?.bake?.z_extent).toBeGreaterThan(140);
 
-    // 2. Source has the Array.from + stack repeat idiom.
+    // 2. Source has the explicit Repeat → Stack split (Phase 24 model).
     const srcResp = await page.request.get('/api/primitives/source?name=dt_stand');
     expect(srcResp.ok()).toBe(true);
     const srcData = await srcResp.json();
     expect(srcData.source).toContain('graph: {');
-    expect(srcData.source).toMatch(/stack\(\s*Array\.from\(/);
+    // Bare Array.from(...) on its own line — the Repeat's emit.
+    expect(srcData.source).toMatch(/Array\.from\(\s*\{\s*length:\s*p\.n/);
+    // Stack spreading the repeat var — the downstream consumer.
+    expect(srcData.source).toMatch(/stack\(\[\.\.\./);
     // The count is `p.n` — proves the param wire reached the repeat node.
     expect(srcData.source).toContain('p.n');
 

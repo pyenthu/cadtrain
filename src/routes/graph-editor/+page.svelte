@@ -667,6 +667,17 @@
     g2 = setLayout(g2, s.id, { x: rPos.x + 260, y: rPos.y });
     graph = g2;
   }
+  /** Drag-wire ending on a Repeat node's count socket — sets the count
+   *  to a param (when wireFrom is a param chip). Same pattern as the
+   *  Call arg wire targets. */
+  function endWireOnRepeatCount(ev: PointerEvent, repeatId: NodeId) {
+    if (!wireFrom) return;
+    ev.stopPropagation();
+    if (wireFrom.kind === 'param-out') {
+      graph = setRepeatCount(graph, repeatId, asParam(wireFrom.paramName));
+    }
+    wireFrom = null; wireMouse = null;
+  }
   /** Drag-wire ending on a Repeat node's child slot — set the wire source
    *  as the new child. Idempotent and works for any node type that has an
    *  output socket. */
@@ -1418,7 +1429,11 @@
 
               {:else if n.type === 'repeat'}
                 {@const rep = n as any}
-                {@const countLiteral = rep.count?.kind === 'literal' ? Number(rep.count.value) : 1}
+                {@const countKind = rep.count?.kind ?? 'literal'}
+                {@const countLiteral = countKind === 'literal' ? Number(rep.count.value) : 1}
+                {@const countDisplay = countKind === 'param' ? `p.${rep.count.param}`
+                  : countKind === 'expr' ? rep.count.expr
+                  : String(countLiteral)}
                 {@const repOp = (rep.op ?? 'stack') as 'stack' | 'list' | 'place'}
                 {@const childNode = rep.child ? graph.nodes[rep.child] : null}
                 {@const childLabel = !childNode ? '(drop a node into the child socket)'
@@ -1432,23 +1447,39 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <!-- Title row: ↻ Repeat × [N]  — count inline, prominently
-                     in the toolbar so the user sees N at a glance. ⚙ +
-                     × on the right edge. -->
+                <!-- Title row: ↻ Repeat × N — N renders as a number input
+                     when literal, OR a clickable chip when wired to a
+                     param OR an expression. Small INPUT socket above the
+                     count lets the user drag-wire a param chip onto it. -->
                 <text x="14" y="22" class="ge-node-title">↻ Repeat ×</text>
-                <foreignObject x="92" y="6" width="46" height="22">
-                  <input class="ge-repeat-count-inline" type="number" min="1" step="1"
-                    xmlns="http://www.w3.org/1999/xhtml"
-                    value={countLiteral}
-                    use:dragNumber={{
-                      step: 1,
-                      get: () => countLiteral,
-                      set: (val) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(val)))); },
-                    }}
-                    oninput={(e) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(Number((e.target as HTMLInputElement).value))))); }}/>
-                </foreignObject>
-                {#if rep.count?.kind === 'param'}
-                  <text x={size.w - 96} y="22" class="ge-repeat-bound">{`(p.${rep.count.param})`}</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in param tiny"
+                  cx={countKind === 'literal' ? 120 : 100} cy="-2" r="4"
+                  onpointerup={(ev) => endWireOnRepeatCount(ev, n.id)}/>
+                {#if countKind === 'literal'}
+                  <foreignObject x="92" y="6" width="56" height="22">
+                    <input class="ge-repeat-count-inline" type="number" min="1" step="1"
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      value={countLiteral}
+                      use:dragNumber={{
+                        step: 1,
+                        get: () => countLiteral,
+                        set: (val) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(val)))); },
+                      }}
+                      oninput={(e) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(Number((e.target as HTMLInputElement).value))))); }}/>
+                  </foreignObject>
+                {:else}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <text role="button" tabindex="-1" x="92" y="22"
+                    class="ge-repeat-count-chip" class:param={countKind === 'param'} class:expr={countKind === 'expr'}
+                    title={countKind === 'param' ? `Wired to param — click × on the chip to unwire` : `Expression — edit below`}
+                    onpointerdown={(ev) => ev.stopPropagation()}>{countDisplay}</text>
+                  {#if countKind === 'param'}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" x="92" y="22" dx={countDisplay.length * 7 + 4}
+                      class="ge-repeat-count-x"
+                      onpointerdown={(ev) => { ev.stopPropagation(); graph = setRepeatCount(graph, n.id, asLiteral(graph.params[rep.count.param]?.default ?? 1)); }}>×</text>
+                  {/if}
                 {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
@@ -1461,19 +1492,11 @@
                      without an `op` field still emit stack(Array.from(...))
                      for backward compat. -->
                 <text x={size.w / 2} y="56" class="ge-repeat-sub" text-anchor="middle">
-                  builds a list of {countLiteral} ×
+                  builds a list of {countDisplay} ×
                 </text>
                 <text x={size.w / 2} y="78" class="ge-repeat-child" text-anchor="middle">
                   {childLabel}
                 </text>
-                {#if repOp !== 'list'}
-                  <!-- Legacy parts may have op='stack' or 'place'; show a hint
-                       so the user knows what the existing emit does. They
-                       can ⚙ open the popover (future) to change it. -->
-                  <text x={size.w / 2} y="94" class="ge-repeat-op-hint" text-anchor="middle">
-                    legacy emit: {repOp}(Array.from(…))
-                  </text>
-                {/if}
                 <!-- Child input socket — drop any node's output here to repeat it. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={size.h - 18} r="6"
@@ -1899,6 +1922,12 @@
   .ge-repeat-count-inline { width: 100%; box-sizing: border-box; padding: 2px 6px; font: 700 14px ui-monospace, monospace; color: #be185d; background: #fff; border: 1px solid #fbcfe8; border-radius: 4px; text-align: center; cursor: ew-resize; }
   .ge-repeat-count-inline:focus { outline: 1px solid #be185d; cursor: text; }
   .ge-repeat-bound { font: 10px ui-monospace, monospace; fill: #be185d; pointer-events: none; }
+  /* Count chip when wired to a param or expression — replaces the input */
+  .ge-repeat-count-chip { font: 700 12px ui-monospace, monospace; fill: #831843; cursor: pointer; user-select: none; }
+  .ge-repeat-count-chip.param { fill: #be185d; }
+  .ge-repeat-count-chip.expr { fill: #b45309; font-style: italic; }
+  .ge-repeat-count-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  .ge-repeat-count-x:hover { fill: #7f1d1d; }
   /* Body labels — "builds a list of N ×" + child name */
   .ge-repeat-sub { font: 11px Arial; fill: #831843; opacity: 0.85; }
   .ge-repeat-child { font: 600 12px ui-monospace, monospace; fill: #831843; }
