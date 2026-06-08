@@ -214,21 +214,27 @@
   }
 
   // ─── param chip positioning ─────────────────────────────────────────────
-  // Chips are FIXED in place (per user request) — packed in a single row
-  // flowing top-left. Position is purely derived from the chip's index in
-  // paramEntries; no per-chip layout state. Wires connecting params to
-  // node sockets read from paramSocketPos() so they stay aligned even if
-  // we later make these draggable again.
+  // Chips are TACKED to the viewport top-left by default (📌). They render
+  // OUTSIDE the pan/zoom transform — so when the user pans the canvas, the
+  // chips stay where they are. This avoids the "ugly default-grid" problem
+  // when you reload and your chips were arranged carefully on the canvas.
+  // Position is purely derived from the chip's index in paramEntries.
   const PARAM_W = 120, PARAM_H = 22, PARAM_GAP = 4, PARAM_X0 = 10, PARAM_Y0 = 10;
   function paramPos(_name: string, i: number): { x: number; y: number } {
-    // VERTICAL stack from top-left — chips flow downward, one per row.
+    // VERTICAL stack from top-left in VIEWPORT space (chips are tacked).
     return { x: PARAM_X0, y: PARAM_Y0 + i * (PARAM_H + PARAM_GAP) };
   }
-  /** Where a param chip's OUTPUT socket sits on the canvas. Used by the
-   *  wire renderer so the bezier always meets the actual socket dot. */
+  /** Where a param chip's OUTPUT socket sits — in GRAPH space (the wires
+   *  render inside the pan/zoom group, so we convert from the chip's fixed
+   *  viewport position back into graph coords). The conversion ensures the
+   *  wire's endpoint always lands on the visual chip socket regardless of
+   *  pan/zoom. */
   function paramSocketPos(name: string, i: number): { x: number; y: number } {
     const p = paramPos(name, i);
-    return { x: p.x + PARAM_W + 4, y: p.y + PARAM_H / 2 };
+    const vx = p.x + PARAM_W + 4;
+    const vy = p.y + PARAM_H / 2;
+    // viewport → graph: invert outer transform `translate(pan) ∘ scale(zoom)`.
+    return { x: (vx - pan.x) / zoom, y: (vy - pan.y) / zoom };
   }
 
   // ─── drag-to-wire ───────────────────────────────────────────────────────
@@ -634,46 +640,9 @@
           </defs>
           <rect x="-2000" y="-2000" width="4000" height="4000" fill="url(#ge-grid)"/>
 
-          <!-- PARAM CHIPS — render each meta.params row as a small chip at
-               the top of the canvas with an output socket + ×-delete + a
-               trailing + button to add a new param. -->
-          {#each paramEntries as [name, p], i (name)}
-            {@const pos = paramPos(name, i)}
-            <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
-              <!-- Fixed-position chip (no drag). Single-row layout:
-                   [p.name] [input] [×]  · ◯ socket (sits OUTSIDE the chip's
-                   right edge to keep × from being clipped). -->
-              <rect class="ge-param-card-bg" width={PARAM_W} height={PARAM_H} rx="11"/>
-              <text x="6" y="15" class="ge-param-card-name" text-anchor="start">p.{name}</text>
-              <foreignObject x="54" y="3" width="46" height="16">
-                <input class="ge-param-card-input" type="number" step="0.05"
-                  xmlns="http://www.w3.org/1999/xhtml"
-                  value={(p as any).default}
-                  use:dragNumber={{
-                    step: 0.05,
-                    get: () => Number((p as any).default) || 0,
-                    set: (val) => onParamDefault(name, val),
-                  }}
-                  oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
-              </foreignObject>
-              <!-- × delete — well inside the chip rect, can't be clipped -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <text role="button" tabindex="-1" class="ge-param-card-x" x={PARAM_W - 12} y="15"
-                onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>×</text>
-              <!-- Output socket — sits OUTSIDE the chip to avoid overlap with ×. -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <circle role="button" tabindex="-1" class="ge-sock out param" cx={PARAM_W + 4} cy={PARAM_H / 2} r="5"
-                onpointerdown={(ev) => startParamWire(ev, name)}/>
-            </g>
-          {/each}
-          <!-- + add-param button — sits BELOW the last chip in the vertical stack -->
-          <g class="ge-param-add-card"
-             transform="translate({PARAM_X0},{PARAM_Y0 + paramEntries.length * (PARAM_H + PARAM_GAP)})">
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <rect role="button" tabindex="-1" class="ge-param-add-bg" width={PARAM_W} height={PARAM_H} rx="11"
-              onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
-            <text x={PARAM_W / 2} y="15" class="ge-param-add-glyph" text-anchor="middle" pointer-events="none">+ param</text>
-          </g>
+          <!-- PARAM CHIPS render OUTSIDE the pan/zoom group (below) so they
+               stay tacked to the viewport top-left even when the canvas
+               is panned. -->
           {#if paramEntries.length === 0}
             <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
           {/if}
@@ -1015,6 +984,47 @@
             <text x="80" y="100" class="ge-canvas-hint">Click <tspan font-weight="bold">+ Drop</tspan> to add a Call, CSG op, or transform.</text>
           {/if}
         </g>
+
+        <!-- TACKED PARAM CHIPS — render OUTSIDE the pan/zoom group so they
+             stay glued to the viewport top-left, even as the canvas pans
+             and zooms. Drawn AFTER the pan group so they layer on top of
+             any node that might end up beneath them. The 📌 glyph on each
+             chip signals it's tacked (future: click to untack + flow with
+             canvas). Wires from chip → node compute the source point in
+             GRAPH space via paramSocketPos so they meet the visual socket. -->
+        {#each paramEntries as [name, p], i (name)}
+          {@const pos = paramPos(name, i)}
+          <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
+            <rect class="ge-param-card-bg" width={PARAM_W} height={PARAM_H} rx="11"/>
+            <text x="4" y="15" class="ge-param-pin" pointer-events="none">📌</text>
+            <text x="18" y="15" class="ge-param-card-name" text-anchor="start">p.{name}</text>
+            <foreignObject x="62" y="3" width="42" height="16">
+              <input class="ge-param-card-input" type="number" step="0.05"
+                xmlns="http://www.w3.org/1999/xhtml"
+                value={(p as any).default}
+                use:dragNumber={{
+                  step: 0.05,
+                  get: () => Number((p as any).default) || 0,
+                  set: (val) => onParamDefault(name, val),
+                }}
+                oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
+            </foreignObject>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <text role="button" tabindex="-1" class="ge-param-card-x" x={PARAM_W - 12} y="15"
+              onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>×</text>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <circle role="button" tabindex="-1" class="ge-sock out param" cx={PARAM_W + 4} cy={PARAM_H / 2} r="5"
+              onpointerdown={(ev) => startParamWire(ev, name)}/>
+          </g>
+        {/each}
+        <!-- + add-param button — same viewport-fixed group, below the last chip -->
+        <g class="ge-param-add-card"
+           transform="translate({PARAM_X0},{PARAM_Y0 + paramEntries.length * (PARAM_H + PARAM_GAP)})">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <rect role="button" tabindex="-1" class="ge-param-add-bg" width={PARAM_W} height={PARAM_H} rx="11"
+            onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
+          <text x={PARAM_W / 2} y="15" class="ge-param-add-glyph" text-anchor="middle" pointer-events="none">+ param</text>
+        </g>
       </svg>
     </section>
 
@@ -1221,6 +1231,7 @@
      output socket. The HTML strip above stays for adding/removing; these
      mirror the same data for visual wiring. */
   .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+  .ge-param-pin { font: 11px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial; user-select: none; opacity: 0.85; }
   /* Hide native number-input spinner arrows everywhere in the editor —
      drag-to-scrub via dragNumber + keyboard arrows are the input methods;
      the chevrons take horizontal space we can't afford in tight cells. */

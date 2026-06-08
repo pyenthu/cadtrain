@@ -257,13 +257,17 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
 
 /** Strip the denormalised `edges` field on emit — it's rebuildable from the
  *  args via composition-graph.collectEdges, so we keep the JSON compact +
- *  avoid serialise/parse mismatches. */
+ *  avoid serialise/parse mismatches. `layout` IS preserved so the user's
+ *  hand-positioned node placements survive save → reload (a fresh hydrate
+ *  falls back to defaultCallPosition for any node missing a layout entry,
+ *  so older files without layout still open cleanly). */
 function serialiseGraph(graph: Graph): Record<string, unknown> {
   return {
     nodes: graph.nodes,
     root: graph.root,
     params: graph.params,
     imports: graph.imports,
+    layout: graph.layout,
   };
 }
 

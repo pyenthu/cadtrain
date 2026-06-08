@@ -1083,6 +1083,65 @@ test.describe('graph-editor — phase 15: stack composition round-trip', () => {
   });
 });
 
+// ─── Phase 18 — layout persists across save → reload ────────────────────
+//
+// Without this, every reload snapped nodes back to the default-grid
+// auto-layout — defeating any careful arrangement the user made. Now
+// serialiseGraph includes `layout` in meta.graph, and hydrateGraph reads
+// it back (falling through to defaults only for nodes that don't have
+// a saved entry — keeps legacy files working).
+
+test.describe('graph-editor — phase 18: layout persists across reload', () => {
+  test('drag a node, save, reload — node lands at the same x, not the default grid', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase18_layout');
+
+    // 1. Drop two Calls + 1 method so there's a layout to remember.
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await pickCsg(page, 'subtract');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    // 2. Drag the FIRST Call far to the right (+ 300, + 80). The default
+    //    grid would have placed it at x≈80; we'll move it to ~380.
+    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0);
+    const before = await callA.boundingBox();
+    if (!before) throw new Error('callA has no bounding box');
+    await page.mouse.move(before.x + before.width / 2, before.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(before.x + before.width / 2 + 300, before.y + 12 + 80, { steps: 8 });
+    await page.mouse.up();
+    const after = await callA.boundingBox();
+    if (!after) throw new Error('callA has no bounding box after drag');
+    expect(after.x - before.x).toBeGreaterThan(200);
+
+    // Capture the post-drag x to compare after the reload.
+    const xAfterDrag = after.x;
+
+    // 3. Save the graph.
+    await page.getByRole('button', { name: /Save/ }).click();
+    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+
+    // 4. Reload via URL — fresh page, fresh hydrate.
+    await page.goto('/graph-editor?id=test_phase18_layout');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    // 5. The reloaded card lands at (about) the same x — NOT back at the
+    //    default-grid position. Tolerance ±25 px to absorb any sub-pixel
+    //    rounding / scroll differences.
+    const reloaded = await page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0).boundingBox();
+    if (!reloaded) throw new Error('reloaded callA has no bounding box');
+    expect(Math.abs(reloaded.x - xAfterDrag)).toBeLessThan(25);
+
+    // 6. Saved source has a `layout: {` block — proves the data path.
+    const r = await page.request.get('/api/primitives/source?name=test_phase18_layout');
+    expect(r.ok()).toBe(true);
+    const data = await r.json();
+    expect(data.source).toMatch(/layout:\s*\{/);
+  });
+});
+
 // ─── Phase 17 — repeat composition (stand) hydrates ─────────────────────
 //
 // Closes the LAST K.68 rule-shape gap. The `stand` vocab term uses

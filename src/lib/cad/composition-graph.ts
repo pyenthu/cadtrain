@@ -151,17 +151,24 @@ export function hydrateGraph(serialised: any): Graph {
   if (!serialised || typeof serialised !== 'object' || !serialised.nodes || !serialised.root) {
     return newGraph();
   }
+  // Use the SAVED layout when present (any value, even partial — the loop
+  // below fills only the holes). Older files saved before composition-emit
+  // started preserving layout will have it undefined; those nodes still
+  // get the default-grid auto-layout, so legacy files open cleanly.
+  const savedLayout =
+    (serialised.layout && typeof serialised.layout === 'object') ? { ...serialised.layout } : {};
   let g: Graph = {
     nodes: serialised.nodes,
     root: serialised.root,
     params: serialised.params ?? {},
     edges: [],
     imports: serialised.imports ?? [],
-    layout: {},
+    layout: savedLayout,
   };
-  // Auto-layout: each non-root, non-inline-wrapper node gets a default position
-  // via the same heuristic used at create-time. Inline mv/rot wrappers don't
-  // render on the main canvas (they surface inside their child Call), so skip.
+  // Fill missing positions only — preserves any saved entry, populates the
+  // rest via the same rough-grid heuristic used at create-time. Inline
+  // mv/rot wrappers don't render on the main canvas (they surface inside
+  // their child Call), so they don't need a layout slot.
   for (const id of Object.keys(g.nodes)) {
     const n = g.nodes[id];
     if (n.type === 'list') continue;
@@ -169,6 +176,7 @@ export function hydrateGraph(serialised: any): Graph {
       const child = g.nodes[n.child];
       if (child?.type === 'call') continue; // inline wrapper, no own card
     }
+    if (g.layout[id]) continue; // already saved — keep it
     g = setLayout(g, id, defaultCallPosition(g));
   }
   g = { ...g, edges: collectEdges(g) };
