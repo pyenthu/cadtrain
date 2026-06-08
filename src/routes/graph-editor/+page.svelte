@@ -54,6 +54,7 @@
   } from '$lib/cad/composition-graph';
   import { emitGraph } from '$lib/cad/composition-emit';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
+  import { autoLayoutGraph } from '$lib/cad/composition-layout';
   import { dragNumber } from '$lib/shared/dragNumber';
 
   let graph = $state<Graph>(newGraph());
@@ -201,8 +202,18 @@
   // ─── drag-to-move node cards ────────────────────────────────────────────
   let dragging: string | null = null;
   let dragOrig = { x: 0, y: 0 }; let dragStart = { x: 0, y: 0 };
+  /** Z-order ordering of node ids — last one wins (renders ON TOP). When the
+   *  user clicks a node, we move its id to the END of this array so it pops
+   *  to the front. Nodes not in this list render BEFORE the listed ones,
+   *  in their natural Object.values order (= insertion order). */
+  let zOrder = $state<string[]>([]);
+  function bringToFront(id: string) {
+    // Filter out the id (idempotent if not in list), then append.
+    zOrder = [...zOrder.filter((x) => x !== id), id];
+  }
   function onNodePointerDown(ev: PointerEvent, id: string) {
     if (ev.button !== 0) return;
+    bringToFront(id);
     dragging = id;
     dragStart = { x: ev.clientX, y: ev.clientY };
     dragOrig = graph.layout[id] ?? { x: 0, y: 0 };
@@ -256,6 +267,21 @@
    *  wire's endpoint always lands on the visual chip socket regardless of
    *  pan/zoom. The chip's group is translated to paramPos, and the socket
    *  inside that group sits at (PARAM_W + CARD_PAD + 4, PARAM_H / 2).  */
+  /** Pull every `p.<ident>` reference out of an expression string. Returns
+   *  unique names in first-occurrence order. Used to render wires from the
+   *  referenced param chips into the arg slot when arg.kind === 'expr'. */
+  function extractParamRefs(expr: string): string[] {
+    if (!expr) return [];
+    const re = /\bp\.([a-zA-Z_]\w*)\b/g;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(expr)) !== null) {
+      const name = m[1]!;
+      if (!seen.has(name)) { seen.add(name); out.push(name); }
+    }
+    return out;
+  }
   function paramSocketPos(name: string, i: number): { x: number; y: number } {
     const p = paramPos(name, i);
     const vx = p.x + PARAM_W + CARD_PAD + 4;
@@ -578,10 +604,54 @@
   function onArgExprEdit(id: string, key: string, expr: string) {
     graph = setCallArg(graph, id, key, asExpr(expr));
   }
+
+  // ─── multi-source ƒ-expression popup editor ─────────────────────────────
+  // When an arg's kind === 'expr' AND the expression references 2+ distinct
+  // params, the inline text input is too cramped to author cleanly. The
+  // collapsed chip — "ƒ(p.od, p.wall)" — opens this popup with a bigger
+  // text area + click-to-insert chips for every declared param. Applied
+  // value commits back to the arg via setCallArg(asExpr(...)).
+  let argExprPop = $state<{ callId: NodeId; key: string; draft: string; x: number; y: number } | null>(null);
+  function openArgExprPop(ev: MouseEvent, callId: NodeId, key: string, currentExpr: string) {
+    ev.stopPropagation();
+    argExprPop = { callId, key, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+  }
+  function closeArgExprPop() { argExprPop = null; }
+  function applyArgExprPop() {
+    if (!argExprPop) return;
+    graph = setCallArg(graph, argExprPop.callId, argExprPop.key, asExpr(argExprPop.draft));
+    argExprPop = null;
+  }
+  function insertParamIntoDraft(name: string) {
+    if (!argExprPop) return;
+    const ref = `p.${name}`;
+    const draft = argExprPop.draft;
+    // Append with a space if there's existing text + the last char isn't whitespace.
+    const sep = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
+    argExprPop = { ...argExprPop, draft: draft + sep + ref };
+  }
   function onTransformAxis(id: string, axis: 0 | 1 | 2, value: number) {
     graph = setTransformAxis(graph, id, axis, value);
   }
   function resetGraph() { graph = newGraph(); }
+
+  // ─── auto-layout (Phase 20) ────────────────────────────────────────────
+  // 📐 Auto-layout runs the heuristic layered algorithm in
+  // src/lib/cad/composition-layout.ts → rearranges every node by depth
+  // column with a barycenter tiebreaker (cheap, deterministic, ~120 LOC,
+  // zero deps). One-step undo restores the prior layout.
+  //
+  // Phase 21 (deferred) will swap in dagre when graphs grow past ~15 nodes.
+  let undoLayout = $state<Record<string, { x: number; y: number }> | null>(null);
+  function autoLayout() {
+    undoLayout = { ...graph.layout };
+    graph = autoLayoutGraph(graph);
+  }
+  function undoAutoLayout() {
+    if (!undoLayout) return;
+    graph = { ...graph, layout: { ...undoLayout } };
+    undoLayout = null;
+  }
 
   // ─── inline transforms on Call cards ────────────────────────────────────
   function toggleInlineTransform(callId: NodeId, kind: 'mv' | 'rot') {
@@ -690,7 +760,23 @@
   // (those render inline inside their Call's card). The ROOT list IS visible
   // now — it shows up as the ▶ Output card so the user can see + curate what
   // the function returns. Non-root lists/stacks/groups also render as cards.
-  let allNodes = $derived(Object.values(graph.nodes).filter((n) => !isInlineWrapper(n.id)));
+  let allNodes = $derived.by(() => {
+    const all = Object.values(graph.nodes).filter((n) => !isInlineWrapper(n.id));
+    // Z-order sort: nodes in `zOrder` render AFTER the rest, in the order they
+    // were brought to front. SVG paints later elements ON TOP — that's how
+    // we get click-to-front. Unlisted nodes keep their natural insertion order.
+    if (zOrder.length === 0) return all;
+    const zMap = new Map<string, number>();
+    zOrder.forEach((id, i) => zMap.set(id, i));
+    return [...all].sort((a, b) => {
+      const aZ = zMap.get(a.id);
+      const bZ = zMap.get(b.id);
+      if (aZ === undefined && bZ === undefined) return 0;
+      if (aZ === undefined) return -1;
+      if (bZ === undefined) return 1;
+      return aZ - bZ;
+    });
+  });
   /** Excludes the root list — that's the always-present ▶ Output card,
    *  not a user-dropped node. Used by the status bar + empty-canvas hint. */
   let visibleNodeCount = $derived(allNodes.filter((n) => n.id !== graph.root).length);
@@ -723,6 +809,12 @@
     <button class="ge-btn" type="button" onclick={openPicker}>+ Drop</button>
     <button class="ge-btn save" type="button" disabled={saveBusy} onclick={saveGraph}>{saveBusy ? '…' : '💾 Save'}</button>
     <button class="ge-btn ghost" type="button" onclick={resetGraph}>Reset</button>
+    <button class="ge-btn ghost auto-layout" type="button" onclick={autoLayout}
+      title="Rearrange nodes left-to-right by depth (Phase 20 heuristic)">📐 Auto-layout</button>
+    {#if undoLayout}
+      <button class="ge-btn ghost undo-layout" type="button" onclick={undoAutoLayout}
+        title="Restore the prior layout">↶ Undo</button>
+    {/if}
     {#if saveStatus}<span class="ge-save-stat">{saveStatus}</span>{/if}
     <span class="ge-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
   </header>
@@ -770,12 +862,24 @@
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === (v as any).param)}
                   {#if pIdx >= 0}
                     {@const ps = paramSocketPos((v as any).param, pIdx)}
-                    {@const psx = ps.x}
-                    {@const psy = ps.y}
                     {@const pos = nodePos(n.id)}
                     {@const argY = pos.y + 36 + 14 + argIdx * 22}
-                    <path class="ge-wire param" d={bezier(psx, psy, pos.x, argY)}/>
+                    <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, argY)}/>
                   {/if}
+                {:else if (v as any).kind === 'expr'}
+                  <!-- Expression arg — draw a wire from EACH referenced
+                       p.<name> chip to this slot. Multi-source = visually
+                       obvious; styled .expr to distinguish from direct
+                       param wires (amber dashed vs orange dashed). -->
+                  {#each extractParamRefs((v as any).expr) as refName (refName)}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                    {#if pIdx >= 0}
+                      {@const ps = paramSocketPos(refName, pIdx)}
+                      {@const pos = nodePos(n.id)}
+                      {@const argY = pos.y + 36 + 14 + argIdx * 22}
+                      <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, argY)}/>
+                    {/if}
+                  {/each}
                 {/if}
               {/each}
               <!-- Inline transform axis wires (mv/rot wrapping this Call) -->
@@ -789,12 +893,20 @@
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
                     {#if pIdx >= 0}
                       {@const ps = paramSocketPos((mvN.offset[i] as any).param, pIdx)}
-                      {@const psx = ps.x}
-                      {@const psy = ps.y}
                       {@const pos = nodePos(n.id)}
                       {@const axisY = pos.y + cSize.h + 4 + 18 + i * 18}
-                      <path class="ge-wire param" d={bezier(psx, psy, pos.x, axisY)}/>
+                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, axisY)}/>
                     {/if}
+                  {:else if (mvN.offset[i] as any).kind === 'expr'}
+                    {#each extractParamRefs((mvN.offset[i] as any).expr) as refName (refName)}
+                      {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                      {#if pIdx >= 0}
+                        {@const ps = paramSocketPos(refName, pIdx)}
+                        {@const pos = nodePos(n.id)}
+                        {@const axisY = pos.y + cSize.h + 4 + 18 + i * 18}
+                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, axisY)}/>
+                      {/if}
+                    {/each}
                   {/if}
                 {/each}
               {/if}
@@ -805,12 +917,20 @@
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
                     {#if pIdx >= 0}
                       {@const ps = paramSocketPos((rotN.rot[i] as any).param, pIdx)}
-                      {@const psx = ps.x}
-                      {@const psy = ps.y}
                       {@const pos = nodePos(n.id)}
                       {@const rotY = pos.y + cSize.h + 4 + (inlMv ? 80 : 0) + 18 + i * 18}
-                      <path class="ge-wire param" d={bezier(psx, psy, pos.x, rotY)}/>
+                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, rotY)}/>
                     {/if}
+                  {:else if (rotN.rot[i] as any).kind === 'expr'}
+                    {#each extractParamRefs((rotN.rot[i] as any).expr) as refName (refName)}
+                      {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                      {#if pIdx >= 0}
+                        {@const ps = paramSocketPos(refName, pIdx)}
+                        {@const pos = nodePos(n.id)}
+                        {@const rotY = pos.y + cSize.h + 4 + (inlMv ? 80 : 0) + 18 + i * 18}
+                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, rotY)}/>
+                      {/if}
+                    {/each}
                   {/if}
                 {/each}
               {/if}
@@ -923,15 +1043,33 @@
                               onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
                           </span>
                         {:else}
-                          <span class="ge-arg-cell">
-                            <input class="ge-arg-input expr" type="text"
-                              placeholder="e.g. p.od / 2"
-                              value={(v as any).expr}
-                              oninput={(e) => onArgExprEdit(n.id, k, (e.target as HTMLInputElement).value)}
-                            />
-                            <button class="ge-arg-fx on" type="button" title="Back to literal"
-                              onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
-                          </span>
+                          {@const expr = (v as any).expr ?? ''}
+                          {@const refs = extractParamRefs(expr)}
+                          {#if refs.length >= 2}
+                            <!-- Multi-source ƒ chip — too dense for inline editing; click to open popup. -->
+                            <span class="ge-arg-cell">
+                              <!-- svelte-ignore a11y_click_events_have_key_events -->
+                              <span class="ge-arg-fnchip" role="button" tabindex="-1"
+                                title={`Click to edit · expression: ${expr}`}
+                                onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>
+                                ƒ(<span class="ge-arg-fnchip-refs">{refs.map((r) => 'p.' + r).join(', ')}</span>) ✎
+                              </span>
+                              <button class="ge-arg-fx on" type="button" title="Back to literal"
+                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                            </span>
+                          {:else}
+                            <span class="ge-arg-cell">
+                              <input class="ge-arg-input expr" type="text"
+                                placeholder="e.g. p.od / 2"
+                                value={expr}
+                                oninput={(e) => onArgExprEdit(n.id, k, (e.target as HTMLInputElement).value)}
+                              />
+                              <button class="ge-arg-fx on" type="button" title="Open expression editor"
+                                onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
+                              <button class="ge-arg-fx on" type="button" title="Back to literal"
+                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                            </span>
+                          {/if}
                         {/if}
                       </div>
                     {/each}
@@ -1308,6 +1446,38 @@
         onclick={() => unwireArgToLiteral(wirePop!.callId, wirePop!.key)}>← back to literal</button>
     </div>
   {/if}
+
+  {#if argExprPop}
+    <!-- ƒ-expression editor popup — wider input + click-to-insert chips for
+         every declared param. Used when an arg references 2+ params (the
+         inline text box becomes too cramped to read). -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeArgExprPop}></div>
+    <div class="ge-wire-pop ge-expr-pop"
+      style="left: {Math.min(argExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {argExprPop.y}px">
+      <div class="ge-wire-head">ƒ <code>{argExprPop.key}</code> expression</div>
+      <textarea class="ge-expr-textarea" rows="3"
+        placeholder="e.g. p.od / 2 - p.wall"
+        value={argExprPop.draft}
+        oninput={(e) => { if (argExprPop) argExprPop = { ...argExprPop, draft: (e.target as HTMLTextAreaElement).value }; }}></textarea>
+      <div class="ge-expr-pop-row">
+        <span class="ge-expr-pop-label">insert:</span>
+        {#each paramEntries as [name, p] (name)}
+          <button class="ge-expr-pop-chip" type="button"
+            onclick={() => insertParamIntoDraft(name)}
+            title={`Append p.${name} to the expression (default ${(p as any).default})`}>p.{name}</button>
+        {/each}
+        {#if paramEntries.length === 0}
+          <span class="ge-empty">no params declared</span>
+        {/if}
+      </div>
+      <div class="ge-expr-pop-row right">
+        <button class="ge-param-add ghost" type="button" onclick={closeArgExprPop}>cancel</button>
+        <button class="ge-param-add" type="button" onclick={applyArgExprPop}>apply</button>
+      </div>
+    </div>
+  {/if}
   {#if pickerOpen}
     <div class="ge-picker-shade" onclick={closePicker}></div>
     <div class="ge-picker">
@@ -1446,6 +1616,10 @@
   .ge-wire.arg { stroke: #d97706; }
   .ge-wire.child { stroke: #6d28d9; }
   .ge-wire.param { stroke: #d97706; stroke-dasharray: 2 2; opacity: 0.85; }
+  /* Expression wires — multi-source. Same color as direct-param wires
+     but a longer dash so it reads as "composed via expression" not
+     "wired directly". Helps when both wire types meet at the same slot. */
+  .ge-wire.param.expr { stroke: #b45309; stroke-dasharray: 5 3; opacity: 0.75; }
   .ge-wire.in-flight { stroke: #15803d; stroke-dasharray: 6 4; }
   /* output: piping a node into a container's slot. Green = "this is what the
      function returns / what gets stacked". root variant is slightly thicker
@@ -1497,6 +1671,19 @@
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 
   .ge-picker-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.2); z-index: 100; }
+  /* Multi-source ƒ-chip — shown on a Call's arg row when expr references 2+ params */
+  .ge-arg-fnchip { display: inline-flex; align-items: center; gap: 2px; flex: 1 1 auto; padding: 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #f59e0b; border-radius: 9999px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.12s; }
+  .ge-arg-fnchip:hover { background: #fde68a; }
+  .ge-arg-fnchip-refs { color: #b45309; font-weight: 500; }
+  /* ƒ expression popup */
+  .ge-expr-pop { min-width: 420px; max-width: 460px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .ge-expr-textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; resize: vertical; background: #faf5ff; color: #5b21b6; }
+  .ge-expr-textarea:focus { outline: 1px solid #6d28d9; background: #fff; }
+  .ge-expr-pop-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; }
+  .ge-expr-pop-row.right { justify-content: flex-end; gap: 8px; }
+  .ge-expr-pop-label { font: 11px Arial; color: #6b7280; margin-right: 4px; }
+  .ge-expr-pop-chip { font: 600 11px ui-monospace, monospace; color: #78350f; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 4px; padding: 2px 7px; cursor: pointer; transition: background 0.1s; }
+  .ge-expr-pop-chip:hover { background: #fde68a; }
   .ge-wire-shade { position: fixed; inset: 0; background: transparent; z-index: 99; }
   .ge-wire-pop { position: fixed; min-width: 200px; background: #fff; border: 1px solid #fbbf24; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); padding: 4px 0; z-index: 100; }
   .ge-wire-head { padding: 6px 10px; font: 600 11px Arial; color: #78350f; border-bottom: 1px solid #fef3c7; }

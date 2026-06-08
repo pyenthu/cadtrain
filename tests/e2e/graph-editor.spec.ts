@@ -1112,8 +1112,12 @@ test.describe('graph-editor — phase 18: layout persists across reload', () => 
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
 
     // 2. Drag the FIRST Call far to the right (+ 300, + 80). The default
-    //    grid would have placed it at x≈80; we'll move it to ~380.
-    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0);
+    //    grid would have placed it at x≈80; we'll move it to ~380. Target by
+    //    alias text — z-order moves nodes around in DOM on pointerdown
+    //    (click-to-front), so nth() picks a different element post-drag.
+    //    Filtering by `A · dt_shaft` is stable regardless of render order.
+    const callA = page.locator('g.ge-node')
+      .filter({ has: page.locator('text.ge-node-title', { hasText: 'A · dt_shaft' }) });
     const before = await callA.boundingBox();
     if (!before) throw new Error('callA has no bounding box');
     await page.mouse.move(before.x + before.width / 2, before.y + 12);
@@ -1136,9 +1140,10 @@ test.describe('graph-editor — phase 18: layout persists across reload', () => 
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
 
     // 5. The reloaded card lands at (about) the same x — NOT back at the
-    //    default-grid position. Tolerance ±25 px to absorb any sub-pixel
-    //    rounding / scroll differences.
-    const reloaded = await page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0).boundingBox();
+    //    default-grid position. Same alias-based selector to survive z-order.
+    const reloaded = await page.locator('g.ge-node')
+      .filter({ has: page.locator('text.ge-node-title', { hasText: 'A · dt_shaft' }) })
+      .boundingBox();
     if (!reloaded) throw new Error('reloaded callA has no bounding box');
     expect(Math.abs(reloaded.x - xAfterDrag)).toBeLessThan(25);
 
@@ -1241,5 +1246,85 @@ test.describe('graph-editor — phase 7: /vocab launches the graph editor', () =
     const hasNodes  = await page.locator('.ge-node-bg.call').count();
     const hasBanner = await page.locator('.ge-legacy-banner').count();
     expect(hasNodes + hasBanner).toBeGreaterThan(0);
+  });
+});
+
+// ─── Phase 20 — auto-layout button arranges nodes by depth ───────────────
+//
+// Heuristic layered layout (src/lib/cad/composition-layout.ts) runs on
+// click and rearranges every node by topological depth column. Within
+// each column, barycenter sort minimises wire crossings. Pinned nodes are
+// preserved (the editor doesn't pin anything yet, so we just verify the
+// algorithm's left-to-right shape from a default-grid start).
+//
+// One-step undo restores the prior layout via a client-side snapshot.
+
+test.describe('graph-editor — phase 20: auto-layout', () => {
+  test('Auto-layout button arranges nodes left-to-right by depth', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase20_auto_layout');
+
+    // 1. Drop 2 Calls + 1 subtract method, wire A → m.obj + B → m.arg, so
+    //    the graph has depth-0 calls + depth-1 method + depth-2 root.
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await pickCsg(page, 'subtract');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
+
+    const callA  = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0);
+    const callB  = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(1);
+    const method = page.locator('g.ge-node:has(rect.ge-node-bg.method)').first();
+    const aOut   = callA.locator('circle.ge-sock.out:not(.in)').first();
+    const bOut   = callB.locator('circle.ge-sock.out:not(.in)').first();
+    const mObj   = method.locator('circle.ge-sock.in.obj').first();
+    const mArg   = method.locator('circle.ge-sock.in.arg').first();
+    await dragBetween(page, aOut, mObj);
+    await dragBetween(page, bOut, mArg);
+
+    // 2. Capture pre-layout x positions for the Undo round-trip.
+    const beforeA = await callA.boundingBox();
+    const beforeB = await callB.boundingBox();
+    const beforeM = await method.boundingBox();
+    if (!beforeA || !beforeB || !beforeM) throw new Error('pre-layout bbox missing');
+
+    // 3. Click Auto-layout. The button is in the header bar.
+    await page.getByRole('button', { name: /Auto-layout/ }).click();
+
+    // 4. The two Calls should share a column (same x within tolerance) and
+    //    the method should sit to the right of either Call. Output (root list,
+    //    rendered as the ▶ Output card) should be the rightmost element.
+    const afterA = await callA.boundingBox();
+    const afterB = await callB.boundingBox();
+    const afterM = await method.boundingBox();
+    if (!afterA || !afterB || !afterM) throw new Error('post-layout bbox missing');
+
+    // Both Calls in the same column — strict equality after autoLayoutGraph's
+    // depth-column placement, but allow 5 px tolerance for any sub-pixel
+    // rendering drift (SVG zoom + transform rounding).
+    expect(Math.abs(afterA.x - afterB.x)).toBeLessThan(5);
+    // Method downstream (next column to the right). The Phase 20 default
+    // columnGap is 280 px; the method should be at least ~200 px to the
+    // right of the calls' column.
+    expect(afterM.x).toBeGreaterThan(afterA.x + 150);
+
+    // 5. Find the ▶ Output card (root list, container.root rect) and assert
+    //    it sits at the highest x of all the canvas nodes — depth = max + 1.
+    const outputRect = page.locator('g.ge-node:has(rect.ge-node-bg.container.root)').first();
+    const outputBox  = await outputRect.boundingBox();
+    if (!outputBox) throw new Error('▶ Output card bbox missing');
+    expect(outputBox.x).toBeGreaterThan(afterM.x);
+
+    // 6. ↶ Undo button is now visible. Click it — the prior layout returns.
+    const undoBtn = page.getByRole('button', { name: /Undo/ });
+    await expect(undoBtn).toBeVisible();
+    await undoBtn.click();
+
+    // 7. After undo, A is back where it started (within tolerance), and the
+    //    Undo button has disappeared.
+    const restoredA = await callA.boundingBox();
+    if (!restoredA) throw new Error('restored bbox missing');
+    expect(Math.abs(restoredA.x - beforeA.x)).toBeLessThan(5);
+    await expect(undoBtn).toHaveCount(0);
   });
 });
