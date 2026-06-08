@@ -82,14 +82,18 @@ export type MethodNode = {
 export type MvNode  = { id: NodeId; type: 'mv';  child: NodeId; offset: [ArgValue, ArgValue, ArgValue] };
 export type RotNode = { id: NodeId; type: 'rot'; child: NodeId; rot:    [ArgValue, ArgValue, ArgValue] };
 
-/** Repeat — instantiate the child N times + stack them end-to-end via
- *  manifold-helpers.stack(). The emit pattern is:
- *    stack(Array.from({length: <count>}, () => <child expr>))
- *  count is an ArgValue so it can be a literal (5), a param (p.n),
- *  or an expression (p.layers * 2). Mate defaults to 'tail(prev)' —
- *  the natural drilling-string idiom that stack() already encodes.
- *  child is a single NodeId (any node type can be the repeating unit). */
-export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue };
+/** Repeat — instantiate the child N times. The `op` decides how the N
+ *  copies are combined:
+ *    'stack' (default) — end-to-end mate via manifold-helpers.stack().
+ *      Emit: stack(Array.from({length: <count>}, () => <child>))
+ *    'list'  — bare array of N instances; the caller decides what to do.
+ *      Emit: Array.from({length: <count>}, () => <child>)
+ *    'place' — combined without mating (overlapping at origin).
+ *      Emit: place(Array.from({length: <count>}, () => <child>))
+ *  count is an ArgValue (literal, param, or expression). child is a single
+ *  NodeId (any node type can be the repeating unit). */
+export type RepeatOp = 'stack' | 'list' | 'place';
+export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue; op?: RepeatOp };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode;
 
@@ -469,6 +473,14 @@ export function setRepeatCount(graph: Graph, repeatId: NodeId, count: ArgValue):
   const node = graph.nodes[repeatId];
   if (!node || node.type !== 'repeat') return graph;
   const updated: RepeatNode = { ...node, count };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Choose how the Repeat's N copies are combined (stack / list / place). */
+export function setRepeatOp(graph: Graph, repeatId: NodeId, op: RepeatOp): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'repeat') return graph;
+  const updated: RepeatNode = { ...node, op };
   return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
 }
 

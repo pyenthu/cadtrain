@@ -66,6 +66,10 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // is the output, not [A, B, cut]. Singleton outputs unwrap to the bare
   // value (no [x] wrapper).
   const consumed = computeConsumedSet(graph);
+  // List producers — nodes whose emitted value is a bare JS array (not a
+  // Manifold). Used by stack to spread (...) them into the outer array,
+  // so a Repeat-with-op-list child of a Stack flattens cleanly.
+  const listProducers = computeListProducers(graph);
 
   const lines: string[] = [];
   let returnExpr = 'undefined';
@@ -87,7 +91,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
       else                         returnExpr = `[${exprs.join(', ')}]`;
       continue;
     }
-    const expr = emitNodeExpr(node, varNames);
+    const expr = emitNodeExpr(node, varNames, listProducers);
     if (expr == null) continue;
     lines.push(`  const ${v} = ${expr};`);
   }
@@ -127,7 +131,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
 
 // ─── node → expression ────────────────────────────────────────────────────
 
-function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>): string | null {
+function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProducers?: Set<NodeId>): string | null {
   switch (node.type) {
     case 'call':
       return emitCallExpr(node.src, node.args);
@@ -138,7 +142,16 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>): string | 
       // Sequential stack — mate via tail/head datum (manifold-helpers.stack
       // takes an ARRAY of children, not positional args; see
       // src/lib/cad/manifold-helpers.ts line 308: `function stack(children: any[])`).
-      const args = node.children.map((c) => varNames.get(c) ?? '/* missing */').join(', ');
+      //
+      // Mixed-input support: when a child is a Repeat with op='list' it
+      // produces a bare array; we SPREAD it (...) into the outer array so
+      // stack receives one flat list. Single items emit bare; spread
+      // emits with the leading `...`. Lets the user mix single parts +
+      // list-producing Repeats in the same stack (e.g. [box, ...joints, pin]).
+      const args = node.children.map((c) => {
+        const cn = listProducers?.has(c) ? `...${varNames.get(c) ?? '/* missing */'}` : (varNames.get(c) ?? '/* missing */');
+        return cn;
+      }).join(', ');
       return `stack([${args}])`;
     }
     case 'method': {
@@ -157,14 +170,20 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>): string | 
       return `rot(${child}, [${r}])`;
     }
     case 'repeat': {
-      // Instantiate the child N times + mate end-to-end via stack().
-      // Re-emits the child expression INSIDE the Array.from callback so each
-      // iteration produces a fresh instance — the parent's const for the
-      // child var still exists (it's the prototype) but the repeat's emit
-      // wraps the actual expression again. Pattern matches the K.44 recipe.
+      // Instantiate the child N times. The `op` field decides how the N
+      // copies are combined:
+      //   'stack' (default) — mate end-to-end via stack()
+      //   'list'            — bare array; caller decides
+      //   'place'           — combine without mating (overlap at origin)
+      // Default 'stack' so existing graphs without an op field keep the
+      // historical drilling-string idiom (every BUILD_ORDER part works).
       const count = emitValueExpr(node.count);
       const child = varNames.get(node.child) ?? '/* missing */';
-      return `stack(Array.from({ length: ${count} }, () => ${child}))`;
+      const array = `Array.from({ length: ${count} }, () => ${child})`;
+      const op = node.op ?? 'stack';
+      if (op === 'list')  return array;
+      if (op === 'place') return `place(${array})`;
+      return `stack(${array})`;
     }
   }
 }
@@ -197,6 +216,19 @@ function emitValueExpr(v: ArgValue): string {
 // container membership is structural, not a value-consumption. The set is
 // used to filter the root list's children: only unconsumed nodes are the
 // composition's outputs.
+
+/** Compute the set of nodes whose emitted value is a bare JS array.
+ *  Currently: Repeat with op === 'list'. Anything else returns a
+ *  Manifold (the leaf) or another array-producer that gets unwrapped
+ *  upstream. Used by stack to know when to `...spread` a child. */
+function computeListProducers(graph: Graph): Set<NodeId> {
+  const set = new Set<NodeId>();
+  for (const n of Object.values(graph.nodes)) {
+    if (n.type === 'repeat' && (n as any).op === 'list') set.add(n.id);
+    // (Future: bare list nodes that aren't the root list, group containers, etc.)
+  }
+  return set;
+}
 
 function computeConsumedSet(graph: Graph): Set<NodeId> {
   const consumed = new Set<NodeId>();

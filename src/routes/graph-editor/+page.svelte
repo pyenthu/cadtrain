@@ -34,6 +34,7 @@
     addRepeatPlaceholder,
     setRepeatChild,
     setRepeatCount,
+    setRepeatOp,
     appendContainerChild,
     removeContainerChildAt,
     setCallArg,
@@ -386,7 +387,7 @@
     }
     if (node.type === 'method') return { w: 180, h: 100 };
     if (node.type === 'mv' || node.type === 'rot') return { w: 200, h: 120 };
-    if (node.type === 'repeat') return { w: 200, h: 100 };
+    if (node.type === 'repeat') return { w: 220, h: 130 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
       const slots = (node.children?.length ?? 0) + 1;
@@ -588,6 +589,26 @@
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
   function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
+
+  // ─── stack/list reorder popover ─────────────────────────────────────────
+  // ⚙ button on container cards (stack / list / group / root output) opens
+  // a popover showing each child as a row with ▲ / ▼ to reorder. Mutates
+  // container.children directly; the visible slots + wires re-derive.
+  let containerPop = $state<{ containerId: NodeId; x: number; y: number } | null>(null);
+  function openContainerPop(ev: MouseEvent, containerId: NodeId) {
+    ev.stopPropagation();
+    containerPop = { containerId, x: ev.clientX, y: ev.clientY };
+  }
+  function closeContainerPop() { containerPop = null; }
+  function moveChild(containerId: NodeId, index: number, delta: -1 | 1) {
+    const node = graph.nodes[containerId] as any;
+    if (!node || !Array.isArray(node.children)) return;
+    const newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= node.children.length) return;
+    const newChildren = [...node.children];
+    [newChildren[index], newChildren[newIndex]] = [newChildren[newIndex]!, newChildren[index]!];
+    graph = { ...graph, nodes: { ...graph.nodes, [containerId]: { ...node, children: newChildren } } };
+  }
 
   // ─── dev-server restart from the bake error ─────────────────────────────
   // POSTs to /api/__dev_restart which spawns a detached restart of `bun run
@@ -1384,18 +1405,20 @@
               {:else if n.type === 'repeat'}
                 {@const rep = n as any}
                 {@const countLiteral = rep.count?.kind === 'literal' ? Number(rep.count.value) : 1}
+                {@const repOp = (rep.op ?? 'stack') as 'stack' | 'list' | 'place'}
+                {@const opIcon = repOp === 'stack' ? '≣' : repOp === 'place' ? '⊞' : '[ ]'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg repeat"
                   width={size.w} height={size.h} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="14" y="22" class="ge-node-title">↻ Repeat</text>
+                <text x="14" y="22" class="ge-node-title">↻ Repeat <tspan class="ge-repeat-op-badge" dx="6">{opIcon} {repOp}</tspan></text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <foreignObject x="20" y="40" width={size.w - 24} height="36">
+                <foreignObject x="20" y="40" width={size.w - 24} height="68">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
                     <div class="ge-arg-row">
                       <span class="ge-arg-key">count</span>
@@ -1423,6 +1446,25 @@
                         {/if}
                       </span>
                     </div>
+                    <!-- op selector — explicit choice of how the N copies
+                         are combined. stack (mate end-to-end, the default)
+                         · list (bare array, caller decides) · place
+                         (combined without mating). Source emit switches
+                         on this; UI shows the active choice in the title. -->
+                    <div class="ge-arg-row">
+                      <span class="ge-arg-key">→ op</span>
+                      <span class="ge-repeat-op-group">
+                        <button class="ge-repeat-op-btn" class:active={repOp === 'stack'}
+                          type="button" title="stack(Array.from(...)) — mate end-to-end"
+                          onclick={() => { graph = setRepeatOp(graph, n.id, 'stack'); }}>≣ stack</button>
+                        <button class="ge-repeat-op-btn" class:active={repOp === 'list'}
+                          type="button" title="Array.from(...) — bare list"
+                          onclick={() => { graph = setRepeatOp(graph, n.id, 'list'); }}>[ ] list</button>
+                        <button class="ge-repeat-op-btn" class:active={repOp === 'place'}
+                          type="button" title="place(Array.from(...)) — overlap at origin"
+                          onclick={() => { graph = setRepeatOp(graph, n.id, 'place'); }}>⊞ place</button>
+                      </span>
+                    </div>
                   </div>
                 </foreignObject>
                 <!-- Child input socket — drop any node's output here to repeat it. -->
@@ -1447,6 +1489,12 @@
                   onpointerup={onNodePointerUp}
                 />
                 <text x="14" y="22" class="ge-node-title">{title}</text>
+                <!-- ⚙ opens the reorder popover. Available on root too — the
+                     Output card benefits from manual ordering just as much. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={isRoot ? size.w - 14 : size.w - 32} y="22"
+                  class="ge-container-cog"
+                  onpointerdown={(ev) => openContainerPop(ev, n.id)}>⚙</text>
                 {#if !isRoot}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
@@ -1705,6 +1753,59 @@
       </div>
     </div>
   {/if}
+
+  {#if containerPop}
+    {@const cnode = graph.nodes[containerPop.containerId] as any}
+    {@const ctitle = cnode?.id === graph.root ? '▶ Output' : cnode?.type === 'stack' ? '↕ Stack' : cnode?.type === 'group' ? '{} Group' : '[ ] List'}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeContainerPop}></div>
+    <div class="ge-wire-pop ge-container-pop"
+      style="left: {Math.min(containerPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 380)}px; top: {containerPop.y}px">
+      <div class="ge-wire-head">{ctitle} · order</div>
+      {#if (cnode?.children ?? []).length === 0}
+        <div class="ge-empty">no children yet — drag-wire something into this card</div>
+      {:else}
+        <table class="ge-container-table">
+          <thead>
+            <tr><th>#</th><th>node</th><th>kind</th><th>order</th><th></th></tr>
+          </thead>
+          <tbody>
+            {#each cnode.children as childId, i (childId)}
+              {@const cn = graph.nodes[childId]}
+              {@const kind = cn?.type === 'repeat' && (cn as any).op === 'list' ? 'list (×N)' : cn?.type ?? '?'}
+              {@const label = cn?.type === 'call' ? `${(cn as any).alias} · ${(cn as any).src}`
+                : cn?.type === 'method' ? `${(cn as any).op}(…)`
+                : cn?.type === 'mv' ? 'mv(…)'
+                : cn?.type === 'rot' ? 'rot(…)'
+                : cn?.type === 'stack' ? 'stack(…)'
+                : cn?.type === 'repeat' ? `repeat × ${(cn as any).count?.kind === 'literal' ? (cn as any).count.value : '…'}`
+                : '(missing)'}
+              <tr>
+                <td class="ge-cp-idx">{i + 1}</td>
+                <td class="ge-cp-name">{label}</td>
+                <td class="ge-cp-kind">{kind}</td>
+                <td class="ge-cp-order">
+                  <button type="button" class="ge-cp-arrow" title="Move up" disabled={i === 0}
+                    onclick={() => moveChild(containerPop!.containerId, i, -1)}>▲</button>
+                  <button type="button" class="ge-cp-arrow" title="Move down" disabled={i === cnode.children.length - 1}
+                    onclick={() => moveChild(containerPop!.containerId, i, 1)}>▼</button>
+                </td>
+                <td class="ge-cp-del">
+                  <button type="button" class="ge-cp-remove" title="Remove from container"
+                    onclick={() => { graph = removeContainerChildAt(graph, containerPop!.containerId, i); }}>×</button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+      <div class="ge-expr-pop-row right">
+        <button class="ge-param-add" type="button" onclick={closeContainerPop}>done</button>
+      </div>
+    </div>
+  {/if}
+
   {#if pickerOpen}
     <div class="ge-picker-shade" onclick={closePicker}></div>
     <div class="ge-picker">
@@ -1787,8 +1888,30 @@
   .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
   /* Repeat × N — distinct color so it reads as "iteration", not "container". */
   .ge-node-bg.repeat { fill: #fdf2f8; stroke: #be185d; stroke-width: 2; }
+  .ge-repeat-op-badge { font: 600 10px ui-monospace, monospace; fill: #be185d; }
+  .ge-repeat-op-group { display: inline-flex; gap: 2px; flex: 1 1 auto; }
+  .ge-repeat-op-btn { flex: 1 1 0; padding: 1px 4px; font: 600 9px Arial; background: #fff; color: #831843; border: 1px solid #fbcfe8; border-radius: 3px; cursor: pointer; transition: background 0.1s; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ge-repeat-op-btn:hover { background: #fbcfe8; }
+  .ge-repeat-op-btn.active { background: #be185d; color: #fff; border-color: #9d174d; }
   .ge-container-slot-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-container-slot-x:hover { fill: #7f1d1d; }
+  .ge-container-cog { font: 13px Arial; fill: #047857; cursor: pointer; user-select: none; }
+  .ge-container-cog:hover { fill: #065f46; }
+  /* Reorder popover table */
+  .ge-container-pop { min-width: 340px; max-width: 480px; padding: 8px 6px 4px; }
+  .ge-container-table { width: 100%; border-collapse: collapse; font: 11px Arial; }
+  .ge-container-table th { text-align: left; padding: 4px 6px; font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; }
+  .ge-container-table td { padding: 4px 6px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  .ge-cp-idx { width: 24px; color: #9ca3af; font: 600 11px ui-monospace, monospace; }
+  .ge-cp-name { font: 600 11px ui-monospace, monospace; color: #0c4a6e; }
+  .ge-cp-kind { font: 10px ui-monospace, monospace; color: #6b7280; }
+  .ge-cp-order { width: 56px; white-space: nowrap; }
+  .ge-cp-arrow { background: transparent; border: 1px solid #d1d5db; color: #6b7280; padding: 1px 5px; font: 10px Arial; cursor: pointer; border-radius: 3px; margin-right: 2px; }
+  .ge-cp-arrow:hover:not(:disabled) { background: #f3f4f6; color: #111827; }
+  .ge-cp-arrow:disabled { opacity: 0.3; cursor: default; }
+  .ge-cp-del { width: 24px; text-align: right; }
+  .ge-cp-remove { background: transparent; border: 0; font: 14px Arial; color: #b91c1c; cursor: pointer; padding: 0 4px; }
+  .ge-cp-remove:hover { color: #7f1d1d; }
   .ge-sock-label.trail { fill: #9ca3af; font-style: italic; }
   .ge-sock.trail { fill: #fff; stroke: #9ca3af; stroke-dasharray: 2 2; }
   .ge-node-title { font: 600 12px Arial; fill: #0c4a6e; pointer-events: none; }

@@ -92,6 +92,47 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(r.source).toMatch(/return\s+\[A,\s*B\]/);
   });
 
+  it('stack spreads Repeat-with-op-list children (Step 7.6)', async () => {
+    const { addCall, addRepeat, setRepeatOp, asLiteral, addContainer, appendContainerChild } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    // dt_box single + Repeat × 3 of dt_joint (as a list) + dt_pin single,
+    // all stacked end-to-end. Expected emit: stack([A, ...R, B])
+    const a = addCall(g, 'dt_box');       g = a.graph;
+    const j = addCall(g, 'dt_joint');     g = j.graph;
+    const r = addRepeat(g, j.id, asLiteral(3)); g = r.graph;
+    g = setRepeatOp(g, r.id, 'list');
+    const b = addCall(g, 'dt_pin');       g = b.graph;
+    const s = addContainer(g, 'stack');   g = s.graph;
+    g = appendContainerChild(g, s.id, a.id);
+    g = appendContainerChild(g, s.id, r.id);
+    g = appendContainerChild(g, s.id, b.id);
+    const out = emitGraph(g, { id: 'tA' });
+    // Mixed single + spread list + single — exactly what the user asked for.
+    // Aliases are A=dt_box, B=dt_joint (inside Repeat), C=dt_pin (sequential).
+    expect(out.source).toMatch(/stack\(\[A,\s*\.\.\.\w+,\s*C\]\)/);
+  });
+
+  it('Repeat node emits switch on op: stack / list / place (Step 7.5)', async () => {
+    const { addCall, addRepeat, setRepeatOp, asLiteral } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const c = addCall(g, 'dt_joint'); g = c.graph;
+    // Default op === 'stack' (no op field present)
+    const r1 = addRepeat(g, c.id, asLiteral(3));
+    const out1 = emitGraph(r1.graph, { id: 'tA' });
+    expect(out1.source).toMatch(/stack\(\s*Array\.from\(/);
+    // op = list → bare Array.from
+    const g2 = setRepeatOp(r1.graph, r1.id, 'list');
+    const out2 = emitGraph(g2, { id: 'tB' });
+    expect(out2.source).toMatch(/Array\.from\(/);
+    expect(out2.source).not.toMatch(/stack\(\s*Array\.from\(/);
+    // op = place → place(Array.from(...))
+    const g3 = setRepeatOp(r1.graph, r1.id, 'place');
+    const out3 = emitGraph(g3, { id: 'tC' });
+    expect(out3.source).toMatch(/place\(\s*Array\.from\(/);
+  });
+
   it('adding meta.params row with no edges is structurally legal but orphan-detectable (Step 8)', () => {
     let g = newGraph();
     const a = addCall(g, 'dt_mule_shoe', { pipeOD: asLiteral(3.56) }); g = a.graph;
