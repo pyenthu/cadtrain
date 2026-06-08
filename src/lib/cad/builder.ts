@@ -423,6 +423,10 @@ export interface ComponentResult {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
   manifold: any;
+  /** True when finalize auto-skipped the cutaway CSG step (manifold too
+   *  large, > 30k tris). cutVC will be an empty BufferGeometry in that
+   *  case. The bake panel can surface a "cutaway disabled" hint. */
+  cutawaySkipped?: boolean;
 }
 
 /** Appearance pair carried on a primitive's `meta.material`. Mirrors
@@ -509,18 +513,31 @@ export function getRenderZScale(): number { return _renderZScale; }
  * the cutaway box and the maxOD-keyed classification work in the
  * geom's natural units.
  */
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto' }): ComponentResult {
   const scaled = _renderZScale === 1.0 ? manifold : manifold.scale([1, 1, _renderZScale]);
   const lut = parts?.active ? parts : undefined;
   // Tag the cut-box with SECTION_ID so the new cross-section faces it
   // creates are distinguishable (→ inner/section color) from the part
   // surfaces it reveals. Only matters on the color-by-source path.
   const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
+  // Auto-skip the cutaway when the manifold gets large. The cutVC step
+  // does a CSG subtract over the WHOLE manifold and scales super-linearly:
+  // 36k verts → 163 ms, 73k → 853 ms, 121k → 2.9 s, 181k → 5.9 s.
+  // Without this guard a Repeat × 15 of dt_joint takes ~6 s per re-bake,
+  // which the user reported as "quite slow beyond 3 or 4 Ns".
+  //
+  // Threshold lowered to 15k tris (~5 joints' worth) — anything beyond
+  // gets the fast path, and the on-demand /api/primitives/preview-cutaway
+  // endpoint computes cutVC lazily when the user toggles cutaway ON.
+  const skipCutaway = opts?.skipCutaway === true ? true
+    : opts?.skipCutaway === false ? false
+    : (typeof scaled.numTri === 'function' ? scaled.numTri() > 15_000 : false);
   return {
     full: manifoldToGeo(scaled, material, lut),
-    cutVC: manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut),
     manifold: scaled,
-  };
+    cutawaySkipped: skipCutaway,
+  } as ComponentResult & { cutawaySkipped: boolean };
 }
 
 export function buildComponent(componentId: string, params: Record<string, number>): ComponentResult {

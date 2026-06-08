@@ -28,6 +28,10 @@ export interface SerializedComponentResult {
 
 function serializeGeometry(geo: THREE.BufferGeometry): SerializedGeometry {
   const pos = geo.getAttribute('position');
+  // Empty BufferGeometry has no position attribute — finalizeManifold uses
+  // this for the auto-skipped cutaway (big repeated structures). Serialize
+  // as an empty positions array so the consumer can render nothing safely.
+  if (!pos) return { positions: [] };
   const out: SerializedGeometry = {
     positions: Array.from(pos.array as ArrayLike<number>),
   };

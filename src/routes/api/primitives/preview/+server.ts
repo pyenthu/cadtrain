@@ -24,7 +24,7 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway } = body ?? {};
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   // Args may be mixed number | string (string carries JSON-encoded
@@ -95,9 +95,24 @@ export const POST = async ({ request, fetch }) => {
   // → finalizeManifold falls back to the material / legacy path.
   let parts: any = undefined;
   try { parts = analyzeParts(source); } catch { /* legacy color path */ }
-  const result = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, parts);
+  // cutaway: undefined → threshold-based auto-skip (default)
+  //          true       → force compute (caller wants the slice)
+  //          false      → force skip (fast path)
+  const result = finalizeManifold(
+    manifold,
+    args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
+    material,
+    parts,
+    { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto' },
+  );
   mark('finalize', t); t = performance.now();
   const serialized = serializeComponentResult(result);
   mark('serialize', t);
-  return json({ ok: true, full: serialized.full, cutVC: serialized.cutVC, _t: T });
+  return json({
+    ok: true,
+    full: serialized.full,
+    cutVC: serialized.cutVC,
+    cutawaySkipped: (result as any).cutawaySkipped === true,
+    _t: T,
+  });
 };
