@@ -156,6 +156,16 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>): string | 
       const r = node.rot.map(emitValueExpr).join(', ');
       return `rot(${child}, [${r}])`;
     }
+    case 'repeat': {
+      // Instantiate the child N times + mate end-to-end via stack().
+      // Re-emits the child expression INSIDE the Array.from callback so each
+      // iteration produces a fresh instance — the parent's const for the
+      // child var still exists (it's the prototype) but the repeat's emit
+      // wraps the actual expression again. Pattern matches the K.44 recipe.
+      const count = emitValueExpr(node.count);
+      const child = varNames.get(node.child) ?? '/* missing */';
+      return `stack(Array.from({ length: ${count} }, () => ${child}))`;
+    }
   }
 }
 
@@ -194,7 +204,7 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
     if (n.type === 'method') {
       if (n.obj) consumed.add(n.obj);
       if (n.arg) consumed.add(n.arg);
-    } else if (n.type === 'mv' || n.type === 'rot') {
+    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'repeat') {
       if (n.child) consumed.add(n.child);
     } else if (n.type === 'stack' || n.type === 'group') {
       // Stack + group are EXPRESSIONS that operate on their children

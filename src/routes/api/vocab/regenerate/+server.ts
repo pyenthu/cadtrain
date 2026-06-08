@@ -35,13 +35,14 @@ interface RegenResult {
 }
 
 // Hard-coded build order — primitives first so asm composes can resolve
-// their imports on bake. Mirrors regenerate-from-vocab.ts. `stand` is
-// deferred (the translator's `repeat` node is not yet supported).
+// their imports on bake. Mirrors regenerate-from-vocab.ts. Stand was
+// previously deferred because translator's repeat node wasn't supported
+// — Phase 17 added it, so stand is back at the end (it depends on joint).
 const BUILD_ORDER = [
   'shaft', 'cone', 'frustum',
   'collar_flat', 'collar_tapered', 'collar_rounded',
   'pin', 'box',
-  'tube', 'sub', 'xover', 'joint',
+  'tube', 'sub', 'xover', 'joint', 'stand',
 ];
 
 function loadVocab(): Vocabulary {

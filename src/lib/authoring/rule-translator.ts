@@ -32,7 +32,7 @@ import {
 // translator (`translateAsm`) is kept for back-compat; new compositions
 // emit `meta.graph` via `translateAsmGraph`.
 import {
-  newGraph, addCall, addMethod, addContainer, addMv,
+  newGraph, addCall, addMethod, addContainer, addMv, addRepeat,
   addParam as gAddParam,
   setMethodInput, setTransformChild, setTransformAxisValue,
   asLiteral, asExpr, asParam,
@@ -500,7 +500,16 @@ function ruleToGraph(
       return { graph: m.graph, nodeId: m.id };
     }
     case 'repeat': {
-      throw new Error('ruleToGraph: repeat-type composition not yet supported in graph format');
+      // Instantiate the child N times + stack via end-to-end mate. Count is
+      // typed as ArgValue so it survives as a literal, param wire, or
+      // expression (e.g. `p.n`, 3, or `p.layers * 2`). The vocab rule's
+      // `mate: 'tail(prev)'` field is the default semantic of stack() —
+      // nothing extra to encode for now (future repeats with custom mate
+      // points would extend this).
+      const childR = ruleToGraph(g, node.child, imports, vocab, aliasToSrc, parentId);
+      const count  = exprOrLiteralOrParam(String(node.count ?? 1));
+      const r = addRepeat(childR.graph, childR.nodeId, count, parentId);
+      return { graph: r.graph, nodeId: r.id };
     }
     default:
       throw new Error(`ruleToGraph: unknown node type "${node.type}"`);

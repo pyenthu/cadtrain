@@ -32,6 +32,44 @@
   // global state — when the user picks a different term we keep the panel
   // open but the iframe's src changes to the new exemplar (reactive).
   let editorOpen = $state(false);
+
+  // Phase 16 — per-term format status. For each asm-kind term, we fetch the
+  // exemplar's source from the volume and classify by whether the file has
+  // a `meta.graph` block. 'graph' / 'text' / 'unknown' (still loading) /
+  // 'missing' (not on volume). Cached in this map so the chip stays stable
+  // until the user explicitly refreshes. The fetch happens lazily — only
+  // when a term row becomes visible (currently: all of them on first load).
+  type TermFormat = 'graph' | 'text' | 'unknown' | 'missing' | 'rev' | 'seed';
+  let formatByTerm = $state<Record<string, TermFormat>>({});
+  /** Format chip for a term row. Returns the cached value when loaded,
+   *  derives 'rev' / 'seed' instantly for non-asm rows. */
+  function termFormat(term: string, entry: any, seed: boolean): TermFormat {
+    if (seed) return 'seed';
+    if (entry?.kind !== 'asm') return 'rev';
+    return formatByTerm[term] ?? 'unknown';
+  }
+  async function loadTermFormat(term: string, exemplar: string) {
+    if (formatByTerm[term] && formatByTerm[term] !== 'unknown') return;
+    try {
+      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(exemplar)}`);
+      if (!r.ok) { formatByTerm = { ...formatByTerm, [term]: 'missing' }; return; }
+      const d = await r.json();
+      const hasGraph =
+        (d.graph && typeof d.graph === 'object') ||
+        (typeof d.source === 'string' && /\bgraph\s*:\s*\{/.test(d.source));
+      formatByTerm = { ...formatByTerm, [term]: hasGraph ? 'graph' : 'text' };
+    } catch {
+      formatByTerm = { ...formatByTerm, [term]: 'missing' };
+    }
+  }
+  // Eagerly load formats once vocab is ready. Fires once per asm term + skips
+  // anything already cached.
+  $effect(() => {
+    const terms = data?.vocab?.terms ?? {};
+    for (const [term, entry] of Object.entries(terms) as any) {
+      if (entry.kind === 'asm' && entry.exemplar) loadTermFormat(term, entry.exemplar);
+    }
+  });
   function isParamsOpen(term: Term): boolean { return paramsOpen[term] !== false; }
   function toggleParamsOpen(term: Term) { paramsOpen = { ...paramsOpen, [term]: !isParamsOpen(term) }; }
 
@@ -542,6 +580,7 @@
           />
           <div class="browser-list">
             {#each filteredTerms() as { term, entry, seed } (term)}
+              {@const fmt = termFormat(term, entry, seed)}
               <button
                 class="browser-row"
                 class:active={selected === term}
@@ -551,6 +590,17 @@
                 onclick={() => selectTerm(term)}
               >
                 <span class="row-kind">{seed ? 'seed' : (entry.kind === 'asm' ? 'asm' : 'rev')}</span>
+                <span class="row-format" class:graph={fmt === 'graph'} class:text={fmt === 'text'}
+                      class:unknown={fmt === 'unknown'} class:missing={fmt === 'missing'}
+                      class:rev={fmt === 'rev'} class:seed={fmt === 'seed'}
+                      title={fmt === 'graph' ? 'Graph-format source — hydrates in /graph-editor'
+                           : fmt === 'text' ? 'Legacy text-body source — shows legacy banner in /graph-editor (regenerate to migrate)'
+                           : fmt === 'missing' ? 'Not saved to volume yet'
+                           : fmt === 'rev' ? 'Single revolved primitive — opens in /primitives'
+                           : fmt === 'seed' ? 'Seed entry — not yet promoted'
+                           : 'Loading format…'}>
+                  {#if fmt === 'graph'}🧬{:else if fmt === 'text'}📝{:else if fmt === 'missing'}∅{:else if fmt === 'unknown'}…{:else}—{/if}
+                </span>
                 <span class="row-name">{term}</span>
                 <span class="row-rule">{seed
                   ? `${entry.category} · ${entry.sub_category}${entry.variants?.length > 1 ? ` · ${entry.variants.length} variants` : ''}`
@@ -1192,7 +1242,12 @@
   .browser-search { padding: 6px 12px; border: 0; border-bottom: 1px solid #f1f5f9; font: 13px Arial; outline: none; }
   .browser-search:focus { background: #f9fafb; }
   .browser-list { overflow: auto; }
-  .browser-row { display: grid; grid-template-columns: 36px 120px 1fr; align-items: center; gap: 8px; padding: 4px 12px; width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; font: 12px Arial; }
+  .browser-row { display: grid; grid-template-columns: 36px 22px 120px 1fr; align-items: center; gap: 8px; padding: 4px 12px; width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; font: 12px Arial; }
+  .row-format { font: 13px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial; text-align: center; color: #6b7280; }
+  .row-format.graph { color: #6d28d9; }
+  .row-format.text  { color: #b45309; }
+  .row-format.missing { color: #b91c1c; }
+  .row-format.unknown { color: #d1d5db; font-style: italic; }
   .browser-row:hover { background: #f9fafb; }
   .browser-row.active { background: #e0f2fe; }
   .browser-row.asm .row-kind { background: #dcfce7; color: #14532d; }

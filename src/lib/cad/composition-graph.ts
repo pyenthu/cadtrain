@@ -82,7 +82,16 @@ export type MethodNode = {
 export type MvNode  = { id: NodeId; type: 'mv';  child: NodeId; offset: [ArgValue, ArgValue, ArgValue] };
 export type RotNode = { id: NodeId; type: 'rot'; child: NodeId; rot:    [ArgValue, ArgValue, ArgValue] };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode;
+/** Repeat — instantiate the child N times + stack them end-to-end via
+ *  manifold-helpers.stack(). The emit pattern is:
+ *    stack(Array.from({length: <count>}, () => <child expr>))
+ *  count is an ArgValue so it can be a literal (5), a param (p.n),
+ *  or an expression (p.layers * 2). Mate defaults to 'tail(prev)' —
+ *  the natural drilling-string idiom that stack() already encodes.
+ *  child is a single NodeId (any node type can be the repeating unit). */
+export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue };
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
@@ -220,6 +229,11 @@ export function collectEdges(graph: Graph): Edge[] {
       node.rot.forEach((v, i) => {
         if (v.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.rot.${i}` });
       });
+    } else if (node.type === 'repeat') {
+      // The repeat's count slot can be wired to a param (e.g. p.n on `stand`).
+      if (node.count.kind === 'param') {
+        edges.push({ from: `p.${node.count.param}`, to: `${node.id}.count` });
+      }
     }
   }
   return edges;
@@ -320,6 +334,24 @@ export function addMv(
 ): { graph: Graph; id: NodeId } {
   const id = newNodeId();
   const node: MvNode = { id, type: 'mv', child, offset };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  const final = appendChild(next, parentId ?? graph.root, id);
+  return { graph: finalize(final), id };
+}
+
+/** Add a repeat node — instantiates a child N times + stacks them
+ *  end-to-end. `count` is an ArgValue (literal / param / expression) so the
+ *  multiplicity can be a dial-able knob. Used by `stand` (3 joints) + future
+ *  drilling-string compositions. */
+export function addRepeat(
+  graph: Graph,
+  child: NodeId,
+  count: ArgValue = asLiteral(1),
+  parentId?: NodeId,
+): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: RepeatNode = { id, type: 'repeat', child, count };
   const xy = defaultCallPosition(graph);
   const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
   const final = appendChild(next, parentId ?? graph.root, id);
@@ -547,7 +579,7 @@ export function topoOrder(graph: Graph): NodeId[] {
     } else if (node.type === 'method') {
       visit(node.obj);
       visit(node.arg);
-    } else if (node.type === 'mv' || node.type === 'rot') {
+    } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'repeat') {
       visit(node.child);
     }
     order.push(id);

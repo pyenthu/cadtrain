@@ -153,7 +153,17 @@
   let canvasEl: SVGSVGElement | undefined = $state();
   let panning = false; let panStart = { x: 0, y: 0 }; let panOrig = { x: 0, y: 0 };
   function onCanvasPointerDown(ev: PointerEvent) {
-    if (ev.button === 1 || ev.shiftKey) {
+    // Middle button + Shift ALWAYS pan, even over content (power-user handle).
+    // Plain left-click pans ONLY when the target is the canvas background —
+    // the SVG itself or the grid rect. Any other target (a button, an input,
+    // a node body) gets its own handler — pointerdown bubbles up to the
+    // canvas but we DON'T capture/pan when the click was meant for a child.
+    const isShortcut = ev.button === 1 || ev.shiftKey;
+    const target = ev.target as Element;
+    const isBackground =
+      target === canvasEl ||
+      (target.tagName.toLowerCase() === 'rect' && (target.getAttribute('fill') ?? '').includes('grid'));
+    if (isShortcut || (ev.button === 0 && isBackground)) {
       panning = true; panStart = { x: ev.clientX, y: ev.clientY }; panOrig = { ...pan };
       canvasEl?.setPointerCapture(ev.pointerId);
       ev.preventDefault();
@@ -201,6 +211,24 @@
       (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
       dragging = null;
     }
+  }
+
+  // ─── param chip positioning ─────────────────────────────────────────────
+  // Chips are FIXED in place (per user request) — packed in a single row
+  // flowing top-left. Position is purely derived from the chip's index in
+  // paramEntries; no per-chip layout state. Wires connecting params to
+  // node sockets read from paramSocketPos() so they stay aligned even if
+  // we later make these draggable again.
+  const PARAM_W = 120, PARAM_H = 22, PARAM_GAP = 4, PARAM_X0 = 10, PARAM_Y0 = 10;
+  function paramPos(_name: string, i: number): { x: number; y: number } {
+    // VERTICAL stack from top-left — chips flow downward, one per row.
+    return { x: PARAM_X0, y: PARAM_Y0 + i * (PARAM_H + PARAM_GAP) };
+  }
+  /** Where a param chip's OUTPUT socket sits on the canvas. Used by the
+   *  wire renderer so the bezier always meets the actual socket dot. */
+  function paramSocketPos(name: string, i: number): { x: number; y: number } {
+    const p = paramPos(name, i);
+    return { x: p.x + PARAM_W + 4, y: p.y + PARAM_H / 2 };
   }
 
   // ─── drag-to-wire ───────────────────────────────────────────────────────
@@ -610,12 +638,14 @@
                the top of the canvas with an output socket + ×-delete + a
                trailing + button to add a new param. -->
           {#each paramEntries as [name, p], i (name)}
-            {@const px = 40 + i * 150}
-            {@const py = 10}
-            <g class="ge-param-card" transform="translate({px},{py})">
-              <rect class="ge-param-card-bg" width="130" height="40" rx="20"/>
-              <text x="58" y="16" class="ge-param-card-name" text-anchor="middle">p.{name}</text>
-              <foreignObject x="10" y="20" width="96" height="16">
+            {@const pos = paramPos(name, i)}
+            <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
+              <!-- Fixed-position chip (no drag). Single-row layout:
+                   [p.name] [input] [×]  · ◯ socket (sits OUTSIDE the chip's
+                   right edge to keep × from being clipped). -->
+              <rect class="ge-param-card-bg" width={PARAM_W} height={PARAM_H} rx="11"/>
+              <text x="6" y="15" class="ge-param-card-name" text-anchor="start">p.{name}</text>
+              <foreignObject x="54" y="3" width="46" height="16">
                 <input class="ge-param-card-input" type="number" step="0.05"
                   xmlns="http://www.w3.org/1999/xhtml"
                   value={(p as any).default}
@@ -626,22 +656,23 @@
                   }}
                   oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
               </foreignObject>
-              <!-- × delete on the chip -->
+              <!-- × delete — well inside the chip rect, can't be clipped -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <text role="button" tabindex="-1" class="ge-param-card-x" x="116" y="14"
+              <text role="button" tabindex="-1" class="ge-param-card-x" x={PARAM_W - 12} y="15"
                 onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>×</text>
-              <!-- output socket for drag-to-wire -->
+              <!-- Output socket — sits OUTSIDE the chip to avoid overlap with ×. -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <circle role="button" tabindex="-1" class="ge-sock out param" cx="130" cy="20" r="6"
+              <circle role="button" tabindex="-1" class="ge-sock out param" cx={PARAM_W + 4} cy={PARAM_H / 2} r="5"
                 onpointerdown={(ev) => startParamWire(ev, name)}/>
             </g>
           {/each}
-          <!-- + add-param button at the end of the chip row -->
-          <g class="ge-param-add-card" transform="translate({40 + paramEntries.length * 150},{10})">
+          <!-- + add-param button — sits BELOW the last chip in the vertical stack -->
+          <g class="ge-param-add-card"
+             transform="translate({PARAM_X0},{PARAM_Y0 + paramEntries.length * (PARAM_H + PARAM_GAP)})">
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <rect role="button" tabindex="-1" class="ge-param-add-bg" width="60" height="40" rx="20"
+            <rect role="button" tabindex="-1" class="ge-param-add-bg" width={PARAM_W} height={PARAM_H} rx="11"
               onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
-            <text x="30" y="26" class="ge-param-add-glyph" text-anchor="middle" pointer-events="none">+ param</text>
+            <text x={PARAM_W / 2} y="15" class="ge-param-add-glyph" text-anchor="middle" pointer-events="none">+ param</text>
           </g>
           {#if paramEntries.length === 0}
             <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
@@ -656,8 +687,9 @@
                 {#if (v as any).kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === (v as any).param)}
                   {#if pIdx >= 0}
-                    {@const psx = 40 + pIdx * 150 + 130}
-                    {@const psy = 10 + 20}
+                    {@const ps = paramSocketPos((v as any).param, pIdx)}
+                    {@const psx = ps.x}
+                    {@const psy = ps.y}
                     {@const pos = nodePos(n.id)}
                     {@const argY = pos.y + 36 + 14 + argIdx * 22}
                     <path class="ge-wire param" d={bezier(psx, psy, pos.x, argY)}/>
@@ -674,8 +706,9 @@
                   {#if (mvN.offset[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
                     {#if pIdx >= 0}
-                      {@const psx = 40 + pIdx * 150 + 130}
-                      {@const psy = 10 + 20}
+                      {@const ps = paramSocketPos((mvN.offset[i] as any).param, pIdx)}
+                      {@const psx = ps.x}
+                      {@const psy = ps.y}
                       {@const pos = nodePos(n.id)}
                       {@const axisY = pos.y + cSize.h + 4 + 18 + i * 18}
                       <path class="ge-wire param" d={bezier(psx, psy, pos.x, axisY)}/>
@@ -689,8 +722,9 @@
                   {#if (rotN.rot[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
                     {#if pIdx >= 0}
-                      {@const psx = 40 + pIdx * 150 + 130}
-                      {@const psy = 10 + 20}
+                      {@const ps = paramSocketPos((rotN.rot[i] as any).param, pIdx)}
+                      {@const psx = ps.x}
+                      {@const psy = ps.y}
                       {@const pos = nodePos(n.id)}
                       {@const rotY = pos.y + cSize.h + 4 + (inlMv ? 80 : 0) + 18 + i * 18}
                       <path class="ge-wire param" d={bezier(psx, psy, pos.x, rotY)}/>
@@ -1187,6 +1221,15 @@
      output socket. The HTML strip above stays for adding/removing; these
      mirror the same data for visual wiring. */
   .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+  /* Hide native number-input spinner arrows everywhere in the editor —
+     drag-to-scrub via dragNumber + keyboard arrows are the input methods;
+     the chevrons take horizontal space we can't afford in tight cells. */
+  :global(.ge-param-card-input::-webkit-outer-spin-button),
+  :global(.ge-param-card-input::-webkit-inner-spin-button),
+  :global(.ge-arg-input::-webkit-outer-spin-button),
+  :global(.ge-arg-input::-webkit-inner-spin-button) { -webkit-appearance: none; margin: 0; }
+  :global(.ge-param-card-input[type='number']),
+  :global(.ge-arg-input[type='number']) { -moz-appearance: textfield; appearance: textfield; }
   .ge-param-card-name { font: 700 11px ui-monospace, monospace; fill: #78350f; pointer-events: none; }
   .ge-param-card-val { font: 10px ui-monospace, monospace; fill: #92400e; pointer-events: none; }
   .ge-param-card-input { width: 100%; padding: 0 4px; font: 10px ui-monospace, monospace; background: rgba(255,255,255,0.85); border: 1px solid #fbbf24; border-radius: 2px; color: #92400e; text-align: center; box-sizing: border-box; }

@@ -1083,6 +1083,51 @@ test.describe('graph-editor — phase 15: stack composition round-trip', () => {
   });
 });
 
+// ─── Phase 17 — repeat composition (stand) hydrates ─────────────────────
+//
+// Closes the LAST K.68 rule-shape gap. The `stand` vocab term uses
+// `kind:'repeat'` with `count: 'p.n'` + a child Call. Phase 15 added
+// `stack` to ruleToGraph; Phase 17 adds `repeat`. After this, every
+// BUILD_ORDER term (13 / 13) regens as the correct format and
+// hydrates / bakes cleanly.
+
+test.describe('graph-editor — phase 17: repeat composition (stand)', () => {
+  test('regenerates `stand` as graph format + 3× joint stacks correctly', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // 1. Regenerate `stand` — should emit graph format, NOT throw or fall back.
+    const regen = await page.request.post('/api/vocab/regenerate?term=stand');
+    expect(regen.ok()).toBe(true);
+    const data = await regen.json();
+    expect(data.ok).toBe(true);
+    expect(data.regenerated?.[0]?.format).toBe('graph');
+    // 3 joints stacked. Each joint ≈ 11328 verts, so the stack should be
+    // close to 33984. z_extent ≈ 3 * 49.25 = 147.75.
+    expect(data.regenerated?.[0]?.bake?.verts).toBeGreaterThan(30000);
+    expect(data.regenerated?.[0]?.bake?.z_extent).toBeGreaterThan(140);
+
+    // 2. Source has the Array.from + stack repeat idiom.
+    const srcResp = await page.request.get('/api/primitives/source?name=dt_stand');
+    expect(srcResp.ok()).toBe(true);
+    const srcData = await srcResp.json();
+    expect(srcData.source).toContain('graph: {');
+    expect(srcData.source).toMatch(/stack\(\s*Array\.from\(/);
+    // The count is `p.n` — proves the param wire reached the repeat node.
+    expect(srcData.source).toContain('p.n');
+
+    // 3. Load in /graph-editor — canvas hydrates, no legacy banner, no bake error.
+    await page.goto('/graph-editor?id=dt_stand');
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await expect(page.locator('input.ge-id')).toHaveValue('dt_stand');
+
+    // One Call card (J = joint). The repeat container itself isn't a Call
+    // and renders differently; the Call count is the child Call.
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
+    await expect(page.locator('.ge-legacy-banner')).toHaveCount(0);
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+  });
+});
+
 // ─── Phase 7 — /vocab → /graph-editor cross-page launch ──────────────────
 //
 // The K.69 vocab GUI gains a 🧬 Graph editor link per term — click it and
