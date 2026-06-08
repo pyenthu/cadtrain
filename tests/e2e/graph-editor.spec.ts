@@ -1367,3 +1367,31 @@ test.describe('graph-editor — phase 23: visual Repeat × N node', () => {
     await expect(src).toContainText(/Array\.from\(\s*\{\s*length:\s*3/);
   });
 });
+
+// ─── Phase 24 — drop Repeat auto-creates Stack downstream ────────────────
+//
+// Per user-flagged workflow: when you drop a Repeat, the canonical pattern
+// is Repeat → Stack → Output. Dropping a Repeat now also drops a Stack
+// adjacent + pre-wires Repeat.out → Stack.slot[0]. One click = the full
+// pattern visible.
+
+test.describe('graph-editor — phase 24: drop Repeat auto-creates Stack', () => {
+  test('dropping Repeat from picker also drops Stack + pre-wires them', async ({ page }) => {
+    test.setTimeout(30_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase24_auto_stack');
+
+    // Drop one Repeat from the picker (no wire-up yet).
+    await openPicker(page);
+    await page.locator('.ge-pick.container', { hasText: 'repeat' }).click();
+
+    // BOTH the Repeat AND a Stack should appear on the canvas.
+    await expect(page.locator('.ge-node-bg.repeat')).toHaveCount(1);
+    await expect(page.locator('.ge-node-bg.container.stack')).toHaveCount(1);
+
+    // Source: Stack contains the Repeat as its first child.
+    // Emit pattern: stack([..._repeat_<id>])
+    const src = page.locator('.ge-source');
+    await expect(src).toContainText(/stack\(\[\s*\.\.\./);
+  });
+});

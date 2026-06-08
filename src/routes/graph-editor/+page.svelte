@@ -652,7 +652,21 @@
       restartBusy = false;
     }
   }
-  function dropRepeat(){ closePicker(); graph = addRepeatPlaceholder(graph).graph; }
+  /** Drop a Repeat + a Stack adjacent + pre-wire Repeat output → Stack
+   *  first slot. The canonical pattern (Repeat → Stack → Output) becomes
+   *  one click. User can ⚙ open the Stack popover or × the Stack if they
+   *  want raw list output instead. */
+  function dropRepeat() {
+    closePicker();
+    const r = addRepeatPlaceholder(graph);
+    const s = addStackPlaceholder(r.graph);
+    let g2 = appendContainerChild(s.graph, s.id, r.id);
+    // Offset the Stack to the right of the Repeat so the wire reads
+    // left-to-right immediately, without needing 📐 Auto-layout.
+    const rPos = g2.layout[r.id] ?? { x: 80, y: 80 };
+    g2 = setLayout(g2, s.id, { x: rPos.x + 260, y: rPos.y });
+    graph = g2;
+  }
   /** Drag-wire ending on a Repeat node's child slot — set the wire source
    *  as the new child. Idempotent and works for any node type that has an
    *  output socket. */
