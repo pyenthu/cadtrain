@@ -588,6 +588,49 @@
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
   function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
+
+  // ─── dev-server restart from the bake error ─────────────────────────────
+  // POSTs to /api/__dev_restart which spawns a detached restart of `bun run
+  // dev`. The current dev server dies; the browser keeps polling and reloads
+  // bake state once the new server comes up. ~2-3 seconds in practice.
+  let restartBusy = $state(false);
+  let restartStatus = $state<string | null>(null);
+  async function restartDevServer() {
+    if (restartBusy) return;
+    restartBusy = true;
+    restartStatus = 'killing dev server…';
+    try {
+      const r = await fetch('/api/__dev_restart', { method: 'POST' });
+      if (!r.ok) {
+        const txt = await r.text();
+        restartStatus = `✗ ${r.status}: ${txt.slice(0, 120)}`;
+        restartBusy = false;
+        return;
+      }
+      restartStatus = '🔄 waiting for new server…';
+      // Poll the cache-stats endpoint until it answers — that means a fresh
+      // bun run dev came up.
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        await new Promise((res) => setTimeout(res, 500));
+        try {
+          const ping = await fetch('/api/cache/stats', { cache: 'no-store' });
+          if (ping.ok) {
+            restartStatus = '✓ dev server ready — re-baking…';
+            // Trigger a bake re-run by tweaking the graph state slightly.
+            graph = { ...graph };
+            setTimeout(() => { restartStatus = null; restartBusy = false; }, 1500);
+            return;
+          }
+        } catch { /* still down */ }
+      }
+      restartStatus = '⚠ timeout waiting for restart — check /tmp/cadtrain-dev.log';
+      restartBusy = false;
+    } catch (e: any) {
+      restartStatus = `✗ ${e?.message ?? String(e)}`;
+      restartBusy = false;
+    }
+  }
   function dropRepeat(){ closePicker(); graph = addRepeatPlaceholder(graph).graph; }
   /** Drag-wire ending on a Repeat node's child slot — set the wire source
    *  as the new child. Idempotent and works for any node type that has an
@@ -827,6 +870,31 @@
   /** Excludes the root list — that's the always-present ▶ Output card,
    *  not a user-dropped node. Used by the status bar + empty-canvas hint. */
   let visibleNodeCount = $derived(allNodes.filter((n) => n.id !== graph.root).length);
+
+  /** Set of node ids that are CONSUMED by another node — i.e. referenced as
+   *  the input slot of a method.obj/arg, mv/rot/repeat.child, or as a child
+   *  of stack/group. Mirrors composition-emit.ts computeConsumedSet so the
+   *  editor and the emit agree on what's "intermediate" vs "output".
+   *
+   *  Used by the ▶ Output card slot rendering — consumed children stay in
+   *  root.children for data integrity but aren't shown as Output slots
+   *  (they aren't in the function's return either). */
+  let consumedSet = $derived.by(() => {
+    const set = new Set<string>();
+    for (const n of Object.values(graph.nodes)) {
+      if (n.type === 'method') {
+        if ((n as any).obj) set.add((n as any).obj);
+        if ((n as any).arg) set.add((n as any).arg);
+      } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'repeat') {
+        if ((n as any).child) set.add((n as any).child);
+      } else if (n.type === 'stack' || n.type === 'group') {
+        for (const c of (n as any).children) set.add(c);
+      } else if (n.type === 'list' && n.id !== graph.root) {
+        for (const c of (n as any).children) set.add(c);
+      }
+    }
+    return set;
+  });
   let paramEntries = $derived(Object.entries(graph.params));
   let filteredSrcs = $derived.by(() => {
     const q = pickerFilter.trim().toLowerCase();
@@ -1014,11 +1082,15 @@
                 <path class="ge-wire child" d={bezier(src.x, src.y, pos.x, pos.y + size.h - 18)} fill="none"/>
               {/if}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
-              <!-- Container wires: each child of a container shows as a bezier
-                   from the child's output socket → the container's i-th slot
-                   input socket. Makes it visually obvious which parts are
-                   "piped into" the Output card. -->
-              {#each (n as any).children as childId, i (childId)}
+              <!-- Container wires: each visible child of a container shows as
+                   a bezier from the child's output socket → the container's
+                   slot input socket. For the ROOT (▶ Output), consumed
+                   children are filtered out so we don't draw wires into
+                   non-existent slots — matches the slot-render filter. -->
+              {@const visKids = (n.id === graph.root
+                ? (n as any).children.filter((cid: string) => !consumedSet.has(cid))
+                : (n as any).children) as string[]}
+              {#each visKids as childId, i (childId)}
                 {#if graph.nodes[childId]}
                   {@const src = outputSocketAt(childId)}
                   {@const tgt = containerSlotInputAt(n.id, i)}
@@ -1381,8 +1453,21 @@
                     onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
                 {/if}
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <!-- Children slots: one per child + a trailing "+ drop" slot -->
-                {#each container.children as childId, i (childId)}
+                <!-- Children slots — for the ROOT (▶ Output) we hide children
+                     that are CONSUMED by another node. Those children stay
+                     in root.children for the graph's data integrity, but
+                     the source emit's output filter strips them from the
+                     return value, so showing them as Output slots was
+                     misleading (the user saw "J is output" but actually
+                     it's just the repeat's input). For non-root stack/group
+                     we show all children — they ARE the container's value. -->
+                {@const visibleChildren = isRoot
+                  ? (container.children as string[])
+                      .map((cid: string, origIdx: number) => ({ cid, origIdx }))
+                      .filter(({ cid }) => !consumedSet.has(cid))
+                  : (container.children as string[])
+                      .map((cid: string, origIdx: number) => ({ cid, origIdx }))}
+                {#each visibleChildren as { cid: childId, origIdx }, i (childId)}
                   {@const childNode = graph.nodes[childId]}
                   {@const childLabel = childNode?.type === 'call'
                     ? `${(childNode as any).alias} · ${(childNode as any).src}`
@@ -1400,10 +1485,10 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" class="ge-container-slot-x"
                     x={size.w - 14} y={containerSlotY(i) + 4}
-                    onpointerdown={(ev) => { ev.stopPropagation(); graph = removeContainerChildAt(graph, n.id, i); }}>×</text>
+                    onpointerdown={(ev) => { ev.stopPropagation(); graph = removeContainerChildAt(graph, n.id, origIdx); }}>×</text>
                 {/each}
                 <!-- Trailing + drop slot — drag any output socket onto here to append. -->
-                {@const trailY = containerSlotY(container.children.length)}
+                {@const trailY = containerSlotY(visibleChildren.length)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={trailY} r="5"
                   onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
@@ -1510,7 +1595,15 @@
                 <div class="ge-err-hint">
                   ⚠ Looks like a stale dev server (Vite HMR skips server modules after
                   edits to composition-graph / composition-emit / primitive-loader).
-                  Restart the dev server: <code>pkill -f 'bun run dev' && bun run dev</code>
+                  <div class="ge-err-hint-actions">
+                    <button class="ge-err-restart-btn" type="button"
+                      disabled={restartBusy} onclick={restartDevServer}>
+                      {restartBusy ? '🔄 restarting…' : '🔄 Restart dev server'}
+                    </button>
+                    <span class="ge-err-hint-or">or manually:</span>
+                    <code>pkill -f 'bun run dev' && bun run dev</code>
+                  </div>
+                  {#if restartStatus}<div class="ge-err-restart-stat">{restartStatus}</div>{/if}
                 </div>
               {/if}
             </div>
@@ -1829,6 +1922,12 @@
   .ge-err { padding: 20px; color: #b91c1c; font: 12px ui-monospace, monospace; display: flex; flex-direction: column; gap: 10px; }
   .ge-err-hint { padding: 10px 12px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 4px; font: 11px Arial; line-height: 1.4; }
   .ge-err-hint code { font: 11px ui-monospace, monospace; background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 2px; }
+  .ge-err-hint-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .ge-err-hint-or { font: 11px Arial; color: #92400e; }
+  .ge-err-restart-btn { font: 600 11px Arial; color: #fff; background: #d97706; border: 1px solid #b45309; border-radius: 4px; padding: 4px 10px; cursor: pointer; transition: background 0.12s; }
+  .ge-err-restart-btn:hover:not(:disabled) { background: #b45309; }
+  .ge-err-restart-btn:disabled { opacity: 0.7; cursor: progress; }
+  .ge-err-restart-stat { margin-top: 6px; font: 11px ui-monospace, monospace; color: #92400e; }
   .ge-source { margin: 0; padding: 10px 14px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; background: #fafaf9; overflow: auto; white-space: pre; }
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 
