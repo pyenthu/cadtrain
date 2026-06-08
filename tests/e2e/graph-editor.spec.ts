@@ -696,6 +696,233 @@ test.describe('graph-editor — phase 14: vocab.json → translator → editor',
   });
 });
 
+// ─── Phase 10 — multi-axis wiring on a single transform ─────────────────
+//
+// Three params bound to the three xyz axes of an inline mv. Each axis
+// chip becomes its own param-wire — no slot can be wired to two params,
+// no two slots wired to the same param accidentally. The source emits
+// `mv(A, [p.x, p.y, p.z])` proving the three wires reached the three
+// distinct slots.
+
+test.describe('graph-editor — phase 10: multi-axis wiring on a transform', () => {
+  test('p.x/y/z → mv.x/y/z on a single Call — three separate wires + chips', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase10_xyz');
+
+    // 1. Three params: x, y, z (defaults 0, 0, 3).
+    await addParam(page, 'x', 0);
+    await addParam(page, 'y', 0);
+    await addParam(page, 'z', 3);
+    await expect(page.locator('.ge-param-card')).toHaveCount(3);
+
+    // 2. Drop one Call + toggle inline mv on it.
+    await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
+    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+    await callA.locator('text.ge-xform-btn').nth(0).dispatchEvent('pointerdown',
+      { button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true });
+    await expect(callA.locator('.ge-inline-label')).toHaveText(/mv/);
+
+    // 3. The Call card now has 3 tiny axis sockets on its LEFT edge (one per xyz).
+    const tinySockets = callA.locator('circle.ge-sock.in.param.tiny');
+    await expect(tinySockets).toHaveCount(3);
+
+    // 4. Wire each param to its matching axis. Param-card outputs are in
+    //    creation order (x, y, z); axis sockets are top-to-bottom (x, y, z).
+    //    A param-card is an SVG <g> with multiple <text>/<input>/<circle>
+    //    children, so hasText:'^p.x$' fails (aggregates ALL text). Filter
+    //    via a sub-locator on the name <text> instead.
+    const paramByName = (name: string) =>
+      page.locator('g.ge-param-card')
+        .filter({ has: page.locator('text.ge-param-card-name', { hasText: new RegExp(`^p\\.${name}$`) }) })
+        .locator('circle.ge-sock.out.param').first();
+    const paramX = paramByName('x');
+    const paramY = paramByName('y');
+    const paramZ = paramByName('z');
+    await dragBetween(page, paramX, tinySockets.nth(0));
+    await dragBetween(page, paramY, tinySockets.nth(1));
+    await dragBetween(page, paramZ, tinySockets.nth(2));
+
+    // 5. Three wires render — one per axis.
+    await expect(page.locator('path.ge-wire.param')).toHaveCount(3);
+
+    // 6. Three chips on the mv card (the inline mv block shows
+    //    `p.x` / `p.y` / `p.z` in the xyz slots).
+    const mvBlock = callA.locator('.ge-inline-xform.mv');
+    await expect(mvBlock.locator('.ge-arg-pchip')).toHaveCount(3);
+    await expect(mvBlock.locator('.ge-arg-pchip', { hasText: 'p.x' })).toHaveCount(1);
+    await expect(mvBlock.locator('.ge-arg-pchip', { hasText: 'p.y' })).toHaveCount(1);
+    await expect(mvBlock.locator('.ge-arg-pchip', { hasText: 'p.z' })).toHaveCount(1);
+
+    // 7. Source emits `mv(A, [p.x, p.y, p.z])` — proves all 3 axes resolved.
+    const src = page.locator('.ge-source');
+    await expect(src).toContainText(/mv\(\s*A,\s*\[/);
+    await expect(src).toContainText('p.x');
+    await expect(src).toContainText('p.y');
+    await expect(src).toContainText('p.z');
+
+    // 8. No bake error.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+  });
+});
+
+// ─── Phase 11 — param schema drift detection ─────────────────────────────
+//
+// When the underlying primitive's params change behind a saved assembly's
+// back, the editor surfaces a ⚠ drift badge on the affected Call. Clicking
+// it syncs the Call's args to the primitive's CURRENT param shape
+// (preserving values where keys survive, filling new keys with defaults,
+// dropping orphans).
+//
+// The test scripts the full life-cycle: write a target with [r, len],
+// build a graph that uses it, save; rewrite the target with [r, len, tag];
+// reload — ⚠ visible. Click it — args refresh. Source now references `tag`.
+
+test.describe('graph-editor — phase 11: param schema drift', () => {
+  test('rewriting a primitive marks its consumers drifted; refresh syncs them', async ({ page }) => {
+    test.setTimeout(60_000);
+    const targetId = 'test_phase11_target';
+    const graphId  = 'test_phase11_graph';
+
+    // ── 1. v1 target: params { r, len }.
+    const targetV1 = `
+export const meta = {
+  id: '${targetId}',
+  name: '${targetId}',
+  kind: 'prim',
+  uses: [],
+  params: {
+    r:   { default: 1.5, min: 0.1, max: 5, step: 0.05 },
+    len: { default: 4,   min: 0.5, max: 20, step: 0.1 },
+  },
+};
+export function ${targetId}(r, len) {
+  return r_cylinder(r, len, 32);
+}
+`.trim();
+    const saveV1 = await page.request.post('/api/primitives/save', {
+      data: { id: targetId, source: targetV1, kind: 'prim', dir: 'basic' },
+    });
+    expect(saveV1.ok()).toBe(true);
+
+    // ── 2. Build a graph that uses targetId. Save it.
+    await openEditor(page);
+    await setExemplar(page, graphId);
+    await pickPrimitive(page, targetId);
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
+    // No drift yet — the target's params match the dropped Call's args.
+    await expect(page.locator('.ge-drift-btn')).toHaveCount(0);
+    await page.getByRole('button', { name: /Save/ }).click();
+    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+
+    // ── 3. v2 target: params { r, len, tag } — tag is the NEW param.
+    const targetV2 = `
+export const meta = {
+  id: '${targetId}',
+  name: '${targetId}',
+  kind: 'prim',
+  uses: [],
+  params: {
+    r:   { default: 1.5, min: 0.1, max: 5, step: 0.05 },
+    len: { default: 4,   min: 0.5, max: 20, step: 0.1 },
+    tag: { default: 0.5, min: 0,   max: 2,  step: 0.05 },
+  },
+};
+export function ${targetId}(r, len, tag) {
+  // tag unused for now — the test just cares about schema drift.
+  return r_cylinder(r, len, 32);
+}
+`.trim();
+    const saveV2 = await page.request.post('/api/primitives/save', {
+      data: { id: targetId, source: targetV2, kind: 'prim', dir: 'basic' },
+    });
+    expect(saveV2.ok()).toBe(true);
+
+    // ── 4. Reload the saved graph — drift badge should appear after the
+    //    editor's $effect fetches the target's NEW params.
+    await page.goto(`/graph-editor?id=${graphId}`);
+    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
+
+    // Drift badge surfaces once the async fetch completes.
+    await expect(page.locator('text.ge-drift-btn')).toBeVisible();
+
+    // ── 5. Click ⚠ — args refresh to match v2's [r, len, tag].
+    await page.locator('text.ge-drift-btn').dispatchEvent('pointerdown',
+      { button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true });
+
+    // Badge clears (no more drift).
+    await expect(page.locator('text.ge-drift-btn')).toHaveCount(0);
+
+    // ── 6. The Call card now has 3 arg rows (was 2 before refresh).
+    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+    await expect(callA.locator('.ge-arg-row')).toHaveCount(3);
+
+    // ── 7. Source contains the new `tag` arg name.
+    await expect(page.locator('.ge-source')).toContainText(/tag\s*:/);
+  });
+});
+
+// ─── Phase 13 — CSG chain (A ⊖ B ⊖ C) ────────────────────────────────────
+//
+// Three Calls + two subtract methods chained: A.subtract(B).subtract(C).
+// Tests that the second method's `obj` socket can wire from the first
+// method's output — proving transitive output→input wiring across CSG
+// nodes. Without that, multi-step CSG (the common case for real parts)
+// can't be built.
+
+test.describe('graph-editor — phase 13: CSG chain A ⊖ B ⊖ C', () => {
+  test('two chained subtracts emit A.subtract(B).subtract(C)', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase13_csg_chain');
+
+    // 1. Three Calls A, B, C.
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(3);
+
+    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(0);
+    const callB = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(1);
+    const callC = page.locator('g.ge-node:has(rect.ge-node-bg.call)').nth(2);
+
+    // 2. Two subtract methods.
+    await pickCsg(page, 'subtract');
+    await pickCsg(page, 'subtract');
+    await expect(page.locator('.ge-node-bg.method')).toHaveCount(2);
+
+    const method1 = page.locator('g.ge-node:has(rect.ge-node-bg.method)').nth(0);
+    const method2 = page.locator('g.ge-node:has(rect.ge-node-bg.method)').nth(1);
+
+    // 3. Wire chain: A → M1.obj, B → M1.arg, M1 → M2.obj, C → M2.arg.
+    const aOut = callA.locator('circle.ge-sock.out:not(.in)').first();
+    const bOut = callB.locator('circle.ge-sock.out:not(.in)').first();
+    const cOut = callC.locator('circle.ge-sock.out:not(.in)').first();
+    const m1Obj = method1.locator('circle.ge-sock.in.obj').first();
+    const m1Arg = method1.locator('circle.ge-sock.in.arg').first();
+    const m1Out = method1.locator('circle.ge-sock.out:not(.in)').first();
+    const m2Obj = method2.locator('circle.ge-sock.in.obj').first();
+    const m2Arg = method2.locator('circle.ge-sock.in.arg').first();
+    await dragBetween(page, aOut, m1Obj);
+    await dragBetween(page, bOut, m1Arg);
+    await dragBetween(page, m1Out, m2Obj);
+    await dragBetween(page, cOut, m2Arg);
+
+    // 4. Source contains the chained subtraction. The emit pattern uses
+    //    intermediate vars, so we look for both methods + the chain shape.
+    const src = page.locator('.ge-source');
+    await expect(src).toContainText(/A\.subtract\(B\)/);
+    // M2's obj is M1's output (the var name varies but the second subtract
+    // must reference that intermediate result + C as the arg).
+    await expect(src).toContainText(/\.subtract\(\s*C\s*\)/);
+
+    // 5. No bake error — the full chain compiles.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+  });
+});
+
 // ─── Phase 9 — inline transforms compose with CSG ────────────────────────
 //
 // Toggling ⇄ on a Call wraps it in an inline mv. When that Call's output

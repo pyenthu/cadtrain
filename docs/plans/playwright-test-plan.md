@@ -40,7 +40,7 @@ click `+ Drop`, scrub a slider, drag a wire from the param chip to
 changes (canvas drag mechanics, SVG socket positions, popover anchors,
 keyboard shortcuts).
 
-## Phase rollout (10 phases shipped, more coming)
+## Phase rollout (13 phases shipped, more coming)
 
 ### Phase 1 — `mv` axis param wiring (single-Call)
 
@@ -257,24 +257,74 @@ sitting unused in the source.
 **File**: `tests/e2e/graph-editor.spec.ts::phase 9`
 **Runtime**: ~7 s headless
 
-### Phase 10 — Multi-axis wiring on a single transform
-Wire `p.x` to mv.x, `p.y` to mv.y, `p.z` to mv.z all on the same Call.
-Verify 3 wires, 3 chips, source has `mv(A, [p.x, p.y, p.z])`.
+### ✅ Phase 10 — Multi-axis wiring on a single transform — SHIPPED
 
-### Phase 11 — Param schema drift detection
-Set up a Call wired to a param. Edit the underlying primitive's source
-(adds a new arg). Reopen the editor — verify the drift badge fires + the
-refresh action grows the Call's arg list.
+| Step | Action | Assert |
+|---|---|---|
+| 1 | Add 3 params x/y/z (defaults 0/0/3) | 3 × `.ge-param-card` |
+| 2 | Drop Call + ⇄ inline mv | inline label `mv` |
+| 3 | 3 tiny axis sockets on Call's left edge | `circle.ge-sock.in.param.tiny` × 3 |
+| 4 | Wire p.x → axis 0, p.y → axis 1, p.z → axis 2 | 3 × `path.ge-wire.param` |
+| 5 | 3 chips on mv block (`p.x`, `p.y`, `p.z`) | `.ge-arg-pchip` × 3 |
+| 6 | Source has `mv(A, [` + p.x + p.y + p.z | regex matches |
+| 7 | `.ge-err` | 0 |
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 10`
+**Runtime**: ~3 s headless
+
+**Selector lesson**: a `g.ge-param-card` aggregates text from every
+child (input value, ×, name); `hasText: /^p\.x$/` will fail because it
+matches the AGGREGATE. Filter via `has: page.locator('text.ge-param-card-name', { hasText: ... })` instead.
+
+### ✅ Phase 11 — Param schema drift detection — SHIPPED
+
+Surfaces a ⚠ chip on a Call when the underlying primitive's
+`meta.params` keys no longer match the Call's `args` keys. Click ⚠ → args
+sync to the current primitive: keep existing values for shared keys,
+add new keys with defaults, drop orphans.
+
+| Step | Action | Assert |
+|---|---|---|
+| 1 | Write target v1 with params `{ r, len }` via /api/primitives/save | save 200 |
+| 2 | Open editor, drop a Call of the target | no drift (`.ge-drift-btn` count 0) |
+| 3 | Save the graph | `saved to basic/` |
+| 4 | Rewrite target v2 with params `{ r, len, tag }` | save 200 |
+| 5 | Reload `/graph-editor?id=<graph>` | drift chip visible after async fetch |
+| 6 | pointerdown on the ⚠ chip | chip disappears |
+| 7 | Call card now has 3 arg rows (was 2) | `.ge-arg-row` × 3 inside the call |
+| 8 | Source contains `tag:` | regex match |
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 11`
+**Runtime**: ~3 s headless
+
+**Editor changes shipped alongside**:
+* `expectedParams: Record<src, string[]>` + `expectedDefaults` cached per src
+* `$effect` walks every Call after any graph mutation, lazy-fetches missing srcs
+* `isCallDrifted(callId)` derived comparison
+* `refreshCallArgs(callId)` rewrites args wholesale (preserve, fill, drop)
+* ⚠ chip in the Call card title row, amber, hover deepens to brown
+* Cleared automatically after refresh — no manual dismiss
+
+### ✅ Phase 13 — CSG chain (A ⊖ B ⊖ C) — SHIPPED
+
+| Step | Action | Assert |
+|---|---|---|
+| 1 | Drop 3 dt_shaft Calls (A, B, C) | 3 × `.ge-node-bg.call` |
+| 2 | Drop 2 ⊖ subtract methods (M1, M2) | 2 × `.ge-node-bg.method` |
+| 3 | Wire A → M1.obj, B → M1.arg, M1.out → M2.obj, C → M2.arg | 4 wires |
+| 4 | Source contains `A.subtract(B)` AND `.subtract(C)` | regex |
+| 5 | `.ge-err` | 0 |
+
+Proves transitive output→input wiring: a method's `out` can feed another
+method's `obj`. Without it, multi-step CSG (the common case) doesn't compose.
+
+**File**: `tests/e2e/graph-editor.spec.ts::phase 13`
+**Runtime**: ~4 s headless
 
 ### Phase 12 — Standalone wrapper nodes
 Drop a Call. Drop a standalone mv wrapper node from the picker (not
 inline). Drag-wire the Call's output to the mv's child input. Edit
 mv.xyz. Verify source emits the wrapped form correctly.
-
-### Phase 13 — CSG chain (A ⊖ B ⊖ C)
-Three Calls + two subtract method nodes chained. Verify the source
-emits `A.subtract(B).subtract(C)` and bake renders. Tests transitive
-output→input wiring.
 
 ### ✅ Phase 14 — Translator round-trip (vocab.json → graph editor) — SHIPPED
 

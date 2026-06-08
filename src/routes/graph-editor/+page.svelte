@@ -60,6 +60,13 @@
    *  the chrome doesn't double-up. The page's own .ge-bar stays since it
    *  hosts Save / + Drop / id input — the in-context controls. */
   let embed = $state(false);
+  /** Drift detection (Phase 11). Per src-name → its meta.params keys
+   *  as last seen on the volume. Compared to each Call's args keys; a
+   *  mismatch marks the Call as drifted. Refresh syncs the Call's args
+   *  back to the expected shape (preserves existing values for shared
+   *  keys, fills new keys with the primitive's defaults). */
+  let expectedParams = $state<Record<string, string[]>>({});
+  let expectedDefaults = $state<Record<string, Record<string, number>>>({});
 
   let emitted = $derived(emitGraph(graph, { id: exemplarId }));
   let sourceText = $derived(emitted.source);
@@ -320,15 +327,91 @@
   async function dropCall(src: string) {
     closePicker();
     let args: Record<string, any> = {};
+    let paramKeys: string[] = [];
+    let defaults: Record<string, number> = {};
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
       const d = await r.json() as any;
       for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
         args[k] = asLiteral(p.default ?? 0);
+        paramKeys.push(k);
+        defaults[k] = Number(p.default ?? 0);
       }
     } catch { /* leave args empty */ }
     const result = addCall(graph, src, args);
     graph = result.graph;
+    // Cache the expected params for drift detection — same fetch we just did.
+    if (paramKeys.length > 0) {
+      expectedParams = { ...expectedParams, [src]: paramKeys };
+      expectedDefaults = { ...expectedDefaults, [src]: defaults };
+    }
+  }
+
+  /** Lazy-load expected params for any Call whose src we haven't fetched
+   *  yet (URL hydrate, paste-in from clipboard, etc.). Idempotent — only
+   *  fetches each src once per session. */
+  async function loadExpectedParamsFor(src: string) {
+    if (expectedParams[src]) return;
+    try {
+      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
+      if (!r.ok) return;
+      const d = await r.json() as any;
+      const keys = Object.keys(d.params ?? {});
+      const defaults: Record<string, number> = {};
+      for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
+        defaults[k] = Number(p.default ?? 0);
+      }
+      expectedParams = { ...expectedParams, [src]: keys };
+      expectedDefaults = { ...expectedDefaults, [src]: defaults };
+    } catch { /* skip */ }
+  }
+
+  // Whenever the graph changes, fetch expected params for any new src.
+  $effect(() => {
+    const srcs = new Set<string>();
+    for (const n of Object.values(graph.nodes)) {
+      if (n.type === 'call') srcs.add(n.src);
+    }
+    for (const src of srcs) loadExpectedParamsFor(src);
+  });
+
+  /** A Call is "drifted" when its args keys differ from the underlying
+   *  primitive's CURRENT meta.params keys. Returns false when expected
+   *  params haven't been fetched yet (don't false-positive). */
+  function isCallDrifted(callId: NodeId): boolean {
+    const node = graph.nodes[callId];
+    if (!node || node.type !== 'call') return false;
+    const expected = expectedParams[node.src];
+    if (!expected) return false;
+    const have = Object.keys(node.args ?? {}).sort();
+    const want = [...expected].sort();
+    if (have.length !== want.length) return true;
+    return have.some((k, i) => k !== want[i]);
+  }
+
+  /** Sync a drifted Call's args back to the primitive's CURRENT params:
+   *    • keep existing arg values for keys that survive
+   *    • add new keys with the primitive's default values
+   *    • drop orphan keys
+   *  Wholesale args replacement instead of incremental setCallArg so
+   *  the graph diff is one transaction. */
+  function refreshCallArgs(callId: NodeId) {
+    const node = graph.nodes[callId];
+    if (!node || node.type !== 'call') return;
+    const expected = expectedParams[node.src];
+    const defaults = expectedDefaults[node.src] ?? {};
+    if (!expected) return;
+    const newArgs: Record<string, any> = {};
+    for (const k of expected) {
+      const existing = (node.args as any)?.[k];
+      newArgs[k] = existing ?? asLiteral(defaults[k] ?? 0);
+    }
+    // Mutate via setCallArg one key at a time — preserves edge index rebuild.
+    let g = graph;
+    // First strip orphan keys via a node replacement.
+    const updated = { ...node, args: { ...newArgs } } as any;
+    g = { ...g, nodes: { ...g.nodes, [callId]: updated } };
+    graph = g;
   }
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
@@ -665,6 +748,15 @@
                   onpointerup={onNodePointerUp}
                 />
                 <text x="10" y="22" class="ge-node-title">{call.alias} · {call.src}</text>
+                <!-- Drift badge (Phase 11) — when the underlying primitive's params
+                     differ from this Call's args keys, surface ⚠ + a Refresh
+                     pointerdown handler that brings the Call back into sync. -->
+                {#if isCallDrifted(n.id)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <text role="button" tabindex="-1" x={size.w - 96} y="22"
+                    class="ge-drift-btn"
+                    onpointerdown={(ev) => { ev.stopPropagation(); refreshCallArgs(n.id); }}>⚠</text>
+                {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 56} y="22" class="ge-xform-btn" class:on={!!inlineMv}
                   onpointerdown={(ev) => { ev.stopPropagation(); toggleInlineTransform(n.id, 'mv'); }}>⇄</text>
@@ -1068,6 +1160,8 @@
   .ge-xform-btn { font: 13px Arial; fill: #6b7280; cursor: pointer; user-select: none; }
   .ge-xform-btn:hover { fill: #6d28d9; }
   .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }
+  .ge-drift-btn { font: 700 14px Arial; fill: #d97706; cursor: pointer; user-select: none; }
+  .ge-drift-btn:hover { fill: #92400e; }
   .ge-inline-xform { font: 11px Arial; color: #1f2937; line-height: 1.4; padding: 4px 0 0; border-top: 1px dashed #c4b5fd; }
   .ge-inline-xform.mv  { color: #5b21b6; }
   .ge-inline-xform.rot { color: #831843; border-top-color: #f9a8d4; }
