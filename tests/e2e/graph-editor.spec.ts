@@ -64,8 +64,11 @@ async function paramChipCount(page: Page): Promise<number> {
 }
 
 async function addParam(page: Page, name: string, defaultValue: number) {
-  // Click + param canvas button (the dashed amber rect).
-  await page.locator('.ge-param-add-bg').click();
+  // Click the + rounded button in the Params card title bar. The button uses
+  // onpointerdown (not click) AND can sit behind the bake pane at narrow
+  // widths — dispatchEvent fires the handler directly.
+  await page.locator('circle.ge-params-add-btn').dispatchEvent('pointerdown',
+    { button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true });
   await page.locator('.ge-wire-pop input[type="text"]').fill(name);
   await page.locator('.ge-wire-pop input[type="number"]').fill(String(defaultValue));
   await page.locator('.ge-wire-pop button', { hasText: 'add' }).click();
@@ -121,8 +124,11 @@ test.describe('graph-editor — smoke', () => {
     await pickPrimitive(page, 'dt_shaft');
     // One Call card on the canvas.
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
-    // The title shows the alias + src.
-    await expect(page.locator('.ge-node-title').first()).toContainText('A · dt_shaft');
+    // The title shows the alias + src. Scope to the Call card — the ▶ Output
+    // root-list card ALSO has a .ge-node-title now.
+    await expect(
+      page.locator('g.ge-node:has(rect.ge-node-bg.call) text.ge-node-title').first(),
+    ).toContainText('A · dt_shaft');
     // Source pane updates to include the function call.
     await expect(page.locator('.ge-source')).toContainText('dt_shaft(');
     await expect(page.locator('.ge-source')).toContainText("alias: 'A'");
@@ -181,7 +187,9 @@ test.describe('graph-editor — phase 1: mv axis param wiring', () => {
     // Step 1 — drop a Call (dt_box).
     await pickPrimitive(page, 'dt_box');
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
-    await expect(page.locator('.ge-node-title').first()).toContainText('A · dt_box');
+    await expect(
+      page.locator('g.ge-node:has(rect.ge-node-bg.call) text.ge-node-title').first(),
+    ).toContainText('A · dt_box');
 
     // Step 2 — toggle ⇄ on the Call card. The toggle is an SVG <text>
     // with class .ge-xform-btn and the glyph ⇄.

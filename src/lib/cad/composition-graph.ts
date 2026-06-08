@@ -133,7 +133,18 @@ export type Graph = {
 export function newGraph(): Graph {
   const rootId = newNodeId();
   const rootNode: ContainerNode = { id: rootId, type: 'list', children: [] };
-  return { nodes: { [rootId]: rootNode }, root: rootId, params: {}, edges: [], imports: [], layout: {} };
+  // Default root layout — sits to the RIGHT of where new Calls land
+  // (defaultCallPosition starts at x=80), so the visible ▶ Output card
+  // is downstream of the workflow. Pure presentational; the user can
+  // drag it anywhere afterward.
+  return {
+    nodes: { [rootId]: rootNode },
+    root: rootId,
+    params: {},
+    edges: [],
+    imports: [],
+    layout: { [rootId]: { x: 600, y: 80 } },
+  };
 }
 
 /** Hydrate a serialised meta.graph block back into a runnable Graph.
@@ -170,13 +181,19 @@ export function hydrateGraph(serialised: any): Graph {
   // mv/rot wrappers don't render on the main canvas (they surface inside
   // their child Call), so they don't need a layout slot.
   for (const id of Object.keys(g.nodes)) {
+    if (g.layout[id]) continue; // already saved — keep it
     const n = g.nodes[id];
+    if (id === g.root) {
+      // Root list — visible as the ▶ Output card. Default to the right side
+      // so it's downstream of new Calls (matches newGraph()).
+      g = setLayout(g, id, { x: 600, y: 80 });
+      continue;
+    }
     if (n.type === 'list') continue;
     if ((n.type === 'mv' || n.type === 'rot') && n.child) {
       const child = g.nodes[n.child];
       if (child?.type === 'call') continue; // inline wrapper, no own card
     }
-    if (g.layout[id]) continue; // already saved — keep it
     g = setLayout(g, id, defaultCallPosition(g));
   }
   g = { ...g, edges: collectEdges(g) };
@@ -346,6 +363,49 @@ export function addMv(
   const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
   const final = appendChild(next, parentId ?? graph.root, id);
   return { graph: finalize(final), id };
+}
+
+/** Drop an empty stack node. Like addContainer('stack') but the picker
+ *  uses this to scaffold a visible stack card on the canvas — emit and
+ *  output-filter both treat its children as consumed inputs, so the
+ *  stack itself is the output of its own expression. */
+export function addStackPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addContainer(graph, 'stack', parentId);
+}
+
+/** Append a child to a stack/list/group container, in order. Pure — used
+ *  by the editor when the user drag-wires a node into a stack's slot. */
+export function appendContainerChild(graph: Graph, containerId: NodeId, childId: NodeId): Graph {
+  const node = graph.nodes[containerId];
+  if (!node || (node.type !== 'stack' && node.type !== 'list' && node.type !== 'group')) return graph;
+  if (node.children.includes(childId)) return graph; // already wired
+  // Detach childId from any previous parent container so a node doesn't end up
+  // double-parented (root-list + the stack). Idempotent for orphans.
+  const detached = { ...graph.nodes };
+  for (const [pid, p] of Object.entries(detached)) {
+    if ((p.type === 'list' || p.type === 'stack' || p.type === 'group') && p.children.includes(childId)) {
+      detached[pid] = { ...p, children: p.children.filter((c) => c !== childId) } as typeof p;
+    }
+  }
+  const updated = { ...node, children: [...node.children, childId] } as typeof node;
+  detached[containerId] = updated;
+  return finalize({ ...graph, nodes: detached });
+}
+
+/** Remove the i-th child of a stack/list/group AND reparent it onto the
+ *  root list so it doesn't become orphaned (the editor would otherwise
+ *  lose track of it). */
+export function removeContainerChildAt(graph: Graph, containerId: NodeId, index: number): Graph {
+  const node = graph.nodes[containerId];
+  if (!node || (node.type !== 'stack' && node.type !== 'list' && node.type !== 'group')) return graph;
+  if (index < 0 || index >= node.children.length) return graph;
+  const detachedId = node.children[index]!;
+  const newChildren = node.children.filter((_, i) => i !== index);
+  const updated = { ...node, children: newChildren } as typeof node;
+  const next = { ...graph, nodes: { ...graph.nodes, [containerId]: updated } };
+  // Hoist the detached node back to the root list so it stays addressable.
+  if (containerId === graph.root) return finalize(next);
+  return finalize(appendChild(next, graph.root, detachedId));
 }
 
 /** Add a repeat node — instantiates a child N times + stacks them

@@ -29,6 +29,9 @@
     setTransformChild,
     setTransformAxis,
     setTransformAxisValue,
+    addStackPlaceholder,
+    appendContainerChild,
+    removeContainerChildAt,
     setCallArg,
     removeNode,
     setLayout,
@@ -219,19 +222,37 @@
   // chips stay where they are. This avoids the "ugly default-grid" problem
   // when you reload and your chips were arranged carefully on the canvas.
   // Position is purely derived from the chip's index in paramEntries.
-  const PARAM_W = 120, PARAM_H = 22, PARAM_GAP = 4, PARAM_X0 = 10, PARAM_Y0 = 10;
+  // Params card geometry. Outer card sits at (CARD_X0, CARD_Y0). The title
+  // bar takes CARD_TITLE_H; chips fill the body below it. Each chip is
+  // PARAM_W × PARAM_H, with PARAM_GAP between rows. The whole card is wide
+  // enough to wrap the chip + padding; the socket sits OUTSIDE the card's
+  // right edge so it can be drag-wired from.
+  const CARD_X0 = 8, CARD_Y0 = 8, CARD_PAD = 8, CARD_TITLE_H = 26;
+  const PARAM_W = 124, PARAM_H = 26, PARAM_GAP = 3;
+  /** Position of the i-th chip's top-left INSIDE the params card. */
   function paramPos(_name: string, i: number): { x: number; y: number } {
-    // VERTICAL stack from top-left in VIEWPORT space (chips are tacked).
-    return { x: PARAM_X0, y: PARAM_Y0 + i * (PARAM_H + PARAM_GAP) };
+    return {
+      x: CARD_X0 + CARD_PAD,
+      y: CARD_Y0 + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP),
+    };
   }
+  /** Card outer rect dimensions — derived from chip count. */
+  function paramCardSize(n: number): { w: number; h: number } {
+    return {
+      w: CARD_PAD * 2 + PARAM_W,
+      h: CARD_TITLE_H + CARD_PAD * 2 + Math.max(1, n) * PARAM_H + Math.max(0, n - 1) * PARAM_GAP,
+    };
+  }
+  let pcs = $derived(paramCardSize(Object.entries(graph.params ?? {}).length));
   /** Where a param chip's OUTPUT socket sits — in GRAPH space (the wires
    *  render inside the pan/zoom group, so we convert from the chip's fixed
    *  viewport position back into graph coords). The conversion ensures the
    *  wire's endpoint always lands on the visual chip socket regardless of
-   *  pan/zoom. */
+   *  pan/zoom. The chip's group is translated to paramPos, and the socket
+   *  inside that group sits at (PARAM_W + CARD_PAD + 4, PARAM_H / 2).  */
   function paramSocketPos(name: string, i: number): { x: number; y: number } {
     const p = paramPos(name, i);
-    const vx = p.x + PARAM_W + 4;
+    const vx = p.x + PARAM_W + CARD_PAD + 4;
     const vy = p.y + PARAM_H / 2;
     // viewport → graph: invert outer transform `translate(pan) ∘ scale(zoom)`.
     return { x: (vx - pan.x) / zoom, y: (vy - pan.y) / zoom };
@@ -314,7 +335,22 @@
     }
     if (node.type === 'method') return { w: 180, h: 100 };
     if (node.type === 'mv' || node.type === 'rot') return { w: 200, h: 120 };
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
+      // One row per existing child + one "+ drop here" trailer row
+      const slots = (node.children?.length ?? 0) + 1;
+      return { w: 200, h: Math.max(60, 40 + slots * 22) };
+    }
     return { w: 180, h: 80 };
+  }
+  /** Input socket Y for the i-th child slot of a container (list/stack/group). */
+  function containerSlotY(i: number): number { return 40 + i * 22; }
+  /** Drag-wire target — when a wire ends on a container's slot, append the
+   *  source node as a child of that container. Idempotent (won't double-add). */
+  function endWireOnContainerSlot(ev: PointerEvent, containerId: NodeId) {
+    if (!wireFrom) return;
+    ev.stopPropagation();
+    graph = appendContainerChild(graph, containerId, wireFrom.nodeId);
+    wireFrom = null; wireMouse = null;
   }
   function nodePos(id: NodeId): { x: number; y: number } {
     return graph.layout[id] ?? { x: 0, y: 0 };
@@ -450,6 +486,7 @@
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
+  function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
 
   function deleteNode(id: string) { graph = removeNode(graph, id); }
   function onArgEdit(id: string, key: string, value: number) {
@@ -581,7 +618,14 @@
   }
 
   // Derived view-helpers.
-  let allNodes = $derived(Object.values(graph.nodes).filter((n) => n.type !== 'list' && !isInlineWrapper(n.id)));
+  // Visible nodes on the canvas: every node EXCEPT inline mv/rot wrappers
+  // (those render inline inside their Call's card). The ROOT list IS visible
+  // now — it shows up as the ▶ Output card so the user can see + curate what
+  // the function returns. Non-root lists/stacks/groups also render as cards.
+  let allNodes = $derived(Object.values(graph.nodes).filter((n) => !isInlineWrapper(n.id)));
+  /** Excludes the root list — that's the always-present ▶ Output card,
+   *  not a user-dropped node. Used by the status bar + empty-canvas hint. */
+  let visibleNodeCount = $derived(allNodes.filter((n) => n.id !== graph.root).length);
   let paramEntries = $derived(Object.entries(graph.params));
   let filteredSrcs = $derived.by(() => {
     const q = pickerFilter.trim().toLowerCase();
@@ -612,7 +656,7 @@
     <button class="ge-btn save" type="button" disabled={saveBusy} onclick={saveGraph}>{saveBusy ? '…' : '💾 Save'}</button>
     <button class="ge-btn ghost" type="button" onclick={resetGraph}>Reset</button>
     {#if saveStatus}<span class="ge-save-stat">{saveStatus}</span>{/if}
-    <span class="ge-stat">{allNodes.length} node{allNodes.length === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
+    <span class="ge-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
   </header>
 
   <main class="ge-grid">
@@ -976,29 +1020,97 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
+
+              {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
+                {@const isRoot = n.id === graph.root}
+                {@const container = n as any}
+                {@const title = isRoot ? '▶ Output' : n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg container" class:root={isRoot} class:stack={n.type === 'stack'}
+                  width={size.w} height={size.h} rx="6"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}
+                />
+                <text x="14" y="22" class="ge-node-title">{title}</text>
+                {#if !isRoot}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
+                    onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
+                {/if}
+                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
+                <!-- Children slots: one per child + a trailing "+ drop" slot -->
+                {#each container.children as childId, i (childId)}
+                  {@const childNode = graph.nodes[childId]}
+                  {@const childLabel = childNode?.type === 'call'
+                    ? `${(childNode as any).alias} · ${(childNode as any).src}`
+                    : childNode?.type === 'method' ? `${(childNode as any).op}(…)`
+                    : childNode?.type === 'mv' ? 'mv(…)'
+                    : childNode?.type === 'rot' ? 'rot(…)'
+                    : childNode?.type === 'stack' ? 'stack(…)'
+                    : childNode?.type === 'repeat' ? `× ${childNode.count?.kind === 'literal' ? childNode.count.value : '…'}`
+                    : '(missing)'}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={containerSlotY(i)} r="5"
+                    onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
+                  <text x="10" y={containerSlotY(i) + 4} class="ge-sock-label">{childLabel}</text>
+                  <!-- × removes this child from the container -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <text role="button" tabindex="-1" class="ge-container-slot-x"
+                    x={size.w - 14} y={containerSlotY(i) + 4}
+                    onpointerdown={(ev) => { ev.stopPropagation(); graph = removeContainerChildAt(graph, n.id, i); }}>×</text>
+                {/each}
+                <!-- Trailing + drop slot — drag any output socket onto here to append. -->
+                {@const trailY = containerSlotY(container.children.length)}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={trailY} r="5"
+                  onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
+                <text x="10" y={trailY + 4} class="ge-sock-label trail">+ drop here</text>
+                <!-- Non-root containers have an OUTPUT socket — their result
+                     can feed upstream (e.g. into a method.obj). -->
+                {#if !isRoot}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                    onpointerdown={(ev) => startWire(ev, n.id)}/>
+                {/if}
               {/if}
             </g>
           {/each}
 
-          {#if allNodes.length === 0}
+          {#if allNodes.filter((n) => n.id !== graph.root).length === 0}
             <text x="80" y="100" class="ge-canvas-hint">Click <tspan font-weight="bold">+ Drop</tspan> to add a Call, CSG op, or transform.</text>
           {/if}
         </g>
 
-        <!-- TACKED PARAM CHIPS — render OUTSIDE the pan/zoom group so they
-             stay glued to the viewport top-left, even as the canvas pans
-             and zooms. Drawn AFTER the pan group so they layer on top of
-             any node that might end up beneath them. The 📌 glyph on each
-             chip signals it's tacked (future: click to untack + flow with
-             canvas). Wires from chip → node compute the source point in
-             GRAPH space via paramSocketPos so they meet the visual socket. -->
+        <!-- PARAMS CARD — tacked outside the pan/zoom group so it stays
+             glued to the viewport top-left. Holds N param chips vertically,
+             with a title bar that has a + rounded button to add a new param.
+             Each chip is vertically symmetric, with: 📌 pin (left),
+             p.name + input value, 🗑 trash (right), output socket OUTSIDE
+             the card's right edge for drag-wiring. -->
+        <g class="ge-params-card" transform="translate({CARD_X0},{CARD_Y0})">
+          <rect class="ge-params-card-bg" width={pcs.w} height={pcs.h} rx="8"/>
+          <text x="10" y={CARD_TITLE_H - 9} class="ge-params-card-title">Params</text>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <circle role="button" tabindex="-1" class="ge-params-add-btn"
+            cx={pcs.w - 14} cy={CARD_TITLE_H - 13} r="9"
+            onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
+          <text x={pcs.w - 14} y={CARD_TITLE_H - 9} class="ge-params-add-glyph" text-anchor="middle" pointer-events="none">+</text>
+          <line x1="0" y1={CARD_TITLE_H} x2={pcs.w} y2={CARD_TITLE_H} class="ge-params-card-divider"/>
+        </g>
+        <!-- Chips render in viewport coords too. Output sockets stick out
+             of the card's right edge so they can still be drag-targeted. -->
         {#each paramEntries as [name, p], i (name)}
           {@const pos = paramPos(name, i)}
           <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
-            <rect class="ge-param-card-bg" width={PARAM_W} height={PARAM_H} rx="11"/>
-            <text x="4" y="15" class="ge-param-pin" pointer-events="none">📌</text>
-            <text x="18" y="15" class="ge-param-card-name" text-anchor="start">p.{name}</text>
-            <foreignObject x="62" y="3" width="42" height="16">
+            <!-- Chip body — full PARAM_H height for vertical centering -->
+            <rect class="ge-param-card-bg" width={PARAM_W} height={PARAM_H} rx="6"/>
+            <!-- 📌 pin (left edge), vertically centered -->
+            <text x="6" y={PARAM_H / 2 + 4} class="ge-param-pin" pointer-events="none">📌</text>
+            <!-- p.name -->
+            <text x="22" y={PARAM_H / 2 + 4} class="ge-param-card-name" text-anchor="start">p.{name}</text>
+            <!-- Input value -->
+            <foreignObject x="60" y={(PARAM_H - 16) / 2} width="40" height="16">
               <input class="ge-param-card-input" type="number" step="0.05"
                 xmlns="http://www.w3.org/1999/xhtml"
                 value={(p as any).default}
@@ -1009,22 +1121,17 @@
                 }}
                 oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
             </foreignObject>
+            <!-- 🗑 trash — vertically centered -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <text role="button" tabindex="-1" class="ge-param-card-x" x={PARAM_W - 12} y="15"
-              onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>×</text>
+            <text role="button" tabindex="-1" class="ge-param-card-trash" x={PARAM_W - 13} y={PARAM_H / 2 + 4}
+              onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</text>
+            <!-- Output socket — OUTSIDE the card right edge so it's not clipped -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <circle role="button" tabindex="-1" class="ge-sock out param" cx={PARAM_W + 4} cy={PARAM_H / 2} r="5"
+            <circle role="button" tabindex="-1" class="ge-sock out param"
+              cx={PARAM_W + CARD_PAD + 4} cy={PARAM_H / 2} r="5"
               onpointerdown={(ev) => startParamWire(ev, name)}/>
           </g>
         {/each}
-        <!-- + add-param button — same viewport-fixed group, below the last chip -->
-        <g class="ge-param-add-card"
-           transform="translate({PARAM_X0},{PARAM_Y0 + paramEntries.length * (PARAM_H + PARAM_GAP)})">
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <rect role="button" tabindex="-1" class="ge-param-add-bg" width={PARAM_W} height={PARAM_H} rx="11"
-            onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
-          <text x={PARAM_W / 2} y="15" class="ge-param-add-glyph" text-anchor="middle" pointer-events="none">+ param</text>
-        </g>
       </svg>
     </section>
 
@@ -1119,6 +1226,10 @@
         <button class="ge-pick xform" type="button" onclick={dropRot}>↻ rot [rx, ry, rz]</button>
       </div>
       <div class="ge-picker-section">
+        <div class="ge-picker-label">Container</div>
+        <button class="ge-pick container" type="button" onclick={dropStack}>↕ stack [...]</button>
+      </div>
+      <div class="ge-picker-section">
         <div class="ge-picker-label">Call (primitive)</div>
         <input class="ge-picker-search" type="text" placeholder="filter…" bind:value={pickerFilter}/>
         <div class="ge-picker-list">
@@ -1171,6 +1282,13 @@
   .ge-node-bg.method { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
   .ge-node-bg.transform { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-node-bg.transform.rot { fill: #fce7f3; stroke: #be185d; }
+  .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }
+  .ge-node-bg.container.root { fill: #f0fdf4; stroke: #15803d; stroke-width: 2.5; }
+  .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
+  .ge-container-slot-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  .ge-container-slot-x:hover { fill: #7f1d1d; }
+  .ge-sock-label.trail { fill: #9ca3af; font-style: italic; }
+  .ge-sock.trail { fill: #fff; stroke: #9ca3af; stroke-dasharray: 2 2; }
   .ge-node-title { font: 600 12px Arial; fill: #0c4a6e; pointer-events: none; }
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
@@ -1230,8 +1348,16 @@
   /* Param chips on canvas — small amber rounded rectangles at the top with
      output socket. The HTML strip above stays for adding/removing; these
      mirror the same data for visual wiring. */
-  .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+  .ge-params-card-bg { fill: #fffbeb; stroke: #d97706; stroke-width: 1.5; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.06)); }
+  .ge-params-card-title { font: 700 12px Arial; fill: #78350f; user-select: none; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ge-params-card-divider { stroke: #fde68a; stroke-width: 1; }
+  .ge-params-add-btn { fill: #fcd34d; stroke: #d97706; stroke-width: 1.5; cursor: pointer; transition: fill 0.12s; }
+  .ge-params-add-btn:hover { fill: #f59e0b; }
+  .ge-params-add-glyph { font: 700 14px Arial; fill: #78350f; user-select: none; }
+  .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 1; }
   .ge-param-pin { font: 11px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial; user-select: none; opacity: 0.85; }
+  .ge-param-card-trash { font: 12px 'Apple Color Emoji', 'Segoe UI Emoji', Arial; cursor: pointer; user-select: none; opacity: 0.65; }
+  .ge-param-card-trash:hover { opacity: 1; }
   /* Hide native number-input spinner arrows everywhere in the editor —
      drag-to-scrub via dragNumber + keyboard arrows are the input methods;
      the chevrons take horizontal space we can't afford in tight cells. */
