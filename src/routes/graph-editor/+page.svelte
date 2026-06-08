@@ -31,6 +31,9 @@
     setTransformAxisValue,
     setViewport,
     addStackPlaceholder,
+    addRepeatPlaceholder,
+    setRepeatChild,
+    setRepeatCount,
     appendContainerChild,
     removeContainerChildAt,
     setCallArg,
@@ -383,6 +386,7 @@
     }
     if (node.type === 'method') return { w: 180, h: 100 };
     if (node.type === 'mv' || node.type === 'rot') return { w: 200, h: 120 };
+    if (node.type === 'repeat') return { w: 200, h: 100 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
       const slots = (node.children?.length ?? 0) + 1;
@@ -584,6 +588,16 @@
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
   function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
+  function dropRepeat(){ closePicker(); graph = addRepeatPlaceholder(graph).graph; }
+  /** Drag-wire ending on a Repeat node's child slot — set the wire source
+   *  as the new child. Idempotent and works for any node type that has an
+   *  output socket. */
+  function endWireOnRepeatChild(ev: PointerEvent, repeatId: NodeId) {
+    if (!wireFrom) return;
+    ev.stopPropagation();
+    graph = setRepeatChild(graph, repeatId, wireFrom.nodeId);
+    wireFrom = null; wireMouse = null;
+  }
 
   function deleteNode(id: string) { graph = removeNode(graph, id); }
   function onArgEdit(id: string, key: string, value: number) {
@@ -991,6 +1005,14 @@
                 {@const tgt = inputSocketAt(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
+            {:else if n.type === 'repeat'}
+              <!-- Repeat node's child wire — bottom-left input socket -->
+              {#if (n as any).child && graph.nodes[(n as any).child]}
+                {@const src = outputSocketAt((n as any).child)}
+                {@const pos = nodePos(n.id)}
+                {@const size = nodeSize(n)}
+                <path class="ge-wire child" d={bezier(src.x, src.y, pos.x, pos.y + size.h - 18)} fill="none"/>
+              {/if}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each child of a container shows as a bezier
                    from the child's output socket → the container's i-th slot
@@ -1287,6 +1309,60 @@
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
 
+              {:else if n.type === 'repeat'}
+                {@const rep = n as any}
+                {@const countLiteral = rep.count?.kind === 'literal' ? Number(rep.count.value) : 1}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg repeat"
+                  width={size.w} height={size.h} rx="6"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="14" y="22" class="ge-node-title">↻ Repeat</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
+                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
+                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
+                <foreignObject x="20" y="40" width={size.w - 24} height="36">
+                  <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="ge-arg-row">
+                      <span class="ge-arg-key">count</span>
+                      <span class="ge-arg-cell">
+                        {#if rep.count?.kind === 'param'}
+                          <span class="ge-arg-pchip" title="Wired to param">
+                            p.{rep.count.param}
+                            <button class="ge-arg-pchip-x" type="button"
+                              onclick={() => { graph = setRepeatCount(graph, n.id, asLiteral(graph.params[rep.count.param]?.default ?? 1)); }}>×</button>
+                          </span>
+                        {:else if rep.count?.kind === 'expr'}
+                          <input class="ge-arg-input expr" type="text"
+                            placeholder="e.g. p.n"
+                            value={rep.count.expr}
+                            oninput={(e) => { graph = setRepeatCount(graph, n.id, asExpr((e.target as HTMLInputElement).value)); }}/>
+                        {:else}
+                          <input class="ge-arg-input" type="number" min="1" step="1"
+                            value={countLiteral}
+                            use:dragNumber={{
+                              step: 1,
+                              get: () => countLiteral,
+                              set: (val) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(val)))); },
+                            }}
+                            oninput={(e) => { graph = setRepeatCount(graph, n.id, asLiteral(Math.max(1, Math.round(Number((e.target as HTMLInputElement).value))))); }}/>
+                        {/if}
+                      </span>
+                    </div>
+                  </div>
+                </foreignObject>
+                <!-- Child input socket — drop any node's output here to repeat it. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={size.h - 18} r="6"
+                  onpointerup={(ev) => endWireOnRepeatChild(ev, n.id)}/>
+                <text x="10" y={size.h - 14} class="ge-sock-label">child</text>
+                <!-- Output -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+
               {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
                 {@const isRoot = n.id === graph.root}
                 {@const container = n as any}
@@ -1554,6 +1630,7 @@
       <div class="ge-picker-section">
         <div class="ge-picker-label">Container</div>
         <button class="ge-pick container" type="button" onclick={dropStack}>↕ stack [...]</button>
+        <button class="ge-pick container" type="button" onclick={dropRepeat}>↻ repeat × N</button>
       </div>
       <div class="ge-picker-section">
         <div class="ge-picker-label">Call (primitive)</div>
@@ -1615,6 +1692,8 @@
   .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }
   .ge-node-bg.container.root { fill: #f0fdf4; stroke: #15803d; stroke-width: 2.5; }
   .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
+  /* Repeat × N — distinct color so it reads as "iteration", not "container". */
+  .ge-node-bg.repeat { fill: #fdf2f8; stroke: #be185d; stroke-width: 2; }
   .ge-container-slot-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-container-slot-x:hover { fill: #7f1d1d; }
   .ge-sock-label.trail { fill: #9ca3af; font-style: italic; }

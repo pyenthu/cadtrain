@@ -1328,3 +1328,43 @@ test.describe('graph-editor — phase 20: auto-layout', () => {
     await expect(undoBtn).toHaveCount(0);
   });
 });
+
+// ─── Phase 23 — Visual Repeat × N loop node ──────────────────────────────
+//
+// The Repeat node type has existed in the graph data model since Phase 17
+// (it's how `stand` translates from the vocab). Phase 23 makes it a
+// first-class droppable from the picker — visible card with a count input
+// + a child input socket. Drag-wire any node into the child slot and the
+// source emits stack(Array.from({length: N}, () => child)).
+
+test.describe('graph-editor — phase 23: visual Repeat × N node', () => {
+  test('drop Repeat, wire a Call into its child, source has Array.from(stack', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openEditor(page);
+    await setExemplar(page, 'test_phase23_repeat');
+
+    // 1. Drop a Call (the iteration body).
+    await pickPrimitive(page, 'dt_shaft');
+    await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
+
+    // 2. Drop a Repeat from the picker — under the Container section.
+    await openPicker(page);
+    await page.locator('.ge-pick.container', { hasText: 'repeat' }).click();
+    await expect(page.locator('.ge-node-bg.repeat')).toHaveCount(1);
+
+    // 3. Drag-wire the Call's output → Repeat's child input socket.
+    const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
+    const repeat = page.locator('g.ge-node:has(rect.ge-node-bg.repeat)').first();
+    const aOut = callA.locator('circle.ge-sock.out:not(.in)').first();
+    const repChild = repeat.locator('circle.ge-sock.in.child').first();
+    await dragBetween(page, aOut, repChild);
+
+    // 4. Source should contain the Array.from + stack idiom; default count = 3.
+    const src = page.locator('.ge-source');
+    await expect(src).toContainText(/Array\.from\(/);
+    await expect(src).toContainText(/stack\(\s*Array\.from\(\s*\{\s*length:\s*3/);
+
+    // 5. No bake error — the repeat compiles + bakes.
+    await expect(page.locator('.ge-err')).toHaveCount(0);
+  });
+});

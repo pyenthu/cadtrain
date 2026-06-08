@@ -450,6 +450,28 @@ export function addRepeat(
   return { graph: finalize(final), id };
 }
 
+/** Drop an UNWIRED Repeat node — count defaults to 3, child is the empty
+ *  string until the user drag-wires another node into the child slot. */
+export function addRepeatPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addRepeat(graph, '', asLiteral(3), parentId);
+}
+
+/** Rebind a Repeat node's child socket to point at another node. */
+export function setRepeatChild(graph: Graph, repeatId: NodeId, childId: NodeId): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'repeat') return graph;
+  const updated: RepeatNode = { ...node, child: childId };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Update a Repeat node's count slot. */
+export function setRepeatCount(graph: Graph, repeatId: NodeId, count: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'repeat') return graph;
+  const updated: RepeatNode = { ...node, count };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
 /** Add a rot transform around a child. */
 export function addRot(
   graph: Graph,
