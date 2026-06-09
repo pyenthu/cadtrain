@@ -17,6 +17,14 @@
 
 <style>
   :global(html, body) { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; font-family: Arial, sans-serif; }
+  /* SvelteKit's `<div id="app">` wrapper in app.html — without this, it
+     stays at `display: block; height: auto` and sizes to its content,
+     which is shorter than the viewport when the rail's primitive list
+     gets short. That made `.layout`'s `height: 100%` resolve to the
+     #app box height (~455 px) instead of the body's 598 px, and the
+     canvas + sidebar both shrank to fit the rail. Pinning #app to
+     100% propagates the viewport height all the way down. */
+  :global(#app) { height: 100%; min-height: 0; display: flex; flex-direction: column; }
   /* No header row — content fills the entire viewport. min-height: 0
      keeps any nested grid 1fr rows clamped to the actual viewport
      instead of sizing to max-content of the canvas. `height: 100%`
@@ -25,6 +33,6 @@
      below `100vh` (which still measures the unobstructed viewport),
      and that gap was making the layout 57 px taller than visible,
      scrolling the whole page instead of the rail. */
-  .layout { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; }
+  .layout { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; flex: 1 1 auto; }
   .content { overflow: hidden; min-width: 0; min-height: 0; }
 </style>

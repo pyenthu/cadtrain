@@ -215,8 +215,14 @@
   <title>Primitives · CAD Train</title>
 </svelte:head>
 
-<div class="prim-root">
-  <aside class="prim-rail" style="width: {railWidth}px">
+<!-- Bind the rail width into a CSS custom property so the grid track
+     references it explicitly. `grid-template-columns: auto …` was
+     sizing the rail column to max-content of the longest primitive
+     name (with `white-space: nowrap` the min-content is the full
+     name), blowing the rail out to 600 px+ when any row had a long id.
+     A fixed first track from --rail-w pins it to the resize handle. -->
+<div class="prim-root" style="--rail-w: {railWidth}px">
+  <aside class="prim-rail">
     <header>
       <h2>Primitives</h2>
       <a class="rail-newtab" href="/graph-editor" target="_blank" rel="noopener" title="Open the standalone graph editor in a new tab">↗ open</a>
@@ -342,7 +348,26 @@
               <button class="prim-trash perm" type="button"
                 title="Permanent delete — removes the file from the volume (irreversible)"
                 disabled={deleteBusy === e.id}
-                onclick={() => deletePrim(e.id, e.source, 'permanent')}>{deleteBusy === e.id ? '…' : '✕'}</button>
+                onclick={() => deletePrim(e.id, e.source, 'permanent')}
+                aria-label="Permanently delete {e.id}">
+                {#if deleteBusy === e.id}
+                  …
+                {:else}
+                  <!-- Heroicons outline / trash — 1.6 stroke, black currentColor,
+                       16 px square inside the 24 px row gutter so it reads as
+                       a real icon rather than emoji noise. -->
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                    aria-hidden="true">
+                    <path d="M3 6h18"/>
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    <path d="M19 6l-1.2 13.2A2 2 0 0 1 15.8 21H8.2a2 2 0 0 1-2-1.8L5 6"/>
+                    <path d="M10 11v6"/>
+                    <path d="M14 11v6"/>
+                  </svg>
+                {/if}
+              </button>
             {/if}
           </div>
         {/each}
@@ -398,7 +423,11 @@
 <style>
   .prim-root {
     display: grid;
-    grid-template-columns: auto 6px minmax(0, 1fr);
+    /* `--rail-w` set on the root element from the rail-resize state.
+       Fixed first track (not `auto`) so a long primitive name with
+       `white-space: nowrap` can't blow the column out to its min-
+       content — the rail stays pinned to the resize handle. */
+    grid-template-columns: var(--rail-w, 240px) 6px minmax(0, 1fr);
     /* `minmax(0, 1fr)` (not `1fr`, which defaults to `minmax(auto, 1fr)`)
        so the row clamps to the parent's height — required for the rail's
        `overflow-y: auto` to actually scroll when there are 100+ entries.
@@ -424,9 +453,11 @@
     overflow-y: scroll; overflow-x: hidden;
     /* `min-height: 0` is required on a flex column inside a clamped
        grid track for the inner scroll to engage — same pattern as the
-       rail's parent (.prim-root). */
+       rail's parent (.prim-root). `min-width: 0` lets the rail shrink
+       to its grid track (var(--rail-w)) instead of expanding to the
+       longest primitive name's min-content. */
     min-height: 0;
-    min-width: 180px; max-width: 480px;
+    min-width: 0;
     /* Firefox / standards-track thin scrollbar with cadtrain palette. */
     scrollbar-width: thin;
     scrollbar-color: #94a3b8 #f1f5f9;
@@ -498,12 +529,29 @@
   }
   .prim-trash:hover { opacity: 1 !important; background: #fee2e2; }
   .prim-trash:disabled { cursor: wait; opacity: 0.4 !important; }
-  /* Permanent-delete variant for the Archived group — same affordance
-     position + reveal, but the glyph is an ✕ (sharper than the soft-
-     delete 🗑) and the hover background is darker red to flag the
-     irreversibility. */
-  .prim-trash.perm { color: #991b1b; font-weight: 600; }
-  .prim-trash.perm:hover { background: #fecaca; color: #7f1d1d; }
+  /* Permanent-delete variant for the Archived group — black outline
+     icon, ALWAYS visible (not hover-revealed like the soft-delete
+     trash). Conspicuous because this is the irreversible path; users
+     should see they have a delete option without having to hover.
+     Square box (24×24) keeps the icon centred + gives a clear hit
+     target. Red wash + tinted icon stroke on hover/focus so the
+     irreversibility reads on intent, not by default. */
+  .prim-trash.perm {
+    opacity: 1;
+    width: 28px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #111827;
+    background: transparent;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    margin: 2px 6px 2px 0;
+  }
+  .prim-trash.perm:hover {
+    background: #fee2e2; color: #991b1b; border-color: #fca5a5;
+  }
+  .prim-trash.perm:focus-visible {
+    outline: 2px solid #991b1b; outline-offset: 1px;
+  }
+  .prim-trash.perm svg { display: block; }
   .prim-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .prim-tag {
     font: 9px ui-monospace, monospace; padding: 1px 5px; border-radius: 3px;
