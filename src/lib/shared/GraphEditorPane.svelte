@@ -576,9 +576,81 @@
     const literal = cur?.kind === 'literal' ? cur.value : (cur?.kind === 'param' ? (graph.params[cur.param]?.default ?? fallback) : fallback);
     graph = setTransformAxis(graph, transformId, axis, typeof literal === 'number' ? literal : fallback);
   }
+  /** Card bounding boxes in graph space — used by `bezier()` to route
+   *  wires AROUND non-endpoint cards instead of straight through them.
+   *  Inline mv/rot wrappers (rendered as decorations on the parent Call,
+   *  not as standalone cards) are filtered out. */
+  let cardObstacles = $derived.by(() => {
+    const out: { id: string; x: number; y: number; w: number; h: number }[] = [];
+    for (const id of Object.keys(graph.nodes)) {
+      const node = graph.nodes[id];
+      if (!node) continue;
+      if (isInlineWrapper(id)) continue;
+      const pos = graph.layout[id];
+      if (!pos) continue;
+      const sz = nodeSize(node);
+      out.push({ id, x: pos.x, y: pos.y, w: sz.w, h: sz.h });
+    }
+    return out;
+  });
+
+  /** Bezier from (x1,y1) to (x2,y2) — orthogonally routed AROUND any card
+   *  whose body the default S-curve would cut through. The source + target
+   *  endpoint cards are auto-detected (point sits within EDGE_TOLERANCE
+   *  of a card's bounding box → that card is excluded from the obstacle
+   *  set). If any non-endpoint obstacle intrudes, the curve's control
+   *  points lift to the closer clear Y level (above or below all
+   *  blockers), giving the wire a clean arch instead of a straight line
+   *  through the offending card body. */
   function bezier(x1: number, y1: number, x2: number, y2: number): string {
     const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
-    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+    const cx1 = x1 + dx, cy1 = y1;
+    const cx2 = x2 - dx, cy2 = y2;
+    const defaultPath = `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+    // Tiny wires (e.g. a self-edge or the in-flight stub) don't need routing.
+    const span = Math.hypot(x2 - x1, y2 - y1);
+    if (span < 60 || cardObstacles.length === 0) return defaultPath;
+
+    const EDGE_TOLERANCE = 10;
+    const onEdge = (px: number, py: number, o: { x: number; y: number; w: number; h: number }) =>
+      px >= o.x - EDGE_TOLERANCE && px <= o.x + o.w + EDGE_TOLERANCE &&
+      py >= o.y - EDGE_TOLERANCE && py <= o.y + o.h + EDGE_TOLERANCE;
+
+    // Endpoint cards — wires START and END on socket points that sit on
+    // card edges; those cards are NOT obstacles for this wire.
+    const endpointCards = new Set<string>();
+    for (const o of cardObstacles) {
+      if (onEdge(x1, y1, o) || onEdge(x2, y2, o)) endpointCards.add(o.id);
+    }
+
+    // Sample the default bezier and check whether ANY non-endpoint card
+    // contains a sample point. If yes, we route — and collect the topmost
+    // top-edge + bottommost bottom-edge so the arch clears the worst case.
+    const samples = 10;
+    let topClear = Infinity, botClear = -Infinity;
+    let intrudes = false;
+    for (let i = 1; i < samples; i++) {
+      const t = i / samples;
+      const t1 = 1 - t;
+      const sx = t1*t1*t1*x1 + 3*t1*t1*t*cx1 + 3*t1*t*t*cx2 + t*t*t*x2;
+      const sy = t1*t1*t1*y1 + 3*t1*t1*t*cy1 + 3*t1*t*t*cy2 + t*t*t*y2;
+      for (const o of cardObstacles) {
+        if (endpointCards.has(o.id)) continue;
+        if (sx >= o.x && sx <= o.x + o.w && sy >= o.y && sy <= o.y + o.h) {
+          intrudes = true;
+          if (o.y < topClear) topClear = o.y - 18;
+          if (o.y + o.h > botClear) botClear = o.y + o.h + 18;
+        }
+      }
+    }
+    if (!intrudes) return defaultPath;
+
+    // Arch direction — whichever clear Y is closer to the wire's midpoint
+    // wins. The result is a smooth bezier whose midsection passes ABOVE
+    // (or BELOW) every blocking card.
+    const midY = (y1 + y2) / 2;
+    const arcY = (midY - topClear) <= (botClear - midY) ? topClear : botClear;
+    return `M ${x1} ${y1} C ${cx1} ${arcY}, ${cx2} ${arcY}, ${x2} ${y2}`;
   }
 
   // Socket position helpers — match the node card geometries below.
