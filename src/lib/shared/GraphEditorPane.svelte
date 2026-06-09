@@ -591,7 +591,7 @@
       return { w: 220, h: Math.max(80, 50 + argCount * 22) };
     }
     if (node.type === 'method') return { w: 180, h: 100 };
-    if (node.type === 'mv' || node.type === 'rot') return { w: 200, h: 120 };
+    if (node.type === 'mv' || node.type === 'rot') return { w: 160, h: 130 };
     if (node.type === 'repeat') return { w: 230, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
@@ -1795,6 +1795,8 @@
               {:else if n.type === 'mv' || n.type === 'rot'}
                 {@const t = n as any}
                 {@const fieldName = n.type === 'mv' ? 'offset' : 'rot'}
+                {@const axisRowH = 22}
+                {@const axisStartY = 56}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg transform" class:rot={n.type === 'rot'}
                   width={size.w} height={size.h} rx="6"
@@ -1806,32 +1808,59 @@
                   {n.type === 'mv' ? '⇄ mv' : '↻ rot'}
                 </text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <foreignObject x="20" y="42" width={size.w - 24} height={size.h - 50}>
+                <!-- Child socket — same y as the title (just below the divider).
+                     One CHILD input plus three AXIS inputs makes the card a
+                     single-column wiring surface. -->
+                <text x="20" y="48" class="ge-sock-label">child</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child" cx="6" cy="44" r="5"
+                  onpointerup={(ev) => endWireOnInput(ev, n.id, 'child')}/>
+                <!-- Each axis row: socket + label + input + ƒ/× — same column
+                     model as the params card so wiring is obvious + the right
+                     edge stays consistent. -->
+                <foreignObject x="20" y={axisStartY - 4} width={size.w - 24} height={3 * axisRowH + 6}>
                   <div class="ge-xyz" xmlns="http://www.w3.org/1999/xhtml">
                     {#each ['x','y','z'] as axisLabel, i (axisLabel)}
+                      {@const axis = (t as any)[fieldName][i]}
                       <div class="ge-arg-row">
-                        <span class="ge-arg-key">{n.type === 'mv' ? '' : 'r'}{axisLabel}</span>
-                        <input class="ge-arg-input" type="number" step={n.type === 'mv' ? 0.5 : 1}
-                          value={((t as any)[fieldName][i].kind === 'literal') ? (t as any)[fieldName][i].value : 0}
-                          use:dragNumber={{
-                            step: n.type === 'mv' ? 0.5 : 1,
-                            get: () => Number((t as any)[fieldName][i].value ?? 0),
-                            set: (val) => onTransformAxis(n.id, i as 0|1|2, val),
-                          }}
-                          oninput={(e) => onTransformAxis(n.id, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                        />
+                        <span class="ge-arg-key axis">{n.type === 'mv' ? '' : 'r'}{axisLabel}</span>
+                        {#if axis.kind === 'param'}
+                          <span class="ge-arg-cell wired">
+                            <span class="ge-arg-pchip" title="Wired to param">p.{axis.param}</span>
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action x" type="button" title="Unwire — back to literal"
+                                onclick={() => onTransformAxis(n.id, i as 0|1|2, 0)}>×</button>
+                            </span>
+                          </span>
+                        {:else}
+                          <span class="ge-arg-cell">
+                            <input class="ge-arg-input" type="number" step={n.type === 'mv' ? 0.5 : 1}
+                              value={axis.kind === 'literal' ? axis.value : 0}
+                              use:dragNumber={{
+                                step: n.type === 'mv' ? 0.5 : 1,
+                                get: () => Number(axis.value ?? 0),
+                                set: (val) => onTransformAxis(n.id, i as 0|1|2, val),
+                              }}
+                              oninput={(e) => onTransformAxis(n.id, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                            />
+                          </span>
+                        {/if}
                       </div>
                     {/each}
                   </div>
                 </foreignObject>
+                <!-- Per-axis input sockets — one circle per row at the LEFT
+                     EDGE of the card. Drag a param chip onto one and the
+                     axis becomes wired (via endWireOnTransformAxis). -->
+                {#each [0, 1, 2] as i}
+                  {@const cy = axisStartY + i * axisRowH + axisRowH / 2 - 4}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="6" cy={cy} r="4"
+                    onpointerup={(ev) => endWireOnTransformAxis(ev, n.id, i as 0|1|2)}/>
+                {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
-                <!-- Input -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy="50" r="6"
-                  onpointerup={(ev) => endWireOnInput(ev, n.id, 'child')}/>
-                <text x="10" y="54" class="ge-sock-label">child</text>
                 <!-- Output -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
@@ -2497,6 +2526,14 @@
      positions. Misalignment of even 3-4 px per row stacks visibly. */
   .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 0; height: 22px; box-sizing: border-box; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
+  /* Axis labels (x/y/z, rx/ry/rz) on the mv/rot single-column card. Slim
+     fixed column so the input box has a predictable left edge regardless
+     of label length (rz vs r vs z). */
+  .ge-arg-key.axis {
+    flex: 0 0 18px; text-align: right;
+    font: 600 10px ui-monospace, monospace; color: #6b21a8;
+    padding-right: 4px;
+  }
   .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; cursor: ew-resize; }
   .ge-arg-input:hover { background: #f0f9ff; }
   .ge-arg-input:focus { cursor: text; outline: 1px solid #0369a1; background: #fff; }
