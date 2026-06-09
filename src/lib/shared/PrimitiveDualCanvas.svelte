@@ -116,7 +116,10 @@
   <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).
        Top = z 0 (top of the part), drag down to follow it deeper (Z-down). -->
   <div class="pd-zpan">
-    <input class="pd-zslider" type="range" min="-10" max="80" step="0.5"
+    <!-- Z-pan range expanded 90 units (−10 → 80) → 250 units (−50 → 200)
+         so tall multi-joint assemblies (drill stands, completion strings)
+         can be scrolled end-to-end without the slider hitting its stop. -->
+    <input class="pd-zslider" type="range" min="-50" max="200" step="0.5"
       bind:value={scene.zFocus} aria-label="Pan camera along Z" title="Pan view along Z ({scene.zFocus.toFixed(1)})" />
     <button class="pd-zreset" type="button" title="Reset Z pan" onclick={() => (scene.zFocus = 0)}>⊙</button>
   </div>

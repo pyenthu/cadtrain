@@ -8,7 +8,14 @@
 // on top of the model, which is what we're fixing here.
 
 export const scene = $state({
-  cam: { x: 0,  y:  30, z:  4 },
+  // Camera default position. Z-down drilling convention (up = [0,0,-1]):
+  //   y = horizontal viewing distance from origin
+  //   z = vertical offset (positive = below origin in world space)
+  // Previously {y:30, z:4} — too close to the part and the look-at felt
+  // low. Pulled to {y:50, z:0} so the typical 9–15 in shoe / joint /
+  // collar exemplars fit comfortably in the viewport with the centerline
+  // through the middle of the frame.
+  cam: { x: 0,  y:  50, z:  0 },
   /** Camera/look-at pan along the Z (drilling) axis — a vertical slider in the
    *  scene scrolls a tall assembly without changing the view angle. Both the
    *  camera and its target shift by this Z amount (a pure pan). */
