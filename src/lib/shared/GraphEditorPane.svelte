@@ -57,6 +57,7 @@
     type RotNode,
   } from '$lib/cad/composition-graph';
   import { emitGraph } from '$lib/cad/composition-emit';
+  import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
   import { dragNumber } from '$lib/shared/dragNumber';
@@ -174,19 +175,47 @@
    *  manual re-resolve). The graph itself doesn't yet feed back into
    *  profileSource — that's the Step-2 profile emit pipeline.
    *  PROFILE_TODO Phase 2.2: emit graph → build() body each change. */
+  /** Profile-mode resolve. Two source paths:
+   *   * GRAPH path — the canvas has pen_* nodes wired. The graph is
+   *     emitted via composition-emit-profile.ts into a build() body;
+   *     we POST that to /resolve. This is what gives the user a LIVE
+   *     2D preview as they drop / edit pen nodes.
+   *   * ON-DISK path — empty/legacy graph (no pen nodes). We fall back
+   *     to the original profileSource loaded from the file so the
+   *     preview still shows SOMETHING.
+   *
+   *  Params come from the graph's own meta.params (PARAMS card sliders)
+   *  when present, otherwise the file's meta.params defaults. Debounced
+   *  120 ms so a slider drag doesn't flood /resolve. */
+  let profileResolveTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     if (editKind !== 'profile') return;
-    const src = profileSource;
     void bakeNonce; // re-run on manual bake
+
+    // Pick the source: emit the graph if it has pen nodes; else the
+    // on-disk source.
+    const hasPenNodes = Object.values(graph.nodes).some(
+      (n) => (n as any).type === 'call' && String((n as any).src ?? '').startsWith('pen_'),
+    );
+    const src = hasPenNodes ? emitProfileGraph(graph).source : profileSource;
     if (!src) return;
-    // Use the profile's own meta.params defaults — the graph's params
-    // start empty for a legacy profile (no meta.graph block yet); the
-    // build() body still needs the declared p.bore / p.od / p.len etc.
+
+    // Param dict — prefer graph.params (the editor-controlled sliders)
+    // when populated; fall back to the file's meta.params.
     const params: Record<string, number> = {};
-    for (const [k, v] of Object.entries(profileMetaParams)) {
-      params[k] = Number((v as any)?.default ?? 0);
+    const graphParams = graph.params ?? {};
+    if (Object.keys(graphParams).length > 0) {
+      for (const [k, v] of Object.entries(graphParams)) {
+        params[k] = Number((v as any)?.default ?? 0);
+      }
+    } else {
+      for (const [k, v] of Object.entries(profileMetaParams)) {
+        params[k] = Number((v as any)?.default ?? 0);
+      }
     }
-    (async () => {
+
+    clearTimeout(profileResolveTimer);
+    profileResolveTimer = setTimeout(async () => {
       try {
         const r = await fetch('/api/primitives/profiles/resolve', {
           method: 'POST', headers: { 'content-type': 'application/json' },
@@ -197,7 +226,7 @@
         profilePts = Array.isArray(d.points) ? d.points : [];
         profileResolveErr = null;
       } catch (e: any) { profileResolveErr = e?.message ?? String(e); }
-    })();
+    }, 120);
   });
 
   /** Re-bake nonce — increment to trigger a fresh /api/primitives/preview
