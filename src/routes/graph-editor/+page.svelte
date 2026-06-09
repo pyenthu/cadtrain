@@ -336,6 +336,18 @@
   let pan = $state({ x: 0, y: 0 });
   let zoom = $state(1);
   let canvasEl: SVGSVGElement | undefined = $state();
+  /** Pan the canvas so a given node id is centered in the viewport — used
+   *  by the broken-reference banner chips to scroll a deleted-ref node into
+   *  view. No-op when the node has no layout entry (legacy graphs). */
+  function panToNode(id: NodeId) {
+    const pos = graph.layout[id];
+    if (!pos || !canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    pan = {
+      x: rect.width / 2 - pos.x * zoom,
+      y: rect.height / 2 - pos.y * zoom,
+    };
+  }
   let panning = false; let panStart = { x: 0, y: 0 }; let panOrig = { x: 0, y: 0 };
   function onCanvasPointerDown(ev: PointerEvent) {
     // Middle button + Shift ALWAYS pan, even over content (power-user handle).
@@ -1149,6 +1161,28 @@
     {#if saveStatus}<span class="ge-save-stat">{saveStatus}</span>{/if}
     <span class="ge-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
   </header>
+
+  {#if emitted.validationErrors.length > 0}
+    <!-- Broken-reference banner. Surfaces deleted-node / deleted-param refs
+         BEFORE the bake explodes as a cryptic WASM out-of-bounds. Each row
+         is precise enough to find + fix in the editor: node id + slot + the
+         missing ref. Clicking selects the offending node. -->
+    <div class="ge-valerr" role="status" aria-live="polite">
+      <strong>⚠ {emitted.validationErrors.length} broken reference{emitted.validationErrors.length === 1 ? '' : 's'}</strong>
+      <span class="ge-valerr-hint">— bake will fail until fixed:</span>
+      <ul>
+        {#each emitted.validationErrors as e (e.nodeId + e.slot)}
+          <li>
+            <button class="ge-valerr-chip" type="button" title="Pan to {e.nodeId}"
+              onclick={() => panToNode(e.nodeId)}>{e.nodeId}</button>
+            <span class="ge-valerr-slot">{e.slot}</span>
+            →
+            <span class="ge-valerr-bad" title={e.kind}>{e.kind === 'missing-param' ? 'param' : 'node'} "{e.badRef}" not found</span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 
   <main class="ge-grid" bind:this={gridEl}
     style="grid-template-columns: {splitA}% 6px 1fr">
@@ -2108,6 +2142,24 @@
   .ge-btn.ghost { background: #e5e7eb; color: #1f2937; }
   .ge-btn.ghost:hover { background: #d1d5db; }
   .ge-save-stat { font: 11px ui-monospace, monospace; color: #15803d; }
+  /* Broken-reference banner — sits between the toolbar and the canvas so
+     the user can't miss it. Amber theme matches the existing stale-server
+     hint; click a node-id chip to select-and-pan to the offending node. */
+  .ge-valerr {
+    padding: 8px 14px; background: #fef3c7; border-bottom: 1px solid #fcd34d;
+    color: #78350f; font: 12px Arial; line-height: 1.5;
+  }
+  .ge-valerr strong { color: #92400e; }
+  .ge-valerr-hint { color: #a16207; }
+  .ge-valerr ul { margin: 4px 0 0; padding: 0 0 0 18px; }
+  .ge-valerr li { font-family: ui-monospace, monospace; font-size: 11px; }
+  .ge-valerr-chip {
+    background: #fde68a; color: #78350f; border: 1px solid #d97706; border-radius: 3px;
+    padding: 0 6px; font: 11px ui-monospace, monospace; cursor: pointer;
+  }
+  .ge-valerr-chip:hover { background: #fcd34d; }
+  .ge-valerr-slot { color: #a16207; }
+  .ge-valerr-bad { color: #b91c1c; }
   .ge-stat { font: 11px ui-monospace, monospace; color: #6b7280; margin-left: auto; }
   /* grid-template-columns set inline (splitA% 6px splitB% 6px 1fr) — both
      dividers live between sections; the source pane gets the remainder. */

@@ -50,10 +50,105 @@ export interface EmitResult {
   body: string;
   /** The variable bound at root, used by the function's `return` statement. */
   rootVar: string;
+  /** Any broken references the graph still has — orphan nodes, deleted
+   *  params, etc. The editor reads this to render error chips on nodes;
+   *  /save + /preview refuse to commit the source when this is non-empty
+   *  (silent /​*​ missing *​/ strings used to surface downstream as a cryptic
+   *  WASM "memory access out of bounds"). */
+  validationErrors: GraphValidationError[];
 }
 
-/** Top-level entry — graph + id → file content. */
+/** One broken reference inside a node — used by validateGraph + thrown by
+ *  emitGraph when the graph is internally inconsistent. */
+export interface GraphValidationError {
+  /** The node holding the bad reference. */
+  nodeId: NodeId;
+  /** Which slot on the node is bad — `child`, `obj`, `arg`, `children[2]`, … */
+  slot: string;
+  /** The missing reference. For node-id slots: the orphan id. For param-arg
+   *  slots: the param name that's no longer declared in graph.params. */
+  badRef: string;
+  kind: 'missing-node' | 'missing-param';
+}
+
+/** Walk every node, return a list of broken references. Emit/save/bake
+ *  should refuse to proceed when this returns anything — silently writing
+ *  a "missing" placeholder into the source explodes downstream as a
+ *  cryptic WASM "memory access out of bounds" (the placeholder becomes
+ *  undefined and undefined.boundingBox() blows up the Manifold proxy chain).
+ *
+ *  Surfaces TWO classes of breakage:
+ *    1. node-id references that point at a deleted node (orphans)
+ *    2. param ArgValues that name a param no longer in graph.params */
+export function validateGraph(graph: Graph): GraphValidationError[] {
+  const errs: GraphValidationError[] = [];
+  const has = (id: NodeId) => Object.prototype.hasOwnProperty.call(graph.nodes, id);
+  const hasParam = (name: string) => Object.prototype.hasOwnProperty.call(graph.params, name);
+  const checkArg = (nodeId: NodeId, slot: string, v: ArgValue) => {
+    if (v.kind === 'param' && !hasParam(v.param)) {
+      errs.push({ nodeId, slot, badRef: v.param, kind: 'missing-param' });
+    }
+  };
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (!node) continue;
+    switch (node.type) {
+      case 'call':
+        for (const [k, v] of Object.entries(node.args)) checkArg(id, `args.${k}`, v);
+        break;
+      case 'list':
+      case 'stack':
+      case 'group':
+        node.children.forEach((c, i) => {
+          if (!has(c)) errs.push({ nodeId: id, slot: `children[${i}]`, badRef: c, kind: 'missing-node' });
+        });
+        break;
+      case 'method':
+        if (!has(node.obj)) errs.push({ nodeId: id, slot: 'obj', badRef: node.obj, kind: 'missing-node' });
+        if (!has(node.arg)) errs.push({ nodeId: id, slot: 'arg', badRef: node.arg, kind: 'missing-node' });
+        break;
+      case 'mv':
+        if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
+        node.offset.forEach((v, i) => checkArg(id, `offset[${i}]`, v));
+        break;
+      case 'rot':
+        if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
+        node.rot.forEach((v, i) => checkArg(id, `rot[${i}]`, v));
+        break;
+      case 'repeat':
+        if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
+        checkArg(id, 'count', node.count);
+        break;
+    }
+  }
+  return errs;
+}
+
+/** Format a list of validation errors into one human-readable message —
+ *  the exact text shown to the user via the /preview error / /save 400. */
+export function formatValidationErrors(errs: GraphValidationError[]): string {
+  if (errs.length === 0) return '';
+  const lines = errs.map((e) => {
+    const what = e.kind === 'missing-node'
+      ? `references a deleted node id "${e.badRef}"`
+      : `references a deleted param "${e.badRef}"`;
+    return `  • node ${e.nodeId} (slot ${e.slot}) ${what}`;
+  });
+  return `graph has ${errs.length} broken reference${errs.length === 1 ? '' : 's'} — fix in the editor before saving:\n${lines.join('\n')}`;
+}
+
+/** Top-level entry — graph + id → file content.
+ *
+ *  NEVER throws on a broken graph (the editor's `$derived emitted` would
+ *  blow up the whole UI). Instead returns the validation errors alongside
+ *  the source — callers refuse to commit a non-empty error list (the
+ *  save endpoint + the bake endpoint + the editor's error pane). The
+ *  body still gets generated so the user can see what would have been
+ *  emitted, with bad refs surfacing as a `throw new Error(...)` line so
+ *  it explodes IMMEDIATELY at call time with a precise message instead
+ *  of silently producing `/* missing *​/` → undefined → cryptic WASM
+ *  out-of-bounds downstream. */
 export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
+  const validationErrors = validateGraph(graph);
   // Walk nodes in topological order; each non-leaf emits a `const <var> = ...` line.
   const order = topoOrder(graph);
   const varNames = assignVarNames(graph, order);
@@ -85,7 +180,10 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
       //   1 child    → return <varName>; (singleton — no [x] wrapper)
       //   N children → return [v1, v2, ...]; (multi-output composition)
       const visible = node.children.filter((c) => !consumed.has(c));
-      const exprs = visible.map((c) => varNames.get(c) ?? '/* missing */');
+      // Same loud-throw treatment as emitNodeExpr — a missing root child
+      // surfaces as an explicit throw instead of a silent placeholder that
+      // compiles to undefined and crashes WASM downstream.
+      const exprs = visible.map((c, i) => varNames.get(c) ?? missingRef(id, `children[${i}]`, c));
       if (exprs.length === 0)      returnExpr = 'undefined';
       else if (exprs.length === 1) returnExpr = exprs[0]!;
       else                         returnExpr = `[${exprs.join(', ')}]`;
@@ -126,18 +224,31 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     `export function ${opts.id}(${sig}) {\n${lines.join('\n')}\n}\n`;
 
   const source = `${metaText}\n\n${fnText}`;
-  return { source, meta, body: lines.join('\n'), rootVar };
+  return { source, meta, body: lines.join('\n'), rootVar, validationErrors };
 }
 
 // ─── node → expression ────────────────────────────────────────────────────
 
+/** Loud placeholder for a missing node ref. Emits a JS expression that
+ *  THROWS at evaluation time with a precise message — replaces the old
+ *  silent comment which compiled to nothing and surfaced downstream as a
+ *  cryptic WASM out-of-bounds. The expression is an IIFE so it can live
+ *  inside any slot (mv child, repeat child, stack arg, …) without breaking
+ *  the surrounding shape — but it throws before any consumer touches its
+ *  (non-)value. */
+function missingRef(nodeId: NodeId, slot: string, badRef: NodeId): string {
+  const msg = `node ${nodeId}.${slot} references missing node "${badRef}" — fix in the editor`;
+  return `(() => { throw new Error(${JSON.stringify(msg)}); })()`;
+}
+
 function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProducers?: Set<NodeId>): string | null {
+  const ref = (id: NodeId, slot: string) => varNames.get(id) ?? missingRef(node.id, slot, id);
   switch (node.type) {
     case 'call':
       return emitCallExpr(node.src, node.args);
     case 'list':
     case 'group':
-      return `[${node.children.map((c) => varNames.get(c) ?? '/* missing */').join(', ')}]`;
+      return `[${node.children.map((c, i) => ref(c, `children[${i}]`)).join(', ')}]`;
     case 'stack': {
       // Sequential stack — mate via tail/head datum (manifold-helpers.stack
       // takes an ARRAY of children, not positional args; see
@@ -148,24 +259,25 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // stack receives one flat list. Single items emit bare; spread
       // emits with the leading `...`. Lets the user mix single parts +
       // list-producing Repeats in the same stack (e.g. [box, ...joints, pin]).
-      const args = node.children.map((c) => {
-        const cn = listProducers?.has(c) ? `...${varNames.get(c) ?? '/* missing */'}` : (varNames.get(c) ?? '/* missing */');
-        return cn;
+      const args = node.children.map((c, i) => {
+        const slot = `children[${i}]`;
+        const nm = ref(c, slot);
+        return listProducers?.has(c) ? `...${nm}` : nm;
       }).join(', ');
       return `stack([${args}])`;
     }
     case 'method': {
-      const obj = varNames.get(node.obj) ?? '/* missing */';
-      const arg = varNames.get(node.arg) ?? '/* missing */';
+      const obj = ref(node.obj, 'obj');
+      const arg = ref(node.arg, 'arg');
       return `${obj}.${node.op}(${arg})`;
     }
     case 'mv': {
-      const child = varNames.get(node.child) ?? '/* missing */';
+      const child = ref(node.child, 'child');
       const o = node.offset.map(emitValueExpr).join(', ');
       return `mv(${child}, [${o}])`;
     }
     case 'rot': {
-      const child = varNames.get(node.child) ?? '/* missing */';
+      const child = ref(node.child, 'child');
       const r = node.rot.map(emitValueExpr).join(', ');
       return `rot(${child}, [${r}])`;
     }
@@ -178,7 +290,7 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // Default 'stack' so existing graphs without an op field keep the
       // historical drilling-string idiom (every BUILD_ORDER part works).
       const count = emitValueExpr(node.count);
-      const child = varNames.get(node.child) ?? '/* missing */';
+      const child = ref(node.child, 'child');
       const array = `Array.from({ length: ${count} }, () => ${child})`;
       const op = node.op ?? 'stack';
       if (op === 'list')  return array;

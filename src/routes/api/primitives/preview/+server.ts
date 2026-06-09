@@ -123,7 +123,34 @@ export const POST = async ({ request, fetch }) => {
 
   let manifold: any;
   try { manifold = primFn(...args); }
-  catch (e: any) { throw error(400, `primitive call failed: ${e?.message ?? e}`); }
+  catch (e: any) {
+    // Surface the structured fail-trail buildPrimitiveGeom's dep wrapper
+    // attached when the crash came out of a sub-call. Keeps the legacy
+    // string shape for non-decorated errors (raw helper calls, bad params,
+    // etc.) so existing callers don't break.
+    const msg = String(e?.message ?? e ?? '');
+    const depChain = (e as any)?.depChain;
+    // ManifoldCAD's "memory access out of bounds" is the WASM bus error —
+    // bubble up a structured payload with chain + hint instead of the
+    // bare string so the editor can highlight the failing dep node.
+    if (/memory access out of bounds/.test(msg)) {
+      const tail = depChain
+        ? ` (in ${depChain.join(' → ')}; common causes: NaN/undefined param into a sub-call, compose of N copies of a non-manifold body, cutaway on a self-overlapping result)`
+        : ' (the WASM Manifold core hit an invalid pointer — usually a NaN/undefined coord upstream)';
+      const full = msg + tail;
+      // Match SvelteKit's error-body shape (`message`) so legacy clients
+      // that read `j.message` keep working, AND add the structured fields
+      // (errorKind, depChain) so the editor's error pane can highlight
+      // the failing dep node specifically.
+      return json({
+        message: full,
+        error: full,
+        errorKind: 'wasm-oob',
+        depChain: depChain ?? null,
+      }, { status: 400 });
+    }
+    throw error(400, `primitive call failed: ${msg}`);
+  }
   mark('geom', t); t = performance.now();
 
   if (!manifold || typeof manifold.getMesh !== 'function') {

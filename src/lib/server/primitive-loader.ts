@@ -62,6 +62,30 @@ function tagInstanceSources(source: string): string {
 
 type GeomFn = (...args: any[]) => any;
 
+/** Compact one-line shape for an args list — used to annotate the
+ *  `[in parent → dep(<shape>)]` suffix on a decorated dep error. Hides
+ *  Manifold objects (huge) + truncates long arrays. */
+function argShape(args: any[]): string {
+  if (args.length === 0) return '';
+  if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+    const o = args[0];
+    const keys = Object.keys(o).slice(0, 6);
+    const body = keys.map((k) => {
+      const v = (o as any)[k];
+      if (v === null || v === undefined) return `${k}:${v}`;
+      if (typeof v === 'number') return `${k}:${Number.isFinite(v) ? v : 'NaN'}`;
+      if (typeof v === 'string') return `${k}:${JSON.stringify(v).slice(0, 24)}`;
+      return `${k}:?`;
+    }).join(',');
+    return `{${body}${Object.keys(o).length > keys.length ? ',…' : ''}}`;
+  }
+  return args.slice(0, 6).map((a) =>
+    typeof a === 'number' ? (Number.isFinite(a) ? String(a) : 'NaN') :
+    typeof a === 'string' ? JSON.stringify(a).slice(0, 24) :
+    a == null ? String(a) : '?',
+  ).join(',');
+}
+
 const IMPORT_RE = /import\s+(?:type\s+)?(?:\{([^}]*)\})?\s*(?:from\s*)?['"]([^'"]+)['"]\s*;?/g;
 function stripImports(src: string): string {
   let out = src;
@@ -259,7 +283,29 @@ export async function buildPrimitiveGeom(
 
   const factory = new Function(...SANDBOX_ARG_NAMES, ...injectNames, wrapper);
   const argValues = await profileAwareArgValues(source, fetchFn);
-  const fn = factory(...argValues, ...depFns);
+  // Decorate each dep-fn so a WASM crash (typically "memory access out of
+  // bounds") thrown from inside its body comes out tagged with WHICH dep
+  // blew up + the parent's name. Without this the user sees a bare
+  // `primitive call failed: memory access out of bounds` with no idea
+  // whether dt_box, dt_pin, or dt_joint produced the bad mesh.
+  // Tag once at the top of the chain — nested decoration would prepend the
+  // chain multiple times. Caller's catch in /api/primitives/preview
+  // unwraps + returns the structured form.
+  const decoratedDepFns = depFns.map((dfn, i) => {
+    const dep = declared[i]!;
+    return (...args: any[]) => {
+      try { return dfn(...args); }
+      catch (e: any) {
+        const msg = String(e?.message ?? e ?? '');
+        if (/\[in /.test(msg)) throw e;                                 // already tagged upstream
+        const tagged = new Error(`${msg} [in ${name} → ${dep}(${argShape(args)})]`);
+        (tagged as any).cause = e;
+        (tagged as any).depChain = [name, dep];
+        throw tagged;
+      }
+    };
+  });
+  const fn = factory(...argValues, ...decoratedDepFns);
   if (typeof fn !== 'function') {
     throw new Error(`primitive "${name}" did not export a function`);
   }
