@@ -60,6 +60,7 @@
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
   import { dragNumber } from '$lib/shared/dragNumber';
+  import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
 
   /** Props (component contract — same surface mounted by /graph-editor for
    *  full-page work and by /primitives for the tabbed multi-instance view).
@@ -89,6 +90,15 @@
    *  keys, fills new keys with the primitive's defaults). */
   let expectedParams = $state<Record<string, string[]>>({});
   let expectedDefaults = $state<Record<string, Record<string, number>>>({});
+  /** Profile-typed arg keys per src. `expectedProfileKeys['r_revolve'] = {profile}`.
+   *  Populated alongside expectedParams from the primitive's meta.params
+   *  scan; lookup at Call-card render time decides whether to show the
+   *  profile chip + picker (#119) instead of a generic expression input. */
+  let expectedProfileKeys = $state<Record<string, Set<string>>>({});
+  /** Which "set" the primitive's profile uses — drives the kind filter in
+   *  the profile picker popover. r_revolve → 'revolve' (r,z half-section);
+   *  r_extrude / r_weld_extrude → 'cartesian' (x,y polygon). */
+  let expectedProfileSet = $state<Record<string, 'revolve' | 'cartesian'>>({});
 
   let emitted = $derived(emitGraph(graph, { id: exemplarId, drawingMd }));
   // The SOURCE the LIVE SOURCE tab + the bake canvas see — it's the
@@ -1123,21 +1133,33 @@
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
       const d = await r.json() as any;
+      const profileKeys = new Set<string>();
       for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
         // Profile-typed args (r_revolve / r_extrude) carry a {kind, params}
-        // DESCRIPTOR as their default — not a number. asLiteral types the value
-        // as scalar, so encoding the descriptor as an `expr` ArgValue is the
-        // correct path: emit injects the literal object syntax, the body's
-        // resolveProfile(...) call inside the primitive collapses it to points.
-        // Minimum-viable #105 — the full picker-chip UI replaces the JSON view
-        // in a later pass; until then the user can edit the JSON in the f-popup.
+        // DESCRIPTOR as their default — not a number. Encode as an `expr`
+        // ArgValue: emit injects the literal object syntax, the body's
+        // resolveProfile(...) call inside the primitive collapses it to
+        // points. The profile-picker chip in the Call card (#119) reads
+        // the descriptor + offers a kind swap; absent the picker the user
+        // can still hand-edit the JSON in the ƒ popup.
         if (p && typeof p === 'object' && p.type === 'profile' && p.default && typeof p.default === 'object') {
           args[k] = asExpr(JSON.stringify(p.default));
+          profileKeys.add(k);
         } else {
           args[k] = asLiteral(p?.default ?? 0);
         }
         paramKeys.push(k);
         defaults[k] = Number(p?.default ?? 0);
+      }
+      // Infer the profile "set" (revolve vs cartesian) from the primitive
+      // name. r_revolve → revolve (r,z); r_extrude / r_weld_extrude →
+      // cartesian (x,y). Drives the kind filter in the picker.
+      if (profileKeys.size > 0) {
+        expectedProfileKeys = { ...expectedProfileKeys, [src]: profileKeys };
+        expectedProfileSet = {
+          ...expectedProfileSet,
+          [src]: src === 'r_revolve' ? 'revolve' : 'cartesian',
+        };
       }
     } catch { /* leave args empty */ }
     const result = addCall(graph, src, args);
@@ -1160,11 +1182,20 @@
       const d = await r.json() as any;
       const keys = Object.keys(d.params ?? {});
       const defaults: Record<string, number> = {};
+      const profileKeys = new Set<string>();
       for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
         defaults[k] = Number(p.default ?? 0);
+        if (p && typeof p === 'object' && p.type === 'profile') profileKeys.add(k);
       }
       expectedParams = { ...expectedParams, [src]: keys };
       expectedDefaults = { ...expectedDefaults, [src]: defaults };
+      if (profileKeys.size > 0) {
+        expectedProfileKeys = { ...expectedProfileKeys, [src]: profileKeys };
+        expectedProfileSet = {
+          ...expectedProfileSet,
+          [src]: src === 'r_revolve' ? 'revolve' : 'cartesian',
+        };
+      }
     } catch { /* skip */ }
   }
 
@@ -1429,6 +1460,41 @@
     graph = setCallArg(graph, argExprPop.callId, argExprPop.key, asExpr(argExprPop.draft));
     argExprPop = null;
   }
+  // ─── Profile picker popover (#119) ─────────────────────────────────────
+  /** Open when the user clicks a profile chip on a Call card. Lists every
+   *  curated kind from PROFILE_REGISTRY filtered by the primitive's `set`
+   *  (revolve vs cartesian). Selecting a kind rewrites the arg's expr to
+   *  a fresh `{kind, params}` JSON descriptor seeded with defaults. */
+  let profilePop = $state<{ callId: NodeId; key: string; src: string; set: 'revolve' | 'cartesian'; currentKind: string; x: number; y: number } | null>(null);
+  function openProfilePop(ev: MouseEvent, callId: NodeId, key: string, src: string, currentKind: string) {
+    ev.stopPropagation();
+    const set = expectedProfileSet[src] ?? (src === 'r_revolve' ? 'revolve' : 'cartesian');
+    profilePop = { callId, key, src, set, currentKind, x: ev.clientX, y: ev.clientY };
+  }
+  function closeProfilePop() { profilePop = null; }
+  function selectProfileKind(kindId: string) {
+    if (!profilePop) return;
+    const def: ProfileDef | undefined = PROFILE_REGISTRY[kindId];
+    if (!def) return;
+    const desc = { kind: kindId, params: defaultsFor(def) };
+    graph = setCallArg(graph, profilePop.callId, profilePop.key, asExpr(JSON.stringify(desc)));
+    profilePop = null;
+  }
+  /** Parse the current expr ArgValue into a `{kind, params}` descriptor.
+   *  Returns null when the expr isn't a parseable JSON object (e.g. the
+   *  user wrote a custom math expression). The chip renderer falls back
+   *  to "expr ƒ" in that case. */
+  function parseProfileExpr(expr: string): { kind?: string; params?: Record<string, number> } | null {
+    if (!expr || !expr.trim().startsWith('{')) return null;
+    try { return JSON.parse(expr); } catch { return null; }
+  }
+  /** Curated kinds available for a given set, sorted by label. */
+  function kindsForSet(set: 'revolve' | 'cartesian'): ProfileDef[] {
+    return Object.values(PROFILE_REGISTRY)
+      .filter((d) => d.set === set)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
   function insertParamIntoDraft(name: string) {
     if (!argExprPop) return;
     const ref = `p.${name}`;
@@ -2173,7 +2239,27 @@
                         {:else}
                           {@const expr = (v as any).expr ?? ''}
                           {@const refs = extractParamRefs(expr)}
-                          {#if refs.length >= 2}
+                          {@const isProfileSlot = !!expectedProfileKeys[call.src]?.has(k)}
+                          {@const profileDesc = isProfileSlot ? parseProfileExpr(expr) : null}
+                          {#if isProfileSlot && profileDesc && profileDesc.kind}
+                            <!-- Profile chip (#119) — replaces the raw JSON expr
+                                 for r_revolve / r_extrude / r_weld_extrude args
+                                 typed as `profile`. Click opens the kind picker
+                                 popover with curated kinds filtered by set. -->
+                            {@const kindDef = PROFILE_REGISTRY[profileDesc.kind]}
+                            <span class="ge-arg-cell">
+                              <!-- svelte-ignore a11y_click_events_have_key_events -->
+                              <span class="ge-arg-profilechip" role="button" tabindex="-1"
+                                title={`Click to swap profile kind · current: ${profileDesc.kind}`}
+                                onclick={(ev) => openProfilePop(ev, n.id, k, call.src, profileDesc.kind ?? '')}>
+                                <span class="ge-arg-profilechip-kind">▾ {kindDef?.label ?? profileDesc.kind}</span>
+                              </span>
+                              <span class="ge-arg-actions">
+                                <button class="ge-arg-action edit" type="button" title="Edit raw JSON descriptor"
+                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
+                              </span>
+                            </span>
+                          {:else if refs.length >= 2}
                             <!-- Multi-source ƒ chip — too dense for inline editing; click to open popup. -->
                             <span class="ge-arg-cell">
                               <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -2872,6 +2958,34 @@
     </div>
   {/if}
 
+  {#if profilePop}
+    <!-- Profile-kind picker popover (#119). Lists curated kinds filtered
+         by the primitive's `set` (revolve = r,z half-section; cartesian =
+         x,y polygon). Click a kind → arg's expr is replaced with a fresh
+         {kind, params} JSON descriptor seeded with defaults. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeProfilePop}></div>
+    <div class="ge-profile-pop"
+      style="left: {Math.min(profilePop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 280)}px; top: {Math.min(profilePop.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 360)}px">
+      <div class="ge-profile-pop-head">
+        <span class="ge-profile-pop-title">Profile · {profilePop.set}</span>
+        <span class="ge-profile-pop-hint">{profilePop.key} · {profilePop.src}</span>
+      </div>
+      <div class="ge-profile-pop-list">
+        {#each kindsForSet(profilePop.set) as def (def.id)}
+          <button class="ge-profile-pop-item"
+            class:active={def.id === profilePop.currentKind}
+            type="button"
+            onclick={() => selectProfileKind(def.id)}>
+            <span class="ge-profile-pop-item-name">{def.label}</span>
+            <span class="ge-profile-pop-item-id">{def.id}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   {#if argExprPop}
     <!-- ƒ-expression editor popup — wider input + click-to-insert chips for
          every declared param. Used when an arg references 2+ params (the
@@ -3554,6 +3668,45 @@
   .ge-arg-fnchip { display: inline-flex; align-items: center; gap: 2px; flex: 1 1 auto; padding: 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #f59e0b; border-radius: 9999px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.12s; }
   .ge-arg-fnchip:hover { background: #fde68a; }
   .ge-arg-fnchip-refs { color: #b45309; font-weight: 500; }
+  /* Profile chip (#119) — appears on r_revolve / r_extrude / r_weld_extrude
+     Call card rows where the underlying param is `type: 'profile'`. Shows
+     the current kind label with a ▾ disclosure glyph; click opens the
+     kind picker popover. */
+  .ge-arg-profilechip {
+    display: inline-flex; align-items: center; gap: 4px; flex: 1 1 auto;
+    padding: 1px 8px; font: 600 10px ui-monospace, monospace;
+    background: #ede9fe; color: #5b21b6;
+    border: 1px solid #c4b5fd; border-radius: 9999px;
+    cursor: pointer; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transition: background 120ms;
+  }
+  .ge-arg-profilechip:hover { background: #c4b5fd; color: #2e1065; }
+  .ge-arg-profilechip-kind { font-weight: 700; }
+  /* Profile picker popover */
+  .ge-profile-pop {
+    position: fixed; width: 280px; max-height: 360px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+    z-index: 200; display: flex; flex-direction: column;
+  }
+  .ge-profile-pop-head {
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 8px 12px; border-bottom: 1px solid #f1f5f9;
+  }
+  .ge-profile-pop-title { font: 600 11px Arial; color: #5b21b6; text-transform: uppercase; letter-spacing: 0.6px; }
+  .ge-profile-pop-hint { font: 10px ui-monospace, monospace; color: #78716c; }
+  .ge-profile-pop-list { flex: 1 1 auto; overflow-y: auto; padding: 4px 0; }
+  .ge-profile-pop-item {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 6px 12px; box-sizing: border-box;
+    background: transparent; border: 0; cursor: pointer;
+    text-align: left; font: 12px Arial; color: #1f2937;
+  }
+  .ge-profile-pop-item:hover { background: #f3f4f6; color: #5b21b6; }
+  .ge-profile-pop-item.active { background: #ede9fe; color: #4c1d95; font-weight: 600; }
+  .ge-profile-pop-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ge-profile-pop-item-id { font: 10px ui-monospace, monospace; color: #a8a29e; }
   /* ƒ expression popup */
   .ge-expr-pop { min-width: 420px; max-width: 460px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
   .ge-expr-textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; resize: vertical; background: #faf5ff; color: #5b21b6; }
