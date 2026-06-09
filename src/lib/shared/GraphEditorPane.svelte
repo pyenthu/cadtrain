@@ -1511,21 +1511,27 @@
       const gyBottom = (rect.height - pan.y) / zoom;
       const wallY = gyTop - FAR;
       const wallH = (gyBottom - gyTop) + 2 * FAR;
+      // Repellant mode ALSO sets a confinerBounds clamp on that side —
+      // gives a hard "stay inside the viewport" guarantee on top of the
+      // half-plane obstacle, so pairwise pushes that ricochet a card past
+      // the boundary in one iteration get yanked back at the end of that
+      // same iteration. Without this, a chain of 5+ cards can cascade and
+      // send the last 1-2 off-screen as the resolver moves things around.
       if (boundLeft === 'repellant') {
-        // Left half-plane: occupies everything LEFT of the viewport edge.
         obstacles.push({
           id: '__obs_wall_left',
           x: gxLeft - FAR, y: wallY, w: FAR, h: wallH,
         });
+        confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
       } else if (boundLeft === 'confiner') {
         confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
       }
       if (boundRight === 'repellant') {
-        // Right half-plane: occupies everything RIGHT of the viewport edge.
         obstacles.push({
           id: '__obs_wall_right',
           x: gxRight, y: wallY, w: FAR, h: wallH,
         });
+        confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
       } else if (boundRight === 'confiner') {
         confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
       }
