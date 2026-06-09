@@ -1496,12 +1496,34 @@
     // to the visible interior via confinerBounds. If both edges are off,
     // we skip the rect lookup entirely.
     let confinerBounds: { minX?: number; maxX?: number } | undefined;
+    // Section-pinning: when the RIGHT edge boundary is engaged, pin every
+    // node that's currently OUTSIDE the visible viewport so push-apart
+    // only tidies the section you're looking at. Off-screen cards stay
+    // put. Activates ONLY on the right-edge toggle — left-edge keeps the
+    // global push-apart behaviour so the LEFT wall just pushes cards in
+    // without touching the rest of the graph.
+    const sectionPinned: Record<string, boolean> = {};
     if (canvasEl && (boundLeft !== 'off' || boundRight !== 'off')) {
       const rect = canvasEl.getBoundingClientRect();
       const gxLeft = (0 - pan.x) / zoom;
       const gxRight = (rect.width - pan.x) / zoom;
       const gyTop = (0 - pan.y) / zoom;
       const gyBottom = (rect.height - pan.y) / zoom;
+      if (boundRight !== 'off') {
+        // Mark nodes whose bbox sits ENTIRELY outside the viewport rect
+        // as pinned. Cards partially inside still get re-arranged.
+        for (const [id, node] of Object.entries(graph.nodes)) {
+          if (!node) continue;
+          const layoutXY = graph.layout[id];
+          if (!layoutXY) continue;
+          const sz = nodeSize(node);
+          const nx2 = layoutXY.x + sz.w, ny2 = layoutXY.y + sz.h;
+          const inside =
+            nx2 > gxLeft && layoutXY.x < gxRight &&
+            ny2 > gyTop  && layoutXY.y < gyBottom;
+          if (!inside) sectionPinned[id] = true;
+        }
+      }
       const wallThickness = 60 / zoom; // px in graph space — thick enough to push convincingly
       const wallH = Math.max(40, gyBottom - gyTop);
       if (boundLeft === 'repellant') {
@@ -1540,6 +1562,7 @@
       wires,
       wirePadding: 16,
       confinerBounds,
+      pinned: sectionPinned,
     });
   }
 
