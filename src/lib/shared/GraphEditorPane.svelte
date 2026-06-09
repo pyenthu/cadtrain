@@ -1307,8 +1307,6 @@
       <button class="ge-btn ghost undo-layout" type="button" onclick={undoAutoLayout}
         title="Restore the prior layout">↶ Undo</button>
     {/if}
-    {#if saveStatus}<span class="ge-save-stat">{saveStatus}</span>{/if}
-    <span class="ge-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
   </header>
 
   {#if emitted.validationErrors.length > 0}
@@ -2008,6 +2006,17 @@
           </g>
         {/each}
       </svg>
+      <!-- In-canvas status strip — bottom-left. Lifted out of the top
+           toolbar so the canvas itself carries the local feedback
+           (saveStatus + node count + zoom). Pointer-events:none on the
+           wrap; the badges themselves are non-interactive so they don't
+           steal canvas drags. -->
+      <div class="ge-canvas-status">
+        {#if saveStatus}
+          <span class="ge-canvas-status-save">{saveStatus}</span>
+        {/if}
+        <span class="ge-canvas-status-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
+      </div>
     </section>
 
     <!-- Divider: canvas ↔ right pane -->
@@ -2320,6 +2329,34 @@
   .ge-btn.ghost { background: #e5e7eb; color: #1f2937; }
   .ge-btn.ghost:hover { background: #d1d5db; }
   .ge-save-stat { font: 11px ui-monospace, monospace; color: #15803d; }
+  /* In-canvas status strip — pinned bottom-left of the canvas pane.
+     pointer-events:none so it doesn't intercept canvas drags; the badges
+     themselves are non-interactive so click+drag pass straight through. */
+  .ge-canvas-status {
+    position: absolute; left: 12px; bottom: 10px;
+    display: flex; align-items: center; gap: 10px;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .ge-canvas-status-save {
+    background: rgba(220, 252, 231, 0.92);
+    color: #15803d; border: 1px solid #86efac;
+    padding: 3px 9px; border-radius: 4px;
+    font: 11px ui-monospace, monospace;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    animation: ge-canvas-status-fade-in 180ms ease-out;
+  }
+  .ge-canvas-status-stat {
+    background: rgba(248, 250, 252, 0.85);
+    color: #475569; border: 1px solid #e2e8f0;
+    padding: 3px 9px; border-radius: 4px;
+    font: 11px ui-monospace, monospace;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  @keyframes ge-canvas-status-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   /* Broken-reference banner — sits between the toolbar and the canvas so
      the user can't miss it. Amber theme matches the existing stale-server
      hint; click a node-id chip to select-and-pan to the offending node. */
