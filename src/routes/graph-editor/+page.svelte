@@ -2095,9 +2095,8 @@
               {#if legacyLoad.reason === 'no-graph'}
                 <strong>{legacyLoad.id}</strong> opened in legacy mode — its source has
                 no <code>meta.graph</code> block, so the canvas can't hydrate. Save
-                here to overwrite with a graph-format part, or
-                <a href="/primitives?id={legacyLoad.id}">open it in /primitives</a>
-                to edit the original text body.
+                here to overwrite with a graph-format part. The legacy PrimitiveView
+                editor was removed 2026-06-09 — graph editor is the only editor now.
               {:else}
                 Could not fetch <strong>{legacyLoad.id}</strong> from the volume.
                 Check the id + your volume connection.

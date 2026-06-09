@@ -1,7 +1,7 @@
 <div class="home">
   <div class="menu">
     <div class="menu-header">CAD Train</div>
-    <a href="/primitives" class="menu-item">Primitives <span class="hint">parametric CAD editor</span></a>
+    <a href="/graph-editor" class="menu-item">Primitives <span class="hint">graph-based parametric CAD editor</span></a>
     <a href="/forge" class="menu-item">Forge <span class="hint">image → 3D</span></a>
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
     <a href="/fem" class="menu-item">FEM <span class="hint">finite element analysis</span></a>

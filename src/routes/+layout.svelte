@@ -10,8 +10,9 @@
     {
       label: null,
       items: [
-        { href: '/primitives',   label: 'Primitives' },
-        { href: '/graph-editor', label: 'Graph editor' },
+        // /primitives now redirects to /graph-editor (2026-06-09). The single
+        // primitive editor is the graph-based one. Old PrimitiveView page deleted.
+        { href: '/graph-editor', label: 'Primitives' },
         { href: '/fem',          label: 'FEM' },
         { href: '/forge',        label: 'Forge' },
       ],

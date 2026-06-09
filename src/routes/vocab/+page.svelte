@@ -1135,7 +1135,7 @@
               {#if e.extends}
                 <span class="info-chip ext-info">extends {e.extends}</span>
               {/if}
-              <a class="info-chip link" href="/primitives" onclick={(ev) => { ev.preventDefault(); if (typeof window !== 'undefined') window.open(`/primitives?open=${e.exemplar}`, '_blank'); }}>open <code>{e.exemplar}</code> in /primitives ↗</a>
+              <a class="info-chip link" href="/graph-editor" onclick={(ev) => { ev.preventDefault(); if (typeof window !== 'undefined') window.open(`/graph-editor?id=${e.exemplar}`, '_blank'); }}>open <code>{e.exemplar}</code> in graph editor ↗</a>
               <span class="info-chip rule">{ruleSummary(e)}</span>
             </div>
 
