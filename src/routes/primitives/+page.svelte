@@ -406,13 +406,31 @@
   .prim-rail {
     display: flex; flex-direction: column;
     background: #fafaf9; border-right: 1px solid #e5e7eb;
-    overflow-y: auto; overflow-x: hidden;
+    /* `overflow-y: scroll` (not `auto`) — keeps the vertical track
+       always visible so the user sees there's content below the fold
+       even before scrolling. Pairs with the webkit-scrollbar styling
+       below to render a visible thumb on macOS (where `auto` would
+       hide the scrollbar until the user starts scrolling). */
+    overflow-y: scroll; overflow-x: hidden;
     /* `min-height: 0` is required on a flex column inside a clamped
        grid track for the inner scroll to engage — same pattern as the
        rail's parent (.prim-root). */
     min-height: 0;
     min-width: 180px; max-width: 480px;
+    /* Firefox / standards-track thin scrollbar with cadtrain palette. */
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 #f1f5f9;
   }
+  /* Webkit (Chrome/Safari/Edge): always-visible thin vertical track
+     with a slate thumb. macOS otherwise auto-hides the scrollbar even
+     under `overflow: scroll`, which is what the user was hitting. */
+  .prim-rail::-webkit-scrollbar { width: 10px; }
+  .prim-rail::-webkit-scrollbar-track { background: #f1f5f9; }
+  .prim-rail::-webkit-scrollbar-thumb {
+    background: #94a3b8; border-radius: 5px;
+    border: 2px solid #f1f5f9;
+  }
+  .prim-rail::-webkit-scrollbar-thumb:hover { background: #64748b; }
   .prim-rail header {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 14px 4px;
