@@ -921,7 +921,7 @@
     if (node.type === 'method') return 96;  // ⊖ + label + × (sockets sit on edges)
     if (node.type === 'mv' || node.type === 'rot') return 116;
     if (node.type === 'repeat') return 170;
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 96;
     return 130;
   }
   /** Auto-fit width based on the card's content — title length + longest
@@ -963,15 +963,15 @@
           '(missing)',
         );
       }
-      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
-      // ~7 px per char monospace + 18 px socket + 14 px × button + 16 px
-      // padding. Title row also has the ▶ chevron + name + ⚙ gear so the
-      // 'Output' header itself needs room; account for that minimum.
-      const titleW = 90; // ▶ Output + gear with padding
-      const rowW = longest * 7 + 18 + 14 + 16;
-      // 120 px floor — tight enough that short single-child container
-      // cards (Output with just "subtract(…)") don't carry empty space.
-      return Math.max(120, Math.max(rowW, titleW));
+      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 8;
+      // ~6.5 px per char (12 px ui-monospace, slightly narrower than
+      // monospace estimate). Socket 16 + × 12 + padding 12 = 40 chrome.
+      // Title row chrome: ▶ + ' Output' + ⚙ + padding ≈ 70 px.
+      const titleW = 70;
+      const rowW = longest * 6.5 + 40;
+      // 96 px floor — tight enough that a one-child container with a
+      // short method label sits snug; longer labels grow it via rowW.
+      return Math.max(96, Math.max(rowW, titleW));
     }
     return 180;
   }
