@@ -219,6 +219,14 @@ export interface ForceSeparateOptions {
    *  permanently pinned. The id prefix `__obs_` is reserved for these;
    *  no graph node can ever collide. */
   obstacles?: { id: string; x: number; y: number; w: number; h: number }[];
+  /** Wires as line segments in GRAPH space. Each card that ISN'T an
+   *  endpoint of the wire (id ∉ {fromId, toId}) gets pushed perpendicular
+   *  to the wire when the wire passes within `wirePadding` px of the
+   *  card's center. Lets the user click 🧲 Push apart and have crossed
+   *  wires escape from the cards they cut through. */
+  wires?: { fromId?: NodeId; toId?: NodeId; ax: number; ay: number; bx: number; by: number }[];
+  /** Padding (px) the wire keeps from a non-endpoint card. */
+  wirePadding?: number;
 }
 
 export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
@@ -311,6 +319,48 @@ export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
           }
         }
         moved = true;
+      }
+    }
+    // Wire-vs-card repulsion. For each wire, push every non-endpoint card
+    // perpendicular to the segment until the wire clears the card's
+    // bounding circle (we use a circle approximation for cheap distance
+    // math — close enough for the editor; cards round into the corners
+    // anyway because the AABB pass above already separated them).
+    // Skipped if no wires were provided. Pinned cards still influence wire
+    // routing implicitly via their position; they just can't move.
+    if (opts.wires && opts.wires.length > 0) {
+      const wpad = opts.wirePadding ?? 18;
+      for (const w of opts.wires) {
+        const dx = w.bx - w.ax;
+        const dy = w.by - w.ay;
+        const len2 = dx * dx + dy * dy;
+        if (len2 < 1) continue;
+        for (const id of ids) {
+          if (id === w.fromId || id === w.toId) continue;
+          if (pinned[id]) continue;
+          const p = pos[id]!;
+          const sz = size[id]!;
+          const cx = p.x + sz.w / 2;
+          const cy = p.y + sz.h / 2;
+          // Project center onto segment; clamp t to [0,1].
+          let t = ((cx - w.ax) * dx + (cy - w.ay) * dy) / len2;
+          if (t < 0) t = 0; else if (t > 1) t = 1;
+          const px = w.ax + t * dx;
+          const py = w.ay + t * dy;
+          const ddx = cx - px;
+          const ddy = cy - py;
+          // Half-extent of the card along the perpendicular direction —
+          // approximate via the smaller of (w/2, h/2) so we don't shove
+          // long cards away when only a corner is touched.
+          const rad = Math.min(sz.w, sz.h) / 2 + wpad;
+          const dd2 = ddx * ddx + ddy * ddy;
+          if (dd2 >= rad * rad) continue;
+          const dd = Math.sqrt(dd2) || 0.001;
+          const push = rad - dd;
+          p.x += (ddx / dd) * push;
+          p.y += (ddy / dd) * push;
+          moved = true;
+        }
       }
     }
     if (!moved) break; // converged

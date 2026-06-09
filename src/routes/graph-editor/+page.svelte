@@ -610,20 +610,83 @@
         const r = await fetch('/api/primitives/list');
         const d = await r.json() as any;
         // completions is an OBJECT keyed by family ({drill_pipe: [...], packers: [...]}) —
-        // flatten its values; basic + stdlib are flat arrays of {id, …}.
+        // flatten its values; basic + stdlib/stdstale + completions are arrays of {id, source, …}.
+        // stdstale carries r_revolve/r_extrude/r_weld_extrude (the engines being phased
+        // out of stdlib but still callable); INCLUDE them so r_revolve + r_extrude
+        // are reachable as Calls in the picker (#105 surface step).
         const basicItems = Array.isArray(d.basic) ? d.basic : [];
         const stdlibItems = Array.isArray(d.stdlib) ? d.stdlib : [];
+        const stdstaleItems = Array.isArray(d.stdstale) ? d.stdstale : [];
         const completionItems: any[] = d.completions && typeof d.completions === 'object'
           ? (Object.values(d.completions) as any[][]).flat()
           : [];
-        const all = [...basicItems, ...stdlibItems, ...completionItems];
-        pickerSrcs = [...new Set(all.map((p: any) => p.id).filter(Boolean))].sort();
+        const all = [...basicItems, ...stdlibItems, ...stdstaleItems, ...completionItems];
+        // Stash {id, source} so the sort dropdown can group by source.
+        const seen = new Set<string>();
+        pickerSrcs = [];
+        pickerSrcMeta = {};
+        for (const p of all) {
+          if (!p?.id || seen.has(p.id)) continue;
+          seen.add(p.id);
+          pickerSrcs.push(p.id);
+          pickerSrcMeta[p.id] = { source: p.source ?? 'volume' };
+        }
+        // Stdlib glob-cache patch — Vite's `import.meta.glob('/stdlib/*.ts')`
+        // caches the matched set at first module load; adding a NEW file to
+        // src/lib/cad/stdlib/ doesn't refresh it without a server restart
+        // (the source + bake endpoints still resolve it because they read
+        // fs directly). Probe the source endpoint for a known stdlib id
+        // here so a freshly-added primitive becomes pickable WITHOUT a
+        // restart. Remove this once the glob's HMR story is solid.
+        for (const id of ['r_cuboid']) {
+          if (seen.has(id)) continue;
+          try {
+            const sr = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+            if (sr.ok) {
+              const sd = await sr.json() as any;
+              if (sd?.source) {
+                pickerSrcs.push(id);
+                pickerSrcMeta[id] = { source: 'stdlib' };
+                seen.add(id);
+              }
+            }
+          } catch { /* skip — not resolvable */ }
+        }
+        pickerSrcs.sort();
       } catch { /* fall through */ }
     }
+  }
+  /** Per-id metadata (source: 'basic'|'stdlib'|'stdstale'|'volume') used
+   *  by the picker's sort dropdown. Populated alongside pickerSrcs. */
+  let pickerSrcMeta = $state<Record<string, { source: string }>>({});
+  /** Sort mode for the +Drop picker primitive list. Persisted to
+   *  localStorage so the user's pick survives across sessions.
+   *    'name'   — A→Z (default)
+   *    'recent' — recently used first (per localStorage 'ge-picker-recent')
+   *    'source' — group by source: stdlib → basic → stdstale → completions */
+  let pickerSort = $state<'name' | 'recent' | 'source'>('name');
+  let pickerRecent = $state<string[]>([]);
+  onMount(() => {
+    try {
+      const m = localStorage.getItem('ge-picker-sort');
+      if (m === 'name' || m === 'recent' || m === 'source') pickerSort = m;
+      const r = localStorage.getItem('ge-picker-recent');
+      if (r) pickerRecent = JSON.parse(r) as string[];
+    } catch { /* storage blocked */ }
+  });
+  function setPickerSort(m: 'name' | 'recent' | 'source') {
+    pickerSort = m;
+    try { localStorage.setItem('ge-picker-sort', m); } catch { /* ignore */ }
+  }
+  /** Track usage when a primitive is dropped — feeds the 'recent' sort. */
+  function bumpRecent(id: string) {
+    pickerRecent = [id, ...pickerRecent.filter((x) => x !== id)].slice(0, 30);
+    try { localStorage.setItem('ge-picker-recent', JSON.stringify(pickerRecent)); } catch { /* ignore */ }
   }
   function closePicker() { pickerOpen = false; pickerFilter = ''; }
   async function dropCall(src: string) {
     closePicker();
+    bumpRecent(src);
     let args: Record<string, any> = {};
     let paramKeys: string[] = [];
     let defaults: Record<string, number> = {};
@@ -631,9 +694,20 @@
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
       const d = await r.json() as any;
       for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
-        args[k] = asLiteral(p.default ?? 0);
+        // Profile-typed args (r_revolve / r_extrude) carry a {kind, params}
+        // DESCRIPTOR as their default — not a number. asLiteral types the value
+        // as scalar, so encoding the descriptor as an `expr` ArgValue is the
+        // correct path: emit injects the literal object syntax, the body's
+        // resolveProfile(...) call inside the primitive collapses it to points.
+        // Minimum-viable #105 — the full picker-chip UI replaces the JSON view
+        // in a later pass; until then the user can edit the JSON in the f-popup.
+        if (p && typeof p === 'object' && p.type === 'profile' && p.default && typeof p.default === 'object') {
+          args[k] = asExpr(JSON.stringify(p.default));
+        } else {
+          args[k] = asLiteral(p?.default ?? 0);
+        }
         paramKeys.push(k);
-        defaults[k] = Number(p.default ?? 0);
+        defaults[k] = Number(p?.default ?? 0);
       }
     } catch { /* leave args empty */ }
     const result = addCall(graph, src, args);
@@ -949,11 +1023,57 @@
       w: (pcardSize.w + 14) / zoom,
       h: pcardSize.h / zoom,
     }];
+    // Collect the visible wires so push-apart can route cards AROUND them
+    // (Phase 22b — wire repulsion). Same socket helpers as the SVG render
+    // path, so the obstacles match what the user sees.
+    const wires = collectWires();
     graph = forceSeparate(graph, {
       nodeSize: (id) => nodeSize(graph.nodes[id]),
       padding: 24,
       obstacles,
+      wires,
+      wirePadding: 16,
     });
+  }
+
+  /** Enumerate every visible wire in the graph as a line segment in
+   *  GRAPH space. Used by pushApart so wires push non-endpoint cards
+   *  perpendicular to the segment when a card sits on top of one.
+   *  Mirrors the SVG render path's wire enumeration (method obj/arg,
+   *  mv/rot/repeat child, container child → output). */
+  function collectWires(): { fromId?: NodeId; toId?: NodeId; ax: number; ay: number; bx: number; by: number }[] {
+    const out: { fromId?: NodeId; toId?: NodeId; ax: number; ay: number; bx: number; by: number }[] = [];
+    for (const [id, node] of Object.entries(graph.nodes)) {
+      if (!node) continue;
+      const addInputWire = (srcId: NodeId, slot: 'obj' | 'arg' | 'child') => {
+        if (!graph.nodes[srcId]) return;
+        const a = outputSocketAt(srcId);
+        const b = inputSocketAt(id, slot);
+        out.push({ fromId: srcId, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
+      };
+      if (node.type === 'method') {
+        if (node.obj) addInputWire(node.obj, 'obj');
+        if (node.arg) addInputWire(node.arg, 'arg');
+      } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'repeat') {
+        if (node.child) addInputWire(node.child, 'child');
+      } else if (node.type === 'stack' || node.type === 'group') {
+        node.children.forEach((c, i) => {
+          if (!graph.nodes[c]) return;
+          const a = outputSocketAt(c);
+          const b = containerSlotInputAt(id, i);
+          out.push({ fromId: c, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
+        });
+      } else if (node.type === 'list' && id === graph.root) {
+        // Root-list children draw a wire to the Output card's slots.
+        node.children.forEach((c, i) => {
+          if (!graph.nodes[c]) return;
+          const a = outputSocketAt(c);
+          const b = containerSlotInputAt(id, i);
+          out.push({ fromId: c, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
+        });
+      }
+    }
+    return out;
   }
 
   // ─── inline transforms on Call cards ────────────────────────────────────
@@ -1111,8 +1231,26 @@
   let paramEntries = $derived(Object.entries(graph.params));
   let filteredSrcs = $derived.by(() => {
     const q = pickerFilter.trim().toLowerCase();
-    if (!q) return pickerSrcs;
-    return pickerSrcs.filter((s) => s.toLowerCase().includes(q));
+    const base = q ? pickerSrcs.filter((s) => s.toLowerCase().includes(q)) : pickerSrcs.slice();
+    // Sort mode applied AFTER filter so the user sees the relevant set in
+    // the chosen order. 'name' = lexicographic A→Z, 'recent' = LRU-first
+    // from `pickerRecent`, then alpha for the tail, 'source' = group by
+    // origin (stdlib first → basic → completions → stdstale).
+    if (pickerSort === 'recent' && pickerRecent.length > 0) {
+      const rec = new Set(pickerRecent);
+      const recentSet = base.filter((s) => rec.has(s)).sort((a, b) => pickerRecent.indexOf(a) - pickerRecent.indexOf(b));
+      const rest = base.filter((s) => !rec.has(s)).sort();
+      return [...recentSet, ...rest];
+    }
+    if (pickerSort === 'source') {
+      const order = { stdlib: 0, basic: 1, volume: 1, completions: 2, stdstale: 3 } as Record<string, number>;
+      return base.sort((a, b) => {
+        const sa = order[pickerSrcMeta[a]?.source ?? 'volume'] ?? 9;
+        const sb = order[pickerSrcMeta[b]?.source ?? 'volume'] ?? 9;
+        return sa !== sb ? sa - sb : a.localeCompare(b);
+      });
+    }
+    return base.sort();
   });
 </script>
 
@@ -2117,9 +2255,28 @@
       <div class="ge-picker-section">
         <div class="ge-picker-label">Call (primitive)</div>
         <input class="ge-picker-search" type="text" placeholder="filter…" bind:value={pickerFilter}/>
+        <!-- Sort dropdown (#104). Persists to localStorage `ge-picker-sort`.
+             'name' is the default A→Z. 'recent' floats LRU picks to the top
+             (per `ge-picker-recent`). 'source' groups by origin so stdlib +
+             basic + completions + stdstale sit in separate blocks. -->
+        <div class="ge-picker-sort">
+          <span class="ge-picker-sort-label">Sort:</span>
+          <button class="ge-pick-sort" class:active={pickerSort === 'name'}
+            type="button" onclick={() => setPickerSort('name')}>A→Z</button>
+          <button class="ge-pick-sort" class:active={pickerSort === 'recent'}
+            type="button" onclick={() => setPickerSort('recent')}
+            title="Recently dropped first">Recent</button>
+          <button class="ge-pick-sort" class:active={pickerSort === 'source'}
+            type="button" onclick={() => setPickerSort('source')}
+            title="Group by stdlib / basic / completions / stdstale">Source</button>
+        </div>
         <div class="ge-picker-list">
           {#each filteredSrcs as src (src)}
-            <button class="ge-pick" type="button" onclick={() => dropCall(src)}>{src}</button>
+            {@const meta = pickerSrcMeta[src]}
+            <button class="ge-pick" type="button" onclick={() => dropCall(src)}>
+              <span>{src}</span>
+              {#if pickerSort === 'source' && meta?.source}<span class="ge-pick-src-tag src-{meta.source}">{meta.source}</span>{/if}
+            </button>
           {/each}
           {#if pickerSrcs.length === 0}<div class="ge-empty">loading…</div>{/if}
         </div>
@@ -2425,6 +2582,25 @@
   .ge-picker-section { padding: 6px 0 8px; border-bottom: 1px solid #f1f5f9; }
   .ge-picker-label { font: 600 10px Arial; color: #92400e; text-transform: uppercase; letter-spacing: 0.6px; padding: 4px 12px; }
   .ge-picker-search { width: calc(100% - 24px); margin: 4px 12px; padding: 3px 8px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
+  /* #104 — sort dropdown above the call list. Small chips so the row
+     stays compact inside the existing picker frame. */
+  .ge-picker-sort { display: flex; align-items: center; gap: 4px; padding: 0 12px 4px; }
+  .ge-picker-sort-label { font: 600 10px Arial; color: #92400e; text-transform: uppercase; letter-spacing: 0.6px; }
+  .ge-pick-sort {
+    flex: 0 0 auto; padding: 2px 8px; font: 10px Arial; background: #f5f5f4;
+    border: 1px solid #d6d3d1; border-radius: 3px; cursor: pointer; color: #44403c;
+  }
+  .ge-pick-sort:hover { background: #e7e5e4; }
+  .ge-pick-sort.active { background: #0369a1; color: #fff; border-color: #0c4a6e; }
+  .ge-pick-src-tag {
+    font: 9px ui-monospace, monospace; padding: 1px 5px; border-radius: 3px;
+    margin-left: 6px; text-transform: lowercase;
+  }
+  .ge-pick-src-tag.src-stdlib { background: #dbeafe; color: #1e40af; }
+  .ge-pick-src-tag.src-basic { background: #f5f5f4; color: #44403c; }
+  .ge-pick-src-tag.src-volume { background: #f5f5f4; color: #44403c; }
+  .ge-pick-src-tag.src-completions { background: #fef3c7; color: #92400e; }
+  .ge-pick-src-tag.src-stdstale { background: #fee2e2; color: #991b1b; }
   .ge-picker-list { max-height: 220px; overflow-y: auto; }
   .ge-pick { width: 100%; padding: 5px 12px; background: transparent; border: 0; text-align: left; font: 12px ui-monospace, monospace; color: #1f2937; cursor: pointer; }
   .ge-pick:hover { background: #e0f2fe; color: #0c4a6e; }

@@ -58,6 +58,8 @@ function load(rawMap: Record<string, string>, origin: StdOrigin) {
 // last-write-wins case during a half-applied move).
 load(stdlibRaw, 'stdlib');
 load(stdstaleRaw, 'stdstale');
+// (no-op HMR nudge — keeps `import.meta.glob` invalidating cleanly when a
+// new <id>.ts is added under stdlib/, without restarting the dev server)
 
 /** Raw source text for a stdlib or stdstale primitive id, or null if neither. */
 export function stdlibSource(id: string): string | null {
