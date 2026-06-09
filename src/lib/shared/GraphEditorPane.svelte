@@ -591,7 +591,7 @@
       return { w: 220, h: Math.max(80, 50 + argCount * 22) };
     }
     if (node.type === 'method') return { w: 180, h: 100 };
-    if (node.type === 'mv' || node.type === 'rot') return { w: 160, h: 130 };
+    if (node.type === 'mv' || node.type === 'rot') return { w: 130, h: 110 };
     if (node.type === 'repeat') return { w: 230, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
@@ -626,7 +626,16 @@
     if (!node) return p;
     if (slot === 'obj')  return { x: p.x, y: p.y + 30 };
     if (slot === 'arg')  return { x: p.x, y: p.y + 70 };
-    /* child */          return { x: p.x, y: p.y + 50 };
+    // mv / rot have their child socket on the TOP-EDGE center (not the
+    // left edge) — the shape comes in from above, axis sockets line the
+    // left edge for parameter wiring. Repeat keeps the legacy bottom-edge
+    // position via its own renderer.
+    if (slot === 'child' && (node.type === 'mv' || node.type === 'rot')) {
+      const w = nodeSize(node).w;
+      return { x: p.x + w / 2, y: p.y };
+    }
+    /* child (legacy left-edge for method/repeat) */
+    return { x: p.x, y: p.y + 50 };
   }
   /** Container slot input socket position — the i-th child slot of a
    *  list/stack/group container's card. Used to draw the visible "piped
@@ -1795,8 +1804,8 @@
               {:else if n.type === 'mv' || n.type === 'rot'}
                 {@const t = n as any}
                 {@const fieldName = n.type === 'mv' ? 'offset' : 'rot'}
-                {@const axisRowH = 22}
-                {@const axisStartY = 56}
+                {@const axisRowH = 24}
+                {@const axisStartY = 40}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg transform" class:rot={n.type === 'rot'}
                   width={size.w} height={size.h} rx="6"
@@ -1808,17 +1817,17 @@
                   {n.type === 'mv' ? '⇄ mv' : '↻ rot'}
                 </text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <!-- Child socket — same y as the title (just below the divider).
-                     One CHILD input plus three AXIS inputs makes the card a
-                     single-column wiring surface. -->
-                <text x="20" y="48" class="ge-sock-label">child</text>
+                <!-- CHILD socket on the TOP EDGE, center. Implicit — no label
+                     since the position itself communicates "shape comes in
+                     from above". inputSocketAt('child') reports this point
+                     so existing wires draw correctly. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" cx="6" cy="44" r="5"
+                <circle role="button" tabindex="-1" class="ge-sock in child" cx={size.w / 2} cy="0" r="6"
                   onpointerup={(ev) => endWireOnInput(ev, n.id, 'child')}/>
-                <!-- Each axis row: socket + label + input + ƒ/× — same column
-                     model as the params card so wiring is obvious + the right
-                     edge stays consistent. -->
-                <foreignObject x="20" y={axisStartY - 4} width={size.w - 24} height={3 * axisRowH + 6}>
+                <!-- Each axis row: edge socket + label + input + × — same
+                     column model as the params card so wiring is obvious
+                     + the right edge stays consistent. -->
+                <foreignObject x="14" y={axisStartY - 4} width={size.w - 18} height={3 * axisRowH + 6}>
                   <div class="ge-xyz" xmlns="http://www.w3.org/1999/xhtml">
                     {#each ['x','y','z'] as axisLabel, i (axisLabel)}
                       {@const axis = (t as any)[fieldName][i]}
@@ -1849,13 +1858,13 @@
                     {/each}
                   </div>
                 </foreignObject>
-                <!-- Per-axis input sockets — one circle per row at the LEFT
-                     EDGE of the card. Drag a param chip onto one and the
-                     axis becomes wired (via endWireOnTransformAxis). -->
+                <!-- Per-axis input sockets — ON the left edge (cx=0). Drag a
+                     param chip onto one and the axis becomes wired (via
+                     endWireOnTransformAxis). -->
                 {#each [0, 1, 2] as i}
                   {@const cy = axisStartY + i * axisRowH + axisRowH / 2 - 4}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="6" cy={cy} r="4"
+                  <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="0" cy={cy} r="4"
                     onpointerup={(ev) => endWireOnTransformAxis(ev, n.id, i as 0|1|2)}/>
                 {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
