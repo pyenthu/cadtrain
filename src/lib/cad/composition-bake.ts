@@ -50,12 +50,16 @@ export interface BakeOptions {
   /** When true, bypass the bake cache for this call (forces a fresh
    *  /api/primitives/preview?bust=1). Used by the 🔄 Rebuild button. */
   bust?: boolean;
+  /** Ghost set — node IDs whose Manifold is appended to the return list
+   *  so the bake includes them as overlays. Each Call card's 👁 toggle
+   *  drives this; saved files are never affected (only /preview gets it). */
+  ghosts?: string[];
 }
 
 /** Bake a graph by emitting source + routing through /api/primitives/preview.
  *  Slice-1 implementation; the server uses the existing primitive-loader. */
 export async function bakeGraphPreview(graph: Graph, opts: BakeOptions): Promise<PreviewBake> {
-  const r = emitGraph(graph, { id: opts.id });
+  const r = emitGraph(graph, { id: opts.id, ghosts: opts.ghosts });
   // Positional params for the existing /preview endpoint, in meta.params order.
   const positional: (number | string | boolean)[] = Object.keys(graph.params).map((k) => {
     const v = opts.paramValues?.[k];

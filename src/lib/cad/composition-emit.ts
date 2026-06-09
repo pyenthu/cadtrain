@@ -39,6 +39,13 @@ export interface EmitOptions {
   id: string;
   /** Optional description for meta.description. */
   description?: string;
+  /** Ghost set — node IDs whose emitted Manifold is ALSO appended to
+   *  the return list so the bake renders them alongside the normal
+   *  result. The editor's per-card 👁 toggle drives this; saved files
+   *  never get a non-empty set (only /preview ever sees it). The bake
+   *  cache keys on source content so the ghost variant has its own
+   *  cache entry, doesn't interfere with the saved bake. */
+  ghosts?: string[];
 }
 
 export interface EmitResult {
@@ -192,6 +199,30 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     const expr = emitNodeExpr(node, varNames, listProducers);
     if (expr == null) continue;
     lines.push(`  const ${v} = ${expr};`);
+  }
+  // Ghost mode — APPEND the emitted var of every node id in opts.ghosts
+  // to the returned array so the bake renders them alongside the normal
+  // result. Each card carries its own 👁 toggle in the editor; the
+  // returned cutter renders in its native colour (color-by-source) so
+  // the user can eyeball where the subtraction is removing material.
+  // Saved files never get this (opts.ghosts is editor-only — /preview
+  // sets it, /save doesn't).
+  if (opts.ghosts && opts.ghosts.length > 0) {
+    const ghostVars: string[] = [];
+    for (const ghostId of opts.ghosts) {
+      const v = varNames.get(ghostId);
+      // Skip ghosts whose node IS the root return (already in the output)
+      // or that don't map to a const line for any reason.
+      if (v && v !== returnExpr && !returnExpr.includes(v + ',') && !returnExpr.includes(' ' + v)) {
+        ghostVars.push(v);
+      }
+    }
+    if (ghostVars.length > 0) {
+      const base = returnExpr === 'undefined' ? '[]'
+        : returnExpr.startsWith('[') ? returnExpr
+        : `[${returnExpr}]`;
+      returnExpr = `[...${base}, ${ghostVars.join(', ')}]`;
+    }
   }
   lines.push(`  return ${returnExpr};`);
   const rootVar = returnExpr;

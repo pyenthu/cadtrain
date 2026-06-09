@@ -125,6 +125,22 @@
     try { localStorage.setItem('ge-auto-bake', v ? '1' : '0'); } catch { /* ignore */ }
     if (v) bakeNonce++; // re-bake when flipping ON
   }
+  /** Per-card ghost set — Call cards (and any node) flagged with the eye
+   *  icon get their emitted Manifold APPENDED to the return list, so the
+   *  bake renders them alongside the normal result. Useful for eyeballing
+   *  the volume that a subtract is removing (toggle the cutter card on,
+   *  see its body sitting inside the void it carved). Lives in editor
+   *  state only; saved files are never affected. */
+  let ghostSet = $state<Record<string, boolean>>({});
+  let ghostIds = $derived(Object.keys(ghostSet).filter((id) => ghostSet[id]));
+  function toggleNodeGhost(id: string) {
+    ghostSet = { ...ghostSet, [id]: !ghostSet[id] };
+    bakeNonce++;
+  }
+  function clearAllGhosts() {
+    ghostSet = {};
+    bakeNonce++;
+  }
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
    *  bumps. Reads the current emitted source so manual bakes always
    *  reflect the latest graph state. */
@@ -154,6 +170,98 @@
     window.addEventListener('keydown', onWindowKeydown);
     return () => window.removeEventListener('keydown', onWindowKeydown);
   });
+  // ─── Global dark tooltip ────────────────────────────────────────────────
+  // Replaces the native browser tooltip (slow + unstyled) with a single
+  // floating black-bg-white-text bubble that follows the cursor. Picks up:
+  //   * any element with a `data-tip="..."` attribute (preferred)
+  //   * any element with a native `title` attribute (the `title` is hoisted
+  //     to `data-tip` on first hover so the browser doesn't show its own
+  //     yellow bubble alongside ours)
+  // Both work with the new resize grip + every existing tooltip in the
+  // editor without per-element changes.
+  onMount(() => {
+    if (typeof document === 'undefined') return;
+    let tipEl: HTMLDivElement | null = null;
+    let activeTarget: HTMLElement | null = null;
+    function ensureTip() {
+      if (tipEl) return tipEl;
+      tipEl = document.createElement('div');
+      tipEl.className = 'ge-floating-tip';
+      tipEl.style.cssText = [
+        'position: fixed',
+        'background: #111827',
+        'color: #f9fafb',
+        'font: 11px Arial',
+        'padding: 4px 8px',
+        'border-radius: 4px',
+        'pointer-events: none',
+        'z-index: 9999',
+        'max-width: 280px',
+        'white-space: pre-line',
+        'box-shadow: 0 2px 6px rgba(0,0,0,0.25)',
+        'opacity: 0',
+        'transition: opacity 90ms',
+      ].join(';');
+      document.body.appendChild(tipEl);
+      return tipEl;
+    }
+    function show(target: HTMLElement, text: string) {
+      activeTarget = target;
+      const tip = ensureTip();
+      tip.textContent = text;
+      tip.style.opacity = '1';
+    }
+    function hide() {
+      activeTarget = null;
+      if (tipEl) tipEl.style.opacity = '0';
+    }
+    function onOver(ev: MouseEvent) {
+      let el = ev.target as HTMLElement | null;
+      while (el && el !== document.body) {
+        const dt = el.getAttribute?.('data-tip');
+        const t  = !dt && el.getAttribute?.('title');
+        if (dt || t) {
+          if (t) {
+            // Hoist native title to data-tip so the browser stops
+            // rendering its own yellow rectangle.
+            el.setAttribute('data-tip', t);
+            el.removeAttribute('title');
+          }
+          show(el, dt ?? t ?? '');
+          return;
+        }
+        el = el.parentElement;
+      }
+      hide();
+    }
+    function onMove(ev: MouseEvent) {
+      if (!activeTarget || !tipEl) return;
+      // Track the cursor at a small offset; the tip clamps to the viewport.
+      const offsetX = 14;
+      const offsetY = 18;
+      const x = Math.min(window.innerWidth - tipEl.offsetWidth - 8, ev.clientX + offsetX);
+      const y = Math.min(window.innerHeight - tipEl.offsetHeight - 8, ev.clientY + offsetY);
+      tipEl.style.left = `${x}px`;
+      tipEl.style.top  = `${y}px`;
+    }
+    function onOut(ev: MouseEvent) {
+      // Only hide when leaving the active target completely.
+      const rel = (ev as any).relatedTarget as HTMLElement | null;
+      if (!activeTarget) return;
+      if (rel && activeTarget.contains(rel)) return;
+      hide();
+    }
+    document.addEventListener('mouseover', onOver);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseout', onOut);
+    return () => {
+      document.removeEventListener('mouseover', onOver);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseout', onOut);
+      tipEl?.remove();
+      tipEl = null;
+    };
+  });
   $effect(() => {
     // Track bakeNonce + the FIRST-load condition (any visible node + no
     // prior bake). Subsequent graph changes don't fire here — they go
@@ -167,7 +275,7 @@
     bake = 'loading';
     clearTimeout(bakeTimer);
     bakeTimer = setTimeout(async () => {
-      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1 });
+      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1, ghosts: ghostIds });
       bake = { ok: r.ok, source: emitted.source, bake: r, message: r.message as string | undefined };
       firstBakeDone = true;
     }, 250);
@@ -431,6 +539,32 @@
     }
   }
 
+  // ─── Card resize (right-edge grip) ─────────────────────────────────────
+  let resizing = $state<string | null>(null);
+  let resizeStartX = 0;
+  let resizeOrigW = 0;
+  function onResizePointerDown(ev: PointerEvent, id: string) {
+    if (ev.button !== 0) return;
+    resizing = id;
+    resizeStartX = ev.clientX;
+    const node = graph.nodes[id];
+    if (!node) return;
+    resizeOrigW = nodeSize(node).w;
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  function onResizePointerMove(ev: PointerEvent) {
+    if (!resizing) return;
+    const dx = (ev.clientX - resizeStartX) / zoom;
+    setCardWidth(resizing, resizeOrigW + dx);
+  }
+  function onResizePointerUp(ev: PointerEvent) {
+    if (!resizing) return;
+    (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
+    resizing = null;
+  }
+
   // ─── param chip positioning ─────────────────────────────────────────────
   // Chips are TACKED to the viewport top-left by default (📌). They render
   // OUTSIDE the pan/zoom transform — so when the user pans the canvas, the
@@ -657,20 +791,73 @@
   // Call card: 200×<auto>; output socket on right edge mid-card.
   // Method card: 180×100; sockets on left (obj at y+30, arg at y+70) + right (output y+50).
   // Mv/Rot card: 200×120; left (child y+40) + right (output y+60).
+  // ─── Per-card user resize overrides ───────────────────────────────────
+  /** width override per node id (px). The user can drag a card's right-edge
+   *  grip to widen/narrow it; the override is stored here. Persists for
+   *  this session only — graph.layout is the on-disk source of truth and
+   *  doesn't currently carry width (small enough that an in-memory map is
+   *  fine for the first iteration). */
+  let cardWidthOverrides = $state<Record<string, number>>({});
+  /** Sets the user-override width on a card, clamped to the card's
+   *  MINIMUM-content width (key column + input + actions + padding). */
+  function setCardWidth(id: string, w: number) {
+    const node = graph.nodes[id];
+    if (!node) return;
+    const min = cardMinWidth(node);
+    cardWidthOverrides = { ...cardWidthOverrides, [id]: Math.max(min, Math.round(w)) };
+  }
+  /** Minimum width the card can shrink to — derived from the row content.
+   *  For Call cards: key column (70 px for "label") + value cell (input +
+   *  actions = ~76 px) + horizontal padding ~16 px. Everything else uses
+   *  its native fixed default — the user resizes those rarely. */
+  function cardMinWidth(node: any): number {
+    if (node.type === 'call')   return 168; // 70 key + 76 value + 22 chrome
+    if (node.type === 'method') return 130;
+    if (node.type === 'mv' || node.type === 'rot') return 116;
+    if (node.type === 'repeat') return 170;
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 140;
+    return 130;
+  }
+  /** Auto-fit width based on the card's content — title length + longest
+   *  arg key character count + value cell footprint. The result is the
+   *  DEFAULT width when no user override is set; the user can always
+   *  drag the grip to override. */
+  function cardAutoWidth(node: any): number {
+    if (node.type === 'call') {
+      const argKeys = Object.keys(node.args ?? {});
+      const titleChars = (node.alias?.length ?? 0) + 3 + (node.src?.length ?? 0); // "A · dt_tube"
+      const longestKey = argKeys.length ? Math.max(...argKeys.map((k) => k.length)) : 4;
+      // 70 key column was a constant; widen if the longest key needs more
+      // (still letting the input cell breathe).
+      const keyW = Math.max(70, longestKey * 8 + 8);
+      const valueW = 124; // input + ƒ + × comfortably
+      const padding = 22;
+      const fromArgs = keyW + valueW + padding;
+      const fromTitle = titleChars * 7 + 50; // ⇄ ↻ × glyphs + side padding
+      return Math.max(220, fromArgs, fromTitle);
+    }
+    if (node.type === 'method') return 180;
+    if (node.type === 'mv' || node.type === 'rot') return 136;
+    if (node.type === 'repeat') return 230;
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 200;
+    return 180;
+  }
   function nodeSize(node: any): { w: number; h: number } {
+    const overrideW = cardWidthOverrides[node.id];
+    const baseW = overrideW != null ? overrideW : cardAutoWidth(node);
+    const w = Math.max(cardMinWidth(node), baseW);
     if (node.type === 'call') {
       const argCount = Object.keys(node.args ?? {}).length;
-      return { w: 220, h: Math.max(80, 50 + argCount * 22) };
+      return { w, h: Math.max(80, 50 + argCount * 22) };
     }
-    if (node.type === 'method') return { w: 180, h: 100 };
-    if (node.type === 'mv' || node.type === 'rot') return { w: 136, h: 110 };
-    if (node.type === 'repeat') return { w: 230, h: 110 };
+    if (node.type === 'method') return { w, h: 100 };
+    if (node.type === 'mv' || node.type === 'rot') return { w, h: 110 };
+    if (node.type === 'repeat') return { w, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
-      // One row per existing child + one "+ drop here" trailer row
       const slots = (node.children?.length ?? 0) + 1;
-      return { w: 200, h: Math.max(60, 40 + slots * 22) };
+      return { w, h: Math.max(60, 40 + slots * 22) };
     }
-    return { w: 180, h: 80 };
+    return { w, h: 80 };
   }
   /** Input socket Y for the i-th child slot of a container (list/stack/group). */
   function containerSlotY(i: number): number { return 40 + i * 22; }
@@ -1434,6 +1621,16 @@
       <input type="checkbox" checked={autoBake} onchange={(e) => setAutoBake((e.target as HTMLInputElement).checked)}/>
       auto
     </label>
+    <!-- Reset ghosts — clears every per-card 👁 flag so the bake returns
+         to the FINAL result without any overlays. Hidden when nothing is
+         ghosted (avoids toolbar clutter). -->
+    {#if ghostIds.length > 0}
+      <button class="ge-btn ghost-clear" type="button"
+        onclick={clearAllGhosts}
+        title={`Clear ${ghostIds.length} ghost overlay${ghostIds.length === 1 ? '' : 's'} and bake the final result`}>
+        👁✕ {ghostIds.length}
+      </button>
+    {/if}
     <button class="ge-btn ghost" type="button" onclick={resetGraph}>Reset</button>
     <button class="ge-btn ghost auto-layout" type="button" onclick={autoLayout}
       title="Rearrange nodes left-to-right by depth (Phase 20 heuristic)">📐 Auto-layout</button>
@@ -1695,6 +1892,15 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 38} y="22" class="ge-xform-btn" class:on={!!inlineRot}
                   onpointerdown={(ev) => { ev.stopPropagation(); toggleInlineTransform(n.id, 'rot'); }}>↻</text>
+                <!-- 👁 ghost toggle — when on, this Call's emitted Manifold is
+                     ALSO returned alongside the normal result. Lets the user
+                     see a cutter (or any intermediate part) overlaid on the
+                     final bake to eyeball its volume. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 56} y="22"
+                  class="ge-node-ghost" class:on={!!ghostSet[n.id]}
+                  data-tip={ghostSet[n.id] ? `Hide ${call.alias} from the bake overlay` : `Show ${call.alias} alongside the bake (ghost overlay)`}
+                  onpointerdown={(ev) => { ev.stopPropagation(); toggleNodeGhost(n.id); }}>👁</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
@@ -2158,6 +2364,22 @@
                     onpointerdown={(ev) => startWire(ev, n.id)}/>
                 {/if}
               {/if}
+              <!-- ─── Right-edge resize grip ──────────────────────────────
+                   Tiny vertical handle on the card's right edge — drag to
+                   widen/shrink. Clamped to cardMinWidth(node) so the row
+                   content (key column + input + actions) never gets
+                   crushed. The Output card alone skips the grip (it's the
+                   root container; resizing it doesn't help anything). -->
+              {#if n.id !== graph.root}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect class="ge-resize-grip"
+                  x={size.w - 3} y={Math.max(36, size.h * 0.2)}
+                  width="6" height={Math.min(size.h * 0.6, 48)} rx="3"
+                  data-tip="Drag to resize"
+                  onpointerdown={(ev) => onResizePointerDown(ev, n.id)}
+                  onpointermove={onResizePointerMove}
+                  onpointerup={onResizePointerUp}/>
+              {/if}
             </g>
           {/each}
 
@@ -2536,6 +2758,18 @@
   }
   .ge-auto-bake-toggle { display: inline-flex; align-items: center; gap: 4px; font: 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
   .ge-auto-bake-toggle input { margin: 0; }
+  /* Reset-ghosts button — appears when at least one card is ghosted.
+     Violet to match the per-card 👁 toggle's active colour. */
+  .ge-btn.ghost-clear {
+    background: #c4b5fd; color: #4c1d95;
+    padding: 3px 9px; font: 12px Arial; border: 1px solid #8b5cf6;
+  }
+  .ge-btn.ghost-clear:hover { background: #a78bfa; color: #2e1065; }
+  /* Per-card 👁 eye toggle — a small SVG button on each Call card,
+     left of the × delete. Activates ghost overlay for that card. */
+  .ge-node-ghost { font: 12px Arial; cursor: pointer; user-select: none; opacity: 0.5; }
+  .ge-node-ghost:hover { opacity: 1; }
+  .ge-node-ghost.on { opacity: 1; fill: #6d28d9; }
   .ge-btn.ghost { background: #e5e7eb; color: #1f2937; }
   .ge-btn.ghost:hover { background: #d1d5db; }
   .ge-save-stat { font: 11px ui-monospace, monospace; color: #15803d; }
@@ -2829,6 +3063,13 @@
   .ge-sock.out.param { stroke: #d97706; fill: #fef3c7; }
   .ge-sock.in.param:hover, .ge-sock.out.param:hover { fill: #fde68a; }
   .ge-sock.tiny { stroke-width: 1.5; }
+  /* Right-edge resize grip — semi-transparent slate, lights up on hover.
+     Cursor: ew-resize so the affordance is obvious. */
+  .ge-resize-grip {
+    fill: #cbd5e1; opacity: 0.55; cursor: ew-resize;
+    transition: fill 120ms, opacity 120ms;
+  }
+  .ge-resize-grip:hover { fill: #6366f1; opacity: 0.95; }
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
   .ge-source-pane:has(.ge-legacy-banner) { grid-template-rows: auto auto 1fr; }
