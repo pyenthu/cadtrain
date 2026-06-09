@@ -147,6 +147,10 @@
     ghostSet = {};
     bakeNonce++;
   }
+  /** Canvas-settings popover (anchored to the ⚙ button on the vertical
+   *  rail). Holds layout tools (auto-layout, push apart) that don't need
+   *  to be one-click from the rail — and future view/nav controls. */
+  let canvasMenuOpen = $state(false);
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
    *  bumps. Reads the current emitted source so manual bakes always
    *  reflect the latest graph state. */
@@ -1655,43 +1659,11 @@
 </svelte:head>
 
 <div class="ge-root" class:embed>
+  <!-- Slim top header — just the working id + active save status badge.
+       All action buttons moved to the left vertical rail (#112). -->
   <header class="ge-bar">
     <h1>Graph editor</h1>
     <input class="ge-id" type="text" bind:value={exemplarId} placeholder="exemplar id" />
-    <button class="ge-btn" type="button" onclick={openPicker}>+ Drop</button>
-    <button class="ge-btn save" type="button" disabled={saveBusy} onclick={saveGraph}>{saveBusy ? '…' : '💾 Save'}</button>
-    <!-- Manual bake — press Enter in any input or click here. Stale flag
-         lit when emitted source differs from what's rendered. Auto-bake
-         toggle next to it; default OFF since rebakes can be expensive
-         at large N. -->
-    <button class="ge-btn bake" type="button" onclick={runBake}
-      class:stale={bakeStale}
-      title={bakeStale ? 'Source changed — click or press Enter to re-bake' : 'Re-bake now (Enter in any input also bakes)'}>
-      🔨 Bake{bakeStale ? ' ●' : ''}
-    </button>
-    <label class="ge-auto-bake-toggle" title="Auto re-bake on every source change">
-      <input type="checkbox" checked={autoBake} onchange={(e) => setAutoBake((e.target as HTMLInputElement).checked)}/>
-      auto
-    </label>
-    <!-- Reset ghosts — clears every per-card 👁 flag so the bake returns
-         to the FINAL result without any overlays. Hidden when nothing is
-         ghosted (avoids toolbar clutter). -->
-    {#if ghostIds.length > 0}
-      <button class="ge-btn ghost-clear" type="button"
-        onclick={clearAllGhosts}
-        title={`Clear ${ghostIds.length} ghost overlay${ghostIds.length === 1 ? '' : 's'} and bake the final result`}>
-        👁✕ {ghostIds.length}
-      </button>
-    {/if}
-    <button class="ge-btn ghost" type="button" onclick={resetGraph}>Reset</button>
-    <button class="ge-btn ghost auto-layout" type="button" onclick={autoLayout}
-      title="Rearrange nodes left-to-right by depth (Phase 20 heuristic)">📐 Auto-layout</button>
-    <button class="ge-btn ghost push-apart" type="button" onclick={pushApart}
-      title="Resolve overlapping cards via pairwise separation (Phase 22)">🧲 Push apart</button>
-    {#if undoLayout}
-      <button class="ge-btn ghost undo-layout" type="button" onclick={undoAutoLayout}
-        title="Restore the prior layout">↶ Undo</button>
-    {/if}
   </header>
 
   {#if emitted.validationErrors.length > 0}
@@ -1713,6 +1685,65 @@
           </li>
         {/each}
       </ul>
+    </div>
+  {/if}
+
+  <!-- Vertical toolbar — primary actions stacked left of the canvas. Each
+       button is icon-only with a data-tip; the dark tooltip layer (mounted
+       in onMount) renders the labels on hover. Auto-layout + Push apart
+       moved to a canvas-settings popover. -->
+  <aside class="ge-vrail">
+    <button class="ge-vrail-btn" type="button" onclick={openPicker}
+      data-tip="+ Drop a node (Call, CSG, transform, container)">＋</button>
+    <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
+      data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
+    <button class="ge-vrail-btn bake" type="button" onclick={runBake}
+      class:stale={bakeStale}
+      data-tip={bakeStale ? 'Source changed — click or press Enter to re-bake' : 'Bake now (Enter in any input also bakes)'}>
+      {bakeStale ? '🔨●' : '🔨'}
+    </button>
+    <button class="ge-vrail-btn auto" type="button"
+      class:on={autoBake}
+      onclick={() => setAutoBake(!autoBake)}
+      data-tip={autoBake ? 'Auto-bake ON — toggle off to bake only on demand' : 'Auto-bake OFF — toggle on to bake on every change (700 ms debounce)'}>
+      ⚡
+    </button>
+    {#if ghostIds.length > 0}
+      <button class="ge-vrail-btn ghost-clear" type="button"
+        onclick={clearAllGhosts}
+        data-tip={`Clear ${ghostIds.length} ghost overlay${ghostIds.length === 1 ? '' : 's'} and bake the final result`}>
+        👁✕<span class="ge-vrail-badge">{ghostIds.length}</span>
+      </button>
+    {/if}
+    {#if undoLayout}
+      <button class="ge-vrail-btn" type="button" onclick={undoAutoLayout}
+        data-tip="Restore the prior layout (undo auto-layout / push apart)">↶</button>
+    {/if}
+    <div class="ge-vrail-sep"></div>
+    <button class="ge-vrail-btn settings" type="button"
+      onclick={() => canvasMenuOpen = !canvasMenuOpen}
+      class:on={canvasMenuOpen}
+      data-tip="Layout tools — auto-layout, push apart">⚙</button>
+    <div class="ge-vrail-spacer"></div>
+    <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
+      data-tip="Reset the graph to an empty canvas">⟲</button>
+  </aside>
+
+  {#if canvasMenuOpen}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-canvas-menu-shade" onclick={() => canvasMenuOpen = false}></div>
+    <div class="ge-canvas-menu">
+      <button class="ge-canvas-menu-btn" type="button"
+        onclick={() => { autoLayout(); canvasMenuOpen = false; }}>
+        📐 Auto-layout
+        <span class="hint">Rearrange nodes left-to-right by depth</span>
+      </button>
+      <button class="ge-canvas-menu-btn" type="button"
+        onclick={() => { pushApart(); canvasMenuOpen = false; }}>
+        🧲 Push apart
+        <span class="hint">Resolve overlapping cards via pairwise separation</span>
+      </button>
     </div>
   {/if}
 
@@ -2792,7 +2823,81 @@
 </div>
 
 <style>
-  .ge-root { display: grid; grid-template-rows: auto 1fr; height: 100vh; font-family: Arial; color: #1f2937; }
+  /* 48 px left rail + 1fr body. Rows: slim header + canvas grid. */
+  .ge-root {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    grid-template-columns: 48px 1fr;
+    height: 100vh; font-family: Arial; color: #1f2937;
+    position: relative;
+  }
+  .ge-root > .ge-bar     { grid-column: 1 / -1; }
+  .ge-root > .ge-vrail   { grid-row: 2; grid-column: 1; }
+  .ge-root > .ge-grid    { grid-row: 2; grid-column: 2; }
+  .ge-root > .ge-valerr  { grid-column: 1 / -1; }
+  /* ─── Vertical action rail ─────────────────────────────────────────── */
+  .ge-vrail {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+    padding: 10px 4px; background: #f8fafc;
+    border-right: 1px solid #e5e7eb;
+    overflow-y: auto;
+  }
+  .ge-vrail-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px;
+    background: #fff; color: #44403c;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    font-size: 16px; line-height: 1; cursor: pointer;
+    transition: background 120ms, border-color 120ms, color 120ms;
+    position: relative;
+  }
+  .ge-vrail-btn:hover { background: #eff6ff; color: #0c4a6e; border-color: #93c5fd; }
+  .ge-vrail-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ge-vrail-btn.save    { color: #15803d; }
+  .ge-vrail-btn.save:hover { background: #d1fae5; color: #14532d; border-color: #6ee7b7; }
+  .ge-vrail-btn.bake    { color: #ea580c; }
+  .ge-vrail-btn.bake:hover { background: #ffedd5; color: #9a3412; border-color: #fdba74; }
+  .ge-vrail-btn.bake.stale {
+    color: #ea580c; border-color: #f97316;
+    animation: ge-bake-pulse 1.4s ease-in-out infinite;
+  }
+  .ge-vrail-btn.auto    { color: #78716c; }
+  .ge-vrail-btn.auto.on { background: #fef3c7; color: #92400e; border-color: #fbbf24; }
+  .ge-vrail-btn.ghost-clear { background: #c4b5fd; color: #4c1d95; border-color: #8b5cf6; }
+  .ge-vrail-btn.ghost-clear:hover { background: #a78bfa; color: #2e1065; }
+  .ge-vrail-btn.settings.on { background: #dbeafe; color: #1e40af; border-color: #60a5fa; }
+  .ge-vrail-btn.reset:hover { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .ge-vrail-badge {
+    position: absolute; top: -4px; right: -4px;
+    background: #ea580c; color: #fff;
+    font: 700 9px Arial; padding: 0 4px; border-radius: 9999px;
+    min-width: 14px; height: 14px; line-height: 14px; text-align: center;
+  }
+  .ge-vrail-sep { width: 24px; height: 1px; background: #e5e7eb; margin: 4px 0; }
+  .ge-vrail-spacer { flex: 1 1 auto; }
+
+  /* ─── Canvas-settings popover ──────────────────────────────────────── */
+  .ge-canvas-menu-shade {
+    position: absolute; inset: 0;
+    z-index: 99;
+  }
+  .ge-canvas-menu {
+    position: absolute; left: 58px; top: 220px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
+    padding: 4px; min-width: 240px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    z-index: 100; display: flex; flex-direction: column; gap: 2px;
+  }
+  .ge-canvas-menu-btn {
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 2px; padding: 8px 12px;
+    background: transparent; border: 0; border-radius: 4px; cursor: pointer;
+    font: 600 12px Arial; color: #1f2937;
+    text-align: left;
+  }
+  .ge-canvas-menu-btn:hover { background: #f5f5f4; }
+  .ge-canvas-menu-btn .hint { font: 400 10px Arial; color: #78716c; }
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
   .ge-root.embed { height: 100%; }
