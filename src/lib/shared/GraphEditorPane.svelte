@@ -921,7 +921,7 @@
     if (node.type === 'method') return 96;  // ⊖ + label + × (sockets sit on edges)
     if (node.type === 'mv' || node.type === 'rot') return 116;
     if (node.type === 'repeat') return 170;
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 96;
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
     return 130;
   }
   /** Auto-fit width based on the card's content — title length + longest
@@ -963,15 +963,15 @@
           '(missing)',
         );
       }
-      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 8;
-      // ~6.5 px per char (12 px ui-monospace, slightly narrower than
-      // monospace estimate). Socket 16 + × 12 + padding 12 = 40 chrome.
-      // Title row chrome: ▶ + ' Output' + ⚙ + padding ≈ 70 px.
-      const titleW = 70;
-      const rowW = longest * 6.5 + 40;
-      // 96 px floor — tight enough that a one-child container with a
-      // short method label sits snug; longer labels grow it via rowW.
-      return Math.max(96, Math.max(rowW, titleW));
+      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
+      // ~7 px per char monospace + 18 px socket + 14 px × button + 16 px
+      // padding. Title row has the ▶ chevron + name + ⚙ gear so the
+      // header itself needs room; account for the minimum.
+      const titleW = 90; // ▶ Output + gear with padding
+      const rowW = longest * 7 + 18 + 14 + 16;
+      // 120 px floor matches the Call card's min and reads as a real
+      // container, not a half-collapsed sliver.
+      return Math.max(120, Math.max(rowW, titleW));
     }
     return 180;
   }
@@ -2613,7 +2613,16 @@
                 {@const container = n as any}
                 {@const title = isRoot ? '▶ Output' : n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect role="button" tabindex="-1" class="ge-node-bg container" class:root={isRoot} class:stack={n.type === 'stack'}
+                <!-- FIX: render the container variant classes as a single
+                     static class string instead of `class:foo` directives.
+                     Svelte 5 reorders SVG attributes when mixing class:
+                     directives with reactive expressions, and the reordered
+                     output makes browsers ignore the `width` SVG attribute
+                     on root containers (rect ends up filling parent SVG ~590
+                     px instead of size.w ~111 px). Static class string
+                     restores normal attribute ordering. -->
+                <rect role="button" tabindex="-1"
+                  class={`ge-node-bg container${isRoot ? ' root' : ''}${n.type === 'stack' ? ' stack' : ''}`}
                   width={size.w} height={size.h} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
