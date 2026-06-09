@@ -591,7 +591,7 @@
       return { w: 220, h: Math.max(80, 50 + argCount * 22) };
     }
     if (node.type === 'method') return { w: 180, h: 100 };
-    if (node.type === 'mv' || node.type === 'rot') return { w: 130, h: 110 };
+    if (node.type === 'mv' || node.type === 'rot') return { w: 112, h: 110 };
     if (node.type === 'repeat') return { w: 230, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
@@ -618,6 +618,10 @@
     if (!node) return { x: 0, y: 0 };
     const { w, h } = nodeSize(node);
     const p = nodePos(id);
+    // mv / rot put their OUTPUT socket on the title row's right edge
+    // (y=16) — same vertical line as the child input on the left. Other
+    // node types keep the middle-right edge default.
+    if (node.type === 'mv' || node.type === 'rot') return { x: p.x + w, y: p.y + 16 };
     return { x: p.x + w, y: p.y + h / 2 };
   }
   function inputSocketAt(id: NodeId, slot: 'obj' | 'arg' | 'child'): { x: number; y: number } {
@@ -626,13 +630,12 @@
     if (!node) return p;
     if (slot === 'obj')  return { x: p.x, y: p.y + 30 };
     if (slot === 'arg')  return { x: p.x, y: p.y + 70 };
-    // mv / rot have their child socket on the TOP-EDGE center (not the
-    // left edge) — the shape comes in from above, axis sockets line the
-    // left edge for parameter wiring. Repeat keeps the legacy bottom-edge
-    // position via its own renderer.
+    // mv / rot put their child socket on the LEFT EDGE, vertically aligned
+    // with the title row (y=16). Axis sockets line the rest of the left
+    // edge underneath. Repeat keeps the legacy bottom-edge position via
+    // its own renderer.
     if (slot === 'child' && (node.type === 'mv' || node.type === 'rot')) {
-      const w = nodeSize(node).w;
-      return { x: p.x + w / 2, y: p.y };
+      return { x: p.x, y: p.y + 16 };
     }
     /* child (legacy left-edge for method/repeat) */
     return { x: p.x, y: p.y + 50 };
@@ -1817,12 +1820,14 @@
                   {n.type === 'mv' ? '⇄ mv' : '↻ rot'}
                 </text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <!-- CHILD socket on the TOP EDGE, center. Implicit — no label
-                     since the position itself communicates "shape comes in
-                     from above". inputSocketAt('child') reports this point
-                     so existing wires draw correctly. -->
+                <!-- CHILD socket on the LEFT EDGE, vertically aligned with
+                     the title row. Implicit — no label since the position
+                     itself communicates "shape comes in here". Sits at the
+                     top of the same left-edge column as the axis sockets.
+                     inputSocketAt('child') reports this point so existing
+                     wires draw correctly. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" cx={size.w / 2} cy="0" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy="16" r="6"
                   onpointerup={(ev) => endWireOnInput(ev, n.id, 'child')}/>
                 <!-- Each axis row: edge socket + label + input + × — same
                      column model as the params card so wiring is obvious
@@ -1867,12 +1872,15 @@
                   <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="0" cy={cy} r="4"
                     onpointerup={(ev) => endWireOnTransformAxis(ev, n.id, i as 0|1|2)}/>
                 {/each}
+                <!-- × delete — moved further from the right edge so it
+                     doesn't crowd the title-row output socket. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
+                <text role="button" tabindex="-1" x={size.w - 22} y="22" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
-                <!-- Output -->
+                <!-- OUTPUT socket on the title-row RIGHT EDGE (y=16) —
+                     same vertical line as the child input on the left. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
 
               {:else if n.type === 'repeat'}
@@ -2536,12 +2544,12 @@
   .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 0; height: 22px; box-sizing: border-box; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
   /* Axis labels (x/y/z, rx/ry/rz) on the mv/rot single-column card. Slim
-     fixed column so the input box has a predictable left edge regardless
-     of label length (rz vs r vs z). */
+     fixed column, LEFT-justified so the rx/ry/rz labels read in a clean
+     column header pattern instead of right-bumping against the input. */
   .ge-arg-key.axis {
-    flex: 0 0 18px; text-align: right;
+    flex: 0 0 14px; text-align: left;
     font: 600 10px ui-monospace, monospace; color: #6b21a8;
-    padding-right: 4px;
+    padding: 0;
   }
   .ge-arg-input { padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; width: 100%; cursor: ew-resize; }
   .ge-arg-input:hover { background: #f0f9ff; }
