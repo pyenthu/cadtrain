@@ -170,6 +170,21 @@
    *  rail). Holds layout tools (auto-layout, push apart) that don't need
    *  to be one-click from the rail — and future view/nav controls. */
   let canvasMenuOpen = $state(false);
+  /** Ref to the ⚙ button so we can position the popover next to ITS
+   *  bounding rect instead of a hardcoded `top: 220px` (which drifted
+   *  as buttons came and went above it — ghost-clear, undo, etc.). */
+  let settingsBtnEl = $state<HTMLButtonElement | null>(null);
+  let canvasMenuPos = $state<{ left: number; top: number }>({ left: 56, top: 220 });
+  function openCanvasMenu() {
+    if (settingsBtnEl) {
+      const r = settingsBtnEl.getBoundingClientRect();
+      // Anchor to the right of the rail button; align top of menu with
+      // top of button. `position: fixed` so it lives in viewport space
+      // and we don't have to chase a positioned ancestor.
+      canvasMenuPos = { left: r.right + 6, top: r.top };
+    }
+    canvasMenuOpen = true;
+  }
   /** Canvas-edge boundary toggles (#116). Each edge cycles
    *    off → repellant → confiner → off
    *  Repellant = a thin tall virtual obstacle just outside the canvas edge,
@@ -1930,9 +1945,10 @@
     {/if}
     <div class="ge-vrail-sep"></div>
     <button class="ge-vrail-btn settings" type="button"
-      onclick={() => canvasMenuOpen = !canvasMenuOpen}
+      bind:this={settingsBtnEl}
+      onclick={() => canvasMenuOpen ? (canvasMenuOpen = false) : openCanvasMenu()}
       class:on={canvasMenuOpen}
-      data-tip="Layout tools — auto-layout, push apart">⚙</button>
+      data-tip="Layout tools — auto-layout, push apart, edge bounds">⚙</button>
     <div class="ge-vrail-spacer"></div>
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
@@ -1942,17 +1958,51 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-canvas-menu-shade" onclick={() => canvasMenuOpen = false}></div>
-    <div class="ge-canvas-menu">
-      <button class="ge-canvas-menu-btn" type="button"
-        onclick={() => { autoLayout(); canvasMenuOpen = false; }}>
-        📐 Auto-layout
-        <span class="hint">Rearrange nodes left-to-right by depth</span>
+    <!-- Compact Flowbite-style dropdown anchored to the ⚙ button's
+         bounding rect (see openCanvasMenu). Two action rows + a separator
+         + two checkbox rows for the left/right canvas-edge boundaries.
+         The checkbox toggle is BOOLEAN repellant on/off; the small edge
+         buttons on the canvas still expose the tri-state (off →
+         repellant → confiner) cycle for the rare confiner case. -->
+    <div class="ge-canvas-menu"
+      style="left: {canvasMenuPos.left}px; top: {canvasMenuPos.top}px">
+      <button class="ge-cm-row action" type="button"
+        onclick={() => { autoLayout(); canvasMenuOpen = false; }}
+        title="Rearrange nodes left-to-right by depth">
+        <span class="ge-cm-icon">📐</span>
+        <span class="ge-cm-label">Auto-layout</span>
       </button>
-      <button class="ge-canvas-menu-btn" type="button"
-        onclick={() => { pushApart(); canvasMenuOpen = false; }}>
-        🧲 Push apart
-        <span class="hint">Resolve overlapping cards via pairwise separation</span>
+      <button class="ge-cm-row action" type="button"
+        onclick={() => { pushApart(); canvasMenuOpen = false; }}
+        title="Resolve overlapping cards via pairwise separation">
+        <span class="ge-cm-icon">🧲</span>
+        <span class="ge-cm-label">Push apart</span>
       </button>
+      <div class="ge-cm-sep"></div>
+      <label class="ge-cm-row check"
+        title="Push nodes away from the LEFT canvas edge during push-apart">
+        <input type="checkbox"
+          checked={boundLeft === 'repellant'}
+          onchange={(ev) => {
+            const on = (ev.currentTarget as HTMLInputElement).checked;
+            boundLeft = on ? 'repellant' : 'off';
+            try { localStorage.setItem('ge-bound-left', boundLeft); } catch { /* ignore */ }
+          }} />
+        <span class="ge-cm-label">Left boundary</span>
+        {#if boundLeft === 'confiner'}<span class="ge-cm-badge">confiner</span>{/if}
+      </label>
+      <label class="ge-cm-row check"
+        title="Push nodes away from the RIGHT canvas edge during push-apart">
+        <input type="checkbox"
+          checked={boundRight === 'repellant'}
+          onchange={(ev) => {
+            const on = (ev.currentTarget as HTMLInputElement).checked;
+            boundRight = on ? 'repellant' : 'off';
+            try { localStorage.setItem('ge-bound-right', boundRight); } catch { /* ignore */ }
+          }} />
+        <span class="ge-cm-label">Right boundary</span>
+        {#if boundRight === 'confiner'}<span class="ge-cm-badge">confiner</span>{/if}
+      </label>
     </div>
   {/if}
 
@@ -3219,27 +3269,44 @@
   .ge-vrail-sep { width: 24px; height: 1px; background: #e5e7eb; margin: 4px 0; }
   .ge-vrail-spacer { flex: 1 1 auto; }
 
-  /* ─── Canvas-settings popover ──────────────────────────────────────── */
+  /* ─── Canvas-settings popover (Flowbite-style compact dropdown) ─────── */
+  /* Backdrop covers the viewport so an outside click closes the menu.
+     `position: fixed` matches the menu's own fixed positioning so we don't
+     need to chase a positioned ancestor — works the same whether mounted
+     standalone (/graph-editor) or as a /primitives tab body. */
   .ge-canvas-menu-shade {
-    position: absolute; inset: 0;
+    position: fixed; inset: 0;
     z-index: 99;
   }
   .ge-canvas-menu {
-    position: absolute; left: 58px; top: 220px;
+    position: fixed;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
-    padding: 4px; min-width: 240px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    z-index: 100; display: flex; flex-direction: column; gap: 2px;
+    padding: 4px; width: 200px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
+    z-index: 100; display: flex; flex-direction: column;
   }
-  .ge-canvas-menu-btn {
-    display: flex; flex-direction: column; align-items: flex-start;
-    gap: 2px; padding: 8px 12px;
+  /* Menu row — uniform height + horizontal layout (icon + label),
+     matches the Flowbite DropdownItem visual rhythm. */
+  .ge-cm-row {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 6px 10px; box-sizing: border-box;
     background: transparent; border: 0; border-radius: 4px; cursor: pointer;
-    font: 600 12px Arial; color: #1f2937;
+    font: 500 12px Arial; color: #1f2937;
     text-align: left;
   }
-  .ge-canvas-menu-btn:hover { background: #f5f5f4; }
-  .ge-canvas-menu-btn .hint { font: 400 10px Arial; color: #78716c; }
+  .ge-cm-row:hover { background: #f3f4f6; color: #0c4a6e; }
+  .ge-cm-row.check { cursor: pointer; user-select: none; }
+  .ge-cm-row.check input { margin: 0; cursor: pointer; accent-color: #cc2222; }
+  .ge-cm-icon { width: 16px; text-align: center; font-size: 13px; line-height: 1; }
+  .ge-cm-label { flex: 1 1 auto; }
+  .ge-cm-badge {
+    flex: 0 0 auto;
+    font: 600 9px Arial; color: #92400e;
+    background: #fef3c7; border: 1px solid #fde68a;
+    padding: 1px 5px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .ge-cm-sep { height: 1px; background: #f1f5f9; margin: 4px 6px; }
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
   .ge-root.embed { height: 100%; }
