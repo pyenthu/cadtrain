@@ -40,6 +40,38 @@
   let listLoading = $state(false);
   let listError = $state<string | null>(null);
 
+  /** Delete a primitive — first call archives (soft delete; sends to
+   *  primitives/archive/<id>.<kind>.ts), second call after confirm hard-
+   *  deletes. Closes any open tab for that id and refreshes the list.
+   *  Stdlib + stdstale entries reject server-side; we hide the trash for
+   *  them in the UI to skip a wasted round-trip. */
+  let deleteBusy = $state<string | null>(null);
+  async function deletePrim(id: string, source: string) {
+    if (source === 'stdlib' || source === 'stdstale' || source === 'bundle') return;
+    const ok = typeof confirm === 'function'
+      ? confirm(`Archive "${id}"? It moves to primitives/archive/ — soft delete (recoverable).`)
+      : true;
+    if (!ok) return;
+    deleteBusy = id;
+    try {
+      const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!r.ok) {
+        const t = await r.text();
+        if (typeof alert === 'function') alert(`Delete failed (${r.status}): ${t.slice(0, 200)}`);
+        return;
+      }
+      // Close any open tabs for the deleted id.
+      tabs = tabs.filter((t) => t.id !== id);
+      if (tabs.length === 0) activeKey = null;
+      persistTabs();
+      await loadList();
+    } catch (e: any) {
+      if (typeof alert === 'function') alert(`Delete error: ${e?.message ?? e}`);
+    } finally {
+      deleteBusy = null;
+    }
+  }
+
   async function loadList() {
     listLoading = true;
     listError = null;
@@ -195,10 +227,18 @@
       </button>
       {#if openGroups.basic}
         {#each basic.filter(pass) as e (e.id)}
-          <button class="prim-row" type="button" class:active={tabs.some((t) => t.id === e.id)} onclick={() => openTab(e.id)}>
-            <span class="prim-name">{e.id}</span>
-            <span class="prim-tag vol">vol</span>
-          </button>
+          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
+            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+              <span class="prim-name">{e.id}</span>
+              <span class="prim-tag vol">vol</span>
+            </button>
+            {#if e.source === 'volume'}
+              <button class="prim-trash" type="button"
+                title="Archive — soft delete (recoverable from primitives/archive/)"
+                disabled={deleteBusy === e.id}
+                onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+            {/if}
+          </div>
         {/each}
       {/if}
     </div>
@@ -221,10 +261,18 @@
             </button>
             {#if openFamilies[fam]}
               {#each filtered as e (e.id)}
-                <button class="prim-row indent" type="button" class:active={tabs.some((t) => t.id === e.id)} onclick={() => openTab(e.id)}>
-                  <span class="prim-name">{e.id}</span>
-                  <span class="prim-tag vol">vol</span>
-                </button>
+                <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === e.id)}>
+                  <button class="prim-row indent" type="button" onclick={() => openTab(e.id)}>
+                    <span class="prim-name">{e.id}</span>
+                    <span class="prim-tag vol">vol</span>
+                  </button>
+                  {#if e.source === 'volume'}
+                    <button class="prim-trash" type="button"
+                      title="Archive — soft delete (recoverable from primitives/archive/)"
+                      disabled={deleteBusy === e.id}
+                      onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+                  {/if}
+                </div>
               {/each}
             {/if}
           {/if}
@@ -240,10 +288,13 @@
       </button>
       {#if openGroups.stdlib}
         {#each stdlib.filter(pass) as e (e.id)}
-          <button class="prim-row" type="button" class:active={tabs.some((t) => t.id === e.id)} onclick={() => openTab(e.id)}>
-            <span class="prim-name">{e.id}</span>
-            <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
-          </button>
+          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
+            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+              <span class="prim-name">{e.id}</span>
+              <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
+            </button>
+            <!-- stdlib lives in git-tracked src/ — no trash, refused server-side anyway. -->
+          </div>
         {/each}
       {/if}
     </div>
@@ -256,10 +307,13 @@
       </button>
       {#if openGroups.stdstale}
         {#each stdstale.filter(pass) as e (e.id)}
-          <button class="prim-row" type="button" class:active={tabs.some((t) => t.id === e.id)} onclick={() => openTab(e.id)}>
-            <span class="prim-name">{e.id}</span>
-            <span class="prim-tag stale" title="Deprecated engine — kept resolvable for legacy parts">stale</span>
-          </button>
+          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
+            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+              <span class="prim-name">{e.id}</span>
+              <span class="prim-tag stale" title="Deprecated engine — kept resolvable for legacy parts">stale</span>
+            </button>
+            <!-- stdstale also lives in git-tracked src/ — no trash. -->
+          </div>
         {/each}
       {/if}
     </div>
@@ -272,10 +326,15 @@
       </button>
       {#if openGroups.archived}
         {#each archived.filter(pass) as e (e.id)}
-          <button class="prim-row" type="button" class:active={tabs.some((t) => t.id === e.id)} onclick={() => openTab(e.id)}>
-            <span class="prim-name">{e.id}</span>
-            <span class="prim-tag arch">arch</span>
-          </button>
+          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
+            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+              <span class="prim-name">{e.id}</span>
+              <span class="prim-tag arch">arch</span>
+            </button>
+            <!-- TODO: permanent-delete + restore icons (hard-delete via
+                 ?permanent=true). For now the trash is hidden on archived
+                 entries to keep the flow simple — just the soft delete. -->
+          </div>
         {/each}
       {/if}
     </div>
@@ -376,16 +435,31 @@
   }
   .prim-family-head:hover { background: #f3f4f6; }
 
+  /* Row wrapper carries the active-tab highlight + hosts the trash button
+     beside the row's open button. Two siblings, can't be nested <button>s. */
+  .prim-row-wrap {
+    display: flex; align-items: stretch; position: relative;
+  }
+  .prim-row-wrap.active { background: #dbeafe; }
+  .prim-row-wrap.active .prim-row { color: #1e40af; font-weight: 600; }
+  .prim-row-wrap:hover .prim-trash { opacity: 0.85; }
   .prim-row {
-    display: flex; align-items: center; gap: 8px; width: 100%;
+    display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0;
     padding: 4px 12px 4px 22px; background: transparent; border: 0; cursor: pointer;
     text-align: left; font: 12px ui-monospace, monospace; color: #1f2937;
   }
   .prim-row.indent { padding-left: 32px; }
   .prim-row:hover { background: #e7e5e4; }
-  .prim-row.active {
-    background: #dbeafe; color: #1e40af; font-weight: 600;
+  /* Trash button — hidden by default, revealed on row hover. Hover the
+     button itself amplifies + tints red. Disabled state for in-flight. */
+  .prim-trash {
+    flex: 0 0 auto;
+    width: 24px; padding: 0; background: transparent; border: 0; cursor: pointer;
+    font-size: 12px; color: #b91c1c; opacity: 0;
+    transition: opacity 100ms, background 100ms;
   }
+  .prim-trash:hover { opacity: 1 !important; background: #fee2e2; }
+  .prim-trash:disabled { cursor: wait; opacity: 0.4 !important; }
   .prim-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .prim-tag {
     font: 9px ui-monospace, monospace; padding: 1px 5px; border-radius: 3px;

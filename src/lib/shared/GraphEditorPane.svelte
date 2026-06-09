@@ -90,13 +90,14 @@
   let expectedParams = $state<Record<string, string[]>>({});
   let expectedDefaults = $state<Record<string, Record<string, number>>>({});
 
-  let emitted = $derived(emitGraph(graph, { id: exemplarId }));
+  let emitted = $derived(emitGraph(graph, { id: exemplarId, drawingMd }));
   // The SOURCE the LIVE SOURCE tab + the bake canvas see — it's the
   // GHOST-emit when any 👁 is active (so the canvas re-posts the same
   // source the auto-bake just baked, gets the same response, and
   // renders the cutters alongside the result). When no ghosts active
-  // it falls back to the plain emit.
-  let emittedForRender = $derived(emitGraph(graph, { id: exemplarId, ghosts: ghostIds }));
+  // it falls back to the plain emit. MD is included so the SRC tab's
+  // text matches what Save writes to disk.
+  let emittedForRender = $derived(emitGraph(graph, { id: exemplarId, ghosts: ghostIds, drawingMd }));
   let sourceText = $derived(emittedForRender.source);
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
@@ -410,6 +411,11 @@
         const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
         if (!r.ok) { legacyLoad = { id, reason: 'fetch-failed' }; exemplarId = id; return; }
         const d = await r.json();
+        // Pull the drawing-descriptor markdown out of the saved meta if
+        // present. Falls back to extracting from the source string for
+        // older endpoints that don't surface every meta field.
+        const md = d.drawingMd ?? d.draw_md ?? extractDrawingMdFromSource(d.source ?? '');
+        if (typeof md === 'string') drawingMd = md;
         const graphJson = d.graph ?? extractGraphFromSource(d.source ?? '');
         if (graphJson && typeof graphJson === 'object') {
           graph = hydrateGraph(graphJson);
@@ -463,6 +469,15 @@
     if (end < 0) return undefined;
     const block = src.slice(startBrace, end + 1);
     try { return new Function(`return (${block});`)(); } catch { return undefined; }
+  }
+  /** Pull `drawingMd: '...'` (single-quoted, newlines escaped) out of a
+   *  saved meta block. Companion to extractGraphFromSource for endpoints
+   *  that don't return the parsed meta field. Returns '' when absent. */
+  function extractDrawingMdFromSource(src: string): string {
+    if (!src) return '';
+    const m = /(^|[\s,{])drawingMd\s*:\s*'((?:\\'|[^'])*)'/m.exec(src);
+    if (!m) return '';
+    return (m[2] ?? '').replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
   }
 
   // ─── canvas state — pan + zoom ─────────────────────────────────────────
@@ -1159,13 +1174,13 @@
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
   /** Right-pane tab: 3D bake or live source. */
-  let rightTab = $state<'bake' | 'source'>('bake');
+  let rightTab = $state<'bake' | 'source' | 'md'>('bake');
   onMount(() => {
     try {
       const a = Number(localStorage.getItem('ge-splitA-v2'));
       if (a >= 30 && a <= 85) splitA = a;
       const t = localStorage.getItem('ge-right-tab');
-      if (t === 'bake' || t === 'source') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function startSplitDrag(ev: PointerEvent) {
@@ -1186,10 +1201,16 @@
     splitDragging = false;
     try { localStorage.setItem('ge-splitA-v2', String(splitA)); } catch { /* ignore */ }
   }
-  function setRightTab(t: 'bake' | 'source') {
+  function setRightTab(t: 'bake' | 'source' | 'md') {
     rightTab = t;
     try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
+
+  /** Drawing descriptor markdown — hand-authored "how to draw this part"
+   *  reference. Stored alongside the graph as `meta.drawingMd` so it
+   *  round-trips through save → reload. Hydrated from any saved file in
+   *  the URL-load block below; empty for fresh graphs. */
+  let drawingMd = $state<string>('');
 
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
@@ -2551,10 +2572,16 @@
       <div class="ge-pane-tabs" role="tablist">
         <button class="ge-pane-tab" class:active={rightTab === 'bake'}
           type="button" role="tab" aria-selected={rightTab === 'bake'}
+          data-tip="3D bake — live mesh + GLB preview"
           onclick={() => setRightTab('bake')}>3D bake</button>
         <button class="ge-pane-tab" class:active={rightTab === 'source'}
           type="button" role="tab" aria-selected={rightTab === 'source'}
-          onclick={() => setRightTab('source')}>live source · <code>{exemplarId}.asm.ts</code></button>
+          data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
+          onclick={() => setRightTab('source')}>SRC · <code>{exemplarId}.asm.ts</code></button>
+        <button class="ge-pane-tab" class:active={rightTab === 'md'}
+          type="button" role="tab" aria-selected={rightTab === 'md'}
+          data-tip="MD — hand-authored drawing-descriptor markdown. Saved as meta.drawingMd."
+          onclick={() => setRightTab('md')}>MD{drawingMd ? ` · ${drawingMd.length}c` : ''}</button>
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
@@ -2642,6 +2669,15 @@
             </div>
           {/if}
           <pre class="ge-source">{sourceText}</pre>
+        </div>
+        <div class="ge-md-body" class:hidden={rightTab !== 'md'}>
+          <div class="ge-md-toolbar">
+            <span class="ge-md-hint">Drawing-descriptor markdown — saved as <code>meta.drawingMd</code>. Free-form notes for how this part should be drawn / what each parameter means.</span>
+            <span class="ge-md-count">{drawingMd.length} char{drawingMd.length === 1 ? '' : 's'}</span>
+          </div>
+          <textarea class="ge-md-textarea"
+            placeholder="# How to draw this part&#10;&#10;Notes, sketch references, parameter meanings, gotchas…"
+            bind:value={drawingMd}></textarea>
         </div>
       </div>
     </section>
@@ -3244,7 +3280,25 @@
   .ge-pane-tab.active code { color: #0c4a6e; }
   .ge-pane-bodies { position: relative; display: grid; min-height: 0; overflow: hidden; }
   .ge-pane-bodies > .ge-bake-body,
-  .ge-pane-bodies > .ge-source-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  .ge-pane-bodies > .ge-source-body,
+  .ge-pane-bodies > .ge-md-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  /* MD tab — toolbar row + full-pane textarea. Stays mounted while hidden
+     so the user can flip between SRC/MD without losing in-progress typing. */
+  .ge-md-body { padding: 8px; gap: 6px; }
+  .ge-md-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; font: 10px Arial; color: #78716c;
+  }
+  .ge-md-toolbar code { font-family: ui-monospace, monospace; color: #44403c; }
+  .ge-md-count { flex: 0 0 auto; color: #a8a29e; }
+  .ge-md-textarea {
+    flex: 1 1 auto; min-height: 0; resize: none;
+    padding: 8px 10px;
+    font: 12px ui-monospace, monospace; line-height: 1.5; color: #1f2937;
+    background: #fafaf9; border: 1px solid #d6d3d1; border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .ge-md-textarea:focus { outline: 1px solid #0369a1; background: #fff; }
   .ge-pane-bodies > .hidden { display: none; }
   .ge-legacy-banner { padding: 8px 12px; font: 11px ui-monospace, monospace; line-height: 1.5; color: #78350f; background: #fef3c7; border-bottom: 1px solid #fbbf24; }
   .ge-legacy-banner strong { color: #92400e; }

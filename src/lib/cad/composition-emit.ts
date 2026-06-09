@@ -46,6 +46,10 @@ export interface EmitOptions {
    *  cache keys on source content so the ghost variant has its own
    *  cache entry, doesn't interfere with the saved bake. */
   ghosts?: string[];
+  /** Drawing-descriptor markdown — hand-authored "how to draw it"
+   *  reference. Serialised as `meta.drawingMd` so it round-trips through
+   *  save → reload. Empty / absent = no MD on the saved file. */
+  drawingMd?: string;
 }
 
 export interface EmitResult {
@@ -262,6 +266,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     name: opts.id,
     kind: 'asm',
     ...(opts.description ? { description: opts.description } : {}),
+    ...(opts.drawingMd ? { drawingMd: opts.drawingMd } : {}),
     uses: [...usesSet].sort(),
     params: graph.params,
     graph: serialiseGraph(graph),
