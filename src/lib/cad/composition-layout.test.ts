@@ -282,4 +282,27 @@ describe('forceSeparate (Phase 22)', () => {
     // The obstacle id is NOT in graph.layout — it's a virtual reference only.
     expect(out.layout['__obs_params_card']).toBeUndefined();
   });
+
+  it('confines non-pinned nodes inside confinerBounds (#116)', () => {
+    // Two cards starting OUTSIDE the bounds — one past the left wall, one
+    // past the right wall. After forceSeparate with confinerBounds={minX:0,
+    // maxX:500}, both nodes should be inside the [0, 500-w] X range.
+    let g = newGraph();
+    const a = addCall(g, 'left_drifter'); g = a.graph;
+    const b = addCall(g, 'right_drifter'); g = b.graph;
+    g = setLayout(g, a.id, { x: -80, y: 50 });
+    g = setLayout(g, b.id, { x: 600, y: 200 });
+    // nodeSize default = 100×60 (the helper above).
+    const out = forceSeparate(g, {
+      nodeSize: size,
+      padding: 10,
+      confinerBounds: { minX: 0, maxX: 500 },
+    });
+    const aPos = out.layout[a.id]!;
+    const bPos = out.layout[b.id]!;
+    expect(aPos.x).toBeGreaterThanOrEqual(0);
+    expect(aPos.x + 100).toBeLessThanOrEqual(500);
+    expect(bPos.x).toBeGreaterThanOrEqual(0);
+    expect(bPos.x + 100).toBeLessThanOrEqual(500);
+  });
 });

@@ -152,6 +152,42 @@
    *  rail). Holds layout tools (auto-layout, push apart) that don't need
    *  to be one-click from the rail — and future view/nav controls. */
   let canvasMenuOpen = $state(false);
+  /** Canvas-edge boundary toggles (#116). Each edge cycles
+   *    off → repellant → confiner → off
+   *  Repellant = a thin tall virtual obstacle just outside the canvas edge,
+   *  fed into forceSeparate.obstacles → pushes nodes AWAY from that edge.
+   *  Confiner = forceSeparate.confinerBounds → clamps nodes INSIDE the
+   *  visible region on each iteration. Persisted to localStorage so the
+   *  user's choice survives across reloads. */
+  type BoundState = 'off' | 'repellant' | 'confiner';
+  let boundLeft = $state<BoundState>('off');
+  let boundRight = $state<BoundState>('off');
+  onMount(() => {
+    try {
+      const l = localStorage.getItem('ge-bound-left');
+      if (l === 'repellant' || l === 'confiner' || l === 'off') boundLeft = l;
+      const r = localStorage.getItem('ge-bound-right');
+      if (r === 'repellant' || r === 'confiner' || r === 'off') boundRight = r;
+    } catch { /* localStorage blocked — fine */ }
+  });
+  function cycleBound(side: 'left' | 'right') {
+    const cur = side === 'left' ? boundLeft : boundRight;
+    const next: BoundState =
+      cur === 'off' ? 'repellant' : cur === 'repellant' ? 'confiner' : 'off';
+    if (side === 'left') boundLeft = next; else boundRight = next;
+    try {
+      localStorage.setItem(side === 'left' ? 'ge-bound-left' : 'ge-bound-right', next);
+    } catch { /* ignore */ }
+  }
+  function boundGlyph(s: BoundState): string {
+    return s === 'off' ? '⏹' : s === 'repellant' ? '🔺' : '🔒';
+  }
+  function boundTip(side: 'left' | 'right', s: BoundState): string {
+    const edge = side === 'left' ? 'left' : 'right';
+    if (s === 'off') return `${edge} edge — off · click to make REPELLANT (pushes nodes away)`;
+    if (s === 'repellant') return `${edge} edge — REPELLANT · push-apart pushes nodes away from this edge · click to make CONFINER`;
+    return `${edge} edge — CONFINER · push-apart clamps nodes inside this edge · click to disable`;
+  }
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
    *  bumps. Reads the current emitted source so manual bakes always
    *  reflect the latest graph state. */
@@ -1445,7 +1481,7 @@
     // participates in the force iteration. As the user pans, the card's
     // graph-space position shifts inversely; we recompute on each click.
     const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
-    const obstacles = [{
+    const obstacles: { id: string; x: number; y: number; w: number; h: number }[] = [{
       id: '__obs_params_card',
       x: (CARD_X0 - pan.x) / zoom,
       y: (CARD_Y0 - pan.y) / zoom,
@@ -1453,6 +1489,46 @@
       w: (pcardSize.w + 14) / zoom,
       h: pcardSize.h / zoom,
     }];
+    // Boundary walls (#116). The visible canvas region in graph space is
+    // ([0, rect.width]/zoom shifted by -pan.x, etc.). Repellant walls
+    // ride the obstacles channel — a tall thin rect JUST OUTSIDE the edge
+    // that pushes any node touching the edge away. Confiner walls clamp
+    // to the visible interior via confinerBounds. If both edges are off,
+    // we skip the rect lookup entirely.
+    let confinerBounds: { minX?: number; maxX?: number } | undefined;
+    if (canvasEl && (boundLeft !== 'off' || boundRight !== 'off')) {
+      const rect = canvasEl.getBoundingClientRect();
+      const gxLeft = (0 - pan.x) / zoom;
+      const gxRight = (rect.width - pan.x) / zoom;
+      const gyTop = (0 - pan.y) / zoom;
+      const gyBottom = (rect.height - pan.y) / zoom;
+      const wallThickness = 60 / zoom; // px in graph space — thick enough to push convincingly
+      const wallH = Math.max(40, gyBottom - gyTop);
+      if (boundLeft === 'repellant') {
+        // Tall thin rect outside the left edge — its right side flush with
+        // gxLeft so a card whose left edge is at gxLeft just touches it.
+        obstacles.push({
+          id: '__obs_wall_left',
+          x: gxLeft - wallThickness,
+          y: gyTop,
+          w: wallThickness,
+          h: wallH,
+        });
+      } else if (boundLeft === 'confiner') {
+        confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
+      }
+      if (boundRight === 'repellant') {
+        obstacles.push({
+          id: '__obs_wall_right',
+          x: gxRight,
+          y: gyTop,
+          w: wallThickness,
+          h: wallH,
+        });
+      } else if (boundRight === 'confiner') {
+        confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
+      }
+    }
     // Collect the visible wires so push-apart can route cards AROUND them
     // (Phase 22b — wire repulsion). Same socket helpers as the SVG render
     // path, so the obstacles match what the user sees.
@@ -1463,6 +1539,7 @@
       obstacles,
       wires,
       wirePadding: 16,
+      confinerBounds,
     });
   }
 
@@ -2575,6 +2652,22 @@
         {/if}
         <span class="ge-canvas-status-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
       </div>
+      <!-- Boundary edge toggles (#116). Two small circular buttons pinned
+           to the canvas pane's left + right edges, vertically centered.
+           Each cycles off → repellant → confiner → off. Active states
+           feed forceSeparate when the user clicks 🧲 Push apart. -->
+      <button class="ge-bound-btn ge-bound-left" type="button"
+        class:on={boundLeft !== 'off'}
+        class:repellant={boundLeft === 'repellant'}
+        class:confiner={boundLeft === 'confiner'}
+        onclick={() => cycleBound('left')}
+        data-tip={boundTip('left', boundLeft)}>{boundGlyph(boundLeft)}</button>
+      <button class="ge-bound-btn ge-bound-right" type="button"
+        class:on={boundRight !== 'off'}
+        class:repellant={boundRight === 'repellant'}
+        class:confiner={boundRight === 'confiner'}
+        onclick={() => cycleBound('right')}
+        data-tip={boundTip('right', boundRight)}>{boundGlyph(boundRight)}</button>
     </section>
 
     <!-- Divider: canvas ↔ right pane -->
@@ -3034,6 +3127,31 @@
     from { opacity: 0; transform: translateY(4px); }
     to   { opacity: 1; transform: translateY(0); }
   }
+  /* Boundary edge toggles (#116) — small circular icons pinned to the
+     left + right edges of the canvas pane, vertically centered. Sit ABOVE
+     the canvas (z-index: 5 — above status, below floating popovers). */
+  .ge-bound-btn {
+    position: absolute; top: 50%;
+    transform: translateY(-50%);
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; line-height: 1;
+    font: 14px/1 Arial;
+    background: rgba(255, 255, 255, 0.92);
+    color: #78716c;
+    border: 1px solid #d6d3d1; border-radius: 50%;
+    cursor: pointer; user-select: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    z-index: 5;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .ge-bound-btn:hover { background: #f5f5f4; color: #1c1917; border-color: #a8a29e; }
+  .ge-bound-btn.repellant { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+  .ge-bound-btn.repellant:hover { background: #fecaca; color: #991b1b; border-color: #f87171; }
+  .ge-bound-btn.confiner { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+  .ge-bound-btn.confiner:hover { background: #bfdbfe; color: #1e40af; border-color: #60a5fa; }
+  .ge-bound-left  { left: 6px; }
+  .ge-bound-right { right: 6px; }
   /* Broken-reference banner — sits between the toolbar and the canvas so
      the user can't miss it. Amber theme matches the existing stale-server
      hint; click a node-id chip to select-and-pan to the offending node. */

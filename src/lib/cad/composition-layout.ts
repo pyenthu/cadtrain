@@ -227,6 +227,13 @@ export interface ForceSeparateOptions {
   wires?: { fromId?: NodeId; toId?: NodeId; ax: number; ay: number; bx: number; by: number }[];
   /** Padding (px) the wire keeps from a non-endpoint card. */
   wirePadding?: number;
+  /** Soft confining bounds in GRAPH space. After each iteration of pairwise
+   *  separation, every non-pinned, non-obstacle node has its position
+   *  clamped so its bounding box stays inside the given walls. Use this
+   *  for "confiner" edges (#116) — the visible canvas region acts as a
+   *  hard wall that drift can't cross. Any axis omitted is unbounded.
+   *  Repellant walls don't use this — they ride the `obstacles` channel. */
+  confinerBounds?: { minX?: number; maxX?: number; minY?: number; maxY?: number };
 }
 
 export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
@@ -361,6 +368,25 @@ export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
           p.y += (ddy / dd) * push;
           moved = true;
         }
+      }
+    }
+    // Soft-clamp confiner bounds. Applied AFTER pairwise + wire push so an
+    // overlap resolution that shoves a node past the wall gets pulled back
+    // inside on the same iteration. Obstacle ids are pinned, so the clamp
+    // skips them naturally. A clamp that moves the node counts as `moved`
+    // so the iteration loop continues until the system settles or hits the
+    // iteration cap.
+    const cb = opts.confinerBounds;
+    if (cb && (cb.minX !== undefined || cb.maxX !== undefined ||
+               cb.minY !== undefined || cb.maxY !== undefined)) {
+      for (const id of ids) {
+        if (pinned[id]) continue;
+        const p = pos[id]!;
+        const sz = size[id]!;
+        if (cb.minX !== undefined && p.x < cb.minX) { p.x = cb.minX; moved = true; }
+        if (cb.maxX !== undefined && p.x + sz.w > cb.maxX) { p.x = cb.maxX - sz.w; moved = true; }
+        if (cb.minY !== undefined && p.y < cb.minY) { p.y = cb.minY; moved = true; }
+        if (cb.maxY !== undefined && p.y + sz.h > cb.maxY) { p.y = cb.maxY - sz.h; moved = true; }
       }
     }
     if (!moved) break; // converged
