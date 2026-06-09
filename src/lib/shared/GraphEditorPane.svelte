@@ -2542,6 +2542,10 @@
      argY computation for the param/expr wires, and inline mv/rot axis
      positions. Misalignment of even 3-4 px per row stacks visibly. */
   .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 0; height: 22px; box-sizing: border-box; }
+  /* mv/rot axis rows live inside .ge-xyz — collapse the key column to
+     14 px and drop the gap so the input box sits right next to the
+     rx/ry/rz label, no wasted horizontal space. */
+  .ge-xyz .ge-arg-row { grid-template-columns: 14px 1fr; gap: 2px; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
   /* Axis labels (x/y/z, rx/ry/rz) on the mv/rot single-column card. Slim
      fixed column, LEFT-justified so the rx/ry/rz labels read in a clean
