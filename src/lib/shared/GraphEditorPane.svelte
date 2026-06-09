@@ -663,7 +663,7 @@
       return { w: 220, h: Math.max(80, 50 + argCount * 22) };
     }
     if (node.type === 'method') return { w: 180, h: 100 };
-    if (node.type === 'mv' || node.type === 'rot') return { w: 112, h: 110 };
+    if (node.type === 'mv' || node.type === 'rot') return { w: 136, h: 110 };
     if (node.type === 'repeat') return { w: 230, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // One row per existing child + one "+ drop here" trailer row
@@ -1106,6 +1106,31 @@
   }
   function onTransformAxis(id: string, axis: 0 | 1 | 2, value: number) {
     graph = setTransformAxis(graph, id, axis, value);
+  }
+  /** ƒ button on an mv/rot axis — toggle the axis between literal /
+   *  expression mode. Mirrors toggleArgExprMode on Call args. Going IN to
+   *  expr mode seeds the draft with `p.<name>` (when wired) or the current
+   *  literal value, so the input stays meaningful after the toggle. */
+  function toggleTransformAxisExprMode(id: string, axis: 0 | 1 | 2) {
+    const node = graph.nodes[id] as (MvNode | RotNode) | undefined;
+    if (!node) return;
+    const field = node.type === 'mv' ? (node as MvNode).offset : (node as RotNode).rot;
+    const cur = field[axis];
+    if (cur.kind === 'expr') {
+      // Try to recover a literal from the expression — if the expression
+      // is just a number string we keep the value; otherwise reset to 0.
+      const n = Number(cur.expr);
+      graph = setTransformAxisValue(graph, id, axis, asLiteral(Number.isFinite(n) ? n : 0));
+      return;
+    }
+    let seed = '';
+    if (cur.kind === 'param') seed = `p.${cur.param}`;
+    else if (cur.kind === 'literal') seed = String(cur.value);
+    graph = setTransformAxisValue(graph, id, axis, asExpr(seed));
+  }
+  /** Edit the expression value on an mv/rot axis. */
+  function onTransformAxisExprEdit(id: string, axis: 0 | 1 | 2, expr: string) {
+    graph = setTransformAxisValue(graph, id, axis, asExpr(expr));
   }
   function resetGraph() { graph = newGraph(); }
 
@@ -1911,17 +1936,38 @@
                       <div class="ge-arg-row">
                         <span class="ge-arg-key axis">{n.type === 'mv' ? '' : 'r'}{axisLabel}</span>
                         {#if axis.kind === 'param'}
+                          <!-- Wired param. ƒ promotes the bare wire to an
+                               expression seeded with `p.<name>`. × unwires
+                               back to literal 0. -->
                           <span class="ge-arg-cell wired">
                             <span class="ge-arg-pchip" title="Wired to param">p.{axis.param}</span>
                             <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx" type="button"
+                                title="Make this an expression (e.g. p.wall / 2)"
+                                onclick={() => toggleTransformAxisExprMode(n.id, i as 0|1|2)}>ƒ</button>
                               <button class="ge-arg-action x" type="button" title="Unwire — back to literal"
                                 onclick={() => onTransformAxis(n.id, i as 0|1|2, 0)}>×</button>
+                            </span>
+                          </span>
+                        {:else if axis.kind === 'expr'}
+                          <!-- Expression mode — free-form text input, click ƒ
+                               to demote back to literal. -->
+                          <span class="ge-arg-cell">
+                            <input class="ge-arg-input expr" type="text"
+                              placeholder="e.g. p.od / 2"
+                              value={axis.expr}
+                              oninput={(e) => onTransformAxisExprEdit(n.id, i as 0|1|2, (e.target as HTMLInputElement).value)}
+                            />
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx on" type="button"
+                                title="Back to literal"
+                                onclick={() => toggleTransformAxisExprMode(n.id, i as 0|1|2)}>ƒ</button>
                             </span>
                           </span>
                         {:else}
                           <span class="ge-arg-cell">
                             <input class="ge-arg-input" type="number" step={n.type === 'mv' ? 0.5 : 1}
-                              value={axis.kind === 'literal' ? axis.value : 0}
+                              value={axis.value}
                               use:dragNumber={{
                                 step: n.type === 'mv' ? 0.5 : 1,
                                 get: () => Number(axis.value ?? 0),
@@ -1929,6 +1975,11 @@
                               }}
                               oninput={(e) => onTransformAxis(n.id, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
                             />
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx" type="button"
+                                title="Switch to expression (ƒ)"
+                                onclick={() => toggleTransformAxisExprMode(n.id, i as 0|1|2)}>ƒ</button>
+                            </span>
                           </span>
                         {/if}
                       </div>
