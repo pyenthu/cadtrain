@@ -6,3 +6,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Targeted preflight-style resets for flowbite-svelte components.
+ *
+ * Tailwind's global preflight is OFF (cadtrain's hand-rolled CSS
+ * depends on browser-default element styles). Flowbite, however,
+ * expects the preflight reset on its OWN markup — without it, e.g. the
+ * Navbar's <ul> renders with the browser-default `list-style: disc` so
+ * a `•` bullet appears before every nav link. These targeted overrides
+ * scope the reset to Flowbite component containers ONLY, leaving the
+ * rest of the app alone.
+ * ──────────────────────────────────────────────────────────────────── */
+
+/* Navbar list reset — kill the disc bullets + default list padding. */
+.layout-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.layout-nav ul li { margin: 0; padding: 0; }
+
+/* Any flowbite-svelte button / link inside the nav inherits its proper
+ * Tailwind border + bg styles, but browsers add a default text-decoration
+ * underline on <a> — kill it for the nav so links look like Flowbite's
+ * docs example (no underline, color-only hover). */
+.layout-nav a { text-decoration: none; }
