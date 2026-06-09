@@ -2613,17 +2613,19 @@
                 {@const container = n as any}
                 {@const title = isRoot ? '▶ Output' : n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <!-- FIX: render the container variant classes as a single
-                     static class string instead of `class:foo` directives.
-                     Svelte 5 reorders SVG attributes when mixing class:
-                     directives with reactive expressions, and the reordered
-                     output makes browsers ignore the `width` SVG attribute
-                     on root containers (rect ends up filling parent SVG ~590
-                     px instead of size.w ~111 px). Static class string
-                     restores normal attribute ordering. -->
+                <!-- ROOT CONTAINER WIDTH FIX: the container rect's SVG
+                     `width` attribute is being IGNORED by the browser (the
+                     rect renders at the full parent SVG width ~590 px).
+                     Inline CSS `style="width: ..."` IS honoured. Setting
+                     it explicitly here pins the actual visual size to
+                     size.w even when the SVG attribute is overridden by
+                     some unknown CSS cascade artifact (Tailwind v4 layer
+                     interaction, suspected). Same trick for height for
+                     consistency. -->
                 <rect role="button" tabindex="-1"
                   class={`ge-node-bg container${isRoot ? ' root' : ''}${n.type === 'stack' ? ' stack' : ''}`}
                   width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
