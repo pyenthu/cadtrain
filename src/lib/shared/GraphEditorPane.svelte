@@ -1211,6 +1211,25 @@
    *  round-trips through save → reload. Hydrated from any saved file in
    *  the URL-load block below; empty for fresh graphs. */
   let drawingMd = $state<string>('');
+  /** ✨ AI-generate spinner. The actual /api/primitives/describe endpoint
+   *  is a follow-up; today this surfaces a "not yet wired" notice in the
+   *  MD pane so the icon is testable without breaking the flow. */
+  let mdAiBusy = $state(false);
+  async function generateMdWithAi() {
+    if (mdAiBusy) return;
+    mdAiBusy = true;
+    try {
+      // TODO (#117): POST { source, bakeStats, graph } to
+      // /api/primitives/describe (Claude vision). For now stub a friendly
+      // notice prepended to the existing MD so the user can see the icon
+      // fires + the spot the AI will land its draft into.
+      const stub = `<!-- ✨ AI describe is not wired yet — coming in #117. -->\n<!-- For ${exemplarId}: include purpose, function, composition, parameter table, drawing notes, see-also links. -->\n\n`;
+      if (!drawingMd.trim()) drawingMd = stub;
+      else if (!drawingMd.startsWith('<!--')) drawingMd = stub + drawingMd;
+    } finally {
+      mdAiBusy = false;
+    }
+  }
 
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
@@ -2678,8 +2697,20 @@
         </div>
         <div class="ge-md-body" class:hidden={rightTab !== 'md'}>
           <div class="ge-md-toolbar">
-            <span class="ge-md-hint">Drawing-descriptor markdown — saved as <code>meta.drawingMd</code>. Free-form notes for how this part should be drawn / what each parameter means.</span>
-            <span class="ge-md-count">{drawingMd.length} char{drawingMd.length === 1 ? '' : 's'}</span>
+            <span class="ge-md-hint">Drawing-descriptor markdown — saved as <code>meta.drawingMd</code></span>
+            <span class="ge-md-toolbar-actions">
+              <!-- ✨ AI generate — kicks off a Claude-vision describe call
+                   that drafts a markdown description from the current
+                   bake + source + node graph. Endpoint TBD (#117 follow-up);
+                   today this just toasts a stub message. -->
+              <button class="ge-md-ai-btn" type="button"
+                onclick={generateMdWithAi}
+                disabled={mdAiBusy}
+                data-tip="Generate description with AI (Claude vision — uses the current bake + graph as context)">
+                {mdAiBusy ? '…' : '✨ AI'}
+              </button>
+              <span class="ge-md-count">{drawingMd.length} char{drawingMd.length === 1 ? '' : 's'}</span>
+            </span>
           </div>
           <textarea class="ge-md-textarea"
             placeholder="# How to draw this part&#10;&#10;Notes, sketch references, parameter meanings, gotchas…"
@@ -3305,7 +3336,18 @@
     gap: 8px; font: 10px Arial; color: #78716c;
   }
   .ge-md-toolbar code { font-family: ui-monospace, monospace; color: #44403c; }
+  .ge-md-toolbar-actions { display: flex; align-items: center; gap: 8px; }
   .ge-md-count { flex: 0 0 auto; color: #a8a29e; }
+  /* ✨ AI button — small violet pill, the established "smart / generated"
+     colour in the editor (matches ƒ promote-to-expression chips). */
+  .ge-md-ai-btn {
+    background: #ede9fe; color: #5b21b6;
+    border: 1px solid #c4b5fd; border-radius: 4px;
+    padding: 2px 8px; font: 600 11px Arial; cursor: pointer;
+    transition: background 100ms, color 100ms;
+  }
+  .ge-md-ai-btn:hover { background: #c4b5fd; color: #3b0764; }
+  .ge-md-ai-btn:disabled { opacity: 0.6; cursor: wait; }
   .ge-md-textarea {
     flex: 1 1 auto; min-height: 0; resize: none;
     padding: 8px 10px;
