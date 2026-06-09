@@ -1915,10 +1915,21 @@
             {@const bakeMeta = (bake as any).bake ?? {}}
             <div class="ge-bake-meta">
               {#if bakeMeta.cached}
-                <span class="ge-cache-badge cached" title={`hash: ${bakeMeta.cacheHash ?? '?'}`}>✓ cached</span>
+                {@const cacheMs = Number(bakeMeta._t?.fetch_total) || 0}
+                <span class="ge-cache-badge cached"
+                  title={`hash: ${bakeMeta.cacheHash ?? '?'} · client round-trip ${cacheMs} ms (mesh decode + paint)`}>
+                  ✓ cached{cacheMs > 0 ? ` · ${Math.round(cacheMs)} ms` : ''}
+                </span>
               {:else if bakeMeta.cacheHash}
-                {@const totalMs = Object.values(bakeMeta._t ?? {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0)}
-                <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(totalMs as number)} ms</span>
+                {@const serverMs = Object.entries(bakeMeta._t ?? {}).reduce((a: number, [k, b]: [string, any]) => {
+                  // fetch_total is the client-perspective round-trip we
+                  // stash in composition-bake; don't double-count it
+                  // against the server-side phase sum.
+                  if (k === 'fetch_total') return a;
+                  const n = Number(b);
+                  return a + (Number.isFinite(n) ? n : 0);
+                }, 0)}
+                <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(serverMs as number)} ms</span>
               {/if}
               {#if bakeMeta.cutawaySkipped}
                 <span class="ge-cache-badge skipped" title="Cutaway CSG auto-skipped for big manifolds (> 15k tris). Click Load to compute it.">cutaway off (perf)</span>

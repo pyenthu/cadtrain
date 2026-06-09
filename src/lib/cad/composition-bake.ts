@@ -61,6 +61,12 @@ export async function bakeGraphPreview(graph: Graph, opts: BakeOptions): Promise
     const v = opts.paramValues?.[k];
     return v ?? graph.params[k]!.default;
   });
+  // Wall-clock the round-trip so we can report a precise cache-hit latency
+  // in the editor's "✓ cached · N ms" badge. Cache hits are typically a
+  // few ms; fresh bakes are 100ms+. The number = wall ms BEFORE we parse
+  // the body — includes network + JSON encode/decode, the actual end-user
+  // perceived time.
+  const tStart = (typeof performance !== 'undefined' ? performance : Date).now();
   const resp = await fetch(`/api/primitives/preview${opts.bust ? '?bust=1' : ''}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -75,6 +81,11 @@ export async function bakeGraphPreview(graph: Graph, opts: BakeOptions): Promise
     return { ok: false, message: `preview ${resp.status}: ${text.slice(0, 240)}` };
   }
   const data = await resp.json() as PreviewBake;
+  const fetchMs = +((typeof performance !== 'undefined' ? performance : Date).now() - tStart).toFixed(1);
+  // Stash the client-side latency in _t so the editor's badge can show it.
+  // Server's own _t breakdown is preserved alongside; _t.fetch_total is
+  // strictly the client-perspective end-to-end time.
+  (data as any)._t = { ...((data as any)._t ?? {}), fetch_total: fetchMs };
   return data;
 }
 
