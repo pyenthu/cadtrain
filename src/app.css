@@ -38,30 +38,6 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * SVG primitive sizing restore — the REAL fix for the Output card width
- * issue. Tailwind v4's base layer preflight sets `svg { display: block }`
- * AND wires `*, *::before, *::after` to a heavy variable initializer
- * block; the cascade interaction causes SVG primitive children (rect,
- * circle, line, polygon, …) inside `<g class:varying>` wrappers to
- * IGNORE their `width`/`height` SVG presentation attributes — the
- * computed CSS width resolves to the parent SVG's width instead of the
- * attribute value. Manifested visually as the ▶ Output card stretching
- * to ~586 px when its rect's SVG `width` attribute said 125.
- *
- * Fix: re-revert SVG primitive width/height back to the user-agent
- * default (= honour the SVG presentation attribute). `revert` jumps the
- * cascade back past Tailwind's base layer to the browser default
- * behaviour for these elements. Targeted to SVG primitives so it
- * doesn't disturb foreignObject content or `<svg>` itself.
- * ──────────────────────────────────────────────────────────────────── */
-@layer base {
-  svg rect, svg circle, svg ellipse, svg line, svg polygon, svg polyline {
-    width: revert;
-    height: revert;
-  }
-}
-
-/* ──────────────────────────────────────────────────────────────────────
  * Targeted preflight-style overrides for Flowbite component containers.
  * Tailwind v4's preflight CAN clash with cadtrain's hand-rolled CSS
  * (every <button>/<input> gets reset to unstyled defaults). These
