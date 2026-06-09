@@ -229,6 +229,11 @@
     </header>
     <input class="prim-filter" type="text" placeholder="filter…" bind:value={filter}/>
 
+    <!-- Everything below the header + filter scrolls inside this wrapper.
+         The rail itself stays anchored — title stays put, filter stays
+         visible while the groups scroll past underneath. -->
+    <div class="prim-rail-scroll">
+
     {#if listLoading}<div class="prim-empty">loading…</div>{/if}
     {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
 
@@ -373,6 +378,8 @@
         {/each}
       {/if}
     </div>
+
+    </div><!-- /.prim-rail-scroll -->
   </aside>
 
   <!-- Drag handle between rail and the tabbed area. Doesn't render its own
@@ -442,36 +449,45 @@
   }
 
   /* ─── Sidebar ──────────────────────────────────────────────────────── */
+  /* The rail itself NO LONGER scrolls — it's a flex column holding three
+     siblings: header (auto), filter (auto), and the scroll wrapper
+     (flex:1). Only the inner wrapper scrolls. This keeps the "Primitives"
+     title + the filter input pinned at the top while the groups scroll
+     past underneath. */
   .prim-rail {
     display: flex; flex-direction: column;
     background: #fafaf9; border-right: 1px solid #e5e7eb;
-    /* `overflow-y: scroll` (not `auto`) — keeps the vertical track
-       always visible so the user sees there's content below the fold
-       even before scrolling. Pairs with the webkit-scrollbar styling
-       below to render a visible thumb on macOS (where `auto` would
-       hide the scrollbar until the user starts scrolling). */
-    overflow-y: scroll; overflow-x: hidden;
+    overflow: hidden;
     /* `min-height: 0` is required on a flex column inside a clamped
-       grid track for the inner scroll to engage — same pattern as the
-       rail's parent (.prim-root). `min-width: 0` lets the rail shrink
-       to its grid track (var(--rail-w)) instead of expanding to the
-       longest primitive name's min-content. */
+       grid track so the inner scroll wrapper can shrink + scroll —
+       same pattern as the rail's parent (.prim-root). `min-width: 0`
+       lets the rail shrink to its grid track (var(--rail-w)) instead
+       of expanding to the longest primitive name's min-content. */
     min-height: 0;
     min-width: 0;
+  }
+  /* Scroll wrapper inside the rail — owns the vertical scrollbar.
+     `flex: 1 1 0` so it fills the remaining rail height after the
+     header + filter take their natural size. `overflow-y: scroll`
+     (not auto) keeps the track always reserved so the rail width
+     doesn't jump when content overflow appears/disappears. */
+  .prim-rail-scroll {
+    flex: 1 1 0; min-height: 0;
+    overflow-y: scroll; overflow-x: hidden;
     /* Firefox / standards-track thin scrollbar with cadtrain palette. */
     scrollbar-width: thin;
     scrollbar-color: #94a3b8 #f1f5f9;
   }
   /* Webkit (Chrome/Safari/Edge): always-visible thin vertical track
      with a slate thumb. macOS otherwise auto-hides the scrollbar even
-     under `overflow: scroll`, which is what the user was hitting. */
-  .prim-rail::-webkit-scrollbar { width: 10px; }
-  .prim-rail::-webkit-scrollbar-track { background: #f1f5f9; }
-  .prim-rail::-webkit-scrollbar-thumb {
+     under `overflow: scroll`. */
+  .prim-rail-scroll::-webkit-scrollbar { width: 10px; }
+  .prim-rail-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+  .prim-rail-scroll::-webkit-scrollbar-thumb {
     background: #94a3b8; border-radius: 5px;
     border: 2px solid #f1f5f9;
   }
-  .prim-rail::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  .prim-rail-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
   .prim-rail header {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 14px 4px;
