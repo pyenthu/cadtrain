@@ -757,6 +757,8 @@
     if (span < 60 || cardObstacles.length === 0) return defaultPath;
 
     const EDGE_TOLERANCE = 10;
+    const CLEAR_BUF = 28; // px above/below blocking cards (was 18 — bump
+                          // so the arch reads clearly outside the body)
     const onEdge = (px: number, py: number, o: { x: number; y: number; w: number; h: number }) =>
       px >= o.x - EDGE_TOLERANCE && px <= o.x + o.w + EDGE_TOLERANCE &&
       py >= o.y - EDGE_TOLERANCE && py <= o.y + o.h + EDGE_TOLERANCE;
@@ -768,33 +770,49 @@
       if (onEdge(x1, y1, o) || onEdge(x2, y2, o)) endpointCards.add(o.id);
     }
 
-    // Sample the default bezier and check whether ANY non-endpoint card
-    // contains a sample point. If yes, we route — and collect the topmost
-    // top-edge + bottommost bottom-edge so the arch clears the worst case.
-    const samples = 10;
-    let topClear = Infinity, botClear = -Infinity;
-    let intrudes = false;
-    for (let i = 1; i < samples; i++) {
-      const t = i / samples;
-      const t1 = 1 - t;
-      const sx = t1*t1*t1*x1 + 3*t1*t1*t*cx1 + 3*t1*t*t*cx2 + t*t*t*x2;
-      const sy = t1*t1*t1*y1 + 3*t1*t1*t*cy1 + 3*t1*t*t*cy2 + t*t*t*y2;
-      for (const o of cardObstacles) {
-        if (endpointCards.has(o.id)) continue;
-        if (sx >= o.x && sx <= o.x + o.w && sy >= o.y && sy <= o.y + o.h) {
-          intrudes = true;
-          if (o.y < topClear) topClear = o.y - 18;
-          if (o.y + o.h > botClear) botClear = o.y + o.h + 18;
+    // Sample a cubic bezier given its control points; returns the worst
+    // intrusion (top + bottom clearance of every offending card). The
+    // router runs this on the default path AND on each lifted iteration
+    // to catch wires whose arch itself crosses another card.
+    function intrudeBounds(ax: number, ay: number, bx: number, by: number, cAx: number, cAy: number, cBx: number, cBy: number) {
+      const samples = 14;
+      let topClear = Infinity, botClear = -Infinity;
+      let hits = 0;
+      for (let i = 1; i < samples; i++) {
+        const t = i / samples;
+        const t1 = 1 - t;
+        const sx = t1*t1*t1*ax + 3*t1*t1*t*cAx + 3*t1*t*t*cBx + t*t*t*bx;
+        const sy = t1*t1*t1*ay + 3*t1*t1*t*cAy + 3*t1*t*t*cBy + t*t*t*by;
+        for (const o of cardObstacles) {
+          if (endpointCards.has(o.id)) continue;
+          if (sx >= o.x && sx <= o.x + o.w && sy >= o.y && sy <= o.y + o.h) {
+            hits++;
+            if (o.y < topClear) topClear = o.y - CLEAR_BUF;
+            if (o.y + o.h > botClear) botClear = o.y + o.h + CLEAR_BUF;
+          }
         }
       }
+      return { hits, topClear, botClear };
     }
-    if (!intrudes) return defaultPath;
 
-    // Arch direction — whichever clear Y is closer to the wire's midpoint
-    // wins. The result is a smooth bezier whose midsection passes ABOVE
-    // (or BELOW) every blocking card.
+    // First pass — default bezier. Picks an arch side + a Y level.
+    const first = intrudeBounds(x1, y1, x2, y2, cx1, cy1, cx2, cy2);
+    if (first.hits === 0) return defaultPath;
     const midY = (y1 + y2) / 2;
-    const arcY = (midY - topClear) <= (botClear - midY) ? topClear : botClear;
+    let goUp = (midY - first.topClear) <= (first.botClear - midY);
+    let arcY = goUp ? first.topClear : first.botClear;
+
+    // Iterative refinement — lift the arch until it ALSO clears any card
+    // its bend would otherwise cross. Caps at 4 passes (rarely needed for
+    // typical graphs) and at the canvas bounds so we don't fly off.
+    for (let pass = 0; pass < 4; pass++) {
+      const re = intrudeBounds(x1, y1, x2, y2, cx1, arcY, cx2, arcY);
+      if (re.hits === 0) break;
+      // The arch itself is hitting a new card. Bump arcY further in the
+      // same direction by the worst clearance we just collected.
+      if (goUp)  arcY = Math.min(arcY, re.topClear);
+      else       arcY = Math.max(arcY, re.botClear);
+    }
     return `M ${x1} ${y1} C ${cx1} ${arcY}, ${cx2} ${arcY}, ${x2} ${y2}`;
   }
 
