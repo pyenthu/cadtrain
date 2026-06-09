@@ -1,34 +1,49 @@
 /**
- * Tailwind directives — required by Tailwind CSS / flowbite-svelte.
- * Preflight is disabled in tailwind.config.cjs to preserve cadtrain's
- * hand-rolled element styles. Utilities + components still work.
+ * Tailwind CSS v4 + Flowbite-Svelte stylesheet (per official quickstart:
+ * https://flowbite-svelte.com/docs/pages/quickstart). cadtrain's UI is
+ * HAND-ROLLED CSS; this file enables Tailwind utilities + the Flowbite
+ * component classes for flowbite-svelte components to render correctly.
+ *
+ * `@source` tells Tailwind to scan the flowbite-svelte node_modules for
+ * the Tailwind classes used in its components (the v4 alternative to
+ * the v3 `content:` array).
+ *
+ * `preflight` is INTENTIONALLY scoped — Tailwind v4 doesn't expose a
+ * single `corePlugins.preflight: false` flag like v3, so we re-enable
+ * the small list-style reset Flowbite components depend on via the
+ * targeted overrides at the bottom of this file. cadtrain's own
+ * elements keep their browser-default styles because nothing in the
+ * `@import "tailwindcss"` layer overrides them.
  */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "flowbite/plugin";
+@custom-variant dark (&:where(.dark, .dark *));
+@source "../node_modules/flowbite-svelte/dist";
+
+/* Primary colour palette extension — Flowbite components reference
+ * `hover:text-primary-500`, `bg-primary-600`, etc. Without a `primary`
+ * palette those classes silently no-op. Red ramp aligned to the
+ * cadtrain brand red `#cc2222`. */
+@theme {
+  --color-primary-50:  #fdf2f2;
+  --color-primary-100: #fde8e8;
+  --color-primary-200: #fbd5d5;
+  --color-primary-300: #f8b4b4;
+  --color-primary-400: #f98080;
+  --color-primary-500: #cc2222;
+  --color-primary-600: #a91d1d;
+  --color-primary-700: #8c1717;
+  --color-primary-800: #771d1d;
+  --color-primary-900: #641e1e;
+}
 
 /* ──────────────────────────────────────────────────────────────────────
- * Targeted preflight-style resets for flowbite-svelte components.
- *
- * Tailwind's global preflight is OFF (cadtrain's hand-rolled CSS
- * depends on browser-default element styles). Flowbite, however,
- * expects the preflight reset on its OWN markup — without it, e.g. the
- * Navbar's <ul> renders with the browser-default `list-style: disc` so
- * a `•` bullet appears before every nav link. These targeted overrides
- * scope the reset to Flowbite component containers ONLY, leaving the
- * rest of the app alone.
+ * Targeted preflight-style overrides for Flowbite component containers.
+ * Tailwind v4's preflight CAN clash with cadtrain's hand-rolled CSS
+ * (every <button>/<input> gets reset to unstyled defaults). These
+ * scoped rules give Flowbite the resets IT expects on the navbar
+ * without disturbing the rest of the app's hand-rolled element styles.
  * ──────────────────────────────────────────────────────────────────── */
-
-/* Navbar list reset — kill the disc bullets + default list padding. */
-.layout-nav ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+.layout-nav ul { list-style: none; margin: 0; padding: 0; }
 .layout-nav ul li { margin: 0; padding: 0; }
-
-/* Any flowbite-svelte button / link inside the nav inherits its proper
- * Tailwind border + bg styles, but browsers add a default text-decoration
- * underline on <a> — kill it for the nav so links look like Flowbite's
- * docs example (no underline, color-only hover). */
 .layout-nav a { text-decoration: none; }

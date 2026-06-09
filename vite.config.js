@@ -1,8 +1,12 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  // Tailwind v4 Vite plugin — replaces the v3 postcss.config.cjs setup.
+  // Required by the Flowbite-Svelte quickstart so `@import "tailwindcss"`
+  // + `@source "..."` directives in src/app.css get processed.
+  plugins: [tailwindcss(), sveltekit()],
   server: {
     port: 3333,
     // Suppress the full-page error overlay. Parse / build errors still
