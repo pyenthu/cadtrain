@@ -1869,12 +1869,11 @@
 </svelte:head>
 
 <div class="ge-root" class:embed>
-  <!-- Slim top header — just the working id + active save status badge.
-       All action buttons moved to the left vertical rail (#112). -->
-  <header class="ge-bar">
-    <h1>Graph editor</h1>
-    <input class="ge-id" type="text" bind:value={exemplarId} placeholder="exemplar id" />
-  </header>
+  <!-- Title + id input removed (2026-06-09 — redundant with the /primitives
+       tab strip showing the part id; the rename / save-as flow surfaces a
+       prompt on demand instead of the always-on input). The graph editor
+       header row is gone; the canvas + left vertical rail now sit flush
+       with the page chrome above. -->
 
   {#if emitted.validationErrors.length > 0}
     <!-- Broken-reference banner. Surfaces deleted-node / deleted-param refs
@@ -3163,18 +3162,20 @@
   /* 48 px left rail + 1fr body. Rows: slim header + canvas grid. */
   .ge-root {
     display: grid;
-    grid-template-rows: auto 1fr;
+    /* Title header removed (redundant with the /primitives tab strip).
+       Single content row now; the validation-error banner inserts an
+       auto row at the top only when shown. */
+    grid-template-rows: 1fr;
     grid-template-columns: 48px 1fr;
-    /* 100% fits inside the layout's content row (Flowbite Navbar takes
-       the top auto-row); 100vh would overflow by the navbar height.
-       Embed mode (iframed inside another page) reaches 100% via the
-       parent's iframe height — same idiom. */
-    height: 100%; font-family: Arial; color: #1f2937;
+    /* 100% fits inside the layout's content row. min-height: 0 lets the
+       grid actually CLAMP at 100% — without it CSS grid sizes 1fr to
+       max-content of the canvas + side pane, blowing the height out
+       2-3× and overflowing the viewport. */
+    height: 100%; min-height: 0; font-family: Arial; color: #1f2937;
     position: relative;
   }
-  .ge-root > .ge-bar     { grid-column: 1 / -1; }
-  .ge-root > .ge-vrail   { grid-row: 2; grid-column: 1; }
-  .ge-root > .ge-grid    { grid-row: 2; grid-column: 2; }
+  .ge-root > .ge-vrail   { grid-row: 1; grid-column: 1; min-height: 0; }
+  .ge-root > .ge-grid    { grid-row: 1; grid-column: 2; min-height: 0; }
   .ge-root > .ge-valerr  { grid-column: 1 / -1; }
   /* ─── Vertical action rail ─────────────────────────────────────────── */
   .ge-vrail {

@@ -41,7 +41,13 @@
 
 <style>
   :global(html, body) { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; font-family: Arial, sans-serif; }
-  .layout { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+  /* CSS grid 1fr defaults to `minmax(auto, 1fr)` — the `auto` minimum lets
+     content force the row taller than the grid container. Without
+     `min-height: 0` here, the 1fr row sizes to the canvas's max-content
+     (which is whatever fills the viewport) and the layout balloons to
+     ~2× the actual browser height. Setting the layout `min-height: 0`
+     AND the content row both clamps the grid back to viewport. */
+  .layout { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; min-height: 0; }
   /* Flowbite Navbar inherits Tailwind padding (px-4 sm:px-6); trim it a
      touch so cadtrain pages get every pixel of canvas they can. */
   :global(.layout-nav) { padding-top: 6px; padding-bottom: 6px; min-height: 0; }
