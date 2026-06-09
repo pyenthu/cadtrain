@@ -22,6 +22,7 @@
    */
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
+  import ProfilePane from '$lib/shared/ProfilePane.svelte';
 
   interface Entry {
     id: string;
@@ -36,6 +37,16 @@
   /** completions is nested by family: { drill_pipe: [...], … }. Empty family
    *  dirs surface as keys with empty arrays so the user sees the slot. */
   let completions: Record<string, Entry[]> = $state({});
+
+  /** Profile entries — `.prvl.ts` (revolve) and `.prex.ts` (extrude) files
+   *  living under `<volume>/primitives/profiles/`. Loaded from a sister
+   *  endpoint (the profile list is shaped differently from the primitive
+   *  list — it carries `set: 'revolve' | 'cartesian'` + pre-built `points`).
+   *  Surface as a top-level PROFILES group in the sidebar so the user can
+   *  browse + open them as their own tabs (Phase 1 — placeholder editor
+   *  for now; the 2D-mode graph editor for profiles is Phase 2). */
+  interface ProfileEntry { id: string; set: 'revolve' | 'cartesian'; hasSource: boolean }
+  let profiles: ProfileEntry[] = $state([]);
 
   let listLoading = $state(false);
   let listError = $state<string | null>(null);
@@ -83,13 +94,21 @@
     listLoading = true;
     listError = null;
     try {
-      const r = await fetch('/api/primitives/list', { cache: 'no-store' });
-      const d = await r.json() as any;
-      basic     = Array.isArray(d.basic)     ? d.basic     : [];
-      stdlib    = Array.isArray(d.stdlib)    ? d.stdlib    : [];
-      stdstale  = Array.isArray(d.stdstale)  ? d.stdstale  : [];
-      archived  = Array.isArray(d.archived)  ? d.archived  : [];
-      completions = (d.completions && typeof d.completions === 'object') ? d.completions : {};
+      // Pull primitives + profiles in parallel — they hit different
+      // endpoints + different on-volume directories, but the sidebar
+      // shows them side-by-side and one shouldn't block the other.
+      const [pr, pf] = await Promise.all([
+        fetch('/api/primitives/list', { cache: 'no-store' }).then((r) => r.json() as any),
+        fetch('/api/primitives/profiles/list', { cache: 'no-store' }).then((r) => r.json() as any).catch(() => ({ profiles: [] })),
+      ]);
+      basic     = Array.isArray(pr.basic)     ? pr.basic     : [];
+      stdlib    = Array.isArray(pr.stdlib)    ? pr.stdlib    : [];
+      stdstale  = Array.isArray(pr.stdstale)  ? pr.stdstale  : [];
+      archived  = Array.isArray(pr.archived)  ? pr.archived  : [];
+      completions = (pr.completions && typeof pr.completions === 'object') ? pr.completions : {};
+      profiles  = Array.isArray(pf.profiles)
+        ? pf.profiles.map((p: any) => ({ id: p.id, set: p.set, hasSource: !!p.hasSource }))
+        : [];
     } catch (e: any) {
       listError = e?.message ?? String(e);
     } finally {
@@ -106,7 +125,7 @@
   }
   // Expand/collapse per group. Persisted to localStorage.
   let openGroups = $state<Record<string, boolean>>({
-    basic: true, stdlib: true, stdstale: false, completions: true, archived: false,
+    profiles: true, basic: true, stdlib: true, stdstale: false, completions: true, archived: false,
   });
   let openFamilies = $state<Record<string, boolean>>({});
   onMount(() => {
@@ -127,7 +146,11 @@
   }
 
   // ─── Tab strip ────────────────────────────────────────────────────────────
-  interface Tab { id: string; key: number }
+  /** A tab is either a PART (graph editor — GraphEditorPane) or a PROFILE
+   *  (`.prvl.ts` / `.prex.ts` — for now opens a placeholder pane that
+   *  surfaces the source; Phase 2 swaps in a 2D-mode graph editor with
+   *  polygon-output sockets). `kind` decides which component to mount. */
+  interface Tab { id: string; key: number; kind: 'part' | 'profile' }
   let tabs: Tab[] = $state([]);
   let activeKey: number | null = $state(null);
   let nextKey = 1;
@@ -136,11 +159,11 @@
    *  otherwise creates a new one. The iframe's `src` is set ONCE per tab
    *  (using the stable `key`) so flipping the active tab doesn't re-init
    *  WASM. Tabs stay loaded in the background until closed. */
-  async function openTab(id: string) {
-    const existing = tabs.find((t) => t.id === id);
+  async function openTab(id: string, kind: 'part' | 'profile' = 'part') {
+    const existing = tabs.find((t) => t.id === id && t.kind === kind);
     if (existing) { activeKey = existing.key; return; }
     const key = nextKey++;
-    tabs = [...tabs, { id, key }];
+    tabs = [...tabs, { id, key, kind }];
     activeKey = key;
     await tick();
     persistTabs();
@@ -157,8 +180,12 @@
   function activate(key: number) { activeKey = key; }
   function persistTabs() {
     try {
-      localStorage.setItem('prim-open-tabs', JSON.stringify(tabs.map((t) => t.id)));
-      localStorage.setItem('prim-active-tab-id', String(activeKey != null ? tabs.find((t) => t.key === activeKey)?.id ?? '' : ''));
+      // Persist `id|kind` per tab so profiles re-open in profile mode
+      // (not as parts) on next page load. Old saves without `|kind`
+      // default to 'part' in the restore loop.
+      localStorage.setItem('prim-open-tabs', JSON.stringify(tabs.map((t) => `${t.id}|${t.kind}`)));
+      const act = activeKey != null ? tabs.find((t) => t.key === activeKey) : null;
+      localStorage.setItem('prim-active-tab-id', act ? `${act.id}|${act.kind}` : '');
     } catch { /* ignore */ }
   }
 
@@ -191,13 +218,17 @@
     } catch { /* ignore */ }
     await loadList();
     // Restore previously-open tabs from this browser's last session.
+    // New format: `id|kind` per entry; legacy entries (no `|`) default to
+    // 'part' so old saves keep working.
     try {
       const saved = JSON.parse(localStorage.getItem('prim-open-tabs') ?? '[]') as string[];
-      const activeId = localStorage.getItem('prim-active-tab-id') ?? '';
-      for (const id of saved) {
+      const activeRef = localStorage.getItem('prim-active-tab-id') ?? '';
+      for (const ref of saved) {
+        const [id, k] = ref.includes('|') ? ref.split('|') : [ref, 'part'];
+        const kind = (k === 'profile' ? 'profile' : 'part') as 'part' | 'profile';
         const key = nextKey++;
-        tabs = [...tabs, { id, key }];
-        if (id === activeId) activeKey = key;
+        tabs = [...tabs, { id, key, kind }];
+        if (ref === activeRef || id === activeRef) activeKey = key;
       }
       if (activeKey == null && tabs.length > 0) activeKey = tabs[0].key;
     } catch { /* ignore */ }
@@ -236,6 +267,45 @@
 
     {#if listLoading}<div class="prim-empty">loading…</div>{/if}
     {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
+
+    <!-- Profiles — `<volume>/primitives/profiles/<id>.{prvl,prex}.ts`.
+         Top-level group above Basic. Subgrouped by `set` (revolve / extrude)
+         so the two consumers (r_revolve / r_extrude) read at a glance.
+         Click → opens a tab. Phase 1 surfaces a basic profile pane (meta +
+         source). Phase 2 will swap in a 2D-mode graph editor with polygon
+         output sockets that can wire into a part's profile arg. -->
+    <div class="prim-group">
+      <button class="prim-group-head" type="button" onclick={() => toggleGroup('profiles')}>
+        <span class="prim-caret">{openGroups.profiles ? '▾' : '▸'}</span>
+        Profiles <span class="prim-count">({profiles.filter((p) => pass({ id: p.id, source: 'volume' })).length})</span>
+      </button>
+      {#if openGroups.profiles}
+        {@const revolves = profiles.filter((p) => p.set === 'revolve' && pass({ id: p.id, source: 'volume' }))}
+        {@const extrudes = profiles.filter((p) => p.set === 'cartesian' && pass({ id: p.id, source: 'volume' }))}
+        {#if revolves.length > 0}
+          <div class="prim-family-head static"><span class="prim-caret">·</span>revolve <span class="prim-count">({revolves.length})</span></div>
+          {#each revolves as p (p.id)}
+            <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === p.id && t.kind === 'profile')}>
+              <button class="prim-row indent" type="button" onclick={() => openTab(p.id, 'profile')}>
+                <span class="prim-name">{p.id}</span>
+                <span class="prim-tag prof">.prvl</span>
+              </button>
+            </div>
+          {/each}
+        {/if}
+        {#if extrudes.length > 0}
+          <div class="prim-family-head static"><span class="prim-caret">·</span>extrude <span class="prim-count">({extrudes.length})</span></div>
+          {#each extrudes as p (p.id)}
+            <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === p.id && t.kind === 'profile')}>
+              <button class="prim-row indent" type="button" onclick={() => openTab(p.id, 'profile')}>
+                <span class="prim-name">{p.id}</span>
+                <span class="prim-tag prof">.prex</span>
+              </button>
+            </div>
+          {/each}
+        {/if}
+      {/if}
+    </div>
 
     <!-- Basic — `<volume>/primitives/basic/*.{prim,asm}.ts`. -->
     <div class="prim-group">
@@ -419,7 +489,14 @@
       <div class="prim-stage">
         {#each tabs as t (t.key)}
           <div class="prim-pane" class:visible={activeKey === t.key}>
-            <GraphEditorPane id={t.id} embed={true} />
+            {#if t.kind === 'profile'}
+              <!-- Phase 1 profile pane — placeholder editor that surfaces
+                   the profile meta + build() source while we build the
+                   real 2D-mode graph editor (Phase 2). -->
+              <ProfilePane id={t.id} />
+            {:else}
+              <GraphEditorPane id={t.id} embed={true} />
+            {/if}
           </div>
         {/each}
       </div>
@@ -577,6 +654,12 @@
   .prim-tag.src { background: #dbeafe; color: #1e40af; }
   .prim-tag.stale { background: #fee2e2; color: #991b1b; }
   .prim-tag.arch { background: #f5f5f4; color: #78716c; }
+  /* PROFILES tag — amber to differentiate from .vol/.src; matches the
+     ProfilePane head badge so the tab title carries the same colour. */
+  .prim-tag.prof { background: #fef3c7; color: #92400e; }
+  /* Static sub-header (revolve / extrude inside PROFILES) — not clickable. */
+  .prim-family-head.static { cursor: default; }
+  .prim-family-head.static:hover { background: transparent; }
 
   .prim-empty { padding: 12px; font: 11px Arial; color: #78716c; }
   .prim-error { padding: 12px; font: 11px Arial; color: #b91c1c; }
