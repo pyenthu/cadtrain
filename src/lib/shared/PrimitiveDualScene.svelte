@@ -112,11 +112,33 @@
     _panZ = z;
   });
 
+  // Auto-center on the GEOMETRY bounding box. Without this, the OrbitControls
+  // target sits at world origin (0,0,0) — which for the Z-down drilling
+  // convention is the TOP of every part. The part body extends DOWN (+Z) from
+  // there, so the camera sees the part hanging below the look-at, visually
+  // off-centre + "low and out of focus". Compute the geom's bbox center once
+  // each time the geometry refreshes, write it to scene.partCenter, and the
+  // target prop below picks it up. Per-axis split: x stays at 0 (mesh/GLB
+  // stacked symmetrically), y/z follow the bbox.
+  $effect(() => {
+    const g = full ?? cutVC;
+    if (!g) return;
+    g.computeBoundingBox?.();
+    const bb = g.boundingBox;
+    if (!bb) return;
+    const cx = 0; // x centred at scene origin (mesh/GLB stacking offset is separate)
+    const cy = (bb.min.y + bb.max.y) / 2;
+    const cz = (bb.min.z + bb.max.z) / 2;
+    scene.partCenter = { x: cx, y: cy, z: cz };
+  });
+
   const AX_LEN = 2.2, AX_R = 0.06;
 </script>
 
 <T.PerspectiveCamera makeDefault position={cameraPosition} fov={45} up={DEFAULT_UP}>
-  <OrbitControls bind:ref={controls} target={[0, 0, scene.zFocus]} enableDamping enableZoom enableRotate enablePan />
+  <OrbitControls bind:ref={controls}
+    target={[scene.partCenter.x, scene.partCenter.y, scene.partCenter.z + scene.zFocus]}
+    enableDamping enableZoom enableRotate enablePan />
 </T.PerspectiveCamera>
 
 <!-- White scene background (user pref — easier to see the part). BOTH this
