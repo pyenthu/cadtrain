@@ -540,7 +540,8 @@
     if (!dragging) return;
     const dx = (ev.clientX - dragStart.x) / zoom;
     const dy = (ev.clientY - dragStart.y) / zoom;
-    graph = setLayout(graph, dragging, { x: dragOrig.x + dx, y: dragOrig.y + dy });
+    // Preserve `w` so a position drag doesn't wipe out a previous resize.
+    graph = setLayout(graph, dragging, { x: dragOrig.x + dx, y: dragOrig.y + dy, w: dragOrig.w });
   }
   function onNodePointerUp(ev: PointerEvent) {
     if (dragging) {
@@ -802,19 +803,17 @@
   // Method card: 180×100; sockets on left (obj at y+30, arg at y+70) + right (output y+50).
   // Mv/Rot card: 200×120; left (child y+40) + right (output y+60).
   // ─── Per-card user resize overrides ───────────────────────────────────
-  /** width override per node id (px). The user can drag a card's right-edge
-   *  grip to widen/narrow it; the override is stored here. Persists for
-   *  this session only — graph.layout is the on-disk source of truth and
-   *  doesn't currently carry width (small enough that an in-memory map is
-   *  fine for the first iteration). */
-  let cardWidthOverrides = $state<Record<string, number>>({});
   /** Sets the user-override width on a card, clamped to the card's
-   *  MINIMUM-content width (key column + input + actions + padding). */
+   *  MINIMUM-content width (key column + input + actions + padding).
+   *  Width round-trips through graph.layout[id].w so resize persists
+   *  across Save → reload (T #111). */
   function setCardWidth(id: string, w: number) {
     const node = graph.nodes[id];
     if (!node) return;
     const min = cardMinWidth(node);
-    cardWidthOverrides = { ...cardWidthOverrides, [id]: Math.max(min, Math.round(w)) };
+    const clamped = Math.max(min, Math.round(w));
+    const cur = graph.layout[id] ?? { x: 0, y: 0 };
+    graph = setLayout(graph, id, { ...cur, w: clamped });
   }
   /** Minimum width the card can shrink to — derived from the row content.
    *  For Call cards: key column (70 px for "label") + value cell (input +
@@ -853,8 +852,11 @@
     return 180;
   }
   function nodeSize(node: any): { w: number; h: number } {
-    const overrideW = cardWidthOverrides[node.id];
-    const baseW = overrideW != null ? overrideW : cardAutoWidth(node);
+    // Width source of truth: graph.layout[id].w (persisted) → cardAutoWidth
+    // fallback. The min clamp protects rows from collapsing below the
+    // input+actions footprint even when a stale saved width is too small.
+    const savedW = graph.layout[node.id]?.w;
+    const baseW = typeof savedW === 'number' ? savedW : cardAutoWidth(node);
     const w = Math.max(cardMinWidth(node), baseW);
     if (node.type === 'call') {
       const argCount = Object.keys(node.args ?? {}).length;

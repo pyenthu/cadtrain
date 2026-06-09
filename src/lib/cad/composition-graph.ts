@@ -113,7 +113,12 @@ export type Edge = {
   to:   string;   // '<nodeId>.args.<key>' | '<nodeId>.offset.<i>' | '<nodeId>.rot.<i>'
 };
 
-export type LayoutXY = { x: number; y: number };
+/** Per-node canvas placement. `w` is OPTIONAL — when set, the editor honours
+ *  it as a user-pinned width override (drag the right-edge grip). When
+ *  absent, the editor's auto-fit width (cardAutoWidth) applies. Width is
+ *  layout-affecting (changes wire routing + auto-layout columns), so it
+ *  round-trips through save → reload. */
+export type LayoutXY = { x: number; y: number; w?: number };
 
 /** Canvas viewport — the pan offset + zoom level the editor was at when
  *  this graph was last saved. Persists alongside layout so the user lands
