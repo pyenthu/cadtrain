@@ -628,15 +628,21 @@ export function ${legacyId}(p) {
     await page.goto(`/graph-editor?id=${legacyId}`);
     await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
 
-    // 1. Exemplar id picked up from the URL.
+    // Wait for the URL-load onMount handler to FINISH — its completion is
+    // signaled by the legacy banner appearing (legacyLoad state is set
+    // inside the same onMount block that updates exemplarId). Asserting
+    // the input value first races against the async fetch + state update.
+    // Use a generous timeout to absorb dev-server lag.
+    await expect(page.locator('.ge-legacy-banner')).toBeVisible({ timeout: 15_000 });
+
+    // 1. Exemplar id picked up from the URL — set in the same onMount.
     await expect(page.locator('input.ge-id')).toHaveValue(legacyId);
 
     // 2. Canvas stays empty — no node cards hydrated.
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(0);
     await expect(page.locator('.ge-node-bg.method')).toHaveCount(0);
 
-    // 3. Amber legacy banner surfaced above the source pane.
-    await expect(page.locator('.ge-legacy-banner')).toBeVisible();
+    // 3. Banner content.
     await expect(page.locator('.ge-legacy-banner')).toContainText(legacyId);
     await expect(page.locator('.ge-legacy-banner')).toContainText('legacy');
   });

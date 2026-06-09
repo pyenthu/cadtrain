@@ -82,21 +82,103 @@
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Re-bake nonce — increment to force a fresh /api/primitives/preview
-   *  call even when the graph hasn't changed (used by the 🔄 Rebuild
-   *  button after clearing this part's cache). */
+  /** Re-bake nonce — increment to trigger a fresh /api/primitives/preview
+   *  call. Used by the 🔨 Bake button (manual rebake), the 🔄 Rebuild
+   *  button (cache wipe + rebake), and the initial-load auto-bake. */
   let bakeNonce = $state(0);
+  /** Tracks whether the source the user is LOOKING AT has changed since
+   *  the bake panel last rendered geometry. Shown as a small "stale" badge
+   *  next to the Bake button so the user knows there's a pending change. */
+  let bakeStale = $derived(
+    typeof bake === 'object' && bake && bake.source !== undefined && bake.source !== emitted.source,
+  );
+  /** Auto-bake mode — defaults ON with a long debounce so slider scrubs
+   *  don't fire intermediate bakes. Press Enter in any input to force-
+   *  bake immediately (skips the debounce). The 🔨 Bake button always
+   *  bakes regardless of the toggle. Persisted to localStorage. */
+  let autoBake = $state(true);
+  /** Suppress the first-render bake until the URL hydrate has settled,
+   *  so we don't bake the empty default graph before redirecting state. */
+  let firstBakeDone = false;
+  onMount(() => {
+    try {
+      // Default to ON unless the user explicitly disabled it.
+      const v = localStorage.getItem('ge-auto-bake');
+      autoBake = v === null ? true : v === '1';
+    } catch { /* localStorage blocked */ }
+  });
+  function setAutoBake(v: boolean) {
+    autoBake = v;
+    try { localStorage.setItem('ge-auto-bake', v ? '1' : '0'); } catch { /* ignore */ }
+    if (v) bakeNonce++; // re-bake when flipping ON
+  }
+  /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
+   *  bumps. Reads the current emitted source so manual bakes always
+   *  reflect the latest graph state. */
+  function runBake() {
+    bakeNonce++;
+  }
+  /** Window-level Enter handler — when the user presses Enter while
+   *  focused on any input/textarea inside the editor, trigger a bake.
+   *  Lets the user scrub a value, hit Enter, see the new render — no
+   *  click required. Skipped for IME composition + modifier keys (those
+   *  are reserved for shortcuts elsewhere). */
+  function onWindowKeydown(ev: KeyboardEvent) {
+    if (ev.key !== 'Enter') return;
+    if (ev.isComposing) return;
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const target = ev.target as HTMLElement | null;
+    if (!target) return;
+    const tag = target.tagName;
+    // Only fire on text-like editing surfaces — buttons / canvas / etc.
+    // shouldn't capture Enter for re-bake.
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
+    ev.preventDefault();
+    if (target.tagName === 'INPUT') (target as HTMLInputElement).blur();
+    runBake();
+  }
+  onMount(() => {
+    window.addEventListener('keydown', onWindowKeydown);
+    return () => window.removeEventListener('keydown', onWindowKeydown);
+  });
   $effect(() => {
-    // touch bakeNonce so the effect re-runs when the rebuild button bumps it
+    // Track bakeNonce + the FIRST-load condition (any visible node + no
+    // prior bake). Subsequent graph changes don't fire here — they go
+    // through the debounced auto-bake effect below.
     bakeNonce;
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
-    if (!hasNode) { bake = null; return; }
+    if (!hasNode) { bake = null; firstBakeDone = false; return; }
+    // Initial-load case: graph hydrated, no bake yet → fire one bake.
+    // Otherwise wait for bakeNonce changes (manual Bake / Enter / Rebuild).
+    if (firstBakeDone && bakeNonce === 0) return;
     bake = 'loading';
     clearTimeout(bakeTimer);
     bakeTimer = setTimeout(async () => {
-      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 0 });
+      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1 });
       bake = { ok: r.ok, source: emitted.source, bake: r, message: r.message as string | undefined };
+      firstBakeDone = true;
     }, 250);
+  });
+  /** Trigger a single initial bake once the graph has nodes — kicks off
+   *  from the URL-load path so loading dt_stand renders without waiting
+   *  for the user to click Bake. */
+  $effect(() => {
+    const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
+    if (hasNode && !firstBakeDone && bake !== 'loading') {
+      bakeNonce++;
+    }
+  });
+  // Auto-bake with a LONG debounce when source changes. The window is
+  // 700 ms — long enough that slider scrubs don't fire intermediate
+  // bakes, short enough that you don't feel sluggish after stopping.
+  // Enter in any input force-fires immediately (see onWindowKeydown).
+  let autoBakeTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    emitted.source; // track
+    if (!autoBake) return;
+    if (!firstBakeDone) return;
+    clearTimeout(autoBakeTimer);
+    autoBakeTimer = setTimeout(() => { bakeNonce++; }, 700);
   });
 
   // ─── Lazy cutaway load ──────────────────────────────────────────────────
@@ -1042,6 +1124,19 @@
     <input class="ge-id" type="text" bind:value={exemplarId} placeholder="exemplar id" />
     <button class="ge-btn" type="button" onclick={openPicker}>+ Drop</button>
     <button class="ge-btn save" type="button" disabled={saveBusy} onclick={saveGraph}>{saveBusy ? '…' : '💾 Save'}</button>
+    <!-- Manual bake — press Enter in any input or click here. Stale flag
+         lit when emitted source differs from what's rendered. Auto-bake
+         toggle next to it; default OFF since rebakes can be expensive
+         at large N. -->
+    <button class="ge-btn bake" type="button" onclick={runBake}
+      class:stale={bakeStale}
+      title={bakeStale ? 'Source changed — click or press Enter to re-bake' : 'Re-bake now (Enter in any input also bakes)'}>
+      🔨 Bake{bakeStale ? ' ●' : ''}
+    </button>
+    <label class="ge-auto-bake-toggle" title="Auto re-bake on every source change">
+      <input type="checkbox" checked={autoBake} onchange={(e) => setAutoBake((e.target as HTMLInputElement).checked)}/>
+      auto
+    </label>
     <button class="ge-btn ghost" type="button" onclick={resetGraph}>Reset</button>
     <button class="ge-btn ghost auto-layout" type="button" onclick={autoLayout}
       title="Rearrange nodes left-to-right by depth (Phase 20 heuristic)">📐 Auto-layout</button>
@@ -2001,6 +2096,15 @@
   .ge-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .ge-btn.save { background: #15803d; }
   .ge-btn.save:hover { background: #166534; }
+  .ge-btn.bake { background: #ea580c; }
+  .ge-btn.bake:hover { background: #c2410c; }
+  .ge-btn.bake.stale { background: #f97316; animation: ge-bake-pulse 1.4s ease-in-out infinite; }
+  @keyframes ge-bake-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4); }
+    50%      { box-shadow: 0 0 0 5px rgba(249, 115, 22, 0); }
+  }
+  .ge-auto-bake-toggle { display: inline-flex; align-items: center; gap: 4px; font: 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
+  .ge-auto-bake-toggle input { margin: 0; }
   .ge-btn.ghost { background: #e5e7eb; color: #1f2937; }
   .ge-btn.ghost:hover { background: #d1d5db; }
   .ge-save-stat { font: 11px ui-monospace, monospace; color: #15803d; }

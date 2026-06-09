@@ -70,6 +70,25 @@
       if (entry.kind === 'asm' && entry.exemplar) loadTermFormat(term, entry.exemplar);
     }
   });
+
+  // Bake-cache counts per exemplar — fetched once on mount from
+  // /api/cache/bake-stats. Drives the small "● N" badge next to the
+  // format chip on each Browse row. Lets the user see at a glance
+  // which terms have warm caches.
+  let cacheByExemplar = $state<Record<string, number>>({});
+  let cacheTotalBytes = $state(0);
+  async function loadCacheStats() {
+    try {
+      const r = await fetch('/api/cache/bake-stats');
+      if (!r.ok) return;
+      const d = await r.json();
+      const map: Record<string, number> = {};
+      for (const p of d.parts ?? []) map[p.id] = p.count;
+      cacheByExemplar = map;
+      cacheTotalBytes = d.bytes ?? 0;
+    } catch { /* missing endpoint or proxy down — leave empty */ }
+  }
+  onMount(() => { loadCacheStats(); });
   function isParamsOpen(term: Term): boolean { return paramsOpen[term] !== false; }
   function toggleParamsOpen(term: Term) { paramsOpen = { ...paramsOpen, [term]: !isParamsOpen(term) }; }
 
@@ -581,6 +600,7 @@
           <div class="browser-list">
             {#each filteredTerms() as { term, entry, seed } (term)}
               {@const fmt = termFormat(term, entry, seed)}
+              {@const cacheCount = entry?.exemplar ? (cacheByExemplar[entry.exemplar] ?? 0) : 0}
               <button
                 class="browser-row"
                 class:active={selected === term}
@@ -601,6 +621,11 @@
                            : 'Loading format…'}>
                   {#if fmt === 'graph'}🧬{:else if fmt === 'text'}📝{:else if fmt === 'missing'}∅{:else if fmt === 'unknown'}…{:else}—{/if}
                 </span>
+                {#if cacheCount > 0}
+                  <span class="row-cache-badge" title={`${cacheCount} cached bake${cacheCount === 1 ? '' : 's'} on volume`}>● {cacheCount}</span>
+                {:else}
+                  <span class="row-cache-spacer"></span>
+                {/if}
                 <span class="row-name">{term}</span>
                 <span class="row-rule">{seed
                   ? `${entry.category} · ${entry.sub_category}${entry.variants?.length > 1 ? ` · ${entry.variants.length} variants` : ''}`
@@ -1242,7 +1267,9 @@
   .browser-search { padding: 6px 12px; border: 0; border-bottom: 1px solid #f1f5f9; font: 13px Arial; outline: none; }
   .browser-search:focus { background: #f9fafb; }
   .browser-list { overflow: auto; }
-  .browser-row { display: grid; grid-template-columns: 36px 22px 120px 1fr; align-items: center; gap: 8px; padding: 4px 12px; width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; font: 12px Arial; }
+  .browser-row { display: grid; grid-template-columns: 36px 22px 36px 120px 1fr; align-items: center; gap: 8px; padding: 4px 12px; width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; font: 12px Arial; }
+  .row-cache-badge { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; font: 600 10px ui-monospace, monospace; color: #065f46; background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 9999px; white-space: nowrap; justify-self: start; }
+  .row-cache-spacer { /* maintains grid column when no badge */ }
   .row-format { font: 13px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial; text-align: center; color: #6b7280; }
   .row-format.graph { color: #6d28d9; }
   .row-format.text  { color: #b45309; }
