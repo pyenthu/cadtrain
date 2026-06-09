@@ -1496,56 +1496,35 @@
     // to the visible interior via confinerBounds. If both edges are off,
     // we skip the rect lookup entirely.
     let confinerBounds: { minX?: number; maxX?: number } | undefined;
-    // Section-pinning: when the RIGHT edge boundary is engaged, pin every
-    // node that's currently OUTSIDE the visible viewport so push-apart
-    // only tidies the section you're looking at. Off-screen cards stay
-    // put. Activates ONLY on the right-edge toggle — left-edge keeps the
-    // global push-apart behaviour so the LEFT wall just pushes cards in
-    // without touching the rest of the graph.
-    const sectionPinned: Record<string, boolean> = {};
     if (canvasEl && (boundLeft !== 'off' || boundRight !== 'off')) {
       const rect = canvasEl.getBoundingClientRect();
+      // Viewport edges in graph space — the wall IS the current section
+      // boundary. Cards past the edge (off-screen) get pulled back inside;
+      // cards inside don't get touched. To catch cards that are already
+      // far off-screen, each wall extends as a FULL HALF-PLANE in the
+      // off-screen direction — viewport-end → ±FAR — so a card anywhere
+      // outside the visible region overlaps it and gets pushed back in.
+      const FAR = 10000;
       const gxLeft = (0 - pan.x) / zoom;
       const gxRight = (rect.width - pan.x) / zoom;
       const gyTop = (0 - pan.y) / zoom;
       const gyBottom = (rect.height - pan.y) / zoom;
-      if (boundRight !== 'off') {
-        // Mark nodes whose bbox sits ENTIRELY outside the viewport rect
-        // as pinned. Cards partially inside still get re-arranged.
-        for (const [id, node] of Object.entries(graph.nodes)) {
-          if (!node) continue;
-          const layoutXY = graph.layout[id];
-          if (!layoutXY) continue;
-          const sz = nodeSize(node);
-          const nx2 = layoutXY.x + sz.w, ny2 = layoutXY.y + sz.h;
-          const inside =
-            nx2 > gxLeft && layoutXY.x < gxRight &&
-            ny2 > gyTop  && layoutXY.y < gyBottom;
-          if (!inside) sectionPinned[id] = true;
-        }
-      }
-      const wallThickness = 60 / zoom; // px in graph space — thick enough to push convincingly
-      const wallH = Math.max(40, gyBottom - gyTop);
+      const wallY = gyTop - FAR;
+      const wallH = (gyBottom - gyTop) + 2 * FAR;
       if (boundLeft === 'repellant') {
-        // Tall thin rect outside the left edge — its right side flush with
-        // gxLeft so a card whose left edge is at gxLeft just touches it.
+        // Left half-plane: occupies everything LEFT of the viewport edge.
         obstacles.push({
           id: '__obs_wall_left',
-          x: gxLeft - wallThickness,
-          y: gyTop,
-          w: wallThickness,
-          h: wallH,
+          x: gxLeft - FAR, y: wallY, w: FAR, h: wallH,
         });
       } else if (boundLeft === 'confiner') {
         confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
       }
       if (boundRight === 'repellant') {
+        // Right half-plane: occupies everything RIGHT of the viewport edge.
         obstacles.push({
           id: '__obs_wall_right',
-          x: gxRight,
-          y: gyTop,
-          w: wallThickness,
-          h: wallH,
+          x: gxRight, y: wallY, w: FAR, h: wallH,
         });
       } else if (boundRight === 'confiner') {
         confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
@@ -1562,7 +1541,6 @@
       wires,
       wirePadding: 16,
       confinerBounds,
-      pinned: sectionPinned,
     });
   }
 
