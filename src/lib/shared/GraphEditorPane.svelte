@@ -192,35 +192,24 @@
    *  Confiner = forceSeparate.confinerBounds → clamps nodes INSIDE the
    *  visible region on each iteration. Persisted to localStorage so the
    *  user's choice survives across reloads. */
-  type BoundState = 'off' | 'repellant' | 'confiner';
+  /** Simplified to boolean: 'off' | 'repellant'. The tri-state cycle
+   *  (off → repellant → confiner → off) was reachable only via the
+   *  small circular edge buttons (🔒 / 🔺 / ⏹) pinned to the canvas
+   *  edges; those buttons were removed (redundant with the ⚙ menu
+   *  checkboxes). Legacy 'confiner' values in localStorage are
+   *  treated as 'off' on read so users with an old persisted state
+   *  don't get a stuck confiner with no UI to clear it. */
+  type BoundState = 'off' | 'repellant';
   let boundLeft = $state<BoundState>('off');
   let boundRight = $state<BoundState>('off');
   onMount(() => {
     try {
       const l = localStorage.getItem('ge-bound-left');
-      if (l === 'repellant' || l === 'confiner' || l === 'off') boundLeft = l;
+      if (l === 'repellant') boundLeft = 'repellant';
       const r = localStorage.getItem('ge-bound-right');
-      if (r === 'repellant' || r === 'confiner' || r === 'off') boundRight = r;
+      if (r === 'repellant') boundRight = 'repellant';
     } catch { /* localStorage blocked — fine */ }
   });
-  function cycleBound(side: 'left' | 'right') {
-    const cur = side === 'left' ? boundLeft : boundRight;
-    const next: BoundState =
-      cur === 'off' ? 'repellant' : cur === 'repellant' ? 'confiner' : 'off';
-    if (side === 'left') boundLeft = next; else boundRight = next;
-    try {
-      localStorage.setItem(side === 'left' ? 'ge-bound-left' : 'ge-bound-right', next);
-    } catch { /* ignore */ }
-  }
-  function boundGlyph(s: BoundState): string {
-    return s === 'off' ? '⏹' : s === 'repellant' ? '🔺' : '🔒';
-  }
-  function boundTip(side: 'left' | 'right', s: BoundState): string {
-    const edge = side === 'left' ? 'left' : 'right';
-    if (s === 'off') return `${edge} edge — off · click to make REPELLANT (pushes nodes away)`;
-    if (s === 'repellant') return `${edge} edge — REPELLANT · push-apart pushes nodes away from this edge · click to make CONFINER`;
-    return `${edge} edge — CONFINER · push-apart clamps nodes inside this edge · click to disable`;
-  }
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
    *  bumps. Reads the current emitted source so manual bakes always
    *  reflect the latest graph state. */
@@ -1064,7 +1053,17 @@
   let pickerOpen = $state(false);
   let pickerSrcs = $state<string[]>([]);
   let pickerFilter = $state('');
+  /** Anchor for the picker dropdown — same pattern as the ⚙ canvas-
+   *  settings menu. We bind:this on the + rail button and read its
+   *  getBoundingClientRect when opening so the picker sits flush
+   *  next to it (not pinned at a hardcoded `top: 60px`). */
+  let dropBtnEl = $state<HTMLButtonElement | null>(null);
+  let pickerPos = $state<{ left: number; top: number }>({ left: 56, top: 60 });
   async function openPicker() {
+    if (dropBtnEl) {
+      const r = dropBtnEl.getBoundingClientRect();
+      pickerPos = { left: r.right + 6, top: r.top };
+    }
     pickerOpen = true;
     if (pickerSrcs.length === 0) {
       try {
@@ -1624,16 +1623,12 @@
           x: gxLeft - FAR, y: wallY, w: FAR, h: wallH,
         });
         confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
-      } else if (boundLeft === 'confiner') {
-        confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
       }
       if (boundRight === 'repellant') {
         obstacles.push({
           id: '__obs_wall_right',
           x: gxRight, y: wallY, w: FAR, h: wallH,
         });
-        confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
-      } else if (boundRight === 'confiner') {
         confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
       }
     }
@@ -1917,7 +1912,8 @@
        in onMount) renders the labels on hover. Auto-layout + Push apart
        moved to a canvas-settings popover. -->
   <aside class="ge-vrail">
-    <button class="ge-vrail-btn" type="button" onclick={openPicker}
+    <button class="ge-vrail-btn" type="button"
+      bind:this={dropBtnEl} onclick={openPicker}
       data-tip="+ Drop a node (Call, CSG, transform, container)">＋</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
@@ -1989,7 +1985,6 @@
             try { localStorage.setItem('ge-bound-left', boundLeft); } catch { /* ignore */ }
           }} />
         <span class="ge-cm-label">Left boundary</span>
-        {#if boundLeft === 'confiner'}<span class="ge-cm-badge">confiner</span>{/if}
       </label>
       <label class="ge-cm-row check"
         title="Push nodes away from the RIGHT canvas edge during push-apart">
@@ -2001,7 +1996,6 @@
             try { localStorage.setItem('ge-bound-right', boundRight); } catch { /* ignore */ }
           }} />
         <span class="ge-cm-label">Right boundary</span>
-        {#if boundRight === 'confiner'}<span class="ge-cm-badge">confiner</span>{/if}
       </label>
     </div>
   {/if}
@@ -2825,22 +2819,10 @@
         {/if}
         <span class="ge-canvas-status-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
       </div>
-      <!-- Boundary edge toggles (#116). Two small circular buttons pinned
-           to the canvas pane's left + right edges, vertically centered.
-           Each cycles off → repellant → confiner → off. Active states
-           feed forceSeparate when the user clicks 🧲 Push apart. -->
-      <button class="ge-bound-btn ge-bound-left" type="button"
-        class:on={boundLeft !== 'off'}
-        class:repellant={boundLeft === 'repellant'}
-        class:confiner={boundLeft === 'confiner'}
-        onclick={() => cycleBound('left')}
-        data-tip={boundTip('left', boundLeft)}>{boundGlyph(boundLeft)}</button>
-      <button class="ge-bound-btn ge-bound-right" type="button"
-        class:on={boundRight !== 'off'}
-        class:repellant={boundRight === 'repellant'}
-        class:confiner={boundRight === 'confiner'}
-        onclick={() => cycleBound('right')}
-        data-tip={boundTip('right', boundRight)}>{boundGlyph(boundRight)}</button>
+      <!-- Boundary edge toggles (#116): the small circular buttons that
+           used to sit on the canvas edges (🔒 confiner / 🔺 repellant /
+           ⏹ off) were removed — the ⚙ canvas-settings menu now owns
+           these as boolean checkbox rows. -->
     </section>
 
     <!-- Divider: canvas ↔ right pane -->
@@ -3142,7 +3124,8 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-picker-shade" onclick={closePicker}></div>
-    <div class="ge-picker">
+    <div class="ge-picker"
+      style="left: {pickerPos.left}px; top: {pickerPos.top}px">
       <!-- CSG ops -->
       <div class="ge-picker-section">
         <div class="ge-picker-label">CSG</div>
@@ -3299,13 +3282,6 @@
   .ge-cm-row.check input { margin: 0; cursor: pointer; accent-color: #cc2222; }
   .ge-cm-icon { width: 16px; text-align: center; font-size: 13px; line-height: 1; }
   .ge-cm-label { flex: 1 1 auto; }
-  .ge-cm-badge {
-    flex: 0 0 auto;
-    font: 600 9px Arial; color: #92400e;
-    background: #fef3c7; border: 1px solid #fde68a;
-    padding: 1px 5px; border-radius: 3px;
-    text-transform: uppercase; letter-spacing: 0.3px;
-  }
   .ge-cm-sep { height: 1px; background: #f1f5f9; margin: 4px 6px; }
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
@@ -3370,31 +3346,9 @@
     from { opacity: 0; transform: translateY(4px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  /* Boundary edge toggles (#116) — small circular icons pinned to the
-     left + right edges of the canvas pane, vertically centered. Sit ABOVE
-     the canvas (z-index: 5 — above status, below floating popovers). */
-  .ge-bound-btn {
-    position: absolute; top: 50%;
-    transform: translateY(-50%);
-    width: 26px; height: 26px;
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 0; line-height: 1;
-    font: 14px/1 Arial;
-    background: rgba(255, 255, 255, 0.92);
-    color: #78716c;
-    border: 1px solid #d6d3d1; border-radius: 50%;
-    cursor: pointer; user-select: none;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-    z-index: 5;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
-  }
-  .ge-bound-btn:hover { background: #f5f5f4; color: #1c1917; border-color: #a8a29e; }
-  .ge-bound-btn.repellant { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
-  .ge-bound-btn.repellant:hover { background: #fecaca; color: #991b1b; border-color: #f87171; }
-  .ge-bound-btn.confiner { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
-  .ge-bound-btn.confiner:hover { background: #bfdbfe; color: #1e40af; border-color: #60a5fa; }
-  .ge-bound-left  { left: 6px; }
-  .ge-bound-right { right: 6px; }
+  /* Boundary edge toggles (#116) — the small circular ⏹/🔺/🔒 buttons
+     pinned to the canvas edges were removed; the ⚙ canvas-settings menu
+     now exposes Left / Right boundary as boolean checkbox rows. */
   /* Broken-reference banner — sits between the toolbar and the canvas so
      the user can't miss it. Amber theme matches the existing stale-server
      hint; click a node-id chip to select-and-pan to the offending node. */
@@ -3819,10 +3773,17 @@
      Sections quietly separated by dividers; small uppercase labels
      instead of full coloured chips. #118. */
   .ge-picker {
-    position: fixed; top: 60px; left: 56px; width: 260px; max-height: 78vh;
+    /* Position is set inline via the openPicker bounding rect — fall back
+       to the rail-top defaults if the ref hasn't resolved yet. */
+    position: fixed; top: 60px; left: 56px;
+    width: 260px; height: 480px;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
     box-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
-    z-index: 101; overflow-y: auto;
+    z-index: 101; overflow: hidden;
+    /* Fixed outer height + overflow:hidden = the inner Call list owns the
+       only scrollbar (vertical, on .ge-picker-list). The CSG/Transform/
+       Container sections stay pinned at the top so the user can always
+       reach them; only the long primitive list scrolls. */
     display: flex; flex-direction: column;
   }
   .ge-picker-section { padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
