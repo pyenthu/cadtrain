@@ -208,14 +208,38 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // Saved files never get this (opts.ghosts is editor-only — /preview
   // sets it, /save doesn't).
   if (opts.ghosts && opts.ghosts.length > 0) {
-    const ghostVars: string[] = [];
-    for (const ghostId of opts.ghosts) {
-      const v = varNames.get(ghostId);
-      // Skip ghosts whose node IS the root return (already in the output)
-      // or that don't map to a const line for any reason.
-      if (v && v !== returnExpr && !returnExpr.includes(v + ',') && !returnExpr.includes(' ' + v)) {
-        ghostVars.push(v);
+    // For each ghost id, walk FORWARD through any mv/rot wrappers so the
+    // overlay shows the PLACED part (rotated + translated to where it
+    // actually sits in the composition), not the raw call at the origin.
+    // Stop at the last mv/rot in the chain — anything beyond (method
+    // subtract/add/intersect, container) is consumed differently.
+    const consumersOf = new Map<NodeId, NodeId>();
+    for (const n of Object.values(graph.nodes)) {
+      if (n?.type === 'mv' || n?.type === 'rot') {
+        if (n.child) consumersOf.set(n.child, n.id);
       }
+    }
+    const resolveGhostNode = (id: NodeId): NodeId => {
+      let cur = id;
+      const seen = new Set<NodeId>();
+      while (consumersOf.has(cur) && !seen.has(cur)) {
+        seen.add(cur);
+        cur = consumersOf.get(cur)!;
+      }
+      return cur;
+    };
+    const ghostVars: string[] = [];
+    const seenVars = new Set<string>();
+    for (const ghostId of opts.ghosts) {
+      const resolved = resolveGhostNode(ghostId);
+      const v = varNames.get(resolved);
+      if (!v || seenVars.has(v)) continue;
+      // Skip vars already in the output expression (no point doubling
+      // up; would only inflate the bake).
+      if (returnExpr === v) continue;
+      if (new RegExp(`\\b${v}\\b`).test(returnExpr)) continue;
+      ghostVars.push(v);
+      seenVars.add(v);
     }
     if (ghostVars.length > 0) {
       const base = returnExpr === 'undefined' ? '[]'
