@@ -130,7 +130,15 @@
   function setAutoBake(v: boolean) {
     autoBake = v;
     try { localStorage.setItem('ge-auto-bake', v ? '1' : '0'); } catch { /* ignore */ }
-    if (v) bakeNonce++; // re-bake when flipping ON
+    if (v) {
+      bakeNonce++; // re-bake when flipping ON
+    } else {
+      // Cancel any pending debounced auto-bake so toggling OFF actually
+      // STOPS the next bake from firing — the $effect below early-bailed
+      // on `!autoBake` without clearing the timer, so a bake set 600 ms
+      // before the toggle would still land 100 ms after. (#115)
+      clearTimeout(autoBakeTimer);
+    }
   }
   /** Per-card ghost set — Call cards (and any node) flagged with the eye
    *  icon get their emitted Manifold APPENDED to the return list, so the
@@ -347,7 +355,13 @@
   let autoBakeTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     emittedForRender.source; // track — also catches ghostIds changes
-    if (!autoBake) return;
+    if (!autoBake) {
+      // Don't just skip — actively cancel anything that was scheduled
+      // while we were on. Without this, flipping the toggle off lets
+      // the last pending bake leak through 700 ms later.
+      clearTimeout(autoBakeTimer);
+      return;
+    }
     if (!firstBakeDone) return;
     clearTimeout(autoBakeTimer);
     autoBakeTimer = setTimeout(() => { bakeNonce++; }, 700);
@@ -2943,48 +2957,67 @@
   {/if}
 
   {#if pickerOpen}
+    <!-- Compact Flowbite-style nav dropdown — anchored to the +Drop rail
+         button. Single column, tight rows, subtle section dividers. (#118) -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-picker-shade" onclick={closePicker}></div>
     <div class="ge-picker">
-      <div class="ge-picker-head">Drop a node</div>
+      <!-- CSG ops -->
       <div class="ge-picker-section">
         <div class="ge-picker-label">CSG</div>
-        <button class="ge-pick csg" type="button" onclick={() => dropCsg('subtract')}>⊖ subtract</button>
-        <button class="ge-pick csg" type="button" onclick={() => dropCsg('add')}>⊕ add</button>
-        <button class="ge-pick csg" type="button" onclick={() => dropCsg('intersect')}>⊗ intersect</button>
+        <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
+          <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
+          <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
+          <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
+        </button>
       </div>
+      <!-- Transform -->
       <div class="ge-picker-section">
         <div class="ge-picker-label">Transform</div>
-        <button class="ge-pick xform" type="button" onclick={dropMv}>⇄ mv [x, y, z]</button>
-        <button class="ge-pick xform" type="button" onclick={dropRot}>↻ rot [rx, ry, rz]</button>
+        <button class="ge-pick-item" type="button" onclick={dropMv}>
+          <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">[x, y, z]</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={dropRot}>
+          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">[rx, ry, rz]</span>
+        </button>
       </div>
+      <!-- Container -->
       <div class="ge-picker-section">
         <div class="ge-picker-label">Container</div>
-        <button class="ge-pick container" type="button" onclick={dropStack}>↕ stack [...]</button>
-        <button class="ge-pick container" type="button" onclick={dropRepeat}>↻ repeat × N</button>
+        <button class="ge-pick-item" type="button" onclick={dropStack}>
+          <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span><span class="ge-pick-hint">[…]</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={dropRepeat}>
+          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
+        </button>
       </div>
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">Call (primitive)</div>
-        <input class="ge-picker-search" type="text" placeholder="filter…" bind:value={pickerFilter}/>
-        <!-- Sort dropdown (#104). Persists to localStorage `ge-picker-sort`.
-             'name' is the default A→Z. 'recent' floats LRU picks to the top
-             (per `ge-picker-recent`). 'source' groups by origin so stdlib +
-             basic + completions + stdstale sit in separate blocks. -->
-        <div class="ge-picker-sort">
-          <span class="ge-picker-sort-label">Sort:</span>
-          <button class="ge-pick-sort" class:active={pickerSort === 'name'}
-            type="button" onclick={() => setPickerSort('name')}>A→Z</button>
-          <button class="ge-pick-sort" class:active={pickerSort === 'recent'}
-            type="button" onclick={() => setPickerSort('recent')}
-            title="Recently dropped first">Recent</button>
-          <button class="ge-pick-sort" class:active={pickerSort === 'source'}
-            type="button" onclick={() => setPickerSort('source')}
-            title="Group by stdlib / basic / completions / stdstale">Source</button>
+      <!-- Call (primitive) — filter + sort row + scrollable list -->
+      <div class="ge-picker-section ge-picker-call-section">
+        <div class="ge-picker-call-head">
+          <div class="ge-picker-label">Call (primitive)</div>
+          <div class="ge-picker-sort">
+            <button class="ge-pick-sort" class:active={pickerSort === 'name'}
+              type="button" onclick={() => setPickerSort('name')}>A–Z</button>
+            <button class="ge-pick-sort" class:active={pickerSort === 'recent'}
+              type="button" onclick={() => setPickerSort('recent')}
+              title="Recently dropped first">Recent</button>
+            <button class="ge-pick-sort" class:active={pickerSort === 'source'}
+              type="button" onclick={() => setPickerSort('source')}
+              title="Group by stdlib / basic / completions / stdstale">Source</button>
+          </div>
         </div>
+        <input class="ge-picker-search" type="text"
+          placeholder="filter…" bind:value={pickerFilter}/>
         <div class="ge-picker-list">
           {#each filteredSrcs as src (src)}
             {@const meta = pickerSrcMeta[src]}
-            <button class="ge-pick" type="button" onclick={() => dropCall(src)}>
-              <span>{src}</span>
+            <button class="ge-pick-item" type="button" onclick={() => dropCall(src)}>
+              <span class="ge-pick-name code">{src}</span>
               {#if pickerSort === 'source' && meta?.source}<span class="ge-pick-src-tag src-{meta.source}">{meta.source}</span>{/if}
             </button>
           {/each}
@@ -3538,27 +3571,64 @@
   .ge-wire-item:hover { background: #fef3c7; }
   .ge-wire-item.literal { color: #6b7280; border-top: 1px solid #f1f5f9; }
   .ge-wire-default { font: 10px ui-monospace, monospace; color: #92400e; }
+  /* +Drop picker — Flowbite-style nav dropdown. Compact 260 px column,
+     anchored next to the rail's +Drop button, soft shadow + 1 px border,
+     row-based items (icon + name + optional hint) with hover highlight.
+     Sections quietly separated by dividers; small uppercase labels
+     instead of full coloured chips. #118. */
   .ge-picker {
-    position: fixed; top: 60px; left: 16px; width: 340px; max-height: 70vh;
-    background: #fff; border: 1px solid #0369a1; border-radius: 6px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    position: fixed; top: 60px; left: 56px; width: 260px; max-height: 78vh;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
     z-index: 101; overflow-y: auto;
+    display: flex; flex-direction: column;
   }
-  .ge-picker-head { padding: 8px 12px; font: 600 12px Arial; color: #0c4a6e; border-bottom: 1px solid #e5e7eb; background: #f8fafc; position: sticky; top: 0; }
-  .ge-picker-section { padding: 6px 0 8px; border-bottom: 1px solid #f1f5f9; }
-  .ge-picker-label { font: 600 10px Arial; color: #92400e; text-transform: uppercase; letter-spacing: 0.6px; padding: 4px 12px; }
-  .ge-picker-search { width: calc(100% - 24px); margin: 4px 12px; padding: 3px 8px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
-  /* #104 — sort dropdown above the call list. Small chips so the row
-     stays compact inside the existing picker frame. */
-  .ge-picker-sort { display: flex; align-items: center; gap: 4px; padding: 0 12px 4px; }
-  .ge-picker-sort-label { font: 600 10px Arial; color: #92400e; text-transform: uppercase; letter-spacing: 0.6px; }
+  .ge-picker-section { padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
+  .ge-picker-section:last-child { border-bottom: 0; }
+  .ge-picker-label {
+    font: 600 9px Arial; color: #78716c;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 4px 12px 2px;
+  }
+  /* Row item — Flowbite menu pattern: full-width button, icon column +
+     name + optional muted hint. Hover gives a subtle bg, no per-type
+     loud colours. */
+  .ge-pick-item {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 6px 12px; box-sizing: border-box;
+    background: transparent; border: 0; cursor: pointer;
+    text-align: left; font: 12px Arial; color: #1f2937;
+  }
+  .ge-pick-item:hover { background: #f3f4f6; color: #0c4a6e; }
+  .ge-pick-icon {
+    flex: 0 0 14px; width: 14px;
+    font-size: 13px; color: #64748b; text-align: center;
+  }
+  .ge-pick-item:hover .ge-pick-icon { color: #0c4a6e; }
+  .ge-pick-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ge-pick-name.code { font-family: ui-monospace, monospace; }
+  .ge-pick-hint { flex: 0 0 auto; font: 10px ui-monospace, monospace; color: #a8a29e; }
+  /* Call (primitive) section — fixed-ish height with internal scroll so
+     the sections above don't get pushed out when 50+ primitives load. */
+  .ge-picker-call-section { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+  .ge-picker-call-head { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; }
+  .ge-picker-sort { display: flex; align-items: center; gap: 3px; }
   .ge-pick-sort {
-    flex: 0 0 auto; padding: 2px 8px; font: 10px Arial; background: #f5f5f4;
-    border: 1px solid #d6d3d1; border-radius: 3px; cursor: pointer; color: #44403c;
+    flex: 0 0 auto; padding: 1px 6px; font: 9px Arial;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 3px;
+    cursor: pointer; color: #57534e;
   }
-  .ge-pick-sort:hover { background: #e7e5e4; }
-  .ge-pick-sort.active { background: #0369a1; color: #fff; border-color: #0c4a6e; }
+  .ge-pick-sort:hover { background: #f3f4f6; }
+  .ge-pick-sort.active { background: #1e40af; color: #fff; border-color: #1e40af; }
+  .ge-picker-search {
+    width: calc(100% - 24px); margin: 4px 12px 6px;
+    padding: 4px 8px; font: 12px ui-monospace, monospace;
+    border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;
+  }
+  .ge-picker-search:focus { outline: 1px solid #1e40af; background: #fff; border-color: #1e40af; }
+  .ge-picker-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
   .ge-pick-src-tag {
+    flex: 0 0 auto;
     font: 9px ui-monospace, monospace; padding: 1px 5px; border-radius: 3px;
     margin-left: 6px; text-transform: lowercase;
   }
@@ -3567,9 +3637,4 @@
   .ge-pick-src-tag.src-volume { background: #f5f5f4; color: #44403c; }
   .ge-pick-src-tag.src-completions { background: #fef3c7; color: #92400e; }
   .ge-pick-src-tag.src-stdstale { background: #fee2e2; color: #991b1b; }
-  .ge-picker-list { max-height: 220px; overflow-y: auto; }
-  .ge-pick { width: 100%; padding: 5px 12px; background: transparent; border: 0; text-align: left; font: 12px ui-monospace, monospace; color: #1f2937; cursor: pointer; }
-  .ge-pick:hover { background: #e0f2fe; color: #0c4a6e; }
-  .ge-pick.csg:hover { background: #fef3c7; color: #92400e; }
-  .ge-pick.xform:hover { background: #ede9fe; color: #5b21b6; }
 </style>
