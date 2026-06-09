@@ -921,7 +921,7 @@
     if (node.type === 'method') return 96;  // ⊖ + label + × (sockets sit on edges)
     if (node.type === 'mv' || node.type === 'rot') return 116;
     if (node.type === 'repeat') return 170;
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 140;
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
     return 130;
   }
   /** Auto-fit width based on the card's content — title length + longest
@@ -964,8 +964,14 @@
         );
       }
       const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
-      // ~7 px per char monospace + 18 px socket + 14 px × button + 20 px padding
-      return Math.max(160, longest * 7 + 18 + 14 + 20);
+      // ~7 px per char monospace + 18 px socket + 14 px × button + 16 px
+      // padding. Title row also has the ▶ chevron + name + ⚙ gear so the
+      // 'Output' header itself needs room; account for that minimum.
+      const titleW = 90; // ▶ Output + gear with padding
+      const rowW = longest * 7 + 18 + 14 + 16;
+      // 120 px floor — tight enough that short single-child container
+      // cards (Output with just "subtract(…)") don't carry empty space.
+      return Math.max(120, Math.max(rowW, titleW));
     }
     return 180;
   }
