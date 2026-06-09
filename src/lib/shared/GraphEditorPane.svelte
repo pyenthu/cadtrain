@@ -1438,6 +1438,31 @@
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
   function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
 
+  /** Profile-mode "pen" nodes — turtle-graphics-style polygon authoring.
+   *  Each pen node lands as a Call with a synthetic src tag (`pen_mv`,
+   *  `pen_line`, …) and default literal args. The Phase 2b profile-
+   *  emit pipeline interprets these src tags into build() body output.
+   *
+   *  Why CALL nodes (not a new node type): keeps the graph data model
+   *  unchanged, so wire / layout / autoLayout / push-apart all work
+   *  uniformly. The src string is a sentinel — the emitter and the
+   *  picker both pattern-match against `pen_*` to decide their behavior.
+   *
+   *  Defaults are Z-down friendly (revolve set): mv puts the pen at
+   *  origin; line pulls outward by 1 in r; lineR pushes down 1 in z;
+   *  lineZ same. The user adjusts the literal args from there or
+   *  wires them to assembly params (od, len, …) via the ƒ-popup. */
+  function dropPen(op: 'mv' | 'line' | 'lineR' | 'lineZ') {
+    closePicker();
+    const args: Record<string, { kind: 'literal'; value: number }> = (() => {
+      if (op === 'mv')    return { r: asLiteral(0), z: asLiteral(0) };
+      if (op === 'line')  return { r: asLiteral(1), z: asLiteral(0) };
+      if (op === 'lineR') return { dr: asLiteral(0), dz: asLiteral(1) };
+      return { dz: asLiteral(1) }; // lineZ
+    })();
+    graph = addCall(graph, `pen_${op}`, args).graph;
+  }
+
   // ─── stack/list reorder popover ─────────────────────────────────────────
   // ⚙ button on container cards (stack / list / group / root output) opens
   // a popover showing each child as a row with ▲ / ▼ to reorder. Mutates
@@ -3283,39 +3308,65 @@
     <div class="ge-picker-shade" onclick={closePicker}></div>
     <div class="ge-picker"
       style="left: {pickerPos.left}px; top: {pickerPos.top}px">
-      <!-- CSG ops -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">CSG</div>
-        <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
-          <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
-          <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
-          <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
-        </button>
-      </div>
-      <!-- Transform -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">Transform</div>
-        <button class="ge-pick-item" type="button" onclick={dropMv}>
-          <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">[x, y, z]</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={dropRot}>
-          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">[rx, ry, rz]</span>
-        </button>
-      </div>
-      <!-- Container -->
+      {#if editKind === 'profile'}
+        <!-- Pen section — turtle-graphics polygon authoring nodes. Drops
+             a Call card with src='pen_<op>'; the profile emitter walks
+             these in graph order to build the [r, z] (revolve) or
+             [x, y] (cartesian) point array. Repeat × N inside a list
+             repeats a pen-op subsequence (also a Call/Container chain). -->
+        <div class="ge-picker-section">
+          <div class="ge-picker-label">Pen</div>
+          <button class="ge-pick-item" type="button" onclick={() => dropPen('mv')}>
+            <span class="ge-pick-icon">✎</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">→ (r, z)</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={() => dropPen('line')}>
+            <span class="ge-pick-icon">／</span><span class="ge-pick-name">line</span><span class="ge-pick-hint">→ (r, z)</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={() => dropPen('lineR')}>
+            <span class="ge-pick-icon">↗</span><span class="ge-pick-name">lineR</span><span class="ge-pick-hint">+(dr, dz)</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={() => dropPen('lineZ')}>
+            <span class="ge-pick-icon">↓</span><span class="ge-pick-name">lineZ</span><span class="ge-pick-hint">+dz</span>
+          </button>
+        </div>
+      {:else}
+        <!-- CSG ops — 3D booleans (parts only). -->
+        <div class="ge-picker-section">
+          <div class="ge-picker-label">CSG</div>
+          <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
+            <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
+            <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
+            <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
+          </button>
+        </div>
+        <!-- Transform — 3D translate / rotate (parts only). -->
+        <div class="ge-picker-section">
+          <div class="ge-picker-label">Transform</div>
+          <button class="ge-pick-item" type="button" onclick={dropMv}>
+            <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">[x, y, z]</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={dropRot}>
+            <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">[rx, ry, rz]</span>
+          </button>
+        </div>
+      {/if}
+      <!-- Container — works for both kinds (graph-shape, no geometry). -->
       <div class="ge-picker-section">
         <div class="ge-picker-label">Container</div>
-        <button class="ge-pick-item" type="button" onclick={dropStack}>
-          <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span><span class="ge-pick-hint">[…]</span>
-        </button>
+        {#if editKind !== 'profile'}
+          <button class="ge-pick-item" type="button" onclick={dropStack}>
+            <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span><span class="ge-pick-hint">[…]</span>
+          </button>
+        {/if}
         <button class="ge-pick-item" type="button" onclick={dropRepeat}>
           <span class="ge-pick-icon">↻</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
         </button>
       </div>
+      {#if editKind !== 'profile'}
       <!-- Call (primitive) — filter + sort row + scrollable list -->
       <div class="ge-picker-section ge-picker-call-section">
         <div class="ge-picker-call-head">
@@ -3344,6 +3395,7 @@
           {#if pickerSrcs.length === 0}<div class="ge-empty">loading…</div>{/if}
         </div>
       </div>
+      {/if}
     </div>
   {/if}
 </div>
