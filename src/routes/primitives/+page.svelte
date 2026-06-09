@@ -390,7 +390,9 @@
     display: grid;
     grid-template-columns: auto 6px 1fr;
     grid-template-rows: 1fr;
-    height: 100vh;
+    /* 100% fits inside the layout's content row (Flowbite Navbar takes
+       the top auto-row); 100vh would overflow by the navbar height. */
+    height: 100%;
     overflow: hidden;
     font-family: Arial;
     color: #1f2937;

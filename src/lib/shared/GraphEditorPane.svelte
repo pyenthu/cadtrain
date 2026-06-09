@@ -3148,7 +3148,11 @@
     display: grid;
     grid-template-rows: auto 1fr;
     grid-template-columns: 48px 1fr;
-    height: 100vh; font-family: Arial; color: #1f2937;
+    /* 100% fits inside the layout's content row (Flowbite Navbar takes
+       the top auto-row); 100vh would overflow by the navbar height.
+       Embed mode (iframed inside another page) reaches 100% via the
+       parent's iframe height — same idiom. */
+    height: 100%; font-family: Arial; color: #1f2937;
     position: relative;
   }
   .ge-root > .ge-bar     { grid-column: 1 / -1; }

@@ -1,0 +1,8 @@
+/**
+ * Tailwind directives — required by Tailwind CSS / flowbite-svelte.
+ * Preflight is disabled in tailwind.config.cjs to preserve cadtrain's
+ * hand-rolled element styles. Utilities + components still work.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

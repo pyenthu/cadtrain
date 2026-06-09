@@ -28,6 +28,11 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
     "@vitest/expect": "^4.1.4",
+    "autoprefixer": "^10.5.0",
+    "flowbite": "^4.0.2",
+    "flowbite-svelte": "^1.33.1",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3",
     "vite": "^8.0.8",
     "vitest": "^4.1.4"
   },
