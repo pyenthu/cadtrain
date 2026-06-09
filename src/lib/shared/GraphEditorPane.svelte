@@ -821,7 +821,7 @@
    *  its native fixed default — the user resizes those rarely. */
   function cardMinWidth(node: any): number {
     if (node.type === 'call')   return 168; // 70 key + 76 value + 22 chrome
-    if (node.type === 'method') return 130;
+    if (node.type === 'method') return 96;  // ⊖ + label + × (sockets sit on edges)
     if (node.type === 'mv' || node.type === 'rot') return 116;
     if (node.type === 'repeat') return 170;
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 140;
@@ -845,10 +845,31 @@
       const fromTitle = titleChars * 7 + 50; // ⇄ ↻ × glyphs + side padding
       return Math.max(220, fromArgs, fromTitle);
     }
-    if (node.type === 'method') return 180;
+    if (node.type === 'method') return 110;
     if (node.type === 'mv' || node.type === 'rot') return 136;
     if (node.type === 'repeat') return 230;
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 200;
+    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
+      // Auto-width based on the LONGEST child-slot label. Each slot prints
+      // either the child's "alias · src" (call), "op(…)" (method/transform),
+      // or a fallback. Width = padding + socket + longest_label + chrome.
+      const labels: string[] = [];
+      for (const cid of (node as any).children ?? []) {
+        const child = graph.nodes[cid];
+        if (!child) continue;
+        labels.push(
+          child.type === 'call'   ? `${(child as any).alias} · ${(child as any).src}` :
+          child.type === 'method' ? `${(child as any).op}(…)` :
+          child.type === 'mv'     ? 'mv(…)' :
+          child.type === 'rot'    ? 'rot(…)' :
+          child.type === 'stack'  ? 'stack(…)' :
+          child.type === 'repeat' ? `repeat × ${(child as any).count?.kind === 'literal' ? (child as any).count.value : '…'}` :
+          '(missing)',
+        );
+      }
+      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
+      // ~7 px per char monospace + 18 px socket + 14 px × button + 20 px padding
+      return Math.max(160, longest * 7 + 18 + 14 + 20);
+    }
     return 180;
   }
   function nodeSize(node: any): { w: number; h: number } {
@@ -862,7 +883,7 @@
       const argCount = Object.keys(node.args ?? {}).length;
       return { w, h: Math.max(80, 50 + argCount * 22) };
     }
-    if (node.type === 'method') return { w, h: 100 };
+    if (node.type === 'method') return { w, h: 64 };
     if (node.type === 'mv' || node.type === 'rot') return { w, h: 110 };
     if (node.type === 'repeat') return { w, h: 110 };
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
@@ -893,14 +914,15 @@
     // (y=16) — same vertical line as the child input on the left. Other
     // node types keep the middle-right edge default.
     if (node.type === 'mv' || node.type === 'rot') return { x: p.x + w, y: p.y + 16 };
+    if (node.type === 'method') return { x: p.x + w, y: p.y + 14 };
     return { x: p.x + w, y: p.y + h / 2 };
   }
   function inputSocketAt(id: NodeId, slot: 'obj' | 'arg' | 'child'): { x: number; y: number } {
     const p = nodePos(id);
     const node = graph.nodes[id];
     if (!node) return p;
-    if (slot === 'obj')  return { x: p.x, y: p.y + 30 };
-    if (slot === 'arg')  return { x: p.x, y: p.y + 70 };
+    if (slot === 'obj')  return { x: p.x, y: p.y + 42 };
+    if (slot === 'arg')  return { x: p.x, y: p.y + 56 };
     // mv / rot put their child socket on the LEFT EDGE, vertically aligned
     // with the title row (y=16). Axis sockets line the rest of the left
     // edge underneath. Repeat keeps the legacy bottom-edge position via
@@ -2092,31 +2114,34 @@
 
               {:else if n.type === 'method'}
                 {@const m = n as any}
+                <!-- Compact title-row layout (matches mv/rot): op glyph +
+                     name in the title at top, obj/arg sockets on the left
+                     below, output on the title-row right edge. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg method" width={size.w} height={size.h} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
                 />
-                <text x={size.w / 2} y="48" class="ge-method-op" text-anchor="middle">
-                  {m.op === 'subtract' ? '⊖' : m.op === 'add' ? '⊕' : '⊗'}
+                <text x="14" y="20" class="ge-node-title">
+                  {m.op === 'subtract' ? '⊖' : m.op === 'add' ? '⊕' : '⊗'} {m.op}
                 </text>
-                <text x={size.w / 2} y="72" class="ge-method-name" text-anchor="middle">{m.op}</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
+                <text role="button" tabindex="-1" x={size.w - 22} y="20" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
-                <!-- Input sockets -->
+                <!-- Input sockets, stacked under the divider -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in obj" cx="0" cy="30" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock in obj" cx="0" cy="42" r="6"
                   onpointerup={(ev) => endWireOnInput(ev, n.id, 'obj')}/>
-                <text x="10" y="34" class="ge-sock-label">obj</text>
+                <text x="10" y="45" class="ge-sock-label">obj</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in arg" cx="0" cy="70" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock in arg" cx="0" cy="56" r="6"
                   onpointerup={(ev) => endWireOnInput(ev, n.id, 'arg')}/>
-                <text x="10" y="74" class="ge-sock-label">arg</text>
-                <!-- Output -->
+                <text x="10" y="59" class="ge-sock-label">arg</text>
+                <!-- OUTPUT socket on the title-row right edge -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="14" r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
 
               {:else if n.type === 'mv' || n.type === 'rot'}
