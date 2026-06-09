@@ -40,21 +40,28 @@
   let listLoading = $state(false);
   let listError = $state<string | null>(null);
 
-  /** Delete a primitive — first call archives (soft delete; sends to
-   *  primitives/archive/<id>.<kind>.ts), second call after confirm hard-
-   *  deletes. Closes any open tab for that id and refreshes the list.
-   *  Stdlib + stdstale entries reject server-side; we hide the trash for
-   *  them in the UI to skip a wasted round-trip. */
+  /** Delete a primitive. Two paths sharing one server endpoint:
+   *   * `archive` (default) — moves the file to primitives/archive/ as
+   *     a soft delete (recoverable: shows up under the Archived group,
+   *     can be restored or hard-deleted).
+   *   * `permanent` — hard delete with `?permanent=true`. The file is
+   *     `fs.unlink`ed from the volume — irreversible. Used for cleaning
+   *     up the Archived group when a user is sure they don't want a part
+   *     anymore.
+   *  Stdlib + stdstale entries reject server-side; we hide the trash
+   *  for them in the UI to skip a wasted round-trip. */
   let deleteBusy = $state<string | null>(null);
-  async function deletePrim(id: string, source: string) {
+  async function deletePrim(id: string, source: string, mode: 'archive' | 'permanent' = 'archive') {
     if (source === 'stdlib' || source === 'stdstale' || source === 'bundle') return;
-    const ok = typeof confirm === 'function'
-      ? confirm(`Archive "${id}"? It moves to primitives/archive/ — soft delete (recoverable).`)
-      : true;
+    const prompt = mode === 'permanent'
+      ? `Permanently delete "${id}"? The file is removed from the volume — this CANNOT be undone.`
+      : `Archive "${id}"? It moves to primitives/archive/ — soft delete (recoverable).`;
+    const ok = typeof confirm === 'function' ? confirm(prompt) : true;
     if (!ok) return;
     deleteBusy = id;
     try {
-      const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const qs = mode === 'permanent' ? '&permanent=true' : '';
+      const r = await fetch(`/api/primitives/delete?id=${encodeURIComponent(id)}${qs}`, { method: 'DELETE' });
       if (!r.ok) {
         const t = await r.text();
         if (typeof alert === 'function') alert(`Delete failed (${r.status}): ${t.slice(0, 200)}`);
@@ -331,9 +338,12 @@
               <span class="prim-name">{e.id}</span>
               <span class="prim-tag arch">arch</span>
             </button>
-            <!-- TODO: permanent-delete + restore icons (hard-delete via
-                 ?permanent=true). For now the trash is hidden on archived
-                 entries to keep the flow simple — just the soft delete. -->
+            {#if e.source === 'volume'}
+              <button class="prim-trash perm" type="button"
+                title="Permanent delete — removes the file from the volume (irreversible)"
+                disabled={deleteBusy === e.id}
+                onclick={() => deletePrim(e.id, e.source, 'permanent')}>{deleteBusy === e.id ? '…' : '✕'}</button>
+            {/if}
           </div>
         {/each}
       {/if}
@@ -488,6 +498,12 @@
   }
   .prim-trash:hover { opacity: 1 !important; background: #fee2e2; }
   .prim-trash:disabled { cursor: wait; opacity: 0.4 !important; }
+  /* Permanent-delete variant for the Archived group — same affordance
+     position + reveal, but the glyph is an ✕ (sharper than the soft-
+     delete 🗑) and the hover background is darker red to flag the
+     irreversibility. */
+  .prim-trash.perm { color: #991b1b; font-weight: 600; }
+  .prim-trash.perm:hover { background: #fecaca; color: #7f1d1d; }
   .prim-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .prim-tag {
     font: 9px ui-monospace, monospace; padding: 1px 5px; border-radius: 3px;
