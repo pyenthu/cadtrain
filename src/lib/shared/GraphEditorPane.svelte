@@ -443,7 +443,34 @@
   // enough to wrap the chip + padding; the socket sits OUTSIDE the card's
   // right edge so it can be drag-wired from.
   const CARD_X0 = 8, CARD_Y0 = 8, CARD_PAD = 8, CARD_TITLE_H = 26;
-  const PARAM_W = 124, PARAM_H = 26, PARAM_GAP = 3;
+  // PARAM_W is DYNAMIC — derived from the longest label so chips like
+  // p.totalLen don't clip. Constants below are the FIXED footprint of the
+  // pin + input + trash; the label slot expands to fit the longest name.
+  const PARAM_W_MIN = 124, PARAM_H = 28, PARAM_GAP = 3;
+  const PARAM_PIN_W = 14;        // 📌 column (icon only)
+  const PARAM_INPUT_W = 48;      // numeric input column
+  const PARAM_TRASH_W = 18;      // 🗑 column
+  const PARAM_GAPS = 4 * 6;      // 4× 6 px gap between pin/name/val/trash
+  const PARAM_CHIP_PAD = 12;     // 6 px L + R chip padding
+  /** Approx char width for 11 px monospace — used to widen the chip to fit
+   *  the longest `p.<name>` label without clipping. Caller passes the
+   *  longest label CHAR COUNT (including the `p.` prefix). The 7.5 px
+   *  bias gives a little extra slack so labels don't sit RIGHT against
+   *  the ellipsis threshold. */
+  function chipWidthFor(longestLabelChars: number): number {
+    const labelPx = Math.max(40, Math.ceil(longestLabelChars * 7.5));
+    const w = PARAM_CHIP_PAD + PARAM_PIN_W + PARAM_GAPS + labelPx + PARAM_INPUT_W + PARAM_TRASH_W;
+    return Math.max(PARAM_W_MIN, w);
+  }
+  // Live longest-label-len → live chip width. Updates as params are added
+  // / renamed / deleted; the wire endpoints + socket positions all read
+  // PARAM_W so they track the chip's growing/shrinking right edge.
+  let PARAM_W = $derived.by(() => {
+    const names = Object.keys(graph.params ?? {});
+    if (names.length === 0) return PARAM_W_MIN;
+    const longest = Math.max(...names.map((n) => ('p.' + n).length));
+    return chipWidthFor(longest);
+  });
   /** Position of the i-th chip's top-left INSIDE the params card. */
   function paramPos(_name: string, i: number): { x: number; y: number } {
     return {
@@ -451,14 +478,14 @@
       y: CARD_Y0 + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP),
     };
   }
-  /** Card outer rect dimensions — derived from chip count. */
-  function paramCardSize(n: number): { w: number; h: number } {
+  /** Card outer rect dimensions — derived from chip count + chip width. */
+  function paramCardSize(n: number, chipW: number): { w: number; h: number } {
     return {
-      w: CARD_PAD * 2 + PARAM_W,
+      w: CARD_PAD * 2 + chipW,
       h: CARD_TITLE_H + CARD_PAD * 2 + Math.max(1, n) * PARAM_H + Math.max(0, n - 1) * PARAM_GAP,
     };
   }
-  let pcs = $derived(paramCardSize(Object.entries(graph.params ?? {}).length));
+  let pcs = $derived(paramCardSize(Object.entries(graph.params ?? {}).length, PARAM_W));
   /** Where a param chip's OUTPUT socket sits — in GRAPH space (the wires
    *  render inside the pan/zoom group, so we convert from the chip's fixed
    *  viewport position back into graph coords). The conversion ensures the
@@ -1025,7 +1052,7 @@
     // Convert the params card's viewport rect to graph space so it
     // participates in the force iteration. As the user pans, the card's
     // graph-space position shifts inversely; we recompute on each click.
-    const pcardSize = paramCardSize(paramEntries.length);
+    const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
     const obstacles = [{
       id: '__obs_params_card',
       x: (CARD_X0 - pan.x) / zoom,
@@ -1976,29 +2003,28 @@
         {#each paramEntries as [name, p], i (name)}
           {@const pos = paramPos(name, i)}
           <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
-            <!-- Chip body — full PARAM_H height for vertical centering -->
-            <rect class="ge-param-card-bg" width={PARAM_W} height={PARAM_H} rx="6"/>
-            <!-- 📌 pin (left edge), vertically centered -->
-            <text x="6" y={PARAM_H / 2 + 4} class="ge-param-pin" pointer-events="none">📌</text>
-            <!-- p.name -->
-            <text x="22" y={PARAM_H / 2 + 4} class="ge-param-card-name" text-anchor="start">p.{name}</text>
-            <!-- Input value -->
-            <foreignObject x="60" y={(PARAM_H - 16) / 2} width="40" height="16">
-              <input class="ge-param-card-input" type="number" step="0.05"
-                xmlns="http://www.w3.org/1999/xhtml"
-                value={(p as any).default}
-                use:dragNumber={{
-                  step: 0.05,
-                  get: () => Number((p as any).default) || 0,
-                  set: (val) => onParamDefault(name, val),
-                }}
-                oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
+            <!-- Chip body — HTML/CSS flex layout inside a foreignObject so
+                 pin / name / input / trash align cleanly without manual
+                 SVG-coordinate math. Dynamic chip width (PARAM_W) tracks
+                 the longest label so labels never clip; the label cell
+                 itself flex-grows to absorb the slack. -->
+            <foreignObject x="0" y="0" width={PARAM_W} height={PARAM_H}>
+              <div class="ge-param-chip" xmlns="http://www.w3.org/1999/xhtml">
+                <span class="pin">📌</span>
+                <span class="name" title="p.{name}">p.{name}</span>
+                <input class="val" type="number" step="0.05"
+                  value={(p as any).default}
+                  use:dragNumber={{
+                    step: 0.05,
+                    get: () => Number((p as any).default) || 0,
+                    set: (val) => onParamDefault(name, val),
+                  }}
+                  oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
+                <button class="trash" type="button" title="Remove p.{name}"
+                  onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</button>
+              </div>
             </foreignObject>
-            <!-- 🗑 trash — vertically centered -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <text role="button" tabindex="-1" class="ge-param-card-trash" x={PARAM_W - 13} y={PARAM_H / 2 + 4}
-              onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</text>
-            <!-- Output socket — OUTSIDE the card right edge so it's not clipped -->
+            <!-- Output socket — OUTSIDE the chip right edge so it's never clipped -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <circle role="button" tabindex="-1" class="ge-sock out param"
               cx={PARAM_W + CARD_PAD + 4} cy={PARAM_H / 2} r="5"
@@ -2526,23 +2552,57 @@
   .ge-params-add-btn { fill: #fcd34d; stroke: #d97706; stroke-width: 1.5; cursor: pointer; transition: fill 0.12s; }
   .ge-params-add-btn:hover { fill: #f59e0b; }
   .ge-params-add-glyph { font: 700 14px Arial; fill: #78350f; user-select: none; }
-  .ge-param-card-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 1; }
-  .ge-param-pin { font: 11px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial; user-select: none; opacity: 0.85; }
-  .ge-param-card-trash { font: 12px 'Apple Color Emoji', 'Segoe UI Emoji', Arial; cursor: pointer; user-select: none; opacity: 0.65; }
-  .ge-param-card-trash:hover { opacity: 1; }
-  /* Hide native number-input spinner arrows everywhere in the editor —
-     drag-to-scrub via dragNumber + keyboard arrows are the input methods;
-     the chevrons take horizontal space we can't afford in tight cells. */
-  :global(.ge-param-card-input::-webkit-outer-spin-button),
-  :global(.ge-param-card-input::-webkit-inner-spin-button),
+  /* Flex-row chip — pin | name (flex-grow) | input (fixed) | trash (fixed).
+     Flowbite-style aesthetic: rounded body, soft amber, even spacing,
+     items vertically centered. Width is controlled by the surrounding
+     <foreignObject>, which itself reads the dynamic PARAM_W computed from
+     the longest label so labels never clip. */
+  .ge-param-chip {
+    display: flex; align-items: center;
+    height: 100%; box-sizing: border-box;
+    padding: 0 6px;
+    background: #fef3c7; border: 1px solid #d97706; border-radius: 6px;
+    color: #78350f; font: 700 11px ui-monospace, monospace;
+    gap: 6px;
+  }
+  .ge-param-chip .pin {
+    flex: 0 0 auto;
+    font: 11px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial;
+    user-select: none; opacity: 0.85;
+    width: 14px; text-align: center;
+  }
+  .ge-param-chip .name {
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: #78350f;
+  }
+  .ge-param-chip .val {
+    flex: 0 0 48px;
+    width: 48px; padding: 1px 4px;
+    font: 11px ui-monospace, monospace; color: #92400e; text-align: center;
+    background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
+    box-sizing: border-box;
+    cursor: ew-resize;
+  }
+  .ge-param-chip .val:focus { outline: 1px solid #d97706; background: #fff; cursor: text; }
+  .ge-param-chip .trash {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0;
+    font: 12px 'Apple Color Emoji', 'Segoe UI Emoji', Arial;
+    background: transparent; border: 0; cursor: pointer;
+    color: #b91c1c; opacity: 0.55; border-radius: 3px;
+  }
+  .ge-param-chip .trash:hover { opacity: 1; background: rgba(220, 38, 38, 0.12); }
+  /* Hide native number-input spinners — drag-to-scrub via dragNumber +
+     keyboard arrows are the input methods; the chevrons take horizontal
+     space we can't afford in tight cells. */
+  :global(.ge-param-chip .val::-webkit-outer-spin-button),
+  :global(.ge-param-chip .val::-webkit-inner-spin-button),
   :global(.ge-arg-input::-webkit-outer-spin-button),
   :global(.ge-arg-input::-webkit-inner-spin-button) { -webkit-appearance: none; margin: 0; }
-  :global(.ge-param-card-input[type='number']),
+  :global(.ge-param-chip .val[type='number']),
   :global(.ge-arg-input[type='number']) { -moz-appearance: textfield; appearance: textfield; }
-  .ge-param-card-name { font: 700 11px ui-monospace, monospace; fill: #78350f; pointer-events: none; }
-  .ge-param-card-val { font: 10px ui-monospace, monospace; fill: #92400e; pointer-events: none; }
-  .ge-param-card-input { width: 100%; padding: 0 4px; font: 10px ui-monospace, monospace; background: rgba(255,255,255,0.85); border: 1px solid #fbbf24; border-radius: 2px; color: #92400e; text-align: center; box-sizing: border-box; }
-  .ge-param-card-input:focus { outline: 1px solid #d97706; background: #fff; }
   .ge-sock.in.param { stroke: #d97706; }
   .ge-sock.out.param { stroke: #d97706; fill: #fef3c7; }
   .ge-sock.in.param:hover, .ge-sock.out.param:hover { fill: #fde68a; }
