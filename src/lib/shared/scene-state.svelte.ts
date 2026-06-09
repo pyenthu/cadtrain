@@ -15,7 +15,7 @@ export const scene = $state({
   // low. Pulled to {y:50, z:0} so the typical 9–15 in shoe / joint /
   // collar exemplars fit comfortably in the viewport with the centerline
   // through the middle of the frame.
-  cam: { x: 0,  y:  50, z: 30 },
+  cam: { x: 0,  y:  50, z: 50 },
   /** Camera/look-at pan along the Z (drilling) axis — a vertical slider in the
    *  scene scrolls a tall assembly without changing the view angle. Both the
    *  camera and its target shift by this Z amount (a pure pan). */
