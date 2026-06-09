@@ -74,9 +74,19 @@ export function paramKeysOf(source: string): string[] {
   const block = extractParamsBlock(source);
   if (!block) return [];
   const out: string[] = [];
-  const keyRe = /([a-zA-Z_$][\w$]*)\s*:\s*\{/g;
+  // Accept BOTH bare identifiers (`pipeOD: { … }`) AND quoted keys
+  // (`"pipeOD": { … }` or `'pipeOD': { … }`). The K.69
+  // proposal-translator emits JSON-style quoted keys via stringify;
+  // without the quote-aware match `paramKeysOf` returned `[]` for every
+  // translator-generated primitive (dt_mule_shoe → empty → adaptive
+  // dispatcher misroutes object args as positional arg 0 → NaN coords →
+  // "Non-finite vertex [in dt_mule_shoe → r_revolve(?,96)]").
+  const keyRe = /(?:"([a-zA-Z_$][\w$]*)"|'([a-zA-Z_$][\w$]*)'|([a-zA-Z_$][\w$]*))\s*:\s*\{/g;
   let km: RegExpExecArray | null;
   while ((km = keyRe.exec(block))) {
+    const key = km[1] ?? km[2] ?? km[3]!;
+    // The bare-id `default: { kind: …, params: { … } }` nested descriptor
+    // case is still handled by the depth-0 check below — same as before.
     // Bail if this match isn't at depth 0.
     let depth = 0, inStr: string | null = null;
     for (let p = 0; p < km.index; p++) {
@@ -91,7 +101,7 @@ export function paramKeysOf(source: string): string[] {
       else if (ch === '}') depth--;
     }
     if (depth !== 0) continue;
-    out.push(km[1]!);
+    out.push(key);
     // Skip past this row's matching close brace so the next regex match
     // starts AFTER the body — `default: { ... }` inside won't surface.
     const bodyStart = km.index + km[0].length;

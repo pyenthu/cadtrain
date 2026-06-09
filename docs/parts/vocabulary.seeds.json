@@ -14,7 +14,8 @@
     "seeds": 41,
     "skipped": 0,
     "with_compjson": 39,
-    "total_variants": 57
+    "total_variants": 57,
+    "promoted": 1
   },
   "skipped": [],
   "terms": {
@@ -1012,7 +1013,7 @@
     },
     "mule_shoe": {
       "kind": "asm",
-      "status": "seed",
+      "status": "promoted",
       "category": "Miscellaneous",
       "sub_category": "Shoe",
       "description": "Mule Shoe",
@@ -1048,7 +1049,8 @@
         }
       ],
       "compjson_ref": "/svtc-compjson/MISC.MULE_SHOE.json",
-      "rule": null
+      "rule": null,
+      "promoted_to_vocabulary_at": "2026-06-09T06:14:26Z"
     },
     "perf_pup": {
       "kind": "asm",

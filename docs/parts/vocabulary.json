@@ -1,6 +1,6 @@
 {
   "$schema": "./vocabulary.schema.json",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "notes": [
     "K.68 Phase 1 draft, 2026-06-05.",
     "Each entry is a TERM in the compositional grammar.",
@@ -902,6 +902,143 @@
         "verts": null,
         "_note": "to populate after first translator pass + bake validation"
       }
+    },
+    "mule_shoe": {
+      "kind": "asm",
+      "extends": "tube",
+      "category": "Miscellaneous",
+      "sub_category": "Shoe",
+      "definition": "Beveled-end pipe attached to the bottom of a drill or work string. Cut at a 45-degree angle on one side, it guides tubing into seal bores, washes out debris during fluid circulation, and directs the string safely past rock ledges during wellbore interventions. The open bore allows fluid circulation and tool passage. Also called a Wireline Entry Guide (WEG) when used as a centralising entry for intervention tools.",
+      "synonyms": [
+        "mule shoe",
+        "Mule Shoe",
+        "WEG",
+        "wireline entry guide",
+        "Wireline Entry Guide",
+        "beveled shoe",
+        "guide shoe",
+        "stab-in guide",
+        "directional guide",
+        "beveled tubing end",
+        "entry guide"
+      ],
+      "function": [
+        "directional_guiding_into_seal_bore",
+        "borehole_cleaning_via_fluid_circulation",
+        "wireline_entry_centralisation",
+        "deviated_well_navigation",
+        "pass_rock_ledges_safely"
+      ],
+      "form": [
+        "tube_with_open_bore",
+        "beveled_bottom",
+        "single_side_45deg_cut",
+        "box_connection_top",
+        "load_shoulder_internal"
+      ],
+      "variants": [
+        "indexing_mule_shoe"
+      ],
+      "references": [
+        "https://parveen.in/products/indexing-mule-shoe/"
+      ],
+      "params": {
+        "pipeOD": {
+          "default": 3.56,
+          "min": 0.5,
+          "max": 24,
+          "step": 0.05,
+          "unit": "in"
+        },
+        "boxOD": {
+          "default": 4,
+          "min": 0.5,
+          "max": 24,
+          "step": 0.05,
+          "unit": "in"
+        },
+        "wall": {
+          "default": 0.28,
+          "min": 0.05,
+          "max": 5,
+          "step": 0.01,
+          "unit": "in"
+        },
+        "boxLen": {
+          "default": 3,
+          "min": 0.5,
+          "max": 12,
+          "step": 0.1,
+          "unit": "in"
+        },
+        "bodyLen": {
+          "default": 6,
+          "min": 1,
+          "max": 50,
+          "step": 0.1,
+          "unit": "in"
+        },
+        "cutAngle": {
+          "default": 45,
+          "min": 5,
+          "max": 85,
+          "step": 1,
+          "unit": "deg"
+        },
+        "segments": {
+          "default": 96,
+          "min": 8,
+          "max": 256,
+          "step": 1
+        }
+      },
+      "rule": {
+        "kind": "boolean_modify",
+        "engine": [
+          "r_revolve",
+          "r_extrude"
+        ],
+        "body": {
+          "kind": "primitive",
+          "template": "polygon_inline",
+          "preamble": [
+            "const ri = pipeOD / 2 - wall;",
+            "const pr = pipeOD / 2;",
+            "const br = boxOD / 2;",
+            "const totalLen = boxLen + bodyLen;"
+          ],
+          "polygon": [
+            "[br, 0]",
+            "[br, boxLen]",
+            "[pr, boxLen]",
+            "[pr, totalLen]",
+            "[ri, totalLen]",
+            "[ri, 0]"
+          ]
+        },
+        "modifiers": [
+          {
+            "op": "subtract",
+            "shape": {
+              "kind": "tilted_slab",
+              "size_factor": 6,
+              "tilt_axis": "y",
+              "tilt_angle_deg": "cutAngle",
+              "anchor_z": "totalLen"
+            }
+          }
+        ]
+      },
+      "exemplar": "dt_mule_shoe",
+      "expects_bake": {
+        "verts_approx": "~3000",
+        "z_extent_in": 9,
+        "outer_r_in": 2,
+        "axisymmetric": false,
+        "has_bore": true
+      },
+      "promoted_at": "2026-06-09T06:14:26Z",
+      "source": "proposed-vocab-entries.json"
     }
   }
 }
