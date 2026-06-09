@@ -388,11 +388,15 @@
 <style>
   .prim-root {
     display: grid;
-    grid-template-columns: auto 6px 1fr;
-    grid-template-rows: 1fr;
-    /* 100% fits inside the layout's content row (Flowbite Navbar takes
-       the top auto-row); 100vh would overflow by the navbar height. */
+    grid-template-columns: auto 6px minmax(0, 1fr);
+    /* `minmax(0, 1fr)` (not `1fr`, which defaults to `minmax(auto, 1fr)`)
+       so the row clamps to the parent's height — required for the rail's
+       `overflow-y: auto` to actually scroll when there are 100+ entries.
+       Without it the row sized to max-content of the rail and the rail
+       grew the page instead of scrolling. */
+    grid-template-rows: minmax(0, 1fr);
     height: 100%;
+    min-height: 0;
     overflow: hidden;
     font-family: Arial;
     color: #1f2937;
@@ -403,6 +407,10 @@
     display: flex; flex-direction: column;
     background: #fafaf9; border-right: 1px solid #e5e7eb;
     overflow-y: auto; overflow-x: hidden;
+    /* `min-height: 0` is required on a flex column inside a clamped
+       grid track for the inner scroll to engage — same pattern as the
+       rail's parent (.prim-root). */
+    min-height: 0;
     min-width: 180px; max-width: 480px;
   }
   .prim-rail header {
