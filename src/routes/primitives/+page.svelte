@@ -22,7 +22,7 @@
    */
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
-  import ProfilePane from '$lib/shared/ProfilePane.svelte';
+  import ProfileGraphEditor from '$lib/shared/ProfileGraphEditor.svelte';
 
   interface Entry {
     id: string;
@@ -490,10 +490,11 @@
         {#each tabs as t (t.key)}
           <div class="prim-pane" class:visible={activeKey === t.key}>
             {#if t.kind === 'profile'}
-              <!-- Phase 1 profile pane — placeholder editor that surfaces
-                   the profile meta + build() source while we build the
-                   real 2D-mode graph editor (Phase 2). -->
-              <ProfilePane id={t.id} />
+              <!-- Phase 2 v1: ProfileGraphEditor — same structural shell
+                   as the part editor (rail + canvas + tabs), wired to the
+                   profile endpoints. Polygon node inline-editable today;
+                   drag-point editing + Mirror/Array nodes are Phase 2.1+. -->
+              <ProfileGraphEditor id={t.id} />
             {:else}
               <GraphEditorPane id={t.id} embed={true} />
             {/if}
