@@ -1593,6 +1593,12 @@
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
                     {#each Object.entries(call.args ?? {}) as [k, v] (k)}
+                      <!-- Unified row: [key_label][value_body][trailing_actions]
+                           The value_body shows the literal input, the wired
+                           param chip body (label-only), or the expression input.
+                           The trailing_actions cell always pins ƒ + × to the
+                           right edge so every row's controls land at the
+                           same spot. -->
                       <div class="ge-arg-row">
                         <button class="ge-arg-key wire-btn" type="button" title="Wire to outer param"
                           onclick={(ev) => openWirePop(ev, n.id, k)}>{k}</button>
@@ -1607,21 +1613,26 @@
                               }}
                               oninput={(e) => onArgEdit(n.id, k, Number((e.target as HTMLInputElement).value))}
                             />
-                            <button class="ge-arg-fx" type="button" title="Switch to expression (ƒ)"
-                              onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx" type="button" title="Switch to expression (ƒ)"
+                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                            </span>
                           </span>
                         {:else if (v as any).kind === 'param'}
-                          <!-- Wired param chip. ƒ promotes the bare wire to an
-                               expression seeded with `p.<name>` so the user
-                               can add math (e.g. `p.wall / 2`) without losing
-                               the wire visualisation. × unwires back to literal. -->
-                          <span class="ge-arg-pchip" title="Wired to param">
-                            p.{(v as any).param}
-                            <button class="ge-arg-pchip-fx" type="button"
-                              title="Make this an expression (e.g. p.wall / 2)"
-                              onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
-                            <button class="ge-arg-pchip-x" type="button"
-                              onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
+                          <!-- Wired param: chip body shows the label only; ƒ + ×
+                               live in the trailing actions cell, vertically
+                               aligned with the literal-case ƒ button so the
+                               right edge stays consistent across rows. -->
+                          <span class="ge-arg-cell wired">
+                            <span class="ge-arg-pchip" title="Wired to param">p.{(v as any).param}</span>
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx" type="button"
+                                title="Make this an expression (e.g. p.wall / 2)"
+                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                              <button class="ge-arg-action x" type="button"
+                                title="Unwire — back to literal"
+                                onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
+                            </span>
                           </span>
                         {:else}
                           {@const expr = (v as any).expr ?? ''}
@@ -1635,8 +1646,10 @@
                                 onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>
                                 ƒ(<span class="ge-arg-fnchip-refs">{refs.map((r) => 'p.' + r).join(', ')}</span>) ✎
                               </span>
-                              <button class="ge-arg-fx on" type="button" title="Back to literal"
-                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                              <span class="ge-arg-actions">
+                                <button class="ge-arg-action fx on" type="button" title="Back to literal"
+                                  onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                              </span>
                             </span>
                           {:else}
                             <span class="ge-arg-cell">
@@ -1645,10 +1658,12 @@
                                 value={expr}
                                 oninput={(e) => onArgExprEdit(n.id, k, (e.target as HTMLInputElement).value)}
                               />
-                              <button class="ge-arg-fx on" type="button" title="Open expression editor"
-                                onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
-                              <button class="ge-arg-fx on" type="button" title="Back to literal"
-                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                              <span class="ge-arg-actions">
+                                <button class="ge-arg-action edit" type="button" title="Open expression editor"
+                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
+                                <button class="ge-arg-action fx on" type="button" title="Back to literal"
+                                  onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                              </span>
                             </span>
                           {/if}
                         {/if}
@@ -2489,8 +2504,32 @@
   .ge-arg-input.expr:focus { background: #fff; outline-color: #6d28d9; }
   /* Two-element cell: [ input | ƒ ] — keeps the grid 70px-key + 1fr-value
      layout intact while giving each arg row a literal/expr mode toggle. */
-  .ge-arg-cell { display: flex; align-items: stretch; gap: 2px; }
+  .ge-arg-cell { display: flex; align-items: stretch; gap: 4px; }
   .ge-arg-cell > input { flex: 1 1 auto; min-width: 0; }
+  .ge-arg-cell.wired > .ge-arg-pchip { flex: 1 1 auto; min-width: 0; }
+  /* Trailing actions — pinned to the right of the value cell. Same flex
+     row in every arg state (literal / wired / expr) so ƒ and × always
+     land at the right edge of the row, vertically aligned with the
+     input's right border. */
+  .ge-arg-actions {
+    display: inline-flex; align-items: center; gap: 2px;
+    flex: 0 0 auto;
+  }
+  .ge-arg-action {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0;
+    background: transparent; border: 1px solid #e5e7eb; border-radius: 3px;
+    color: #6b7280; cursor: pointer; line-height: 1;
+    font: 700 11px serif;
+  }
+  .ge-arg-action.fx { font: 700 11px serif; }
+  .ge-arg-action.edit { font: 11px Arial; color: #9ca3af; }
+  .ge-arg-action.x { font: 12px Arial; color: #b91c1c; border-color: #fecaca; }
+  .ge-arg-action:hover { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-arg-action.fx.on { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-arg-action.x:hover { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  /* Legacy .ge-arg-fx class — kept so anything still using it gets the
+     same look. Will be removed in a follow-up when no callers remain. */
   .ge-arg-fx { flex: 0 0 auto; padding: 0 5px; font: 700 11px serif; background: transparent; border: 1px solid #e5e7eb; border-radius: 2px; color: #6b7280; cursor: pointer; line-height: 1; }
   .ge-arg-fx:hover { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
   .ge-arg-fx.on { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
@@ -2498,14 +2537,16 @@
   .ge-param-card-input:focus { cursor: text; }
   :global(body.dragnum-active) { cursor: ew-resize !important; }
   :global(body.dragnum-active *) { cursor: ew-resize !important; }
-  .ge-arg-pchip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 9999px; }
+  /* Wired-param chip body — label-only (ƒ + × moved out to .ge-arg-actions).
+     Pill-shaped so it visually reads as a "wire connection" not an input. */
+  .ge-arg-pchip {
+    display: inline-flex; align-items: center; min-width: 0;
+    padding: 1px 8px; font: 600 10px ui-monospace, monospace;
+    background: #fef3c7; color: #78350f; border: 1px solid #fbbf24;
+    border-radius: 9999px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .ge-arg-pchip.ƒ { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
-  .ge-arg-pchip-x { background: transparent; border: 0; font: 11px Arial; color: #b91c1c; cursor: pointer; padding: 0 2px; line-height: 1; }
-  /* ƒ promote-to-expression on a wired param chip. Smaller + violet to
-     differentiate from the × (unwire) and from the .ge-arg-fx (literal→expr
-     toggle on literal inputs). */
-  .ge-arg-pchip-fx { background: transparent; border: 0; font: 700 11px serif; color: #6d28d9; cursor: pointer; padding: 0 3px; line-height: 1; }
-  .ge-arg-pchip-fx:hover { color: #4c1d95; background: rgba(109, 40, 217, 0.1); border-radius: 3px; }
   .ge-arg-key.wire-btn { background: transparent; border: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; color: #6b7280; cursor: pointer; text-align: left; border-radius: 2px; }
   .ge-arg-key.wire-btn:hover { background: #fef3c7; color: #78350f; }
   .ge-xform-btn { font: 13px Arial; fill: #6b7280; cursor: pointer; user-select: none; }
