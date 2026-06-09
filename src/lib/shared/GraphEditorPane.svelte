@@ -2577,7 +2577,7 @@
         <button class="ge-pane-tab" class:active={rightTab === 'source'}
           type="button" role="tab" aria-selected={rightTab === 'source'}
           data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
-          onclick={() => setRightTab('source')}>SRC · <code>{exemplarId}.asm.ts</code></button>
+          onclick={() => setRightTab('source')}>SRC</button>
         <button class="ge-pane-tab" class:active={rightTab === 'md'}
           type="button" role="tab" aria-selected={rightTab === 'md'}
           data-tip="MD — hand-authored drawing-descriptor markdown. Saved as meta.drawingMd."
@@ -2668,6 +2668,12 @@
               {/if}
             </div>
           {/if}
+          <!-- Filename header — the SAM info that used to live in the tab
+               label. Moved into the body so the tab strip stays compact. -->
+          <div class="ge-source-header">
+            <code>{exemplarId}.asm.ts</code>
+            <span class="ge-source-header-hint">auto-generated from the graph — edits here are discarded on next save</span>
+          </div>
           <pre class="ge-source">{sourceText}</pre>
         </div>
         <div class="ge-md-body" class:hidden={rightTab !== 'md'}>
@@ -3282,6 +3288,15 @@
   .ge-pane-bodies > .ge-bake-body,
   .ge-pane-bodies > .ge-source-body,
   .ge-pane-bodies > .ge-md-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  /* SRC tab — filename header above the <pre>. Light row, monospace
+     filename + a faded hint reminding the user the file is generated. */
+  .ge-source-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; padding: 6px 10px;
+    border-bottom: 1px solid #e5e7eb; background: #f8fafc;
+  }
+  .ge-source-header code { font: 12px ui-monospace, monospace; color: #0c4a6e; }
+  .ge-source-header-hint { font: 10px Arial; color: #78716c; }
   /* MD tab — toolbar row + full-pane textarea. Stays mounted while hidden
      so the user can flip between SRC/MD without losing in-progress typing. */
   .ge-md-body { padding: 8px; gap: 6px; }
