@@ -91,7 +91,13 @@
   let expectedDefaults = $state<Record<string, Record<string, number>>>({});
 
   let emitted = $derived(emitGraph(graph, { id: exemplarId }));
-  let sourceText = $derived(emitted.source);
+  // The SOURCE the LIVE SOURCE tab + the bake canvas see — it's the
+  // GHOST-emit when any 👁 is active (so the canvas re-posts the same
+  // source the auto-bake just baked, gets the same response, and
+  // renders the cutters alongside the result). When no ghosts active
+  // it falls back to the plain emit.
+  let emittedForRender = $derived(emitGraph(graph, { id: exemplarId, ghosts: ghostIds }));
+  let sourceText = $derived(emittedForRender.source);
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -103,7 +109,7 @@
    *  the bake panel last rendered geometry. Shown as a small "stale" badge
    *  next to the Bake button so the user knows there's a pending change. */
   let bakeStale = $derived(
-    typeof bake === 'object' && bake && bake.source !== undefined && bake.source !== emitted.source,
+    typeof bake === 'object' && bake && bake.source !== undefined && bake.source !== emittedForRender.source,
   );
   /** Auto-bake mode — defaults ON with a long debounce so slider scrubs
    *  don't fire intermediate bakes. Press Enter in any input to force-
@@ -276,7 +282,11 @@
     clearTimeout(bakeTimer);
     bakeTimer = setTimeout(async () => {
       const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1, ghosts: ghostIds });
-      bake = { ok: r.ok, source: emitted.source, bake: r, message: r.message as string | undefined };
+      // Hand the canvas the EXACT same source the bake just ran on (the
+      // ghost-flag aware emit) so its own /preview re-fetch returns the
+      // same mesh — otherwise the cuboids get baked once + immediately
+      // thrown away by the canvas's no-ghost re-bake.
+      bake = { ok: r.ok, source: emittedForRender.source, bake: r, message: r.message as string | undefined };
       firstBakeDone = true;
     }, 250);
   });
@@ -295,7 +305,7 @@
   // Enter in any input force-fires immediately (see onWindowKeydown).
   let autoBakeTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    emitted.source; // track
+    emittedForRender.source; // track — also catches ghostIds changes
     if (!autoBake) return;
     if (!firstBakeDone) return;
     clearTimeout(autoBakeTimer);
