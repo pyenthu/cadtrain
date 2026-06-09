@@ -99,6 +99,51 @@
     }, 250);
   });
 
+  // ─── Lazy cutaway load ──────────────────────────────────────────────────
+  // When the bake auto-skips the cutaway (big Repeat × N, > 15k tris), the
+  // bake panel surfaces "cutaway off (perf)" with a "Load" button. Click
+  // re-bakes with cutaway:true (forced) and merges the new cutVC into the
+  // bake state so the scene's cutaway toggle starts showing actual geometry.
+  // This is the "first load, then cut" pattern.
+  let cutawayBusy = $state(false);
+  let cutawayStatus = $state<string | null>(null);
+  async function loadCutaway() {
+    if (cutawayBusy) return;
+    if (typeof bake !== 'object' || !bake || !bake.source) return;
+    cutawayBusy = true;
+    cutawayStatus = '🔄 baking cutaway…';
+    try {
+      const params = Object.values(graph.params).map((p) => p.default);
+      const r = await fetch('/api/primitives/preview?bust=1', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          source: bake.source,
+          name: exemplarId,
+          params,
+          cutaway: true,
+        }),
+      });
+      if (!r.ok) {
+        cutawayStatus = `✗ ${r.status}: ${(await r.text()).slice(0, 140)}`;
+        cutawayBusy = false;
+        return;
+      }
+      const data = await r.json();
+      // Merge cutVC + clear the skip flag in-place so the badge disappears.
+      const cur = (bake as any).bake ?? {};
+      cur.cutVC = data.cutVC;
+      cur.cutawaySkipped = false;
+      cur.cached = data.cached;
+      cur.cacheHash = data.cacheHash;
+      bake = { ...(bake as any) };
+      cutawayStatus = `✓ cutaway baked (${Object.keys(data._t ?? {}).length ? Math.round(Object.values(data._t).reduce((a: number, b: any) => a + (Number(b) || 0), 0)) : '?'} ms)`;
+      setTimeout(() => { cutawayStatus = null; cutawayBusy = false; }, 2000);
+    } catch (e: any) {
+      cutawayStatus = `✗ ${e?.message ?? String(e)}`;
+      cutawayBusy = false;
+    }
+  }
+
   // 🔄 Rebuild this part's cache + re-bake (Phase 1.5 of bake-cache.md).
   // Wipes cache/<exemplarId>/ then bumps the bake nonce to force a fresh
   // /api/primitives/preview that repopulates the cache on the cold path.
@@ -1747,7 +1792,13 @@
                 <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(totalMs as number)} ms</span>
               {/if}
               {#if bakeMeta.cutawaySkipped}
-                <span class="ge-cache-badge skipped">cutaway off (perf)</span>
+                <span class="ge-cache-badge skipped" title="Cutaway CSG auto-skipped for big manifolds (> 15k tris). Click Load to compute it.">cutaway off (perf)</span>
+                <button class="ge-cutaway-load-btn" type="button"
+                  disabled={cutawayBusy} onclick={loadCutaway}
+                  title="Bake cutaway on-demand for this part">
+                  {cutawayBusy ? '🔄 …' : 'Load'}
+                </button>
+                {#if cutawayStatus}<span class="ge-rebuild-stat">{cutawayStatus}</span>{/if}
               {/if}
               <span class="ge-bake-meta-spacer"></span>
               <button class="ge-rebuild-btn" type="button"
@@ -2168,6 +2219,10 @@
   .ge-rebuild-btn:hover:not(:disabled) { background: #f5f5f4; }
   .ge-rebuild-btn:disabled { opacity: 0.7; cursor: progress; }
   .ge-rebuild-stat { font: 11px ui-monospace, monospace; color: #57534e; }
+  /* Lazy cutaway load button — sits next to the "cutaway off (perf)" badge */
+  .ge-cutaway-load-btn { font: 600 10px Arial; color: #fff; background: #b91c1c; border: 1px solid #991b1b; border-radius: 4px; padding: 2px 8px; cursor: pointer; transition: background 0.12s; }
+  .ge-cutaway-load-btn:hover:not(:disabled) { background: #991b1b; }
+  .ge-cutaway-load-btn:disabled { opacity: 0.7; cursor: progress; }
   .ge-source { margin: 0; padding: 10px 14px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; background: #fafaf9; overflow: auto; white-space: pre; }
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 
