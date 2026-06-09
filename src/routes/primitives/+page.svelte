@@ -22,7 +22,6 @@
    */
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
-  import ProfileGraphEditor from '$lib/shared/ProfileGraphEditor.svelte';
 
   interface Entry {
     id: string;
@@ -489,15 +488,12 @@
       <div class="prim-stage">
         {#each tabs as t (t.key)}
           <div class="prim-pane" class:visible={activeKey === t.key}>
-            {#if t.kind === 'profile'}
-              <!-- Phase 2 v1: ProfileGraphEditor — same structural shell
-                   as the part editor (rail + canvas + tabs), wired to the
-                   profile endpoints. Polygon node inline-editable today;
-                   drag-point editing + Mirror/Array nodes are Phase 2.1+. -->
-              <ProfileGraphEditor id={t.id} />
-            {:else}
-              <GraphEditorPane id={t.id} embed={true} />
-            {/if}
+            <!-- Both kinds mount the SAME GraphEditorPane — auto-layout,
+                 push-apart, Repeat × N, canvas-settings menu all work
+                 uniformly. The `kind` prop toggles which endpoints are
+                 used (source/save/preview) and swaps the 3D bake right-
+                 pane for an inline 2D SVG of the resolved polygon. -->
+            <GraphEditorPane id={t.id} kind={t.kind} embed={true} />
           </div>
         {/each}
       </div>

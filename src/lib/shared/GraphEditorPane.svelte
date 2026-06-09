@@ -69,9 +69,24 @@
    *             component opens a fresh default graph (`test_graph_a`).
    *    embed  — when true the global SvelteKit nav is hidden via the head
    *             style injection below + the inner chrome layout collapses
-   *             so the editor fits inside another page's tab/iframe. */
-  interface Props { id?: string | null; embed?: boolean; }
+   *             so the editor fits inside another page's tab/iframe.
+   *    kind   — 'part' (default) edits a part assembly (.asm.ts / .prim.ts);
+   *             'profile' edits a 2D profile (.prvl.ts / .prex.ts) — same
+   *             canvas + auto-layout + push-apart, but the source/save
+   *             endpoints route to /api/primitives/profiles/* and the
+   *             right-pane swaps the 3D bake canvas for an inline SVG of
+   *             the resolved polygon. Profile-specific node types
+   *             (mv/line/repeat) come in a follow-up commit. */
+  interface Props { id?: string | null; embed?: boolean; kind?: 'part' | 'profile'; }
   const props: Props = $props();
+  const editKind = $derived(props.kind ?? 'part');
+  /** Endpoint paths swap based on `kind`. Profile endpoints take `?id=…`
+   *  rather than `?name=…` so the helpers also normalize the query
+   *  param. Kept as derived strings (not constants) so a parent flipping
+   *  `kind` mid-mount re-routes cleanly. */
+  const SOURCE_URL = $derived(editKind === 'profile' ? '/api/primitives/profiles/source' : '/api/primitives/source');
+  const SAVE_URL   = $derived(editKind === 'profile' ? '/api/primitives/profiles/save'   : '/api/primitives/save');
+  const SOURCE_QS  = $derived(editKind === 'profile' ? 'id' : 'name');
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
   // id input mutate it locally. The `id` prop only seeds it; once mounted
   // we stop reading the prop so the user's typed value isn't reverted.
@@ -112,6 +127,79 @@
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
+   *  with the polygon points the build() returns at default params. Driven
+   *  by a separate effect that fires on profile load + on bakeNonce changes
+   *  (the Bake button reuses the same nonce so the user gets a re-resolve
+   *  after editing). `profileSet` ('revolve' | 'cartesian') changes how the
+   *  SVG renders the axis + Y orientation. */
+  let profilePts = $state<[number, number][]>([]);
+  let profileSet = $state<'revolve' | 'cartesian'>('revolve');
+  let profileResolveErr = $state<string | null>(null);
+  let profileSource = $state<string>('');
+  /** Profile's meta.params (loaded from the file's meta block) — used as
+   *  the default param dict when calling /resolve. We can't just read
+   *  graph.params because profiles loaded in legacy mode (no meta.graph
+   *  block) have an empty graph + empty params, but the build() needs
+   *  the file's declared param defaults to produce points. */
+  let profileMetaParams = $state<Record<string, { default?: number }>>({});
+  /** Derived viewBox + path for the 2D SVG preview (revolve: axis at r=0,
+   *  Z-down; cartesian: Y-flip so positive points up). Mirrors the SVG
+   *  logic in the deleted ProfilePane. */
+  const profileView = $derived.by(() => {
+    const pts = profilePts;
+    if (pts.length === 0) return null;
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const w = Math.max(0.001, xMax - xMin), h = Math.max(0.001, yMax - yMin);
+    const pad = Math.max(w, h) * 0.08;
+    return {
+      vb: `${xMin - pad} ${yMin - pad} ${w + 2 * pad} ${h + 2 * pad}`,
+      d: pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]} ${p[1]}`).join(' ') + ' Z',
+      // Closure: dashed segment from last point back to first.
+      dClose: pts.length > 1
+        ? `M ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]} L ${pts[0][0]} ${pts[0][1]}`
+        : '',
+      yFlip: profileSet === 'cartesian',
+      axis: profileSet === 'revolve',
+      xMin, yMin, w, h, pad,
+    };
+  });
+  /** Profile-mode resolve — calls /api/primitives/profiles/resolve with
+   *  `profileSource` (loaded from the file) and current default params,
+   *  populating `profilePts` for the right-pane 2D SVG. Re-fires on
+   *  source change and on bakeNonce bumps (the 🔨 button triggers a
+   *  manual re-resolve). The graph itself doesn't yet feed back into
+   *  profileSource — that's the Step-2 profile emit pipeline.
+   *  PROFILE_TODO Phase 2.2: emit graph → build() body each change. */
+  $effect(() => {
+    if (editKind !== 'profile') return;
+    const src = profileSource;
+    void bakeNonce; // re-run on manual bake
+    if (!src) return;
+    // Use the profile's own meta.params defaults — the graph's params
+    // start empty for a legacy profile (no meta.graph block yet); the
+    // build() body still needs the declared p.bore / p.od / p.len etc.
+    const params: Record<string, number> = {};
+    for (const [k, v] of Object.entries(profileMetaParams)) {
+      params[k] = Number((v as any)?.default ?? 0);
+    }
+    (async () => {
+      try {
+        const r = await fetch('/api/primitives/profiles/resolve', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ source: src, params }),
+        });
+        if (!r.ok) { profileResolveErr = `Resolve ${r.status}: ${(await r.text()).slice(0, 160)}`; return; }
+        const d = await r.json();
+        profilePts = Array.isArray(d.points) ? d.points : [];
+        profileResolveErr = null;
+      } catch (e: any) { profileResolveErr = e?.message ?? String(e); }
+    })();
+  });
+
   /** Re-bake nonce — increment to trigger a fresh /api/primitives/preview
    *  call. Used by the 🔨 Bake button (manual rebake), the 🔄 Rebuild
    *  button (cache wipe + rebake), and the initial-load auto-bake. */
@@ -336,6 +424,10 @@
     // prior bake). Subsequent graph changes don't fire here — they go
     // through the debounced auto-bake effect below.
     bakeNonce;
+    // Profile mode skips the part-bake pipeline entirely — the right-pane
+    // 2D preview renders from `profilePts` (resolved via the profile-
+    // specific /resolve endpoint, refreshed in a separate effect below).
+    if (editKind === 'profile') { bake = null; firstBakeDone = true; return; }
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
     if (!hasNode) { bake = null; firstBakeDone = false; return; }
     // Initial-load case: graph hydrated, no bake yet → fire one bake.
@@ -472,9 +564,18 @@
     try {
       const id = props.id ?? null;
       if (id && /^[a-z_][a-z0-9_]*$/i.test(id)) {
-        const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
+        const r = await fetch(`${SOURCE_URL}?${SOURCE_QS}=${encodeURIComponent(id)}`);
         if (!r.ok) { legacyLoad = { id, reason: 'fetch-failed' }; exemplarId = id; return; }
         const d = await r.json();
+        // Profile mode: capture set + source so the resolve effect can run.
+        if (editKind === 'profile') {
+          profileSet = (d.set === 'cartesian' ? 'cartesian' : 'revolve');
+          profileMetaParams = d.params ?? {};
+          profileSource = String(d.source ?? '');
+          exemplarId = id;
+          // Trigger an initial resolve — the effect below picks up on
+          // profileSource changes.
+        }
         // Pull the drawing-descriptor markdown out of the saved meta if
         // present. Falls back to extracting from the source string for
         // older endpoints that don't surface every meta field.
@@ -1766,15 +1867,29 @@
     // emit chain to include the new viewport.
     graph = setViewport(graph, pan, zoom);
     try {
-      const r = await fetch('/api/primitives/save', {
+      // Profile save expects a richer body (label / description / set /
+      // params / source); parts get the lean assembly body. The endpoint
+      // contract differs even though the canvas is the same.
+      const body = editKind === 'profile'
+        ? {
+            id: exemplarId,
+            label: exemplarId,
+            description: '',
+            set: 'revolve',
+            tags: [],
+            params: graph.params ?? {},
+            source: emitted.source,
+          }
+        : {
+            id: exemplarId,
+            source: emitted.source,
+            kind: 'asm',
+            dir: 'basic',
+          };
+      const r = await fetch(SAVE_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          id: exemplarId,
-          source: emitted.source,
-          kind: 'asm',
-          dir: 'basic',
-        }),
+        body: JSON.stringify(body),
       });
       if (r.ok) {
         saveStatus = `✓ ${exemplarId} saved to basic/`;
@@ -2839,8 +2954,8 @@
       <div class="ge-pane-tabs" role="tablist">
         <button class="ge-pane-tab" class:active={rightTab === 'bake'}
           type="button" role="tab" aria-selected={rightTab === 'bake'}
-          data-tip="3D bake — live mesh + GLB preview"
-          onclick={() => setRightTab('bake')}>3D bake</button>
+          data-tip={editKind === 'profile' ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
+          onclick={() => setRightTab('bake')}>{editKind === 'profile' ? '2D preview' : '3D bake'}</button>
         <button class="ge-pane-tab" class:active={rightTab === 'source'}
           type="button" role="tab" aria-selected={rightTab === 'source'}
           data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
@@ -2852,7 +2967,49 @@
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
-          {#if !bake}<div class="ge-empty">Drop nodes to bake.</div>
+          {#if editKind === 'profile'}
+            <!-- Profile mode: inline SVG of the resolved polygon. The
+                 graph-driven re-emit is Phase 2.2 — for now this shows
+                 the on-disk build()'s shape at default params. Closure
+                 (last → first vertex) drawn as a dashed line so the
+                 implicit polygon-close is visible. -->
+            {#if profileView}
+              {@const v = profileView}
+              {@const sw = Math.max(v.w, v.h) * 0.008}
+              {@const vsw = Math.max(v.w, v.h) * 0.005}
+              {@const ph = Math.max(v.w, v.h) * 0.012}
+              <div class="ge-profile-2d">
+                <div class="ge-profile-2d-head">{exemplarId} · {profilePts.length} pts · {profileSet}</div>
+                <svg viewBox={v.vb} preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                  <g transform={v.yFlip ? `scale(1, -1) translate(0, ${-(2 * v.yMin + v.h)})` : ''}>
+                    {#if v.axis}
+                      <line x1="0" y1={v.yMin - v.pad} x2="0" y2={v.yMin + v.h + v.pad}
+                        stroke="#94a3b8" stroke-width={vsw}
+                        stroke-dasharray={`${Math.max(v.w, v.h) * 0.02} ${Math.max(v.w, v.h) * 0.02}`}/>
+                    {/if}
+                    <path d={v.d}
+                      fill="rgba(204, 34, 34, 0.22)" stroke="#991b1b" stroke-width={sw}
+                      stroke-linejoin="round"/>
+                    <!-- Auto-closure dashed line — visual reminder that the
+                         polygon implicitly closes the last vertex back to
+                         the first. -->
+                    <path d={v.dClose}
+                      fill="none" stroke="#991b1b" stroke-width={sw * 0.7}
+                      stroke-dasharray={`${sw * 2.5} ${sw * 2}`} stroke-linecap="round"/>
+                    {#each profilePts as p, i}
+                      <circle cx={p[0]} cy={p[1]} r={ph} fill="#991b1b">
+                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}</title>
+                      </circle>
+                    {/each}
+                  </g>
+                </svg>
+              </div>
+            {:else if profileResolveErr}
+              <div class="ge-err"><div>{profileResolveErr}</div></div>
+            {:else}
+              <div class="ge-empty">resolving polygon…</div>
+            {/if}
+          {:else if !bake}<div class="ge-empty">Drop nodes to bake.</div>
           {:else if bake === 'loading'}<div class="ge-empty">baking…</div>
           {:else if !bake.ok}
             <div class="ge-err">
@@ -3283,6 +3440,10 @@
   .ge-cm-icon { width: 16px; text-align: center; font-size: 13px; line-height: 1; }
   .ge-cm-label { flex: 1 1 auto; }
   .ge-cm-sep { height: 1px; background: #f1f5f9; margin: 4px 6px; }
+  /* ─── Profile-mode 2D preview ────────────────────────────────────── */
+  .ge-profile-2d { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
+  .ge-profile-2d-head { font: 600 11px Arial; color: #57534e; margin-bottom: 8px; letter-spacing: 0.3px; }
+  .ge-profile-2d svg { flex: 1 1 auto; min-height: 240px; width: 100%; background: #fafaf9; border: 1px solid #e5e7eb; border-radius: 4px; }
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
   .ge-root.embed { height: 100%; }
