@@ -390,12 +390,22 @@
   type BoundState = 'off' | 'repellant';
   let boundLeft = $state<BoundState>('off');
   let boundRight = $state<BoundState>('off');
+  /** Top edge boundary — push-apart pushes nodes DOWN from the top.
+   *  Without it, cards drift off the top of the visible canvas (the
+   *  PARAMS dock + the tab strip end up obscuring them). Default ON
+   *  for new sessions because the top edge is far more annoying than
+   *  the left/right to push nodes off-screen. */
+  let boundTop = $state<BoundState>('repellant');
   onMount(() => {
     try {
       const l = localStorage.getItem('ge-bound-left');
       if (l === 'repellant') boundLeft = 'repellant';
       const r = localStorage.getItem('ge-bound-right');
       if (r === 'repellant') boundRight = 'repellant';
+      const t = localStorage.getItem('ge-bound-top');
+      // Explicit 'off' (user turned it off) wins over the default 'repellant'.
+      if (t === 'off') boundTop = 'off';
+      else if (t === 'repellant') boundTop = 'repellant';
     } catch { /* localStorage blocked — fine */ }
   });
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
@@ -1905,8 +1915,8 @@
     // that pushes any node touching the edge away. Confiner walls clamp
     // to the visible interior via confinerBounds. If both edges are off,
     // we skip the rect lookup entirely.
-    let confinerBounds: { minX?: number; maxX?: number } | undefined;
-    if (canvasEl && (boundLeft !== 'off' || boundRight !== 'off')) {
+    let confinerBounds: { minX?: number; maxX?: number; minY?: number } | undefined;
+    if (canvasEl && (boundLeft !== 'off' || boundRight !== 'off' || boundTop !== 'off')) {
       const rect = canvasEl.getBoundingClientRect();
       // Viewport edges in graph space — the wall IS the current section
       // boundary. Cards past the edge (off-screen) get pulled back inside;
@@ -1940,6 +1950,19 @@
           x: gxRight, y: wallY, w: FAR, h: wallH,
         });
         confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
+      }
+      // Top edge — half-plane above the viewport, pushes nodes down.
+      // Extend wall width FAR beyond the visible x-range so a card sitting
+      // ABOVE the viewport (any x) gets caught.
+      if (boundTop === 'repellant') {
+        // Pad by some buffer (24 px) so cards land well clear of the tab
+        // strip / PARAMS card overlay, not flush against the edge.
+        const topPad = 24 / zoom;
+        obstacles.push({
+          id: '__obs_wall_top',
+          x: gxLeft - FAR, y: gyTop + topPad - FAR, w: (gxRight - gxLeft) + 2 * FAR, h: FAR,
+        });
+        confinerBounds = { ...(confinerBounds ?? {}), minY: gyTop + topPad };
       }
     }
     // Collect the visible wires so push-apart can route cards AROUND them
@@ -2320,6 +2343,17 @@
             try { localStorage.setItem('ge-bound-left', boundLeft); } catch { /* ignore */ }
           }} />
         <span class="ge-cm-label">Left boundary</span>
+      </label>
+      <label class="ge-cm-row check"
+        title="Push nodes DOWN from the TOP canvas edge during push-apart (keeps cards from drifting off-screen above the PARAMS dock)">
+        <input type="checkbox"
+          checked={boundTop === 'repellant'}
+          onchange={(ev) => {
+            const on = (ev.currentTarget as HTMLInputElement).checked;
+            boundTop = on ? 'repellant' : 'off';
+            try { localStorage.setItem('ge-bound-top', boundTop); } catch { /* ignore */ }
+          }} />
+        <span class="ge-cm-label">Top boundary</span>
       </label>
       <label class="ge-cm-row check"
         title="Push nodes away from the RIGHT canvas edge during push-apart">
