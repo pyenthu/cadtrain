@@ -231,6 +231,40 @@
     polyPreviewResize = null;
     try { localStorage.setItem('ge-poly-preview-size', JSON.stringify(polyPreviewSize)); } catch { /* ignore */ }
   }
+  // ── Drag the popover by its title bar (2026-06-11) ────────────────────
+  // The popover's default anchor is next to the polygon card on the graph
+  // canvas — but when the user is also editing a loop card, that card
+  // can sit ON TOP of the popover. Grab-and-move lets the user drop the
+  // popover over the Threlte 3D canvas (or anywhere else) so it stays
+  // visible. State tracks the down-cursor + start position so each move
+  // is absolute (no accumulating drift). Position is NOT persisted —
+  // a re-open re-anchors to the polygon card on the graph canvas.
+  let polyPreviewDrag = $state<{ startX: number; startY: number; startLeft: number; startTop: number } | null>(null);
+  function startPolyPreviewDrag(ev: PointerEvent) {
+    // Only the grab-grip itself starts the drag — the toolbar buttons
+    // and the pin/close icons inside the head must NOT pull the popover.
+    if (ev.button !== 0) return;
+    polyPreviewDrag = {
+      startX: ev.clientX, startY: ev.clientY,
+      startLeft: polyPreviewPos.left, startTop: polyPreviewPos.top,
+    };
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  function polyPreviewDragMove(ev: PointerEvent) {
+    if (!polyPreviewDrag) return;
+    const d = polyPreviewDrag;
+    polyPreviewPos = {
+      left: Math.max(0, d.startLeft + (ev.clientX - d.startX)),
+      top:  Math.max(0, d.startTop  + (ev.clientY - d.startY)),
+    };
+  }
+  function polyPreviewDragEnd(ev: PointerEvent) {
+    if (!polyPreviewDrag) return;
+    (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
+    polyPreviewDrag = null;
+  }
   function openPolyPreview(ev: PointerEvent, polyId: string) {
     ev.stopPropagation();
     // Toggle off when the same polygon's 👁 is clicked again. Re-pin on
@@ -4795,6 +4829,17 @@
     <div class="ge-poly-preview" class:pinned={polyPreviewPinned}
       style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px; width: {polyPreviewSize.w}px; height: {polyPreviewSize.h}px">
       <div class="ge-poly-preview-head">
+        <!-- Drag grip — pick up the popover by this dot-cluster and drop
+             it anywhere (e.g. over the 3D canvas) so it stays visible
+             while you edit a loop card on the graph canvas. svelte-ignore
+             the pointer-driven role — the title attribute already
+             communicates the affordance. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span class="ge-poly-preview-grab"
+          title="Drag to reposition"
+          onpointerdown={startPolyPreviewDrag}
+          onpointermove={polyPreviewDragMove}
+          onpointerup={polyPreviewDragEnd}>⋮⋮</span>
         <span class="ge-poly-preview-count">2D · {pts.length} pts</span>
         <!-- Drawing toolbar (#155): zoom +/− / fit / append vertex / pop
              last vertex. Frozen view means these are the ONLY way to
@@ -5391,6 +5436,22 @@
   }
   .ge-poly-preview-count { white-space: nowrap; }
   .ge-poly-preview-spacer { flex: 1 1 auto; }
+  /* Drag grip on the popover's title bar — pick-up affordance for the
+     drag-anywhere flow (2026-06-11). Tight 14×16 box on the LEFT of
+     the head so it reads as "handle"; cursor:grab on hover, grabbing
+     during drag. Light grey dots until hovered. */
+  .ge-poly-preview-grab {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 16px;
+    margin-right: 4px;
+    font: 700 9px ui-monospace, monospace; color: #94a3b8;
+    line-height: 1; letter-spacing: -1px;
+    cursor: grab; user-select: none;
+    border-radius: 3px;
+    transition: color 100ms, background 100ms;
+  }
+  .ge-poly-preview-grab:hover { color: #1f2937; background: #f1f5f9; }
+  .ge-poly-preview-grab:active { cursor: grabbing; }
   /* Drawing toolbar (#155) — small flat buttons left of the pin/close,
      freeze-then-zoom + add/delete vertex controls. Tight 18 × 18 with
      a faint hover wash; matches the inspector chrome. */
