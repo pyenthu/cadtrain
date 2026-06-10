@@ -437,10 +437,13 @@
         const loopVar = String(src.loopVar || 'i');
         const bindings = Array.isArray(src.bindings) ? src.bindings : [];
         for (let i = 0; i < n; i++) {
-          // Loop var first; bindings evaluate against the running `extra`
-          // so a later binding can reference an earlier one (or the loop
-          // var) the same way the emitted JS const cascade does at runtime.
-          const extra: Record<string, number> = { [loopVar]: i };
+          // Loop var + NPts (the resolved count) in scope from the start —
+          // the user expects to write `theta = i * tau / NPts` and have
+          // NPts mean "the count for THIS loop". Bindings evaluate against
+          // the running `extra` so later bindings can reference earlier
+          // ones, the loop var, or NPts the same way the emitted JS const
+          // cascade does at runtime.
+          const extra: Record<string, number> = { [loopVar]: i, NPts: n };
           for (const b of bindings) {
             if (!b || typeof b.name !== 'string' || !b.name) continue;
             extra[b.name] = evalCoord(b.value, extra);
@@ -1749,6 +1752,18 @@
     wireFrom = null; wireMouse = null;
   }
 
+  /** Drop a wire onto a PolyRepeatNode's NPts (count) input socket
+   *  (2026-06-11). Wires `p.<name>` → loop.count = { kind:'param',
+   *  param:<name> }. Drops from a node output (poly_repeat or other)
+   *  are ignored — count takes a SCALAR, not a node. */
+  function endWireOnPolyRepeatCount(ev: PointerEvent, repeatId: NodeId) {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'param-out') {
+      graph = setPolyRepeatCount(graph, repeatId, asParam(wireFrom.paramName));
+    }
+    wireFrom = null; wireMouse = null;
+  }
   /** Drop a wire onto a polygon's repeat-ref row (#157). When the wire's
    *  source is a poly_repeat node's output socket, REPOINT the row to
    *  that source. Drops from anything else are ignored. */
@@ -3547,6 +3562,30 @@
                   {/if}
                 {/if}
               {/each}
+            {:else if n.type === 'poly_repeat'}
+              <!-- PolyRepeat NPts (count) param wire (2026-06-11). When
+                   count is kind:'param', draw a bezier from the param
+                   chip's output to the loop card's NPts input socket
+                   on the left edge at y=57. Mirror branch for expr
+                   coords that REFERENCE a p.<name>. -->
+              {@const pos = nodePos(n.id)}
+              {@const tgtX = pos.x}
+              {@const tgtY = pos.y + 57}
+              {#if (n as any).count?.kind === 'param'}
+                {@const pIdx = paramEntries.findIndex(([nm]) => nm === (n as any).count.param)}
+                {#if pIdx >= 0}
+                  {@const ps = paramSocketPos((n as any).count.param, pIdx)}
+                  <path class="ge-wire param" d={bezier(ps.x, ps.y, tgtX, tgtY)}/>
+                {/if}
+              {:else if (n as any).count?.kind === 'expr'}
+                {#each extractParamRefs((n as any).count.expr) as refName (refName)}
+                  {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                  {#if pIdx >= 0}
+                    {@const ps = paramSocketPos(refName, pIdx)}
+                    <path class="ge-wire param expr" d={bezier(ps.x, ps.y, tgtX, tgtY)}/>
+                  {/if}
+                {/each}
+              {/if}
             {/if}
           {/each}
 
@@ -4497,13 +4536,16 @@
                         oninput={(e) => { graph = setPolyRepeatLoopVar(graph, pr.id, String((e.target as HTMLInputElement).value) || 'i'); }}/>
                     </div>
                     <!-- Bindings section (#157, 2026-06-11) — local
-                         constants like `amplitude = p.thread_height` so
-                         the loop expressions stay terse. Each row evaluates
-                         INSIDE the loop, so bindings can reference the
-                         loop var + earlier bindings. -->
+                         constants like `amplitude = p.thread_height` or
+                         `theta = i * tau / NPts`. Each binding evaluates
+                         PER ITERATION (inside the loop), so it can use
+                         the loop var + NPts + earlier bindings. The
+                         label is `Bindings ƒ({i})` to match the Loop
+                         section head so the user sees "these are inside
+                         the loop body" at a glance. -->
                     <div class="ge-prc-section-head ge-prc-bindings-head">
-                      <span>Bindings</span>
-                      <button class="ge-prc-add" type="button" title="Add a local binding"
+                      <span>Bindings ƒ({pr.loopVar || 'i'})</span>
+                      <button class="ge-prc-add" type="button" title="Add a local binding (evaluated each iteration)"
                         onclick={() => { graph = addPolyRepeatBinding(graph, pr.id); }}>+</button>
                     </div>
                     {#each (pr.bindings ?? []) as bind, bIdx (bIdx)}
@@ -4573,6 +4615,15 @@
                 <circle role="button" tabindex="-1" class="ge-sock out poly-repeat-out"
                   cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
+                <!-- NPts input socket — left edge, aligned with the NPts
+                     row inside the foreignObject (header 28 + section
+                     head 18 + half-row 11 ≈ 57). Drag a param's output
+                     onto this socket to wire p.<name> → NPts. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1"
+                  class={`ge-sock in poly-repeat-in${pr.count?.kind === 'param' ? ' wired' : ''}`}
+                  cx="0" cy="57" r="5"
+                  onpointerup={(ev) => endWireOnPolyRepeatCount(ev, pr.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -6132,6 +6183,11 @@
   .ge-sock.in.poly-rref-in { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-sock.in.poly-rref-in.wired { fill: #6d28d9; }
   .ge-sock.out.poly-repeat-out { fill: #6d28d9; stroke: #5b21b6; }
+  /* NPts input socket on the loop card — yellow-ish so it reads as a
+     PARAM input (matches the param-bezier palette elsewhere). Wired
+     state fills the dot when count is wire-bound. */
+  .ge-sock.in.poly-repeat-in { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; }
+  .ge-sock.in.poly-repeat-in.wired { fill: #fbbf24; stroke: #92400e; }
   /* IMPORTANT: row height is 22 px to match the input-socket spacing
      math in the SVG (cy = 36 + 14 + i * 22). Don't change without
      updating ALL three sites: the cy expression on socket circles,

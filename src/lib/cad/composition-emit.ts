@@ -391,11 +391,9 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
           const valid = bindings.filter((b) =>
             b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name)
           );
-          if (valid.length === 0) {
-            return `...Array.from({ length: ${count} }, (_, ${loopVar}) => [${rExpr}, ${zExpr}])`;
-          }
-          const constLines = valid.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
-          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => { ${constLines} return [${rExpr}, ${zExpr}]; })`;
+          const bindLines = valid.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
+          const preamble = bindLines ? `const NPts = ${count}; ${bindLines}` : `const NPts = ${count};`;
+          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => { ${preamble} return [${rExpr}, ${zExpr}]; })`;
         }
         if (entry?.kind === 'repeat') {
           const count = emitValueExpr(entry.count);
