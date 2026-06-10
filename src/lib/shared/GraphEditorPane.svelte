@@ -232,9 +232,16 @@
     if (polyPreviewFor === polyId) {
       polyPreviewFor = null; polyPreviewPinned = true; return;
     }
+    // Anchor to the polygon CARD's right edge, not the eye-button's. The
+    // 👁 is rendered as an SVG <text> at x = size.w - 30 INSIDE the card,
+    // so its rect.right lands ~10–20px short of the card's right edge —
+    // the popup would overlap the card. Walk up to the closest .ge-node
+    // group (the card's outer <g>) and use ITS bbox so the popup lands
+    // cleanly outside the card with comfortable breathing room.
     const target = ev.currentTarget as Element | null;
-    const r = target?.getBoundingClientRect();
-    if (r) polyPreviewPos = { left: r.right + 8, top: r.top };
+    const card = (target as any)?.closest?.('.ge-node') as Element | null;
+    const r = (card ?? target)?.getBoundingClientRect();
+    if (r) polyPreviewPos = { left: r.right + 24, top: r.top };
     polyPreviewFor = polyId;
     fitPolyPreview();
   }
@@ -290,31 +297,60 @@
     if (!n?.points || n.points.length <= 1) return;
     graph = removePolygonPoint(graph, polyPreviewFor, n.points.length - 1);
   }
-  /** Evaluate a polygon's vertices into concrete [x, y] number pairs.
+  /** Evaluate a polygon's entries into concrete [x, y] number pairs.
    *  Literal coords pass through; expr/param coords are evaluated against
    *  the graph's current PARAMS defaults via `new Function` with `p` bound.
-   *  Anything that fails to evaluate is treated as 0 so the popup never
-   *  crashes — the user sees a degenerate but still-rendered preview. */
+   *  REPEAT blocks (#154) expand to N points: the loop var (default `i`,
+   *  range 0..count-1) is in scope for the r and z expressions. Anything
+   *  that fails to evaluate is treated as 0 so the popup never crashes —
+   *  the user sees a degenerate but still-rendered preview. */
   function polyToPoints(node: any): [number, number][] {
     if (!node || node.type !== 'polygon') return [];
     const params: Record<string, number> = {};
     for (const [k, v] of Object.entries(graph.params ?? {})) {
       params[k] = Number((v as any)?.default ?? 0);
     }
-    const evalCoord = (val: any): number => {
+    const evalCoord = (val: any, extra?: Record<string, number>): number => {
       try {
         if (!val) return 0;
         if (val.kind === 'literal') return Number(val.value) || 0;
         if (val.kind === 'param')   return Number(params[val.param]) || 0;
         if (val.kind === 'expr') {
-          const fn = new Function('p', `return (${String(val.expr)});`);
-          const out = fn(params);
+          // Math primitives + PI/tau already in scope via Function shadowing.
+          const env = { ...params, ...(extra ?? {}) };
+          const keys = Object.keys(env);
+          const args = keys.map((k) => env[k]);
+          const fn = new Function(
+            'p', 'Math', 'PI', 'tau', 'cos', 'sin', 'tan', 'sqrt', 'abs',
+            ...keys,
+            `return (${String(val.expr)});`,
+          );
+          const out = fn(
+            params, Math, Math.PI, 2 * Math.PI, Math.cos, Math.sin, Math.tan, Math.sqrt, Math.abs,
+            ...args,
+          );
           return Number.isFinite(out) ? Number(out) : 0;
         }
       } catch { /* ignore eval errors */ }
       return 0;
     };
-    return (node.points as any[]).map((pt) => [evalCoord(pt.r), evalCoord(pt.z)] as [number, number]);
+    const out: [number, number][] = [];
+    for (const entry of (node.points as any[])) {
+      // Legacy entries (pre-#154) have NO `kind` field — treat as 'point'
+      // so old saved files continue to work without a migration script.
+      const isRepeat = entry?.kind === 'repeat';
+      if (!isRepeat) {
+        out.push([evalCoord(entry?.r), evalCoord(entry?.z)]);
+        continue;
+      }
+      const n = Math.max(0, Math.min(2048, Math.round(evalCoord(entry.count))));
+      const loopVar = String(entry.loopVar || 'i');
+      for (let i = 0; i < n; i++) {
+        const extra = { [loopVar]: i };
+        out.push([evalCoord(entry.r, extra), evalCoord(entry.z, extra)]);
+      }
+    }
+    return out;
   }
 
   /** Polygon-vertex drag state — when set, a `<circle>` dot on EITHER 2D
@@ -3680,8 +3716,26 @@
                     <div class="ge-poly-vtx-list">
                     {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
                       <div class="ge-poly-vertex">
-                        <!-- Axis-0 sub-row (top): label + input + ƒ + reorder + insert-above -->
-                        <span></span>
+                        <!-- Axis-0 sub-row (top): [socket-gutter w/ 🗑 unwire] + label
+                             + input + ƒ + reorder + insert-above. The 🗑 sits IN the
+                             gutter column directly beside the SVG socket on the left
+                             edge — same column as the existing socket overlay so a
+                             user reading right-to-left from the input lands on
+                             "[break-connection] [socket]" naturally. -->
+                        {#if pt.r.kind === 'param'}
+                          <button class="ge-poly-unwire" type="button"
+                            title={`Disconnect from p.${pt.r.param} (keep current numeric value)`}
+                            onclick={() => {
+                              const v = Number((graph.params as any)?.[(pt.r as any).param]?.default ?? 0);
+                              graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: v });
+                            }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                        {:else if pt.r.kind === 'expr'}
+                          <button class="ge-poly-unwire" type="button"
+                            title="Back to a number (clears the expression)"
+                            onclick={() => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: 0 }); }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                        {:else}
+                          <span></span>
+                        {/if}
                         <span class="ge-poly-axis-label">{ax0}</span>
                         {#if pt.r.kind === 'literal'}
                           <input class="ge-poly-input" type="number" step="0.05"
@@ -3698,20 +3752,21 @@
                             placeholder="p.od / 2"
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
                         {/if}
-                        <button class="ge-poly-fx" type="button" title={pt.r.kind === 'literal' ? 'Switch to expression' : pt.r.kind === 'param' ? 'Write an expression using this param' : 'Back to number'}
+                        <!-- ƒ button — ALWAYS opens the expression popover (#156,
+                             2026-06-10). Previously it toggled modes inline:
+                             pressing ƒ on `p.od / 2` would reset the value to
+                             literal 0, silently losing the expression. Use the
+                             trash button to clear; ƒ is for editing. -->
+                        <button class="ge-poly-fx" type="button"
+                          title={pt.r.kind === 'literal' ? 'Write an expression' : 'Edit expression'}
                           class:on={pt.r.kind !== 'literal'}
                           onclick={(ev) => {
-                            // param → open the expression popover prefilled
-                            // with p.<name> so the user can extend (e.g. /2,
-                            // - p.wall). Literal/expr → toggle modes inline.
-                            if (pt.r.kind === 'param') {
-                              openPolyExprPop(ev as any, n.id, idx, 'r', `p.${pt.r.param}`);
-                              return;
-                            }
-                            const next: any = pt.r.kind === 'literal'
-                              ? { kind: 'expr', expr: String((pt.r as any).value ?? 0) }
-                              : { kind: 'literal', value: Number((pt.r as any).expr) || 0 };
-                            graph = setPolygonCoord(graph, n.id, idx, 'r', next);
+                            const prefill = pt.r.kind === 'literal'
+                              ? String((pt.r as any).value ?? 0)
+                              : pt.r.kind === 'param'
+                                ? `p.${(pt.r as any).param}`
+                                : String((pt.r as any).expr ?? '');
+                            openPolyExprPop(ev as any, n.id, idx, 'r', prefill);
                           }}>ƒ</button>
                         <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
                           onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
@@ -3719,8 +3774,23 @@
                           onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
                         <button class="ge-poly-ins" type="button" title="Insert a vertex above this row"
                           onclick={() => { graph = addPolygonPoint(graph, n.id, idx - 1); }}>+</button>
-                        <!-- Axis-1 sub-row (bottom): label + input + ƒ + delete -->
-                        <span></span>
+                        <!-- Axis-1 sub-row (bottom): [socket-gutter w/ 🗑] + label
+                             + input + ƒ + delete. Mirrors the r sub-row's gutter
+                             layout — trash appears only when wired/expr. -->
+                        {#if pt.z.kind === 'param'}
+                          <button class="ge-poly-unwire" type="button"
+                            title={`Disconnect from p.${pt.z.param} (keep current numeric value)`}
+                            onclick={() => {
+                              const v = Number((graph.params as any)?.[(pt.z as any).param]?.default ?? 0);
+                              graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: v });
+                            }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                        {:else if pt.z.kind === 'expr'}
+                          <button class="ge-poly-unwire" type="button"
+                            title="Back to a number (clears the expression)"
+                            onclick={() => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: 0 }); }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                        {:else}
+                          <span></span>
+                        {/if}
                         <span class="ge-poly-axis-label">{ax1}</span>
                         {#if pt.z.kind === 'literal'}
                           <input class="ge-poly-input" type="number" step="0.05"
@@ -3737,17 +3807,16 @@
                             placeholder="p.len"
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
                         {/if}
-                        <button class="ge-poly-fx" type="button" title={pt.z.kind === 'literal' ? 'Switch to expression' : pt.z.kind === 'param' ? 'Write an expression using this param' : 'Back to number'}
+                        <button class="ge-poly-fx" type="button"
+                          title={pt.z.kind === 'literal' ? 'Write an expression' : 'Edit expression'}
                           class:on={pt.z.kind !== 'literal'}
                           onclick={(ev) => {
-                            if (pt.z.kind === 'param') {
-                              openPolyExprPop(ev as any, n.id, idx, 'z', `p.${pt.z.param}`);
-                              return;
-                            }
-                            const next: any = pt.z.kind === 'literal'
-                              ? { kind: 'expr', expr: String((pt.z as any).value ?? 0) }
-                              : { kind: 'literal', value: Number((pt.z as any).expr) || 0 };
-                            graph = setPolygonCoord(graph, n.id, idx, 'z', next);
+                            const prefill = pt.z.kind === 'literal'
+                              ? String((pt.z as any).value ?? 0)
+                              : pt.z.kind === 'param'
+                                ? `p.${(pt.z as any).param}`
+                                : String((pt.z as any).expr ?? '');
+                            openPolyExprPop(ev as any, n.id, idx, 'z', prefill);
                           }}>ƒ</button>
                         <!-- Cols 5-6 empty placeholders to anchor × in col 7
                              (the symmetric counterpart to the top row's +). -->
@@ -4969,6 +5038,29 @@
     border: 1px solid #d6d3d1; border-radius: 2px; width: 100%;
     cursor: text; min-width: 0; box-sizing: border-box;
   }
+  /* Strip the native number-input spinner — the up/down adjuster arrows
+     waste horizontal space inside our compact 1fr column and add visual
+     noise. Same trick used everywhere else in the editor. */
+  .ge-poly-input[type="number"] {
+    -moz-appearance: textfield; appearance: textfield;
+  }
+  .ge-poly-input[type="number"]::-webkit-outer-spin-button,
+  .ge-poly-input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  /* Unwire button — sits in the SOCKET GUTTER column on the left edge of
+     each sub-row. Tiny, faded by default, brightens on hover. Only renders
+     when the coord is wired or an expression; literal mode shows nothing
+     (no link to break). Icon is a small SVG trash glyph for crispness at
+     9 × 9 px (emoji would be illegible at this size). */
+  .ge-poly-unwire {
+    width: 12px; height: 12px; padding: 0;
+    background: transparent; border: 0; cursor: pointer;
+    color: #b91c1c; opacity: 0.55;
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity 100ms, color 100ms;
+  }
+  .ge-poly-unwire:hover { opacity: 1; color: #7f1d1d; }
   .ge-poly-input:hover { background: #f0f9ff; }
   .ge-poly-input:focus { outline: 1px solid #0369a1; background: #fff; }
   .ge-poly-input.expr { background: #faf5ff; color: #5b21b6; border-color: #c4b5fd; }
@@ -5347,8 +5439,12 @@
   .ge-expr-pop-label { font: 11px Arial; color: #6b7280; margin-right: 4px; }
   .ge-expr-pop-chip { font: 600 11px ui-monospace, monospace; color: #78350f; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 4px; padding: 2px 7px; cursor: pointer; transition: background 0.1s; }
   .ge-expr-pop-chip:hover { background: #fde68a; }
-  .ge-wire-shade { position: fixed; inset: 0; background: transparent; z-index: 99; }
-  .ge-wire-pop { position: fixed; min-width: 200px; background: #fff; border: 1px solid #fbbf24; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); padding: 4px 0; z-index: 100; }
+  /* Expression / wire / param popovers — these need to float ABOVE the
+     polygon SVG popup (z-index 100) when both are open, so editing a
+     parametric vertex's expression while the 2D preview is pinned doesn't
+     get visually blocked. 2026-06-10. */
+  .ge-wire-shade { position: fixed; inset: 0; background: transparent; z-index: 200; }
+  .ge-wire-pop { position: fixed; min-width: 200px; background: #fff; border: 1px solid #fbbf24; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); padding: 4px 0; z-index: 210; }
   .ge-wire-head { padding: 6px 10px; font: 600 11px Arial; color: #78350f; border-bottom: 1px solid #fef3c7; }
   .ge-wire-head code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
   .ge-wire-item { width: 100%; padding: 5px 12px; background: transparent; border: 0; text-align: left; font: 12px ui-monospace, monospace; color: #78350f; cursor: pointer; display: flex; gap: 8px; align-items: center; }

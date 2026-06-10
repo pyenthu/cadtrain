@@ -105,11 +105,34 @@ export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: Arg
  *  is dynamic-length so encoding as named args (p0r, p0z, p1r, …) gets
  *  ugly; a first-class node also gives the editor a clean place to
  *  render the inline reorderable list. */
-export type PolygonPoint = { r: ArgValue; z: ArgValue };
+/** A literal vertex — one (r, z) pair. The historical shape, before #154
+ *  introduced repeat blocks. Legacy files have entries with NO `kind`
+ *  field; the hydrate path defaults missing kinds to 'point'. New writes
+ *  always include the kind tag so the union is discriminable. */
+export type PolygonPoint = { kind: 'point'; r: ArgValue; z: ArgValue };
+/** A REPEAT block — expands to N points at evaluation time. The loop var
+ *  (default `i`, runs 0..count-1) is in scope for the r and z expressions.
+ *  Use cases: polar n-gons (r = R, z = i·2π/N), stars (r alternates by
+ *  i%2), gear teeth (r = R + a·sin(N·i·2π)), drill-pipe wear-pad rings.
+ *
+ *  The expressions are ArgValue so they can also pull from PARAMS via the
+ *  ƒ-popup — e.g. `count = p.teeth`. */
+export type PolygonRepeat = {
+  kind: 'repeat';
+  count: ArgValue;
+  loopVar: string;
+  r: ArgValue;
+  z: ArgValue;
+};
+export type PolygonEntry = PolygonPoint | PolygonRepeat;
 export type PolygonNode = {
   id: NodeId;
   type: 'polygon';
-  points: PolygonPoint[];
+  /** Ordered list of entries — vertices and/or repeat blocks. Both
+   *  contribute points to the final polygon when emitted/evaluated. Name
+   *  kept as `points` for back-compat with the pre-#154 shape; legacy
+   *  files round-trip unchanged. */
+  points: PolygonEntry[];
 };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode;
@@ -549,14 +572,14 @@ export function setRepeatOp(graph: Graph, repeatId: NodeId, op: RepeatOp): Graph
  *  visible immediately. Defaults trace a small triangle in (r, z) space. */
 export function addPolygon(
   graph: Graph,
-  initialPoints?: PolygonPoint[],
+  initialPoints?: PolygonEntry[],
   parentId?: NodeId,
 ): { graph: Graph; id: NodeId } {
   const id = newNodeId();
-  const points: PolygonPoint[] = initialPoints ?? [
-    { r: asLiteral(0), z: asLiteral(0) },
-    { r: asLiteral(1), z: asLiteral(0) },
-    { r: asLiteral(1), z: asLiteral(1) },
+  const points: PolygonEntry[] = initialPoints ?? [
+    { kind: 'point', r: asLiteral(0), z: asLiteral(0) },
+    { kind: 'point', r: asLiteral(1), z: asLiteral(0) },
+    { kind: 'point', r: asLiteral(1), z: asLiteral(1) },
   ];
   const node: PolygonNode = { id, type: 'polygon', points };
   const xy = defaultCallPosition(graph);
@@ -565,7 +588,9 @@ export function addPolygon(
   return { graph: finalize(finalGraph), id };
 }
 
-/** Update one coordinate of one vertex in a polygon. */
+/** Update one coordinate of one entry in a polygon. Works on both vertex
+ *  rows AND repeat-block rows — for a vertex it's the single (r, z) pair,
+ *  for a repeat it's the EXPRESSION the loop iterates (r(i) / z(i)). */
 export function setPolygonCoord(
   graph: Graph,
   polygonId: NodeId,
@@ -581,7 +606,42 @@ export function setPolygonCoord(
   return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
 }
 
-/** Insert a new vertex into a polygon, after `afterIdx` (or at the end
+/** Update the repeat block's `count` (the number of points it expands to).
+ *  No-op on a vertex row — repeat-only field. */
+export function setPolygonRepeatCount(
+  graph: Graph,
+  polygonId: NodeId,
+  idx: number,
+  count: ArgValue,
+): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  const entry = node.points[idx];
+  if (!entry || entry.kind !== 'repeat') return graph;
+  const points = node.points.map((p, i) => (i === idx ? { ...p, count } : p));
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/** Rename the repeat block's loop variable (the symbol bound to the
+ *  iteration index in r/z expressions). Defaults to `i` on add; the user
+ *  can switch to `j` etc. when nesting repeats inside a parent loop. */
+export function setPolygonRepeatLoopVar(
+  graph: Graph,
+  polygonId: NodeId,
+  idx: number,
+  loopVar: string,
+): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  const entry = node.points[idx];
+  if (!entry || entry.kind !== 'repeat') return graph;
+  const points = node.points.map((p, i) => (i === idx ? { ...p, loopVar } : p));
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/** Insert a new VERTEX into a polygon, after `afterIdx` (or at the end
  *  when afterIdx is omitted / out of range). New vertex defaults to the
  *  same coords as the row above so the user can tweak from a known base.
  *  Pass `afterIdx = -1` to PREPEND at index 0 (insert above the first row);
@@ -592,9 +652,36 @@ export function addPolygonPoint(graph: Graph, polygonId: NodeId, afterIdx?: numb
   const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.points.length)
     ? afterIdx + 1
     : node.points.length;
-  const seed = node.points[insertAt - 1] ?? node.points[0] ?? { r: asLiteral(0), z: asLiteral(0) };
-  const newPt: PolygonPoint = { r: { ...seed.r }, z: { ...seed.z } };
-  const points = [...node.points.slice(0, insertAt), newPt, ...node.points.slice(insertAt)];
+  // Seed from the previous entry IF it's a vertex; a repeat block's r/z
+  // are expressions in the loop var (e.g. `cos(i*2*PI/N)`), and copying
+  // those into a literal vertex would produce garbage. Fall back to 0,0
+  // when the seed isn't a plain vertex.
+  const prev = node.points[insertAt - 1];
+  const seedPt: PolygonPoint = (prev && prev.kind === 'point')
+    ? { kind: 'point', r: { ...prev.r }, z: { ...prev.z } }
+    : { kind: 'point', r: asLiteral(0), z: asLiteral(0) };
+  const points = [...node.points.slice(0, insertAt), seedPt, ...node.points.slice(insertAt)];
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/** Insert a new REPEAT block. Default = 6-point polar n-gon: count=6,
+ *  loopVar='i', r='cos(i*2*PI/6)', z='sin(i*2*PI/6)'. Same `afterIdx`
+ *  semantics as addPolygonPoint (-1 = prepend, omitted = append). */
+export function addPolygonRepeat(graph: Graph, polygonId: NodeId, afterIdx?: number): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.points.length)
+    ? afterIdx + 1
+    : node.points.length;
+  const block: PolygonRepeat = {
+    kind: 'repeat',
+    count: asLiteral(6),
+    loopVar: 'i',
+    r: { kind: 'expr', expr: 'cos(i*2*PI/6)' },
+    z: { kind: 'expr', expr: 'sin(i*2*PI/6)' },
+  };
+  const points = [...node.points.slice(0, insertAt), block, ...node.points.slice(insertAt)];
   const updated: PolygonNode = { ...node, points };
   return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
 }
