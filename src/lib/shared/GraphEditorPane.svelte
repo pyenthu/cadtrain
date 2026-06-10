@@ -1015,6 +1015,16 @@
     }
     wireFrom = null; wireMouse = null;
   }
+  /** Wire a param's output onto a polygon vertex's r or z coord. */
+  function endWireOnPolygonCoord(ev: PointerEvent, polygonId: NodeId, idx: number, axis: 'r' | 'z') {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'param-out') {
+      graph = setPolygonCoord(graph, polygonId, idx, axis, asParam(wireFrom.paramName));
+    }
+    wireFrom = null; wireMouse = null;
+  }
+
   /** Wire a param's output onto one of a mv/rot's three xyz slots. */
   function endWireOnTransformAxis(ev: PointerEvent, transformId: NodeId, axis: 0 | 1 | 2) {
     ev.stopPropagation();
@@ -1229,9 +1239,11 @@
       return { w, h: Math.max(60, 40 + slots * 22) };
     }
     if (node.type === 'polygon') {
-      // 36 header + 26 per point row + 30 footer (+ Add row button).
+      // 36 header + 18 column-label row + 30 per point row + 30 footer.
+      // Per-row height bumped to 30 so the two stacked input sockets
+      // (r above z) each get a comfortable 12-px slot on the left.
       const rows = (node as any).points?.length ?? 0;
-      return { w, h: 36 + Math.max(1, rows) * 26 + 30 };
+      return { w, h: 36 + 18 + Math.max(1, rows) * 30 + 30 };
     }
     return { w, h: 80 };
   }
@@ -2539,6 +2551,48 @@
                   {/if}
                 {/each}
               {/if}
+            {:else if n.type === 'polygon'}
+              <!-- Polygon per-coord param wires. Each vertex has two
+                   input sockets stacked on the LEFT edge of the card at
+                   y = 36(header) + 18(labels) + idx*30 + (9 r | 22 z).
+                   Walk every point; for each coord with kind:'param'
+                   (or 'expr' referencing p.<name>), draw a bezier from
+                   the chip's output socket to that coord's input socket. -->
+              {#each ((n as any).points ?? []) as pt, idx (idx)}
+                {@const pos = nodePos(n.id)}
+                {@const rTopY = pos.y + 36 + 18 + idx * 30 + 9}
+                {@const zTopY = pos.y + 36 + 18 + idx * 30 + 22}
+                {#if pt.r?.kind === 'param'}
+                  {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.r.param)}
+                  {#if pIdx >= 0}
+                    {@const ps = paramSocketPos(pt.r.param, pIdx)}
+                    <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, rTopY)}/>
+                  {/if}
+                {:else if pt.r?.kind === 'expr'}
+                  {#each extractParamRefs(pt.r.expr) as refName (refName)}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                    {#if pIdx >= 0}
+                      {@const ps = paramSocketPos(refName, pIdx)}
+                      <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, rTopY)}/>
+                    {/if}
+                  {/each}
+                {/if}
+                {#if pt.z?.kind === 'param'}
+                  {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.z.param)}
+                  {#if pIdx >= 0}
+                    {@const ps = paramSocketPos(pt.z.param, pIdx)}
+                    <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, zTopY)}/>
+                  {/if}
+                {:else if pt.z?.kind === 'expr'}
+                  {#each extractParamRefs(pt.z.expr) as refName (refName)}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                    {#if pIdx >= 0}
+                      {@const ps = paramSocketPos(refName, pIdx)}
+                      <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, zTopY)}/>
+                    {/if}
+                  {/each}
+                {/if}
+              {/each}
             {/if}
           {/each}
 
@@ -3182,49 +3236,71 @@
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-polygon" xmlns="http://www.w3.org/1999/xhtml">
+                    <!-- Column labels: shown ONCE at the top, not per row.
+                         Maps to the body grid columns: 12px socket gutter,
+                         r cell + ƒ, z cell + ƒ, reorder, delete. -->
+                    <div class="ge-poly-head">
+                      <span></span>
+                      <span class="ge-poly-col-label">r</span>
+                      <span></span>
+                      <span class="ge-poly-col-label">z</span>
+                      <span></span>
+                      <span class="ge-poly-col-label reorder">↕</span>
+                      <span></span>
+                    </div>
                     {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
                       <div class="ge-poly-row">
-                        <span class="ge-poly-idx">{idx}</span>
-                        <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
-                          onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
-                        <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
-                          onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
+                        <!-- Socket gutter (visual placeholder; the actual
+                             SVG circles live OUTSIDE the foreignObject so
+                             they participate in the wire system). 12 px so
+                             the dots have breathing room. -->
+                        <span></span>
                         {#if pt.r.kind === 'literal'}
                           <input class="ge-poly-input" type="number" step="0.05"
                             value={pt.r.value}
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: Number((e.target as HTMLInputElement).value) }); }}/>
+                        {:else if pt.r.kind === 'param'}
+                          <span class="ge-poly-chip" title={`Wired to p.${pt.r.param}`}>p.{pt.r.param}</span>
                         {:else}
                           <input class="ge-poly-input expr" type="text"
-                            value={pt.r.kind === 'expr' ? pt.r.expr : `p.${pt.r.param}`}
+                            value={pt.r.expr}
                             placeholder="p.od / 2"
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
                         {/if}
                         <button class="ge-poly-fx" type="button" title={pt.r.kind === 'literal' ? 'Switch to expression' : 'Back to number'}
                           class:on={pt.r.kind !== 'literal'}
                           onclick={() => {
-                            const next = pt.r.kind === 'literal'
-                              ? { kind: 'expr' as const, expr: String((pt.r as any).value ?? 0) }
-                              : { kind: 'literal' as const, value: Number((pt.r as any).expr) || 0 };
+                            const next: any = pt.r.kind === 'literal'
+                              ? { kind: 'expr', expr: String((pt.r as any).value ?? 0) }
+                              : { kind: 'literal', value: pt.r.kind === 'param' ? (graph.params[pt.r.param]?.default ?? 0) : (Number((pt.r as any).expr) || 0) };
                             graph = setPolygonCoord(graph, n.id, idx, 'r', next);
                           }}>ƒ</button>
                         {#if pt.z.kind === 'literal'}
                           <input class="ge-poly-input" type="number" step="0.05"
                             value={pt.z.value}
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: Number((e.target as HTMLInputElement).value) }); }}/>
+                        {:else if pt.z.kind === 'param'}
+                          <span class="ge-poly-chip" title={`Wired to p.${pt.z.param}`}>p.{pt.z.param}</span>
                         {:else}
                           <input class="ge-poly-input expr" type="text"
-                            value={pt.z.kind === 'expr' ? pt.z.expr : `p.${pt.z.param}`}
+                            value={pt.z.expr}
                             placeholder="p.len"
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
                         {/if}
                         <button class="ge-poly-fx" type="button" title={pt.z.kind === 'literal' ? 'Switch to expression' : 'Back to number'}
                           class:on={pt.z.kind !== 'literal'}
                           onclick={() => {
-                            const next = pt.z.kind === 'literal'
-                              ? { kind: 'expr' as const, expr: String((pt.z as any).value ?? 0) }
-                              : { kind: 'literal' as const, value: Number((pt.z as any).expr) || 0 };
+                            const next: any = pt.z.kind === 'literal'
+                              ? { kind: 'expr', expr: String((pt.z as any).value ?? 0) }
+                              : { kind: 'literal', value: pt.z.kind === 'param' ? (graph.params[pt.z.param]?.default ?? 0) : (Number((pt.z as any).expr) || 0) };
                             graph = setPolygonCoord(graph, n.id, idx, 'z', next);
                           }}>ƒ</button>
+                        <span class="ge-poly-reorder">
+                          <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
+                            onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
+                          <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
+                            onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
+                        </span>
                         <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
                           onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
                       </div>
@@ -3233,6 +3309,27 @@
                       onclick={() => { graph = addPolygonPoint(graph, n.id); }}>+ add vertex</button>
                   </div>
                 </foreignObject>
+                <!-- Per-vertex coord input sockets — SVG circles outside the
+                     foreignObject so they participate in the wire system.
+                     Two sockets per row, stacked vertically on the LEFT edge:
+                       top    (cy = rowTop + 9)  -> r coord
+                       bottom (cy = rowTop + 22) -> z coord
+                     rowTop = header(36) + labels(18) + idx * 30. Drag a
+                     PARAMS chip's output socket onto either to wire that
+                     coord to a param. -->
+                {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
+                  {@const rowTop = 36 + 18 + idx * 30}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1"
+                    class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
+                    cx="0" cy={rowTop + 9} r="5"
+                    onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1"
+                    class={`ge-sock in poly-coord${pt.z.kind === 'param' ? ' wired' : ''}`}
+                    cx="0" cy={rowTop + 22} r="5"
+                    onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
+                {/each}
                 <!-- OUTPUT socket on right edge — wires to the Output card. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
@@ -4126,13 +4223,31 @@
      Layout per row:
        idx · ▲ · ▼ · r-input · ƒ · z-input · ƒ · ×                      */
   .ge-polygon { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; }
+  /* Column-header row — labels appear ONCE above the rows so the grid
+     stays clean. Tracks the same grid columns as .ge-poly-row. */
+  .ge-poly-head {
+    display: grid;
+    grid-template-columns: 12px 1fr 14px 1fr 14px 34px 14px;
+    gap: 2px; align-items: center;
+    height: 16px; margin-bottom: 2px;
+  }
+  .ge-poly-col-label {
+    font: 600 9px ui-monospace, monospace; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    text-align: center;
+  }
+  .ge-poly-col-label.reorder { font-size: 11px; }
+  /* Vertex row — sockets gutter on the very left, then r-input + ƒ,
+     then z-input + ƒ, then ▲▼ reorder cluster, then × delete. No idx
+     column — the SVG sockets to the LEFT of the card are the visual
+     handle for each row. */
   .ge-poly-row {
     display: grid;
-    grid-template-columns: 16px 16px 16px 1fr 14px 1fr 14px 14px;
+    grid-template-columns: 12px 1fr 14px 1fr 14px 34px 14px;
     gap: 2px; align-items: center;
-    height: 24px; padding: 1px 0;
+    height: 28px; padding: 1px 0;
   }
-  .ge-poly-idx { font: 600 9px ui-monospace, monospace; color: #94a3b8; text-align: right; padding-right: 2px; }
+  .ge-poly-reorder { display: flex; gap: 1px; align-items: center; justify-content: center; }
   .ge-poly-mv {
     width: 16px; height: 18px; padding: 0;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 2px;
@@ -4141,6 +4256,16 @@
   }
   .ge-poly-mv:hover:not(:disabled) { background: #f3f4f6; color: #1f2937; border-color: #94a3b8; }
   .ge-poly-mv:disabled { opacity: 0.35; cursor: default; }
+  /* Wired-coord chip — replaces the input when the coord is kind:'param'.
+     Reuses the violet palette for "wired" everywhere else in the editor. */
+  .ge-poly-chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 1px 6px; font: 11px ui-monospace, monospace;
+    color: #5b21b6; background: #ede9fe; border: 1px solid #c4b5fd;
+    border-radius: 3px; width: 100%; box-sizing: border-box;
+    cursor: default; user-select: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .ge-poly-input {
     padding: 1px 4px; font: 11px ui-monospace, monospace;
     border: 1px solid #d6d3d1; border-radius: 2px; width: 100%;
@@ -4261,6 +4386,10 @@
   .ge-sock.in.obj { stroke: #b91c1c; }
   .ge-sock.in.arg { stroke: #d97706; }
   .ge-sock.in.child { stroke: #6d28d9; }
+  /* Polygon per-coord input sockets — orange (matches the polygon card
+     palette). Wired state fills with the same violet as Call wired args. */
+  .ge-sock.in.poly-coord { stroke: #c2410c; }
+  .ge-sock.in.poly-coord.wired { fill: #ede9fe; stroke: #6d28d9; }
   .ge-sock:hover { fill: #fef3c7; }
   .ge-sock-label { font: 10px ui-monospace, monospace; fill: #6b7280; pointer-events: none; }
 
