@@ -169,6 +169,52 @@
   let polyPreviewFor = $state<string | null>(null);
   let polyPreviewPos = $state<{ left: number; top: number }>({ left: 0, top: 0 });
   let polyPreviewPinned = $state<boolean>(false);
+  /** User-resizable popup size — persisted across sessions so the
+   *  preferred dimensions stick. Default 240 × 240; min 160 × 160. */
+  let polyPreviewSize = $state<{ w: number; h: number }>({ w: 240, h: 240 });
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('ge-poly-preview-size');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.w === 'number' && typeof parsed?.h === 'number') {
+          polyPreviewSize = {
+            w: Math.max(160, Math.round(parsed.w)),
+            h: Math.max(160, Math.round(parsed.h)),
+          };
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  /** Drag-resize the popup via the bottom-right corner grip. Tracks
+   *  start size + start cursor position so each pointermove computes
+   *  an absolute size (dx + start.w, dy + start.h) instead of
+   *  accumulating round-off across moves. */
+  let polyPreviewResize = $state<{ startW: number; startH: number; startX: number; startY: number } | null>(null);
+  function startPolyPreviewResize(ev: PointerEvent) {
+    if (ev.button !== 0) return;
+    polyPreviewResize = {
+      startW: polyPreviewSize.w, startH: polyPreviewSize.h,
+      startX: ev.clientX, startY: ev.clientY,
+    };
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  function polyPreviewResizeMove(ev: PointerEvent) {
+    if (!polyPreviewResize) return;
+    const r = polyPreviewResize;
+    polyPreviewSize = {
+      w: Math.max(160, Math.round(r.startW + (ev.clientX - r.startX))),
+      h: Math.max(160, Math.round(r.startH + (ev.clientY - r.startY))),
+    };
+  }
+  function polyPreviewResizeEnd(ev: PointerEvent) {
+    if (!polyPreviewResize) return;
+    (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
+    polyPreviewResize = null;
+    try { localStorage.setItem('ge-poly-preview-size', JSON.stringify(polyPreviewSize)); } catch { /* ignore */ }
+  }
   function openPolyPreview(ev: PointerEvent, polyId: string) {
     ev.stopPropagation();
     // Toggle off when the same polygon's 👁 is clicked again — unless
@@ -4156,7 +4202,7 @@
       <div class="ge-poly-preview-shade" onclick={() => { if (!polyDrag) polyPreviewFor = null; }}></div>
     {/if}
     <div class="ge-poly-preview" class:pinned={polyPreviewPinned}
-      style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px">
+      style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px; width: {polyPreviewSize.w}px; height: {polyPreviewSize.h}px">
       <div class="ge-poly-preview-head">
         <span>2D · {pts.length} pts</span>
         <span class="ge-poly-preview-spacer"></span>
@@ -4207,6 +4253,13 @@
           {/each}
         </g>
       </svg>
+      <!-- Bottom-right resize grip — drag to grow/shrink the popup
+           diagonally. Persists size to localStorage on release. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="ge-poly-preview-grip"
+        onpointerdown={startPolyPreviewResize}
+        onpointermove={polyPreviewResizeMove}
+        onpointerup={polyPreviewResizeEnd}>↘</div>
     </div>
   {/if}
 
@@ -4639,12 +4692,27 @@
      underlying 2D shape. */
   .ge-poly-preview-shade { position: fixed; inset: 0; z-index: 99; }
   .ge-poly-preview {
-    position: fixed; width: 240px; height: 240px;
+    /* Width + height set inline from polyPreviewSize. min-width/min-height
+       enforce the resize-grip floor in case the inline values get out of
+       sync with the helper clamps. */
+    position: fixed; min-width: 160px; min-height: 160px;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
     box-shadow: 0 6px 18px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
     z-index: 100; display: flex; flex-direction: column;
     overflow: hidden;
   }
+  /* Drag-resize grip — bottom-right corner. 14×14 hit area + a faint
+     ↘ glyph that brightens on hover. Slate by default, violet on hover
+     so it matches the pin's accent palette. */
+  .ge-poly-preview-grip {
+    position: absolute; right: 1px; bottom: 1px;
+    width: 14px; height: 14px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 10px Arial; color: #94a3b8;
+    cursor: nwse-resize; user-select: none;
+    z-index: 1;
+  }
+  .ge-poly-preview-grip:hover { color: #6d28d9; }
   .ge-poly-preview-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 6px 10px; border-bottom: 1px solid #f1f5f9;
