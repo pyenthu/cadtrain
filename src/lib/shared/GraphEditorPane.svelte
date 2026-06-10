@@ -3416,14 +3416,16 @@
                   <div class="ge-polygon" xmlns="http://www.w3.org/1999/xhtml">
                     <!-- Vertex list — scrollable when count exceeds the cap.
                          Each vertex is two stacked sub-rows: top = socket
-                         gutter + axis-0 label + value + ƒ + ▲▼×; bottom =
-                         socket gutter + axis-1 label + value + ƒ. Tight
-                         16-px sub-row height keeps the card compact even
-                         for many vertices. -->
+                         gutter + axis-0 label + value + ƒ + ▲▼+ ; bottom =
+                         socket gutter + axis-1 label + value + ƒ + × .
+                         The action columns are symmetric — top row adds a
+                         new vertex ABOVE this one, bottom row removes this
+                         vertex. Tight 16-px sub-row height keeps the card
+                         compact even for many vertices. -->
                     <div class="ge-poly-vtx-list">
                     {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
                       <div class="ge-poly-vertex">
-                        <!-- Axis-0 sub-row (top): label + input + ƒ + reorder + delete -->
+                        <!-- Axis-0 sub-row (top): label + input + ƒ + reorder + insert-above -->
                         <span></span>
                         <span class="ge-poly-axis-label">{ax0}</span>
                         {#if pt.r.kind === 'literal'}
@@ -3460,9 +3462,9 @@
                           onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
                         <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
                           onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
-                        <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
-                          onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
-                        <!-- Axis-1 sub-row (bottom): label + input + ƒ -->
+                        <button class="ge-poly-ins" type="button" title="Insert a vertex above this row"
+                          onclick={() => { graph = addPolygonPoint(graph, n.id, idx - 1); }}>+</button>
+                        <!-- Axis-1 sub-row (bottom): label + input + ƒ + delete -->
                         <span></span>
                         <span class="ge-poly-axis-label">{ax1}</span>
                         {#if pt.z.kind === 'literal'}
@@ -3492,6 +3494,12 @@
                               : { kind: 'literal', value: Number((pt.z as any).expr) || 0 };
                             graph = setPolygonCoord(graph, n.id, idx, 'z', next);
                           }}>ƒ</button>
+                        <!-- Cols 5-6 empty placeholders to anchor × in col 7
+                             (the symmetric counterpart to the top row's +). -->
+                        <span></span>
+                        <span></span>
+                        <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
+                          onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
                       </div>
                     {/each}
                     </div>
@@ -4543,10 +4551,12 @@
   /* Each vertex is a 2-row × 7-column grid wrapped in a rounded outline
      so it reads as one block. Tight 2-px gap between vertices keeps the
      list compact while making the block boundaries scannable.
-       row 1: gutter | label | input | ƒ | ▲ | ▼ | ×
-       row 2: gutter | label | input | ƒ | .  | .  | .
-     Sub-row height = 16 px so the inner content is 32 px; plus 2 px
-     padding top/bottom = 36 px total per vertex card. */
+       row 1: gutter | label | input | ƒ | ▲ | ▼ | +     ← insert above
+       row 2: gutter | label | input | ƒ | .  | .  | ×    ← delete this
+     The col-7 action is symmetric: top adds a vertex above this row,
+     bottom removes this row. Sub-row height = 16 px so the inner
+     content is 32 px; plus 2 px padding top/bottom = 36 px total per
+     vertex card. */
   .ge-poly-vertex {
     display: grid;
     grid-template-columns: 12px 12px 1fr 14px 16px 16px 14px;
@@ -4610,6 +4620,17 @@
   }
   .ge-poly-del:hover:not(:disabled) { background: #fee2e2; border-radius: 2px; }
   .ge-poly-del:disabled { opacity: 0.3; cursor: default; }
+  /* Insert-above button — symmetric counterpart to × in the bottom sub-row.
+     Same 14 × 18 box; green palette to distinguish add-vs-remove at a
+     glance (× is red). Click inserts a new vertex at this row's index,
+     shifting this row + everything below down by one. */
+  .ge-poly-ins {
+    width: 14px; height: 18px; padding: 0;
+    background: transparent; border: 0; cursor: pointer;
+    font: 600 13px Arial; color: #15803d; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ge-poly-ins:hover { background: #dcfce7; border-radius: 2px; color: #14532d; }
   .ge-poly-add {
     margin-top: 4px; width: 100%;
     padding: 4px 6px; font: 600 11px Arial;

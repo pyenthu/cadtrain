@@ -583,11 +583,13 @@ export function setPolygonCoord(
 
 /** Insert a new vertex into a polygon, after `afterIdx` (or at the end
  *  when afterIdx is omitted / out of range). New vertex defaults to the
- *  same coords as the row above so the user can tweak from a known base. */
+ *  same coords as the row above so the user can tweak from a known base.
+ *  Pass `afterIdx = -1` to PREPEND at index 0 (insert above the first row);
+ *  seed falls back to the original first point in that case. */
 export function addPolygonPoint(graph: Graph, polygonId: NodeId, afterIdx?: number): Graph {
   const node = graph.nodes[polygonId];
   if (!node || node.type !== 'polygon') return graph;
-  const insertAt = (typeof afterIdx === 'number' && afterIdx >= 0 && afterIdx < node.points.length)
+  const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.points.length)
     ? afterIdx + 1
     : node.points.length;
   const seed = node.points[insertAt - 1] ?? node.points[0] ?? { r: asLiteral(0), z: asLiteral(0) };
