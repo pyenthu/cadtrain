@@ -1568,20 +1568,21 @@
    *  The user can also leave the slot empty and wire it manually. */
   function dropSolid(op: 'revolve' | 'extrude') {
     closePicker();
-    const polyEntry = Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any;
-    const polyExpr = polyEntry
-      ? '__POLY__' + polyEntry.id  // sentinel — emit pipeline rewrites to the polygon's literal
-      : '[[0,0],[1,0],[1,1]]';
+    // Profile arg starts as an EMPTY-pointing sentinel — the user must
+    // drag a wire from a Polygon's output socket onto the profile arg
+    // input socket to make the connection. Until then the bake will
+    // surface 'profile is undefined' as an explicit error, not a silent
+    // hardcoded literal. The wire renders as the visible orange bezier
+    // (.ge-wire.noderef) once made.
+    const placeholderProfile = { kind: 'expr' as const, expr: '__POLY__pending__' };
     if (op === 'revolve') {
-      // r_revolve(profile, segments?)  — segments defaults to 96 in stdlib
       graph = addCall(graph, 'r_revolve', {
-        profile: { kind: 'expr', expr: polyExpr } as any,
+        profile: placeholderProfile as any,
         segments: { kind: 'literal', value: 96 } as any,
       }).graph;
     } else {
-      // r_weld_extrude(profile, height, twist?, divs?, segments?)
       graph = addCall(graph, 'r_weld_extrude', {
-        profile: { kind: 'expr', expr: polyExpr } as any,
+        profile: placeholderProfile as any,
         height: { kind: 'literal', value: 2 } as any,
         twist: { kind: 'literal', value: 0 } as any,
         divs: { kind: 'literal', value: 12 } as any,
