@@ -208,6 +208,88 @@
     return (node.points as any[]).map((pt) => [evalCoord(pt.r), evalCoord(pt.z)] as [number, number]);
   }
 
+  /** Polygon-vertex drag state — when set, a `<circle>` dot on EITHER 2D
+   *  surface (the right-pane 2D PREVIEW or the popup) is being dragged.
+   *  Tracks the polygon node id, the vertex index, and the owning <svg>
+   *  so pointermove can invert screen → svg → graph coords against the
+   *  same viewBox.
+   *
+   *  Drag is gated: only fires when BOTH the vertex's r AND z are
+   *  literals — wired (param/expr) coords would silently overwrite the
+   *  wiring, so they read as `not-allowed` cursor and ignore pointerdown.
+   *  Update on each pointermove rewrites the (r, z) ArgValues through
+   *  `setPolygonCoord` (the same path the inline number inputs use), so
+   *  the table, the popup, and the right-pane SVG all stay in sync.
+   *
+   *  Coord inversion math:
+   *    revolve  (no transform)            graph_x = svgX, graph_y = svgY
+   *    cartesian (scale(1,-1) translate)  graph_x = svgX, graph_y = -svgY
+   *
+   *  The SVG group transform on the cartesian path is
+   *  `scale(1,-1) translate(0, -(2*yMin + h))`; since both surfaces
+   *  build their viewBox symmetrically around 0 in cartesian mode
+   *  (xMin = -half, yMin = -half), -(2*yMin + h) = 0 and the y-flip is
+   *  pure scale(1,-1). Inverting reduces to graph_y = -svgY. */
+  let polyDrag = $state<{
+    polyId: string;
+    idx: number;
+    svgEl: SVGSVGElement;
+    mode: 'revolve' | 'cartesian';
+  } | null>(null);
+
+  /** Begin dragging a polygon vertex dot. Only literal/literal coord pairs
+   *  are draggable — bail with no state change when either coord is
+   *  param- or expr-wired (the .locked cursor signals this visually). */
+  function startPolyVertexDrag(
+    ev: PointerEvent,
+    polyId: string,
+    idx: number,
+    mode: 'revolve' | 'cartesian',
+  ) {
+    if (ev.button !== 0) return;
+    const node: any = graph.nodes[polyId];
+    if (!node || node.type !== 'polygon') return;
+    const pt = node.points?.[idx];
+    if (!pt || pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal') return;
+    const circle = ev.currentTarget as SVGCircleElement;
+    const svgEl = circle.ownerSVGElement;
+    if (!svgEl) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    try { circle.setPointerCapture(ev.pointerId); } catch { /* older browsers */ }
+    polyDrag = { polyId, idx, svgEl, mode };
+  }
+
+  /** Invert a screen-space cursor position to graph (r, z) (or x, y for
+   *  cartesian) using the same SVG viewBox the dot was rendered into. */
+  function polyDragMove(ev: PointerEvent) {
+    if (!polyDrag) return;
+    const svgEl = polyDrag.svgEl;
+    const vb = svgEl.viewBox?.baseVal;
+    const rect = svgEl.getBoundingClientRect();
+    if (!vb || rect.width === 0 || rect.height === 0) return;
+    const svgX = vb.x + (ev.clientX - rect.left) * vb.width / rect.width;
+    const svgY = vb.y + (ev.clientY - rect.top) * vb.height / rect.height;
+    // Cartesian SVG group uses scale(1,-1) so the graph y axis is the
+    // inverse of the screen y; revolve renders identity so y = svgY.
+    const graphX = svgX;
+    const graphY = polyDrag.mode === 'cartesian' ? -svgY : svgY;
+    // Round to 0.001 to avoid floating-point noise pinging the inputs
+    // and the source-emit pipeline on every sub-pixel move.
+    const rRounded = Math.round(graphX * 1000) / 1000;
+    const zRounded = Math.round(graphY * 1000) / 1000;
+    graph = setPolygonCoord(graph, polyDrag.polyId, polyDrag.idx, 'r', { kind: 'literal', value: rRounded });
+    graph = setPolygonCoord(graph, polyDrag.polyId, polyDrag.idx, 'z', { kind: 'literal', value: zRounded });
+  }
+
+  /** End the drag — release pointer capture and clear state. */
+  function polyDragEnd(ev: PointerEvent) {
+    if (!polyDrag) return;
+    const target = ev.currentTarget as SVGCircleElement | null;
+    try { target?.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
+    polyDrag = null;
+  }
+
   /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
    *  with the polygon points the build() returns at default params. Driven
    *  by a separate effect that fires on profile load + on bakeNonce changes
@@ -294,6 +376,16 @@
     const polygons = Object.values(graph.nodes).filter((n) => (n as any).type === 'polygon') as any[];
     if (polygons.length === 0) return profileSet;
     return polygonModeFor(polygons[0].id);
+  });
+  /** Companion to `rootPolygonMode` — id of the polygon whose vertices
+   *  are visible in the right-pane 2D PREVIEW (the only one that exists
+   *  in 2D-output mode). Used by the vertex-drag pointerdown to know
+   *  which node's coords to rewrite. Null when there's no polygon in
+   *  the graph (the 2D pane shows the on-disk build's points then, and
+   *  those aren't editable). */
+  const rootPolygonId = $derived.by<string | null>(() => {
+    const polygons = Object.values(graph.nodes).filter((n) => (n as any).type === 'polygon') as any[];
+    return polygons.length === 0 ? null : polygons[0].id;
   });
   /** Profile-mode resolve — calls /api/primitives/profiles/resolve with
    *  `profileSource` (loaded from the file) and current default params,
@@ -3698,8 +3790,19 @@
                       fill="none" stroke="#991b1b" stroke-width={sw * 0.7}
                       stroke-dasharray={`${sw * 2.5} ${sw * 2}`} stroke-linecap="round"/>
                     {#each profilePts as p, i}
-                      <circle cx={p[0]} cy={p[1]} r={ph} fill="#991b1b">
-                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}</title>
+                      {@const rootPoly = rootPolygonId ? (graph.nodes[rootPolygonId] as any) : null}
+                      {@const pt = rootPoly?.points?.[i]}
+                      {@const draggable = !!pt && pt.r?.kind === 'literal' && pt.z?.kind === 'literal'}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle cx={p[0]} cy={p[1]} r={ph} fill="#991b1b"
+                        class:locked={!draggable}
+                        onpointerdown={(ev) => {
+                          if (!rootPolygonId) return;
+                          startPolyVertexDrag(ev, rootPolygonId, i, v.yFlip ? 'cartesian' : 'revolve');
+                        }}
+                        onpointermove={polyDragMove}
+                        onpointerup={polyDragEnd}>
+                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{draggable ? '' : ' (wired — unwire to drag)'}</title>
                       </circle>
                     {/each}
                   </g>
@@ -4039,8 +4142,10 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     {#if !polyPreviewPinned}
       <!-- Outside-click shade only when NOT pinned. Pinning makes the
-           popup persist while the user edits polygon coords. -->
-      <div class="ge-poly-preview-shade" onclick={() => (polyPreviewFor = null)}></div>
+           popup persist while the user edits polygon coords. A drag in
+           progress also prevents dismissal — releasing the pointer over
+           the shade region after dragging shouldn't close the popup. -->
+      <div class="ge-poly-preview-shade" onclick={() => { if (!polyDrag) polyPreviewFor = null; }}></div>
     {/if}
     <div class="ge-poly-preview" class:pinned={polyPreviewPinned}
       style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px">
@@ -4080,8 +4185,16 @@
             stroke-width={Math.max(w, h) * 0.006}
             stroke-dasharray={`${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.015}`} stroke-linecap="round"/>
           {#each pts as p, i}
-            <circle cx={p[0]} cy={p[1]} r={Math.max(w, h) * 0.012} fill="#991b1b">
-              <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}</title>
+            {@const popupPolyNode = graph.nodes[polyPreviewFor] as any}
+            {@const pt = popupPolyNode?.points?.[i]}
+            {@const draggable = !!pt && pt.r?.kind === 'literal' && pt.z?.kind === 'literal'}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <circle cx={p[0]} cy={p[1]} r={Math.max(w, h) * 0.012} fill="#991b1b"
+              class:locked={!draggable}
+              onpointerdown={(ev) => startPolyVertexDrag(ev, polyPreviewFor!, i, isCart ? 'cartesian' : 'revolve')}
+              onpointermove={polyDragMove}
+              onpointerup={polyDragEnd}>
+              <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{draggable ? '' : ' (wired — unwire to drag)'}</title>
             </circle>
           {/each}
         </g>
@@ -4320,6 +4433,35 @@
   .ge-profile-2d { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
   .ge-profile-2d-head { font: 600 11px Arial; color: #57534e; margin-bottom: 8px; letter-spacing: 0.3px; }
   .ge-profile-2d svg { flex: 1 1 auto; min-height: 240px; width: 100%; background: #fafaf9; border: 1px solid #e5e7eb; border-radius: 4px; }
+  /* Polygon vertex dots are draggable when BOTH coords are literal — the
+     pointermove rewrites (r, z) directly. Wired (param / expr) coords get
+     a not-allowed cursor; dragging them would silently overwrite the
+     wiring. Hover adds a translucent halo via stroke so the drop target
+     reads as interactive (stroke is independent of the inline r attr,
+     unlike a CSS r override which fights the geometry attribute). */
+  .ge-profile-2d svg circle,
+  .ge-poly-preview-svg circle {
+    cursor: grab;
+    touch-action: none;
+    transition: stroke-width 80ms ease, stroke 80ms ease;
+    stroke: transparent;
+    stroke-width: 0;
+  }
+  .ge-profile-2d svg circle:hover,
+  .ge-poly-preview-svg circle:hover {
+    stroke: rgba(153, 27, 27, 0.28);
+    stroke-width: 0.012em;
+    /* Stroke-width in em scales with the parent's font-size — not the SVG
+       viewBox. The numeric value here is tuned against the path stroke
+       width (sw) which is bbox-relative; the resulting halo reads
+       proportional at common card sizes. */
+  }
+  .ge-profile-2d svg circle:active,
+  .ge-poly-preview-svg circle:active { cursor: grabbing; }
+  .ge-profile-2d svg circle.locked,
+  .ge-poly-preview-svg circle.locked { cursor: not-allowed; opacity: 0.7; }
+  .ge-profile-2d svg circle.locked:hover,
+  .ge-poly-preview-svg circle.locked:hover { stroke: transparent; stroke-width: 0; }
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
   .ge-root.embed { height: 100%; }
