@@ -4796,23 +4796,32 @@
                       stroke-dasharray={`${sw * 2.5} ${sw * 2}`} stroke-linecap="round"/>
                     {#each profilePts as p, i}
                       {@const rootPoly = rootPolygonId ? (graph.nodes[rootPolygonId] as any) : null}
-                      {@const pt = rootPoly?.points?.[i]}
-                      {@const parametric = !!pt && (pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal')}
-                      {@const draggable = !!pt && !parametric}
+                      <!-- Same eval-idx → entry-idx mapping as the popup
+                           preview so loop-generated points read their
+                           true entry kind instead of falling off the
+                           array. (2026-06-11) -->
+                      {@const entryIdx = rootPoly ? entryIdxForEvalIdx(rootPoly, i) : null}
+                      {@const entry = entryIdx !== null ? rootPoly?.points?.[entryIdx] : null}
+                      {@const fromLoop = entryIdx === null}
+                      {@const parametricVertex = !!entry && entry.kind === 'point'
+                        && (entry.r?.kind !== 'literal' || entry.z?.kind !== 'literal')}
+                      {@const draggable = !!entry && entry.kind === 'point' && !parametricVertex && !fromLoop}
+                      {@const fill = fromLoop ? '#a855f7' : (parametricVertex ? '#6d28d9' : '#991b1b')}
+                      {@const stroke = fromLoop ? '#6d28d9' : (parametricVertex ? '#a78bfa' : 'none')}
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <circle cx={p[0]} cy={p[1]} r={ph}
-                        fill={parametric ? '#6d28d9' : '#991b1b'}
-                        stroke={parametric ? '#a78bfa' : 'none'}
-                        stroke-width={parametric ? ph * 0.5 : 0}
+                        fill={fill}
+                        stroke={stroke}
+                        stroke-width={fromLoop || parametricVertex ? ph * 0.5 : 0}
                         class:locked={!draggable}
-                        class:parametric
+                        class:parametric={parametricVertex || fromLoop}
                         onpointerdown={(ev) => {
                           if (!rootPolygonId) return;
                           startPolyVertexDrag(ev, rootPolygonId, i, v.yFlip ? 'cartesian' : 'revolve');
                         }}
                         onpointermove={polyDragMove}
                         onpointerup={polyDragEnd}>
-                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{parametric ? ' (parametric — click to edit expression)' : ' (drag to move, click to add expression)'}</title>
+                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{fromLoop ? ' (loop-generated)' : (parametricVertex ? ' (parametric — click to edit expression)' : ' (drag to move, click to add expression)')}</title>
                       </circle>
                     {/each}
                   </g>
@@ -5351,21 +5360,39 @@
           {/if}
           {#each pts as p, i}
             {@const popupPolyNode = graph.nodes[polyPreviewFor] as any}
-            {@const pt = popupPolyNode?.points?.[i]}
-            {@const parametric = !!pt && (pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal')}
-            {@const draggable = !!pt && !parametric}
+            <!-- Map the evaluated point index back to its ENTRY index
+                 in the polygon so a loop-expanded point reads the right
+                 entry kind (a single repeat-ref entry expands to N
+                 points; without this all but the first would look up
+                 the wrong entry or undefined and render as red). -->
+            {@const entryIdx = entryIdxForEvalIdx(popupPolyNode, i)}
+            {@const entry = entryIdx !== null ? popupPolyNode?.points?.[entryIdx] : null}
+            {@const fromLoop = entryIdx === null}
+            {@const parametricVertex = !!entry && entry.kind === 'point'
+              && (entry.r?.kind !== 'literal' || entry.z?.kind !== 'literal')}
+            {@const draggable = !!entry && entry.kind === 'point' && !parametricVertex && !fromLoop}
             {@const dotR = Math.max(w, h) * 0.012}
+            <!-- Colour scheme (2026-06-11):
+                 * literal vertex (drag to move)      = red   #991b1b
+                 * parametric vertex (click to edit)   = violet #6d28d9
+                 * LOOP-GENERATED point                = purple #a855f7
+                                                        with darker ring
+                                                        for extra contrast
+                 The loop color is a distinctly LIGHTER violet so the user
+                 can tell which dots came from a generator at a glance. -->
+            {@const fill = fromLoop ? '#a855f7' : (parametricVertex ? '#6d28d9' : '#991b1b')}
+            {@const stroke = fromLoop ? '#6d28d9' : (parametricVertex ? '#a78bfa' : 'none')}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <circle cx={p[0]} cy={p[1]} r={dotR}
-              fill={parametric ? '#6d28d9' : '#991b1b'}
-              stroke={parametric ? '#a78bfa' : 'none'}
-              stroke-width={parametric ? dotR * 0.5 : 0}
+              fill={fill}
+              stroke={stroke}
+              stroke-width={fromLoop || parametricVertex ? dotR * 0.5 : 0}
               class:locked={!draggable}
-              class:parametric
+              class:parametric={parametricVertex || fromLoop}
               onpointerdown={(ev) => startPolyVertexDrag(ev, polyPreviewFor!, i, isCart ? 'cartesian' : 'revolve')}
               onpointermove={polyDragMove}
               onpointerup={polyDragEnd}>
-              <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{draggable ? '' : ' (wired — unwire to drag)'}</title>
+              <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{fromLoop ? ' (loop-generated)' : (draggable ? '' : ' (wired — unwire to drag)')}</title>
             </circle>
           {/each}
         </g>
