@@ -375,10 +375,17 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // Polygon nodes are profile-only (handled by composition-emit-
       // profile.ts). The part emitter shouldn't see one in a real
       // assembly, but if it does we emit the literal [[r, z], …] array
-      // so a stray polygon doesn't crash an unrelated bake.
-      const rows = node.points.map((p) =>
-        `[${emitValueExpr(p.r)}, ${emitValueExpr(p.z)}]`,
-      );
+      // so a stray polygon doesn't crash an unrelated bake. #154 repeat
+      // entries spread via Array.from inside the same outer literal.
+      const rows = node.points.map((entry: any) => {
+        if (entry?.kind === 'repeat') {
+          const count = emitValueExpr(entry.count);
+          const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(entry.loopVar || ''))
+            ? String(entry.loopVar) : 'i';
+          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => [${emitValueExpr(entry.r)}, ${emitValueExpr(entry.z)}])`;
+        }
+        return `[${emitValueExpr(entry.r)}, ${emitValueExpr(entry.z)}]`;
+      });
       return `[${rows.join(', ')}]`;
     }
   }

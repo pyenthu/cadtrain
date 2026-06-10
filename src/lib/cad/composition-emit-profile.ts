@@ -136,9 +136,25 @@ function collectFromNode(
 ) {
   if ((node as any).type === 'polygon') {
     const poly = node as any;
-    for (const p of poly.points as Array<{ r: ArgValue; z: ArgValue }>) {
-      const r = argToCode(p.r);
-      const z = argToCode(p.z);
+    for (const entry of poly.points as Array<any>) {
+      // Repeat block (#154) — emits as `...Array.from({length:N}, (_, i) =>
+      // [<rExpr>, <zExpr>])` so the outer `return [...]` literal can
+      // spread N points in line. The loop var (default `i`) becomes the
+      // arrow's second arg → it's in scope for the r/z expressions at
+      // runtime. count + r + z each go through argToCode so PARAMS
+      // wiring + bare-name expressions Just Work inside the loop body.
+      if (entry?.kind === 'repeat') {
+        const count = argToCode(entry.count);
+        const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(entry.loopVar || ''))
+          ? String(entry.loopVar) : 'i';
+        const r = argToCode(entry.r);
+        const z = argToCode(entry.z);
+        polyRows.push(`...Array.from({ length: ${count} }, (_, ${loopVar}) => [${r}, ${z}])`);
+        continue;
+      }
+      // Literal vertex (legacy entries lack `kind` — default to 'point').
+      const r = argToCode(entry.r);
+      const z = argToCode(entry.z);
       polyRows.push(`[${r}, ${z}]`);
     }
     used.add('polygon');

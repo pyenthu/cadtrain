@@ -25,8 +25,11 @@
     addPolygon,
     setPolygonCoord,
     addPolygonPoint,
+    addPolygonRepeat,
     removePolygonPoint,
     movePolygonPoint,
+    setPolygonRepeatCount,
+    setPolygonRepeatLoopVar,
     addMethodPlaceholder,
     addMvPlaceholder,
     addRotPlaceholder,
@@ -288,14 +291,24 @@
     if (!polyPreviewFor) return;
     graph = addPolygonPoint(graph, polyPreviewFor);
   }
-  /** Toolbar delete — removes the LAST vertex of the polygon. Keeps the
-   *  polygon at ≥ 1 point (composition-graph's removePolygonPoint
-   *  refuses below 1 to avoid dropping the node entirely). */
-  function popPolyPoint() {
-    if (!polyPreviewFor) return;
-    const n = graph.nodes[polyPreviewFor] as any;
+  /** Toolbar delete — arms a "click-to-delete" cursor mode (2026-06-10).
+   *  When armed, the next click on a vertex dot in the SVG (either the
+   *  popup or the right-pane preview) REMOVES that vertex instead of
+   *  opening the expression popover or starting a drag. The mode is
+   *  STICKY (multiple deletes in a row work) — exit via clicking the
+   *  toolbar button again, pressing Escape, or closing the popup. */
+  let polyDeleteMode = $state<boolean>(false);
+  function togglePolyDeleteMode() {
+    polyDeleteMode = !polyDeleteMode;
+    polyDrag = null; // cancel any in-flight drag when arming
+  }
+  /** Delete a SPECIFIC vertex from the active polygon — wired to the
+   *  vertex-dot click handler when polyDeleteMode is on. Refuses to
+   *  delete the only remaining point (would orphan the node geometry). */
+  function deletePolyVertexAt(polyId: string, idx: number) {
+    const n = graph.nodes[polyId] as any;
     if (!n?.points || n.points.length <= 1) return;
-    graph = removePolygonPoint(graph, polyPreviewFor, n.points.length - 1);
+    graph = removePolygonPoint(graph, polyId, idx);
   }
   /** Evaluate a polygon's entries into concrete [x, y] number pairs.
    *  Literal coords pass through; expr/param coords are evaluated against
@@ -470,6 +483,12 @@
     const dt = (typeof performance !== 'undefined' ? performance : Date).now() - d.startTime;
     const isClick = !d.moved && dt < 250;
     if (!isClick) return;
+    // DELETE MODE — clicking a vertex removes it (stays armed for the
+    // next click, so the user can scrub through multiple deletes).
+    if (polyDeleteMode) {
+      deletePolyVertexAt(d.polyId, d.idx);
+      return;
+    }
     // CLICK semantics:
     //   * One coord parametric, one literal → open popover for the
     //     parametric axis (edit its expression).
@@ -487,6 +506,89 @@
                       : cur.kind === 'param'   ? `p.${cur.param}`
                       : String(cur.value ?? 0);
     openPolyExprPop(ev as any, d.polyId, d.idx, axis, initialExpr);
+  }
+
+  // ─── Insert-mode (click on edge to insert a vertex) (#155, 2026-06-10) ─
+  let polyInsertMode = $state<boolean>(false);
+  function togglePolyInsertMode() {
+    polyInsertMode = !polyInsertMode;
+    if (polyInsertMode) polyDeleteMode = false;
+    polyDrag = null;
+  }
+  /** Map an evaluated-points-index back to the ENTRY index in the polygon's
+   *  `points` array. Repeat blocks expand to N points so we can't 1:1.
+   *  Returns null when the eval index falls INSIDE a repeat-block
+   *  expansion — those edges can't be split via UI insert (the user
+   *  would tweak the count/expressions instead). */
+  function entryIdxForEvalIdx(node: any, evalIdx: number): number | null {
+    let cursor = 0;
+    for (let i = 0; i < node.points.length; i++) {
+      const entry = node.points[i];
+      if (entry?.kind === 'repeat') {
+        // The count needs to be evaluated; cheapest is to recount via
+        // polyToPoints once at call site. Refuse the insert when the
+        // edge sits inside or starts at a repeat block — keeps the
+        // semantics simple, can revisit when repeat-split UX is needed.
+        return null;
+      }
+      if (cursor === evalIdx) return i;
+      cursor += 1;
+    }
+    return null;
+  }
+  /** Click anywhere on the SVG background while polyInsertMode is on:
+   *  find the polygon edge closest to the click point, insert a new
+   *  vertex between its endpoints at the click position. The new vertex
+   *  is a LITERAL [r, z]. Refuses to act when the closest edge touches
+   *  a repeat-block expansion (entryIdxForEvalIdx returns null). */
+  function handleSvgInsertClick(ev: MouseEvent, polyId: string, isCart: boolean) {
+    if (!polyInsertMode) return;
+    const svgEl = (ev.currentTarget as SVGSVGElement);
+    const vb = svgEl?.viewBox?.baseVal;
+    const rect = svgEl?.getBoundingClientRect();
+    if (!vb || !rect || rect.width === 0 || rect.height === 0) return;
+    const svgX = vb.x + (ev.clientX - rect.left) * vb.width / rect.width;
+    const svgY = vb.y + (ev.clientY - rect.top) * vb.height / rect.height;
+    const graphX = svgX;
+    const graphY = isCart ? -svgY : svgY;
+    const node: any = graph.nodes[polyId];
+    if (!node || node.type !== 'polygon') return;
+    const pts = polyToPoints(node);
+    if (pts.length < 2) { graph = addPolygonPoint(graph, polyId); return; }
+    // Nearest-edge hit-test via point-to-segment perpendicular distance.
+    let bestI = -1, bestD = Infinity, bestPx = 0, bestPy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1e-9) continue;
+      let t = ((graphX - a[0]) * dx + (graphY - a[1]) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const px = a[0] + t * dx;
+      const py = a[1] + t * dy;
+      const d = Math.hypot(graphX - px, graphY - py);
+      if (d < bestD) { bestD = d; bestI = i; bestPx = px; bestPy = py; }
+    }
+    if (bestI < 0) return;
+    const entryIdx = entryIdxForEvalIdx(node, bestI);
+    if (entryIdx === null) return; // edge inside a repeat block — refuse
+    const r = Math.round(bestPx * 1000) / 1000;
+    const z = Math.round(bestPy * 1000) / 1000;
+    graph = addPolygonPoint(graph, polyId, entryIdx);
+    graph = setPolygonCoord(graph, polyId, entryIdx + 1, 'r', { kind: 'literal', value: r });
+    graph = setPolygonCoord(graph, polyId, entryIdx + 1, 'z', { kind: 'literal', value: z });
+  }
+
+  // Escape exits delete/insert mode. Browser-window listener so the user
+  // can press Esc with focus anywhere (input, canvas, body).
+  if (typeof window !== 'undefined') {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && (polyDeleteMode || polyInsertMode)) {
+        polyDeleteMode = false; polyInsertMode = false;
+      }
+    });
   }
 
   /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
@@ -3714,7 +3816,53 @@
                          vertex. Tight 16-px sub-row height keeps the card
                          compact even for many vertices. -->
                     <div class="ge-poly-vtx-list">
-                    {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
+                    {#each (poly.points as Array<any>) as pt, idx (idx)}
+                      {#if pt?.kind === 'repeat'}
+                        <!-- Repeat block (#154) — expands to N points at evaluation
+                             time. The loop var (default `i`, 0..N-1) is in scope for
+                             the r and z expressions, so polar n-gons / stars / gear
+                             teeth / wear-pad rings collapse to one row of two
+                             expressions instead of N hand-typed vertices. Distinct
+                             violet skin so the user can tell at a glance "this is a
+                             generator, not a single vertex." -->
+                        <div class="ge-poly-repeat">
+                          <div class="ge-poly-repeat-head">
+                            <span class="ge-poly-repeat-badge">× N</span>
+                            <input class="ge-poly-input ge-poly-repeat-count" type="number" min="0" step="1"
+                              value={pt.count?.kind === 'literal' ? pt.count.value : 6}
+                              title="Number of points this block expands to (i = 0..N−1)"
+                              oninput={(e) => { graph = setPolygonRepeatCount(graph, n.id, idx, { kind: 'literal', value: Math.max(0, Math.round(Number((e.target as HTMLInputElement).value) || 0)) }); }}/>
+                            <span class="ge-poly-repeat-label">loop</span>
+                            <input class="ge-poly-input ge-poly-repeat-var" type="text" maxlength="6"
+                              value={String(pt.loopVar || 'i')}
+                              title="Loop variable bound in the r and z expressions (default i)"
+                              oninput={(e) => { graph = setPolygonRepeatLoopVar(graph, n.id, idx, String((e.target as HTMLInputElement).value) || 'i'); }}/>
+                            <span class="ge-poly-repeat-spacer"></span>
+                            <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
+                              onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
+                            <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
+                              onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
+                            <button class="ge-poly-ins" type="button" title="Insert a vertex above this row"
+                              onclick={() => { graph = addPolygonPoint(graph, n.id, idx - 1); }}>+</button>
+                            <button class="ge-poly-del" type="button" title="Remove repeat block" disabled={poly.points.length <= 1}
+                              onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
+                          </div>
+                          <div class="ge-poly-repeat-row">
+                            <span class="ge-poly-axis-label">{ax0}({pt.loopVar || 'i'})</span>
+                            <input class="ge-poly-input expr" type="text"
+                              value={pt.r?.kind === 'expr' ? pt.r.expr : pt.r?.kind === 'literal' ? String(pt.r.value) : ''}
+                              placeholder="cos(i*2*PI/6)"
+                              oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                          </div>
+                          <div class="ge-poly-repeat-row">
+                            <span class="ge-poly-axis-label">{ax1}({pt.loopVar || 'i'})</span>
+                            <input class="ge-poly-input expr" type="text"
+                              value={pt.z?.kind === 'expr' ? pt.z.expr : pt.z?.kind === 'literal' ? String(pt.z.value) : ''}
+                              placeholder="sin(i*2*PI/6)"
+                              oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                          </div>
+                        </div>
+                      {:else}
                       <div class="ge-poly-vertex">
                         <!-- Axis-0 sub-row (top): [socket-gutter w/ 🗑 unwire] + label
                              + input + ƒ + reorder + insert-above. The 🗑 sits IN the
@@ -3728,11 +3876,11 @@
                             onclick={() => {
                               const v = Number((graph.params as any)?.[(pt.r as any).param]?.default ?? 0);
                               graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: v });
-                            }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                            }}><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
                         {:else if pt.r.kind === 'expr'}
                           <button class="ge-poly-unwire" type="button"
                             title="Back to a number (clears the expression)"
-                            onclick={() => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: 0 }); }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                            onclick={() => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: 0 }); }}><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
                         {:else}
                           <span></span>
                         {/if}
@@ -3783,11 +3931,11 @@
                             onclick={() => {
                               const v = Number((graph.params as any)?.[(pt.z as any).param]?.default ?? 0);
                               graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: v });
-                            }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                            }}><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
                         {:else if pt.z.kind === 'expr'}
                           <button class="ge-poly-unwire" type="button"
                             title="Back to a number (clears the expression)"
-                            onclick={() => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: 0 }); }}><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
+                            onclick={() => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: 0 }); }}><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v2H2V3h3l1-1zm-2 4h8l-1 8H5L4 6zm2 2v6h1V8H6zm3 0v6h1V8H9z"/></svg></button>
                         {:else}
                           <span></span>
                         {/if}
@@ -3825,10 +3973,15 @@
                         <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
                           onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
                       </div>
+                      {/if}
                     {/each}
                     </div>
-                    <button class="ge-poly-add" type="button" title="Add a vertex below the last row"
-                      onclick={() => { graph = addPolygonPoint(graph, n.id); }}>+ add vertex</button>
+                    <div class="ge-poly-add-row">
+                      <button class="ge-poly-add" type="button" title="Add a vertex below the last row"
+                        onclick={() => { graph = addPolygonPoint(graph, n.id); }}>+ vertex</button>
+                      <button class="ge-poly-add repeat" type="button" title="Add a REPEAT block — expands to N points via a loop"
+                        onclick={() => { graph = addPolygonRepeat(graph, n.id); }}>+ repeat</button>
+                    </div>
                   </div>
                 </foreignObject>
                 <!-- Per-vertex coord input sockets — SVG circles outside the
@@ -3840,8 +3993,14 @@
                      vtxTop = header(36) + idx * 32. Only renders sockets
                      for visible vertices (up to MAX_VISIBLE) so scrolled-
                      off rows aren't wirable from outside the card. -->
-                {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
-                  {#if idx < 8}
+                {#each (poly.points as Array<any>) as pt, idx (idx)}
+                  <!-- Repeat blocks (#154) don't expose r/z sockets — their
+                       expressions are edited via the inline expr inputs +
+                       ƒ-popover, not the wire system. Skip them so the
+                       socket overlay doesn't drift relative to the visible
+                       rows below. (Vertex-row sockets resume on the next
+                       point entry.) -->
+                  {#if idx < 8 && pt?.kind !== 'repeat'}
                     {@const vtxTop = 36 + idx * 39}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
@@ -4403,10 +4562,19 @@
           <button class="ge-poly-tb-btn" type="button" title="Fit to points"
             onclick={fitPolyPreview}>⊡</button>
           <span class="ge-poly-tb-sep"></span>
-          <button class="ge-poly-tb-btn" type="button" title="Append vertex"
-            onclick={appendPolyPoint}>＋pt</button>
-          <button class="ge-poly-tb-btn" type="button" title="Remove last vertex"
-            onclick={popPolyPoint}>🗑</button>
+          <!-- Mode toggles: ＋pt = "click on an edge to insert a vertex
+               there" — armed state shows green tint until clicked again
+               (or Escape). 🗑 = "click on a vertex to delete it" — armed
+               state shows red tint. Both modes stay sticky so the user
+               can chain edits. -->
+          <button class="ge-poly-tb-btn ge-poly-tb-mode" type="button"
+            class:on={polyInsertMode}
+            title={polyInsertMode ? 'Insert mode ON — click an edge to add a vertex (Esc to exit)' : 'Insert mode: click an edge to add a vertex'}
+            onclick={togglePolyInsertMode}>＋pt</button>
+          <button class="ge-poly-tb-btn ge-poly-tb-mode del" type="button"
+            class:on={polyDeleteMode}
+            title={polyDeleteMode ? 'Delete mode ON — click a vertex to remove it (Esc to exit)' : 'Delete mode: click a vertex to remove it'}
+            onclick={togglePolyDeleteMode} style="font-size: 10px">🗑</button>
         </div>
         <span class="ge-poly-preview-spacer"></span>
         <button class="ge-poly-preview-pin" type="button"
@@ -4416,8 +4584,14 @@
         <button class="ge-poly-preview-close" type="button"
           onclick={() => { polyPreviewFor = null; polyPreviewPinned = true; }} aria-label="Close">×</button>
       </div>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <svg viewBox={vb} preserveAspectRatio="xMidYMid meet"
-        xmlns="http://www.w3.org/2000/svg" class="ge-poly-preview-svg">
+        xmlns="http://www.w3.org/2000/svg"
+        class="ge-poly-preview-svg"
+        class:insert-mode={polyInsertMode}
+        class:delete-mode={polyDeleteMode}
+        onclick={(ev) => { if (polyInsertMode && polyPreviewFor) handleSvgInsertClick(ev, polyPreviewFor, isCart); }}>
         <g transform={previewMode === 'cartesian' ? `scale(1, -1) translate(0, ${-(2 * yMin + h)})` : ''}>
           {#if previewMode !== 'cartesian'}
             <!-- Axis dashes for revolve profiles (r = 0 vertical line). -->
@@ -4944,9 +5118,22 @@
   }
   .ge-poly-tb-btn:hover { background: #f1f5f9; border-color: #cbd5e1; color: #1f2937; }
   .ge-poly-tb-btn:active { background: #e2e8f0; }
+  /* Armed state — green for insert, red for delete. Bold border so the
+     user has a clear "this mode is active" signal even when their mouse
+     is on the SVG canvas. */
+  .ge-poly-tb-mode.on { background: #dcfce7; border-color: #16a34a; color: #15803d; }
+  .ge-poly-tb-mode.on:hover { background: #bbf7d0; }
+  .ge-poly-tb-mode.del.on { background: #fee2e2; border-color: #b91c1c; color: #7f1d1d; }
+  .ge-poly-tb-mode.del.on:hover { background: #fecaca; }
   .ge-poly-tb-sep {
     width: 1px; height: 12px; background: #e2e8f0; margin: 0 4px;
   }
+  /* Mode cursors over the SVG canvas. Insert mode = `copy` so the user
+     sees a "+ landing" hint when hovering an edge; delete mode = `crosshair`
+     plus a soft red wash so vertex circles read as "armed for deletion". */
+  .ge-poly-preview-svg.insert-mode { cursor: copy; background: #f0fdf4; }
+  .ge-poly-preview-svg.delete-mode { cursor: crosshair; background: #fef2f2; }
+  .ge-poly-preview-svg.delete-mode circle { cursor: not-allowed; }
   /* Pin toggle — when ON, the popup persists across canvas clicks so the
      user can edit polygon coords with the SVG live in the corner. */
   .ge-poly-preview-pin {
@@ -4997,8 +5184,11 @@
      vertex card. */
   .ge-poly-vertex {
     display: grid;
-    grid-template-columns: 12px 12px 1fr 14px 16px 16px 14px;
-    grid-template-rows: 16px 16px;
+    /* Col 1 = socket gutter + unwire 🗑 (18px to fit the 16px button +
+       padding); col 2 = axis label; col 3 = value/expr/chip; col 4 = ƒ;
+       cols 5/6 = ▲▼ (reorder); col 7 = + (insert above) / × (delete). */
+    grid-template-columns: 18px 12px 1fr 14px 16px 16px 14px;
+    grid-template-rows: 18px 18px;
     gap: 1px 2px; align-items: center;
     padding: 2px 2px;
     margin-bottom: 2px;
@@ -5049,18 +5239,20 @@
     -webkit-appearance: none; margin: 0;
   }
   /* Unwire button — sits in the SOCKET GUTTER column on the left edge of
-     each sub-row. Tiny, faded by default, brightens on hover. Only renders
-     when the coord is wired or an expression; literal mode shows nothing
-     (no link to break). Icon is a small SVG trash glyph for crispness at
-     9 × 9 px (emoji would be illegible at this size). */
+     each sub-row. Only renders when the coord is wired or an expression;
+     literal mode shows nothing (no link to break). Distinctive look: black
+     trash glyph with a 1px black border so it reads as a deliberate
+     "break this link" affordance, not a decorative chrome bit. SVG icon
+     (not emoji) for crispness at small sizes — 11 × 11 px. */
   .ge-poly-unwire {
-    width: 12px; height: 12px; padding: 0;
-    background: transparent; border: 0; cursor: pointer;
-    color: #b91c1c; opacity: 0.55;
+    width: 16px; height: 16px; padding: 0;
+    background: #fff; border: 1px solid #1f2937; border-radius: 3px;
+    cursor: pointer; color: #1f2937; opacity: 0.9;
     display: flex; align-items: center; justify-content: center;
-    transition: opacity 100ms, color 100ms;
+    transition: background 100ms, opacity 100ms;
   }
-  .ge-poly-unwire:hover { opacity: 1; color: #7f1d1d; }
+  .ge-poly-unwire:hover { background: #f1f5f9; opacity: 1; }
+  .ge-poly-unwire:active { background: #e2e8f0; }
   .ge-poly-input:hover { background: #f0f9ff; }
   .ge-poly-input:focus { outline: 1px solid #0369a1; background: #fff; }
   .ge-poly-input.expr { background: #faf5ff; color: #5b21b6; border-color: #c4b5fd; }
@@ -5074,12 +5266,15 @@
   .ge-poly-fx:hover { background: #f5f5f4; border-color: #94a3b8; color: #0c4a6e; }
   .ge-poly-fx.on { background: #ddd6fe; color: #5b21b6; border-color: #a78bfa; }
   .ge-poly-del {
-    width: 14px; height: 18px; padding: 0;
-    background: transparent; border: 0; cursor: pointer;
-    font: 14px Arial; color: #b91c1c; line-height: 1;
+    width: 16px; height: 18px; padding: 0;
+    /* Red outline — matches the unwire-🗑 button's bordered look so
+       destructive-edge controls visually pair. */
+    background: #fff; border: 1px solid #b91c1c; border-radius: 3px;
+    cursor: pointer;
+    font: 700 12px Arial; color: #b91c1c; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  .ge-poly-del:hover:not(:disabled) { background: #fee2e2; border-radius: 2px; }
+  .ge-poly-del:hover:not(:disabled) { background: #fee2e2; border-color: #7f1d1d; color: #7f1d1d; }
   .ge-poly-del:disabled { opacity: 0.3; cursor: default; }
   /* Insert-above button — symmetric counterpart to × in the bottom sub-row.
      Same 14 × 18 box; green palette to distinguish add-vs-remove at a
@@ -5092,13 +5287,60 @@
     display: flex; align-items: center; justify-content: center;
   }
   .ge-poly-ins:hover { background: #dcfce7; border-radius: 2px; color: #14532d; }
+  /* Footer add-row — two side-by-side buttons: "+ vertex" (orange) and
+     "+ repeat" (violet). Stacked vertically when the card is narrow. */
+  .ge-poly-add-row { display: flex; gap: 4px; margin-top: 4px; }
   .ge-poly-add {
-    margin-top: 4px; width: 100%;
+    flex: 1 1 0; min-width: 0;
     padding: 4px 6px; font: 600 11px Arial;
     background: #fff7ed; color: #9a3412; border: 1px dashed #fdba74;
     border-radius: 4px; cursor: pointer;
   }
   .ge-poly-add:hover { background: #ffedd5; border-style: solid; border-color: #fb923c; color: #7c2d12; }
+  /* Repeat-block variant — violet skin (matches the parametric-vertex
+     colour family) so the visual contrast against "+ vertex" reads
+     instantly as "this is a different KIND of thing". */
+  .ge-poly-add.repeat {
+    background: #f5f3ff; color: #5b21b6; border-color: #c4b5fd;
+  }
+  .ge-poly-add.repeat:hover { background: #ede9fe; border-style: solid; border-color: #a78bfa; color: #4c1d95; }
+  /* ─── Repeat-block row ───────────────────────────────────────────────
+     A polygon entry of kind 'repeat' that expands to N points at
+     evaluation time. Three-row layout: header (count + loop var +
+     reorder/del controls) followed by two expression rows (r(i) and
+     z(i)). Distinct violet skin so the user reads "this is a generator,
+     not a single vertex" at a glance. */
+  .ge-poly-repeat {
+    margin-bottom: 2px; padding: 4px 4px 4px 6px;
+    border: 1px solid #c4b5fd; border-radius: 5px;
+    background: rgba(245, 243, 255, 0.6);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .ge-poly-repeat:hover { background: #f5f3ff; border-color: #a78bfa; }
+  .ge-poly-repeat-head {
+    display: flex; align-items: center; gap: 3px;
+  }
+  .ge-poly-repeat-badge {
+    font: 700 9px Arial; color: #5b21b6; background: #ede9fe;
+    border: 1px solid #c4b5fd; border-radius: 3px;
+    padding: 1px 5px; letter-spacing: 0.5px;
+  }
+  .ge-poly-repeat-label {
+    font: 9px ui-monospace, monospace; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .ge-poly-repeat-count { width: 36px; min-width: 36px; flex: 0 0 36px; }
+  .ge-poly-repeat-var   { width: 28px; min-width: 28px; flex: 0 0 28px; }
+  .ge-poly-repeat-spacer { flex: 1 1 auto; }
+  .ge-poly-repeat-row {
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    gap: 4px; align-items: center;
+  }
+  .ge-poly-repeat-row .ge-poly-axis-label {
+    text-align: left; padding-left: 2px;
+    color: #5b21b6; /* match the violet family */
+  }
   /* IMPORTANT: row height is 22 px to match the input-socket spacing
      math in the SVG (cy = 36 + 14 + i * 22). Don't change without
      updating ALL three sites: the cy expression on socket circles,
