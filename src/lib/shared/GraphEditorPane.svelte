@@ -255,9 +255,23 @@
     if (pts.length === 0) return null;
     const xs = pts.map((p) => p[0]);
     const ys = pts.map((p) => p[1]);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const yMin = Math.min(...ys), yMax = Math.max(...ys);
-    const w = Math.max(0.001, xMax - xMin), h = Math.max(0.001, yMax - yMin);
+    const xMin0 = Math.min(...xs), xMax0 = Math.max(...xs);
+    const yMin0 = Math.min(...ys), yMax0 = Math.max(...ys);
+    const isCart = rootPolygonMode === 'cartesian';
+    // Cartesian mode: center the SVG on (0, 0) — the extrude rotates
+    // around the origin, so the viewport should show that as the center
+    // even when the polygon's bbox is off-center. viewBox half-extent =
+    // the largest absolute coord in either axis, so positive and negative
+    // sides are mirrored around 0. Revolve mode keeps the natural bbox-
+    // fit so the polygon hugs the visible area.
+    let xMin: number, yMin: number, w: number, h: number;
+    if (isCart) {
+      const half = Math.max(Math.abs(xMin0), Math.abs(xMax0), Math.abs(yMin0), Math.abs(yMax0), 0.001);
+      xMin = -half; yMin = -half; w = 2 * half; h = 2 * half;
+    } else {
+      xMin = xMin0; yMin = yMin0;
+      w = Math.max(0.001, xMax0 - xMin0); h = Math.max(0.001, yMax0 - yMin0);
+    }
     const pad = Math.max(w, h) * 0.08;
     return {
       vb: `${xMin - pad} ${yMin - pad} ${w + 2 * pad} ${h + 2 * pad}`,
@@ -266,8 +280,8 @@
       dClose: pts.length > 1
         ? `M ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]} L ${pts[0][0]} ${pts[0][1]}`
         : '',
-      yFlip: rootPolygonMode === 'cartesian',
-      axis: rootPolygonMode === 'revolve',
+      yFlip: isCart,
+      axis: !isCart,
       xMin, yMin, w, h, pad,
     };
   });
@@ -1688,6 +1702,23 @@
    *  immediately wire its emitted points into the new Call's `profile`
    *  arg via an `expr` ArgValue that emits the polygon's literal array.
    *  The user can also leave the slot empty and wire it manually. */
+  /** Default polygon vertices for the auto-attached polygon when
+   *  dropSolid creates one. Revolve gets the small triangle (matches
+   *  the plain dropPolygon default); extrude gets a unit square
+   *  centered on the origin so the user sees a sensible default
+   *  cross-section that respects the cartesian (x, y) coord system. */
+  const POLY_REVOLVE_DEFAULT = [
+    { r: asLiteral(0), z: asLiteral(0) },
+    { r: asLiteral(1), z: asLiteral(0) },
+    { r: asLiteral(1), z: asLiteral(1) },
+  ];
+  const POLY_EXTRUDE_DEFAULT = [
+    { r: asLiteral(-1), z: asLiteral(-1) },
+    { r: asLiteral( 1), z: asLiteral(-1) },
+    { r: asLiteral( 1), z: asLiteral( 1) },
+    { r: asLiteral(-1), z: asLiteral( 1) },
+  ];
+
   function dropSolid(op: 'revolve' | 'extrude') {
     closePicker();
     // Find an existing polygon, or create one — a revolve / extrude is
@@ -1698,7 +1729,13 @@
     let polyId: string | undefined =
       (Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any)?.id;
     if (!polyId) {
-      const r = addPolygon(graph);
+      // Seed the new polygon with a default appropriate to the producer:
+      // a small (0..1, 0..1) triangle for revolve (sits on the r ≥ 0 half
+      // and reads as a half-section), a unit square centered on (0, 0)
+      // for extrude (cartesian cross-section, respects the origin-centered
+      // viewport in cartesian SVG preview mode).
+      const initial = op === 'extrude' ? POLY_EXTRUDE_DEFAULT : POLY_REVOLVE_DEFAULT;
+      const r = addPolygon(graph, initial);
       graph = r.graph;
       polyId = r.id;
     }
@@ -3819,10 +3856,16 @@
     {@const pts = polyToPoints(graph.nodes[polyPreviewFor])}
     {@const xs = pts.map((p) => p[0])}
     {@const ys = pts.map((p) => p[1])}
-    {@const xMin = pts.length ? Math.min(...xs) : 0}
-    {@const xMax = pts.length ? Math.max(...xs) : 1}
-    {@const yMin = pts.length ? Math.min(...ys) : 0}
-    {@const yMax = pts.length ? Math.max(...ys) : 1}
+    {@const xMin0 = pts.length ? Math.min(...xs) : 0}
+    {@const xMax0 = pts.length ? Math.max(...xs) : 1}
+    {@const yMin0 = pts.length ? Math.min(...ys) : 0}
+    {@const yMax0 = pts.length ? Math.max(...ys) : 1}
+    {@const isCart = previewMode === 'cartesian'}
+    {@const half = isCart ? Math.max(Math.abs(xMin0), Math.abs(xMax0), Math.abs(yMin0), Math.abs(yMax0), 0.001) : 0}
+    {@const xMin = isCart ? -half : xMin0}
+    {@const xMax = isCart ?  half : xMax0}
+    {@const yMin = isCart ? -half : yMin0}
+    {@const yMax = isCart ?  half : yMax0}
     {@const w = Math.max(0.001, xMax - xMin)}
     {@const h = Math.max(0.001, yMax - yMin)}
     {@const pad = Math.max(w, h) * 0.08}
