@@ -149,6 +149,20 @@
    *  block) have an empty graph + empty params, but the build() needs
    *  the file's declared param defaults to produce points. */
   let profileMetaParams = $state<Record<string, { default?: number }>>({});
+  /** Universal output-type detection — does the graph contain a node
+   *  that produces a 3D Manifold? Today that's any Call to a known solid
+   *  producer (r_revolve / r_weld_extrude / r_extrude / any r_* call).
+   *  When true, the right-pane swaps from 2D PREVIEW (inline SVG) to
+   *  3D BAKE (PrimitiveDualCanvas) — even in profile mode. This is the
+   *  "one universal graph" promise: the editor figures out the render
+   *  surface from the graph's content, not from a fixed mode flag. */
+  const hasSolidProducer = $derived(
+    Object.values(graph.nodes).some((n) => {
+      if ((n as any).type !== 'call') return false;
+      const src = String((n as any).src ?? '');
+      return src === 'r_revolve' || src === 'r_extrude' || src === 'r_weld_extrude' || (src.startsWith('r_') && src !== 'r_rotate');
+    }),
+  );
   /** Derived viewBox + path for the 2D SVG preview (revolve: axis at r=0,
    *  Z-down; cartesian: Y-flip so positive points up). Mirrors the SVG
    *  logic in the deleted ProfilePane. */
@@ -195,6 +209,10 @@
   let profileResolveTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     if (editKind !== 'profile') return;
+    // When the graph has a 3D solid producer (r_revolve / r_extrude /
+    // r_weld_extrude / any r_* call), skip the 2D resolve entirely —
+    // the part-bake pipeline above handles the 3D render in that case.
+    if (hasSolidProducer) return;
     void bakeNonce; // re-run on manual bake
 
     // Pick the source: emit the graph when it has profile-shaped nodes
@@ -464,10 +482,15 @@
     // prior bake). Subsequent graph changes don't fire here — they go
     // through the debounced auto-bake effect below.
     bakeNonce;
-    // Profile mode skips the part-bake pipeline entirely — the right-pane
-    // 2D preview renders from `profilePts` (resolved via the profile-
-    // specific /resolve endpoint, refreshed in a separate effect below).
-    if (editKind === 'profile') { bake = null; firstBakeDone = true; return; }
+    // Profile mode usually skips the part-bake pipeline (the right-pane
+    // 2D preview renders from `profilePts` resolved via /resolve). BUT
+    // when the profile graph contains a solid-producer (r_revolve or
+    // r_weld_extrude), the output is a Manifold and we route through
+    // the part bake pipeline (/preview) so the right pane gets a 3D
+    // mesh. The 2D-vs-3D switch is driven by `hasSolidProducer` below.
+    if (editKind === 'profile' && !hasSolidProducer) {
+      bake = null; firstBakeDone = true; return;
+    }
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
     if (!hasNode) { bake = null; firstBakeDone = false; return; }
     // Initial-load case: graph hydrated, no bake yet → fire one bake.
@@ -1520,6 +1543,41 @@
   function dropPolygon() {
     closePicker();
     graph = addPolygon(graph).graph;
+  }
+
+  /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
+   *  These are 3D solid producers — the polygon's output flows into the
+   *  Call's `profile` arg, and the Output card receives a Manifold
+   *  instead of a polygon. The right-pane swap (2D PREVIEW → 3D BAKE)
+   *  happens automatically: the bake effect detects `r_revolve` or
+   *  `r_weld_extrude` in the graph and routes to /api/primitives/preview.
+   *
+   *  Auto-wire: if a Polygon node already exists in the graph, we
+   *  immediately wire its emitted points into the new Call's `profile`
+   *  arg via an `expr` ArgValue that emits the polygon's literal array.
+   *  The user can also leave the slot empty and wire it manually. */
+  function dropSolid(op: 'revolve' | 'extrude') {
+    closePicker();
+    const polyEntry = Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any;
+    const polyExpr = polyEntry
+      ? '__POLY__' + polyEntry.id  // sentinel — emit pipeline rewrites to the polygon's literal
+      : '[[0,0],[1,0],[1,1]]';
+    if (op === 'revolve') {
+      // r_revolve(profile, segments?)  — segments defaults to 96 in stdlib
+      graph = addCall(graph, 'r_revolve', {
+        profile: { kind: 'expr', expr: polyExpr } as any,
+        segments: { kind: 'literal', value: 96 } as any,
+      }).graph;
+    } else {
+      // r_weld_extrude(profile, height, twist?, divs?, segments?)
+      graph = addCall(graph, 'r_weld_extrude', {
+        profile: { kind: 'expr', expr: polyExpr } as any,
+        height: { kind: 'literal', value: 2 } as any,
+        twist: { kind: 'literal', value: 0 } as any,
+        divs: { kind: 'literal', value: 12 } as any,
+        segments: { kind: 'literal', value: 64 } as any,
+      }).graph;
+    }
   }
 
   // ─── stack/list reorder popover ─────────────────────────────────────────
@@ -3118,8 +3176,8 @@
       <div class="ge-pane-tabs" role="tablist">
         <button class="ge-pane-tab" class:active={rightTab === 'bake'}
           type="button" role="tab" aria-selected={rightTab === 'bake'}
-          data-tip={editKind === 'profile' ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
-          onclick={() => setRightTab('bake')}>{editKind === 'profile' ? '2D preview' : '3D bake'}</button>
+          data-tip={(editKind === 'profile' && !hasSolidProducer) ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
+          onclick={() => setRightTab('bake')}>{(editKind === 'profile' && !hasSolidProducer) ? '2D preview' : '3D bake'}</button>
         <button class="ge-pane-tab" class:active={rightTab === 'source'}
           type="button" role="tab" aria-selected={rightTab === 'source'}
           data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
@@ -3131,7 +3189,7 @@
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
-          {#if editKind === 'profile'}
+          {#if editKind === 'profile' && !hasSolidProducer}
             <!-- Profile mode: inline SVG of the resolved polygon. The
                  graph-driven re-emit is Phase 2.2 — for now this shows
                  the on-disk build()'s shape at default params. Closure
@@ -3455,6 +3513,18 @@
           <div class="ge-picker-label">Polygon</div>
           <button class="ge-pick-item" type="button" onclick={dropPolygon}>
             <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">[(r, z), …]</span>
+          </button>
+        </div>
+        <!-- Solid (from 2D) — revolve / extrude turn the polygon into
+             a 3D Manifold. Right-pane auto-flips from 2D PREVIEW to
+             3D BAKE when one of these is present in the graph. -->
+        <div class="ge-picker-section">
+          <div class="ge-picker-label">Solid (from 2D)</div>
+          <button class="ge-pick-item" type="button" onclick={() => dropSolid('revolve')}>
+            <span class="ge-pick-icon">◯</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin r→z</span>
+          </button>
+          <button class="ge-pick-item" type="button" onclick={() => dropSolid('extrude')}>
+            <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep ↓</span>
           </button>
         </div>
       {:else}

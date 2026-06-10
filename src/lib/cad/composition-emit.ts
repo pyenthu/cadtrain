@@ -278,13 +278,27 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // both assume it. Emit the signature with `p` whenever ANY param is declared,
   // otherwise omit (a paramless assembly is also valid for the trivial case).
   const sig = Object.keys(graph.params).length > 0 ? 'p' : '';
+
+  // ── Polygon sentinel substitution ─────────────────────────────────────
+  // Polygon nodes get a varName like `_poly_1` from assignVarNames; when a
+  // downstream Call (r_revolve, r_weld_extrude) references them, its
+  // `profile` arg carries an expr like `__POLY__<polygonId>`. After all
+  // lines emit, rewrite the sentinel to the polygon's actual varName so
+  // the generated body is valid JS.
+  let bodyText = lines.join('\n');
+  for (const [id, varName] of varNames.entries()) {
+    const node = graph.nodes[id];
+    if (!node || node.type !== 'polygon') continue;
+    bodyText = bodyText.split(`__POLY__${id}`).join(varName);
+  }
+
   const fnText =
     `// AUTO-GENERATED from meta.graph by composition-emit.ts.\n` +
     `// Edits to this body are DISCARDED — the editor regenerates from the graph on every save.\n` +
-    `export function ${opts.id}(${sig}) {\n${lines.join('\n')}\n}\n`;
+    `export function ${opts.id}(${sig}) {\n${bodyText}\n}\n`;
 
   const source = `${metaText}\n\n${fnText}`;
-  return { source, meta, body: lines.join('\n'), rootVar, validationErrors };
+  return { source, meta, body: bodyText, rootVar, validationErrors };
 }
 
 // ─── node → expression ────────────────────────────────────────────────────
@@ -451,12 +465,13 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
       name = node.alias;
     } else {
       const prefix =
-        node.type === 'list'   ? 'list' :
-        node.type === 'stack'  ? 'stack' :
-        node.type === 'group'  ? 'group' :
-        node.type === 'method' ? `${node.op}_obj` :
-        node.type === 'mv'     ? 'mv_obj' :
-                                  'rot_obj';
+        node.type === 'list'    ? 'list' :
+        node.type === 'stack'   ? 'stack' :
+        node.type === 'group'   ? 'group' :
+        node.type === 'method'  ? `${node.op}_obj` :
+        node.type === 'mv'      ? 'mv_obj' :
+        node.type === 'polygon' ? 'poly' :
+                                   'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;
       name = `_${prefix}_${counters[prefix]}`;
     }
