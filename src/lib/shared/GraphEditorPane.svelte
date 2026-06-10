@@ -3984,12 +3984,12 @@
                         {@const src = graph.nodes[pt.sourceId]}
                         {@const srcCount = src?.type === 'poly_repeat' ? (src.count?.kind === 'literal' ? src.count.value : '?') : '?'}
                         {@const isMissing = !src || src.type !== 'poly_repeat'}
-                        <div class="ge-poly-rref" class:missing={isMissing}>
+                        <div class="ge-poly-rref" class:missing={isMissing}
+                          title={isMissing ? 'The loop card this row points to was deleted' : 'Loop ref — edit the expressions on the separate loop card'}>
                           <span class="ge-poly-rref-glyph" aria-hidden="true">↳</span>
                           <span class="ge-poly-rref-label">
                             Loop {isMissing ? '(missing)' : '· ×'} {isMissing ? '' : srcCount}
                           </span>
-                          <span class="ge-poly-rref-id" title={`Source card ${pt.sourceId}`}>{String(pt.sourceId).slice(2, 7)}</span>
                           <span class="ge-poly-rref-spacer"></span>
                           <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
                             onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
@@ -4218,7 +4218,7 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="10" y="20" class="ge-node-title">↻ loop · {pr.id.slice(2, 7)}</text>
+                <text x="10" y="20" class="ge-node-title">↻ loop</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
                   data-tip="Delete loop (refs in polygons will show as 'missing')"
@@ -5645,11 +5645,6 @@
   .ge-poly-rref.missing { background: #fff7ed; border-color: #fb923c; }
   .ge-poly-rref-glyph { font: 700 14px Arial; color: #5b21b6; line-height: 1; }
   .ge-poly-rref-label { font: 600 11px Arial; color: #4c1d95; white-space: nowrap; }
-  .ge-poly-rref-id {
-    font: 600 9px ui-monospace, monospace; color: #6d28d9;
-    background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 3px;
-    padding: 1px 4px; letter-spacing: 0.5px;
-  }
   .ge-poly-rref-spacer { flex: 1 1 auto; }
   /* ─── PolyRepeat card inner content (#157) ──────────────────────────
      Two sections — Params (count + loop var inline) and Loop ƒ(i)
