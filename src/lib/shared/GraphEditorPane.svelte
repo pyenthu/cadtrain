@@ -61,7 +61,7 @@
     type MvNode,
     type RotNode,
   } from '$lib/cad/composition-graph';
-  import { emitGraph } from '$lib/cad/composition-emit';
+  import { emitGraph, consumedByCall } from '$lib/cad/composition-emit';
   import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
@@ -1571,19 +1571,19 @@
    *  The user can also leave the slot empty and wire it manually. */
   function dropSolid(op: 'revolve' | 'extrude') {
     closePicker();
-    // If a Polygon is already on the canvas, auto-wire its output into
-    // the new Call's `profile` arg — the bezier renders immediately and
-    // the bake succeeds without forcing the user to drag a connection
-    // they obviously want. The user can still REWIRE manually (drag from
-    // any other producer onto the profile socket) or break the wire by
-    // clicking ƒ then editing the expr. When no polygon exists yet, the
-    // profile arg starts as a hardcoded triangle so the bake doesn't
-    // error out at zero state — the user can drop a polygon afterward
-    // and manually re-wire the connection.
-    const polyEntry = Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any;
-    const profileArg = polyEntry
-      ? { kind: 'expr' as const, expr: '__POLY__' + polyEntry.id }
-      : { kind: 'expr' as const, expr: '[[0,0],[1,0],[1,1]]' };
+    // Find an existing polygon, or create one — a revolve / extrude is
+    // useless without a profile to operate on. Auto-attached polygons
+    // become non-deletable while the revolve consumes them (the × on
+    // the polygon card greys out + the title carries a 🔒). User must
+    // delete the revolve first to unlock the polygon.
+    let polyId: string | undefined =
+      (Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any)?.id;
+    if (!polyId) {
+      const r = addPolygon(graph);
+      graph = r.graph;
+      polyId = r.id;
+    }
+    const profileArg = { kind: 'expr' as const, expr: '__POLY__' + polyId };
     if (op === 'revolve') {
       graph = addCall(graph, 'r_revolve', {
         profile: profileArg as any,
@@ -2111,6 +2111,17 @@
         for (const c of (n as any).children) set.add(c);
       } else if (n.type === 'list' && n.id !== graph.root) {
         for (const c of (n as any).children) set.add(c);
+      } else if (n.type === 'call') {
+        // Call args carrying a __POLY__<sourceId> expr consume the source.
+        // Without this, the polygon shows up as an Output child alongside
+        // the revolve that's USING it — two outputs visible when there's
+        // only one actual return value (the revolve's solid).
+        for (const v of Object.values((n as any).args ?? {})) {
+          if ((v as any).kind !== 'expr') continue;
+          const matches = String((v as any).expr ?? '').match(/__POLY__(n_[a-z0-9]+)/gi);
+          if (!matches) continue;
+          for (const m of matches) set.add(m.slice('__POLY__'.length));
+        }
       }
     }
     return set;
@@ -3044,10 +3055,20 @@
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
                 />
-                <text x="10" y="22" class="ge-node-title">◇ polygon · {poly.points.length} pts</text>
+                {@const polyConsumed = consumedSet.has(n.id)}
+                <text x="10" y="22" class="ge-node-title">◇ polygon · {poly.points.length} pts{polyConsumed ? ' · 🔒' : ''}</text>
+                <!-- Delete disabled while another node consumes this polygon
+                     (e.g. a revolve's profile arg wired via __POLY__<id>).
+                     The 🔒 in the title signals the lock; hover tooltip
+                     explains the constraint. Unwire the consumer first to
+                     unlock + delete. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
+                  class:disabled={polyConsumed}
+                  data-tip={polyConsumed
+                    ? 'Polygon is wired into a Revolve / Extrude — delete the consumer first to unlock this polygon.'
+                    : 'Delete polygon'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (!polyConsumed) deleteNode(n.id); }}>×</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-polygon" xmlns="http://www.w3.org/1999/xhtml">
@@ -3900,6 +3921,7 @@
   .ge-node-title { font: 600 12px Arial; fill: #0c4a6e; pointer-events: none; }
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }
   .ge-method-op { font: 900 36px Arial; fill: #92400e; pointer-events: none; }
   .ge-method-name { font: 11px Arial; fill: #92400e; text-transform: uppercase; letter-spacing: 0.5px; pointer-events: none; }
   .ge-fo { overflow: visible; }

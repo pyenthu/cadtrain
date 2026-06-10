@@ -444,9 +444,28 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
       // children are inputs. The ROOT list is special — its children ARE
       // the function's return value (filtered downstream).
       for (const c of n.children) consumed.add(c);
+    } else if (n.type === 'call') {
+      // Call args carrying a `__POLY__<sourceId>` sentinel expr consume
+      // the source node (the polygon, today). Without this, the polygon
+      // and the revolve BOTH show up as Output children — the user sees
+      // two outputs when there's really only one (the revolve's solid).
+      for (const v of Object.values(n.args)) {
+        if (v.kind !== 'expr') continue;
+        const matches = v.expr.match(/__POLY__(n_[a-z0-9]+)/gi);
+        if (!matches) continue;
+        for (const m of matches) consumed.add(m.slice('__POLY__'.length));
+      }
     }
   }
   return consumed;
+}
+
+/** Same logic as `computeConsumedSet` but exported for the editor — used
+ *  to grey-out the × delete button on cards that are consumed by another
+ *  node (their value flows into something else; deleting them would
+ *  break the consumer). */
+export function consumedByCall(graph: Graph): Set<NodeId> {
+  return computeConsumedSet(graph);
 }
 
 // ─── variable name assignment ────────────────────────────────────────────
