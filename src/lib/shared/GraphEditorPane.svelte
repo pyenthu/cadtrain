@@ -921,25 +921,33 @@
   // ─── Card resize (right-edge grip) ─────────────────────────────────────
   let resizing = $state<string | null>(null);
   let resizeStartX = 0;
+  let resizeStartY = 0;
   let resizeOrigW = 0;
+  let resizeOrigH = 0;
   function onResizePointerDown(ev: PointerEvent, id: string) {
     if (ev.button !== 0) return;
     resizing = id;
     resizeStartX = ev.clientX;
+    resizeStartY = ev.clientY;
     const node = graph.nodes[id];
     if (!node) return;
-    resizeOrigW = nodeSize(node).w;
+    const sz = nodeSize(node);
+    resizeOrigW = sz.w;
+    resizeOrigH = sz.h;
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ev.stopPropagation();
     ev.preventDefault();
   }
   function onResizePointerMove(ev: PointerEvent) {
     if (!resizing) return;
-    // Width grows with horizontal drag; vertical drag is ignored because
-    // card heights are auto-computed from content (rows, points etc).
-    // Keeping width-only matches the prior right-edge grip's feel.
+    // Width AND height grow with horizontal + vertical drag (diagonal
+    // resize). User chose the corner grip to enable both axes - the
+    // polygon card uses height to control scrollable list area; other
+    // cards ignore the height override (their nodeSize doesn't consult
+    // layout.h) but the persistence is harmless.
     const dx = (ev.clientX - resizeStartX) / zoom;
-    setCardWidth(resizing, resizeOrigW + dx);
+    const dy = (ev.clientY - resizeStartY) / zoom;
+    setCardSize(resizing, resizeOrigW + dx, resizeOrigH + dy);
   }
   function onResizePointerUp(ev: PointerEvent) {
     if (!resizing) return;
@@ -1224,6 +1232,20 @@
     const cur = graph.layout[id] ?? { x: 0, y: 0 };
     graph = setLayout(graph, id, { ...cur, w: clamped });
   }
+  /** Set both width AND height for a card. Height is honoured only by
+   *  nodes that consult `layout[id].h` in their nodeSize override (today
+   *  just polygon — its scrollable list expands with extra height). For
+   *  cards that don't read .h, the value is still persisted (cheap) and
+   *  becomes meaningful as soon as those cards opt into the read. */
+  function setCardSize(id: string, w: number, h: number) {
+    const node = graph.nodes[id];
+    if (!node) return;
+    const minW = cardMinWidth(node);
+    const clampedW = Math.max(minW, Math.round(w));
+    const clampedH = Math.max(80, Math.round(h));
+    const cur = graph.layout[id] ?? { x: 0, y: 0 };
+    graph = setLayout(graph, id, { ...cur, w: clampedW, h: clampedH });
+  }
   /** Minimum width the card can shrink to — derived from the row content.
    *  For Call cards: key column (70 px for "label") + value cell (input +
    *  actions = ~76 px) + horizontal padding ~16 px. Everything else uses
@@ -1234,7 +1256,7 @@
     if (node.type === 'mv' || node.type === 'rot') return 116;
     if (node.type === 'repeat') return 170;
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
-    if (node.type === 'polygon') return 220; // # · ▲▼ · r · z · × needs ~220px
+    if (node.type === 'polygon') return 180; // tighter vertical layout — input + chrome fits at 180
     return 130;
   }
   /** Auto-fit width based on the card's content — title length + longest
@@ -1258,7 +1280,7 @@
     if (node.type === 'method') return 110;
     if (node.type === 'mv' || node.type === 'rot') return 136;
     if (node.type === 'repeat') return 230;
-    if (node.type === 'polygon') return 240; // fixed-width compact table
+    if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // Auto-width based on the LONGEST child-slot label. Each slot prints
       // either the child's "alias · src" (call), "op(…)" (method/transform),
@@ -1308,13 +1330,15 @@
       return { w, h: Math.max(60, 40 + slots * 22) };
     }
     if (node.type === 'polygon') {
-      // 36 header + 32 per vertex (two stacked sub-rows of 16) + 30 footer.
-      // Card height caps at MAX_VISIBLE vertices; beyond that the inner
-      // div scrolls. The two sockets per vertex are aligned with the
-      // two sub-rows on the LEFT edge of the card.
+      // Default height: header + N visible vertices + footer. User can
+      // resize (corner grip works for height too now) to grow/shrink.
+      // Persisted height in layout[id].h wins over the auto-fit.
       const MAX_VISIBLE = 8;
       const rows = Math.min(MAX_VISIBLE, (node as any).points?.length ?? 0);
-      return { w, h: 36 + Math.max(1, rows) * 32 + 30 };
+      const savedH = graph.layout[node.id]?.h;
+      const autoH = 36 + Math.max(1, rows) * 39 + 30;
+      const h = typeof savedH === 'number' ? Math.max(120, savedH) : autoH;
+      return { w, h };
     }
     return { w, h: 80 };
   }
@@ -2624,8 +2648,8 @@
                    the chip's output socket to that coord's input socket. -->
               {#each ((n as any).points ?? []) as pt, idx (idx)}
                 {@const pos = nodePos(n.id)}
-                {@const rTopY = pos.y + 36 + 18 + idx * 30 + 9}
-                {@const zTopY = pos.y + 36 + 18 + idx * 30 + 22}
+                {@const rTopY = pos.y + 36 + idx * 39 + 10}
+                {@const zTopY = pos.y + 36 + idx * 39 + 27}
                 {#if pt.r?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.r.param)}
                   {#if pIdx >= 0}
@@ -3382,16 +3406,16 @@
                      off rows aren't wirable from outside the card. -->
                 {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
                   {#if idx < 8}
-                    {@const vtxTop = 36 + idx * 32}
+                    {@const vtxTop = 36 + idx * 39}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
-                      cx="0" cy={vtxTop + 8} r="5"
+                      cx="0" cy={vtxTop + 10} r="5"
                       onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.z.kind === 'param' ? ' wired' : ''}`}
-                      cx="0" cy={vtxTop + 24} r="5"
+                      cx="0" cy={vtxTop + 27} r="5"
                       onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
                   {/if}
                 {/each}
@@ -4337,19 +4361,26 @@
   /* Scrollable vertex list — caps at the foreignObject's available
      height; scrolls when the vertex count exceeds the visible cap. */
   .ge-poly-vtx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  /* Each vertex is a 2-row × 7-column grid:
+  /* Each vertex is a 2-row × 7-column grid wrapped in a rounded outline
+     so it reads as one block. Tight 2-px gap between vertices keeps the
+     list compact while making the block boundaries scannable.
        row 1: gutter | label | input | ƒ | ▲ | ▼ | ×
        row 2: gutter | label | input | ƒ | .  | .  | .
-     Sub-row height = 16 px so the whole vertex block is 32 px tall. */
+     Sub-row height = 16 px so the inner content is 32 px; plus 2 px
+     padding top/bottom = 36 px total per vertex card. */
   .ge-poly-vertex {
     display: grid;
     grid-template-columns: 12px 12px 1fr 14px 16px 16px 14px;
     grid-template-rows: 16px 16px;
     gap: 1px 2px; align-items: center;
-    padding: 1px 0;
-    border-bottom: 1px dotted #f5f5f4;
+    padding: 2px 2px;
+    margin-bottom: 2px;
+    border: 1px solid #fed7aa;
+    border-radius: 5px;
+    background: rgba(255, 247, 237, 0.5);
   }
-  .ge-poly-vertex:last-child { border-bottom: 0; }
+  .ge-poly-vertex:last-child { margin-bottom: 0; }
+  .ge-poly-vertex:hover { background: #fff7ed; border-color: #fdba74; }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.5px;

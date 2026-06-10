@@ -135,7 +135,13 @@ export type Edge = {
  *  absent, the editor's auto-fit width (cardAutoWidth) applies. Width is
  *  layout-affecting (changes wire routing + auto-layout columns), so it
  *  round-trips through save → reload. */
-export type LayoutXY = { x: number; y: number; w?: number };
+/** Per-node canvas placement. `w` is the user-pinned width override
+ *  (drag the corner grip's horizontal axis). `h` is the user-pinned
+ *  height override — read by the polygon node's `nodeSize` so the
+ *  user can grow the scrollable vertex list. Other node types don't
+ *  consult `h` (their height auto-fits content); the field persists
+ *  harmlessly. */
+export type LayoutXY = { x: number; y: number; w?: number; h?: number };
 
 /** Canvas viewport — the pan offset + zoom level the editor was at when
  *  this graph was last saved. Persists alongside layout so the user lands
