@@ -4784,45 +4784,48 @@
   .ge-wire-item:hover { background: #fef3c7; }
   .ge-wire-item.literal { color: #6b7280; border-top: 1px solid #f1f5f9; }
   .ge-wire-default { font: 10px ui-monospace, monospace; color: #92400e; }
-  /* +Drop picker — Flowbite-style nav dropdown. Compact 260 px column,
-     anchored next to the rail's +Drop button, soft shadow + 1 px border,
-     row-based items (icon + name + optional hint) with hover highlight.
-     Sections quietly separated by dividers; small uppercase labels
-     instead of full coloured chips. #118. */
+  /* +Drop picker — mirrors the ⚙ canvas-settings dropdown look (same
+     220 px column width, 4 px outer padding, 6 px row padding, 6 px
+     border-radius, identical hover treatment). Visual contract matched
+     to .ge-canvas-menu / .ge-cm-row so a user fluent in one popover is
+     fluent in the other. (#146) */
   .ge-picker {
-    /* Position is set inline via the openPicker bounding rect — fall back
-       to the rail-top defaults if the ref hasn't resolved yet. */
+    /* Position is set inline via the openPicker bounding rect — fall
+       back to the rail-top defaults if the ref hasn't resolved yet. */
     position: fixed; top: 60px; left: 56px;
-    width: 260px; height: 480px;
-    background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+    width: 220px; height: 480px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
     z-index: 101; overflow: hidden;
-    /* Fixed outer height + overflow:hidden = the inner Call list owns the
-       only scrollbar (vertical, on .ge-picker-list). The CSG/Transform/
-       Container sections stay pinned at the top so the user can always
-       reach them; only the long primitive list scrolls. */
+    /* Fixed outer height + overflow:hidden = the inner Call list owns
+       the only scrollbar (vertical, on .ge-picker-list). The non-Call
+       sections stay pinned at the top so the user can always reach them. */
     display: flex; flex-direction: column;
   }
-  .ge-picker-section { padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
-  .ge-picker-section:last-child { border-bottom: 0; }
+  /* Section: a small uppercase label + its rows. Same vertical rhythm
+     as the ⚙ menu (no per-section border; thin divider between sections
+     via padding + a hairline). */
+  .ge-picker-section { padding: 2px 0 4px; }
+  .ge-picker-section + .ge-picker-section { border-top: 1px solid #f1f5f9; padding-top: 4px; }
   .ge-picker-label {
-    font: 600 9px Arial; color: #78716c;
+    font: 600 9px Arial; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.6px;
-    padding: 4px 12px 2px;
+    padding: 4px 10px 2px;
   }
-  /* Row item — Flowbite menu pattern: full-width button, icon column +
-     name + optional muted hint. Hover gives a subtle bg, no per-type
-     loud colours. */
+  /* Row item — matches .ge-cm-row exactly: full-width button, 6/10 px
+     padding, 12 px Arial, 4 px row radius, slate hover. */
   .ge-pick-item {
     display: flex; align-items: center; gap: 8px;
-    width: 100%; padding: 6px 12px; box-sizing: border-box;
-    background: transparent; border: 0; cursor: pointer;
-    text-align: left; font: 12px Arial; color: #1f2937;
+    width: 100%; padding: 6px 10px; box-sizing: border-box;
+    background: transparent; border: 0; border-radius: 4px; cursor: pointer;
+    font: 500 12px Arial; color: #1f2937;
+    text-align: left;
   }
   .ge-pick-item:hover { background: #f3f4f6; color: #0c4a6e; }
   .ge-pick-icon {
-    flex: 0 0 14px; width: 14px;
-    font-size: 13px; color: #64748b; text-align: center;
+    flex: 0 0 16px; width: 16px;
+    font-size: 13px; color: #64748b; text-align: center; line-height: 1;
   }
   .ge-pick-item:hover .ge-pick-icon { color: #0c4a6e; }
   .ge-pick-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4841,7 +4844,7 @@
   .ge-pick-sort:hover { background: #f3f4f6; }
   .ge-pick-sort.active { background: #1e40af; color: #fff; border-color: #1e40af; }
   .ge-picker-search {
-    width: calc(100% - 24px); margin: 4px 12px 6px;
+    width: calc(100% - 16px); margin: 4px 8px 4px;
     padding: 4px 8px; font: 12px ui-monospace, monospace;
     border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;
   }
