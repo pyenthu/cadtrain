@@ -100,15 +100,18 @@ export function splitProfileModule(src: string): { meta: ProfileMeta; buildSourc
     while (after < src.length && /[;\s]/.test(src[after])) after++; // skip `;` + whitespace
     buildSource = src.slice(after);
   }
-  return {
-    meta: {
-      id: String(raw.id ?? ''),
-      label: String(raw.label ?? raw.id ?? ''),
-      description: String(raw.description ?? ''),
-      set: raw.set === 'cartesian' ? 'cartesian' : 'revolve',
-      tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
-      params: raw.params && typeof raw.params === 'object' ? raw.params : {},
-    },
-    buildSource: buildSource.trim(),
+  const meta: ProfileMeta = {
+    id: String(raw.id ?? ''),
+    label: String(raw.label ?? raw.id ?? ''),
+    description: String(raw.description ?? ''),
+    set: raw.set === 'cartesian' ? 'cartesian' : 'revolve',
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    params: raw.params && typeof raw.params === 'object' ? raw.params : {},
   };
+  // PRESERVE the optional graph block. Earlier cut explicitly constructed
+  // meta from only the canonical fields - graph was silently dropped on
+  // every load, so files saved with a graph round-tripped to nothing on
+  // reopen ('legacy mode' banner). Copy it through when present.
+  if (raw.graph && typeof raw.graph === 'object') meta.graph = raw.graph;
+  return { meta, buildSource: buildSource.trim() };
 }
