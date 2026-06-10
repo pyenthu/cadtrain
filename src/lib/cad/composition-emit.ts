@@ -375,9 +375,17 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // Polygon nodes are profile-only (handled by composition-emit-
       // profile.ts). The part emitter shouldn't see one in a real
       // assembly, but if it does we emit the literal [[r, z], …] array
-      // so a stray polygon doesn't crash an unrelated bake. #154 repeat
-      // entries spread via Array.from inside the same outer literal.
+      // so a stray polygon doesn't crash an unrelated bake. #154/#157
+      // repeat entries spread via Array.from inside the same outer literal.
       const rows = node.points.map((entry: any) => {
+        if (entry?.kind === 'repeat-ref') {
+          const src = nodes[entry.sourceId] as any;
+          if (!src || src.type !== 'poly_repeat') return '';
+          const count = emitValueExpr(src.count);
+          const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(src.loopVar || ''))
+            ? String(src.loopVar) : 'i';
+          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => [${emitValueExpr(src.r)}, ${emitValueExpr(src.z)}])`;
+        }
         if (entry?.kind === 'repeat') {
           const count = emitValueExpr(entry.count);
           const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(entry.loopVar || ''))
@@ -385,7 +393,7 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
           return `...Array.from({ length: ${count} }, (_, ${loopVar}) => [${emitValueExpr(entry.r)}, ${emitValueExpr(entry.z)}])`;
         }
         return `[${emitValueExpr(entry.r)}, ${emitValueExpr(entry.z)}]`;
-      });
+      }).filter(Boolean);
       return `[${rows.join(', ')}]`;
     }
   }

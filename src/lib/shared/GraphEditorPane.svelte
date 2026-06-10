@@ -30,6 +30,9 @@
     movePolygonPoint,
     setPolygonRepeatCount,
     setPolygonRepeatLoopVar,
+    setPolyRepeatCount,
+    setPolyRepeatLoopVar,
+    setPolyRepeatCoord,
     addMethodPlaceholder,
     addMvPlaceholder,
     addRotPlaceholder,
@@ -349,19 +352,35 @@
     };
     const out: [number, number][] = [];
     for (const entry of (node.points as any[])) {
-      // Legacy entries (pre-#154) have NO `kind` field — treat as 'point'
-      // so old saved files continue to work without a migration script.
-      const isRepeat = entry?.kind === 'repeat';
-      if (!isRepeat) {
-        out.push([evalCoord(entry?.r), evalCoord(entry?.z)]);
+      // repeat-ref (#157) — chase the sourceId to its PolyRepeatNode and
+      // expand its r/z expressions across i = 0..count-1. The loop var
+      // (named on the source) is bound in scope for the expressions.
+      if (entry?.kind === 'repeat-ref') {
+        const src = graph.nodes[entry.sourceId] as any;
+        if (!src || src.type !== 'poly_repeat') continue;
+        const n = Math.max(0, Math.min(2048, Math.round(evalCoord(src.count))));
+        const loopVar = String(src.loopVar || 'i');
+        for (let i = 0; i < n; i++) {
+          const extra = { [loopVar]: i };
+          out.push([evalCoord(src.r, extra), evalCoord(src.z, extra)]);
+        }
         continue;
       }
-      const n = Math.max(0, Math.min(2048, Math.round(evalCoord(entry.count))));
-      const loopVar = String(entry.loopVar || 'i');
-      for (let i = 0; i < n; i++) {
-        const extra = { [loopVar]: i };
-        out.push([evalCoord(entry.r, extra), evalCoord(entry.z, extra)]);
+      // DEPRECATED inline repeat (pre-#157) — kept for any in-memory
+      // graph that bypassed the hydrate migration. New saves never emit
+      // this kind.
+      if (entry?.kind === 'repeat') {
+        const n = Math.max(0, Math.min(2048, Math.round(evalCoord(entry.count))));
+        const loopVar = String(entry.loopVar || 'i');
+        for (let i = 0; i < n; i++) {
+          const extra = { [loopVar]: i };
+          out.push([evalCoord(entry.r, extra), evalCoord(entry.z, extra)]);
+        }
+        continue;
       }
+      // Literal vertex (legacy entries pre-#154 lack `kind` — treat as
+      // point so old files keep working without a migration script).
+      out.push([evalCoord(entry?.r), evalCoord(entry?.z)]);
     }
     return out;
   }
@@ -578,24 +597,58 @@
       blocked,
     };
   }
+  /** Cheap PARAMS-only eval for an ArgValue → number. Mirrors the
+   *  evalCoord pipeline inside polyToPoints but standalone (no extra
+   *  loop-var bindings). Used by entryIdxForEvalIdx to size each
+   *  repeat-ref / repeat span without re-expanding the whole polygon. */
+  function evalArgValueScalar(val: any): number {
+    try {
+      if (!val) return 0;
+      if (val.kind === 'literal') return Number(val.value) || 0;
+      if (val.kind === 'param') {
+        return Number((graph.params as any)?.[val.param]?.default ?? 0);
+      }
+      if (val.kind === 'expr') {
+        const params: Record<string, number> = {};
+        for (const [k, v] of Object.entries(graph.params ?? {})) {
+          params[k] = Number((v as any)?.default ?? 0);
+        }
+        const fn = new Function(
+          'p', 'Math', 'PI', 'tau', 'cos', 'sin', 'tan', 'sqrt', 'abs',
+          `return (${String(val.expr)});`,
+        );
+        const out = fn(params, Math, Math.PI, 2 * Math.PI, Math.cos, Math.sin, Math.tan, Math.sqrt, Math.abs);
+        return Number.isFinite(out) ? Number(out) : 0;
+      }
+    } catch { /* ignore */ }
+    return 0;
+  }
   /** Map an evaluated-points-index back to the ENTRY index in the polygon's
-   *  `points` array. Repeat blocks expand to N points so we can't 1:1.
-   *  Returns null when the eval index falls INSIDE a repeat-block
-   *  expansion — those edges can't be split via UI insert (the user
-   *  would tweak the count/expressions instead). */
+   *  `points` array. Walks entries advancing `cursor` by each entry's
+   *  expansion span. Repeat-ref / inline-repeat entries with N points
+   *  cover [cursor..cursor+N); literal vertices cover {cursor}. Returns
+   *  the entry index when the eval idx lands on a literal vertex; returns
+   *  null when it falls inside a repeat expansion (those edges can't
+   *  be UI-inserted — the user tweaks count/expressions instead). */
   function entryIdxForEvalIdx(node: any, evalIdx: number): number | null {
     let cursor = 0;
     for (let i = 0; i < node.points.length; i++) {
       const entry = node.points[i];
-      if (entry?.kind === 'repeat') {
-        // The count needs to be evaluated; cheapest is to recount via
-        // polyToPoints once at call site. Refuse the insert when the
-        // edge sits inside or starts at a repeat block — keeps the
-        // semantics simple, can revisit when repeat-split UX is needed.
+      let span = 1;
+      if (entry?.kind === 'repeat-ref') {
+        const src = graph.nodes[entry.sourceId] as any;
+        span = (src && src.type === 'poly_repeat')
+          ? Math.max(0, Math.min(2048, Math.round(evalArgValueScalar(src.count))))
+          : 0;
+      } else if (entry?.kind === 'repeat') {
+        span = Math.max(0, Math.min(2048, Math.round(evalArgValueScalar(entry.count))));
+      }
+      if (evalIdx < cursor + span) {
+        // Fell inside this entry. Only literal vertices accept a UI insert.
+        if (entry?.kind === 'point' || !entry?.kind) return i;
         return null;
       }
-      if (cursor === evalIdx) return i;
-      cursor += 1;
+      cursor += span;
     }
     return null;
   }
@@ -1565,6 +1618,26 @@
     wireFrom = null; wireMouse = null;
   }
 
+  /** Drop a wire onto a polygon's repeat-ref row (#157). When the wire's
+   *  source is a poly_repeat node's output socket, REPOINT the row to
+   *  that source. Drops from anything else are ignored. */
+  function endWireOnPolygonRepeatRef(ev: PointerEvent, polygonId: NodeId, idx: number) {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'node-out') {
+      const src = graph.nodes[wireFrom.nodeId];
+      if (src && (src as any).type === 'poly_repeat') {
+        const poly = graph.nodes[polygonId] as any;
+        if (poly?.type === 'polygon') {
+          const points = [...poly.points];
+          points[idx] = { kind: 'repeat-ref', sourceId: wireFrom.nodeId };
+          graph = { ...graph, nodes: { ...graph.nodes, [polygonId]: { ...poly, points } } };
+        }
+      }
+    }
+    wireFrom = null; wireMouse = null;
+  }
+
   /** Wire a param's output onto one of a mv/rot's three xyz slots. */
   function endWireOnTransformAxis(ev: PointerEvent, transformId: NodeId, axis: 0 | 1 | 2) {
     ev.stopPropagation();
@@ -1802,6 +1875,11 @@
       const autoH = 36 + Math.max(1, rows) * 39 + 30;
       const h = typeof savedH === 'number' ? Math.max(120, savedH) : autoH;
       return { w, h };
+    }
+    if (node.type === 'poly_repeat') {
+      // 2-section fixed-height card (#157) — params + loop. Header (32) +
+      // Params section (40) + Loop section (76) + bottom padding (6) = 154.
+      return { w: 220, h: 154 };
     }
     return { w, h: 80 };
   }
@@ -3223,6 +3301,22 @@
                     {/if}
                   {/each}
                 {/if}
+                <!-- Repeat-ref wire (#157) — from the source poly_repeat's
+                     output socket to this row's input socket on the
+                     polygon's left edge. Distinctive violet skin so it
+                     reads as "this loop feeds this row". -->
+                {#if pt?.kind === 'repeat-ref'}
+                  {@const src = graph.nodes[pt.sourceId]}
+                  {#if src && src.type === 'poly_repeat'}
+                    {@const srcXY = nodePos(src.id)}
+                    {@const srcSize = nodeSize(src as any)}
+                    {@const srcX = srcXY.x + srcSize.w}
+                    {@const srcY = srcXY.y + srcSize.h / 2}
+                    {@const tgtX = pos.x}
+                    {@const tgtY = pos.y + 36 + idx * 39 + 18}
+                    <path class="ge-wire poly-rref" d={bezier(srcX, srcY, tgtX, tgtY)} fill="none"/>
+                  {/if}
+                {/if}
               {/each}
             {/if}
           {/each}
@@ -3880,14 +3974,37 @@
                          compact even for many vertices. -->
                     <div class="ge-poly-vtx-list">
                     {#each (poly.points as Array<any>) as pt, idx (idx)}
-                      {#if pt?.kind === 'repeat'}
-                        <!-- Repeat block (#154) — expands to N points at evaluation
-                             time. The loop var (default `i`, 0..N-1) is in scope for
-                             the r and z expressions, so polar n-gons / stars / gear
-                             teeth / wear-pad rings collapse to one row of two
-                             expressions instead of N hand-typed vertices. Distinct
-                             violet skin so the user can tell at a glance "this is a
-                             generator, not a single vertex." -->
+                      {#if pt?.kind === 'repeat-ref'}
+                        <!-- Repeat-ref summary row (#157) — points to a SEPARATE
+                             PolyRepeatNode card. Shows a compact summary
+                             "↳ Loop · × N" with the source's current count.
+                             Editing the loop's expressions happens on the
+                             source card; this row is just the splice anchor +
+                             reorder + delete. -->
+                        {@const src = graph.nodes[pt.sourceId]}
+                        {@const srcCount = src?.type === 'poly_repeat' ? (src.count?.kind === 'literal' ? src.count.value : '?') : '?'}
+                        {@const isMissing = !src || src.type !== 'poly_repeat'}
+                        <div class="ge-poly-rref" class:missing={isMissing}>
+                          <span class="ge-poly-rref-glyph" aria-hidden="true">↳</span>
+                          <span class="ge-poly-rref-label">
+                            Loop {isMissing ? '(missing)' : '· ×'} {isMissing ? '' : srcCount}
+                          </span>
+                          <span class="ge-poly-rref-id" title={`Source card ${pt.sourceId}`}>{String(pt.sourceId).slice(2, 7)}</span>
+                          <span class="ge-poly-rref-spacer"></span>
+                          <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
+                            onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
+                          <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
+                            onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
+                          <button class="ge-poly-ins" type="button" title="Insert a vertex above this row"
+                            onclick={() => { graph = addPolygonPoint(graph, n.id, idx - 1); }}>+</button>
+                          <button class="ge-poly-del" type="button" title="Remove this loop ref (drops the source card too)" disabled={poly.points.length <= 1}
+                            onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
+                        </div>
+                      {:else if pt?.kind === 'repeat'}
+                        <!-- DEPRECATED — inline repeat block (#154). Hydrate
+                             migrates these to repeat-refs on file open, so
+                             this branch is rarely hit in practice; kept as
+                             a safety net for graphs that bypass hydration. -->
                         <div class="ge-poly-repeat">
                           <div class="ge-poly-repeat-head">
                             <span class="ge-poly-repeat-badge">× N</span>
@@ -4057,13 +4174,19 @@
                      for visible vertices (up to MAX_VISIBLE) so scrolled-
                      off rows aren't wirable from outside the card. -->
                 {#each (poly.points as Array<any>) as pt, idx (idx)}
-                  <!-- Repeat blocks (#154) don't expose r/z sockets — their
-                       expressions are edited via the inline expr inputs +
-                       ƒ-popover, not the wire system. Skip them so the
-                       socket overlay doesn't drift relative to the visible
-                       rows below. (Vertex-row sockets resume on the next
-                       point entry.) -->
-                  {#if idx < 8 && pt?.kind !== 'repeat'}
+                  {#if idx < 8 && pt?.kind === 'repeat-ref'}
+                    <!-- Repeat-ref input socket (#157) — single socket
+                         centered vertically on the row. Wires in from a
+                         PolyRepeatNode's output. Drag from this socket to
+                         a different poly_repeat to repoint the ref. -->
+                    {@const vtxTop = 36 + idx * 39}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1"
+                      class="ge-sock in poly-rref-in wired"
+                      cx="0" cy={vtxTop + 18} r="6"
+                      onpointerup={(ev) => endWireOnPolygonRepeatRef(ev, n.id, idx)}/>
+                  {:else if idx < 8 && pt?.kind !== 'repeat'}
+                    <!-- Vertex r/z sockets — two stacked, one per axis. -->
                     {@const vtxTop = 36 + idx * 39}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
@@ -4080,6 +4203,65 @@
                 <!-- OUTPUT socket on right edge — wires to the Output card. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+              {:else if n.type === 'poly_repeat'}
+                {@const pr = n as any}
+                <!-- PolyRepeat card (#157, 2026-06-10) — generates N points
+                     via a (count, loopVar, r-expr, z-expr) tuple. Output
+                     splices into one or more polygons at their repeat-ref
+                     entries. Two sections: Params (count + loop var)
+                     and Loop (r(i) + z(i) expressions). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg poly-repeat"
+                  width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="10" y="20" class="ge-node-title">↻ loop · {pr.id.slice(2, 7)}</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
+                  data-tip="Delete loop (refs in polygons will show as 'missing')"
+                  onpointerdown={(ev) => { ev.stopPropagation(); graph = removeNode(graph, n.id); }}>×</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <foreignObject x="6" y="32" width={size.w - 12} height={size.h - 38} class="ge-fo">
+                  <div class="ge-poly-repeat-card" xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="ge-prc-section-head">Params</div>
+                    <div class="ge-prc-params">
+                      <span class="ge-prc-label">N</span>
+                      <input class="ge-poly-input" type="number" min="0" step="1"
+                        value={pr.count?.kind === 'literal' ? pr.count.value : 6}
+                        title="Number of points this loop generates (i = 0..N−1)"
+                        oninput={(e) => { graph = setPolyRepeatCount(graph, pr.id, { kind: 'literal', value: Math.max(0, Math.round(Number((e.target as HTMLInputElement).value) || 0)) }); }}/>
+                      <span class="ge-prc-label">var</span>
+                      <input class="ge-poly-input" type="text" maxlength="6"
+                        value={String(pr.loopVar || 'i')}
+                        title="Loop variable bound in r and z expressions"
+                        oninput={(e) => { graph = setPolyRepeatLoopVar(graph, pr.id, String((e.target as HTMLInputElement).value) || 'i'); }}/>
+                    </div>
+                    <div class="ge-prc-section-head">Loop ƒ({pr.loopVar || 'i'})</div>
+                    <div class="ge-prc-expr-row">
+                      <span class="ge-prc-label">r</span>
+                      <input class="ge-poly-input expr" type="text"
+                        value={pr.r?.kind === 'expr' ? pr.r.expr : pr.r?.kind === 'literal' ? String(pr.r.value) : ''}
+                        placeholder="cos(i*2*PI/6)"
+                        oninput={(e) => { graph = setPolyRepeatCoord(graph, pr.id, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                    </div>
+                    <div class="ge-prc-expr-row">
+                      <span class="ge-prc-label">z</span>
+                      <input class="ge-poly-input expr" type="text"
+                        value={pr.z?.kind === 'expr' ? pr.z.expr : pr.z?.kind === 'literal' ? String(pr.z.value) : ''}
+                        placeholder="sin(i*2*PI/6)"
+                        oninput={(e) => { graph = setPolyRepeatCoord(graph, pr.id, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                    </div>
+                  </div>
+                </foreignObject>
+                <!-- Output socket on the right edge — wires into a polygon's
+                     repeat-ref row. The wire visualisation is computed in
+                     the connector layer below; this socket is the source. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out poly-repeat-out"
+                  cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
@@ -5129,6 +5311,9 @@
   .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
   /* Repeat × N — distinct color so it reads as "iteration", not "container". */
   .ge-node-bg.repeat { fill: #fdf2f8; stroke: #be185d; stroke-width: 2; }
+  /* PolyRepeat card (#157) — violet skin matches the parametric-vertex
+     palette + the repeat-ref row inside polygons. */
+  .ge-node-bg.poly-repeat { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 2; }
   /* Repeat count input — inline in the title row, big + editable. */
   .ge-repeat-count-inline { width: 100%; box-sizing: border-box; padding: 2px 6px; font: 700 14px ui-monospace, monospace; color: #be185d; background: #fff; border: 1px solid #fbcfe8; border-radius: 4px; text-align: center; cursor: ew-resize; }
   .ge-repeat-count-inline:focus { outline: 1px solid #be185d; cursor: text; }
@@ -5444,6 +5629,64 @@
     text-align: left; padding-left: 2px;
     color: #5b21b6; /* match the violet family */
   }
+  /* ─── Repeat-ref summary row (#157) ──────────────────────────────────
+     One-row strip inside the polygon table that represents a wire INTO
+     a separate PolyRepeatNode card. Compact (matches vertex-row height
+     so the per-row SVG socket overlay aligns), violet skin, shows the
+     source's current count + a 5-char id stub for cross-card lookup. */
+  .ge-poly-rref {
+    margin-bottom: 2px; padding: 0 4px 0 6px;
+    height: 36px; box-sizing: border-box;
+    border: 1px solid #c4b5fd; border-radius: 5px;
+    background: rgba(245, 243, 255, 0.6);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .ge-poly-rref:hover { background: #f5f3ff; border-color: #a78bfa; }
+  .ge-poly-rref.missing { background: #fff7ed; border-color: #fb923c; }
+  .ge-poly-rref-glyph { font: 700 14px Arial; color: #5b21b6; line-height: 1; }
+  .ge-poly-rref-label { font: 600 11px Arial; color: #4c1d95; white-space: nowrap; }
+  .ge-poly-rref-id {
+    font: 600 9px ui-monospace, monospace; color: #6d28d9;
+    background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 3px;
+    padding: 1px 4px; letter-spacing: 0.5px;
+  }
+  .ge-poly-rref-spacer { flex: 1 1 auto; }
+  /* ─── PolyRepeat card inner content (#157) ──────────────────────────
+     Two sections — Params (count + loop var inline) and Loop ƒ(i)
+     (two stacked expression rows). Compact 12-px label column, 1fr
+     for the input so the expressions get most of the width. */
+  .ge-poly-repeat-card {
+    display: flex; flex-direction: column; gap: 4px;
+    font: 11px Arial; color: #1f2937;
+  }
+  .ge-prc-section-head {
+    font: 700 9px Arial; color: #6d28d9;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-top: 1px;
+  }
+  .ge-prc-params {
+    display: grid; grid-template-columns: 14px 48px 24px 1fr;
+    gap: 4px; align-items: center;
+  }
+  .ge-prc-expr-row {
+    display: grid; grid-template-columns: 14px 1fr;
+    gap: 4px; align-items: center;
+  }
+  .ge-prc-label {
+    font: 600 10px ui-monospace, monospace; color: #5b21b6;
+    text-align: center;
+  }
+  /* Repeat-ref wire (#157) — violet, slightly thicker than the param
+     bezier so it reads as "data flow" not "param wiring". */
+  .ge-wire.poly-rref {
+    stroke: #6d28d9; stroke-width: 2.5; stroke-opacity: 0.75;
+    fill: none;
+  }
+  /* Repeat-ref input socket on the polygon's left edge — violet, larger
+     than a coord socket so the user can land a wire reliably. */
+  .ge-sock.in.poly-rref-in { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
+  .ge-sock.in.poly-rref-in.wired { fill: #6d28d9; }
+  .ge-sock.out.poly-repeat-out { fill: #6d28d9; stroke: #5b21b6; }
   /* IMPORTANT: row height is 22 px to match the input-socket spacing
      math in the SVG (cy = 36 + 14 + i * 22). Don't change without
      updating ALL three sites: the cy expression on socket circles,

@@ -137,12 +137,22 @@ function collectFromNode(
   if ((node as any).type === 'polygon') {
     const poly = node as any;
     for (const entry of poly.points as Array<any>) {
-      // Repeat block (#154) — emits as `...Array.from({length:N}, (_, i) =>
-      // [<rExpr>, <zExpr>])` so the outer `return [...]` literal can
-      // spread N points in line. The loop var (default `i`) becomes the
-      // arrow's second arg → it's in scope for the r/z expressions at
-      // runtime. count + r + z each go through argToCode so PARAMS
-      // wiring + bare-name expressions Just Work inside the loop body.
+      // Repeat-ref (#157) — look up the PolyRepeatNode it points to and
+      // emit ITS r/z expressions as an Array.from spread.
+      if (entry?.kind === 'repeat-ref') {
+        const src = graph.nodes[entry.sourceId] as any;
+        if (!src || src.type !== 'poly_repeat') continue;
+        const count = argToCode(src.count);
+        const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(src.loopVar || ''))
+          ? String(src.loopVar) : 'i';
+        const r = argToCode(src.r);
+        const z = argToCode(src.z);
+        polyRows.push(`...Array.from({ length: ${count} }, (_, ${loopVar}) => [${r}, ${z}])`);
+        continue;
+      }
+      // DEPRECATED inline repeat block (#154 / pre-#157). The hydrate path
+      // migrates these to repeat-refs; this branch handles raw graphs
+      // that somehow bypassed hydration.
       if (entry?.kind === 'repeat') {
         const count = argToCode(entry.count);
         const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(entry.loopVar || ''))

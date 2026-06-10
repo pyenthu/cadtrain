@@ -110,13 +110,10 @@ export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: Arg
  *  field; the hydrate path defaults missing kinds to 'point'. New writes
  *  always include the kind tag so the union is discriminable. */
 export type PolygonPoint = { kind: 'point'; r: ArgValue; z: ArgValue };
-/** A REPEAT block — expands to N points at evaluation time. The loop var
- *  (default `i`, runs 0..count-1) is in scope for the r and z expressions.
- *  Use cases: polar n-gons (r = R, z = i·2π/N), stars (r alternates by
- *  i%2), gear teeth (r = R + a·sin(N·i·2π)), drill-pipe wear-pad rings.
- *
- *  The expressions are ArgValue so they can also pull from PARAMS via the
- *  ƒ-popup — e.g. `count = p.teeth`. */
+/** DEPRECATED — inline repeat block. Kept as a TYPE only so the hydrate
+ *  path can recognise + migrate legacy entries to the new shape
+ *  (PolyRepeatNode + PolygonRepeatRef). New code MUST NOT emit this; it
+ *  exists for one-way migration of files saved during Phase B (#154). */
 export type PolygonRepeat = {
   kind: 'repeat';
   count: ArgValue;
@@ -124,18 +121,44 @@ export type PolygonRepeat = {
   r: ArgValue;
   z: ArgValue;
 };
-export type PolygonEntry = PolygonPoint | PolygonRepeat;
+/** A reference to a SEPARATE PolyRepeatNode whose output is spliced into
+ *  the polygon's point list at this entry's position (#157). Multiple
+ *  refs can interleave with literal vertices in any order — each ref
+ *  contributes its source node's N points at the row where it sits.
+ *  Wired via the polygon's per-row repeat-ref input socket on the left
+ *  edge of the card, paired with the PolyRepeatNode's output socket. */
+export type PolygonRepeatRef = {
+  kind: 'repeat-ref';
+  sourceId: NodeId;
+};
+export type PolygonEntry = PolygonPoint | PolygonRepeat | PolygonRepeatRef;
 export type PolygonNode = {
   id: NodeId;
   type: 'polygon';
-  /** Ordered list of entries — vertices and/or repeat blocks. Both
+  /** Ordered list of entries — vertices and/or repeat-refs. Both
    *  contribute points to the final polygon when emitted/evaluated. Name
    *  kept as `points` for back-compat with the pre-#154 shape; legacy
    *  files round-trip unchanged. */
   points: PolygonEntry[];
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode;
+/** Polygon-repeat node — generates N points by iterating a loop var
+ *  (default `i`, runs 0..count-1) over r and z ArgValue expressions.
+ *  Output wires into one or more polygon `repeat-ref` entries.
+ *
+ *  Rendered as a 2-section card: PARAMS (count + loop var) and LOOP
+ *  (r(i) + z(i) expression inputs). Sits on the canvas next to the
+ *  polygon it feeds, with a dedicated wire showing the spread. */
+export type PolyRepeatNode = {
+  id: NodeId;
+  type: 'poly_repeat';
+  count: ArgValue;
+  loopVar: string;
+  r: ArgValue;
+  z: ArgValue;
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode | PolyRepeatNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
@@ -246,13 +269,59 @@ export function hydrateGraph(serialised: any): Graph {
       ? { pan: { x: Number(serialised.viewport.pan.x) || 0, y: Number(serialised.viewport.pan.y) || 0 },
           zoom: Number(serialised.viewport.zoom) || 1 }
       : { pan: { x: 0, y: 0 }, zoom: 1 };
+  // Migrate legacy inline {kind:'repeat'} polygon entries (Phase B / #154)
+  // into the new separate-card model (#157): create a PolyRepeatNode per
+  // inline repeat + replace the entry with a {kind:'repeat-ref', sourceId}.
+  // Round-tripping a pre-#157 file no longer loses the loop data.
+  const migratedNodes: Record<string, GraphNode> = { ...(serialised.nodes ?? {}) };
+  const migratedLayout: Record<string, LayoutXY> = { ...savedLayout };
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id];
+    if (!n || (n as any).type !== 'polygon') continue;
+    const poly = n as PolygonNode;
+    const newEntries: PolygonEntry[] = [];
+    let migratedAny = false;
+    for (const entry of (poly.points as any[])) {
+      if (entry?.kind === 'repeat') {
+        // Allocate a new PolyRepeatNode; preserve count/loopVar/r/z.
+        const repeatId = newNodeId();
+        const repeatNode: PolyRepeatNode = {
+          id: repeatId,
+          type: 'poly_repeat',
+          count: entry.count,
+          loopVar: String(entry.loopVar || 'i'),
+          r: entry.r,
+          z: entry.z,
+        };
+        migratedNodes[repeatId] = repeatNode;
+        // Layout — sits to the right of the polygon if its position is
+        // known, otherwise gets a default slot. The pass below filling
+        // missing positions will also catch the edge cases.
+        const polyXY = migratedLayout[id];
+        if (polyXY) migratedLayout[repeatId] = { x: polyXY.x + 280, y: polyXY.y + 40 };
+        newEntries.push({ kind: 'repeat-ref', sourceId: repeatId });
+        migratedAny = true;
+      } else if (entry?.kind === 'point') {
+        newEntries.push(entry);
+      } else if (entry?.kind === 'repeat-ref') {
+        newEntries.push(entry);
+      } else {
+        // Untagged legacy point (pre-#154 entries with no kind).
+        newEntries.push({ kind: 'point', r: entry.r, z: entry.z });
+      }
+    }
+    if (migratedAny) {
+      migratedNodes[id] = { ...poly, points: newEntries };
+    }
+  }
+
   let g: Graph = {
-    nodes: serialised.nodes,
+    nodes: migratedNodes,
     root: serialised.root,
     params: serialised.params ?? {},
     edges: [],
     imports: serialised.imports ?? [],
-    layout: savedLayout,
+    layout: migratedLayout,
     viewport: savedViewport,
   };
   // Fill missing positions only — preserves any saved entry, populates the
@@ -293,7 +362,8 @@ export function defaultCallPosition(graph: Graph): LayoutXY {
   // and the cards stack invisibly.
   const dropped = Object.values(graph.nodes).filter((n) =>
     n.type === 'call' || n.type === 'polygon' || n.type === 'method' ||
-    n.type === 'mv'   || n.type === 'rot'     || n.type === 'repeat',
+    n.type === 'mv'   || n.type === 'rot'     || n.type === 'repeat' ||
+    n.type === 'poly_repeat',
   ).length;
   return { x: 80 + (dropped % 4) * 240, y: 80 + Math.floor(dropped / 4) * 180 };
 }
@@ -665,25 +735,73 @@ export function addPolygonPoint(graph: Graph, polygonId: NodeId, afterIdx?: numb
   return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
 }
 
-/** Insert a new REPEAT block. Default = 6-point polar n-gon: count=6,
- *  loopVar='i', r='cos(i*2*PI/6)', z='sin(i*2*PI/6)'. Same `afterIdx`
- *  semantics as addPolygonPoint (-1 = prepend, omitted = append). */
+/** Insert a new REPEAT-REF row into a polygon AND drop the corresponding
+ *  PolyRepeatNode as a separate card on the canvas (#157, 2026-06-10).
+ *  Default = 6-point polar n-gon: count=6, loopVar='i', r='cos(i*2*PI/6)',
+ *  z='sin(i*2*PI/6)'. The new card lands to the RIGHT of the polygon
+ *  with a 40-px vertical offset stacked per existing repeat sibling so
+ *  consecutive `+ repeat` clicks don't pile cards on top of each other.
+ *
+ *  Same `afterIdx` semantics as addPolygonPoint (-1 = prepend, omitted
+ *  = append). */
 export function addPolygonRepeat(graph: Graph, polygonId: NodeId, afterIdx?: number): Graph {
   const node = graph.nodes[polygonId];
   if (!node || node.type !== 'polygon') return graph;
   const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.points.length)
     ? afterIdx + 1
     : node.points.length;
-  const block: PolygonRepeat = {
-    kind: 'repeat',
+
+  // Create the PolyRepeatNode + its canvas layout entry.
+  const repeatId = newNodeId();
+  const repeatNode: PolyRepeatNode = {
+    id: repeatId,
+    type: 'poly_repeat',
     count: asLiteral(6),
     loopVar: 'i',
     r: { kind: 'expr', expr: 'cos(i*2*PI/6)' },
     z: { kind: 'expr', expr: 'sin(i*2*PI/6)' },
   };
-  const points = [...node.points.slice(0, insertAt), block, ...node.points.slice(insertAt)];
-  const updated: PolygonNode = { ...node, points };
-  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+  // Layout: 280 px right of the polygon's left edge + stack vertically
+  // so multiple `+ repeat` clicks fan out instead of overlapping.
+  const polyXY = graph.layout[polygonId] ?? { x: 80, y: 80 };
+  const existingRepeats = Object.values(graph.nodes)
+    .filter((n) => n.type === 'poly_repeat').length;
+  const xy: LayoutXY = { x: polyXY.x + 280, y: polyXY.y + existingRepeats * 40 };
+
+  // Insert the repeat-ref entry into the polygon at insertAt.
+  const ref: PolygonRepeatRef = { kind: 'repeat-ref', sourceId: repeatId };
+  const points = [...node.points.slice(0, insertAt), ref, ...node.points.slice(insertAt)];
+  const updatedPoly: PolygonNode = { ...node, points };
+
+  return finalize({
+    ...graph,
+    nodes: { ...graph.nodes, [polygonId]: updatedPoly, [repeatId]: repeatNode },
+    layout: { ...graph.layout, [repeatId]: xy },
+  });
+}
+
+/** Mutate a PolyRepeatNode's `count` (number of points it generates). */
+export function setPolyRepeatCount(graph: Graph, repeatId: NodeId, count: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const updated: PolyRepeatNode = { ...node, count };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Mutate a PolyRepeatNode's loop variable name. */
+export function setPolyRepeatLoopVar(graph: Graph, repeatId: NodeId, loopVar: string): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const updated: PolyRepeatNode = { ...node, loopVar };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Mutate a PolyRepeatNode's r or z expression. */
+export function setPolyRepeatCoord(graph: Graph, repeatId: NodeId, axis: 'r' | 'z', arg: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const updated: PolyRepeatNode = { ...node, [axis]: arg };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
 }
 
 /** Remove a vertex at idx. Keeps the polygon at ≥ 1 point — fully empty
@@ -694,9 +812,28 @@ export function removePolygonPoint(graph: Graph, polygonId: NodeId, idx: number)
   if (!node || node.type !== 'polygon') return graph;
   if (idx < 0 || idx >= node.points.length) return graph;
   if (node.points.length <= 1) return graph;
+  const removed = node.points[idx];
   const points = node.points.filter((_, i) => i !== idx);
   const updated: PolygonNode = { ...node, points };
-  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+  // When the removed entry was a repeat-ref AND no other entry still
+  // references the same source, drop the orphaned PolyRepeatNode + its
+  // layout entry. Multiple refs to the same source would be unusual but
+  // would be preserved by the "still referenced?" check.
+  let nodes = { ...graph.nodes, [polygonId]: updated };
+  let layout = graph.layout;
+  if (removed?.kind === 'repeat-ref') {
+    const srcId = (removed as PolygonRepeatRef).sourceId;
+    const stillReferenced = points.some((p) => p.kind === 'repeat-ref' && p.sourceId === srcId);
+    if (!stillReferenced && nodes[srcId]) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [srcId]: _drop, ...rest } = nodes;
+      nodes = rest;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [srcId]: _dropL, ...restL } = layout;
+      layout = restL;
+    }
+  }
+  return finalize({ ...graph, nodes, layout });
 }
 
 /** Move a vertex up (delta = -1) or down (delta = +1) in the list.
