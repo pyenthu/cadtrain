@@ -168,7 +168,17 @@
    *  id changes on a fresh save, so persisting longer doesn't help). */
   let polyPreviewFor = $state<string | null>(null);
   let polyPreviewPos = $state<{ left: number; top: number }>({ left: 0, top: 0 });
-  let polyPreviewPinned = $state<boolean>(false);
+  // Pinned BY DEFAULT (#155, 2026-06-10): without this an outside click
+  // dismisses the popup mid-edit. Pinning makes "open + edit" the default
+  // flow and "click pin to unpin" the explicit close gesture.
+  let polyPreviewPinned = $state<boolean>(true);
+  /** Frozen SVG view (center + half-extent) — DECOUPLED from polygon points
+   *  so dragging a vertex doesn't trigger a global re-fit (the canvas was
+   *  visibly zooming while you dragged a point — #155). The view is set
+   *  ONCE on popup-open by `fitPolyPreview()` and after that only changes
+   *  when the user clicks a toolbar button (zoom +/−, fit). Drag updates
+   *  the polygon's POINTS without ever touching the view. */
+  let polyPreviewView = $state<{ cx: number; cy: number; half: number }>({ cx: 0.5, cy: 0.5, half: 0.7 });
   /** User-resizable popup size — persisted across sessions so the
    *  preferred dimensions stick. Default 240 × 240; min 160 × 160. */
   let polyPreviewSize = $state<{ w: number; h: number }>({ w: 240, h: 240 });
@@ -217,15 +227,68 @@
   }
   function openPolyPreview(ev: PointerEvent, polyId: string) {
     ev.stopPropagation();
-    // Toggle off when the same polygon's 👁 is clicked again — unless
-    // the popup is pinned, in which case the eye also unpins.
+    // Toggle off when the same polygon's 👁 is clicked again. Re-pin on
+    // close so the next open is pinned again (default state, #155).
     if (polyPreviewFor === polyId) {
-      polyPreviewFor = null; polyPreviewPinned = false; return;
+      polyPreviewFor = null; polyPreviewPinned = true; return;
     }
     const target = ev.currentTarget as Element | null;
     const r = target?.getBoundingClientRect();
     if (r) polyPreviewPos = { left: r.right + 8, top: r.top };
     polyPreviewFor = polyId;
+    fitPolyPreview();
+  }
+  /** Compute a viewBox center + half-extent that frames the current
+   *  polygon points with ~16% padding. For revolve profiles this snaps
+   *  to the points' bbox; for cartesian it's symmetric around (0,0) so
+   *  the user sees the origin (extrude rotates around it). 16% =
+   *  enough breathing room that dragging a vertex slightly past the
+   *  edge keeps it visible without immediately clipping. */
+  function fitPolyPreview() {
+    if (!polyPreviewFor) return;
+    const node = graph.nodes[polyPreviewFor];
+    if (!node || node.type !== 'polygon') return;
+    const pts = polyToPoints(node);
+    const isCart = polygonModeFor(polyPreviewFor) === 'cartesian';
+    let xMin = 0, xMax = 1, yMin = 0, yMax = 1;
+    if (pts.length > 0) {
+      const xs = pts.map((p) => p[0]);
+      const ys = pts.map((p) => p[1]);
+      xMin = Math.min(...xs); xMax = Math.max(...xs);
+      yMin = Math.min(...ys); yMax = Math.max(...ys);
+    }
+    if (isCart) {
+      const half = Math.max(Math.abs(xMin), Math.abs(xMax), Math.abs(yMin), Math.abs(yMax), 0.001) * 1.16;
+      polyPreviewView = { cx: 0, cy: 0, half };
+    } else {
+      const w = Math.max(xMax - xMin, 0.001);
+      const h = Math.max(yMax - yMin, 0.001);
+      const cx = (xMin + xMax) / 2;
+      const cy = (yMin + yMax) / 2;
+      const half = Math.max(w, h) / 2 * 1.16;
+      polyPreviewView = { cx, cy, half };
+    }
+  }
+  /** Multiply the view's half-extent by `factor`. < 1 = zoom in (smaller
+   *  view), > 1 = zoom out. Center stays put. */
+  function zoomPolyPreview(factor: number) {
+    polyPreviewView = { ...polyPreviewView, half: Math.max(0.001, polyPreviewView.half * factor) };
+  }
+  /** Toolbar append — adds a new vertex at the END of the polygon's
+   *  points list, seeded from the previous last point. Same semantics
+   *  as the per-row `+` button without needing a specific row clicked. */
+  function appendPolyPoint() {
+    if (!polyPreviewFor) return;
+    graph = addPolygonPoint(graph, polyPreviewFor);
+  }
+  /** Toolbar delete — removes the LAST vertex of the polygon. Keeps the
+   *  polygon at ≥ 1 point (composition-graph's removePolygonPoint
+   *  refuses below 1 to avoid dropping the node entirely). */
+  function popPolyPoint() {
+    if (!polyPreviewFor) return;
+    const n = graph.nodes[polyPreviewFor] as any;
+    if (!n?.points || n.points.length <= 1) return;
+    graph = removePolygonPoint(graph, polyPreviewFor, n.points.length - 1);
   }
   /** Evaluate a polygon's vertices into concrete [x, y] number pairs.
    *  Literal coords pass through; expr/param coords are evaluated against
@@ -281,11 +344,30 @@
     idx: number;
     svgEl: SVGSVGElement;
     mode: 'revolve' | 'cartesian';
+    /** Cursor position at pointerdown (clientX/Y). Lets pointerup
+     *  decide whether the gesture was a CLICK (open expression
+     *  popover) or a DRAG (already wrote new coords during move).
+     *  A click is < 3 px movement total + pointerup within 250 ms. */
+    startX: number;
+    startY: number;
+    startTime: number;
+    moved: boolean;
+    /** When true, the vertex has at least one non-literal coord — the
+     *  drag path is suppressed (a non-literal can't accept a literal
+     *  coord without breaking wiring) but a CLICK still opens the
+     *  popover so the user can edit the expression. */
+    parametric: boolean;
   } | null>(null);
 
-  /** Begin dragging a polygon vertex dot. Only literal/literal coord pairs
-   *  are draggable — bail with no state change when either coord is
-   *  param- or expr-wired (the .locked cursor signals this visually). */
+  /** Begin a pointer gesture on a polygon vertex dot. Two outcomes:
+   *    LITERAL/LITERAL coords  — drag path active. Movement past 3 px
+   *                              writes new coords each pointermove.
+   *                              Pointerup with no movement opens the
+   *                              expression popover so the user can
+   *                              CONVERT the literal to an expression.
+   *    Any PARAMETRIC coord   — drag path disabled (would clobber the
+   *                              binding). Pointerup opens the
+   *                              expression popover for the wired axis. */
   function startPolyVertexDrag(
     ev: PointerEvent,
     polyId: string,
@@ -296,44 +378,79 @@
     const node: any = graph.nodes[polyId];
     if (!node || node.type !== 'polygon') return;
     const pt = node.points?.[idx];
-    if (!pt || pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal') return;
+    if (!pt) return;
+    const parametric = pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal';
     const circle = ev.currentTarget as SVGCircleElement;
     const svgEl = circle.ownerSVGElement;
     if (!svgEl) return;
     ev.stopPropagation();
     ev.preventDefault();
     try { circle.setPointerCapture(ev.pointerId); } catch { /* older browsers */ }
-    polyDrag = { polyId, idx, svgEl, mode };
+    polyDrag = {
+      polyId, idx, svgEl, mode, parametric,
+      startX: ev.clientX, startY: ev.clientY,
+      startTime: (typeof performance !== 'undefined' ? performance : Date).now(),
+      moved: false,
+    };
   }
 
   /** Invert a screen-space cursor position to graph (r, z) (or x, y for
-   *  cartesian) using the same SVG viewBox the dot was rendered into. */
+   *  cartesian) using the same SVG viewBox the dot was rendered into.
+   *  Only writes coords once the cursor has moved more than 3 px from
+   *  the pointerdown position — under that threshold the gesture is
+   *  still a candidate click. */
   function polyDragMove(ev: PointerEvent) {
     if (!polyDrag) return;
-    const svgEl = polyDrag.svgEl;
+    const d = polyDrag;
+    const dist = Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY);
+    if (dist < 3) return;
+    polyDrag.moved = true;
+    // Parametric dots refuse the drag — movement triggers nothing,
+    // but pointerup still opens the popover.
+    if (d.parametric) return;
+    const svgEl = d.svgEl;
     const vb = svgEl.viewBox?.baseVal;
     const rect = svgEl.getBoundingClientRect();
     if (!vb || rect.width === 0 || rect.height === 0) return;
     const svgX = vb.x + (ev.clientX - rect.left) * vb.width / rect.width;
     const svgY = vb.y + (ev.clientY - rect.top) * vb.height / rect.height;
-    // Cartesian SVG group uses scale(1,-1) so the graph y axis is the
-    // inverse of the screen y; revolve renders identity so y = svgY.
     const graphX = svgX;
-    const graphY = polyDrag.mode === 'cartesian' ? -svgY : svgY;
-    // Round to 0.001 to avoid floating-point noise pinging the inputs
-    // and the source-emit pipeline on every sub-pixel move.
+    const graphY = d.mode === 'cartesian' ? -svgY : svgY;
     const rRounded = Math.round(graphX * 1000) / 1000;
     const zRounded = Math.round(graphY * 1000) / 1000;
-    graph = setPolygonCoord(graph, polyDrag.polyId, polyDrag.idx, 'r', { kind: 'literal', value: rRounded });
-    graph = setPolygonCoord(graph, polyDrag.polyId, polyDrag.idx, 'z', { kind: 'literal', value: zRounded });
+    graph = setPolygonCoord(graph, d.polyId, d.idx, 'r', { kind: 'literal', value: rRounded });
+    graph = setPolygonCoord(graph, d.polyId, d.idx, 'z', { kind: 'literal', value: zRounded });
   }
 
-  /** End the drag — release pointer capture and clear state. */
+  /** End the gesture. If no movement happened AND the pointer was up
+   *  within 250 ms of down, treat as a click → open polyExprPop for
+   *  the appropriate axis. */
   function polyDragEnd(ev: PointerEvent) {
     if (!polyDrag) return;
+    const d = polyDrag;
     const target = ev.currentTarget as SVGCircleElement | null;
     try { target?.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
     polyDrag = null;
+    const dt = (typeof performance !== 'undefined' ? performance : Date).now() - d.startTime;
+    const isClick = !d.moved && dt < 250;
+    if (!isClick) return;
+    // CLICK semantics:
+    //   * One coord parametric, one literal → open popover for the
+    //     parametric axis (edit its expression).
+    //   * Both literal → open popover for r (the user can also click
+    //     ƒ on z in the table; click→edit-r is the common case).
+    //   * Both parametric → open popover for r.
+    const node: any = graph.nodes[d.polyId];
+    const pt = node?.points?.[d.idx];
+    if (!pt) return;
+    const axis: 'r' | 'z' = (pt.r.kind !== 'literal') ? 'r'
+                          : (pt.z.kind !== 'literal') ? 'z'
+                          : 'r';
+    const cur = pt[axis];
+    const initialExpr = cur.kind === 'expr'    ? cur.expr
+                      : cur.kind === 'param'   ? `p.${cur.param}`
+                      : String(cur.value ?? 0);
+    openPolyExprPop(ev as any, d.polyId, d.idx, axis, initialExpr);
   }
 
   /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
@@ -3846,17 +3963,22 @@
                     {#each profilePts as p, i}
                       {@const rootPoly = rootPolygonId ? (graph.nodes[rootPolygonId] as any) : null}
                       {@const pt = rootPoly?.points?.[i]}
-                      {@const draggable = !!pt && pt.r?.kind === 'literal' && pt.z?.kind === 'literal'}
+                      {@const parametric = !!pt && (pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal')}
+                      {@const draggable = !!pt && !parametric}
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle cx={p[0]} cy={p[1]} r={ph} fill="#991b1b"
+                      <circle cx={p[0]} cy={p[1]} r={ph}
+                        fill={parametric ? '#6d28d9' : '#991b1b'}
+                        stroke={parametric ? '#a78bfa' : 'none'}
+                        stroke-width={parametric ? ph * 0.5 : 0}
                         class:locked={!draggable}
+                        class:parametric
                         onpointerdown={(ev) => {
                           if (!rootPolygonId) return;
                           startPolyVertexDrag(ev, rootPolygonId, i, v.yFlip ? 'cartesian' : 'revolve');
                         }}
                         onpointermove={polyDragMove}
                         onpointerup={polyDragEnd}>
-                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{draggable ? '' : ' (wired — unwire to drag)'}</title>
+                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{parametric ? ' (parametric — click to edit expression)' : ' (drag to move, click to add expression)'}</title>
                       </circle>
                     {/each}
                   </g>
@@ -4170,22 +4292,18 @@
   {#if polyPreviewFor && graph.nodes[polyPreviewFor]}
     {@const previewMode = polygonModeFor(polyPreviewFor)}
     {@const pts = polyToPoints(graph.nodes[polyPreviewFor])}
-    {@const xs = pts.map((p) => p[0])}
-    {@const ys = pts.map((p) => p[1])}
-    {@const xMin0 = pts.length ? Math.min(...xs) : 0}
-    {@const xMax0 = pts.length ? Math.max(...xs) : 1}
-    {@const yMin0 = pts.length ? Math.min(...ys) : 0}
-    {@const yMax0 = pts.length ? Math.max(...ys) : 1}
     {@const isCart = previewMode === 'cartesian'}
-    {@const half = isCart ? Math.max(Math.abs(xMin0), Math.abs(xMax0), Math.abs(yMin0), Math.abs(yMax0), 0.001) : 0}
-    {@const xMin = isCart ? -half : xMin0}
-    {@const xMax = isCart ?  half : xMax0}
-    {@const yMin = isCart ? -half : yMin0}
-    {@const yMax = isCart ?  half : yMax0}
-    {@const w = Math.max(0.001, xMax - xMin)}
-    {@const h = Math.max(0.001, yMax - yMin)}
-    {@const pad = Math.max(w, h) * 0.08}
-    {@const vb = `${xMin - pad} ${yMin - pad} ${w + 2 * pad} ${h + 2 * pad}`}
+    <!-- Frozen view (#155): viewBox derived from polyPreviewView, NOT
+         from the points' live bbox. Dragging a vertex updates pts but
+         polyPreviewView stays put — no auto-zoom mid-drag. The toolbar
+         buttons (zoom +/− · fit · + · 🗑) are the only path to mutate
+         the view. -->
+    {@const xMin = polyPreviewView.cx - polyPreviewView.half}
+    {@const yMin = polyPreviewView.cy - polyPreviewView.half}
+    {@const w = polyPreviewView.half * 2}
+    {@const h = polyPreviewView.half * 2}
+    {@const pad = 0}
+    {@const vb = `${xMin} ${yMin} ${w} ${h}`}
     {@const d = pts.length
       ? pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]} ${p[1]}`).join(' ') + ' Z'
       : ''}
@@ -4204,14 +4322,30 @@
     <div class="ge-poly-preview" class:pinned={polyPreviewPinned}
       style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px; width: {polyPreviewSize.w}px; height: {polyPreviewSize.h}px">
       <div class="ge-poly-preview-head">
-        <span>2D · {pts.length} pts</span>
+        <span class="ge-poly-preview-count">2D · {pts.length} pts</span>
+        <!-- Drawing toolbar (#155): zoom +/− / fit / append vertex / pop
+             last vertex. Frozen view means these are the ONLY way to
+             change the SVG framing; drag never re-zooms. -->
+        <div class="ge-poly-preview-toolbar">
+          <button class="ge-poly-tb-btn" type="button" title="Zoom in"
+            onclick={() => zoomPolyPreview(0.8)}>＋</button>
+          <button class="ge-poly-tb-btn" type="button" title="Zoom out"
+            onclick={() => zoomPolyPreview(1.25)}>－</button>
+          <button class="ge-poly-tb-btn" type="button" title="Fit to points"
+            onclick={fitPolyPreview}>⊡</button>
+          <span class="ge-poly-tb-sep"></span>
+          <button class="ge-poly-tb-btn" type="button" title="Append vertex"
+            onclick={appendPolyPoint}>＋pt</button>
+          <button class="ge-poly-tb-btn" type="button" title="Remove last vertex"
+            onclick={popPolyPoint}>🗑</button>
+        </div>
         <span class="ge-poly-preview-spacer"></span>
         <button class="ge-poly-preview-pin" type="button"
           class:on={polyPreviewPinned}
           title={polyPreviewPinned ? 'Unpin (popup will close on outside click)' : 'Pin (popup stays open while you edit)'}
           onclick={() => (polyPreviewPinned = !polyPreviewPinned)}>📌</button>
         <button class="ge-poly-preview-close" type="button"
-          onclick={() => { polyPreviewFor = null; polyPreviewPinned = false; }} aria-label="Close">×</button>
+          onclick={() => { polyPreviewFor = null; polyPreviewPinned = true; }} aria-label="Close">×</button>
       </div>
       <svg viewBox={vb} preserveAspectRatio="xMidYMid meet"
         xmlns="http://www.w3.org/2000/svg" class="ge-poly-preview-svg">
@@ -4241,10 +4375,16 @@
           {#each pts as p, i}
             {@const popupPolyNode = graph.nodes[polyPreviewFor] as any}
             {@const pt = popupPolyNode?.points?.[i]}
-            {@const draggable = !!pt && pt.r?.kind === 'literal' && pt.z?.kind === 'literal'}
+            {@const parametric = !!pt && (pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal')}
+            {@const draggable = !!pt && !parametric}
+            {@const dotR = Math.max(w, h) * 0.012}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <circle cx={p[0]} cy={p[1]} r={Math.max(w, h) * 0.012} fill="#991b1b"
+            <circle cx={p[0]} cy={p[1]} r={dotR}
+              fill={parametric ? '#6d28d9' : '#991b1b'}
+              stroke={parametric ? '#a78bfa' : 'none'}
+              stroke-width={parametric ? dotR * 0.5 : 0}
               class:locked={!draggable}
+              class:parametric
               onpointerdown={(ev) => startPolyVertexDrag(ev, polyPreviewFor!, i, isCart ? 'cartesian' : 'revolve')}
               onpointermove={polyDragMove}
               onpointerup={polyDragEnd}>
@@ -4718,7 +4858,26 @@
     padding: 6px 10px; border-bottom: 1px solid #f1f5f9;
     font: 600 11px Arial; color: #57534e;
   }
+  .ge-poly-preview-count { white-space: nowrap; }
   .ge-poly-preview-spacer { flex: 1 1 auto; }
+  /* Drawing toolbar (#155) — small flat buttons left of the pin/close,
+     freeze-then-zoom + add/delete vertex controls. Tight 18 × 18 with
+     a faint hover wash; matches the inspector chrome. */
+  .ge-poly-preview-toolbar {
+    display: flex; align-items: center; gap: 1px;
+    margin: 0 6px 0 8px;
+  }
+  .ge-poly-tb-btn {
+    height: 18px; min-width: 18px; padding: 0 4px;
+    background: transparent; border: 1px solid transparent; border-radius: 3px;
+    font: 600 11px Arial; color: #57534e; line-height: 1; cursor: pointer;
+    transition: background 80ms, border-color 80ms, color 80ms;
+  }
+  .ge-poly-tb-btn:hover { background: #f1f5f9; border-color: #cbd5e1; color: #1f2937; }
+  .ge-poly-tb-btn:active { background: #e2e8f0; }
+  .ge-poly-tb-sep {
+    width: 1px; height: 12px; background: #e2e8f0; margin: 0 4px;
+  }
   /* Pin toggle — when ON, the popup persists across canvas clicks so the
      user can edit polygon coords with the SVG live in the corner. */
   .ge-poly-preview-pin {
