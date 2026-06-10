@@ -607,9 +607,16 @@
     // the part bake pipeline (/preview) so the right pane gets a 3D
     // mesh. The 2D-vs-3D switch is driven by `hasSolidProducer` below.
     // Polygon-only graphs (no solid producer) skip the part-bake — the
-    // right pane shows the inline 2D SVG instead.
+    // right pane shows the inline 2D SVG instead. CRITICAL: don't set
+    // firstBakeDone here. Tab-open sequence is:
+    //   1. graph starts empty  -> !hasSolidProducer  -> this branch
+    //   2. load hydrates graph -> hasSolidProducer flips true
+    // If step 1 sets firstBakeDone=true, step 2's main-bake fall-through
+    // sees the guard `if (firstBakeDone && bakeNonce === 0) return` and
+    // BLOCKS the initial bake. Leaving firstBakeDone alone here lets the
+    // bake fire once the real graph appears, even with autoBake OFF.
     if (!hasSolidProducer) {
-      bake = null; firstBakeDone = true; return;
+      bake = null; return;
     }
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
     if (!hasNode) { bake = null; firstBakeDone = false; return; }
@@ -1929,6 +1936,30 @@
     if (!argExprPop) return;
     graph = setCallArg(graph, argExprPop.callId, argExprPop.key, asExpr(argExprPop.draft));
     argExprPop = null;
+  }
+
+  // ─── Polygon coord expression popover ──────────────────────────────────
+  /** Click on a polygon vertex's wired `p.<name>` chip (or the ƒ button on
+   *  an expr coord) opens this small popover. User edits a JS expression
+   *  like `p.od / 2` or `p.od - p.wall`, presses Enter → coord becomes
+   *  kind:'expr' with that expression. Same UX as the Call-arg argExprPop. */
+  let polyExprPop = $state<{ polygonId: string; idx: number; axis: 'r' | 'z'; draft: string; x: number; y: number } | null>(null);
+  function openPolyExprPop(ev: MouseEvent, polygonId: string, idx: number, axis: 'r' | 'z', currentExpr: string) {
+    ev.stopPropagation();
+    polyExprPop = { polygonId, idx, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+  }
+  function closePolyExprPop() { polyExprPop = null; }
+  function applyPolyExprPop() {
+    if (!polyExprPop) return;
+    graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, polyExprPop.axis, asExpr(polyExprPop.draft));
+    polyExprPop = null;
+  }
+  function insertParamIntoPolyDraft(name: string) {
+    if (!polyExprPop) return;
+    const ref = `p.${name}`;
+    const draft = polyExprPop.draft;
+    const sep = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
+    polyExprPop = { ...polyExprPop, draft: draft + sep + ref };
   }
   // ─── Profile picker popover (#119) ─────────────────────────────────────
   /** Open when the user clicks a profile chip on a Call card. Lists every
@@ -3344,19 +3375,29 @@
                             value={pt.r.value}
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: Number((e.target as HTMLInputElement).value) }); }}/>
                         {:else if pt.r.kind === 'param'}
-                          <span class="ge-poly-chip" title={`Wired to p.${pt.r.param}`}>p.{pt.r.param}</span>
+                          <!-- svelte-ignore a11y_click_events_have_key_events -->
+                          <!-- svelte-ignore a11y_no_static_element_interactions -->
+                          <span class="ge-poly-chip" title={`Wired to p.${pt.r.param} — click to write an expression like p.${pt.r.param} / 2`}
+                            onclick={(ev) => openPolyExprPop(ev as any, n.id, idx, 'r', `p.${pt.r.param}`)}>p.{pt.r.param}</span>
                         {:else}
                           <input class="ge-poly-input expr" type="text"
                             value={pt.r.expr}
                             placeholder="p.od / 2"
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
                         {/if}
-                        <button class="ge-poly-fx" type="button" title={pt.r.kind === 'literal' ? 'Switch to expression' : 'Back to number'}
+                        <button class="ge-poly-fx" type="button" title={pt.r.kind === 'literal' ? 'Switch to expression' : pt.r.kind === 'param' ? 'Write an expression using this param' : 'Back to number'}
                           class:on={pt.r.kind !== 'literal'}
-                          onclick={() => {
+                          onclick={(ev) => {
+                            // param → open the expression popover prefilled
+                            // with p.<name> so the user can extend (e.g. /2,
+                            // - p.wall). Literal/expr → toggle modes inline.
+                            if (pt.r.kind === 'param') {
+                              openPolyExprPop(ev as any, n.id, idx, 'r', `p.${pt.r.param}`);
+                              return;
+                            }
                             const next: any = pt.r.kind === 'literal'
                               ? { kind: 'expr', expr: String((pt.r as any).value ?? 0) }
-                              : { kind: 'literal', value: pt.r.kind === 'param' ? (graph.params[pt.r.param]?.default ?? 0) : (Number((pt.r as any).expr) || 0) };
+                              : { kind: 'literal', value: Number((pt.r as any).expr) || 0 };
                             graph = setPolygonCoord(graph, n.id, idx, 'r', next);
                           }}>ƒ</button>
                         <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
@@ -3373,19 +3414,26 @@
                             value={pt.z.value}
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: Number((e.target as HTMLInputElement).value) }); }}/>
                         {:else if pt.z.kind === 'param'}
-                          <span class="ge-poly-chip" title={`Wired to p.${pt.z.param}`}>p.{pt.z.param}</span>
+                          <!-- svelte-ignore a11y_click_events_have_key_events -->
+                          <!-- svelte-ignore a11y_no_static_element_interactions -->
+                          <span class="ge-poly-chip" title={`Wired to p.${pt.z.param} — click to write an expression like p.${pt.z.param} / 2`}
+                            onclick={(ev) => openPolyExprPop(ev as any, n.id, idx, 'z', `p.${pt.z.param}`)}>p.{pt.z.param}</span>
                         {:else}
                           <input class="ge-poly-input expr" type="text"
                             value={pt.z.expr}
                             placeholder="p.len"
                             oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
                         {/if}
-                        <button class="ge-poly-fx" type="button" title={pt.z.kind === 'literal' ? 'Switch to expression' : 'Back to number'}
+                        <button class="ge-poly-fx" type="button" title={pt.z.kind === 'literal' ? 'Switch to expression' : pt.z.kind === 'param' ? 'Write an expression using this param' : 'Back to number'}
                           class:on={pt.z.kind !== 'literal'}
-                          onclick={() => {
+                          onclick={(ev) => {
+                            if (pt.z.kind === 'param') {
+                              openPolyExprPop(ev as any, n.id, idx, 'z', `p.${pt.z.param}`);
+                              return;
+                            }
                             const next: any = pt.z.kind === 'literal'
                               ? { kind: 'expr', expr: String((pt.z as any).value ?? 0) }
-                              : { kind: 'literal', value: pt.z.kind === 'param' ? (graph.params[pt.z.param]?.default ?? 0) : (Number((pt.z as any).expr) || 0) };
+                              : { kind: 'literal', value: Number((pt.z as any).expr) || 0 };
                             graph = setPolygonCoord(graph, n.id, idx, 'z', next);
                           }}>ƒ</button>
                       </div>
@@ -3816,6 +3864,40 @@
       <div class="ge-expr-pop-row right">
         <button class="ge-param-add ghost" type="button" onclick={closeArgExprPop}>cancel</button>
         <button class="ge-param-add" type="button" onclick={applyArgExprPop}>apply</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if polyExprPop}
+    <!-- Polygon coord expression popover — same UX as argExprPop but
+         keyed to a polygon vertex's r or z slot. Insert chips append
+         `p.<name>` to the draft so the user can compose like
+         `p.od / 2 - p.wall` with click + keyboard. Enter applies. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closePolyExprPop}></div>
+    <div class="ge-wire-pop ge-expr-pop"
+      style="left: {Math.min(polyExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {polyExprPop.y}px">
+      <div class="ge-wire-head">ƒ vertex <code>{polyExprPop.idx}.{polyExprPop.axis}</code> expression</div>
+      <textarea class="ge-expr-textarea" rows="3"
+        placeholder="e.g. p.od / 2 - p.wall"
+        value={polyExprPop.draft}
+        onkeydown={(e) => { if (e.key === 'Enter' && !(e as KeyboardEvent).shiftKey) { (e as KeyboardEvent).preventDefault(); applyPolyExprPop(); } }}
+        oninput={(e) => { if (polyExprPop) polyExprPop = { ...polyExprPop, draft: (e.target as HTMLTextAreaElement).value }; }}></textarea>
+      <div class="ge-expr-pop-row">
+        <span class="ge-expr-pop-label">insert:</span>
+        {#each paramEntries as [name, p] (name)}
+          <button class="ge-expr-pop-chip" type="button"
+            onclick={() => insertParamIntoPolyDraft(name)}
+            title={`Append p.${name} (default ${(p as any).default})`}>p.{name}</button>
+        {/each}
+        {#if paramEntries.length === 0}
+          <span class="ge-empty">no params declared — add one in the PARAMS card</span>
+        {/if}
+      </div>
+      <div class="ge-expr-pop-row right">
+        <button class="ge-param-add ghost" type="button" onclick={closePolyExprPop}>cancel</button>
+        <button class="ge-param-add" type="button" onclick={applyPolyExprPop}>apply</button>
       </div>
     </div>
   {/if}
@@ -4401,9 +4483,11 @@
     padding: 1px 6px; font: 11px ui-monospace, monospace;
     color: #5b21b6; background: #ede9fe; border: 1px solid #c4b5fd;
     border-radius: 3px; width: 100%; box-sizing: border-box;
-    cursor: default; user-select: none;
+    cursor: pointer; user-select: none;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background 100ms;
   }
+  .ge-poly-chip:hover { background: #c4b5fd; color: #2e1065; }
   .ge-poly-input {
     padding: 1px 4px; font: 11px ui-monospace, monospace;
     border: 1px solid #d6d3d1; border-radius: 2px; width: 100%;
