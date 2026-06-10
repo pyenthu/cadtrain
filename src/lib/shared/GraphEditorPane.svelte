@@ -265,6 +265,24 @@
     (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
     polyPreviewDrag = null;
   }
+  /** Snap the popover back to its anchor next to the active polygon
+   *  card on the graph canvas (2026-06-11). Inverse of "drag it onto
+   *  the 3D canvas to keep it visible" — once the loop edit is done,
+   *  one click reels it back. Computes the position from the active
+   *  polygon's current screen bbox so panning the canvas doesn't
+   *  matter. */
+  function snapPolyPreviewToCard() {
+    if (!polyPreviewFor) return;
+    if (typeof document === 'undefined') return;
+    // The polygon card's outer <g> carries data-node-id so we can find
+    // it without threading refs. Fall back to the eye button's bbox
+    // when that data attribute isn't present.
+    const cardEl = document.querySelector(`[data-node-id="${polyPreviewFor}"]`) as Element | null;
+    const r = cardEl?.getBoundingClientRect();
+    if (r) {
+      polyPreviewPos = { left: r.right + 24, top: r.top };
+    }
+  }
   function openPolyPreview(ev: PointerEvent, polyId: string) {
     ev.stopPropagation();
     // Toggle off when the same polygon's 👁 is clicked again. Re-pin on
@@ -3415,6 +3433,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <g transform="translate({pos.x},{pos.y})" class="ge-node"
+              data-node-id={n.id}
               role="group"
               onpointerdown={() => bringToFront(n.id)}>
               {#if n.type === 'call'}
@@ -4867,6 +4886,13 @@
             onclick={togglePolyDeleteMode} style="font-size: 10px">🗑</button>
         </div>
         <span class="ge-poly-preview-spacer"></span>
+        <!-- Snap back to the polygon card on the graph canvas — the
+             inverse of drag-it-onto-the-3D-canvas. Useful once a loop
+             edit is done and the user wants the popover out of the
+             3D-canvas region without closing it. -->
+        <button class="ge-poly-preview-snap" type="button"
+          title="Snap back to the polygon card"
+          onclick={snapPolyPreviewToCard}>↩</button>
         <button class="ge-poly-preview-pin" type="button"
           class:on={polyPreviewPinned}
           title={polyPreviewPinned ? 'Unpin (popup will close on outside click)' : 'Pin (popup stays open while you edit)'}
@@ -5452,6 +5478,15 @@
   }
   .ge-poly-preview-grab:hover { color: #1f2937; background: #f1f5f9; }
   .ge-poly-preview-grab:active { cursor: grabbing; }
+  /* Snap-back button — sits next to the pin icon, ↩ glyph reads as
+     "send back". Tight 18×18 to match the pin/close affordances. */
+  .ge-poly-preview-snap {
+    width: 22px; height: 18px; padding: 0;
+    background: transparent; border: 0; cursor: pointer;
+    font: 600 12px Arial; color: #94a3b8; line-height: 1; opacity: 0.7;
+    transition: opacity 100ms, color 100ms;
+  }
+  .ge-poly-preview-snap:hover { opacity: 1; color: #0c4a6e; }
   /* Drawing toolbar (#155) — small flat buttons left of the pin/close,
      freeze-then-zoom + add/delete vertex controls. Tight 18 × 18 with
      a faint hover wash; matches the inspector chrome. */
