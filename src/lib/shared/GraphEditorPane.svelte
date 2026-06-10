@@ -1399,8 +1399,56 @@
     return { x: p.x, y: p.y + containerSlotY(i) };
   }
 
-  // ─── picker — drops Calls, CSG ops, transforms ──────────────────────────
+  // ─── picker — drops graph nodes (polygon, solids, ops, position) ────────
   let pickerOpen = $state(false);
+  /** Nested-submenu state for the + picker. Parents (solids / ops /
+   *  position / container) open a right-anchored flyout on hover or
+   *  click. Hovering a different parent switches; hovering the Call
+   *  rail or clicking outside the picker closes everything. */
+  let submenuKey = $state<string | null>(null);
+  let submenuTopY = $state<number>(0);
+  function openSubmenu(ev: PointerEvent, key: string) {
+    const target = ev.currentTarget as Element | null;
+    const r = target?.getBoundingClientRect();
+    if (r) submenuTopY = r.top;
+    submenuKey = key;
+  }
+  /** Call (primitive) picker — its OWN popover, opened by a dedicated
+   *  rail button. Cleaner logical separation: + drops structural graph
+   *  nodes; this button drops a Call to a saved primitive. */
+  let callPickerOpen = $state(false);
+  let callPickerPos = $state<{ left: number; top: number }>({ left: 56, top: 110 });
+  let callBtnEl = $state<HTMLButtonElement | null>(null);
+  async function openCallPicker() {
+    if (callBtnEl) {
+      const r = callBtnEl.getBoundingClientRect();
+      callPickerPos = { left: r.right + 6, top: r.top };
+    }
+    if (pickerSrcs.length === 0) {
+      try {
+        const r = await fetch('/api/primitives/list');
+        const d = await r.json() as any;
+        const completions = d.completions && typeof d.completions === 'object' ? d.completions : {};
+        const flat = [
+          ...(Array.isArray(d.basic)    ? d.basic    : []),
+          ...(Array.isArray(d.stdlib)   ? d.stdlib   : []),
+          ...(Array.isArray(d.stdstale) ? d.stdstale : []),
+          ...Object.values(completions).flat(),
+        ] as Array<{ id: string; source: string }>;
+        const seen = new Set<string>();
+        const meta: Record<string, { source: string }> = {};
+        const ids: string[] = [];
+        for (const e of flat) {
+          if (!e?.id || seen.has(e.id)) continue;
+          seen.add(e.id); ids.push(e.id); meta[e.id] = { source: e.source };
+        }
+        pickerSrcs = ids;
+        pickerSrcMeta = meta;
+      } catch { /* empty list — sidebar may still work */ }
+    }
+    callPickerOpen = true;
+  }
+  function closeCallPicker() { callPickerOpen = false; pickerFilter = ''; }
   let pickerSrcs = $state<string[]>([]);
   let pickerFilter = $state('');
   /** Anchor for the picker dropdown — same pattern as the ⚙ canvas-
@@ -2421,9 +2469,17 @@
        in onMount) renders the labels on hover. Auto-layout + Push apart
        moved to a canvas-settings popover. -->
   <aside class="ge-vrail">
+    <!-- Operations: polygon, solids, ops, position, container.
+         Pencil icon = "drop a graph operation" — drawing/structural ops. -->
     <button class="ge-vrail-btn" type="button"
       bind:this={dropBtnEl} onclick={openPicker}
-      data-tip="+ Drop a node (Call, CSG, transform, container)">＋</button>
+      data-tip="Drop an operation (polygon, solid, op, position, container)">✎</button>
+    <!-- Fetch + drop a saved primitive part. Distinct from the
+         operations menu — this is for stamping a saved Call into the
+         graph. + icon emphasises 'add a part'. -->
+    <button class="ge-vrail-btn" type="button"
+      bind:this={callBtnEl} onclick={openCallPicker}
+      data-tip="Fetch a part — primitives library">+</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -4044,47 +4100,101 @@
       <!-- Polygon — 2D vertex list producer. Output flows into a
            revolve/extrude (for 3D solids) or directly to Output
            (for a profile-shaped save). -->
-      <!-- Section dividers replace uppercase labels — section identity
-           comes from spacing + hairline, matching the ⚙ canvas-settings
-           menu look. Icons are simple monochrome glyphs (no emoji). -->
+      <!-- Top level: 5 items (polygon, solid▸, ops▸, transform▸,
+           container▸) + the Call sub-section. Each ▸ parent opens a
+           right-anchored flyout submenu on hover. Cuts the top-level
+           row count nearly in half so the picker reads like a real
+           nav menu instead of a long directory. -->
       <button class="ge-pick-item" type="button" onclick={dropPolygon}>
         <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">2D pts</span>
       </button>
       <div class="ge-cm-sep"></div>
-      <button class="ge-pick-item" type="button" onclick={() => dropSolid('revolve')}>
-        <span class="ge-pick-icon">○</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin</span>
+      <button class="ge-pick-item parent" type="button"
+        class:on={submenuKey === 'solids'}
+        onmouseenter={(ev) => openSubmenu(ev as any, 'solids')}
+        onclick={(ev) => openSubmenu(ev as any, 'solids')}>
+        <span class="ge-pick-icon">○</span><span class="ge-pick-name">solids</span><span class="ge-pick-chev">›</span>
       </button>
-      <button class="ge-pick-item" type="button" onclick={() => dropSolid('extrude')}>
-        <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep</span>
+      <button class="ge-pick-item parent" type="button"
+        class:on={submenuKey === 'ops'}
+        onmouseenter={(ev) => openSubmenu(ev as any, 'ops')}
+        onclick={(ev) => openSubmenu(ev as any, 'ops')}>
+        <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">ops</span><span class="ge-pick-chev">›</span>
       </button>
-      <div class="ge-cm-sep"></div>
-      <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
-        <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
+      <button class="ge-pick-item parent" type="button"
+        class:on={submenuKey === 'position'}
+        onmouseenter={(ev) => openSubmenu(ev as any, 'position')}
+        onclick={(ev) => openSubmenu(ev as any, 'position')}>
+        <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">position</span><span class="ge-pick-chev">›</span>
       </button>
-      <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
-        <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
+      <button class="ge-pick-item parent" type="button"
+        class:on={submenuKey === 'container'}
+        onmouseenter={(ev) => openSubmenu(ev as any, 'container')}
+        onclick={(ev) => openSubmenu(ev as any, 'container')}>
+        <span class="ge-pick-icon">↕</span><span class="ge-pick-name">container</span><span class="ge-pick-chev">›</span>
       </button>
-      <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
-        <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
-      </button>
-      <div class="ge-cm-sep"></div>
-      <button class="ge-pick-item" type="button" onclick={dropMv}>
-        <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">x y z</span>
-      </button>
-      <button class="ge-pick-item" type="button" onclick={dropRot}>
-        <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">rx ry rz</span>
-      </button>
-      <div class="ge-cm-sep"></div>
-      <button class="ge-pick-item" type="button" onclick={dropStack}>
-        <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span>
-      </button>
-      <button class="ge-pick-item" type="button" onclick={dropRepeat}>
-        <span class="ge-pick-icon">⋯</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
-      </button>
-      <div class="ge-cm-sep"></div>
-      <!-- Call (primitive) — own sub-header (filter + sort) + scrollable
-           list. Lives at the bottom of the picker so the small fixed
-           items above stay one-click reachable. -->
+    </div>
+
+    <!-- Submenu flyouts — anchored right of the picker at the parent's
+         y. One renders at a time based on submenuKey. Mouse-leave closes. -->
+    {#if submenuKey === 'solids'}
+      <div class="ge-picker ge-picker-flyout"
+        style="left: {pickerPos.left + 200}px; top: {submenuTopY}px"
+        onmouseleave={() => (submenuKey = null)}>
+        <button class="ge-pick-item" type="button" onclick={() => { dropSolid('revolve'); submenuKey = null; }}>
+          <span class="ge-pick-icon">○</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropSolid('extrude'); submenuKey = null; }}>
+          <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep</span>
+        </button>
+      </div>
+    {:else if submenuKey === 'ops'}
+      <div class="ge-picker ge-picker-flyout"
+        style="left: {pickerPos.left + 200}px; top: {submenuTopY}px"
+        onmouseleave={() => (submenuKey = null)}>
+        <button class="ge-pick-item" type="button" onclick={() => { dropCsg('subtract'); submenuKey = null; }}>
+          <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropCsg('add'); submenuKey = null; }}>
+          <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropCsg('intersect'); submenuKey = null; }}>
+          <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
+        </button>
+      </div>
+    {:else if submenuKey === 'position'}
+      <div class="ge-picker ge-picker-flyout"
+        style="left: {pickerPos.left + 200}px; top: {submenuTopY}px"
+        onmouseleave={() => (submenuKey = null)}>
+        <button class="ge-pick-item" type="button" onclick={() => { dropMv(); submenuKey = null; }}>
+          <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">x y z</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropRot(); submenuKey = null; }}>
+          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">rx ry rz</span>
+        </button>
+      </div>
+    {:else if submenuKey === 'container'}
+      <div class="ge-picker ge-picker-flyout"
+        style="left: {pickerPos.left + 200}px; top: {submenuTopY}px"
+        onmouseleave={() => (submenuKey = null)}>
+        <button class="ge-pick-item" type="button" onclick={() => { dropStack(); submenuKey = null; }}>
+          <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropRepeat(); submenuKey = null; }}>
+          <span class="ge-pick-icon">⋯</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
+        </button>
+      </div>
+    {/if}
+  {/if}
+
+  {#if callPickerOpen}
+    <!-- Call (primitive) picker — own popover, opened by the dedicated
+         rail button. Logically separate from the operations menu. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-picker-shade" onclick={closeCallPicker}></div>
+    <div class="ge-picker"
+      style="left: {callPickerPos.left}px; top: {callPickerPos.top}px; height: 360px">
       <div class="ge-picker-call-section">
         <div class="ge-picker-call-head">
           <input class="ge-picker-search" type="text"
@@ -4093,17 +4203,16 @@
             <button class="ge-pick-sort" class:active={pickerSort === 'name'}
               type="button" onclick={() => setPickerSort('name')}>A–Z</button>
             <button class="ge-pick-sort" class:active={pickerSort === 'recent'}
-              type="button" onclick={() => setPickerSort('recent')}
-              title="Recently dropped first">recent</button>
+              type="button" onclick={() => setPickerSort('recent')}>recent</button>
             <button class="ge-pick-sort" class:active={pickerSort === 'source'}
-              type="button" onclick={() => setPickerSort('source')}
-              title="Group by stdlib / basic / completions / stdstale">src</button>
+              type="button" onclick={() => setPickerSort('source')}>src</button>
           </div>
         </div>
         <div class="ge-picker-list">
           {#each filteredSrcs as src (src)}
             {@const meta = pickerSrcMeta[src]}
-            <button class="ge-pick-item" type="button" onclick={() => dropCall(src)}>
+            <button class="ge-pick-item" type="button"
+              onclick={() => { dropCall(src); closeCallPicker(); }}>
               <span class="ge-pick-name code">{src}</span>
               {#if pickerSort === 'source' && meta?.source}<span class="ge-pick-src-tag src-{meta.source}">{meta.source}</span>{/if}
             </button>
@@ -4123,7 +4232,7 @@
        Single content row now; the validation-error banner inserts an
        auto row at the top only when shown. */
     grid-template-rows: 1fr;
-    grid-template-columns: 48px 1fr;
+    grid-template-columns: 38px 1fr;
     /* 100% fits inside the layout's content row. min-height: 0 lets the
        grid actually CLAMP at 100% — without it CSS grid sizes 1fr to
        max-content of the canvas + side pane, blowing the height out
@@ -4137,17 +4246,17 @@
   /* ─── Vertical action rail ─────────────────────────────────────────── */
   .ge-vrail {
     display: flex; flex-direction: column;
-    align-items: center; gap: 6px;
-    padding: 10px 4px; background: #f8fafc;
+    align-items: center; gap: 4px;
+    padding: 6px 3px; background: #f8fafc;
     border-right: 1px solid #e5e7eb;
     overflow-y: auto;
   }
   .ge-vrail-btn {
     display: flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px;
+    width: 30px; height: 30px; padding: 0;
     background: #fff; color: #44403c;
-    border: 1px solid #e5e7eb; border-radius: 8px;
-    font-size: 16px; line-height: 1; cursor: pointer;
+    border: 1px solid #cbd5e1; border-radius: 6px;
+    font-size: 14px; line-height: 1; cursor: pointer;
     transition: background 120ms, border-color 120ms, color 120ms;
     position: relative;
   }
@@ -4865,14 +4974,29 @@
     /* Position is set inline via the openPicker bounding rect — fall
        back to the rail-top defaults if the ref hasn't resolved yet. */
     position: fixed; top: 60px; left: 56px;
-    width: 200px; height: 420px;
+    width: 196px;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
     padding: 4px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
     z-index: 101; overflow: hidden;
-    /* Flat structure now — items + hairlines, no per-section padding.
-       Matches the ⚙ canvas-settings menu look directly. */
+    /* Compact nested-menu structure: top-level fits its content
+       (no fixed height); flyout submenus open to the right on hover. */
     display: flex; flex-direction: column;
+  }
+  /* Parent row in the top-level menu — has a chevron on the right
+     indicating a flyout submenu. Hover or click opens it. */
+  .ge-pick-item.parent .ge-pick-chev {
+    flex: 0 0 auto; font: 600 14px Arial; color: #94a3b8; line-height: 1;
+  }
+  .ge-pick-item.parent.on,
+  .ge-pick-item.parent:hover { background: #f3f4f6; color: #0c4a6e; }
+  .ge-pick-item.parent:hover .ge-pick-chev,
+  .ge-pick-item.parent.on .ge-pick-chev { color: #0c4a6e; }
+  /* Flyout submenu — anchored to the right of the picker at the parent's
+     y. Same width/look as the main picker so it reads as a continuation. */
+  .ge-picker-flyout {
+    width: 160px;
+    z-index: 102;
   }
   /* Row item — matches .ge-cm-row exactly: full-width button, 6/10 px
      padding, 12 px Arial, 4 px row radius, slate hover. */
