@@ -521,6 +521,11 @@
     ax: number; ay: number;
     bx: number; by: number;
     px: number; py: number;
+    /** True when the edge sits inside a repeat-block expansion — the
+     *  click will be refused. The renderer flips the highlight from
+     *  green→orange + draws a 🚫 marker at the projection so the user
+     *  sees the block BEFORE clicking. */
+    blocked: boolean;
   }>(null);
   function togglePolyInsertMode() {
     polyInsertMode = !polyInsertMode;
@@ -560,11 +565,17 @@
     }
     if (bestI < 0) { polyInsertHover = null; return; }
     const b = pts[(bestI + 1) % pts.length];
+    // Edge is "blocked" when it sits inside a repeat-block expansion —
+    // entryIdxForEvalIdx returns null. The click handler refuses to act;
+    // the renderer shows orange + 🚫 so the user has visual feedback
+    // before pressing.
+    const blocked = entryIdxForEvalIdx(node, bestI) === null;
     polyInsertHover = {
       i: bestI,
       ax: pts[bestI][0], ay: pts[bestI][1],
       bx: b[0], by: b[1],
       px: bestPx, py: bestPy,
+      blocked,
     };
   }
   /** Map an evaluated-points-index back to the ENTRY index in the polygon's
@@ -4669,22 +4680,43 @@
           <path d={dClose} fill="none" stroke="#991b1b"
             stroke-width={Math.max(w, h) * 0.006}
             stroke-dasharray={`${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.015}`} stroke-linecap="round"/>
-          <!-- Insert-mode HOVER GHOST — when the user is hovering with the
-               cursor in insert mode, draw the nearest edge fat-green plus
-               a translucent green dot at the perpendicular projection
-               point so the user sees WHERE the next click will land before
-               committing. pointer-events:none so the highlight never
-               steals the click. -->
+          <!-- Insert-mode HOVER GHOST — fat stroke on the nearest edge +
+               a translucent dot at the perpendicular projection point.
+               Allowed edges = GREEN (committing will land a vertex);
+               edges inside a repeat-block expansion = ORANGE + 🚫 no-entry
+               glyph at the projection point so the user can see at a
+               glance that this edge is generator-owned. pointer-events:none
+               on every layer so the highlight never steals the click. -->
           {#if polyInsertMode && polyInsertHover}
-            <line x1={polyInsertHover.ax} y1={polyInsertHover.ay}
-              x2={polyInsertHover.bx} y2={polyInsertHover.by}
-              stroke="#16a34a" stroke-width={Math.max(w, h) * 0.014}
+            {@const hov = polyInsertHover}
+            {@const stroke = hov.blocked ? '#ea580c' : '#16a34a'}
+            {@const fill   = hov.blocked ? '#ea580c' : '#16a34a'}
+            {@const sub    = hov.blocked ? '#9a3412' : '#15803d'}
+            <line x1={hov.ax} y1={hov.ay} x2={hov.bx} y2={hov.by}
+              stroke={stroke} stroke-width={Math.max(w, h) * 0.014}
               stroke-linecap="round" stroke-opacity="0.7" pointer-events="none"/>
-            <circle cx={polyInsertHover.px} cy={polyInsertHover.py}
+            <circle cx={hov.px} cy={hov.py}
               r={Math.max(w, h) * 0.018}
-              fill="#16a34a" fill-opacity="0.55"
-              stroke="#15803d" stroke-width={Math.max(w, h) * 0.005}
+              fill={fill} fill-opacity="0.55"
+              stroke={sub} stroke-width={Math.max(w, h) * 0.005}
               pointer-events="none"/>
+            {#if hov.blocked}
+              <!-- 🚫 no-entry glyph rendered as a vector (circle + slash)
+                   inside the SAME <g> as the path so it inherits the same
+                   coord system + cartesian Y-flip. Drawn slightly bigger
+                   than the projection dot so it reads as an overlay. -->
+              {@const nr = Math.max(w, h) * 0.035}
+              {@const nx = hov.px}
+              {@const ny = hov.py}
+              {@const sw = Math.max(w, h) * 0.008}
+              <circle cx={nx} cy={ny} r={nr}
+                fill="none" stroke="#9a3412" stroke-width={sw}
+                pointer-events="none"/>
+              <line x1={nx - nr * 0.7} y1={ny - nr * 0.7}
+                    x2={nx + nr * 0.7} y2={ny + nr * 0.7}
+                stroke="#9a3412" stroke-width={sw}
+                stroke-linecap="round" pointer-events="none"/>
+            {/if}
           {/if}
           {#each pts as p, i}
             {@const popupPolyNode = graph.nodes[polyPreviewFor] as any}
