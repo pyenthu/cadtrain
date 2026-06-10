@@ -2093,38 +2093,53 @@
     if (saveBusy) return;
     saveBusy = true;
     saveStatus = `saving ${exemplarId}…`;
-    // Capture current viewport into the graph BEFORE serialising so the
-    // emitted meta.graph carries the canvas state we want to restore on
-    // reload. `emitted.source` is reactive — assigning graph re-runs the
-    // emit chain to include the new viewport.
+    // Capture current viewport into the graph BEFORE serialising.
     graph = setViewport(graph, pan, zoom);
     try {
-      // Profile save expects a richer body (label / description / set /
-      // params / source); parts get the lean assembly body. The endpoint
-      // contract differs even though the canvas is the same.
-      const body = editKind === 'profile'
-        ? {
-            id: exemplarId,
-            label: exemplarId,
-            description: '',
-            set: 'revolve',
-            tags: [],
-            params: graph.params ?? {},
-            source: emitted.source,
-          }
-        : {
-            id: exemplarId,
-            source: emitted.source,
-            kind: 'asm',
-            dir: 'basic',
-          };
-      const r = await fetch(SAVE_URL, {
+      // Save routing — the GRAPH's content (not the editKind prop) decides
+      // which endpoint the file lands at:
+      //   * Polygon-only graph    -> /api/primitives/profiles/save (.prvl.ts
+      //     or .prex.ts depending on profileSet). Emit a `build(p)` body via
+      //     emitProfileGraph — the profile resolver expects that shape.
+      //   * Has a solid producer  -> /api/primitives/save (.prim.ts / .asm.ts).
+      //     The polygon + revolve graph becomes a PART because the output is
+      //     3D. Same emitGraph path real parts use.
+      //   * Pure part graph       -> /api/primitives/save (existing path).
+      let endpoint: string;
+      let body: any;
+      if (editKind === 'profile' && !hasSolidProducer) {
+        // Pure polygon → profile save. Emit a build() body via the
+        // profile-specific emitter so the profile resolve endpoint accepts it.
+        const profileSource = emitProfileGraph(graph).source;
+        endpoint = '/api/primitives/profiles/save';
+        body = {
+          id: exemplarId,
+          label: exemplarId,
+          description: '',
+          set: profileSet,
+          tags: [],
+          params: graph.params ?? {},
+          source: profileSource,
+        };
+      } else {
+        // Part (or profile-mode graph that's grown a solid producer).
+        // Route to the part save endpoint with the assembly body.
+        endpoint = '/api/primitives/save';
+        body = {
+          id: exemplarId,
+          source: emitted.source,
+          kind: 'asm',
+          dir: 'basic',
+        };
+      }
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (r.ok) {
-        saveStatus = `✓ ${exemplarId} saved to basic/`;
+        const where = endpoint.includes('profiles') ? 'profiles' : 'basic';
+        saveStatus = `✓ ${exemplarId} saved to ${where}/`;
       } else {
         saveStatus = `✗ save ${r.status}: ${(await r.text()).slice(0, 160)}`;
       }

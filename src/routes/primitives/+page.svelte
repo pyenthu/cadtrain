@@ -680,18 +680,28 @@
     border-bottom: 1px solid #e5e7eb; background: #f8fafc;
     padding: 4px 4px 0;
   }
+  /* Inactive tabs: dimmed grey-on-grey so the active tab pops by contrast. */
   .prim-tab-wrap {
     display: flex; align-items: center; gap: 0;
-    background: #fff; border: 1px solid #e5e7eb; border-bottom: 0;
+    background: #e7e5e4; border: 1px solid #d6d3d1; border-bottom: 0;
     border-radius: 5px 5px 0 0; margin-right: 2px;
     padding: 0 6px 0 10px;
+    transition: background 120ms;
   }
   .prim-tab-wrap:hover { background: #f5f5f4; }
+  /* Active tab: INVERTED — dark slate background, white text. Stands out
+     against the grey unselected tabs even with 8+ open. The bottom border
+     overrides the strip's divider so the active tab visually "merges" with
+     the editor pane below it. */
   .prim-tab-wrap.active {
-    background: #fff;
-    border-bottom: 1px solid #fff; margin-bottom: -1px;
+    background: #0c4a6e;
+    border-color: #0c4a6e;
+    border-bottom: 1px solid #0c4a6e; margin-bottom: -1px;
+    box-shadow: 0 -1px 2px rgba(12, 74, 110, 0.18);
   }
-  .prim-tab-wrap.active .prim-tab { color: #0c4a6e; font-weight: 600; }
+  .prim-tab-wrap.active .prim-tab { color: #fff; font-weight: 600; }
+  .prim-tab-wrap.active .prim-tab-close { color: rgba(255, 255, 255, 0.7); }
+  .prim-tab-wrap.active .prim-tab-close:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
   .prim-tab {
     display: flex; align-items: center; padding: 6px 4px;
     background: transparent; border: 0; cursor: pointer;
