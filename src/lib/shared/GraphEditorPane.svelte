@@ -1308,11 +1308,13 @@
       return { w, h: Math.max(60, 40 + slots * 22) };
     }
     if (node.type === 'polygon') {
-      // 36 header + 18 column-label row + 30 per point row + 30 footer.
-      // Per-row height bumped to 30 so the two stacked input sockets
-      // (r above z) each get a comfortable 12-px slot on the left.
-      const rows = (node as any).points?.length ?? 0;
-      return { w, h: 36 + 18 + Math.max(1, rows) * 30 + 30 };
+      // 36 header + 32 per vertex (two stacked sub-rows of 16) + 30 footer.
+      // Card height caps at MAX_VISIBLE vertices; beyond that the inner
+      // div scrolls. The two sockets per vertex are aligned with the
+      // two sub-rows on the LEFT edge of the card.
+      const MAX_VISIBLE = 8;
+      const rows = Math.min(MAX_VISIBLE, (node as any).points?.length ?? 0);
+      return { w, h: 36 + Math.max(1, rows) * 32 + 30 };
     }
     return { w, h: 80 };
   }
@@ -3301,28 +3303,18 @@
                 {@const ax1 = polyMode === 'cartesian' ? 'y' : 'z'}
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-polygon" xmlns="http://www.w3.org/1999/xhtml">
-                    <!-- Column labels: shown ONCE at the top, not per row.
-                         Labels swap to (x, y) when the polygon is consumed by
-                         an extrude (cartesian cross-section), stay (r, z) for
-                         a revolve consumer (revolve half-section). Maps to
-                         the body grid columns: 12px socket gutter, axis-0
-                         cell + ƒ, axis-1 cell + ƒ, reorder, delete. -->
-                    <div class="ge-poly-head">
-                      <span></span>
-                      <span class="ge-poly-col-label">{ax0}</span>
-                      <span></span>
-                      <span class="ge-poly-col-label">{ax1}</span>
-                      <span></span>
-                      <span class="ge-poly-col-label reorder">↕</span>
-                      <span></span>
-                    </div>
+                    <!-- Vertex list — scrollable when count exceeds the cap.
+                         Each vertex is two stacked sub-rows: top = socket
+                         gutter + axis-0 label + value + ƒ + ▲▼×; bottom =
+                         socket gutter + axis-1 label + value + ƒ. Tight
+                         16-px sub-row height keeps the card compact even
+                         for many vertices. -->
+                    <div class="ge-poly-vtx-list">
                     {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
-                      <div class="ge-poly-row">
-                        <!-- Socket gutter (visual placeholder; the actual
-                             SVG circles live OUTSIDE the foreignObject so
-                             they participate in the wire system). 12 px so
-                             the dots have breathing room. -->
+                      <div class="ge-poly-vertex">
+                        <!-- Axis-0 sub-row (top): label + input + ƒ + reorder + delete -->
                         <span></span>
+                        <span class="ge-poly-axis-label">{ax0}</span>
                         {#if pt.r.kind === 'literal'}
                           <input class="ge-poly-input" type="number" step="0.05"
                             value={pt.r.value}
@@ -3343,6 +3335,15 @@
                               : { kind: 'literal', value: pt.r.kind === 'param' ? (graph.params[pt.r.param]?.default ?? 0) : (Number((pt.r as any).expr) || 0) };
                             graph = setPolygonCoord(graph, n.id, idx, 'r', next);
                           }}>ƒ</button>
+                        <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
+                          onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
+                        <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
+                          onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
+                        <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
+                          onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
+                        <!-- Axis-1 sub-row (bottom): label + input + ƒ -->
+                        <span></span>
+                        <span class="ge-poly-axis-label">{ax1}</span>
                         {#if pt.z.kind === 'literal'}
                           <input class="ge-poly-input" type="number" step="0.05"
                             value={pt.z.value}
@@ -3363,57 +3364,36 @@
                               : { kind: 'literal', value: pt.z.kind === 'param' ? (graph.params[pt.z.param]?.default ?? 0) : (Number((pt.z as any).expr) || 0) };
                             graph = setPolygonCoord(graph, n.id, idx, 'z', next);
                           }}>ƒ</button>
-                        <span class="ge-poly-reorder">
-                          <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
-                            onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
-                          <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
-                            onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
-                        </span>
-                        <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
-                          onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
                       </div>
                     {/each}
+                    </div>
                     <button class="ge-poly-add" type="button" title="Add a vertex below the last row"
                       onclick={() => { graph = addPolygonPoint(graph, n.id); }}>+ add vertex</button>
                   </div>
                 </foreignObject>
                 <!-- Per-vertex coord input sockets — SVG circles outside the
                      foreignObject so they participate in the wire system.
-                     Two sockets per row, stacked vertically on the LEFT edge:
-                       top    (cy = rowTop + 9)  -> r coord
-                       bottom (cy = rowTop + 22) -> z coord
-                     rowTop = header(36) + labels(18) + idx * 30. Drag a
-                     PARAMS chip's output socket onto either to wire that
-                     coord to a param. -->
+                     Two sockets per vertex, one per sub-row stacked on the
+                     LEFT edge:
+                       top    (cy = vtxTop + 8)   -> axis-0 (r / x)
+                       bottom (cy = vtxTop + 24)  -> axis-1 (z / y)
+                     vtxTop = header(36) + idx * 32. Only renders sockets
+                     for visible vertices (up to MAX_VISIBLE) so scrolled-
+                     off rows aren't wirable from outside the card. -->
                 {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
-                  {@const rowTop = 36 + 18 + idx * 30}
-                  <!-- Connector lines from each socket to its cell — shows
-                       which socket targets which coord (top → first cell,
-                       bottom → second cell). The first-cell connector is
-                       a short stub right of the socket; the second-cell
-                       connector continues further right + bends UP into
-                       the second input cell (passes BELOW the first cell
-                       at row-bottom so it doesn't visually cross it).
-                       Wired-state coords use the violet wired-wire color
-                       so the connector matches the socket fill. -->
-                  {@const cellLeft1 = 18}
-                  {@const cellLeft2 = 102}
-                  <path class="ge-poly-connector"
-                    class:wired={pt.r.kind === 'param'}
-                    d={`M 5 ${rowTop + 9} L ${cellLeft1} ${rowTop + 9}`}/>
-                  <path class="ge-poly-connector"
-                    class:wired={pt.z.kind === 'param'}
-                    d={`M 5 ${rowTop + 22} L ${cellLeft2 - 6} ${rowTop + 22} Q ${cellLeft2} ${rowTop + 22} ${cellLeft2} ${rowTop + 18}`}/>
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1"
-                    class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
-                    cx="0" cy={rowTop + 9} r="5"
-                    onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1"
-                    class={`ge-sock in poly-coord${pt.z.kind === 'param' ? ' wired' : ''}`}
-                    cx="0" cy={rowTop + 22} r="5"
-                    onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
+                  {#if idx < 8}
+                    {@const vtxTop = 36 + idx * 32}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1"
+                      class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
+                      cx="0" cy={vtxTop + 8} r="5"
+                      onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1"
+                      class={`ge-sock in poly-coord${pt.z.kind === 'param' ? ' wired' : ''}`}
+                      cx="0" cy={vtxTop + 24} r="5"
+                      onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
+                  {/if}
                 {/each}
                 <!-- OUTPUT socket on right edge — wires to the Output card. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -4353,32 +4333,28 @@
      mirrors the SVG nodeSize math (header 36 + rows*26 + footer 30).
      Layout per row:
        idx · ▲ · ▼ · r-input · ƒ · z-input · ƒ · ×                      */
-  .ge-polygon { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; }
-  /* Column-header row — labels appear ONCE above the rows so the grid
-     stays clean. Tracks the same grid columns as .ge-poly-row. */
-  .ge-poly-head {
+  .ge-polygon { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  /* Scrollable vertex list — caps at the foreignObject's available
+     height; scrolls when the vertex count exceeds the visible cap. */
+  .ge-poly-vtx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  /* Each vertex is a 2-row × 7-column grid:
+       row 1: gutter | label | input | ƒ | ▲ | ▼ | ×
+       row 2: gutter | label | input | ƒ | .  | .  | .
+     Sub-row height = 16 px so the whole vertex block is 32 px tall. */
+  .ge-poly-vertex {
     display: grid;
-    grid-template-columns: 12px 1fr 14px 1fr 14px 34px 14px;
-    gap: 2px; align-items: center;
-    height: 16px; margin-bottom: 2px;
+    grid-template-columns: 12px 12px 1fr 14px 16px 16px 14px;
+    grid-template-rows: 16px 16px;
+    gap: 1px 2px; align-items: center;
+    padding: 1px 0;
+    border-bottom: 1px dotted #f5f5f4;
   }
-  .ge-poly-col-label {
+  .ge-poly-vertex:last-child { border-bottom: 0; }
+  .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.5px;
     text-align: center;
   }
-  .ge-poly-col-label.reorder { font-size: 11px; }
-  /* Vertex row — sockets gutter on the very left, then r-input + ƒ,
-     then z-input + ƒ, then ▲▼ reorder cluster, then × delete. No idx
-     column — the SVG sockets to the LEFT of the card are the visual
-     handle for each row. */
-  .ge-poly-row {
-    display: grid;
-    grid-template-columns: 12px 1fr 14px 1fr 14px 34px 14px;
-    gap: 2px; align-items: center;
-    height: 28px; padding: 1px 0;
-  }
-  .ge-poly-reorder { display: flex; gap: 1px; align-items: center; justify-content: center; }
   .ge-poly-mv {
     width: 16px; height: 18px; padding: 0;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 2px;
