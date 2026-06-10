@@ -3387,6 +3387,23 @@
                      coord to a param. -->
                 {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
                   {@const rowTop = 36 + 18 + idx * 30}
+                  <!-- Connector lines from each socket to its cell — shows
+                       which socket targets which coord (top → first cell,
+                       bottom → second cell). The first-cell connector is
+                       a short stub right of the socket; the second-cell
+                       connector continues further right + bends UP into
+                       the second input cell (passes BELOW the first cell
+                       at row-bottom so it doesn't visually cross it).
+                       Wired-state coords use the violet wired-wire color
+                       so the connector matches the socket fill. -->
+                  {@const cellLeft1 = 18}
+                  {@const cellLeft2 = 102}
+                  <path class="ge-poly-connector"
+                    class:wired={pt.r.kind === 'param'}
+                    d={`M 5 ${rowTop + 9} L ${cellLeft1} ${rowTop + 9}`}/>
+                  <path class="ge-poly-connector"
+                    class:wired={pt.z.kind === 'param'}
+                    d={`M 5 ${rowTop + 22} L ${cellLeft2 - 6} ${rowTop + 22} Q ${cellLeft2} ${rowTop + 22} ${cellLeft2} ${rowTop + 18}`}/>
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1"
                     class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
@@ -4504,6 +4521,13 @@
      palette). Wired state fills with the same violet as Call wired args. */
   .ge-sock.in.poly-coord { stroke: #c2410c; }
   .ge-sock.in.poly-coord.wired { fill: #ede9fe; stroke: #6d28d9; }
+  /* Connector line from each per-coord socket into its corresponding
+     input cell. Subtle slate by default so it reads as a visual hint
+     (top socket → first cell, bottom → second cell). Wired state
+     switches to violet matching the socket fill + the param-wire color
+     elsewhere in the editor. */
+  .ge-poly-connector { stroke: #cbd5e1; stroke-width: 1.5; fill: none; pointer-events: none; }
+  .ge-poly-connector.wired { stroke: #6d28d9; stroke-width: 1.8; }
   .ge-sock:hover { fill: #fef3c7; }
   .ge-sock-label { font: 10px ui-monospace, monospace; fill: #6b7280; pointer-events: none; }
 
