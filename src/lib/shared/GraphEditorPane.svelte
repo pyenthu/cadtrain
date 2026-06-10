@@ -126,6 +126,30 @@
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Mode the polygon at `polyId` should render under — revolve (r, z)
+   *  with axis at r=0, or cartesian (x, y) centered around origin.
+   *  Decided by the consuming Call: r_revolve → revolve; r_weld_extrude
+   *  / r_extrude → cartesian; nothing consumes it → fall back to the
+   *  file's saved set (profileSet, default 'revolve'). Polygon CARD
+   *  column labels, the 2D-preview popup, and the right-pane 2D
+   *  PREVIEW all consult this so a polygon wired to extrude reads as
+   *  cartesian everywhere it surfaces. */
+  function polygonModeFor(polyId: string): 'revolve' | 'cartesian' {
+    for (const n of Object.values(graph.nodes)) {
+      if ((n as any).type !== 'call') continue;
+      const args = (n as any).args ?? {};
+      for (const v of Object.values(args)) {
+        if ((v as any).kind !== 'expr') continue;
+        const expr = String((v as any).expr ?? '');
+        if (!expr.includes('__POLY__' + polyId)) continue;
+        const src = String((n as any).src ?? '');
+        if (src === 'r_weld_extrude' || src === 'r_extrude') return 'cartesian';
+        if (src === 'r_revolve') return 'revolve';
+      }
+    }
+    return profileSet;
+  }
+
   /** Polygon 2D-preview popup state — when set, a floating SVG of the
    *  polygon at the named id renders near its card so the user can SEE
    *  the 2D shape even while the right-pane is showing the 3D BAKE of
@@ -242,10 +266,20 @@
       dClose: pts.length > 1
         ? `M ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]} L ${pts[0][0]} ${pts[0][1]}`
         : '',
-      yFlip: profileSet === 'cartesian',
-      axis: profileSet === 'revolve',
+      yFlip: rootPolygonMode === 'cartesian',
+      axis: rootPolygonMode === 'revolve',
       xMin, yMin, w, h, pad,
     };
+  });
+  /** Mode for the right-pane 2D PREVIEW — when the graph's output is a
+   *  single polygon (no solid producer), use polygonModeFor on that
+   *  polygon's id so the preview adapts to a downstream extrude even
+   *  though extrude only becomes the consumer after wiring. With no
+   *  polygon present, fall back to the file's saved set. */
+  const rootPolygonMode = $derived.by<'revolve' | 'cartesian'>(() => {
+    const polygons = Object.values(graph.nodes).filter((n) => (n as any).type === 'polygon') as any[];
+    if (polygons.length === 0) return profileSet;
+    return polygonModeFor(polygons[0].id);
   });
   /** Profile-mode resolve — calls /api/primitives/profiles/resolve with
    *  `profileSource` (loaded from the file) and current default params,
@@ -3225,16 +3259,22 @@
                     : 'Delete polygon'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (!polyConsumed) deleteNode(n.id); }}>×</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
+                {@const polyMode = polygonModeFor(n.id)}
+                {@const ax0 = polyMode === 'cartesian' ? 'x' : 'r'}
+                {@const ax1 = polyMode === 'cartesian' ? 'y' : 'z'}
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-polygon" xmlns="http://www.w3.org/1999/xhtml">
                     <!-- Column labels: shown ONCE at the top, not per row.
-                         Maps to the body grid columns: 12px socket gutter,
-                         r cell + ƒ, z cell + ƒ, reorder, delete. -->
+                         Labels swap to (x, y) when the polygon is consumed by
+                         an extrude (cartesian cross-section), stay (r, z) for
+                         a revolve consumer (revolve half-section). Maps to
+                         the body grid columns: 12px socket gutter, axis-0
+                         cell + ƒ, axis-1 cell + ƒ, reorder, delete. -->
                     <div class="ge-poly-head">
                       <span></span>
-                      <span class="ge-poly-col-label">r</span>
+                      <span class="ge-poly-col-label">{ax0}</span>
                       <span></span>
-                      <span class="ge-poly-col-label">z</span>
+                      <span class="ge-poly-col-label">{ax1}</span>
                       <span></span>
                       <span class="ge-poly-col-label reorder">↕</span>
                       <span></span>
@@ -3468,13 +3508,23 @@
               {@const vsw = Math.max(v.w, v.h) * 0.005}
               {@const ph = Math.max(v.w, v.h) * 0.012}
               <div class="ge-profile-2d">
-                <div class="ge-profile-2d-head">{exemplarId} · {profilePts.length} pts · {profileSet}</div>
+                <div class="ge-profile-2d-head">{exemplarId} · {profilePts.length} pts · {rootPolygonMode}</div>
                 <svg viewBox={v.vb} preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
                   <g transform={v.yFlip ? `scale(1, -1) translate(0, ${-(2 * v.yMin + v.h)})` : ''}>
                     {#if v.axis}
+                      <!-- Revolve axis (r = 0 vertical dash line). -->
                       <line x1="0" y1={v.yMin - v.pad} x2="0" y2={v.yMin + v.h + v.pad}
                         stroke="#94a3b8" stroke-width={vsw}
                         stroke-dasharray={`${Math.max(v.w, v.h) * 0.02} ${Math.max(v.w, v.h) * 0.02}`}/>
+                    {:else if v.yFlip}
+                      <!-- Cartesian crosshair (extrude cross-section): show
+                           both axes through (0, 0) so the user sees the
+                           center the extrude rotates around. -->
+                      {@const ad = `${Math.max(v.w, v.h) * 0.02} ${Math.max(v.w, v.h) * 0.02}`}
+                      <line x1={v.xMin - v.pad} y1="0" x2={v.xMin + v.w + v.pad} y2="0"
+                        stroke="#94a3b8" stroke-width={vsw} stroke-dasharray={ad}/>
+                      <line x1="0" y1={v.yMin - v.pad} x2="0" y2={v.yMin + v.h + v.pad}
+                        stroke="#94a3b8" stroke-width={vsw} stroke-dasharray={ad}/>
                     {/if}
                     <path d={v.d}
                       fill="rgba(204, 34, 34, 0.22)" stroke="#991b1b" stroke-width={sw}
@@ -3765,6 +3815,7 @@
   {/if}
 
   {#if polyPreviewFor && graph.nodes[polyPreviewFor]}
+    {@const previewMode = polygonModeFor(polyPreviewFor)}
     {@const pts = polyToPoints(graph.nodes[polyPreviewFor])}
     {@const xs = pts.map((p) => p[0])}
     {@const ys = pts.map((p) => p[1])}
@@ -3803,12 +3854,22 @@
       </div>
       <svg viewBox={vb} preserveAspectRatio="xMidYMid meet"
         xmlns="http://www.w3.org/2000/svg" class="ge-poly-preview-svg">
-        <g transform={profileSet === 'cartesian' ? `scale(1, -1) translate(0, ${-(2 * yMin + h)})` : ''}>
-          {#if profileSet !== 'cartesian'}
+        <g transform={previewMode === 'cartesian' ? `scale(1, -1) translate(0, ${-(2 * yMin + h)})` : ''}>
+          {#if previewMode !== 'cartesian'}
             <!-- Axis dashes for revolve profiles (r = 0 vertical line). -->
             <line x1="0" y1={yMin - pad} x2="0" y2={yMin + h + pad}
               stroke="#94a3b8" stroke-width={Math.max(w, h) * 0.005}
               stroke-dasharray={`${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.02}`}/>
+          {:else}
+            <!-- Cartesian cross-section: show both axes through origin
+                 so the user sees the (0, 0) center the extrude rotates
+                 around. Thin grey crosshair, dashed. -->
+            {@const aw = Math.max(w, h) * 0.005}
+            {@const ad = `${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.02}`}
+            <line x1={xMin - pad} y1="0" x2={xMin + w + pad} y2="0"
+              stroke="#94a3b8" stroke-width={aw} stroke-dasharray={ad}/>
+            <line x1="0" y1={yMin - pad} x2="0" y2={yMin + h + pad}
+              stroke="#94a3b8" stroke-width={aw} stroke-dasharray={ad}/>
           {/if}
           <path d={d} fill="rgba(204, 34, 34, 0.22)" stroke="#991b1b"
             stroke-width={Math.max(w, h) * 0.008} stroke-linejoin="round"/>
