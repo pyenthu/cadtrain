@@ -4044,74 +4044,62 @@
       <!-- Polygon — 2D vertex list producer. Output flows into a
            revolve/extrude (for 3D solids) or directly to Output
            (for a profile-shaped save). -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">Polygon</div>
-        <button class="ge-pick-item" type="button" onclick={dropPolygon}>
-          <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">[(r, z), …]</span>
-        </button>
-      </div>
-      <!-- Solid (from 2D) — revolve / extrude turn a polygon into a
-           3D Manifold. Auto-attaches a polygon if none present.
-           Right-pane auto-flips from 2D PREVIEW to 3D BAKE. -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">Solid (from 2D)</div>
-        <button class="ge-pick-item" type="button" onclick={() => dropSolid('revolve')}>
-          <span class="ge-pick-icon">◯</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin r→z</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={() => dropSolid('extrude')}>
-          <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep ↓</span>
-        </button>
-      </div>
-      <!-- CSG ops — boolean combination of two 3D manifolds. -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">CSG</div>
-        <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
-          <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
-          <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
-          <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
-        </button>
-      </div>
-      <!-- Transform — translate / rotate a 3D child. -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">Transform</div>
-        <button class="ge-pick-item" type="button" onclick={dropMv}>
-          <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">[x, y, z]</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={dropRot}>
-          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">[rx, ry, rz]</span>
-        </button>
-      </div>
-      <!-- Container — graph-shape ops, no geometry. -->
-      <div class="ge-picker-section">
-        <div class="ge-picker-label">Container</div>
-        <button class="ge-pick-item" type="button" onclick={dropStack}>
-          <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span><span class="ge-pick-hint">[…]</span>
-        </button>
-        <button class="ge-pick-item" type="button" onclick={dropRepeat}>
-          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
-        </button>
-      </div>
-      <!-- Call (primitive) — filter + sort row + scrollable list -->
-      <div class="ge-picker-section ge-picker-call-section">
+      <!-- Section dividers replace uppercase labels — section identity
+           comes from spacing + hairline, matching the ⚙ canvas-settings
+           menu look. Icons are simple monochrome glyphs (no emoji). -->
+      <button class="ge-pick-item" type="button" onclick={dropPolygon}>
+        <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">2D pts</span>
+      </button>
+      <div class="ge-cm-sep"></div>
+      <button class="ge-pick-item" type="button" onclick={() => dropSolid('revolve')}>
+        <span class="ge-pick-icon">○</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin</span>
+      </button>
+      <button class="ge-pick-item" type="button" onclick={() => dropSolid('extrude')}>
+        <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep</span>
+      </button>
+      <div class="ge-cm-sep"></div>
+      <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
+        <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
+      </button>
+      <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
+        <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
+      </button>
+      <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
+        <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
+      </button>
+      <div class="ge-cm-sep"></div>
+      <button class="ge-pick-item" type="button" onclick={dropMv}>
+        <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">x y z</span>
+      </button>
+      <button class="ge-pick-item" type="button" onclick={dropRot}>
+        <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">rx ry rz</span>
+      </button>
+      <div class="ge-cm-sep"></div>
+      <button class="ge-pick-item" type="button" onclick={dropStack}>
+        <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span>
+      </button>
+      <button class="ge-pick-item" type="button" onclick={dropRepeat}>
+        <span class="ge-pick-icon">⋯</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
+      </button>
+      <div class="ge-cm-sep"></div>
+      <!-- Call (primitive) — own sub-header (filter + sort) + scrollable
+           list. Lives at the bottom of the picker so the small fixed
+           items above stay one-click reachable. -->
+      <div class="ge-picker-call-section">
         <div class="ge-picker-call-head">
-          <div class="ge-picker-label">Call (primitive)</div>
+          <input class="ge-picker-search" type="text"
+            placeholder="filter primitives…" bind:value={pickerFilter}/>
           <div class="ge-picker-sort">
             <button class="ge-pick-sort" class:active={pickerSort === 'name'}
               type="button" onclick={() => setPickerSort('name')}>A–Z</button>
             <button class="ge-pick-sort" class:active={pickerSort === 'recent'}
               type="button" onclick={() => setPickerSort('recent')}
-              title="Recently dropped first">Recent</button>
+              title="Recently dropped first">recent</button>
             <button class="ge-pick-sort" class:active={pickerSort === 'source'}
               type="button" onclick={() => setPickerSort('source')}
-              title="Group by stdlib / basic / completions / stdstale">Source</button>
+              title="Group by stdlib / basic / completions / stdstale">src</button>
           </div>
         </div>
-        <input class="ge-picker-search" type="text"
-          placeholder="filter…" bind:value={pickerFilter}/>
         <div class="ge-picker-list">
           {#each filteredSrcs as src (src)}
             {@const meta = pickerSrcMeta[src]}
@@ -4877,25 +4865,14 @@
     /* Position is set inline via the openPicker bounding rect — fall
        back to the rail-top defaults if the ref hasn't resolved yet. */
     position: fixed; top: 60px; left: 56px;
-    width: 220px; height: 480px;
+    width: 200px; height: 420px;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
     padding: 4px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
     z-index: 101; overflow: hidden;
-    /* Fixed outer height + overflow:hidden = the inner Call list owns
-       the only scrollbar (vertical, on .ge-picker-list). The non-Call
-       sections stay pinned at the top so the user can always reach them. */
+    /* Flat structure now — items + hairlines, no per-section padding.
+       Matches the ⚙ canvas-settings menu look directly. */
     display: flex; flex-direction: column;
-  }
-  /* Section: a small uppercase label + its rows. Same vertical rhythm
-     as the ⚙ menu (no per-section border; thin divider between sections
-     via padding + a hairline). */
-  .ge-picker-section { padding: 2px 0 4px; }
-  .ge-picker-section + .ge-picker-section { border-top: 1px solid #f1f5f9; padding-top: 4px; }
-  .ge-picker-label {
-    font: 600 9px Arial; color: #94a3b8;
-    text-transform: uppercase; letter-spacing: 0.6px;
-    padding: 4px 10px 2px;
   }
   /* Row item — matches .ge-cm-row exactly: full-width button, 6/10 px
      padding, 12 px Arial, 4 px row radius, slate hover. */
@@ -4916,23 +4893,28 @@
   .ge-pick-name.code { font-family: ui-monospace, monospace; }
   .ge-pick-hint { flex: 0 0 auto; font: 10px ui-monospace, monospace; color: #a8a29e; }
   /* Call (primitive) section — fixed-ish height with internal scroll so
-     the sections above don't get pushed out when 50+ primitives load. */
+     the items above don't get pushed out when 50+ primitives load.
+     The filter + sort sub-header sits at the TOP of this section
+     (own sub-row), keeping the controls scoped to the list they govern. */
   .ge-picker-call-section { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
-  .ge-picker-call-head { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; }
-  .ge-picker-sort { display: flex; align-items: center; gap: 3px; }
+  .ge-picker-call-head {
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 4px 4px;
+  }
+  .ge-picker-search {
+    flex: 1 1 auto; min-width: 0;
+    padding: 3px 6px; font: 11px ui-monospace, monospace;
+    border: 1px solid #e5e7eb; border-radius: 3px; background: #f9fafb;
+  }
+  .ge-picker-search:focus { outline: 1px solid #1e40af; background: #fff; border-color: #1e40af; }
+  .ge-picker-sort { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
   .ge-pick-sort {
-    flex: 0 0 auto; padding: 1px 6px; font: 9px Arial;
+    flex: 0 0 auto; padding: 1px 4px; font: 9px Arial;
     background: #fff; border: 1px solid #e5e7eb; border-radius: 3px;
     cursor: pointer; color: #57534e;
   }
   .ge-pick-sort:hover { background: #f3f4f6; }
   .ge-pick-sort.active { background: #1e40af; color: #fff; border-color: #1e40af; }
-  .ge-picker-search {
-    width: calc(100% - 16px); margin: 4px 8px 4px;
-    padding: 4px 8px; font: 12px ui-monospace, monospace;
-    border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;
-  }
-  .ge-picker-search:focus { outline: 1px solid #1e40af; background: #fff; border-color: #1e40af; }
   .ge-picker-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
   .ge-pick-src-tag {
     flex: 0 0 auto;
