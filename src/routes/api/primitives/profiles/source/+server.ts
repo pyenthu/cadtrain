@@ -26,6 +26,11 @@ export const GET = async ({ url }) => {
     return json({
       id, label: meta.label, description: meta.description, set: meta.set,
       tags: meta.tags, params: meta.params, source: buildSource,
+      // Optional graph block — present on profiles authored via the
+      // /primitives editor's polygon node. When present, the editor
+      // hydrates the canvas state from it instead of falling into
+      // legacy mode.
+      graph: (meta as any).graph,
     });
   }
 

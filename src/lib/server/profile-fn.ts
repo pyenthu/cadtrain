@@ -66,6 +66,12 @@ export interface ProfileMeta {
   set: 'revolve' | 'cartesian';
   tags: string[];
   params: Record<string, any>;
+  /** Optional graph block — emitted by the /primitives editor when the
+   *  profile is authored via the polygon node. Persists the node layout
+   *  + connections + viewport so the next open hydrates the canvas
+   *  instead of falling into 'legacy mode'. Read by GraphEditorPane's
+   *  load path (extractGraphFromSource or data.graph). */
+  graph?: any;
 }
 
 /** The file mid-extension a profile's `set` maps to: revolve→prvl, cartesian→prex. */

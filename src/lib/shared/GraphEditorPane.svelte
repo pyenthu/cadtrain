@@ -2110,6 +2110,10 @@
       if (editKind === 'profile' && !hasSolidProducer) {
         // Pure polygon → profile save. Emit a build() body via the
         // profile-specific emitter so the profile resolve endpoint accepts it.
+        // The `graph` field carries the FULL canvas state — nodes + layout +
+        // viewport — so reopening hydrates the polygon table instead of
+        // dropping into legacy mode (which is what was happening when the
+        // user re-opened a saved cone before this fix).
         const profileSource = emitProfileGraph(graph).source;
         endpoint = '/api/primitives/profiles/save';
         body = {
@@ -2120,6 +2124,7 @@
           tags: [],
           params: graph.params ?? {},
           source: profileSource,
+          graph: emitted.meta.graph,
         };
       } else {
         // Part (or profile-mode graph that's grown a solid producer).

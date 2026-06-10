@@ -28,7 +28,7 @@ function defaultsOf(params: any): Record<string, number> {
 export const POST = async ({ request }) => {
   let body: any;
   try { body = await request.json(); } catch { throw error(400, 'invalid JSON body'); }
-  const { id, label, description, set, tags, kind, params, points, source } = body ?? {};
+  const { id, label, description, set, tags, kind, params, points, source, graph } = body ?? {};
   if (typeof id !== 'string' || !ID_RE.test(id)) throw error(400, `bad id "${id}" — must match [a-z][a-z0-9_]*`);
   if (set !== 'cartesian' && set !== 'revolve') throw error(400, 'set must be "cartesian" | "revolve"');
   const hasKind = typeof kind === 'string' && kind.length > 0;
@@ -36,7 +36,7 @@ export const POST = async ({ request }) => {
   const hasSource = typeof source === 'string' && /\bfunction\s+build\b/.test(source);
   if (!hasKind && !hasPoints && !hasSource) throw error(400, 'profile needs a kind, points (>= 3), or a build() source');
 
-  const meta = {
+  const meta: any = {
     id,
     label: typeof label === 'string' && label.trim() ? label.trim() : id,
     description: typeof description === 'string' ? description.trim() : '',
@@ -44,6 +44,11 @@ export const POST = async ({ request }) => {
     tags: Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [],
     params: (params && typeof params === 'object') ? params : {},
   };
+  // Optional graph block — when the editor sends one (polygon-node
+  // authoring path), embed it so the next open hydrates the canvas
+  // instead of falling into legacy mode. The raw object is JSON-stringified
+  // alongside the rest of meta.
+  if (graph && typeof graph === 'object') meta.graph = graph;
 
   // FUNCTION profile → merged module (new flat file).
   if (hasSource) {
