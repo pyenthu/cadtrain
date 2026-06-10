@@ -672,11 +672,12 @@
     // ── Vertex proximity (always on, not just in insert mode) ─────────
     // The hover halo lives whenever the popup is open — clicking a
     // parametric vertex opens the ƒ-popup so the user needs to see
-    // them as "tappable." Hit radius = view-half * 0.04 (slightly
-    // bigger than the dot's 0.012 so the halo triggers a few px
-    // before the cursor lands ON the dot).
+    // them as "tappable." Hit radius bumped to view-half * 0.09
+    // (2026-06-11) so the click target is comfortably bigger than
+    // the visual halo (~0.028 of w) — the user mostly clicks a few
+    // pixels off the centre and wanted more breathing room.
     const view = polyPreviewView;
-    const hitR = view.half * 0.04;
+    const hitR = view.half * 0.09;
     let bestVi = -1, bestVd = Infinity;
     for (let i = 0; i < pts.length; i++) {
       const d = Math.hypot(graphX - pts[i][0], graphY - pts[i][1]);
