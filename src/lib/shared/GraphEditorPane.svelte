@@ -140,6 +140,25 @@
    *  column labels, the 2D-preview popup, and the right-pane 2D
    *  PREVIEW all consult this so a polygon wired to extrude reads as
    *  cartesian everywhere it surfaces. */
+  /** Pick the axis label set for a PolyRepeatNode based on the polygon(s)
+   *  that consume it. A poly_repeat fed into an r_revolve uses (r, z);
+   *  one fed into r_extrude uses (x, y). Walks every polygon's points
+   *  for a repeat-ref whose sourceId matches; returns the first
+   *  consumer's mode, falling back to the active profile's set.
+   *  Multi-consumer ambiguity (rare) gets the first match — deterministic
+   *  enough for the label task. */
+  function polyRepeatModeFor(repeatId: string): 'revolve' | 'cartesian' {
+    for (const n of Object.values(graph.nodes)) {
+      if ((n as any).type !== 'polygon') continue;
+      const pts = (n as any).points ?? [];
+      for (const p of pts) {
+        if (p?.kind === 'repeat-ref' && p.sourceId === repeatId) {
+          return polygonModeFor((n as any).id);
+        }
+      }
+    }
+    return profileSet;
+  }
   function polygonModeFor(polyId: string): 'revolve' | 'cartesian' {
     for (const n of Object.values(graph.nodes)) {
       if ((n as any).type !== 'call') continue;
@@ -2577,15 +2596,27 @@
    *  an expr coord) opens this small popover. User edits a JS expression
    *  like `p.od / 2` or `p.od - p.wall`, presses Enter → coord becomes
    *  kind:'expr' with that expression. Same UX as the Call-arg argExprPop. */
-  let polyExprPop = $state<{ polygonId: string; idx: number; axis: 'r' | 'z'; draft: string; x: number; y: number } | null>(null);
+  /** The expression popover targets either a polygon vertex
+   *  (polygonId + idx) or a PolyRepeatNode's r/z slot (repeatId).
+   *  Discriminator: `repeatId` present ⇒ loop, else vertex. */
+  let polyExprPop = $state<{ polygonId?: string; idx?: number; repeatId?: string; axis: 'r' | 'z'; draft: string; x: number; y: number } | null>(null);
   function openPolyExprPop(ev: MouseEvent, polygonId: string, idx: number, axis: 'r' | 'z', currentExpr: string) {
     ev.stopPropagation();
     polyExprPop = { polygonId, idx, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
   }
+  /** Variant for the PolyRepeatNode's r/z expressions (#157, 2026-06-11). */
+  function openPolyRepeatExprPop(ev: MouseEvent, repeatId: string, axis: 'r' | 'z', currentExpr: string) {
+    ev.stopPropagation();
+    polyExprPop = { repeatId, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+  }
   function closePolyExprPop() { polyExprPop = null; }
   function applyPolyExprPop() {
     if (!polyExprPop) return;
-    graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, polyExprPop.axis, asExpr(polyExprPop.draft));
+    if (polyExprPop.repeatId) {
+      graph = setPolyRepeatCoord(graph, polyExprPop.repeatId, polyExprPop.axis, asExpr(polyExprPop.draft));
+    } else if (polyExprPop.polygonId !== undefined && polyExprPop.idx !== undefined) {
+      graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, polyExprPop.axis, asExpr(polyExprPop.draft));
+    }
     polyExprPop = null;
   }
   function insertParamIntoPolyDraft(name: string) {
@@ -4271,7 +4302,12 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="10" y="20" class="ge-node-title">↻ loop</text>
+                {@const prMode = polyRepeatModeFor(pr.id)}
+                {@const prAx0 = prMode === 'cartesian' ? 'x' : 'r'}
+                {@const prAx1 = prMode === 'cartesian' ? 'y' : 'z'}
+                {@const prAx0Ph = prMode === 'cartesian' ? 'cos(i*2*PI/6)' : 'cos(i*2*PI/6)'}
+                {@const prAx1Ph = prMode === 'cartesian' ? 'sin(i*2*PI/6)' : 'sin(i*2*PI/6)'}
+                <text x="10" y="20" class="ge-node-title">↻ loop · {prAx0}/{prAx1}</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
                   data-tip="Delete loop (refs in polygons will show as 'missing')"
@@ -4294,18 +4330,36 @@
                     </div>
                     <div class="ge-prc-section-head">Loop ƒ({pr.loopVar || 'i'})</div>
                     <div class="ge-prc-expr-row">
-                      <span class="ge-prc-label">r</span>
+                      <span class="ge-prc-label">{prAx0}</span>
                       <input class="ge-poly-input expr" type="text"
                         value={pr.r?.kind === 'expr' ? pr.r.expr : pr.r?.kind === 'literal' ? String(pr.r.value) : ''}
-                        placeholder="cos(i*2*PI/6)"
+                        placeholder={prAx0Ph}
                         oninput={(e) => { graph = setPolyRepeatCoord(graph, pr.id, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                      <button class="ge-poly-fx" type="button"
+                        title="Edit expression with param chips"
+                        class:on={pr.r?.kind !== 'literal'}
+                        onclick={(ev) => {
+                          const prefill = pr.r?.kind === 'expr' ? String(pr.r.expr)
+                                        : pr.r?.kind === 'literal' ? String(pr.r.value)
+                                        : '';
+                          openPolyRepeatExprPop(ev as any, pr.id, 'r', prefill);
+                        }}>ƒ</button>
                     </div>
                     <div class="ge-prc-expr-row">
-                      <span class="ge-prc-label">z</span>
+                      <span class="ge-prc-label">{prAx1}</span>
                       <input class="ge-poly-input expr" type="text"
                         value={pr.z?.kind === 'expr' ? pr.z.expr : pr.z?.kind === 'literal' ? String(pr.z.value) : ''}
-                        placeholder="sin(i*2*PI/6)"
+                        placeholder={prAx1Ph}
                         oninput={(e) => { graph = setPolyRepeatCoord(graph, pr.id, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                      <button class="ge-poly-fx" type="button"
+                        title="Edit expression with param chips"
+                        class:on={pr.z?.kind !== 'literal'}
+                        onclick={(ev) => {
+                          const prefill = pr.z?.kind === 'expr' ? String(pr.z.expr)
+                                        : pr.z?.kind === 'literal' ? String(pr.z.value)
+                                        : '';
+                          openPolyRepeatExprPop(ev as any, pr.id, 'z', prefill);
+                        }}>ƒ</button>
                     </div>
                   </div>
                 </foreignObject>
@@ -4739,7 +4793,13 @@
     <div class="ge-wire-shade" onclick={closePolyExprPop}></div>
     <div class="ge-wire-pop ge-expr-pop"
       style="left: {Math.min(polyExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {polyExprPop.y}px">
-      <div class="ge-wire-head">ƒ vertex <code>{polyExprPop.idx}.{polyExprPop.axis}</code> expression</div>
+      <div class="ge-wire-head">
+        {#if polyExprPop.repeatId}
+          ƒ loop <code>{polyExprPop.axis}(i)</code> expression
+        {:else}
+          ƒ vertex <code>{polyExprPop.idx}.{polyExprPop.axis}</code> expression
+        {/if}
+      </div>
       <textarea class="ge-expr-textarea" rows="3"
         placeholder="e.g. p.od / 2 - p.wall"
         value={polyExprPop.draft}
@@ -5760,7 +5820,7 @@
     gap: 4px; align-items: center;
   }
   .ge-prc-expr-row {
-    display: grid; grid-template-columns: 14px 1fr;
+    display: grid; grid-template-columns: 14px 1fr 16px;
     gap: 4px; align-items: center;
   }
   .ge-prc-label {
