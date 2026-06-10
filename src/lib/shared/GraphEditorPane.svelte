@@ -129,13 +129,29 @@
   /** Polygon 2D-preview popup state — when set, a floating SVG of the
    *  polygon at the named id renders near its card so the user can SEE
    *  the 2D shape even while the right-pane is showing the 3D BAKE of
-   *  a consuming revolve / extrude. Click the 👁 button on the polygon
-   *  title to open; click the same button (or anywhere else) to dismiss. */
+   *  a consuming revolve / extrude.
+   *
+   *  Open: click the 👁 button on the polygon title.
+   *  Pin:  click the 📌 in the popup head to make it PERSISTENT — clicks
+   *        on the canvas (and edits inside the polygon table) don't
+   *        dismiss it. The popup stays anchored next to the polygon card
+   *        and updates live as the user types coords.
+   *  Close: click the 👁 again, click the popup's × button, or unpin +
+   *        click anywhere outside the popup.
+   *
+   *  Pinned state is preserved per browser session via sessionStorage so
+   *  a quick page reload doesn't lose the pin (cross-session: the polygon
+   *  id changes on a fresh save, so persisting longer doesn't help). */
   let polyPreviewFor = $state<string | null>(null);
   let polyPreviewPos = $state<{ left: number; top: number }>({ left: 0, top: 0 });
+  let polyPreviewPinned = $state<boolean>(false);
   function openPolyPreview(ev: PointerEvent, polyId: string) {
     ev.stopPropagation();
-    if (polyPreviewFor === polyId) { polyPreviewFor = null; return; }
+    // Toggle off when the same polygon's 👁 is clicked again — unless
+    // the popup is pinned, in which case the eye also unpins.
+    if (polyPreviewFor === polyId) {
+      polyPreviewFor = null; polyPreviewPinned = false; return;
+    }
     const target = ev.currentTarget as Element | null;
     const r = target?.getBoundingClientRect();
     if (r) polyPreviewPos = { left: r.right + 8, top: r.top };
@@ -3768,13 +3784,22 @@
       : ''}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-poly-preview-shade" onclick={() => (polyPreviewFor = null)}></div>
-    <div class="ge-poly-preview"
+    {#if !polyPreviewPinned}
+      <!-- Outside-click shade only when NOT pinned. Pinning makes the
+           popup persist while the user edits polygon coords. -->
+      <div class="ge-poly-preview-shade" onclick={() => (polyPreviewFor = null)}></div>
+    {/if}
+    <div class="ge-poly-preview" class:pinned={polyPreviewPinned}
       style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px">
       <div class="ge-poly-preview-head">
         <span>2D · {pts.length} pts</span>
+        <span class="ge-poly-preview-spacer"></span>
+        <button class="ge-poly-preview-pin" type="button"
+          class:on={polyPreviewPinned}
+          title={polyPreviewPinned ? 'Unpin (popup will close on outside click)' : 'Pin (popup stays open while you edit)'}
+          onclick={() => (polyPreviewPinned = !polyPreviewPinned)}>📌</button>
         <button class="ge-poly-preview-close" type="button"
-          onclick={() => (polyPreviewFor = null)} aria-label="Close">×</button>
+          onclick={() => { polyPreviewFor = null; polyPreviewPinned = false; }} aria-label="Close">×</button>
       </div>
       <svg viewBox={vb} preserveAspectRatio="xMidYMid meet"
         xmlns="http://www.w3.org/2000/svg" class="ge-poly-preview-svg">
@@ -4170,6 +4195,23 @@
     display: flex; align-items: center; justify-content: space-between;
     padding: 6px 10px; border-bottom: 1px solid #f1f5f9;
     font: 600 11px Arial; color: #57534e;
+  }
+  .ge-poly-preview-spacer { flex: 1 1 auto; }
+  /* Pin toggle — when ON, the popup persists across canvas clicks so the
+     user can edit polygon coords with the SVG live in the corner. */
+  .ge-poly-preview-pin {
+    width: 22px; height: 18px; padding: 0;
+    background: transparent; border: 0; cursor: pointer;
+    font: 11px Arial; color: #94a3b8; line-height: 1; opacity: 0.55;
+    transition: opacity 100ms, color 100ms;
+  }
+  .ge-poly-preview-pin:hover { opacity: 1; color: #57534e; }
+  .ge-poly-preview-pin.on { opacity: 1; color: #6d28d9; transform: rotate(-30deg); }
+  .ge-poly-preview-pin.on:hover { color: #5b21b6; }
+  /* Pinned popup state — slightly thicker border + violet accent so the
+     user has a clear visual signal the popup is sticky. */
+  .ge-poly-preview.pinned {
+    border-color: #a78bfa; box-shadow: 0 6px 18px rgba(109, 40, 217, 0.18), 0 2px 4px rgba(109, 40, 217, 0.10);
   }
   .ge-poly-preview-close {
     width: 18px; height: 18px; padding: 0;
