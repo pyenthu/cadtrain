@@ -417,11 +417,20 @@ export function collectEdges(graph: Graph): Edge[] {
       }
     } else if (node.type === 'polygon') {
       // Each vertex's r + z can be wired to a param — same edge shape as
-      // mv.offset, indexed by point index and axis.
-      node.points.forEach((p, i) => {
-        if (p.r.kind === 'param') edges.push({ from: `p.${p.r.param}`, to: `${node.id}.points.${i}.r` });
-        if (p.z.kind === 'param') edges.push({ from: `p.${p.z.param}`, to: `${node.id}.points.${i}.z` });
+      // mv.offset, indexed by point index and axis. Repeat-refs + legacy
+      // inline repeats have no per-entry r/z to wire here (the source
+      // PolyRepeatNode carries those expressions; its own branch below
+      // emits the edges).
+      node.points.forEach((p: any, i: number) => {
+        if (p?.kind !== 'point' && p?.kind !== undefined) return;
+        if (p.r?.kind === 'param') edges.push({ from: `p.${p.r.param}`, to: `${node.id}.points.${i}.r` });
+        if (p.z?.kind === 'param') edges.push({ from: `p.${p.z.param}`, to: `${node.id}.points.${i}.z` });
       });
+    } else if (node.type === 'poly_repeat') {
+      // The loop's count + r + z slots can all be wired to params.
+      if (node.count?.kind === 'param') edges.push({ from: `p.${node.count.param}`, to: `${node.id}.count` });
+      if (node.r?.kind === 'param')     edges.push({ from: `p.${node.r.param}`,     to: `${node.id}.r` });
+      if (node.z?.kind === 'param')     edges.push({ from: `p.${node.z.param}`,     to: `${node.id}.z` });
     }
   }
   return edges;

@@ -372,20 +372,15 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       return `stack(${array})`;
     }
     case 'polygon': {
-      // Polygon nodes are profile-only (handled by composition-emit-
-      // profile.ts). The part emitter shouldn't see one in a real
-      // assembly, but if it does we emit the literal [[r, z], …] array
-      // so a stray polygon doesn't crash an unrelated bake. #154/#157
-      // repeat entries spread via Array.from inside the same outer literal.
+      // Polygon nodes are profile-only (composition-emit-profile.ts handles
+      // them). The part emitter shouldn't see one; if it does we emit
+      // best-effort literals so a stray polygon doesn't crash. Repeat-refs
+      // are SKIPPED here (the part-emit fallback has no access to the
+      // graph node map to resolve a sourceId — by design this path is
+      // never taken in real assemblies). Inline-repeat back-compat still
+      // works since the body is self-contained.
       const rows = node.points.map((entry: any) => {
-        if (entry?.kind === 'repeat-ref') {
-          const src = nodes[entry.sourceId] as any;
-          if (!src || src.type !== 'poly_repeat') return '';
-          const count = emitValueExpr(src.count);
-          const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(src.loopVar || ''))
-            ? String(src.loopVar) : 'i';
-          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => [${emitValueExpr(src.r)}, ${emitValueExpr(src.z)}])`;
-        }
+        if (entry?.kind === 'repeat-ref') return '';
         if (entry?.kind === 'repeat') {
           const count = emitValueExpr(entry.count);
           const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(entry.loopVar || ''))
