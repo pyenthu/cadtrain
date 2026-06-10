@@ -133,6 +133,48 @@
 
   let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Polygon 2D-preview popup state — when set, a floating SVG of the
+   *  polygon at the named id renders near its card so the user can SEE
+   *  the 2D shape even while the right-pane is showing the 3D BAKE of
+   *  a consuming revolve / extrude. Click the 👁 button on the polygon
+   *  title to open; click the same button (or anywhere else) to dismiss. */
+  let polyPreviewFor = $state<string | null>(null);
+  let polyPreviewPos = $state<{ left: number; top: number }>({ left: 0, top: 0 });
+  function openPolyPreview(ev: PointerEvent, polyId: string) {
+    ev.stopPropagation();
+    if (polyPreviewFor === polyId) { polyPreviewFor = null; return; }
+    const target = ev.currentTarget as Element | null;
+    const r = target?.getBoundingClientRect();
+    if (r) polyPreviewPos = { left: r.right + 8, top: r.top };
+    polyPreviewFor = polyId;
+  }
+  /** Evaluate a polygon's vertices into concrete [x, y] number pairs.
+   *  Literal coords pass through; expr/param coords are evaluated against
+   *  the graph's current PARAMS defaults via `new Function` with `p` bound.
+   *  Anything that fails to evaluate is treated as 0 so the popup never
+   *  crashes — the user sees a degenerate but still-rendered preview. */
+  function polyToPoints(node: any): [number, number][] {
+    if (!node || node.type !== 'polygon') return [];
+    const params: Record<string, number> = {};
+    for (const [k, v] of Object.entries(graph.params ?? {})) {
+      params[k] = Number((v as any)?.default ?? 0);
+    }
+    const evalCoord = (val: any): number => {
+      try {
+        if (!val) return 0;
+        if (val.kind === 'literal') return Number(val.value) || 0;
+        if (val.kind === 'param')   return Number(params[val.param]) || 0;
+        if (val.kind === 'expr') {
+          const fn = new Function('p', `return (${String(val.expr)});`);
+          const out = fn(params);
+          return Number.isFinite(out) ? Number(out) : 0;
+        }
+      } catch { /* ignore eval errors */ }
+      return 0;
+    };
+    return (node.points as any[]).map((pt) => [evalCoord(pt.r), evalCoord(pt.z)] as [number, number]);
+  }
+
   /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
    *  with the polygon points the build() returns at default params. Driven
    *  by a separate effect that fires on profile load + on bakeNonce changes
@@ -3057,6 +3099,15 @@
                 />
                 {@const polyConsumed = consumedSet.has(n.id)}
                 <text x="10" y="22" class="ge-node-title">◇ polygon · {poly.points.length} pts{polyConsumed ? ' · 🔒' : ''}</text>
+                <!-- 👁 button — opens a floating SVG popup of the polygon's
+                     current 2D shape. Useful when a downstream revolve
+                     is showing the 3D BAKE on the right pane and the user
+                     still wants to see the underlying 2D profile. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 30} y="22"
+                  class="ge-poly-eye" class:on={polyPreviewFor === n.id}
+                  data-tip={polyPreviewFor === n.id ? 'Close 2D preview' : 'Show 2D preview'}
+                  onpointerdown={(ev) => openPolyPreview(ev as any, n.id)}>👁</text>
                 <!-- Delete disabled while another node consumes this polygon
                      (e.g. a revolve's profile arg wired via __POLY__<id>).
                      The 🔒 in the title signals the lock; hover tooltip
@@ -3566,6 +3617,59 @@
     </div>
   {/if}
 
+  {#if polyPreviewFor && graph.nodes[polyPreviewFor]}
+    {@const pts = polyToPoints(graph.nodes[polyPreviewFor])}
+    {@const xs = pts.map((p) => p[0])}
+    {@const ys = pts.map((p) => p[1])}
+    {@const xMin = pts.length ? Math.min(...xs) : 0}
+    {@const xMax = pts.length ? Math.max(...xs) : 1}
+    {@const yMin = pts.length ? Math.min(...ys) : 0}
+    {@const yMax = pts.length ? Math.max(...ys) : 1}
+    {@const w = Math.max(0.001, xMax - xMin)}
+    {@const h = Math.max(0.001, yMax - yMin)}
+    {@const pad = Math.max(w, h) * 0.08}
+    {@const vb = `${xMin - pad} ${yMin - pad} ${w + 2 * pad} ${h + 2 * pad}`}
+    {@const d = pts.length
+      ? pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]} ${p[1]}`).join(' ') + ' Z'
+      : ''}
+    {@const dClose = pts.length > 1
+      ? `M ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]} L ${pts[0][0]} ${pts[0][1]}`
+      : ''}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-poly-preview-shade" onclick={() => (polyPreviewFor = null)}></div>
+    <div class="ge-poly-preview"
+      style="left: {polyPreviewPos.left}px; top: {polyPreviewPos.top}px">
+      <div class="ge-poly-preview-head">
+        <span>2D · {pts.length} pts</span>
+        <button class="ge-poly-preview-close" type="button"
+          onclick={() => (polyPreviewFor = null)} aria-label="Close">×</button>
+      </div>
+      <svg viewBox={vb} preserveAspectRatio="xMidYMid meet"
+        xmlns="http://www.w3.org/2000/svg" class="ge-poly-preview-svg">
+        <g transform={profileSet === 'cartesian' ? `scale(1, -1) translate(0, ${-(2 * yMin + h)})` : ''}>
+          {#if profileSet !== 'cartesian'}
+            <!-- Axis dashes for revolve profiles (r = 0 vertical line). -->
+            <line x1="0" y1={yMin - pad} x2="0" y2={yMin + h + pad}
+              stroke="#94a3b8" stroke-width={Math.max(w, h) * 0.005}
+              stroke-dasharray={`${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.02}`}/>
+          {/if}
+          <path d={d} fill="rgba(204, 34, 34, 0.22)" stroke="#991b1b"
+            stroke-width={Math.max(w, h) * 0.008} stroke-linejoin="round"/>
+          <!-- Dashed auto-closure from last → first. -->
+          <path d={dClose} fill="none" stroke="#991b1b"
+            stroke-width={Math.max(w, h) * 0.006}
+            stroke-dasharray={`${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.015}`} stroke-linecap="round"/>
+          {#each pts as p, i}
+            <circle cx={p[0]} cy={p[1]} r={Math.max(w, h) * 0.012} fill="#991b1b">
+              <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}</title>
+            </circle>
+          {/each}
+        </g>
+      </svg>
+    </div>
+  {/if}
+
   {#if pickerOpen}
     <!-- Compact Flowbite-style nav dropdown — anchored to the +Drop rail
          button. Single column, tight rows, subtle section dividers. (#118) -->
@@ -3922,6 +4026,37 @@
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }
+  /* Polygon 👁 preview-toggle (sits just left of the × delete). */
+  .ge-poly-eye { font: 12px Arial; fill: #475569; cursor: pointer; user-select: none; opacity: 0.7; }
+  .ge-poly-eye:hover { fill: #0c4a6e; opacity: 1; }
+  .ge-poly-eye.on { fill: #6d28d9; opacity: 1; }
+  /* Floating 2D-preview popup — fixed position next to the 👁 button.
+     Useful when the right pane is showing 3D BAKE (because a revolve
+     is consuming the polygon) and the user still wants to see the
+     underlying 2D shape. */
+  .ge-poly-preview-shade { position: fixed; inset: 0; z-index: 99; }
+  .ge-poly-preview {
+    position: fixed; width: 240px; height: 240px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
+    z-index: 100; display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .ge-poly-preview-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; border-bottom: 1px solid #f1f5f9;
+    font: 600 11px Arial; color: #57534e;
+  }
+  .ge-poly-preview-close {
+    width: 18px; height: 18px; padding: 0;
+    background: transparent; border: 0; cursor: pointer;
+    font: 14px Arial; color: #b91c1c; line-height: 1;
+  }
+  .ge-poly-preview-close:hover { background: #fee2e2; border-radius: 3px; }
+  .ge-poly-preview-svg {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    background: #fafaf9; display: block;
+  }
   .ge-method-op { font: 900 36px Arial; fill: #92400e; pointer-events: none; }
   .ge-method-name { font: 11px Arial; fill: #92400e; text-transform: uppercase; letter-spacing: 0.5px; pointer-events: none; }
   .ge-fo { overflow: visible; }
