@@ -258,8 +258,15 @@ export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {
 /** Compute a default position for a newly-added Call based on how many Calls
  *  already exist — rough grid so a freshly-dropped node doesn't overlap. */
 export function defaultCallPosition(graph: Graph): LayoutXY {
-  const calls = Object.values(graph.nodes).filter((n) => n.type === 'call').length;
-  return { x: 80 + (calls % 4) * 240, y: 80 + Math.floor(calls / 4) * 180 };
+  // Count droppable nodes (calls + polygons + methods + transforms +
+  // repeats) so the placement counter advances on every drop, not just
+  // Call drops. Otherwise polygon + revolve land on the same xy slot
+  // and the cards stack invisibly.
+  const dropped = Object.values(graph.nodes).filter((n) =>
+    n.type === 'call' || n.type === 'polygon' || n.type === 'method' ||
+    n.type === 'mv'   || n.type === 'rot'     || n.type === 'repeat',
+  ).length;
+  return { x: 80 + (dropped % 4) * 240, y: 80 + Math.floor(dropped / 4) * 180 };
 }
 
 // ─── aliases ──────────────────────────────────────────────────────────────

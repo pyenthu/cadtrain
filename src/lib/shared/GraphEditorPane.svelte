@@ -1571,21 +1571,27 @@
    *  The user can also leave the slot empty and wire it manually. */
   function dropSolid(op: 'revolve' | 'extrude') {
     closePicker();
-    // Profile arg starts as an EMPTY-pointing sentinel — the user must
-    // drag a wire from a Polygon's output socket onto the profile arg
-    // input socket to make the connection. Until then the bake will
-    // surface 'profile is undefined' as an explicit error, not a silent
-    // hardcoded literal. The wire renders as the visible orange bezier
-    // (.ge-wire.noderef) once made.
-    const placeholderProfile = { kind: 'expr' as const, expr: '__POLY__pending__' };
+    // If a Polygon is already on the canvas, auto-wire its output into
+    // the new Call's `profile` arg — the bezier renders immediately and
+    // the bake succeeds without forcing the user to drag a connection
+    // they obviously want. The user can still REWIRE manually (drag from
+    // any other producer onto the profile socket) or break the wire by
+    // clicking ƒ then editing the expr. When no polygon exists yet, the
+    // profile arg starts as a hardcoded triangle so the bake doesn't
+    // error out at zero state — the user can drop a polygon afterward
+    // and manually re-wire the connection.
+    const polyEntry = Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any;
+    const profileArg = polyEntry
+      ? { kind: 'expr' as const, expr: '__POLY__' + polyEntry.id }
+      : { kind: 'expr' as const, expr: '[[0,0],[1,0],[1,1]]' };
     if (op === 'revolve') {
       graph = addCall(graph, 'r_revolve', {
-        profile: placeholderProfile as any,
+        profile: profileArg as any,
         segments: { kind: 'literal', value: 96 } as any,
       }).graph;
     } else {
       graph = addCall(graph, 'r_weld_extrude', {
-        profile: placeholderProfile as any,
+        profile: profileArg as any,
         height: { kind: 'literal', value: 2 } as any,
         twist: { kind: 'literal', value: 0 } as any,
         divs: { kind: 'literal', value: 12 } as any,
