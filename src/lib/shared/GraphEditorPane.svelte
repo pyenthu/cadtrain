@@ -197,12 +197,18 @@
     if (editKind !== 'profile') return;
     void bakeNonce; // re-run on manual bake
 
-    // Pick the source: emit the graph if it has pen nodes; else the
-    // on-disk source.
-    const hasPenNodes = Object.values(graph.nodes).some(
-      (n) => (n as any).type === 'call' && String((n as any).src ?? '').startsWith('pen_'),
-    );
-    const src = hasPenNodes ? emitProfileGraph(graph).source : profileSource;
+    // Pick the source: emit the graph when it has profile-shaped nodes
+    // (Polygon — the canonical path — or legacy pen_* Calls); else fall
+    // back to the on-disk profileSource. Bug in v2 first cut — only
+    // pen_* was checked, so a polygon's edits went unnoticed and the
+    // preview kept showing the file's untouched shape.
+    const hasGraphContent = Object.values(graph.nodes).some((n) => {
+      const t = (n as any).type;
+      if (t === 'polygon') return true;
+      if (t === 'call' && String((n as any).src ?? '').startsWith('pen_')) return true;
+      return false;
+    });
+    const src = hasGraphContent ? emitProfileGraph(graph).source : profileSource;
     if (!src) return;
 
     // Param dict — prefer graph.params (the editor-controlled sliders)
