@@ -510,10 +510,62 @@
 
   // ─── Insert-mode (click on edge to insert a vertex) (#155, 2026-06-10) ─
   let polyInsertMode = $state<boolean>(false);
+  /** Hover ghost — when polyInsertMode is on, pointermove on the SVG
+   *  computes the nearest edge under the cursor + the perpendicular
+   *  projection landing point. The popup renders this as a green line
+   *  over the edge + a green circle at the projection so the user can
+   *  see WHERE the new vertex will land before they click. Cleared on
+   *  pointerleave. */
+  let polyInsertHover = $state<null | {
+    i: number;
+    ax: number; ay: number;
+    bx: number; by: number;
+    px: number; py: number;
+  }>(null);
   function togglePolyInsertMode() {
     polyInsertMode = !polyInsertMode;
     if (polyInsertMode) polyDeleteMode = false;
+    if (!polyInsertMode) polyInsertHover = null;
     polyDrag = null;
+  }
+  function clearPolyInsertHover() { polyInsertHover = null; }
+  function handleSvgInsertMove(ev: PointerEvent, polyId: string, isCart: boolean) {
+    if (!polyInsertMode) { polyInsertHover = null; return; }
+    const svgEl = ev.currentTarget as SVGSVGElement;
+    const vb = svgEl?.viewBox?.baseVal;
+    const rect = svgEl?.getBoundingClientRect();
+    if (!vb || !rect || rect.width === 0 || rect.height === 0) { polyInsertHover = null; return; }
+    const svgX = vb.x + (ev.clientX - rect.left) * vb.width / rect.width;
+    const svgY = vb.y + (ev.clientY - rect.top) * vb.height / rect.height;
+    const graphX = svgX;
+    const graphY = isCart ? -svgY : svgY;
+    const node: any = graph.nodes[polyId];
+    if (!node || node.type !== 'polygon') { polyInsertHover = null; return; }
+    const pts = polyToPoints(node);
+    if (pts.length < 2) { polyInsertHover = null; return; }
+    let bestI = -1, bestD = Infinity, bestPx = 0, bestPy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1e-9) continue;
+      let t = ((graphX - a[0]) * dx + (graphY - a[1]) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const px = a[0] + t * dx;
+      const py = a[1] + t * dy;
+      const d = Math.hypot(graphX - px, graphY - py);
+      if (d < bestD) { bestD = d; bestI = i; bestPx = px; bestPy = py; }
+    }
+    if (bestI < 0) { polyInsertHover = null; return; }
+    const b = pts[(bestI + 1) % pts.length];
+    polyInsertHover = {
+      i: bestI,
+      ax: pts[bestI][0], ay: pts[bestI][1],
+      bx: b[0], by: b[1],
+      px: bestPx, py: bestPy,
+    };
   }
   /** Map an evaluated-points-index back to the ENTRY index in the polygon's
    *  `points` array. Repeat blocks expand to N points so we can't 1:1.
@@ -4591,7 +4643,9 @@
         class="ge-poly-preview-svg"
         class:insert-mode={polyInsertMode}
         class:delete-mode={polyDeleteMode}
-        onclick={(ev) => { if (polyInsertMode && polyPreviewFor) handleSvgInsertClick(ev, polyPreviewFor, isCart); }}>
+        onclick={(ev) => { if (polyInsertMode && polyPreviewFor) handleSvgInsertClick(ev, polyPreviewFor, isCart); }}
+        onpointermove={(ev) => { if (polyPreviewFor) handleSvgInsertMove(ev, polyPreviewFor, isCart); }}
+        onpointerleave={clearPolyInsertHover}>
         <g transform={previewMode === 'cartesian' ? `scale(1, -1) translate(0, ${-(2 * yMin + h)})` : ''}>
           {#if previewMode !== 'cartesian'}
             <!-- Axis dashes for revolve profiles (r = 0 vertical line). -->
@@ -4615,6 +4669,23 @@
           <path d={dClose} fill="none" stroke="#991b1b"
             stroke-width={Math.max(w, h) * 0.006}
             stroke-dasharray={`${Math.max(w, h) * 0.02} ${Math.max(w, h) * 0.015}`} stroke-linecap="round"/>
+          <!-- Insert-mode HOVER GHOST — when the user is hovering with the
+               cursor in insert mode, draw the nearest edge fat-green plus
+               a translucent green dot at the perpendicular projection
+               point so the user sees WHERE the next click will land before
+               committing. pointer-events:none so the highlight never
+               steals the click. -->
+          {#if polyInsertMode && polyInsertHover}
+            <line x1={polyInsertHover.ax} y1={polyInsertHover.ay}
+              x2={polyInsertHover.bx} y2={polyInsertHover.by}
+              stroke="#16a34a" stroke-width={Math.max(w, h) * 0.014}
+              stroke-linecap="round" stroke-opacity="0.7" pointer-events="none"/>
+            <circle cx={polyInsertHover.px} cy={polyInsertHover.py}
+              r={Math.max(w, h) * 0.018}
+              fill="#16a34a" fill-opacity="0.55"
+              stroke="#15803d" stroke-width={Math.max(w, h) * 0.005}
+              pointer-events="none"/>
+          {/if}
           {#each pts as p, i}
             {@const popupPolyNode = graph.nodes[polyPreviewFor] as any}
             {@const pt = popupPolyNode?.points?.[i]}
