@@ -22,6 +22,11 @@
   import {
     newGraph,
     addCall,
+    addPolygon,
+    setPolygonCoord,
+    addPolygonPoint,
+    removePolygonPoint,
+    movePolygonPoint,
     addMethodPlaceholder,
     addMvPlaceholder,
     addRotPlaceholder,
@@ -1056,6 +1061,7 @@
     if (node.type === 'mv' || node.type === 'rot') return 116;
     if (node.type === 'repeat') return 170;
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
+    if (node.type === 'polygon') return 220; // # · ▲▼ · r · z · × needs ~220px
     return 130;
   }
   /** Auto-fit width based on the card's content — title length + longest
@@ -1079,6 +1085,7 @@
     if (node.type === 'method') return 110;
     if (node.type === 'mv' || node.type === 'rot') return 136;
     if (node.type === 'repeat') return 230;
+    if (node.type === 'polygon') return 240; // fixed-width compact table
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       // Auto-width based on the LONGEST child-slot label. Each slot prints
       // either the child's "alias · src" (call), "op(…)" (method/transform),
@@ -1126,6 +1133,11 @@
     if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
       const slots = (node.children?.length ?? 0) + 1;
       return { w, h: Math.max(60, 40 + slots * 22) };
+    }
+    if (node.type === 'polygon') {
+      // 36 header + 26 per point row + 30 footer (+ Add row button).
+      const rows = (node as any).points?.length ?? 0;
+      return { w, h: 36 + Math.max(1, rows) * 26 + 30 };
     }
     return { w, h: 80 };
   }
@@ -1490,6 +1502,18 @@
       return { dz: asLiteral(1) }; // lineZ
     })();
     graph = addCall(graph, `pen_${op}`, args).graph;
+  }
+
+  /** Profile-mode Polygon — the canonical (and only) producer for the
+   *  new profile editor. Drops a single PolygonNode with three default
+   *  vertices; the user edits the inline table to wire each point's
+   *  r/z to a PARAMS slider, paste an expression, reorder rows, or
+   *  add / remove rows. Replaces the per-pen-op Call cards from Phase
+   *  2a — far more compact + matches how a parametric polygon actually
+   *  thinks. */
+  function dropPolygon() {
+    closePicker();
+    graph = addPolygon(graph).graph;
   }
 
   // ─── stack/list reorder popover ─────────────────────────────────────────
@@ -2902,6 +2926,86 @@
                   <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                     onpointerdown={(ev) => startWire(ev, n.id)}/>
                 {/if}
+
+              {:else if n.type === 'polygon'}
+                {@const poly = n as any}
+                <!-- Polygon card — the profile editor's sole producer.
+                     Compact reorderable vertex table where each (r, z)
+                     coord is an editable literal OR an expression. ƒ
+                     toggles a row's slot from literal to expr; the
+                     expression syntax matches Call args (p.<name> wires
+                     to the PARAMS slider, full JS allowed inside the box).
+                     Output socket on the right edge feeds into Output. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg polygon"
+                  width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}
+                />
+                <text x="10" y="22" class="ge-node-title">◇ polygon · {poly.points.length} pts</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
+                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
+                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
+                <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
+                  <div class="ge-polygon" xmlns="http://www.w3.org/1999/xhtml">
+                    {#each (poly.points as Array<{ r: any; z: any }>) as pt, idx (idx)}
+                      <div class="ge-poly-row">
+                        <span class="ge-poly-idx">{idx}</span>
+                        <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
+                          onclick={() => { graph = movePolygonPoint(graph, n.id, idx, -1); }}>▲</button>
+                        <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
+                          onclick={() => { graph = movePolygonPoint(graph, n.id, idx, 1); }}>▼</button>
+                        {#if pt.r.kind === 'literal'}
+                          <input class="ge-poly-input" type="number" step="0.05"
+                            value={pt.r.value}
+                            oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'literal', value: Number((e.target as HTMLInputElement).value) }); }}/>
+                        {:else}
+                          <input class="ge-poly-input expr" type="text"
+                            value={pt.r.kind === 'expr' ? pt.r.expr : `p.${pt.r.param}`}
+                            placeholder="p.od / 2"
+                            oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'r', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                        {/if}
+                        <button class="ge-poly-fx" type="button" title={pt.r.kind === 'literal' ? 'Switch to expression' : 'Back to number'}
+                          class:on={pt.r.kind !== 'literal'}
+                          onclick={() => {
+                            const next = pt.r.kind === 'literal'
+                              ? { kind: 'expr' as const, expr: String((pt.r as any).value ?? 0) }
+                              : { kind: 'literal' as const, value: Number((pt.r as any).expr) || 0 };
+                            graph = setPolygonCoord(graph, n.id, idx, 'r', next);
+                          }}>ƒ</button>
+                        {#if pt.z.kind === 'literal'}
+                          <input class="ge-poly-input" type="number" step="0.05"
+                            value={pt.z.value}
+                            oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'literal', value: Number((e.target as HTMLInputElement).value) }); }}/>
+                        {:else}
+                          <input class="ge-poly-input expr" type="text"
+                            value={pt.z.kind === 'expr' ? pt.z.expr : `p.${pt.z.param}`}
+                            placeholder="p.len"
+                            oninput={(e) => { graph = setPolygonCoord(graph, n.id, idx, 'z', { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                        {/if}
+                        <button class="ge-poly-fx" type="button" title={pt.z.kind === 'literal' ? 'Switch to expression' : 'Back to number'}
+                          class:on={pt.z.kind !== 'literal'}
+                          onclick={() => {
+                            const next = pt.z.kind === 'literal'
+                              ? { kind: 'expr' as const, expr: String((pt.z as any).value ?? 0) }
+                              : { kind: 'literal' as const, value: Number((pt.z as any).expr) || 0 };
+                            graph = setPolygonCoord(graph, n.id, idx, 'z', next);
+                          }}>ƒ</button>
+                        <button class="ge-poly-del" type="button" title="Remove vertex" disabled={poly.points.length <= 1}
+                          onclick={() => { graph = removePolygonPoint(graph, n.id, idx); }}>×</button>
+                      </div>
+                    {/each}
+                    <button class="ge-poly-add" type="button" title="Add a vertex below the last row"
+                      onclick={() => { graph = addPolygonPoint(graph, n.id); }}>+ add vertex</button>
+                  </div>
+                </foreignObject>
+                <!-- OUTPUT socket on right edge — wires to the Output card. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  onpointerdown={(ev) => startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Right-edge resize grip ──────────────────────────────
                    Tiny vertical handle on the card's right edge — drag to
@@ -3338,24 +3442,13 @@
     <div class="ge-picker"
       style="left: {pickerPos.left}px; top: {pickerPos.top}px">
       {#if editKind === 'profile'}
-        <!-- Pen section — turtle-graphics polygon authoring nodes. Drops
-             a Call card with src='pen_<op>'; the profile emitter walks
-             these in graph order to build the [r, z] (revolve) or
-             [x, y] (cartesian) point array. Repeat × N inside a list
-             repeats a pen-op subsequence (also a Call/Container chain). -->
+        <!-- Polygon section — single producer for profile graphs. One
+             node holds the whole vertex list as a compact, reorderable
+             table; the per-pen-op cards (Phase 2a) collapsed into this. -->
         <div class="ge-picker-section">
-          <div class="ge-picker-label">Pen</div>
-          <button class="ge-pick-item" type="button" onclick={() => dropPen('mv')}>
-            <span class="ge-pick-icon">✎</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">→ (r, z)</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={() => dropPen('line')}>
-            <span class="ge-pick-icon">／</span><span class="ge-pick-name">line</span><span class="ge-pick-hint">→ (r, z)</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={() => dropPen('lineR')}>
-            <span class="ge-pick-icon">↗</span><span class="ge-pick-name">lineR</span><span class="ge-pick-hint">+(dr, dz)</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={() => dropPen('lineZ')}>
-            <span class="ge-pick-icon">↓</span><span class="ge-pick-name">lineZ</span><span class="ge-pick-hint">+dz</span>
+          <div class="ge-picker-label">Polygon</div>
+          <button class="ge-pick-item" type="button" onclick={dropPolygon}>
+            <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">[(r, z), …]</span>
           </button>
         </div>
       {:else}
@@ -3637,6 +3730,10 @@
   .ge-node-bg.transform { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-node-bg.transform.rot { fill: #fce7f3; stroke: #be185d; }
   .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }
+  /* Polygon card — warm peach background (matches the `.prvl` tag in the
+     sidebar + the +Add Vertex CTA). Stroke amber to differentiate from
+     Call (blue) and Method (yellow). */
+  .ge-node-bg.polygon { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; }
   .ge-node-bg.container.root { fill: #f0fdf4; stroke: #15803d; stroke-width: 2.5; }
   .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
   /* Repeat × N — distinct color so it reads as "iteration", not "container". */
@@ -3683,6 +3780,59 @@
   .ge-method-name { font: 11px Arial; fill: #92400e; text-transform: uppercase; letter-spacing: 0.5px; pointer-events: none; }
   .ge-fo { overflow: visible; }
   .ge-args, .ge-xyz { font: 11px Arial; color: #1f2937; line-height: 1.5; }
+  /* ─── Polygon card table (profile-mode sole producer) ──────────────── */
+  /* Compact reorderable vertex list. Each row is a 26-px grid that
+     mirrors the SVG nodeSize math (header 36 + rows*26 + footer 30).
+     Layout per row:
+       idx · ▲ · ▼ · r-input · ƒ · z-input · ƒ · ×                      */
+  .ge-polygon { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; }
+  .ge-poly-row {
+    display: grid;
+    grid-template-columns: 16px 16px 16px 1fr 14px 1fr 14px 14px;
+    gap: 2px; align-items: center;
+    height: 24px; padding: 1px 0;
+  }
+  .ge-poly-idx { font: 600 9px ui-monospace, monospace; color: #94a3b8; text-align: right; padding-right: 2px; }
+  .ge-poly-mv {
+    width: 16px; height: 18px; padding: 0;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 2px;
+    font: 8px Arial; color: #57534e; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ge-poly-mv:hover:not(:disabled) { background: #f3f4f6; color: #1f2937; border-color: #94a3b8; }
+  .ge-poly-mv:disabled { opacity: 0.35; cursor: default; }
+  .ge-poly-input {
+    padding: 1px 4px; font: 11px ui-monospace, monospace;
+    border: 1px solid #d6d3d1; border-radius: 2px; width: 100%;
+    cursor: text; min-width: 0; box-sizing: border-box;
+  }
+  .ge-poly-input:hover { background: #f0f9ff; }
+  .ge-poly-input:focus { outline: 1px solid #0369a1; background: #fff; }
+  .ge-poly-input.expr { background: #faf5ff; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-poly-input.expr:focus { background: #fff; outline-color: #6d28d9; }
+  .ge-poly-fx {
+    width: 14px; height: 18px; padding: 0;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 2px;
+    font: 600 10px Arial; color: #6b7280; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ge-poly-fx:hover { background: #f5f5f4; border-color: #94a3b8; color: #0c4a6e; }
+  .ge-poly-fx.on { background: #ddd6fe; color: #5b21b6; border-color: #a78bfa; }
+  .ge-poly-del {
+    width: 14px; height: 18px; padding: 0;
+    background: transparent; border: 0; cursor: pointer;
+    font: 14px Arial; color: #b91c1c; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ge-poly-del:hover:not(:disabled) { background: #fee2e2; border-radius: 2px; }
+  .ge-poly-del:disabled { opacity: 0.3; cursor: default; }
+  .ge-poly-add {
+    margin-top: 4px; width: 100%;
+    padding: 4px 6px; font: 600 11px Arial;
+    background: #fff7ed; color: #9a3412; border: 1px dashed #fdba74;
+    border-radius: 4px; cursor: pointer;
+  }
+  .ge-poly-add:hover { background: #ffedd5; border-style: solid; border-color: #fb923c; color: #7c2d12; }
   /* IMPORTANT: row height is 22 px to match the input-socket spacing
      math in the SVG (cy = 36 + 14 + i * 22). Don't change without
      updating ALL three sites: the cy expression on socket circles,

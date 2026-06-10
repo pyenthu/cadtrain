@@ -2,45 +2,40 @@
  * composition-emit-profile.ts — profile graph → `build(p)` body.
  *
  * Sister of composition-emit.ts (which emits 3D part `.asm.ts` source).
- * Walks a profile graph — Output ← chain of pen_* Call nodes + repeat
- * containers — and emits a JavaScript function body that returns an
- * array of `[r, z]` (revolve) or `[x, y]` (cartesian) points.
+ * Walks a profile graph — Output ← Polygon node(s) — and emits a JS
+ * `export function build(p) { return [[r, z], …]; }` body.
  *
- * Pen vocabulary (`src` strings):
- *
- *   pen_mv    args { r, z }     move pen to absolute (places first vertex
- *                                or starts a new sub-path; we treat it as
- *                                "place a vertex at the given point")
- *   pen_line  args { r, z }     line to absolute point
- *   pen_lineR args { dr, dz }   line to relative offset from previous pen
- *   pen_lineZ args { dz }       vertical line (same r, dz down/up)
- *
- * Repeat × N (container kind 'repeat') wraps a sub-sequence with a JS
- * `for (let i = 0; i < N; i++) { … }` loop. Inside the loop, `i` is
- * available so the user can express `p.r * i / N` etc. via the ƒ-popup
- * on any arg.
+ * The profile editor's SOLE producer is the Polygon node — a compact
+ * ordered list of vertices where each (r, z) coord is an ArgValue
+ * (literal / expression / wired to a PARAMS slider via the ƒ-popup).
+ * The earlier pen_* turtle-graphics nodes (pen_mv / pen_line / lineR /
+ * lineZ) were the wrong shape for a parametric polygon — replaced by
+ * this single-table model. Pen Call nodes are still tolerated as a
+ * legacy back-compat path so any graph saved during the Phase 2a/2b
+ * iteration still resolves.
  *
  * The emitted body is sandbox-evaluated server-side by
  * /api/primitives/profiles/resolve (the same endpoint that runs hand-
  * authored profile build() bodies today).
  *
- * Body shape:
+ * Body shape (polygon path):
+ *
+ *   export function build(p) {
+ *     return [
+ *       [<r0>, <z0>],
+ *       [<r1>, <z1>],
+ *       …
+ *     ];
+ *   }
+ *
+ * Body shape (legacy pen path — kept until those graphs are migrated):
  *
  *   export function build(p) {
  *     const pts = [];
  *     let _pen = [0, 0];
- *     // pen_mv → _pen = [<r>, <z>]; pts.push([..._pen]);
- *     // pen_line → _pen = [<r>, <z>]; pts.push([..._pen]);
- *     // pen_lineR → _pen = [_pen[0] + <dr>, _pen[1] + <dz>]; pts.push([..._pen]);
- *     // pen_lineZ → _pen = [_pen[0], _pen[1] + <dz>]; pts.push([..._pen]);
- *     // for (let i = 0; i < <count>; i++) { … }
+ *     …pen_mv / pen_line / pen_lineR / pen_lineZ lines…
  *     return pts;
  *   }
- *
- * `_pen` tracks the last placed vertex so relative ops can chain without
- * the emitter needing to peek at the previous static value (which would
- * break inside a repeat loop — the previous vertex inside iteration
- * isn't a compile-time constant).
  */
 
 import type { Graph, GraphNode, ArgValue, NodeId } from './composition-graph';
@@ -81,28 +76,90 @@ export interface EmitProfileResult {
 
 /** Top-level entry point — emit a complete `export function build(p)`
  *  for a profile graph. Walks the root list's children in declared
- *  order (no topological sort needed because there's no method/CSG
- *  here — every node is a Call or a Container). */
+ *  order. The body shape depends on which nodes are present:
+ *
+ *    * Polygon-only (the new canonical path) — single literal
+ *      `return [[r0, z0], …]` collected from each PolygonNode's points.
+ *    * Pen-only (legacy back-compat) — `const pts = []; let _pen = …;
+ *      <pen ops>; return pts;`
+ *    * Mixed — start with the polygon literal, then run any pen
+ *      operations as a `pts.push` chain.
+ */
 export function emitProfileGraph(graph: Graph, _opts: EmitProfileOptions = {}): EmitProfileResult {
   const used = new Set<string>();
-  const lines: string[] = [];
-  lines.push('  const pts = [];');
-  lines.push('  let _pen = [0, 0];');
 
-  const rootNode = graph.nodes[graph.root];
-  if (rootNode && (rootNode as any).type === 'list') {
-    walkList((rootNode as any).children as NodeId[], graph, lines, used, '  ');
+  // First pass — does the graph contain Polygon nodes? If yes we drive
+  // the body from those (the new canonical path). Pen nodes get tacked
+  // on as a back-compat append. A fully empty graph returns an empty
+  // array (the SVG handles "no points" gracefully).
+  const polyRows: string[] = [];
+  const penLines: string[] = [];
+  if (graph.nodes[graph.root] && (graph.nodes[graph.root] as any).type === 'list') {
+    collectFromList((graph.nodes[graph.root] as any).children as NodeId[], graph, polyRows, penLines, used, '  ');
   }
 
-  lines.push('  return pts;');
-  const body = lines.join('\n');
+  let body: string;
+  if (penLines.length === 0) {
+    // Pure polygon path — clean literal array return.
+    body = polyRows.length > 0
+      ? `  return [\n${polyRows.map((r) => `    ${r},`).join('\n')}\n  ];`
+      : `  return [];`;
+  } else {
+    // Mixed / legacy pen path — keep the pts builder for the pen ops.
+    const lines: string[] = ['  const pts = [];', '  let _pen = [0, 0];'];
+    if (polyRows.length > 0) {
+      for (const r of polyRows) lines.push(`  pts.push(${r});`);
+    }
+    for (const l of penLines) lines.push(l);
+    lines.push('  return pts;');
+    body = lines.join('\n');
+  }
   const source = `export function build(p) {\n${body}\n}\n`;
   return { source, body, usedOps: Array.from(used) };
 }
 
+/** Walk a list of children, collecting polygon vertex rows + legacy pen
+ *  op lines into separate buckets. The caller stitches the buckets into
+ *  the final body shape. */
+function collectFromList(
+  children: NodeId[], graph: Graph, polyRows: string[], penLines: string[], used: Set<string>, indent: string,
+) {
+  for (const cid of children) {
+    const child = graph.nodes[cid];
+    if (!child) continue;
+    collectFromNode(child, graph, polyRows, penLines, used, indent);
+  }
+}
+
+function collectFromNode(
+  node: GraphNode, graph: Graph, polyRows: string[], penLines: string[], used: Set<string>, indent: string,
+) {
+  if ((node as any).type === 'polygon') {
+    const poly = node as any;
+    for (const p of poly.points as Array<{ r: ArgValue; z: ArgValue }>) {
+      const r = argToCode(p.r);
+      const z = argToCode(p.z);
+      polyRows.push(`[${r}, ${z}]`);
+    }
+    used.add('polygon');
+    return;
+  }
+  // Legacy pen path — collected so existing graphs from Phase 2a/2b still resolve.
+  if ((node as any).type === 'call') {
+    emitNode(node, graph, penLines, used, indent);
+    return;
+  }
+  if ((node as any).type === 'repeat') {
+    emitNode(node, graph, penLines, used, indent);
+    return;
+  }
+  if ((node as any).children && Array.isArray((node as any).children)) {
+    collectFromList((node as any).children as NodeId[], graph, polyRows, penLines, used, indent);
+  }
+}
+
 /** Walk a list of child ids in declared order, emitting each child's
- *  contribution into `lines`. Children of unknown type are skipped
- *  silently (validation lives elsewhere). */
+ *  legacy-pen contribution into `lines`. Unknown types are skipped. */
 function walkList(children: NodeId[], graph: Graph, lines: string[], used: Set<string>, indent: string) {
   for (const cid of children) {
     const child = graph.nodes[cid];

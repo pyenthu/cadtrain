@@ -95,7 +95,24 @@ export type RotNode = { id: NodeId; type: 'rot'; child: NodeId; rot:    [ArgValu
 export type RepeatOp = 'stack' | 'list' | 'place';
 export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue; op?: RepeatOp };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode;
+/** 2D polygon — the SOLE producer node for profile graphs (replaces the
+ *  pen_mv/pen_line/lineR/lineZ chain). A compact ordered list of vertices
+ *  where each (r, z) coordinate is an ArgValue → literal / expr / wired
+ *  to a PARAMS slider via the same ƒ-popup as Call args. Reordering, add,
+ *  delete operate directly on `points` and round-trip into the emit.
+ *
+ *  Why a typed node and not a Call with src='polygon': the points array
+ *  is dynamic-length so encoding as named args (p0r, p0z, p1r, …) gets
+ *  ugly; a first-class node also gives the editor a clean place to
+ *  render the inline reorderable list. */
+export type PolygonPoint = { r: ArgValue; z: ArgValue };
+export type PolygonNode = {
+  id: NodeId;
+  type: 'polygon';
+  points: PolygonPoint[];
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
@@ -292,6 +309,13 @@ export function collectEdges(graph: Graph): Edge[] {
       if (node.count.kind === 'param') {
         edges.push({ from: `p.${node.count.param}`, to: `${node.id}.count` });
       }
+    } else if (node.type === 'polygon') {
+      // Each vertex's r + z can be wired to a param — same edge shape as
+      // mv.offset, indexed by point index and axis.
+      node.points.forEach((p, i) => {
+        if (p.r.kind === 'param') edges.push({ from: `p.${p.r.param}`, to: `${node.id}.points.${i}.r` });
+        if (p.z.kind === 'param') edges.push({ from: `p.${p.z.param}`, to: `${node.id}.points.${i}.z` });
+      });
     }
   }
   return edges;
@@ -496,6 +520,95 @@ export function setRepeatOp(graph: Graph, repeatId: NodeId, op: RepeatOp): Graph
   if (!node || node.type !== 'repeat') return graph;
   const updated: RepeatNode = { ...node, op };
   return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+// ─── Polygon helpers ────────────────────────────────────────────────────────
+//
+// PolygonNode is profile-mode's sole producer (replaces pen_* Call chains).
+// A polygon owns a flat ordered list of {r, z} ArgValue pairs. The editor
+// renders each row with a ƒ-popup so points can be wired to PARAMS sliders
+// or expressions just like Call args. Reorder / add / remove are direct
+// mutations on `points`; emit walks the array literally into a `return
+// [[r0, z0], …];` body via composition-emit-profile.ts.
+
+/** Drop a Polygon node with three default vertices — enough geometry that
+ *  /resolve doesn't trip the "≥ 3 points" guard, gives the user something
+ *  visible immediately. Defaults trace a small triangle in (r, z) space. */
+export function addPolygon(
+  graph: Graph,
+  initialPoints?: PolygonPoint[],
+  parentId?: NodeId,
+): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const points: PolygonPoint[] = initialPoints ?? [
+    { r: asLiteral(0), z: asLiteral(0) },
+    { r: asLiteral(1), z: asLiteral(0) },
+    { r: asLiteral(1), z: asLiteral(1) },
+  ];
+  const node: PolygonNode = { id, type: 'polygon', points };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  const finalGraph = appendChild(next, parentId ?? graph.root, id);
+  return { graph: finalize(finalGraph), id };
+}
+
+/** Update one coordinate of one vertex in a polygon. */
+export function setPolygonCoord(
+  graph: Graph,
+  polygonId: NodeId,
+  idx: number,
+  axis: 'r' | 'z',
+  arg: ArgValue,
+): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  if (idx < 0 || idx >= node.points.length) return graph;
+  const points = node.points.map((p, i) => (i === idx ? { ...p, [axis]: arg } : p));
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/** Insert a new vertex into a polygon, after `afterIdx` (or at the end
+ *  when afterIdx is omitted / out of range). New vertex defaults to the
+ *  same coords as the row above so the user can tweak from a known base. */
+export function addPolygonPoint(graph: Graph, polygonId: NodeId, afterIdx?: number): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  const insertAt = (typeof afterIdx === 'number' && afterIdx >= 0 && afterIdx < node.points.length)
+    ? afterIdx + 1
+    : node.points.length;
+  const seed = node.points[insertAt - 1] ?? node.points[0] ?? { r: asLiteral(0), z: asLiteral(0) };
+  const newPt: PolygonPoint = { r: { ...seed.r }, z: { ...seed.z } };
+  const points = [...node.points.slice(0, insertAt), newPt, ...node.points.slice(insertAt)];
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/** Remove a vertex at idx. Keeps the polygon at ≥ 1 point — fully empty
+ *  triggers the "needs ≥ 3 points" resolve error and the user loses the
+ *  node entirely. Use removeNode for delete-the-whole-polygon. */
+export function removePolygonPoint(graph: Graph, polygonId: NodeId, idx: number): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  if (idx < 0 || idx >= node.points.length) return graph;
+  if (node.points.length <= 1) return graph;
+  const points = node.points.filter((_, i) => i !== idx);
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/** Move a vertex up (delta = -1) or down (delta = +1) in the list.
+ *  Clamps at the ends so ▲ on the first row or ▼ on the last is a no-op. */
+export function movePolygonPoint(graph: Graph, polygonId: NodeId, idx: number, delta: number): Graph {
+  const node = graph.nodes[polygonId];
+  if (!node || node.type !== 'polygon') return graph;
+  const j = idx + delta;
+  if (idx < 0 || idx >= node.points.length) return graph;
+  if (j  < 0 || j  >= node.points.length) return graph;
+  const points = [...node.points];
+  const tmp = points[idx]; points[idx] = points[j]; points[j] = tmp;
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
 }
 
 /** Add a rot transform around a child. */

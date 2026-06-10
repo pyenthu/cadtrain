@@ -357,6 +357,16 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       if (op === 'place') return `place(${array})`;
       return `stack(${array})`;
     }
+    case 'polygon': {
+      // Polygon nodes are profile-only (handled by composition-emit-
+      // profile.ts). The part emitter shouldn't see one in a real
+      // assembly, but if it does we emit the literal [[r, z], …] array
+      // so a stray polygon doesn't crash an unrelated bake.
+      const rows = node.points.map((p) =>
+        `[${emitValueExpr(p.r)}, ${emitValueExpr(p.z)}]`,
+      );
+      return `[${rows.join(', ')}]`;
+    }
   }
 }
 
