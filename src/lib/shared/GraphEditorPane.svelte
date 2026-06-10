@@ -814,6 +814,9 @@
   }
   function onResizePointerMove(ev: PointerEvent) {
     if (!resizing) return;
+    // Width grows with horizontal drag; vertical drag is ignored because
+    // card heights are auto-computed from content (rows, points etc).
+    // Keeping width-only matches the prior right-edge grip's feel.
     const dx = (ev.clientX - resizeStartX) / zoom;
     setCardWidth(resizing, resizeOrigW + dx);
   }
@@ -3098,21 +3101,33 @@
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
               {/if}
-              <!-- ─── Right-edge resize grip ──────────────────────────────
-                   Tiny vertical handle on the card's right edge — drag to
-                   widen/shrink. Clamped to cardMinWidth(node) so the row
-                   content (key column + input + actions) never gets
-                   crushed. The Output card alone skips the grip (it's the
-                   root container; resizing it doesn't help anything). -->
+              <!-- ─── Bottom-right corner resize grip ─────────────────────
+                   Diagonal handle in the card's bottom-right corner —
+                   drag to widen/shrink. Moved off the right edge so it
+                   doesn't fight the output sockets that live there (Call
+                   output, Polygon output, Container output all sit at
+                   x=size.w, vertically centred). Two short stacked
+                   strokes give the classic "↘" resize-handle look at
+                   ~10 × 10 px. The Output card (root) skips the grip. -->
               {#if n.id !== graph.root}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect class="ge-resize-grip"
-                  x={size.w - 3} y={Math.max(36, size.h * 0.2)}
-                  width="6" height={Math.min(size.h * 0.6, 48)} rx="3"
+                <g class="ge-resize-corner"
                   data-tip="Drag to resize"
                   onpointerdown={(ev) => onResizePointerDown(ev, n.id)}
                   onpointermove={onResizePointerMove}
-                  onpointerup={onResizePointerUp}/>
+                  onpointerup={onResizePointerUp}>
+                  <!-- Larger transparent hit target so the 10 × 10 visual
+                       isn't pixel-fragile to click. -->
+                  <rect class="ge-resize-corner-hit"
+                    x={size.w - 14} y={size.h - 14} width="14" height="14"/>
+                  <!-- Visual diagonal strokes (two parallel short lines). -->
+                  <line class="ge-resize-corner-line"
+                    x1={size.w - 8} y1={size.h - 2}
+                    x2={size.w - 2} y2={size.h - 8}/>
+                  <line class="ge-resize-corner-line"
+                    x1={size.w - 5} y1={size.h - 2}
+                    x2={size.w - 2} y2={size.h - 5}/>
+                </g>
               {/if}
             </g>
           {/each}
@@ -4117,6 +4132,13 @@
     transition: fill 120ms, opacity 120ms;
   }
   .ge-resize-grip:hover { fill: #6366f1; opacity: 0.95; }
+  /* Bottom-right corner resize handle — moved from the right edge so the
+     output sockets sitting at x=size.w have their full hit area back.
+     Hit rect is larger than the visible strokes for forgiveness. */
+  .ge-resize-corner { cursor: nwse-resize; }
+  .ge-resize-corner-hit { fill: transparent; }
+  .ge-resize-corner-line { stroke: #94a3b8; stroke-width: 1.5; stroke-linecap: round; fill: none; pointer-events: none; }
+  .ge-resize-corner:hover .ge-resize-corner-line { stroke: #6366f1; stroke-width: 2; }
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
   .ge-source-pane:has(.ge-legacy-banner) { grid-template-rows: auto auto 1fr; }
