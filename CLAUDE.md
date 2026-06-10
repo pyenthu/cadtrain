@@ -117,11 +117,22 @@ Research findings (default-param pHash/CLIP collapse, the cold-classification
 counter-finding, and the deferred ablation queue) live in **`docs/FINDINGS.md`**
 and the session memory. Not day-to-day rules.
 
-## Current work in flight (2026-06-06 — resume point)
+## Current work in flight (2026-06-11 — resume point)
 
 > Living section — clear entries as they land. Full detail in the session
 > memory handoffs. **Launch `claude --chrome`
 > for fast visual iteration on /primitives + /vocab** (`feedback_claude_chrome_efficiency`).
+
+**Shipped 2026-06-10/11 (pushed, `e0ff295`..`86fb9b2`):** **GraphEditorPane polygon + loop overhaul (#155–#157).**
+* **`PolyRepeatNode` as a separate node type** with its own card on the canvas (Params · Bindings · Loop sections). Polygons embed loops via `{kind:'repeat-ref', sourceId}` entries that interleave with literal vertices in any order; each ref splices N points at its row position. Hydrate auto-migrates legacy inline `{kind:'repeat'}` entries to the new shape — pre-#157 files round-trip without data loss.
+* **`NPts` auto-injected** as a const at the top of every loop arrow body so users can write `theta = i*tau/NPts` or `i/NPts` (0..1 fraction) directly. Bindings emit AFTER `NPts` so they can reference it; bindings cascade left-to-right per-iteration.
+* **Wire sockets**: poly_repeat output (violet, right edge) → polygon's per-row repeat-ref input (violet, left edge at `y = 36 + idx*39 + 18`); NPts input (amber, left edge at `cy=57`) accepts `p.<name>` wire drops.
+* **3-state vertex colours** on the SVG popup + right-pane preview: red `#991b1b` (literal — drag), violet `#6d28d9` (parametric — click ƒ), purple `#a855f7` (loop-generated). Loop dots get a darker violet ring.
+* **SVG popover** picks up: ⋮⋮ drag grip (move popover anywhere, e.g. over the 3D canvas), ↩ snap-back to anchor, default pin = true, frozen viewBox (toolbar buttons are the only zoom path), click-to-insert mode with edge-hover (green/orange-🚫), click-to-delete mode.
+* **Expression popover** gains r/z (or x/y) tab strip + ƒ buttons on loop expression slots + axis labels adapt to consumer polygon's mode via `polyRepeatModeFor()`.
+* **Always call `entryIdxForEvalIdx(node, i)`** in per-point UI to map eval-index → entry-index; direct `polygon.points[i]` lookups silently break for repeat-expansions. See memory `entry_idx_eval_idx_gotcha`.
+
+Detail: memories `polygon_repeat_loop_architecture` + `entry_idx_eval_idx_gotcha`.
 
 **Shipped 2026-06-06 (pushed, `d3b696e`..`9ef94e9`):** **K.69 — vocabulary editor `/vocab` + boolean_modify rule + completion-parts seeds + mule_shoe end-to-end.**
 * **41 seeds ingested from SVTC `comp_list.xlsx`** (`d3b696e`) — 57 catalogue rows folded into 41 unique terms (multi-size variants kept in `variants[]`); 39 carry a `compjson_ref` to the matching 2D silhouette. New file: `docs/parts/vocabulary.seeds.json`. Scripts: `scripts/sync-svtc-compjson.ts` + `scripts/ingest-comp-list.ts`. Drawings live at `static/svtc-compjson/*.json` (72 files, ~2.9 MB).
