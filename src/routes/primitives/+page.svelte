@@ -144,6 +144,25 @@
     try { localStorage.setItem('prim-open-families', JSON.stringify(openFamilies)); } catch { /* ignore */ }
   }
 
+  /** Create a new entry by opening a fresh tab with the typed id. The
+   *  file isn't written until the user clicks Save inside the editor —
+   *  fetching /source for an id that doesn't exist 404s, GraphEditorPane
+   *  treats that as a fresh graph + lets the first save create the file.
+   *  Validates the id against the same regex the server uses. */
+  const ID_RE = /^[a-z][a-z0-9_]*$/i;
+  function createNewEntry(kind: 'profile' | 'part') {
+    const prompt = typeof window !== 'undefined' ? window.prompt : null;
+    if (!prompt) return;
+    const label = kind === 'profile' ? 'profile id (lowercase, _ allowed)' : 'part id (lowercase, _ allowed)';
+    const raw = prompt(label, '');
+    if (!raw) return;
+    const id = raw.trim();
+    if (!ID_RE.test(id)) { alert(`bad id "${id}" — must match [a-z][a-z0-9_]*`); return; }
+    // Open the tab — its load path 404s (no file yet) + stays on an empty
+    // graph. User authors + clicks Save inside the editor to persist.
+    void openTab(id, kind);
+  }
+
   // ─── Tab strip ────────────────────────────────────────────────────────────
   /** A tab is either a PART (graph editor — GraphEditorPane) or a PROFILE
    *  (`.prvl.ts` / `.prex.ts` — for now opens a placeholder pane that
@@ -274,10 +293,15 @@
          source). Phase 2 will swap in a 2D-mode graph editor with polygon
          output sockets that can wire into a part's profile arg. -->
     <div class="prim-group">
-      <button class="prim-group-head" type="button" onclick={() => toggleGroup('profiles')}>
-        <span class="prim-caret">{openGroups.profiles ? '▾' : '▸'}</span>
-        Profiles <span class="prim-count">({profiles.filter((p) => pass({ id: p.id, source: 'volume' })).length})</span>
-      </button>
+      <div class="prim-group-row">
+        <button class="prim-group-head" type="button" onclick={() => toggleGroup('profiles')}>
+          <span class="prim-caret">{openGroups.profiles ? '▾' : '▸'}</span>
+          Profiles <span class="prim-count">({profiles.filter((p) => pass({ id: p.id, source: 'volume' })).length})</span>
+        </button>
+        <button class="prim-group-new" type="button"
+          title="Create a new profile — opens a fresh tab; first save creates the .prvl.ts file"
+          onclick={(ev) => { ev.stopPropagation(); createNewEntry('profile'); }}>+</button>
+      </div>
       {#if openGroups.profiles}
         {@const revolves = profiles.filter((p) => p.set === 'revolve' && pass({ id: p.id, source: 'volume' }))}
         {@const extrudes = profiles.filter((p) => p.set === 'cartesian' && pass({ id: p.id, source: 'volume' }))}
@@ -308,10 +332,15 @@
 
     <!-- Basic — `<volume>/primitives/basic/*.{prim,asm}.ts`. -->
     <div class="prim-group">
-      <button class="prim-group-head" type="button" onclick={() => toggleGroup('basic')}>
-        <span class="prim-caret">{openGroups.basic ? '▾' : '▸'}</span>
-        Basic <span class="prim-count">({basic.filter(pass).length})</span>
-      </button>
+      <div class="prim-group-row">
+        <button class="prim-group-head" type="button" onclick={() => toggleGroup('basic')}>
+          <span class="prim-caret">{openGroups.basic ? '▾' : '▸'}</span>
+          Basic <span class="prim-count">({basic.filter(pass).length})</span>
+        </button>
+        <button class="prim-group-new" type="button"
+          title="Create a new part — opens a fresh tab; first save creates the .prim.ts file in basic/"
+          onclick={(ev) => { ev.stopPropagation(); createNewEntry('part'); }}>+</button>
+      </div>
       {#if openGroups.basic}
         {#each basic.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
@@ -577,13 +606,29 @@
   }
 
   .prim-group { padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
+  /* Row wrapping the group toggle + the trailing + button so they share
+     a single hover region without nesting buttons. */
+  .prim-group-row { display: flex; align-items: stretch; }
+  .prim-group-row:hover .prim-group-head,
+  .prim-group-row:hover .prim-group-new { background: #f3f4f6; }
   .prim-group-head {
-    display: flex; align-items: center; gap: 6px; width: 100%;
+    display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
     padding: 6px 12px; background: transparent; border: 0; cursor: pointer;
     text-align: left; font: 600 11px Arial; color: #44403c;
     text-transform: uppercase; letter-spacing: 0.5px;
   }
-  .prim-group-head:hover { background: #f3f4f6; }
+  /* + new entry button — hover-revealed at the right edge of the group row.
+     Click opens a name prompt + a fresh tab. The file is created on the
+     editor's first Save, so there's no risk of dangling empty files. */
+  .prim-group-new {
+    width: 28px; padding: 0; background: transparent; border: 0;
+    color: #15803d; cursor: pointer;
+    font: 600 16px Arial; line-height: 1;
+    opacity: 0; transition: opacity 100ms;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .prim-group-row:hover .prim-group-new { opacity: 0.85; }
+  .prim-group-new:hover { opacity: 1 !important; background: #d1fae5; color: #166534; }
   .prim-caret { color: #78716c; font-size: 9px; width: 10px; }
   .prim-count { color: #a8a29e; font-weight: 400; font-size: 10px; }
 
