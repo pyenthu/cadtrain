@@ -200,7 +200,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
       else                         returnExpr = `[${exprs.join(', ')}]`;
       continue;
     }
-    const expr = emitNodeExpr(node, varNames, listProducers);
+    const expr = emitNodeExpr(node, varNames, listProducers, graph.nodes);
     if (expr == null) continue;
     lines.push(`  const ${v} = ${expr};`);
   }
@@ -315,7 +315,7 @@ function missingRef(nodeId: NodeId, slot: string, badRef: NodeId): string {
   return `(() => { throw new Error(${JSON.stringify(msg)}); })()`;
 }
 
-function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProducers?: Set<NodeId>): string | null {
+function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProducers: Set<NodeId> | undefined, nodes: Record<NodeId, GraphNode>): string | null {
   const ref = (id: NodeId, slot: string) => varNames.get(id) ?? missingRef(node.id, slot, id);
   switch (node.type) {
     case 'call':
@@ -372,15 +372,31 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       return `stack(${array})`;
     }
     case 'polygon': {
-      // Polygon nodes are profile-only (composition-emit-profile.ts handles
-      // them). The part emitter shouldn't see one; if it does we emit
-      // best-effort literals so a stray polygon doesn't crash. Repeat-refs
-      // are SKIPPED here (the part-emit fallback has no access to the
-      // graph node map to resolve a sourceId — by design this path is
-      // never taken in real assemblies). Inline-repeat back-compat still
-      // works since the body is self-contained.
+      // A polygon embedded in a part graph emits its points array directly
+      // (so callers like r_revolve / r_extrude / r_weld_extrude that take
+      // a profile arg can `__POLY__<id>` it). #157 repeat-ref entries
+      // chase their sourceId to the corresponding PolyRepeatNode + emit
+      // an Array.from spread with the loop's expressions. Bindings (#157)
+      // emit as `const` lines inside the arrow body.
       const rows = node.points.map((entry: any) => {
-        if (entry?.kind === 'repeat-ref') return '';
+        if (entry?.kind === 'repeat-ref') {
+          const src = nodes[entry.sourceId] as any;
+          if (!src || src.type !== 'poly_repeat') return '';
+          const count = emitValueExpr(src.count);
+          const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(src.loopVar || ''))
+            ? String(src.loopVar) : 'i';
+          const rExpr = emitValueExpr(src.r);
+          const zExpr = emitValueExpr(src.z);
+          const bindings: Array<{ name: string; value: any }> = Array.isArray(src.bindings) ? src.bindings : [];
+          const valid = bindings.filter((b) =>
+            b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name)
+          );
+          if (valid.length === 0) {
+            return `...Array.from({ length: ${count} }, (_, ${loopVar}) => [${rExpr}, ${zExpr}])`;
+          }
+          const constLines = valid.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
+          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => { ${constLines} return [${rExpr}, ${zExpr}]; })`;
+        }
         if (entry?.kind === 'repeat') {
           const count = emitValueExpr(entry.count);
           const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(entry.loopVar || ''))

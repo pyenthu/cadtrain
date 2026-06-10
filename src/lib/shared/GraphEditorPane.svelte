@@ -2669,16 +2669,62 @@
     polygonId?: string; idx?: number;
     repeatId?: string;
     bindingIdx?: number;
-    axis: 'r' | 'z'; draft: string; x: number; y: number;
+    axis: 'r' | 'z'; draft: string;
+    /** Per-axis drafts when the popover is on a vertex or loop r/z slot
+     *  (#157, 2026-06-11). Lets the tab strip switch axes without
+     *  losing typing on the previous tab. Apply writes BOTH if either
+     *  differs from the stored value, so editing r + z + apply in one
+     *  flow Just Works. Absent for binding/count popovers (single slot). */
+    drafts?: { r: string; z: string };
+    x: number; y: number;
   } | null>(null);
+  /** Format an ArgValue as a string the popover textarea can edit. */
+  function argToDraftStr(v: any): string {
+    if (!v) return '';
+    if (v.kind === 'expr')    return String(v.expr ?? '');
+    if (v.kind === 'param')   return `p.${v.param}`;
+    if (v.kind === 'literal') return String(v.value ?? 0);
+    return '';
+  }
   function openPolyExprPop(ev: MouseEvent, polygonId: string, idx: number, axis: 'r' | 'z', currentExpr: string) {
     ev.stopPropagation();
-    polyExprPop = { polygonId, idx, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+    // Populate BOTH axis drafts so the tab strip can switch without
+    // losing typing on the other tab. The axis-passed currentExpr is
+    // authoritative for the active tab (callers may have computed it
+    // from a custom prefill); the OTHER tab loads from on-disk state.
+    const poly = graph.nodes[polygonId] as any;
+    const pt = poly?.points?.[idx];
+    const otherAxis: 'r' | 'z' = axis === 'r' ? 'z' : 'r';
+    const drafts = {
+      [axis]: currentExpr,
+      [otherAxis]: argToDraftStr(pt?.[otherAxis]),
+    } as { r: string; z: string };
+    polyExprPop = { polygonId, idx, axis, draft: currentExpr, drafts, x: ev.clientX, y: ev.clientY };
   }
   /** Variant for the PolyRepeatNode's r/z expressions (#157, 2026-06-11). */
   function openPolyRepeatExprPop(ev: MouseEvent, repeatId: string, axis: 'r' | 'z', currentExpr: string) {
     ev.stopPropagation();
-    polyExprPop = { repeatId, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+    const pr = graph.nodes[repeatId] as any;
+    const otherAxis: 'r' | 'z' = axis === 'r' ? 'z' : 'r';
+    const drafts = {
+      [axis]: currentExpr,
+      [otherAxis]: argToDraftStr(pr?.[otherAxis]),
+    } as { r: string; z: string };
+    polyExprPop = { repeatId, axis, draft: currentExpr, drafts, x: ev.clientX, y: ev.clientY };
+  }
+  /** Switch tab — save current draft into drafts[old axis], load
+   *  drafts[new axis] as the active draft. Pure state transition; no
+   *  graph mutation until Apply. */
+  function switchPolyExprAxis(newAxis: 'r' | 'z') {
+    if (!polyExprPop || !polyExprPop.drafts) return;
+    const old = polyExprPop.axis;
+    if (old === newAxis) return;
+    polyExprPop = {
+      ...polyExprPop,
+      drafts: { ...polyExprPop.drafts, [old]: polyExprPop.draft } as { r: string; z: string },
+      axis: newAxis,
+      draft: polyExprPop.drafts[newAxis],
+    };
   }
   /** Variant for a PolyRepeatNode BINDING's value expression. `bindingIdx`
    *  distinguishes the binding from the r/z slot when applying. */
@@ -2701,9 +2747,21 @@
     } else if (polyExprPop.repeatId && (polyExprPop.axis as any) === 'count') {
       graph = setPolyRepeatCount(graph, polyExprPop.repeatId, asExpr(polyExprPop.draft));
     } else if (polyExprPop.repeatId) {
-      graph = setPolyRepeatCoord(graph, polyExprPop.repeatId, polyExprPop.axis, asExpr(polyExprPop.draft));
+      // Tabbed loop r/z — write BOTH axes from drafts so editing across
+      // tabs commits together. Snapshot active draft into drafts[axis]
+      // first so the in-progress edit isn't lost.
+      const drafts = polyExprPop.drafts
+        ? { ...polyExprPop.drafts, [polyExprPop.axis]: polyExprPop.draft }
+        : { [polyExprPop.axis]: polyExprPop.draft } as Record<'r' | 'z', string>;
+      if (drafts.r !== undefined) graph = setPolyRepeatCoord(graph, polyExprPop.repeatId, 'r', asExpr(drafts.r));
+      if (drafts.z !== undefined) graph = setPolyRepeatCoord(graph, polyExprPop.repeatId, 'z', asExpr(drafts.z));
     } else if (polyExprPop.polygonId !== undefined && polyExprPop.idx !== undefined) {
-      graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, polyExprPop.axis, asExpr(polyExprPop.draft));
+      // Tabbed vertex r/z — same pattern as loop r/z above.
+      const drafts = polyExprPop.drafts
+        ? { ...polyExprPop.drafts, [polyExprPop.axis]: polyExprPop.draft }
+        : { [polyExprPop.axis]: polyExprPop.draft } as Record<'r' | 'z', string>;
+      if (drafts.r !== undefined) graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, 'r', asExpr(drafts.r));
+      if (drafts.z !== undefined) graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, 'z', asExpr(drafts.z));
     }
     polyExprPop = null;
   }
@@ -4929,6 +4987,13 @@
   {/if}
 
   {#if polyExprPop}
+    {@const tabbed = !!polyExprPop.drafts}
+    {@const isLoopAxis = !!(polyExprPop.repeatId && polyExprPop.bindingIdx === undefined && (polyExprPop.axis as any) !== 'count')}
+    {@const tabMode = polyExprPop.polygonId
+      ? polygonModeFor(polyExprPop.polygonId)
+      : (polyExprPop.repeatId ? polyRepeatModeFor(polyExprPop.repeatId) : 'revolve')}
+    {@const labelR = tabMode === 'cartesian' ? 'x' : 'r'}
+    {@const labelZ = tabMode === 'cartesian' ? 'y' : 'z'}
     <!-- Polygon coord expression popover — same UX as argExprPop but
          keyed to a polygon vertex's r or z slot. Insert chips append
          `p.<name>` to the draft so the user can compose like
@@ -4943,12 +5008,26 @@
           ƒ loop binding expression
         {:else if polyExprPop.repeatId && (polyExprPop.axis as any) === 'count'}
           ƒ loop <code>NPts</code> expression
-        {:else if polyExprPop.repeatId}
-          ƒ loop <code>{polyExprPop.axis}(i)</code> expression
+        {:else if isLoopAxis}
+          ƒ loop expression
         {:else}
-          ƒ vertex <code>{polyExprPop.idx}.{polyExprPop.axis}</code> expression
+          ƒ vertex <code>#{polyExprPop.idx}</code> expression
         {/if}
       </div>
+      {#if tabbed}
+        <!-- Axis tab strip (#157, 2026-06-11) — switch between r/x and
+             z/y without closing the popover. Per-axis drafts are kept
+             so a typed expression on the inactive tab isn't lost; Apply
+             writes BOTH tabs back to the graph. -->
+        <div class="ge-expr-pop-tabs">
+          <button class="ge-expr-pop-tab" type="button"
+            class:on={polyExprPop.axis === 'r'}
+            onclick={() => switchPolyExprAxis('r')}>{labelR}</button>
+          <button class="ge-expr-pop-tab" type="button"
+            class:on={polyExprPop.axis === 'z'}
+            onclick={() => switchPolyExprAxis('z')}>{labelZ}</button>
+        </div>
+      {/if}
       <textarea class="ge-expr-textarea" rows="3"
         placeholder="e.g. p.od / 2 - p.wall"
         value={polyExprPop.draft}
@@ -6393,6 +6472,24 @@
   .ge-expr-pop-label { font: 11px Arial; color: #6b7280; margin-right: 4px; }
   .ge-expr-pop-chip { font: 600 11px ui-monospace, monospace; color: #78350f; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 4px; padding: 2px 7px; cursor: pointer; transition: background 0.1s; }
   .ge-expr-pop-chip:hover { background: #fde68a; }
+  /* Axis tab strip — sits just below the head label, lets the user
+     switch between r/x and z/y without closing the popover. */
+  .ge-expr-pop-tabs {
+    display: flex; gap: 1px; padding: 4px 8px 0;
+    border-bottom: 1px solid #fef3c7;
+  }
+  .ge-expr-pop-tab {
+    flex: 0 0 auto; padding: 3px 12px;
+    background: #fff7ed; border: 1px solid #fed7aa; border-bottom: 0;
+    border-top-left-radius: 4px; border-top-right-radius: 4px;
+    font: 600 11px ui-monospace, monospace; color: #92400e; cursor: pointer;
+    transition: background 80ms, color 80ms;
+  }
+  .ge-expr-pop-tab:hover { background: #ffedd5; color: #7c2d12; }
+  .ge-expr-pop-tab.on {
+    background: #fef3c7; color: #78350f; border-color: #fbbf24;
+    position: relative; top: 1px; /* nudge so the bottom border merges with the strip */
+  }
   /* Expression / wire / param popovers — these need to float ABOVE the
      polygon SVG popup (z-index 100) when both are open, so editing a
      parametric vertex's expression while the 2D preview is pinned doesn't
