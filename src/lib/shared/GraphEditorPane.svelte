@@ -947,6 +947,16 @@
     if (!wireFrom) return;
     if (wireFrom.kind === 'param-out') {
       graph = setCallArg(graph, callId, key, asParam(wireFrom.paramName));
+    } else if (wireFrom.kind === 'out' && wireFrom.nodeId !== callId) {
+      // Wire from another node's OUTPUT into this Call's arg. Today the
+      // only producer that flows into a Call arg is a Polygon node (the
+      // profile slot on r_revolve / r_weld_extrude). We encode the link
+      // as an `expr` ArgValue carrying the `__POLY__<sourceId>` sentinel;
+      // composition-emit.ts post-substitutes it with the source node's
+      // varName at emit time. Visible wire renders from the source's
+      // output socket to this arg's input socket via the same bezier
+      // path used for param wires.
+      graph = setCallArg(graph, callId, key, asExpr(`__POLY__${wireFrom.nodeId}`));
     }
     wireFrom = null; wireMouse = null;
   }
@@ -2318,6 +2328,22 @@
                       <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, argY)}/>
                     {/if}
                   {/each}
+                  <!-- NODE-REF expr — `__POLY__<sourceId>` sentinel set by
+                       endWireOnCallArg when the user drags from a polygon
+                       (or any producer) output socket onto this Call arg.
+                       Render a green bezier from the source node's right
+                       output socket to the input arg socket, matching the
+                       polygon → revolve wire the user just made visible. -->
+                  {@const polyMatch = String((v as any).expr ?? '').match(/^__POLY__(n_[a-z0-9]+)$/i)}
+                  {#if polyMatch && graph.nodes[polyMatch[1]]}
+                    {@const sourceId = polyMatch[1]}
+                    {@const srcSize = nodeSize(graph.nodes[sourceId])}
+                    {@const srcPos = nodePos(sourceId)}
+                    {@const pos = nodePos(n.id)}
+                    {@const argY = pos.y + 36 + 14 + argIdx * 22}
+                    <path class="ge-wire noderef"
+                      d={bezier(srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, pos.x, argY)}/>
+                  {/if}
                 {/if}
               {/each}
               <!-- Inline transform axis wires (mv/rot wrapping this Call) -->
@@ -4009,6 +4035,10 @@
      but a longer dash so it reads as "composed via expression" not
      "wired directly". Helps when both wire types meet at the same slot. */
   .ge-wire.param.expr { stroke: #b45309; stroke-dasharray: 5 3; opacity: 0.75; }
+  /* Node-ref wire (polygon → revolve.profile etc) — orange solid, slightly
+     bolder than param wires so the producer→consumer connection reads as
+     "value flow" rather than "param injection". */
+  .ge-wire.noderef { stroke: #c2410c; stroke-width: 2.4; fill: none; opacity: 0.9; }
   .ge-wire.in-flight { stroke: #15803d; stroke-dasharray: 6 4; }
   /* output: piping a node into a container's slot. Green = "this is what the
      function returns / what gets stacked". root variant is slightly thicker
