@@ -33,6 +33,10 @@
     setPolyRepeatCount,
     setPolyRepeatLoopVar,
     setPolyRepeatCoord,
+    addPolyRepeatBinding,
+    setPolyRepeatBindingName,
+    setPolyRepeatBindingValue,
+    removePolyRepeatBinding,
     addMethodPlaceholder,
     addMvPlaceholder,
     addRotPlaceholder,
@@ -431,8 +435,16 @@
         if (!src || src.type !== 'poly_repeat') continue;
         const n = Math.max(0, Math.min(2048, Math.round(evalCoord(src.count))));
         const loopVar = String(src.loopVar || 'i');
+        const bindings = Array.isArray(src.bindings) ? src.bindings : [];
         for (let i = 0; i < n; i++) {
-          const extra = { [loopVar]: i };
+          // Loop var first; bindings evaluate against the running `extra`
+          // so a later binding can reference an earlier one (or the loop
+          // var) the same way the emitted JS const cascade does at runtime.
+          const extra: Record<string, number> = { [loopVar]: i };
+          for (const b of bindings) {
+            if (!b || typeof b.name !== 'string' || !b.name) continue;
+            extra[b.name] = evalCoord(b.value, extra);
+          }
           out.push([evalCoord(src.r, extra), evalCoord(src.z, extra)]);
         }
         continue;
@@ -1948,9 +1960,15 @@
       return { w, h };
     }
     if (node.type === 'poly_repeat') {
-      // 2-section fixed-height card (#157) — params + loop. Header (32) +
-      // Params section (40) + Loop section (76) + bottom padding (6) = 154.
-      return { w: 220, h: 154 };
+      // 3-section card (#157) — params + bindings + loop. Variable height
+      // so the bindings list can grow. Base: 154 px for params + loop +
+      // chrome; each binding adds 22 px; section header + add-button add
+      // a baseline 50 px when bindings exist; the no-binding case still
+      // shows a compact `+ binding` add button so the affordance is
+      // always visible.
+      const bindings = (node as any).bindings ?? [];
+      const bindingsH = 28 + bindings.length * 22 + 24; // hdr + rows + add btn
+      return { w: 240, h: 154 + bindingsH - 24 };
     }
     return { w, h: 80 };
   }
@@ -2599,7 +2617,12 @@
   /** The expression popover targets either a polygon vertex
    *  (polygonId + idx) or a PolyRepeatNode's r/z slot (repeatId).
    *  Discriminator: `repeatId` present ⇒ loop, else vertex. */
-  let polyExprPop = $state<{ polygonId?: string; idx?: number; repeatId?: string; axis: 'r' | 'z'; draft: string; x: number; y: number } | null>(null);
+  let polyExprPop = $state<{
+    polygonId?: string; idx?: number;
+    repeatId?: string;
+    bindingIdx?: number;
+    axis: 'r' | 'z'; draft: string; x: number; y: number;
+  } | null>(null);
   function openPolyExprPop(ev: MouseEvent, polygonId: string, idx: number, axis: 'r' | 'z', currentExpr: string) {
     ev.stopPropagation();
     polyExprPop = { polygonId, idx, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
@@ -2609,10 +2632,18 @@
     ev.stopPropagation();
     polyExprPop = { repeatId, axis, draft: currentExpr, x: ev.clientX, y: ev.clientY };
   }
+  /** Variant for a PolyRepeatNode BINDING's value expression. `bindingIdx`
+   *  distinguishes the binding from the r/z slot when applying. */
+  function openPolyBindingExprPop(ev: MouseEvent, repeatId: string, bindingIdx: number, currentExpr: string) {
+    ev.stopPropagation();
+    polyExprPop = { repeatId, bindingIdx, axis: 'r', draft: currentExpr, x: ev.clientX, y: ev.clientY };
+  }
   function closePolyExprPop() { polyExprPop = null; }
   function applyPolyExprPop() {
     if (!polyExprPop) return;
-    if (polyExprPop.repeatId) {
+    if (polyExprPop.repeatId && polyExprPop.bindingIdx !== undefined) {
+      graph = setPolyRepeatBindingValue(graph, polyExprPop.repeatId, polyExprPop.bindingIdx, asExpr(polyExprPop.draft));
+    } else if (polyExprPop.repeatId) {
       graph = setPolyRepeatCoord(graph, polyExprPop.repeatId, polyExprPop.axis, asExpr(polyExprPop.draft));
     } else if (polyExprPop.polygonId !== undefined && polyExprPop.idx !== undefined) {
       graph = setPolygonCoord(graph, polyExprPop.polygonId, polyExprPop.idx, polyExprPop.axis, asExpr(polyExprPop.draft));
@@ -4328,6 +4359,41 @@
                         title="Loop variable bound in r and z expressions"
                         oninput={(e) => { graph = setPolyRepeatLoopVar(graph, pr.id, String((e.target as HTMLInputElement).value) || 'i'); }}/>
                     </div>
+                    <!-- Bindings section (#157, 2026-06-11) — local
+                         constants like `amplitude = p.thread_height` so
+                         the loop expressions stay terse. Each row evaluates
+                         INSIDE the loop, so bindings can reference the
+                         loop var + earlier bindings. -->
+                    <div class="ge-prc-section-head ge-prc-bindings-head">
+                      <span>Bindings</span>
+                      <button class="ge-prc-add" type="button" title="Add a local binding"
+                        onclick={() => { graph = addPolyRepeatBinding(graph, pr.id); }}>+</button>
+                    </div>
+                    {#each (pr.bindings ?? []) as bind, bIdx (bIdx)}
+                      <div class="ge-prc-bind-row">
+                        <input class="ge-poly-input ge-prc-bind-name" type="text" maxlength="12"
+                          value={bind.name}
+                          placeholder="name"
+                          title="Binding name (used in r and z expressions)"
+                          oninput={(e) => { graph = setPolyRepeatBindingName(graph, pr.id, bIdx, String((e.target as HTMLInputElement).value)); }}/>
+                        <span class="ge-prc-eq">=</span>
+                        <input class="ge-poly-input expr" type="text"
+                          value={bind.value?.kind === 'expr' ? bind.value.expr : bind.value?.kind === 'literal' ? String(bind.value.value) : ''}
+                          placeholder="p.od / 2"
+                          oninput={(e) => { graph = setPolyRepeatBindingValue(graph, pr.id, bIdx, { kind: 'expr', expr: (e.target as HTMLInputElement).value }); }}/>
+                        <button class="ge-poly-fx" type="button"
+                          title="Edit expression with param chips"
+                          class:on={bind.value?.kind !== 'literal'}
+                          onclick={(ev) => {
+                            const prefill = bind.value?.kind === 'expr' ? String(bind.value.expr)
+                                          : bind.value?.kind === 'literal' ? String(bind.value.value)
+                                          : '';
+                            openPolyBindingExprPop(ev as any, pr.id, bIdx, prefill);
+                          }}>ƒ</button>
+                        <button class="ge-poly-del ge-prc-bind-del" type="button" title="Remove this binding"
+                          onclick={() => { graph = removePolyRepeatBinding(graph, pr.id, bIdx); }}>×</button>
+                      </div>
+                    {/each}
                     <div class="ge-prc-section-head">Loop ƒ({pr.loopVar || 'i'})</div>
                     <div class="ge-prc-expr-row">
                       <span class="ge-prc-label">{prAx0}</span>
@@ -4794,7 +4860,9 @@
     <div class="ge-wire-pop ge-expr-pop"
       style="left: {Math.min(polyExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {polyExprPop.y}px">
       <div class="ge-wire-head">
-        {#if polyExprPop.repeatId}
+        {#if polyExprPop.repeatId && polyExprPop.bindingIdx !== undefined}
+          ƒ loop binding expression
+        {:else if polyExprPop.repeatId}
           ƒ loop <code>{polyExprPop.axis}(i)</code> expression
         {:else}
           ƒ vertex <code>{polyExprPop.idx}.{polyExprPop.axis}</code> expression
@@ -5827,6 +5895,31 @@
     font: 600 10px ui-monospace, monospace; color: #5b21b6;
     text-align: center;
   }
+  /* Bindings section — variable-height list of local-name = value rows
+     between Params and Loop. Inline "+ binding" button on the section
+     head. Each row: name-input · = · value-expr · ƒ · × */
+  .ge-prc-bindings-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 6px;
+  }
+  .ge-prc-add {
+    height: 14px; min-width: 14px; padding: 0 4px;
+    background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 3px;
+    font: 700 10px Arial; color: #5b21b6; line-height: 1; cursor: pointer;
+  }
+  .ge-prc-add:hover { background: #ddd6fe; border-color: #a78bfa; }
+  .ge-prc-bind-row {
+    display: grid; grid-template-columns: 56px 10px 1fr 16px 16px;
+    gap: 3px; align-items: center;
+  }
+  .ge-prc-bind-name {
+    font: 600 11px ui-monospace, monospace; color: #5b21b6;
+  }
+  .ge-prc-eq {
+    font: 600 11px ui-monospace, monospace; color: #6b7280;
+    text-align: center;
+  }
+  .ge-prc-bind-del { width: 16px; height: 16px; font: 700 11px Arial; }
   /* Repeat-ref wire (#157) — violet, slightly thicker than the param
      bezier so it reads as "data flow" not "param wiring". */
   .ge-wire.poly-rref {

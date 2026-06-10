@@ -147,7 +147,21 @@ function collectFromNode(
           ? String(src.loopVar) : 'i';
         const r = argToCode(src.r);
         const z = argToCode(src.z);
-        polyRows.push(`...Array.from({ length: ${count} }, (_, ${loopVar}) => [${r}, ${z}])`);
+        // Optional local bindings (#157, 2026-06-11) → emitted as `const`
+        // lines INSIDE the arrow body so they can reference the loop var.
+        // No bindings → keep the terse expression form for readability.
+        const bindings: Array<{ name: string; value: any }> = Array.isArray(src.bindings) ? src.bindings : [];
+        const validBindings = bindings.filter((b) =>
+          b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name)
+        );
+        if (validBindings.length === 0) {
+          polyRows.push(`...Array.from({ length: ${count} }, (_, ${loopVar}) => [${r}, ${z}])`);
+        } else {
+          const constLines = validBindings.map((b) => `      const ${b.name} = ${argToCode(b.value)};`).join('\n');
+          polyRows.push(
+            `...Array.from({ length: ${count} }, (_, ${loopVar}) => {\n${constLines}\n      return [${r}, ${z}];\n    })`,
+          );
+        }
         continue;
       }
       // DEPRECATED inline repeat block (#154 / pre-#157). The hydrate path

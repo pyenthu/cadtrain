@@ -149,6 +149,13 @@ export type PolygonNode = {
  *  Rendered as a 2-section card: PARAMS (count + loop var) and LOOP
  *  (r(i) + z(i) expression inputs). Sits on the canvas next to the
  *  polygon it feeds, with a dedicated wire showing the spread. */
+/** Local symbol bound on a PolyRepeatNode. Each binding is a name +
+ *  value expression (ArgValue). Bindings are evaluated INSIDE the loop
+ *  (so they can reference the loop var); their resolved values are in
+ *  scope for the r and z expressions. Lets the user pull out repeated
+ *  sub-expressions (`amplitude = p.thread_height`) so the loop body
+ *  stays readable. */
+export type PolyRepeatBinding = { name: string; value: ArgValue };
 export type PolyRepeatNode = {
   id: NodeId;
   type: 'poly_repeat';
@@ -156,6 +163,8 @@ export type PolyRepeatNode = {
   loopVar: string;
   r: ArgValue;
   z: ArgValue;
+  /** Optional local bindings — undefined / [] means "no bindings". */
+  bindings?: PolyRepeatBinding[];
 };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode | PolyRepeatNode;
@@ -810,6 +819,65 @@ export function setPolyRepeatCoord(graph: Graph, repeatId: NodeId, axis: 'r' | '
   const node = graph.nodes[repeatId];
   if (!node || node.type !== 'poly_repeat') return graph;
   const updated: PolyRepeatNode = { ...node, [axis]: arg };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+// ─── PolyRepeat bindings (#157, 2026-06-11) ────────────────────────────
+// Local symbols on a loop card — let the user pull repeated sub-expressions
+// into named constants (e.g. `amplitude = p.thread_height`) so the r/z
+// expressions stay terse. Each binding's value is an ArgValue, so it can
+// be a literal, a wired param, or a JS expression itself.
+
+/** Append a new binding to a PolyRepeatNode. Default name picks the next
+ *  unused single letter (a, b, c, …) so the user can rename without
+ *  conflict; default value is a literal 0. */
+export function addPolyRepeatBinding(graph: Graph, repeatId: NodeId): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const existing = node.bindings ?? [];
+  const taken = new Set(existing.map((b) => b.name));
+  // Find the next free single-letter name skipping the loop var so the
+  // user doesn't accidentally shadow it.
+  let name = 'a';
+  for (const ch of 'abcdefghjklmnoqstuvwxyz') {
+    if (ch !== node.loopVar && !taken.has(ch)) { name = ch; break; }
+  }
+  const updated: PolyRepeatNode = {
+    ...node,
+    bindings: [...existing, { name, value: asLiteral(0) }],
+  };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Rename a binding. No-op on duplicates / empty names — caller is expected
+ *  to validate before calling. */
+export function setPolyRepeatBindingName(graph: Graph, repeatId: NodeId, idx: number, name: string): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const bindings = (node.bindings ?? []).slice();
+  if (idx < 0 || idx >= bindings.length) return graph;
+  bindings[idx] = { ...bindings[idx], name };
+  const updated: PolyRepeatNode = { ...node, bindings };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Update a binding's value expression. */
+export function setPolyRepeatBindingValue(graph: Graph, repeatId: NodeId, idx: number, value: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const bindings = (node.bindings ?? []).slice();
+  if (idx < 0 || idx >= bindings.length) return graph;
+  bindings[idx] = { ...bindings[idx], value };
+  const updated: PolyRepeatNode = { ...node, bindings };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+/** Remove a binding from a PolyRepeatNode. */
+export function removePolyRepeatBinding(graph: Graph, repeatId: NodeId, idx: number): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'poly_repeat') return graph;
+  const bindings = (node.bindings ?? []).filter((_, i) => i !== idx);
+  const updated: PolyRepeatNode = { ...node, bindings };
   return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
 }
 
