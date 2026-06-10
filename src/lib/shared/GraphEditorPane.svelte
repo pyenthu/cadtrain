@@ -1632,12 +1632,17 @@
         segments: { kind: 'literal', value: 96 } as any,
       }).graph;
     } else {
+      // r_weld_extrude actual sig (stdstale/r_weld_extrude.ts meta.params):
+      //   profile · length · divs · twist · taper · segments
+      // Earlier draft used `height` (CrossSection.extrude arg name) which
+      // didn't match meta.params → drift warning + bake skipped.
       graph = addCall(graph, 'r_weld_extrude', {
         profile: profileArg as any,
-        height: { kind: 'literal', value: 2 } as any,
-        twist: { kind: 'literal', value: 0 } as any,
-        divs: { kind: 'literal', value: 12 } as any,
-        segments: { kind: 'literal', value: 64 } as any,
+        length:   { kind: 'literal', value: 2 } as any,
+        divs:     { kind: 'literal', value: 12 } as any,
+        twist:    { kind: 'literal', value: 0 } as any,
+        taper:    { kind: 'literal', value: 0 } as any,
+        segments: { kind: 'literal', value: 32 } as any,
       }).graph;
     }
   }
