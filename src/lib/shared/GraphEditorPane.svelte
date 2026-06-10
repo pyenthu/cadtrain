@@ -71,28 +71,21 @@
   /** Props (component contract — same surface mounted by /graph-editor for
    *  full-page work and by /primitives for the tabbed multi-instance view).
    *
+   *  UNIFIED MODEL (post-K.72): there is ONE editor, ONE graph type, ONE
+   *  save endpoint. The output type of the graph (polygon literal vs
+   *  manifold) decides what the right pane renders (2D SVG vs 3D bake),
+   *  not a prop. A graph with only a Polygon node saves as a profile-
+   *  shaped file; a graph with a revolve/extrude saves as a part-shaped
+   *  file — the save endpoint inspects the emitted meta and chooses the
+   *  on-disk location, the editor itself doesn't branch.
+   *
    *    id     — the primitive to load on mount. When null/undefined the
    *             component opens a fresh default graph (`test_graph_a`).
    *    embed  — when true the global SvelteKit nav is hidden via the head
    *             style injection below + the inner chrome layout collapses
-   *             so the editor fits inside another page's tab/iframe.
-   *    kind   — 'part' (default) edits a part assembly (.asm.ts / .prim.ts);
-   *             'profile' edits a 2D profile (.prvl.ts / .prex.ts) — same
-   *             canvas + auto-layout + push-apart, but the source/save
-   *             endpoints route to /api/primitives/profiles/* and the
-   *             right-pane swaps the 3D bake canvas for an inline SVG of
-   *             the resolved polygon. Profile-specific node types
-   *             (mv/line/repeat) come in a follow-up commit. */
-  interface Props { id?: string | null; embed?: boolean; kind?: 'part' | 'profile'; }
+   *             so the editor fits inside another page's tab/iframe. */
+  interface Props { id?: string | null; embed?: boolean }
   const props: Props = $props();
-  const editKind = $derived(props.kind ?? 'part');
-  /** Endpoint paths swap based on `kind`. Profile endpoints take `?id=…`
-   *  rather than `?name=…` so the helpers also normalize the query
-   *  param. Kept as derived strings (not constants) so a parent flipping
-   *  `kind` mid-mount re-routes cleanly. */
-  const SOURCE_URL = $derived(editKind === 'profile' ? '/api/primitives/profiles/source' : '/api/primitives/source');
-  const SAVE_URL   = $derived(editKind === 'profile' ? '/api/primitives/profiles/save'   : '/api/primitives/save');
-  const SOURCE_QS  = $derived(editKind === 'profile' ? 'id' : 'name');
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
   // id input mutate it locally. The `id` prop only seeds it; once mounted
   // we stop reading the prop so the user's typed value isn't reverted.
@@ -191,18 +184,27 @@
    *  block) have an empty graph + empty params, but the build() needs
    *  the file's declared param defaults to produce points. */
   let profileMetaParams = $state<Record<string, { default?: number }>>({});
-  /** Universal output-type detection — does the graph contain a node
-   *  that produces a 3D Manifold? Today that's any Call to a known solid
-   *  producer (r_revolve / r_weld_extrude / r_extrude / any r_* call).
-   *  When true, the right-pane swaps from 2D PREVIEW (inline SVG) to
-   *  3D BAKE (PrimitiveDualCanvas) — even in profile mode. This is the
-   *  "one universal graph" promise: the editor figures out the render
-   *  surface from the graph's content, not from a fixed mode flag. */
+  /** Universal output-type detection — does the graph produce a 3D
+   *  Manifold or 2D polygon points?
+   *
+   *  2D output (polygon literal) when the graph contains ONLY:
+   *    - polygon nodes
+   *    - the root list / nested list / group containers
+   *    - nothing else
+   *
+   *  3D output when ANY other node type is present — Call, method,
+   *  mv/rot transform, repeat, stack. Those all produce manifolds (or
+   *  arrays of manifolds), so the right pane needs the 3D bake.
+   *
+   *  This is the "one universal graph" promise: the editor decides
+   *  what to render from the graph's content, not from a fixed
+   *  `kind: 'part' | 'profile'` flag. */
   const hasSolidProducer = $derived(
     Object.values(graph.nodes).some((n) => {
-      if ((n as any).type !== 'call') return false;
-      const src = String((n as any).src ?? '');
-      return src === 'r_revolve' || src === 'r_extrude' || src === 'r_weld_extrude' || (src.startsWith('r_') && src !== 'r_rotate');
+      const t = (n as any).type;
+      if (t === 'polygon') return false;
+      if (t === 'list' || t === 'group') return false;
+      return true;
     }),
   );
   /** Derived viewBox + path for the 2D SVG preview (revolve: axis at r=0,
@@ -250,10 +252,10 @@
    *  120 ms so a slider drag doesn't flood /resolve. */
   let profileResolveTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    if (editKind !== 'profile') return;
-    // When the graph has a 3D solid producer (r_revolve / r_extrude /
-    // r_weld_extrude / any r_* call), skip the 2D resolve entirely —
-    // the part-bake pipeline above handles the 3D render in that case.
+    // 2D resolve fires when the graph's output is a polygon (no solid
+    // producer present). When a revolve/extrude lives in the graph, the
+    // part-bake pipeline takes over and this effect short-circuits.
+    if (hasSolidProducer) return;
     if (hasSolidProducer) return;
     void bakeNonce; // re-run on manual bake
 
@@ -540,7 +542,9 @@
     // r_weld_extrude), the output is a Manifold and we route through
     // the part bake pipeline (/preview) so the right pane gets a 3D
     // mesh. The 2D-vs-3D switch is driven by `hasSolidProducer` below.
-    if (editKind === 'profile' && !hasSolidProducer) {
+    // Polygon-only graphs (no solid producer) skip the part-bake — the
+    // right pane shows the inline 2D SVG instead.
+    if (!hasSolidProducer) {
       bake = null; firstBakeDone = true; return;
     }
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
@@ -679,18 +683,19 @@
     try {
       const id = props.id ?? null;
       if (id && /^[a-z_][a-z0-9_]*$/i.test(id)) {
-        const r = await fetch(`${SOURCE_URL}?${SOURCE_QS}=${encodeURIComponent(id)}`);
+        const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`);
         if (!r.ok) { legacyLoad = { id, reason: 'fetch-failed' }; exemplarId = id; return; }
         const d = await r.json();
-        // Profile mode: capture set + source so the resolve effect can run.
-        if (editKind === 'profile') {
-          profileSet = (d.set === 'cartesian' ? 'cartesian' : 'revolve');
-          profileMetaParams = d.params ?? {};
-          profileSource = String(d.source ?? '');
-          exemplarId = id;
-          // Trigger an initial resolve — the effect below picks up on
-          // profileSource changes.
+        // Capture optional profile-shape hints from the loaded meta. These
+        // populate the 2D-resolve effect when the loaded graph is polygon-
+        // only. A part graph doesn't surface these fields — the effect
+        // short-circuits via hasSolidProducer anyway.
+        if (d.set === 'cartesian' || d.set === 'revolve') {
+          profileSet = d.set;
         }
+        profileMetaParams = d.params ?? {};
+        profileSource = String(d.source ?? '');
+        exemplarId = id;
         // Pull the drawing-descriptor markdown out of the saved meta if
         // present. Falls back to extracting from the source string for
         // older endpoints that don't surface every meta field.
@@ -2108,55 +2113,25 @@
     // Capture current viewport into the graph BEFORE serialising.
     graph = setViewport(graph, pan, zoom);
     try {
-      // Save routing — the GRAPH's content (not the editKind prop) decides
-      // which endpoint the file lands at:
-      //   * Polygon-only graph    -> /api/primitives/profiles/save (.prvl.ts
-      //     or .prex.ts depending on profileSet). Emit a `build(p)` body via
-      //     emitProfileGraph — the profile resolver expects that shape.
-      //   * Has a solid producer  -> /api/primitives/save (.prim.ts / .asm.ts).
-      //     The polygon + revolve graph becomes a PART because the output is
-      //     3D. Same emitGraph path real parts use.
-      //   * Pure part graph       -> /api/primitives/save (existing path).
-      let endpoint: string;
-      let body: any;
-      if (editKind === 'profile' && !hasSolidProducer) {
-        // Pure polygon → profile save. Emit a build() body via the
-        // profile-specific emitter so the profile resolve endpoint accepts it.
-        // The `graph` field carries the FULL canvas state — nodes + layout +
-        // viewport — so reopening hydrates the polygon table instead of
-        // dropping into legacy mode (which is what was happening when the
-        // user re-opened a saved cone before this fix).
-        const profileSource = emitProfileGraph(graph).source;
-        endpoint = '/api/primitives/profiles/save';
-        body = {
-          id: exemplarId,
-          label: exemplarId,
-          description: '',
-          set: profileSet,
-          tags: [],
-          params: graph.params ?? {},
-          source: profileSource,
-          graph: emitted.meta.graph,
-        };
-      } else {
-        // Part (or profile-mode graph that's grown a solid producer).
-        // Route to the part save endpoint with the assembly body.
-        endpoint = '/api/primitives/save';
-        body = {
+      // Unified save — one endpoint, one body shape. The graph emit walks
+      // every node type uniformly (composition-emit.ts handles polygon
+      // as a literal-array case alongside Call / method / mv / repeat).
+      // The output type doesn't change the save destination: every saved
+      // file is .prim.ts in basic/. The right-pane render surface (2D
+      // vs 3D) is decided by hasSolidProducer at READ time, not encoded
+      // into the file location.
+      const r = await fetch('/api/primitives/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
           id: exemplarId,
           source: emitted.source,
           kind: 'asm',
           dir: 'basic',
-        };
-      }
-      const r = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        }),
       });
       if (r.ok) {
-        const where = endpoint.includes('profiles') ? 'profiles' : 'basic';
-        saveStatus = `✓ ${exemplarId} saved to ${where}/`;
+        saveStatus = `✓ ${exemplarId} saved to basic/`;
       } else {
         saveStatus = `✗ save ${r.status}: ${(await r.text()).slice(0, 160)}`;
       }
@@ -3452,8 +3427,8 @@
       <div class="ge-pane-tabs" role="tablist">
         <button class="ge-pane-tab" class:active={rightTab === 'bake'}
           type="button" role="tab" aria-selected={rightTab === 'bake'}
-          data-tip={(editKind === 'profile' && !hasSolidProducer) ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
-          onclick={() => setRightTab('bake')}>{(editKind === 'profile' && !hasSolidProducer) ? '2D preview' : '3D bake'}</button>
+          data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
+          onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : '3D bake'}</button>
         <button class="ge-pane-tab" class:active={rightTab === 'source'}
           type="button" role="tab" aria-selected={rightTab === 'source'}
           data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
@@ -3465,7 +3440,7 @@
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
-          {#if editKind === 'profile' && !hasSolidProducer}
+          {#if !hasSolidProducer}
             <!-- Profile mode: inline SVG of the resolved polygon. The
                  graph-driven re-emit is Phase 2.2 — for now this shows
                  the on-disk build()'s shape at default params. Closure
@@ -3834,66 +3809,60 @@
     <div class="ge-picker-shade" onclick={closePicker}></div>
     <div class="ge-picker"
       style="left: {pickerPos.left}px; top: {pickerPos.top}px">
-      {#if editKind === 'profile'}
-        <!-- Polygon section — single producer for profile graphs. One
-             node holds the whole vertex list as a compact, reorderable
-             table; the per-pen-op cards (Phase 2a) collapsed into this. -->
-        <div class="ge-picker-section">
-          <div class="ge-picker-label">Polygon</div>
-          <button class="ge-pick-item" type="button" onclick={dropPolygon}>
-            <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">[(r, z), …]</span>
-          </button>
-        </div>
-        <!-- Solid (from 2D) — revolve / extrude turn the polygon into
-             a 3D Manifold. Right-pane auto-flips from 2D PREVIEW to
-             3D BAKE when one of these is present in the graph. -->
-        <div class="ge-picker-section">
-          <div class="ge-picker-label">Solid (from 2D)</div>
-          <button class="ge-pick-item" type="button" onclick={() => dropSolid('revolve')}>
-            <span class="ge-pick-icon">◯</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin r→z</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={() => dropSolid('extrude')}>
-            <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep ↓</span>
-          </button>
-        </div>
-      {:else}
-        <!-- CSG ops — 3D booleans (parts only). -->
-        <div class="ge-picker-section">
-          <div class="ge-picker-label">CSG</div>
-          <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
-            <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
-            <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
-            <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
-          </button>
-        </div>
-        <!-- Transform — 3D translate / rotate (parts only). -->
-        <div class="ge-picker-section">
-          <div class="ge-picker-label">Transform</div>
-          <button class="ge-pick-item" type="button" onclick={dropMv}>
-            <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">[x, y, z]</span>
-          </button>
-          <button class="ge-pick-item" type="button" onclick={dropRot}>
-            <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">[rx, ry, rz]</span>
-          </button>
-        </div>
-      {/if}
-      <!-- Container — works for both kinds (graph-shape, no geometry). -->
+      <!-- Polygon — 2D vertex list producer. Output flows into a
+           revolve/extrude (for 3D solids) or directly to Output
+           (for a profile-shaped save). -->
+      <div class="ge-picker-section">
+        <div class="ge-picker-label">Polygon</div>
+        <button class="ge-pick-item" type="button" onclick={dropPolygon}>
+          <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">[(r, z), …]</span>
+        </button>
+      </div>
+      <!-- Solid (from 2D) — revolve / extrude turn a polygon into a
+           3D Manifold. Auto-attaches a polygon if none present.
+           Right-pane auto-flips from 2D PREVIEW to 3D BAKE. -->
+      <div class="ge-picker-section">
+        <div class="ge-picker-label">Solid (from 2D)</div>
+        <button class="ge-pick-item" type="button" onclick={() => dropSolid('revolve')}>
+          <span class="ge-pick-icon">◯</span><span class="ge-pick-name">revolve</span><span class="ge-pick-hint">spin r→z</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => dropSolid('extrude')}>
+          <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep ↓</span>
+        </button>
+      </div>
+      <!-- CSG ops — boolean combination of two 3D manifolds. -->
+      <div class="ge-picker-section">
+        <div class="ge-picker-label">CSG</div>
+        <button class="ge-pick-item" type="button" onclick={() => dropCsg('subtract')}>
+          <span class="ge-pick-icon">⊖</span><span class="ge-pick-name">subtract</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => dropCsg('add')}>
+          <span class="ge-pick-icon">⊕</span><span class="ge-pick-name">add</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => dropCsg('intersect')}>
+          <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
+        </button>
+      </div>
+      <!-- Transform — translate / rotate a 3D child. -->
+      <div class="ge-picker-section">
+        <div class="ge-picker-label">Transform</div>
+        <button class="ge-pick-item" type="button" onclick={dropMv}>
+          <span class="ge-pick-icon">⇄</span><span class="ge-pick-name">mv</span><span class="ge-pick-hint">[x, y, z]</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={dropRot}>
+          <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">[rx, ry, rz]</span>
+        </button>
+      </div>
+      <!-- Container — graph-shape ops, no geometry. -->
       <div class="ge-picker-section">
         <div class="ge-picker-label">Container</div>
-        {#if editKind !== 'profile'}
-          <button class="ge-pick-item" type="button" onclick={dropStack}>
-            <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span><span class="ge-pick-hint">[…]</span>
-          </button>
-        {/if}
+        <button class="ge-pick-item" type="button" onclick={dropStack}>
+          <span class="ge-pick-icon">↕</span><span class="ge-pick-name">stack</span><span class="ge-pick-hint">[…]</span>
+        </button>
         <button class="ge-pick-item" type="button" onclick={dropRepeat}>
           <span class="ge-pick-icon">↻</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
         </button>
       </div>
-      {#if editKind !== 'profile'}
       <!-- Call (primitive) — filter + sort row + scrollable list -->
       <div class="ge-picker-section ge-picker-call-section">
         <div class="ge-picker-call-head">
@@ -3922,7 +3891,6 @@
           {#if pickerSrcs.length === 0}<div class="ge-empty">loading…</div>{/if}
         </div>
       </div>
-      {/if}
     </div>
   {/if}
 </div>

@@ -150,38 +150,33 @@
    *  treats that as a fresh graph + lets the first save create the file.
    *  Validates the id against the same regex the server uses. */
   const ID_RE = /^[a-z][a-z0-9_]*$/i;
-  function createNewEntry(kind: 'profile' | 'part') {
+  function createNewEntry() {
     const prompt = typeof window !== 'undefined' ? window.prompt : null;
     if (!prompt) return;
-    const label = kind === 'profile' ? 'profile id (lowercase, _ allowed)' : 'part id (lowercase, _ allowed)';
-    const raw = prompt(label, '');
+    const raw = prompt('new entry id (lowercase, _ allowed)', '');
     if (!raw) return;
     const id = raw.trim();
     if (!ID_RE.test(id)) { alert(`bad id "${id}" — must match [a-z][a-z0-9_]*`); return; }
-    // Open the tab — its load path 404s (no file yet) + stays on an empty
-    // graph. User authors + clicks Save inside the editor to persist.
-    void openTab(id, kind);
+    void openTab(id);
   }
 
   // ─── Tab strip ────────────────────────────────────────────────────────────
-  /** A tab is either a PART (graph editor — GraphEditorPane) or a PROFILE
-   *  (`.prvl.ts` / `.prex.ts` — for now opens a placeholder pane that
-   *  surfaces the source; Phase 2 swaps in a 2D-mode graph editor with
-   *  polygon-output sockets). `kind` decides which component to mount. */
-  interface Tab { id: string; key: number; kind: 'part' | 'profile' }
+  /** UNIFIED tab — every tab mounts the same GraphEditorPane. The graph's
+   *  output type (polygon vs manifold) decides what gets rendered in the
+   *  right pane. No mode flag. */
+  interface Tab { id: string; key: number }
   let tabs: Tab[] = $state([]);
   let activeKey: number | null = $state(null);
   let nextKey = 1;
 
-  /** Open `id` in a tab — activates the existing tab if one is already open,
-   *  otherwise creates a new one. The iframe's `src` is set ONCE per tab
-   *  (using the stable `key`) so flipping the active tab doesn't re-init
-   *  WASM. Tabs stay loaded in the background until closed. */
-  async function openTab(id: string, kind: 'part' | 'profile' = 'part') {
-    const existing = tabs.find((t) => t.id === id && t.kind === kind);
+  /** Open `id` in a tab — activates the existing tab if one is already
+   *  open, otherwise creates a new one. Tabs stay loaded in the background
+   *  until closed (graph state + bake cache + zoom survive switches). */
+  async function openTab(id: string) {
+    const existing = tabs.find((t) => t.id === id);
     if (existing) { activeKey = existing.key; return; }
     const key = nextKey++;
-    tabs = [...tabs, { id, key, kind }];
+    tabs = [...tabs, { id, key }];
     activeKey = key;
     await tick();
     persistTabs();
@@ -198,12 +193,9 @@
   function activate(key: number) { activeKey = key; }
   function persistTabs() {
     try {
-      // Persist `id|kind` per tab so profiles re-open in profile mode
-      // (not as parts) on next page load. Old saves without `|kind`
-      // default to 'part' in the restore loop.
-      localStorage.setItem('prim-open-tabs', JSON.stringify(tabs.map((t) => `${t.id}|${t.kind}`)));
+      localStorage.setItem('prim-open-tabs', JSON.stringify(tabs.map((t) => t.id)));
       const act = activeKey != null ? tabs.find((t) => t.key === activeKey) : null;
-      localStorage.setItem('prim-active-tab-id', act ? `${act.id}|${act.kind}` : '');
+      localStorage.setItem('prim-active-tab-id', act ? act.id : '');
     } catch { /* ignore */ }
   }
 
@@ -242,10 +234,10 @@
       const saved = JSON.parse(localStorage.getItem('prim-open-tabs') ?? '[]') as string[];
       const activeRef = localStorage.getItem('prim-active-tab-id') ?? '';
       for (const ref of saved) {
-        const [id, k] = ref.includes('|') ? ref.split('|') : [ref, 'part'];
-        const kind = (k === 'profile' ? 'profile' : 'part') as 'part' | 'profile';
+        // Back-compat: old `id|kind` entries split to drop the kind half.
+        const id = ref.includes('|') ? ref.split('|')[0] : ref;
         const key = nextKey++;
-        tabs = [...tabs, { id, key, kind }];
+        tabs = [...tabs, { id, key }];
         if (ref === activeRef || id === activeRef) activeKey = key;
       }
       if (activeKey == null && tabs.length > 0) activeKey = tabs[0].key;
@@ -286,49 +278,10 @@
     {#if listLoading}<div class="prim-empty">loading…</div>{/if}
     {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
 
-    <!-- Profiles — `<volume>/primitives/profiles/<id>.{prvl,prex}.ts`.
-         Top-level group above Basic. Subgrouped by `set` (revolve / extrude)
-         so the two consumers (r_revolve / r_extrude) read at a glance.
-         Click → opens a tab. Phase 1 surfaces a basic profile pane (meta +
-         source). Phase 2 will swap in a 2D-mode graph editor with polygon
-         output sockets that can wire into a part's profile arg. -->
-    <div class="prim-group">
-      <div class="prim-group-row">
-        <button class="prim-group-head" type="button" onclick={() => toggleGroup('profiles')}>
-          <span class="prim-caret">{openGroups.profiles ? '▾' : '▸'}</span>
-          Profiles <span class="prim-count">({profiles.filter((p) => pass({ id: p.id, source: 'volume' })).length})</span>
-        </button>
-        <button class="prim-group-new" type="button"
-          title="Create a new profile — opens a fresh tab; first save creates the .prvl.ts file"
-          onclick={(ev) => { ev.stopPropagation(); createNewEntry('profile'); }}>+</button>
-      </div>
-      {#if openGroups.profiles}
-        {@const revolves = profiles.filter((p) => p.set === 'revolve' && pass({ id: p.id, source: 'volume' }))}
-        {@const extrudes = profiles.filter((p) => p.set === 'cartesian' && pass({ id: p.id, source: 'volume' }))}
-        {#if revolves.length > 0}
-          <div class="prim-family-head static"><span class="prim-caret">·</span>revolve <span class="prim-count">({revolves.length})</span></div>
-          {#each revolves as p (p.id)}
-            <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === p.id && t.kind === 'profile')}>
-              <button class="prim-row indent" type="button" onclick={() => openTab(p.id, 'profile')}>
-                <span class="prim-name">{p.id}</span>
-                <span class="prim-tag prof">.prvl</span>
-              </button>
-            </div>
-          {/each}
-        {/if}
-        {#if extrudes.length > 0}
-          <div class="prim-family-head static"><span class="prim-caret">·</span>extrude <span class="prim-count">({extrudes.length})</span></div>
-          {#each extrudes as p (p.id)}
-            <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === p.id && t.kind === 'profile')}>
-              <button class="prim-row indent" type="button" onclick={() => openTab(p.id, 'profile')}>
-                <span class="prim-name">{p.id}</span>
-                <span class="prim-tag prof">.prex</span>
-              </button>
-            </div>
-          {/each}
-        {/if}
-      {/if}
-    </div>
+    <!-- PROFILES section removed in the K.72 unify — every saved file
+         is now .prim.ts in basic/. Existing .prvl.ts / .prex.ts files
+         were archived; the volume's primitives/profiles/ directory is
+         dormant. Recreate any needed profiles via Basic's + new. -->
 
     <!-- Basic — `<volume>/primitives/basic/*.{prim,asm}.ts`. -->
     <div class="prim-group">
@@ -338,8 +291,8 @@
           Basic <span class="prim-count">({basic.filter(pass).length})</span>
         </button>
         <button class="prim-group-new" type="button"
-          title="Create a new part — opens a fresh tab; first save creates the .prim.ts file in basic/"
-          onclick={(ev) => { ev.stopPropagation(); createNewEntry('part'); }}>+</button>
+          title="Create a new graph — opens a fresh tab; first save creates the .prim.ts file in basic/"
+          onclick={(ev) => { ev.stopPropagation(); createNewEntry(); }}>+</button>
       </div>
       {#if openGroups.basic}
         {#each basic.filter(pass) as e (e.id)}
@@ -517,12 +470,10 @@
       <div class="prim-stage">
         {#each tabs as t (t.key)}
           <div class="prim-pane" class:visible={activeKey === t.key}>
-            <!-- Both kinds mount the SAME GraphEditorPane — auto-layout,
-                 push-apart, Repeat × N, canvas-settings menu all work
-                 uniformly. The `kind` prop toggles which endpoints are
-                 used (source/save/preview) and swaps the 3D bake right-
-                 pane for an inline 2D SVG of the resolved polygon. -->
-            <GraphEditorPane id={t.id} kind={t.kind} embed={true} />
+            <!-- One unified graph editor — output type (polygon vs
+                 manifold) decides the right-pane render. No more
+                 part/profile mode flag. -->
+            <GraphEditorPane id={t.id} embed={true} />
           </div>
         {/each}
       </div>
