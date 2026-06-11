@@ -1541,6 +1541,69 @@
     zoom = Math.max(0.2, Math.min(3, zoom * k));
   }
 
+  // ─── drag-from-sidebar drop target (#161, 2026-06-11) ─────────────────
+  /** When a sidebar primitive row is being dragged over the canvas, this
+   *  flips true so the SVG gets a dashed highlight + cursor:copy. Cleared
+   *  on dragleave / drop / drag end. */
+  let dragOverActive = $state<boolean>(false);
+  /** Convert a client (screen) coord to graph (canvas) coord by inverting
+   *  the SVG's current pan + zoom. Used so the dropped Call lands where
+   *  the cursor was, not at a fixed default position. */
+  function clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
+    if (!canvasEl) return { x: 0, y: 0 };
+    const r = canvasEl.getBoundingClientRect();
+    return {
+      x: (clientX - r.left - pan.x) / zoom,
+      y: (clientY - r.top  - pan.y) / zoom,
+    };
+  }
+  function onCanvasDragOver(ev: DragEvent) {
+    if (!ev.dataTransfer) return;
+    // Only react to OUR mime — other drags (HTML images etc.) pass through.
+    const types = Array.from(ev.dataTransfer.types ?? []);
+    if (!types.includes('application/x-cadtrain-prim')) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'copy';
+    dragOverActive = true;
+  }
+  function onCanvasDragLeave(ev: DragEvent) {
+    // Only clear when we actually LEAVE the SVG (not when crossing child
+    // nodes inside it). relatedTarget null = left the document; check
+    // containment otherwise.
+    const rt = ev.relatedTarget as Node | null;
+    if (rt && canvasEl && (canvasEl as Node).contains(rt)) return;
+    dragOverActive = false;
+  }
+  async function onCanvasDrop(ev: DragEvent) {
+    dragOverActive = false;
+    if (!ev.dataTransfer) return;
+    const src = ev.dataTransfer.getData('application/x-cadtrain-prim');
+    if (!src) return;
+    ev.preventDefault();
+    // Drop position in graph coords; default seed for the new Call.
+    const xy = clientToCanvas(ev.clientX, ev.clientY);
+    // Pull the dragged part's meta so we can seed default args from
+    // its params (same as the picker path uses).
+    let args: Record<string, ArgValue> = {};
+    try {
+      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
+      if (r.ok) {
+        const data = await r.json();
+        const params = (data?.params && typeof data.params === 'object') ? data.params : {};
+        for (const [k, v] of Object.entries(params)) {
+          const d = (v as any)?.default;
+          args[k] = (typeof d === 'number' || typeof d === 'string' || typeof d === 'boolean')
+            ? asLiteral(d as any)
+            : asLiteral(0);
+        }
+      }
+    } catch { /* network failure — drop with empty args, user can edit */ }
+    const { graph: next, id: newId } = addCall(graph, src, args);
+    // Replace the auto-position with the drop coords.
+    graph = { ...next, layout: { ...next.layout, [newId]: xy } };
+    bringToFront(newId);
+  }
+
   // ─── drag-to-move node cards ────────────────────────────────────────────
   let dragging: string | null = null;
   let dragOrig = { x: 0, y: 0 }; let dragStart = { x: 0, y: 0 };
@@ -3401,6 +3464,7 @@
         bind:this={canvasEl}
         class="ge-canvas"
         class:dragging={!!dragging || !!wireFrom}
+        class:drop-target={dragOverActive}
         xmlns="http://www.w3.org/2000/svg"
         role="application"
         aria-label="Graph canvas"
@@ -3408,6 +3472,9 @@
         onpointermove={onCanvasPointerMove}
         onpointerup={onCanvasPointerUp}
         onwheel={onCanvasWheel}
+        ondragover={onCanvasDragOver}
+        ondragleave={onCanvasDragLeave}
+        ondrop={onCanvasDrop}
       >
         <g transform="translate({pan.x},{pan.y}) scale({zoom})">
           <defs>
@@ -5890,6 +5957,15 @@
   .ge-sock-label.trail { fill: #9ca3af; font-style: italic; }
   .ge-sock.trail { fill: #fff; stroke: #9ca3af; stroke-dasharray: 2 2; }
   .ge-node-title { font: 600 12px Arial; fill: #0c4a6e; pointer-events: none; }
+  /* Drag-drop-target highlight on the canvas SVG when a sidebar primitive
+     row is being dragged over (#161). Subtle dashed violet outline +
+     cursor:copy on the cells inside; cleared on dragleave/drop. */
+  .ge-canvas.drop-target {
+    outline: 2px dashed #a855f7;
+    outline-offset: -4px;
+    background: rgba(168, 85, 247, 0.04);
+    cursor: copy;
+  }
   /* Call-card title hyperlink: the SRC half of "<alias> · <src>" is
      clickable — opens that primitive in a new editor tab via onOpenTab.
      Re-enable pointer-events on the tspan only (the parent <text> stays

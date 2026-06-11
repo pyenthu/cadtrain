@@ -385,7 +385,15 @@
       {#if openGroups.basic}
         {#each basic.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+            <button class="prim-row" type="button"
+              draggable="true"
+              ondragstart={(ev) => {
+                if (ev.dataTransfer) {
+                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                  ev.dataTransfer.effectAllowed = 'copy';
+                }
+              }}
+              onclick={() => openTab(e.id)}>
               <span class="prim-name">{e.id}</span>
               <span class="prim-tag vol">vol</span>
             </button>
@@ -419,7 +427,15 @@
             {#if openFamilies[fam]}
               {#each filtered as e (e.id)}
                 <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === e.id)}>
-                  <button class="prim-row indent" type="button" onclick={() => openTab(e.id)}>
+                  <button class="prim-row indent" type="button"
+                    draggable="true"
+                    ondragstart={(ev) => {
+                      if (ev.dataTransfer) {
+                        ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                        ev.dataTransfer.effectAllowed = 'copy';
+                      }
+                    }}
+                    onclick={() => openTab(e.id)}>
                     <span class="prim-name">{e.id}</span>
                     <span class="prim-tag vol">vol</span>
                   </button>
@@ -446,7 +462,15 @@
       {#if openGroups.stdlib}
         {#each stdlib.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+            <button class="prim-row" type="button"
+              draggable="true"
+              ondragstart={(ev) => {
+                if (ev.dataTransfer) {
+                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                  ev.dataTransfer.effectAllowed = 'copy';
+                }
+              }}
+              onclick={() => openTab(e.id)}>
               <span class="prim-name">{e.id}</span>
               <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
             </button>
@@ -465,7 +489,15 @@
       {#if openGroups.stdstale}
         {#each stdstale.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+            <button class="prim-row" type="button"
+              draggable="true"
+              ondragstart={(ev) => {
+                if (ev.dataTransfer) {
+                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                  ev.dataTransfer.effectAllowed = 'copy';
+                }
+              }}
+              onclick={() => openTab(e.id)}>
               <span class="prim-name">{e.id}</span>
               <span class="prim-tag stale" title="Deprecated engine — kept resolvable for legacy parts">stale</span>
             </button>
@@ -484,7 +516,15 @@
       {#if openGroups.archived}
         {#each archived.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button" onclick={() => openTab(e.id)}>
+            <button class="prim-row" type="button"
+              draggable="true"
+              ondragstart={(ev) => {
+                if (ev.dataTransfer) {
+                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                  ev.dataTransfer.effectAllowed = 'copy';
+                }
+              }}
+              onclick={() => openTab(e.id)}>
               <span class="prim-name">{e.id}</span>
               <span class="prim-tag arch">arch</span>
             </button>
@@ -723,6 +763,11 @@
   }
   .prim-row.indent { padding-left: 32px; }
   .prim-row:hover { background: #e7e5e4; }
+  /* Drag-to-canvas affordance (#161, 2026-06-11) — cursor:grab on hover
+     hints the row is draggable; grabbing during the drag. Visual cue
+     so users discover the feature. */
+  .prim-row[draggable="true"] { cursor: grab; }
+  .prim-row[draggable="true"]:active { cursor: grabbing; }
   /* Trash button — hidden by default, revealed on row hover. Hover the
      button itself amplifies + tints red. Disabled state for in-flight. */
   .prim-trash {
