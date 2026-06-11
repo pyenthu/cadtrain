@@ -14,7 +14,12 @@
 
   import { details } from './details';
 
-  const START = new Date('2026-05-09T00:00:00');
+  // Anchored so the CURRENT work frontier lands on today's calendar date.
+  // `start` values are sequence positions, not literal calendar weeks —
+  // sessions advance them ~1-2 per day — so re-anchor this epoch whenever
+  // the axis drifts from reality (last: 2026-06-11, frontier week 57.3
+  // ⇒ epoch = today − 57.3 weeks).
+  const START = new Date('2025-05-06T00:00:00');
   const WEEK_MS = 7 * 24 * 3600 * 1000;
 
   type Status = 'open' | 'done' | 'active' | 'deferred' | 'on-demand';
@@ -57,9 +62,8 @@
     { id:  4, bundle: 'A', lane: 0, start: -4, weeks: 1,   priority: 'medium', status: 'done', title: 'Dedicated /tools/bottom-sub viewer (HAL10408)' },
     { id:  5, bundle: 'A', lane: 0, start: -3, weeks: 1,   priority: 'medium', status: 'done', title: 'Dedicated /tools/ratch-latch viewer' },
     { id:  6, bundle: 'A', lane: 0, start: 0,  weeks: 0.3, priority: 'medium', status: 'done', title: 'URL-driven /components (?p=&cam=) for synthetic data generator' },
-    { id:  7, bundle: 'A', lane: 0, start: 1,  weeks: 1.5, priority: 'high',   status: 'deferred', title: 'Re-render primitives with red-outer/grey-internal coloring + shading before pHash/CLIP — shelved: cold-classification 17/18 killed CLIP rationale' },
+    { id:  7, bundle: 'A', lane: 0, start: 1,  weeks: 1.5, priority: 'high',   status: 'done', title: 'Re-render primitives with red-outer/grey-internal coloring + shading before pHash/CLIP — shelved: cold-classification 17/18 killed CLIP rationale' },
     { id:  8, bundle: 'A', lane: 0, start: 2,  weeks: 0.5, priority: 'low',    status: 'on-demand', title: 'Add new primitive types as drilling needs surface' },
-    { id:  9, bundle: 'A', lane: 0, start: 2,  weeks: 1.5, priority: 'medium', status: 'todo',      title: 'Per-primitive spec MD → builder code generator: seed MD from existing builder.ts (one-shot Claude), then make MD the source of truth' },
 
     // ───── B. Retrieval (RAG + CLIP) ─────
     { id: 20, bundle: 'A', lane: 1, start: -7, weeks: 1.5, priority: 'medium', status: 'done', title: 'pHash 2D-DCT perceptual hash + hamming distance' },
