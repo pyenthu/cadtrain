@@ -36,7 +36,7 @@ consult `src/lib/server/stdlib.ts` — the git-tracked engines in
 to prod when `CADTRAIN_VOLUME_REMOTE_URL` is set. The proxy is centralized
 in `src/hooks.server.ts` via the `VOLUME_PROXY_PATHS` allowlist (list,
 save, source, delete, restore, move, rename, prompts, instructions,
-profiles/{list,save,delete,source}, plus `rag/{rebuild,stats,scan-refs}`).
+profiles/{list,save,delete,source}, plus `rag/{rebuild,stats,scan-refs,prompt}`).
 Excluded (stay local): `preview`, `bake-preview`, `profiles/resolve`
 (stateless compute — fast local WASM).
 The hook also bypasses the proxy for stdlib/stdstale ids on `source` so
@@ -58,6 +58,7 @@ forces local FS (e2e tests).
 | `/api/rag/rebuild` | POST | Rebuild the parts corpus at `<volume>/ai/rag/parts.jsonl` (`src/lib/server/rag-corpus.ts`). |
 | `/api/rag/stats` | GET | Corpus record count + last-refresh time (sidebar `↻` footnote). |
 | `/api/rag/scan-refs` | POST | Scan for broken `src:'<id>'` references (used by rename's "Repair all"). |
+| `/api/rag/prompt` | POST | Phase 2 — `{prompt, k?}` → BM25 top-k exemplars + one Claude call (`RAG_MODEL`, default `claude-sonnet-4-6`) → `{id, candidates, graph}` for the ✨ sidebar generate box. Prod-proxied like rebuild/stats. |
 
 ### Vocabulary (K.68 / K.69 — `/vocab` backing API)
 

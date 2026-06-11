@@ -72,8 +72,13 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 - **Latest session**: memory `session_handoff_2026-06-11` — polygon repeat-loop
   architecture (#155–#157), g_* graph-part migration Round 1, RAG Phase 1,
   sidebar UX cluster, mv/rot ƒ popover.
-- **In flight**: RAG Phase 2 (BM25 + Claude prompt builder) — subagent crashed
-  mid-task, needs retry (`docs/plans/rag-prompt-builder.md`).
+- **RAG Phase 2 SHIPPED 2026-06-11 PM** (`5355374`): `POST /api/rag/prompt`
+  (BM25 top-5 + one Claude call, `RAG_MODEL` default claude-sonnet-4-6,
+  prod-proxied) → ✨ sidebar prompt box → proposed graph opens in a NEW
+  seeded tab (`seedGraph` prop; volume untouched until Save). Same PM:
+  polygon socket alignment (`polyRowTop` walk), active-tab-only WebGL
+  context + fetch cache, profiles/resolve dedupe, canvas effect content-key
+  guard (memory `fresh-array-props-effect-loops`).
 - **Deferred next**: `g_dt_joint` (#167) — graph emit must handle `place([...])`.
 - **Gotchas to keep warm**: `entryIdxForEvalIdx(node, i)` for per-point polygon
   UI (memory `entry_idx_eval_idx_gotcha`); regex meta extractors must accept
