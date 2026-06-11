@@ -116,6 +116,12 @@
      *  `id` still seeds exemplarId so the user's first Save lands under
      *  that name. */
     seedGraph?: any;
+    /** RAG Phase 2 — wired by /primitives. When set, the vertical rail
+     *  shows a ✨ button whose popover takes a part description, POSTs
+     *  /api/rag/prompt, and hands the proposed {id, graph} back to the
+     *  parent to open as a new seeded tab. Hidden when unset (standalone
+     *  /graph-editor / /vocab mounts have no tab strip to open into). */
+    onGenerated?: (id: string, graph: any, candidates: string[]) => void;
   }
   const props: Props = $props();
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
@@ -1113,6 +1119,49 @@
     }
     canvasMenuOpen = true;
   }
+  /** ✨ AI-generate popover (RAG Phase 2) — anchored to the rail button
+   *  like the ⚙ canvas menu. Holds the instructions + the description
+   *  textarea; the generated graph opens via props.onGenerated. */
+  let aiMenuOpen = $state(false);
+  let aiBtnEl = $state<HTMLButtonElement | null>(null);
+  let aiMenuPos = $state<{ left: number; top: number }>({ left: 56, top: 120 });
+  let aiPrompt = $state('');
+  let aiBusy = $state(false);
+  let aiError = $state<string | null>(null);
+  let aiCandidates = $state<string[]>([]);
+  function openAiMenu() {
+    if (aiBtnEl) {
+      const r = aiBtnEl.getBoundingClientRect();
+      aiMenuPos = { left: r.right + 6, top: r.top };
+    }
+    aiError = null;
+    aiMenuOpen = true;
+  }
+  async function generateFromPrompt() {
+    const prompt = aiPrompt.trim();
+    if (!prompt || aiBusy) return;
+    aiBusy = true;
+    aiError = null;
+    aiCandidates = [];
+    try {
+      const r = await fetch('/api/rag/prompt', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!r.ok) { aiError = `generate ${r.status}: ${(await r.text()).slice(0, 200)}`; return; }
+      const j = await r.json();
+      if (!j?.graph) { aiError = 'no graph in response'; return; }
+      aiCandidates = Array.isArray(j.candidates) ? j.candidates : [];
+      props.onGenerated?.(String(j.id || 'g_generated'), j.graph, aiCandidates);
+      aiPrompt = '';
+      aiMenuOpen = false;
+    } catch (e: any) {
+      aiError = e?.message ?? String(e);
+    } finally {
+      aiBusy = false;
+    }
+  }
+
   /** Canvas-edge boundary toggles (#116). Each edge cycles
    *    off → repellant → confiner → off
    *  Repellant = a thin tall virtual obstacle just outside the canvas edge,
@@ -3429,6 +3478,13 @@
     <button class="ge-vrail-btn" type="button"
       bind:this={callBtnEl} onclick={openCallPicker}
       data-tip="Fetch a part — primitives library">+</button>
+    {#if props.onGenerated}
+      <button class="ge-vrail-btn ai" type="button"
+        bind:this={aiBtnEl}
+        class:on={aiMenuOpen}
+        onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
+        data-tip="Generate a part from a description (AI)">✨</button>
+    {/if}
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -3463,6 +3519,41 @@
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
+
+  {#if aiMenuOpen}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-canvas-menu-shade" onclick={() => aiMenuOpen = false}></div>
+    <!-- ✨ generate popover — same anchored-dropdown chrome as the ⚙ menu.
+         Instructions live here (not inline in the sidebar): describe →
+         BM25-retrieve similar parts → Claude proposes a graph → opens in
+         a NEW tab; nothing is saved until the user hits Save there. -->
+    <div class="ge-canvas-menu ge-ai-menu"
+      style="left: {aiMenuPos.left}px; top: {aiMenuPos.top}px">
+      <div class="ge-ai-title">✨ Generate a part</div>
+      <div class="ge-ai-hint">Describe the part in plain words — e.g.
+        <em>flat coil disc, 2 turns, 60 segments</em>. Similar parts are
+        retrieved from the RAG corpus and Claude proposes a parametric
+        graph, opened in a new tab for review. Nothing touches the volume
+        until you Save.</div>
+      <!-- svelte-ignore a11y_autofocus -->
+      <textarea class="ge-ai-input" rows="3" autofocus
+        placeholder="hexagonal prism with a central round bore…"
+        bind:value={aiPrompt}
+        disabled={aiBusy}
+        onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateFromPrompt(); } }}></textarea>
+      <div class="ge-ai-actions">
+        <button class="ge-ai-go" type="button"
+          disabled={aiBusy || !aiPrompt.trim()}
+          onclick={generateFromPrompt}>{aiBusy ? 'generating…' : 'Generate'}</button>
+        {#if aiError}
+          <span class="ge-ai-err" title={aiError}>failed — hover for detail</span>
+        {:else if aiCandidates.length > 0}
+          <span class="ge-ai-from">from: {aiCandidates.join(' · ')}</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   {#if canvasMenuOpen}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -5814,6 +5905,30 @@
     position: fixed; inset: 0;
     z-index: 99;
   }
+  /* ✨ generate popover — shares the .ge-canvas-menu shell; violet accents
+     match the rest of the AI/parametric family. */
+  .ge-vrail-btn.ai { color: #6d28d9; }
+  .ge-vrail-btn.ai:hover, .ge-vrail-btn.ai.on { background: #ede9fe; color: #4c1d95; border-color: #a78bfa; }
+  .ge-ai-menu { width: 264px; padding: 8px; gap: 6px; }
+  .ge-ai-title { font: 700 12px Arial; color: #4c1d95; }
+  .ge-ai-hint { font: 11px Arial; color: #6b7280; line-height: 1.45; }
+  .ge-ai-hint em { color: #5b21b6; font-style: normal; }
+  .ge-ai-input {
+    width: 100%; box-sizing: border-box; resize: vertical;
+    padding: 5px 8px; font: 12px ui-monospace, monospace;
+    border: 1px solid #c4b5fd; border-radius: 4px; background: #faf5ff;
+  }
+  .ge-ai-input:focus { outline: 1px solid #6d28d9; background: #fff; }
+  .ge-ai-input:disabled { opacity: 0.6; }
+  .ge-ai-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ge-ai-go {
+    padding: 4px 12px; font: 600 12px Arial; cursor: pointer;
+    background: #6d28d9; color: #fff; border: 1px solid #5b21b6; border-radius: 4px;
+  }
+  .ge-ai-go:hover:not(:disabled) { background: #5b21b6; }
+  .ge-ai-go:disabled { opacity: 0.5; cursor: default; }
+  .ge-ai-err { font: 10px Arial; color: #b91c1c; }
+  .ge-ai-from { font: 10px Arial; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ge-canvas-menu {
     position: fixed;
     background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;

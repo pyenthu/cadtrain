@@ -291,44 +291,6 @@
     }
   }
 
-  // ─── RAG generate (Phase 2 — docs/plans/rag-prompt-builder.md) ──────────
-  // Natural-language part description → POST /api/rag/prompt (BM25 top-k
-  // exemplars + one Claude call) → {id, graph} → a NEW seeded editor tab.
-  // Nothing touches the volume until the user saves from that tab.
-  let aiPrompt = $state<string>('');
-  let aiBusy = $state<boolean>(false);
-  let aiError = $state<string | null>(null);
-  let aiCandidates = $state<string[]>([]);
-
-  async function generateFromPrompt() {
-    const prompt = aiPrompt.trim();
-    if (!prompt || aiBusy) return;
-    aiBusy = true;
-    aiError = null;
-    aiCandidates = [];
-    try {
-      const r = await fetch('/api/rag/prompt', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        aiError = `generate failed (${r.status}): ${t.slice(0, 200)}`;
-        return;
-      }
-      const j = await r.json();
-      if (!j?.graph) { aiError = 'no graph in response'; return; }
-      aiCandidates = Array.isArray(j.candidates) ? j.candidates : [];
-      openGeneratedTab(String(j.id || 'g_generated'), j.graph);
-      aiPrompt = '';
-    } catch (e: any) {
-      aiError = e?.message ?? String(e);
-    } finally {
-      aiBusy = false;
-    }
-  }
-
   /** Format an ISO timestamp as a short "Xm ago" / "Xh ago" / "Xd ago"
    *  string. Re-reads `ragNowTick` so it ticks live. */
   function formatAgo(iso: string | null, now: number): string {
@@ -575,28 +537,11 @@
         disabled={ragBusy}
         onclick={rebuildRag}>{ragBusy ? '…' : '↻'}</button>
     </div>
-    <!-- AI prompt (RAG Phase 2) — describe a part in natural language;
-         Enter (or ✨) generates a composition graph via /api/rag/prompt
-         and opens it in a NEW seeded tab for review. -->
-    <div class="prim-ai-row">
-      <input class="prim-ai-input" type="text"
-        placeholder="describe a part… e.g. flat coil disc, 2 turns"
-        bind:value={aiPrompt}
-        disabled={aiBusy}
-        onkeydown={(e) => { if (e.key === 'Enter') generateFromPrompt(); }}/>
-      <button class="prim-rag-rebuild" type="button"
-        title={aiBusy ? 'Generating…' : 'Generate a part graph from the description (opens a new tab)'}
-        disabled={aiBusy || !aiPrompt.trim()}
-        onclick={generateFromPrompt}>{aiBusy ? '…' : '✨'}</button>
-    </div>
-    <div class="prim-rag-foot" title={aiError ?? ragError ?? `${ragCount} parts`}>
-      {#if aiError}
-        <span class="prim-rag-err">generate failed — hover for detail</span>
-      {:else if aiBusy}
-        generating graph…
-      {:else if aiCandidates.length > 0}
-        from: {aiCandidates.join(' · ')}
-      {:else if ragError}
+    <!-- The ✨ AI generate flow lives on the graph editor's vertical rail
+         (GraphEditorPane, via the onGenerated prop) — instructions +
+         prompt are in its popover, not a sidebar row. -->
+    <div class="prim-rag-foot" title={ragError ?? `${ragCount} parts`}>
+      {#if ragError}
         <span class="prim-rag-err">rebuild failed — hover for detail</span>
       {:else}
         RAG corpus · {ragCount} parts · {ragLabel}
@@ -917,7 +862,8 @@
             <!-- active gates the 3D canvas: only the visible tab holds a
                  WebGL context (browser cap ~16). Inactive tabs keep all
                  editor state mounted; their canvas remounts on activate. -->
-            <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph} />
+            <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph}
+              onGenerated={(id, graph) => openGeneratedTab(id, graph)} />
           </div>
         {/each}
       </div>
@@ -1033,18 +979,6 @@
   .prim-rag-rebuild:disabled { cursor: wait; color: #a8a29e; }
   /* Quiet footnote under the filter row — count + last refreshed Xm ago.
      Pulls the eye only when something's wrong (error state goes red). */
-  .prim-ai-row {
-    display: flex; align-items: center; gap: 6px;
-    margin: 4px 12px 0;
-  }
-  .prim-ai-input {
-    flex: 1 1 auto; min-width: 0;
-    padding: 4px 10px; font: 12px ui-monospace, monospace;
-    border: 1px solid #c4b5fd; border-radius: 4px;
-    background: #faf5ff;
-  }
-  .prim-ai-input:focus { outline: 1px solid #6d28d9; background: #fff; }
-  .prim-ai-input:disabled { opacity: 0.6; }
   .prim-rag-foot {
     margin: 2px 14px 6px;
     font: 10px Arial; color: #78716c;
