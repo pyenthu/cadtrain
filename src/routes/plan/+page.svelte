@@ -14,13 +14,11 @@
 
   import { details } from './details';
 
-  // Anchored so the CURRENT work frontier lands on today's calendar date.
-  // `start` values are sequence positions, not literal calendar weeks —
-  // sessions advance them ~1-2 per day — so re-anchor this epoch whenever
-  // the axis drifts from reality (last: 2026-06-11, frontier week 57.3
-  // ⇒ epoch = today − 57.3 weeks).
-  const START = new Date('2025-05-06T00:00:00');
-  const WEEK_MS = 7 * 24 * 3600 * 1000;
+  // Axis epoch — the project's real start (May 2026). The chart shows
+  // plain "W+n weeks since May 2026" numbers, NOT calendar dates:
+  // `start` values are sequence positions that advance ~1-2 per working
+  // session, so any date mapping drifts from reality within weeks.
+  const START = new Date('2026-05-09T00:00:00');
 
   type Status = 'open' | 'done' | 'active' | 'deferred' | 'on-demand';
   type Priority = 'high' | 'medium' | 'low' | 'large';
@@ -307,13 +305,16 @@
   const chartHeight = $derived(HEAD_H + rowYAt(flatRows.length) + 20);
   const chartWidth = $derived(totalWeeks * WEEK_PX + TAIL_PAD);
 
-  function formatDate(weekOffset: number): string {
-    const d = new Date(START.getTime() + weekOffset * WEEK_MS);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
   function weekX(weekOffset: number): number {
     return (weekOffset - minStart) * WEEK_PX;
   }
+  /** The work frontier — latest END (start + weeks) among done items.
+   *  Drives the "Now" marker; self-maintains as items flip to done. */
+  const doneFrontier = $derived.by(() => {
+    let f = 0;
+    for (const t of tasks) if (t.status === 'done') f = Math.max(f, t.start + t.weeks);
+    return Math.round(f * 10) / 10;
+  });
 
   const activeIds = $derived(new Set(tasks.filter(t => t.status === 'active').map(t => t.id)));
   const countsByPri = $derived.by<Record<Priority, number>>(() => {
@@ -346,7 +347,7 @@
         {#if viewMode === 'done'}
           {doneCount} shipped · click any item for detail
         {:else}
-          {openCount} open · {BUNDLES.length} bundles · start {START.toLocaleDateString()} · horizon ≈ {maxEnd}w forward
+          {openCount} open · {BUNDLES.length} bundles · weeks since May 2026 · now ≈ W{doneFrontier} · horizon W{maxEnd}
         {/if}
       </p>
     </div>
@@ -419,20 +420,17 @@
             <text x={w * WEEK_PX + 6} y={16} fill="#64748b" style="font: 10px ui-monospace, monospace">
               W{(w + minStart) >= 0 ? '+' : ''}{w + minStart}
             </text>
-            {#if w % 4 === 0}
-              <text x={w * WEEK_PX + 6} y={30} fill="#94a3b8" style="font: 9px system-ui">
-                {formatDate(w + minStart)}
-              </text>
-            {/if}
           {/if}
         {/each}
 
         <line x1={0} y1={HEAD_H - 2} x2={chartWidth} y2={HEAD_H - 2} stroke="#cbd5e1" stroke-width="1" />
 
-        <!-- Today marker -->
-        <line x1={weekX(0)} y1={HEAD_H} x2={weekX(0)} y2={chartHeight}
+        <!-- Now marker — the work frontier, derived as the latest END
+             among done items (self-maintaining; was hardcoded weekX(0),
+             which pinned "Today" to the May-2026 epoch forever). -->
+        <line x1={weekX(doneFrontier)} y1={HEAD_H} x2={weekX(doneFrontier)} y2={chartHeight}
               stroke="#ef4444" stroke-width="2" stroke-dasharray="4 3" />
-        <text x={weekX(0) + 4} y={HEAD_H + 12} fill="#dc2626" style="font: 10px system-ui; font-weight: 600">Today</text>
+        <text x={weekX(doneFrontier) + 4} y={HEAD_H + 12} fill="#dc2626" style="font: 10px system-ui; font-weight: 600">Now · W{doneFrontier}</text>
       </g>
 
       <!-- Left label column header -->
@@ -501,7 +499,7 @@
             >
               <title>{codeFor(t.id)} (#{t.id}) — {t.title}
 Bundle: {t.bundle} · Priority: {t.priority} · Status: {t.status}
-W{t.start} ({formatDate(t.start)}) + {t.weeks}w
+W{t.start} + {t.weeks}w
 Click for plan details</title>
             </rect>
 
@@ -536,9 +534,7 @@ Click for plan details</title>
           <span class="dot-sm"></span>
           <span class:active-text={selectedTask.status === 'active'}>{selectedTask.status}</span>
           <span class="dot-sm"></span>
-          <span>W{selectedTask.start} + {selectedTask.weeks}w</span>
-          <span class="dot-sm"></span>
-          <span>{formatDate(selectedTask.start)} → {formatDate(selectedTask.start + selectedTask.weeks)}</span>
+          <span>W{selectedTask.start} → W{Math.round((selectedTask.start + selectedTask.weeks) * 10) / 10}</span>
         </div>
         <h2>{selectedTask.title}</h2>
         <button class="modal-close" onclick={() => selectedId = null} aria-label="Close">✕</button>
