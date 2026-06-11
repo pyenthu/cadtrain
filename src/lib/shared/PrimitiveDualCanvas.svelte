@@ -50,8 +50,9 @@
       import('$lib/shared/PrimitiveDualScene.svelte'),
       import('$lib/shared/SceneControls.svelte'),
     ]);
+    // No rebuild() here — setting Scene re-fires the keyed $effect below,
+    // which owns ALL rebuild triggering (single path, no double-fetch).
     Scene = scn.default; SceneControls = controls.default;
-    rebuild();
   });
 
   function setGlbBlob(b64: string | null) {
@@ -142,8 +143,27 @@
     renderer = null;
   });
 
-  $effect(() => { void id; void args; void source; if (Scene) rebuild(); });
-  $effect(() => { void glbCut; if (Scene) rebuildGlb(); });
+  // Keyed on CONTENT, not identity. `args` arrives as a fresh array on
+  // every parent render, so an identity-tracked effect re-fires constantly;
+  // that was survivable when rebuild() always awaited a fetch, but a
+  // synchronous cache hit writes geo/glb state inside the effect →
+  // re-render → fresh args → effect → cache hit → infinite loop
+  // (effect_update_depth_exceeded). Skip when the request body is
+  // unchanged and the loop has nothing to feed on.
+  let lastRebuildKey = '';
+  $effect(() => {
+    const key = JSON.stringify({ id, args, source: source ?? '' });
+    if (!Scene || key === lastRebuildKey) return;
+    lastRebuildKey = key;
+    rebuild();
+  });
+  let lastGlbCut: boolean | null = null;
+  $effect(() => {
+    if (!Scene || glbCut === lastGlbCut) return;
+    const first = lastGlbCut === null; // initial run is covered by rebuild()
+    lastGlbCut = glbCut;
+    if (!first) rebuildGlb();
+  });
 
   function downloadGlb() {
     if (!glbBlobUrl) return;
