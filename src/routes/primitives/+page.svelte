@@ -23,6 +23,10 @@
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
 
+  /** Same regex the server uses for primitive ids — keep them in sync.
+   *  Server: src/routes/api/primitives/rename/+server.ts ID_RE. */
+  const ID_RE = /^[a-z][a-z0-9_]*$/i;
+
   interface Entry {
     id: string;
     source: 'bundle' | 'volume' | 'stdlib' | 'stdstale';
@@ -86,6 +90,71 @@
       if (typeof alert === 'function') alert(`Delete error: ${e?.message ?? e}`);
     } finally {
       deleteBusy = null;
+    }
+  }
+
+  // ─── Inline rename (#164) ─────────────────────────────────────────────────
+  // Clicking ✎ on a row puts the row into rename mode: the .prim-name span
+  // is swapped for an <input> prefilled with the current id (auto-selected,
+  // autofocused). Enter commits via POST /api/primitives/rename?id=<old>&to=<new>;
+  // Escape (or blur with no validation error) cancels. Validation mirrors
+  // the server regex so a typo doesn't even bother the server (and we can
+  // show a red-tooltip hint inline).
+  let renamingId = $state<string | null>(null);
+  let renameValue = $state<string>('');
+  let renameError = $state<string | null>(null);
+  let renameBusy = $state<boolean>(false);
+
+  function startRename(id: string, source: string) {
+    if (source !== 'volume') return; // stdlib + stdstale already excluded by caller
+    renamingId = id;
+    renameValue = id;
+    renameError = null;
+  }
+  function cancelRename() {
+    renamingId = null;
+    renameValue = '';
+    renameError = null;
+  }
+  /** Auto-focus + select the rename input the moment it mounts. Svelte
+   *  `use:` action — runs once after the node enters the DOM. */
+  function focusRenameInput(node: HTMLInputElement) {
+    queueMicrotask(() => { node.focus(); node.select(); });
+  }
+  async function commitRename(oldId: string) {
+    const newId = renameValue.trim();
+    if (newId === oldId) { cancelRename(); return; }
+    if (!ID_RE.test(newId)) {
+      renameError = `bad id "${newId}" — must match [a-z][a-z0-9_]*`;
+      return;
+    }
+    renameBusy = true;
+    renameError = null;
+    try {
+      const r = await fetch(
+        `/api/primitives/rename?id=${encodeURIComponent(oldId)}&to=${encodeURIComponent(newId)}`,
+        { method: 'POST' },
+      );
+      if (!r.ok) {
+        const t = await r.text();
+        renameError = `rename failed (${r.status}): ${t.slice(0, 200)}`;
+        return;
+      }
+      // Success — close any open tab for the old id (openTab will recreate
+      // for the new one). Then refresh the sidebar list and open the new id.
+      tabs = tabs.filter((t) => t.id !== oldId);
+      if (tabs.length === 0) activeKey = null;
+      persistTabs();
+      renamingId = null;
+      renameValue = '';
+      await loadList();
+      await openTab(newId);
+      // TODO(#165): fire-and-forget POST /api/rag/scan-refs to surface
+      // any dangling references in other primitives' meta.graph blocks.
+    } catch (e: any) {
+      renameError = `rename error: ${e?.message ?? e}`;
+    } finally {
+      renameBusy = false;
     }
   }
 
@@ -239,9 +308,7 @@
   /** Create a new entry by opening a fresh tab with the typed id. The
    *  file isn't written until the user clicks Save inside the editor —
    *  fetching /source for an id that doesn't exist 404s, GraphEditorPane
-   *  treats that as a fresh graph + lets the first save create the file.
-   *  Validates the id against the same regex the server uses. */
-  const ID_RE = /^[a-z][a-z0-9_]*$/i;
+   *  treats that as a fresh graph + lets the first save create the file. */
   function createNewEntry() {
     const prompt = typeof window !== 'undefined' ? window.prompt : null;
     if (!prompt) return;
@@ -423,24 +490,46 @@
       </div>
       {#if openGroups.basic}
         {#each basicSorted.filter(pass) as e (e.id)}
-          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button"
-              draggable="true"
-              ondragstart={(ev) => {
-                if (ev.dataTransfer) {
-                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                  ev.dataTransfer.effectAllowed = 'copy';
-                }
-              }}
-              onclick={() => openTab(e.id)}>
-              <span class="prim-name">{e.id}</span>
-              <span class="prim-tag vol">vol</span>
-            </button>
-            {#if e.source === 'volume'}
-              <button class="prim-trash" type="button"
-                title="Archive — soft delete (recoverable from primitives/archive/)"
-                disabled={deleteBusy === e.id}
-                onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
+            {#if renamingId === e.id}
+              <!-- Rename mode (#164): the row body becomes an input prefilled
+                   with the current id. Enter commits, Escape cancels, blur
+                   cancels too (avoid stranded inputs from accidental clicks
+                   elsewhere). Errors land in a tooltip-style chip beneath. -->
+              <div class="prim-row prim-row-rename">
+                <input class="prim-rename-input" type="text" use:focusRenameInput
+                  bind:value={renameValue}
+                  disabled={renameBusy}
+                  onkeydown={(ev) => {
+                    if (ev.key === 'Enter') { ev.preventDefault(); void commitRename(e.id); }
+                    else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
+                  }}
+                  onblur={() => { if (!renameError && !renameBusy) cancelRename(); }} />
+                {#if renameError}<span class="prim-rename-err" title={renameError}>{renameError}</span>{/if}
+              </div>
+            {:else}
+              <button class="prim-row" type="button"
+                draggable="true"
+                ondragstart={(ev) => {
+                  if (ev.dataTransfer) {
+                    ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                    ev.dataTransfer.effectAllowed = 'copy';
+                  }
+                }}
+                onclick={() => openTab(e.id)}>
+                <span class="prim-name">{e.id}</span>
+                <span class="prim-tag vol">vol</span>
+              </button>
+              {#if e.source === 'volume'}
+                <button class="prim-rename" type="button"
+                  title="Rename — type a new id, Enter to commit"
+                  aria-label="Rename {e.id}"
+                  onclick={() => startRename(e.id, e.source)}>✎</button>
+                <button class="prim-trash" type="button"
+                  title="Archive — soft delete (recoverable from primitives/archive/)"
+                  disabled={deleteBusy === e.id}
+                  onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+              {/if}
             {/if}
           </div>
         {/each}
@@ -465,24 +554,42 @@
             </button>
             {#if openFamilies[fam]}
               {#each filtered as e (e.id)}
-                <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === e.id)}>
-                  <button class="prim-row indent" type="button"
-                    draggable="true"
-                    ondragstart={(ev) => {
-                      if (ev.dataTransfer) {
-                        ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                        ev.dataTransfer.effectAllowed = 'copy';
-                      }
-                    }}
-                    onclick={() => openTab(e.id)}>
-                    <span class="prim-name">{e.id}</span>
-                    <span class="prim-tag vol">vol</span>
-                  </button>
-                  {#if e.source === 'volume'}
-                    <button class="prim-trash" type="button"
-                      title="Archive — soft delete (recoverable from primitives/archive/)"
-                      disabled={deleteBusy === e.id}
-                      onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+                <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
+                  {#if renamingId === e.id}
+                    <div class="prim-row indent prim-row-rename">
+                      <input class="prim-rename-input" type="text" use:focusRenameInput
+                        bind:value={renameValue}
+                        disabled={renameBusy}
+                        onkeydown={(ev) => {
+                          if (ev.key === 'Enter') { ev.preventDefault(); void commitRename(e.id); }
+                          else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
+                        }}
+                        onblur={() => { if (!renameError && !renameBusy) cancelRename(); }} />
+                      {#if renameError}<span class="prim-rename-err" title={renameError}>{renameError}</span>{/if}
+                    </div>
+                  {:else}
+                    <button class="prim-row indent" type="button"
+                      draggable="true"
+                      ondragstart={(ev) => {
+                        if (ev.dataTransfer) {
+                          ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                          ev.dataTransfer.effectAllowed = 'copy';
+                        }
+                      }}
+                      onclick={() => openTab(e.id)}>
+                      <span class="prim-name">{e.id}</span>
+                      <span class="prim-tag vol">vol</span>
+                    </button>
+                    {#if e.source === 'volume'}
+                      <button class="prim-rename" type="button"
+                        title="Rename — type a new id, Enter to commit"
+                        aria-label="Rename {e.id}"
+                        onclick={() => startRename(e.id, e.source)}>✎</button>
+                      <button class="prim-trash" type="button"
+                        title="Archive — soft delete (recoverable from primitives/archive/)"
+                        disabled={deleteBusy === e.id}
+                        onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+                    {/if}
                   {/if}
                 </div>
               {/each}
@@ -824,6 +931,45 @@
   }
   .prim-trash:hover { opacity: 1 !important; background: #fee2e2; }
   .prim-trash:disabled { cursor: wait; opacity: 0.4 !important; }
+  /* Rename button (#164) — same hidden-by-default-then-hover-revealed
+     pattern as .prim-trash, but blue tinted so it reads as "edit" rather
+     than "delete". Sits LEFT of the trash so the rename pencil is the
+     first row-action a user reaches; the trash stays at the end of the
+     row where its destructive intent is the visual stop. */
+  .prim-row-wrap:hover .prim-rename { opacity: 0.85; }
+  .prim-rename {
+    flex: 0 0 auto;
+    width: 22px; padding: 0; background: transparent; border: 0; cursor: pointer;
+    font-size: 13px; color: #2563eb; opacity: 0;
+    transition: opacity 100ms, background 100ms;
+  }
+  .prim-rename:hover { opacity: 1 !important; background: #dbeafe; }
+  /* Renaming row: the inline input replaces the .prim-row button entirely.
+     Use display:flex so the input stretches and the error chip can sit
+     to its right. The whole row stays the same height as a static row so
+     the sidebar doesn't reflow while the user types. */
+  .prim-row-wrap.renaming { background: #eff6ff; }
+  .prim-row-rename {
+    display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
+    padding: 2px 12px 2px 22px; cursor: text;
+  }
+  .prim-row.indent.prim-row-rename { padding-left: 32px; }
+  .prim-rename-input {
+    flex: 1 1 auto; min-width: 0;
+    padding: 2px 6px; font: 12px ui-monospace, monospace;
+    border: 1px solid #3b82f6; border-radius: 3px;
+    background: #fff; color: #1e3a8a;
+    outline: none;
+  }
+  .prim-rename-input:focus { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25); }
+  /* Validation error chip — flat red text, hover for the full message in
+     a native tooltip. Lives inside the row so it doesn't trigger a
+     layout shift. */
+  .prim-rename-err {
+    flex: 0 0 auto;
+    font: 10px Arial; color: #b91c1c;
+    max-width: 12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   /* Permanent-delete variant for the Archived group — black outline
      icon, ALWAYS visible (not hover-revealed like the soft-delete
      trash). Conspicuous because this is the irreversible path; users
