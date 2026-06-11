@@ -360,14 +360,31 @@ export function defaultsFor(def: ProfileDef): Record<string, number> {
 }
 
 /** Collapse any stored descriptor to a polygon. Pure + sync. Throws on an
- *  unknown kind so callers (sandbox / endpoint) can surface a friendly error. */
+ *  unknown kind so callers (sandbox / endpoint) can surface a friendly error.
+ *
+ *  NaN GUARD (2026-06-11): any non-finite coordinate gets clamped to 0
+ *  before returning. Mid-edit typos in graph-editor expressions (e.g. a
+ *  missing param `p.lenght`) used to surface as opaque WASM "Non-finite
+ *  vertex" errors with no hint at what went wrong. Now the bake still
+ *  runs (with possibly-degenerate geometry) and the author can fix the
+ *  typo without the editor turning red on every keystroke. Surfacing
+ *  the issue is the engine's job — `r_revolve` / `r_extrude` get a
+ *  thin profile (or all-zero points) and react predictably. */
+function clampFinite(pts: Pt[]): Pt[] {
+  return pts.map(([r, z]) => [
+    Number.isFinite(r) ? r : 0,
+    Number.isFinite(z) ? z : 0,
+  ] as Pt);
+}
 export function resolveProfile(d: ProfileDescriptor): Pt[] {
-  if (Array.isArray(d)) return d as Pt[];
-  if (d && typeof d === 'object' && 'points' in d && Array.isArray((d as any).points)) return (d as any).points as Pt[];
+  if (Array.isArray(d)) return clampFinite(d as Pt[]);
+  if (d && typeof d === 'object' && 'points' in d && Array.isArray((d as any).points)) {
+    return clampFinite((d as any).points as Pt[]);
+  }
   if (d && typeof d === 'object' && 'kind' in d) {
     const def = PROFILE_REGISTRY[(d as any).kind];
     if (!def) throw new Error(`unknown profile kind "${(d as any).kind}"`);
-    return def.build({ ...defaultsFor(def), ...((d as any).params ?? {}) });
+    return clampFinite(def.build({ ...defaultsFor(def), ...((d as any).params ?? {}) }));
   }
   throw new Error('invalid profile descriptor');
 }
