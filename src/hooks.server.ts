@@ -49,6 +49,13 @@ const VOLUME_PROXY_PATHS = new Set([
   '/api/components/glb',
   '/api/components/geom',
   '/api/components/bake-preview',
+  // RAG (Phase 1, docs/plans/rag-prompt-builder.md): the rebuild walks
+  // the on-volume primitives tree + writes ai/rag/parts.jsonl — single
+  // live store, so a local-dev rebuild proxies to prod. stats is a cheap
+  // read of the same file; proxy it too so the sidebar's "last refreshed
+  // Xm ago" reflects prod state (instead of the empty local .dev-volume).
+  '/api/rag/rebuild',
+  '/api/rag/stats',
 ]);
 
 /** Routes subject to rate limiting (prefix match).
