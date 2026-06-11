@@ -1,9 +1,14 @@
+<script module lang="ts">
+  // Shared across ALL instances + survives unmount/remount (tab switches).
+  const fetchCache = new Map<string, any>();
+</script>
+
 <script lang="ts">
   // One canvas showing the live mesh (left) + baked GLB (right) side-by-side
   // in a SINGLE WebGL context — replaces the stacked PrimitiveCanvas +
   // PrimitiveGlbCanvas (was 2 contexts per tab → the WebGL-context leak,
   // todo_webgl_context_leak). Fetches both /preview and /bake-preview.
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
@@ -34,8 +39,10 @@
   let glbStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
   let err = $state<string | null>(null);
 
+  let renderer: WebGLRenderer | null = null;
   function createRenderer(canvas: HTMLCanvasElement) {
-    return new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    return renderer;
   }
 
   onMount(async () => {
@@ -55,43 +62,85 @@
     glbBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'model/gltf-binary' }));
   }
 
+  // Module-scope fetch cache (2026-06-11) — survives unmount/remount.
+  // Inactive /primitives tabs now UNMOUNT this component (WebGL-context
+  // cap), so switching back would re-hit /preview + /bake-preview for
+  // unchanged geometry. Cache the raw responses keyed by the full request
+  // body; a remount with the same id/args/source repaints instantly.
+  // Small LRU — GLB payloads can be MBs for tall assemblies.
+  const FETCH_CACHE_MAX = 12;
+  function cacheGet(key: string): any | undefined {
+    const v = fetchCache.get(key);
+    if (v !== undefined) { fetchCache.delete(key); fetchCache.set(key, v); } // refresh recency
+    return v;
+  }
+  function cachePut(key: string, val: any) {
+    if (fetchCache.has(key)) fetchCache.delete(key);
+    fetchCache.set(key, val);
+    while (fetchCache.size > FETCH_CACHE_MAX) fetchCache.delete(fetchCache.keys().next().value as string);
+  }
+
   let meshAc: AbortController | null = null;
   let glbAc: AbortController | null = null;
   async function rebuildMesh() {
     if (!id) return;
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle' });
+    const cached = cacheGet(`mesh:${body}`);
+    if (cached) {
+      geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC });
+      geoVersion++; meshStatus = 'ok'; err = null;
+      return;
+    }
     meshStatus = 'building';
     meshAc?.abort(); const ac = new AbortController(); meshAc = ac;
     try {
       const r = await fetch('/api/primitives/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle' }),
+        body,
         signal: ac.signal,
       });
       if (ac.signal.aborted) return;
       if (!r.ok) { err = `Preview ${r.status}`; meshStatus = 'error'; return; }
       const data = await r.json();
+      cachePut(`mesh:${body}`, { full: data.full, cutVC: data.cutVC });
       geo = deserializeComponentResult({ full: data.full, cutVC: data.cutVC });
       geoVersion++; meshStatus = 'ok'; err = null;
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; } }
   }
   async function rebuildGlb() {
     if (!id) return;
+    const body = JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut });
+    const cachedB64 = cacheGet(`glb:${body}`);
+    if (cachedB64) { setGlbBlob(cachedB64); glbStatus = 'ok'; return; }
     glbStatus = 'building';
     glbAc?.abort(); const ac = new AbortController(); glbAc = ac;
     try {
       const r = await fetch('/api/primitives/bake-preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut }),
+        body,
         signal: ac.signal,
       });
       if (ac.signal.aborted) return;
       if (!r.ok) { err = `Bake ${r.status}`; glbStatus = 'error'; return; }
       const data = await r.json();
-      setGlbBlob(glbCut && data.cut ? data.cut : data.full);
+      const b64 = glbCut && data.cut ? data.cut : data.full;
+      cachePut(`glb:${body}`, b64);
+      setGlbBlob(b64);
       glbStatus = 'ok';
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); glbStatus = 'error'; } }
   }
   function rebuild() { rebuildMesh(); rebuildGlb(); }
+
+  onDestroy(() => {
+    // Release the WebGL context NOW, not at GC time — the whole point of
+    // unmounting inactive tabs' canvases is freeing the browser's ~16
+    // context budget. dispose() drops GPU resources; forceContextLoss()
+    // tells the browser the context is reclaimable immediately.
+    meshAc?.abort(); glbAc?.abort();
+    if (glbBlobUrl) URL.revokeObjectURL(glbBlobUrl);
+    try { renderer?.dispose(); renderer?.forceContextLoss(); } catch { /* already lost */ }
+    renderer = null;
+  });
 
   $effect(() => { void id; void args; void source; if (Scene) rebuild(); });
   $effect(() => { void glbCut; if (Scene) rebuildGlb(); });

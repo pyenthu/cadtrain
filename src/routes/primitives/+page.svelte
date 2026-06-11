@@ -836,7 +836,10 @@
             <!-- One unified graph editor — output type (polygon vs
                  manifold) decides the right-pane render. No more
                  part/profile mode flag. -->
-            <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} />
+            <!-- active gates the 3D canvas: only the visible tab holds a
+                 WebGL context (browser cap ~16). Inactive tabs keep all
+                 editor state mounted; their canvas remounts on activate. -->
+            <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} />
           </div>
         {/each}
       </div>
