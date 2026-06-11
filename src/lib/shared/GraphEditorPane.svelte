@@ -94,7 +94,15 @@
    *    embed  — when true the global SvelteKit nav is hidden via the head
    *             style injection below + the inner chrome layout collapses
    *             so the editor fits inside another page's tab/iframe. */
-  interface Props { id?: string | null; embed?: boolean }
+  interface Props {
+    id?: string | null;
+    embed?: boolean;
+    /** Optional callback to open another primitive id in a new editor
+     *  tab — wired by the /primitives parent so clicking a call card's
+     *  title navigates to that part's own editor. When unset the click
+     *  is a no-op (e.g. /vocab's embed where there's no tab strip). */
+    onOpenTab?: (id: string) => void;
+  }
   const props: Props = $props();
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
   // id input mutate it locally. The `id` prop only seeds it; once mounted
@@ -3665,7 +3673,26 @@
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
                 />
-                <text x="10" y="22" class="ge-node-title">{call.alias} · {call.src}</text>
+                <!-- The src half of the title is a HYPERLINK that opens
+                     the referenced primitive in a new editor tab — wired
+                     via the onOpenTab prop from /primitives. Split the
+                     two halves so the alias stays plain text + only the
+                     primitive id reads as clickable (underline-on-hover).
+                     Falls back to a no-op when onOpenTab is unset
+                     (/vocab's embed has no tab strip). -->
+                <text x="10" y="22" class="ge-node-title">
+                  <tspan>{call.alias} · </tspan>
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <tspan class="ge-node-title-link"
+                    role={props.onOpenTab ? 'link' : null}
+                    data-tip={props.onOpenTab ? 'Open this part in a new tab' : null}
+                    onclick={(ev) => {
+                      if (!props.onOpenTab) return;
+                      ev.stopPropagation();
+                      props.onOpenTab(call.src);
+                    }}>{call.src}</tspan>
+                </text>
                 <!-- Drift badge (Phase 11) — when the underlying primitive's params
                      differ from this Call's args keys, surface ⚠ + a Refresh
                      pointerdown handler that brings the Call back into sync. -->
@@ -5826,6 +5853,18 @@
   .ge-sock-label.trail { fill: #9ca3af; font-style: italic; }
   .ge-sock.trail { fill: #fff; stroke: #9ca3af; stroke-dasharray: 2 2; }
   .ge-node-title { font: 600 12px Arial; fill: #0c4a6e; pointer-events: none; }
+  /* Call-card title hyperlink: the SRC half of "<alias> · <src>" is
+     clickable — opens that primitive in a new editor tab via onOpenTab.
+     Re-enable pointer-events on the tspan only (the parent <text> stays
+     pointer-events:none so it doesn't fight the card drag). */
+  .ge-node-title .ge-node-title-link {
+    pointer-events: visiblePainted; cursor: pointer;
+    text-decoration: underline; text-decoration-color: transparent;
+    transition: text-decoration-color 100ms, fill 100ms;
+  }
+  .ge-node-title .ge-node-title-link:hover {
+    fill: #075985; text-decoration-color: #0369a1;
+  }
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }

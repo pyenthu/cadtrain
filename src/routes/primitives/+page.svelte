@@ -561,7 +561,7 @@
             <!-- One unified graph editor — output type (polygon vs
                  manifold) decides the right-pane render. No more
                  part/profile mode flag. -->
-            <GraphEditorPane id={t.id} embed={true} />
+            <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} />
           </div>
         {/each}
       </div>
