@@ -187,6 +187,31 @@
     if (!q) return true;
     return e.id.toLowerCase().includes(q);
   }
+
+  // Sort toggle (#163) — one global preference, applied across every group.
+  // 'default' keeps the insertion order from /api/primitives/list (which is
+  // already the on-disk readdir order); 'alpha' sorts each group A→Z by id.
+  // Persisted to localStorage so a refresh keeps the user's choice. The
+  // sorted views are $derived (not mutating the source arrays) so toggling
+  // back to 'default' doesn't require a re-fetch.
+  let sortMode = $state<'default' | 'alpha'>('default');
+  const sortBy = (xs: Entry[]) =>
+    sortMode === 'alpha' ? [...xs].sort((a, b) => a.id.localeCompare(b.id)) : xs;
+  let basicSorted     = $derived(sortBy(basic));
+  let stdlibSorted    = $derived(sortBy(stdlib));
+  let stdstaleSorted  = $derived(sortBy(stdstale));
+  let archivedSorted  = $derived(sortBy(archived));
+  // For completions, sort the entries inside each family but leave the
+  // family-name order unchanged (families come back from /list in a deliberate
+  // order and shouldn't get re-shuffled). Object.entries() iteration order is
+  // the insertion order of the keys.
+  let completionsSorted = $derived(
+    Object.fromEntries(Object.entries(completions).map(([fam, items]) => [fam, sortBy(items)]))
+  );
+  function toggleSortMode() {
+    sortMode = sortMode === 'alpha' ? 'default' : 'alpha';
+    try { localStorage.setItem('prim-sidebar-sort', sortMode); } catch { /* ignore */ }
+  }
   // Expand/collapse per group. Persisted to localStorage.
   let openGroups = $state<Record<string, boolean>>({
     profiles: true, basic: true, stdlib: true, stdstale: false, completions: true, archived: false,
@@ -198,6 +223,8 @@
       if (og) openGroups = { ...openGroups, ...JSON.parse(og) };
       const of = localStorage.getItem('prim-open-families');
       if (of) openFamilies = JSON.parse(of);
+      const sm = localStorage.getItem('prim-sidebar-sort');
+      if (sm === 'alpha' || sm === 'default') sortMode = sm;
     } catch { /* ignore */ }
   });
   function toggleGroup(k: string) {
@@ -341,6 +368,18 @@
     </header>
     <div class="prim-filter-row">
       <input class="prim-filter" type="text" placeholder="filter…" bind:value={filter}/>
+      <!-- A↓ sort toggle (#163) — flips every group between insertion order
+           (the readdir order from /api/primitives/list) and alphabetical
+           A→Z by id. One global mode covers Basic + completions + stdlib +
+           stdstale + Archived; family names inside Completions stay in
+           their original order (only entries inside each family re-sort).
+           Active state mirrors the .prim-rag-rebuild:hover styling so the
+           "currently sorted alpha" cue is unambiguous. -->
+      <button class="prim-rag-rebuild"
+        class:active={sortMode === 'alpha'}
+        type="button"
+        title={sortMode === 'alpha' ? 'Sorted A→Z — click to restore insertion order' : 'Sort all groups A→Z'}
+        onclick={toggleSortMode}>A↓</button>
       <!-- RAG corpus rebuild — Phase 1 of docs/plans/rag-prompt-builder.md.
            POSTs /api/rag/rebuild → walks primitives/ → writes ai/rag/parts.jsonl.
            Phase 2 will turn this corpus into a prompt-driven part suggester. -->
@@ -376,14 +415,14 @@
       <div class="prim-group-row">
         <button class="prim-group-head" type="button" onclick={() => toggleGroup('basic')}>
           <span class="prim-caret">{openGroups.basic ? '▾' : '▸'}</span>
-          Basic <span class="prim-count">({basic.filter(pass).length})</span>
+          Basic <span class="prim-count">({basicSorted.filter(pass).length})</span>
         </button>
         <button class="prim-group-new" type="button"
           title="Create a new graph — opens a fresh tab; first save creates the .prim.ts file in basic/"
           onclick={(ev) => { ev.stopPropagation(); createNewEntry(); }}>+</button>
       </div>
       {#if openGroups.basic}
-        {#each basic.filter(pass) as e (e.id)}
+        {#each basicSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
               draggable="true"
@@ -417,7 +456,7 @@
         Completions
       </button>
       {#if openGroups.completions}
-        {#each Object.entries(completions) as [fam, items] (fam)}
+        {#each Object.entries(completionsSorted) as [fam, items] (fam)}
           {@const filtered = items.filter(pass)}
           {#if filtered.length > 0 || !filter.trim()}
             <button class="prim-family-head" type="button" onclick={() => toggleFamily(fam)}>
@@ -457,10 +496,10 @@
     <div class="prim-group">
       <button class="prim-group-head" type="button" onclick={() => toggleGroup('stdlib')}>
         <span class="prim-caret">{openGroups.stdlib ? '▾' : '▸'}</span>
-        stdlib <span class="prim-count">({stdlib.filter(pass).length})</span>
+        stdlib <span class="prim-count">({stdlibSorted.filter(pass).length})</span>
       </button>
       {#if openGroups.stdlib}
-        {#each stdlib.filter(pass) as e (e.id)}
+        {#each stdlibSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
               draggable="true"
@@ -484,10 +523,10 @@
     <div class="prim-group">
       <button class="prim-group-head" type="button" onclick={() => toggleGroup('stdstale')}>
         <span class="prim-caret">{openGroups.stdstale ? '▾' : '▸'}</span>
-        stdstale <span class="prim-count">({stdstale.filter(pass).length})</span>
+        stdstale <span class="prim-count">({stdstaleSorted.filter(pass).length})</span>
       </button>
       {#if openGroups.stdstale}
-        {#each stdstale.filter(pass) as e (e.id)}
+        {#each stdstaleSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
               draggable="true"
@@ -511,10 +550,10 @@
     <div class="prim-group">
       <button class="prim-group-head" type="button" onclick={() => toggleGroup('archived')}>
         <span class="prim-caret">{openGroups.archived ? '▾' : '▸'}</span>
-        Archived <span class="prim-count">({archived.filter(pass).length})</span>
+        Archived <span class="prim-count">({archivedSorted.filter(pass).length})</span>
       </button>
       {#if openGroups.archived}
-        {#each archived.filter(pass) as e (e.id)}
+        {#each archivedSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
               draggable="true"
@@ -703,6 +742,13 @@
   }
   .prim-rag-rebuild:hover:not(:disabled) {
     background: #e0f2fe; border-color: #7dd3fc; color: #0369a1;
+  }
+  /* Sort toggle (#163): "currently sorted A→Z" reads as a steady accent —
+     same palette as :hover so the button doesn't have to fight for a
+     second colour, just locks in the hover look while the mode is on. */
+  .prim-rag-rebuild.active {
+    background: #e0f2fe; border-color: #7dd3fc; color: #0369a1;
+    font-weight: 600;
   }
   .prim-rag-rebuild:disabled { cursor: wait; color: #a8a29e; }
   /* Quiet footnote under the filter row — count + last refreshed Xm ago.
