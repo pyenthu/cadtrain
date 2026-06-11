@@ -1129,6 +1129,19 @@
   let aiBusy = $state(false);
   let aiError = $state<string | null>(null);
   let aiCandidates = $state<string[]>([]);
+  /** Popover width — user-resizable via the native CSS resize grip
+   *  (bottom-right corner); persisted so the chosen width sticks. */
+  let aiMenuW = $state<number>(360);
+  try { const w = Number(localStorage.getItem('ge-ai-menu-w')); if (w >= 264) aiMenuW = Math.min(720, w); } catch { /* SSR/off */ }
+  let aiPanelEl = $state<HTMLDivElement | null>(null);
+  function persistAiMenuW() {
+    if (!aiPanelEl) return;
+    const w = aiPanelEl.offsetWidth;
+    if (w >= 264) {
+      aiMenuW = w;
+      try { localStorage.setItem('ge-ai-menu-w', String(w)); } catch { /* ignore */ }
+    }
+  }
   function openAiMenu() {
     if (aiBtnEl) {
       const r = aiBtnEl.getBoundingClientRect();
@@ -3528,8 +3541,11 @@
          Instructions live here (not inline in the sidebar): describe →
          BM25-retrieve similar parts → Claude proposes a graph → opens in
          a NEW tab; nothing is saved until the user hits Save there. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="ge-canvas-menu ge-ai-menu"
-      style="left: {aiMenuPos.left}px; top: {aiMenuPos.top}px">
+      bind:this={aiPanelEl}
+      onpointerup={persistAiMenuW}
+      style="left: {aiMenuPos.left}px; top: {aiMenuPos.top}px; width: {aiMenuW}px">
       <div class="ge-ai-title">✨ Generate a part</div>
       <div class="ge-ai-hint">Describe the part in plain words — e.g.
         <em>flat coil disc, 2 turns, 60 segments</em>. Similar parts are
@@ -5909,7 +5925,14 @@
      match the rest of the AI/parametric family. */
   .ge-vrail-btn.ai { color: #6d28d9; }
   .ge-vrail-btn.ai:hover, .ge-vrail-btn.ai.on { background: #ede9fe; color: #4c1d95; border-color: #a78bfa; }
-  .ge-ai-menu { width: 264px; padding: 8px; gap: 6px; }
+  .ge-ai-menu {
+    padding: 8px; gap: 6px;
+    /* User-resizable via the native bottom-right grip; width persisted
+       to localStorage (ge-ai-menu-w). overflow:hidden is required for
+       CSS resize to engage. */
+    resize: horizontal; overflow: hidden;
+    min-width: 264px; max-width: 720px;
+  }
   .ge-ai-title { font: 700 12px Arial; color: #4c1d95; }
   .ge-ai-hint { font: 11px Arial; color: #6b7280; line-height: 1.45; }
   .ge-ai-hint em { color: #5b21b6; font-style: normal; }
