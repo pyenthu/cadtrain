@@ -111,6 +111,11 @@
      *  Defaults true so standalone mounts (/graph-editor, /vocab) are
      *  unaffected. */
     active?: boolean;
+    /** RAG Phase 2 — a generated composition graph to hydrate INSTEAD of
+     *  fetching `id` from the volume. The part doesn't exist on disk yet;
+     *  `id` still seeds exemplarId so the user's first Save lands under
+     *  that name. */
+    seedGraph?: any;
   }
   const props: Props = $props();
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
@@ -1411,6 +1416,21 @@
     // extracts it via extractMetaFromSource) BUT fall back to a client-side
     // brace-walking parser on `data.source` so the load path works against
     // a prod endpoint that hasn't been redeployed with the graph field yet.
+    // Seeded graph (RAG Phase 2) — an AI-proposed graph passed in directly
+    // by the parent. Hydrate it instead of fetching by id: the part does
+    // not exist on the volume yet; the user reviews/tweaks and the first
+    // Save creates it. Auto-layout always (a generated graph has no saved
+    // card positions).
+    if (props.seedGraph && typeof props.seedGraph === 'object') {
+      try {
+        graph = autoLayoutGraph(hydrateGraph(props.seedGraph));
+        return;
+      } catch (e) {
+        console.warn('[graph-editor] seedGraph failed to hydrate', e);
+        // fall through to the id-load path (which will banner on 404)
+      }
+    }
+
     try {
       const id = props.id ?? null;
       if (id && /^[a-z_][a-z0-9_]*$/i.test(id)) {

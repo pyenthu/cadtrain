@@ -62,6 +62,11 @@ const VOLUME_PROXY_PATHS = new Set([
   // store → proxy to prod so a local rename + repair sweep ends up where
   // the prod app reads from.
   '/api/rag/scan-refs',
+  // Phase 2 — BM25 over the same on-volume corpus + a Claude call. The
+  // corpus AND ANTHROPIC_API_KEY both live prod-side, so the local-dev
+  // generate button proxies like rebuild/stats. X-Volume-Local: 1 forces
+  // the local handler (needs a local .env key + corpus).
+  '/api/rag/prompt',
 ]);
 
 /** Routes subject to rate limiting (prefix match).
