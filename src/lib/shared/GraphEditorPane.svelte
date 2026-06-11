@@ -102,6 +102,15 @@
      *  title navigates to that part's own editor. When unset the click
      *  is a no-op (e.g. /vocab's embed where there's no tab strip). */
     onOpenTab?: (id: string) => void;
+    /** Tab visibility (2026-06-11). When false (an inactive /primitives
+     *  tab), the 3D canvas is UNMOUNTED so its WebGL context is released
+     *  — browsers cap at ~16 contexts, so N open tabs each holding one
+     *  ran the page out of contexts. All other editor state (graph,
+     *  bake result, zoom) stays mounted; reactivating remounts the
+     *  canvas which repaints from the PrimitiveDualCanvas fetch cache.
+     *  Defaults true so standalone mounts (/graph-editor, /vocab) are
+     *  unaffected. */
+    active?: boolean;
   }
   const props: Props = $props();
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
@@ -2064,6 +2073,35 @@
     }
     return 180;
   }
+  // ─── Polygon card row geometry ──────────────────────────────────────
+  // The left-edge sockets + incoming wires are SVG, but the rows are HTML
+  // inside a foreignObject — these constants MUST mirror the CSS:
+  //   .ge-poly-vertex  border 1 + pad 2 + 18 + gap 1 + 18 + pad 2 + border 1
+  //                    = 43px + 2px margin-bottom            → 45px pitch
+  //   .ge-poly-rref    36px border-box + 2px margin-bottom   → 38px pitch
+  //   .ge-poly-repeat  (deprecated inline block) ≈ 72px + 2px margin
+  // Rows are heterogeneous, so socket Y is a cumulative walk, not idx*pitch.
+  const POLY_VTX_PITCH = 45;
+  const POLY_RREF_PITCH = 38;
+  function polyEntryH(pt: any): number {
+    if (pt?.kind === 'repeat-ref') return POLY_RREF_PITCH;
+    if (pt?.kind === 'repeat') return 74; // deprecated inline block
+    return POLY_VTX_PITCH;
+  }
+  /** Y of the idx-th row's top edge, in CARD coords (0 = card top). */
+  function polyRowTop(node: any, idx: number): number {
+    const pts: any[] = node?.points ?? [];
+    let y = 36; // header + divider = the foreignObject's y offset
+    for (let i = 0; i < Math.min(idx, pts.length); i++) y += polyEntryH(pts[i]);
+    return y;
+  }
+  /** Socket centers in CARD coords. r/z sit on the two stacked sub-rows
+   *  (border 1 + pad 2 + half of 18 = 12; + row 18 + gap 1 = 31); a
+   *  repeat-ref row has ONE socket centered on its 36px body. */
+  function polySockR(node: any, idx: number): number { return polyRowTop(node, idx) + 12; }
+  function polySockZ(node: any, idx: number): number { return polyRowTop(node, idx) + 31; }
+  function polySockRef(node: any, idx: number): number { return polyRowTop(node, idx) + 18; }
+
   function nodeSize(node: any): { w: number; h: number } {
     // Width source of truth: graph.layout[id].w (persisted) → cardAutoWidth
     // fallback. The min clamp protects rows from collapsing below the
@@ -2087,9 +2125,13 @@
       // resize (corner grip works for height too now) to grow/shrink.
       // Persisted height in layout[id].h wins over the auto-fit.
       const MAX_VISIBLE = 8;
-      const rows = Math.min(MAX_VISIBLE, (node as any).points?.length ?? 0);
+      const pts: any[] = (node as any).points ?? [];
+      const rows = pts.slice(0, MAX_VISIBLE);
       const savedH = graph.layout[node.id]?.h;
-      const autoH = 36 + Math.max(1, rows) * 39 + 30;
+      const rowsH = rows.length
+        ? rows.reduce((a, pt) => a + polyEntryH(pt), 0)
+        : POLY_VTX_PITCH;
+      const autoH = 36 + rowsH + 30;
       const h = typeof savedH === 'number' ? Math.max(120, savedH) : autoH;
       return { w, h };
     }
@@ -3611,14 +3653,15 @@
             {:else if n.type === 'polygon'}
               <!-- Polygon per-coord param wires. Each vertex has two
                    input sockets stacked on the LEFT edge of the card at
-                   y = 36(header) + 18(labels) + idx*30 + (9 r | 22 z).
+                   y = polySockR/Z(n, idx) — cumulative row walk that
+                   mirrors the .ge-poly-vertex / .ge-poly-rref CSS.
                    Walk every point; for each coord with kind:'param'
                    (or 'expr' referencing p.<name>), draw a bezier from
                    the chip's output socket to that coord's input socket. -->
               {#each ((n as any).points ?? []) as pt, idx (idx)}
                 {@const pos = nodePos(n.id)}
-                {@const rTopY = pos.y + 36 + idx * 39 + 10}
-                {@const zTopY = pos.y + 36 + idx * 39 + 27}
+                {@const rTopY = pos.y + polySockR(n, idx)}
+                {@const zTopY = pos.y + polySockZ(n, idx)}
                 {#if pt.r?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.r.param)}
                   {#if pIdx >= 0}
@@ -3661,7 +3704,7 @@
                     {@const srcX = srcXY.x + srcSize.w}
                     {@const srcY = srcXY.y + srcSize.h / 2}
                     {@const tgtX = pos.x}
-                    {@const tgtY = pos.y + 36 + idx * 39 + 18}
+                    {@const tgtY = pos.y + polySockRef(n, idx)}
                     <path class="ge-wire poly-rref" d={bezier(srcX, srcY, tgtX, tgtY)} fill="none"/>
                   {/if}
                 {/if}
@@ -4563,9 +4606,10 @@
                      foreignObject so they participate in the wire system.
                      Two sockets per vertex, one per sub-row stacked on the
                      LEFT edge:
-                       top    (cy = vtxTop + 8)   -> axis-0 (r / x)
-                       bottom (cy = vtxTop + 24)  -> axis-1 (z / y)
-                     vtxTop = header(36) + idx * 32. Only renders sockets
+                       top    (cy = polySockR)  -> axis-0 (r / x)
+                       bottom (cy = polySockZ)  -> axis-1 (z / y)
+                     Positions come from the polyRowTop cumulative walk
+                     (rows are heterogeneous). Only renders sockets
                      for visible vertices (up to MAX_VISIBLE) so scrolled-
                      off rows aren't wirable from outside the card. -->
                 {#each (poly.points as Array<any>) as pt, idx (idx)}
@@ -4574,24 +4618,22 @@
                          centered vertically on the row. Wires in from a
                          PolyRepeatNode's output. Drag from this socket to
                          a different poly_repeat to repoint the ref. -->
-                    {@const vtxTop = 36 + idx * 39}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class="ge-sock in poly-rref-in wired"
-                      cx="0" cy={vtxTop + 18} r="6"
+                      cx="0" cy={polySockRef(n, idx)} r="6"
                       onpointerup={(ev) => endWireOnPolygonRepeatRef(ev, n.id, idx)}/>
                   {:else if idx < 8 && pt?.kind !== 'repeat'}
                     <!-- Vertex r/z sockets — two stacked, one per axis. -->
-                    {@const vtxTop = 36 + idx * 39}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
-                      cx="0" cy={vtxTop + 10} r="5"
+                      cx="0" cy={polySockR(n, idx)} r="5"
                       onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.z.kind === 'param' ? ' wired' : ''}`}
-                      cx="0" cy={vtxTop + 27} r="5"
+                      cx="0" cy={polySockZ(n, idx)} r="5"
                       onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
                   {/if}
                 {/each}
@@ -4982,7 +5024,7 @@
                 </div>
               {/if}
             </div>
-          {:else if PrimitiveDualCanvas}
+          {:else if PrimitiveDualCanvas && (props.active ?? true)}
             <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
               args={Object.values(graph.params).map((p) => p.default)}
               source={bake.source}
