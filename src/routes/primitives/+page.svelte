@@ -115,6 +115,71 @@
     }
   }
 
+  // ─── RAG corpus rebuild (Phase 1 — docs/plans/rag-prompt-builder.md) ─────
+  // Tiny stateful chip: one ↻ button next to the filter input + a quiet
+  // "last refreshed Xm ago" footnote underneath. POSTs /api/rag/rebuild;
+  // reads /api/rag/stats on mount + after each rebuild. No new sidebar
+  // section — minimal surface area until Phase 2 lands the prompt UI.
+  let ragLastRebuiltAt = $state<string | null>(null);
+  let ragCount = $state<number>(0);
+  let ragBusy = $state<boolean>(false);
+  let ragError = $state<string | null>(null);
+  // Drives the "Xm ago" label without forcing a parent re-render.
+  let ragNowTick = $state<number>(Date.now());
+
+  async function loadRagStats() {
+    try {
+      const r = await fetch('/api/rag/stats', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      ragLastRebuiltAt = typeof j?.lastRebuiltAt === 'string' ? j.lastRebuiltAt : null;
+      ragCount = typeof j?.count === 'number' ? j.count : 0;
+    } catch { /* keep prior state silently */ }
+  }
+
+  async function rebuildRag() {
+    if (ragBusy) return;
+    ragBusy = true;
+    ragError = null;
+    try {
+      const r = await fetch('/api/rag/rebuild', { method: 'POST' });
+      if (!r.ok) {
+        const t = await r.text();
+        ragError = `rebuild failed (${r.status}): ${t.slice(0, 200)}`;
+        return;
+      }
+      const j = await r.json();
+      ragCount = typeof j?.count === 'number' ? j.count : ragCount;
+      // Authoritative timestamp comes from the next stats read — the
+      // file mtime is what the label is based on, so the two stay in
+      // sync regardless of client clock skew.
+      await loadRagStats();
+    } catch (e: any) {
+      ragError = e?.message ?? String(e);
+    } finally {
+      ragBusy = false;
+    }
+  }
+
+  /** Format an ISO timestamp as a short "Xm ago" / "Xh ago" / "Xd ago"
+   *  string. Re-reads `ragNowTick` so it ticks live. */
+  function formatAgo(iso: string | null, now: number): string {
+    if (!iso) return 'never refreshed';
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return 'never refreshed';
+    const sec = Math.max(0, Math.floor((now - t) / 1000));
+    if (sec < 5) return 'refreshed just now';
+    if (sec < 60) return `refreshed ${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `refreshed ${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `refreshed ${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    return `refreshed ${day}d ago`;
+  }
+
+  let ragLabel = $derived(formatAgo(ragLastRebuiltAt, ragNowTick));
+
   // Search filter — narrows EVERY group in place. Empty = no filter.
   let filter = $state('');
   function pass(e: Entry): boolean {
@@ -249,6 +314,12 @@
       const id = u.searchParams.get('id') ?? u.searchParams.get('open');
       if (id) openTab(id);
     } catch { /* ignore */ }
+    // RAG stats (Phase 1 — docs/plans/rag-prompt-builder.md). One-shot
+    // read for the "last refreshed Xm ago" label + a minute-cadence
+    // re-tick so the label updates while the page sits open.
+    void loadRagStats();
+    const tickId = setInterval(() => { ragNowTick = Date.now(); }, 60_000);
+    return () => clearInterval(tickId);
   });
 </script>
 
@@ -268,7 +339,24 @@
       <h2>Primitives</h2>
       <a class="rail-newtab" href="/graph-editor" target="_blank" rel="noopener" title="Open the standalone graph editor in a new tab">↗ open</a>
     </header>
-    <input class="prim-filter" type="text" placeholder="filter…" bind:value={filter}/>
+    <div class="prim-filter-row">
+      <input class="prim-filter" type="text" placeholder="filter…" bind:value={filter}/>
+      <!-- RAG corpus rebuild — Phase 1 of docs/plans/rag-prompt-builder.md.
+           POSTs /api/rag/rebuild → walks primitives/ → writes ai/rag/parts.jsonl.
+           Phase 2 will turn this corpus into a prompt-driven part suggester. -->
+      <button class="prim-rag-rebuild"
+        type="button"
+        title={ragBusy ? 'Rebuilding RAG corpus…' : `Rebuild RAG corpus (${ragCount} parts, ${ragLabel})`}
+        disabled={ragBusy}
+        onclick={rebuildRag}>{ragBusy ? '…' : '↻'}</button>
+    </div>
+    <div class="prim-rag-foot" title={ragError ?? `${ragCount} parts`}>
+      {#if ragError}
+        <span class="prim-rag-err">rebuild failed — hover for detail</span>
+      {:else}
+        RAG corpus · {ragCount} parts · {ragLabel}
+      {/if}
+    </div>
 
     <!-- Everything below the header + filter scrolls inside this wrapper.
          The rail itself stays anchored — title stays put, filter stays
@@ -550,11 +638,41 @@
   .prim-rail h2 { font: 700 14px Arial; margin: 0; color: #0c4a6e; flex: 1; }
   .rail-newtab { font: 11px Arial; color: #0369a1; text-decoration: none; }
   .rail-newtab:hover { text-decoration: underline; }
+  /* Filter input + RAG rebuild button share a single row. The input
+     stretches; the ↻ button is a fixed-width chip on the right. */
+  .prim-filter-row {
+    display: flex; align-items: center; gap: 6px;
+    margin: 6px 12px 0;
+  }
   .prim-filter {
-    margin: 6px 12px;
+    flex: 1 1 auto; min-width: 0;
     padding: 4px 10px; font: 12px ui-monospace, monospace;
     border: 1px solid #d6d3d1; border-radius: 4px;
   }
+  /* ↻ rebuild button — same vertical height as the filter input, square,
+     muted so it doesn't compete with the filter. Hover hits a darker bg
+     + the cadtrain accent colour. Spinning when busy. */
+  .prim-rag-rebuild {
+    flex: 0 0 auto;
+    width: 26px; height: 26px;
+    padding: 0; line-height: 1;
+    background: #f3f4f6; border: 1px solid #d6d3d1; border-radius: 4px;
+    color: #44403c; font: 14px Arial; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 100ms, color 100ms, border-color 100ms;
+  }
+  .prim-rag-rebuild:hover:not(:disabled) {
+    background: #e0f2fe; border-color: #7dd3fc; color: #0369a1;
+  }
+  .prim-rag-rebuild:disabled { cursor: wait; color: #a8a29e; }
+  /* Quiet footnote under the filter row — count + last refreshed Xm ago.
+     Pulls the eye only when something's wrong (error state goes red). */
+  .prim-rag-foot {
+    margin: 2px 14px 6px;
+    font: 10px Arial; color: #78716c;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .prim-rag-err { color: #b91c1c; }
 
   .prim-group { padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
   /* Row wrapping the group toggle + the trailing + button so they share
