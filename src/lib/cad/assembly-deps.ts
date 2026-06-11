@@ -125,7 +125,14 @@ export function paramKeysOf(source: string): string[] {
 }
 
 function extractParamsBlock(source: string): string | null {
-  const open = source.match(/\bparams\s*:\s*\{/);
+  // Accept both bare (`params: {`) and quoted (`"params": {` / `'params': {`)
+  // — JSON.stringify-emitted metas use quoted property names. Without the
+  // optional-quote sentinel, paramKeysOf returned [] for any JSON-style
+  // meta (the build script for g_star produced one), the adaptive
+  // dispatcher misroutes the single positional arg into `p`, and the
+  // function body sees p.length = undefined → "profile needs ≥ 3 points".
+  // Mirrors the usesOf fix in primitive-loader.ts (commit 049db80).
+  const open = source.match(/["']?\bparams\b["']?\s*:\s*\{/);
   if (!open) return null;
   const start = (open.index ?? 0) + open[0].length;
   let depth = 1;
