@@ -2762,9 +2762,38 @@
     ev.stopPropagation();
     polyExprPop = { repeatId, axis: 'count' as any, draft: currentExpr, x: ev.clientX, y: ev.clientY };
   }
+  /** ƒ button on an mv/rot axis — opens the shared expression popover
+   *  (2026-06-11). Consistent with the polygon vertex + loop r/z
+   *  buttons: click ALWAYS opens the editor with the current value
+   *  prefilled; apply writes back via setTransformAxisValue with
+   *  asExpr(draft). Discriminator `transformId` + numeric `axis` (0|1|2)
+   *  added to the shared state union. */
+  function openTransformAxisExprPop(ev: MouseEvent, transformId: string, axis: 0 | 1 | 2) {
+    ev.stopPropagation();
+    const node = graph.nodes[transformId] as (MvNode | RotNode) | undefined;
+    if (!node) return;
+    const field = node.type === 'mv' ? (node as MvNode).offset : (node as RotNode).rot;
+    const cur = field[axis];
+    const prefill = cur.kind === 'expr'    ? String(cur.expr ?? '')
+                  : cur.kind === 'param'   ? `p.${cur.param}`
+                  : String(cur.value ?? 0);
+    polyExprPop = {
+      transformId, transformAxis: axis,
+      axis: 'r', // sentinel; apply path branches on transformId first
+      draft: prefill, x: ev.clientX, y: ev.clientY,
+    } as any;
+  }
   function closePolyExprPop() { polyExprPop = null; }
   function applyPolyExprPop() {
     if (!polyExprPop) return;
+    // mv/rot axis — write via setTransformAxisValue with asExpr(draft).
+    const txId = (polyExprPop as any).transformId as string | undefined;
+    const txAxis = (polyExprPop as any).transformAxis as (0 | 1 | 2) | undefined;
+    if (txId && (txAxis === 0 || txAxis === 1 || txAxis === 2)) {
+      graph = setTransformAxisValue(graph, txId, txAxis, asExpr(polyExprPop.draft));
+      polyExprPop = null;
+      return;
+    }
     if (polyExprPop.repeatId && polyExprPop.bindingIdx !== undefined) {
       graph = setPolyRepeatBindingValue(graph, polyExprPop.repeatId, polyExprPop.bindingIdx, asExpr(polyExprPop.draft));
     } else if (polyExprPop.repeatId && (polyExprPop.axis as any) === 'count') {
@@ -3981,22 +4010,25 @@
                       <div class="ge-arg-row">
                         <span class="ge-arg-key axis">{n.type === 'mv' ? '' : 'r'}{axisLabel}</span>
                         {#if axis.kind === 'param'}
-                          <!-- Wired param. ƒ promotes the bare wire to an
-                               expression seeded with `p.<name>`. × unwires
+                          <!-- Wired param. ƒ opens the shared expression
+                               popover (consistent with polygon/loop ƒ
+                               buttons, 2026-06-11) prefilled with `p.<name>`
+                               so the user can compose like `p.od / 2`. × unwires
                                back to literal 0. -->
                           <span class="ge-arg-cell wired">
                             <span class="ge-arg-pchip" title="Wired to param">p.{axis.param}</span>
                             <span class="ge-arg-actions">
                               <button class="ge-arg-action fx" type="button"
-                                title="Make this an expression (e.g. p.wall / 2)"
-                                onclick={() => toggleTransformAxisExprMode(n.id, i as 0|1|2)}>ƒ</button>
+                                title="Edit expression (e.g. p.wall / 2)"
+                                onclick={(ev) => openTransformAxisExprPop(ev as any, n.id, i as 0|1|2)}>ƒ</button>
                               <button class="ge-arg-action x" type="button" title="Unwire — back to literal"
                                 onclick={() => onTransformAxis(n.id, i as 0|1|2, 0)}>×</button>
                             </span>
                           </span>
                         {:else if axis.kind === 'expr'}
-                          <!-- Expression mode — free-form text input, click ƒ
-                               to demote back to literal. -->
+                          <!-- Expression mode — inline text input PLUS ƒ
+                               opens the popover for chip-assisted editing
+                               (same as polygon/loop). -->
                           <span class="ge-arg-cell">
                             <input class="ge-arg-input expr" type="text"
                               placeholder="e.g. p.od / 2"
@@ -4005,8 +4037,8 @@
                             />
                             <span class="ge-arg-actions">
                               <button class="ge-arg-action fx on" type="button"
-                                title="Back to literal"
-                                onclick={() => toggleTransformAxisExprMode(n.id, i as 0|1|2)}>ƒ</button>
+                                title="Edit expression in popover"
+                                onclick={(ev) => openTransformAxisExprPop(ev as any, n.id, i as 0|1|2)}>ƒ</button>
                             </span>
                           </span>
                         {:else}
@@ -4022,8 +4054,8 @@
                             />
                             <span class="ge-arg-actions">
                               <button class="ge-arg-action fx" type="button"
-                                title="Switch to expression (ƒ)"
-                                onclick={() => toggleTransformAxisExprMode(n.id, i as 0|1|2)}>ƒ</button>
+                                title="Write an expression"
+                                onclick={(ev) => openTransformAxisExprPop(ev as any, n.id, i as 0|1|2)}>ƒ</button>
                             </span>
                           </span>
                         {/if}
@@ -5091,7 +5123,12 @@
     <div class="ge-wire-pop ge-expr-pop"
       style="left: {Math.min(polyExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {polyExprPop.y}px">
       <div class="ge-wire-head">
-        {#if polyExprPop.repeatId && polyExprPop.bindingIdx !== undefined}
+        {#if (polyExprPop as any).transformId}
+          {@const txn = graph.nodes[(polyExprPop as any).transformId]}
+          {@const txKind = (txn as any)?.type === 'rot' ? 'rot' : 'mv'}
+          {@const axLetter = ['x','y','z'][(polyExprPop as any).transformAxis] ?? 'x'}
+          ƒ {txKind} <code>{txKind === 'rot' ? 'r' : ''}{axLetter}</code> expression
+        {:else if polyExprPop.repeatId && polyExprPop.bindingIdx !== undefined}
           ƒ loop binding expression
         {:else if polyExprPop.repeatId && (polyExprPop.axis as any) === 'count'}
           ƒ loop <code>NPts</code> expression
