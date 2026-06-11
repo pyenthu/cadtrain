@@ -1,37 +1,46 @@
 # `src/lib/cad/` — CAD domain code
 
-The CAD half of the two-product split (the other being
-`src/lib/wells/`). Must NOT cross-import with `src/lib/wells/*`.
-Free to import from `src/lib/shared/*` and `src/lib/training/*`.
+The geometry core. Free to import from `src/lib/shared/*`. The old wells /
+training / pipe / rules code it used to sit beside was archived 2026-06-01
+(`archive/src/lib/...` — see `archive/CADTRAIN_CLEANUP.md`).
 
 ## Directory map
 
 ```
 src/lib/cad/
-├── builder.ts              # ManifoldCAD buildComponent / buildPrimitiveManifold + render helpers
-├── library.ts              # ComponentDef catalog (params, tags, defaults)
-├── exporter.ts             # three-svg-renderer SVG export
-├── manifold-helpers.ts     # raw shape primitives (base geometry toolkit)
+├── composition-graph.ts     # node-graph model (Call/Container/Method/Mv/Rot/Repeat/Polygon/PolyRepeat; ArgValue literal|expr|param; hydrate + migrations)
+├── composition-emit.ts      # graph → emitted source body (meta.graph round-trip)
+├── composition-emit-profile.ts # polygon/profile emit path
+├── composition-layout.ts    # canvas auto-layout
+├── composition-bake.ts      # graph bake orchestration
+├── composition-tree.ts      # TreeNode model (docs/COMPOSITION.md)
+├── assembly-deps.ts         # parse/diff/write meta.uses dependencies
+├── builder.ts               # legacy ComponentDef builds + LIVE render helpers (finalizeManifold, setRenderZScale, manifoldToGeo/CutVC — used by /api/primitives/preview)
+├── library.ts               # legacy ComponentDef catalog (kept only because builder.ts imports it)
+├── manifold-helpers.ts      # raw shape toolkit (cyl, tube, revolve, datums ref/head/tail/mate/align, place, …)
 ├── manifold-helpers-meta.ts # positional-prop schemas for the helpers
-├── mesh-serial.ts          # serialize/rehydrate { full, cutVC } mesh-JSON
-├── mesh-serial.test.ts     # round-trip vitest
-├── assemblies-l4.ts        # level-4 assembly scaffolding
-├── stdlib/                 # git-tracked STDLIB primitives (r_revolve, r_extrude) — canonical, read-only, served stdlib-first. See root CLAUDE.md Rule 21.
-├── primitive-stub.ts       # source generators for "+ new primitive" (buildFnProfileStub / buildPartStubFromBase / stubSource)
-├── pipe/                   # pipe-specific composites
-└── rules/                  # tubing + drill_pipe domain rules
+├── manifold-mesh.ts         # welded-mesh toolkit (gridPatch / capFan / weldAndBuild)
+├── csg-2d.ts                # CrossSection helpers (cs, extrude_csg, ext, resample)
+├── inline-profile.ts        # inline-profile resolution (resolveProfile + NaN guard)
+├── profile-templates.ts     # profile preset templates
+├── primitive-sandbox.ts     # sandbox exec for part sources (injects helpers)
+├── primitive-stub.ts        # typed-create scaffolds (Extrude/Profile/Assembly stubs)
+├── part-id.ts               # hashId stamping for color-by-source
+├── math-lib.ts              # math injected into profile-fn + sandbox
+├── mesh-serial.ts           # serialize/rehydrate { full, cutVC } mesh-JSON
+├── warp-spline.ts           # warp-along-spline path
+├── stdlib/                  # ACTIVE engine primitives (currently r_cuboid) — Rule 21
+└── stdstale/                # DEPRECATED engines (r_revolve, r_extrude, r_weld_extrude) — still resolvable so legacy parts bake
 ```
 
-`builder.ts`'s `buildComponent` / `buildPrimitiveManifold` now build only
-from the legacy `library.ts` `ComponentDef` catalog. Its render helpers
-(`finalizeManifold`, `setRenderZScale`, `manifoldToGeo`, `manifoldToCutVC`)
-are used live by `/api/primitives/preview`.
+Archived (2026-06-01, in `archive/src/lib/cad/`): `exporter.ts` (SVG
+export), `assemblies-l4.ts`, `file-kinds.ts`, `pipe/`, `rules/`.
 
-**Stdlib primitives** (`stdlib/`): `r_revolve` + `r_extrude` are git-tracked,
-function-only parametric (`type:'profile'`), read-only in the GUI, served
-BEFORE the volume by the resolver. Registry: `src/lib/server/stdlib.ts`
-(`import.meta.glob('?raw')` → source baked into the build). Full contract in
-root CLAUDE.md Rule 21 + memory `stdlib_primitives_in_src`.
+**Engine primitives** (`stdlib/` + `stdstale/`): git-tracked, read-only in
+the GUI, served BEFORE the volume by the resolver, save/delete refused.
+Registry: `src/lib/server/stdlib.ts` (`import.meta.glob('?raw')` → source
+baked into the build). Deprecate = `git mv` into `stdstale/`. Full contract
+in root CLAUDE.md Rule 21.
 
 ## Geometry — Z-down convention
 
@@ -70,16 +79,12 @@ Drilling convention. Encoded into every helper and component.
   its own normals on non-indexed output). Regressed once in commit 8297314;
   don't drop `flatShading` from the live material.
 
-## SVG export — `src/lib/cad/exporter.ts`
+## SVG export — archived
 
-Uses `three-svg-renderer`:
-
-- Uses **OrthographicCamera** (type-cast as `any` since
-  three-svg-renderer types only accept PerspectiveCamera, but the
-  underlying `Vector3.project()` works with both).
-- Geometry split by vertex colour into two meshes (red + grey)
-  because FillPass reads material colour, not per-face vertex colours.
-- Passes: `FillPass` (polygons) + `VisibleChainPass` (edges).
+`exporter.ts` (three-svg-renderer export) moved to
+`archive/src/lib/cad/exporter.ts` 2026-06-01. Its gotchas
+(OrthographicCamera cast, vertex-colour mesh split, FillPass +
+VisibleChainPass) travel with it.
 
 ## Manifold gotchas
 
@@ -98,7 +103,7 @@ primitives reach `CS` + `Mesh` via `G.__cadtrain_manifold__.wasm` directly.
 
 In manifold-3d 3.4.1, `extrude(h, nDivisions, 0)` with `nDivisions > 0` AND `twistDegrees === 0` produces a non-manifold mesh — the intermediate slices are IDENTICAL to top + bottom (no morph), so the triangulator emits coincident triangle pairs and rejects with `"Not manifold"`.
 
-**Fix pattern** (used by both `r_extrude` and `r_weld_extrude` in `src/lib/cad/stdlib/`):
+**Fix pattern** (used by both `r_extrude` and `r_weld_extrude` in `src/lib/cad/stdstale/`):
 
 ```ts
 const tw = Number(twist ?? 0);
