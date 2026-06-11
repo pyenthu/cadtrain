@@ -97,9 +97,14 @@ function stripImports(src: string): string {
 
 /** Pull declared dependency ids from `meta.uses: ['a', 'b']`. Regex over
  *  the source (independent of the full meta parser) — robust to whatever
- *  else the meta carries. */
+ *  else the meta carries. Accepts BOTH unquoted (`uses: [...]`) AND
+ *  quoted (`"uses": [...]`) property forms — JSON.stringify-emitted
+ *  metas use quotes, and without the optional-quote sentinel the loader
+ *  failed to resolve any deps and the body errored "X is not defined"
+ *  at preview time. Mirrors paramKeysOf's quote-aware match in
+ *  assembly-deps.ts. */
 export function usesOf(source: string): string[] {
-  const m = /\buses\s*:\s*\[([^\]]*)\]/.exec(source);
+  const m = /["']?\buses\b["']?\s*:\s*\[([^\]]*)\]/.exec(source);
   if (!m) return [];
   return [...m[1].matchAll(/['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g)].map((x) => x[1]);
 }
