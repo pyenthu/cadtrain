@@ -97,16 +97,26 @@
   // Clicking ✎ on a row puts the row into rename mode: the .prim-name span
   // is swapped for an <input> prefilled with the current id (auto-selected,
   // autofocused). Enter commits via POST /api/primitives/rename?id=<old>&to=<new>;
-  // Escape (or blur with no validation error) cancels. Validation mirrors
-  // the server regex so a typo doesn't even bother the server (and we can
-  // show a red-tooltip hint inline).
+  // Escape cancels. Validation mirrors the server regex so a typo doesn't
+  // even bother the server (and we can show a red-tooltip hint inline).
   let renamingId = $state<string | null>(null);
   let renameValue = $state<string>('');
   let renameError = $state<string | null>(null);
   let renameBusy = $state<boolean>(false);
 
+  // Toast pinned to the bottom-right of the rail surfaces broken-ref info
+  // (#165). Shows up after a successful rename when scan-refs returns >0
+  // affected files; user can click Repair all or Skip.
+  let refToast = $state<null | {
+    oldId: string;
+    newId: string;
+    affected: string[];
+    repairing: boolean;
+    note?: string;
+  }>(null);
+
   function startRename(id: string, source: string) {
-    if (source !== 'volume') return; // stdlib + stdstale already excluded by caller
+    if (source !== 'volume') return; // stdlib + stdstale + archived already excluded by caller
     renamingId = id;
     renameValue = id;
     renameError = null;
@@ -149,14 +159,65 @@
       renameValue = '';
       await loadList();
       await openTab(newId);
-      // TODO(#165): fire-and-forget POST /api/rag/scan-refs to surface
-      // any dangling references in other primitives' meta.graph blocks.
+      // Fire-and-forget the broken-refs scan. The rename endpoint already
+      // returns its own `dependents` list, but scan-refs is the path the
+      // user can REPAIR through (rewrite each dependent's `src:'<old>'` →
+      // `src:'<new>'` and re-save) — do it via the dedicated endpoint so
+      // both code paths stay testable independently.
+      void scanRefs(oldId, newId);
     } catch (e: any) {
       renameError = `rename error: ${e?.message ?? e}`;
     } finally {
       renameBusy = false;
     }
   }
+
+  // ─── Broken-refs scan (#165) ──────────────────────────────────────────────
+  /** Ask the server for the list of primitives still referencing oldId.
+   *  Surfaces a toast IF the list is non-empty. The server runs a regex
+   *  walk of every <id>.{prim,asm,prvl,prex,rev,exp}.ts under primitives/
+   *  and returns the affected ids (report-only by default). */
+  async function scanRefs(oldId: string, newId: string) {
+    try {
+      const r = await fetch(
+        `/api/rag/scan-refs?old=${encodeURIComponent(oldId)}&new=${encodeURIComponent(newId)}`,
+        { method: 'POST' },
+      );
+      if (!r.ok) {
+        // Quiet failure — the rename itself succeeded, just couldn't scan.
+        // Surface only when something interesting comes back.
+        return;
+      }
+      const j = await r.json() as { affected?: string[] };
+      const affected = Array.isArray(j.affected) ? j.affected : [];
+      if (affected.length === 0) return; // silent — nothing references the old id
+      refToast = { oldId, newId, affected, repairing: false };
+    } catch { /* ignore — see above */ }
+  }
+  async function repairAllRefs() {
+    if (!refToast || refToast.repairing) return;
+    refToast = { ...refToast, repairing: true };
+    try {
+      const r = await fetch(
+        `/api/rag/scan-refs?old=${encodeURIComponent(refToast.oldId)}&new=${encodeURIComponent(refToast.newId)}&repair=1`,
+        { method: 'POST' },
+      );
+      if (!r.ok) {
+        const t = await r.text();
+        refToast = { ...refToast, repairing: false, note: `repair failed (${r.status}): ${t.slice(0, 200)}` };
+        return;
+      }
+      const j = await r.json() as { repaired?: string[] };
+      const n = Array.isArray(j.repaired) ? j.repaired.length : 0;
+      refToast = { ...refToast, repairing: false, note: `Repaired ${n} file${n === 1 ? '' : 's'}.` };
+      await loadList();
+      // Auto-dismiss 2.5s after a successful repair.
+      setTimeout(() => { refToast = null; }, 2500);
+    } catch (e: any) {
+      if (refToast) refToast = { ...refToast, repairing: false, note: `repair error: ${e?.message ?? e}` };
+    }
+  }
+  function dismissRefToast() { refToast = null; }
 
   async function loadList() {
     listLoading = true;
@@ -705,6 +766,34 @@
     </div>
 
     </div><!-- /.prim-rail-scroll -->
+
+    <!-- Broken-refs toast (#165) — surfaced when a rename leaves OTHER
+         primitives' meta.graph still pointing at the old id. Lets the user
+         repair-all (rewrite each dependent file's `src:'<old>'` →
+         `src:'<new>'` and re-save) or dismiss. Pinned to the bottom of the
+         rail, not the viewport, so it disappears with the surface it
+         belongs to. -->
+    {#if refToast}
+      <div class="prim-ref-toast" role="status" aria-live="polite">
+        <div>
+          <strong>{refToast.affected.length}</strong>
+          part{refToast.affected.length === 1 ? '' : 's'} reference
+          <code>{refToast.oldId}</code>.
+        </div>
+        {#if refToast.note}
+          <div class="prim-ref-toast-note">{refToast.note}</div>
+        {/if}
+        <div class="prim-ref-toast-actions">
+          <button type="button"
+            disabled={refToast.repairing}
+            onclick={repairAllRefs}>
+            {refToast.repairing ? 'Repairing…' : 'Repair all'}
+          </button>
+          <button type="button" class="skip"
+            onclick={dismissRefToast}>Skip</button>
+        </div>
+      </div>
+    {/if}
   </aside>
 
   <!-- Drag handle between rail and the tabbed area. Doesn't render its own
@@ -786,6 +875,9 @@
     display: flex; flex-direction: column;
     background: #fafaf9; border-right: 1px solid #e5e7eb;
     overflow: hidden;
+    /* position:relative so the broken-refs toast (#165) can anchor to
+       the rail rather than the viewport. */
+    position: relative;
     /* `min-height: 0` is required on a flex column inside a clamped
        grid track so the inner scroll wrapper can shrink + scroll —
        same pattern as the rail's parent (.prim-root). `min-width: 0`
@@ -970,6 +1062,34 @@
     font: 10px Arial; color: #b91c1c;
     max-width: 12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* Broken-refs toast (#165) — pinned bottom-right of the rail, slides in
+     after a rename that affected dependents. Two states: report (default,
+     with [Repair all] [Skip]) and repairing (busy spinner). */
+  .prim-ref-toast {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    background: #1e293b; color: #f8fafc;
+    border-radius: 6px; padding: 8px 10px;
+    font: 11px Arial; line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+    z-index: 10;
+  }
+  .prim-ref-toast strong { color: #fde68a; font-weight: 600; }
+  .prim-ref-toast code {
+    font: 10px ui-monospace, monospace; background: rgba(248, 250, 252, 0.1);
+    padding: 1px 4px; border-radius: 3px;
+  }
+  .prim-ref-toast-actions {
+    display: flex; gap: 6px; margin-top: 6px;
+  }
+  .prim-ref-toast button {
+    padding: 3px 10px; font: 11px Arial; cursor: pointer;
+    background: #f8fafc; color: #1e293b; border: 0; border-radius: 3px;
+  }
+  .prim-ref-toast button.skip { background: transparent; color: #cbd5e1; border: 1px solid #475569; }
+  .prim-ref-toast button:hover { background: #fde68a; color: #1e293b; }
+  .prim-ref-toast button.skip:hover { background: rgba(248, 250, 252, 0.1); color: #f8fafc; }
+  .prim-ref-toast button:disabled { cursor: wait; opacity: 0.6; }
+  .prim-ref-toast-note { margin-top: 4px; color: #cbd5e1; font-size: 10px; }
   /* Permanent-delete variant for the Archived group — black outline
      icon, ALWAYS visible (not hover-revealed like the soft-delete
      trash). Conspicuous because this is the irreversible path; users

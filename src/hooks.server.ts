@@ -56,6 +56,12 @@ const VOLUME_PROXY_PATHS = new Set([
   // Xm ago" reflects prod state (instead of the empty local .dev-volume).
   '/api/rag/rebuild',
   '/api/rag/stats',
+  // #165 — scan-refs walks the on-volume primitives tree (every
+  // <id>.{prim,asm,prvl,prex,rev,exp}.ts) to find dependents of a renamed
+  // primitive. Repair mode rewrites those files in place. Single live
+  // store → proxy to prod so a local rename + repair sweep ends up where
+  // the prod app reads from.
+  '/api/rag/scan-refs',
 ]);
 
 /** Routes subject to rate limiting (prefix match).
