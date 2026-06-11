@@ -3478,13 +3478,6 @@
     <button class="ge-vrail-btn" type="button"
       bind:this={callBtnEl} onclick={openCallPicker}
       data-tip="Fetch a part — primitives library">+</button>
-    {#if props.onGenerated}
-      <button class="ge-vrail-btn ai" type="button"
-        bind:this={aiBtnEl}
-        class:on={aiMenuOpen}
-        onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
-        data-tip="Generate a part from a description (AI)">✨</button>
-    {/if}
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -3515,6 +3508,13 @@
       onclick={() => canvasMenuOpen ? (canvasMenuOpen = false) : openCanvasMenu()}
       class:on={canvasMenuOpen}
       data-tip="Layout tools — auto-layout, push apart, edge bounds">⚙</button>
+    {#if props.onGenerated}
+      <button class="ge-vrail-btn ai" type="button"
+        bind:this={aiBtnEl}
+        class:on={aiMenuOpen}
+        onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
+        data-tip="Generate a part from a description (AI)">✨</button>
+    {/if}
     <div class="ge-vrail-spacer"></div>
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
