@@ -980,11 +980,11 @@
    *  when present, otherwise the file's meta.params defaults. Debounced
    *  120 ms so a slider drag doesn't flood /resolve. */
   let profileResolveTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastProfileResolveKey = '';
   $effect(() => {
     // 2D resolve fires when the graph's output is a polygon (no solid
     // producer present). When a revolve/extrude lives in the graph, the
     // part-bake pipeline takes over and this effect short-circuits.
-    if (hasSolidProducer) return;
     if (hasSolidProducer) return;
     void bakeNonce; // re-run on manual bake
 
@@ -1016,12 +1016,21 @@
       }
     }
 
+    // Dedupe — this $effect re-fires on EVERY render (graph identity churn,
+    // tab activation, unrelated state), not just on real source/param
+    // changes. Without a guard, a failing resolve (400) re-POSTed the
+    // identical body 4-5× per interaction. Key includes bakeNonce so the
+    // 🔨 button still forces a retry of an unchanged body.
+    const body = JSON.stringify({ source: src, params });
+    const resolveKey = `${bakeNonce}:${body}`;
     clearTimeout(profileResolveTimer);
     profileResolveTimer = setTimeout(async () => {
+      if (resolveKey === lastProfileResolveKey) return;
+      lastProfileResolveKey = resolveKey;
       try {
         const r = await fetch('/api/primitives/profiles/resolve', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ source: src, params }),
+          body,
         });
         if (!r.ok) { profileResolveErr = `Resolve ${r.status}: ${(await r.text()).slice(0, 160)}`; return; }
         const d = await r.json();

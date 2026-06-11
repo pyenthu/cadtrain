@@ -553,15 +553,22 @@
   function delMove(i: number) { moves = moves.filter((_, j) => j !== i); }
 
   // Live preview: debounce → resolve build(defaults) on the server sandbox.
+  // Deduped on the full request body — the $effect re-fires on every
+  // render, so without the guard an erroring source re-POSTed the same
+  // failing body repeatedly (400 spam in the console).
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastResolveBody = '';
   $effect(() => {
     const src = composeSource(); const pp = previewParams(); // track body + rows
+    const body = JSON.stringify({ source: src, params: pp });
     clearTimeout(timer);
     timer = setTimeout(async () => {
+      if (body === lastResolveBody) return;
+      lastResolveBody = body;
       try {
         const r = await fetch('/api/primitives/profiles/resolve', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ source: src, params: pp }),
+          body,
         });
         if (r.ok) { previewPts = (await r.json()).points ?? []; err = null; }
         else { err = (await r.text()).slice(0, 160); }
