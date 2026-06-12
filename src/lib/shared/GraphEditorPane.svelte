@@ -2628,21 +2628,36 @@
    *  round-trips through save → reload. Hydrated from any saved file in
    *  the URL-load block below; empty for fresh graphs. */
   let drawingMd = $state<string>('');
-  /** ✨ AI-generate spinner. The actual /api/primitives/describe endpoint
-   *  is a follow-up; today this surfaces a "not yet wired" notice in the
-   *  MD pane so the icon is testable without breaking the flow. */
+  /** ✨ AI-generate spinner. Drives POST /api/primitives/describe — one
+   *  Claude call that infers a drawing-descriptor markdown from the emitted
+   *  source + bake stats and REPLACES drawingMd (this is a generate action).
+   *  On failure the error is prepended as an HTML comment so existing MD is
+   *  never wiped. (#117) */
   let mdAiBusy = $state(false);
   async function generateMdWithAi() {
     if (mdAiBusy) return;
     mdAiBusy = true;
     try {
-      // TODO (#117): POST { source, bakeStats, graph } to
-      // /api/primitives/describe (Claude vision). For now stub a friendly
-      // notice prepended to the existing MD so the user can see the icon
-      // fires + the spot the AI will land its draft into.
-      const stub = `<!-- ✨ AI describe is not wired yet — coming in #117. -->\n<!-- For ${exemplarId}: include purpose, function, composition, parameter table, drawing notes, see-also links. -->\n\n`;
-      if (!drawingMd.trim()) drawingMd = stub;
-      else if (!drawingMd.startsWith('<!--')) drawingMd = stub + drawingMd;
+      const r = await fetch('/api/primitives/describe', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: exemplarId,
+          source: emitted.source,
+          bake: typeof bake === 'object' && bake ? (bake as any).bake : null,
+        }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j.markdown) drawingMd = j.markdown;
+      } else {
+        let detail = `HTTP ${r.status}`;
+        try { detail = (await r.text()) || detail; } catch { /* ignore */ }
+        drawingMd = `<!-- describe failed: ${detail.replace(/-->/g, '--&gt;')} -->\n\n` + drawingMd;
+      }
+    } catch (e: any) {
+      const detail = String(e?.message ?? e).replace(/-->/g, '--&gt;');
+      drawingMd = `<!-- describe failed: ${detail} -->\n\n` + drawingMd;
     } finally {
       mdAiBusy = false;
     }
