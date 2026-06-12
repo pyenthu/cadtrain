@@ -1,3 +1,40 @@
+# Cadtrain Cleanup — 2026-06-12 (`src/lib/shared/` pass)
+
+Second pass, scoped to `src/lib/shared/`. Traced every import across the
+active `src/` tree (excluding `archive/`, `docs/`, and `/plan` narration
+strings); moved the files with no active importer to
+`archive/src/lib/shared/` via `git mv`. The Claude/CLI trio
+(`claude-cli.ts` / `mime.ts` / `temp-file.ts` — still used by
+`scripts/generate_authored_library.ts`) and `anthropic-api.ts` (active via
+`/api/primitives/refine` + `/api/rag/prompt`) were KEPT.
+
+| Path moved (→ `archive/src/lib/shared/`) | Reason |
+|---|---|
+| `PrimitiveView.svelte` | DORMANT — old Build/Parts editor; no active mount since `GraphEditorPane` took over. |
+| `CompositionEditor.svelte` | Only consumer was `PrimitiveView` (the `.asm.ts` Parts branch). |
+| `ConstructionTree.svelte` / `CodeEditor.svelte` / `ProfileEditor.svelte` | Imported only by `PrimitiveView`. |
+| `FloatingPanel.svelte` | Imported only by `PrimitiveView` + `CompositionEditor`; `GraphEditorPane` uses its own inline popovers. |
+| `format-ts.ts` / `parse-build-source.ts` | Zero importers anywhere in `src/`. |
+| `MarkdownView.svelte` / `KbTableViewer.svelte` | Zero active importers (`KbTableViewer`'s `/components` route was deleted 2026-05-27). |
+| `PrimitiveCanvas.svelte` / `PrimitiveGlbCanvas.svelte` | Superseded by `PrimitiveDualCanvas` (single WebGL context); only comment refs remain. |
+| `ComponentScene.svelte` | Only `archive/` routes + the dead `PrimitiveCanvas` referenced it. |
+
+Kept active in `src/lib/shared/`: `GraphEditorPane`, `ParamGrid`,
+`PrimitiveDualCanvas`, `PrimitiveDualScene`, `CompJsonSilhouette`,
+`ProfileFnEditor`, `ProfileFn3DCanvas`, `ProfilePalette`,
+`ComponentSceneGlb`, `SceneControls`, `profile-presets` (+test),
+`anthropic-api`, `claude-cli`, `mime`, `temp-file`, `instance-colors`,
+`dragNumber`, `floating-tip`, `warp`, `scene-state`.
+
+Follow-up candidate: `src/lib/cad/assembly-deps.ts` was kept in the
+2026-06-01 pass solely because `PrimitiveView` imported it (see the
+"NOT moved" table below). With `PrimitiveView` now archived, re-check
+its consumers — it may be archivable next pass.
+
+Revive any file with `git mv archive/src/lib/shared/<file> src/lib/shared/`.
+
+---
+
 # Cadtrain Cleanup — 2026-06-01
 
 Moved stale code out of the active codebase to shrink the surface area the
