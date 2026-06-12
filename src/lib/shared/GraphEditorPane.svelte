@@ -7241,7 +7241,7 @@
      the visible dot AND the SVG hit geometry, centered on each socket so its
      cx/cy stay put. Mouse users keep the compact dots. */
   @media (pointer: coarse) {
-    .ge-sock { transform-box: fill-box; transform-origin: center; transform: scale(2.2); }
+    .ge-sock { transform-box: fill-box; transform-origin: center; transform: scale(1.5); }
   }
   .ge-sock.out { stroke: #15803d; }
   .ge-sock.in.obj { stroke: #b91c1c; }
