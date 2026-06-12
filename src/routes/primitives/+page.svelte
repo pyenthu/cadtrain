@@ -449,8 +449,16 @@
     } catch { /* ignore */ }
   }
 
-  // ─── Rail width (drag-resizable) ─────────────────────────────────────────
+  // ─── Rail width (drag-resizable) + collapse ──────────────────────────────
   let railWidth = $state(240);
+  // Sidebar collapse — available on ALL viewports (persisted). When true the
+  // rail column collapses to 0 and a floating ☰ expand button appears.
+  let sidebarCollapsed = $state(false);
+  try { sidebarCollapsed = localStorage.getItem('prim-rail-collapsed') === '1'; } catch { /* SSR/off */ }
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    try { localStorage.setItem('prim-rail-collapsed', sidebarCollapsed ? '1' : '0'); } catch { /* ignore */ }
+  }
   let railResizing = false;
   function startRailResize(ev: PointerEvent) {
     railResizing = true;
@@ -518,10 +526,15 @@
      name (with `white-space: nowrap` the min-content is the full
      name), blowing the rail out to 600 px+ when any row had a long id.
      A fixed first track from --rail-w pins it to the resize handle. -->
-<div class="prim-root" style="--rail-w: {railWidth}px">
+<div class="prim-root" class:collapsed={sidebarCollapsed} style="--rail-w: {sidebarCollapsed ? 0 : railWidth}px">
+  <!-- Floating expand handle — only shown when the sidebar is collapsed. -->
+  {#if sidebarCollapsed}
+    <button class="prim-rail-expand" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
+  {/if}
   <aside class="prim-rail">
     <header>
       <h2>Primitives</h2>
+      <button class="prim-rail-collapse" type="button" title="Collapse the sidebar" onclick={toggleSidebar}>«</button>
       <a class="rail-newtab" href="/graph-editor" target="_blank" rel="noopener" title="Open the standalone graph editor in a new tab">↗ open</a>
     </header>
     <div class="prim-filter-row">
@@ -898,6 +911,7 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
+    position: relative;
     font-family: Arial;
     color: #1f2937;
   }
@@ -1175,6 +1189,37 @@
     transition: background 120ms;
   }
   .prim-rail-divider:hover { background: #cbd5e1; }
+
+  /* ─── Sidebar collapse (all viewports) ───────────────────────────────── */
+  .prim-rail-collapse {
+    margin-left: auto; width: 22px; height: 22px; padding: 0;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 4px;
+    font: 13px Arial; color: #475569; cursor: pointer; line-height: 1;
+  }
+  .prim-rail-collapse:hover { background: #f1f5f9; color: #1e293b; }
+  .prim-root.collapsed .prim-rail,
+  .prim-root.collapsed .prim-rail-divider { display: none; }
+  .prim-rail-expand {
+    position: absolute; top: 8px; left: 8px; z-index: 30;
+    width: 30px; height: 30px; padding: 0;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
+    font: 15px Arial; color: #334155; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+  .prim-rail-expand:hover { background: #f1f5f9; }
+
+  /* ─── Mobile PORTRAIT — stack the sidebar ABOVE the editor (K.53) ─────── */
+  /* Landscape keeps the sidebar on the left (wide enough). Portrait stacks:
+     a capped, scrollable sidebar on top, the editor below. */
+  @media (max-width: 820px) and (orientation: portrait) {
+    .prim-root {
+      grid-template-columns: 1fr !important;
+      grid-template-rows: minmax(90px, 32vh) 0 minmax(0, 1fr) !important;
+    }
+    .prim-rail-divider { display: none; }
+    .prim-rail { border-right: none; border-bottom: 1px solid #e5e7eb; }
+    .prim-root.collapsed { grid-template-rows: 0 0 minmax(0, 1fr) !important; }
+  }
 
   /* ─── Tabbed main area ────────────────────────────────────────────── */
   .prim-main { display: flex; flex-direction: column; overflow: hidden; }

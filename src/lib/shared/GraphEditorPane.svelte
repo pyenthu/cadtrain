@@ -6510,6 +6510,19 @@
      dividers live between sections; the source pane gets the remainder. */
   .ge-grid { display: grid; overflow: hidden; }
   .ge-divider { background: #e5e7eb; cursor: col-resize; touch-action: none; transition: background 0.12s; }
+
+  /* ─── Mobile — VERTICAL sectioning in PORTRAIT only (plan K.53) ───────── */
+  /* Narrow + portrait: the canvas | preview side-by-side split is too
+     cramped, so stack them — graph canvas on TOP, the 3D/SRC/MD pane BELOW.
+     LANDSCAPE keeps the two sections side-by-side (wide enough). `!important`
+     overrides the inline `grid-template-columns: {splitA}%…`. */
+  @media (max-width: 820px) and (orientation: portrait) {
+    .ge-grid {
+      grid-template-columns: 1fr !important;
+      grid-template-rows: minmax(0, 1fr) 8px minmax(180px, 44vh) !important;
+    }
+    .ge-divider { cursor: row-resize; }
+  }
   .ge-divider:hover, .ge-divider:active { background: #0369a1; }
   .ge-canvas-pane { overflow: hidden; position: relative; }
   /* + param button + delete × on canvas chip + add-param popover rows. */
