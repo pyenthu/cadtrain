@@ -21,6 +21,7 @@ src/lib/cad/
 ├── manifold-helpers-meta.ts # positional-prop schemas for the helpers
 ├── manifold-mesh.ts         # welded-mesh toolkit (gridPatch / capFan / weldAndBuild)
 ├── csg-2d.ts                # CrossSection helpers (cs, extrude_csg, ext, resample)
+├── sketch.ts                # M.1 sketch engine — compileSketch(ops)→(r,z) via Maker.js (line/spline/fillet/chamfer); injected into the part sandbox as `sketch(...)`. Plan: docs/plans/profile-sketcher.md
 ├── inline-profile.ts        # inline-profile resolution (resolveProfile + NaN guard)
 ├── profile-templates.ts     # profile preset templates
 ├── primitive-sandbox.ts     # sandbox exec for part sources (injects helpers)
