@@ -29,7 +29,7 @@ import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox'
 import { compileProfileBuild } from './profile-fn';
 import { recognizeComposite } from './recognize-composite';
 import { partHashId } from '$lib/cad/part-id';
-import { paramKeysOf } from '$lib/cad/assembly-deps';
+import { paramKeysOf } from '$lib/cad/param-keys';
 
 /**
  * Wrap each recognized named PART instance's init with `__tag(<init>,

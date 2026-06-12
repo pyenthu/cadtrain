@@ -3,6 +3,16 @@
  * the user gets a warning when a referenced component drifts (params added /
  * renamed / body rewritten).
  *
+ * ARCHIVED 2026-06-12. The drift-snapshot machinery below
+ * (parseDependencies / diffDependencies / buildSnapshots / writeDependencies /
+ * parseUses + the DependencySnapshot/DependencyDiff types + djb2 /
+ * hashComponent / extractFunctionBody helpers) was only ever consumed by the
+ * now-archived PrimitiveView.svelte + CompositionEditor.svelte. The single
+ * live export, `paramKeysOf` (+ its private `extractParamsBlock` helper), was
+ * split out into `src/lib/cad/param-keys.ts`. Revive the drift feature by
+ * re-wiring these against the resurrected editor; see
+ * `archive/CADTRAIN_CLEANUP.md`.
+ *
  * Snapshot is stored in assembly source as `meta.dependencies` — an array of
  * `{ id, paramKeys, hash }`:
  *   * id          — component id (matches an entry in meta.uses).
@@ -18,6 +28,12 @@
  * semantically equivalent updates the user might want to inspect — by making
  * the change VISIBLE without crashing the assembly.
  */
+
+// NOTE: `paramKeysOf` + `extractParamsBlock` now live in
+// `$lib/cad/param-keys`. They are reproduced here only so the archived
+// editor components remain self-contained for revival; the active import is
+// `src/lib/cad/param-keys.ts`.
+import { paramKeysOf } from '$lib/cad/param-keys';
 
 export interface DependencySnapshot {
   id: string;
@@ -60,78 +76,7 @@ export function hashComponent(source: string): string {
   return djb2(normalized);
 }
 
-/** Return Object.keys of meta.params, in declaration order. Empty array when
- *  no params block is found.
- *
- *  Walks the block char by char tracking brace depth + string state so a
- *  param row whose `default:` is a nested descriptor
- *  (`profile: { ..., default: { kind, params: { r, len } } }`) doesn't yield
- *  the inner `default` / `params` / `kind` as fake top-level param keys
- *  (which then either rename the loader's signature to `(profile, default,
- *  params, segments)` — a syntax error on the reserved word — or just
- *  return the wrong keys). */
-export function paramKeysOf(source: string): string[] {
-  const block = extractParamsBlock(source);
-  if (!block) return [];
-  const out: string[] = [];
-  // Accept BOTH bare identifiers (`pipeOD: { … }`) AND quoted keys
-  // (`"pipeOD": { … }` or `'pipeOD': { … }`). The K.69
-  // proposal-translator emits JSON-style quoted keys via stringify;
-  // without the quote-aware match `paramKeysOf` returned `[]` for every
-  // translator-generated primitive (dt_mule_shoe → empty → adaptive
-  // dispatcher misroutes object args as positional arg 0 → NaN coords →
-  // "Non-finite vertex [in dt_mule_shoe → r_revolve(?,96)]").
-  const keyRe = /(?:"([a-zA-Z_$][\w$]*)"|'([a-zA-Z_$][\w$]*)'|([a-zA-Z_$][\w$]*))\s*:\s*\{/g;
-  let km: RegExpExecArray | null;
-  while ((km = keyRe.exec(block))) {
-    const key = km[1] ?? km[2] ?? km[3]!;
-    // The bare-id `default: { kind: …, params: { … } }` nested descriptor
-    // case is still handled by the depth-0 check below — same as before.
-    // Bail if this match isn't at depth 0.
-    let depth = 0, inStr: string | null = null;
-    for (let p = 0; p < km.index; p++) {
-      const ch = block[p]!;
-      if (inStr) {
-        if (ch === '\\') { p++; continue; }
-        if (ch === inStr) inStr = null;
-        continue;
-      }
-      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
-      if (ch === '{') depth++;
-      else if (ch === '}') depth--;
-    }
-    if (depth !== 0) continue;
-    out.push(key);
-    // Skip past this row's matching close brace so the next regex match
-    // starts AFTER the body — `default: { ... }` inside won't surface.
-    const bodyStart = km.index + km[0].length;
-    let d = 1, j = bodyStart;
-    let s: string | null = null;
-    while (j < block.length && d > 0) {
-      const ch = block[j]!;
-      if (s) {
-        if (ch === '\\') { j += 2; continue; }
-        if (ch === s) s = null;
-        j++; continue;
-      }
-      if (ch === '"' || ch === "'" || ch === '`') { s = ch; j++; continue; }
-      if (ch === '{') d++;
-      else if (ch === '}') { d--; if (d === 0) break; }
-      j++;
-    }
-    if (d === 0) keyRe.lastIndex = j + 1;
-  }
-  return out;
-}
-
 function extractParamsBlock(source: string): string | null {
-  // Accept both bare (`params: {`) and quoted (`"params": {` / `'params': {`)
-  // — JSON.stringify-emitted metas use quoted property names. Without the
-  // optional-quote sentinel, paramKeysOf returned [] for any JSON-style
-  // meta (the build script for g_star produced one), the adaptive
-  // dispatcher misroutes the single positional arg into `p`, and the
-  // function body sees p.length = undefined → "profile needs ≥ 3 points".
-  // Mirrors the usesOf fix in primitive-loader.ts (commit 049db80).
   const open = source.match(/["']?\bparams\b["']?\s*:\s*\{/);
   if (!open) return null;
   const start = (open.index ?? 0) + open[0].length;

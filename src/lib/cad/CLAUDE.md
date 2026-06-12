@@ -14,7 +14,7 @@ src/lib/cad/
 ├── composition-layout.ts    # canvas auto-layout
 ├── composition-bake.ts      # graph bake orchestration
 ├── composition-tree.ts      # TreeNode model (docs/COMPOSITION.md)
-├── assembly-deps.ts         # parse/diff/write meta.uses dependencies
+├── param-keys.ts            # paramKeysOf(source) — ordered meta.params keys (adaptive dispatch). Drift-snapshot machinery archived 2026-06-12 with PrimitiveView
 ├── builder.ts               # legacy ComponentDef builds + LIVE render helpers (finalizeManifold, setRenderZScale, manifoldToGeo/CutVC — used by /api/primitives/preview)
 ├── library.ts               # legacy ComponentDef catalog (kept only because builder.ts imports it)
 ├── manifold-helpers.ts      # raw shape toolkit (cyl, tube, revolve, datums ref/head/tail/mate/align, place, …)
@@ -35,6 +35,10 @@ src/lib/cad/
 
 Archived (2026-06-01, in `archive/src/lib/cad/`): `exporter.ts` (SVG
 export), `assemblies-l4.ts`, `file-kinds.ts`, `pipe/`, `rules/`.
+Archived (2026-06-12): `assembly-deps.ts`'s drift-snapshot half
+(parse/diff/write/buildSnapshots + djb2/hashComponent) — only the
+now-archived PrimitiveView/CompositionEditor used it. The live
+`paramKeysOf` moved to `param-keys.ts`.
 
 **Engine primitives** (`stdlib/` + `stdstale/`): git-tracked, read-only in
 the GUI, served BEFORE the volume by the resolver, save/delete refused.

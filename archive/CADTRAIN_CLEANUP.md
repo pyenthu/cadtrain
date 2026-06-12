@@ -26,10 +26,17 @@ Kept active in `src/lib/shared/`: `GraphEditorPane`, `ParamGrid`,
 `anthropic-api`, `claude-cli`, `mime`, `temp-file`, `instance-colors`,
 `dragNumber`, `floating-tip`, `warp`, `scene-state`.
 
-Follow-up candidate: `src/lib/cad/assembly-deps.ts` was kept in the
-2026-06-01 pass solely because `PrimitiveView` imported it (see the
-"NOT moved" table below). With `PrimitiveView` now archived, re-check
-its consumers — it may be archivable next pass.
+Follow-up handled same pass: `src/lib/cad/assembly-deps.ts` was kept in
+the 2026-06-01 pass solely because `PrimitiveView` imported it (see the
+"NOT moved" table below). With `PrimitiveView` archived, only its
+`paramKeysOf` export remained live (`src/lib/server/primitive-loader.ts`).
+So the file was SPLIT: `paramKeysOf` (+ private `extractParamsBlock`) moved
+to a slim `src/lib/cad/param-keys.ts`; the drift-snapshot half
+(`parseDependencies` / `diffDependencies` / `buildSnapshots` /
+`writeDependencies` / `parseUses` + `DependencySnapshot` / `DependencyDiff`
++ `djb2` / `hashComponent` / `extractFunctionBody`) moved to
+`archive/src/lib/cad/assembly-deps.ts`. Revive the drift feature by
+re-wiring it against the resurrected editor.
 
 Revive any file with `git mv archive/src/lib/shared/<file> src/lib/shared/`.
 
