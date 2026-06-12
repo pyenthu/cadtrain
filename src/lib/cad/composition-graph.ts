@@ -696,6 +696,87 @@ export function addPolygon(
   return { graph: finalize(finalGraph), id };
 }
 
+// ─── Sketch node helpers (plan M.1) ────────────────────────────────────────
+
+/** Create a `sketch` node seeded with a flat collar (4 line ops) so it bakes
+ *  immediately; the user adds curves/fillets/chamfers from there. */
+export function addSketch(graph: Graph, parentId?: NodeId): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: SketchNode = {
+    id, type: 'sketch',
+    ops: [
+      { op: 'line', r: asLiteral(0.5), z: asLiteral(0) },
+      { op: 'line', r: asLiteral(0.5), z: asLiteral(2) },
+      { op: 'line', r: asLiteral(1.5), z: asLiteral(2) },
+      { op: 'line', r: asLiteral(1.5), z: asLiteral(0) },
+    ],
+    segments: asLiteral(64),
+  };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  const finalGraph = appendChild(next, parentId ?? graph.root, id);
+  return { graph: finalize(finalGraph), id };
+}
+
+/** Insert a sketch op after `afterIdx` (default end). line/spline carry a
+ *  point; fillet/chamfer are corner mods on the preceding point. */
+export function addSketchOp(graph: Graph, sketchId: NodeId, op: SketchOpEntry['op'], afterIdx?: number): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  let entry: SketchOpEntry;
+  if (op === 'fillet') entry = { op: 'fillet', radius: asLiteral(0.25) };
+  else if (op === 'chamfer') entry = { op: 'chamfer', dist: asLiteral(0.3) };
+  else if (op === 'spline') entry = { op: 'spline', r: asLiteral(1), z: asLiteral(1) };
+  else entry = { op: 'line', r: asLiteral(1), z: asLiteral(1) };
+  const at = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.ops.length) ? afterIdx + 1 : node.ops.length;
+  const ops = [...node.ops.slice(0, at), entry, ...node.ops.slice(at)];
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+/** Set one ArgValue field (r/z/radius/dist) on a sketch op. */
+export function setSketchOpField(graph: Graph, sketchId: NodeId, idx: number, field: 'r' | 'z' | 'radius' | 'dist', arg: ArgValue): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  if (idx < 0 || idx >= node.ops.length) return graph;
+  const ops = node.ops.map((o, i) => (i === idx ? ({ ...o, [field]: arg } as SketchOpEntry) : o));
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+/** Switch a point op between line and spline (preserves r/z). No-op on
+ *  fillet/chamfer. */
+export function setSketchOpKind(graph: Graph, sketchId: NodeId, idx: number, kind: 'line' | 'spline'): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  const o = node.ops[idx] as any;
+  if (!o || (o.op !== 'line' && o.op !== 'spline')) return graph;
+  const ops = node.ops.map((e, i) => (i === idx ? ({ op: kind, r: o.r, z: o.z } as SketchOpEntry) : e));
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+export function moveSketchOp(graph: Graph, sketchId: NodeId, idx: number, dir: -1 | 1): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  const j = idx + dir;
+  if (idx < 0 || idx >= node.ops.length || j < 0 || j >= node.ops.length) return graph;
+  const ops = [...node.ops];
+  [ops[idx], ops[j]] = [ops[j], ops[idx]];
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+export function removeSketchOp(graph: Graph, sketchId: NodeId, idx: number): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  if (node.ops.length <= 1) return graph;
+  const ops = node.ops.filter((_, i) => i !== idx);
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+export function setSketchSegments(graph: Graph, sketchId: NodeId, seg: ArgValue): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, segments: seg } } });
+}
+
 /** Update one coordinate of one entry in a polygon. Works on both vertex
  *  rows AND repeat-block rows — for a vertex it's the single (r, z) pair,
  *  for a repeat it's the EXPRESSION the loop iterates (r(i) / z(i)). */

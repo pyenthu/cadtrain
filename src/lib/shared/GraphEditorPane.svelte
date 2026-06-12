@@ -23,6 +23,13 @@
     newGraph,
     addCall,
     addPolygon,
+    addSketch,
+    addSketchOp,
+    setSketchOpField,
+    setSketchOpKind,
+    moveSketchOp,
+    removeSketchOp,
+    setSketchSegments,
     setPolygonCoord,
     addPolygonPoint,
     addPolygonRepeat,
@@ -2254,6 +2261,16 @@
       const h = typeof savedH === 'number' ? Math.max(120, savedH) : autoH;
       return { w, h };
     }
+    if (node.type === 'sketch') {
+      // header + per-op rows (line/spline = 44, fillet/chamfer = 24) +
+      // footer (segments + add-op buttons). (plan M.1)
+      const ops: any[] = (node as any).ops ?? [];
+      const rowsH = ops.reduce((a, o) => a + ((o.op === 'fillet' || o.op === 'chamfer') ? 24 : 44), 0);
+      const savedH = graph.layout[node.id]?.h;
+      const autoH = 36 + Math.max(44, rowsH) + 62;
+      const h = typeof savedH === 'number' ? Math.max(140, savedH) : autoH;
+      return { w: Math.max(w, 210), h };
+    }
     if (node.type === 'poly_repeat') {
       // 3-section card (#157) — params + bindings + loop. Variable height
       // so the bindings list can grow. Base: 154 px for params + loop +
@@ -2703,6 +2720,26 @@
   function dropPolygon() {
     closePicker();
     graph = addPolygon(graph).graph;
+  }
+  /** Drop a `sketch` node (plan M.1) — a profile producer with CAD operators
+   *  (line · spline · fillet · chamfer) that compile to (r,z) via Maker.js.
+   *  Wires into a revolve/extrude profile arg the same way a polygon does. */
+  function dropSketch() {
+    closePicker();
+    graph = addSketch(graph).graph;
+  }
+  /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
+  function argStr(a: any): string {
+    if (!a) return '0';
+    if (a.kind === 'literal') return String(a.value);
+    if (a.kind === 'param') return `p.${a.param}`;
+    return String(a.expr ?? '');
+  }
+  /** Editable string → ArgValue: a bare number → literal, else expr. */
+  function argFrom(s: string): any {
+    const t = (s ?? '').trim();
+    if (/^-?\d*\.?\d+$/.test(t)) return { kind: 'literal', value: Number(t) };
+    return { kind: 'expr', expr: t };
   }
 
   /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
@@ -4912,6 +4949,67 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
+
+              {:else if n.type === 'sketch'}
+                {@const sk = n as any}
+                {@const skConsumed = consumedSet.has(n.id)}
+                <!-- Sketch card (plan M.1) — CAD-operator profile producer:
+                     line/spline points + fillet/chamfer corner mods compile
+                     to (r,z) via Maker.js. Output socket wires into a
+                     revolve/extrude profile arg like a polygon. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg sketch"
+                  width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="10" y="22" class="ge-node-title">✐ sketch · {sk.ops.length} ops{skConsumed ? ' · 🔒' : ''}</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
+                  class:disabled={skConsumed}
+                  data-tip={skConsumed ? 'Wired into a Revolve/Extrude — delete the consumer first.' : 'Delete sketch'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (!skConsumed) deleteNode(n.id); }}>×</text>
+                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
+                <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
+                  <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="ge-sketch-ops">
+                      {#each (sk.ops as Array<any>) as op, idx (idx)}
+                        <div class="ge-sketch-op" class:corner={op.op === 'fillet' || op.op === 'chamfer'}>
+                          <span class="ge-sketch-kind">{op.op === 'line' ? '╱' : op.op === 'spline' ? '∿' : op.op === 'fillet' ? '◜' : '⊿'}<span class="ge-sketch-kind-t">{op.op}</span></span>
+                          {#if op.op === 'line' || op.op === 'spline'}
+                            <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r"
+                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
+                            <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
+                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
+                          {:else if op.op === 'fillet'}
+                            <input class="ge-sketch-in wide" type="text" value={argStr(op.radius)} title="fillet radius"
+                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'radius', argFrom((e.target as HTMLInputElement).value)); }}/>
+                          {:else}
+                            <input class="ge-sketch-in wide" type="text" value={argStr(op.dist)} title="chamfer dist"
+                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
+                          {/if}
+                          <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                            onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
+                          <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
+                            onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
+                          <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
+                            onclick={() => { graph = removeSketchOp(graph, n.id, idx); }}>×</button>
+                        </div>
+                      {/each}
+                    </div>
+                    <div class="ge-sketch-foot">
+                      <button class="ge-sketch-add" type="button" title="Add a line segment" onclick={() => { graph = addSketchOp(graph, n.id, 'line'); }}>+ line</button>
+                      <button class="ge-sketch-add" type="button" title="Add a Bézier spline" onclick={() => { graph = addSketchOp(graph, n.id, 'spline'); }}>+ spline</button>
+                      <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { graph = addSketchOp(graph, n.id, 'fillet'); }}>+ fillet</button>
+                      <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { graph = addSketchOp(graph, n.id, 'chamfer'); }}>+ chamfer</button>
+                    </div>
+                  </div>
+                </foreignObject>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+
               {:else if n.type === 'poly_repeat'}
                 {@const pr = n as any}
                 <!-- PolyRepeat card (#157, 2026-06-10) — generates N points
@@ -5907,6 +6005,9 @@
       <button class="ge-pick-item" type="button" onclick={dropPolygon}>
         <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">2D pts</span>
       </button>
+      <button class="ge-pick-item" type="button" onclick={dropSketch}>
+        <span class="ge-pick-icon">✐</span><span class="ge-pick-name">sketch</span><span class="ge-pick-hint">line·arc·fillet</span>
+      </button>
       <div class="ge-cm-sep"></div>
       <button class="ge-pick-item parent" type="button"
         class:on={submenuKey === 'solids'}
@@ -6539,6 +6640,25 @@
     padding: 3px 7px; border-radius: 4px; white-space: nowrap;
     box-shadow: 0 2px 6px rgba(0,0,0,0.35);
   }
+  /* ─── Sketch card (plan M.1) ─────────────────────────────────────────── */
+  .ge-node-bg.sketch { fill: #faf5ff; stroke: #9333ea; }
+  .ge-sketch { font: 11px ui-monospace, monospace; color: #1f2937; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .ge-sketch-ops { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .ge-sketch-op { display: flex; align-items: center; gap: 2px; padding: 2px; margin-bottom: 2px; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
+  .ge-sketch-op.corner { background: rgba(243,232,255,0.85); border-color: #d8b4fe; }
+  .ge-sketch-kind { display: inline-flex; align-items: center; gap: 2px; width: 56px; flex: none; font: 600 9px ui-monospace, monospace; color: #7c3aed; }
+  .ge-sketch-kind-t { text-transform: uppercase; letter-spacing: 0.3px; }
+  .ge-sketch-in { width: 100%; min-width: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; box-sizing: border-box; cursor: text; }
+  .ge-sketch-in.wide { flex: 1 1 auto; }
+  .ge-sketch-in:hover { background: #faf5ff; }
+  .ge-sketch-in:focus { outline: 1px solid #7c3aed; background: #fff; }
+  .ge-sketch-btn { width: 14px; height: 17px; padding: 0; flex: none; background: #fff; border: 1px solid #d6d3d1; border-radius: 2px; font: 8px Arial; color: #57534e; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .ge-sketch-btn:hover:not(:disabled) { background: #f3e8ff; color: #6b21a8; }
+  .ge-sketch-btn:disabled { opacity: 0.35; cursor: default; }
+  .ge-sketch-btn.del:hover:not(:disabled) { background: #fee2e2; color: #991b1b; }
+  .ge-sketch-foot { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .ge-sketch-add { padding: 2px 6px; font: 600 10px Arial; background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; border-radius: 3px; cursor: pointer; }
+  .ge-sketch-add:hover { background: #e9d5ff; }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.5px;
