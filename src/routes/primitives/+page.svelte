@@ -421,7 +421,8 @@
   /** Open an AI-generated graph in a fresh tab. The suggested id is
    *  de-duped against already-open tabs so two generations with the same
    *  suggestion don't collide (the volume itself is untouched until the
-   *  user saves). */
+   *  user saves). Retained for the empty-canvas / future "open as new"
+   *  path; the in-editor ✨ now generates into the CURRENT tab instead. */
   function openGeneratedTab(id: string, seedGraph: any) {
     let unique = id;
     let n = 2;
@@ -429,6 +430,15 @@
     const key = nextKey++;
     tabs = [...tabs, { id: unique, key, seedGraph }];
     activeKey = key;
+  }
+  /** In-place AI generation (2026-06-12) — the pane already hydrated the
+   *  proposed graph into the ACTIVE tab; this just relabels that tab to
+   *  the suggested id. props.id only seeds the pane on mount, so changing
+   *  it here is a safe relabel (no remount, no refetch). */
+  function renameActiveTab(id: string) {
+    if (activeKey == null || !id) return;
+    tabs = tabs.map((t) => (t.key === activeKey ? { ...t, id } : t));
+    persistTabs();
   }
   function activate(key: number) { activeKey = key; }
   function persistTabs() {
@@ -863,7 +873,7 @@
                  WebGL context (browser cap ~16). Inactive tabs keep all
                  editor state mounted; their canvas remounts on activate. -->
             <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph}
-              onGenerated={(id, graph) => openGeneratedTab(id, graph)} />
+              onGenerated={(id) => renameActiveTab(id)} />
           </div>
         {/each}
       </div>

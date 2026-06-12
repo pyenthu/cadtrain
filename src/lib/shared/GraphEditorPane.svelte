@@ -1165,7 +1165,24 @@
       const j = await r.json();
       if (!j?.graph) { aiError = 'no graph in response'; return; }
       aiCandidates = Array.isArray(j.candidates) ? j.candidates : [];
-      props.onGenerated?.(String(j.id || 'g_generated'), j.graph, aiCandidates);
+      // Hydrate the proposed graph INTO the CURRENT tab (in place) — the
+      // user generates from the open editor and the changes land HERE,
+      // not in a new tab (2026-06-12). Auto-layout since a generated
+      // graph carries no saved positions; set exemplarId so the first
+      // Save lands under the suggested name.
+      try {
+        graph = autoLayoutGraph(hydrateGraph(j.graph));
+      } catch (e) {
+        console.warn('[graph-editor] generated graph failed to hydrate', e);
+        aiError = 'the generated graph could not be loaded';
+        return;
+      }
+      const gid = String(j.id || '').trim();
+      if (/^[a-z_][a-z0-9_]*$/i.test(gid)) exemplarId = gid;
+      // Notify the parent so it can rename the active tab's label (it must
+      // NOT open a new tab — props.id only seeds on mount, so updating it
+      // is a safe relabel, not a remount).
+      props.onGenerated?.(exemplarId, j.graph, aiCandidates);
       aiPrompt = '';
       aiMenuOpen = false;
     } catch (e: any) {
@@ -3104,6 +3121,11 @@
   function autoLayout() {
     undoLayout = { ...graph.layout };
     graph = autoLayoutGraph(graph);
+    // Auto-layout ALWAYS finishes with a push-apart pass (2026-06-12) —
+    // the depth-columns layout can still leave same-depth cards
+    // overlapping, and the user asked for one button, not two. Skip the
+    // undo-snapshot (autoLayout already took it).
+    applyPushApart();
   }
   function undoAutoLayout() {
     if (!undoLayout) return;
@@ -3114,9 +3136,13 @@
   // bounding-box separation. Includes the tacked params card as a
   // viewport-fixed obstacle so nodes get pushed clear of it too.
   // The same undoLayout snapshot is reused so the user can ↶ undo this
-  // just like an auto-layout.
+  // just like an auto-layout. (Standalone entry point kept for the ↶-undo
+  // semantics; auto-layout calls applyPushApart directly without re-snapshotting.)
   function pushApart() {
     undoLayout = { ...graph.layout };
+    applyPushApart();
+  }
+  function applyPushApart() {
     // Convert the params card's viewport rect to graph space so it
     // participates in the force iteration. As the user pans, the card's
     // graph-space position shifts inversely; we recompute on each click.
@@ -3520,15 +3546,18 @@
       bind:this={settingsBtnEl}
       onclick={() => canvasMenuOpen ? (canvasMenuOpen = false) : openCanvasMenu()}
       class:on={canvasMenuOpen}
-      data-tip="Layout tools — auto-layout, push apart, edge bounds">⚙</button>
+      data-tip="Layout tools — auto-layout (+ push apart), edge bounds">⚙</button>
+    <div class="ge-vrail-spacer"></div>
     {#if props.onGenerated}
+      <!-- ✨ AI generate — parked at the BOTTOM of the rail, separated
+           from the top action cluster by the flex spacer + its own sep. -->
       <button class="ge-vrail-btn ai" type="button"
         bind:this={aiBtnEl}
         class:on={aiMenuOpen}
         onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
         data-tip="Generate a part from a description (AI)">✨</button>
+      <div class="ge-vrail-sep"></div>
     {/if}
-    <div class="ge-vrail-spacer"></div>
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
@@ -3585,15 +3614,9 @@
       style="left: {canvasMenuPos.left}px; top: {canvasMenuPos.top}px">
       <button class="ge-cm-row action" type="button"
         onclick={() => { autoLayout(); canvasMenuOpen = false; }}
-        title="Rearrange nodes left-to-right by depth">
+        title="Rearrange nodes left-to-right by depth, then push overlapping cards apart">
         <span class="ge-cm-icon">📐</span>
         <span class="ge-cm-label">Auto-layout</span>
-      </button>
-      <button class="ge-cm-row action" type="button"
-        onclick={() => { pushApart(); canvasMenuOpen = false; }}
-        title="Resolve overlapping cards via pairwise separation">
-        <span class="ge-cm-icon">🧲</span>
-        <span class="ge-cm-label">Push apart</span>
       </button>
       <div class="ge-cm-sep"></div>
       <label class="ge-cm-row check"
