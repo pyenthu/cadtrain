@@ -1217,17 +1217,22 @@
   /* Landscape keeps the sidebar on the left (wide enough). Portrait stacks:
      a capped, scrollable sidebar on top, the editor below. */
   @media (max-width: 820px) and (orientation: portrait) {
+    /* The divider is display:none here, so it leaves the grid entirely —
+       only TWO items auto-place (rail, main). The row template must have
+       exactly two tracks; a phantom middle `0` row would drop .prim-main
+       onto it and collapse the editor to zero height (the "blank, no tabs"
+       bug). Rows: [sidebar] [editor]. */
     .prim-root {
       grid-template-columns: 1fr !important;
-      grid-template-rows: minmax(90px, 38vh) 0 minmax(0, 1fr) !important;
+      grid-template-rows: minmax(90px, 38vh) minmax(0, 1fr) !important;
     }
     .prim-rail-divider { display: none; }
     .prim-rail { border-right: none; border-bottom: 1px solid #e5e7eb; }
-    .prim-root.collapsed { grid-template-rows: 0 0 minmax(0, 1fr) !important; }
+    .prim-root.collapsed { grid-template-rows: 0 minmax(0, 1fr) !important; }
     /* Nothing open yet → let the sidebar fill the screen (the empty editor
        below would otherwise be wasted white space). Splits once a part opens. */
-    .prim-root.no-tabs { grid-template-rows: minmax(0, 1fr) 0 0 !important; }
-    .prim-root.no-tabs.collapsed { grid-template-rows: 0 0 minmax(0, 1fr) !important; }
+    .prim-root.no-tabs { grid-template-rows: minmax(0, 1fr) 0 !important; }
+    .prim-root.no-tabs.collapsed { grid-template-rows: 0 minmax(0, 1fr) !important; }
   }
 
   /* ─── Tabbed main area ────────────────────────────────────────────── */
