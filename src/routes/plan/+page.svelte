@@ -364,7 +364,7 @@
 
 <div class="page">
   <header class="head">
-    <div>
+    <div class="head-title">
       <h1>Plan</h1>
       <p class="sub">
         {#if viewMode === 'done'}
@@ -400,19 +400,7 @@
         </button>
       {/if}
     {/each}
-  </div>
-
-  <!-- Controls + priority legend -->
-  <div class="controls">
-    <label>Sort:</label>
-    <select bind:value={sortMode}>
-      <option value="bundle">Bundle order</option>
-      <option value="priority">Priority</option>
-      <option value="start">Start date</option>
-      <option value="id">ID</option>
-    </select>
-    <button onclick={expandAll}>Expand all</button>
-    <button onclick={collapseAll}>Collapse all</button>
+    <!-- Priority legend shares the bundle-legend row (pushed right). -->
     <div class="pri-legend">
       {#each Object.entries(PRIORITY_COLOR) as [key, color]}
         {#if countsByPri[key as Priority]}
@@ -424,6 +412,19 @@
       {/each}
       <span class="pri-chip"><span class="dot active-dot"></span>active</span>
     </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label>Sort:</label>
+    <select bind:value={sortMode}>
+      <option value="bundle">Bundle order</option>
+      <option value="priority">Priority</option>
+      <option value="start">Start date</option>
+      <option value="id">ID</option>
+    </select>
+    <button onclick={expandAll}>Expand all</button>
+    <button onclick={collapseAll}>Collapse all</button>
   </div>
 
   <div class="chart-wrap">
@@ -619,15 +620,16 @@ Click for plan details</title>
 <style>
   .page { padding: 16px 24px; height: 100%; overflow: auto; background: #f8fafc; box-sizing: border-box; }
   .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .head-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .head h1 { margin: 0; font-size: 24px; font-weight: 600; color: #1e293b; }
-  .sub { margin: 2px 0 0; font-size: 13px; color: #64748b; }
+  .sub { margin: 0; font-size: 13px; color: #64748b; white-space: nowrap; }
   .head-controls { display: flex; align-items: center; gap: 12px; }
   .toggle { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 12px; }
   .toggle button { padding: 4px 12px; border: none; background: #fff; color: #475569; cursor: pointer; font: inherit; }
   .toggle button:hover { background: #f1f5f9; }
   .toggle button.on { background: #334155; color: #fff; font-weight: 600; }
 
-  .legend { display: flex; flex-wrap: wrap; gap: 5px 6px; margin-bottom: 10px; }
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; margin-bottom: 10px; }
   .legend-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px;
     border: 1px solid #e2e8f0; border-radius: 4px; background: #f1f5f9; font-size: 11px; color: #334155; cursor: pointer; }
   .legend-chip.active { background: #fff; border-color: #cbd5e1; }
