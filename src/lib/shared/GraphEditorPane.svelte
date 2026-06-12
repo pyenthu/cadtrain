@@ -2957,6 +2957,21 @@
     drafts?: { r: string; z: string };
     x: number; y: number;
   } | null>(null);
+  /** Vertex highlight (2026-06-12) — the vertex currently being EDITED (its
+   *  expr popover is open) or HOVERED on the card. Reflected in BOTH the
+   *  card row (blue outline) and the profile SVGs (wider dot) so the user
+   *  can see which point an input maps to. */
+  let hoverVertex = $state<{ polyId: string; idx: number } | null>(null);
+  let hlVertex = $derived.by<{ polyId: string; idx: number } | null>(() => {
+    if (polyExprPop && polyExprPop.polygonId && typeof polyExprPop.idx === 'number') {
+      return { polyId: polyExprPop.polygonId, idx: polyExprPop.idx };
+    }
+    return hoverVertex;
+  });
+  function setHoverVertex(polyId: string, idx: number) { hoverVertex = { polyId, idx }; }
+  function clearHoverVertex(polyId: string, idx: number) {
+    if (hoverVertex && hoverVertex.polyId === polyId && hoverVertex.idx === idx) hoverVertex = null;
+  }
   /** Format an ArgValue as a string the popover textarea can edit. */
   function argToDraftStr(v: any): string {
     if (!v) return '';
@@ -4707,7 +4722,11 @@
                           </div>
                         </div>
                       {:else}
-                      <div class="ge-poly-vertex">
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <div class="ge-poly-vertex"
+                        class:vtx-active={hlVertex && hlVertex.polyId === n.id && hlVertex.idx === idx}
+                        onmouseenter={() => setHoverVertex(n.id, idx)}
+                        onmouseleave={() => clearHoverVertex(n.id, idx)}>
                         <!-- Axis-0 sub-row (top): [socket-gutter w/ 🗑 unwire] + label
                              + input + ƒ + reorder + insert-above. The 🗑 sits IN the
                              gutter column directly beside the SVG socket on the left
@@ -5202,8 +5221,12 @@
                       {@const draggable = !!entry && entry.kind === 'point' && !parametricVertex && !fromLoop}
                       {@const fill = fromLoop ? '#a855f7' : (parametricVertex ? '#6d28d9' : '#991b1b')}
                       {@const stroke = fromLoop ? '#6d28d9' : (parametricVertex ? '#a78bfa' : 'none')}
+                      {@const isHl = !!hlVertex && hlVertex.polyId === rootPolygonId && entryIdx === hlVertex.idx}
+                      {#if isHl}
+                        <circle cx={p[0]} cy={p[1]} r={ph * 2.6} fill="none" stroke="#2563eb" stroke-width={ph * 0.6} pointer-events="none"/>
+                      {/if}
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle cx={p[0]} cy={p[1]} r={ph}
+                      <circle cx={p[0]} cy={p[1]} r={isHl ? ph * 1.7 : ph}
                         fill={fill}
                         stroke={stroke}
                         stroke-width={fromLoop || parametricVertex ? ph * 0.5 : 0}
@@ -5793,8 +5816,12 @@
                  can tell which dots came from a generator at a glance. -->
             {@const fill = fromLoop ? '#a855f7' : (parametricVertex ? '#6d28d9' : '#991b1b')}
             {@const stroke = fromLoop ? '#6d28d9' : (parametricVertex ? '#a78bfa' : 'none')}
+            {@const isHl = !!hlVertex && hlVertex.polyId === polyPreviewFor && entryIdx === hlVertex.idx}
+            {#if isHl}
+              <circle cx={p[0]} cy={p[1]} r={dotR * 2.6} fill="none" stroke="#2563eb" stroke-width={dotR * 0.6} pointer-events="none"/>
+            {/if}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <circle cx={p[0]} cy={p[1]} r={dotR}
+            <circle cx={p[0]} cy={p[1]} r={isHl ? dotR * 1.7 : dotR}
               fill={fill}
               stroke={stroke}
               stroke-width={fromLoop || parametricVertex ? dotR * 0.5 : 0}
@@ -6459,6 +6486,13 @@
   }
   .ge-poly-vertex:last-child { margin-bottom: 0; }
   .ge-poly-vertex:hover { background: #fff7ed; border-color: #fdba74; }
+  /* The vertex being edited / hovered — blue outline mirrors the wider
+     blue dot in the profile SVG so the row↔point correspondence is clear. */
+  .ge-poly-vertex.vtx-active {
+    background: #eff6ff;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px #2563eb;
+  }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.5px;
