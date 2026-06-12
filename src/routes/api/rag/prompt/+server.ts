@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import { topK } from '$lib/server/rag-query';
 import { buildRagPrompt } from '$lib/server/rag-prompt';
 import { createAnthropicClient } from '$lib/shared/anthropic-api';
+import { tryL1 } from '$lib/server/rag-l1';
 
 /**
  * POST /api/rag/prompt → { prompt, k? } → { id, candidates, graph }
@@ -45,6 +46,11 @@ export const POST = async ({ request }: { request: Request }) => {
   const prompt = String(body?.prompt ?? '').trim();
   if (!prompt) throw error(400, 'prompt (a part description) is required');
   const k = Math.min(10, Math.max(1, Number(body?.k) || 5));
+
+  // L1 (K.77): a known, common part resolves to a ready-to-bake graph
+  // instantly + offline — 0 Claude tokens, no volume read. Miss → L2.
+  const l1 = tryL1(prompt);
+  if (l1) return json({ id: l1.id, candidates: [l1.id], graph: l1.graph, tier: 'L1' });
 
   const exemplars = await topK(prompt, k);
   const { system, user } = buildRagPrompt(prompt, exemplars);

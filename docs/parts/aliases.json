@@ -1,0 +1,12 @@
+{
+  "_doc": "L1 dictionary for /api/rag/prompt (K.77). Human-readable mirror of the alias table in src/lib/server/rag-l1.ts — the RUNTIME uses the inlined copy there (so it bundles into the prod build where docs/ isn't shipped). Each entry maps natural-language phrases to a self-contained revolve shape that resolves instantly + offline (0 Claude tokens, no volume read). Grow this incrementally — every common 'describe a part' phrase that should never need Claude.",
+  "version": 1,
+  "shapes": ["collar_flat", "collar_tapered", "collar_rounded", "tube", "shaft"],
+  "entries": [
+    { "id": "collar_flat",    "shape": "collar_flat",    "phrases": ["flat collar", "plain collar", "square collar", "collar"] },
+    { "id": "collar_tapered", "shape": "collar_tapered", "phrases": ["tapered collar", "chamfered collar", "bevelled collar", "beveled collar"] },
+    { "id": "collar_rounded", "shape": "collar_rounded", "phrases": ["rounded collar", "radiused collar"] },
+    { "id": "tube",           "shape": "tube",           "phrases": ["tube", "tubing", "pup joint", "tubing pup", "pup", "hollow tube"] },
+    { "id": "shaft",          "shape": "shaft",          "phrases": ["shaft", "rod", "solid cylinder", "solid shaft", "cylinder"] }
+  ]
+}
