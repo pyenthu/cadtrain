@@ -3564,17 +3564,17 @@
       onclick={() => canvasMenuOpen ? (canvasMenuOpen = false) : openCanvasMenu()}
       class:on={canvasMenuOpen}
       data-tip="Layout tools — auto-layout (+ push apart), edge bounds">⚙</button>
+    <!-- ✨ AI generate sits CENTERED in the gap between ⚙ and reset:
+         an equal flex spacer above and below floats it to the midpoint. -->
     <div class="ge-vrail-spacer"></div>
     {#if props.onGenerated}
-      <!-- ✨ AI generate — parked at the BOTTOM of the rail, separated
-           from the top action cluster by the flex spacer + its own sep. -->
       <button class="ge-vrail-btn ai" type="button"
         bind:this={aiBtnEl}
         class:on={aiMenuOpen}
         onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
         data-tip="Generate a part from a description (AI)">✨</button>
-      <div class="ge-vrail-sep"></div>
     {/if}
+    <div class="ge-vrail-spacer"></div>
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
