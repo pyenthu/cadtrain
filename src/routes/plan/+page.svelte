@@ -319,6 +319,23 @@
     return Math.round(f * 10) / 10;
   });
 
+  // ── Calendar axis (today-anchored) ───────────────────────────────────
+  // The `start` values are sequence positions, NOT literal calendar weeks,
+  // so we don't hardcode a calendar epoch. Instead we pin the work frontier
+  // (doneFrontier) to TODAY and read every other week off that: the gantt
+  // shows real dates with today at the origin, and forward items dated out
+  // from today. Self-maintaining — re-anchors every day + every time an
+  // item flips to done. (ssr is off, so `new Date()` client-side is fine.)
+  const WEEK_MS = 7 * 24 * 3600 * 1000;
+  const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+  /** Calendar date for an ABSOLUTE sequence-week (frontier ⇒ today). */
+  function dateForWeek(absW: number): Date {
+    return new Date(TODAY.getTime() + (absW - doneFrontier) * WEEK_MS);
+  }
+  function fmtDate(d: Date): string {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   const activeIds = $derived(new Set(tasks.filter(t => t.status === 'active').map(t => t.id)));
   const countsByPri = $derived.by<Record<Priority, number>>(() => {
     const out: Record<Priority, number> = { high: 0, medium: 0, large: 0, low: 0 };
@@ -350,7 +367,7 @@
         {#if viewMode === 'done'}
           {doneCount} shipped · click any item for detail
         {:else}
-          {openCount} open · {BUNDLES.length} bundles · weeks since May 2026 · now ≈ W{doneFrontier} · horizon W{maxEnd}
+          {openCount} open · {BUNDLES.length} bundles · today = {fmtDate(TODAY)} · horizon {fmtDate(dateForWeek(maxEnd))}
         {/if}
       </p>
     </div>
@@ -416,24 +433,27 @@
     >
       <!-- Grid + week labels -->
       <g transform="translate({LABEL_W}, 0)">
+        <!-- Date axis: a gridline every week, a DATE label every 2 weeks
+             (each computed from the today-anchored frontier). -->
         {#each Array(totalWeeks + 1) as _, w}
+          {@const absW = w + minStart}
           <line x1={w * WEEK_PX} y1={0} x2={w * WEEK_PX} y2={chartHeight}
-                stroke={w % 4 === 0 ? '#cbd5e1' : '#e2e8f0'} stroke-width={w % 4 === 0 ? 1 : 0.5} />
-          {#if w < totalWeeks}
-            <text x={w * WEEK_PX + 6} y={16} fill="#64748b" style="font: 10px ui-monospace, monospace">
-              W{(w + minStart) >= 0 ? '+' : ''}{w + minStart}
+                stroke={w % 2 === 0 ? '#cbd5e1' : '#eef2f6'} stroke-width={w % 2 === 0 ? 1 : 0.5} />
+          {#if w < totalWeeks && w % 2 === 0}
+            <text x={w * WEEK_PX + 5} y={16} fill="#64748b" style="font: 9.5px system-ui">
+              {fmtDate(dateForWeek(absW))}
             </text>
           {/if}
         {/each}
 
         <line x1={0} y1={HEAD_H - 2} x2={chartWidth} y2={HEAD_H - 2} stroke="#cbd5e1" stroke-width="1" />
 
-        <!-- Now marker — the work frontier, derived as the latest END
-             among done items (self-maintaining; was hardcoded weekX(0),
-             which pinned "Today" to the May-2026 epoch forever). -->
+        <!-- Today marker — pinned to the work frontier (latest done END),
+             which the axis anchors to TODAY. Self-maintaining: advances as
+             items flip to done and as the calendar advances. -->
         <line x1={weekX(doneFrontier)} y1={HEAD_H} x2={weekX(doneFrontier)} y2={chartHeight}
               stroke="#ef4444" stroke-width="2" stroke-dasharray="4 3" />
-        <text x={weekX(doneFrontier) + 4} y={HEAD_H + 12} fill="#dc2626" style="font: 10px system-ui; font-weight: 600">Now · W{doneFrontier}</text>
+        <text x={weekX(doneFrontier) + 4} y={HEAD_H + 12} fill="#dc2626" style="font: 10px system-ui; font-weight: 700">Today · {fmtDate(TODAY)}</text>
       </g>
 
       <!-- Left label column header -->
@@ -502,7 +522,7 @@
             >
               <title>{codeFor(t.id)} (#{t.id}) — {t.title}
 Bundle: {t.bundle} · Priority: {t.priority} · Status: {t.status}
-W{t.start} + {t.weeks}w
+{fmtDate(dateForWeek(t.start))} → {fmtDate(dateForWeek(t.start + t.weeks))}
 Click for plan details</title>
             </rect>
 
@@ -537,7 +557,7 @@ Click for plan details</title>
           <span class="dot-sm"></span>
           <span class:active-text={selectedTask.status === 'active'}>{selectedTask.status}</span>
           <span class="dot-sm"></span>
-          <span>W{selectedTask.start} → W{Math.round((selectedTask.start + selectedTask.weeks) * 10) / 10}</span>
+          <span>{fmtDate(dateForWeek(selectedTask.start))} → {fmtDate(dateForWeek(selectedTask.start + selectedTask.weeks))}</span>
         </div>
         <h2>{selectedTask.title}</h2>
         <button class="modal-close" onclick={() => selectedId = null} aria-label="Close">✕</button>
