@@ -73,7 +73,22 @@ function predecessorsOf(graph: Graph, id: NodeId): NodeId[] {
   // properties of undefined (reading 'filter')" — which crashed
   // autoLayoutGraph on EVERY graph carrying an inline polygon (i.e. every
   // revolve/extrude part). 2026-06-12.
-  if (n.type === 'call' || n.type === 'polygon' || n.type === 'poly_repeat') return [];
+  // polygon / poly_repeat are leaf producers — no predecessors.
+  if (n.type === 'polygon' || n.type === 'poly_repeat') return [];
+  // A Call consumes any polygon wired through a profile arg whose expr is
+  // `__POLY__<id>` (revolve/extrude profiles). Modeling that as a data-flow
+  // edge puts the polygon in the column BEFORE its consumer instead of
+  // piling both into depth 0 — the K.78 layout-quality fix. Other arg kinds
+  // (literal/param/plain expr) carry no node inputs.
+  if (n.type === 'call') {
+    const out: NodeId[] = [];
+    for (const v of Object.values((n as any).args ?? {})) {
+      const expr = v && (v as any).kind === 'expr' ? String((v as any).expr ?? '') : '';
+      const m = expr.match(/__POLY__([A-Za-z0-9_]+)/);
+      if (m && graph.nodes[m[1]] && !out.includes(m[1])) out.push(m[1]);
+    }
+    return out;
+  }
   if (n.type === 'method') {
     const out: NodeId[] = [];
     if (n.obj && graph.nodes[n.obj]) out.push(n.obj);

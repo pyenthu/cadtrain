@@ -3165,7 +3165,7 @@
     undoLayout = { ...graph.layout };
     // Bigger row gap than the 40px default — real cards are 80-200px tall,
     // so tight rows overlap heavily and leave push-apart too much to do.
-    graph = autoLayoutGraph(graph, { rowGap: 160 });
+    graph = autoLayoutGraph(graph, { rowGap: 220 });
     // Auto-layout ALWAYS finishes with a push-apart pass (2026-06-12) — the
     // depth-columns layout can still leave same-depth cards overlapping,
     // and the user asked for one button, not two. PURE separation: pass
@@ -3264,8 +3264,28 @@
     // (Phase 22b — wire repulsion). Same socket helpers as the SVG render
     // path, so the obstacles match what the user sees.
     const wires = collectWires();
+    // Real rendered card heights from the DOM (the nodeSize estimate
+    // undersizes cards with foreignObject param/accordion bodies, so
+    // forceSeparate thought cards cleared when they visually overlapped —
+    // K.78). getBBox is in the card's local graph units, so no zoom
+    // division needed. Fall back to the estimate when a card isn't in the
+    // DOM yet.
+    const realH = new Map<string, number>();
+    if (typeof document !== 'undefined') {
+      for (const el of Array.from(document.querySelectorAll('g.ge-node[data-node-id]'))) {
+        const nid = el.getAttribute('data-node-id');
+        if (!nid) continue;
+        try { const bb = (el as any).getBBox?.(); if (bb && bb.height > 0) realH.set(nid, bb.height); } catch { /* detached */ }
+      }
+    }
     graph = forceSeparate(graph, {
-      nodeSize: (id) => nodeSize(graph.nodes[id]),
+      nodeSize: (id) => {
+        const est = nodeSize(graph.nodes[id]);
+        const measured = realH.get(id);
+        // Use the larger of estimate / measured, with a sane floor so
+        // small estimates can't pack cards too tightly.
+        return { w: est.w, h: Math.max(est.h, measured ?? 0, 120) };
+      },
       padding: 24,
       obstacles,
       wires,
