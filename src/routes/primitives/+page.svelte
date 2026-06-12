@@ -526,7 +526,7 @@
      name (with `white-space: nowrap` the min-content is the full
      name), blowing the rail out to 600 px+ when any row had a long id.
      A fixed first track from --rail-w pins it to the resize handle. -->
-<div class="prim-root" class:collapsed={sidebarCollapsed} style="--rail-w: {sidebarCollapsed ? 0 : railWidth}px">
+<div class="prim-root" class:collapsed={sidebarCollapsed} class:no-tabs={tabs.length === 0} style="--rail-w: {sidebarCollapsed ? 0 : railWidth}px">
   <!-- Floating expand handle — only shown when the sidebar is collapsed. -->
   {#if sidebarCollapsed}
     <button class="prim-rail-expand" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
@@ -1214,11 +1214,15 @@
   @media (max-width: 820px) and (orientation: portrait) {
     .prim-root {
       grid-template-columns: 1fr !important;
-      grid-template-rows: minmax(90px, 32vh) 0 minmax(0, 1fr) !important;
+      grid-template-rows: minmax(90px, 38vh) 0 minmax(0, 1fr) !important;
     }
     .prim-rail-divider { display: none; }
     .prim-rail { border-right: none; border-bottom: 1px solid #e5e7eb; }
     .prim-root.collapsed { grid-template-rows: 0 0 minmax(0, 1fr) !important; }
+    /* Nothing open yet → let the sidebar fill the screen (the empty editor
+       below would otherwise be wasted white space). Splits once a part opens. */
+    .prim-root.no-tabs { grid-template-rows: minmax(0, 1fr) 0 0 !important; }
+    .prim-root.no-tabs.collapsed { grid-template-rows: 0 0 minmax(0, 1fr) !important; }
   }
 
   /* ─── Tabbed main area ────────────────────────────────────────────── */
