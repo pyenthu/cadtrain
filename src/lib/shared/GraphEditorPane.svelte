@@ -82,6 +82,7 @@
   import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
+  import { compileSketch, type SketchOp } from '$lib/cad/sketch';
   import { dragNumber } from '$lib/shared/dragNumber';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
 
@@ -2742,6 +2743,93 @@
     return { kind: 'expr', expr: t };
   }
 
+  // ─── Full-tab sketch editor (plan M.2) ─────────────────────────────────
+  let editingSketchId = $state<string | null>(null);
+  let sketchTool = $state<'select' | 'line' | 'spline' | 'fillet' | 'chamfer'>('select');
+  let sketchSvgEl = $state<SVGSVGElement | null>(null);
+  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; }
+  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; }
+
+  /** Param scope {name: default} for evaluating ArgValue fields to numbers. */
+  function sketchParamScope(): Record<string, number> {
+    const s: Record<string, number> = {};
+    for (const [k, v] of Object.entries(graph.params)) s[k] = Number((v as any)?.default ?? 0);
+    return s;
+  }
+  function evalArg(a: any, p: Record<string, number>): number {
+    if (!a) return 0;
+    if (a.kind === 'literal') return Number(a.value) || 0;
+    if (a.kind === 'param') return Number(p[a.param] ?? 0);
+    try { return Number(new Function('p', `with(p){ return (${String(a.expr)}); }`)(p)) || 0; } catch { return 0; }
+  }
+  /** The active sketch resolved to numbers: compiled outline + draggable
+   *  anchors + extents (for the editor viewBox). */
+  let sketchEditor = $derived.by(() => {
+    if (!editingSketchId) return null;
+    const node = graph.nodes[editingSketchId] as any;
+    if (!node || node.type !== 'sketch') return null;
+    const p = sketchParamScope();
+    const ops: SketchOp[] = node.ops.map((o: any) => {
+      if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p) };
+      if (o.op === 'spline') return { op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p), ctrl: (o.ctrl ?? []).map((c: any) => [evalArg(c[0], p), evalArg(c[1], p)] as [number, number]) };
+      if (o.op === 'fillet') return { op: 'fillet', radius: evalArg(o.radius, p) };
+      return { op: 'chamfer', dist: evalArg(o.dist, p) };
+    });
+    const seg = node.segments ? evalArg(node.segments, p) : 64;
+    let pts: [number, number][] = [];
+    try { pts = compileSketch(ops, seg); } catch { pts = []; }
+    const anchors: { opIdx: number; r: number; z: number; kind: string; literal: boolean }[] = [];
+    node.ops.forEach((o: any, i: number) => {
+      if (o.op === 'line' || o.op === 'spline') {
+        anchors.push({ opIdx: i, r: evalArg(o.r, p), z: evalArg(o.z, p), kind: o.op, literal: o.r?.kind === 'literal' && o.z?.kind === 'literal' });
+      }
+    });
+    const all = [...pts, ...anchors.map((a) => [a.r, a.z] as [number, number])];
+    const xs = all.map((q) => q[0]); const ys = all.map((q) => q[1]);
+    const minX = Math.min(0, ...xs), maxX = Math.max(1, ...xs), minY = Math.min(0, ...ys), maxY = Math.max(1, ...ys);
+    return { node, ops, pts, anchors, ext: { minX, maxX, minY, maxY } };
+  });
+
+  /** Map a pointer event to sketch (r,z) coords via the SVG viewBox. */
+  function sketchEventToCoord(ev: PointerEvent): [number, number] | null {
+    if (!sketchSvgEl || !sketchEditor) return null;
+    const rect = sketchSvgEl.getBoundingClientRect();
+    const { minX, maxX, minY, maxY } = sketchEditor.ext;
+    const pad = Math.max(maxX - minX, maxY - minY) * 0.12 + 0.2;
+    const vbW = (maxX - minX) + 2 * pad, vbH = (maxY - minY) + 2 * pad;
+    const fx = (ev.clientX - rect.left) / rect.width;
+    const fy = (ev.clientY - rect.top) / rect.height;
+    const r = (minX - pad) + fx * vbW;
+    const z = (minY - pad) + fy * vbH;   // SVG y-down == z-down (revolve), so no flip
+    return [Math.round(r * 1000) / 1000, Math.round(z * 1000) / 1000];
+  }
+  let sketchDrag = $state<{ opIdx: number } | null>(null);
+  function sketchAnchorDown(ev: PointerEvent, opIdx: number, literal: boolean) {
+    ev.stopPropagation();
+    if (sketchTool !== 'select' || !literal) return;
+    sketchDrag = { opIdx };
+    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+  }
+  function sketchAnchorMove(ev: PointerEvent) {
+    if (!sketchDrag || !editingSketchId) return;
+    const c = sketchEventToCoord(ev); if (!c) return;
+    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'r', { kind: 'literal', value: c[0] });
+    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'z', { kind: 'literal', value: c[1] });
+  }
+  function sketchAnchorUp() { sketchDrag = null; }
+  /** Click on the canvas with a tool active → add an op. */
+  function sketchCanvasClick(ev: PointerEvent) {
+    if (!editingSketchId || sketchTool === 'select') return;
+    if (sketchTool === 'fillet') { graph = addSketchOp(graph, editingSketchId, 'fillet'); return; }
+    if (sketchTool === 'chamfer') { graph = addSketchOp(graph, editingSketchId, 'chamfer'); return; }
+    const c = sketchEventToCoord(ev); if (!c) return;
+    graph = addSketchOp(graph, editingSketchId, sketchTool);
+    const node = graph.nodes[editingSketchId] as any;
+    const idx = node.ops.length - 1;
+    graph = setSketchOpField(graph, editingSketchId, idx, 'r', { kind: 'literal', value: c[0] });
+    graph = setSketchOpField(graph, editingSketchId, idx, 'z', { kind: 'literal', value: c[1] });
+  }
+
   /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
    *  These are 3D solid producers — the polygon's output flows into the
    *  Call's `profile` arg, and the Output card receives a Manifold
@@ -3611,6 +3699,54 @@
 </svelte:head>
 
 <div class="ge-root" class:embed>
+  <!-- Full-tab sketch editor (plan M.2) — overlays the editor while editing
+       a sketch; a dedicated toolbar + Maker.js outline render + draggable
+       points. ✓ Done returns to the graph. -->
+  {#if editingSketchId && sketchEditor}
+    {@const se = sketchEditor}
+    {@const span = Math.max(se.ext.maxX - se.ext.minX, se.ext.maxY - se.ext.minY) || 1}
+    {@const pad = span * 0.12 + 0.2}
+    {@const vb = `${se.ext.minX - pad} ${se.ext.minY - pad} ${(se.ext.maxX - se.ext.minX) + 2 * pad} ${(se.ext.maxY - se.ext.minY) + 2 * pad}`}
+    {@const hr = span * 0.018}
+    {@const sw = span * 0.008}
+    <div class="ge-sketch-editor">
+      <div class="ge-sketch-toolbar">
+        <button class="ge-stool" class:on={sketchTool === 'select'} title="Select / drag points" onclick={() => (sketchTool = 'select')}>⬚</button>
+        <div class="ge-stool-sep"></div>
+        <button class="ge-stool" class:on={sketchTool === 'line'} title="Line — click the canvas to add points" onclick={() => (sketchTool = 'line')}>╱</button>
+        <button class="ge-stool" class:on={sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketchTool = 'spline')}>∿</button>
+        <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click to round the last corner" onclick={() => (sketchTool = 'fillet')}>◜</button>
+        <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click to bevel the last corner" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
+        <div class="ge-stool-sep"></div>
+        <span class="ge-stool-label">✐ {se.node.ops.length} ops · {se.pts.length} pts</span>
+        <div class="ge-stool-spacer"></div>
+        <button class="ge-stool done" title="Done — back to the graph" onclick={closeSketchEditor}>✓ Done</button>
+      </div>
+      <div class="ge-sketch-stage">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'}
+          viewBox={vb} preserveAspectRatio="xMidYMid meet"
+          onpointerdown={sketchCanvasClick}>
+          <!-- revolve axis at r = 0 -->
+          <line x1="0" y1={se.ext.minY - pad} x2="0" y2={se.ext.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
+          {#if se.pts.length > 2}
+            <polygon points={se.pts.map((q) => `${q[0]},${q[1]}`).join(' ')} fill="rgba(147,51,234,0.12)" stroke="#7c3aed" stroke-width={sw} stroke-linejoin="round"/>
+          {/if}
+          {#each se.anchors as a, i (a.opIdx)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <circle cx={a.r} cy={a.z} r={hr}
+              class="ge-sk-anchor" class:locked={!a.literal}
+              fill={a.kind === 'spline' ? '#0891b2' : '#7c3aed'} stroke="#fff" stroke-width={hr * 0.25}
+              onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal)}
+              onpointermove={sketchAnchorMove}
+              onpointerup={sketchAnchorUp}/>
+            {#if i === 0}<text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.6} fill="#15803d" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>1</text>{/if}
+          {/each}
+        </svg>
+        <div class="ge-sketch-hint">{sketchTool === 'select' ? 'Drag the violet points to reshape · pick a tool to add ops' : `Click the canvas to add a ${sketchTool}`}</div>
+      </div>
+    </div>
+  {/if}
   <!-- Title + id input removed (2026-06-09 — redundant with the /primitives
        tab strip showing the part id; the rename / save-as flow surfaces a
        prompt on demand instead of the always-on input). The graph editor
@@ -4965,6 +5101,11 @@
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
                 <text x="10" y="22" class="ge-node-title">✐ sketch · {sk.ops.length} ops{skConsumed ? ' · 🔒' : ''}</text>
+                <!-- ✎ open the full-tab sketch editor (plan M.2). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 32} y="22" class="ge-sketch-edit-btn"
+                  data-tip="Edit in the full-tab sketch editor"
+                  onpointerdown={(ev) => { ev.stopPropagation(); openSketchEditor(n.id); }}>✎</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   class:disabled={skConsumed}
@@ -6659,6 +6800,29 @@
   .ge-sketch-foot { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
   .ge-sketch-add { padding: 2px 6px; font: 600 10px Arial; background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; border-radius: 3px; cursor: pointer; }
   .ge-sketch-add:hover { background: #e9d5ff; }
+  /* ─── Full-tab sketch editor (plan M.2) ──────────────────────────────── */
+  .ge-sketch-edit-btn { font: 13px system-ui; fill: #7c3aed; cursor: pointer; }
+  .ge-sketch-edit-btn:hover { fill: #5b21b6; }
+  .ge-sketch-editor { position: absolute; inset: 0; z-index: 60; background: #fbfbfd; display: flex; flex-direction: column; }
+  .ge-sketch-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+  .ge-stool { width: 30px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; font: 14px ui-monospace, monospace; color: #57534e; cursor: pointer; }
+  .ge-stool:hover { background: #f3e8ff; color: #6b21a8; border-color: #c4b5fd; }
+  .ge-stool.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
+  .ge-stool.done { width: auto; padding: 0 12px; font: 600 12px Arial; color: #15803d; border-color: #6ee7b7; }
+  .ge-stool.done:hover { background: #d1fae5; }
+  .ge-stool-sep { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
+  .ge-stool-label { font: 600 12px Arial; color: #6b21a8; padding: 0 6px; }
+  .ge-stool-spacer { flex: 1 1 auto; }
+  .ge-sketch-stage { flex: 1 1 auto; min-height: 0; position: relative; display: flex; }
+  .ge-sketch-svg { flex: 1 1 auto; width: 100%; height: 100%;
+    background:
+      linear-gradient(#eef2f6 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, #eef2f6 1px, transparent 1px) 0 0 / 24px 24px, #fbfbfd; }
+  .ge-sketch-svg.tool { cursor: crosshair; }
+  .ge-sk-anchor { cursor: grab; touch-action: none; }
+  .ge-sk-anchor:hover { stroke: #fde68a; }
+  .ge-sk-anchor.locked { cursor: not-allowed; opacity: 0.6; }
+  .ge-sketch-hint { position: absolute; left: 12px; bottom: 10px; font: 11px Arial; color: #6b7280; background: rgba(255,255,255,0.85); padding: 3px 8px; border-radius: 4px; pointer-events: none; }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.5px;
