@@ -6532,7 +6532,12 @@
   @media (max-width: 820px) and (orientation: portrait) {
     .ge-grid {
       grid-template-columns: 1fr !important;
-      grid-template-rows: minmax(0, 1fr) 8px minmax(180px, 44vh) !important;
+      /* Node-graph canvas on TOP gets the dominant share; the 3D/SRC/MD
+         preview BELOW is capped. A greedy `minmax(180px, 44vh)` preview was
+         eating 343 of 451px and squeezing the editing canvas to a ~100px
+         sliver. Proportional fr tracks (node ~1.5 : preview 1) keep the node
+         canvas the larger pane while both stay usable and scale with height. */
+      grid-template-rows: minmax(140px, 1.5fr) 8px minmax(120px, 1fr) !important;
     }
     .ge-divider { cursor: row-resize; }
   }

@@ -1228,11 +1228,15 @@
     }
     .prim-rail-divider { display: none; }
     .prim-rail { border-right: none; border-bottom: 1px solid #e5e7eb; }
-    .prim-root.collapsed { grid-template-rows: 0 minmax(0, 1fr) !important; }
+    /* Collapsed: the rail is also display:none, so .prim-main is the ONLY
+       grid item left — it must land on a SINGLE 1fr track. A two-track
+       `0 1fr` would auto-place the lone main onto the leading `0` and blank
+       the whole screen (the "collapse blanks everything" bug). */
+    .prim-root.collapsed { grid-template-rows: minmax(0, 1fr) !important; }
     /* Nothing open yet → let the sidebar fill the screen (the empty editor
        below would otherwise be wasted white space). Splits once a part opens. */
     .prim-root.no-tabs { grid-template-rows: minmax(0, 1fr) 0 !important; }
-    .prim-root.no-tabs.collapsed { grid-template-rows: 0 minmax(0, 1fr) !important; }
+    .prim-root.no-tabs.collapsed { grid-template-rows: minmax(0, 1fr) !important; }
   }
 
   /* ─── Tabbed main area ────────────────────────────────────────────── */
