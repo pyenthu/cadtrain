@@ -455,6 +455,11 @@
   // rail column collapses to 0 and a floating ☰ expand button appears.
   let sidebarCollapsed = $state(false);
   try { sidebarCollapsed = localStorage.getItem('prim-rail-collapsed') === '1'; } catch { /* SSR/off */ }
+  // Touch devices: `draggable=true` on the row buttons can swallow the TAP
+  // (the drag system intercepts it) so a part never opens. Disable drag on
+  // coarse pointers — tap-to-open then works; drag-to-canvas stays on desktop.
+  let isCoarsePointer = $state(false);
+  try { isCoarsePointer = window.matchMedia('(pointer: coarse)').matches; } catch { /* SSR/off */ }
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
     try { localStorage.setItem('prim-rail-collapsed', sidebarCollapsed ? '1' : '0'); } catch { /* ignore */ }
@@ -616,7 +621,7 @@
               </div>
             {:else}
               <button class="prim-row" type="button"
-                draggable="true"
+                draggable={!isCoarsePointer}
                 ondragstart={(ev) => {
                   if (ev.dataTransfer) {
                     ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
@@ -676,7 +681,7 @@
                     </div>
                   {:else}
                     <button class="prim-row indent" type="button"
-                      draggable="true"
+                      draggable={!isCoarsePointer}
                       ondragstart={(ev) => {
                         if (ev.dataTransfer) {
                           ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
@@ -716,7 +721,7 @@
         {#each stdlibSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
-              draggable="true"
+              draggable={!isCoarsePointer}
               ondragstart={(ev) => {
                 if (ev.dataTransfer) {
                   ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
@@ -743,7 +748,7 @@
         {#each stdstaleSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
-              draggable="true"
+              draggable={!isCoarsePointer}
               ondragstart={(ev) => {
                 if (ev.dataTransfer) {
                   ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
@@ -770,7 +775,7 @@
         {#each archivedSorted.filter(pass) as e (e.id)}
           <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
             <button class="prim-row" type="button"
-              draggable="true"
+              draggable={!isCoarsePointer}
               ondragstart={(ev) => {
                 if (ev.dataTransfer) {
                   ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
@@ -1226,7 +1231,7 @@
   }
 
   /* ─── Tabbed main area ────────────────────────────────────────────── */
-  .prim-main { display: flex; flex-direction: column; overflow: hidden; }
+  .prim-main { display: flex; flex-direction: column; overflow: hidden; min-height: 0; min-width: 0; }
   .prim-empty-state {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 8px; color: #78716c; font: 13px Arial;
