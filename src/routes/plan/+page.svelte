@@ -627,14 +627,17 @@ Click for plan details</title>
   .toggle button:hover { background: #f1f5f9; }
   .toggle button.on { background: #334155; color: #fff; font-weight: 600; }
 
-  .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-  .legend-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px;
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 6px; margin-bottom: 10px; }
+  .legend-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px;
     border: 1px solid #e2e8f0; border-radius: 4px; background: #f1f5f9; font-size: 11px; color: #334155; cursor: pointer; }
   .legend-chip.active { background: #fff; border-color: #cbd5e1; }
   .legend-chip:hover { background: #fff; }
-  .legend-chip .bid { font-weight: 700; }
-  .legend-chip .bname { color: #475569; }
-  .legend-chip .bcount { color: #94a3b8; }
+  .legend-chip .bid { font-weight: 700; flex: none; }
+  /* Cap the name width so long bundle titles ellipsis instead of forcing
+     each chip onto its own row — keeps the legend to ~2 rows on narrow
+     viewports while still fitting all four on one row when wide. */
+  .legend-chip .bname { color: #475569; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend-chip .bcount { color: #94a3b8; flex: none; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 
   .controls { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; font-size: 13px; color: #475569; }
