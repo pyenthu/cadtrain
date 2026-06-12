@@ -1909,13 +1909,26 @@
     const r = canvasEl.getBoundingClientRect();
     return { x: ((cx - r.left) - pan.x) / zoom, y: ((cy - r.top) - pan.y) / zoom };
   }
+  // On touch/pen, the browser sets IMPLICIT pointer capture on the element
+  // that received pointerdown, so every later pointermove/pointerup for this
+  // pointerId is dispatched to the SOURCE socket — the target socket's
+  // onpointerup never fires and the wire can't complete. Release it here so
+  // events route to whatever element is under the finger (same as mouse).
+  function releaseImplicitCapture(ev: PointerEvent) {
+    try {
+      const el = ev.currentTarget as Element;
+      if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
+    } catch { /* older browsers */ }
+  }
   function startWire(ev: PointerEvent, nodeId: NodeId) {
     ev.stopPropagation();
+    releaseImplicitCapture(ev);
     wireFrom = { kind: 'out', nodeId };
     wireMouse = clientToGraph(ev.clientX, ev.clientY);
   }
   function startParamWire(ev: PointerEvent, paramName: string) {
     ev.stopPropagation();
+    releaseImplicitCapture(ev);
     wireFrom = { kind: 'param-out', paramName };
     wireMouse = clientToGraph(ev.clientX, ev.clientY);
   }
@@ -6541,7 +6554,7 @@
   .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none; }
   .ge-canvas.dragging { cursor: grabbing; }
 
-  .ge-node-bg { fill: #fff; stroke: #0369a1; stroke-width: 2; cursor: grab; }
+  .ge-node-bg { fill: #fff; stroke: #0369a1; stroke-width: 2; cursor: grab; touch-action: none; }
   .ge-node-bg.method { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
   .ge-node-bg.transform { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-node-bg.transform.rot { fill: #fce7f3; stroke: #be185d; }
@@ -7147,7 +7160,7 @@
   .ge-arg-row.tight { padding: 0; }
   .ge-canvas-hint { font: 13px Arial; fill: #9ca3af; }
 
-  .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; }
+  .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; touch-action: none; }
   .ge-sock.out { stroke: #15803d; }
   .ge-sock.in.obj { stroke: #b91c1c; }
   .ge-sock.in.arg { stroke: #d97706; }
