@@ -2972,6 +2972,19 @@
   function clearHoverVertex(polyId: string, idx: number) {
     if (hoverVertex && hoverVertex.polyId === polyId && hoverVertex.idx === idx) hoverVertex = null;
   }
+  /** Tooltip shown while browsing the 2D profile SVG — black bg / white text
+   *  at the cursor with the vertex number + (r,z). Set on dot pointerenter,
+   *  cleared on leave. */
+  let svgTip = $state<{ x: number; y: number; text: string } | null>(null);
+  function showSvgTip(ev: PointerEvent, polyId: string, entryIdx: number | null, evalI: number, total: number, p: [number, number]) {
+    if (entryIdx !== null) setHoverVertex(polyId, entryIdx);
+    svgTip = {
+      x: ev.clientX, y: ev.clientY,
+      text: `#${evalI + 1}/${total} · r ${p[0].toFixed(3)} · z ${p[1].toFixed(3)}`,
+    };
+  }
+  function moveSvgTip(ev: PointerEvent) { if (svgTip) svgTip = { ...svgTip, x: ev.clientX, y: ev.clientY }; }
+  function hideSvgTip(polyId: string, entryIdx: number | null) { if (entryIdx !== null) clearHoverVertex(polyId, entryIdx); svgTip = null; }
   /** Format an ArgValue as a string the popover textarea can edit. */
   function argToDraftStr(v: any): string {
     if (!v) return '';
@@ -4737,6 +4750,7 @@
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <div class="ge-poly-vertex"
                         class:vtx-active={hlVertex && hlVertex.polyId === n.id && hlVertex.idx === idx}
+                        class:vtx-fn={pt.r?.kind !== 'literal' || pt.z?.kind !== 'literal'}
                         onmouseenter={() => setHoverVertex(n.id, idx)}
                         onmouseleave={() => clearHoverVertex(n.id, idx)}>
                         <!-- Axis-0 sub-row (top): [socket-gutter w/ 🗑 unwire] + label
@@ -5248,9 +5262,10 @@
                           if (!rootPolygonId) return;
                           startPolyVertexDrag(ev, rootPolygonId, i, v.yFlip ? 'cartesian' : 'revolve');
                         }}
-                        onpointermove={polyDragMove}
+                        onpointerenter={(ev) => { if (rootPolygonId) showSvgTip(ev, rootPolygonId, entryIdx, i, profilePts.length, p); }}
+                        onpointermove={(ev) => { polyDragMove(ev); moveSvgTip(ev); }}
+                        onpointerleave={() => { if (rootPolygonId) hideSvgTip(rootPolygonId, entryIdx); }}
                         onpointerup={polyDragEnd}>
-                        <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{fromLoop ? ' (loop-generated)' : (parametricVertex ? ' (parametric — click to edit expression)' : ' (drag to move, click to add expression)')}</title>
                       </circle>
                       <!-- Point-order markers: green ring + "1" on the FIRST
                            vertex, orange ring + count on the LAST, so the
@@ -5484,6 +5499,12 @@
         <button class="ge-param-add" type="button" onclick={applyArgExprPop}>apply</button>
       </div>
     </div>
+  {/if}
+
+  <!-- Profile-SVG hover tooltip — black bg / white text at the cursor while
+       browsing the 2D profile points. -->
+  {#if svgTip}
+    <div class="ge-svg-tip" style="left: {svgTip.x + 12}px; top: {svgTip.y + 12}px">{svgTip.text}</div>
   {/if}
 
   {#if polyExprPop}
@@ -5840,9 +5861,10 @@
               class:locked={!draggable}
               class:parametric={parametricVertex || fromLoop}
               onpointerdown={(ev) => startPolyVertexDrag(ev, polyPreviewFor!, i, isCart ? 'cartesian' : 'revolve')}
-              onpointermove={polyDragMove}
+              onpointerenter={(ev) => showSvgTip(ev, polyPreviewFor!, entryIdx, i, pts.length, p)}
+              onpointermove={(ev) => { polyDragMove(ev); moveSvgTip(ev); }}
+              onpointerleave={() => hideSvgTip(polyPreviewFor!, entryIdx)}
               onpointerup={polyDragEnd}>
-              <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{fromLoop ? ' (loop-generated)' : (draggable ? '' : ' (wired — unwire to drag)')}</title>
             </circle>
             <!-- Point-order markers: green ring + "1" on the FIRST vertex,
                  orange ring + count on the LAST. Non-interactive. -->
@@ -6504,6 +6526,18 @@
     background: #eff6ff;
     border-color: #2563eb;
     box-shadow: 0 0 0 1px #2563eb;
+  }
+  /* Function (parametric) vertex rows — blue left accent so an expr-driven
+     vertex reads as blue, matching the editor's blue ƒ language. */
+  .ge-poly-vertex.vtx-fn { border-left: 3px solid #2563eb; }
+  .ge-poly-vertex.vtx-fn .ge-poly-fx.on { background: #dbeafe; color: #1e40af; border-color: #60a5fa; }
+  /* Profile-SVG hover tooltip — black bg, white text, follows the cursor. */
+  .ge-svg-tip {
+    position: fixed; z-index: 1200; pointer-events: none;
+    background: #111827; color: #fff;
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 3px 7px; border-radius: 4px; white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
   }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
