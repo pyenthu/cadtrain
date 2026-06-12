@@ -18,7 +18,7 @@
   Per docs/plans/composition-architecture.md.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import {
     newGraph,
     addCall,
@@ -1142,13 +1142,24 @@
       try { localStorage.setItem('ge-ai-menu-w', String(w)); } catch { /* ignore */ }
     }
   }
-  function openAiMenu() {
+  async function openAiMenu() {
     if (aiBtnEl) {
       const r = aiBtnEl.getBoundingClientRect();
       aiMenuPos = { left: r.right + 6, top: r.top };
     }
     aiError = null;
     aiMenuOpen = true;
+    // The ✨ button lives at the BOTTOM of the rail, so anchoring the
+    // popover's top to the button spills it below the viewport. After it
+    // renders, measure + clamp so the whole panel stays on-screen (shift
+    // UP if needed, never above a 12px top margin).
+    await tick();
+    if (aiPanelEl) {
+      const h = aiPanelEl.offsetHeight;
+      const margin = 12;
+      const maxTop = window.innerHeight - h - margin;
+      aiMenuPos = { ...aiMenuPos, top: Math.max(margin, Math.min(aiMenuPos.top, maxTop)) };
+    }
   }
   async function generateFromPrompt() {
     const prompt = aiPrompt.trim();
@@ -3120,12 +3131,18 @@
   let undoLayout = $state<Record<string, { x: number; y: number }> | null>(null);
   function autoLayout() {
     undoLayout = { ...graph.layout };
-    graph = autoLayoutGraph(graph);
-    // Auto-layout ALWAYS finishes with a push-apart pass (2026-06-12) —
-    // the depth-columns layout can still leave same-depth cards
-    // overlapping, and the user asked for one button, not two. Skip the
-    // undo-snapshot (autoLayout already took it).
-    applyPushApart();
+    // Bigger row gap than the 40px default — real cards are 80-200px tall,
+    // so tight rows overlap heavily and leave push-apart too much to do.
+    graph = autoLayoutGraph(graph, { rowGap: 160 });
+    // Auto-layout ALWAYS finishes with a push-apart pass (2026-06-12) — the
+    // depth-columns layout can still leave same-depth cards overlapping,
+    // and the user asked for one button, not two. PURE separation: pass
+    // useBounds=false so the viewport boundary walls (which depend on
+    // pan/zoom and can FLING a card thousands of px off-screen) don't
+    // participate — auto-layout just cleanly de-overlaps. try/catch so a
+    // push failure can't silently abort + leave the layout un-separated.
+    try { applyPushApart(false); }
+    catch (e) { console.warn('[graph-editor] push-apart after auto-layout failed', e); }
   }
   function undoAutoLayout() {
     if (!undoLayout) return;
@@ -3142,7 +3159,7 @@
     undoLayout = { ...graph.layout };
     applyPushApart();
   }
-  function applyPushApart() {
+  function applyPushApart(useBounds = true) {
     // Convert the params card's viewport rect to graph space so it
     // participates in the force iteration. As the user pans, the card's
     // graph-space position shifts inversely; we recompute on each click.
@@ -3162,7 +3179,7 @@
     // to the visible interior via confinerBounds. If both edges are off,
     // we skip the rect lookup entirely.
     let confinerBounds: { minX?: number; maxX?: number; minY?: number } | undefined;
-    if (canvasEl && (boundLeft !== 'off' || boundRight !== 'off' || boundTop !== 'off')) {
+    if (useBounds && canvasEl && (boundLeft !== 'off' || boundRight !== 'off' || boundTop !== 'off')) {
       const rect = canvasEl.getBoundingClientRect();
       // Viewport edges in graph space — the wall IS the current section
       // boundary. Cards past the edge (off-screen) get pulled back inside;
