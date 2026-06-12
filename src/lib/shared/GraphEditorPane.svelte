@@ -3163,18 +3163,16 @@
   let undoLayout = $state<Record<string, { x: number; y: number }> | null>(null);
   function autoLayout() {
     undoLayout = { ...graph.layout };
-    // Bigger row gap than the 40px default — real cards are 80-200px tall,
-    // so tight rows overlap heavily and leave push-apart too much to do.
-    graph = autoLayoutGraph(graph, { rowGap: 220 });
-    // Auto-layout ALWAYS finishes with a push-apart pass (2026-06-12) — the
-    // depth-columns layout can still leave same-depth cards overlapping,
-    // and the user asked for one button, not two. PURE separation: pass
-    // useBounds=false so the viewport boundary walls (which depend on
-    // pan/zoom and can FLING a card thousands of px off-screen) don't
-    // participate — auto-layout just cleanly de-overlaps. try/catch so a
-    // push failure can't silently abort + leave the layout un-separated.
-    try { applyPushApart(false); }
-    catch (e) { console.warn('[graph-editor] push-apart after auto-layout failed', e); }
+    // Generous column + row gaps so the depth-column layout is clean BY
+    // CONSTRUCTION: rowGap 220 clears the tallest cards within a column,
+    // and the __POLY__ profile edges (K.78) put polygons in the column
+    // BEFORE their consumer calls instead of piling into depth 0.
+    // We deliberately DON'T run the push-apart pass afterward — with the
+    // edges + gaps there's nothing to de-overlap, and forceSeparate with
+    // the params-card obstacle was COMPRESSING the clean columns back
+    // together. The manual ⚙→push-apart path (applyPushApart) stays for
+    // hand-arranged graphs.
+    graph = autoLayoutGraph(graph, { rowGap: 220, columnGap: 300 });
   }
   function undoAutoLayout() {
     if (!undoLayout) return;
