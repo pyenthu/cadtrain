@@ -1204,6 +1204,12 @@
   .prim-rail-collapse:hover { background: #f1f5f9; color: #1e293b; }
   .prim-root.collapsed .prim-rail,
   .prim-root.collapsed .prim-rail-divider { display: none; }
+  /* Collapsed (desktop + mobile LANDSCAPE): rail + divider are display:none,
+     so .prim-main is the only grid item left. The base three-column template
+     would auto-place it onto the leading `var(--rail-w)` (0px when collapsed)
+     → blank screen. Collapse to a SINGLE column so main fills the width.
+     Portrait overrides this with its own row template (!important). */
+  .prim-root.collapsed { grid-template-columns: minmax(0, 1fr); }
   .prim-rail-expand {
     position: absolute; top: 8px; left: 8px; z-index: 30;
     width: 30px; height: 30px; padding: 0;
