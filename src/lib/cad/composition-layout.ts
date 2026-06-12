@@ -67,7 +67,13 @@ function isInlineWrapper(graph: Graph, id: NodeId): boolean {
 function predecessorsOf(graph: Graph, id: NodeId): NodeId[] {
   const n = graph.nodes[id];
   if (!n) return [];
-  if (n.type === 'call') return [];
+  // Leaf producers — no data-flow predecessors. polygon / poly_repeat MUST
+  // be listed here: they have no `children` field, so without this they
+  // fell through to the container branch below and threw "Cannot read
+  // properties of undefined (reading 'filter')" — which crashed
+  // autoLayoutGraph on EVERY graph carrying an inline polygon (i.e. every
+  // revolve/extrude part). 2026-06-12.
+  if (n.type === 'call' || n.type === 'polygon' || n.type === 'poly_repeat') return [];
   if (n.type === 'method') {
     const out: NodeId[] = [];
     if (n.obj && graph.nodes[n.obj]) out.push(n.obj);
@@ -77,8 +83,10 @@ function predecessorsOf(graph: Graph, id: NodeId): NodeId[] {
   if (n.type === 'mv' || n.type === 'rot' || n.type === 'repeat') {
     return n.child && graph.nodes[n.child] ? [n.child] : [];
   }
-  // list / stack / group — children flow INTO this container.
-  return n.children.filter((c) => !!graph.nodes[c]);
+  // list / stack / group — children flow INTO this container. Guard the
+  // field too: a malformed container missing `children` should yield [],
+  // not throw.
+  return ((n as any).children ?? []).filter((c: NodeId) => !!graph.nodes[c]);
 }
 
 /** Median of a number array. Returns +Infinity for an empty array so that
