@@ -2907,6 +2907,23 @@
   // collapsed chip — "ƒ(p.od, p.wall)" — opens this popup with a bigger
   // text area + click-to-insert chips for every declared param. Applied
   // value commits back to the arg via setCallArg(asExpr(...)).
+  /** Svelte action — after a fixed-position popover paints, measure it and
+   *  shift left/up so the WHOLE thing stays on-screen (the expr popovers
+   *  open at the click point and otherwise spill off the bottom/right when
+   *  the vertex is near an edge). Re-runs when the bound value changes. */
+  function clampToViewport(node: HTMLElement, _dep?: unknown) {
+    const margin = 10;
+    const fit = () => {
+      const r = node.getBoundingClientRect();
+      let l = r.left, t = r.top;
+      if (r.right > window.innerWidth - margin) l = Math.max(margin, window.innerWidth - r.width - margin);
+      if (r.bottom > window.innerHeight - margin) t = Math.max(margin, window.innerHeight - r.height - margin);
+      if (l !== r.left) node.style.left = `${l}px`;
+      if (t !== r.top) node.style.top = `${t}px`;
+    };
+    requestAnimationFrame(fit);
+    return { update: () => requestAnimationFrame(fit) };
+  }
   let argExprPop = $state<{ callId: NodeId; key: string; draft: string; x: number; y: number } | null>(null);
   function openArgExprPop(ev: MouseEvent, callId: NodeId, key: string, currentExpr: string) {
     ev.stopPropagation();
@@ -5182,6 +5199,16 @@
                         onpointerup={polyDragEnd}>
                         <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{fromLoop ? ' (loop-generated)' : (parametricVertex ? ' (parametric — click to edit expression)' : ' (drag to move, click to add expression)')}</title>
                       </circle>
+                      <!-- Point-order markers: green ring + "1" on the FIRST
+                           vertex, orange ring + count on the LAST, so the
+                           winding / point sequence is readable. Non-interactive. -->
+                      {#if i === 0}
+                        <circle cx={p[0]} cy={p[1]} r={ph * 1.8} fill="none" stroke="#16a34a" stroke-width={ph * 0.45} pointer-events="none"/>
+                        <text x={p[0] + ph * 2.4} y={p[1] - ph * 1.6} fill="#15803d" font-size={ph * 3.4} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={ph * 0.7}>1</text>
+                      {:else if i === profilePts.length - 1}
+                        <circle cx={p[0]} cy={p[1]} r={ph * 1.8} fill="none" stroke="#ea580c" stroke-width={ph * 0.45} pointer-events="none"/>
+                        <text x={p[0] + ph * 2.4} y={p[1] - ph * 1.6} fill="#c2410c" font-size={ph * 3.4} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={ph * 0.7}>{profilePts.length}</text>
+                      {/if}
                     {/each}
                   </g>
                 </svg>
@@ -5381,6 +5408,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-wire-shade" onclick={closeArgExprPop}></div>
     <div class="ge-wire-pop ge-expr-pop"
+      use:clampToViewport={argExprPop}
       style="left: {Math.min(argExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {argExprPop.y}px">
       <div class="ge-wire-head">ƒ <code>{argExprPop.key}</code> expression</div>
       <textarea class="ge-expr-textarea" rows="3"
@@ -5421,6 +5449,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-wire-shade" onclick={closePolyExprPop}></div>
     <div class="ge-wire-pop ge-expr-pop"
+      use:clampToViewport={polyExprPop}
       style="left: {Math.min(polyExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {polyExprPop.y}px">
       <div class="ge-wire-head">
         {#if (polyExprPop as any).transformId}
@@ -5758,6 +5787,15 @@
               onpointerup={polyDragEnd}>
               <title>[{p[0].toFixed(3)}, {p[1].toFixed(3)}] · #{i}{fromLoop ? ' (loop-generated)' : (draggable ? '' : ' (wired — unwire to drag)')}</title>
             </circle>
+            <!-- Point-order markers: green ring + "1" on the FIRST vertex,
+                 orange ring + count on the LAST. Non-interactive. -->
+            {#if i === 0}
+              <circle cx={p[0]} cy={p[1]} r={dotR * 1.8} fill="none" stroke="#16a34a" stroke-width={dotR * 0.45} pointer-events="none"/>
+              <text x={p[0] + dotR * 2.4} y={p[1] - dotR * 1.6} fill="#15803d" font-size={dotR * 3.4} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={dotR * 0.7}>1</text>
+            {:else if i === pts.length - 1}
+              <circle cx={p[0]} cy={p[1]} r={dotR * 1.8} fill="none" stroke="#ea580c" stroke-width={dotR * 0.45} pointer-events="none"/>
+              <text x={p[0] + dotR * 2.4} y={p[1] - dotR * 1.6} fill="#c2410c" font-size={dotR * 3.4} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={dotR * 0.7}>{pts.length}</text>
+            {/if}
           {/each}
         </g>
       </svg>
