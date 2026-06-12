@@ -73,8 +73,8 @@ function predecessorsOf(graph: Graph, id: NodeId): NodeId[] {
   // properties of undefined (reading 'filter')" — which crashed
   // autoLayoutGraph on EVERY graph carrying an inline polygon (i.e. every
   // revolve/extrude part). 2026-06-12.
-  // polygon / poly_repeat are leaf producers — no predecessors.
-  if (n.type === 'polygon' || n.type === 'poly_repeat') return [];
+  // polygon / poly_repeat / sketch are leaf producers — no predecessors.
+  if (n.type === 'polygon' || n.type === 'poly_repeat' || n.type === 'sketch') return [];
   // A Call consumes any polygon wired through a profile arg whose expr is
   // `__POLY__<id>` (revolve/extrude profiles). Modeling that as a data-flow
   // edge puts the polygon in the column BEFORE its consumer instead of

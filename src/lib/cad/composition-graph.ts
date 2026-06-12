@@ -167,7 +167,27 @@ export type PolyRepeatNode = {
   bindings?: PolyRepeatBinding[];
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode | PolyRepeatNode;
+/** Sketch node (plan M.1) — a richer profile producer than `polygon`: an
+ *  ordered list of CAD operators (line · spline · fillet · chamfer) that
+ *  emit a runtime `sketch([...], segments)` call (compileSketch via Maker.js)
+ *  → the same `(r,z)` point list r_revolve/r_extrude consume. Wired to a
+ *  consumer's profile arg through the SAME `__POLY__<id>` sentinel as a
+ *  polygon. Every op field is an ArgValue so radius/dist/coords can be
+ *  param/expr-driven. */
+export type SketchOpEntry =
+  | { op: 'line'; r: ArgValue; z: ArgValue }
+  | { op: 'spline'; r: ArgValue; z: ArgValue; ctrl?: Array<[ArgValue, ArgValue]> }
+  | { op: 'fillet'; radius: ArgValue }
+  | { op: 'chamfer'; dist: ArgValue };
+export type SketchNode = {
+  id: NodeId;
+  type: 'sketch';
+  ops: SketchOpEntry[];
+  /** Sampling density of curved sections; defaults to a literal 64. */
+  segments?: ArgValue;
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

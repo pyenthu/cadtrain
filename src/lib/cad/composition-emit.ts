@@ -288,7 +288,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   let bodyText = lines.join('\n');
   for (const [id, varName] of varNames.entries()) {
     const node = graph.nodes[id];
-    if (!node || node.type !== 'polygon') continue;
+    if (!node || (node.type !== 'polygon' && node.type !== 'sketch')) continue;
     bodyText = bodyText.split(`__POLY__${id}`).join(varName);
   }
 
@@ -405,6 +405,28 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       }).filter(Boolean);
       return `[${rows.join(', ')}]`;
     }
+    case 'sketch': {
+      // Emit a runtime `sketch([...ops], segments)` call — compileSketch is
+      // injected into the part sandbox. Each op's coord/radius/dist field is
+      // an ArgValue so it can be param/expr-driven. (plan M.1)
+      const ops = ((node as any).ops ?? []).map((o: any) => {
+        if (o.op === 'line' || o.op === 'spline') {
+          const base = `op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}`;
+          if (o.op === 'spline') {
+            const ctrl = Array.isArray(o.ctrl) && o.ctrl.length
+              ? `, ctrl: [${o.ctrl.map((c: any[]) => `[${emitValueExpr(c[0])}, ${emitValueExpr(c[1])}]`).join(', ')}]`
+              : '';
+            return `{ op: 'spline', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}${ctrl} }`;
+          }
+          return `{ ${base} }`;
+        }
+        if (o.op === 'fillet')  return `{ op: 'fillet', radius: ${emitValueExpr(o.radius)} }`;
+        if (o.op === 'chamfer') return `{ op: 'chamfer', dist: ${emitValueExpr(o.dist)} }`;
+        return '';
+      }).filter(Boolean);
+      const seg = (node as any).segments != null ? emitValueExpr((node as any).segments) : '64';
+      return `sketch([${ops.join(', ')}], ${seg})`;
+    }
   }
 }
 
@@ -514,6 +536,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'method'  ? `${node.op}_obj` :
         node.type === 'mv'      ? 'mv_obj' :
         node.type === 'polygon' ? 'poly' :
+        node.type === 'sketch'  ? 'sketch' :
                                    'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;
       name = `_${prefix}_${counters[prefix]}`;
