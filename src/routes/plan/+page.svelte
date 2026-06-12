@@ -61,7 +61,7 @@
     { id:  5, bundle: 'A', lane: 0, start: -3, weeks: 1,   priority: 'medium', status: 'done', title: 'Dedicated /tools/ratch-latch viewer' },
     { id:  6, bundle: 'A', lane: 0, start: 0,  weeks: 0.3, priority: 'medium', status: 'done', title: 'URL-driven /components (?p=&cam=) for synthetic data generator' },
     { id:  7, bundle: 'A', lane: 0, start: 1,  weeks: 1.5, priority: 'high',   status: 'done', title: 'Re-render primitives with red-outer/grey-internal coloring + shading before pHash/CLIP — shelved: cold-classification 17/18 killed CLIP rationale' },
-    { id:  8, bundle: 'A', lane: 0, start: 2,  weeks: 0.5, priority: 'low',    status: 'on-demand', title: 'Add new primitive types as drilling needs surface' },
+    { id:  8, bundle: 'A', lane: 0, start: 57.4, weeks: 0.3, priority: 'low',    status: 'on-demand', title: 'Add new primitive types as drilling needs surface' },
 
     // ───── B. Retrieval (RAG + CLIP) ─────
     { id: 20, bundle: 'A', lane: 1, start: -7, weeks: 1.5, priority: 'medium', status: 'done', title: 'pHash 2D-DCT perceptual hash + hamming distance' },
@@ -285,15 +285,18 @@
 
   // Time horizon spans both backward (done items shipped before start)
   // and forward. We snap to whole-week increments on either side of START.
+  // Chart span = the EARLIEST visible item to the LATEST (no hard 0 floor —
+  // that pinned the left edge to sequence-week 0, which now maps to a year
+  // back; the open view would render every bar far off-screen right).
   const minStart = $derived.by(() => {
-    let m = 0;
+    let m = Infinity;
     for (const t of visibleTasks) m = Math.min(m, t.start);
-    return Math.floor(m);
+    return Number.isFinite(m) ? Math.floor(m) : 0;
   });
   const maxEnd = $derived.by(() => {
-    let m = 0;
+    let m = -Infinity;
     for (const t of visibleTasks) m = Math.max(m, t.start + t.weeks);
-    return Math.ceil(m + 0.5);
+    return Number.isFinite(m) ? Math.ceil(m + 0.5) : 1;
   });
   const totalWeeks = $derived(maxEnd - minStart);
 
