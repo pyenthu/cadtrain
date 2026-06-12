@@ -53,7 +53,13 @@ export function tipHost(root: HTMLElement) {
   }
   function onOver(e: Event) {
     const el = findTarget(e.target);
-    if (el && el !== target) { hide(); show(el); }
+    if (el === target) return;
+    // Moving onto a different tip target switches; moving onto anything with
+    // NO tip (empty canvas, a tap elsewhere on touch) hides. Previously this
+    // only switched and never hid → on touch the tip stuck forever (no
+    // mouseout follows a tap).
+    hide();
+    if (el) show(el);
   }
   function onOut(e: MouseEvent) {
     if (!target) return;
@@ -61,13 +67,25 @@ export function tipHost(root: HTMLElement) {
     if (to && target.contains(to)) return;
     hide();
   }
+  // Any tap/click dismisses the tip — including taps OUTSIDE root, which the
+  // root-scoped mouseover never sees. This is what makes the tooltip
+  // "disappear on clicking outside" on both touch and desktop.
+  function onDocPointerDown(e: Event) {
+    if (!target) return;
+    if (target.contains(e.target as Node)) return; // tapping the tip's own owner keeps it
+    hide();
+  }
   root.addEventListener('mouseover', onOver, true);
   root.addEventListener('mouseout', onOut, true);
+  document.addEventListener('pointerdown', onDocPointerDown, true);
+  window.addEventListener('scroll', hide, true);
   return {
     destroy() {
       hide();
       root.removeEventListener('mouseover', onOver, true);
       root.removeEventListener('mouseout', onOut, true);
+      document.removeEventListener('pointerdown', onDocPointerDown, true);
+      window.removeEventListener('scroll', hide, true);
     },
   };
 }

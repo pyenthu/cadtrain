@@ -1258,6 +1258,10 @@
    *  click required. Skipped for IME composition + modifier keys (those
    *  are reserved for shortcuts elsewhere). */
   function onWindowKeydown(ev: KeyboardEvent) {
+    if (ev.key === 'Escape' && wireFrom) {
+      wireFrom = null; wireMouse = null; wireJustArmed = false;
+      return;
+    }
     if (ev.key !== 'Enter') return;
     if (ev.isComposing) return;
     if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -1273,6 +1277,7 @@
   }
   onMount(() => {
     window.addEventListener('keydown', onWindowKeydown);
+    try { isCoarse = window.matchMedia('(pointer: coarse)').matches; } catch { /* SSR/off */ }
     return () => window.removeEventListener('keydown', onWindowKeydown);
   });
   // ─── Global dark tooltip ────────────────────────────────────────────────
@@ -1356,13 +1361,22 @@
       if (rel && activeTarget.contains(rel)) return;
       hide();
     }
+    // A tap/click anywhere dismisses the tip (touch shows it on tap but never
+    // fires a mouseout, so it would otherwise stick).
+    function onDown(ev: Event) {
+      if (activeTarget && !activeTarget.contains(ev.target as Node)) hide();
+    }
     document.addEventListener('mouseover', onOver);
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseout', onOut);
+    document.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('scroll', hide, true);
     return () => {
       document.removeEventListener('mouseover', onOver);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseout', onOut);
+      document.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('scroll', hide, true);
       tipEl?.remove();
       tipEl = null;
     };
@@ -1662,14 +1676,27 @@
       pan = { x: panOrig.x + (ev.clientX - panStart.x), y: panOrig.y + (ev.clientY - panStart.y) };
     }
     if (wireFrom) {
+      if (!wirePointerMoved) {
+        const dx = ev.clientX - wireDownAt.x, dy = ev.clientY - wireDownAt.y;
+        if (dx * dx + dy * dy > 36) wirePointerMoved = true; // moved >6px ⇒ a drag, not a tap
+      }
       const pt = clientToGraph(ev.clientX, ev.clientY);
       wireMouse = pt;
     }
   }
   function onCanvasPointerUp(ev: PointerEvent) {
     if (panning) { panning = false; canvasEl?.releasePointerCapture(ev.pointerId); }
-    // If a wire-drag was in flight and we're releasing over empty canvas, cancel.
-    if (wireFrom) { wireFrom = null; wireMouse = null; }
+    if (wireFrom) {
+      // Tap-to-connect: a no-drag tap that just ARMED the wire stays armed so
+      // the NEXT tap on a target socket completes it (touch + connect-mode).
+      // Any other release — a drag that missed its target, or a tap on empty
+      // canvas while already armed — cancels the in-flight wire.
+      if (tapConnect && wireJustArmed && !wirePointerMoved) {
+        wireJustArmed = false; // consume; the wire is now parked, waiting for a target tap
+      } else {
+        wireFrom = null; wireMouse = null; wireJustArmed = false;
+      }
+    }
   }
   function onCanvasWheel(ev: WheelEvent) {
     ev.preventDefault();
@@ -1904,6 +1931,17 @@
     | { kind: 'param-out'; paramName: string };
   let wireFrom = $state<WireSource | null>(null);
   let wireMouse = $state<{ x: number; y: number } | null>(null);
+  // Tap-to-connect. Drag-from-socket-to-socket is unreliable on touch (the
+  // drop never registers), so instead of press-drag-release the user can TAP
+  // a source socket to ARM a wire, then TAP a target socket to complete it.
+  // Always on for coarse (touch) pointers; desktop users opt in via the 🔗
+  // toolbar toggle. The drag path still works unchanged for the mouse.
+  let connectMode = $state(false);
+  let isCoarse = $state(false);
+  const tapConnect = $derived(connectMode || isCoarse);
+  let wireJustArmed = false;    // true only for the one pointerup right after arming
+  let wirePointerMoved = false; // set once the pointer drags past threshold since arming
+  let wireDownAt = { x: 0, y: 0 };
   function clientToGraph(cx: number, cy: number) {
     if (!canvasEl) return { x: cx, y: cy };
     const r = canvasEl.getBoundingClientRect();
@@ -1920,17 +1958,24 @@
       if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
     } catch { /* older browsers */ }
   }
+  function armWire(ev: PointerEvent) {
+    wireJustArmed = true;
+    wirePointerMoved = false;
+    wireDownAt = { x: ev.clientX, y: ev.clientY };
+  }
   function startWire(ev: PointerEvent, nodeId: NodeId) {
     ev.stopPropagation();
     releaseImplicitCapture(ev);
     wireFrom = { kind: 'out', nodeId };
     wireMouse = clientToGraph(ev.clientX, ev.clientY);
+    armWire(ev);
   }
   function startParamWire(ev: PointerEvent, paramName: string) {
     ev.stopPropagation();
     releaseImplicitCapture(ev);
     wireFrom = { kind: 'param-out', paramName };
     wireMouse = clientToGraph(ev.clientX, ev.clientY);
+    armWire(ev);
   }
   function endWireOnInput(ev: PointerEvent, targetId: NodeId, slot: 'obj' | 'arg' | 'child') {
     ev.stopPropagation();
@@ -3804,6 +3849,15 @@
     <button class="ge-vrail-btn" type="button"
       bind:this={callBtnEl} onclick={openCallPicker}
       data-tip="Fetch a part — primitives library">+</button>
+    <!-- Click-to-connect: tap a source socket, then a target socket — no
+         dragging. Always available on touch; this toggle turns it on for the
+         mouse too. Drag-to-wire still works regardless. -->
+    <button class="ge-vrail-btn connect" type="button"
+      class:on={connectMode}
+      onclick={() => { connectMode = !connectMode; if (!connectMode) { wireFrom = null; wireMouse = null; } }}
+      data-tip={connectMode
+        ? 'Click-to-connect ON — tap a source socket, then a target (Esc cancels)'
+        : 'Click-to-connect — wire two sockets by tapping them, no dragging'}>🔗</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -3952,6 +4006,9 @@
     style="grid-template-columns: {splitA}% 6px 1fr">
     <!-- LEFT — graph canvas -->
     <section class="ge-canvas-pane">
+      {#if wireFrom && tapConnect}
+        <div class="ge-connect-hint">🔗 Tap a target socket to connect · <kbd>Esc</kbd> to cancel</div>
+      {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <svg
@@ -6328,6 +6385,9 @@
   .ge-vrail-btn.auto.on { background: #fef3c7; color: #92400e; border-color: #fbbf24; }
   .ge-vrail-btn.ghost-clear { background: #c4b5fd; color: #4c1d95; border-color: #8b5cf6; }
   .ge-vrail-btn.ghost-clear:hover { background: #a78bfa; color: #2e1065; }
+  .ge-vrail-btn.connect { color: #0e7490; }
+  .ge-vrail-btn.connect:hover { background: #cffafe; color: #155e75; border-color: #67e8f9; }
+  .ge-vrail-btn.connect.on { background: #06b6d4; color: #fff; border-color: #0891b2; }
   .ge-vrail-btn.settings.on { background: #dbeafe; color: #1e40af; border-color: #60a5fa; }
   .ge-vrail-btn.reset:hover { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
   .ge-vrail-badge {
@@ -6543,6 +6603,16 @@
   }
   .ge-divider:hover, .ge-divider:active { background: #0369a1; }
   .ge-canvas-pane { overflow: hidden; position: relative; }
+  .ge-connect-hint {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 20; padding: 5px 12px; border-radius: 9999px;
+    background: #06b6d4; color: #fff; font: 600 12px Arial; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(8, 145, 178, 0.35); pointer-events: none;
+  }
+  .ge-connect-hint kbd {
+    background: rgba(255,255,255,0.25); border-radius: 3px; padding: 0 4px;
+    font: 600 11px ui-monospace, monospace;
+  }
   /* + param button + delete × on canvas chip + add-param popover rows. */
   .ge-param-card-x { font: 13px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-param-add-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; stroke-dasharray: 4 3; cursor: pointer; }
@@ -7166,6 +7236,13 @@
   .ge-canvas-hint { font: 13px Arial; fill: #9ca3af; }
 
   .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; touch-action: none; }
+  /* Touch devices: the SVG sockets are tiny (r=4-6 ≈ 8-12px) and hard to hit
+     with a finger. Scale them up on COARSE pointers only — this enlarges both
+     the visible dot AND the SVG hit geometry, centered on each socket so its
+     cx/cy stay put. Mouse users keep the compact dots. */
+  @media (pointer: coarse) {
+    .ge-sock { transform-box: fill-box; transform-origin: center; transform: scale(2.2); }
+  }
   .ge-sock.out { stroke: #15803d; }
   .ge-sock.in.obj { stroke: #b91c1c; }
   .ge-sock.in.arg { stroke: #d97706; }
