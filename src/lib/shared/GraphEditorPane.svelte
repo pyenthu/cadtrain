@@ -3182,12 +3182,13 @@
     // CONSTRUCTION: rowGap 220 clears the tallest cards within a column,
     // and the __POLY__ profile edges (K.78) put polygons in the column
     // BEFORE their consumer calls instead of piling into depth 0.
-    // We deliberately DON'T run the push-apart pass afterward — with the
-    // edges + gaps there's nothing to de-overlap, and forceSeparate with
-    // the params-card obstacle was COMPRESSING the clean columns back
-    // together. The manual ⚙→push-apart path (applyPushApart) stays for
-    // hand-arranged graphs.
     graph = autoLayoutGraph(graph, { rowGap: 220, columnGap: 300 });
+    // Finish with a PURE push-apart (no params-card obstacle / wires /
+    // bounds — those were compressing the clean columns). With the column
+    // gaps this is usually a no-op, but it cleanly de-overlaps any residual
+    // collision (e.g. many same-depth siblings) without pulling columns in.
+    try { applyPushApart({ useBounds: false, useObstacles: false, useWires: false }); }
+    catch (e) { console.warn('[graph-editor] push-apart after auto-layout failed', e); }
   }
   function undoAutoLayout() {
     if (!undoLayout) return;
@@ -3204,19 +3205,25 @@
     undoLayout = { ...graph.layout };
     applyPushApart();
   }
-  function applyPushApart(useBounds = true) {
-    // Convert the params card's viewport rect to graph space so it
-    // participates in the force iteration. As the user pans, the card's
-    // graph-space position shifts inversely; we recompute on each click.
-    const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
-    const obstacles: { id: string; x: number; y: number; w: number; h: number }[] = [{
-      id: '__obs_params_card',
-      x: (CARD_X0 - pan.x) / zoom,
-      y: (CARD_Y0 - pan.y) / zoom,
-      // socket spills past the card's right edge by ~12 px — pad accordingly
-      w: (pcardSize.w + 14) / zoom,
-      h: pcardSize.h / zoom,
-    }];
+  function applyPushApart(opts: { useBounds?: boolean; useObstacles?: boolean; useWires?: boolean } = {}) {
+    const { useBounds = true, useObstacles = true, useWires = true } = opts;
+    // The params card is a viewport-fixed obstacle nodes get pushed clear
+    // of. PURE mode (auto-layout's pass) skips it + the wires + the bounds —
+    // those pull cards toward the viewport/params channel and were
+    // COMPRESSING the clean column layout back together. Pure pairwise
+    // separation only de-overlaps, never compresses.
+    const obstacles: { id: string; x: number; y: number; w: number; h: number }[] = [];
+    if (useObstacles) {
+      const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
+      obstacles.push({
+        id: '__obs_params_card',
+        x: (CARD_X0 - pan.x) / zoom,
+        y: (CARD_Y0 - pan.y) / zoom,
+        // socket spills past the card's right edge by ~12 px — pad accordingly
+        w: (pcardSize.w + 14) / zoom,
+        h: pcardSize.h / zoom,
+      });
+    }
     // Boundary walls (#116). The visible canvas region in graph space is
     // ([0, rect.width]/zoom shifted by -pan.x, etc.). Repellant walls
     // ride the obstacles channel — a tall thin rect JUST OUTSIDE the edge
@@ -3274,9 +3281,8 @@
       }
     }
     // Collect the visible wires so push-apart can route cards AROUND them
-    // (Phase 22b — wire repulsion). Same socket helpers as the SVG render
-    // path, so the obstacles match what the user sees.
-    const wires = collectWires();
+    // (Phase 22b — wire repulsion). Skipped in pure mode.
+    const wires = useWires ? collectWires() : [];
     // Real rendered card heights from the DOM (the nodeSize estimate
     // undersizes cards with foreignObject param/accordion bodies, so
     // forceSeparate thought cards cleared when they visually overlapped —
@@ -3696,9 +3702,15 @@
       style="left: {canvasMenuPos.left}px; top: {canvasMenuPos.top}px">
       <button class="ge-cm-row action" type="button"
         onclick={() => { autoLayout(); canvasMenuOpen = false; }}
-        title="Rearrange nodes left-to-right by depth, then push overlapping cards apart">
+        title="Rearrange nodes left-to-right by depth columns (clean by construction)">
         <span class="ge-cm-icon">📐</span>
         <span class="ge-cm-label">Auto-layout</span>
+      </button>
+      <button class="ge-cm-row action" type="button"
+        onclick={() => { pushApart(); canvasMenuOpen = false; }}
+        title="Push overlapping cards apart IN PLACE (keeps your manual arrangement; clears the params card + edge bounds below)">
+        <span class="ge-cm-icon">🧲</span>
+        <span class="ge-cm-label">Push apart</span>
       </button>
       <div class="ge-cm-sep"></div>
       <label class="ge-cm-row check"
