@@ -76,6 +76,16 @@ const RATE_LIMITED_PREFIXES: string[] = [];
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
+/** Flood guard — a GENEROUS per-IP ceiling on high-frequency READ endpoints so
+ *  a runaway client loop can't hammer the volume API. Sized far above normal
+ *  interactive use (opening even a deep assembly fetches each dep's source
+ *  ONCE), so only a loop trips it. Added after a client effect re-fetched a
+ *  404ing dependency ~1000×/s and saturated prod (2026-06-13). 300 / 10 s =
+ *  30 req/s sustained ceiling. */
+const FLOOD_GUARD_PREFIXES: string[] = ['/api/primitives/source'];
+const FLOOD_GUARD_MAX = 300;
+const FLOOD_GUARD_WINDOW_MS = 10 * 1000; // 10 seconds
+
 /** Routes that require Bearer auth when AUTH_TOKEN env var is set. */
 const AUTH_PROTECTED_PREFIX = '/api/';
 
@@ -174,12 +184,26 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
   }
 
+  const clientIp =
+    event.getClientAddress?.() ||
+    event.request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+    'unknown';
+
+  // Flood guard on high-frequency read endpoints (separate bucket, generous
+  // ceiling) — backstops any runaway client loop regardless of its cause.
+  if (FLOOD_GUARD_PREFIXES.some((p) => path.startsWith(p))) {
+    if (!checkRateLimit(`flood:${clientIp}`, FLOOD_GUARD_MAX, FLOOD_GUARD_WINDOW_MS)) {
+      console.log(`[429] ${event.request.method} ${path} — flood guard (${clientIp})`);
+      return new Response(
+        JSON.stringify({ error: 'Too many requests (flood guard). Reload the page.' }),
+        { status: 429, headers: { 'Content-Type': 'application/json', ...cors } }
+      );
+    }
+  }
+
   // Rate limit on sensitive API routes
   if (RATE_LIMITED_PREFIXES.some((p) => path.startsWith(p))) {
-    const ip =
-      event.getClientAddress?.() ||
-      event.request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      'unknown';
+    const ip = clientIp;
     if (!checkRateLimit(ip, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
       console.log(`[429] ${event.request.method} ${path} — rate limited (${ip})`);
       return new Response(
