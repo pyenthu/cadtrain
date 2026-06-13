@@ -3972,7 +3972,7 @@
   function producerLabel(id: NodeId): string {
     const n = graph.nodes[id] as any;
     if (!n) return '(missing)';
-    if (n.type === 'sketch') return `sketch · ${(n.ops ?? []).length} ops`;
+    if (n.type === 'sketch') return `sketch`;
     if (n.type === 'polygon') return `polygon · ${(n.points ?? []).length} pts`;
     return n.type;
   }
@@ -5880,7 +5880,7 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="10" y="22" class="ge-node-title">✐ sketch · {sk.ops.length} ops{skConsumed ? ' · 🔒' : ''}</text>
+                <text x="10" y="22" class="ge-node-title">✐ sketch{skConsumed ? ' · 🔒' : ''}</text>
                 <!-- ✎ open the full-tab sketch editor (plan M.2). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 32} y="22" class="ge-sketch-edit-btn"
