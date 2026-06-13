@@ -113,8 +113,12 @@ graph" requirement.
     radius). Each fillet op's existing radius field is now truly per-corner;
     unfilleted corners stay sharp; spline corners deferred to M.4. Tests in
     `src/lib/cad/sketch.test.ts`.
-  - ⏳ Remaining: click-two-segments gesture to ADD a fillet/chamfer with a
-    drag radius dial; spline-through-points; offset (wall thickness).
+  - ✅ **Click-to-fillet/chamfer + live radius dial — DONE 2026-06-13**
+    (`91c3da9`). Click a corner with the fillet/chamfer tool to round/bevel
+    THAT corner; a slider+number dial edits its radius/dist live; gold badge
+    marks modified corners. Same commit: tools moved to a LEFT vertical rail
+    and the status/dial/Done bar is a DRAGGABLE floating top bar.
+  - ⏳ Remaining: spline-through-points; offset (wall thickness, expandPaths).
 - **M.4 — pro polish (own session each).** Snapping + grid; dimensions /
   light constraints; DXF export; 2D-CSG (folds in K.58); mirror/symmetry.
 
