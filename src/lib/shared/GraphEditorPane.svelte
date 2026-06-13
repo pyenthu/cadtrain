@@ -2653,8 +2653,15 @@
   /** Lazy-load expected params for any Call whose src we haven't fetched
    *  yet (URL hydrate, paste-in from clipboard, etc.). Idempotent — only
    *  fetches each src once per session. */
+  // Attempted-once guard — without it a `src` that 404s (renamed/missing
+  // dependency) never lands in expectedParams, so the reactive effect below
+  // re-fires and re-fetches it on every graph change → a tight loop that
+  // floods /api/primitives/source (hammered prod, 2026-06-13). Record the
+  // attempt FIRST so failures don't retry.
+  const attemptedParams = new Set<string>();
   async function loadExpectedParamsFor(src: string) {
-    if (expectedParams[src]) return;
+    if (!src || expectedParams[src] || attemptedParams.has(src)) return;
+    attemptedParams.add(src);
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
       if (!r.ok) return;
