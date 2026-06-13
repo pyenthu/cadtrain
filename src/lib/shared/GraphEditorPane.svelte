@@ -2312,6 +2312,13 @@
   function sketchSockR(node: any, idx: number): number { return sketchRowTop(node, idx) + 12; }
   function sketchSockZ(node: any, idx: number): number { return sketchRowTop(node, idx) + 31; }
   function sketchSockVal(node: any, idx: number): number { return sketchRowTop(node, idx) + 12; }
+  /** When the ops list scrolls, the left-edge SVG sockets must shift up by the
+   *  same amount (they don't live inside the scrolling HTML). Hide a row's
+   *  sockets once its top scrolls outside the visible card band [36, scH]. */
+  function sketchRowVisible(node: any, idx: number, scH: number): boolean {
+    const top = sketchRowTop(node, idx) - sketchOpsScrollTop;
+    return top >= 36 && top <= scH;
+  }
   /** Wire a param's output onto a sketch op coord/field (r|z|radius|dist). */
   function endWireOnSketchCoord(ev: PointerEvent, sketchId: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist') {
     ev.stopPropagation();
@@ -2852,8 +2859,8 @@
   let editingSketchId = $state<string | null>(null);
   let sketchTool = $state<'select' | 'line' | 'spline' | 'fillet' | 'chamfer'>('select');
   let sketchSvgEl = $state<SVGSVGElement | null>(null);
-  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; }
-  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; splineDrag = null; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; }
+  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; sketchCardSize = null; sketchOpsScrollTop = 0; }
+  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; splineDrag = null; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; sketchCardSize = null; sketchOpsScrollTop = 0; }
 
   /** Param scope {name: default} for evaluating ArgValue fields to numbers. */
   function sketchParamScope(): Record<string, number> {
@@ -3245,6 +3252,34 @@
     { params: { x: 64, y: 56 }, sketch: { x: 64, y: 244 } }
   );
   let sketchCardDrag: { which: 'params' | 'sketch'; sx: number; sy: number; px: number; py: number } | null = null;
+  // Resizable sketch card (overrides MINI_SCW / ml.sch when set). null = auto-fit.
+  let sketchCardSize = $state<{ w: number; h: number } | null>(null);
+  let sketchCardResize: { sw: number; sh: number; px: number; py: number } | null = null;
+  // Live scroll offset of the ops list — left-edge SVG sockets must shift by
+  // this (and hide when scrolled out of the card) since they don't scroll with
+  // the inner HTML.
+  let sketchOpsScrollTop = $state(0);
+  function sketchCardResizeDown(ev: PointerEvent) {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    const w = sketchCardSize?.w ?? MINI_SCW;
+    const h = sketchCardSize?.h ?? (miniLayout?.sch ?? 200);
+    sketchCardResize = { sw: w, sh: h, px: ev.clientX, py: ev.clientY };
+    try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+  }
+  function sketchCardResizeMove(ev: PointerEvent) {
+    if (!sketchCardResize) return;
+    const d = sketchCardResize;
+    sketchCardSize = {
+      w: Math.max(140, d.sw + (ev.clientX - d.px)),
+      h: Math.max(120, d.sh + (ev.clientY - d.py)),
+    };
+  }
+  function sketchCardResizeUp(ev: PointerEvent) {
+    if (!sketchCardResize) return;
+    sketchCardResize = null;
+    releaseImplicitCapture(ev);
+  }
   function sketchCardDown(ev: PointerEvent, which: 'params' | 'sketch') {
     if (ev.button !== 0) return;
     ev.stopPropagation();
@@ -6108,6 +6143,14 @@
                     fill="#f59e0b" stroke="#fff" stroke-width={hr * 0.25}
                     onpointerdown={(ev) => splineCompDown(ev, 'pt', pt.k)}
                     onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+                  <!-- per-point delete: a small × above-right of THIS through-point -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle class="ge-sk-spt-del-hit" role="button" tabindex="-1"
+                    cx={pt.x + hr * 1.5} cy={pt.y - hr * 1.5} r={hr * 0.9}
+                    data-tip="Delete this through-point"
+                    onpointerdown={(ev) => { ev.stopPropagation(); if (editingSketchId) graph = removeSketchSplinePoint(graph, editingSketchId, ss.opIdx, pt.k); }}/>
+                  <text x={pt.x + hr * 1.5} y={pt.y - hr * 1.5 + hr * 0.5} font-size={hr * 1.4} text-anchor="middle"
+                    fill="#fff" font-weight="700" pointer-events="none">×</text>
                 {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle cx={ss.h0.x} cy={ss.h0.y} r={hr * 0.82} class="ge-sk-spt"
@@ -6131,31 +6174,33 @@
             {#if miniLayout}
               {@const ml = miniLayout}
               {@const sn = se.node}
+              {@const scW = sketchCardSize?.w ?? MINI_SCW}
+              {@const scH = sketchCardSize?.h ?? ml.sch}
               <svg class="ge-sketch-cards" bind:this={miniSvgEl}>
                 <!-- committed wires: every param-driven coord → its param socket -->
                 {#each (sn.ops as Array<any>) as op, idx (idx)}
                   {#if op.op === 'line' || op.op === 'spline'}
                     {#if op.r?.kind === 'param'}
                       {@const pi = paramNames.indexOf(op.r.param)}
-                      {#if pi >= 0}
+                      {#if pi >= 0 && sketchRowVisible(sn, idx, scH)}
                         {@const a = miniParamSockAbs(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockR(sn, idx))}/>
+                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockR(sn, idx) - sketchOpsScrollTop)}/>
                       {/if}
                     {/if}
                     {#if op.z?.kind === 'param'}
                       {@const pi = paramNames.indexOf(op.z.param)}
-                      {#if pi >= 0}
+                      {#if pi >= 0 && sketchRowVisible(sn, idx, scH)}
                         {@const a = miniParamSockAbs(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockZ(sn, idx))}/>
+                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockZ(sn, idx) - sketchOpsScrollTop)}/>
                       {/if}
                     {/if}
                   {:else}
                     {@const f = op.op === 'fillet' ? op.radius : op.dist}
                     {#if f?.kind === 'param'}
                       {@const pi = paramNames.indexOf(f.param)}
-                      {#if pi >= 0}
+                      {#if pi >= 0 && sketchRowVisible(sn, idx, scH)}
                         {@const a = miniParamSockAbs(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockVal(sn, idx))}/>
+                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockVal(sn, idx) - sketchOpsScrollTop)}/>
                       {/if}
                     {/if}
                   {/if}
@@ -6224,15 +6269,16 @@
                 <!-- SKETCH node card — drag by its title bar; per-coord wire
                      sockets (LEFT edge) + a ƒ button on every coord row. -->
                 <g class="card" transform="translate({sketchCardPos.sketch.x},{sketchCardPos.sketch.y})">
-                  <rect class="ge-node-bg sketch" width={MINI_SCW} height={ml.sch} rx="6"/>
+                  <rect class="ge-node-bg sketch" width={scW} height={scH} rx="6"/>
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <rect class="ge-sketch-card-title" x="0" y="0" width={MINI_SCW} height="32" rx="6"
+                  <rect class="ge-sketch-card-title" x="0" y="0" width={scW} height="32" rx="6"
                     onpointerdown={(ev) => sketchCardDown(ev, 'sketch')}/>
                   <text x="10" y="22" class="ge-node-title" pointer-events="none">✐ sketch · {sn.ops.length} ops</text>
-                  <line x1="0" y1="32" x2={MINI_SCW} y2="32" class="ge-node-divider" pointer-events="none"/>
-                  <foreignObject x="6" y="36" width={MINI_SCW - 12} height={ml.sch - 40} class="ge-fo">
+                  <line x1="0" y1="32" x2={scW} y2="32" class="ge-node-divider" pointer-events="none"/>
+                  <foreignObject x="6" y="36" width={scW - 12} height={scH - 40} class="ge-fo">
                     <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-sketch-ops">
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <div class="ge-sketch-ops" onscroll={(e) => (sketchOpsScrollTop = (e.currentTarget as HTMLElement).scrollTop)}>
                         {#each (sn.ops as Array<any>) as op, idx (idx)}
                           {#if op.op === 'line' || op.op === 'spline'}
                             <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
@@ -6284,24 +6330,34 @@
                       </div>
                     </div>
                   </foreignObject>
-                  <!-- Per-coord INPUT sockets (drop a param's output socket here). -->
+                  <!-- Per-coord INPUT sockets (drop a param's output socket here).
+                       They live in card-space, so when the ops list scrolls they
+                       shift up by sketchOpsScrollTop and hide once their row
+                       scrolls out of the visible card band. -->
                   {#each (sn.ops as Array<any>) as op, idx (idx)}
-                    {#if op.op === 'line' || op.op === 'spline'}
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
-                        cx="0" cy={sketchSockR(sn, idx)} r="4" data-tip="Drag a param here → r"
-                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'r')}/>
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.z?.kind === 'param' ? ' wired' : ''}`}
-                        cx="0" cy={sketchSockZ(sn, idx)} r="4" data-tip="Drag a param here → z"
-                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'z')}/>
-                    {:else}
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param' ? ' wired' : ''}`}
-                        cx="0" cy={sketchSockVal(sn, idx)} r="4" data-tip="Drag a param here"
-                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
+                    {#if sketchRowVisible(sn, idx, scH)}
+                      {#if op.op === 'line' || op.op === 'spline'}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
+                          cx="0" cy={sketchSockR(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here → r"
+                          onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'r')}/>
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.z?.kind === 'param' ? ' wired' : ''}`}
+                          cx="0" cy={sketchSockZ(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here → z"
+                          onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'z')}/>
+                      {:else}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param' ? ' wired' : ''}`}
+                          cx="0" cy={sketchSockVal(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here"
+                          onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
+                      {/if}
                     {/if}
                   {/each}
+                  <!-- Bottom-right resize grip — drag to set a fixed card size
+                       (the ops list then scrolls when ops overflow). -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <path class="ge-sketch-resize-grip" d={`M ${scW - 3} ${scH - 14} L ${scW - 3} ${scH - 3} L ${scW - 14} ${scH - 3} Z`}
+                    onpointerdown={sketchCardResizeDown} onpointermove={sketchCardResizeMove} onpointerup={sketchCardResizeUp}/>
                 </g>
 
                 <!-- in-flight preview: param out socket → cursor -->
@@ -6352,9 +6408,9 @@
                   <button class="ge-stool" title="Clear both end handles → auto Catmull-Rom tangent" disabled={!selectedSpline.h0.set && !selectedSpline.h1.set} onclick={autoTangentSpline}>auto tangent</button>
                 </span>
               {/if}
-              <div class="ge-stool-sep"></div>
-              <button class="ge-stool done" title="Done — back to the graph" onclick={closeSketchEditor}>✓ Done</button>
             </div>
+            <!-- Standalone Done tick — pinned top-right, above the canvas/overlay. -->
+            <button class="ge-sketch-done-tick" title="Done — back to the graph" onclick={closeSketchEditor}>✓</button>
             <div class="ge-sketch-hint">
               {#if sketchTool === 'select'}Drag the violet points to reshape · pick a tool to add ops
               {:else if sketchTool === 'fillet' || sketchTool === 'chamfer'}Click a corner to {sketchTool} it, then use the dial to set the {sketchTool === 'fillet' ? 'radius' : 'distance'}
@@ -7928,6 +7984,20 @@
   .ge-sk-anchor.locked { cursor: not-allowed; opacity: 0.6; }
   .ge-sk-spt { cursor: grab; touch-action: none; }
   .ge-sk-spt:hover { stroke: #fde68a; }
+  /* Per-point spline delete hit target (× glyph rides on top, pointer-events:none). */
+  .ge-sk-spt-del-hit { fill: #dc2626; stroke: #fff; stroke-width: 0.4px; cursor: pointer; touch-action: none; }
+  .ge-sk-spt-del-hit:hover { fill: #b91c1c; }
+  /* Bottom-right resize grip on the sketch card. */
+  .ge-sketch-resize-grip { fill: #c4b5fd; cursor: nwse-resize; touch-action: none; }
+  .ge-sketch-resize-grip:hover { fill: #a78bfa; }
+  /* Standalone Done tick — pinned top-right of the sketcher, above everything. */
+  .ge-sketch-done-tick {
+    position: absolute; top: 10px; right: 14px; z-index: 10;
+    width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center;
+    background: #ecfdf5; color: #15803d; border: 1px solid #6ee7b7; border-radius: 9999px;
+    font: 700 17px Arial; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+  }
+  .ge-sketch-done-tick:hover { background: #d1fae5; border-color: #34d399; }
   .ge-sketch-hint { position: absolute; left: 12px; bottom: 10px; font: 11px Arial; color: #6b7280; background: rgba(255,255,255,0.85); padding: 3px 8px; border-radius: 4px; pointer-events: none; }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
