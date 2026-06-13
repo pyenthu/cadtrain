@@ -5077,8 +5077,8 @@
                               oninput={(e) => onArgEdit(n.id, k, Number((e.target as HTMLInputElement).value))}
                             />
                             <span class="ge-arg-actions">
-                              <button class="ge-arg-action fx" type="button" title="Switch to expression (ƒ)"
-                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                              <button class="ge-arg-action fx" type="button" title="Edit as an expression (ƒ)"
+                                onclick={(ev) => openArgExprPop(ev, n.id, k, String((v as any).value ?? 0))}>ƒ</button>
                             </span>
                           </span>
                         {:else if (v as any).kind === 'param'}
@@ -5090,8 +5090,8 @@
                             <span class="ge-arg-pchip" title="Wired to param">p.{(v as any).param}</span>
                             <span class="ge-arg-actions">
                               <button class="ge-arg-action fx" type="button"
-                                title="Make this an expression (e.g. p.wall / 2)"
-                                onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                                title="Edit as an expression (e.g. p.wall / 2)"
+                                onclick={(ev) => openArgExprPop(ev, n.id, k, 'p.' + (v as any).param)}>ƒ</button>
                               <button class="ge-arg-action x" type="button"
                                 title="Unwire — back to literal"
                                 onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
@@ -5159,8 +5159,10 @@
                                 ƒ(<span class="ge-arg-fnchip-refs">{refs.map((r) => 'p.' + r).join(', ')}</span>) ✎
                               </span>
                               <span class="ge-arg-actions">
-                                <button class="ge-arg-action fx on" type="button" title="Back to literal"
-                                  onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                                <button class="ge-arg-action fx on" type="button" title="Edit expression"
+                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>ƒ</button>
+                                <button class="ge-arg-action x" type="button" title="Back to literal"
+                                  onclick={() => toggleArgExprMode(n.id, k)}>×</button>
                               </span>
                             </span>
                           {:else}
@@ -5171,10 +5173,10 @@
                                 oninput={(e) => onArgExprEdit(n.id, k, (e.target as HTMLInputElement).value)}
                               />
                               <span class="ge-arg-actions">
-                                <button class="ge-arg-action edit" type="button" title="Open expression editor"
-                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
-                                <button class="ge-arg-action fx on" type="button" title="Back to literal"
-                                  onclick={() => toggleArgExprMode(n.id, k)}>ƒ</button>
+                                <button class="ge-arg-action fx on" type="button" title="Edit expression in popover"
+                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>ƒ</button>
+                                <button class="ge-arg-action x" type="button" title="Back to literal"
+                                  onclick={() => toggleArgExprMode(n.id, k)}>×</button>
                               </span>
                             </span>
                           {/if}
