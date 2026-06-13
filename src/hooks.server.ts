@@ -26,6 +26,7 @@ const VOLUME_PROXY_PATHS = new Set([
   '/api/primitives/source',
   '/api/primitives/delete',
   '/api/primitives/move',
+  '/api/primitives/mkdir',
   '/api/primitives/rename',
   '/api/primitives/restore',
   '/api/primitives/prompts',

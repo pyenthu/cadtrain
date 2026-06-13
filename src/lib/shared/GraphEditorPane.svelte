@@ -141,6 +141,12 @@
      *  parent to open as a new seeded tab. Hidden when unset (standalone
      *  /graph-editor / /vocab mounts have no tab strip to open into). */
     onGenerated?: (id: string, graph: any, candidates: string[]) => void;
+    /** Target folder for a NEW part's first Save — the active folder-tab /
+     *  subfolder in the /primitives sidebar (location IS category, Rule 16).
+     *  A 1–3-segment path under primitives/ (e.g. 'completions/drill_pipe').
+     *  Ignored for parts that already exist on disk (save writes back in
+     *  place server-side). Defaults to 'basic'. */
+    createDir?: string;
   }
   const props: Props = $props();
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
@@ -4360,11 +4366,13 @@
           id: exemplarId,
           source: emitted.source,
           kind: 'asm',
-          dir: 'basic',
+          // Active folder-tab dir for a brand-new part (server ignores this for
+          // an existing id — it writes back in place). Defaults to basic/.
+          dir: props.createDir || 'basic',
         }),
       });
       if (r.ok) {
-        saveStatus = `✓ ${exemplarId} saved to basic/`;
+        saveStatus = `✓ ${exemplarId} saved to ${props.createDir || 'basic'}/`;
       } else {
         saveStatus = `✗ save ${r.status}: ${(await r.text()).slice(0, 160)}`;
       }

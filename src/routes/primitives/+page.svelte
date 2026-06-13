@@ -41,6 +41,105 @@
    *  dirs surface as keys with empty arrays so the user sees the slot. */
   let completions: Record<string, Entry[]> = $state({});
 
+  // ─── Folder tree (vertical-tab sidebar) ───────────────────────────────────
+  /** A directory under primitives/. The sidebar's top-level tabs are the
+   *  tree root's children (each a volume folder); nested dirs are navigable
+   *  subfolders. Sourced from /api/primitives/list `tree` so it always
+   *  mirrors the on-volume dirs incl. user-created ones (Rule 16). */
+  interface FolderNode { name: string; path: string; parts: Entry[]; children: FolderNode[]; }
+  let tree = $state<FolderNode | null>(null);
+  let topFolders = $derived(tree?.children ?? []);
+  /** Active top-level tab: a volume folder name OR a fixed src group
+   *  ('stdlib' | 'stdstale'). */
+  let activeTab = $state<string>('basic');
+  /** Current navigation path within the active VOLUME tab — relative to
+   *  primitives/, always rooted at the tab name (e.g. 'completions/drill_pipe'). */
+  let navPath = $state<string>('basic');
+  /** Remember the last subfolder visited per tab so switching away + back
+   *  returns to where you were (in-memory; only activeTab/navPath persist). */
+  let navByTab: Record<string, string> = {};
+  let isSrcTab = $derived(activeTab === 'stdlib' || activeTab === 'stdstale');
+  let isArchiveTab = $derived(activeTab === 'archive');
+
+  function tabLabel(name: string): string {
+    if (name === 'archive') return 'Archived';
+    if (name === 'stdlib' || name === 'stdstale') return name;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  /** Walk the tree to the node at a relative path ('' → root, else by name). */
+  function nodeAt(path: string): FolderNode | null {
+    if (!tree) return null;
+    if (!path) return tree;
+    let n: FolderNode = tree;
+    for (const seg of path.split('/')) {
+      const c = n.children.find((x) => x.name === seg);
+      if (!c) return null;
+      n = c;
+    }
+    return n;
+  }
+  let currentNode = $derived(nodeAt(navPath));
+  /** Breadcrumb segments for navPath, each with its cumulative path. */
+  let crumbs = $derived(
+    navPath
+      ? navPath.split('/').map((seg, i, arr) => ({ seg, path: arr.slice(0, i + 1).join('/') }))
+      : [],
+  );
+
+  function persistNav() {
+    try {
+      localStorage.setItem('prim-active-tab', activeTab);
+      localStorage.setItem('prim-nav-path', navPath);
+    } catch { /* ignore */ }
+  }
+  function selectTab(name: string) {
+    activeTab = name;
+    navPath = (name === 'stdlib' || name === 'stdstale') ? name : (navByTab[name] ?? name);
+    persistNav();
+  }
+  function descend(path: string) {
+    navPath = path;
+    navByTab[activeTab] = path;
+    persistNav();
+  }
+
+  // ─── Create folder (folder-tab + nested subfolder) ────────────────────────
+  let folderBusy = $state(false);
+  async function mkFolder(path: string): Promise<boolean> {
+    folderBusy = true;
+    try {
+      const r = await fetch(`/api/primitives/mkdir?path=${encodeURIComponent(path)}`, { method: 'POST' });
+      if (!r.ok) {
+        if (typeof alert === 'function') alert(`Create folder failed (${r.status}): ${(await r.text()).slice(0, 160)}`);
+        return false;
+      }
+      await loadList();
+      return true;
+    } catch (e: any) {
+      if (typeof alert === 'function') alert(`Create folder error: ${e?.message ?? e}`);
+      return false;
+    } finally {
+      folderBusy = false;
+    }
+  }
+  async function addTopFolder() {
+    const raw = typeof window !== 'undefined' ? window.prompt?.('New folder-tab name (lowercase, _ allowed)', '') : null;
+    if (!raw) return;
+    const name = raw.trim();
+    if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
+    if (await mkFolder(name)) selectTab(name);
+  }
+  async function addSubfolder() {
+    if (isSrcTab) return;
+    const raw = typeof window !== 'undefined' ? window.prompt?.('New subfolder name (lowercase, _ allowed)', '') : null;
+    if (!raw) return;
+    const name = raw.trim();
+    if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
+    const path = `${navPath}/${name}`;
+    if (path.split('/').length > 3) { alert('Max folder depth is 3 (cat / family / subfolder)'); return; }
+    if (await mkFolder(path)) descend(path);
+  }
+
   /** Profile entries — `.prvl.ts` (revolve) and `.prex.ts` (extrude) files
    *  living under `<volume>/primitives/profiles/`. Loaded from a sister
    *  endpoint (the profile list is shaped differently from the primitive
@@ -235,6 +334,7 @@
       stdstale  = Array.isArray(pr.stdstale)  ? pr.stdstale  : [];
       archived  = Array.isArray(pr.archived)  ? pr.archived  : [];
       completions = (pr.completions && typeof pr.completions === 'object') ? pr.completions : {};
+      tree      = (pr.tree && typeof pr.tree === 'object') ? pr.tree : { name: '', path: '', parts: [], children: [] };
       profiles  = Array.isArray(pf.profiles)
         ? pf.profiles.map((p: any) => ({ id: p.id, set: p.set, hasSource: !!p.hasSource }))
         : [];
@@ -373,11 +473,13 @@
   function createNewEntry() {
     const prompt = typeof window !== 'undefined' ? window.prompt : null;
     if (!prompt) return;
-    const raw = prompt('new entry id (lowercase, _ allowed)', '');
+    const raw = prompt(`new part id in ${navPath}/ (lowercase, _ allowed)`, '');
     if (!raw) return;
     const id = raw.trim();
     if (!ID_RE.test(id)) { alert(`bad id "${id}" — must match [a-z][a-z0-9_]*`); return; }
-    void openTab(id);
+    // First Save lands the .prim.ts in the active folder-tab / subfolder
+    // (location IS category, Rule 16). The pane carries `createDir`.
+    void openTab(id, navPath);
   }
 
   // ─── Tab strip ────────────────────────────────────────────────────────────
@@ -392,6 +494,9 @@
      *  id; the user's first Save creates the file. Seeded tabs are NOT
      *  persisted across reloads (nothing on disk to restore from). */
     seedGraph?: any;
+    /** Target folder for a brand-new part's first Save (the folder-tab the
+     *  user created it from). Undefined for parts opened from the list. */
+    createDir?: string;
   }
   let tabs: Tab[] = $state([]);
   let activeKey: number | null = $state(null);
@@ -400,11 +505,11 @@
   /** Open `id` in a tab — activates the existing tab if one is already
    *  open, otherwise creates a new one. Tabs stay loaded in the background
    *  until closed (graph state + bake cache + zoom survive switches). */
-  async function openTab(id: string) {
+  async function openTab(id: string, createDir?: string) {
     const existing = tabs.find((t) => t.id === id);
     if (existing) { activeKey = existing.key; return; }
     const key = nextKey++;
-    tabs = [...tabs, { id, key }];
+    tabs = [...tabs, { id, key, createDir }];
     activeKey = key;
     await tick();
     persistTabs();
@@ -490,6 +595,24 @@
       if (rw >= 180 && rw <= 480) railWidth = rw;
     } catch { /* ignore */ }
     await loadList();
+    // Restore the active folder-tab + nav path. Validate against the freshly
+    // loaded tree — a stored path whose dir was deleted falls back to the tab
+    // root, then to the first available folder-tab, so the sidebar never lands
+    // on a blank (null) node.
+    try {
+      const at = localStorage.getItem('prim-active-tab');
+      if (at) activeTab = at;
+      const np = localStorage.getItem('prim-nav-path');
+      if (np) navPath = np;
+    } catch { /* ignore */ }
+    if (!isSrcTab) {
+      if (!nodeAt(navPath)) navPath = nodeAt(activeTab) ? activeTab : '';
+      if (!nodeAt(navPath)) {
+        const first = topFolders[0];
+        if (first) { activeTab = first.name; navPath = first.name; }
+      }
+      navByTab[activeTab] = navPath;
+    }
     // Restore previously-open tabs from this browser's last session.
     // New format: `id|kind` per entry; legacy entries (no `|`) default to
     // 'part' so old saves keep working.
@@ -577,245 +700,159 @@
       {/if}
     </div>
 
-    <!-- Everything below the header + filter scrolls inside this wrapper.
-         The rail itself stays anchored — title stays put, filter stays
-         visible while the groups scroll past underneath. -->
+    <!-- Vertical tab rail — one tab per top-level volume folder (sourced from
+         the /list `tree`, so user-created dirs appear automatically; Rule 16),
+         plus the two fixed read-only SRC groups (stdlib / stdstale) which are
+         git-tracked src, NOT volume folders → not addable. The trailing ＋
+         creates a new folder-tab on the volume. Tabs are PINNED (outside the
+         scroll); only the active tab's content scrolls. -->
+    <div class="prim-tabrail" role="tablist" aria-label="Primitive folders">
+      {#each topFolders as f (f.path)}
+        <button class="prim-tabbtn" class:active={activeTab === f.name}
+          role="tab" type="button" aria-selected={activeTab === f.name}
+          title={`${tabLabel(f.name)} — primitives/${f.name}/`}
+          onclick={() => selectTab(f.name)}>{tabLabel(f.name)}</button>
+      {/each}
+      <button class="prim-tabbtn src" class:active={activeTab === 'stdlib'}
+        role="tab" type="button" aria-selected={activeTab === 'stdlib'}
+        title="Built-in engines (src/lib/cad/stdlib — read-only)"
+        onclick={() => selectTab('stdlib')}>stdlib</button>
+      <button class="prim-tabbtn src" class:active={activeTab === 'stdstale'}
+        role="tab" type="button" aria-selected={activeTab === 'stdstale'}
+        title="Deprecated engines (src/lib/cad/stdstale — read-only)"
+        onclick={() => selectTab('stdstale')}>stdstale</button>
+      <button class="prim-tabadd" type="button"
+        title="New folder-tab — creates primitives/<name>/ on the volume"
+        disabled={folderBusy} onclick={addTopFolder}>＋ folder</button>
+    </div>
+
+    <!-- Reusable part row — open / drag / rename / trash. `tag` is the source
+         badge; `trashKind` picks soft-delete (🗑 → archive/), permanent
+         (irreversible, Archived tab) or none (read-only src). -->
+    {#snippet partRow(e: Entry, tag: string, canRename: boolean, trashKind: 'none' | 'soft' | 'perm')}
+      <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
+        {#if renamingId === e.id}
+          <div class="prim-row prim-row-rename">
+            <input class="prim-rename-input" type="text" use:focusRenameInput
+              bind:value={renameValue}
+              disabled={renameBusy}
+              onkeydown={(ev) => {
+                if (ev.key === 'Enter') { ev.preventDefault(); void commitRename(e.id); }
+                else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
+              }}
+              onblur={() => { if (!renameError && !renameBusy) cancelRename(); }} />
+            {#if renameError}<span class="prim-rename-err" title={renameError}>{renameError}</span>{/if}
+          </div>
+        {:else}
+          <button class="prim-row" type="button"
+            draggable={!isCoarsePointer}
+            ondragstart={(ev) => {
+              if (ev.dataTransfer) {
+                ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
+                ev.dataTransfer.effectAllowed = 'copy';
+              }
+            }}
+            onclick={() => openTab(e.id)}>
+            <span class="prim-name">{e.id}</span>
+            <span class="prim-tag {tag}">{tag}</span>
+          </button>
+          {#if canRename}
+            <button class="prim-rename" type="button"
+              title="Rename — type a new id, Enter to commit"
+              aria-label="Rename {e.id}"
+              onclick={() => startRename(e.id, e.source)}>✎</button>
+          {/if}
+          {#if trashKind === 'soft'}
+            <button class="prim-trash" type="button"
+              title="Archive — soft delete (recoverable from primitives/archive/)"
+              disabled={deleteBusy === e.id}
+              onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
+          {:else if trashKind === 'perm'}
+            <button class="prim-trash perm" type="button"
+              title="Permanent delete — removes the file from the volume (irreversible)"
+              disabled={deleteBusy === e.id}
+              onclick={() => deletePrim(e.id, e.source, 'permanent')}
+              aria-label="Permanently delete {e.id}">
+              {#if deleteBusy === e.id}
+                …
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true">
+                  <path d="M3 6h18"/>
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                  <path d="M19 6l-1.2 13.2A2 2 0 0 1 15.8 21H8.2a2 2 0 0 1-2-1.8L5 6"/>
+                  <path d="M10 11v6"/>
+                  <path d="M14 11v6"/>
+                </svg>
+              {/if}
+            </button>
+          {/if}
+        {/if}
+      </div>
+    {/snippet}
+
+    <!-- Active tab's content scrolls here. Only ONE pane is rendered (the
+         active tab), so there's no display:none grid/track phantom to blank
+         the next pane (memory grid_display_none_auto_placement). -->
     <div class="prim-rail-scroll">
 
     {#if listLoading}<div class="prim-empty">loading…</div>{/if}
     {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
 
-    <!-- PROFILES section removed in the K.72 unify — every saved file
-         is now .prim.ts in basic/. Existing .prvl.ts / .prex.ts files
-         were archived; the volume's primitives/profiles/ directory is
-         dormant. Recreate any needed profiles via Basic's + new. -->
-
-    <!-- Basic — `<volume>/primitives/basic/*.{prim,asm}.ts`. -->
-    <div class="prim-group">
-      <div class="prim-group-row">
-        <button class="prim-group-head" type="button" onclick={() => toggleGroup('basic')}>
-          <span class="prim-caret">{openGroups.basic ? '▾' : '▸'}</span>
-          Basic <span class="prim-count">({basicSorted.filter(pass).length})</span>
-        </button>
-        <button class="prim-group-new" type="button"
-          title="Create a new graph — opens a fresh tab; first save creates the .prim.ts file in basic/"
-          onclick={(ev) => { ev.stopPropagation(); createNewEntry(); }}>+</button>
+    {#if isSrcTab}
+      <!-- Fixed SRC group — flat, read-only (no create / rename / trash). -->
+      {@const srcList = activeTab === 'stdlib' ? stdlibSorted : stdstaleSorted}
+      {@const srcTag = activeTab === 'stdlib' ? 'src' : 'stale'}
+      {#each srcList.filter(pass) as e (e.id)}
+        {@render partRow(e, srcTag, false, 'none')}
+      {/each}
+      {#if srcList.filter(pass).length === 0}<div class="prim-empty">no entries</div>{/if}
+    {:else}
+      <!-- Breadcrumb — descend by clicking a child folder, climb by clicking a
+           crumb. Each segment is a real on-volume dir. -->
+      <div class="prim-crumbs">
+        {#each crumbs as c, i (c.path)}
+          {#if i > 0}<span class="prim-crumb-sep">/</span>{/if}
+          <button class="prim-crumb" class:current={c.path === navPath} type="button"
+            onclick={() => descend(c.path)}>{i === 0 ? tabLabel(c.seg) : c.seg}</button>
+        {/each}
       </div>
-      {#if openGroups.basic}
-        {#each basicSorted.filter(pass) as e (e.id)}
-          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
-            {#if renamingId === e.id}
-              <!-- Rename mode (#164): the row body becomes an input prefilled
-                   with the current id. Enter commits, Escape cancels, blur
-                   cancels too (avoid stranded inputs from accidental clicks
-                   elsewhere). Errors land in a tooltip-style chip beneath. -->
-              <div class="prim-row prim-row-rename">
-                <input class="prim-rename-input" type="text" use:focusRenameInput
-                  bind:value={renameValue}
-                  disabled={renameBusy}
-                  onkeydown={(ev) => {
-                    if (ev.key === 'Enter') { ev.preventDefault(); void commitRename(e.id); }
-                    else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
-                  }}
-                  onblur={() => { if (!renameError && !renameBusy) cancelRename(); }} />
-                {#if renameError}<span class="prim-rename-err" title={renameError}>{renameError}</span>{/if}
-              </div>
-            {:else}
-              <button class="prim-row" type="button"
-                draggable={!isCoarsePointer}
-                ondragstart={(ev) => {
-                  if (ev.dataTransfer) {
-                    ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                    ev.dataTransfer.effectAllowed = 'copy';
-                  }
-                }}
-                onclick={() => openTab(e.id)}>
-                <span class="prim-name">{e.id}</span>
-                <span class="prim-tag vol">vol</span>
-              </button>
-              {#if e.source === 'volume'}
-                <button class="prim-rename" type="button"
-                  title="Rename — type a new id, Enter to commit"
-                  aria-label="Rename {e.id}"
-                  onclick={() => startRename(e.id, e.source)}>✎</button>
-                <button class="prim-trash" type="button"
-                  title="Archive — soft delete (recoverable from primitives/archive/)"
-                  disabled={deleteBusy === e.id}
-                  onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
-              {/if}
-            {/if}
-          </div>
-        {/each}
-      {/if}
-    </div>
+      <!-- Folder-level actions: new part (writes into THIS dir — location IS
+           category) + new subfolder (mkdir on the volume). Hidden where they
+           don't apply (no new parts into the archive graveyard). -->
+      <div class="prim-folder-actions">
+        {#if !isArchiveTab}
+          <button class="prim-mini" type="button"
+            title={`Create a new part in primitives/${navPath}/ — opens a fresh tab; first save writes the file`}
+            onclick={createNewEntry}>＋ part</button>
+        {/if}
+        <button class="prim-mini" type="button"
+          title={`Create a subfolder in primitives/${navPath}/`}
+          disabled={folderBusy} onclick={addSubfolder}>＋ subfolder</button>
+      </div>
 
-    <!-- Completions — nested by family. Each family is its own collapsible
-         sub-group so a single drill_pipe family with 30 parts doesn't drown
-         the smaller families. -->
-    <div class="prim-group">
-      <button class="prim-group-head" type="button" onclick={() => toggleGroup('completions')}>
-        <span class="prim-caret">{openGroups.completions ? '▾' : '▸'}</span>
-        Completions
-      </button>
-      {#if openGroups.completions}
-        {#each Object.entries(completionsSorted) as [fam, items] (fam)}
-          {@const filtered = items.filter(pass)}
-          {#if filtered.length > 0 || !filter.trim()}
-            <button class="prim-family-head" type="button" onclick={() => toggleFamily(fam)}>
-              <span class="prim-caret">{openFamilies[fam] ? '▾' : '▸'}</span>
-              {fam} <span class="prim-count">({filtered.length})</span>
-            </button>
-            {#if openFamilies[fam]}
-              {#each filtered as e (e.id)}
-                <div class="prim-row-wrap indent" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
-                  {#if renamingId === e.id}
-                    <div class="prim-row indent prim-row-rename">
-                      <input class="prim-rename-input" type="text" use:focusRenameInput
-                        bind:value={renameValue}
-                        disabled={renameBusy}
-                        onkeydown={(ev) => {
-                          if (ev.key === 'Enter') { ev.preventDefault(); void commitRename(e.id); }
-                          else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
-                        }}
-                        onblur={() => { if (!renameError && !renameBusy) cancelRename(); }} />
-                      {#if renameError}<span class="prim-rename-err" title={renameError}>{renameError}</span>{/if}
-                    </div>
-                  {:else}
-                    <button class="prim-row indent" type="button"
-                      draggable={!isCoarsePointer}
-                      ondragstart={(ev) => {
-                        if (ev.dataTransfer) {
-                          ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                          ev.dataTransfer.effectAllowed = 'copy';
-                        }
-                      }}
-                      onclick={() => openTab(e.id)}>
-                      <span class="prim-name">{e.id}</span>
-                      <span class="prim-tag vol">vol</span>
-                    </button>
-                    {#if e.source === 'volume'}
-                      <button class="prim-rename" type="button"
-                        title="Rename — type a new id, Enter to commit"
-                        aria-label="Rename {e.id}"
-                        onclick={() => startRename(e.id, e.source)}>✎</button>
-                      <button class="prim-trash" type="button"
-                        title="Archive — soft delete (recoverable from primitives/archive/)"
-                        disabled={deleteBusy === e.id}
-                        onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
-                    {/if}
-                  {/if}
-                </div>
-              {/each}
-            {/if}
-          {/if}
+      {#if currentNode}
+        {#each currentNode.children as c (c.path)}
+          <button class="prim-folder-row" type="button"
+            title={`Open primitives/${c.path}/`}
+            onclick={() => descend(c.path)}>
+            <span class="prim-folder-ic">📁</span>
+            <span class="prim-name">{c.name}</span>
+            <span class="prim-count">({c.parts.length})</span>
+          </button>
         {/each}
-      {/if}
-    </div>
-
-    <!-- stdlib — git-tracked r_* canonical building blocks (read-only). -->
-    <div class="prim-group">
-      <button class="prim-group-head" type="button" onclick={() => toggleGroup('stdlib')}>
-        <span class="prim-caret">{openGroups.stdlib ? '▾' : '▸'}</span>
-        stdlib <span class="prim-count">({stdlibSorted.filter(pass).length})</span>
-      </button>
-      {#if openGroups.stdlib}
-        {#each stdlibSorted.filter(pass) as e (e.id)}
-          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button"
-              draggable={!isCoarsePointer}
-              ondragstart={(ev) => {
-                if (ev.dataTransfer) {
-                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                  ev.dataTransfer.effectAllowed = 'copy';
-                }
-              }}
-              onclick={() => openTab(e.id)}>
-              <span class="prim-name">{e.id}</span>
-              <span class="prim-tag src" title="from src/lib/cad/stdlib — read-only">src</span>
-            </button>
-            <!-- stdlib lives in git-tracked src/ — no trash, refused server-side anyway. -->
-          </div>
+        {#each sortBy(currentNode.parts).filter(pass) as e (e.id)}
+          {@render partRow(e, isArchiveTab ? 'arch' : 'vol', !isArchiveTab, isArchiveTab ? 'perm' : 'soft')}
         {/each}
+        {#if currentNode.children.length === 0 && currentNode.parts.filter(pass).length === 0}
+          <div class="prim-empty">{filter.trim() ? 'no matches' : 'empty folder'}</div>
+        {/if}
+      {:else}
+        <div class="prim-empty">folder not found</div>
       {/if}
-    </div>
-
-    <!-- stdstale — deprecated stdlib engines kept resolvable for legacy parts. -->
-    <div class="prim-group">
-      <button class="prim-group-head" type="button" onclick={() => toggleGroup('stdstale')}>
-        <span class="prim-caret">{openGroups.stdstale ? '▾' : '▸'}</span>
-        stdstale <span class="prim-count">({stdstaleSorted.filter(pass).length})</span>
-      </button>
-      {#if openGroups.stdstale}
-        {#each stdstaleSorted.filter(pass) as e (e.id)}
-          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button"
-              draggable={!isCoarsePointer}
-              ondragstart={(ev) => {
-                if (ev.dataTransfer) {
-                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                  ev.dataTransfer.effectAllowed = 'copy';
-                }
-              }}
-              onclick={() => openTab(e.id)}>
-              <span class="prim-name">{e.id}</span>
-              <span class="prim-tag stale" title="Deprecated engine — kept resolvable for legacy parts">stale</span>
-            </button>
-            <!-- stdstale also lives in git-tracked src/ — no trash. -->
-          </div>
-        {/each}
-      {/if}
-    </div>
-
-    <!-- Archived — soft-deleted. Collapsed by default. -->
-    <div class="prim-group">
-      <button class="prim-group-head" type="button" onclick={() => toggleGroup('archived')}>
-        <span class="prim-caret">{openGroups.archived ? '▾' : '▸'}</span>
-        Archived <span class="prim-count">({archivedSorted.filter(pass).length})</span>
-      </button>
-      {#if openGroups.archived}
-        {#each archivedSorted.filter(pass) as e (e.id)}
-          <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)}>
-            <button class="prim-row" type="button"
-              draggable={!isCoarsePointer}
-              ondragstart={(ev) => {
-                if (ev.dataTransfer) {
-                  ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                  ev.dataTransfer.effectAllowed = 'copy';
-                }
-              }}
-              onclick={() => openTab(e.id)}>
-              <span class="prim-name">{e.id}</span>
-              <span class="prim-tag arch">arch</span>
-            </button>
-            {#if e.source === 'volume'}
-              <button class="prim-trash perm" type="button"
-                title="Permanent delete — removes the file from the volume (irreversible)"
-                disabled={deleteBusy === e.id}
-                onclick={() => deletePrim(e.id, e.source, 'permanent')}
-                aria-label="Permanently delete {e.id}">
-                {#if deleteBusy === e.id}
-                  …
-                {:else}
-                  <!-- Heroicons outline / trash — 1.6 stroke, black currentColor,
-                       16 px square inside the 24 px row gutter so it reads as
-                       a real icon rather than emoji noise. -->
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
-                    aria-hidden="true">
-                    <path d="M3 6h18"/>
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    <path d="M19 6l-1.2 13.2A2 2 0 0 1 15.8 21H8.2a2 2 0 0 1-2-1.8L5 6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
-                  </svg>
-                {/if}
-              </button>
-            {/if}
-          </div>
-        {/each}
-      {/if}
-    </div>
+    {/if}
 
     </div><!-- /.prim-rail-scroll -->
 
@@ -895,6 +932,7 @@
                  WebGL context (browser cap ~16). Inactive tabs keep all
                  editor state mounted; their canvas remounts on activate. -->
             <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph}
+              createDir={t.createDir}
               onGenerated={(id) => renameActiveTab(id)} />
           </div>
         {/each}
@@ -1016,6 +1054,78 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .prim-rag-err { color: #b91c1c; }
+
+  /* ─── Vertical tab rail (folder-tabs) ────────────────────────────────── */
+  /* A pinned column of folder-tabs above the scrolling content. Each tab is
+     a full-width button; the active one is inverted (slate) so it reads as
+     "selected". Wraps to multiple rows when there are many folders. */
+  .prim-tabrail {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7eb; background: #f3f4f6;
+    max-height: 38vh; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: #cbd5e1 #f3f4f6;
+  }
+  .prim-tabbtn {
+    display: flex; align-items: center;
+    padding: 5px 10px; border: 1px solid transparent; border-radius: 5px;
+    background: transparent; cursor: pointer; text-align: left;
+    font: 600 11px Arial; color: #44403c;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background 100ms, color 100ms, border-color 100ms;
+  }
+  .prim-tabbtn:hover { background: #e7e5e4; }
+  .prim-tabbtn.active {
+    background: #0c4a6e; color: #fff; border-color: #0c4a6e;
+  }
+  /* SRC tabs (stdlib / stdstale) — blue tint so their read-only provenance
+     reads at a glance; still inverts when active. */
+  .prim-tabbtn.src { color: #1e40af; }
+  .prim-tabbtn.src.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+  /* + folder-tab — dashed green affordance, set apart from the real tabs. */
+  .prim-tabadd {
+    display: flex; align-items: center; gap: 4px;
+    margin-top: 2px; padding: 4px 10px;
+    border: 1px dashed #86efac; border-radius: 5px;
+    background: transparent; cursor: pointer; text-align: left;
+    font: 600 10px Arial; color: #15803d; letter-spacing: 0.3px;
+  }
+  .prim-tabadd:hover:not(:disabled) { background: #d1fae5; border-color: #4ade80; color: #166534; }
+  .prim-tabadd:disabled { cursor: wait; opacity: 0.5; }
+
+  /* ─── Breadcrumb + folder-level actions ──────────────────────────────── */
+  .prim-crumbs {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 1px;
+    padding: 6px 12px 2px; font: 11px Arial;
+  }
+  .prim-crumb {
+    padding: 1px 4px; border: 0; border-radius: 3px; background: transparent;
+    cursor: pointer; color: #0369a1; font: 600 11px Arial;
+  }
+  .prim-crumb:hover { background: #e0f2fe; }
+  .prim-crumb.current { color: #44403c; cursor: default; }
+  .prim-crumb.current:hover { background: transparent; }
+  .prim-crumb-sep { color: #a8a29e; font-size: 10px; }
+  .prim-folder-actions {
+    display: flex; gap: 6px; padding: 2px 12px 6px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .prim-mini {
+    padding: 3px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
+    background: #fff; cursor: pointer; font: 11px Arial; color: #44403c;
+  }
+  .prim-mini:hover:not(:disabled) { background: #d1fae5; border-color: #86efac; color: #166534; }
+  .prim-mini:disabled { cursor: wait; opacity: 0.5; }
+
+  /* Subfolder row — clicking descends into it. Folder icon + count badge. */
+  .prim-folder-row {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 5px 12px; background: transparent; border: 0; cursor: pointer;
+    text-align: left; font: 12px Arial; color: #1f2937;
+  }
+  .prim-folder-row:hover { background: #e7e5e4; }
+  .prim-folder-ic { font-size: 13px; flex: 0 0 auto; }
 
   .prim-group { padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
   /* Row wrapping the group toggle + the trailing + button so they share

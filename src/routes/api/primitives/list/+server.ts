@@ -25,6 +25,20 @@ interface PrimEntry {
   subfolder?: string;
 }
 
+/** A directory node in the generic folder tree the vertical-tab sidebar
+ *  navigates. `path` is relative to `primitives/` ('' for the root). Mirrors
+ *  the 3-level resolver (findPrim) so what the sidebar shows is what resolves. */
+interface FolderNode {
+  /** Leaf dir name ('' for the root). */
+  name: string;
+  /** Relative path under primitives/ (e.g. 'completions/drill_pipe'). */
+  path: string;
+  /** Parts living DIRECTLY in this dir. */
+  parts: PrimEntry[];
+  /** Sub-directories (navigable as nested folders). */
+  children: FolderNode[];
+}
+
 const PRIMS_ROOT = 'primitives';
 
 export const GET = async () => {
@@ -109,6 +123,36 @@ export const GET = async () => {
     await collectCompletions();
   }
 
+  // ── Generic folder tree (vertical-tab sidebar) ──────────────────────────────
+  // Every top-level dir under primitives/ (except the dormant profiles/ store)
+  // becomes a folder-tab; nested dirs become navigable subfolders. User-created
+  // dirs surface automatically — the tree IS a directory listing (Rule 16:
+  // location IS category). Depth is capped at the 3rd resolver level
+  // (cat/family/subfolder) plus the root, so the UI never offers an unresolvable
+  // nesting.
+  const EXCLUDE_TOP = new Set(['profiles']);
+  async function buildNode(absDir: string, rel: string, depth: number): Promise<FolderNode> {
+    const parts = (await listEntitiesIn(absDir)).map((e) => mk(e.id));
+    const children: FolderNode[] = [];
+    if (depth < 4) {
+      let kids: any[] = [];
+      try { kids = await readdir(absDir, { withFileTypes: true }); } catch { /* ignore */ }
+      for (const k of kids) {
+        if (!k.isDirectory()) continue;
+        if (rel === '' && EXCLUDE_TOP.has(k.name)) continue;
+        // A legacy <id>/source.ts folder is a PART (already in `parts`), not a
+        // subfolder — don't surface it as a navigable dir.
+        if (existsSync(join(absDir, k.name, 'source.ts'))) continue;
+        const childRel = rel ? `${rel}/${k.name}` : k.name;
+        children.push(await buildNode(join(absDir, k.name), childRel, depth + 1));
+      }
+      children.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return { name: rel ? rel.split('/').pop()! : '', path: rel, parts, children };
+  }
+  let tree: FolderNode = { name: '', path: '', parts: [], children: [] };
+  if (existsSync(root)) tree = await buildNode(root, '', 0);
+
   // Stdlib primitives are git-tracked src parts — canonical + read-only — and
   // get their OWN sidebar group (distinct from volume Basic) so their provenance
   // (from src/) is obvious. They shadow any same-named volume copy: drop the
@@ -136,6 +180,10 @@ export const GET = async () => {
       const arr = completions[fam];
       if (arr) dropDupes(arr);
     }
+    // Same shadow rule for the generic tree — a src engine shadows any
+    // same-named volume copy everywhere it appears.
+    const dedupeTree = (n: FolderNode) => { dropDupes(n.parts); n.children.forEach(dedupeTree); };
+    dedupeTree(tree);
     stdlib.push(
       ...stdlibActiveEntries().map((e) => ({
         id: e.id, source: 'stdlib' as const, name: e.name, description: e.description, params: {}, editable: false,
@@ -149,5 +197,5 @@ export const GET = async () => {
   }
 
   const merged = [...volume];
-  return json({ stdlib, stdstale, basic, basicSubfolders, completions, completionSubfolders, archived, merged });
+  return json({ stdlib, stdstale, basic, basicSubfolders, completions, completionSubfolders, archived, merged, tree });
 };

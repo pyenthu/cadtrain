@@ -45,10 +45,13 @@ export const POST = async ({ request }) => {
   // Optional target folder for a NEW primitive (the sidebar "+ add" affordance).
   // Allowlisted to the known group folders — no traversal. Ignored when the id
   // already exists (updates always write back in place).
-  // basic | basic/<subfolder> | archive | completions/<family>(/<subfolder>)?
-  const TARGET_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/;
-  if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir))) {
-    throw error(400, `bad dir "${targetDir}" — must be basic | archive | completions/<family> | completions/<family>/<subfolder>`);
+  // Any 1–3-segment folder under primitives/ (each segment [a-z][a-z0-9_]*) —
+  // matches the vertical-tab sidebar's dynamic folder-tabs + subfolders and the
+  // 3-level resolver depth (primitive-paths.ts findPrim). No traversal (no '.',
+  // no leading slash); `profiles` is reserved.
+  const TARGET_RE = /^[a-z][a-z0-9_]*(\/[a-z][a-z0-9_]*){0,2}$/;
+  if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir) || targetDir.split('/')[0] === 'profiles')) {
+    throw error(400, `bad dir "${targetDir}" — must be 1–3 segments of [a-z][a-z0-9_]* under primitives/ (not profiles)`);
   }
   if (typeof source !== 'string' || !source.trim()) {
     throw error(400, 'source required (non-empty string)');
