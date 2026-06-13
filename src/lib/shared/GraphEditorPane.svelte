@@ -3222,7 +3222,24 @@
    *  appended; clicks far from every edge fall back to the append behaviour. */
   function sketchCanvasClick(ev: PointerEvent) {
     if (!editingSketchId) return;
-    if (sketchTool === 'select') { selectedSplineOpIdx = null; return; }
+    if (sketchTool === 'select') {
+      selectedSplineOpIdx = null;
+      // Begin a view PAN — drag the empty canvas to reposition the view for
+      // better visibility. (Anchors/sockets stopPropagation on their own
+      // pointerdown, so this only fires on empty canvas.) A click with no
+      // movement leaves the frame unchanged (just deselects, above).
+      const se2 = sketchEditor;
+      if (se2 && sketchSvgEl) {
+        const f = sketchFrame ?? se2.ext;
+        const pad = Math.max(f.maxX - f.minX, f.maxY - f.minY) * 0.12 + 0.2;
+        const vbW = (f.maxX - f.minX) + 2 * pad, vbH = (f.maxY - f.minY) + 2 * pad;
+        const rect = sketchSvgEl.getBoundingClientRect();
+        sketchPanDrag = { minX: f.minX, maxX: f.maxX, minY: f.minY, maxY: f.maxY,
+          px: ev.clientX, py: ev.clientY, sx: vbW / rect.width, sy: vbH / rect.height };
+        try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+      }
+      return;
+    }
     const c = sketchEventToCoord(ev); if (!c) return;
     if (sketchTool === 'fillet' || sketchTool === 'chamfer') { applyCornerAt(c); return; }
     // Edge-aware insertion (line/spline): find the nearest edge between
@@ -3253,6 +3270,23 @@
     const idx = typeof afterIdx === 'number' ? afterIdx + 1 : node.ops.length - 1;
     graph = setSketchOpField(graph, editingSketchId, idx, 'r', { kind: 'literal', value: c[0] });
     graph = setSketchOpField(graph, editingSketchId, idx, 'z', { kind: 'literal', value: c[1] });
+  }
+
+  // ─── Pan + zoom the sketcher VIEW (sketchFrame is the view rect) ─────────
+  // Drag empty canvas to pan; wheel to zoom toward the cursor. Both just move
+  // sketchFrame; Fit (⤢) re-frames to the sketch.
+  let sketchPanDrag = $state<{ minX: number; maxX: number; minY: number; maxY: number; px: number; py: number; sx: number; sy: number } | null>(null);
+  function sketchCanvasWheel(ev: WheelEvent) {
+    if (!editingSketchId) return;
+    const f = sketchFrame ?? sketchEditor?.ext;
+    if (!f) return;
+    ev.preventDefault();
+    const c = sketchEventToCoord(ev as unknown as PointerEvent); if (!c) return;
+    const k = ev.deltaY > 0 ? 1.12 : 1 / 1.12;   // out / in, zoom toward cursor
+    sketchFrame = {
+      minX: c[0] - (c[0] - f.minX) * k, maxX: c[0] + (f.maxX - c[0]) * k,
+      minY: c[1] - (c[1] - f.minY) * k, maxY: c[1] + (f.maxY - c[1]) * k,
+    };
   }
 
   // ─── Draggable top toolbar in the sketch editor ─────────────────────────
@@ -3325,6 +3359,12 @@
    *  empty canvas would lose its move events — the STAGE always gets them. One
    *  handler covers both: a card-title drag OR in-flight wire tracking. */
   function sketchStageMove(ev: PointerEvent) {
+    if (sketchPanDrag) {
+      const d = sketchPanDrag;
+      const dx = (ev.clientX - d.px) * d.sx, dy = (ev.clientY - d.py) * d.sy;
+      sketchFrame = { minX: d.minX - dx, maxX: d.maxX - dx, minY: d.minY - dy, maxY: d.maxY - dy };
+      return;
+    }
     if (sketchCardDrag) {
       const d = sketchCardDrag;
       sketchCardPos = { ...sketchCardPos, [d.which]: { x: d.sx + (ev.clientX - d.px), y: d.sy + (ev.clientY - d.py) } };
@@ -3333,6 +3373,7 @@
     if (wireFrom) { const p = miniEventToCoord(ev); if (p) wireMouse = p; }
   }
   function sketchStageUp(_ev: PointerEvent) {
+    if (sketchPanDrag) { sketchPanDrag = null; return; }
     if (sketchCardDrag) { sketchCardDrag = null; return; }
     miniPointerUp();
   }
@@ -6167,9 +6208,9 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="ge-sketch-stage" onpointermove={sketchStageMove} onpointerup={sketchStageUp}>
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'}
+            <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'} class:panning={!!sketchPanDrag}
               viewBox={vb} preserveAspectRatio="xMidYMid meet"
-              onpointerdown={sketchCanvasClick}>
+              onpointerdown={sketchCanvasClick} onwheel={sketchCanvasWheel}>
               <!-- revolve axis at r = 0 -->
               <line x1="0" y1={fr.minY - pad} x2="0" y2={fr.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
               {#if se.pts.length > 2}
@@ -8042,7 +8083,9 @@
     background:
       linear-gradient(#eef2f6 1px, transparent 1px) 0 0 / 24px 24px,
       linear-gradient(90deg, #eef2f6 1px, transparent 1px) 0 0 / 24px 24px, #fbfbfd; }
+  .ge-sketch-svg { cursor: grab; touch-action: none; }
   .ge-sketch-svg.tool { cursor: crosshair; }
+  .ge-sketch-svg.panning { cursor: grabbing; }
   .ge-sk-anchor { cursor: grab; touch-action: none; }
   .ge-sk-anchor:hover { stroke: #fde68a; }
   .ge-sk-anchor.locked { cursor: not-allowed; opacity: 0.6; }
