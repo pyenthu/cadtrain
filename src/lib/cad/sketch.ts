@@ -102,9 +102,20 @@ export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
     const b = chamfered[(i + 1) % n].pt;
     const target = chamfered[(i + 1) % n];
     if (target.edge === 'spline') {
-      const ctrl = (target.ctrl && target.ctrl.length)
-        ? [a, ...target.ctrl, b]
-        : [a, add(a, scale(sub(b, a), 0.33)), add(a, scale(sub(b, a), 0.66)), b];
+      // Explicit control points win; otherwise build a SMOOTH cubic that
+      // interpolates the points via Catmull-Rom → Bézier tangents (using the
+      // neighbouring vertices). The old auto path put both controls ON the
+      // chord → a straight line; this actually bows the curve through them.
+      let ctrl: Pt[];
+      if (target.ctrl && target.ctrl.length) {
+        ctrl = [a, ...target.ctrl, b];
+      } else {
+        const prev = chamfered[(i - 1 + n) % n].pt; // vertex before a
+        const next = chamfered[(i + 2) % n].pt;      // vertex after b
+        const c1 = add(a, scale(sub(b, prev), 1 / 6));
+        const c2 = sub(b, scale(sub(next, a), 1 / 6));
+        ctrl = [a, c1, c2, b];
+      }
       modelsObj[`s${i}`] = new makerjs.models.BezierCurve(ctrl as any);
     } else {
       const line = new makerjs.paths.Line(a, b);

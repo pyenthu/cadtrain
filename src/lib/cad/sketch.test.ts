@@ -62,6 +62,19 @@ describe('compileSketch — per-corner fillet (M.3)', () => {
     expect(nearestTo(pts, 0, 2)).toBeGreaterThan(nearestTo(pts, 2, 0) + 0.1);
   });
 
+  it('a spline edge bows the curve through the points (not a straight line)', () => {
+    const splineOps: SketchOp[] = [
+      { op: 'line', r: 0, z: 0 },
+      { op: 'line', r: 2, z: 0 },
+      { op: 'spline', r: 2, z: 2 }, // edge (2,0)→(2,2) is a spline
+      { op: 'line', r: 0, z: 2 },
+    ];
+    const maxR = (pts: Pt[]) => Math.max(...pts.map((p) => p[0]));
+    // The all-line square never exceeds r = 2; the spline bows outward past it.
+    expect(maxR(compileSketch(square(), 96))).toBeLessThan(2.01);
+    expect(maxR(compileSketch(splineOps, 96))).toBeGreaterThan(2.1);
+  });
+
   it('chamfer + fillet coexist on the same sketch', () => {
     const ops: SketchOp[] = [
       { op: 'line', r: 0, z: 0 },
