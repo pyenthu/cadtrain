@@ -107,6 +107,14 @@ graph" requirement.
 - **M.3 — operator UX (2 days).** Click-two-segments → fillet/chamfer with a
   live radius dial; add spline through points; offset for wall thickness;
   each writes a graph op. Live re-bake.
+  - ✅ **Per-corner fillet (engine) — DONE 2026-06-13** (`1faaf0f`).
+    `compileSketch` now fillets each corner with its OWN radius via
+    `makerjs.path.fillet` (was `chain.fillet(min(radii))` = all corners, one
+    radius). Each fillet op's existing radius field is now truly per-corner;
+    unfilleted corners stay sharp; spline corners deferred to M.4. Tests in
+    `src/lib/cad/sketch.test.ts`.
+  - ⏳ Remaining: click-two-segments gesture to ADD a fillet/chamfer with a
+    drag radius dial; spline-through-points; offset (wall thickness).
 - **M.4 — pro polish (own session each).** Snapping + grid; dimensions /
   light constraints; DXF export; 2D-CSG (folds in K.58); mirror/symmetry.
 
