@@ -532,8 +532,10 @@
      name), blowing the rail out to 600 px+ when any row had a long id.
      A fixed first track from --rail-w pins it to the resize handle. -->
 <div class="prim-root" class:collapsed={sidebarCollapsed} class:no-tabs={tabs.length === 0} style="--rail-w: {sidebarCollapsed ? 0 : railWidth}px">
-  <!-- Floating expand handle — only shown when the sidebar is collapsed. -->
-  {#if sidebarCollapsed}
+  <!-- Floating expand handle — only when collapsed AND no tabs are open
+       (empty state has no tab strip to host the inline ☰). With tabs open the
+       ☰ lives inside the tab strip instead, so it can't overlap a tab. -->
+  {#if sidebarCollapsed && tabs.length === 0}
     <button class="prim-rail-expand" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
   {/if}
   <aside class="prim-rail">
@@ -864,6 +866,9 @@
       <!-- Tab strip — clicking flips activeKey without unmounting the iframe.
            The iframe stays loaded so flipping back to a tab is instant. -->
       <div class="prim-tabs">
+        {#if sidebarCollapsed}
+          <button class="prim-rail-expand inline" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
+        {/if}
         {#each tabs as t (t.key)}
           <!-- Tab + close-button as siblings inside a wrapper div (can't
                nest <button> in <button>). Click anywhere on the tab body
@@ -1218,6 +1223,14 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.12);
   }
   .prim-rail-expand:hover { background: #f1f5f9; }
+  /* Inline variant — lives as the first item in the tab strip when collapsed,
+     so the ☰ sits LEFT of the tabs instead of floating over them. */
+  .prim-rail-expand.inline {
+    position: static; z-index: auto;
+    width: 26px; height: 24px; align-self: center;
+    margin: 0 6px 4px 2px; box-shadow: none; font-size: 13px;
+    flex: 0 0 auto;
+  }
 
   /* ─── Mobile PORTRAIT — stack the sidebar ABOVE the editor (K.53) ─────── */
   /* Landscape keeps the sidebar on the left (wide enough). Portrait stacks:

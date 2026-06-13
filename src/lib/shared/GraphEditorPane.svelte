@@ -2807,8 +2807,8 @@
   let editingSketchId = $state<string | null>(null);
   let sketchTool = $state<'select' | 'line' | 'spline' | 'fillet' | 'chamfer'>('select');
   let sketchSvgEl = $state<SVGSVGElement | null>(null);
-  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; }
-  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; selectedCornerOpIdx = null; }
+  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; sketchFrame = null; }
+  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; selectedCornerOpIdx = null; sketchFrame = null; }
 
   /** Param scope {name: default} for evaluating ArgValue fields to numbers. */
   function sketchParamScope(): Record<string, number> {
@@ -2852,11 +2852,28 @@
     return { node, ops, pts, anchors, ext: { minX, maxX, minY, maxY } };
   });
 
+  // FROZEN viewBox frame. Deriving the viewBox from the LIVE point extents
+  // made the canvas rescale on every point drag (jarring). Freeze the frame
+  // on open; only an explicit Fit re-derives it. Used for BOTH the SVG
+  // viewBox and pointer→coord mapping so they stay consistent.
+  let sketchFrame = $state<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null);
+  $effect(() => {
+    if (editingSketchId && sketchEditor && !sketchFrame) {
+      const e = sketchEditor.ext;
+      sketchFrame = { minX: e.minX, maxX: e.maxX, minY: e.minY, maxY: e.maxY };
+    }
+  });
+  function fitSketchFrame() {
+    if (!sketchEditor) return;
+    const e = sketchEditor.ext;
+    sketchFrame = { minX: e.minX, maxX: e.maxX, minY: e.minY, maxY: e.maxY };
+  }
+
   /** Map a pointer event to sketch (r,z) coords via the SVG viewBox. */
   function sketchEventToCoord(ev: PointerEvent): [number, number] | null {
     if (!sketchSvgEl || !sketchEditor) return null;
     const rect = sketchSvgEl.getBoundingClientRect();
-    const { minX, maxX, minY, maxY } = sketchEditor.ext;
+    const { minX, maxX, minY, maxY } = sketchFrame ?? sketchEditor.ext;
     const pad = Math.max(maxX - minX, maxY - minY) * 0.12 + 0.2;
     const vbW = (maxX - minX) + 2 * pad, vbH = (maxY - minY) + 2 * pad;
     const fx = (ev.clientX - rect.left) / rect.width;
@@ -3890,9 +3907,10 @@
        points. ✓ Done returns to the graph. -->
   {#if editingSketchId && sketchEditor}
     {@const se = sketchEditor}
-    {@const span = Math.max(se.ext.maxX - se.ext.minX, se.ext.maxY - se.ext.minY) || 1}
+    {@const fr = sketchFrame ?? se.ext}
+    {@const span = Math.max(fr.maxX - fr.minX, fr.maxY - fr.minY) || 1}
     {@const pad = span * 0.12 + 0.2}
-    {@const vb = `${se.ext.minX - pad} ${se.ext.minY - pad} ${(se.ext.maxX - se.ext.minX) + 2 * pad} ${(se.ext.maxY - se.ext.minY) + 2 * pad}`}
+    {@const vb = `${fr.minX - pad} ${fr.minY - pad} ${(fr.maxX - fr.minX) + 2 * pad} ${(fr.maxY - fr.minY) + 2 * pad}`}
     {@const hr = span * 0.018}
     {@const sw = span * 0.008}
     <div class="ge-sketch-editor">
@@ -3904,6 +3922,8 @@
         <button class="ge-stool" class:on={sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketchTool = 'spline')}>∿</button>
         <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click a corner to round it" onclick={() => (sketchTool = 'fillet')}>◜</button>
         <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
+        <div class="ge-stool-sep"></div>
+        <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
       </div>
       <div class="ge-sketch-stage">
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -3911,7 +3931,7 @@
           viewBox={vb} preserveAspectRatio="xMidYMid meet"
           onpointerdown={sketchCanvasClick}>
           <!-- revolve axis at r = 0 -->
-          <line x1="0" y1={se.ext.minY - pad} x2="0" y2={se.ext.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
+          <line x1="0" y1={fr.minY - pad} x2="0" y2={fr.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
           {#if se.pts.length > 2}
             <polygon points={se.pts.map((q) => `${q[0]},${q[1]}`).join(' ')} fill="rgba(147,51,234,0.12)" stroke="#7c3aed" stroke-width={sw} stroke-linejoin="round"/>
           {/if}
