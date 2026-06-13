@@ -2894,8 +2894,22 @@
     if (!o || (o.op !== 'fillet' && o.op !== 'chamfer')) return null;
     const p = sketchParamScope();
     const field = o.op === 'fillet' ? 'radius' : 'dist';
-    return { idx: selectedCornerOpIdx, kind: o.op as 'fillet' | 'chamfer', field, value: evalArg(o[field], p) };
+    const arg = o[field];                 // the raw ArgValue (literal | param | expr)
+    const bound = arg?.kind === 'param' || arg?.kind === 'expr';
+    const label = arg?.kind === 'param' ? `p.${arg.param}` : arg?.kind === 'expr' ? String(arg.expr) : null;
+    return { idx: selectedCornerOpIdx, kind: o.op as 'fillet' | 'chamfer', field, value: evalArg(arg, p), bound, label, paramName: arg?.kind === 'param' ? arg.param : null };
   });
+  /** Names of the graph's params (PARAMS card) — the wireable `p.*` set. */
+  const paramNames = $derived(Object.keys(graph.params ?? {}));
+  /** Bind / unbind the selected corner's radius|dist to a param `p.<name>`. */
+  function bindCornerParam(name: string) {
+    const sc = selectedCorner; if (!sc || !editingSketchId) return;
+    if (name === '__literal__' || name === '') {
+      graph = setSketchOpField(graph, editingSketchId, sc.idx, sc.field as any, { kind: 'literal', value: Math.max(0, Math.round(sc.value * 1000) / 1000) });
+    } else {
+      graph = setSketchOpField(graph, editingSketchId, sc.idx, sc.field as any, asParam(name));
+    }
+  }
   /** Round/bevel the corner at vertex op `vIdx` with the active tool, then
    *  select it for the radius/dist dial. Inserts the corner op right after the
    *  vertex; if the corner already has one, switches its kind or just selects. */
@@ -3897,12 +3911,28 @@
             <div class="ge-stool-sep"></div>
             <span class="ge-sketch-dial">
               <span class="ge-sketch-dial-lbl">{selectedCorner.kind === 'fillet' ? '◜ radius' : '⊿ dist'}</span>
-              <input class="ge-sketch-range" type="range" min="0" max={span * 0.5} step={span / 200}
-                value={selectedCorner.value}
-                oninput={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
-              <input class="ge-sketch-num" type="number" min="0" step="0.01"
-                value={Math.round(selectedCorner.value * 1000) / 1000}
-                onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+              {#if selectedCorner.bound}
+                <!-- Param/expr-driven: show the binding + live resolved value;
+                     ↩ unties back to a literal you can drag. -->
+                <span class="ge-sketch-bound" title="Driven by {selectedCorner.label}">ƒ {selectedCorner.label}</span>
+                <span class="ge-sketch-resolved">= {Math.round(selectedCorner.value * 1000) / 1000}</span>
+                <button class="ge-sketch-dial-x untie" title="Unbind → literal" onclick={() => bindCornerParam('__literal__')}>↩</button>
+              {:else}
+                <input class="ge-sketch-range" type="range" min="0" max={span * 0.5} step={span / 200}
+                  value={selectedCorner.value}
+                  oninput={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+                <input class="ge-sketch-num" type="number" min="0" step="0.01"
+                  value={Math.round(selectedCorner.value * 1000) / 1000}
+                  onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+                <!-- ƒ param picker: wire this corner to a PARAMS slider. -->
+                {#if paramNames.length}
+                  <select class="ge-sketch-param-sel" title="Wire to a parameter"
+                    onchange={(e) => { bindCornerParam((e.currentTarget as HTMLSelectElement).value); (e.currentTarget as HTMLSelectElement).selectedIndex = 0; }}>
+                    <option value="">ƒ→</option>
+                    {#each paramNames as pn}<option value={pn}>p.{pn}</option>{/each}
+                  </select>
+                {/if}
+              {/if}
               <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
             </span>
           {/if}
@@ -7062,6 +7092,11 @@
   .ge-sketch-dial-lbl { font: 600 11px ui-monospace, monospace; color: #0e7490; white-space: nowrap; }
   .ge-sketch-range { width: 110px; accent-color: #0891b2; touch-action: none; }
   .ge-sketch-num { width: 56px; font: 12px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; }
+  .ge-sketch-param-sel { font: 600 11px ui-monospace, monospace; color: #b45309; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; padding: 1px 2px; cursor: pointer; }
+  .ge-sketch-bound { font: 600 11px ui-monospace, monospace; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 9999px; padding: 1px 8px; }
+  .ge-sketch-resolved { font: 11px ui-monospace, monospace; color: #64748b; }
+  .ge-sketch-dial-x.untie { border-color: #fbbf24; color: #b45309; }
+  .ge-sketch-dial-x.untie:hover { background: #fef3c7; }
   .ge-sketch-dial-x { width: 20px; height: 20px; padding: 0; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; color: #b91c1c; cursor: pointer; font: 11px Arial; }
   .ge-sketch-dial-x:hover { background: #fee2e2; }
   .ge-sketch-stage { flex: 1 1 auto; min-height: 0; position: relative; display: flex; }
