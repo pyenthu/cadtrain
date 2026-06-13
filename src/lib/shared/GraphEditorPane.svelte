@@ -3681,6 +3681,20 @@
   }
   /** Switch the active r/z tab — stash the current draft into the inactive
    *  axis, load the other axis's draft. Pure state; Apply writes both. */
+  /** Flip the popover's point between abs and Δ relative, then refresh the
+   *  drafts from the (possibly converted) stored coords so the textarea +
+   *  tabs show the new values. */
+  function toggleSketchExprPopMode() {
+    if (!sketchExprPop || !sketchExprPop.drafts) return;
+    const op = (graph.nodes[sketchExprPop.sid] as any)?.ops?.[sketchExprPop.opIdx];
+    if (!op || (op.op !== 'line' && op.op !== 'spline')) return;
+    toggleSketchOpMode(sketchExprPop.sid, sketchExprPop.opIdx, op);
+    const op2 = (graph.nodes[sketchExprPop.sid] as any)?.ops?.[sketchExprPop.opIdx];
+    if (!op2) return;
+    const drafts = { r: argToDraftStr(op2.r), z: argToDraftStr(op2.z) } as { r: string; z: string };
+    const field = sketchExprPop.field === 'z' ? 'z' : 'r';
+    sketchExprPop = { ...sketchExprPop, drafts, draft: drafts[field] };
+  }
   function switchSketchExprAxis(newAxis: 'r' | 'z') {
     if (!sketchExprPop || !sketchExprPop.drafts) return;
     const old = sketchExprPop.field;
@@ -6931,16 +6945,21 @@
       <div class="ge-wire-head ge-wire-head-drag" title="Drag to move"
         onpointerdown={sketchExprPopDown} onpointermove={sketchExprPopMove} onpointerup={sketchExprPopUp}>ƒ sketch point <code>{sketchExprPop.field}</code> expression</div>
       {#if sketchExprPop.drafts}
-        <!-- r / z tab strip — edit both coordinates of the point without
-             closing the popover (mirrors the polygon vertex editor). Apply
-             writes BOTH axes. -->
+        {@const _op = (graph.nodes[sketchExprPop.sid] as any)?.ops?.[sketchExprPop.opIdx]}
+        {@const _rel = _op?.mode === 'rel'}
+        <!-- r / z tab strip + abs/Δ toggle — edit both coordinates of the point
+             without closing the popover (mirrors the polygon vertex editor).
+             Apply writes BOTH axes. -->
         <div class="ge-expr-pop-tabs">
           <button class="ge-expr-pop-tab" type="button"
             class:on={sketchExprPop.field === 'r'}
-            onclick={() => switchSketchExprAxis('r')}>r</button>
+            onclick={() => switchSketchExprAxis('r')}>{_rel ? 'Δr' : 'r'}</button>
           <button class="ge-expr-pop-tab" type="button"
             class:on={sketchExprPop.field === 'z'}
-            onclick={() => switchSketchExprAxis('z')}>z</button>
+            onclick={() => switchSketchExprAxis('z')}>{_rel ? 'Δz' : 'z'}</button>
+          <button class="ge-expr-pop-mode" type="button" class:rel={_rel}
+            title="Toggle absolute / Δ relative (offset from previous point)"
+            onclick={toggleSketchExprPopMode}>{_rel ? 'Δ rel' : 'abs'}</button>
         </div>
       {/if}
       <textarea class="ge-expr-textarea" rows="3"
@@ -8753,6 +8772,14 @@
     background: #fef3c7; color: #78350f; border-color: #fbbf24;
     position: relative; top: 1px; /* nudge so the bottom border merges with the strip */
   }
+  /* abs/Δ mode toggle — pushed to the right of the r/z tabs */
+  .ge-expr-pop-mode {
+    margin-left: auto; align-self: center; padding: 2px 9px;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 999px;
+    font: 600 10px ui-monospace, monospace; color: #475569; cursor: pointer;
+  }
+  .ge-expr-pop-mode:hover { background: #f1f5f9; }
+  .ge-expr-pop-mode.rel { background: #fff7ed; border-color: #fdba74; color: #ea580c; }
   /* Expression / wire / param popovers — these need to float ABOVE the
      polygon SVG popup (z-index 100) when both are open, so editing a
      parametric vertex's expression while the 2D preview is pinned doesn't
