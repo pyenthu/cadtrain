@@ -3928,117 +3928,6 @@
 </svelte:head>
 
 <div class="ge-root" class:embed>
-  <!-- Full-tab sketch editor (plan M.2) — overlays the editor while editing
-       a sketch; a dedicated toolbar + Maker.js outline render + draggable
-       points. ✓ Done returns to the graph. -->
-  {#if editingSketchId && sketchEditor}
-    {@const se = sketchEditor}
-    {@const fr = sketchFrame ?? se.ext}
-    {@const span = Math.max(fr.maxX - fr.minX, fr.maxY - fr.minY) || 1}
-    {@const pad = span * 0.12 + 0.2}
-    {@const vb = `${fr.minX - pad} ${fr.minY - pad} ${(fr.maxX - fr.minX) + 2 * pad} ${(fr.maxY - fr.minY) + 2 * pad}`}
-    {@const hr = span * 0.018}
-    {@const sw = span * 0.008}
-    <div class="ge-sketch-editor">
-      <!-- Tool palette — LEFT vertical rail (matches the main editor vrail). -->
-      <div class="ge-sketch-vtools">
-        <button class="ge-stool" class:on={sketchTool === 'select'} title="Select / drag points" onclick={() => (sketchTool = 'select')}>⬚</button>
-        <div class="ge-stool-sep"></div>
-        <button class="ge-stool" class:on={sketchTool === 'line'} title="Line — click the canvas to add points" onclick={() => (sketchTool = 'line')}>╱</button>
-        <button class="ge-stool" class:on={sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketchTool = 'spline')}>∿</button>
-        <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click a corner to round it" onclick={() => (sketchTool = 'fillet')}>◜</button>
-        <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
-        <div class="ge-stool-sep"></div>
-        <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
-      </div>
-      <div class="ge-sketch-stage">
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'}
-          viewBox={vb} preserveAspectRatio="xMidYMid meet"
-          onpointerdown={sketchCanvasClick}>
-          <!-- revolve axis at r = 0 -->
-          <line x1="0" y1={fr.minY - pad} x2="0" y2={fr.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
-          {#if se.pts.length > 2}
-            <polygon points={se.pts.map((q) => `${q[0]},${q[1]}`).join(' ')} fill="rgba(147,51,234,0.12)" stroke="#7c3aed" stroke-width={sw} stroke-linejoin="round"/>
-          {/if}
-          {#each se.anchors as a, i (a.opIdx)}
-            <!-- corner badge: ring on filleted/chamfered vertices; gold when selected -->
-            {#if a.corner}
-              <circle cx={a.r} cy={a.z} r={hr * 1.9} fill="none"
-                stroke={a.cornerOpIdx === selectedCornerOpIdx ? '#f59e0b' : (a.corner === 'fillet' ? '#0e7490' : '#b45309')}
-                stroke-width={hr * 0.4} pointer-events="none"/>
-            {/if}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <circle cx={a.r} cy={a.z} r={hr}
-              class="ge-sk-anchor" class:locked={!a.literal}
-              fill={a.kind === 'spline' ? '#0891b2' : '#7c3aed'} stroke="#fff" stroke-width={hr * 0.25}
-              onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal)}
-              onpointermove={sketchAnchorMove}
-              onpointerup={sketchAnchorUp}/>
-            {#if i === 0}<text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.6} fill="#15803d" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>1</text>{/if}
-          {/each}
-        </svg>
-        <!-- DRAGGABLE top bar — status, the live corner radius/dist dial, Done.
-             Floats over the stage; drag the ⣿ handle to reposition. -->
-        <div class="ge-sketch-topbar" style="left: {sketchBarPos.x}px; top: {sketchBarPos.y}px">
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span class="ge-sketch-grip" title="Drag the toolbar"
-            onpointerdown={sketchBarDown} onpointermove={sketchBarMove} onpointerup={sketchBarUp}>⣿</span>
-          <span class="ge-stool-label">✐ {se.node.ops.length} ops · {se.pts.length} pts</span>
-          {#if selectedCorner}
-            <div class="ge-stool-sep"></div>
-            <span class="ge-sketch-dial">
-              <span class="ge-sketch-dial-lbl">{selectedCorner.kind === 'fillet' ? '◜ radius' : '⊿ dist'}</span>
-              {#if selectedCorner.bound}
-                <!-- Param/expr-driven: show the binding + live resolved value;
-                     ↩ unties back to a literal you can drag. -->
-                <span class="ge-sketch-bound" title="Driven by {selectedCorner.label}">ƒ {selectedCorner.label}</span>
-                <span class="ge-sketch-resolved">= {Math.round(selectedCorner.value * 1000) / 1000}</span>
-                <button class="ge-sketch-dial-x untie" title="Unbind → literal" onclick={() => bindCornerParam('__literal__')}>↩</button>
-              {:else}
-                <input class="ge-sketch-range" type="range" min="0" max={span * 0.5} step={span / 200}
-                  value={selectedCorner.value}
-                  oninput={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
-                <input class="ge-sketch-num" type="number" min="0" step="0.01"
-                  value={Math.round(selectedCorner.value * 1000) / 1000}
-                  onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
-                <span class="ge-sketch-wire-hint">↦ tap a param →</span>
-              {/if}
-              <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
-            </span>
-          {/if}
-          <div class="ge-stool-sep"></div>
-          <button class="ge-stool done" title="Done — back to the graph" onclick={closeSketchEditor}>✓ Done</button>
-        </div>
-        <div class="ge-sketch-hint">
-          {#if sketchTool === 'select'}Drag the violet points to reshape · pick a tool to add ops
-          {:else if sketchTool === 'fillet' || sketchTool === 'chamfer'}Click a corner to {sketchTool} it, then use the dial to set the {sketchTool === 'fillet' ? 'radius' : 'distance'}
-          {:else}Click the canvas to add a {sketchTool}{/if}
-        </div>
-      </div>
-      <!-- PARAMS panel — the graph's parameters, available INSIDE the editor.
-           Scrub a value (live re-bake) or, with a corner selected, tap a row
-           to WIRE that corner's radius/dist to the param. -->
-      <aside class="ge-sketch-params">
-        <div class="ge-sketch-params-hd">PARAMS</div>
-        {#if paramNames.length === 0}
-          <div class="ge-sketch-params-empty">No parameters yet — add them on the graph's PARAMS card, then they appear here to wire in.</div>
-        {:else}
-          {#each paramNames as pn (pn)}
-            {@const wired = !!selectedCorner && selectedCorner.paramName === pn}
-            <div class="ge-sketch-param-row" class:wired>
-              <button class="ge-sketch-param-name" disabled={!selectedCorner}
-                title={selectedCorner ? `Wire the selected corner to p.${pn}` : 'Select a corner first, then tap to wire'}
-                onclick={() => bindCornerParam(pn)}>{wired ? '🔗 ' : ''}p.{pn}</button>
-              <input class="ge-sketch-param-val" type="number" step="0.05"
-                value={Number((graph.params as any)[pn]?.default ?? 0)}
-                onchange={(e) => onParamDefault(pn, Number((e.currentTarget as HTMLInputElement).value))} />
-            </div>
-          {/each}
-        {/if}
-      </aside>
-    </div>
-  {/if}
   <!-- Title + id input removed (2026-06-09 — redundant with the /primitives
        tab strip showing the part id; the rename / save-as flow surfaces a
        prompt on demand instead of the always-on input). The graph editor
@@ -5789,6 +5678,176 @@
            used to sit on the canvas edges (🔒 confiner / 🔺 repellant /
            ⏹ off) were removed — the ⚙ canvas-settings menu now owns
            these as boolean checkbox rows. -->
+
+      <!-- Full-tab sketch editor (plan M.2) — lives INSIDE .ge-canvas-pane so
+           its position:absolute inset:0 overlay covers ONLY the canvas pane;
+           the 3D BAKE pane stays visible on the right, separated by the
+           draggable divider, and re-bakes live as the sketch changes. Tools
+           rail + PARAMS + OPS on the LEFT, the 2D sketch in the CENTRE.
+           ✓ Done returns to the graph. -->
+      {#if editingSketchId && sketchEditor}
+        {@const se = sketchEditor}
+        {@const sid = editingSketchId}
+        {@const fr = sketchFrame ?? se.ext}
+        {@const span = Math.max(fr.maxX - fr.minX, fr.maxY - fr.minY) || 1}
+        {@const pad = span * 0.12 + 0.2}
+        {@const vb = `${fr.minX - pad} ${fr.minY - pad} ${(fr.maxX - fr.minX) + 2 * pad} ${(fr.maxY - fr.minY) + 2 * pad}`}
+        {@const hr = span * 0.018}
+        {@const sw = span * 0.008}
+        <div class="ge-sketch-editor">
+          <!-- Tool palette — LEFT vertical rail (matches the main editor vrail). -->
+          <div class="ge-sketch-vtools">
+            <button class="ge-stool" class:on={sketchTool === 'select'} title="Select / drag points" onclick={() => (sketchTool = 'select')}>⬚</button>
+            <div class="ge-stool-sep"></div>
+            <button class="ge-stool" class:on={sketchTool === 'line'} title="Line — click the canvas to add points" onclick={() => (sketchTool = 'line')}>╱</button>
+            <button class="ge-stool" class:on={sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketchTool = 'spline')}>∿</button>
+            <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click a corner to round it" onclick={() => (sketchTool = 'fillet')}>◜</button>
+            <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
+            <div class="ge-stool-sep"></div>
+            <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
+          </div>
+          <!-- LEFT sidebar: PARAMS on top, the editable OPS list below. -->
+          <div class="ge-sketch-side">
+            <!-- PARAMS panel — the graph's parameters, available INSIDE the editor.
+                 Scrub a value (live re-bake) or, with a corner selected, tap a row
+                 to WIRE that corner's radius/dist to the param. -->
+            <aside class="ge-sketch-params">
+              <div class="ge-sketch-params-hd">PARAMS</div>
+              {#if paramNames.length === 0}
+                <div class="ge-sketch-params-empty">No parameters yet — add them on the graph's PARAMS card, then they appear here to wire in.</div>
+              {:else}
+                {#each paramNames as pn (pn)}
+                  {@const wired = !!selectedCorner && selectedCorner.paramName === pn}
+                  <div class="ge-sketch-param-row" class:wired>
+                    <button class="ge-sketch-param-name" disabled={!selectedCorner}
+                      title={selectedCorner ? `Wire the selected corner to p.${pn}` : 'Select a corner first, then tap to wire'}
+                      onclick={() => bindCornerParam(pn)}>{wired ? '🔗 ' : ''}p.{pn}</button>
+                    <input class="ge-sketch-param-val" type="number" step="0.05"
+                      value={Number((graph.params as any)[pn]?.default ?? 0)}
+                      onchange={(e) => onParamDefault(pn, Number((e.currentTarget as HTMLInputElement).value))} />
+                  </div>
+                {/each}
+              {/if}
+            </aside>
+            <!-- OPS list — same markup/classes as the inline sketch card, but
+                 bound to the sketch being edited (sid = editingSketchId). For
+                 value/expr editing + reordering; per-coord wire sockets stay on
+                 the node card. -->
+            <div class="ge-sketch-ops-wrap">
+              <div class="ge-sketch-params-hd">OPS</div>
+              <div class="ge-sketch-ops">
+                {#each (se.node.ops as Array<any>) as op, idx (idx)}
+                  {#if op.op === 'line' || op.op === 'spline'}
+                    <div class="ge-sketch-vtx">
+                      <div class="ge-sketch-srow">
+                        <span class="ge-sketch-axis">{op.op === 'spline' ? '∿' : '╱'}r</span>
+                        <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
+                          onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
+                        <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                          onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
+                      </div>
+                      <div class="ge-sketch-srow">
+                        <span class="ge-sketch-axis">z</span>
+                        <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
+                          onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
+                        <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === se.node.ops.length - 1}
+                          onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
+                        <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={se.node.ops.length <= 1}
+                          onclick={() => { graph = removeSketchOp(graph, sid, idx); }}>×</button>
+                      </div>
+                    </div>
+                  {:else}
+                    <div class="ge-sketch-vtx corner">
+                      <div class="ge-sketch-srow">
+                        <span class="ge-sketch-axis">{op.op === 'fillet' ? '◜r' : '⊿d'}</span>
+                        <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
+                          onchange={(e) => { graph = setSketchOpField(graph, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
+                        <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                          onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
+                        <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === se.node.ops.length - 1}
+                          onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
+                        <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={se.node.ops.length <= 1}
+                          onclick={() => { graph = removeSketchOp(graph, sid, idx); }}>×</button>
+                      </div>
+                    </div>
+                  {/if}
+                {/each}
+              </div>
+              <div class="ge-sketch-foot">
+                <button class="ge-sketch-add" type="button" title="Add a line segment" onclick={() => { graph = addSketchOp(graph, sid, 'line'); }}>+ line</button>
+                <button class="ge-sketch-add" type="button" title="Add a Bézier spline" onclick={() => { graph = addSketchOp(graph, sid, 'spline'); }}>+ spline</button>
+                <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { graph = addSketchOp(graph, sid, 'fillet'); }}>+ fillet</button>
+                <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { graph = addSketchOp(graph, sid, 'chamfer'); }}>+ chamfer</button>
+              </div>
+            </div>
+          </div>
+          <div class="ge-sketch-stage">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'}
+              viewBox={vb} preserveAspectRatio="xMidYMid meet"
+              onpointerdown={sketchCanvasClick}>
+              <!-- revolve axis at r = 0 -->
+              <line x1="0" y1={fr.minY - pad} x2="0" y2={fr.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
+              {#if se.pts.length > 2}
+                <polygon points={se.pts.map((q) => `${q[0]},${q[1]}`).join(' ')} fill="rgba(147,51,234,0.12)" stroke="#7c3aed" stroke-width={sw} stroke-linejoin="round"/>
+              {/if}
+              {#each se.anchors as a, i (a.opIdx)}
+                <!-- corner badge: ring on filleted/chamfered vertices; gold when selected -->
+                {#if a.corner}
+                  <circle cx={a.r} cy={a.z} r={hr * 1.9} fill="none"
+                    stroke={a.cornerOpIdx === selectedCornerOpIdx ? '#f59e0b' : (a.corner === 'fillet' ? '#0e7490' : '#b45309')}
+                    stroke-width={hr * 0.4} pointer-events="none"/>
+                {/if}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle cx={a.r} cy={a.z} r={hr}
+                  class="ge-sk-anchor" class:locked={!a.literal}
+                  fill={a.kind === 'spline' ? '#0891b2' : '#7c3aed'} stroke="#fff" stroke-width={hr * 0.25}
+                  onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal)}
+                  onpointermove={sketchAnchorMove}
+                  onpointerup={sketchAnchorUp}/>
+                {#if i === 0}<text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.6} fill="#15803d" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>1</text>{/if}
+              {/each}
+            </svg>
+            <!-- DRAGGABLE top bar — status, the live corner radius/dist dial, Done.
+                 Floats over the stage; drag the ⣿ handle to reposition. -->
+            <div class="ge-sketch-topbar" style="left: {sketchBarPos.x}px; top: {sketchBarPos.y}px">
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span class="ge-sketch-grip" title="Drag the toolbar"
+                onpointerdown={sketchBarDown} onpointermove={sketchBarMove} onpointerup={sketchBarUp}>⣿</span>
+              <span class="ge-stool-label">✐ {se.node.ops.length} ops · {se.pts.length} pts</span>
+              {#if selectedCorner}
+                <div class="ge-stool-sep"></div>
+                <span class="ge-sketch-dial">
+                  <span class="ge-sketch-dial-lbl">{selectedCorner.kind === 'fillet' ? '◜ radius' : '⊿ dist'}</span>
+                  {#if selectedCorner.bound}
+                    <!-- Param/expr-driven: show the binding + live resolved value;
+                         ↩ unties back to a literal you can drag. -->
+                    <span class="ge-sketch-bound" title="Driven by {selectedCorner.label}">ƒ {selectedCorner.label}</span>
+                    <span class="ge-sketch-resolved">= {Math.round(selectedCorner.value * 1000) / 1000}</span>
+                    <button class="ge-sketch-dial-x untie" title="Unbind → literal" onclick={() => bindCornerParam('__literal__')}>↩</button>
+                  {:else}
+                    <input class="ge-sketch-range" type="range" min="0" max={span * 0.5} step={span / 200}
+                      value={selectedCorner.value}
+                      oninput={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+                    <input class="ge-sketch-num" type="number" min="0" step="0.01"
+                      value={Math.round(selectedCorner.value * 1000) / 1000}
+                      onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+                    <span class="ge-sketch-wire-hint">↦ tap a param →</span>
+                  {/if}
+                  <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
+                </span>
+              {/if}
+              <div class="ge-stool-sep"></div>
+              <button class="ge-stool done" title="Done — back to the graph" onclick={closeSketchEditor}>✓ Done</button>
+            </div>
+            <div class="ge-sketch-hint">
+              {#if sketchTool === 'select'}Drag the violet points to reshape · pick a tool to add ops
+              {:else if sketchTool === 'fillet' || sketchTool === 'chamfer'}Click a corner to {sketchTool} it, then use the dial to set the {sketchTool === 'fillet' ? 'radius' : 'distance'}
+              {:else}Click the canvas to add a {sketchTool}{/if}
+            </div>
+          </div>
+        </div>
+      {/if}
     </section>
 
     <!-- Divider: canvas ↔ right pane -->
@@ -7285,8 +7344,11 @@
   .ge-sketch-num { width: 56px; font: 12px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; }
   .ge-sketch-wire-hint { font: 11px Arial; color: #b45309; white-space: nowrap; }
   .ge-sketch-bound { font: 600 11px ui-monospace, monospace; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 9999px; padding: 1px 8px; }
-  /* PARAMS panel (right side of the sketch editor). */
-  .ge-sketch-params { width: 184px; flex: 0 0 184px; border-left: 1px solid #e2e8f0; background: #fff; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+  /* LEFT sidebar wrapper — PARAMS (top) + the editable OPS list (below). */
+  .ge-sketch-side { width: 230px; flex: 0 0 230px; display: flex; flex-direction: column; border-right: 1px solid #e2e8f0; background: #fff; overflow-y: auto; }
+  .ge-sketch-ops-wrap { display: flex; flex-direction: column; min-height: 0; padding: 8px; gap: 4px; }
+  /* PARAMS panel (top of the left sidebar). */
+  .ge-sketch-params { flex: 0 0 auto; border-bottom: 1px solid #e2e8f0; background: #fff; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
   .ge-sketch-params-hd { font: 700 11px Arial; letter-spacing: 0.5px; color: #92400e; padding: 0 2px 2px; }
   .ge-sketch-params-empty { font: 11px Arial; color: #94a3b8; line-height: 1.4; }
   .ge-sketch-param-row { display: flex; align-items: center; gap: 4px; padding: 2px; border-radius: 6px; border: 1px solid transparent; }
