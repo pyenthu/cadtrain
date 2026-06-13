@@ -129,6 +129,29 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
         if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
         checkArg(id, 'count', node.count);
         break;
+      case 'sketch':
+        // Mirror the polygon path: every per-op ArgValue component is checked
+        // so a wired-then-deleted param surfaces as `missing-param`.
+        (node.ops as any[]).forEach((o, i) => {
+          if (o.op === 'line' || o.op === 'spline') {
+            checkArg(id, `ops[${i}].r`, o.r);
+            checkArg(id, `ops[${i}].z`, o.z);
+          }
+          if (o.op === 'spline') {
+            (o.pts ?? []).forEach((pt: any, k: number) => {
+              if (pt?.[0]) checkArg(id, `ops[${i}].pts[${k}].u`, pt[0]);
+              if (pt?.[1]) checkArg(id, `ops[${i}].pts[${k}].v`, pt[1]);
+            });
+            if (o.h0?.[0]) checkArg(id, `ops[${i}].h0.u`, o.h0[0]);
+            if (o.h0?.[1]) checkArg(id, `ops[${i}].h0.v`, o.h0[1]);
+            if (o.h1?.[0]) checkArg(id, `ops[${i}].h1.u`, o.h1[0]);
+            if (o.h1?.[1]) checkArg(id, `ops[${i}].h1.v`, o.h1[1]);
+          }
+          if (o.op === 'fillet')  checkArg(id, `ops[${i}].radius`, o.radius);
+          if (o.op === 'chamfer') checkArg(id, `ops[${i}].dist`, o.dist);
+        });
+        if ((node as any).segments) checkArg(id, 'segments', (node as any).segments);
+        break;
     }
   }
   return errs;
@@ -411,14 +434,16 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // an ArgValue so it can be param/expr-driven. (plan M.1)
       const ops = ((node as any).ops ?? []).map((o: any) => {
         if (o.op === 'line' || o.op === 'spline') {
-          const base = `op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}`;
           if (o.op === 'spline') {
-            const ctrl = Array.isArray(o.ctrl) && o.ctrl.length
-              ? `, ctrl: [${o.ctrl.map((c: any[]) => `[${emitValueExpr(c[0])}, ${emitValueExpr(c[1])}]`).join(', ')}]`
-              : '';
-            return `{ op: 'spline', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}${ctrl} }`;
+            const parts = [`op: 'spline'`, `r: ${emitValueExpr(o.r)}`, `z: ${emitValueExpr(o.z)}`];
+            if (Array.isArray(o.pts) && o.pts.length) {
+              parts.push(`pts: [${o.pts.map((c: any[]) => `[${emitValueExpr(c[0])}, ${emitValueExpr(c[1])}]`).join(', ')}]`);
+            }
+            if (Array.isArray(o.h0)) parts.push(`h0: [${emitValueExpr(o.h0[0])}, ${emitValueExpr(o.h0[1])}]`);
+            if (Array.isArray(o.h1)) parts.push(`h1: [${emitValueExpr(o.h1[0])}, ${emitValueExpr(o.h1[1])}]`);
+            return `{ ${parts.join(', ')} }`;
           }
-          return `{ ${base} }`;
+          return `{ op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)} }`;
         }
         if (o.op === 'fillet')  return `{ op: 'fillet', radius: ${emitValueExpr(o.radius)} }`;
         if (o.op === 'chamfer') return `{ op: 'chamfer', dist: ${emitValueExpr(o.dist)} }`;

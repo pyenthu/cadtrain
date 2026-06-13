@@ -15,6 +15,10 @@
  * Companion: composition-bake.ts (graph → Manifold) — Phase B; not yet.
  */
 
+// Chord-affine inverse, used by the spline `ctrl`→`pts` migration in
+// hydrateGraph (absolute legacy control points → chord-relative through-points).
+import { absToChord } from './sketch';
+
 // ─── identity ─────────────────────────────────────────────────────────────
 
 export type NodeId = string;   // 'n_abc123' — random 6-char base36 suffix
@@ -176,7 +180,14 @@ export type PolyRepeatNode = {
  *  param/expr-driven. */
 export type SketchOpEntry =
   | { op: 'line'; r: ArgValue; z: ArgValue }
-  | { op: 'spline'; r: ArgValue; z: ArgValue; ctrl?: Array<[ArgValue, ArgValue]> }
+  /** Smooth curve to (r,z). `pts` are chord-relative through-points `(u,v)`,
+   *  `h0`/`h1` chord-relative end-tangent handles — every component an ArgValue
+   *  so coords/bulge/handles are param- or expr-wireable. See sketch.ts for the
+   *  chord-affine frame. */
+  | { op: 'spline'; r: ArgValue; z: ArgValue;
+      pts?: Array<[ArgValue, ArgValue]>;
+      h0?: [ArgValue, ArgValue];
+      h1?: [ArgValue, ArgValue] }
   | { op: 'fillet'; radius: ArgValue }
   | { op: 'chamfer'; dist: ArgValue };
 export type SketchNode = {
@@ -344,6 +355,52 @@ export function hydrateGraph(serialised: any): Graph {
     }
   }
 
+  // Migrate legacy ABSOLUTE spline `ctrl` points → chord-relative `pts`
+  // (the redesign, 2026-06-13). A pre-redesign spline op carried `ctrl` as
+  // absolute (r,z) control points off the chord; convert each via absToChord
+  // against the chord [prev vertex → this op's (r,z)] so it now parametrises
+  // with the endpoints. Plain splines (no `ctrl`, the common case) are left
+  // untouched — the engine's no-handle path reproduces today's geometry. Only
+  // literal coords convert cleanly; a non-literal endpoint/ctrl just drops the
+  // stale `ctrl` (no saved file sets it, so this is defensive).
+  const litNum = (v: any): number =>
+    (v && v.kind === 'literal' && typeof v.value === 'number') ? v.value : NaN;
+  const round6 = (n: number): number => Math.round(n * 1e6) / 1e6;
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id];
+    if (!n || (n as any).type !== 'sketch') continue;
+    const sk = n as SketchNode;
+    let changed = false;
+    let prevPt: [number, number] | null = null;
+    const newOps = sk.ops.map((op: any) => {
+      if (op.op !== 'line' && op.op !== 'spline') return op; // fillet/chamfer carry no point
+      const cur: [number, number] = [litNum(op.r), litNum(op.z)];
+      if (op.op === 'spline' && 'ctrl' in op) {
+        const { ctrl, ...rest } = op;
+        changed = true;
+        if (Array.isArray(ctrl) && ctrl.length && prevPt &&
+            Number.isFinite(cur[0]) && Number.isFinite(cur[1]) &&
+            Number.isFinite(prevPt[0]) && Number.isFinite(prevPt[1])) {
+          const a = prevPt, b = cur;
+          const pts = ctrl
+            .map((c: any) => [litNum(c[0]), litNum(c[1])] as [number, number])
+            .filter((abs) => Number.isFinite(abs[0]) && Number.isFinite(abs[1]))
+            .map((abs) => {
+              const [u, v] = absToChord(a, b, abs);
+              return [asLiteral(round6(u)), asLiteral(round6(v))] as [ArgValue, ArgValue];
+            });
+          prevPt = cur;
+          return pts.length ? { ...rest, pts } : rest;
+        }
+        prevPt = cur;
+        return rest; // unconvertible — just drop the stale ctrl
+      }
+      prevPt = cur;
+      return op;
+    });
+    if (changed) migratedNodes[id] = { ...sk, ops: newOps };
+  }
+
   let g: Graph = {
     nodes: migratedNodes,
     root: serialised.root,
@@ -460,6 +517,31 @@ export function collectEdges(graph: Graph): Edge[] {
       if (node.count?.kind === 'param') edges.push({ from: `p.${node.count.param}`, to: `${node.id}.count` });
       if (node.r?.kind === 'param')     edges.push({ from: `p.${node.r.param}`,     to: `${node.id}.r` });
       if (node.z?.kind === 'param')     edges.push({ from: `p.${node.z.param}`,     to: `${node.id}.z` });
+    } else if (node.type === 'sketch') {
+      // Every per-op ArgValue component is param-wireable: line/spline r+z,
+      // each spline through-point's u/v, the two end handles' u/v, fillet
+      // radius, chamfer dist, plus the sampling `segments`. Missing today —
+      // wiring a param into a sketch coord silently produced no edge.
+      const push = (v: any, to: string) => {
+        if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.${to}` });
+      };
+      node.ops.forEach((o: any, i: number) => {
+        if (o.op === 'line' || o.op === 'spline') {
+          push(o.r, `ops.${i}.r`);
+          push(o.z, `ops.${i}.z`);
+        }
+        if (o.op === 'spline') {
+          (o.pts ?? []).forEach((pt: any, k: number) => {
+            push(pt?.[0], `ops.${i}.pts.${k}.u`);
+            push(pt?.[1], `ops.${i}.pts.${k}.v`);
+          });
+          if (o.h0) { push(o.h0[0], `ops.${i}.h0.u`); push(o.h0[1], `ops.${i}.h0.v`); }
+          if (o.h1) { push(o.h1[0], `ops.${i}.h1.u`); push(o.h1[1], `ops.${i}.h1.v`); }
+        }
+        if (o.op === 'fillet')  push(o.radius, `ops.${i}.radius`);
+        if (o.op === 'chamfer') push(o.dist,   `ops.${i}.dist`);
+      });
+      push(node.segments, 'segments');
     }
   }
   return edges;
@@ -775,6 +857,113 @@ export function setSketchSegments(graph: Graph, sketchId: NodeId, seg: ArgValue)
   const node = graph.nodes[sketchId];
   if (!node || node.type !== 'sketch') return graph;
   return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, segments: seg } } });
+}
+
+// ─── Spline through-points + end-handles (redesign 2026-06-13) ─────────────
+// A spline op is one grouped entity: its `(r,z)` endpoint plus chord-relative
+// through-points (`pts`) and optional end-tangent handles (`h0`/`h1`). All
+// edits go through these finalize-wrapped helpers (no-op on a non-spline op).
+
+/** Internal — apply `mut` to the spline op at `idx`, no-op otherwise. */
+function withSplineOp(
+  graph: Graph,
+  sketchId: NodeId,
+  idx: number,
+  mut: (o: Extract<SketchOpEntry, { op: 'spline' }>) => SketchOpEntry,
+): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  const o = node.ops[idx] as any;
+  if (!o || o.op !== 'spline') return graph;
+  const ops = node.ops.map((e, i) => (i === idx ? mut(o) : e));
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+/** Add a through-point to a spline op's `pts[]`. Inserts after `afterPtIdx`
+ *  (or appends when omitted / out of range). Defaults to mid-chord, no bulge
+ *  (u=0.5, v=0). */
+export function addSketchSplinePoint(
+  graph: Graph,
+  sketchId: NodeId,
+  idx: number,
+  afterPtIdx?: number,
+  u: ArgValue = asLiteral(0.5),
+  v: ArgValue = asLiteral(0),
+): Graph {
+  return withSplineOp(graph, sketchId, idx, (o) => {
+    const pts = [...(o.pts ?? [])];
+    const at = (typeof afterPtIdx === 'number' && afterPtIdx >= -1 && afterPtIdx < pts.length)
+      ? afterPtIdx + 1 : pts.length;
+    pts.splice(at, 0, [u, v]);
+    return { ...o, pts };
+  });
+}
+
+/** Set one component (`u` or `v`) of one through-point on a spline op. */
+export function setSketchSplinePoint(
+  graph: Graph,
+  sketchId: NodeId,
+  idx: number,
+  ptIdx: number,
+  axis: 'u' | 'v',
+  arg: ArgValue,
+): Graph {
+  return withSplineOp(graph, sketchId, idx, (o) => {
+    const pts = [...(o.pts ?? [])];
+    if (ptIdx < 0 || ptIdx >= pts.length) return o;
+    const pair: [ArgValue, ArgValue] = [...pts[ptIdx]];
+    pair[axis === 'u' ? 0 : 1] = arg;
+    pts[ptIdx] = pair;
+    return { ...o, pts };
+  });
+}
+
+/** Remove a through-point from a spline op. Drops the `pts` field entirely
+ *  when the last point is removed (so emit/migration stay clean). */
+export function removeSketchSplinePoint(
+  graph: Graph,
+  sketchId: NodeId,
+  idx: number,
+  ptIdx: number,
+): Graph {
+  return withSplineOp(graph, sketchId, idx, (o) => {
+    const pts = (o.pts ?? []).filter((_, k) => k !== ptIdx);
+    if (pts.length === 0) { const { pts: _drop, ...rest } = o; return rest; }
+    return { ...o, pts };
+  });
+}
+
+/** Set one component (`u` or `v`) of an end-tangent handle (`h0` = off the
+ *  start, `h1` = off the end). Creates the handle at the origin (0,0) of the
+ *  chord frame first if absent. */
+export function setSketchSplineHandle(
+  graph: Graph,
+  sketchId: NodeId,
+  idx: number,
+  which: 'h0' | 'h1',
+  axis: 'u' | 'v',
+  arg: ArgValue,
+): Graph {
+  return withSplineOp(graph, sketchId, idx, (o) => {
+    const cur: [ArgValue, ArgValue] = o[which] ? [...o[which]!] : [asLiteral(0), asLiteral(0)];
+    cur[axis === 'u' ? 0 : 1] = arg;
+    return { ...o, [which]: cur };
+  });
+}
+
+/** Drop an end-tangent handle, reverting that end to the auto Catmull-Rom
+ *  tangent. */
+export function clearSketchSplineHandle(
+  graph: Graph,
+  sketchId: NodeId,
+  idx: number,
+  which: 'h0' | 'h1',
+): Graph {
+  return withSplineOp(graph, sketchId, idx, (o) => {
+    if (!o[which]) return o;
+    const { [which]: _drop, ...rest } = o;
+    return rest;
+  });
 }
 
 /** Update one coordinate of one entry in a polygon. Works on both vertex

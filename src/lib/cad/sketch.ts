@@ -17,9 +17,14 @@ import makerjs from 'makerjs';
 export type SketchOp =
   /** Straight segment to (r,z). The FIRST op is the start point (moveTo). */
   | { op: 'line'; r: number; z: number }
-  /** Bézier curve to (r,z); `ctrl` = 1 or 2 control points (quad/cubic).
-   *  Omit ctrl for an auto smooth curve through the points. */
-  | { op: 'spline'; r: number; z: number; ctrl?: [number, number][] }
+  /** Smooth curve to (r,z) — start = the preceding vertex `a`, end = `b=(r,z)`.
+   *  `pts` are ordered through-points in the CHORD-AFFINE frame: `(u,v)` with
+   *  `u`≈0..1 along the chord and `v` = perpendicular bulge as a fraction of
+   *  |b−a| (`abs = a + u·d + v·rot90(d)`, `d=b−a`). The curve interpolates them.
+   *  `h0`/`h1` are optional chord-relative end-tangent handles — displacements
+   *  off `a`/`b` in the same frame. Omit all three → an auto Catmull-Rom smooth
+   *  curve, geometry-identical to the pre-redesign plain spline. */
+  | { op: 'spline'; r: number; z: number; pts?: [number, number][]; h0?: [number, number]; h1?: [number, number] }
   /** Round the corner at the vertex this op FOLLOWS (the most recent point). */
   | { op: 'fillet'; radius: number }
   /** Bevel the corner at the most recent point by `dist` along each edge. */
@@ -32,7 +37,9 @@ type Pt = [number, number];
 interface Vert {
   pt: Pt;
   edge: 'line' | 'spline';
-  ctrl?: Pt[];
+  pts?: Pt[];   // chord-relative through-points (u,v) on a spline edge
+  h0?: Pt;      // chord-relative start tangent handle
+  h1?: Pt;      // chord-relative end tangent handle
   corner?: { kind: 'fillet'; radius: number } | { kind: 'chamfer'; dist: number };
 }
 
@@ -42,7 +49,13 @@ function toVerts(ops: SketchOp[]): Vert[] {
   const verts: Vert[] = [];
   for (const op of ops) {
     if (op.op === 'line' || op.op === 'spline') {
-      verts.push({ pt: [op.r, op.z], edge: op.op, ctrl: op.op === 'spline' ? op.ctrl : undefined });
+      verts.push({
+        pt: [op.r, op.z],
+        edge: op.op,
+        pts: op.op === 'spline' ? op.pts : undefined,
+        h0: op.op === 'spline' ? op.h0 : undefined,
+        h1: op.op === 'spline' ? op.h1 : undefined,
+      });
     } else if (op.op === 'fillet' && verts.length) {
       verts[verts.length - 1].corner = { kind: 'fillet', radius: op.radius };
     } else if (op.op === 'chamfer' && verts.length) {
@@ -57,6 +70,39 @@ const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
 const scale = (a: Pt, s: number): Pt => [a[0] * s, a[1] * s];
 const len = (a: Pt): number => Math.hypot(a[0], a[1]);
 const norm = (a: Pt): Pt => { const l = len(a) || 1; return [a[0] / l, a[1] / l]; };
+
+// ── Chord-affine frame ──────────────────────────────────────────────────
+// A spline edge spans `a` (preceding vertex) → `b` (this op's (r,z)). Internal
+// through-points + end handles are stored RELATIVE to that chord so they
+// parametrise: move / rotate / scale an endpoint and the curve follows. With
+// `d = b − a` and `rot90([dx,dy]) = [−dy, dx]`:
+//   abs = a + u·d + v·rot90(d)
+// `u` runs ≈0..1 along the chord, `v` is the perpendicular bulge as a fraction
+// of |d|.
+
+/** Chord-frame displacement vector for `(u,v)` (no anchor added). */
+const chordDisp = (a: Pt, b: Pt, u: number, v: number): Pt => {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  return [u * dx - v * dy, u * dy + v * dx];
+};
+
+/** Chord-frame `(u,v)` → absolute point. */
+export function chordToAbs(a: Pt, b: Pt, u: number, v: number): Pt {
+  const d = chordDisp(a, b, u, v);
+  return [a[0] + d[0], a[1] + d[1]];
+}
+
+/** Inverse of `chordToAbs` — absolute point `p` → its `(u,v)` in the chord
+ *  frame. Used by the editor's drag→relative-coords path (degenerate chord
+ *  |d|≈0 falls back to det=1 so it returns finite numbers). */
+export function absToChord(a: Pt, b: Pt, p: Pt): [number, number] {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const det = dx * dx + dy * dy || 1;
+  const px = p[0] - a[0], py = p[1] - a[1];
+  const u = (dx * px + dy * py) / det;
+  const v = (dx * py - dy * px) / det;
+  return [u, v];
+}
 
 /** Chamfer a corner geometrically: replace the vertex with two points,
  *  pulled back `dist` along each incident edge. Pure math (no Maker.js). */
@@ -76,17 +122,17 @@ export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
   if (verts.length < 2) return verts.map((v) => v.pt);
 
   // ── 1. Apply CHAMFERS at the point level (each splits a vertex in two) ──
-  const chamfered: { pt: Pt; edge: 'line' | 'spline'; ctrl?: Pt[]; fillet?: number }[] = [];
+  const chamfered: { pt: Pt; edge: 'line' | 'spline'; pts?: Pt[]; h0?: Pt; h1?: Pt; fillet?: number }[] = [];
   for (let i = 0; i < verts.length; i++) {
     const v = verts[i];
     if (v.corner?.kind === 'chamfer') {
       const prev = verts[(i - 1 + verts.length) % verts.length].pt;
       const next = verts[(i + 1) % verts.length].pt;
       const [a, b] = chamferCorner(prev, v.pt, next, v.corner.dist);
-      chamfered.push({ pt: a, edge: v.edge, ctrl: v.ctrl });
+      chamfered.push({ pt: a, edge: v.edge, pts: v.pts, h0: v.h0, h1: v.h1 });
       chamfered.push({ pt: b, edge: 'line' });
     } else {
-      chamfered.push({ pt: v.pt, edge: v.edge, ctrl: v.ctrl, fillet: v.corner?.kind === 'fillet' ? v.corner.radius : undefined });
+      chamfered.push({ pt: v.pt, edge: v.edge, pts: v.pts, h0: v.h0, h1: v.h1, fillet: v.corner?.kind === 'fillet' ? v.corner.radius : undefined });
     }
   }
 
@@ -102,21 +148,36 @@ export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
     const b = chamfered[(i + 1) % n].pt;
     const target = chamfered[(i + 1) % n];
     if (target.edge === 'spline') {
-      // Explicit control points win; otherwise build a SMOOTH cubic that
-      // interpolates the points via Catmull-Rom → Bézier tangents (using the
-      // neighbouring vertices). The old auto path put both controls ON the
-      // chord → a straight line; this actually bows the curve through them.
-      let ctrl: Pt[];
-      if (target.ctrl && target.ctrl.length) {
-        ctrl = [a, ...target.ctrl, b];
-      } else {
-        const prev = chamfered[(i - 1 + n) % n].pt; // vertex before a
-        const next = chamfered[(i + 2) % n].pt;      // vertex after b
-        const c1 = add(a, scale(sub(b, prev), 1 / 6));
-        const c2 = sub(b, scale(sub(next, a), 1 / 6));
-        ctrl = [a, c1, c2, b];
+      // Build the knot sequence K = [a, ...through-points, b] (through-points
+      // are chord-relative → absolute) and emit ONE cubic Bézier per
+      // sub-segment. Each interior tangent is the uniform Catmull-Rom tangent
+      // (K[k+1]−K[k−1])/6, with the outer neighbours being the polygon
+      // vertices before `a` and after `b`. With no through-points this reduces
+      // EXACTLY to the previous single-segment auto formula → migrated plain
+      // splines bake identically. End handles override the very first c1 (h0)
+      // and the very last c2 (h1) so the user can steer the end tangents.
+      const prev = chamfered[(i - 1 + n) % n].pt; // vertex before a (K[-1])
+      const next = chamfered[(i + 2) % n].pt;      // vertex after b  (K[m+1])
+      const through = (target.pts ?? []).map(([u, v]) => chordToAbs(a, b, u, v));
+      const K: Pt[] = [a, ...through, b];
+      const ext: Pt[] = [prev, ...K, next]; // ext[s] = K[s-1], ext[s+3] = K[s+2]
+      const segs = K.length - 1;
+      for (let s = 0; s < segs; s++) {
+        const p0 = K[s], p3 = K[s + 1];
+        const km1 = ext[s];      // K[s-1]
+        const kp2 = ext[s + 3];  // K[s+2]
+        let c1 = add(p0, scale(sub(p3, km1), 1 / 6));
+        let c2 = sub(p3, scale(sub(kp2, p0), 1 / 6));
+        if (s === 0 && target.h0) {
+          const d = chordDisp(a, b, target.h0[0], target.h0[1]);
+          c1 = [a[0] + d[0], a[1] + d[1]];
+        }
+        if (s === segs - 1 && target.h1) {
+          const d = chordDisp(a, b, target.h1[0], target.h1[1]);
+          c2 = [b[0] + d[0], b[1] + d[1]];
+        }
+        modelsObj[`s${i}_${s}`] = new makerjs.models.BezierCurve([p0, c1, c2, p3] as any);
       }
-      modelsObj[`s${i}`] = new makerjs.models.BezierCurve(ctrl as any);
     } else {
       const line = new makerjs.paths.Line(a, b);
       pathsObj[`e${i}`] = line;
