@@ -5361,14 +5361,14 @@
                                siblings below) so a param can be wired in. -->
                           <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
-                              <span class="ge-sketch-axis">{op.op === 'spline' ? '∿' : '╱'}r</span>
+                              <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
                               <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
                                 onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
                             </div>
                             <div class="ge-sketch-srow">
-                              <span class="ge-sketch-axis">z</span>
+                              <span class="ge-sketch-axis" class:spline={op.op === 'spline'}>{op.op === 'spline' ? 'spl z' : 'z'}</span>
                               <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
@@ -5380,7 +5380,7 @@
                         {:else}
                           <div class="ge-sketch-vtx corner" style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
-                              <span class="ge-sketch-axis">{op.op === 'fillet' ? '◜r' : '⊿d'}</span>
+                              <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                               <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
@@ -5740,14 +5740,14 @@
                   {#if op.op === 'line' || op.op === 'spline'}
                     <div class="ge-sketch-vtx">
                       <div class="ge-sketch-srow">
-                        <span class="ge-sketch-axis">{op.op === 'spline' ? '∿' : '╱'}r</span>
+                        <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
                         <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
                           onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
                         <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
                           onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
                       </div>
                       <div class="ge-sketch-srow">
-                        <span class="ge-sketch-axis">z</span>
+                        <span class="ge-sketch-axis" class:spline={op.op === 'spline'}>{op.op === 'spline' ? 'spl z' : 'z'}</span>
                         <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
                           onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
                         <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === se.node.ops.length - 1}
@@ -5759,7 +5759,7 @@
                   {:else}
                     <div class="ge-sketch-vtx corner">
                       <div class="ge-sketch-srow">
-                        <span class="ge-sketch-axis">{op.op === 'fillet' ? '◜r' : '⊿d'}</span>
+                        <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                         <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
                           onchange={(e) => { graph = setSketchOpField(graph, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
                         <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
@@ -7305,7 +7305,10 @@
   .ge-sketch-vtx { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 2px 0 4px; margin: 0; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
   .ge-sketch-vtx.corner { background: rgba(243,232,255,0.85); border-color: #d8b4fe; }
   .ge-sketch-srow { display: flex; align-items: center; gap: 3px; height: 18px; }
-  .ge-sketch-axis { width: 20px; flex: none; font: 600 10px ui-monospace, monospace; color: #7c3aed; text-align: right; }
+  .ge-sketch-axis { width: 40px; flex: none; font: 700 9px ui-monospace, monospace; color: #7c3aed; text-align: right; white-space: nowrap; }
+  .ge-sketch-axis.spline { color: #0891b2; }
+  .ge-sketch-axis.corner { color: #0e7490; }      /* fillet */
+  .ge-sketch-axis.corner.chamfer { color: #b45309; }
   .ge-sketch-in { width: 100%; min-width: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; box-sizing: border-box; cursor: text; }
   .ge-sketch-in.wide { flex: 1 1 auto; }
   .ge-sketch-in:hover { background: #faf5ff; }
