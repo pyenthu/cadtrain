@@ -6332,8 +6332,11 @@
                 {/if}
               </svg>
             {/if}
-            <!-- DRAGGABLE top bar — status, the live corner radius/dist dial, Done.
-                 Floats over the stage; drag the ⣿ handle to reposition. -->
+            <!-- DRAGGABLE top bar — the live corner radius/dist dial or spline
+                 controls. Floats over the stage; drag the ⣿ handle to reposition.
+                 Only rendered when a corner or spline is selected — otherwise it
+                 would show as an empty floating box (just the grip). -->
+            {#if selectedCorner || selectedSpline}
             <div class="ge-sketch-topbar" style="left: {sketchBarPos.x}px; top: {sketchBarPos.y}px">
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <span class="ge-sketch-grip" title="Drag the toolbar"
@@ -6370,6 +6373,7 @@
                 </span>
               {/if}
             </div>
+            {/if}
             <!-- Standalone Done tick — pinned top-right, above the canvas/overlay. -->
             <button class="ge-sketch-done-tick" title="Done — back to the graph" onclick={closeSketchEditor}>✓</button>
             <div class="ge-sketch-hint">
