@@ -27,6 +27,7 @@
     addSketchOp,
     setSketchOpField,
     setSketchOpKind,
+    setSketchOpMode,
     moveSketchOp,
     removeSketchOp,
     setSketchSegments,
@@ -2896,9 +2897,9 @@
     if (!node || node.type !== 'sketch') return null;
     const p = sketchParamScope();
     const ops: SketchOp[] = node.ops.map((o: any) => {
-      if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p) };
+      if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode };
       if (o.op === 'spline') return {
-        op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p),
+        op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode,
         pts: (o.pts ?? []).map((c: any) => [evalArg(c[0], p), evalArg(c[1], p)] as [number, number]),
         h0: o.h0 ? [evalArg(o.h0[0], p), evalArg(o.h0[1], p)] as [number, number] : undefined,
         h1: o.h1 ? [evalArg(o.h1[0], p), evalArg(o.h1[1], p)] as [number, number] : undefined,
@@ -2909,12 +2910,20 @@
     const seg = node.segments ? evalArg(node.segments, p) : 64;
     let pts: [number, number][] = [];
     try { pts = compileSketch(ops, seg); } catch { pts = []; }
-    const anchors: { opIdx: number; r: number; z: number; kind: string; literal: boolean; corner: 'fillet' | 'chamfer' | null; cornerOpIdx: number | null }[] = [];
+    const anchors: { opIdx: number; r: number; z: number; kind: string; literal: boolean; rel: boolean; corner: 'fillet' | 'chamfer' | null; cornerOpIdx: number | null }[] = [];
+    // Accumulate a running cursor so relative (Δr,Δz) ops resolve to their
+    // ABSOLUTE canvas positions — mirrors compileSketch/toVerts. The first
+    // point op is always absolute.
+    let cur: [number, number] = [0, 0]; let started = false;
     node.ops.forEach((o: any, i: number) => {
       if (o.op === 'line' || o.op === 'spline') {
         const nx = node.ops[i + 1];
         const corner = nx && (nx.op === 'fillet' || nx.op === 'chamfer') ? nx.op as 'fillet' | 'chamfer' : null;
-        anchors.push({ opIdx: i, r: evalArg(o.r, p), z: evalArg(o.z, p), kind: o.op, literal: o.r?.kind === 'literal' && o.z?.kind === 'literal', corner, cornerOpIdx: corner ? i + 1 : null });
+        const rel = o.mode === 'rel' && started;
+        const ar = rel ? cur[0] + evalArg(o.r, p) : evalArg(o.r, p);
+        const az = rel ? cur[1] + evalArg(o.z, p) : evalArg(o.z, p);
+        cur = [ar, az]; started = true;
+        anchors.push({ opIdx: i, r: ar, z: az, kind: o.op, literal: o.r?.kind === 'literal' && o.z?.kind === 'literal', rel, corner, cornerOpIdx: corner ? i + 1 : null });
       }
     });
     const all = [...pts, ...anchors.map((a) => [a.r, a.z] as [number, number])];
@@ -3029,8 +3038,18 @@
     if (!sketchDrag || !editingSketchId) return;
     sketchTapMoved = true;
     const c = sketchEventToCoord(ev); if (!c) return;
-    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'r', { kind: 'literal', value: c[0] });
-    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'z', { kind: 'literal', value: c[1] });
+    // For a relative (Δ) op, write the delta from the previous vertex's
+    // absolute position so the increment is preserved; else write absolute.
+    const node = graph.nodes[editingSketchId] as any;
+    const op = node?.ops?.[sketchDrag.opIdx];
+    const se = sketchEditor;
+    let r = c[0], z = c[1];
+    if (op?.mode === 'rel' && se) {
+      const ai = se.anchors.findIndex((a) => a.opIdx === sketchDrag!.opIdx);
+      if (ai > 0) { const prev = se.anchors[ai - 1]; r = +(c[0] - prev.r).toFixed(3); z = +(c[1] - prev.z).toFixed(3); }
+    }
+    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'r', { kind: 'literal', value: r });
+    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'z', { kind: 'literal', value: z });
   }
   function sketchAnchorUp() { sketchDrag = null; }
   // Mobile equivalent of the mouse ondblclick → open the point's coordinate
@@ -3672,6 +3691,31 @@
       field: newAxis,
       draft: sketchExprPop.drafts[newAxis],
     };
+  }
+  // Per-line abs/relative coord toggle. The axis label doubles as the control:
+  // click it to flip the op between absolute (r/z) and incremental (Δr/Δz).
+  // For LITERAL coords we convert the value (abs↔delta vs the previous vertex)
+  // so the point doesn't jump; expr/param coords just flip the flag.
+  function toggleSketchOpMode(sid: NodeId, idx: number, op: any) {
+    const toRel = op?.mode !== 'rel';
+    const se = sketchEditor;
+    if (se && op?.r?.kind === 'literal' && op?.z?.kind === 'literal') {
+      const ai = se.anchors.findIndex((a) => a.opIdx === idx);
+      if (ai > 0) {
+        const prev = se.anchors[ai - 1], curAbs = se.anchors[ai]; // anchors are resolved absolutes
+        const r = toRel ? +(curAbs.r - prev.r).toFixed(3) : +curAbs.r.toFixed(3);
+        const z = toRel ? +(curAbs.z - prev.z).toFixed(3) : +curAbs.z.toFixed(3);
+        graph = setSketchOpField(graph, sid, idx, 'r', { kind: 'literal', value: r });
+        graph = setSketchOpField(graph, sid, idx, 'z', { kind: 'literal', value: z });
+      }
+    }
+    graph = setSketchOpMode(graph, sid, idx, toRel ? 'rel' : 'abs');
+  }
+  /** Axis label that reflects the op's coord mode: Δr/Δz when relative,
+   *  r/z (or spl r/spl z for splines) when absolute. */
+  function sketchAxisLabel(op: any, axis: 'r' | 'z'): string {
+    if (op?.mode === 'rel') return axis === 'r' ? 'Δr' : 'Δz';
+    return op?.op === 'spline' ? (axis === 'r' ? 'spl r' : 'spl z') : axis;
   }
   function closeSketchExprPop() { sketchExprPop = null; }
   // Drag the point popover by its header (grab the title bar). Mirrors the
@@ -5844,8 +5888,8 @@
                                siblings below) so a param can be wired in. -->
                           <div class="ge-sketch-vtx" class:editing={sketchExprPop?.sid === n.id && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
-                              <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
-                              <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
+                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(n.id, idx, op)}>{sketchAxisLabel(op, 'r')}</button>
+                              <input class="ge-sketch-in" type="text" value={argStr(op.r)} title={op.mode === 'rel' ? 'Δr — offset from previous point' : 'r — number or p.param'}
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-fx" type="button" title="Write/edit an expression for r" class:on={op.r?.kind === 'expr'}
                                 onclick={(ev) => openSketchExprPop(ev, n.id, idx, 'r', argStr(op.r))}>ƒ</button>
@@ -5853,8 +5897,8 @@
                                 onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
                             </div>
                             <div class="ge-sketch-srow">
-                              <span class="ge-sketch-axis" class:spline={op.op === 'spline'}>{op.op === 'spline' ? 'spl z' : 'z'}</span>
-                              <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
+                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(n.id, idx, op)}>{sketchAxisLabel(op, 'z')}</button>
+                              <input class="ge-sketch-in" type="text" value={argStr(op.z)} title={op.mode === 'rel' ? 'Δz — offset from previous point' : 'z'}
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-fx" type="button" title="Write/edit an expression for z" class:on={op.z?.kind === 'expr'}
                                 onclick={(ev) => openSketchExprPop(ev, n.id, idx, 'z', argStr(op.z))}>ƒ</button>
@@ -6367,8 +6411,8 @@
                           {#if op.op === 'line' || op.op === 'spline'}
                             <div class="ge-sketch-vtx" class:editing={sketchExprPop?.sid === sid && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                               <div class="ge-sketch-srow">
-                                <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
-                                <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
+                                <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(sid, idx, op)}>{sketchAxisLabel(op, 'r')}</button>
+                                <input class="ge-sketch-in" type="text" value={argStr(op.r)} title={op.mode === 'rel' ? 'Δr — offset from previous point' : 'r — number or p.param'}
                                   onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
                                 <button class="ge-sketch-fx" type="button" title="Write/edit an expression for r" class:on={op.r?.kind === 'expr'}
                                   onclick={(ev) => openSketchExprPop(ev, sid, idx, 'r', argStr(op.r))}>ƒ</button>
@@ -6376,8 +6420,8 @@
                                   onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
                               </div>
                               <div class="ge-sketch-srow">
-                                <span class="ge-sketch-axis" class:spline={op.op === 'spline'}>{op.op === 'spline' ? 'spl z' : 'z'}</span>
-                                <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
+                                <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(sid, idx, op)}>{sketchAxisLabel(op, 'z')}</button>
+                                <input class="ge-sketch-in" type="text" value={argStr(op.z)} title={op.mode === 'rel' ? 'Δz — offset from previous point' : 'z'}
                                   onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
                                 <button class="ge-sketch-fx" type="button" title="Write/edit an expression for z" class:on={op.z?.kind === 'expr'}
                                   onclick={(ev) => openSketchExprPop(ev, sid, idx, 'z', argStr(op.z))}>ƒ</button>
@@ -8016,6 +8060,10 @@
   .ge-sketch-vtx.editing { border-color: #f59e0b; background: rgba(254,243,199,0.7); box-shadow: 0 0 0 1px #f59e0b; }
   .ge-sketch-srow { display: flex; align-items: center; gap: 3px; height: 18px; }
   .ge-sketch-axis { width: 40px; flex: none; font: 700 9px ui-monospace, monospace; color: #7c3aed; text-align: right; white-space: nowrap; }
+  /* clickable abs/Δ toggle variant — used on line/spline coord rows */
+  button.ge-sketch-axis { border: none; background: none; padding: 0; cursor: pointer; }
+  button.ge-sketch-axis:hover { text-decoration: underline; }
+  .ge-sketch-axis.rel { color: #ea580c; }   /* relative (Δ) coords */
   .ge-sketch-axis.spline { color: #0891b2; }
   .ge-sketch-axis.corner { color: #0e7490; }      /* fillet */
   .ge-sketch-axis.corner.chamfer { color: #b45309; }

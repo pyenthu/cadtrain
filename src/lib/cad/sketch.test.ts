@@ -94,6 +94,41 @@ describe('compileSketch — per-corner fillet (M.3)', () => {
   });
 });
 
+describe('compileSketch — relative (incremental) coords', () => {
+  it('a rel-coord square matches the abs-coord square', () => {
+    // Same 2×2 square, drawn as deltas: right 2, up 2, left 2.
+    const relSquare: SketchOp[] = [
+      { op: 'line', r: 0, z: 0 },                  // first op always absolute
+      { op: 'line', r: 2, z: 0, mode: 'rel' },     // Δ → (2,0)
+      { op: 'line', r: 0, z: 2, mode: 'rel' },     // Δ → (2,2)
+      { op: 'line', r: -2, z: 0, mode: 'rel' },    // Δ → (0,2)
+    ];
+    expect(sharpCount(compileSketch(relSquare, 64))).toBe(4);
+    expect(has(compileSketch(relSquare, 64), 2, 2)).toBe(true);
+  });
+
+  it('first op is treated as absolute even when flagged rel', () => {
+    const ops: SketchOp[] = [
+      { op: 'line', r: 1, z: 1, mode: 'rel' },     // no previous vertex → absolute (1,1)
+      { op: 'line', r: 2, z: 0, mode: 'rel' },     // → (3,1)
+      { op: 'line', r: 0, z: 2, mode: 'rel' },     // → (3,3)
+    ];
+    const pts = compileSketch(ops, 64);
+    expect(has(pts, 1, 1)).toBe(true);
+    expect(has(pts, 3, 3)).toBe(true);
+  });
+
+  it('abs and rel ops can be mixed in one sketch', () => {
+    const ops: SketchOp[] = [
+      { op: 'line', r: 0, z: 0 },
+      { op: 'line', r: 2, z: 0, mode: 'rel' },     // → (2,0)
+      { op: 'line', r: 2, z: 2, mode: 'abs' },     // absolute (2,2)
+      { op: 'line', r: -2, z: 0, mode: 'rel' },    // → (0,2)
+    ];
+    expect(sharpCount(compileSketch(ops, 64))).toBe(4);
+  });
+});
+
 // ── Spline redesign (2026-06-13) — chord-relative through-points + handles ──
 
 const maxR = (pts: Pt[]) => Math.max(...pts.map((p) => p[0]));

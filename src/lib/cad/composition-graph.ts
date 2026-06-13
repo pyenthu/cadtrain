@@ -179,7 +179,9 @@ export type PolyRepeatNode = {
  *  polygon. Every op field is an ArgValue so radius/dist/coords can be
  *  param/expr-driven. */
 export type SketchOpEntry =
-  | { op: 'line'; r: ArgValue; z: ArgValue }
+  /** `mode:'rel'` makes (r,z) a delta from the previous vertex (Δr,Δz); 'abs'
+   *  (default, forced on the first op) is an absolute coordinate. */
+  | { op: 'line'; r: ArgValue; z: ArgValue; mode?: 'abs' | 'rel' }
   /** Smooth curve to (r,z). `pts` are chord-relative through-points `(u,v)`,
    *  `h0`/`h1` chord-relative end-tangent handles — every component an ArgValue
    *  so coords/bulge/handles are param- or expr-wireable. See sketch.ts for the
@@ -187,7 +189,8 @@ export type SketchOpEntry =
   | { op: 'spline'; r: ArgValue; z: ArgValue;
       pts?: Array<[ArgValue, ArgValue]>;
       h0?: [ArgValue, ArgValue];
-      h1?: [ArgValue, ArgValue] }
+      h1?: [ArgValue, ArgValue];
+      mode?: 'abs' | 'rel' }
   | { op: 'fillet'; radius: ArgValue }
   | { op: 'chamfer'; dist: ArgValue };
 export type SketchNode = {
@@ -821,6 +824,20 @@ export function setSketchOpField(graph: Graph, sketchId: NodeId, idx: number, fi
   if (!node || node.type !== 'sketch') return graph;
   if (idx < 0 || idx >= node.ops.length) return graph;
   const ops = node.ops.map((o, i) => (i === idx ? ({ ...o, [field]: arg } as SketchOpEntry) : o));
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+}
+
+/** Toggle a point op between absolute and relative (Δr,Δz) coords. No-op on
+ *  fillet/chamfer or on the first point op (always absolute). */
+export function setSketchOpMode(graph: Graph, sketchId: NodeId, idx: number, mode: 'abs' | 'rel'): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  const o = node.ops[idx] as any;
+  if (!o || (o.op !== 'line' && o.op !== 'spline')) return graph;
+  // The first point op has no predecessor to offset from → always absolute.
+  const firstPointIdx = node.ops.findIndex((e) => e.op === 'line' || e.op === 'spline');
+  if (idx === firstPointIdx) return graph;
+  const ops = node.ops.map((e, i) => (i === idx ? ({ ...e, mode } as SketchOpEntry) : e));
   return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
 }
 

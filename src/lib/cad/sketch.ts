@@ -15,8 +15,11 @@
 import makerjs from 'makerjs';
 
 export type SketchOp =
-  /** Straight segment to (r,z). The FIRST op is the start point (moveTo). */
-  | { op: 'line'; r: number; z: number }
+  /** Straight segment to (r,z). The FIRST op is the start point (moveTo).
+   *  `mode:'rel'` makes (r,z) a DELTA from the previous vertex (Δr,Δz) — an
+   *  incremental move; `mode:'abs'` (default, and forced on the first op) is an
+   *  absolute coordinate. `compileSketch` accumulates rel ops into absolutes. */
+  | { op: 'line'; r: number; z: number; mode?: 'abs' | 'rel' }
   /** Smooth curve to (r,z) — start = the preceding vertex `a`, end = `b=(r,z)`.
    *  `pts` are ordered through-points in the CHORD-AFFINE frame: `(u,v)` with
    *  `u`≈0..1 along the chord and `v` = perpendicular bulge as a fraction of
@@ -24,7 +27,7 @@ export type SketchOp =
    *  `h0`/`h1` are optional chord-relative end-tangent handles — displacements
    *  off `a`/`b` in the same frame. Omit all three → an auto Catmull-Rom smooth
    *  curve, geometry-identical to the pre-redesign plain spline. */
-  | { op: 'spline'; r: number; z: number; pts?: [number, number][]; h0?: [number, number]; h1?: [number, number] }
+  | { op: 'spline'; r: number; z: number; pts?: [number, number][]; h0?: [number, number]; h1?: [number, number]; mode?: 'abs' | 'rel' }
   /** Round the corner at the vertex this op FOLLOWS (the most recent point). */
   | { op: 'fillet'; radius: number }
   /** Bevel the corner at the most recent point by `dist` along each edge. */
@@ -47,10 +50,18 @@ interface Vert {
  *  (fillet/chamfer) attached to the preceding vertex. */
 function toVerts(ops: SketchOp[]): Vert[] {
   const verts: Vert[] = [];
+  // Running cursor for incremental (relative) ops. The FIRST point op is
+  // always treated as absolute (no previous vertex to offset from).
+  let cursor: Pt = [0, 0];
+  let started = false;
   for (const op of ops) {
     if (op.op === 'line' || op.op === 'spline') {
+      const rel = op.mode === 'rel' && started;
+      const pt: Pt = rel ? [cursor[0] + op.r, cursor[1] + op.z] : [op.r, op.z];
+      cursor = pt;
+      started = true;
       verts.push({
-        pt: [op.r, op.z],
+        pt,
         edge: op.op,
         pts: op.op === 'spline' ? op.pts : undefined,
         h0: op.op === 'spline' ? op.h0 : undefined,

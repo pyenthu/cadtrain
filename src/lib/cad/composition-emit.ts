@@ -434,6 +434,9 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // an ArgValue so it can be param/expr-driven. (plan M.1)
       const ops = ((node as any).ops ?? []).map((o: any) => {
         if (o.op === 'line' || o.op === 'spline') {
+          // `mode:'rel'` → compileSketch accumulates (r,z) as a Δ from the
+          // previous vertex; emitted verbatim so the bake matches the editor.
+          const modePart = o.mode === 'rel' ? `, mode: 'rel'` : '';
           if (o.op === 'spline') {
             const parts = [`op: 'spline'`, `r: ${emitValueExpr(o.r)}`, `z: ${emitValueExpr(o.z)}`];
             if (Array.isArray(o.pts) && o.pts.length) {
@@ -441,9 +444,10 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
             }
             if (Array.isArray(o.h0)) parts.push(`h0: [${emitValueExpr(o.h0[0])}, ${emitValueExpr(o.h0[1])}]`);
             if (Array.isArray(o.h1)) parts.push(`h1: [${emitValueExpr(o.h1[0])}, ${emitValueExpr(o.h1[1])}]`);
+            if (o.mode === 'rel') parts.push(`mode: 'rel'`);
             return `{ ${parts.join(', ')} }`;
           }
-          return `{ op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)} }`;
+          return `{ op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}${modePart} }`;
         }
         if (o.op === 'fillet')  return `{ op: 'fillet', radius: ${emitValueExpr(o.radius)} }`;
         if (o.op === 'chamfer') return `{ op: 'chamfer', dist: ${emitValueExpr(o.dist)} }`;
