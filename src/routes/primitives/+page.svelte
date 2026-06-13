@@ -318,6 +318,24 @@
   }
   function dismissRefToast() { refToast = null; }
 
+  /** Build a FolderNode tree from the legacy flat groups (fallback when the
+   *  proxied /list has no recursive `tree` — old prod). */
+  function legacyTree(pr: any): FolderNode {
+    const n = (name: string, path: string, parts: any[], children: FolderNode[]): FolderNode =>
+      ({ name, path, parts: parts ?? [], children: children ?? [] });
+    const children: FolderNode[] = [];
+    const basicSubs: FolderNode[] = (Array.isArray(pr.basicSubfolders) ? pr.basicSubfolders : [])
+      .map((s: string) => n(s, `basic/${s}`, [], []));
+    children.push(n('basic', 'basic', Array.isArray(pr.basic) ? pr.basic : [], basicSubs));
+    const comp = (pr.completions && typeof pr.completions === 'object') ? pr.completions : {};
+    const compSubs = (pr.completionSubfolders && typeof pr.completionSubfolders === 'object') ? pr.completionSubfolders : {};
+    const compChildren: FolderNode[] = Object.entries(comp).map(([fam, parts]: [string, any]) =>
+      n(fam, `completions/${fam}`, Array.isArray(parts) ? parts : [],
+        (Array.isArray(compSubs[fam]) ? compSubs[fam] : []).map((s: string) => n(s, `completions/${fam}/${s}`, [], []))));
+    children.push(n('completions', 'completions', [], compChildren));
+    children.push(n('archive', 'archive', Array.isArray(pr.archived) ? pr.archived : [], []));
+    return n('', '', [], children);
+  }
   async function loadList() {
     listLoading = true;
     listError = null;
@@ -334,7 +352,15 @@
       stdstale  = Array.isArray(pr.stdstale)  ? pr.stdstale  : [];
       archived  = Array.isArray(pr.archived)  ? pr.archived  : [];
       completions = (pr.completions && typeof pr.completions === 'object') ? pr.completions : {};
-      tree      = (pr.tree && typeof pr.tree === 'object') ? pr.tree : { name: '', path: '', parts: [], children: [] };
+      // Prefer the server's recursive `tree` (new /list). When it's absent —
+      // e.g. the list is PROXIED to a prod that hasn't redeployed the tree
+      // endpoint yet (Rule 13) — rebuild an equivalent tree from the legacy
+      // flat groups so the folder-tabs populate against real prod data instead
+      // of showing empty (completions families carry their parts; deeper
+      // subfolders fill in once prod serves the real tree).
+      tree = (pr.tree && typeof pr.tree === 'object' && Array.isArray(pr.tree.children) && pr.tree.children.length)
+        ? pr.tree
+        : legacyTree(pr);
       profiles  = Array.isArray(pf.profiles)
         ? pf.profiles.map((p: any) => ({ id: p.id, set: p.set, hasSource: !!p.hasSource }))
         : [];
