@@ -1251,6 +1251,20 @@ export function topoOrder(graph: Graph): NodeId[] {
       visit(node.arg);
     } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'repeat') {
       visit(node.child);
+    } else if (node.type === 'call') {
+      // A Call arg can carry a `__POLY__<id>` ref to a producer (polygon /
+      // sketch) feeding e.g. a revolve's `profile`. Visit those producers
+      // FIRST so their `const` emits before the Call that uses it — otherwise
+      // `const A = r_revolve({ profile: _sketch_1 })` lands before
+      // `const _sketch_1 = ...` → "Cannot access '_sketch_1' before
+      // initialization" (TDZ). Mirrors composition-emit's __POLY__ handling.
+      for (const arg of Object.values(node.args ?? {})) {
+        const a = arg as any;
+        if (a && a.kind === 'expr' && typeof a.expr === 'string') {
+          const ms = a.expr.match(/__POLY__(n_[a-z0-9]+)/gi);
+          if (ms) for (const m of ms) visit(m.slice('__POLY__'.length));
+        }
+      }
     }
     order.push(id);
   }
