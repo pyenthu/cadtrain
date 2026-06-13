@@ -513,7 +513,7 @@ export function getRenderZScale(): number { return _renderZScale; }
  * the cutaway box and the maxOD-keyed classification work in the
  * geom's natural units.
  */
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto' }): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -529,7 +529,12 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
     // Only re-throw OUR empty-solid error; a missing numTri must not break the bake.
     if (/EMPTY solid/.test(String(e?.message))) throw e;
   }
-  const scaled = _renderZScale === 1.0 ? manifold : manifold.scale([1, 1, _renderZScale]);
+  // Z-scale is REQUEST-LOCAL via opts.zScale (falls back to the module global
+  // for legacy callers). Threading it through avoids the concurrency race where
+  // two simultaneous preview requests clobbered the shared _renderZScale before
+  // either finalized (GRAPH_EDITOR_REVIEW / robustness-plan 1d).
+  const z = opts?.zScale ?? _renderZScale;
+  const scaled = z === 1.0 ? manifold : manifold.scale([1, 1, z]);
   const lut = parts?.active ? parts : undefined;
   // Tag the cut-box with SECTION_ID so the new cross-section faces it
   // creates are distinguishable (→ inner/section color) from the part

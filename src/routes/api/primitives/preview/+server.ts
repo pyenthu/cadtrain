@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
-import { finalizeManifold, setRenderZScale } from '$lib/cad/builder';
+import { finalizeManifold } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { analyzeParts } from '$lib/server/part-colors';
@@ -26,6 +26,9 @@ export const POST = async ({ request, fetch }) => {
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
   const { source, name, params, zScale, mode, cutaway } = body ?? {};
+  // Request-local Z-scale — passed into finalizeManifold (no shared global to
+  // race on between concurrent previews). undefined → finalize uses 1.0.
+  const zArg = (typeof zScale === 'number' && zScale > 0) ? zScale : undefined;
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   // Args may be mixed number | string (string carries JSON-encoded
@@ -93,20 +96,18 @@ export const POST = async ({ request, fetch }) => {
       throw error(404, `bundle primitive "${name}" not found`);
     }
     await helpers.initManifold();
-    if (typeof zScale === 'number' && zScale > 0) setRenderZScale(zScale);
     let manifold: any;
     try { manifold = directFn(...args); }
     catch (e: any) { throw error(400, `primitive call failed: ${e?.message ?? e}`); }
     if (!manifold || typeof manifold.getMesh !== 'function') {
       throw error(400, 'primitive did not return a Manifold');
     }
-    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material);
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg });
     const s = serializeComponentResult(r);
     return json({ ok: true, full: s.full, cutVC: s.cutVC });
   }
 
   await helpers.initManifold();
-  if (typeof zScale === 'number' && zScale > 0) setRenderZScale(zScale);
   // Phase timings (ms) — returned as `_t` so we can break down where a
   // preview spends its time: deps+sandbox build vs WASM geom vs cutaway vs
   // mesh serialize. Client ignores the field.
@@ -177,7 +178,7 @@ export const POST = async ({ request, fetch }) => {
       args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
       material,
       parts,
-      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto' },
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg },
     );
     mark('finalize', t); t = performance.now();
     serialized = serializeComponentResult(result);
