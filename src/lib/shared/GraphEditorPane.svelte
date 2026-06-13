@@ -7891,13 +7891,13 @@
   .ge-sketch-edit-btn:hover { fill: #5b21b6; }
   .ge-sketch-editor { position: absolute; inset: 0; z-index: 60; background: #fbfbfd; display: flex; flex-direction: column; }
   /* TOP horizontal tool palette (sketch items run left→right across the top). */
-  .ge-sketch-vtools { display: flex; flex-direction: row; align-items: center; gap: 5px; padding: 5px 8px; border-bottom: 1px solid #e2e8f0; background: #fff; flex: 0 0 auto; }
-  .ge-stool { width: 32px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; font: 15px ui-monospace, monospace; color: #57534e; cursor: pointer; }
+  .ge-sketch-vtools { display: flex; flex-direction: row; align-items: center; gap: 4px; padding: 2px 8px; border-bottom: 1px solid #e2e8f0; background: #fff; flex: 0 0 auto; }
+  .ge-stool { width: 28px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; font: 14px ui-monospace, monospace; color: #57534e; cursor: pointer; }
   .ge-stool:hover { background: #f3e8ff; color: #6b21a8; border-color: #c4b5fd; }
   .ge-stool.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
-  .ge-stool.done { width: auto; height: 26px; padding: 0 12px; font: 600 12px Arial; color: #15803d; border-color: #6ee7b7; }
+  .ge-stool.done { width: auto; height: 24px; padding: 0 12px; font: 600 12px Arial; color: #15803d; border-color: #6ee7b7; }
   .ge-stool.done:hover { background: #d1fae5; }
-  .ge-stool-sep { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
+  .ge-stool-sep { width: 1px; height: 16px; background: #e2e8f0; margin: 0 3px; }
   .ge-stool-label { font: 600 12px Arial; color: #6b21a8; padding: 0 4px; white-space: nowrap; }
   /* DRAGGABLE floating top bar (status + corner dial + Done). */
   .ge-sketch-topbar {
