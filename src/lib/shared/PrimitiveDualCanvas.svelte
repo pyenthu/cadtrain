@@ -85,7 +85,13 @@
   let glbAc: AbortController | null = null;
   async function rebuildMesh() {
     if (!id) return;
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle' });
+    // Request the cutaway (cutVC) only when the user is VIEWING it. Large parts
+    // (> ~15k tris, e.g. multi-part assemblies) auto-skip the cutaway server-side
+    // for speed, so without this the live mesh's cutVC stays empty and toggling
+    // cutaway ON renders blank. cutaway:true forces the server to compute it;
+    // when off we omit the flag (auto-skip → fast). The flag is part of the body
+    // so it keys the fetch cache separately for cut vs full.
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined });
     const cached = cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC });
@@ -152,7 +158,10 @@
   // unchanged and the loop has nothing to feed on.
   let lastRebuildKey = '';
   $effect(() => {
-    const key = JSON.stringify({ id, args, source: source ?? '' });
+    // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
+    // part re-fetches WITH the cutaway computed. rebuildGlb's body is unchanged
+    // by this, so it cache-hits and stays cheap.
+    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();
