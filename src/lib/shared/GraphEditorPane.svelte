@@ -3399,6 +3399,36 @@
     profilePop = { callId, key, src, set, currentKind, x: ev.clientX, y: ev.clientY };
   }
   function closeProfilePop() { profilePop = null; }
+
+  // ─── Node-ref profile (a wired polygon/sketch) — swap / detach ──────────
+  // A revolve/extrude `profile` arg wired to a producer carries a
+  // `__POLY__<id>` expr. This popover lets the user SWAP it to a different
+  // polygon/sketch in the graph or DETACH it entirely (× on the chip).
+  let profileRefPop = $state<{ callId: NodeId; key: string; x: number; y: number } | null>(null);
+  function openProfileRefPop(ev: MouseEvent, callId: NodeId, key: string) {
+    ev.stopPropagation();
+    profileRefPop = { callId, key, x: ev.clientX, y: ev.clientY };
+  }
+  function closeProfileRefPop() { profileRefPop = null; }
+  /** All profile-producing nodes (polygon + sketch) — the swap candidates. */
+  function profileProducers() {
+    return Object.values(graph.nodes).filter((n: any) => n.type === 'polygon' || n.type === 'sketch') as any[];
+  }
+  function producerLabel(id: NodeId): string {
+    const n = graph.nodes[id] as any;
+    if (!n) return '(missing)';
+    if (n.type === 'sketch') return `sketch · ${(n.ops ?? []).length} ops`;
+    if (n.type === 'polygon') return `polygon · ${(n.points ?? []).length} pts`;
+    return n.type;
+  }
+  function swapProfileRef(callId: NodeId, key: string, nodeId: NodeId) {
+    graph = setCallArg(graph, callId, key, asExpr(`__POLY__${nodeId}`));
+    profileRefPop = null;
+  }
+  /** Detach the profile — clears the arg to an empty slot the user re-fills. */
+  function detachProfile(callId: NodeId, key: string) {
+    graph = setCallArg(graph, callId, key, asExpr(''));
+  }
   function selectProfileKind(kindId: string) {
     if (!profilePop) return;
     const def: ProfileDef | undefined = PROFILE_REGISTRY[kindId];
@@ -4573,8 +4603,24 @@
                           {@const expr = (v as any).expr ?? ''}
                           {@const refs = extractParamRefs(expr)}
                           {@const isProfileSlot = !!expectedProfileKeys[call.src]?.has(k)}
+                          {@const polyM = String(expr).match(/^__POLY__(n_[a-z0-9]+)$/i)}
                           {@const profileDesc = isProfileSlot ? parseProfileExpr(expr) : null}
-                          {#if isProfileSlot && profileDesc && profileDesc.kind}
+                          {#if isProfileSlot && polyM && graph.nodes[polyM[1]]}
+                            <!-- NODE-REF profile: wired to a polygon/sketch.
+                                 ▾ swaps to a different producer; × detaches. -->
+                            <span class="ge-arg-cell">
+                              <!-- svelte-ignore a11y_click_events_have_key_events -->
+                              <span class="ge-arg-profilechip noderef" role="button" tabindex="-1"
+                                title="Click to swap to a different profile"
+                                onclick={(ev) => openProfileRefPop(ev, n.id, k)}>
+                                <span class="ge-arg-profilechip-kind">▢ {producerLabel(polyM[1])} ▾</span>
+                              </span>
+                              <span class="ge-arg-actions">
+                                <button class="ge-arg-action edit" type="button" title="Detach this profile"
+                                  onclick={() => detachProfile(n.id, k)}>×</button>
+                              </span>
+                            </span>
+                          {:else if isProfileSlot && profileDesc && profileDesc.kind}
                             <!-- Profile chip (#119) — replaces the raw JSON expr
                                  for r_revolve / r_extrude / r_weld_extrude args
                                  typed as `profile`. Click opens the kind picker
@@ -4588,8 +4634,21 @@
                                 <span class="ge-arg-profilechip-kind">▾ {kindDef?.label ?? profileDesc.kind}</span>
                               </span>
                               <span class="ge-arg-actions">
+                                <button class="ge-arg-action edit" type="button" title="Swap to a polygon/sketch profile"
+                                  onclick={(ev) => openProfileRefPop(ev, n.id, k)}>▢</button>
                                 <button class="ge-arg-action edit" type="button" title="Edit raw JSON descriptor"
                                   onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
+                              </span>
+                            </span>
+                          {:else if isProfileSlot && (!expr || expr.trim() === '')}
+                            <!-- EMPTY profile slot — detached / never wired.
+                                 Pick a producer (or a built-in kind) to fill it. -->
+                            <span class="ge-arg-cell">
+                              <!-- svelte-ignore a11y_click_events_have_key_events -->
+                              <span class="ge-arg-profilechip empty" role="button" tabindex="-1"
+                                title="Pick a profile for this revolve/extrude"
+                                onclick={(ev) => openProfileRefPop(ev, n.id, k)}>
+                                <span class="ge-arg-profilechip-kind">▢ pick a profile ▾</span>
                               </span>
                             </span>
                           {:else if refs.length >= 2}
@@ -5946,6 +6005,37 @@
             <span class="ge-profile-pop-item-id">{def.id}</span>
           </button>
         {/each}
+      </div>
+    </div>
+  {/if}
+
+  {#if profileRefPop}
+    <!-- Node-ref profile swap picker. Lists every polygon/sketch in the graph
+         (the new sketch IS a profile producer — combining the 2D drawing
+         program with the profile editor) + a shortcut to the built-in kinds. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeProfileRefPop}></div>
+    <div class="ge-profile-pop"
+      style="left: {Math.min(profileRefPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 280)}px; top: {Math.min(profileRefPop.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 360)}px">
+      <div class="ge-profile-pop-head">
+        <span class="ge-profile-pop-title">Choose a profile</span>
+        <span class="ge-profile-pop-hint">{profileRefPop.key} · wire a polygon / sketch</span>
+      </div>
+      <div class="ge-profile-pop-list">
+        {#each profileProducers() as prod (prod.id)}
+          {@const curExpr = String((graph.nodes[profileRefPop.callId] as any)?.args?.[profileRefPop.key]?.expr ?? '')}
+          <button class="ge-profile-pop-item"
+            class:active={curExpr === `__POLY__${prod.id}`}
+            type="button"
+            onclick={() => swapProfileRef(profileRefPop!.callId, profileRefPop!.key, prod.id)}>
+            <span class="ge-profile-pop-item-name">{prod.type === 'sketch' ? '✐ ' : '◇ '}{producerLabel(prod.id)}</span>
+            <span class="ge-profile-pop-item-id">{prod.id}</span>
+          </button>
+        {/each}
+        {#if profileProducers().length === 0}
+          <div class="ge-profile-pop-empty">No polygon or sketch in this graph yet. Drop one (✎ → polygon / sketch) first.</div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -7675,6 +7765,12 @@
   }
   .ge-arg-profilechip:hover { background: #c4b5fd; color: #2e1065; }
   .ge-arg-profilechip-kind { font-weight: 700; }
+  /* Node-ref profile (wired to a polygon/sketch): teal. Empty slot: dashed. */
+  .ge-arg-profilechip.noderef { background: #cffafe; color: #155e75; border-color: #67e8f9; }
+  .ge-arg-profilechip.noderef:hover { background: #a5f3fc; color: #164e63; }
+  .ge-arg-profilechip.empty { background: #fff; color: #b45309; border: 1px dashed #fbbf24; }
+  .ge-arg-profilechip.empty:hover { background: #fffbeb; }
+  .ge-profile-pop-empty { padding: 10px; font: 11px Arial; color: #94a3b8; line-height: 1.4; }
   /* Profile picker popover */
   .ge-profile-pop {
     position: fixed; width: 280px; max-height: 360px;
