@@ -4637,6 +4637,37 @@
                   {/if}
                 {/if}
               {/each}
+            {:else if n.type === 'sketch'}
+              <!-- Sketch per-coord param wires (main canvas) — mirror the
+                   polygon pass. Each op's coord input sockets sit on the LEFT
+                   edge at sketchSockR/Z/Val(n, idx); draw a bezier from the
+                   param chip's output socket to any param/expr-wired coord so
+                   the wiring is visible in the graph, not just the sketcher. -->
+              {#each ((n as any).ops ?? []) as op, idx (idx)}
+                {@const pos = nodePos(n.id)}
+                {@const fields = (op.op === 'line' || op.op === 'spline')
+                  ? [['r', sketchSockR(n, idx)], ['z', sketchSockZ(n, idx)]]
+                  : op.op === 'fillet' ? [['radius', sketchSockVal(n, idx)]]
+                  : op.op === 'chamfer' ? [['dist', sketchSockVal(n, idx)]] : []}
+                {#each fields as [field, sy] (field)}
+                  {@const av = (op as any)[field]}
+                  {#if av?.kind === 'param'}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === av.param)}
+                    {#if pIdx >= 0}
+                      {@const ps = paramSocketPos(av.param, pIdx)}
+                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
+                    {/if}
+                  {:else if av?.kind === 'expr'}
+                    {#each extractParamRefs(av.expr) as refName (refName)}
+                      {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                      {#if pIdx >= 0}
+                        {@const ps = paramSocketPos(refName, pIdx)}
+                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
+              {/each}
             {:else if n.type === 'poly_repeat'}
               <!-- PolyRepeat NPts (count) param wire (2026-06-11). When
                    count is kind:'param', draw a bezier from the param
