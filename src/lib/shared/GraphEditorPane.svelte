@@ -2247,11 +2247,11 @@
         );
       }
       const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
-      // ~7 px per char monospace + 18 px socket + 14 px × button + 16 px
-      // padding. Title row has the ▶ chevron + name + ⚙ gear so the
-      // header itself needs room; account for the minimum.
+      // ~7 px per char monospace + 18 px socket + 44 px for the ▲▼ reorder
+      // arrows + 14 px × button + 16 px padding. Title row has the ▶ chevron
+      // + name + ⚙ gear so the header itself needs room; account for the min.
       const titleW = 90; // ▶ Output + gear with padding
-      const rowW = longest * 7 + 18 + 14 + 16;
+      const rowW = longest * 7 + 18 + 44 + 14 + 16;
       // 120 px floor matches the Call card's min and reads as a real
       // container, not a half-collapsed sliver.
       return Math.max(120, Math.max(rowW, titleW));
@@ -4845,6 +4845,23 @@
                   <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={containerSlotY(i)} r="5"
                     onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
                   <text x="10" y={containerSlotY(i) + 4} class="ge-sock-label">{childLabel}</text>
+                  <!-- ▲▼ reorder this part up / down in the stack. The slots
+                       (and the stacked geometry) re-derive from children order.
+                       Hidden at the ends so you can't move past the edge. -->
+                  {#if i > 0}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" class="ge-container-slot-move"
+                      x={size.w - 50} y={containerSlotY(i) + 4}
+                      data-tip="Move up in the stack"
+                      onpointerdown={(ev) => { ev.stopPropagation(); moveChild(n.id, origIdx, -1); }}>▲</text>
+                  {/if}
+                  {#if i < visibleChildren.length - 1}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" class="ge-container-slot-move"
+                      x={size.w - 32} y={containerSlotY(i) + 4}
+                      data-tip="Move down in the stack"
+                      onpointerdown={(ev) => { ev.stopPropagation(); moveChild(n.id, origIdx, 1); }}>▼</text>
+                  {/if}
                   <!-- × removes this child from the container -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" class="ge-container-slot-x"
@@ -6661,6 +6678,13 @@
   .ge-repeat-op-hint { font: 9px ui-monospace, monospace; fill: #9d174d; opacity: 0.6; }
   .ge-container-slot-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-container-slot-x:hover { fill: #7f1d1d; }
+  .ge-container-slot-move { font: 13px Arial; fill: #0e7490; cursor: pointer; user-select: none; }
+  .ge-container-slot-move:hover { fill: #155e75; }
+  /* Touch: bigger reorder + remove glyphs so they're finger-tappable. */
+  @media (pointer: coarse) {
+    .ge-container-slot-move { font-size: 17px; }
+    .ge-container-slot-x { font-size: 16px; }
+  }
   .ge-container-cog { font: 13px Arial; fill: #047857; cursor: pointer; user-select: none; }
   .ge-container-cog:hover { fill: #065f46; }
   /* Reorder popover table */
