@@ -2321,6 +2321,16 @@
     }
     wireFrom = null; wireMouse = null;
   }
+  /** S.3: wire a param's output onto a POINT's r/z socket on the 2D canvas.
+   *  Mirrors endWireOnSketchCoord but is invoked from the on-canvas sockets. */
+  function endWireOnSketchPoint(ev: PointerEvent, sketchId: NodeId, opIdx: number, axis: 'r' | 'z') {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'param-out') {
+      graph = setSketchOpField(graph, sketchId, opIdx, axis, asParam(wireFrom.paramName));
+    }
+    wireFrom = null; wireMouse = null;
+  }
 
   function nodeSize(node: any): { w: number; h: number } {
     // Width source of truth: graph.layout[id].w (persisted) → cardAutoWidth
@@ -3157,15 +3167,50 @@
     graph = clearSketchSplineHandle(graph, editingSketchId, selectedSplineOpIdx, 'h0');
     graph = clearSketchSplineHandle(graph, editingSketchId, selectedSplineOpIdx, 'h1');
   }
-  /** Click on the canvas with a tool active → add an op. */
+  /** Shortest distance from point (px,py) to segment a→b (clamped to the ends). */
+  function ptSegDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+  /** Click on the canvas with a tool active → add an op. With the line/spline
+   *  tool and ≥2 vertices, the new point is inserted ON the nearest EDGE
+   *  (splitting that segment at the right sequence position) rather than always
+   *  appended; clicks far from every edge fall back to the append behaviour. */
   function sketchCanvasClick(ev: PointerEvent) {
     if (!editingSketchId) return;
     if (sketchTool === 'select') { selectedSplineOpIdx = null; return; }
     const c = sketchEventToCoord(ev); if (!c) return;
     if (sketchTool === 'fillet' || sketchTool === 'chamfer') { applyCornerAt(c); return; }
-    graph = addSketchOp(graph, editingSketchId, sketchTool);
+    // Edge-aware insertion (line/spline): find the nearest edge between
+    // consecutive vertices (incl. the closing edge back to the first), then
+    // insert the op after that edge's START vertex so it lands between them.
+    let afterIdx: number | undefined;
+    const se = sketchEditor;
+    if (se && se.anchors.length >= 2) {
+      const an = se.anchors;
+      const f = sketchFrame ?? se.ext;
+      const span = Math.max(f.maxX - f.minX, f.maxY - f.minY) || 1;
+      const thresh = span * 0.15;
+      let bestD = Infinity, bestStart = -1;
+      for (let i = 0; i < an.length; i++) {
+        const a = an[i], b = an[(i + 1) % an.length];
+        const d = ptSegDist(c[0], c[1], a.r, a.z, b.r, b.z);
+        if (d < bestD) { bestD = d; bestStart = i; }
+      }
+      if (bestStart >= 0 && bestD <= thresh) {
+        const start = an[bestStart];
+        // Skip past the start vertex's own corner op (if any) so the fillet/
+        // chamfer stays attached to the original vertex, not the new one.
+        afterIdx = start.cornerOpIdx ?? start.opIdx;
+      }
+    }
+    graph = addSketchOp(graph, editingSketchId, sketchTool, afterIdx);
     const node = graph.nodes[editingSketchId] as any;
-    const idx = node.ops.length - 1;
+    const idx = typeof afterIdx === 'number' ? afterIdx + 1 : node.ops.length - 1;
     graph = setSketchOpField(graph, editingSketchId, idx, 'r', { kind: 'literal', value: c[0] });
     graph = setSketchOpField(graph, editingSketchId, idx, 'z', { kind: 'literal', value: c[1] });
   }
@@ -3230,6 +3275,30 @@
       x: sketchCardPos.params.x + CARD_PAD + PARAM_W + CARD_PAD + 4,
       y: sketchCardPos.params.y + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP) + PARAM_H / 2,
     };
+  }
+  /** S.3: map a sketch (r,z) coord → cards-overlay px so a param→point wire can
+   *  be drawn in the overlay (where the PARAMS card lives) but land on the
+   *  point as it actually renders in the 2D SVG. Replicates the SVG's
+   *  preserveAspectRatio="xMidYMid meet" letterboxing (anchors render with meet,
+   *  so the wire must too). Reads sketchFrame (reactive) so it re-evaluates on
+   *  Fit and on anchor drags; the SVG pixel size is read live from the DOM. */
+  function sketchPtToOverlay(r: number, z: number): { x: number; y: number } | null {
+    const f = sketchFrame ?? sketchEditor?.ext;
+    if (!f || !sketchSvgEl) return null;
+    const rect = sketchSvgEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const span = Math.max(f.maxX - f.minX, f.maxY - f.minY) || 1;
+    const pad = span * 0.12 + 0.2;
+    const minVX = f.minX - pad, minVY = f.minY - pad;
+    const vbW = (f.maxX - f.minX) + 2 * pad, vbH = (f.maxY - f.minY) + 2 * pad;
+    const scale = Math.min(rect.width / vbW, rect.height / vbH);
+    const ox = (rect.width - vbW * scale) / 2;
+    const oy = (rect.height - vbH * scale) / 2;
+    const sx = rect.left + ox + (r - minVX) * scale;
+    const sy = rect.top + oy + (z - minVY) * scale;
+    if (!miniSvgEl) return { x: sx, y: sy };
+    const orect = miniSvgEl.getBoundingClientRect();
+    return { x: sx - orect.left, y: sy - orect.top };
   }
 
   /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
@@ -5969,6 +6038,26 @@
                   onpointermove={sketchAnchorMove}
                   onpointerup={sketchAnchorUp}/>
                 {#if i === 0}<text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.6} fill="#15803d" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>1</text>{/if}
+                <!-- S.3: per-point r/z wire sockets (drag a param's output socket
+                     onto one to bind that coord). viewBox units, so stroke-width
+                     is overridden inline to scale with the frame. -->
+                {@const raw = se.node.ops[a.opIdx]}
+                {@const rWired = raw?.r?.kind === 'param'}
+                {@const zWired = raw?.z?.kind === 'param'}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${rWired ? ' wired' : ''}`}
+                  style="stroke-width:{hr * 0.3}" cx={a.r - hr * 2.2} cy={a.z + hr * 2.2} r={hr * 0.85}
+                  data-tip="Drag a param here → r"
+                  onpointerup={(ev) => endWireOnSketchPoint(ev, sid, a.opIdx, 'r')}/>
+                <text x={a.r - hr * 2.2} y={a.z + hr * 2.2 + hr * 0.55} font-size={hr * 1.2} text-anchor="middle" fill="#7c2d12" pointer-events="none">r</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${zWired ? ' wired' : ''}`}
+                  style="stroke-width:{hr * 0.3}" cx={a.r + hr * 2.2} cy={a.z + hr * 2.2} r={hr * 0.85}
+                  data-tip="Drag a param here → z"
+                  onpointerup={(ev) => endWireOnSketchPoint(ev, sid, a.opIdx, 'z')}/>
+                <text x={a.r + hr * 2.2} y={a.z + hr * 2.2 + hr * 0.55} font-size={hr * 1.2} text-anchor="middle" fill="#7c2d12" pointer-events="none">z</text>
+                {#if rWired}<text x={a.r - hr * 2.2} y={a.z + hr * 4.6} font-size={hr * 1.5} text-anchor="middle" fill="#6d28d9" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.45}>p.{raw.r.param}</text>{/if}
+                {#if zWired}<text x={a.r + hr * 2.2} y={a.z + hr * 4.6} font-size={hr * 1.5} text-anchor="middle" fill="#6d28d9" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.45}>p.{raw.z.param}</text>{/if}
               {/each}
               <!-- Phase 2: selected spline's relative through-points + end handles.
                    Amber dots; thin dashed handle lines off the endpoints. Ghost
@@ -6037,6 +6126,29 @@
                         {@const a = miniParamSockAbs(pi)}
                         <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockVal(sn, idx))}/>
                       {/if}
+                    {/if}
+                  {/if}
+                {/each}
+                <!-- S.3: param → on-canvas POINT wires. The point lives in the
+                     2D SVG (viewBox); sketchPtToOverlay maps it into this
+                     overlay's px space (meet-aware) so the wire lands on the
+                     rendered anchor. Reactive via sketchFrame + se.anchors. -->
+                {#each se.anchors as a (a.opIdx)}
+                  {@const rawA = se.node.ops[a.opIdx]}
+                  {#if rawA?.r?.kind === 'param'}
+                    {@const pi = paramNames.indexOf(rawA.r.param)}
+                    {@const tp = sketchPtToOverlay(a.r - hr * 2.2, a.z + hr * 2.2)}
+                    {#if pi >= 0 && tp}
+                      {@const ps = miniParamSockAbs(pi)}
+                      <path class="ge-wire param" d={miniBez(ps.x, ps.y, tp.x, tp.y)} pointer-events="none"/>
+                    {/if}
+                  {/if}
+                  {#if rawA?.z?.kind === 'param'}
+                    {@const pi = paramNames.indexOf(rawA.z.param)}
+                    {@const tp = sketchPtToOverlay(a.r + hr * 2.2, a.z + hr * 2.2)}
+                    {#if pi >= 0 && tp}
+                      {@const ps = miniParamSockAbs(pi)}
+                      <path class="ge-wire param" d={miniBez(ps.x, ps.y, tp.x, tp.y)} pointer-events="none"/>
                     {/if}
                   {/if}
                 {/each}
