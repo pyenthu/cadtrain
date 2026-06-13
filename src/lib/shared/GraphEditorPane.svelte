@@ -75,6 +75,9 @@
     addParam,
     removeParam,
     setParamSchema,
+    addStackRef,
+    hasStackRef,
+    STACK_REF_PARAM,
     wrapInTransform,
     unwrapTransform,
     inlineTransformOf,
@@ -4298,7 +4301,12 @@
     if (!cur) return;
     graph = setParamSchema(graph, name, { ...cur, default: value });
   }
+  function onAddStackRef() {
+    graph = addStackRef(graph);
+    addParamPop = null;
+  }
   function onRemoveParam(name: string) {
+    if (name === STACK_REF_PARAM) return; // reserved — no trash button anyway
     const r = removeParam(graph, name);
     if (r.orphans.length > 0) {
       // Surface to the user — the editor refuses, expects them to unwire first.
@@ -4427,7 +4435,14 @@
     }
     return set;
   });
-  let paramEntries = $derived(Object.entries(graph.params));
+  // Display order: the reserved stack-reference param is PINNED first (no
+  // trash button); the rest keep insertion order. paramEntries is the single
+  // source for both the chip render AND the param-wire `findIndex` lookups, so
+  // reordering here keeps every socket index aligned automatically.
+  let paramEntries = $derived(
+    Object.entries(graph.params).sort(([a], [b]) =>
+      a === STACK_REF_PARAM ? -1 : b === STACK_REF_PARAM ? 1 : 0),
+  );
   let filteredSrcs = $derived.by(() => {
     const q = pickerFilter.trim().toLowerCase();
     const base = q ? pickerSrcs.filter((s) => s.toLowerCase().includes(q)) : pickerSrcs.slice();
@@ -6219,9 +6234,9 @@
                  the longest label so labels never clip; the label cell
                  itself flex-grows to absorb the slack. -->
             <foreignObject x="0" y="0" width={PARAM_W} height={PARAM_H}>
-              <div class="ge-param-chip" xmlns="http://www.w3.org/1999/xhtml">
-                <span class="pin">📌</span>
-                <span class="name" title="p.{name}">p.{name}</span>
+              <div class="ge-param-chip" class:stackref={name === STACK_REF_PARAM} xmlns="http://www.w3.org/1999/xhtml">
+                <span class="pin">{name === STACK_REF_PARAM ? '🔗' : '📌'}</span>
+                <span class="name" title={name === STACK_REF_PARAM ? 'stack reference — how this part mates in a stack() (0 = end-to-end · negative = overlap same datum · positive = advance by value). Reserved; cannot be deleted.' : `p.${name}`}>p.{name}</span>
                 <input class="val" type="number" step="0.05"
                   value={(p as any).default}
                   use:dragNumber={{
@@ -6230,8 +6245,12 @@
                     set: (val) => onParamDefault(name, val),
                   }}
                   oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
-                <button class="trash" type="button" title="Remove p.{name}"
-                  onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</button>
+                {#if name !== STACK_REF_PARAM}
+                  <button class="trash" type="button" title="Remove p.{name}"
+                    onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</button>
+                {:else}
+                  <span class="trash locked" title="Reserved — cannot be deleted">🔒</span>
+                {/if}
               </div>
             </foreignObject>
             <!-- Output socket — OUTSIDE the chip right edge so it's never clipped -->
@@ -6868,6 +6887,12 @@
         <button class="ge-param-add" type="button" onclick={onAddParam}>add</button>
         <button class="ge-param-add ghost" type="button" onclick={closeAddParamPop}>cancel</button>
       </div>
+      {#if !hasStackRef(graph)}
+        <div class="ge-addparam-row" style="border-top: 1px solid #2a2a2a; padding-top: 8px; flex-direction: column; align-items: stretch; gap: 4px;">
+          <button class="ge-param-add ghost" type="button" onclick={onAddStackRef}>🔗 + stack ref</button>
+          <span style="font-size: 9px; color: #888; line-height: 1.3;">how this part mates in a stack: 0 = end-to-end · negative = overlap · positive = advance</span>
+        </div>
+      {/if}
     </div>
   {/if}
   {#if wirePop}

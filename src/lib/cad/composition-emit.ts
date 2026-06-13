@@ -32,6 +32,7 @@ import {
   type ArgValue,
   type NodeId,
   topoOrder,
+  STACK_REF_PARAM,
 } from './composition-graph';
 
 export interface EmitOptions {
@@ -227,6 +228,23 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     if (expr == null) continue;
     lines.push(`  const ${v} = ${expr};`);
   }
+  // STACK REFERENCE stamp — when this part opted into the reserved
+  // `stack_ref` param, stamp the RESOLVED value onto the returned manifold as
+  // `_stackRef` so a PARENT assembly's stack() can read how this part mates
+  // (mirrors the `_refHead`/`_refTail` datum stamping pattern). Falls back to
+  // the part's OWN default when a caller omits the arg (`p.stack_ref ?? def`)
+  // so the part's intended mate survives even unwired. Parts without the param
+  // emit nothing → no behaviour change. An array return is composed via
+  // place() FIRST so the stamp survives the loader's autoPlace boundary.
+  if (Object.prototype.hasOwnProperty.call(graph.params, STACK_REF_PARAM) && returnExpr !== 'undefined') {
+    const rawDef = (graph.params as any)[STACK_REF_PARAM]?.default;
+    const def = Number.isFinite(Number(rawDef)) ? Number(rawDef) : 0;
+    const primary = returnExpr.startsWith('[') ? `place(${returnExpr})` : returnExpr;
+    lines.push(`  const _stackOut = ${primary};`);
+    lines.push(`  if (_stackOut && typeof _stackOut === 'object') _stackOut._stackRef = (p.${STACK_REF_PARAM} ?? ${def});`);
+    returnExpr = '_stackOut';
+  }
+
   // Ghost mode — APPEND the emitted var of every node id in opts.ghosts
   // to the returned array so the bake renders them alongside the normal
   // result. Each card carries its own 👁 toggle in the editor; the

@@ -255,6 +255,11 @@ export function mv(m: any, v: [number, number, number]) {
   const r = m.translate(v);
   if (m._refHead !== undefined) r._refHead = m._refHead + v[2];
   if (m._refTail !== undefined) r._refTail = m._refTail + v[2];
+  // `_stackRef` (the per-part STACK REFERENCE — how this part mates inside a
+  // stack(); see stack() below) is NOT a z-coordinate, it's an advance amount
+  // / sign flag, so it carries through a translate UNSHIFTED. Lets a user wrap
+  // a part in mv() before dropping it into a stack without losing the ref.
+  if (m._stackRef !== undefined) r._stackRef = m._stackRef;
   return r;
 }
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
@@ -320,12 +325,28 @@ export function stack(children: any[]): any {
       throw new Error(`stack: item ${i + 1} of ${items.length} produced EMPTY or invalid geometry (degenerate bounding box) — a part collapsed to nothing (e.g. a subtract removing everything, or identical OD on both sides). Fix that part's parameters.`);
     }
   }
-  let prev = items[0];
-  const out: any[] = [prev];
-  for (let i = 1; i < items.length; i++) {
-    const placed = mv(items[i], [0, 0, tail(prev)]);
+  // STACK REFERENCE (per-part mate control). `cursor` is the z where the NEXT
+  // child's local origin lands. After placing a child we advance the cursor by
+  // reading that child's `_stackRef` (stamped on the manifold by its emitted
+  // geom — composition-emit's `stack_ref` reserved param; absent on parts that
+  // never opted in):
+  //   • absent / 0  → advance to the child's TAIL datum — end-to-end mating,
+  //                    the historical behaviour every existing graph relies on.
+  //   • negative    → do NOT advance — the next child sits at the SAME datum
+  //                    (overlaps this one). "Keep the same offset."
+  //   • positive v  → advance the cursor by exactly v (explicit spacing).
+  // `_stackRef` is translation-invariant (an advance/flag, not a coordinate)
+  // so it's read from the ORIGINAL item, before placement.
+  let cursor = 0;
+  const out: any[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const placed = i === 0 ? items[i] : mv(items[i], [0, 0, cursor]);
     out.push(placed);
-    prev = placed;
+    const refRaw = (items[i] as any)._stackRef;
+    const ref = (refRaw == null || !Number.isFinite(Number(refRaw))) ? 0 : Number(refRaw);
+    if (ref === 0)      cursor = tail(placed);   // end-to-end (default)
+    else if (ref < 0)   { /* no advance — next child overlaps at same datum */ }
+    else                cursor = cursor + ref;   // explicit advance
   }
   return place(out);
 }

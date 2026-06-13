@@ -1422,11 +1422,46 @@ export function addParam(graph: Graph, name: string, schema: ParamSchema): Graph
   return finalize({ ...graph, params: { ...graph.params, [name]: schema } });
 }
 
+// ─── Stack reference (per-part mate control) ────────────────────────────────
+//
+// A part can OPT IN to a reserved numeric param that controls how it mates
+// when it's a child of a stack() node (see manifold-helpers.stack + emit's
+// `_stackRef` stamp). Sparse/opt-in — absent means "treated as 0", i.e. the
+// historical end-to-end behaviour. When present it behaves like a normal
+// numeric param (drivable, has a default) EXCEPT the PARAMS card pins it at
+// the top and refuses to delete it.
+//   • value 0  → advance the stack cursor by the part's own length (default).
+//   • negative → do NOT advance — the part sits at the same datum (overlaps).
+//   • positive → advance the cursor by exactly that value.
+export const STACK_REF_PARAM = 'stack_ref';
+
+/** True when the graph has opted into the reserved stack-reference param. */
+export function hasStackRef(graph: Graph): boolean {
+  return Object.prototype.hasOwnProperty.call(graph.params ?? {}, STACK_REF_PARAM);
+}
+
+/** Add the reserved stack-reference param (default 0 = neutral end-to-end).
+ *  Idempotent — no-op when it already exists. */
+export function addStackRef(graph: Graph, def = 0): Graph {
+  if (hasStackRef(graph)) return graph;
+  return finalize({
+    ...graph,
+    params: { ...graph.params, [STACK_REF_PARAM]: { default: def, step: 0.05, label: 'stack ref' } },
+  });
+}
+
 /** Remove a meta.params row. Caller is responsible for resolving the orphan
  *  slots first (use slotsForParam to surface, unwireArg to convert each
  *  back to a literal). Returns the graph unchanged if any slot still
- *  references the param. */
+ *  references the param.
+ *
+ *  REFUSES the reserved stack-reference param — it isn't a normal,
+ *  user-deletable row (the PARAMS card hides its trash button too); deletion
+ *  surfaces as a single synthetic orphan so the UI shows a clear message. */
 export function removeParam(graph: Graph, name: string): { graph: Graph; orphans: Edge[] } {
+  if (name === STACK_REF_PARAM) {
+    return { graph, orphans: [{ from: `p.${STACK_REF_PARAM}`, to: '(reserved — cannot be deleted)' }] };
+  }
   const orphans = slotsForParam(graph, name);
   if (orphans.length > 0) return { graph, orphans };
   const { [name]: _, ...rest } = graph.params;
