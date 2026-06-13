@@ -265,6 +265,16 @@ export function mv(m: any, v: [number, number, number]) {
 /** @op Rotate — rotate the part by degrees around [x, y, z]. */
 export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
 
+/** Re-stamp the per-part STACK REFERENCE on a manifold. Used by emitted
+ *  stack() expressions to apply a PER-CHILD OVERRIDE (the Stack node's
+ *  childRefs) — it overrides the value the child's own geom stamped as
+ *  `_stackRef`. Mutates + returns the same manifold; no-op on non-objects so
+ *  it's safe to wrap any child expression. See stack() for how `v` is read. */
+export function withStackRef(m: any, v: number) {
+  if (m && typeof m === 'object') m._stackRef = v;
+  return m;
+}
+
 /** @op Place parts as ONE manifold WITHOUT a boolean union — a purely
  *  topological combine (Manifold.compose). Parts stay SEPARATE bodies
  *  ("connected/placed, not fused"), and each one's source originalID is

@@ -77,6 +77,7 @@
     setParamSchema,
     addStackRef,
     hasStackRef,
+    setStackChildRef,
     STACK_REF_PARAM,
     wrapInTransform,
     unwrapTransform,
@@ -7142,6 +7143,7 @@
   {#if containerPop}
     {@const cnode = graph.nodes[containerPop.containerId] as any}
     {@const ctitle = cnode?.id === graph.root ? '▶ Output' : cnode?.type === 'stack' ? '↕ Stack' : cnode?.type === 'group' ? '{} Group' : '[ ] List'}
+    {@const isStack = cnode?.type === 'stack'}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-wire-shade" onclick={closeContainerPop}></div>
@@ -7153,7 +7155,7 @@
       {:else}
         <table class="ge-container-table">
           <thead>
-            <tr><th>#</th><th>node</th><th>kind</th><th>order</th><th></th></tr>
+            <tr><th>#</th><th>node</th><th>kind</th>{#if isStack}<th title="Per-child stack reference: blank = inherit the part's own stack_ref · 0 = end-to-end · negative = overlap (same datum) · positive = advance by value">stack ref</th>{/if}<th>order</th><th></th></tr>
           </thead>
           <tbody>
             {#each cnode.children as childId, i (childId)}
@@ -7166,10 +7168,35 @@
                 : cn?.type === 'stack' ? 'stack(…)'
                 : cn?.type === 'repeat' ? `repeat × ${(cn as any).count?.kind === 'literal' ? (cn as any).count.value : '…'}`
                 : '(missing)'}
+              {@const inheritedRef = cn?.type === 'call' ? expectedDefaults[(cn as any).src]?.[STACK_REF_PARAM] : undefined}
+              {@const overrideRef = (cnode.childRefs ?? {})[childId]}
               <tr>
                 <td class="ge-cp-idx">{i + 1}</td>
                 <td class="ge-cp-name">{label}</td>
                 <td class="ge-cp-kind">{kind}</td>
+                {#if isStack}
+                  <td class="ge-cp-ref">
+                    <!-- Per-child stack-ref OVERRIDE. Blank value = inherit the
+                         part's own stack_ref (shown as the placeholder when we
+                         know it). Commit on Enter/blur (Apply-on-Enter convention);
+                         empty clears the override → inherit. -->
+                    <input
+                      class="ge-cp-ref-input"
+                      type="text"
+                      inputmode="decimal"
+                      value={overrideRef ?? ''}
+                      placeholder={inheritedRef != null ? String(inheritedRef) : 'inherit'}
+                      title={overrideRef != null
+                        ? `Override for this stack: ${overrideRef} (clear to inherit ${inheritedRef ?? 0})`
+                        : `Inheriting ${inheritedRef != null ? `the part's ${inheritedRef}` : '0 (no stack_ref on the part)'} — type a number to override here`}
+                      onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      onchange={(e) => {
+                        const raw = (e.target as HTMLInputElement).value.trim();
+                        const v = raw === '' ? null : Number(raw);
+                        graph = setStackChildRef(graph, cnode.id, childId, v == null || Number.isNaN(v) ? null : v);
+                      }} />
+                  </td>
+                {/if}
                 <td class="ge-cp-order">
                   <button type="button" class="ge-cp-arrow" title="Move up" disabled={i === 0}
                     onclick={() => moveChild(containerPop!.containerId, i, -1)}>▲</button>
@@ -7936,6 +7963,10 @@
   .ge-cp-idx { width: 24px; color: #9ca3af; font: 600 11px ui-monospace, monospace; }
   .ge-cp-name { font: 600 11px ui-monospace, monospace; color: #0c4a6e; }
   .ge-cp-kind { font: 10px ui-monospace, monospace; color: #6b7280; }
+  .ge-cp-ref { width: 64px; }
+  .ge-cp-ref-input { width: 56px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #0c4a6e; background: #fff; }
+  .ge-cp-ref-input::placeholder { color: #b0b7c0; font-style: italic; }
+  .ge-cp-ref-input:focus { outline: none; border-color: #0ea5e9; }
   .ge-cp-order { width: 56px; white-space: nowrap; }
   .ge-cp-arrow { background: transparent; border: 1px solid #d1d5db; color: #6b7280; padding: 1px 5px; font: 10px Arial; cursor: pointer; border-radius: 3px; margin-right: 2px; }
   .ge-cp-arrow:hover:not(:disabled) { background: #f3f4f6; color: #111827; }

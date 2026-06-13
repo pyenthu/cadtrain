@@ -73,6 +73,12 @@ export type ContainerNode = {
   id: NodeId;
   type: 'list' | 'stack' | 'group';
   children: NodeId[];     // ordered references; node objects live in graph.nodes
+  /** Per-child STACK REFERENCE override (stack nodes only). Keyed by child
+   *  NodeId → the value that overrides that child's part-level `stack_ref` for
+   *  THIS stack instance. A child absent from this map inherits the part's own
+   *  `stack_ref` (the value its emitted geom stamps as `_stackRef`). Sparse +
+   *  optional → no migration; emit only re-stamps the children listed here. */
+  childRefs?: Record<NodeId, number>;
 };
 
 export type MethodNode = {
@@ -1448,6 +1454,29 @@ export function addStackRef(graph: Graph, def = 0): Graph {
     ...graph,
     params: { ...graph.params, [STACK_REF_PARAM]: { default: def, step: 0.05, label: 'stack ref' } },
   });
+}
+
+/** Set (or clear) the per-child STACK REFERENCE override on a stack node.
+ *  `value` of `null`/`undefined`/non-finite CLEARS the override (the child
+ *  reverts to inheriting the part's own `stack_ref`); a finite number stores
+ *  the override keyed by the child's NodeId. No-op when the node isn't a
+ *  stack or doesn't contain that child. Round-trips via serialiseGraph since
+ *  the override lives on the node object. */
+export function setStackChildRef(graph: Graph, stackId: NodeId, childId: NodeId, value: number | null): Graph {
+  const node = graph.nodes[stackId];
+  if (!node || node.type !== 'stack') return graph;
+  const container = node as ContainerNode;
+  if (!container.children.includes(childId)) return graph;
+  const next: Record<NodeId, number> = { ...(container.childRefs ?? {}) };
+  if (value == null || !Number.isFinite(Number(value))) {
+    if (!(childId in next)) return graph; // already absent — nothing to clear
+    delete next[childId];
+  } else {
+    next[childId] = Number(value);
+  }
+  const hasAny = Object.keys(next).length > 0;
+  const updated: ContainerNode = { ...container, childRefs: hasAny ? next : undefined };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [stackId]: updated } });
 }
 
 /** Remove a meta.params row. Caller is responsible for resolving the orphan

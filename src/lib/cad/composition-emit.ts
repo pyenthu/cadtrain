@@ -374,10 +374,24 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // stack receives one flat list. Single items emit bare; spread
       // emits with the leading `...`. Lets the user mix single parts +
       // list-producing Repeats in the same stack (e.g. [box, ...joints, pin]).
+      // PER-CHILD STACK REFERENCE OVERRIDE (#stack_ref level 2). A child listed
+      // in this stack's `childRefs` has its part-level `_stackRef` overridden
+      // FOR THIS STACK by re-stamping the value via withStackRef(). Wrapped at
+      // the child EXPRESSION (not a parallel array) so spread Repeats stay
+      // index-safe; a list-producing child applies the override to each item
+      // it spreads. Children without an override emit bare and keep the value
+      // their own emitted geom stamped.
+      const childRefs = (node as { childRefs?: Record<NodeId, number> }).childRefs ?? {};
       const args = node.children.map((c, i) => {
         const slot = `children[${i}]`;
         const nm = ref(c, slot);
-        return listProducers?.has(c) ? `...${nm}` : nm;
+        const raw = childRefs[c];
+        const hasOverride = Object.prototype.hasOwnProperty.call(childRefs, c) && Number.isFinite(Number(raw));
+        const v = Number(raw);
+        if (listProducers?.has(c)) {
+          return hasOverride ? `...${nm}.map((__m) => withStackRef(__m, ${v}))` : `...${nm}`;
+        }
+        return hasOverride ? `withStackRef(${nm}, ${v})` : nm;
       }).join(', ');
       return `stack([${args}])`;
     }

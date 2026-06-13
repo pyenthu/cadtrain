@@ -13,7 +13,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { initManifold, stack, zMin, zMax, zLen, M } from './manifold-helpers';
 import { emitGraph } from './composition-emit';
-import { hydrateGraph, addStackRef, removeParam, hasStackRef, STACK_REF_PARAM, newGraph } from './composition-graph';
+import { hydrateGraph, addStackRef, removeParam, hasStackRef, STACK_REF_PARAM, newGraph, setStackChildRef, addCall } from './composition-graph';
+import { withStackRef } from './manifold-helpers';
 
 beforeAll(async () => {
   await initManifold();
@@ -126,5 +127,77 @@ describe('emitGraph — stack_ref stamping + round-trip', () => {
     const r = removeParam(g, STACK_REF_PARAM);
     expect(r.orphans.length).toBeGreaterThan(0);
     expect(hasStackRef(r.graph)).toBe(true); // unchanged
+  });
+});
+
+describe('withStackRef — per-child override helper', () => {
+  it('re-stamps _stackRef, overriding the part-level value', () => {
+    const a = box(2); a._stackRef = 0; // part says end-to-end…
+    withStackRef(a, -1);               // …stack overrides to overlap
+    const result = stack([a, box(2)]);
+    // -1 wins → no advance → B coincides with A. Total 0..2.
+    expect(zMax(result)).toBeCloseTo(2, 5);
+  });
+
+  it('is a no-op on non-objects and returns its arg', () => {
+    expect(withStackRef(null, 3)).toBe(null);
+    expect(withStackRef(undefined as any, 3)).toBe(undefined);
+  });
+});
+
+describe('Stack node — per-child stack-ref OVERRIDE (model + emit)', () => {
+  /** A graph whose ROOT is a stack node holding two Calls A and B. */
+  function graphWithStack() {
+    let g = newGraph();
+    // Make the root list a stack so children mate via stack().
+    const root = g.nodes[g.root] as any;
+    g = { ...g, nodes: { ...g.nodes, [g.root]: { ...root, type: 'stack' } } };
+    const ra = addCall(g, 'r_cuboid', {}, g.root); g = ra.graph;
+    const rb = addCall(g, 'r_cuboid', {}, g.root); g = rb.graph;
+    return { g, stackId: g.root, a: ra.id, b: rb.id };
+  }
+
+  it('setStackChildRef stores the override keyed by child id', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildRef(g, stackId, a, -1);
+    expect((g2.nodes[stackId] as any).childRefs[a]).toBe(-1);
+  });
+
+  it('null override clears → inherit (childRefs drops the key / map)', () => {
+    const { g, stackId, a, b } = graphWithStack();
+    let g2 = setStackChildRef(g, stackId, a, -1);
+    g2 = setStackChildRef(g2, stackId, b, 4);
+    g2 = setStackChildRef(g2, stackId, a, null); // clear A
+    const refs = (g2.nodes[stackId] as any).childRefs;
+    expect(a in refs).toBe(false);
+    expect(refs[b]).toBe(4);
+    // Clearing the last override removes the whole map.
+    const g3 = setStackChildRef(g2, stackId, b, null);
+    expect((g3.nodes[stackId] as any).childRefs).toBeUndefined();
+  });
+
+  it('emit wraps ONLY overridden children in withStackRef()', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildRef(g, stackId, a, -1);
+    const { source } = emitGraph(g2, { id: 'p_asm' });
+    // The stack() call wraps A's expression but leaves B bare.
+    expect(source).toContain('withStackRef(');
+    expect(source).toContain(', -1)');
+    // Exactly one wrap (B is not overridden).
+    expect(source.match(/withStackRef\(/g)?.length).toBe(1);
+  });
+
+  it('no override → emit contains no withStackRef wrap', () => {
+    const { g } = graphWithStack();
+    const { source } = emitGraph(g, { id: 'p_asm' });
+    expect(source).not.toContain('withStackRef');
+  });
+
+  it('round-trips childRefs through emit → hydrate', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildRef(g, stackId, a, 2.5);
+    const { meta } = emitGraph(g2, { id: 'p_asm' });
+    const rehydrated = hydrateGraph((meta as any).graph);
+    expect((rehydrated.nodes[stackId] as any).childRefs[a]).toBe(2.5);
   });
 });
