@@ -1863,7 +1863,7 @@
   // PARAM_W is DYNAMIC — derived from the longest label so chips like
   // p.totalLen don't clip. Constants below are the FIXED footprint of the
   // pin + input + trash; the label slot expands to fit the longest name.
-  const PARAM_W_MIN = 124, PARAM_H = 28, PARAM_GAP = 3;
+  const PARAM_W_MIN = 124, PARAM_H = 22, PARAM_GAP = 2;
   const PARAM_PIN_W = 14;        // 📌 column (icon only)
   const PARAM_INPUT_W = 48;      // numeric input column
   const PARAM_TRASH_W = 18;      // 🗑 column
@@ -6048,6 +6048,13 @@
                   <rect class="ge-sketch-card-title" x="0" y="0" width={pcs.w} height={CARD_TITLE_H} rx="8"
                     onpointerdown={(ev) => sketchCardDown(ev, 'params')}/>
                   <text x="10" y={CARD_TITLE_H - 9} class="ge-params-card-title" pointer-events="none">Params</text>
+                  <!-- + add a new param (same handler as the main params card) -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-params-add-btn"
+                    cx={pcs.w - 14} cy={CARD_TITLE_H - 13} r="9"
+                    data-tip="Add a parameter"
+                    onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
+                  <text x={pcs.w - 14} y={CARD_TITLE_H - 9} class="ge-params-add-glyph" text-anchor="middle" pointer-events="none">+</text>
                   <line x1="0" y1={CARD_TITLE_H} x2={pcs.w} y2={CARD_TITLE_H} class="ge-params-card-divider" pointer-events="none"/>
                   {#if paramEntries.length === 0}
                     <text x="10" y={CARD_TITLE_H + 22} class="ge-sketch-mini-empty">No params yet — add them on the graph.</text>
@@ -8152,10 +8159,10 @@
   .ge-param-chip {
     display: flex; align-items: center;
     height: 100%; box-sizing: border-box;
-    padding: 0 6px;
-    background: #fef3c7; border: 1px solid #d97706; border-radius: 6px;
-    color: #78350f; font: 700 11px ui-monospace, monospace;
-    gap: 6px;
+    padding: 0 4px;
+    background: #fef3c7; border: 1px solid #d97706; border-radius: 5px;
+    color: #78350f; font: 700 10px ui-monospace, monospace;
+    gap: 4px;
   }
   .ge-param-chip .pin {
     flex: 0 0 auto;
@@ -8169,9 +8176,9 @@
     color: #78350f;
   }
   .ge-param-chip .val {
-    flex: 0 0 48px;
-    width: 48px; padding: 1px 4px;
-    font: 11px ui-monospace, monospace; color: #92400e; text-align: center;
+    flex: 0 0 44px;
+    width: 44px; padding: 0 3px;
+    font: 10px ui-monospace, monospace; color: #92400e; text-align: center;
     background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
     box-sizing: border-box;
     cursor: ew-resize;

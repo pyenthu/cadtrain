@@ -99,6 +99,22 @@ on the canvas point) and re-bakes live when the slider moves.
 Each phase is independently shippable and verified in-browser (drag-wire a
 param, watch the 3D re-bake).
 
+## TODO — edge-aware point insertion (2026-06-13)
+
+Today adding a point/spline/op **appends to the END** of the ops list
+(`addSketchOp` appends, or inserts after a passed `afterIdx`). It should be
+smarter: clicking on/near an **edge** should **insert the new point ON that
+edge** — i.e. split that segment by inserting the op at the right sequence
+position — rather than always tacking it onto the end. Same for splines.
+
+Approach: on a canvas click with the line/spline tool, find the nearest EDGE
+(the segment between consecutive vertices, via point-to-segment distance over
+`se.pts`/the resolved vertices), map it back to the **start vertex's op index**
+(`entryIdxForEvalIdx`-style), and call `addSketchOp(graph, sid, tool,
+startVertexOpIdx)` so the new op lands between the two endpoints. If the click
+is far from any edge (or near an end), keep the append behaviour. Bonus: insert
+the click coordinate as the new point's literal r/z so it lands where clicked.
+
 ## Open questions for the user
 
 1. Cards on the **left column** (as drawn) vs a **floating** params card +
