@@ -3678,6 +3678,7 @@
       drafts = { [field]: currentExpr, [other]: argToDraftStr(op?.[other]) } as { r: string; z: string };
     }
     sketchExprPop = { sid, opIdx, field, draft: currentExpr, drafts, x: ev.clientX, y: ev.clientY };
+    sketchDelArmed = false;
   }
   /** Switch the active r/z tab — stash the current draft into the inactive
    *  axis, load the other axis's draft. Pure state; Apply writes both. */
@@ -3736,12 +3737,20 @@
   const sketchPopPtCount = $derived(
     sketchExprPop ? ((graph.nodes[sketchExprPop.sid] as any)?.ops ?? []).filter((o: any) => o.op === 'line' || o.op === 'spline').length : 0
   );
-  function closeSketchExprPop() { sketchExprPop = null; }
+  function closeSketchExprPop() { sketchExprPop = null; sketchDelArmed = false; }
+  // Two-step delete confirm (no native dialog — that blocks the extension):
+  // first click ARMS the button, second click within the armed state deletes.
+  let sketchDelArmed = $state(false);
+  function onSketchDeleteClick() {
+    if (!sketchDelArmed) { sketchDelArmed = true; return; }
+    deleteSketchExprPopPoint();
+  }
   /** Delete the point (op) the popover is editing, then close. */
   function deleteSketchExprPopPoint() {
     if (!sketchExprPop) return;
     graph = removeSketchOp(graph, sketchExprPop.sid, sketchExprPop.opIdx);
     sketchExprPop = null;
+    sketchDelArmed = false;
   }
   // Drag the point popover by its header (grab the title bar). Mirrors the
   // sketch-toolbar drag — offset-based so the cursor stays where you grabbed.
@@ -6990,9 +6999,9 @@
         {/if}
       </div>
       <div class="ge-expr-pop-row right">
-        <button class="ge-param-add danger" type="button" disabled={sketchPopPtCount <= 1}
-          title={sketchPopPtCount <= 1 ? 'Can’t delete the only point' : 'Delete this point'}
-          onclick={deleteSketchExprPopPoint}>🗑 delete</button>
+        <button class="ge-param-add danger" type="button" class:armed={sketchDelArmed} disabled={sketchPopPtCount <= 1}
+          title={sketchPopPtCount <= 1 ? 'Can’t delete the only point' : (sketchDelArmed ? 'Click again to confirm' : 'Delete this point')}
+          onclick={onSketchDeleteClick}>{sketchDelArmed ? 'confirm delete?' : '🗑 delete'}</button>
         <button class="ge-param-add ghost" type="button" onclick={closeSketchExprPop}>cancel</button>
         <button class="ge-param-add" type="button" onclick={applySketchExprPop}>apply</button>
       </div>
@@ -7818,6 +7827,8 @@
   .ge-param-add.danger:hover { background: #ef4444; color: #fff; }
   .ge-param-add.danger:disabled { opacity: 0.4; cursor: not-allowed; }
   .ge-param-add.danger:disabled:hover { background: #fee2e2; color: #b91c1c; }
+  .ge-param-add.danger.armed { background: #dc2626; color: #fff; }
+  .ge-param-add.danger.armed:hover { background: #b91c1c; color: #fff; }
 
   .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none; }
   .ge-canvas.dragging { cursor: grabbing; }
