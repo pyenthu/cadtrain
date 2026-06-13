@@ -2805,8 +2805,8 @@
   let editingSketchId = $state<string | null>(null);
   let sketchTool = $state<'select' | 'line' | 'spline' | 'fillet' | 'chamfer'>('select');
   let sketchSvgEl = $state<SVGSVGElement | null>(null);
-  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; }
-  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; }
+  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; }
+  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; selectedCornerOpIdx = null; }
 
   /** Param scope {name: default} for evaluating ArgValue fields to numbers. */
   function sketchParamScope(): Record<string, number> {
@@ -2836,10 +2836,12 @@
     const seg = node.segments ? evalArg(node.segments, p) : 64;
     let pts: [number, number][] = [];
     try { pts = compileSketch(ops, seg); } catch { pts = []; }
-    const anchors: { opIdx: number; r: number; z: number; kind: string; literal: boolean }[] = [];
+    const anchors: { opIdx: number; r: number; z: number; kind: string; literal: boolean; corner: 'fillet' | 'chamfer' | null; cornerOpIdx: number | null }[] = [];
     node.ops.forEach((o: any, i: number) => {
       if (o.op === 'line' || o.op === 'spline') {
-        anchors.push({ opIdx: i, r: evalArg(o.r, p), z: evalArg(o.z, p), kind: o.op, literal: o.r?.kind === 'literal' && o.z?.kind === 'literal' });
+        const nx = node.ops[i + 1];
+        const corner = nx && (nx.op === 'fillet' || nx.op === 'chamfer') ? nx.op as 'fillet' | 'chamfer' : null;
+        anchors.push({ opIdx: i, r: evalArg(o.r, p), z: evalArg(o.z, p), kind: o.op, literal: o.r?.kind === 'literal' && o.z?.kind === 'literal', corner, cornerOpIdx: corner ? i + 1 : null });
       }
     });
     const all = [...pts, ...anchors.map((a) => [a.r, a.z] as [number, number])];
@@ -2864,6 +2866,9 @@
   let sketchDrag = $state<{ opIdx: number } | null>(null);
   function sketchAnchorDown(ev: PointerEvent, opIdx: number, literal: boolean) {
     ev.stopPropagation();
+    // With the fillet/chamfer tool active, clicking a vertex anchor rounds/
+    // bevels THAT corner (exact op index — no nearest-search needed).
+    if (sketchTool === 'fillet' || sketchTool === 'chamfer') { cornerAtOpIdx(opIdx); return; }
     if (sketchTool !== 'select' || !literal) return;
     sketchDrag = { opIdx };
     (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
@@ -2875,17 +2880,94 @@
     graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'z', { kind: 'literal', value: c[1] });
   }
   function sketchAnchorUp() { sketchDrag = null; }
+
+  // ─── M.3: per-corner fillet/chamfer by click + a live radius dial ───────
+  // With the fillet/chamfer tool active, clicking near a CORNER inserts that
+  // op right after the corner's vertex (so the engine rounds THAT corner with
+  // its own radius), and selects it so the toolbar radius/dist dial edits it
+  // live. Clicking a corner that already has the op just selects it.
+  let selectedCornerOpIdx = $state<number | null>(null);
+  const selectedCorner = $derived.by(() => {
+    if (selectedCornerOpIdx == null || !editingSketchId) return null;
+    const node = graph.nodes[editingSketchId] as any;
+    const o = node?.ops?.[selectedCornerOpIdx];
+    if (!o || (o.op !== 'fillet' && o.op !== 'chamfer')) return null;
+    const p = sketchParamScope();
+    const field = o.op === 'fillet' ? 'radius' : 'dist';
+    return { idx: selectedCornerOpIdx, kind: o.op as 'fillet' | 'chamfer', field, value: evalArg(o[field], p) };
+  });
+  /** Round/bevel the corner at vertex op `vIdx` with the active tool, then
+   *  select it for the radius/dist dial. Inserts the corner op right after the
+   *  vertex; if the corner already has one, switches its kind or just selects. */
+  function cornerAtOpIdx(vIdx: number) {
+    if (!editingSketchId) return;
+    const node = graph.nodes[editingSketchId] as any;
+    const next = node.ops[vIdx + 1];
+    if (next && (next.op === 'fillet' || next.op === 'chamfer')) {
+      if (next.op !== sketchTool) {
+        graph = removeSketchOp(graph, editingSketchId, vIdx + 1);
+        graph = addSketchOp(graph, editingSketchId, sketchTool as any, vIdx);
+      }
+    } else {
+      graph = addSketchOp(graph, editingSketchId, sketchTool as any, vIdx);
+    }
+    selectedCornerOpIdx = vIdx + 1;
+  }
+  /** Canvas click with the fillet/chamfer tool → round the NEAREST vertex. */
+  function applyCornerAt(c: [number, number]) {
+    if (!editingSketchId) return;
+    const se = sketchEditor;
+    if (!se || !se.anchors.length) {
+      graph = addSketchOp(graph, editingSketchId, sketchTool as any);
+      selectedCornerOpIdx = (graph.nodes[editingSketchId] as any).ops.length - 1;
+      return;
+    }
+    let bestOpIdx = -1, bestD = Infinity;
+    for (const a of se.anchors) {
+      const d = Math.hypot(a.r - c[0], a.z - c[1]);
+      if (d < bestD) { bestD = d; bestOpIdx = a.opIdx; }
+    }
+    cornerAtOpIdx(bestOpIdx);
+  }
+  function setCornerValue(v: number) {
+    const sc = selectedCorner; if (!sc || !editingSketchId) return;
+    graph = setSketchOpField(graph, editingSketchId, sc.idx, sc.field as any, { kind: 'literal', value: Math.max(0, Math.round(v * 1000) / 1000) });
+  }
+  function removeSelectedCorner() {
+    if (selectedCornerOpIdx == null || !editingSketchId) return;
+    graph = removeSketchOp(graph, editingSketchId, selectedCornerOpIdx);
+    selectedCornerOpIdx = null;
+  }
   /** Click on the canvas with a tool active → add an op. */
   function sketchCanvasClick(ev: PointerEvent) {
     if (!editingSketchId || sketchTool === 'select') return;
-    if (sketchTool === 'fillet') { graph = addSketchOp(graph, editingSketchId, 'fillet'); return; }
-    if (sketchTool === 'chamfer') { graph = addSketchOp(graph, editingSketchId, 'chamfer'); return; }
     const c = sketchEventToCoord(ev); if (!c) return;
+    if (sketchTool === 'fillet' || sketchTool === 'chamfer') { applyCornerAt(c); return; }
     graph = addSketchOp(graph, editingSketchId, sketchTool);
     const node = graph.nodes[editingSketchId] as any;
     const idx = node.ops.length - 1;
     graph = setSketchOpField(graph, editingSketchId, idx, 'r', { kind: 'literal', value: c[0] });
     graph = setSketchOpField(graph, editingSketchId, idx, 'z', { kind: 'literal', value: c[1] });
+  }
+
+  // ─── Draggable top toolbar in the sketch editor ─────────────────────────
+  // The status / radius-dial / Done bar floats over the stage and can be
+  // dragged anywhere (offsets are relative to the editor container).
+  let sketchBarPos = $state<{ x: number; y: number }>({ x: 16, y: 10 });
+  let sketchBarDrag: { sx: number; sy: number; px: number; py: number } | null = null;
+  function sketchBarDown(ev: PointerEvent) {
+    ev.stopPropagation();
+    sketchBarDrag = { sx: sketchBarPos.x, sy: sketchBarPos.y, px: ev.clientX, py: ev.clientY };
+    try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+  }
+  function sketchBarMove(ev: PointerEvent) {
+    if (!sketchBarDrag) return;
+    sketchBarPos = { x: sketchBarDrag.sx + (ev.clientX - sketchBarDrag.px), y: sketchBarDrag.sy + (ev.clientY - sketchBarDrag.py) };
+  }
+  function sketchBarUp(ev: PointerEvent) {
+    if (!sketchBarDrag) return;
+    sketchBarDrag = null;
+    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* ignore */ }
   }
 
   /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
@@ -3768,17 +3850,14 @@
     {@const hr = span * 0.018}
     {@const sw = span * 0.008}
     <div class="ge-sketch-editor">
-      <div class="ge-sketch-toolbar">
+      <!-- Tool palette — LEFT vertical rail (matches the main editor vrail). -->
+      <div class="ge-sketch-vtools">
         <button class="ge-stool" class:on={sketchTool === 'select'} title="Select / drag points" onclick={() => (sketchTool = 'select')}>⬚</button>
         <div class="ge-stool-sep"></div>
         <button class="ge-stool" class:on={sketchTool === 'line'} title="Line — click the canvas to add points" onclick={() => (sketchTool = 'line')}>╱</button>
         <button class="ge-stool" class:on={sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketchTool = 'spline')}>∿</button>
-        <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click to round the last corner" onclick={() => (sketchTool = 'fillet')}>◜</button>
-        <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click to bevel the last corner" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
-        <div class="ge-stool-sep"></div>
-        <span class="ge-stool-label">✐ {se.node.ops.length} ops · {se.pts.length} pts</span>
-        <div class="ge-stool-spacer"></div>
-        <button class="ge-stool done" title="Done — back to the graph" onclick={closeSketchEditor}>✓ Done</button>
+        <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click a corner to round it" onclick={() => (sketchTool = 'fillet')}>◜</button>
+        <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
       </div>
       <div class="ge-sketch-stage">
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -3791,6 +3870,12 @@
             <polygon points={se.pts.map((q) => `${q[0]},${q[1]}`).join(' ')} fill="rgba(147,51,234,0.12)" stroke="#7c3aed" stroke-width={sw} stroke-linejoin="round"/>
           {/if}
           {#each se.anchors as a, i (a.opIdx)}
+            <!-- corner badge: ring on filleted/chamfered vertices; gold when selected -->
+            {#if a.corner}
+              <circle cx={a.r} cy={a.z} r={hr * 1.9} fill="none"
+                stroke={a.cornerOpIdx === selectedCornerOpIdx ? '#f59e0b' : (a.corner === 'fillet' ? '#0e7490' : '#b45309')}
+                stroke-width={hr * 0.4} pointer-events="none"/>
+            {/if}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <circle cx={a.r} cy={a.z} r={hr}
               class="ge-sk-anchor" class:locked={!a.literal}
@@ -3801,7 +3886,34 @@
             {#if i === 0}<text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.6} fill="#15803d" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>1</text>{/if}
           {/each}
         </svg>
-        <div class="ge-sketch-hint">{sketchTool === 'select' ? 'Drag the violet points to reshape · pick a tool to add ops' : `Click the canvas to add a ${sketchTool}`}</div>
+        <!-- DRAGGABLE top bar — status, the live corner radius/dist dial, Done.
+             Floats over the stage; drag the ⣿ handle to reposition. -->
+        <div class="ge-sketch-topbar" style="left: {sketchBarPos.x}px; top: {sketchBarPos.y}px">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span class="ge-sketch-grip" title="Drag the toolbar"
+            onpointerdown={sketchBarDown} onpointermove={sketchBarMove} onpointerup={sketchBarUp}>⣿</span>
+          <span class="ge-stool-label">✐ {se.node.ops.length} ops · {se.pts.length} pts</span>
+          {#if selectedCorner}
+            <div class="ge-stool-sep"></div>
+            <span class="ge-sketch-dial">
+              <span class="ge-sketch-dial-lbl">{selectedCorner.kind === 'fillet' ? '◜ radius' : '⊿ dist'}</span>
+              <input class="ge-sketch-range" type="range" min="0" max={span * 0.5} step={span / 200}
+                value={selectedCorner.value}
+                oninput={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+              <input class="ge-sketch-num" type="number" min="0" step="0.01"
+                value={Math.round(selectedCorner.value * 1000) / 1000}
+                onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+              <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
+            </span>
+          {/if}
+          <div class="ge-stool-sep"></div>
+          <button class="ge-stool done" title="Done — back to the graph" onclick={closeSketchEditor}>✓ Done</button>
+        </div>
+        <div class="ge-sketch-hint">
+          {#if sketchTool === 'select'}Drag the violet points to reshape · pick a tool to add ops
+          {:else if sketchTool === 'fillet' || sketchTool === 'chamfer'}Click a corner to {sketchTool} it, then use the dial to set the {sketchTool === 'fillet' ? 'radius' : 'distance'}
+          {:else}Click the canvas to add a {sketchTool}{/if}
+        </div>
       </div>
     </div>
   {/if}
@@ -6928,16 +7040,30 @@
   /* ─── Full-tab sketch editor (plan M.2) ──────────────────────────────── */
   .ge-sketch-edit-btn { font: 13px system-ui; fill: #7c3aed; cursor: pointer; }
   .ge-sketch-edit-btn:hover { fill: #5b21b6; }
-  .ge-sketch-editor { position: absolute; inset: 0; z-index: 60; background: #fbfbfd; display: flex; flex-direction: column; }
-  .ge-sketch-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; background: #fff; }
-  .ge-stool { width: 30px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; font: 14px ui-monospace, monospace; color: #57534e; cursor: pointer; }
+  .ge-sketch-editor { position: absolute; inset: 0; z-index: 60; background: #fbfbfd; display: flex; flex-direction: row; }
+  /* LEFT vertical tool palette. */
+  .ge-sketch-vtools { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 6px; border-right: 1px solid #e2e8f0; background: #fff; }
+  .ge-stool { width: 32px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; font: 15px ui-monospace, monospace; color: #57534e; cursor: pointer; }
   .ge-stool:hover { background: #f3e8ff; color: #6b21a8; border-color: #c4b5fd; }
   .ge-stool.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
-  .ge-stool.done { width: auto; padding: 0 12px; font: 600 12px Arial; color: #15803d; border-color: #6ee7b7; }
+  .ge-stool.done { width: auto; height: 26px; padding: 0 12px; font: 600 12px Arial; color: #15803d; border-color: #6ee7b7; }
   .ge-stool.done:hover { background: #d1fae5; }
   .ge-stool-sep { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
-  .ge-stool-label { font: 600 12px Arial; color: #6b21a8; padding: 0 6px; }
-  .ge-stool-spacer { flex: 1 1 auto; }
+  .ge-stool-label { font: 600 12px Arial; color: #6b21a8; padding: 0 4px; white-space: nowrap; }
+  /* DRAGGABLE floating top bar (status + corner dial + Done). */
+  .ge-sketch-topbar {
+    position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; background: rgba(255,255,255,0.96); border: 1px solid #e2e8f0;
+    border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  }
+  .ge-sketch-grip { cursor: grab; touch-action: none; color: #94a3b8; font-size: 14px; line-height: 1; padding: 0 2px; user-select: none; }
+  .ge-sketch-grip:active { cursor: grabbing; }
+  .ge-sketch-dial { display: flex; align-items: center; gap: 5px; }
+  .ge-sketch-dial-lbl { font: 600 11px ui-monospace, monospace; color: #0e7490; white-space: nowrap; }
+  .ge-sketch-range { width: 110px; accent-color: #0891b2; touch-action: none; }
+  .ge-sketch-num { width: 56px; font: 12px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; }
+  .ge-sketch-dial-x { width: 20px; height: 20px; padding: 0; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; color: #b91c1c; cursor: pointer; font: 11px Arial; }
+  .ge-sketch-dial-x:hover { background: #fee2e2; }
   .ge-sketch-stage { flex: 1 1 auto; min-height: 0; position: relative; display: flex; }
   .ge-sketch-svg { flex: 1 1 auto; width: 100%; height: 100%;
     background:
