@@ -25,12 +25,13 @@
     geoVersion?: number;
     glbUrl?: string | null; // blob URL of the baked GLB
     showCutaway?: boolean;  // applies to the LIVE-mesh half (GLB half follows its own cut bake)
-    offset?: number;        // half-separation between mesh and GLB
-    /** Which axis the mesh + GLB are separated along.
-     *  * 'x' (default) — side-by-side comparison view: mesh at -offset, GLB at +offset.
-     *  * 'z' — stacked vertically along the drilling axis: mesh at z=-offset,
-     *    GLB at z=+offset. Lets the user orbit up/down to see one above the
-     *    other instead of side-by-side. */
+    offset?: number;        // FALLBACK half-separation, used only before the
+    // live-mesh bbox is known (sep then = 2·offset). Once geometry loads the
+    // separation is auto-computed as (part Z-extent + ~12% gap).
+    /** RETAINED for call-site compatibility but no longer drives layout: the
+     *  scene now ALWAYS stacks the mesh + GLB one-above-the-other on the part
+     *  (Z / drilling) axis, separated by the part's own extent plus a small
+     *  gap, with the camera auto-fit to the combined bounding box. */
     stackAxis?: 'x' | 'z';
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
@@ -112,24 +113,74 @@
     _panZ = z;
   });
 
-  // Auto-center on the GEOMETRY bounding box. Without this, the OrbitControls
-  // target sits at world origin (0,0,0) — which for the Z-down drilling
-  // convention is the TOP of every part. The part body extends DOWN (+Z) from
-  // there, so the camera sees the part hanging below the look-at, visually
-  // off-centre + "low and out of focus". Compute the geom's bbox center once
-  // each time the geometry refreshes, write it to scene.partCenter, and the
-  // target prop below picks it up. Per-axis split: x stays at 0 (mesh/GLB
-  // stacked symmetrically), y/z follow the bbox.
-  $effect(() => {
+  // --- bounding box of the LIVE mesh (drives stacking + camera fit) ---
+  // Recomputed only when the geometry buffer changes (full/cutVC). Stable
+  // identity otherwise so the downstream $derived stacking offsets + the
+  // camera-fit effect don't churn every render. (See memory
+  // fresh_array_props_effect_loops / canvas_height_contract.)
+  let bbox = $derived.by(() => {
     const g = full ?? cutVC;
-    if (!g) return;
+    if (!g) return null;
     g.computeBoundingBox?.();
     const bb = g.boundingBox;
-    if (!bb) return;
-    const cx = 0; // x centred at scene origin (mesh/GLB stacking offset is separate)
-    const cy = (bb.min.y + bb.max.y) / 2;
-    const cz = (bb.min.z + bb.max.z) / 2;
-    scene.partCenter = { x: cx, y: cy, z: cz };
+    if (!bb) return null;
+    return {
+      ex: bb.max.x - bb.min.x,
+      ey: bb.max.y - bb.min.y,
+      ez: bb.max.z - bb.min.z,
+      cx: 0, // x centred at scene origin
+      cy: (bb.min.y + bb.max.y) / 2,
+      cz: (bb.min.z + bb.max.z) / 2,
+    };
+  });
+
+  // Stack the mesh + GLB on the SAME part (Z / drilling) axis, one above the
+  // other, separated centre-to-centre by (part Z-extent + a small gap). The
+  // gap is ~12% of the part's largest dimension (with a small floor) so the
+  // two read as one-over-the-other with clear air between them rather than
+  // side-by-side or overlapping. Z-down: the mesh sits toward the TOP (lower
+  // z), the GLB toward the BOTTOM (higher z).
+  let gap = $derived(bbox ? Math.max(0.4, 0.12 * Math.max(bbox.ex, bbox.ey, bbox.ez)) : offset);
+  let sep = $derived(bbox ? bbox.ez + gap : 2 * offset); // centre-to-centre
+  let meshPos = $derived<[number, number, number]>([0, 0, -sep / 2]);
+  let glbPos = $derived<[number, number, number]>([0, 0, sep / 2]);
+
+  // OrbitControls target = combined bbox centre. The two stacked copies are
+  // symmetric about the part's own bbox centre (cz), so the midpoint is just
+  // (0, cy, cz). Without this the target sits at world origin (the TOP of
+  // every Z-down part) and the part hangs below the look-at, off-centre.
+  $effect(() => {
+    if (!bbox) return;
+    scene.partCenter = { x: bbox.cx, y: bbox.cy, z: bbox.cz };
+  });
+
+  // --- auto-fit the camera to the combined (stacked) bounding box ---
+  // View axis is +Y (camera at +Y looking toward the part), up = -Z, so the
+  // screen-vertical extent is the stacked Z span (2·ez + gap) and the
+  // screen-horizontal extent is the X span. Frame the larger of the two
+  // against the 45° vertical FOV (aspect=1 is conservative → a little extra
+  // margin on wide canvases), back off past the part's own Y depth, add 15%
+  // padding. Guarded by a rounded size/centre key so pure orbit or a
+  // colour-only param change does NOT yank the view — it refits only when the
+  // part's size or position actually changes ("recompute when the part
+  // changes"). Writing scene.cam is one-way (this effect never reads it) so
+  // there's no feedback loop with the OrbitControls 'change' sync above.
+  const FIT_FOV_DEG = 45;
+  let lastFitKey = '';
+  $effect(() => {
+    if (!bbox) return;
+    const { ex, ey, ez, cy, cz } = bbox;
+    const key = `${ex.toFixed(2)}|${ey.toFixed(2)}|${ez.toFixed(2)}|${cy.toFixed(2)}|${cz.toFixed(2)}`;
+    if (key === lastFitKey) return;
+    lastFitKey = key;
+    const tanHalf = Math.tan((FIT_FOV_DEG * Math.PI) / 180 / 2);
+    const halfZspan = ez + gap / 2; // half of the combined stacked Z span (2·ez + gap)/2
+    const halfX = ex / 2;
+    const distV = halfZspan / tanHalf;          // fit the vertical (Z) span
+    const distH = halfX / tanHalf;              // fit the horizontal (X) span, aspect≈1
+    let dist = Math.max(distV, distH) * 1.15 + ey / 2;
+    dist = Math.max(dist, 4);                   // floor so tiny parts aren't on top of the lens
+    scene.cam = { x: 0, y: cy + dist, z: cz };
   });
 
   const AX_LEN = 2.2, AX_R = 0.06;
@@ -152,8 +203,9 @@
 <!-- Fill light from below to lift the previously-shaded quadrant. -->
 <T.PointLight position={light3Pos} intensity={scene.l3.i} distance={50} />
 
-<!-- LEFT — live mesh (zScale already baked server-side, so no scale.z here) -->
-<T.Group position={stackAxis === 'z' ? [0, 0, -offset] : [-offset, 0, 0]}>
+<!-- TOP — live mesh, stacked on the part (Z) axis (zScale already baked
+     server-side, so no scale.z here) -->
+<T.Group position={meshPos}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '')}
     {#if showCutaway && cutVC}
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
@@ -179,9 +231,10 @@
   <T.Mesh position={[0,0,AX_LEN/2]} rotation={[Math.PI/2,0,0]}><T.CylinderGeometry args={[AX_R,AX_R,AX_LEN,12]} /><T.MeshBasicMaterial color="#3060ff" /></T.Mesh>
 </T.Group>
 
-<!-- RIGHT — baked GLB (scaled along Z to match the SceneControls zScale, like ComponentSceneGlb) -->
+<!-- BOTTOM — baked GLB, stacked below the mesh on the part (Z) axis (scaled
+     along Z to match the SceneControls zScale, like ComponentSceneGlb) -->
 {#if loaded}
-  <T.Group position={stackAxis === 'z' ? [0, 0, offset] : [offset, 0, 0]} scale.z={scene.zScale}>
+  <T.Group position={glbPos} scale.z={scene.zScale}>
     <T is={loaded} />
   </T.Group>
 {/if}

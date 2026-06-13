@@ -2660,17 +2660,19 @@
   }
   // ─── Resizable 2-pane divider ──────────────────────────────────────────
   // The editor's main area is split canvas | (bake/source tabs). Default
-  // ratio is canvas 70 % / right 30 %, giving the graph 7/10 of the width.
-  // Persisted as client state (localStorage) so the user's preferred split
-  // survives reloads without bloating meta.graph.
-  let splitA = $state(70);          // canvas pane %
+  // ratio is canvas 76 % / right 24 %, giving the node graph more room and a
+  // narrower 3D-preview pane (was 70/30). Persisted as client state
+  // (localStorage) so the user's preferred split survives reloads without
+  // bloating meta.graph. (Storage key bumped to -v3 when the default changed
+  // so existing users pick up the narrower preview.)
+  let splitA = $state(76);          // canvas pane %
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
   /** Right-pane tab: 3D bake or live source. */
   let rightTab = $state<'bake' | 'source' | 'md'>('bake');
   onMount(() => {
     try {
-      const a = Number(localStorage.getItem('ge-splitA-v2'));
+      const a = Number(localStorage.getItem('ge-splitA-v3'));
       if (a >= 30 && a <= 85) splitA = a;
       const t = localStorage.getItem('ge-right-tab');
       if (t === 'bake' || t === 'source' || t === 'md') rightTab = t;
@@ -2692,7 +2694,7 @@
     if (!splitDragging) return;
     (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
     splitDragging = false;
-    try { localStorage.setItem('ge-splitA-v2', String(splitA)); } catch { /* ignore */ }
+    try { localStorage.setItem('ge-splitA-v3', String(splitA)); } catch { /* ignore */ }
   }
   function setRightTab(t: 'bake' | 'source' | 'md') {
     rightTab = t;
