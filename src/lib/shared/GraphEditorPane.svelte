@@ -6415,7 +6415,7 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <rect class="ge-sketch-card-title" x="0" y="0" width={scW} height="32" rx="6"
                     onpointerdown={(ev) => sketchCardDown(ev, 'sketch')}/>
-                  <text x="10" y="22" class="ge-node-title" pointer-events="none">✐ sketch · {sn.ops.length} ops</text>
+                  <text x="10" y="22" class="ge-node-title" pointer-events="none">✐ sketch</text>
                   <line x1="0" y1="32" x2={scW} y2="32" class="ge-node-divider" pointer-events="none"/>
                   <foreignObject x="6" y="36" width={scW - 12} height={scH - 40} class="ge-fo">
                     <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
