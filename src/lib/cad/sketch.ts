@@ -94,6 +94,9 @@ export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
   const pathsObj: Record<string, any> = {};
   const modelsObj: Record<string, any> = {};
   const n = chamfered.length;
+  // edgeLine[i] = the Line path for edge i (vertex i → i+1), or null when that
+  // edge is a Bézier (splines aren't filletable here — M.4).
+  const edgeLine: (any | null)[] = new Array(n).fill(null);
   for (let i = 0; i < n; i++) {
     const a = chamfered[i].pt;
     const b = chamfered[(i + 1) % n].pt;
@@ -104,24 +107,30 @@ export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
         : [a, add(a, scale(sub(b, a), 0.33)), add(a, scale(sub(b, a), 0.66)), b];
       modelsObj[`s${i}`] = new makerjs.models.BezierCurve(ctrl as any);
     } else {
-      pathsObj[`e${i}`] = new makerjs.paths.Line(a, b);
+      const line = new makerjs.paths.Line(a, b);
+      pathsObj[`e${i}`] = line;
+      edgeLine[i] = line;
     }
   }
   const model: any = { paths: pathsObj, models: modelsObj };
 
-  // ── 3. Apply FILLETS via chain.fillet (per-radius when corners differ) ──
-  // First cut: if any vertex requests a fillet, round all such corners with
-  // the (smallest requested) radius via chain.fillet. Per-corner radii is an
-  // M.3 refinement.
-  const filletR = chamfered.filter((c) => c.fillet != null).map((c) => c.fillet!);
-  if (filletR.length) {
+  // ── 3. Apply FILLETS PER CORNER via makerjs.path.fillet ────────────────
+  // The corner at vertex j sits between edge (j-1) [reaching j] and edge j
+  // [leaving j]. path.fillet rounds JUST that corner with JUST its radius and
+  // crops the two incident lines to the tangent points — so every vertex keeps
+  // its OWN radius. (The old chain.fillet rounded EVERY filleted corner with a
+  // single shared radius — the M.3 limitation this fixes.) A corner where
+  // either incident edge is a spline is left sharp (M.4).
+  for (let j = 0; j < n; j++) {
+    const r = chamfered[j].fillet;
+    if (r == null || r <= 0) continue;
+    const into = edgeLine[(j - 1 + n) % n];
+    const outOf = edgeLine[j];
+    if (!into || !outOf) continue; // a spline meets at this corner — skip
     try {
-      const chain = makerjs.model.findSingleChain(model);
-      if (chain) {
-        const f = makerjs.chain.fillet(chain, Math.min(...filletR));
-        if (f) model.models = { ...(model.models || {}), __fillets: f };
-      }
-    } catch { /* leave unfilleted on failure */ }
+      const arc = makerjs.path.fillet(into, outOf, r);
+      if (arc) pathsObj[`f${j}`] = arc;
+    } catch { /* leave this corner sharp on failure (e.g. radius too large) */ }
   }
 
   // ── 4. SAMPLE the chain → evenly-spaced (r,z) ──────────────────────────
