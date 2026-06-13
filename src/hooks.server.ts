@@ -80,11 +80,52 @@ const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const AUTH_PROTECTED_PREFIX = '/api/';
 
 /**
+ * CORS for external apps (e.g. a third-party Svelte app with its OWN RAG +
+ * LLM that consumes our volume + bake operations cross-origin). A browser
+ * can't call /api/* from another origin without these headers.
+ *
+ * Disabled by default. Set `CORS_ORIGINS` to a comma-separated allowlist of
+ * origins (e.g. `https://their-app.com`) — or `*` for any. Pair with
+ * `AUTH_TOKEN` so the open surface still needs a Bearer token (the token is
+ * NOT a cookie credential, so `*` + Authorization is valid without
+ * Allow-Credentials). The external app sends `Authorization: Bearer <token>`.
+ */
+function corsHeadersFor(origin: string | null): Record<string, string> {
+  const allowed = (env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (allowed.length === 0) return {};
+  const allowOrigin = allowed.includes('*') ? '*' : (origin && allowed.includes(origin) ? origin : '');
+  if (!allowOrigin) return {};
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Volume-Local',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+/** Return a copy of `res` with CORS headers merged in (headers may be immutable). */
+function applyCors(res: Response, cors: Record<string, string>): Response {
+  if (!Object.keys(cors).length) return res;
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+/**
  * Request middleware: optional auth + rate limiting + logging.
  */
 export const handle: Handle = async ({ event, resolve }) => {
   const start = Date.now();
   const path = event.url.pathname;
+
+  // CORS for external apps. Compute once; apply to every /api/* response
+  // (including the proxy + error early-returns) so the browser sees them.
+  const isApi = path.startsWith('/api/');
+  const cors = isApi ? corsHeadersFor(event.request.headers.get('origin')) : {};
+  // Preflight: answer OPTIONS before auth so the browser can probe the surface.
+  if (isApi && event.request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: cors });
+  }
 
   // Single-store proxy: forward volume-data endpoints to prod when
   // CADTRAIN_VOLUME_REMOTE_URL is set (local dev). maybeProxy returns
@@ -106,7 +147,7 @@ export const handle: Handle = async ({ event, resolve }) => {
         const proxied = await maybeProxy(event.request, event.url);
         if (proxied) {
           console.log(`[${proxied.status}] ${event.request.method} ${path} — proxied → prod`);
-          return proxied;
+          return applyCors(proxied, cors);
         }
       }
     } else {
@@ -128,7 +169,7 @@ export const handle: Handle = async ({ event, resolve }) => {
       console.log(`[401] ${event.request.method} ${path} — auth failed`);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...cors },
       });
     }
   }
@@ -145,7 +186,7 @@ export const handle: Handle = async ({ event, resolve }) => {
         JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }),
         {
           status: 429,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...cors },
         }
       );
     }
@@ -156,5 +197,5 @@ export const handle: Handle = async ({ event, resolve }) => {
   console.log(
     `[${response.status}] ${event.request.method} ${path} — ${duration}ms`
   );
-  return response;
+  return applyCors(response, cors);
 };
