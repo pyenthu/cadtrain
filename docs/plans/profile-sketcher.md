@@ -104,23 +104,24 @@ graph" requirement.
 - **M.2 — full-tab sketch editor + toolbar (2-3 days).** Expand-to-full-tab
   sketch mode; the dedicated toolbar; Maker.js outline render + drag/select
   interaction; enter/exit.
-- **M.3 — operator UX (2 days).** Click-two-segments → fillet/chamfer with a
-  live radius dial; add spline through points; offset for wall thickness;
-  each writes a graph op. Live re-bake.
-  - ✅ **Per-corner fillet (engine) — DONE 2026-06-13** (`1faaf0f`).
-    `compileSketch` now fillets each corner with its OWN radius via
-    `makerjs.path.fillet` (was `chain.fillet(min(radii))` = all corners, one
-    radius). Each fillet op's existing radius field is now truly per-corner;
-    unfilleted corners stay sharp; spline corners deferred to M.4. Tests in
-    `src/lib/cad/sketch.test.ts`.
-  - ✅ **Click-to-fillet/chamfer + live radius dial — DONE 2026-06-13**
-    (`91c3da9`). Click a corner with the fillet/chamfer tool to round/bevel
-    THAT corner; a slider+number dial edits its radius/dist live; gold badge
-    marks modified corners. Same commit: tools moved to a LEFT vertical rail
-    and the status/dial/Done bar is a DRAGGABLE floating top bar.
-  - ⏳ Remaining: spline-through-points; offset (wall thickness, expandPaths).
+- **M.3 — operator UX — ✅ DONE 2026-06-13.** The interactive operators all
+  work (fillet/chamfer per-corner + spline), with a live radius dial. Offset
+  moved to M.4 (it needs 2D-CSG to cut the inner wall).
+  - ✅ **Per-corner fillet (engine)** (`1faaf0f`). `compileSketch` fillets each
+    corner with its OWN radius via `makerjs.path.fillet` (was
+    `chain.fillet(min(radii))` = all corners, one radius). Unfilleted corners
+    stay sharp. Tests in `src/lib/cad/sketch.test.ts`.
+  - ✅ **Click-to-fillet/chamfer + live radius dial** (`91c3da9`). Click a
+    corner with the fillet/chamfer tool to round/bevel THAT corner; a
+    slider+number dial edits its radius/dist live; gold badge marks modified
+    corners. Same commit: tools moved to a LEFT vertical rail and the
+    status/dial/Done bar is a DRAGGABLE floating top bar.
+  - ✅ **Spline curves through points** (`8facd4d`). Catmull-Rom → Bézier
+    tangents so a spline actually bows through the clicked points (the auto
+    controls used to sit on the chord → a straight line).
 - **M.4 — pro polish (own session each).** Snapping + grid; dimensions /
-  light constraints; DXF export; 2D-CSG (folds in K.58); mirror/symmetry.
+  light constraints; DXF export; **2D-CSG (folds in K.58) + offset/wall-
+  thickness (shell via inset + boolean subtract)**; mirror/symmetry.
 
 ## Open decisions (for the user)
 
