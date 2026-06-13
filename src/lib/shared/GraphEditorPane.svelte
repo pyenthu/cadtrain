@@ -2691,14 +2691,14 @@
   // (localStorage) so the user's preferred split survives reloads without
   // bloating meta.graph. (Storage key bumped to -v3 when the default changed
   // so existing users pick up the narrower preview.)
-  let splitA = $state(76);          // canvas pane %
+  let splitA = $state(56);          // canvas pane % — 3D preview gets the rest (~44%, prominent)
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
   /** Right-pane tab: 3D bake or live source. */
   let rightTab = $state<'bake' | 'source' | 'md'>('bake');
   onMount(() => {
     try {
-      const a = Number(localStorage.getItem('ge-splitA-v3'));
+      const a = Number(localStorage.getItem('ge-splitA-v4'));
       if (a >= 30 && a <= 85) splitA = a;
       const t = localStorage.getItem('ge-right-tab');
       if (t === 'bake' || t === 'source' || t === 'md') rightTab = t;
@@ -2720,7 +2720,7 @@
     if (!splitDragging) return;
     (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
     splitDragging = false;
-    try { localStorage.setItem('ge-splitA-v3', String(splitA)); } catch { /* ignore */ }
+    try { localStorage.setItem('ge-splitA-v4', String(splitA)); } catch { /* ignore */ }
   }
   function setRightTab(t: 'bake' | 'source' | 'md') {
     rightTab = t;
