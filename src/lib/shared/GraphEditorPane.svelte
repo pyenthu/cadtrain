@@ -7889,9 +7889,9 @@
   /* ─── Full-tab sketch editor (plan M.2) ──────────────────────────────── */
   .ge-sketch-edit-btn { font: 13px system-ui; fill: #7c3aed; cursor: pointer; }
   .ge-sketch-edit-btn:hover { fill: #5b21b6; }
-  .ge-sketch-editor { position: absolute; inset: 0; z-index: 60; background: #fbfbfd; display: flex; flex-direction: row; }
-  /* LEFT vertical tool palette. */
-  .ge-sketch-vtools { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 6px; border-right: 1px solid #e2e8f0; background: #fff; }
+  .ge-sketch-editor { position: absolute; inset: 0; z-index: 60; background: #fbfbfd; display: flex; flex-direction: column; }
+  /* TOP horizontal tool palette (sketch items run left→right across the top). */
+  .ge-sketch-vtools { display: flex; flex-direction: row; align-items: center; gap: 5px; padding: 5px 8px; border-bottom: 1px solid #e2e8f0; background: #fff; flex: 0 0 auto; }
   .ge-stool { width: 32px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; font: 15px ui-monospace, monospace; color: #57534e; cursor: pointer; }
   .ge-stool:hover { background: #f3e8ff; color: #6b21a8; border-color: #c4b5fd; }
   .ge-stool.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
