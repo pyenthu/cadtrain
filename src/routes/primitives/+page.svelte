@@ -542,7 +542,6 @@
     <header>
       <h2>Primitives</h2>
       <button class="prim-rail-collapse" type="button" title="Collapse the sidebar" onclick={toggleSidebar}>«</button>
-      <a class="rail-newtab" href="/graph-editor" target="_blank" rel="noopener" title="Open the standalone graph editor in a new tab">↗ open</a>
     </header>
     <div class="prim-filter-row">
       <input class="prim-filter" type="text" placeholder="filter…" bind:value={filter}/>
@@ -975,8 +974,6 @@
     border-bottom: 1px solid #e5e7eb; background: #f3f4f6;
   }
   .prim-rail h2 { font: 700 14px Arial; margin: 0; color: #0c4a6e; flex: 1; }
-  .rail-newtab { font: 11px Arial; color: #0369a1; text-decoration: none; }
-  .rail-newtab:hover { text-decoration: underline; }
   /* Filter input + RAG rebuild button share a single row. The input
      stretches; the ↻ button is a fixed-width chip on the right. */
   .prim-filter-row {
