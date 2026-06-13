@@ -3633,6 +3633,24 @@
     };
   }
   function closeSketchExprPop() { sketchExprPop = null; }
+  // Drag the point popover by its header (grab the title bar). Mirrors the
+  // sketch-toolbar drag — offset-based so the cursor stays where you grabbed.
+  let sketchExprPopDrag: { dx: number; dy: number } | null = null;
+  function sketchExprPopDown(ev: PointerEvent) {
+    if (!sketchExprPop) return;
+    ev.preventDefault(); ev.stopPropagation();
+    sketchExprPopDrag = { dx: ev.clientX - sketchExprPop.x, dy: ev.clientY - sketchExprPop.y };
+    try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+  }
+  function sketchExprPopMove(ev: PointerEvent) {
+    if (!sketchExprPopDrag || !sketchExprPop) return;
+    sketchExprPop = { ...sketchExprPop, x: ev.clientX - sketchExprPopDrag.dx, y: ev.clientY - sketchExprPopDrag.dy };
+  }
+  function sketchExprPopUp(ev: PointerEvent) {
+    if (!sketchExprPopDrag) return;
+    sketchExprPopDrag = null;
+    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+  }
   function applySketchExprPop() {
     if (!sketchExprPop) return;
     if (sketchExprPop.drafts) {
@@ -6823,8 +6841,10 @@
     <div class="ge-wire-shade" onclick={closeSketchExprPop}></div>
     <div class="ge-wire-pop ge-expr-pop"
       use:clampToViewport={sketchExprPop}
-      style="left: {Math.min(sketchExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {sketchExprPop.y}px">
-      <div class="ge-wire-head">ƒ sketch point <code>{sketchExprPop.field}</code> expression</div>
+      style="left: {sketchExprPop.x}px; top: {sketchExprPop.y}px">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="ge-wire-head ge-wire-head-drag" title="Drag to move"
+        onpointerdown={sketchExprPopDown} onpointermove={sketchExprPopMove} onpointerup={sketchExprPopUp}>ƒ sketch point <code>{sketchExprPop.field}</code> expression</div>
       {#if sketchExprPop.drafts}
         <!-- r / z tab strip — edit both coordinates of the point without
              closing the popover (mirrors the polygon vertex editor). Apply
@@ -8646,6 +8666,8 @@
   .ge-wire-shade { position: fixed; inset: 0; background: transparent; z-index: 200; }
   .ge-wire-pop { position: fixed; min-width: 200px; background: #fff; border: 1px solid #fbbf24; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); padding: 4px 0; z-index: 210; }
   .ge-wire-head { padding: 6px 10px; font: 600 11px Arial; color: #78350f; border-bottom: 1px solid #fef3c7; }
+  .ge-wire-head-drag { cursor: grab; touch-action: none; user-select: none; }
+  .ge-wire-head-drag:active { cursor: grabbing; }
   .ge-wire-head code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
   .ge-wire-item { width: 100%; padding: 5px 12px; background: transparent; border: 0; text-align: left; font: 12px ui-monospace, monospace; color: #78350f; cursor: pointer; display: flex; gap: 8px; align-items: center; }
   .ge-wire-item:hover { background: #fef3c7; }
