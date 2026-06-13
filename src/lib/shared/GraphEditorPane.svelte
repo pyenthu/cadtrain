@@ -175,7 +175,7 @@
   let emittedForRender = $derived(emitGraph(graph, { id: exemplarId, ghosts: ghostIds, drawingMd }));
   let sourceText = $derived(emittedForRender.source);
 
-  let bake = $state<{ ok: boolean; source?: string; bake?: any; message?: string } | 'loading' | null>(null);
+  let bake = $state<{ ok: boolean; source?: string; args?: (number | string)[]; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Mode the polygon at `polyId` should render under — revolve (r, z)
    *  with axis at r=0, or cartesian (x, y) centered around origin.
@@ -1425,8 +1425,22 @@
       // Hand the canvas the EXACT same source the bake just ran on (the
       // ghost-flag aware emit) so its own /preview re-fetch returns the
       // same mesh — otherwise the cuboids get baked once + immediately
-      // thrown away by the canvas's no-ghost re-bake.
-      bake = { ok: r.ok, source: emittedForRender.source, bake: r, message: r.message as string | undefined };
+      // thrown away by the canvas's no-ghost re-bake. Capture `args` at the
+      // SAME instant for the SAME reason: `source` and the positional arg
+      // array MUST stay consistent. Reading args live in the template lets a
+      // param add/delete change the arg COUNT a frame before the re-emitted
+      // source catches up — the canvas then bakes the old N-param source with
+      // N±1 args, so a trailing param resolves to `undefined` → NaN geometry
+      // → a degenerate mesh that corrupts the shared camera-fit and blanks the
+      // 3D until reload. Pairing them here makes every (source, args) the
+      // canvas sees a matched set.
+      bake = {
+        ok: r.ok,
+        source: emittedForRender.source,
+        args: Object.values(graph.params).map((p) => p.default),
+        bake: r,
+        message: r.message as string | undefined,
+      };
       firstBakeDone = true;
     }, 250);
   });
@@ -2998,6 +3012,7 @@
   let sketchDrag = $state<{ opIdx: number } | null>(null);
   function sketchAnchorDown(ev: PointerEvent, opIdx: number, literal: boolean, kind?: string) {
     ev.stopPropagation();
+    sketchTapMoved = false;
     // With the fillet/chamfer tool active, clicking a vertex anchor rounds/
     // bevels THAT corner (exact op index — no nearest-search needed).
     if (sketchTool === 'fillet' || sketchTool === 'chamfer') { cornerAtOpIdx(opIdx); return; }
@@ -3012,11 +3027,29 @@
   }
   function sketchAnchorMove(ev: PointerEvent) {
     if (!sketchDrag || !editingSketchId) return;
+    sketchTapMoved = true;
     const c = sketchEventToCoord(ev); if (!c) return;
     graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'r', { kind: 'literal', value: c[0] });
     graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'z', { kind: 'literal', value: c[1] });
   }
   function sketchAnchorUp() { sketchDrag = null; }
+  // Mobile equivalent of the mouse ondblclick → open the point's coordinate
+  // popover. `dblclick` doesn't reliably fire for touch, so detect a
+  // double-TAP (two quick taps on the same anchor with no drag between).
+  let sketchLastTap: { opIdx: number; t: number } | null = null;
+  let sketchTapMoved = false;
+  function sketchAnchorTap(ev: PointerEvent, sid: NodeId, opIdx: number, curR: string) {
+    if (ev.pointerType !== 'touch') return;        // mouse path is ondblclick
+    if (sketchTapMoved) { sketchLastTap = null; return; } // it was a drag, not a tap
+    if (sketchTool !== 'select') return;
+    const now = Date.now();
+    if (sketchLastTap && sketchLastTap.opIdx === opIdx && now - sketchLastTap.t < 350) {
+      sketchLastTap = null;
+      openSketchExprPop(ev as unknown as MouseEvent, sid, opIdx, 'r', curR);
+    } else {
+      sketchLastTap = { opIdx, t: now };
+    }
+  }
 
   // ─── M.3: per-corner fillet/chamfer by click + a live radius dial ───────
   // With the fillet/chamfer tool active, clicking near a CORNER inserts that
@@ -3572,15 +3605,44 @@
    *  chamfer dist) opens this. Same UX as the Call-arg argExprPop: edit a JS
    *  expression like `p.od / 2 - p.wall`, apply → the coord becomes
    *  kind:'expr'. Keyed to a sketch op field, written via setSketchOpField. */
-  let sketchExprPop = $state<{ sid: NodeId; opIdx: number; field: 'r' | 'z' | 'radius' | 'dist'; draft: string; x: number; y: number } | null>(null);
+  let sketchExprPop = $state<{ sid: NodeId; opIdx: number; field: 'r' | 'z' | 'radius' | 'dist'; draft: string; drafts?: { r: string; z: string }; x: number; y: number } | null>(null);
   function openSketchExprPop(ev: MouseEvent, sid: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist', currentExpr: string) {
     ev.stopPropagation();
-    sketchExprPop = { sid, opIdx, field, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+    // For a point coordinate (line/spline r/z) populate BOTH axis drafts so
+    // the popover shows r AND z behind a tab strip — same UX as the polygon
+    // vertex editor. fillet radius / chamfer dist are single-value, no tabs.
+    let drafts: { r: string; z: string } | undefined;
+    if (field === 'r' || field === 'z') {
+      const op = (graph.nodes[sid] as any)?.ops?.[opIdx];
+      const other: 'r' | 'z' = field === 'r' ? 'z' : 'r';
+      drafts = { [field]: currentExpr, [other]: argToDraftStr(op?.[other]) } as { r: string; z: string };
+    }
+    sketchExprPop = { sid, opIdx, field, draft: currentExpr, drafts, x: ev.clientX, y: ev.clientY };
+  }
+  /** Switch the active r/z tab — stash the current draft into the inactive
+   *  axis, load the other axis's draft. Pure state; Apply writes both. */
+  function switchSketchExprAxis(newAxis: 'r' | 'z') {
+    if (!sketchExprPop || !sketchExprPop.drafts) return;
+    const old = sketchExprPop.field;
+    if (old === newAxis) return;
+    sketchExprPop = {
+      ...sketchExprPop,
+      drafts: { ...sketchExprPop.drafts, [old]: sketchExprPop.draft } as { r: string; z: string },
+      field: newAxis,
+      draft: sketchExprPop.drafts[newAxis],
+    };
   }
   function closeSketchExprPop() { sketchExprPop = null; }
   function applySketchExprPop() {
     if (!sketchExprPop) return;
-    graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, sketchExprPop.field, asExpr(sketchExprPop.draft));
+    if (sketchExprPop.drafts) {
+      // Dual r/z: fold the active tab's live draft back in, write both axes.
+      const drafts = { ...sketchExprPop.drafts, [sketchExprPop.field]: sketchExprPop.draft } as { r: string; z: string };
+      graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, 'r', asExpr(drafts.r));
+      graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, 'z', asExpr(drafts.z));
+    } else {
+      graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, sketchExprPop.field, asExpr(sketchExprPop.draft));
+    }
     sketchExprPop = null;
   }
   function insertParamIntoSketchDraft(name: string) {
@@ -6108,7 +6170,8 @@
                   fill={a.kind === 'spline' ? '#0891b2' : '#7c3aed'} stroke="#fff" stroke-width={hr * 0.25}
                   onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal, a.kind)}
                   onpointermove={sketchAnchorMove}
-                  onpointerup={sketchAnchorUp}/>
+                  onpointerup={(ev) => { sketchAnchorUp(); sketchAnchorTap(ev, sid, a.opIdx, argStr(se.node.ops[a.opIdx].r)); }}
+                  ondblclick={(ev) => openSketchExprPop(ev, sid, a.opIdx, 'r', argStr(se.node.ops[a.opIdx].r))}/>
                 <!-- Number every point (1,2,3…) in small font next to it. -->
                 <text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.0} fill={i === 0 ? '#15803d' : '#6d28d9'} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>{i + 1}</text>
                 <!-- (Param→point on-canvas sockets/badges removed — param links
@@ -6531,7 +6594,7 @@
             </div>
           {:else if PrimitiveDualCanvas && (props.active ?? true)}
             <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-              args={Object.values(graph.params).map((p) => p.default)}
+              args={bake.args ?? Object.values(graph.params).map((p) => p.default)}
               source={bake.source}
               showControls={true} showLabels={false}/>
             <!-- Cache status row + Rebuild button (Phase 1.5) -->
@@ -6761,7 +6824,20 @@
     <div class="ge-wire-pop ge-expr-pop"
       use:clampToViewport={sketchExprPop}
       style="left: {Math.min(sketchExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {sketchExprPop.y}px">
-      <div class="ge-wire-head">ƒ sketch <code>{sketchExprPop.field}</code> expression</div>
+      <div class="ge-wire-head">ƒ sketch point <code>{sketchExprPop.field}</code> expression</div>
+      {#if sketchExprPop.drafts}
+        <!-- r / z tab strip — edit both coordinates of the point without
+             closing the popover (mirrors the polygon vertex editor). Apply
+             writes BOTH axes. -->
+        <div class="ge-expr-pop-tabs">
+          <button class="ge-expr-pop-tab" type="button"
+            class:on={sketchExprPop.field === 'r'}
+            onclick={() => switchSketchExprAxis('r')}>r</button>
+          <button class="ge-expr-pop-tab" type="button"
+            class:on={sketchExprPop.field === 'z'}
+            onclick={() => switchSketchExprAxis('z')}>z</button>
+        </div>
+      {/if}
       <textarea class="ge-expr-textarea" rows="3"
         placeholder="e.g. p.od / 2 - p.wall"
         value={sketchExprPop.draft}
