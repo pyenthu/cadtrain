@@ -565,9 +565,11 @@ function withNodes(graph: Graph, updates: Record<NodeId, GraphNode>): Graph {
   return { ...graph, nodes: { ...graph.nodes, ...updates }, edges: [] /* recomputed below */ };
 }
 
-/** Internal: finalize a mutation by recomputing the edge index + de-duped
- *  imports list. Pure. */
-function finalize(graph: Graph): Graph {
+/** Finalize a mutation by recomputing the edge index + de-duped imports list.
+ *  Pure. Exported so callers that build a node replacement by hand (e.g. the
+ *  editor's drift-refresh) still rebuild graph.edges instead of leaving it
+ *  stale. */
+export function finalize(graph: Graph): Graph {
   const importsSet = new Set<string>(graph.imports);
   for (const n of Object.values(graph.nodes)) {
     if (n.type === 'call') importsSet.add(n.src);

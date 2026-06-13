@@ -28,6 +28,7 @@
     setSketchOpField,
     setSketchOpKind,
     setSketchOpMode,
+    finalize,
     moveSketchOp,
     removeSketchOp,
     setSketchSegments,
@@ -878,15 +879,9 @@
     graph = setPolygonCoord(graph, polyId, entryIdx + 1, 'z', { kind: 'literal', value: z });
   }
 
-  // Escape exits delete/insert mode. Browser-window listener so the user
-  // can press Esc with focus anywhere (input, canvas, body).
-  if (typeof window !== 'undefined') {
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && (polyDeleteMode || polyInsertMode)) {
-        polyDeleteMode = false; polyInsertMode = false;
-      }
-    });
-  }
+  // Escape exits delete/insert mode — handled in onWindowKeydown (registered +
+  // cleaned up in onMount). Previously a top-level addEventListener here leaked
+  // one anonymous handler per component instance (multi-tab) — Cursor review #1.
 
   /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
    *  with the polygon points the build() returns at default params. Driven
@@ -1269,6 +1264,10 @@
    *  click required. Skipped for IME composition + modifier keys (those
    *  are reserved for shortcuts elsewhere). */
   function onWindowKeydown(ev: KeyboardEvent) {
+    if (ev.key === 'Escape' && (polyDeleteMode || polyInsertMode)) {
+      polyDeleteMode = false; polyInsertMode = false;
+      return;
+    }
     if (ev.key === 'Escape' && wireFrom) {
       wireFrom = null; wireMouse = null; wireJustArmed = false;
       return;
@@ -2730,12 +2729,11 @@
       const existing = (node.args as any)?.[k];
       newArgs[k] = existing ?? asLiteral(defaults[k] ?? 0);
     }
-    // Mutate via setCallArg one key at a time — preserves edge index rebuild.
-    let g = graph;
-    // First strip orphan keys via a node replacement.
+    // Replace the args wholesale (adds new keys, strips orphans), then
+    // finalize() so graph.edges + imports are rebuilt — a raw node-spread
+    // left graph.edges stale (phantom wires / wrong orphan detection). #2.
     const updated = { ...node, args: { ...newArgs } } as any;
-    g = { ...g, nodes: { ...g.nodes, [callId]: updated } };
-    graph = g;
+    graph = finalize({ ...graph, nodes: { ...graph.nodes, [callId]: updated } });
   }
   // ─── Resizable 2-pane divider ──────────────────────────────────────────
   // The editor's main area is split canvas | (bake/source tabs). Default
@@ -4523,8 +4521,8 @@
       data-tip={connectMode
         ? 'Click-to-connect ON — tap a source socket, then a target (Esc cancels)'
         : 'Click-to-connect — wire two sockets by tapping them, no dragging'}>🔗</button>
-    <button class="ge-vrail-btn save" type="button" disabled={saveBusy} onclick={saveGraph}
-      data-tip={saveBusy ? 'Saving…' : `Save ${exemplarId} to the volume`}>💾</button>
+    <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
+      data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
       class:stale={bakeStale}
       data-tip={bakeStale ? 'Source changed — click or press Enter to re-bake' : 'Bake now (Enter in any input also bakes)'}>
