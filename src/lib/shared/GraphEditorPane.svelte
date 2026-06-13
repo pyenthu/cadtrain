@@ -3731,7 +3731,18 @@
     if (op?.mode === 'rel') return axis === 'r' ? 'Δr' : 'Δz';
     return op?.op === 'spline' ? (axis === 'r' ? 'spl r' : 'spl z') : axis;
   }
+  // # of point ops in the popover's sketch — guards the delete button (can't
+  // remove the only point).
+  const sketchPopPtCount = $derived(
+    sketchExprPop ? ((graph.nodes[sketchExprPop.sid] as any)?.ops ?? []).filter((o: any) => o.op === 'line' || o.op === 'spline').length : 0
+  );
   function closeSketchExprPop() { sketchExprPop = null; }
+  /** Delete the point (op) the popover is editing, then close. */
+  function deleteSketchExprPopPoint() {
+    if (!sketchExprPop) return;
+    graph = removeSketchOp(graph, sketchExprPop.sid, sketchExprPop.opIdx);
+    sketchExprPop = null;
+  }
   // Drag the point popover by its header (grab the title bar). Mirrors the
   // sketch-toolbar drag — offset-based so the cursor stays where you grabbed.
   let sketchExprPopDrag: { dx: number; dy: number } | null = null;
@@ -6979,6 +6990,9 @@
         {/if}
       </div>
       <div class="ge-expr-pop-row right">
+        <button class="ge-param-add danger" type="button" disabled={sketchPopPtCount <= 1}
+          title={sketchPopPtCount <= 1 ? 'Can’t delete the only point' : 'Delete this point'}
+          onclick={deleteSketchExprPopPoint}>🗑 delete</button>
         <button class="ge-param-add ghost" type="button" onclick={closeSketchExprPop}>cancel</button>
         <button class="ge-param-add" type="button" onclick={applySketchExprPop}>apply</button>
       </div>
@@ -7800,6 +7814,10 @@
   .ge-param-add:hover { background: #d97706; color: #fff; }
   .ge-param-add.ghost { background: #e5e7eb; color: #1f2937; }
   .ge-param-add.ghost:hover { background: #d1d5db; }
+  .ge-param-add.danger { margin-right: auto; background: #fee2e2; color: #b91c1c; }
+  .ge-param-add.danger:hover { background: #ef4444; color: #fff; }
+  .ge-param-add.danger:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ge-param-add.danger:disabled:hover { background: #fee2e2; color: #b91c1c; }
 
   .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none; }
   .ge-canvas.dragging { cursor: grabbing; }
