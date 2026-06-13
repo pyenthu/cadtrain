@@ -6168,30 +6168,24 @@
               <svg class="ge-sketch-cards" bind:this={miniSvgEl}>
                 <!-- committed wires: every param-driven coord → its param socket -->
                 {#each (sn.ops as Array<any>) as op, idx (idx)}
-                  {#if op.op === 'line' || op.op === 'spline'}
-                    {#if op.r?.kind === 'param'}
-                      {@const pi = paramNames.indexOf(op.r.param)}
-                      {#if pi >= 0 && sketchRowVisible(sn, idx, scH)}
-                        {@const a = miniParamSockAbs(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockR(sn, idx) - sketchOpsScrollTop)}/>
+                  {#if sketchRowVisible(sn, idx, scH)}
+                    {@const fields = (op.op === 'line' || op.op === 'spline')
+                      ? [['r', sketchSockR(sn, idx)], ['z', sketchSockZ(sn, idx)]]
+                      : op.op === 'fillet' ? [['radius', sketchSockVal(sn, idx)]]
+                      : op.op === 'chamfer' ? [['dist', sketchSockVal(sn, idx)]] : []}
+                    {#each fields as [field, sy] (field)}
+                      {@const av = (op as any)[field]}
+                      {@const ty = sketchCardPos.sketch.y + (sy as number) - sketchOpsScrollTop}
+                      {#if av?.kind === 'param'}
+                        {@const pi = paramNames.indexOf(av.param)}
+                        {#if pi >= 0}{@const a = miniParamSockAbs(pi)}<path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, ty)}/>{/if}
+                      {:else if av?.kind === 'expr'}
+                        {#each extractParamRefs(av.expr) as ref (ref)}
+                          {@const pi = paramNames.indexOf(ref)}
+                          {#if pi >= 0}{@const a = miniParamSockAbs(pi)}<path class="ge-wire param expr" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, ty)}/>{/if}
+                        {/each}
                       {/if}
-                    {/if}
-                    {#if op.z?.kind === 'param'}
-                      {@const pi = paramNames.indexOf(op.z.param)}
-                      {#if pi >= 0 && sketchRowVisible(sn, idx, scH)}
-                        {@const a = miniParamSockAbs(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockZ(sn, idx) - sketchOpsScrollTop)}/>
-                      {/if}
-                    {/if}
-                  {:else}
-                    {@const f = op.op === 'fillet' ? op.radius : op.dist}
-                    {#if f?.kind === 'param'}
-                      {@const pi = paramNames.indexOf(f.param)}
-                      {#if pi >= 0 && sketchRowVisible(sn, idx, scH)}
-                        {@const a = miniParamSockAbs(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockVal(sn, idx) - sketchOpsScrollTop)}/>
-                      {/if}
-                    {/if}
+                    {/each}
                   {/if}
                 {/each}
                 <!-- (Param→on-canvas-point wires removed — param links are shown
