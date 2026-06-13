@@ -30,6 +30,11 @@
     moveSketchOp,
     removeSketchOp,
     setSketchSegments,
+    addSketchSplinePoint,
+    setSketchSplinePoint,
+    removeSketchSplinePoint,
+    setSketchSplineHandle,
+    clearSketchSplineHandle,
     setPolygonCoord,
     addPolygonPoint,
     addPolygonRepeat,
@@ -82,7 +87,7 @@
   import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
-  import { compileSketch, type SketchOp } from '$lib/cad/sketch';
+  import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
   import { dragNumber } from '$lib/shared/dragNumber';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
 
@@ -1260,6 +1265,10 @@
   function onWindowKeydown(ev: KeyboardEvent) {
     if (ev.key === 'Escape' && wireFrom) {
       wireFrom = null; wireMouse = null; wireJustArmed = false;
+      return;
+    }
+    if (ev.key === 'Escape' && selectedSplineOpIdx != null) {
+      selectedSplineOpIdx = null;
       return;
     }
     if (ev.key !== 'Enter') return;
@@ -2833,8 +2842,8 @@
   let editingSketchId = $state<string | null>(null);
   let sketchTool = $state<'select' | 'line' | 'spline' | 'fillet' | 'chamfer'>('select');
   let sketchSvgEl = $state<SVGSVGElement | null>(null);
-  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; sketchFrame = null; }
-  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; selectedCornerOpIdx = null; sketchFrame = null; }
+  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; }
+  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; splineDrag = null; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; }
 
   /** Param scope {name: default} for evaluating ArgValue fields to numbers. */
   function sketchParamScope(): Record<string, number> {
@@ -2857,7 +2866,12 @@
     const p = sketchParamScope();
     const ops: SketchOp[] = node.ops.map((o: any) => {
       if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p) };
-      if (o.op === 'spline') return { op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p), ctrl: (o.ctrl ?? []).map((c: any) => [evalArg(c[0], p), evalArg(c[1], p)] as [number, number]) };
+      if (o.op === 'spline') return {
+        op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p),
+        pts: (o.pts ?? []).map((c: any) => [evalArg(c[0], p), evalArg(c[1], p)] as [number, number]),
+        h0: o.h0 ? [evalArg(o.h0[0], p), evalArg(o.h0[1], p)] as [number, number] : undefined,
+        h1: o.h1 ? [evalArg(o.h1[0], p), evalArg(o.h1[1], p)] as [number, number] : undefined,
+      };
       if (o.op === 'fillet') return { op: 'fillet', radius: evalArg(o.radius, p) };
       return { op: 'chamfer', dist: evalArg(o.dist, p) };
     });
@@ -2909,12 +2923,17 @@
     return [Math.round(r * 1000) / 1000, Math.round(z * 1000) / 1000];
   }
   let sketchDrag = $state<{ opIdx: number } | null>(null);
-  function sketchAnchorDown(ev: PointerEvent, opIdx: number, literal: boolean) {
+  function sketchAnchorDown(ev: PointerEvent, opIdx: number, literal: boolean, kind?: string) {
     ev.stopPropagation();
     // With the fillet/chamfer tool active, clicking a vertex anchor rounds/
     // bevels THAT corner (exact op index — no nearest-search needed).
     if (sketchTool === 'fillet' || sketchTool === 'chamfer') { cornerAtOpIdx(opIdx); return; }
-    if (sketchTool !== 'select' || !literal) return;
+    if (sketchTool !== 'select') return;
+    // Click a spline's endpoint anchor → select that spline (reveals its
+    // through-point + end-handle dots); clicking any other anchor clears it.
+    if (kind === 'spline') { selectedSplineOpIdx = opIdx; selectedCornerOpIdx = null; }
+    else selectedSplineOpIdx = null;
+    if (!literal) return;
     sketchDrag = { opIdx };
     (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
   }
@@ -2960,6 +2979,7 @@
    *  vertex; if the corner already has one, switches its kind or just selects. */
   function cornerAtOpIdx(vIdx: number) {
     if (!editingSketchId) return;
+    selectedSplineOpIdx = null;
     const node = graph.nodes[editingSketchId] as any;
     const next = node.ops[vIdx + 1];
     if (next && (next.op === 'fillet' || next.op === 'chamfer')) {
@@ -2997,9 +3017,94 @@
     graph = removeSketchOp(graph, editingSketchId, selectedCornerOpIdx);
     selectedCornerOpIdx = null;
   }
+
+  // ─── Phase 2: spline-as-entity editing (docs/plans/spline-redesign.md §6a) ─
+  // Selecting a spline endpoint anchor (SELECT tool) sets selectedSplineOpIdx.
+  // That reveals draggable through-point dots + two relative end-handle dots,
+  // all stored in the chord-affine frame (a=prev vertex, b=this op's r,z).
+  let selectedSplineOpIdx = $state<number | null>(null);
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  /** Resolve the selected spline to absolute on-canvas geometry: chord
+   *  endpoints a/b, through-point dots, and the two end-handle dots (each
+   *  carries `set` — true when the op stores it, false = a ghost default the
+   *  user can grab to CREATE the handle). */
+  const selectedSpline = $derived.by(() => {
+    if (selectedSplineOpIdx == null || !sketchEditor) return null;
+    const se = sketchEditor;
+    const ai = se.anchors.findIndex((x) => x.opIdx === selectedSplineOpIdx);
+    if (ai < 0 || se.anchors[ai].kind !== 'spline') return null;
+    const b: [number, number] = [se.anchors[ai].r, se.anchors[ai].z];
+    // Previous vertex (wraps — the sketch outline is closed), same as the
+    // engine's chord start `a`.
+    const prev = se.anchors[(ai - 1 + se.anchors.length) % se.anchors.length];
+    const a: [number, number] = [prev.r, prev.z];
+    const o = se.node.ops[selectedSplineOpIdx] as any;
+    const p = sketchParamScope();
+    const pts = (o.pts ?? []).map((c: any, k: number) => {
+      const u = evalArg(c[0], p), v = evalArg(c[1], p);
+      const abs = chordToAbs(a, b, u, v);
+      return { k, x: abs[0], y: abs[1] };
+    });
+    // Handle dot: stored h displaces off `a` (h0) or `b` (h1); absent → a
+    // sensible default along the chord (±1/3) shown as a ghost.
+    const handleDot = (h: any, base: 'a' | 'b') => {
+      const set = !!h;
+      const u = set ? evalArg(h[0], p) : (base === 'a' ? 1 / 3 : -1 / 3);
+      const v = set ? evalArg(h[1], p) : 0;
+      const absA = chordToAbs(a, b, u, v);        // a + chord-frame disp
+      const dx = absA[0] - a[0], dy = absA[1] - a[1];
+      const O = base === 'a' ? a : b;
+      return { set, x: O[0] + dx, y: O[1] + dy };
+    };
+    return { opIdx: selectedSplineOpIdx, a, b, pts, h0: handleDot(o.h0, 'a'), h1: handleDot(o.h1, 'b') };
+  });
+
+  let splineDrag = $state<{ which: 'pt' | 'h0' | 'h1'; ptIdx?: number } | null>(null);
+  function splineCompDown(ev: PointerEvent, which: 'pt' | 'h0' | 'h1', ptIdx?: number) {
+    ev.stopPropagation();
+    if (sketchTool !== 'select') return;
+    splineDrag = { which, ptIdx };
+    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+  }
+  function splineCompMove(ev: PointerEvent) {
+    if (!splineDrag || !editingSketchId) return;
+    const ss = selectedSpline; if (!ss) return;
+    const c = sketchEventToCoord(ev); if (!c) return;
+    const { a, b } = ss;
+    if (splineDrag.which === 'pt') {
+      const [u, v] = absToChord(a, b, c);
+      graph = setSketchSplinePoint(graph, editingSketchId, ss.opIdx, splineDrag.ptIdx!, 'u', asLiteral(r3(u)));
+      graph = setSketchSplinePoint(graph, editingSketchId, ss.opIdx, splineDrag.ptIdx!, 'v', asLiteral(r3(v)));
+    } else {
+      // h0 displaces off a (use the pointer directly); h1 displaces off b —
+      // shift the pointer into a's frame so absToChord yields the (u,v) of the
+      // displacement off b.
+      const which = splineDrag.which;
+      const p: [number, number] = which === 'h0' ? c : [a[0] + (c[0] - b[0]), a[1] + (c[1] - b[1])];
+      const [u, v] = absToChord(a, b, p);
+      graph = setSketchSplineHandle(graph, editingSketchId, ss.opIdx, which, 'u', asLiteral(r3(u)));
+      graph = setSketchSplineHandle(graph, editingSketchId, ss.opIdx, which, 'v', asLiteral(r3(v)));
+    }
+  }
+  function splineCompUp(ev: PointerEvent) { releaseImplicitCapture(ev); splineDrag = null; }
+
+  function addSplinePt() {
+    if (selectedSplineOpIdx == null || !editingSketchId) return;
+    graph = addSketchSplinePoint(graph, editingSketchId, selectedSplineOpIdx);
+  }
+  function removeSplinePt() {
+    const ss = selectedSpline; if (!ss || ss.pts.length === 0 || !editingSketchId) return;
+    graph = removeSketchSplinePoint(graph, editingSketchId, ss.opIdx, ss.pts.length - 1);
+  }
+  function autoTangentSpline() {
+    if (selectedSplineOpIdx == null || !editingSketchId) return;
+    graph = clearSketchSplineHandle(graph, editingSketchId, selectedSplineOpIdx, 'h0');
+    graph = clearSketchSplineHandle(graph, editingSketchId, selectedSplineOpIdx, 'h1');
+  }
   /** Click on the canvas with a tool active → add an op. */
   function sketchCanvasClick(ev: PointerEvent) {
-    if (!editingSketchId || sketchTool === 'select') return;
+    if (!editingSketchId) return;
+    if (sketchTool === 'select') { selectedSplineOpIdx = null; return; }
     const c = sketchEventToCoord(ev); if (!c) return;
     if (sketchTool === 'fillet' || sketchTool === 'chamfer') { applyCornerAt(c); return; }
     graph = addSketchOp(graph, editingSketchId, sketchTool);
@@ -5802,11 +5907,43 @@
                 <circle cx={a.r} cy={a.z} r={hr}
                   class="ge-sk-anchor" class:locked={!a.literal}
                   fill={a.kind === 'spline' ? '#0891b2' : '#7c3aed'} stroke="#fff" stroke-width={hr * 0.25}
-                  onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal)}
+                  onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal, a.kind)}
                   onpointermove={sketchAnchorMove}
                   onpointerup={sketchAnchorUp}/>
                 {#if i === 0}<text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.6} fill="#15803d" font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>1</text>{/if}
               {/each}
+              <!-- Phase 2: selected spline's relative through-points + end handles.
+                   Amber dots; thin dashed handle lines off the endpoints. Ghost
+                   (low-opacity) end handles are defaults the user grabs to create
+                   an h0/h1; solid ones are stored. -->
+              {#if selectedSpline}
+                {@const ss = selectedSpline}
+                <line x1={ss.a[0]} y1={ss.a[1]} x2={ss.h0.x} y2={ss.h0.y} stroke="#d97706"
+                  stroke-width={sw * 0.7} stroke-dasharray={`${sw * 2} ${sw * 2}`}
+                  opacity={ss.h0.set ? 0.9 : 0.4} pointer-events="none"/>
+                <line x1={ss.b[0]} y1={ss.b[1]} x2={ss.h1.x} y2={ss.h1.y} stroke="#d97706"
+                  stroke-width={sw * 0.7} stroke-dasharray={`${sw * 2} ${sw * 2}`}
+                  opacity={ss.h1.set ? 0.9 : 0.4} pointer-events="none"/>
+                {#each ss.pts as pt (pt.k)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle cx={pt.x} cy={pt.y} r={hr} class="ge-sk-spt"
+                    fill="#f59e0b" stroke="#fff" stroke-width={hr * 0.25}
+                    onpointerdown={(ev) => splineCompDown(ev, 'pt', pt.k)}
+                    onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+                {/each}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle cx={ss.h0.x} cy={ss.h0.y} r={hr * 0.82} class="ge-sk-spt"
+                  fill="#fbbf24" stroke="#b45309" stroke-width={hr * 0.3}
+                  opacity={ss.h0.set ? 1 : 0.45}
+                  onpointerdown={(ev) => splineCompDown(ev, 'h0')}
+                  onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle cx={ss.h1.x} cy={ss.h1.y} r={hr * 0.82} class="ge-sk-spt"
+                  fill="#fbbf24" stroke="#b45309" stroke-width={hr * 0.3}
+                  opacity={ss.h1.set ? 1 : 0.45}
+                  onpointerdown={(ev) => splineCompDown(ev, 'h1')}
+                  onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+              {/if}
             </svg>
             <!-- DRAGGABLE top bar — status, the live corner radius/dist dial, Done.
                  Floats over the stage; drag the ⣿ handle to reposition. -->
@@ -5835,6 +5972,15 @@
                     <span class="ge-sketch-wire-hint">↦ tap a param →</span>
                   {/if}
                   <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
+                </span>
+              {/if}
+              {#if selectedSpline}
+                <div class="ge-stool-sep"></div>
+                <span class="ge-sketch-dial">
+                  <span class="ge-sketch-dial-lbl">∿ spline · {selectedSpline.pts.length} pt</span>
+                  <button class="ge-stool" title="Add a through-point (mid-chord)" onclick={addSplinePt}>+ pt</button>
+                  <button class="ge-stool" title="Remove the last through-point" disabled={selectedSpline.pts.length === 0} onclick={removeSplinePt}>− pt</button>
+                  <button class="ge-stool" title="Clear both end handles → auto Catmull-Rom tangent" disabled={!selectedSpline.h0.set && !selectedSpline.h1.set} onclick={autoTangentSpline}>auto tangent</button>
                 </span>
               {/if}
               <div class="ge-stool-sep"></div>
@@ -7374,6 +7520,8 @@
   .ge-sk-anchor { cursor: grab; touch-action: none; }
   .ge-sk-anchor:hover { stroke: #fde68a; }
   .ge-sk-anchor.locked { cursor: not-allowed; opacity: 0.6; }
+  .ge-sk-spt { cursor: grab; touch-action: none; }
+  .ge-sk-spt:hover { stroke: #fde68a; }
   .ge-sketch-hint { position: absolute; left: 12px; bottom: 10px; font: 11px Arial; color: #6b7280; background: rgba(255,255,255,0.85); padding: 3px 8px; border-radius: 4px; pointer-events: none; }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
