@@ -2287,6 +2287,32 @@
   function polySockZ(node: any, idx: number): number { return polyRowTop(node, idx) + 31; }
   function polySockRef(node: any, idx: number): number { return polyRowTop(node, idx) + 18; }
 
+  // ─── Sketch op row geometry (mirrors the polygon pattern) ───────────────
+  // Each line/spline op renders two STACKED sub-rows (r over z) like a polygon
+  // vertex; fillet/chamfer is a single short row. SVG wire sockets sit at the
+  // computed sub-row centres so params can be wired onto a coord.
+  function sketchEntryH(op: any): number {
+    return (op?.op === 'fillet' || op?.op === 'chamfer') ? 24 : 45; // 45 = POLY_VTX_PITCH (socket math +12/+31)
+  }
+  function sketchRowTop(node: any, idx: number): number {
+    const ops: any[] = node?.ops ?? [];
+    let y = 36; // header + divider
+    for (let i = 0; i < Math.min(idx, ops.length); i++) y += sketchEntryH(ops[i]);
+    return y;
+  }
+  function sketchSockR(node: any, idx: number): number { return sketchRowTop(node, idx) + 12; }
+  function sketchSockZ(node: any, idx: number): number { return sketchRowTop(node, idx) + 31; }
+  function sketchSockVal(node: any, idx: number): number { return sketchRowTop(node, idx) + 12; }
+  /** Wire a param's output onto a sketch op coord/field (r|z|radius|dist). */
+  function endWireOnSketchCoord(ev: PointerEvent, sketchId: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist') {
+    ev.stopPropagation();
+    if (!wireFrom) return;
+    if (wireFrom.kind === 'param-out') {
+      graph = setSketchOpField(graph, sketchId, opIdx, field, asParam(wireFrom.paramName));
+    }
+    wireFrom = null; wireMouse = null;
+  }
+
   function nodeSize(node: any): { w: number; h: number } {
     // Width source of truth: graph.layout[id].w (persisted) → cardAutoWidth
     // fallback. The min clamp protects rows from collapsing below the
@@ -2321,10 +2347,10 @@
       return { w, h };
     }
     if (node.type === 'sketch') {
-      // header + per-op rows (line/spline = 44, fillet/chamfer = 24) +
-      // footer (segments + add-op buttons). (plan M.1)
+      // header + per-op rows (line/spline = stacked r/z = 45, corner = 24) +
+      // footer. Uses sketchEntryH so the card height matches the socket row math.
       const ops: any[] = (node as any).ops ?? [];
-      const rowsH = ops.reduce((a, o) => a + ((o.op === 'fillet' || o.op === 'chamfer') ? 24 : 44), 0);
+      const rowsH = ops.reduce((a, o) => a + sketchEntryH(o), 0);
       const savedH = graph.layout[node.id]?.h;
       const autoH = 36 + Math.max(44, rowsH) + 62;
       const h = typeof savedH === 'number' ? Math.max(140, savedH) : autoH;
@@ -5440,27 +5466,43 @@
                   <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
                     <div class="ge-sketch-ops">
                       {#each (sk.ops as Array<any>) as op, idx (idx)}
-                        <div class="ge-sketch-op" class:corner={op.op === 'fillet' || op.op === 'chamfer'}>
-                          <span class="ge-sketch-kind">{op.op === 'line' ? '╱' : op.op === 'spline' ? '∿' : op.op === 'fillet' ? '◜' : '⊿'}<span class="ge-sketch-kind-t">{op.op}</span></span>
-                          {#if op.op === 'line' || op.op === 'spline'}
-                            <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r"
-                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
-                            <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
-                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
-                          {:else if op.op === 'fillet'}
-                            <input class="ge-sketch-in wide" type="text" value={argStr(op.radius)} title="fillet radius"
-                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'radius', argFrom((e.target as HTMLInputElement).value)); }}/>
-                          {:else}
-                            <input class="ge-sketch-in wide" type="text" value={argStr(op.dist)} title="chamfer dist"
-                              onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
-                          {/if}
-                          <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
-                            onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
-                          <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
-                            onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
-                          <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
-                            onclick={() => { graph = removeSketchOp(graph, n.id, idx); }}>×</button>
-                        </div>
+                        {#if op.op === 'line' || op.op === 'spline'}
+                          <!-- Two STACKED sub-rows (r over z) — compact + each
+                               coord has a left-edge wire socket (rendered as SVG
+                               siblings below) so a param can be wired in. -->
+                          <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
+                            <div class="ge-sketch-srow">
+                              <span class="ge-sketch-axis">{op.op === 'spline' ? '∿' : '╱'}r</span>
+                              <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
+                                onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
+                              <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
+                            </div>
+                            <div class="ge-sketch-srow">
+                              <span class="ge-sketch-axis">z</span>
+                              <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
+                                onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
+                              <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
+                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
+                              <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
+                                onclick={() => { graph = removeSketchOp(graph, n.id, idx); }}>×</button>
+                            </div>
+                          </div>
+                        {:else}
+                          <div class="ge-sketch-vtx corner" style="height: {sketchEntryH(op)}px">
+                            <div class="ge-sketch-srow">
+                              <span class="ge-sketch-axis">{op.op === 'fillet' ? '◜r' : '⊿d'}</span>
+                              <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
+                                onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
+                              <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
+                              <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
+                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
+                              <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
+                                onclick={() => { graph = removeSketchOp(graph, n.id, idx); }}>×</button>
+                            </div>
+                          </div>
+                        {/if}
                       {/each}
                     </div>
                     <div class="ge-sketch-foot">
@@ -5471,6 +5513,25 @@
                     </div>
                   </div>
                 </foreignObject>
+                <!-- Per-coord wire sockets (drag a PARAMS output onto one to
+                     wire p.<name> into that coord). Mirrors the polygon card. -->
+                {#each (sk.ops as Array<any>) as op, idx (idx)}
+                  {#if op.op === 'line' || op.op === 'spline'}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockR(n, idx)} r="4"
+                      class:wired={op.r?.kind === 'param'} data-tip="Drag a param here → r"
+                      onpointerup={(ev) => endWireOnSketchCoord(ev, n.id, idx, 'r')}/>
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockZ(n, idx)} r="4"
+                      class:wired={op.z?.kind === 'param'} data-tip="Drag a param here → z"
+                      onpointerup={(ev) => endWireOnSketchCoord(ev, n.id, idx, 'z')}/>
+                  {:else}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockVal(n, idx)} r="4"
+                      class:wired={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param'} data-tip="Drag a param here"
+                      onpointerup={(ev) => endWireOnSketchCoord(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
+                  {/if}
+                {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   onpointerdown={(ev) => startWire(ev, n.id)}/>
@@ -7177,11 +7238,15 @@
   /* ─── Sketch card (plan M.1) ─────────────────────────────────────────── */
   .ge-node-bg.sketch { fill: #faf5ff; stroke: #9333ea; }
   .ge-sketch { font: 11px ui-monospace, monospace; color: #1f2937; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  /* Sketch op rows mirror the polygon: line/spline = two STACKED sub-rows
+     (r over z) inside a fixed-height vtx so the SVG wire sockets (cy =
+     rowTop+12 / +31) line up; corner ops are one short row. No margins —
+     row height MUST equal sketchEntryH or the sockets drift. */
   .ge-sketch-ops { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .ge-sketch-op { display: flex; align-items: center; gap: 2px; padding: 2px; margin-bottom: 2px; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
-  .ge-sketch-op.corner { background: rgba(243,232,255,0.85); border-color: #d8b4fe; }
-  .ge-sketch-kind { display: inline-flex; align-items: center; gap: 2px; width: 56px; flex: none; font: 600 9px ui-monospace, monospace; color: #7c3aed; }
-  .ge-sketch-kind-t { text-transform: uppercase; letter-spacing: 0.3px; }
+  .ge-sketch-vtx { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 2px 0 4px; margin: 0; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
+  .ge-sketch-vtx.corner { background: rgba(243,232,255,0.85); border-color: #d8b4fe; }
+  .ge-sketch-srow { display: flex; align-items: center; gap: 3px; height: 18px; }
+  .ge-sketch-axis { width: 20px; flex: none; font: 600 10px ui-monospace, monospace; color: #7c3aed; text-align: right; }
   .ge-sketch-in { width: 100%; min-width: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; box-sizing: border-box; cursor: text; }
   .ge-sketch-in.wide { flex: 1 1 auto; }
   .ge-sketch-in:hover { background: #faf5ff; }
