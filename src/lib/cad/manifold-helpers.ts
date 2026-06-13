@@ -306,11 +306,24 @@ export function align(b: any, aZ: number, bZ: number): any { return mv(b, [0, 0,
  *  Mirror of the Phase F StackNode emit — drives the canonical drilling
  *  string idiom (joints stacked under joints, no gap). */
 export function stack(children: any[]): any {
-  if (!Array.isArray(children) || children.length === 0) return empty();
-  let prev = children[0];
+  const items = (Array.isArray(children) ? children : []).filter((c) => c != null);
+  if (items.length === 0) return empty();
+  // Guard against an EMPTY child. An empty Manifold (0 triangles — e.g. a
+  // subtract that removed everything, "blanking" a part) reports a DEGENERATE
+  // bounding box (max = [null,null,null] → tail()/head() = ±Infinity). Using
+  // that as a stacking offset translates the next part by ±Infinity → NaN
+  // geometry → the place() union crashes Manifold with "memory access out of
+  // bounds" and (pre-guard) cascaded into a client request-flood that took the
+  // server down (2026-06-13). Fail with a clear, accurate message instead.
+  for (let i = 0; i < items.length; i++) {
+    if (!Number.isFinite(tail(items[i])) || !Number.isFinite(head(items[i]))) {
+      throw new Error(`stack: item ${i + 1} of ${items.length} produced EMPTY or invalid geometry (degenerate bounding box) — a part collapsed to nothing (e.g. a subtract removing everything, or identical OD on both sides). Fix that part's parameters.`);
+    }
+  }
+  let prev = items[0];
   const out: any[] = [prev];
-  for (let i = 1; i < children.length; i++) {
-    const placed = mv(children[i], [0, 0, tail(prev)]);
+  for (let i = 1; i < items.length; i++) {
+    const placed = mv(items[i], [0, 0, tail(prev)]);
     out.push(placed);
     prev = placed;
   }

@@ -514,6 +514,21 @@ export function getRenderZScale(): number { return _renderZScale; }
  * geom's natural units.
  */
 export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto' }): ComponentResult {
+  // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
+  // geometry, e.g. subtracting two identically-dimensioned solids. Left
+  // unguarded it serialises as a successful 0-triangle mesh; the client then
+  // renders "blank" and its auto-fit/re-eval churns, which previously drove a
+  // request-flood loop (2026-06-13). Fail loudly + once instead.
+  try {
+    const tris = typeof manifold?.numTri === 'function' ? manifold.numTri()
+      : typeof manifold?.numTri === 'number' ? manifold.numTri : -1;
+    if (tris === 0) {
+      throw new Error('Bake produced an EMPTY solid — a CSG op (subtract/intersect) removed all geometry. Check the dimensions (e.g. the same OD on both sides of a subtract).');
+    }
+  } catch (e: any) {
+    // Only re-throw OUR empty-solid error; a missing numTri must not break the bake.
+    if (/EMPTY solid/.test(String(e?.message))) throw e;
+  }
   const scaled = _renderZScale === 1.0 ? manifold : manifold.scale([1, 1, _renderZScale]);
   const lut = parts?.active ? parts : undefined;
   // Tag the cut-box with SECTION_ID so the new cross-section faces it

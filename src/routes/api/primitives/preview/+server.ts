@@ -164,17 +164,32 @@ export const POST = async ({ request, fetch }) => {
   // cutaway: undefined → threshold-based auto-skip (default)
   //          true       → force compute (caller wants the slice)
   //          false      → force skip (fast path)
-  const result = finalizeManifold(
-    manifold,
-    args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
-    material,
-    parts,
-    { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto' },
-  );
-  mark('finalize', t); t = performance.now();
-  const serialized = serializeComponentResult(result);
-  mark('serialize', t);
-  const cutawaySkipped = (result as any).cutawaySkipped === true;
+  // finalizeManifold can throw — the empty-solid guard (a CSG/subtract that
+  // removed all geometry), a cutaway OOB on a self-overlapping body, etc. It
+  // used to sit OUTSIDE this try, so those throws escaped as a 500 "Internal
+  // Error" (uncatchable by the client → no clean error, harder recovery).
+  // Catch + return a structured 400 with errorKind so the editor shows a
+  // proper geometry message and re-bakes cleanly once params are fixed.
+  let result: any, serialized: any, cutawaySkipped: boolean;
+  try {
+    result = finalizeManifold(
+      manifold,
+      args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
+      material,
+      parts,
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto' },
+    );
+    mark('finalize', t); t = performance.now();
+    serialized = serializeComponentResult(result);
+    mark('serialize', t);
+    cutawaySkipped = (result as any).cutawaySkipped === true;
+  } catch (e: any) {
+    const msg = String(e?.message ?? e ?? '');
+    const kind = /EMPTY solid/i.test(msg) ? 'empty-solid'
+      : /memory access out of bounds/.test(msg) ? 'wasm-oob'
+      : 'finalize-failed';
+    return json({ message: msg, error: msg, errorKind: kind }, { status: 400 });
+  }
 
   // Best-effort cache write. Errors here don't break the response — we'd
   // rather serve the bake and miss the cache than fail the whole call.

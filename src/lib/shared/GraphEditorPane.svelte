@@ -175,6 +175,11 @@
   // text matches what Save writes to disk.
   let emittedForRender = $derived(emitGraph(graph, { id: exemplarId, ghosts: ghostIds, drawingMd }));
   let sourceText = $derived(emittedForRender.source);
+  // Memoised param-defaults — a STABLE reference for the canvas `args` fallback.
+  // A fresh `Object.values(...).map(...)` per render re-mounts the canvas / loops
+  // its auto-fit (see fresh_array_props_effect_loops). Only changes when the
+  // param defaults actually change.
+  let paramDefaults = $derived(Object.values(graph.params).map((p) => p.default));
 
   let bake = $state<{ ok: boolean; source?: string; args?: (number | string)[]; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -6719,28 +6724,45 @@
           {:else if !bake.ok}
             <div class="ge-err">
               <div>{bake.message ?? 'bake failed'}</div>
-              {#if /parameter 0 has unknown type|memory access out of bounds/.test(bake.message ?? '')}
-                <!-- Stale-server-modules trap — Vite HMR doesn't reload server-side
-                     modules (primitive-loader / composition-graph / emit). Surface
-                     the symptom + the fix instead of letting the user wonder. -->
-                <div class="ge-err-hint">
-                  ⚠ Looks like a stale dev server (Vite HMR skips server modules after
-                  edits to composition-graph / composition-emit / primitive-loader).
-                  <div class="ge-err-hint-actions">
-                    <button class="ge-err-restart-btn" type="button"
-                      disabled={restartBusy} onclick={restartDevServer}>
-                      {restartBusy ? '🔄 restarting…' : '🔄 Restart dev server'}
-                    </button>
-                    <span class="ge-err-hint-or">or manually:</span>
-                    <code>pkill -f 'bun run dev' && bun run dev</code>
+              {#if /EMPTY solid|stack: item|degenerate|parameter 0 has unknown type|memory access out of bounds/.test(bake.message ?? '')}
+                {#if /EMPTY solid|stack: item|degenerate|\[in .+→|\(in .+→/.test(bake.message ?? '')}
+                  <!-- A dependency CHAIN ([in X → Y]) means this came from a
+                       named primitive's geometry, NOT a stale server. It's a
+                       GEOMETRY error: a CSG/revolve produced invalid/empty
+                       geometry (subtract that removes everything, NaN/0 param,
+                       degenerate profile). Point the user at the params, and do
+                       NOT offer the restart button (clicking it wedged the dev
+                       server, 2026-06-13). -->
+                  <div class="ge-err-hint geom">
+                    ⚠ A primitive produced <strong>invalid or empty geometry</strong> — e.g. a
+                    subtract that removes everything (same OD on both sides), or a
+                    NaN/0 parameter feeding a revolve. Check the parameters of the
+                    part(s) in the chain above. This is a geometry issue, not a
+                    server problem — no restart needed.
                   </div>
-                  {#if restartStatus}<div class="ge-err-restart-stat">{restartStatus}</div>{/if}
-                </div>
+                {:else}
+                  <!-- Bare OOB with no dep chain — can be a stale dev server
+                       (Vite HMR skips server modules: primitive-loader /
+                       composition-graph / emit). -->
+                  <div class="ge-err-hint">
+                    ⚠ Looks like a stale dev server (Vite HMR skips server modules after
+                    edits to composition-graph / composition-emit / primitive-loader).
+                    <div class="ge-err-hint-actions">
+                      <button class="ge-err-restart-btn" type="button"
+                        disabled={restartBusy} onclick={restartDevServer}>
+                        {restartBusy ? '🔄 restarting…' : '🔄 Restart dev server'}
+                      </button>
+                      <span class="ge-err-hint-or">or manually:</span>
+                      <code>pkill -f 'bun run dev' && bun run dev</code>
+                    </div>
+                    {#if restartStatus}<div class="ge-err-restart-stat">{restartStatus}</div>{/if}
+                  </div>
+                {/if}
               {/if}
             </div>
           {:else if PrimitiveDualCanvas && (props.active ?? true)}
             <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-              args={bake.args ?? Object.values(graph.params).map((p) => p.default)}
+              args={bake.args ?? paramDefaults}
               source={bake.source}
               showControls={true} showLabels={false}/>
             <!-- Cache status row + Rebuild button (Phase 1.5) -->
