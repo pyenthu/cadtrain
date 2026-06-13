@@ -5801,7 +5801,7 @@
                           <!-- Two STACKED sub-rows (r over z) — compact + each
                                coord has a left-edge wire socket (rendered as SVG
                                siblings below) so a param can be wired in. -->
-                          <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
+                          <div class="ge-sketch-vtx" class:editing={sketchExprPop?.sid === n.id && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
                               <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
                               <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
@@ -5824,7 +5824,7 @@
                             </div>
                           </div>
                         {:else}
-                          <div class="ge-sketch-vtx corner" style="height: {sketchEntryH(op)}px">
+                          <div class="ge-sketch-vtx corner" class:editing={sketchExprPop?.sid === n.id && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
                               <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                               <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
@@ -6324,7 +6324,7 @@
                       <div class="ge-sketch-ops" onscroll={(e) => (sketchOpsScrollTop = (e.currentTarget as HTMLElement).scrollTop)}>
                         {#each (sn.ops as Array<any>) as op, idx (idx)}
                           {#if op.op === 'line' || op.op === 'spline'}
-                            <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
+                            <div class="ge-sketch-vtx" class:editing={sketchExprPop?.sid === sid && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                               <div class="ge-sketch-srow">
                                 <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
                                 <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
@@ -6347,7 +6347,7 @@
                               </div>
                             </div>
                           {:else}
-                            <div class="ge-sketch-vtx corner" style="height: {sketchEntryH(op)}px">
+                            <div class="ge-sketch-vtx corner" class:editing={sketchExprPop?.sid === sid && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                               <div class="ge-sketch-srow">
                                 <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                                 <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
@@ -7970,6 +7970,9 @@
   .ge-sketch-ops { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .ge-sketch-vtx { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 2px 0 4px; margin: 0; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
   .ge-sketch-vtx.corner { background: rgba(243,232,255,0.85); border-color: #d8b4fe; }
+  /* Row of the point currently being edited in the coordinate popover — amber
+     ring to match the popover's amber chrome + the canvas point's edit state. */
+  .ge-sketch-vtx.editing { border-color: #f59e0b; background: rgba(254,243,199,0.7); box-shadow: 0 0 0 1px #f59e0b; }
   .ge-sketch-srow { display: flex; align-items: center; gap: 3px; height: 18px; }
   .ge-sketch-axis { width: 40px; flex: none; font: 700 9px ui-monospace, monospace; color: #7c3aed; text-align: right; white-space: nowrap; }
   .ge-sketch-axis.spline { color: #0891b2; }
