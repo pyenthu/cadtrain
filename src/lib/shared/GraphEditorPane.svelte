@@ -3924,14 +3924,7 @@
                 <input class="ge-sketch-num" type="number" min="0" step="0.01"
                   value={Math.round(selectedCorner.value * 1000) / 1000}
                   onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
-                <!-- ƒ param picker: wire this corner to a PARAMS slider. -->
-                {#if paramNames.length}
-                  <select class="ge-sketch-param-sel" title="Wire to a parameter"
-                    onchange={(e) => { bindCornerParam((e.currentTarget as HTMLSelectElement).value); (e.currentTarget as HTMLSelectElement).selectedIndex = 0; }}>
-                    <option value="">ƒ→</option>
-                    {#each paramNames as pn}<option value={pn}>p.{pn}</option>{/each}
-                  </select>
-                {/if}
+                <span class="ge-sketch-wire-hint">↦ tap a param →</span>
               {/if}
               <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
             </span>
@@ -3945,6 +3938,27 @@
           {:else}Click the canvas to add a {sketchTool}{/if}
         </div>
       </div>
+      <!-- PARAMS panel — the graph's parameters, available INSIDE the editor.
+           Scrub a value (live re-bake) or, with a corner selected, tap a row
+           to WIRE that corner's radius/dist to the param. -->
+      <aside class="ge-sketch-params">
+        <div class="ge-sketch-params-hd">PARAMS</div>
+        {#if paramNames.length === 0}
+          <div class="ge-sketch-params-empty">No parameters yet — add them on the graph's PARAMS card, then they appear here to wire in.</div>
+        {:else}
+          {#each paramNames as pn (pn)}
+            {@const wired = !!selectedCorner && selectedCorner.paramName === pn}
+            <div class="ge-sketch-param-row" class:wired>
+              <button class="ge-sketch-param-name" disabled={!selectedCorner}
+                title={selectedCorner ? `Wire the selected corner to p.${pn}` : 'Select a corner first, then tap to wire'}
+                onclick={() => bindCornerParam(pn)}>{wired ? '🔗 ' : ''}p.{pn}</button>
+              <input class="ge-sketch-param-val" type="number" step="0.05"
+                value={Number((graph.params as any)[pn]?.default ?? 0)}
+                onchange={(e) => onParamDefault(pn, Number((e.currentTarget as HTMLInputElement).value))} />
+            </div>
+          {/each}
+        {/if}
+      </aside>
     </div>
   {/if}
   <!-- Title + id input removed (2026-06-09 — redundant with the /primitives
@@ -7092,8 +7106,18 @@
   .ge-sketch-dial-lbl { font: 600 11px ui-monospace, monospace; color: #0e7490; white-space: nowrap; }
   .ge-sketch-range { width: 110px; accent-color: #0891b2; touch-action: none; }
   .ge-sketch-num { width: 56px; font: 12px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; }
-  .ge-sketch-param-sel { font: 600 11px ui-monospace, monospace; color: #b45309; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; padding: 1px 2px; cursor: pointer; }
+  .ge-sketch-wire-hint { font: 11px Arial; color: #b45309; white-space: nowrap; }
   .ge-sketch-bound { font: 600 11px ui-monospace, monospace; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 9999px; padding: 1px 8px; }
+  /* PARAMS panel (right side of the sketch editor). */
+  .ge-sketch-params { width: 184px; flex: 0 0 184px; border-left: 1px solid #e2e8f0; background: #fff; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+  .ge-sketch-params-hd { font: 700 11px Arial; letter-spacing: 0.5px; color: #92400e; padding: 0 2px 2px; }
+  .ge-sketch-params-empty { font: 11px Arial; color: #94a3b8; line-height: 1.4; }
+  .ge-sketch-param-row { display: flex; align-items: center; gap: 4px; padding: 2px; border-radius: 6px; border: 1px solid transparent; }
+  .ge-sketch-param-row.wired { background: #fef3c7; border-color: #f59e0b; }
+  .ge-sketch-param-name { flex: 1 1 auto; text-align: left; font: 600 12px ui-monospace, monospace; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 5px; padding: 3px 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ge-sketch-param-name:hover:not(:disabled) { background: #fef3c7; border-color: #f59e0b; }
+  .ge-sketch-param-name:disabled { opacity: 0.55; cursor: default; }
+  .ge-sketch-param-val { width: 52px; font: 12px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; }
   .ge-sketch-resolved { font: 11px ui-monospace, monospace; color: #64748b; }
   .ge-sketch-dial-x.untie { border-color: #fbbf24; color: #b45309; }
   .ge-sketch-dial-x.untie:hover { background: #fef3c7; }
