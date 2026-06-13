@@ -2928,15 +2928,14 @@
     const dx = Math.max(18, Math.abs(x2 - x1) * 0.5);
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   }
-  /** client → mini-canvas coords (viewBox 0 0 w h, width:100% height:auto ⇒
-   *  uniform scale). Drives the in-flight wire preview as the cursor moves. */
+  /** client → cards-overlay coords. The overlay SVG (S.2) has NO viewBox and
+   *  fills the stage at width/height:100% ⇒ user units are 1:1 with CSS px,
+   *  so the mapping is just the rect offset. Drives the in-flight wire. */
   function miniEventToCoord(ev: PointerEvent): { x: number; y: number } | null {
-    const ml = miniLayout;
-    if (!miniSvgEl || !ml) return null;
+    if (!miniSvgEl) return null;
     const r = miniSvgEl.getBoundingClientRect();
     if (!r.width || !r.height) return null;
-    const s = r.width / ml.w; // height tracks the viewBox ratio ⇒ uniform
-    return { x: (ev.clientX - r.left) / s, y: (ev.clientY - r.top) / s };
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
   }
   function miniPointerMove(ev: PointerEvent) {
     if (wireFrom) { const p = miniEventToCoord(ev); if (p) wireMouse = p; }
@@ -3191,6 +3190,48 @@
     try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* ignore */ }
   }
 
+  // ─── S.2: floating, draggable PARAMS + sketch cards over the 2D canvas ───
+  // The two mini-graph cards float ON TOP of the big 2D draw stage (like the
+  // main graph's PARAMS overlay), each draggable by its title bar. Positions
+  // live in the cards-overlay SVG's pixel space (1:1 with the stage; the
+  // overlay has no viewBox). The wire layer + sockets re-route from these
+  // positions, so wiring a param → coord keeps working as the cards move.
+  let sketchCardPos = $state<{ params: { x: number; y: number }; sketch: { x: number; y: number } }>(
+    { params: { x: 64, y: 56 }, sketch: { x: 64, y: 244 } }
+  );
+  let sketchCardDrag: { which: 'params' | 'sketch'; sx: number; sy: number; px: number; py: number } | null = null;
+  function sketchCardDown(ev: PointerEvent, which: 'params' | 'sketch') {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    releaseImplicitCapture(ev);
+    const p = sketchCardPos[which];
+    sketchCardDrag = { which, sx: p.x, sy: p.y, px: ev.clientX, py: ev.clientY };
+  }
+  /** Stage-level pointermove. The cards overlay is pointer-events:none over
+   *  its empty area (so drawing passes through), so an in-flight wire over the
+   *  empty canvas would lose its move events — the STAGE always gets them. One
+   *  handler covers both: a card-title drag OR in-flight wire tracking. */
+  function sketchStageMove(ev: PointerEvent) {
+    if (sketchCardDrag) {
+      const d = sketchCardDrag;
+      sketchCardPos = { ...sketchCardPos, [d.which]: { x: d.sx + (ev.clientX - d.px), y: d.sy + (ev.clientY - d.py) } };
+      return;
+    }
+    if (wireFrom) { const p = miniEventToCoord(ev); if (p) wireMouse = p; }
+  }
+  function sketchStageUp(_ev: PointerEvent) {
+    if (sketchCardDrag) { sketchCardDrag = null; return; }
+    miniPointerUp();
+  }
+  /** Param OUTPUT socket centre, ABS in cards-overlay px — tracks the params
+   *  card as it drags (mirrors miniParamSock but offset by sketchCardPos). */
+  function miniParamSockAbs(i: number) {
+    return {
+      x: sketchCardPos.params.x + CARD_PAD + PARAM_W + CARD_PAD + 4,
+      y: sketchCardPos.params.y + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP) + PARAM_H / 2,
+    };
+  }
+
   /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
    *  These are 3D solid producers — the polygon's output flows into the
    *  Call's `profile` arg, and the Output card receives a Manifold
@@ -3420,6 +3461,30 @@
     if (!argExprPop) return;
     graph = setCallArg(graph, argExprPop.callId, argExprPop.key, asExpr(argExprPop.draft));
     argExprPop = null;
+  }
+
+  // ─── Sketch coord expression popover (S.2) ─────────────────────────────
+  /** The ƒ button on a sketch-card coord row (r / z / fillet radius /
+   *  chamfer dist) opens this. Same UX as the Call-arg argExprPop: edit a JS
+   *  expression like `p.od / 2 - p.wall`, apply → the coord becomes
+   *  kind:'expr'. Keyed to a sketch op field, written via setSketchOpField. */
+  let sketchExprPop = $state<{ sid: NodeId; opIdx: number; field: 'r' | 'z' | 'radius' | 'dist'; draft: string; x: number; y: number } | null>(null);
+  function openSketchExprPop(ev: MouseEvent, sid: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist', currentExpr: string) {
+    ev.stopPropagation();
+    sketchExprPop = { sid, opIdx, field, draft: currentExpr, x: ev.clientX, y: ev.clientY };
+  }
+  function closeSketchExprPop() { sketchExprPop = null; }
+  function applySketchExprPop() {
+    if (!sketchExprPop) return;
+    graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, sketchExprPop.field, asExpr(sketchExprPop.draft));
+    sketchExprPop = null;
+  }
+  function insertParamIntoSketchDraft(name: string) {
+    if (!sketchExprPop) return;
+    const ref = `p.${name}`;
+    const draft = sketchExprPop.draft;
+    const sep = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
+    sketchExprPop = { ...sketchExprPop, draft: draft + sep + ref };
   }
 
   // ─── Polygon coord expression popover ──────────────────────────────────
@@ -5868,164 +5933,18 @@
             <div class="ge-stool-sep"></div>
             <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
           </div>
-          <!-- LEFT column (plan S.1): a focused, WIREABLE mini node-graph —
-               the real PARAMS card (output sockets) + the sketch node card
-               (per-coord input sockets) in their OWN SVG space. Drag a param's
-               output socket onto a coord's input socket to wire p.<name> in,
-               same machinery as the main graph, scoped to editingSketchId. The
-               2D draw canvas (centre) + 3D bake (right) stay untouched. -->
-          <div class="ge-sketch-side">
-            <div class="ge-sketch-mini-hd">WIRE · params → sketch coords</div>
-            {#if miniLayout}
-              {@const ml = miniLayout}
-              {@const sn = se.node}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <svg class="ge-sketch-mini" viewBox={`0 0 ${ml.w} ${ml.h}`}
-                bind:this={miniSvgEl}
-                onpointermove={miniPointerMove} onpointerup={miniPointerUp}>
-                <!-- committed wires: every param-driven coord → its param socket -->
-                {#each (sn.ops as Array<any>) as op, idx (idx)}
-                  {#if op.op === 'line' || op.op === 'spline'}
-                    {#if op.r?.kind === 'param'}
-                      {@const pi = paramNames.indexOf(op.r.param)}
-                      {#if pi >= 0}
-                        {@const a = miniParamSock(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, ml.sx, ml.sy + sketchSockR(sn, idx))}/>
-                      {/if}
-                    {/if}
-                    {#if op.z?.kind === 'param'}
-                      {@const pi = paramNames.indexOf(op.z.param)}
-                      {#if pi >= 0}
-                        {@const a = miniParamSock(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, ml.sx, ml.sy + sketchSockZ(sn, idx))}/>
-                      {/if}
-                    {/if}
-                  {:else}
-                    {@const f = op.op === 'fillet' ? op.radius : op.dist}
-                    {#if f?.kind === 'param'}
-                      {@const pi = paramNames.indexOf(f.param)}
-                      {#if pi >= 0}
-                        {@const a = miniParamSock(pi)}
-                        <path class="ge-wire param" d={miniBez(a.x, a.y, ml.sx, ml.sy + sketchSockVal(sn, idx))}/>
-                      {/if}
-                    {/if}
-                  {/if}
-                {/each}
-
-                <!-- PARAMS card -->
-                <g transform="translate({MINI_PX},{MINI_PY})">
-                  <rect class="ge-params-card-bg" width={pcs.w} height={pcs.h} rx="8"/>
-                  <text x="10" y={CARD_TITLE_H - 9} class="ge-params-card-title">Params</text>
-                  <line x1="0" y1={CARD_TITLE_H} x2={pcs.w} y2={CARD_TITLE_H} class="ge-params-card-divider"/>
-                </g>
-                {#if paramEntries.length === 0}
-                  <text x={MINI_PX + 10} y={MINI_PY + CARD_TITLE_H + 22} class="ge-sketch-mini-empty">No params yet — add them on the graph.</text>
-                {/if}
-                {#each paramEntries as [name, p], i (name)}
-                  {@const pos = miniParamPos(i)}
-                  <g transform="translate({pos.x},{pos.y})">
-                    <foreignObject x="0" y="0" width={PARAM_W} height={PARAM_H}>
-                      <div class="ge-param-chip" xmlns="http://www.w3.org/1999/xhtml">
-                        <span class="name" title="p.{name}">p.{name}</span>
-                        <input class="val" type="number" step="0.05" value={(p as any).default}
-                          onchange={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
-                      </div>
-                    </foreignObject>
-                    <!-- Output socket — drag onto a sketch coord input socket. -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock out param"
-                      cx={PARAM_W + CARD_PAD + 4} cy={PARAM_H / 2} r="5"
-                      data-tip="Drag onto a sketch coord to wire p.{name}"
-                      onpointerdown={(ev) => startParamWire(ev, name)}/>
-                  </g>
-                {/each}
-
-                <!-- SKETCH node card — same ops list + foot as the inline card,
-                     bound to sid; per-coord wire sockets on the LEFT edge. -->
-                <g transform="translate({ml.sx},{ml.sy})">
-                  <rect class="ge-node-bg sketch" width={MINI_SCW} height={ml.sch} rx="6"/>
-                  <text x="10" y="22" class="ge-node-title">✐ sketch · {sn.ops.length} ops</text>
-                  <line x1="0" y1="32" x2={MINI_SCW} y2="32" class="ge-node-divider"/>
-                  <foreignObject x="6" y="36" width={MINI_SCW - 12} height={ml.sch - 40} class="ge-fo">
-                    <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-sketch-ops">
-                        {#each (sn.ops as Array<any>) as op, idx (idx)}
-                          {#if op.op === 'line' || op.op === 'spline'}
-                            <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
-                              <div class="ge-sketch-srow">
-                                <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
-                                <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
-                                  onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
-                                <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
-                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
-                              </div>
-                              <div class="ge-sketch-srow">
-                                <span class="ge-sketch-axis" class:spline={op.op === 'spline'}>{op.op === 'spline' ? 'spl z' : 'z'}</span>
-                                <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
-                                  onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
-                                <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
-                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
-                                <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sn.ops.length <= 1}
-                                  onclick={() => { graph = removeSketchOp(graph, sid, idx); }}>×</button>
-                              </div>
-                            </div>
-                          {:else}
-                            <div class="ge-sketch-vtx corner" style="height: {sketchEntryH(op)}px">
-                              <div class="ge-sketch-srow">
-                                <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
-                                <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
-                                  onchange={(e) => { graph = setSketchOpField(graph, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
-                                <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
-                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
-                                <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
-                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
-                                <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sn.ops.length <= 1}
-                                  onclick={() => { graph = removeSketchOp(graph, sid, idx); }}>×</button>
-                              </div>
-                            </div>
-                          {/if}
-                        {/each}
-                      </div>
-                      <div class="ge-sketch-foot">
-                        <button class="ge-sketch-add" type="button" title="Add a line segment" onclick={() => { graph = addSketchOp(graph, sid, 'line'); }}>+ line</button>
-                        <button class="ge-sketch-add" type="button" title="Add a Bézier spline" onclick={() => { graph = addSketchOp(graph, sid, 'spline'); }}>+ spline</button>
-                        <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { graph = addSketchOp(graph, sid, 'fillet'); }}>+ fillet</button>
-                        <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { graph = addSketchOp(graph, sid, 'chamfer'); }}>+ chamfer</button>
-                      </div>
-                    </div>
-                  </foreignObject>
-                  <!-- Per-coord INPUT sockets (drop a param's output socket here). -->
-                  {#each (sn.ops as Array<any>) as op, idx (idx)}
-                    {#if op.op === 'line' || op.op === 'spline'}
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
-                        cx="0" cy={sketchSockR(sn, idx)} r="4" data-tip="Drag a param here → r"
-                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'r')}/>
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.z?.kind === 'param' ? ' wired' : ''}`}
-                        cx="0" cy={sketchSockZ(sn, idx)} r="4" data-tip="Drag a param here → z"
-                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'z')}/>
-                    {:else}
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param' ? ' wired' : ''}`}
-                        cx="0" cy={sketchSockVal(sn, idx)} r="4" data-tip="Drag a param here"
-                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
-                    {/if}
-                  {/each}
-                </g>
-
-                <!-- in-flight preview: param out socket → cursor -->
-                {#if wireFrom?.kind === 'param-out' && wireMouse}
-                  {@const pi = paramNames.indexOf(wireFrom.paramName)}
-                  {#if pi >= 0}
-                    {@const a = miniParamSock(pi)}
-                    <path class="ge-wire in-flight" d={miniBez(a.x, a.y, wireMouse.x, wireMouse.y)} pointer-events="none"/>
-                  {/if}
-                {/if}
-              </svg>
-            {/if}
-          </div>
-          <div class="ge-sketch-stage">
+          <!-- S.2: the 2D draw stage fills the sketcher (minus the tool rail +
+               the 3D pane). The PARAMS card + sketch card FLOAT over it as a
+               draggable overlay (.ge-sketch-side / .ge-sketch-cards) — each
+               drags by its TITLE bar — and stay fully wireable: drag a param's
+               output socket onto a coord's input socket to wire p.<name>, wires
+               re-route from the moved card, 3D re-bakes live. The overlay is
+               pointer-events:none so drawing passes through; only the card
+               bodies + sockets capture events. Stage-level pointer handlers
+               track both a card-title drag and an in-flight wire that crosses
+               the empty canvas (which would otherwise eat the move events). -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="ge-sketch-stage" onpointermove={sketchStageMove} onpointerup={sketchStageUp}>
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'}
               viewBox={vb} preserveAspectRatio="xMidYMid meet"
@@ -6084,6 +6003,167 @@
                   onpointermove={splineCompMove} onpointerup={splineCompUp}/>
               {/if}
             </svg>
+            <!-- Floating, draggable cards overlay (S.2): the real PARAMS card +
+                 sketch node card, on top of the 2D stage. 1:1 px coordinate
+                 space (no viewBox). Root is pointer-events:none so the canvas
+                 underneath stays drawable; each card group re-enables events.
+                 Wires + the in-flight preview route from sketchCardPos. -->
+            {#if miniLayout}
+              {@const ml = miniLayout}
+              {@const sn = se.node}
+              <svg class="ge-sketch-cards" bind:this={miniSvgEl}>
+                <!-- committed wires: every param-driven coord → its param socket -->
+                {#each (sn.ops as Array<any>) as op, idx (idx)}
+                  {#if op.op === 'line' || op.op === 'spline'}
+                    {#if op.r?.kind === 'param'}
+                      {@const pi = paramNames.indexOf(op.r.param)}
+                      {#if pi >= 0}
+                        {@const a = miniParamSockAbs(pi)}
+                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockR(sn, idx))}/>
+                      {/if}
+                    {/if}
+                    {#if op.z?.kind === 'param'}
+                      {@const pi = paramNames.indexOf(op.z.param)}
+                      {#if pi >= 0}
+                        {@const a = miniParamSockAbs(pi)}
+                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockZ(sn, idx))}/>
+                      {/if}
+                    {/if}
+                  {:else}
+                    {@const f = op.op === 'fillet' ? op.radius : op.dist}
+                    {#if f?.kind === 'param'}
+                      {@const pi = paramNames.indexOf(f.param)}
+                      {#if pi >= 0}
+                        {@const a = miniParamSockAbs(pi)}
+                        <path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, sketchCardPos.sketch.y + sketchSockVal(sn, idx))}/>
+                      {/if}
+                    {/if}
+                  {/if}
+                {/each}
+
+                <!-- PARAMS card — drag by its title bar -->
+                <g class="card" transform="translate({sketchCardPos.params.x},{sketchCardPos.params.y})">
+                  <rect class="ge-params-card-bg" width={pcs.w} height={pcs.h} rx="8"/>
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <rect class="ge-sketch-card-title" x="0" y="0" width={pcs.w} height={CARD_TITLE_H} rx="8"
+                    onpointerdown={(ev) => sketchCardDown(ev, 'params')}/>
+                  <text x="10" y={CARD_TITLE_H - 9} class="ge-params-card-title" pointer-events="none">Params</text>
+                  <line x1="0" y1={CARD_TITLE_H} x2={pcs.w} y2={CARD_TITLE_H} class="ge-params-card-divider" pointer-events="none"/>
+                  {#if paramEntries.length === 0}
+                    <text x="10" y={CARD_TITLE_H + 22} class="ge-sketch-mini-empty">No params yet — add them on the graph.</text>
+                  {/if}
+                  {#each paramEntries as [name, p], i (name)}
+                    <g transform="translate({CARD_PAD},{CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP)})">
+                      <foreignObject x="0" y="0" width={PARAM_W} height={PARAM_H}>
+                        <div class="ge-param-chip" xmlns="http://www.w3.org/1999/xhtml">
+                          <span class="name" title="p.{name}">p.{name}</span>
+                          <input class="val" type="number" step="0.05" value={(p as any).default}
+                            onchange={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
+                        </div>
+                      </foreignObject>
+                      <!-- Output socket — drag onto a sketch coord input socket. -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle role="button" tabindex="-1" class="ge-sock out param"
+                        cx={PARAM_W + CARD_PAD + 4} cy={PARAM_H / 2} r="5"
+                        data-tip="Drag onto a sketch coord to wire p.{name}"
+                        onpointerdown={(ev) => startParamWire(ev, name)}/>
+                    </g>
+                  {/each}
+                </g>
+
+                <!-- SKETCH node card — drag by its title bar; per-coord wire
+                     sockets (LEFT edge) + a ƒ button on every coord row. -->
+                <g class="card" transform="translate({sketchCardPos.sketch.x},{sketchCardPos.sketch.y})">
+                  <rect class="ge-node-bg sketch" width={MINI_SCW} height={ml.sch} rx="6"/>
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <rect class="ge-sketch-card-title" x="0" y="0" width={MINI_SCW} height="32" rx="6"
+                    onpointerdown={(ev) => sketchCardDown(ev, 'sketch')}/>
+                  <text x="10" y="22" class="ge-node-title" pointer-events="none">✐ sketch · {sn.ops.length} ops</text>
+                  <line x1="0" y1="32" x2={MINI_SCW} y2="32" class="ge-node-divider" pointer-events="none"/>
+                  <foreignObject x="6" y="36" width={MINI_SCW - 12} height={ml.sch - 40} class="ge-fo">
+                    <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
+                      <div class="ge-sketch-ops">
+                        {#each (sn.ops as Array<any>) as op, idx (idx)}
+                          {#if op.op === 'line' || op.op === 'spline'}
+                            <div class="ge-sketch-vtx" style="height: {sketchEntryH(op)}px">
+                              <div class="ge-sketch-srow">
+                                <span class="ge-sketch-axis" class:spline={op.op === 'spline'} title={op.op}>{op.op === 'spline' ? 'spl r' : 'r'}</span>
+                                <input class="ge-sketch-in" type="text" value={argStr(op.r)} title="r — number or p.param"
+                                  onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
+                                <button class="ge-sketch-fx" type="button" title="Write/edit an expression for r" class:on={op.r?.kind === 'expr'}
+                                  onclick={(ev) => openSketchExprPop(ev, sid, idx, 'r', argStr(op.r))}>ƒ</button>
+                                <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
+                              </div>
+                              <div class="ge-sketch-srow">
+                                <span class="ge-sketch-axis" class:spline={op.op === 'spline'}>{op.op === 'spline' ? 'spl z' : 'z'}</span>
+                                <input class="ge-sketch-in" type="text" value={argStr(op.z)} title="z"
+                                  onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
+                                <button class="ge-sketch-fx" type="button" title="Write/edit an expression for z" class:on={op.z?.kind === 'expr'}
+                                  onclick={(ev) => openSketchExprPop(ev, sid, idx, 'z', argStr(op.z))}>ƒ</button>
+                                <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
+                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
+                                <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sn.ops.length <= 1}
+                                  onclick={() => { graph = removeSketchOp(graph, sid, idx); }}>×</button>
+                              </div>
+                            </div>
+                          {:else}
+                            <div class="ge-sketch-vtx corner" style="height: {sketchEntryH(op)}px">
+                              <div class="ge-sketch-srow">
+                                <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
+                                <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
+                                  onchange={(e) => { graph = setSketchOpField(graph, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
+                                <button class="ge-sketch-fx" type="button" title="Write/edit an expression" class:on={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'expr'}
+                                  onclick={(ev) => openSketchExprPop(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argStr(op.op === 'fillet' ? op.radius : op.dist))}>ƒ</button>
+                                <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
+                                <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
+                                  onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
+                                <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sn.ops.length <= 1}
+                                  onclick={() => { graph = removeSketchOp(graph, sid, idx); }}>×</button>
+                              </div>
+                            </div>
+                          {/if}
+                        {/each}
+                      </div>
+                      <div class="ge-sketch-foot">
+                        <button class="ge-sketch-add" type="button" title="Add a line segment" onclick={() => { graph = addSketchOp(graph, sid, 'line'); }}>+ line</button>
+                        <button class="ge-sketch-add" type="button" title="Add a Bézier spline" onclick={() => { graph = addSketchOp(graph, sid, 'spline'); }}>+ spline</button>
+                        <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { graph = addSketchOp(graph, sid, 'fillet'); }}>+ fillet</button>
+                        <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { graph = addSketchOp(graph, sid, 'chamfer'); }}>+ chamfer</button>
+                      </div>
+                    </div>
+                  </foreignObject>
+                  <!-- Per-coord INPUT sockets (drop a param's output socket here). -->
+                  {#each (sn.ops as Array<any>) as op, idx (idx)}
+                    {#if op.op === 'line' || op.op === 'spline'}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
+                        cx="0" cy={sketchSockR(sn, idx)} r="4" data-tip="Drag a param here → r"
+                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'r')}/>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.z?.kind === 'param' ? ' wired' : ''}`}
+                        cx="0" cy={sketchSockZ(sn, idx)} r="4" data-tip="Drag a param here → z"
+                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'z')}/>
+                    {:else}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param' ? ' wired' : ''}`}
+                        cx="0" cy={sketchSockVal(sn, idx)} r="4" data-tip="Drag a param here"
+                        onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
+                    {/if}
+                  {/each}
+                </g>
+
+                <!-- in-flight preview: param out socket → cursor -->
+                {#if wireFrom?.kind === 'param-out' && wireMouse}
+                  {@const pi = paramNames.indexOf(wireFrom.paramName)}
+                  {#if pi >= 0}
+                    {@const a = miniParamSockAbs(pi)}
+                    <path class="ge-wire in-flight" d={miniBez(a.x, a.y, wireMouse.x, wireMouse.y)} pointer-events="none"/>
+                  {/if}
+                {/if}
+              </svg>
+            {/if}
             <!-- DRAGGABLE top bar — status, the live corner radius/dist dial, Done.
                  Floats over the stage; drag the ⣿ handle to reposition. -->
             <div class="ge-sketch-topbar" style="left: {sketchBarPos.x}px; top: {sketchBarPos.y}px">
@@ -6496,6 +6576,40 @@
       <div class="ge-expr-pop-row right">
         <button class="ge-param-add ghost" type="button" onclick={closeArgExprPop}>cancel</button>
         <button class="ge-param-add" type="button" onclick={applyArgExprPop}>apply</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if sketchExprPop}
+    <!-- Sketch coord ƒ-expression editor (S.2) — same UX as argExprPop, keyed
+         to a sketch op field (r / z / fillet radius / chamfer dist). Apply →
+         setSketchOpField with kind:'expr'; the 3D re-bakes live. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeSketchExprPop}></div>
+    <div class="ge-wire-pop ge-expr-pop"
+      use:clampToViewport={sketchExprPop}
+      style="left: {Math.min(sketchExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {sketchExprPop.y}px">
+      <div class="ge-wire-head">ƒ sketch <code>{sketchExprPop.field}</code> expression</div>
+      <textarea class="ge-expr-textarea" rows="3"
+        placeholder="e.g. p.od / 2 - p.wall"
+        value={sketchExprPop.draft}
+        onkeydown={(e) => { if (e.key === 'Enter' && !(e as KeyboardEvent).shiftKey) { (e as KeyboardEvent).preventDefault(); applySketchExprPop(); } }}
+        oninput={(e) => { if (sketchExprPop) sketchExprPop = { ...sketchExprPop, draft: (e.target as HTMLTextAreaElement).value }; }}></textarea>
+      <div class="ge-expr-pop-row">
+        <span class="ge-expr-pop-label">insert:</span>
+        {#each paramEntries as [name, p] (name)}
+          <button class="ge-expr-pop-chip" type="button"
+            onclick={() => insertParamIntoSketchDraft(name)}
+            title={`Append p.${name} to the expression (default ${(p as any).default})`}>p.{name}</button>
+        {/each}
+        {#if paramEntries.length === 0}
+          <span class="ge-empty">no params declared</span>
+        {/if}
+      </div>
+      <div class="ge-expr-pop-row right">
+        <button class="ge-param-add ghost" type="button" onclick={closeSketchExprPop}>cancel</button>
+        <button class="ge-param-add" type="button" onclick={applySketchExprPop}>apply</button>
       </div>
     </div>
   {/if}
@@ -7632,12 +7746,22 @@
   .ge-sketch-num { width: 56px; font: 12px ui-monospace, monospace; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; }
   .ge-sketch-wire-hint { font: 11px Arial; color: #b45309; white-space: nowrap; }
   .ge-sketch-bound { font: 600 11px ui-monospace, monospace; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 9999px; padding: 1px 8px; }
-  /* LEFT sidebar wrapper — PARAMS (top) + the editable OPS list (below). */
-  .ge-sketch-side { width: 300px; flex: 0 0 300px; display: flex; flex-direction: column; border-right: 1px solid #e2e8f0; background: #fff; overflow-y: auto; }
-  /* S.1 mini node-graph: PARAMS card + sketch node card + wire layer. */
+  /* S.2: floating cards overlay — covers the whole editor area but is
+     pointer-events:none so the 2D canvas underneath stays drawable. */
+  .ge-sketch-side { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+  .ge-sketch-cards { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; touch-action: none; }
+  /* Only the card bodies (+ their sockets/inputs) capture pointer events. */
+  .ge-sketch-cards g.card { pointer-events: auto; }
+  /* Transparent title-bar hit area — drags the card. */
+  .ge-sketch-card-title { fill: transparent; cursor: grab; }
+  .ge-sketch-card-title:active { cursor: grabbing; }
   .ge-sketch-mini-hd { font: 700 10px Arial; letter-spacing: 0.5px; color: #92400e; padding: 8px 8px 4px; }
   .ge-sketch-mini { width: 100%; height: auto; display: block; touch-action: none; }
   .ge-sketch-mini-empty { font: 11px Arial; fill: #94a3b8; }
+  /* ƒ button on a sketch coord row — opens the expression popover. */
+  .ge-sketch-fx { width: 16px; height: 17px; padding: 0; flex: none; background: #fff; border: 1px solid #d6d3d1; border-radius: 2px; font: 700 11px serif; color: #57534e; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .ge-sketch-fx:hover { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .ge-sketch-fx.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
   .ge-sketch-resolved { font: 11px ui-monospace, monospace; color: #64748b; }
   .ge-sketch-dial-x.untie { border-color: #fbbf24; color: #b45309; }
   .ge-sketch-dial-x.untie:hover { background: #fef3c7; }
