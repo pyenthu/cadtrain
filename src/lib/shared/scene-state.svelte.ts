@@ -72,7 +72,16 @@ export const scene = $state({
    *  this is always on (no off toggle) and the lit meshes are always
    *  MeshStandardMaterial. The $effect that sizes/positions it calls
    *  invalidate() so changes render live on the on-demand loop. */
-  zRectLight: true,
+  zRectLight: false,
+  /** Z-axis DIRECTIONAL light (2026-06-14). Parallel rays perpendicular to the
+   *  Z (drilling) axis → the whole length lit evenly, no falloff; `zDirAngle`
+   *  spins the bearing around Z. Works with MeshPhong (no PBR/strange colours,
+   *  no LTC init). An OPTION (toggle) — default ON. */
+  zDirLight: true,
+  zDirIntensity: 2.2,
+  /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera
+   *  side), 90°=+X, 180°=behind. Light shines FROM this bearing toward the axis. */
+  zDirAngle: 0,
   /** RectAreaLight intensity (luminance-ish units — NOT point-light candela).
    *  Higher now that it's the sole directional source (was 4 as a fill). */
   zRectIntensity: 2,

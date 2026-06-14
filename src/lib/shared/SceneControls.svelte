@@ -61,20 +61,17 @@
         Edges
       </label>
     </div>
-    <!-- Rectangular AREA light along Z — the SOLE light now (point lights + the
-         Z point-strip were removed). Always on; tune intensity / size / offset. -->
+    <!-- Z-axis DIRECTIONAL light — parallel rays perpendicular to Z (even
+         length-wise illumination). A theta spins the bearing around the axis. -->
     <div class="sv-row sv-zlight">
-      <span class="sv-label sv-zlight-master">Rect light</span>
+      <label class="sv-check sv-zlight-master">
+        <input type="checkbox" bind:checked={scene.zDirLight} />
+        Z light
+      </label>
       <span class="sv-sub">i</span>
-      <input type="number" step="0.5" min={0} bind:value={scene.zRectIntensity} title="intensity" />
-      <span class="sv-sub">w</span>
-      <input type="number" step="1" min={0} bind:value={scene.zRectWidth} title="width along Z (0 = auto-span the part)" />
-      <span class="sv-sub">h</span>
-      <input type="number" step="1" min={0} bind:value={scene.zRectHeight} title="height across the part" />
-      <span class="sv-sub">⌀</span>
-      <input type="number" step="1" bind:value={scene.zRectOffset} title="radial offset off the axis" />
+      <input type="number" step="0.2" min={0} bind:value={scene.zDirIntensity} disabled={!scene.zDirLight} title="intensity" />
       <span class="sv-sub">∠</span>
-      <input type="number" step="15" bind:value={scene.zRectAngle} title="bearing around the Z axis (deg): 0=+Y front, 90=+X, 180=behind" />
+      <input type="number" step="15" bind:value={scene.zDirAngle} disabled={!scene.zDirLight} title="bearing θ around Z (deg): 0=+Y front, 90=+X, 180=behind" />
     </div>
     <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
          row + scene.warp* fields + warp.ts to retire the feature. -->

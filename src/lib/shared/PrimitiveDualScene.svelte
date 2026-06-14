@@ -185,6 +185,14 @@
   let light1Pos = $derived<[number, number, number]>([scene.l1.x, scene.l1.y, scene.l1.z]);
   let light2Pos = $derived<[number, number, number]>([scene.l2.x, scene.l2.y, scene.l2.z]);
   let light3Pos = $derived<[number, number, number]>([scene.l3.x, scene.l3.y, scene.l3.z]);
+  // Directional light position: a bearing `zDirAngle` (deg) around Z in the X/Y
+  // plane, z=0. Target stays the origin (default), so the direction is purely
+  // in-plane → perpendicular to Z → the whole drilling length is lit evenly. The
+  // magnitude (100) only sets direction; a directional light has no falloff.
+  let dirPos = $derived.by<[number, number, number]>(() => {
+    const a = (scene.zDirAngle || 0) * Math.PI / 180;
+    return [Math.sin(a) * 100, Math.cos(a) * 100, 0];
+  });
   let controls = $state<any>(null);
   $effect(() => {
     if (!controls) return;
@@ -408,15 +416,18 @@
      consistent whether the Color attaches (dev) or the build drops it and falls
      back to the CSS (the prior dev-white / prod-black mismatch). -->
 <T.Color args={['#ffffff']} attach="background" />
-<!-- Ambient fill so faces the rect light doesn't reach aren't pure black. -->
-<T.AmbientLight intensity={0.55} />
+<!-- Ambient fill so the side the directional light doesn't reach isn't black. -->
+<T.AmbientLight intensity={0.45} />
 
-<!-- SOLE light (user pref 2026-06-14): the rectangular AREA light running ALONG
-     the part's Z extent. The old L1/L2/L3 point lights and the Z-axis point
-     strip were removed. Materials are MeshStandardMaterial (RectAreaLight only
-     lights Standard/Physical) — kept on via scene.zRectLight being default-true
-     with no off toggle. Position/size/orientation come from the $effect above. -->
-<T.RectAreaLight bind:ref={rectLight} intensity={scene.zRectIntensity} width={1} height={1} />
+<!-- SOLE light (user pref 2026-06-14): a DIRECTIONAL light projecting PERPENDICULAR
+     to the Z (drilling) axis, so the whole length is lit evenly (parallel rays,
+     no falloff). `zDirAngle` spins its bearing around Z (0°=+Y front, 90°=+X).
+     Works with MeshPhong (no PBR), so colours render true. Target = origin
+     (default) → direction is the in-plane bearing toward the axis. Replaced the
+     point lights, the Z point-strip, and the rect area light. -->
+{#if scene.zDirLight}
+  <T.DirectionalLight position={dirPos} intensity={scene.zDirIntensity} />
+{/if}
 
 <!-- VIEW-ONLY scale: X/Y = diameter exaggeration (xScale), Z = depth
      compression (zScale). Wraps BOTH stacked renders + their offsets so the
