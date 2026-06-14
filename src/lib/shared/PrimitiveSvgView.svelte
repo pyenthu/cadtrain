@@ -198,37 +198,44 @@
     addDir(scene.l2, 0.4);
     addDir(scene.l3, 0.25);
 
-    // Camera — mirror PrimitiveDualScene's position/up/look-at (Z-down).
-    // PERSPECTIVE: fov 45 like the 3D pane. ORTHOGRAPHIC: parallel projection
-    // (the correct one for a technical/dimensioned drawing — parallel edges stay
-    // parallel, no foreshortening). The ortho frustum is fit to the SCALED
-    // geometry's bounding sphere so the part fills the view in any orientation.
+    // Camera. Z-down convention (up = [0,0,-1]) in both modes.
     let camera: THREE.Camera;
     if (projection === 'ortho') {
+      // ORTHOGRAPHIC = a straight perpendicular technical ELEVATION. We IGNORE
+      // the orbited 3D camera and look dead-on perpendicular to the Z (drilling)
+      // axis: camera sits on the +Y axis at z=0, looking at the ORIGIN, with Z
+      // running vertically. Parallel edges stay parallel (no foreshortening).
       geo.computeBoundingBox();
       const bb = geo.boundingBox;
-      // Scale the local extents by the view-only [xScale, xScale, zScale] group
-      // so the frustum matches what's actually drawn.
-      const dx = bb ? (bb.max.x - bb.min.x) * scene.xScale : 1;
-      const dy = bb ? (bb.max.y - bb.min.y) * scene.xScale : 1;
-      const dz = bb ? (bb.max.z - bb.min.z) * scene.zScale : 1;
-      const radius = 0.5 * Math.hypot(dx, dy, dz) || 1;
-      const halfH = radius * 1.05; // small padding
+      // World (scaled) extents of what's actually drawn (the [xScale,xScale,
+      // zScale] group). Radial half-width (x/y) is horizontal; the z reach FROM
+      // THE ORIGIN is vertical (the part extends away from z=0, and we look at 0,
+      // so the frustum must reach the farthest z end to keep the part framed).
+      const halfX = bb ? 0.5 * (bb.max.x - bb.min.x) * scene.xScale : 1;
+      const halfY = bb ? 0.5 * (bb.max.y - bb.min.y) * scene.xScale : 1;
+      const radial = Math.hypot(halfX, halfY) || 1;
+      const zReach = bb
+        ? Math.max(Math.abs(bb.min.z), Math.abs(bb.max.z)) * scene.zScale
+        : 1;
+      const halfH = Math.max(zReach, radial) * 1.05; // pad; frame from origin
       const aspect = w / h;
-      const ortho = new THREE.OrthographicCamera(
+      camera = new THREE.OrthographicCamera(
         -halfH * aspect, halfH * aspect, halfH, -halfH, 0.1, 100000,
       );
-      camera = ortho;
+      camera.up.set(0, 0, -1);
+      camera.position.set(0, 1000, 0); // +Y axis, z=0; ortho → distance is cosmetic
+      camera.lookAt(0, 0, 0);
     } else {
+      // PERSPECTIVE: mirror the 3D pane — fov 45, the live (orbitable) camera.
       camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100000);
+      camera.up.set(0, 0, -1);
+      camera.position.set(scene.cam.x, scene.cam.y, scene.cam.z);
+      camera.lookAt(
+        scene.partCenter.x,
+        scene.partCenter.y,
+        scene.partCenter.z + scene.zFocus,
+      );
     }
-    camera.up.set(0, 0, -1);
-    camera.position.set(scene.cam.x, scene.cam.y, scene.cam.z);
-    camera.lookAt(
-      scene.partCenter.x,
-      scene.partCenter.y,
-      scene.partCenter.z + scene.zFocus,
-    );
 
     if (!renderer) {
       renderer = new Ctor();
