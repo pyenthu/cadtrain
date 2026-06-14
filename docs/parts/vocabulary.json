@@ -1,11 +1,12 @@
 {
   "$schema": "./vocabulary.schema.json",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "notes": [
-    "K.68 Phase 1 draft, 2026-06-05.",
+    "K.68 Phase 1 draft, 2026-06-05; exemplar repoint 2026-06-14.",
     "Each entry is a TERM in the compositional grammar.",
     "A rule compiles deterministically to AsmSource via rule-translator.ts (Phase 2).",
-    "Synonyms are aliases the RAG retrieval treats as the same term."
+    "Synonyms are aliases the RAG retrieval treats as the same term.",
+    "2026-06-14: exemplars repointed from the deleted dt_* parts to the live g_* migration (dt_*->g_*). expects_bake now reflects the EXEMPLAR part baked at its OWN meta.params defaults (was: translator output at vocab params). GAPS (frustum, mule_shoe) have no live g_* twin and are flagged stale:true; xover reuses dt_sub geometry. New terms spiral (g_spiral) + star (g_star) added."
   ],
   "terms": {
     "shaft": {
@@ -43,11 +44,12 @@
         "template": "cylinder",
         "engine": "r_revolve"
       },
-      "exemplar": "dt_shaft",
+      "exemplar": "g_shaft",
       "expects_bake": {
-        "verts": 258,
-        "z_extent": 3,
-        "outer_r": 1
+        "verts": 1440,
+        "z_extent": 5,
+        "outer_r": 0.5,
+        "_note": "g_shaft @ defaults r=0.5, length=5, segments=120."
       }
     },
     "tube": {
@@ -116,12 +118,13 @@
           }
         }
       },
-      "exemplar": "dt_tube",
+      "exemplar": "g_tube",
       "expects_bake": {
-        "verts": 1536,
+        "verts": 6144,
         "z_extent": 3,
         "outer_r": 2.25,
-        "min_r": 1.75
+        "min_r": 1.75,
+        "_note": "g_tube @ defaults od=4.5, wall=0.5, length=3, segments=256."
       }
     },
     "collar_flat": {
@@ -170,10 +173,12 @@
         "template": "collar_flat",
         "engine": "r_revolve"
       },
-      "exemplar": "dt_collar_flat",
+      "exemplar": "g_collar",
       "expects_bake": {
-        "verts": null,
-        "_note": "first translator pass populates"
+        "verts": 6036,
+        "z_extent": 0.5005,
+        "outer_r": 0.5,
+        "_note": "All three collar variants now share the single live exemplar g_collar (flat/tapered/rounded are no longer separate parts). Metrics: g_collar @ its meta.params defaults."
       }
     },
     "collar_tapered": {
@@ -226,10 +231,12 @@
         "template": "collar_tapered",
         "engine": "r_revolve"
       },
-      "exemplar": "dt_collar_tapered",
+      "exemplar": "g_collar",
       "expects_bake": {
-        "verts": null,
-        "_note": "first translator pass populates"
+        "verts": 6036,
+        "z_extent": 0.5005,
+        "outer_r": 0.5,
+        "_note": "All three collar variants now share the single live exemplar g_collar (flat/tapered/rounded are no longer separate parts). Metrics: g_collar @ its meta.params defaults."
       }
     },
     "collar_rounded": {
@@ -288,10 +295,12 @@
         "template": "collar_rounded",
         "engine": "r_revolve"
       },
-      "exemplar": "dt_collar_rounded",
+      "exemplar": "g_collar",
       "expects_bake": {
-        "verts": null,
-        "_note": "first translator pass populates"
+        "verts": 6036,
+        "z_extent": 0.5005,
+        "outer_r": 0.5,
+        "_note": "All three collar variants now share the single live exemplar g_collar (flat/tapered/rounded are no longer separate parts). Metrics: g_collar @ its meta.params defaults."
       }
     },
     "pin": {
@@ -414,12 +423,13 @@
         ],
         "derived_from_profile": "dp_spec_pin"
       },
-      "exemplar": "dt_pin",
+      "exemplar": "g_dp_pin",
       "expects_bake": {
-        "verts": 1344,
-        "z_extent": 9.625,
-        "outer_r": 2.625,
-        "min_r": 1.5
+        "verts": 14400,
+        "z_extent": 7,
+        "outer_r": 3,
+        "min_r": 1.7,
+        "_note": "g_dp_pin @ its meta.params defaults."
       }
     },
     "box": {
@@ -530,10 +540,13 @@
         ],
         "derived_from_profile": "dp_spec_box"
       },
-      "exemplar": "dt_box",
+      "exemplar": "g_dp_box",
       "expects_bake": {
-        "verts": null,
-        "_note": "to populate after first translator pass + bake validation"
+        "verts": 20400,
+        "z_extent": 5.5,
+        "outer_r": 3,
+        "min_r": 1.7,
+        "_note": "g_dp_box @ its meta.params defaults."
       }
     },
     "joint": {
@@ -612,10 +625,13 @@
           ]
         }
       },
-      "exemplar": "dt_joint",
+      "exemplar": "g_dp_joint",
       "expects_bake": {
-        "verts": null,
-        "_note": "to populate after first translator pass + bake validation"
+        "verts": 47712,
+        "z_extent": 37.5,
+        "outer_r": 3,
+        "min_r": 1.65,
+        "_note": "g_dp_joint @ its meta.params defaults (body_len=25)."
       }
     },
     "cone": {
@@ -655,10 +671,12 @@
         "template": "cone",
         "engine": "r_revolve"
       },
-      "exemplar": "dt_cone",
+      "exemplar": "g_cone",
       "expects_bake": {
-        "verts": null,
-        "_note": "first translator pass populates"
+        "verts": 576,
+        "z_extent": 4,
+        "outer_r": 1.5,
+        "_note": "g_cone @ its meta.params defaults."
       }
     },
     "frustum": {
@@ -708,8 +726,10 @@
       "exemplar": "dt_frustum",
       "expects_bake": {
         "verts": null,
-        "_note": "first translator pass populates"
-      }
+        "_note": "stale — no live exemplar to bake."
+      },
+      "stale": true,
+      "stale_note": "2026-06-14: exemplar dt_frustum was deleted in the dt_*->g_* migration and has NO live g_* twin (no barrel/frustum part exists). Term retained for its rule/synonyms; exemplar is dead. USER DECISION: author a g_frustum (barrel) exemplar, or remap to the closest live part."
     },
     "sub": {
       "kind": "asm",
@@ -768,8 +788,11 @@
       },
       "exemplar": "dt_sub",
       "expects_bake": {
-        "verts": null,
-        "_note": "first translator pass populates"
+        "verts": 8640,
+        "z_extent": 19.25,
+        "outer_r": 2.625,
+        "min_r": 1.5,
+        "_note": "dt_sub survives the migration. Baked @ its defaults od=4.5, wall=0.5."
       }
     },
     "xover": {
@@ -830,11 +853,15 @@
           ]
         }
       },
-      "exemplar": "dt_xover",
+      "exemplar": "dt_sub",
       "expects_bake": {
-        "verts": null,
-        "_note": "first translator pass populates"
-      }
+        "verts": 8640,
+        "z_extent": 19.25,
+        "outer_r": 2.625,
+        "min_r": 1.5,
+        "_note": "Borrows dt_sub geometry (same composition)."
+      },
+      "exemplar_note": "2026-06-14: dt_xover was deleted; its geometry was identical to sub (per its own note — thread spec is metadata-only until r_threads ships). Repointed to the live dt_sub exemplar. USER DECISION: author a dedicated g_xover if/when per-end thread geometry renders."
     },
     "stand": {
       "kind": "asm",
@@ -897,10 +924,13 @@
           "mate": "tail(prev)"
         }
       },
-      "exemplar": "dt_stand",
+      "exemplar": "g_dp_stand",
       "expects_bake": {
-        "verts": null,
-        "_note": "to populate after first translator pass + bake validation"
+        "verts": 143136,
+        "z_extent": 107,
+        "outer_r": 3,
+        "min_r": 1.65,
+        "_note": "g_dp_stand @ its meta.params defaults."
       }
     },
     "mule_shoe": {
@@ -1038,7 +1068,132 @@
         "has_bore": true
       },
       "promoted_at": "2026-06-09T06:14:26Z",
-      "source": "proposed-vocab-entries.json"
+      "source": "proposed-vocab-entries.json",
+      "stale": true,
+      "stale_note": "2026-06-14: exemplar dt_mule_shoe was deleted in the dt_*->g_* migration and has NO live g_* twin (no g_mule_shoe / g_mule_shoe_basic on the store). Rich K.69 entry (boolean_modify rule) retained; exemplar is dead. USER DECISION: regenerate the exemplar via /api/vocab/promote-proposed (the boolean_modify rule still compiles) or author a g_mule_shoe."
+    },
+    "spiral": {
+      "kind": "asm",
+      "definition": "Helical ribbon swept around a central axis — a spiral / helical groove or flight. Radius grows from r0 by `growth` over `turns` revolutions; the band has rectangular cross-section `width` and overall axial `length`. Graph-emitted via r_weld_extrude (welded-mesh path).",
+      "synonyms": [
+        "spiral",
+        "helix",
+        "helical groove",
+        "helical flight",
+        "auger flight",
+        "screw thread band",
+        "coil",
+        "worm"
+      ],
+      "params": {
+        "NPts": {
+          "default": 360,
+          "min": 24,
+          "max": 2048,
+          "step": 1
+        },
+        "r0": {
+          "default": 0.4,
+          "min": 0.05,
+          "max": 10,
+          "step": 0.05,
+          "unit": "in"
+        },
+        "growth": {
+          "default": 1,
+          "min": 0,
+          "max": 5,
+          "step": 0.05
+        },
+        "turns": {
+          "default": 2,
+          "min": 0.1,
+          "max": 20,
+          "step": 0.1
+        },
+        "width": {
+          "default": 0.06,
+          "min": 0.01,
+          "max": 2,
+          "step": 0.01,
+          "unit": "in"
+        },
+        "length": {
+          "default": 2,
+          "min": 0.1,
+          "max": 50,
+          "step": 0.05,
+          "unit": "in"
+        }
+      },
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_weld_extrude",
+        "_note": "Geometry lives in the graph-emitted g_spiral part (meta.graph + r_weld_extrude). Not compilable by the K.68 rule-translator (no helix template) — like mule_shoe, this is a retrieval/exemplar anchor, not a translator target."
+      },
+      "exemplar": "g_spiral",
+      "expects_bake": {
+        "verts": 8628,
+        "z_extent": 2,
+        "outer_r": 1.3972,
+        "_note": "g_spiral @ its meta.params defaults."
+      }
+    },
+    "star": {
+      "kind": "asm",
+      "definition": "Star / splined cross-section extruded straight down its axis — a prism whose section is `points` outer lobes (r_outer) alternating with inner valleys (r_inner). Models splined shafts, star points, and lobed keys. Graph-emitted via r_weld_extrude.",
+      "synonyms": [
+        "star",
+        "splined",
+        "spline",
+        "star profile",
+        "lobed",
+        "gear-like",
+        "cog",
+        "splined shaft",
+        "star point"
+      ],
+      "params": {
+        "points": {
+          "default": 5,
+          "min": 3,
+          "max": 24,
+          "step": 1
+        },
+        "r_outer": {
+          "default": 2,
+          "min": 0.05,
+          "max": 12,
+          "step": 0.05,
+          "unit": "in"
+        },
+        "r_inner": {
+          "default": 1,
+          "min": 0.05,
+          "max": 12,
+          "step": 0.05,
+          "unit": "in"
+        },
+        "length": {
+          "default": 4,
+          "min": 0.1,
+          "max": 50,
+          "step": 0.05,
+          "unit": "in"
+        }
+      },
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_weld_extrude",
+        "_note": "Geometry lives in the graph-emitted g_star part (meta.graph + r_weld_extrude). Not compilable by the K.68 rule-translator — retrieval/exemplar anchor only."
+      },
+      "exemplar": "g_star",
+      "expects_bake": {
+        "verts": 2724,
+        "z_extent": 4.0005,
+        "outer_r": 2,
+        "_note": "g_star @ its meta.params defaults."
+      }
     }
   }
 }
