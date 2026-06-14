@@ -6251,7 +6251,7 @@
             <foreignObject x="0" y="0" width={PARAM_W} height={PARAM_H}>
               <div class="ge-param-chip" class:stackref={name === STACK_REF_PARAM} xmlns="http://www.w3.org/1999/xhtml">
                 <span class="pin">{name === STACK_REF_PARAM ? '🔗' : '📌'}</span>
-                <span class="name" title={name === STACK_REF_PARAM ? 'stack reference — how this part mates in a stack() (0 = end-to-end · negative = overlap same datum · positive = advance by value). Reserved; cannot be deleted.' : `p.${name}`}>p.{name}</span>
+                <span class="name" title={name === STACK_REF_PARAM ? 'z-offset — how this part mates in a stack() (0 = end-to-end flush · negative = overlap into the next by that much · positive = leave that much gap). Reserved; cannot be deleted.' : `p.${name}`}>p.{name}</span>
                 <input class="val" type="number" step="0.05"
                   value={(p as any).default}
                   use:dragNumber={{
@@ -7169,7 +7169,7 @@
       {:else}
         <table class="ge-container-table">
           <thead>
-            <tr><th>#</th><th>node</th><th>kind</th>{#if isStack}<th title="Per-child stack reference: blank = inherit the part's own stack_ref · 0 = end-to-end · negative = overlap (same datum) · positive = advance by value">stack ref</th><th title="Copies of this child, mated end-to-end (replaces a Repeat node): blank/1 = single · a number or a param expr like p.n">× N</th>{/if}<th>order</th><th></th></tr>
+            <tr><th>#</th><th>node</th><th>kind</th>{#if isStack}<th title="Per-child z-offset: blank = inherit the part's own stack_ref · 0 = end-to-end flush · negative = overlap into the next · positive = leave a gap">stack ref</th><th title="Copies of this child, mated end-to-end (replaces a Repeat node): blank/1 = single · a number or a param expr like p.n">× N</th>{/if}<th>order</th><th></th></tr>
           </thead>
           <tbody>
             {#each cnode.children as childId, i (childId)}

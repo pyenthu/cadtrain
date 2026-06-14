@@ -335,17 +335,16 @@ export function stack(children: any[]): any {
       throw new Error(`stack: item ${i + 1} of ${items.length} produced EMPTY or invalid geometry (degenerate bounding box) — a part collapsed to nothing (e.g. a subtract removing everything, or identical OD on both sides). Fix that part's parameters.`);
     }
   }
-  // STACK REFERENCE (per-part mate control). `cursor` is the z where the NEXT
-  // child's local origin lands. After placing a child we advance the cursor by
-  // reading that child's `_stackRef` (stamped on the manifold by its emitted
-  // geom — composition-emit's `stack_ref` reserved param; absent on parts that
-  // never opted in):
-  //   • absent / 0  → advance to the child's TAIL datum — end-to-end mating,
-  //                    the historical behaviour every existing graph relies on.
-  //   • negative    → do NOT advance — the next child sits at the SAME datum
-  //                    (overlaps this one). "Keep the same offset."
-  //   • positive v  → advance the cursor by exactly v (explicit spacing).
-  // `_stackRef` is translation-invariant (an advance/flag, not a coordinate)
+  // STACK REFERENCE / z-offset (per-part mate control). `cursor` is the z where
+  // the NEXT child's local origin lands: the placed child's TAIL datum (flush /
+  // end-to-end) PLUS its `_stackRef` z-offset (stamped by its emitted geom —
+  // composition-emit's `stack_ref` reserved param; absent on parts that never
+  // opted in). The offset is a DELTA, intuitive both ways:
+  //   • absent / 0  → flush, end-to-end (historical behaviour).
+  //   • positive v  → leave a GAP of v before the next child.
+  //   • negative v  → OVERLAP the next child into this one by |v| (mate a
+  //                    tool-joint pin into the box, overlap upset collars, …).
+  // `_stackRef` is translation-invariant (a relative offset, not a coordinate)
   // so it's read from the ORIGINAL item, before placement.
   let cursor = 0;
   const out: any[] = [];
@@ -354,9 +353,12 @@ export function stack(children: any[]): any {
     out.push(placed);
     const refRaw = (items[i] as any)._stackRef;
     const ref = (refRaw == null || !Number.isFinite(Number(refRaw))) ? 0 : Number(refRaw);
-    if (ref === 0)      cursor = tail(placed);   // end-to-end (default)
-    else if (ref < 0)   { /* no advance — next child overlaps at same datum */ }
-    else                cursor = cursor + ref;   // explicit advance
+    // z-offset is a DELTA to the flush (end-to-end) position: 0 = end-to-end,
+    // positive = a GAP of that size, negative = OVERLAP the next child by |v|
+    // (e.g. mate a tool-joint pin into the box). Intuitive in both directions —
+    // unlike "advance by exactly v", a small positive value no longer piles long
+    // parts on top of each other.
+    cursor = tail(placed) + ref;
   }
   return place(out);
 }

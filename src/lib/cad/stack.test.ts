@@ -34,23 +34,23 @@ describe('stack() — stack reference (per-part mate control)', () => {
     expect(zLen(result)).toBeCloseTo(5, 5);
   });
 
-  it('explicit positive _stackRef → advance the cursor by that value', () => {
+  it('positive _stackRef → a GAP of that size after the flush position', () => {
     const a = box(2);
-    a._stackRef = 5; // advance 5 from where A was placed, regardless of A's length
+    a._stackRef = 5; // leave a 5-unit gap between A's tail and B
     const result = stack([a, box(3)]);
-    // A at 0..2, cursor advances by 5 → B at 5..8. Total 0..8.
+    // A at 0..2, cursor = tail(2) + 5 = 7 → B at 7..10. Total 0..10.
     expect(zMin(result)).toBeCloseTo(0, 5);
-    expect(zMax(result)).toBeCloseTo(8, 5);
+    expect(zMax(result)).toBeCloseTo(10, 5);
   });
 
-  it('negative _stackRef → no advance; next part coincides (same datum)', () => {
+  it('negative _stackRef → OVERLAP the next part by |v|', () => {
     const a = box(2);
-    a._stackRef = -1; // keep the same offset — do not advance
+    a._stackRef = -1; // overlap the next child into A by 1
     const result = stack([a, box(2)]);
-    // A at 0..2, cursor stays at 0 → B placed at 0 too → both occupy 0..2.
+    // A at 0..2, cursor = tail(2) - 1 = 1 → B at 1..3. Total 0..3.
     expect(zMin(result)).toBeCloseTo(0, 5);
-    expect(zMax(result)).toBeCloseTo(2, 5);
-    expect(zLen(result)).toBeCloseTo(2, 5);
+    expect(zMax(result)).toBeCloseTo(3, 5);
+    expect(zLen(result)).toBeCloseTo(3, 5);
   });
 
   it('_stackRef === 0 behaves identically to absent (end-to-end)', () => {
@@ -59,15 +59,14 @@ describe('stack() — stack reference (per-part mate control)', () => {
     expect(zMax(result)).toBeCloseTo(5, 5);
   });
 
-  it('chains: negative then default mate from the shared datum', () => {
+  it('chains: a negative-overlap part then a default mate', () => {
     const a = box(2);
-    const b = box(2); b._stackRef = -1; // B overlaps A, and does not advance
+    const b = box(2); b._stackRef = -1; // B overlaps the next by 1
     const c = box(2);
     const result = stack([a, b, c]);
-    // A 0..2 (cursor→2). B placed at 2 (2..4) but negative → cursor stays 2.
-    // C placed at 2 → 2..4. Total 0..4.
+    // A 0..2 (cursor→2). B at 2..4, cursor = tail(4) - 1 = 3. C at 3..5. Total 0..5.
     expect(zMin(result)).toBeCloseTo(0, 5);
-    expect(zMax(result)).toBeCloseTo(4, 5);
+    expect(zMax(result)).toBeCloseTo(5, 5);
   });
 
   it('preserves the empty-child guard', () => {
@@ -133,10 +132,10 @@ describe('emitGraph — stack_ref stamping + round-trip', () => {
 describe('withStackRef — per-child override helper', () => {
   it('re-stamps _stackRef, overriding the part-level value', () => {
     const a = box(2); a._stackRef = 0; // part says end-to-end…
-    withStackRef(a, -1);               // …stack overrides to overlap
+    withStackRef(a, -1);               // …stack overrides to overlap by 1
     const result = stack([a, box(2)]);
-    // -1 wins → no advance → B coincides with A. Total 0..2.
-    expect(zMax(result)).toBeCloseTo(2, 5);
+    // -1 wins → B overlaps A by 1: A 0..2, cursor = 2 - 1 = 1, B at 1..3. Total 0..3.
+    expect(zMax(result)).toBeCloseTo(3, 5);
   });
 
   it('is a no-op on non-objects and returns its arg', () => {
@@ -287,11 +286,11 @@ describe('Stack node — per-child COUNT (×N) (model + emit)', () => {
     expect(zMax(result)).toBeCloseTo(6, 5);
   });
 
-  it('runtime: count + negative stack-ref → copies overlap at the same datum', () => {
+  it('runtime: count + negative stack-ref → copies overlap by |v| each', () => {
     const a = box(2);
     const result = stack([...Array(3).fill(0).map(() => withStackRef(a, -1))]);
-    // negative ref = no advance → all 3 coincide at 0..2.
+    // 3 copies, each overlapping the next by 1: 0..2, 1..3, 2..4 → union 0..4.
     expect(zMin(result)).toBeCloseTo(0, 5);
-    expect(zMax(result)).toBeCloseTo(2, 5);
+    expect(zMax(result)).toBeCloseTo(4, 5);
   });
 });
