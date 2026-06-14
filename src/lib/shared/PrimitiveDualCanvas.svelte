@@ -122,7 +122,7 @@
   }
   async function rebuildGlb() {
     if (!id) return;
-    const body = JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut });
+    const body = JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut, colorOuter, colorInner });
     const cachedB64 = cacheGet(`glb:${body}`);
     if (cachedB64) { setGlbBlob(cachedB64); glbStatus = 'ok'; return; }
     glbStatus = 'building';

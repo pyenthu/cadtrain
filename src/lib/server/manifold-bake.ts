@@ -41,17 +41,46 @@ const STATIC_DIR = join(process.cwd(), 'static', 'components');
 export interface MaterialSpec { color: string; metallic?: number; roughness?: number }
 export interface MaterialPair { outer: MaterialSpec; inner: MaterialSpec }
 
+/** Per-part viewer colour override (outside ← outer, bore/cut ← inner). Mirrors
+ *  builder.ts ColorOverride — the user's explicit paint of THIS part. When set
+ *  it wins over the material / color-by-source / legacy paths so the GLB pane
+ *  matches the live Mesh pane. */
+export interface ColorOverride { outer: string; inner: string }
+/** Defaults identical to builder.ts DEFAULT_OUTER_HEX/DEFAULT_INNER_HEX so an
+ *  override with only one side set fills the other with the historical look. */
+export const DEFAULT_OUTER_HEX = '#cc2222';
+export const DEFAULT_INNER_HEX = '#888888';
+
 function hexToRgba(hex: string): [number, number, number, number] {
-  // '#rrggbb' or 'rrggbb'
-  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim());
-  if (!m) return [0.8, 0.13, 0.13, 1];
-  const v = m[1];
-  return [
-    parseInt(v.slice(0, 2), 16) / 255,
-    parseInt(v.slice(2, 4), 16) / 255,
-    parseInt(v.slice(4, 6), 16) / 255,
-    1,
-  ];
+  // '#rrggbb' / 'rrggbb' / '#rgb' / 'rgb'
+  const t = (hex ?? '').trim();
+  const m6 = /^#?([0-9a-f]{6})$/i.exec(t);
+  if (m6) {
+    const v = m6[1];
+    return [
+      parseInt(v.slice(0, 2), 16) / 255,
+      parseInt(v.slice(2, 4), 16) / 255,
+      parseInt(v.slice(4, 6), 16) / 255,
+      1,
+    ];
+  }
+  const m3 = /^#?([0-9a-f]{3})$/i.exec(t);
+  if (m3) {
+    const v = m3[1];
+    return [
+      parseInt(v[0] + v[0], 16) / 255,
+      parseInt(v[1] + v[1], 16) / 255,
+      parseInt(v[2] + v[2], 16) / 255,
+      1,
+    ];
+  }
+  return [0.8, 0.13, 0.13, 1];
+}
+
+/** Three-channel form of `hexToRgba` (drops alpha). */
+function hexRgb3(hex: string): [number, number, number] {
+  const [r, g, b] = hexToRgba(hex);
+  return [r, g, b];
 }
 
 /** Per-part color table (mirrors builder.ts PartColorLUT / analyzeParts). */
@@ -71,6 +100,7 @@ function manifoldToGltf(
   coloured: boolean,
   material?: MaterialPair,
   parts?: PartColorLUT,
+  override?: ColorOverride,
 ): Document {
   // Bake Manifold's calculateNormals so the GLB carries correct shading
   // data — matches the in-browser Mesh pane after the same fix in
@@ -104,6 +134,76 @@ function manifoldToGltf(
 
   const doc = new Document();
   const buf = doc.createBuffer();
+
+  if (override) {
+    // PER-PART OVERRIDE — the user explicitly painted this part's outside /
+    // inside. Wins over color-by-source + material + legacy, mirroring
+    // builder.ts manifoldToGeo/manifoldToCutVC's ColorOverride substitution.
+    // Always emit a non-indexed COLOR_0 so the GLB pane (PrimitiveDualScene)
+    // sees `attributes.color` → vertexColors and shows the baked colours.
+    //   full (coloured=false): every triangle = outer (uniform skin).
+    //   cut  (coloured=true):  legacy bore/cut/internal classification,
+    //                          recoloured outer/inner (identical to the
+    //                          live-mesh manifoldToCutVC ovOuter/ovInner path).
+    const ovOuter = hexRgb3(override.outer);
+    const ovInner = hexRgb3(override.inner);
+    const ntp = tris.length / 3;
+    const oPos = new Float32Array(ntp * 9);
+    const oCol = new Float32Array(ntp * 9);
+    const oNrm = vnrm ? new Float32Array(ntp * 9) : null;
+    for (let i = 0; i < ntp; i++) {
+      const a = tris[i * 3], b = tris[i * 3 + 1], c = tris[i * 3 + 2];
+      const ax = vpos[a * 3], ay = vpos[a * 3 + 1];
+      const bx = vpos[b * 3], by = vpos[b * 3 + 1];
+      const cx = vpos[c * 3], cy = vpos[c * 3 + 1];
+      const az = vpos[a * 3 + 2], bz = vpos[b * 3 + 2], cz = vpos[c * 3 + 2];
+      let rgb: [number, number, number];
+      if (!coloured) {
+        rgb = ovOuter;
+      } else {
+        const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+        const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+        const nx = e1y * e2z - e1z * e2y;
+        const ny = e1z * e2x - e1x * e2z;
+        const nz = e1x * e2y - e1y * e2x;
+        const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        const mx = (ax + bx + cx) / 3, my = (ay + by + cy) / 3;
+        const centroidR = Math.sqrt(mx * mx + my * my);
+        const radialDot = centroidR > 0.01 ? (nx * mx + ny * my) / (centroidR * nLen) : 0;
+        const eps = 0.02;
+        const isBore = radialDot < -0.3;
+        const onCutX = Math.abs(ax) < eps && Math.abs(bx) < eps && Math.abs(cx) < eps;
+        const onCutY = Math.abs(ay) < eps && Math.abs(by) < eps && Math.abs(cy) < eps;
+        const nzNorm = Math.abs(nz / nLen);
+        const maxR = Math.max(Math.sqrt(ax * ax + ay * ay), Math.sqrt(bx * bx + by * by), Math.sqrt(cx * cx + cy * cy));
+        const isGrey = isBore || (onCutX || onCutY) || (nzNorm > 0.8 && maxR < maxOD / 2 + 0.05);
+        rgb = isGrey ? ovInner : ovOuter;
+      }
+      const idx = i * 9;
+      for (let v = 0; v < 3; v++) {
+        const vi = tris[i * 3 + v];
+        oPos[idx + v * 3] = vpos[vi * 3];
+        oPos[idx + v * 3 + 1] = vpos[vi * 3 + 1];
+        oPos[idx + v * 3 + 2] = vpos[vi * 3 + 2];
+        oCol[idx + v * 3] = rgb[0];
+        oCol[idx + v * 3 + 1] = rgb[1];
+        oCol[idx + v * 3 + 2] = rgb[2];
+        if (oNrm && vnrm) {
+          oNrm[idx + v * 3] = vnrm[vi * 3];
+          oNrm[idx + v * 3 + 1] = vnrm[vi * 3 + 1];
+          oNrm[idx + v * 3 + 2] = vnrm[vi * 3 + 2];
+        }
+      }
+    }
+    const posAcc = doc.createAccessor().setType('VEC3').setArray(oPos).setBuffer(buf);
+    const colAcc = doc.createAccessor().setType('VEC3').setArray(oCol).setBuffer(buf);
+    const prim = doc.createPrimitive().setAttribute('POSITION', posAcc).setAttribute('COLOR_0', colAcc);
+    if (oNrm) prim.setAttribute('NORMAL', doc.createAccessor().setType('VEC3').setArray(oNrm).setBuffer(buf));
+    prim.setMaterial(doc.createMaterial().setBaseColorFactor([1, 1, 1, 1]).setMetallicFactor(0).setRoughnessFactor(1));
+    const meshNode = doc.createMesh().addPrimitive(prim);
+    doc.createScene().addChild(doc.createNode().setMesh(meshNode));
+    return doc;
+  }
 
   if (parts?.active) {
     // COLOR-BY-SOURCE — non-indexed COLOR_0, per-triangle color from the
@@ -399,6 +499,7 @@ export async function buildGlbBytes(
   defaults: Record<string, number | string>,
   material?: MaterialPair,
   parts?: PartColorLUT,
+  override?: ColorOverride,
 ): Promise<GlbBytes | GlbBytesError> {
   try {
     await initManifold();
@@ -415,7 +516,7 @@ export async function buildGlbBytes(
     //    external viewers (Blender, model-viewer, glTF preview). When
     //    no material is provided we fall back to the smallest
     //    positions-only representation.
-    const doc = manifoldToGltf(manifold, maxOD, false, material, lut);
+    const doc = manifoldToGltf(manifold, maxOD, false, material, lut, override);
     const full = await io.writeBinary(doc);
     const result: GlbBytes = { ok: true, full };
     // 2. Half-sectioned mesh — non-indexed with per-face colours so the
@@ -425,7 +526,7 @@ export async function buildGlbBytes(
     try {
       const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
       const cutManifold = manifold.subtract(cutBox);
-      const cutDoc = manifoldToGltf(cutManifold, maxOD, true, undefined, lut);
+      const cutDoc = manifoldToGltf(cutManifold, maxOD, true, undefined, lut, override);
       result.cut = await io.writeBinary(cutDoc);
     } catch {
       // Cut bake failed (component might already be open / one-sided);
