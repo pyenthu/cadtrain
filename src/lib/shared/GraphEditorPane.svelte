@@ -3593,7 +3593,7 @@
     { r: asLiteral(-1), z: asLiteral( 1) },
   ];
 
-  function dropSolid(op: 'revolve' | 'extrude') {
+  function dropSolid(op: 'revolve' | 'extrude' | 'loft') {
     closePicker();
     // Find an existing polygon, or create one — a revolve / extrude is
     // useless without a profile to operate on. Auto-attached polygons
@@ -3608,7 +3608,9 @@
       // and reads as a half-section), a unit square centered on (0, 0)
       // for extrude (cartesian cross-section, respects the origin-centered
       // viewport in cartesian SVG preview mode).
-      const initial = op === 'extrude' ? POLY_EXTRUDE_DEFAULT : POLY_REVOLVE_DEFAULT;
+      // loft + extrude both take a cartesian (x,y) cross-section; revolve takes
+      // an r≥0 half-section.
+      const initial = op === 'revolve' ? POLY_REVOLVE_DEFAULT : POLY_EXTRUDE_DEFAULT;
       const r = addPolygon(graph, initial);
       graph = r.graph;
       polyId = r.id;
@@ -3618,6 +3620,20 @@
       graph = addCall(graph, 'r_revolve', {
         profile: profileArg as any,
         segments: { kind: 'literal', value: 96 } as any,
+      }).graph;
+    } else if (op === 'loft') {
+      // r_loft (stdlib) sig: profile · length · divs · twist · bulge · shape ·
+      // segments. Defaults to a barrel bulge so the new node visibly differs
+      // from a plain extrude. shape stays the engine default ('barrel') even if
+      // the enum field reads blank in the card — it bakes via the default.
+      graph = addCall(graph, 'r_loft', {
+        profile:  profileArg as any,
+        length:   { kind: 'literal', value: 6 } as any,
+        divs:     { kind: 'literal', value: 48 } as any,
+        twist:    { kind: 'literal', value: 0 } as any,
+        bulge:    { kind: 'literal', value: 0.4 } as any,
+        shape:    { kind: 'literal', value: 'barrel' } as any,
+        segments: { kind: 'literal', value: 48 } as any,
       }).graph;
     } else {
       // r_weld_extrude actual sig (stdstale/r_weld_extrude.ts meta.params):
@@ -7864,6 +7880,9 @@
         </button>
         <button class="ge-pick-item" type="button" onclick={() => { dropSolid('extrude'); submenuKey = null; }}>
           <span class="ge-pick-icon">▭</span><span class="ge-pick-name">extrude</span><span class="ge-pick-hint">sweep</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropSolid('loft'); submenuKey = null; }}>
+          <span class="ge-pick-icon">◇</span><span class="ge-pick-name">loft</span><span class="ge-pick-hint">bulge</span>
         </button>
       </div>
     {:else if submenuKey === 'ops'}
