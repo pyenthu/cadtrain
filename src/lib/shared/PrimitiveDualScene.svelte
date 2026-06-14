@@ -331,7 +331,7 @@
   // On Threlte's on-demand render loop, mutating the RectAreaLight object
   // directly (below) doesn't invalidate a frame — so changes wouldn't show
   // live. invalidate() requests a re-render after each update.
-  const { invalidate } = useThrelte();
+  const { invalidate, size } = useThrelte();
   // One-time uniforms-lib init (LTC textures the RectAreaLight needs). It's
   // async — the light renders UNLIT until init completes, and the on-demand
   // loop won't re-render on its own, so invalidate() once it's ready (this was
@@ -402,14 +402,48 @@
     scene.cam = { x: 0, y: cy + dist, z: cz };
   });
 
+  // --- orthographic frustum (when scene.cam3dOrtho) ---
+  // Parallel projection: size the frustum to the scaled part bbox (larger of the
+  // Z-span / X extent) + 15% padding, matched to the canvas aspect so nothing
+  // stretches. Driven imperatively onto the ortho cam (updateProjectionMatrix)
+  // so it's correct regardless of Threlte's camera-prop handling.
+  let orthoCam = $state<any>(null);
+  let orthoFrustum = $derived.by(() => {
+    const w = $size?.width || 1, h = $size?.height || 1;
+    const aspect = w / h;
+    let halfH = 10;
+    if (bbox) {
+      const ex = bbox.ex * scene.xScale, ez = bbox.ez * scene.zScale;
+      const halfZspan = ez + (gap * scene.zScale) / 2;
+      halfH = Math.max(halfZspan, ex / 2) * 1.15 || 10;
+    }
+    return { l: -halfH * aspect, r: halfH * aspect, t: halfH, b: -halfH };
+  });
+  $effect(() => {
+    const c = orthoCam;
+    if (!c || !scene.cam3dOrtho) return;
+    const f = orthoFrustum;
+    c.left = f.l; c.right = f.r; c.top = f.t; c.bottom = f.b;
+    c.updateProjectionMatrix();
+    invalidate();
+  });
+
   const AX_LEN = 2.2, AX_R = 0.06;
 </script>
 
-<T.PerspectiveCamera makeDefault position={cameraPosition} fov={45} up={DEFAULT_UP}>
-  <OrbitControls bind:ref={controls}
-    target={[scene.partCenter.x, scene.partCenter.y, scene.partCenter.z + scene.zFocus]}
-    enableDamping enableZoom enableRotate enablePan />
-</T.PerspectiveCamera>
+{#if scene.cam3dOrtho}
+  <T.OrthographicCamera bind:ref={orthoCam} makeDefault position={cameraPosition} up={DEFAULT_UP} near={0.1} far={100000}>
+    <OrbitControls bind:ref={controls}
+      target={[scene.partCenter.x, scene.partCenter.y, scene.partCenter.z + scene.zFocus]}
+      enableDamping enableZoom enableRotate enablePan />
+  </T.OrthographicCamera>
+{:else}
+  <T.PerspectiveCamera makeDefault position={cameraPosition} fov={45} up={DEFAULT_UP}>
+    <OrbitControls bind:ref={controls}
+      target={[scene.partCenter.x, scene.partCenter.y, scene.partCenter.z + scene.zFocus]}
+      enableDamping enableZoom enableRotate enablePan />
+  </T.PerspectiveCamera>
+{/if}
 
 <!-- White scene background (user pref — easier to see the part). BOTH this
      <T.Color> AND the .pd-stage CSS in PrimitiveDualCanvas are white, so it's

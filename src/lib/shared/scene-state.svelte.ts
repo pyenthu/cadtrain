@@ -77,6 +77,10 @@ export const scene = $state({
    *  Z (drilling) axis → the whole length lit evenly, no falloff; `zDirAngle`
    *  spins the bearing around Z. Works with MeshPhong (no PBR/strange colours,
    *  no LTC init). An OPTION (toggle) — default ON. */
+  /** 3D-canvas camera projection — false = perspective (default), true =
+   *  orthographic (parallel, no foreshortening; good for inspecting a part).
+   *  VIEW ONLY; OrbitControls works with both. */
+  cam3dOrtho: false,
   zDirLight: true,
   zDirIntensity: 1,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera

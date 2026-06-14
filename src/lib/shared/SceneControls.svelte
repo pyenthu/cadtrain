@@ -60,6 +60,10 @@
         <input type="checkbox" bind:checked={scene.showEdges} />
         Edges
       </label>
+      <label class="sv-check" title="Orthographic (parallel) camera — no perspective foreshortening">
+        <input type="checkbox" bind:checked={scene.cam3dOrtho} />
+        Ortho
+      </label>
     </div>
     <!-- Z-axis DIRECTIONAL light — parallel rays perpendicular to Z (even
          length-wise illumination). A theta spins the bearing around the axis. -->
