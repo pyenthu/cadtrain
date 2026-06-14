@@ -22,6 +22,7 @@
    */
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
+  import CacheBrowser from '$lib/shared/CacheBrowser.svelte';
 
   /** Same regex the server uses for primitive ids — keep them in sync.
    *  Server: src/routes/api/primitives/rename/+server.ts ID_RE. */
@@ -60,6 +61,11 @@
   let navByTab: Record<string, string> = {};
   let isSrcTab = $derived(activeTab === 'stdlib' || activeTab === 'stdstale');
   let isArchiveTab = $derived(activeTab === 'archive');
+  /** ⛁ Cache inspector — a non-folder rail tab. When active the MAIN area
+   *  shows <CacheBrowser/> instead of the per-part editor tabs; the sidebar
+   *  scroll body shows a short hint (the cache's own parts-list lives in
+   *  main). Treated like the read-only src tabs: no navPath, no create. */
+  let isCacheTab = $derived(activeTab === 'cache');
 
   function tabLabel(name: string): string {
     if (name === 'archive') return 'Archived';
@@ -124,7 +130,9 @@
   }
   function selectTab(name: string) {
     activeTab = name;
-    navPath = (name === 'stdlib' || name === 'stdstale') ? name : (navByTab[name] ?? name);
+    // stdlib / stdstale / cache are non-folder tabs — navPath isn't a real
+    // on-volume dir for them, so just park it at the tab name.
+    navPath = (name === 'stdlib' || name === 'stdstale' || name === 'cache') ? name : (navByTab[name] ?? name);
     persistNav();
   }
   function descend(path: string) {
@@ -662,7 +670,7 @@
       const np = localStorage.getItem('prim-nav-path');
       if (np) navPath = np;
     } catch { /* ignore */ }
-    if (!isSrcTab) {
+    if (!isSrcTab && !isCacheTab) {
       if (!nodeAt(navPath)) navPath = nodeAt(activeTab) ? activeTab : '';
       if (!nodeAt(navPath)) {
         const first = topFolders[0];
@@ -771,14 +779,15 @@
           title={`${tabLabel(f.name)} — primitives/${f.name}/`}
           onclick={() => selectTab(f.name)}>{tabLabel(f.name)}</button>
       {/each}
-      <button class="prim-tabbtn src" class:active={activeTab === 'stdlib'}
-        role="tab" type="button" aria-selected={activeTab === 'stdlib'}
-        title="Built-in engines (src/lib/cad/stdlib — read-only)"
-        onclick={() => selectTab('stdlib')}>stdlib</button>
-      <button class="prim-tabbtn src" class:active={activeTab === 'stdstale'}
-        role="tab" type="button" aria-selected={activeTab === 'stdstale'}
-        title="Deprecated engines (src/lib/cad/stdstale — read-only)"
-        onclick={() => selectTab('stdstale')}>stdstale</button>
+      <!-- stdlib / stdstale are read-only engine SOURCES the user doesn't
+           author in — hidden from the rail (the source files + resolver
+           behaviour are untouched; parts still bake against them). -->
+      <!-- ⛁ Cache inspector — a non-folder tab; selecting it swaps the main
+           area to <CacheBrowser/>. -->
+      <button class="prim-tabbtn cache" class:active={activeTab === 'cache'}
+        role="tab" type="button" aria-selected={activeTab === 'cache'}
+        title="Bake-cache inspector (local volume)"
+        onclick={() => selectTab('cache')}>⛁ Cache</button>
       <button class="prim-tabadd" type="button"
         title="New folder-tab — creates primitives/<name>/ on the volume"
         disabled={folderBusy} onclick={addTopFolder}>＋ folder</button>
@@ -859,7 +868,12 @@
     {#if listLoading}<div class="prim-empty">loading…</div>{/if}
     {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
 
-    {#if isSrcTab}
+    {#if isCacheTab}
+      <!-- Cache tab — the inspector's own parts-list lives in the MAIN panel
+           (it needs the width); the rail just orients the user. -->
+      <div class="prim-empty">⛁ Bake-cache inspector — see the main panel. The
+        cache is on the local volume (not proxied).</div>
+    {:else if isSrcTab}
       <!-- Fixed SRC group — flat, read-only (no create / rename / trash). -->
       {@const srcList = activeTab === 'stdlib' ? stdlibSorted : stdstaleSorted}
       {@const srcTag = activeTab === 'stdlib' ? 'src' : 'stale'}
@@ -952,7 +966,10 @@
     ondblclick={() => { railWidth = 240; try { localStorage.setItem('prim-rail-width', '240'); } catch { /* ignore */ } }}></div>
 
   <main class="prim-main">
-    {#if tabs.length === 0}
+    {#if isCacheTab}
+      <!-- ⛁ Cache tab active — the inspector replaces the editor tab strip. -->
+      <CacheBrowser active={true} />
+    {:else if tabs.length === 0}
       <div class="prim-empty-state">
         <p>No primitives open.</p>
         <p>Click a primitive in the sidebar to open it in a tab. Each tab embeds the graph editor.</p>
@@ -1154,6 +1171,10 @@
      reads at a glance; still inverts when active. */
   .prim-tabbtn.src { color: #1e40af; }
   .prim-tabbtn.src.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+  /* ⛁ Cache tab — amber tint so the inspector reads as a distinct utility
+     surface, not a part folder; inverts to amber when active. */
+  .prim-tabbtn.cache { color: #92400e; }
+  .prim-tabbtn.cache.active { background: #92400e; color: #fff; border-color: #92400e; }
   /* + folder-tab — dashed green affordance, set apart from the real tabs. */
   .prim-tabadd {
     flex: 0 0 auto;
