@@ -408,14 +408,24 @@
   // stretches. Driven imperatively onto the ortho cam (updateProjectionMatrix)
   // so it's correct regardless of Threlte's camera-prop handling.
   let orthoCam = $state<any>(null);
+  // How much LENGTH to show initially, as a multiple of the diameter, before
+  // the user scrolls the rest with the Z-pan slider. Keeps the dia prominent on
+  // long thin tools instead of shrinking the whole length into the frame.
+  const ORTHO_LEN_DIAMETERS = 3;
   let orthoFrustum = $derived.by(() => {
     const w = $size?.width || 1, h = $size?.height || 1;
     const aspect = w / h;
     let halfH = 10;
     if (bbox) {
       const ex = bbox.ex * scene.xScale, ez = bbox.ez * scene.zScale;
-      const halfZspan = ez + (gap * scene.zScale) / 2;
-      halfH = Math.max(halfZspan, ex / 2) * 1.15 || 10;
+      const halfZspan = ez + (gap * scene.zScale) / 2;   // half of the full part length
+      const radius = (ex / 2) || 1;
+      // Bias the zoom to the BREADTH (diameter): the lower bound fits the dia to
+      // the width (so it reads big), and we only frame ~ORTHO_LEN_DIAMETERS of
+      // length (or the whole part if it's shorter) instead of the full length.
+      const breadthFit = radius / aspect;                            // dia fills the width
+      const lenWindowHalf = Math.min(halfZspan, radius * ORTHO_LEN_DIAMETERS);
+      halfH = Math.max(breadthFit, lenWindowHalf) * 1.15 || 10;
     }
     return { l: -halfH * aspect, r: halfH * aspect, t: halfH, b: -halfH };
   });
