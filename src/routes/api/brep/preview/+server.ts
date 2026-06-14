@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { revolveBrep, extractRevolveProfile } from '$lib/server/brep-occt';
+import { revolveBrep, brepFromSource } from '$lib/server/brep-occt';
 
 // POST /api/brep/preview — server-side OpenCascade (OCCT) BREP render.
 // Two input shapes:
@@ -10,7 +10,7 @@ import { revolveBrep, extractRevolveProfile } from '$lib/server/brep-occt';
 // Returns an adaptively-tessellated indexed mesh (+ OCCT exact-surface normals)
 // for the editor's BREP tab. Parts with no top-level r_revolve return
 // supported:false → the tab shows "no BREP path" instead of erroring.
-export const POST = async ({ request }) => {
+export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
@@ -21,32 +21,29 @@ export const POST = async ({ request }) => {
     angularTolerance: typeof angularTolerance === 'number' ? angularTolerance : undefined,
   };
 
-  // Resolve the (r,z) profile from either an explicit array or a part source.
-  let prof: [number, number][] | null = null;
+  // Explicit half-section → revolve directly.
   if (kind === 'revolve' && Array.isArray(profile)) {
-    prof = profile;
-  } else if (typeof source === 'string' && source.trim()) {
-    prof = await extractRevolveProfile(source, (paramValues && typeof paramValues === 'object') ? paramValues : {});
-    if (!prof) {
-      return json({ supported: false, reason: 'no top-level r_revolve in this part — BREP path is revolve-only for now' });
-    }
-  } else {
-    throw error(400, 'provide { kind:"revolve", profile } or { source, paramValues }');
+    if (profile.length < 3) throw error(400, 'profile must be ≥3 [r,z] points');
+    try {
+      const mesh = await revolveBrep(profile as [number, number][], opts);
+      return json({ supported: true, ...mesh });
+    } catch (e: any) { throw error(500, `OCCT revolve failed: ${e?.message ?? e}`); }
   }
 
-  if (!Array.isArray(prof) || prof.length < 3) {
-    throw error(400, 'profile must resolve to ≥3 [r,z] points');
-  }
-  for (const p of prof) {
-    if (!Array.isArray(p) || p.length < 2 || typeof p[0] !== 'number' || typeof p[1] !== 'number') {
-      throw error(400, 'each profile point must be [r:number, z:number]');
+  // Part source → full graph→OCCT executor (revolve · extrude · loft · CSG).
+  if (typeof source === 'string' && source.trim()) {
+    try {
+      const mesh = await brepFromSource(source, (paramValues && typeof paramValues === 'object') ? paramValues : {}, opts, fetch);
+      if (!mesh) {
+        return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
+      }
+      return json({ supported: true, ...mesh });
+    } catch (e: any) {
+      // OCCT couldn't build/mesh it (unmapped op, bad profile, boolean failure)
+      // → report gracefully so the tab shows the reason, not a 500.
+      return json({ supported: false, reason: String(e?.message ?? e).slice(0, 200) });
     }
   }
 
-  try {
-    const mesh = await revolveBrep(prof, opts);
-    return json({ supported: true, ...mesh });
-  } catch (e: any) {
-    throw error(500, `OCCT revolve failed: ${e?.message ?? e}`);
-  }
+  throw error(400, 'provide { kind:"revolve", profile } or { source, paramValues }');
 };

@@ -6955,7 +6955,7 @@
           onclick={() => setRightTab('glb')}>GLB</button>
         <button class="ge-pane-tab" class:active={rightTab === 'brep'}
           type="button" role="tab" aria-selected={rightTab === 'brep'}
-          data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve parts only for now."
+          data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve · extrude · loft · CSG · composed parts."
           onclick={() => setRightTab('brep')}>BREP</button>
       </div>
       <div class="ge-pane-bodies">

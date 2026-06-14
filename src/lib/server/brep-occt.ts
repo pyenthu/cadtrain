@@ -114,6 +114,224 @@ export interface BrepMesh {
 }
 
 /**
+ * Full graph→OCCT executor: run an emitted part body with OpenCascade-backed
+ * engines + booleans instead of Manifold, then tessellate. This covers CSG
+ * parts (the body chains .add/.subtract/.intersect + mv/rot over multiple
+ * engine solids), not just a single revolve.
+ *
+ * Strategy: build a scope where r_revolve/r_extrude/r_weld_extrude/r_loft/
+ * r_cuboid return WRAPPED OCCT solids, and the wrapper maps the Manifold method
+ * names the body calls onto replicad's: .add→.fuse · .subtract→.cut ·
+ * .intersect→.intersect · mv→.translate · rot→.rotate. Anything unmappable
+ * throws → the endpoint reports supported:false and the BREP tab shows
+ * "no BREP path", so this never blocks the part.
+ *
+ * Returns null when no OCCT solid was produced (not a buildable BREP part).
+ */
+export async function brepFromSource(
+  source: string,
+  paramValues: Record<string, number> = {},
+  opts: { tolerance?: number; angularTolerance?: number } = {},
+  fetchFn?: typeof fetch,
+): Promise<BrepMesh | null> {
+  await ensureOC();
+  const replicad: any = await import('replicad');
+  const { compileSketch } = await import('$lib/cad/sketch');
+  const { draw, makeBaseBox, makeCompound } = replicad;
+  const tol = opts.tolerance ?? 0.05;
+  const ang = opts.angularTolerance ?? 0.3;
+
+  const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
+  if (!m) return null;
+  const fnBody = m[1];
+
+  // ── wrapped OCCT solid: Manifold-method names → replicad methods ──────────
+  const WRAP = Symbol('occt');
+  const unwrap = (v: any) => (v && v[WRAP]) ? v[WRAP] : v;
+  function wrap(shape: any): any {
+    if (!shape || typeof shape !== 'object') return shape;
+    const proxy: any = new Proxy(shape, {
+      get(t, prop) {
+        if (prop === WRAP) return t;
+        if (prop === 'add' || prop === 'union') return (o: any) => wrap(t.fuse(unwrap(o)));
+        if (prop === 'subtract') return (o: any) => wrap(t.cut(unwrap(o)));
+        if (prop === 'intersect') return (o: any) => wrap(t.intersect(unwrap(o)));
+        const val = (t as any)[prop];
+        if (typeof val === 'function') return (...a: any[]) => {
+          const r = val.apply(t, a.map(unwrap));
+          return (r && typeof r === 'object' && typeof r.mesh === 'function') ? wrap(r) : r;
+        };
+        return val;
+      },
+    });
+    return proxy;
+  }
+
+  // Build a closed replicad drawing from a 2D point list, sketch on a plane.
+  const sketchPoly = (pts: [number, number][], plane: 'XZ' | 'XY') => {
+    if (!Array.isArray(pts) || pts.length < 3) throw new Error('profile < 3 pts');
+    let d = draw([pts[0][0], pts[0][1]]);
+    for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i][0], pts[i][1]]);
+    return d.close().sketchOnPlane(plane);
+  };
+  const asPts = (p: any): [number, number][] =>
+    (typeof p === 'string' ? JSON.parse(p) : p) as [number, number][];
+
+  // ── OCCT-backed engines ──────────────────────────────────────────────────
+  const r_revolve = (a: any, b?: any) => {
+    const prof = asPts(Array.isArray(a) ? a : a.profile);
+    return wrap(sketchPoly(prof, 'XZ').revolve());
+  };
+  const extrudeXY = (profile: any, length: number, twist = 0) => {
+    const prof = asPts(profile);
+    const sk = sketchPoly(prof, 'XY');
+    const h = Math.max(0.01, length);
+    return wrap(twist ? sk.extrude(h, { twistAngle: twist }) : sk.extrude(h));
+  };
+  const r_weld_extrude = (a: any, length?: number, _divs?: number, twist?: number) => {
+    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.length, a.twist ?? 0);
+    return extrudeXY(a, length ?? 2, twist ?? 0);
+  };
+  const r_extrude = (a: any, height?: number, twist?: number) => {
+    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.height ?? a.length, a.twist ?? 0);
+    return extrudeXY(a, height ?? 2, twist ?? 0);
+  };
+  const r_loft = (a: any, length?: number, _divs?: number, twist?: number, bulge?: number) => {
+    // Approximate the scale-along-z bulge with replicad's extrusionProfile.
+    const prof = asPts(Array.isArray(a) ? a : a.profile);
+    const L = (a && a.length !== undefined) ? a.length : (length ?? 6);
+    const tw = (a && a.twist !== undefined) ? a.twist : (twist ?? 0);
+    const bl = (a && a.bulge !== undefined) ? a.bulge : (bulge ?? 0);
+    const sk = sketchPoly(prof, 'XY');
+    const ep = bl ? { profile: 's-curve' as const, endFactor: 1 + bl } : undefined;
+    return wrap(sk.extrude(Math.max(0.01, L), { twistAngle: tw || 0, ...(ep ? { extrusionProfile: ep } : {}) }));
+  };
+  const r_cuboid = (w: number, h: number, d: number) => wrap(makeBaseBox(Math.max(0.01, w), Math.max(0.01, h), Math.max(0.01, d)));
+
+  // transforms
+  const mv = (s: any, v: number[]) => wrap(unwrap(s).translate([v[0] || 0, v[1] || 0, v[2] || 0]));
+  const rot = (s: any, v: number[]) => {
+    let sh = unwrap(s);
+    if (v[0]) sh = sh.rotate(v[0], [0, 0, 0], [1, 0, 0]);
+    if (v[1]) sh = sh.rotate(v[1], [0, 0, 0], [0, 1, 0]);
+    if (v[2]) sh = sh.rotate(v[2], [0, 0, 0], [0, 0, 1]);
+    return wrap(sh);
+  };
+  const place = (...args: any[]) => { const last = args[args.length - 1]; return last; };
+  // Stack-ref offset (graded-delta z mate) — BREP compounds at built positions,
+  // so passthrough the part (offset affects Manifold stacking, not the compound).
+  const withStackRef = (s: any) => s;
+  const sketch = (ops: any[], segs = 64) => compileSketch(ops, segs);
+
+  // Collect wrapped OCCT solids out of any return value (shape | array | stack).
+  const collectShapes = (v: any, into: any[]) => {
+    if (!v) return;
+    if (Array.isArray(v)) { v.forEach((x) => collectShapes(x, into)); return; }
+    const s = unwrap(v);
+    if (s && typeof s.mesh === 'function' && typeof s.cut === 'function') into.push(s);
+  };
+  // Composition containers: stack / list / group all just gather solids into a
+  // compound for BREP (topological compose ≈ a non-fused compound).
+  const compoundOf = (...xs: any[]) => {
+    const arr: any[] = []; collectShapes(xs, arr);
+    // Clone before compounding — OCCT frees operands consumed by makeCompound,
+    // and a part reused across the stack would then throw "object deleted".
+    const safe = arr.map((s) => { try { return typeof s.clone === 'function' ? s.clone() : s; } catch { return s; } });
+    return safe.length === 1 ? wrap(safe[0]) : wrap(makeCompound(safe));
+  };
+
+  // ── recursively resolve volume-part dependencies → callable functions ─────
+  // A composed body calls sub-parts as `g_dp_box({ wall: p.wall, … })`; the
+  // named-args object IS the sub-part's `p`. Engines are already injected, so
+  // only non-engine meta.uses need resolving (transitively).
+  const ENGINES = new Set(['r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid']);
+  const parseUses = (src: string): string[] => {
+    const m2 = src.match(/uses:\s*\[([\s\S]*?)\]/);
+    if (!m2) return [];
+    return [...m2[1].matchAll(/['"]([a-z_][a-z0-9_]*)['"]/gi)].map((x) => x[1]);
+  };
+  const depSrc: Record<string, string> = {};
+  async function collectDeps(src: string): Promise<void> {
+    for (const nm of parseUses(src)) {
+      if (ENGINES.has(nm) || depSrc[nm]) continue;
+      const s = await getDepSource(nm, fetchFn);
+      if (s) { depSrc[nm] = s; await collectDeps(s); }
+    }
+  }
+  await collectDeps(source);
+
+  // Build the shared scope once; dep fns close over it (mutual recursion ok —
+  // all built before any runs).
+  const depFns: Record<string, (args?: any) => any> = {};
+  const NAMES = [
+    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid',
+    'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group', 'cos', 'sin', 'tan', 'tau', 'PI',
+    'sqrt', 'abs', 'min', 'max', 'pow', 'floor', 'round',
+  ];
+  const baseVals = (p: any) => [
+    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid,
+    mv, rot, place, withStackRef, compoundOf, compoundOf, compoundOf, Math.cos, Math.sin, Math.tan, 2 * Math.PI, Math.PI,
+    Math.sqrt, Math.abs, Math.min, Math.max, Math.pow, Math.floor, Math.round,
+  ];
+  function bodyOf(src: string): string | null {
+    const mm = src.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
+    return mm ? mm[1] : null;
+  }
+  function runBody(src: string, pv: any): any {
+    const b = bodyOf(src);
+    if (!b) throw new Error('no function body');
+    const depNames = Object.keys(depFns);
+    const runner = new Function(...NAMES, ...depNames, 'return (function(){' + b + '})();');
+    const out = runner(...baseVals(pv), ...depNames.map((n) => depFns[n]));
+    const arr: any[] = []; collectShapes(out, arr);
+    if (arr.length === 0) return null;
+    return arr.length === 1 ? arr[0] : makeCompound(arr);
+  }
+  for (const nm of Object.keys(depSrc)) {
+    depFns[nm] = (args?: any) => { const s = runBody(depSrc[nm], args ?? {}); return s ? wrap(s) : s; };
+  }
+
+  const t0 = Date.now();
+  let solid: any;
+  try {
+    solid = runBody(source, paramValues);
+  } catch (e: any) {
+    throw new Error('BREP build failed: ' + (e?.message ?? e));
+  }
+  if (!solid) return null;
+
+  const meshed = solid.mesh({ tolerance: tol, angularTolerance: ang });
+  const ms = Date.now() - t0;
+  const positions: number[] = Array.from(meshed.vertices ?? []);
+  const index: number[] = Array.from(meshed.triangles ?? []);
+  const normals: number[] | undefined = meshed.normals ? Array.from(meshed.normals) : undefined;
+  return { positions, index, normals, meta: { tris: index.length / 3, verts: positions.length / 3, ms, tolerance: tol } };
+}
+
+/** Resolve a part/engine source by name. stdlib (local, canonical) first; then
+ *  the /api/primitives/source endpoint via the request's fetch — that path is
+ *  PROXIED to prod in dev (the local .dev-volume is stale), so it's the only
+ *  resolver that sees the real volume parts. Falls back to a local file read. */
+async function getDepSource(name: string, fetchFn?: typeof fetch): Promise<string | null> {
+  try {
+    const { stdlibSource } = await import('$lib/server/stdlib');
+    const std = stdlibSource(name);
+    if (std) return std;
+    if (fetchFn) {
+      const r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(name)}`);
+      if (r.ok) { const d = await r.json(); if (d?.source) return d.source as string; }
+    }
+    const { findPrim } = await import('$lib/server/primitive-paths');
+    const hit = await findPrim(name);
+    if (hit) {
+      const { readFile } = await import('node:fs/promises');
+      return await readFile(hit.path, 'utf8');
+    }
+  } catch { /* unresolved */ }
+  return null;
+}
+
+/**
  * Revolve a closed (r,z) half-section 360° around the z-axis via OCCT and
  * tessellate to `tolerance`. `profile` is [[r,z], …] with r ≥ 0 — the same
  * shape r_revolve consumes. Returns an indexed mesh with OCCT's exact-surface
