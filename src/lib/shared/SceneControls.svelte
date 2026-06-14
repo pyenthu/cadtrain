@@ -77,6 +77,19 @@
         Edges
       </label>
     </div>
+    <!-- Z-axis light strip — even illumination down a long/tall part. -->
+    <div class="sv-row sv-zlight">
+      <label class="sv-check sv-zlight-master">
+        <input type="checkbox" bind:checked={scene.zStripLight} />
+        Z-axis light
+      </label>
+      <span class="sv-sub">n</span>
+      <input type="number" step="1" min={1} max={20} bind:value={scene.zStripCount} disabled={!scene.zStripLight} />
+      <span class="sv-sub">i</span>
+      <input type="number" step="10" min={0} bind:value={scene.zStripIntensity} disabled={!scene.zStripLight} />
+      <span class="sv-sub">⌀</span>
+      <input type="number" step="1" min={0} bind:value={scene.zStripRadius} disabled={!scene.zStripLight} />
+    </div>
     <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
          row + scene.warp* fields + warp.ts to retire the feature. -->
     <div class="sv-row sv-warp">
@@ -141,6 +154,9 @@
   .sv-row-toggles { gap: 14px; margin-top: 2px; }
   .sv-check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
   .sv-check input[type='checkbox'] { accent-color: #cc2222; cursor: pointer; }
+  /* Z-axis light strip row */
+  .sv-zlight { gap: 4px; flex-wrap: wrap; }
+  .sv-zlight-master { margin-right: 4px; }
   /* TEMP warp experiment styling */
   .sv-warp { gap: 4px; flex-wrap: wrap; }
   .sv-warp-radio { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }

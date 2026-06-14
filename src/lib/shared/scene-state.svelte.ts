@@ -41,6 +41,25 @@ export const scene = $state({
    *  scale on the whole render group in PrimitiveDualScene; the part on disk +
    *  the bake stay TRUE scale. The camera auto-fit accounts for both. */
   xScale: 1.0,
+  /** Z-axis ("rectangular") light strip — VIEW ONLY. Distributes
+   *  `zStripCount` point lights evenly along the part's Z (drilling) extent
+   *  at a fixed radial offset (`zStripRadius`), so long thin tools / tall
+   *  stacks are lit evenly down their whole length instead of falling off at
+   *  the far end. When on, the three fixed lights (l1/l2/l3) dim to a small
+   *  fill. Option A from docs/plans/z-axis-light.md (Phong-compatible — no
+   *  material swap). Master OFF by default → lighting is identical to the
+   *  prior 3-point setup. */
+  zStripLight: false,
+  /** Number of point lights spanning the part's Z extent. */
+  zStripCount: 5,
+  /** Per-light intensity for the strip. */
+  zStripIntensity: 300,
+  /** Radial offset (world units, +Y) of the strip from the part axis. */
+  zStripRadius: 30,
+  /** Auto-computed visual Z range of the rendered (stacked) part, in world
+   *  units after the view scale. Written by PrimitiveDualScene's geometry
+   *  effect alongside partCenter; the strip lights span [min, max]. */
+  partZExtent: { min: 0, max: 0 },
   /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
    *  renders (per-vertex RGB: red outer / grey bore). When false, the
    *  solid `full` mesh renders in flat red. UI in SceneControls. */
