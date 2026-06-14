@@ -62,6 +62,16 @@ function tagInstanceSources(source: string): string {
 
 type GeomFn = (...args: any[]) => any;
 
+/** True for a meta.params key that controls circular tessellation resolution
+ *  (engine primitives expose it as an explicit param, e.g. `segments`). Used by
+ *  the coarse-bake clamp so an assembly's deps actually bake low-poly. */
+function isSegmentKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return k === 'segments' || k === 'segment' || k === 'seg' || k === 'segs'
+    || k === 'nseg' || k === 'nsegments' || k === 'circularsegments'
+    || k.endsWith('segments');
+}
+
 /** Compact one-line shape for an args list — used to annotate the
  *  `[in parent → dep(<shape>)]` suffix on a decorated dep error. Hides
  *  Manifold objects (huge) + truncates long arrays. */
@@ -342,25 +352,61 @@ export async function buildPrimitiveGeom(
   // We bridge by detecting the single-object inbound shape and the fn's style,
   // then translating as needed. metaKeys is the ground truth for both
   // directions when present (canonical key list).
+  // ── Coarse-bake segment clamp ───────────────────────────────────────────
+  // When /preview activates a coarse SVG bake it sets a segment CAP (see
+  // manifold-helpers.setCircularSegmentCap). Engine primitives (r_revolve /
+  // r_tube / r_cylinder, …) take their circular-resolution as an explicit
+  // `segments` PARAM and feed it straight to revolveProfile — they ignore the
+  // module-global currentSegments AND the WASM global, so without this clamp
+  // an assembly's circular geometry (which lives entirely inside those deps)
+  // stays at full resolution even under the override. Here — at the single
+  // call boundary every built part (top-level AND dep) passes through — we
+  // clamp any `segments`-style param DOWN to the cap. Read at CALL time so the
+  // cap is observed only while a coarse bake is in flight (deps execute
+  // synchronously inside the parent's primFn, with the cap set).
+  const segKeyIdx = metaKeys.findIndex(isSegmentKey);
+  const clampSegInObj = (obj: any, cap: number): any => {
+    if (segKeyIdx < 0) return obj;
+    const k = metaKeys[segKeyIdx]!;
+    const v = obj?.[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v > cap) {
+      return { ...obj, [k]: cap };
+    }
+    return obj;
+  };
+  const clampSegInArgs = (a: any[], cap: number): any[] => {
+    if (segKeyIdx < 0 || segKeyIdx >= a.length) return a;
+    const v = a[segKeyIdx];
+    if (typeof v === 'number' && Number.isFinite(v) && v > cap) {
+      const out = a.slice();
+      out[segKeyIdx] = cap;
+      return out;
+    }
+    return a;
+  };
   const wrapped: GeomFn = (...args: any[]) => {
+    const cap = helpers.getCircularSegmentCap();
     const objectInbound = args.length === 1 && args[0] && typeof args[0] === 'object'
       && !Array.isArray(args[0]) && (args[0] as any).__cadtrain_manifold__ === undefined
       && !(args[0] as any).constructor?.name?.startsWith?.('Manifold');
     if (isObjectStyle) {
       // fn expects a single object. Pass through when already object; bundle
       // positional args into an object via metaKeys when not.
-      const obj = objectInbound
+      let obj = objectInbound
         ? args[0]
         : Object.fromEntries(metaKeys.map((k, i) => [k, args[i]]));
+      if (cap != null) obj = clampSegInObj(obj, cap);
       return autoPlace((fn as any)(obj));
     }
     // fn expects positional args. Pass through when already positional;
     // spread an object via metaKeys when single-object inbound.
     if (objectInbound && metaKeys.length > 0) {
-      const positional = metaKeys.map((k) => (args[0] as any)[k]);
+      let positional = metaKeys.map((k) => (args[0] as any)[k]);
+      if (cap != null) positional = clampSegInArgs(positional, cap);
       return autoPlace((fn as any)(...positional));
     }
-    return autoPlace((fn as any)(...args));
+    const finalArgs = cap != null ? clampSegInArgs(args, cap) : args;
+    return autoPlace((fn as any)(...finalArgs));
   };
   return wrapped;
 }

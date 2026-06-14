@@ -146,17 +146,33 @@ export const POST = async ({ request, fetch }) => {
 
   let manifold: any;
   // ── Coarse-segment override (SVG tab) ──────────────────────────────────
-  // Set the circular-segment count IMMEDIATELY before the SYNCHRONOUS geom
-  // call and restore it right after, with NO `await` in between (WASM is
-  // sync). This is the race-safe pattern: a concurrent full bake can't
-  // observe the coarse count because nothing yields the event loop between
-  // set → build → restore. `buildPrimitiveGeom` (the only await above) ran
-  // BEFORE this point, so its dep resolution baked at the default count.
+  // Set the circular-segment levers IMMEDIATELY before the SYNCHRONOUS geom
+  // call and restore them right after, with NO `await` in between (WASM is
+  // sync). This is the race-safe pattern: a concurrent full bake can't observe
+  // the coarse setting because nothing yields the event loop between set →
+  // build → restore. `buildPrimitiveGeom` (the only await above) only builds
+  // dep FACTORY functions; the dep GEOMETRY executes lazily INSIDE this
+  // synchronous `primFn(...args)` call, so setting the levers here reaches the
+  // deps too.
+  //
+  // TWO levers, because circular resolution is plumbed two ways:
+  //  1. `setCircularSegmentCount(n)` → module-local `currentSegments` + the
+  //     WASM global. Reaches the RAW helpers (cyl/tube/revolve), which pass
+  //     `currentSegments` explicitly to M.cylinder / cs.revolve.
+  //  2. `setCircularSegmentCap(n)` → a cap the part loader applies to each
+  //     part's explicit `segments` param. Reaches the ENGINE primitives
+  //     (r_revolve / r_tube / r_cylinder, …) — which IGNORE both globals and
+  //     take segments as a param — and therefore the ASSEMBLIES composed from
+  //     them. This is the half that the original SVG-coarse feature missed:
+  //     an assembly's circular geometry lives entirely in those engine-prim
+  //     deps, so without the cap the override was a no-op (byte-identical
+  //     30 MB bake at segments:32 vs 256).
   const segPrev = segArg !== undefined ? helpers.getCircularSegmentCount() : undefined;
-  if (segArg !== undefined) helpers.setCircularSegmentCount(segArg);
+  const capPrev = segArg !== undefined ? helpers.getCircularSegmentCap() : undefined;
+  if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); }
   try { manifold = primFn(...args); }
   catch (e: any) {
-    if (segArg !== undefined) helpers.setCircularSegmentCount(segPrev as number);
+    if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); }
     // Surface the structured fail-trail buildPrimitiveGeom's dep wrapper
     // attached when the crash came out of a sub-call. Keeps the legacy
     // string shape for non-decorated errors (raw helper calls, bad params,
@@ -184,9 +200,9 @@ export const POST = async ({ request, fetch }) => {
     }
     throw error(400, `primitive call failed: ${msg}`);
   }
-  // Restore the segment count right after the sync build (success path). The
+  // Restore both segment levers right after the sync build (success path). The
   // catch arms above already restored before throwing/returning.
-  if (segArg !== undefined) helpers.setCircularSegmentCount(segPrev as number);
+  if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); }
   mark('geom', t); t = performance.now();
 
   if (!manifold || typeof manifold.getMesh !== 'function') {
