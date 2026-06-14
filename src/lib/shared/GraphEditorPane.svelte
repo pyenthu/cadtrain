@@ -1082,6 +1082,16 @@
    *  call. Used by the 🔨 Bake button (manual rebake), the 🔄 Rebuild
    *  button (cache wipe + rebake), and the initial-load auto-bake. */
   let bakeNonce = $state(0);
+  /** Set by the explicit 🔄 Rebuild button (rebuildCache) to force the NEXT
+   *  composition-bake to run FRESH (`?bust=1`) regardless of bakeNonce. A
+   *  rebuild is, by the user's mental model, a real bake — so the yellow
+   *  "fresh · N ms" badge must show, never the green "✓ cached". `bakeNonce > 1`
+   *  alone is unreliable: after a cold load bakeNonce can still be 0 (the
+   *  initial bake fires before any nonce bump), so the first Rebuild only
+   *  reaches 1 → `1 > 1` is false → it cache-HITS the entry the canvas's own
+   *  rebuild(true) just re-wrote → badge wrongly reads "cached". Plain (non-
+   *  reactive) so consuming it inside the bake effect can't loop the effect. */
+  let manualBustPending = false;
   /** Tracks whether the source the user is LOOKING AT has changed since
    *  the bake panel last rendered geometry. Shown as a small "stale" badge
    *  next to the Bake button so the user knows there's a pending change. */
@@ -1444,7 +1454,13 @@
     bake = 'loading';
     clearTimeout(bakeTimer);
     bakeTimer = setTimeout(async () => {
-      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1, ghosts: ghostIds });
+      // Consume the manual-rebuild flag at the instant the bake fires so an
+      // explicit 🔄 Rebuild ALWAYS busts (fresh), while normal edits/auto-bakes
+      // keep the `bakeNonce > 1` heuristic (and legitimately show "cached" on
+      // a real cache hit). Read+reset is non-reactive → no effect re-fire.
+      const forceBust = manualBustPending;
+      manualBustPending = false;
+      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1 || forceBust, ghosts: ghostIds });
       // Hand the canvas the EXACT same source the bake just ran on (the
       // ghost-flag aware emit) so its own /preview re-fetch returns the
       // same mesh — otherwise the cuboids get baked once + immediately
@@ -1554,6 +1570,10 @@
       const d = await r.json();
       if (d.ok) rebuildStatus = `✓ cleared ${d.cleared} · re-baking…`;
       else      rebuildStatus = `⚠ ${d.error ?? 'clear failed'}`;
+      // Force the composition-bake (the badge's data source) to run FRESH on
+      // this explicit Rebuild — independent of bakeNonce, and immune to the
+      // canvas's own rebuild(true) having just re-populated the server cache.
+      manualBustPending = true;
       bakeNonce++;
       setTimeout(() => { rebuildStatus = null; rebuildBusy = false; }, 2000);
     } catch (e: any) {
