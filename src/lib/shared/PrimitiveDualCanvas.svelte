@@ -14,8 +14,18 @@
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+    /** Bake/show the live MESH (left). Default true. The mesh bake is fast
+     *  (~1-2 s); the 3D-bake tab uses mesh-only so iteration never waits on the
+     *  slow GLB bake. */
+    bakeMesh?: boolean;
+    /** Bake/show the GLB (right). Default true. The GLB bake is SLOW (the full
+     *  cutaway subtract, ~20 s cold, and it blocks Node's single thread). The
+     *  GLB lives in its own lazy tab now, so the editor mounts it with
+     *  bakeGlb=true ONLY when that tab is active. Default-true keeps other
+     *  callers (typed builders) unchanged. */
+    bakeGlb?: boolean;
     /** Per-part viewer colours (outside ← outer body, inside ← bore/cut). When
      *  set, sent to /preview so the live mesh re-bakes with them (and keyed into
      *  the fetch cache below). Unset → the legacy red/grey default bake. */
@@ -142,7 +152,14 @@
       glbStatus = 'ok';
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); glbStatus = 'error'; } }
   }
-  function rebuild() { rebuildMesh(); rebuildGlb(); }
+  // Mesh FIRST, then GLB — so the fast mesh (~2 s) renders before the slow GLB
+  // bake (~20 s) hogs Node's single thread. Each is gated by its prop so the
+  // mesh-only 3D tab never triggers the GLB bake, and the lazy GLB tab never
+  // re-bakes the mesh.
+  async function rebuild() {
+    if (bakeMesh) await rebuildMesh();
+    if (bakeGlb) rebuildGlb();
+  }
 
   onDestroy(() => {
     // Release the WebGL context NOW, not at GC time — the whole point of
@@ -243,7 +260,8 @@
       id === 'r_weld_extrude' ||
       (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
     <Canvas {createRenderer}>
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={sceneOffset} stackAxis={sceneStackAxis} />
+      <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={(bakeMesh && bakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

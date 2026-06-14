@@ -2785,13 +2785,13 @@
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
   /** Right-pane tab: 3D bake or live source. */
-  let rightTab = $state<'bake' | 'source' | 'md' | 'svg'>('bake');
+  let rightTab = $state<'bake' | 'source' | 'md' | 'svg' | 'glb'>('bake');
   onMount(() => {
     try {
       const a = Number(localStorage.getItem('ge-splitA-v4'));
       if (a >= 30 && a <= 85) splitA = a;
       const t = localStorage.getItem('ge-right-tab');
-      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function startSplitDrag(ev: PointerEvent) {
@@ -2812,7 +2812,7 @@
     splitDragging = false;
     try { localStorage.setItem('ge-splitA-v4', String(splitA)); } catch { /* ignore */ }
   }
-  function setRightTab(t: 'bake' | 'source' | 'md' | 'svg') {
+  function setRightTab(t: 'bake' | 'source' | 'md' | 'svg' | 'glb') {
     rightTab = t;
     try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
@@ -6877,6 +6877,10 @@
           type="button" role="tab" aria-selected={rightTab === 'svg'}
           data-tip="SVG — vector render of the baked geometry (downloadable .svg)"
           onclick={() => setRightTab('svg')}>SVG</button>
+        <button class="ge-pane-tab" class:active={rightTab === 'glb'}
+          type="button" role="tab" aria-selected={rightTab === 'glb'}
+          data-tip="GLB — half-sectioned bake (downloadable). Baked on demand — the bake is slow, so it only runs when you open this tab."
+          onclick={() => setRightTab('glb')}>GLB</button>
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
@@ -7018,6 +7022,7 @@
               args={bake.args ?? paramDefaults}
               source={bake.source}
               colorOuter={graph.colorOuter} colorInner={graph.colorInner}
+              bakeGlb={false}
               showControls={true} showLabels={false}/>
             <!-- Cache status row + Rebuild button (Phase 1.5) -->
             {@const bakeMeta = (bake as any).bake ?? {}}
@@ -7110,6 +7115,23 @@
               <div class="ge-empty">Baking SVG…</div>
             {:else}
               <div class="ge-empty">No geometry to render yet — bake the part first.</div>
+            {/if}
+          {/if}
+        </div>
+        <!-- GLB tab — the slow GLB bake (full cutaway subtract, ~20 s cold)
+             runs ONLY when this tab is open, and ONLY bakes the GLB (no mesh).
+             Mounted on demand so iteration on the 3D-bake tab never waits on it. -->
+        <div class="ge-glb-body" class:hidden={rightTab !== 'glb'}>
+          {#if rightTab === 'glb'}
+            {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
+              <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
+                args={bake.args ?? paramDefaults}
+                source={bake.source}
+                colorOuter={graph.colorOuter} colorInner={graph.colorInner}
+                bakeMesh={false}
+                showControls={true} showLabels={false}/>
+            {:else}
+              <div class="ge-empty">No geometry yet — bake the part first (open the 3D bake tab).</div>
             {/if}
           {/if}
         </div>
@@ -9079,6 +9101,7 @@
   .ge-pane-bodies > .ge-bake-body,
   .ge-pane-bodies > .ge-source-body,
   .ge-pane-bodies > .ge-svg-body,
+  .ge-pane-bodies > .ge-glb-body,
   .ge-pane-bodies > .ge-md-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
   /* SVG tab — PrimitiveSvgView fills the pane (it manages its own toolbar +
      scroll). Give it a defined height so the renderer's container isn't 0px. */
