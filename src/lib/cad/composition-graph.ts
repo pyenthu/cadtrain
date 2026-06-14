@@ -79,6 +79,11 @@ export type ContainerNode = {
    *  `stack_ref` (the value its emitted geom stamps as `_stackRef`). Sparse +
    *  optional → no migration; emit only re-stamps the children listed here. */
   childRefs?: Record<NodeId, number>;
+  /** Per-child COUNT (stack nodes only). Keyed by child NodeId → an ArgValue
+   *  (literal OR `p.<param>`) for how many copies of that child the stack
+   *  places, mated end-to-end, WITHOUT a separate Repeat node. Absent / 1 =
+   *  a single copy (today's behaviour). Sparse + optional → no migration. */
+  childCounts?: Record<NodeId, ArgValue>;
 };
 
 export type MethodNode = {
@@ -1476,6 +1481,34 @@ export function setStackChildRef(graph: Graph, stackId: NodeId, childId: NodeId,
   }
   const hasAny = Object.keys(next).length > 0;
   const updated: ContainerNode = { ...container, childRefs: hasAny ? next : undefined };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [stackId]: updated } });
+}
+
+/** Set (or clear) the per-child COUNT on a stack node — how many copies of
+ *  that child the stack places, mated end-to-end, without a separate Repeat.
+ *  `value` of `null`, or a literal `1` (a single copy = the default), CLEARS
+ *  the count (drop the key; drop the whole map when it empties). A literal
+ *  number > 1 or a param/expr ArgValue stores the override keyed by child id.
+ *  No-op when the node isn't a stack or doesn't contain that child. Round-trips
+ *  via serialiseGraph since the count lives on the node object. */
+export function setStackChildCount(graph: Graph, stackId: NodeId, childId: NodeId, value: ArgValue | null): Graph {
+  const node = graph.nodes[stackId];
+  if (!node || node.type !== 'stack') return graph;
+  const container = node as ContainerNode;
+  if (!container.children.includes(childId)) return graph;
+  const next: Record<NodeId, ArgValue> = { ...(container.childCounts ?? {}) };
+  // A literal 1 (or a non-positive / non-finite literal) is "single copy" →
+  // clear the override. Param/expr values always set (resolved at runtime,
+  // guarded to ≥1 in emit). null also clears.
+  const isOneLiteral = value != null && value.kind === 'literal' && Number(value.value) <= 1;
+  if (value == null || isOneLiteral) {
+    if (!(childId in next)) return graph; // already absent — nothing to clear
+    delete next[childId];
+  } else {
+    next[childId] = value;
+  }
+  const hasAny = Object.keys(next).length > 0;
+  const updated: ContainerNode = { ...container, childCounts: hasAny ? next : undefined };
   return finalize({ ...graph, nodes: { ...graph.nodes, [stackId]: updated } });
 }
 

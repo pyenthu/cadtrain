@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { initManifold, stack, zMin, zMax, zLen, M } from './manifold-helpers';
 import { emitGraph } from './composition-emit';
-import { hydrateGraph, addStackRef, removeParam, hasStackRef, STACK_REF_PARAM, newGraph, setStackChildRef, addCall } from './composition-graph';
+import { hydrateGraph, addStackRef, removeParam, hasStackRef, STACK_REF_PARAM, newGraph, setStackChildRef, setStackChildCount, addCall, asLiteral, asParam } from './composition-graph';
 import { withStackRef } from './manifold-helpers';
 
 beforeAll(async () => {
@@ -199,5 +199,99 @@ describe('Stack node — per-child stack-ref OVERRIDE (model + emit)', () => {
     const { meta } = emitGraph(g2, { id: 'p_asm' });
     const rehydrated = hydrateGraph((meta as any).graph);
     expect((rehydrated.nodes[stackId] as any).childRefs[a]).toBe(2.5);
+  });
+});
+
+describe('Stack node — per-child COUNT (×N) (model + emit)', () => {
+  /** A graph whose ROOT is a stack node holding two Calls A and B. */
+  function graphWithStack() {
+    let g = newGraph();
+    const root = g.nodes[g.root] as any;
+    g = { ...g, nodes: { ...g.nodes, [g.root]: { ...root, type: 'stack' } } };
+    const ra = addCall(g, 'r_cuboid', {}, g.root); g = ra.graph;
+    const rb = addCall(g, 'r_cuboid', {}, g.root); g = rb.graph;
+    return { g, stackId: g.root, a: ra.id, b: rb.id };
+  }
+
+  it('setStackChildCount stores a literal count keyed by child id', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildCount(g, stackId, a, asLiteral(3));
+    expect((g2.nodes[stackId] as any).childCounts[a]).toEqual({ kind: 'literal', value: 3 });
+  });
+
+  it('a literal 1 clears (single copy = the default)', () => {
+    const { g, stackId, a } = graphWithStack();
+    let g2 = setStackChildCount(g, stackId, a, asLiteral(3));
+    g2 = setStackChildCount(g2, stackId, a, asLiteral(1));
+    expect((g2.nodes[stackId] as any).childCounts).toBeUndefined();
+  });
+
+  it('null clears → child reverts to a single copy; last clear drops the map', () => {
+    const { g, stackId, a, b } = graphWithStack();
+    let g2 = setStackChildCount(g, stackId, a, asLiteral(3));
+    g2 = setStackChildCount(g2, stackId, b, asLiteral(2));
+    g2 = setStackChildCount(g2, stackId, a, null); // clear A
+    const counts = (g2.nodes[stackId] as any).childCounts;
+    expect(a in counts).toBe(false);
+    expect(counts[b]).toEqual({ kind: 'literal', value: 2 });
+    const g3 = setStackChildCount(g2, stackId, b, null);
+    expect((g3.nodes[stackId] as any).childCounts).toBeUndefined();
+  });
+
+  it('emit places N copies of a counted child (literal)', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildCount(g, stackId, a, asLiteral(3));
+    const { source } = emitGraph(g2, { id: 'p_asm' });
+    // A spreads N copies of its build-once var; B stays bare.
+    expect(source).toContain('...Array(Math.max(1, Math.floor(3) | 0)).fill(');
+    expect(source).not.toContain('withStackRef'); // no ref override here
+  });
+
+  it('emit drives the count off a param (p.n)', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildCount(g, stackId, a, asParam('n'));
+    const { source } = emitGraph(g2, { id: 'p_asm' });
+    expect(source).toContain('...Array(Math.max(1, Math.floor(p.n) | 0)).fill(');
+  });
+
+  it('count + stack-ref override composes withStackRef over each copy', () => {
+    const { g, stackId, a } = graphWithStack();
+    let g2 = setStackChildCount(g, stackId, a, asLiteral(3));
+    g2 = setStackChildRef(g2, stackId, a, -1);
+    const { source } = emitGraph(g2, { id: 'p_asm' });
+    expect(source).toContain('.fill(0).map(() => withStackRef(');
+    expect(source).toContain(', -1))');
+  });
+
+  it('absent count → emit unchanged (bare children, no Array spread)', () => {
+    const { g } = graphWithStack();
+    const { source } = emitGraph(g, { id: 'p_asm' });
+    expect(source).not.toContain('...Array(');
+  });
+
+  it('round-trips childCounts through emit → hydrate', () => {
+    const { g, stackId, a } = graphWithStack();
+    const g2 = setStackChildCount(g, stackId, a, asLiteral(4));
+    const { meta } = emitGraph(g2, { id: 'p_asm' });
+    const rehydrated = hydrateGraph((meta as any).graph);
+    expect((rehydrated.nodes[stackId] as any).childCounts[a]).toEqual({ kind: 'literal', value: 4 });
+  });
+
+  it('runtime: a counted child places N boxes mated end-to-end', () => {
+    // Drive the emitted pattern directly to confirm N placements stack.
+    const a = box(2);
+    // mimic emit: build once, spread N copies, stack mates them end-to-end.
+    const result = stack([...Array(Math.max(1, Math.floor(3) | 0)).fill(a)]);
+    // 3 boxes of length 2 → 0..6.
+    expect(zMin(result)).toBeCloseTo(0, 5);
+    expect(zMax(result)).toBeCloseTo(6, 5);
+  });
+
+  it('runtime: count + negative stack-ref → copies overlap at the same datum', () => {
+    const a = box(2);
+    const result = stack([...Array(3).fill(0).map(() => withStackRef(a, -1))]);
+    // negative ref = no advance → all 3 coincide at 0..2.
+    expect(zMin(result)).toBeCloseTo(0, 5);
+    expect(zMax(result)).toBeCloseTo(2, 5);
   });
 });

@@ -78,6 +78,7 @@
     addStackRef,
     hasStackRef,
     setStackChildRef,
+    setStackChildCount,
     STACK_REF_PARAM,
     wrapInTransform,
     unwrapTransform,
@@ -7168,7 +7169,7 @@
       {:else}
         <table class="ge-container-table">
           <thead>
-            <tr><th>#</th><th>node</th><th>kind</th>{#if isStack}<th title="Per-child stack reference: blank = inherit the part's own stack_ref · 0 = end-to-end · negative = overlap (same datum) · positive = advance by value">stack ref</th>{/if}<th>order</th><th></th></tr>
+            <tr><th>#</th><th>node</th><th>kind</th>{#if isStack}<th title="Per-child stack reference: blank = inherit the part's own stack_ref · 0 = end-to-end · negative = overlap (same datum) · positive = advance by value">stack ref</th><th title="Copies of this child, mated end-to-end (replaces a Repeat node): blank/1 = single · a number or a param expr like p.n">× N</th>{/if}<th>order</th><th></th></tr>
           </thead>
           <tbody>
             {#each cnode.children as childId, i (childId)}
@@ -7207,6 +7208,36 @@
                         const raw = (e.target as HTMLInputElement).value.trim();
                         const v = raw === '' ? null : Number(raw);
                         graph = setStackChildRef(graph, cnode.id, childId, v == null || Number.isNaN(v) ? null : v);
+                      }} />
+                  </td>
+                  {@const countVal = (cnode.childCounts ?? {})[childId]}
+                  {@const countDisplay = countVal == null ? ''
+                    : countVal.kind === 'literal' ? String(countVal.value)
+                    : countVal.kind === 'param' ? `p.${countVal.param}`
+                    : countVal.expr}
+                  <td class="ge-cp-count">
+                    <!-- Per-child COUNT (×N). Blank/1 = a single copy; a number
+                         or a param expr (e.g. p.n) places N copies mated
+                         end-to-end — no separate Repeat node. Commit on
+                         Enter/blur; empty or ≤1 clears. -->
+                    <input
+                      class="ge-cp-count-input"
+                      type="text"
+                      value={countDisplay}
+                      placeholder="1"
+                      title={countVal != null
+                        ? `Placing ${countDisplay} copies mated end-to-end (clear or set 1 for a single copy)`
+                        : 'Single copy — type a number (or a param expr like p.n) to stack N copies'}
+                      onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      onchange={(e) => {
+                        const raw = (e.target as HTMLInputElement).value.trim();
+                        let next = null;
+                        if (raw !== '') {
+                          const n = Number(raw);
+                          if (Number.isFinite(n)) next = n <= 1 ? null : asLiteral(Math.floor(n));
+                          else next = asExpr(raw);
+                        }
+                        graph = setStackChildCount(graph, cnode.id, childId, next);
                       }} />
                   </td>
                 {/if}
@@ -7980,6 +8011,10 @@
   .ge-cp-ref-input { width: 56px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #0c4a6e; background: #fff; }
   .ge-cp-ref-input::placeholder { color: #b0b7c0; font-style: italic; }
   .ge-cp-ref-input:focus { outline: none; border-color: #0ea5e9; }
+  .ge-cp-count { width: 56px; }
+  .ge-cp-count-input { width: 48px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #166534; background: #fff; }
+  .ge-cp-count-input::placeholder { color: #b0b7c0; font-style: italic; }
+  .ge-cp-count-input:focus { outline: none; border-color: #22c55e; }
   .ge-cp-order { width: 56px; white-space: nowrap; }
   .ge-cp-arrow { background: transparent; border: 1px solid #d1d5db; color: #6b7280; padding: 1px 5px; font: 10px Arial; cursor: pointer; border-radius: 3px; margin-right: 2px; }
   .ge-cp-arrow:hover:not(:disabled) { background: #f3f4f6; color: #111827; }

@@ -381,14 +381,37 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // index-safe; a list-producing child applies the override to each item
       // it spreads. Children without an override emit bare and keep the value
       // their own emitted geom stamped.
+      // PER-CHILD COUNT (×N). A child listed in this stack's `childCounts` is
+      // placed N times, mated end-to-end — the common "Repeat → Stack" pattern
+      // collapsed into the Stack itself. The child is ALREADY built once into
+      // a const (`nm`, every stack child is consumed → emitted as a var), so
+      // we spread N references to that same var; stack() mv's each (new
+      // translated manifolds, never mutating the source) so N identical refs
+      // is correct. `Math.max(1, Math.floor(count) | 0)` guards a bad / 0 / NaN
+      // count → a single copy. A stack-ref override composes by mapping
+      // withStackRef over each copy. List/spread children (a Repeat op='list')
+      // keep their existing flatten behaviour — count does not apply to them.
       const childRefs = (node as { childRefs?: Record<NodeId, number> }).childRefs ?? {};
+      const childCounts = (node as { childCounts?: Record<NodeId, ArgValue> }).childCounts ?? {};
       const args = node.children.map((c, i) => {
         const slot = `children[${i}]`;
         const nm = ref(c, slot);
         const raw = childRefs[c];
         const hasOverride = Object.prototype.hasOwnProperty.call(childRefs, c) && Number.isFinite(Number(raw));
         const v = Number(raw);
-        if (listProducers?.has(c)) {
+        const isList = listProducers?.has(c);
+        const countVal = childCounts[c];
+        // A literal ≤ 1 means "single copy" — treat as no count. Param/expr
+        // values always opt in (resolved + guarded at runtime).
+        const wantsCount = !isList && countVal != null &&
+          !(countVal.kind === 'literal' && Number(countVal.value) <= 1);
+        if (wantsCount) {
+          const countExpr = `Math.max(1, Math.floor(${emitValueExpr(countVal)}) | 0)`;
+          return hasOverride
+            ? `...Array(${countExpr}).fill(0).map(() => withStackRef(${nm}, ${v}))`
+            : `...Array(${countExpr}).fill(${nm})`;
+        }
+        if (isList) {
           return hasOverride ? `...${nm}.map((__m) => withStackRef(__m, ${v}))` : `...${nm}`;
         }
         return hasOverride ? `withStackRef(${nm}, ${v})` : nm;
