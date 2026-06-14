@@ -1085,20 +1085,24 @@
   /* A pinned column of folder-tabs above the scrolling content. Each tab is
      a full-width button; the active one is inverted (slate) so it reads as
      "selected". Wraps to multiple rows when there are many folders. */
+  /* Vertical-tab strip — tabs sit side-by-side, each label rotated to read
+     vertically (filing-cabinet style). Horizontal scroll if they overflow. */
   .prim-tabrail {
-    display: flex; flex-direction: column; gap: 2px;
+    display: flex; flex-direction: row; gap: 3px;
     padding: 6px 8px;
     border-bottom: 1px solid #e5e7eb; background: #f3f4f6;
-    max-height: 38vh; overflow-y: auto;
+    overflow-x: auto; overflow-y: hidden;
     scrollbar-width: thin; scrollbar-color: #cbd5e1 #f3f4f6;
   }
   .prim-tabbtn {
-    display: flex; align-items: center;
-    padding: 5px 10px; border: 1px solid transparent; border-radius: 5px;
-    background: transparent; cursor: pointer; text-align: left;
+    flex: 0 0 auto;
+    writing-mode: vertical-rl;            /* text runs top→bottom */
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px 5px; border: 1px solid transparent; border-radius: 5px;
+    background: transparent; cursor: pointer;
     font: 600 11px Arial; color: #44403c;
-    text-transform: uppercase; letter-spacing: 0.4px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    white-space: nowrap; min-height: 96px;
     transition: background 100ms, color 100ms, border-color 100ms;
   }
   .prim-tabbtn:hover { background: #e7e5e4; }
@@ -1111,11 +1115,13 @@
   .prim-tabbtn.src.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
   /* + folder-tab — dashed green affordance, set apart from the real tabs. */
   .prim-tabadd {
-    display: flex; align-items: center; gap: 4px;
-    margin-top: 2px; padding: 4px 10px;
+    flex: 0 0 auto;
+    writing-mode: vertical-rl;
+    display: flex; align-items: center; justify-content: center;
+    padding: 8px 5px;
     border: 1px dashed #86efac; border-radius: 5px;
-    background: transparent; cursor: pointer; text-align: left;
-    font: 600 10px Arial; color: #15803d; letter-spacing: 0.3px;
+    background: transparent; cursor: pointer; min-height: 96px;
+    font: 600 10px Arial; color: #15803d; letter-spacing: 0.4px;
   }
   .prim-tabadd:hover:not(:disabled) { background: #d1fae5; border-color: #4ade80; color: #166534; }
   .prim-tabadd:disabled { cursor: wait; opacity: 0.5; }
