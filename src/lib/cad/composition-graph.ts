@@ -268,12 +268,14 @@ export type Graph = {
   /** Canvas-level state — captured at save time, restored at hydrate time. */
   viewport?: Viewport;
   /** Part-level appearance — surfaced by the editor's Properties card.
-   *  Both are SPARSE/optional: absent means "unset" (the viewer falls back
-   *  to its default colour-by-source / red-outer convention). They round-trip
-   *  through emit (`meta.color` / `meta.material` + the serialised graph block)
-   *  and `hydrateGraph`. Existing parts need no migration — a file without
-   *  these keys hydrates with both undefined. */
-  color?: string;
+   *  All SPARSE/optional: absent means "unset" (the viewer falls back to its
+   *  default colour-by-source / red-outer-grey-inner convention). They
+   *  round-trip through emit (`meta.colorOuter` / `meta.colorInner` /
+   *  `meta.material` + the serialised graph block) and `hydrateGraph`, AND
+   *  apply to the baked geometry (outside ← outer body, inside ← bore/cut).
+   *  A legacy single `color` migrates to `colorOuter` on hydrate. */
+  colorOuter?: string;
+  colorInner?: string;
   material?: string;
 };
 
@@ -426,11 +428,14 @@ export function hydrateGraph(serialised: any): Graph {
   // Part-level appearance round-trips through the serialised graph block.
   // Sparse: only attach when present + well-formed so legacy files stay
   // undefined (= unset → default appearance).
-  const savedColor =
-    (typeof serialised.color === 'string' &&
-     /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(serialised.color.trim()))
-      ? serialised.color.trim().toLowerCase()
+  const hexOrUndef = (v: any) =>
+    (typeof v === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim()))
+      ? v.trim().toLowerCase()
       : undefined;
+  // Back-compat: a legacy single `color` migrates to `colorOuter` (an explicit
+  // `colorOuter` wins if both somehow exist).
+  const savedColorOuter = hexOrUndef(serialised.colorOuter) ?? hexOrUndef(serialised.color);
+  const savedColorInner = hexOrUndef(serialised.colorInner);
   const savedMaterial =
     (typeof serialised.material === 'string' && serialised.material.trim() &&
      serialised.material.trim() !== 'none')
@@ -444,7 +449,8 @@ export function hydrateGraph(serialised: any): Graph {
     imports: serialised.imports ?? [],
     layout: migratedLayout,
     viewport: savedViewport,
-    ...(savedColor ? { color: savedColor } : {}),
+    ...(savedColorOuter ? { colorOuter: savedColorOuter } : {}),
+    ...(savedColorInner ? { colorInner: savedColorInner } : {}),
     ...(savedMaterial ? { material: savedMaterial } : {}),
   };
   // Fill missing positions only — preserves any saved entry, populates the
@@ -1484,19 +1490,36 @@ export function addStackRef(graph: Graph, def = 0): Graph {
   });
 }
 
-/** Set (or clear) the part-level viewer COLOUR — surfaced by the editor's
- *  Properties card. A `#rrggbb`/`#rgb` hex stores; `null`/empty/invalid CLEARS
- *  the field (drops the key → "unset", the historical default appearance).
- *  Sparse by design so existing parts never gain a `color` key until the user
- *  picks one. Round-trips via serialiseGraph + meta.color. */
-export function setPartColor(graph: Graph, hex: string | null | undefined): Graph {
+/** Set (or clear) the part-level OUTSIDE viewer COLOUR (outer body faces) —
+ *  surfaced by the editor's Properties card and APPLIED to the baked geometry
+ *  (the full mesh + the cutaway's non-bore faces). A `#rrggbb`/`#rgb` hex
+ *  stores; `null`/empty/invalid CLEARS the field (drops the key → "unset", the
+ *  historical red default). Sparse by design. Round-trips via serialiseGraph +
+ *  meta.colorOuter. */
+export function setPartColorOuter(graph: Graph, hex: string | null | undefined): Graph {
   const isHex = typeof hex === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex.trim());
   if (!isHex) {
-    if (graph.color === undefined) return graph; // already unset
-    const { color: _drop, ...rest } = graph;
+    if (graph.colorOuter === undefined) return graph; // already unset
+    const { colorOuter: _drop, ...rest } = graph;
     return rest;
   }
-  return { ...graph, color: (hex as string).trim().toLowerCase() };
+  return { ...graph, colorOuter: (hex as string).trim().toLowerCase() };
+}
+
+/** Set (or clear) the part-level INSIDE viewer COLOUR (bore / cut / internal
+ *  faces revealed in the cutaway) — surfaced by the editor's Properties card
+ *  and APPLIED to the baked cutaway geometry. A `#rrggbb`/`#rgb` hex stores;
+ *  `null`/empty/invalid CLEARS the field (drops the key → "unset", the
+ *  historical grey default). Sparse by design. Round-trips via serialiseGraph +
+ *  meta.colorInner. */
+export function setPartColorInner(graph: Graph, hex: string | null | undefined): Graph {
+  const isHex = typeof hex === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex.trim());
+  if (!isHex) {
+    if (graph.colorInner === undefined) return graph; // already unset
+    const { colorInner: _drop, ...rest } = graph;
+    return rest;
+  }
+  return { ...graph, colorInner: (hex as string).trim().toLowerCase() };
 }
 
 /** Set (or clear) the part-level MATERIAL tag — surfaced by the editor's

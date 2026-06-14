@@ -14,8 +14,13 @@
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x' }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+    /** Per-part viewer colours (outside ← outer body, inside ← bore/cut). When
+     *  set, sent to /preview so the live mesh re-bakes with them (and keyed into
+     *  the fetch cache below). Unset → the legacy red/grey default bake. */
+    colorOuter?: string;
+    colorInner?: string;
     /** When false, the top 'Mesh (live)' + 'GLB (bake)' label chips are
      *  hidden — used by the typed-builder panes where the labels add
      *  visual clutter without information value (only one scene anyway). */
@@ -92,7 +97,7 @@
     // cutaway ON renders blank. cutaway:true forces the server to compute it;
     // when off we omit the flag (auto-skip → fast). The flag is part of the body
     // so it keys the fetch cache separately for cut vs full.
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined });
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner });
     const cached = cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC });
@@ -162,7 +167,7 @@
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
     // part re-fetches WITH the cutaway computed. rebuildGlb's body is unchanged
     // by this, so it cache-hits and stays cheap.
-    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway });
+    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();

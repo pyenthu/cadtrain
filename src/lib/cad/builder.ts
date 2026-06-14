@@ -513,7 +513,20 @@ export function getRenderZScale(): number { return _renderZScale; }
  * the cutaway box and the maxOD-keyed classification work in the
  * geom's natural units.
  */
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number }): ComponentResult {
+/** Default outer/inner viewer hexes — the historical red/grey convention
+ *  (docs: src/lib/cad/CLAUDE.md "Vertex colours classify faces"). Used only
+ *  to fill the OTHER side when the caller supplies just one of the two
+ *  per-part colour overrides. When NEITHER is supplied the override is
+ *  undefined and the legacy heuristic runs byte-identically. */
+export const DEFAULT_OUTER_HEX = '#cc2222';
+export const DEFAULT_INNER_HEX = '#888888';
+
+/** Per-part colour override (outside ← outer, inside ← bore/cut/internal),
+ *  threaded from the preview request body. Replaces the hardcoded red/grey
+ *  in the legacy classification WITHOUT changing the classification itself. */
+export interface ColorOverride { outer: string; inner: string }
+
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -552,9 +565,16 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   const skipCutaway = opts?.skipCutaway === true ? true
     : opts?.skipCutaway === false ? false
     : (typeof scaled.numTri === 'function' ? scaled.numTri() > 15_000 : false);
+  // Per-part colour override — present only when the caller passed at least
+  // one of colorOuter/colorInner. Fills the unset side with the historical
+  // default so a one-sided pick still renders the other side sanely. When
+  // BOTH are absent → undefined → byte-identical legacy red/grey output.
+  const override: ColorOverride | undefined = (opts?.colorOuter || opts?.colorInner)
+    ? { outer: opts?.colorOuter ?? DEFAULT_OUTER_HEX, inner: opts?.colorInner ?? DEFAULT_INNER_HEX }
+    : undefined;
   return {
-    full: manifoldToGeo(scaled, material, lut),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut),
+    full: manifoldToGeo(scaled, material, lut, override),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut, override),
     manifold: scaled,
     cutawaySkipped: skipCutaway,
   } as ComponentResult & { cutawaySkipped: boolean };
@@ -578,14 +598,17 @@ export function buildComponent(componentId: string, params: Record<string, numbe
 // directly, so it doesn't care about winding inversions, and splitting
 // at the 60° threshold keeps hard corners (cylinder caps, hex faces)
 // crisp.
-function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartColorLUT): THREE.BufferGeometry {
+function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride): THREE.BufferGeometry {
   let withNormals: any;
   try { withNormals = manifold.calculateNormals(3, 60); }
   catch { withNormals = manifold; }
+  // Per-part colour override wins over both color-by-source and material:
+  // the user explicitly painted THIS part's outside, so the full mesh is a
+  // uniform outer colour (set via the indexed-geo colour attribute below).
   // Color-by-source path: go NON-INDEXED + per-triangle color from the
   // Manifold relation (parts can't share a vertex color where they meet).
   // calculateNormals preserves the relation (verified — spike TEST 4).
-  if (parts?.active) return colorBySourceGeo(withNormals, parts, material, false, 0);
+  if (!override && parts?.active) return colorBySourceGeo(withNormals, parts, material, false, 0);
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
@@ -608,13 +631,15 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   geo.setIndex(new THREE.BufferAttribute(tri, 1));
   if (nrm) geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   else geo.computeVertexNormals();
-  // When a material is declared, bake a uniform per-vertex `color` =
-  // material.outer so ComponentScene's full (non-cutaway) branch can
-  // render with `vertexColors` and match the cutaway pane + GLB pane.
-  // Omitted entirely on the legacy/no-material path so the existing
-  // hardcoded `color="#cc2222"` render is byte-identical.
-  if (material) {
-    const [r, g, b] = hexToRgb(material.outer.color);
+  // When a per-part override OR a material is declared, bake a uniform
+  // per-vertex `color` = outer so ComponentScene's full (non-cutaway) branch
+  // can render with `vertexColors` and match the cutaway pane + GLB pane.
+  // Override wins (it's the user's explicit pick). Omitted entirely on the
+  // legacy/no-colour path so the existing hardcoded `color="#cc2222"` render
+  // is byte-identical.
+  const fullColorHex = override ? override.outer : material ? material.outer.color : null;
+  if (fullColorHex) {
+    const [r, g, b] = hexToRgb(fullColorHex);
     const col = new Float32Array(nv * 3);
     for (let i = 0; i < nv; i++) { col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = b; }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -622,16 +647,17 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   return geo;
 }
 
-function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT): THREE.BufferGeometry {
+function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride): THREE.BufferGeometry {
   // Same calculateNormals path as manifoldToGeo — keeps shading
   // consistent across the cross-section overlay.
   let withNormals: any;
   try { withNormals = manifold.calculateNormals(3, 60); }
   catch { withNormals = manifold; }
+  // Per-part colour override wins over color-by-source (user's explicit pick).
   // Color-by-source path: per-triangle color from the relation. SECTION_ID
   // (the cut-box) → cross-section color; subtractive parts already remapped
   // to the body color upstream; unknown/anonymous tools → body.
-  if (parts?.active) return colorBySourceGeo(withNormals, parts, material, true, maxOD);
+  if (!override && parts?.active) return colorBySourceGeo(withNormals, parts, material, true, maxOD);
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
@@ -651,6 +677,12 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
   // the legacy red/grey heuristic byte-identically.
   const outerRgb = material ? hexToRgb(material.outer.color) : null;
   const innerRgb = material ? hexToRgb(material.inner.color) : null;
+  // Per-part override RGB — when present, KEEP the legacy bore/cut/internal
+  // classification (isGrey) but substitute the two configured colours:
+  // outside ← outer, inside ← inner. This is "recolour the existing
+  // classification", not a new one (per the task brief).
+  const ovOuter = override ? hexToRgb(override.outer) : null;
+  const ovInner = override ? hexToRgb(override.inner) : null;
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
@@ -671,7 +703,12 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
     const nzNorm=Math.abs(nz/nLen);
     const maxR=Math.max(Math.sqrt(ax*ax+ay*ay),Math.sqrt(bx*bx+by*by),Math.sqrt(cx*cx+cy*cy));
     let r:number,g:number,b2:number;
-    if (outerRgb && innerRgb) {
+    if (ovOuter && ovInner) {
+      // Per-part override: legacy bore/cut/internal classification, recoloured.
+      const isGrey=isBore||(onCutX||onCutY)||(nzNorm>0.8&&maxR<maxOD/2+0.05);
+      const rgb=isGrey?ovInner:ovOuter;
+      r=rgb[0];g=rgb[1];b2=rgb[2];
+    } else if (outerRgb && innerRgb) {
       // Material path: cut cross-section faces = inner, everything else = outer.
       const onCut=onCutX||onCutY;
       const rgb=onCut?innerRgb:outerRgb;

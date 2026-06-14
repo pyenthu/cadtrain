@@ -48,6 +48,10 @@ export interface BakeCacheOptions {
   zScale?: number | undefined;
   /** Mode passed to /preview ('bundle' bypasses the sandbox). */
   mode?: string | undefined;
+  /** Per-part outer/inner viewer colours. Change the baked vertex colours, so
+   *  they must key the cache; undefined → the legacy red/grey default bake. */
+  colorOuter?: string | undefined;
+  colorInner?: string | undefined;
 }
 
 export interface BakeCachePayload {
