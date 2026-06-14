@@ -78,10 +78,11 @@ export const scene = $state({
    *  spins the bearing around Z. Works with MeshPhong (no PBR/strange colours,
    *  no LTC init). An OPTION (toggle) — default ON. */
   zDirLight: true,
-  zDirIntensity: 2.2,
+  zDirIntensity: 1,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera
-   *  side), 90°=+X, 180°=behind. Light shines FROM this bearing toward the axis. */
-  zDirAngle: 0,
+   *  side), 90°=+X, 180°=behind. Light shines FROM this bearing toward the axis.
+   *  −45° is the user-confirmed "perfect" default. */
+  zDirAngle: -45,
   /** RectAreaLight intensity (luminance-ish units — NOT point-light candela).
    *  Higher now that it's the sole directional source (was 4 as a fill). */
   zRectIntensity: 2,
