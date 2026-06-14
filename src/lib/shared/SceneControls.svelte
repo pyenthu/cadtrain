@@ -46,22 +46,6 @@
       <input type="number" step="0.1" bind:value={scene.cam.y} />
       <input type="number" step="0.1" bind:value={scene.cam.z} />
     </div>
-    <div class="sv-row">
-      <span class="sv-label">L1</span>
-      <input type="number" step="0.1" bind:value={scene.l1.x} />
-      <input type="number" step="0.1" bind:value={scene.l1.y} />
-      <input type="number" step="0.1" bind:value={scene.l1.z} />
-      <span class="sv-sub">i</span>
-      <input type="number" step="5" min={0} bind:value={scene.l1.i} />
-    </div>
-    <div class="sv-row">
-      <span class="sv-label">L2</span>
-      <input type="number" step="0.1" bind:value={scene.l2.x} />
-      <input type="number" step="0.1" bind:value={scene.l2.y} />
-      <input type="number" step="0.1" bind:value={scene.l2.z} />
-      <span class="sv-sub">i</span>
-      <input type="number" step="5" min={0} bind:value={scene.l2.i} />
-    </div>
     <div class="sv-row sv-row-wide">
       <span class="sv-label">Z×</span>
       <input class="sv-range" type="range" min="0.05" max="1" step="0.05" bind:value={scene.zScale} />
@@ -77,35 +61,18 @@
         Edges
       </label>
     </div>
-    <!-- Z-axis light strip — even illumination down a long/tall part. -->
+    <!-- Rectangular AREA light along Z — the SOLE light now (point lights + the
+         Z point-strip were removed). Always on; tune intensity / size / offset. -->
     <div class="sv-row sv-zlight">
-      <label class="sv-check sv-zlight-master">
-        <input type="checkbox" bind:checked={scene.zStripLight} />
-        Z-axis light
-      </label>
-      <span class="sv-sub">n</span>
-      <input type="number" step="1" min={1} max={20} bind:value={scene.zStripCount} disabled={!scene.zStripLight} />
+      <span class="sv-label sv-zlight-master">Rect light</span>
       <span class="sv-sub">i</span>
-      <input type="number" step="10" min={0} bind:value={scene.zStripIntensity} disabled={!scene.zStripLight} />
-      <span class="sv-sub">⌀</span>
-      <input type="number" step="1" min={0} bind:value={scene.zStripRadius} disabled={!scene.zStripLight} />
-    </div>
-    <!-- True rectangular AREA light running along Z — even soft wash down a
-         long/tall part. Independent of the point-light strip above; swaps the
-         lit meshes to MeshStandardMaterial while on. -->
-    <div class="sv-row sv-zlight">
-      <label class="sv-check sv-zlight-master">
-        <input type="checkbox" bind:checked={scene.zRectLight} />
-        Rect light (Z)
-      </label>
-      <span class="sv-sub">i</span>
-      <input type="number" step="0.5" min={0} bind:value={scene.zRectIntensity} disabled={!scene.zRectLight} />
+      <input type="number" step="0.5" min={0} bind:value={scene.zRectIntensity} title="intensity" />
       <span class="sv-sub">w</span>
-      <input type="number" step="1" min={0} bind:value={scene.zRectWidth} disabled={!scene.zRectLight} title="width along Z (0 = auto-span the part)" />
+      <input type="number" step="1" min={0} bind:value={scene.zRectWidth} title="width along Z (0 = auto-span the part)" />
       <span class="sv-sub">h</span>
-      <input type="number" step="1" min={0} bind:value={scene.zRectHeight} disabled={!scene.zRectLight} title="height across the part" />
+      <input type="number" step="1" min={0} bind:value={scene.zRectHeight} title="height across the part" />
       <span class="sv-sub">⌀</span>
-      <input type="number" step="1" bind:value={scene.zRectOffset} disabled={!scene.zRectLight} title="radial offset off the axis" />
+      <input type="number" step="1" bind:value={scene.zRectOffset} title="radial offset off the axis" />
     </div>
     <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
          row + scene.warp* fields + warp.ts to retire the feature. -->

@@ -67,16 +67,15 @@ export const scene = $state({
    *  tall stack. RectAreaLight only affects MeshStandard/Physical materials,
    *  so while this is ON the lit meshes render as MeshStandardMaterial instead
    *  of MeshPhong; OFF → the MeshPhong path is byte-identical to before.
-   *  Option B from docs/plans/z-axis-light.md. DEFAULT OFF — when ON it dims
-   *  the L1/L2 point lights to a 0.15 fill (making their sliders feel inert)
-   *  and its intensity/size are set via a direct-mutation $effect that doesn't
-   *  invalidate Threlte's on-demand render, so changes don't show live. Until
-   *  that's fixed (reactive <T.RectAreaLight> props + invalidate), the bright
-   *  responsive 3-point default is better. Toggle on in the SceneControls gear. */
-  zRectLight: false,
-  /** RectAreaLight intensity (luminance-ish units — NOT point-light candela;
-   *  small values 1–10 are normal once RectAreaLightUniformsLib.init() runs). */
-  zRectIntensity: 4,
+   *  Option B from docs/plans/z-axis-light.md. The SOLE light now (user pref
+   *  2026-06-14): the L1/L2/L3 point lights + the Z point-strip were removed, so
+   *  this is always on (no off toggle) and the lit meshes are always
+   *  MeshStandardMaterial. The $effect that sizes/positions it calls
+   *  invalidate() so changes render live on the on-demand loop. */
+  zRectLight: true,
+  /** RectAreaLight intensity (luminance-ish units — NOT point-light candela).
+   *  Higher now that it's the sole directional source (was 4 as a fill). */
+  zRectIntensity: 9,
   /** Rectangle WIDTH = the dimension running ALONG Z (the part's length). 0 =
    *  auto-derive from `partZExtent` (full part span + ~5% headroom). */
   zRectWidth: 0,

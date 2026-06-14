@@ -401,27 +401,15 @@
      consistent whether the Color attaches (dev) or the build drops it and falls
      back to the CSS (the prior dev-white / prod-black mismatch). -->
 <T.Color args={['#ffffff']} attach="background" />
-<T.AmbientLight intensity={0.3} />
-<T.PointLight position={light1Pos} intensity={scene.l1.i * fillFactor} distance={50} />
-<T.PointLight position={light2Pos} intensity={scene.l2.i * fillFactor} distance={50} />
-<!-- Fill light from below to lift the previously-shaded quadrant. -->
-<T.PointLight position={light3Pos} intensity={scene.l3.i * fillFactor} distance={50} />
+<!-- Ambient fill so faces the rect light doesn't reach aren't pure black. -->
+<T.AmbientLight intensity={0.55} />
 
-<!-- Z-axis light strip: N point lights running down the part's Z (drilling)
-     extent, Phong-compatible. Rendered only while scene.zStripLight is on so
-     the off-state render is unchanged. -->
-{#each zStripLights as L, i (i)}
-  <T.PointLight position={L.pos} intensity={scene.zStripIntensity} distance={zStripDistance} />
-{/each}
-
-<!-- True rectangular AREA light: a literal emissive panel running ALONG the
-     part's Z extent, lighting MeshStandard meshes (the lit meshes swap to
-     Standard while this is on). Position / size / orientation are driven by the
-     $effect above via the bound ref. Mounted only while scene.zRectLight is on
-     so the off-state render is unchanged. -->
-{#if scene.zRectLight}
-  <T.RectAreaLight bind:ref={rectLight} intensity={scene.zRectIntensity} width={1} height={1} />
-{/if}
+<!-- SOLE light (user pref 2026-06-14): the rectangular AREA light running ALONG
+     the part's Z extent. The old L1/L2/L3 point lights and the Z-axis point
+     strip were removed. Materials are MeshStandardMaterial (RectAreaLight only
+     lights Standard/Physical) — kept on via scene.zRectLight being default-true
+     with no off toggle. Position/size/orientation come from the $effect above. -->
+<T.RectAreaLight bind:ref={rectLight} intensity={scene.zRectIntensity} width={1} height={1} />
 
 <!-- VIEW-ONLY scale: X/Y = diameter exaggeration (xScale), Z = depth
      compression (zScale). Wraps BOTH stacked renders + their offsets so the
