@@ -9173,7 +9173,7 @@
   .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
   .ge-bake-meta-spacer { flex: 1 1 auto; }
   .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
-  .ge-draft-toggle input { margin: 0; cursor: pointer; }
+  .ge-draft-toggle input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #d97706; width: 13px; height: 13px; }
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
   .ge-cache-badge.cached { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
   .ge-cache-badge.fresh { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }

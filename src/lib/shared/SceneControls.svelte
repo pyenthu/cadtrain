@@ -170,14 +170,17 @@
   .sv-row-wide .sv-range { flex: 1; min-width: 0; accent-color: #cc2222; height: 14px; }
   .sv-row-toggles { gap: 14px; margin-top: 2px; }
   .sv-check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-  .sv-check input[type='checkbox'] { accent-color: #cc2222; cursor: pointer; }
+  /* appearance:auto restores the NATIVE box+check — the Tailwind/Flowbite base
+     reset sets appearance:none on form controls, which strips the checkmark
+     (and makes accent-color a no-op) so toggles looked like they never switched. */
+  .sv-check input[type='checkbox'] { appearance: auto; -webkit-appearance: auto; accent-color: #cc2222; cursor: pointer; width: 14px; height: 14px; }
   /* Z-axis light strip row */
   .sv-zlight { gap: 4px; flex-wrap: wrap; }
   .sv-zlight-master { margin-right: 4px; }
   /* TEMP warp experiment styling */
   .sv-warp { gap: 4px; flex-wrap: wrap; }
   .sv-warp-radio { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
-  .sv-warp-radio input[type='radio'] { accent-color: #cc2222; cursor: pointer; }
+  .sv-warp-radio input[type='radio'] { appearance: auto; -webkit-appearance: auto; accent-color: #cc2222; cursor: pointer; }
   .sv-warp-radio.dim { opacity: 0.4; }
   .sv-warp-master { margin-right: 4px; }
   .sv-panel input[type='number']:disabled { opacity: 0.35; cursor: not-allowed; }

@@ -334,6 +334,7 @@
   .pd-label-l { left: 8px; top: 34px; pointer-events: none; }
   .pd-label-r { right: 8px; display: flex; gap: 8px; align-items: center; }
   .pd-toggle { pointer-events: auto; display: inline-flex; gap: 3px; align-items: center; cursor: pointer; }
+  .pd-toggle input[type='checkbox'] { appearance: auto; -webkit-appearance: auto; accent-color: #cc2222; cursor: pointer; }
   .pd-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font: 12px Arial; }
   /* Title (top-left) + description (bottom) as DOM overlays — NOT a Threlte
      <HTML> overlay, which rendered a pointer-events:auto wrapper at z-index 8
