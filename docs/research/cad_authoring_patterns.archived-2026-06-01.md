@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-06-01 snapshot.** Superseded by
+> `cad_authoring_patterns.md` (current). Kept verbatim for provenance — its
+> recommendations drove the K.63 *tree* editor; several were later **inverted**
+> when we shipped the node-graph editor (most notably §F3 "don't add a 2D
+> node-canvas", which we ultimately *did* build). See the current doc's
+> reconciliation table for what we adopted, rejected, and reversed.
+
 # CAD Authoring Patterns — Reference for K.63 Composition Editor
 
 Survey of six parametric/procedural CAD tools, extracted patterns, and concrete
