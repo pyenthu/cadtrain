@@ -2837,7 +2837,13 @@
     if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; return; }
     const src = bake.source;
     const params = bake.args ?? paramDefaults;
-    const key = JSON.stringify({ s: src, a: params });
+    // Coarse circular-segment count for the SVG tab — a vector drawing doesn't
+    // need 256-facet circles, and 32 keeps the mesh ~an order of magnitude
+    // lighter so the SVG renders fast and stays below the high-poly warning.
+    // The 3D/GLB panes (PrimitiveDualCanvas) request the full default; only
+    // this SVG fetch passes `segments`. Part of the key so a change re-fetches.
+    const SVG_SEGMENTS = 32;
+    const key = JSON.stringify({ s: src, a: params, seg: SVG_SEGMENTS });
     if (key === svgMeshKey) return; // already have this mesh
     svgMeshKey = key;
     svgMeshBusy = true;
@@ -2848,7 +2854,7 @@
         // have source here). cutaway:true forces the cut even for big stacks.
         const r = await fetch('/api/primitives/preview', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true }),
+          body: JSON.stringify({ id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true, segments: SVG_SEGMENTS }),
         });
         if (!r.ok) { svgMeshJson = null; return; }
         const data = await r.json();

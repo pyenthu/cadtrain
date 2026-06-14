@@ -52,6 +52,11 @@ export interface BakeCacheOptions {
    *  they must key the cache; undefined → the legacy red/grey default bake. */
   colorOuter?: string | undefined;
   colorInner?: string | undefined;
+  /** Circular-segment count for THIS bake (the SVG tab requests a coarse 32).
+   *  Changes mesh density → must key the cache; undefined → the full default
+   *  (256) bake, so the legacy cache key is byte-identical and existing
+   *  default-bake entries still hit. */
+  segments?: number | undefined;
 }
 
 export interface BakeCachePayload {

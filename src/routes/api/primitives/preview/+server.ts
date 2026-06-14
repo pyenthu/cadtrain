@@ -25,7 +25,16 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments } = body ?? {};
+  // Optional per-request circular-segment override (the SVG tab asks for a
+  // coarse 32 so the vector drawing renders fast + below the high-poly warning).
+  // Clamp to a sane range; non-finite / out-of-range → undefined → full default
+  // (256) bake, so the 3D/GLB panes are unaffected and the default cache key is
+  // unchanged. Applied for THIS bake only (set immediately before the sync geom
+  // build, restored right after — see below).
+  const segArg = (typeof segments === 'number' && Number.isFinite(segments) && segments >= 8 && segments <= 256)
+    ? Math.round(segments)
+    : undefined;
   // Request-local Z-scale — passed into finalizeManifold (no shared global to
   // race on between concurrent previews). undefined → finalize uses 1.0.
   const zArg = (typeof zScale === 'number' && zScale > 0) ? zScale : undefined;
@@ -59,6 +68,9 @@ export const POST = async ({ request, fetch }) => {
     // so a colour change re-bakes (undefined keys are dropped by hashBakeKey).
     colorOuter: cOuter,
     colorInner: cInner,
+    // Coarse-segment override keys the cache so a coarse (SVG) bake stores
+    // separately from the full bake; undefined → dropped → default key unchanged.
+    segments: segArg,
   };
   // Numeric params only — string params (e.g. JSON polygons) don't round
   // trip identically across calls.
@@ -133,8 +145,18 @@ export const POST = async ({ request, fetch }) => {
   mark('buildFn', t); t = performance.now();
 
   let manifold: any;
+  // ── Coarse-segment override (SVG tab) ──────────────────────────────────
+  // Set the circular-segment count IMMEDIATELY before the SYNCHRONOUS geom
+  // call and restore it right after, with NO `await` in between (WASM is
+  // sync). This is the race-safe pattern: a concurrent full bake can't
+  // observe the coarse count because nothing yields the event loop between
+  // set → build → restore. `buildPrimitiveGeom` (the only await above) ran
+  // BEFORE this point, so its dep resolution baked at the default count.
+  const segPrev = segArg !== undefined ? helpers.getCircularSegmentCount() : undefined;
+  if (segArg !== undefined) helpers.setCircularSegmentCount(segArg);
   try { manifold = primFn(...args); }
   catch (e: any) {
+    if (segArg !== undefined) helpers.setCircularSegmentCount(segPrev as number);
     // Surface the structured fail-trail buildPrimitiveGeom's dep wrapper
     // attached when the crash came out of a sub-call. Keeps the legacy
     // string shape for non-decorated errors (raw helper calls, bad params,
@@ -162,6 +184,9 @@ export const POST = async ({ request, fetch }) => {
     }
     throw error(400, `primitive call failed: ${msg}`);
   }
+  // Restore the segment count right after the sync build (success path). The
+  // catch arms above already restored before throwing/returning.
+  if (segArg !== undefined) helpers.setCircularSegmentCount(segPrev as number);
   mark('geom', t); t = performance.now();
 
   if (!manifold || typeof manifold.getMesh !== 'function') {

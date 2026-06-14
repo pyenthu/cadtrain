@@ -116,6 +116,31 @@ export function setCircularSegmentMode(mode: 'default' | 'compose'): void {
   if (w) w.setCircularSegments(currentSegments);
 }
 
+/** Read the segment count currently in effect — used to capture-then-restore
+ *  around a one-off coarse bake (see setCircularSegmentCount). */
+export function getCircularSegmentCount(): number {
+  return currentSegments;
+}
+
+/** Set a NUMERIC circular-segment count for the NEXT geom build (e.g. the SVG
+ *  tab's coarse bake). Sets BOTH the module-local `currentSegments` (which
+ *  `cyl`/`tube`/`revolve` pass explicitly to `M.cylinder(...)` /
+ *  `cs.revolve(...)`) AND the Manifold WASM global (`setCircularSegments`,
+ *  which governs any geometry that doesn't pass an explicit count) so the two
+ *  stay in lock-step.
+ *
+ *  GLOBAL-RACE caution: like setCircularSegmentMode this mutates a process-wide
+ *  setting. The /preview endpoint sets it IMMEDIATELY before the SYNCHRONOUS
+ *  geom call (`primFn(...args)` — WASM is sync, no await in between) and
+ *  restores it right after, so concurrent requests can't interleave a coarse
+ *  count into a full bake. Callers MUST pair this with a restore (capture via
+ *  getCircularSegmentCount() or call setCircularSegmentMode('default')). */
+export function setCircularSegmentCount(n: number): void {
+  currentSegments = n;
+  const w = G.__cadtrain_manifold__.wasm;
+  if (w) w.setCircularSegments(n);
+}
+
 export async function initManifold() {
   // If a sibling module instance already initialised the wasm, just
   // reapply this instance's segment count to the shared wasm and bail.
