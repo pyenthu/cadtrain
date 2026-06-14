@@ -309,6 +309,11 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     ...(opts.description ? { description: opts.description } : {}),
     ...(opts.drawingMd ? { drawingMd: opts.drawingMd } : {}),
     uses: [...usesSet].sort(),
+    // Part-level appearance — sparse top-level mirror of the values that also
+    // live inside the serialised graph block. External consumers (the viewer
+    // tint, loaders) can read these without parsing meta.graph.
+    ...(graph.color ? { color: graph.color } : {}),
+    ...(graph.material ? { material: graph.material } : {}),
     params: graph.params,
     graph: serialiseGraph(graph),
   };
@@ -650,6 +655,10 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     // Viewport ALWAYS round-trips so canvas pan + zoom restore on reload.
     // Default fallback (0, 0, zoom=1) lives in hydrateGraph for legacy files.
     ...(graph.viewport ? { viewport: graph.viewport } : {}),
+    // Part-level appearance — sparse so legacy files stay clean. hydrateGraph
+    // reads these back into graph.color / graph.material.
+    ...(graph.color ? { color: graph.color } : {}),
+    ...(graph.material ? { material: graph.material } : {}),
   };
 }
 
