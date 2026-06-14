@@ -427,6 +427,14 @@ export interface ComponentResult {
    *  large, > 30k tris). cutVC will be an empty BufferGeometry in that
    *  case. The bake panel can surface a "cutaway disabled" hint. */
   cutawaySkipped?: boolean;
+  /** GPU-instancing payload — present ONLY when `opts.instanced` was set AND
+   *  finalize detected N≥2 identical-up-to-translation bodies (a Stack/Repeat
+   *  of the same child). When present, `full`/`cutVC` carry the CANONICAL CHILD
+   *  mesh ONCE (not the merged N copies), and `instances` is the list of N
+   *  rigid 4×4 transforms (column-major 16-float, THREE.Matrix4 order) placing
+   *  each copy. The renderer draws a single THREE.InstancedMesh. Absent on the
+   *  merged path → callers render `full`/`cutVC` as a single mesh, unchanged. */
+  instances?: number[][];
 }
 
 /** Appearance pair carried on a primitive's `meta.material`. Mirrors
@@ -526,7 +534,7 @@ export const DEFAULT_INNER_HEX = '#888888';
  *  in the legacy classification WITHOUT changing the classification itself. */
 export interface ColorOverride { outer: string; inner: string }
 
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string }): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -553,6 +561,23 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // creates are distinguishable (→ inner/section color) from the part
   // surfaces it reveals. Only matters on the color-by-source path.
   const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
+  // Per-part colour override — present only when the caller passed at least
+  // one of colorOuter/colorInner. Fills the unset side with the historical
+  // default so a one-sided pick still renders the other side sanely. When
+  // BOTH are absent → undefined → byte-identical legacy red/grey output.
+  const override: ColorOverride | undefined = (opts?.colorOuter || opts?.colorInner)
+    ? { outer: opts?.colorOuter ?? DEFAULT_OUTER_HEX, inner: opts?.colorInner ?? DEFAULT_INNER_HEX }
+    : undefined;
+  // ─── GPU instancing (opt-in) ────────────────────────────────────────────
+  // When the caller asks (LIVE-mesh path only) AND the composed result is a
+  // Stack/Repeat of N identical bodies, return the canonical child mesh ONCE
+  // + N transforms instead of the merged N-copy mesh — O(1)+N transfer/render
+  // instead of O(N·tris). Falls through to the merged path (below, BYTE-
+  // IDENTICAL) when bodies are not all identical / there's only one body.
+  if (opts?.instanced) {
+    const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway);
+    if (inst) return inst;
+  }
   // Auto-skip the cutaway when the manifold gets large. The cutVC step
   // does a CSG subtract over the WHOLE manifold and scales super-linearly:
   // 36k verts → 163 ms, 73k → 853 ms, 121k → 2.9 s, 181k → 5.9 s.
@@ -565,19 +590,110 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   const skipCutaway = opts?.skipCutaway === true ? true
     : opts?.skipCutaway === false ? false
     : (typeof scaled.numTri === 'function' ? scaled.numTri() > 15_000 : false);
-  // Per-part colour override — present only when the caller passed at least
-  // one of colorOuter/colorInner. Fills the unset side with the historical
-  // default so a one-sided pick still renders the other side sanely. When
-  // BOTH are absent → undefined → byte-identical legacy red/grey output.
-  const override: ColorOverride | undefined = (opts?.colorOuter || opts?.colorInner)
-    ? { outer: opts?.colorOuter ?? DEFAULT_OUTER_HEX, inner: opts?.colorInner ?? DEFAULT_INNER_HEX }
-    : undefined;
   return {
     full: manifoldToGeo(scaled, material, lut, override),
     cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut, override),
     manifold: scaled,
     cutawaySkipped: skipCutaway,
   } as ComponentResult & { cutawaySkipped: boolean };
+}
+
+/**
+ * Detect a Stack/Repeat of N IDENTICAL bodies and, if found, return the
+ * instancing payload (canonical child mesh ONCE + N rigid transforms).
+ * Returns null when instancing does NOT apply (single body / mixed
+ * composition / decompose unavailable) so the caller falls back to the
+ * merged path BYTE-IDENTICALLY.
+ *
+ * Detection (the design's "decompose + group"):
+ *   1. `scaled.decompose()` → the connected-component bodies. A Stack of
+ *      separate joints yields N bodies; a single connected part yields 1.
+ *   2. Each body gets a signature = numTri | numVert | bbox extents | volume
+ *      (all translation-INVARIANT — a rigid Z-shift via mv() preserves every
+ *      one). If ALL bodies share body[0]'s signature → they're identical up
+ *      to a rigid transform → instance them. Any mismatch → null (fall back).
+ *   3. The transform for each body is the translation of its bbox centre vs
+ *      body[0]'s (body[0] itself = identity). Stacks differ only by Δz, so
+ *      this recovers each copy's `mv([0,0,Δz])` offset.
+ *
+ * Correctness notes (cited in the task brief):
+ *  - COLOURS: the canonical child is run through the SAME manifoldToGeo /
+ *    manifoldToCutVC as the merged path (incl. the color-by-source relation
+ *    when `lut` is active, and the red/grey or override classification), so
+ *    the child carries the correct per-vertex colours; they replicate across
+ *    every instance for free.
+ *  - CUTAWAY: we cut the CANONICAL child against the same Y=0 cut-box and
+ *    replicate it. Because the instance transforms are pure translations and
+ *    a Z-stack keeps every copy on the same side of the Y=0 plane, cutting
+ *    one child + translating == cutting the whole assembly. (Per-instance CSG
+ *    is unnecessary.) cutaway skip is re-evaluated against the CHILD's tri
+ *    count (small) rather than the merged total, so a long stack still gets
+ *    its slice.
+ *  - Z-OFFSET (graded-delta _stackRef): each copy's Δz is encoded in its
+ *    matrix, so stack offsets carry through verbatim.
+ */
+function tryInstanceFinalize(
+  scaled: any,
+  cutBox: any,
+  maxOD: number,
+  material: RenderMaterial | undefined,
+  lut: PartColorLUT | undefined,
+  override: ColorOverride | undefined,
+  skipCutawayOpt: boolean | 'auto' | undefined,
+): ComponentResult | null {
+  let bodies: any[];
+  try {
+    if (typeof scaled.decompose !== 'function') return null;
+    bodies = scaled.decompose();
+  } catch {
+    return null;
+  }
+  // Need ≥2 bodies for instancing to be a win. A single (connected) part →
+  // null → merged path (== current single-part behaviour, byte-identical).
+  if (!Array.isArray(bodies) || bodies.length < 2) return null;
+
+  // Translation-invariant signature. numTri/numVert/volume are exact for a
+  // rigid translation; bbox EXTENTS (max-min) are too (only the centre moves).
+  const r6 = (n: number) => (Number.isFinite(n) ? n.toFixed(4) : 'x');
+  const sigOf = (m: any): { sig: string; cx: number; cy: number; cz: number } => {
+    const bb = m.boundingBox();
+    const ex = bb.max[0] - bb.min[0], ey = bb.max[1] - bb.min[1], ez = bb.max[2] - bb.min[2];
+    const cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2, cz = (bb.min[2] + bb.max[2]) / 2;
+    const nt = typeof m.numTri === 'function' ? m.numTri() : -1;
+    const nv = typeof m.numVert === 'function' ? m.numVert() : -1;
+    const vol = typeof m.volume === 'function' ? m.volume() : NaN;
+    return { sig: `${nt}|${nv}|${r6(ex)}|${r6(ey)}|${r6(ez)}|${r6(vol)}`, cx, cy, cz };
+  };
+
+  const ref = sigOf(bodies[0]);
+  const centres: { cx: number; cy: number; cz: number }[] = [ref];
+  for (let i = 1; i < bodies.length; i++) {
+    const s = sigOf(bodies[i]);
+    if (s.sig !== ref.sig) return null; // mixed composition → merged path
+    centres.push(s);
+  }
+
+  // All identical. Canonical child = body[0] (kept in its own world position);
+  // each instance is the pure translation of its centre relative to body[0].
+  const canonical = bodies[0];
+  const instances: number[][] = centres.map((c) => {
+    const m = new THREE.Matrix4().makeTranslation(c.cx - ref.cx, c.cy - ref.cy, c.cz - ref.cz);
+    return Array.from(m.elements as Float32Array | number[]); // column-major 16
+  });
+
+  // Cutaway skip judged on the CHILD (small), not the merged total.
+  const childTris = typeof canonical.numTri === 'function' ? canonical.numTri() : 0;
+  const skipCutaway = skipCutawayOpt === true ? true
+    : skipCutawayOpt === false ? false
+    : childTris > 15_000;
+
+  return {
+    full: manifoldToGeo(canonical, material, lut, override),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(canonical.subtract(cutBox), maxOD, material, lut, override),
+    manifold: scaled,
+    cutawaySkipped: skipCutaway,
+    instances,
+  };
 }
 
 export function buildComponent(componentId: string, params: Record<string, number>): ComponentResult {

@@ -24,6 +24,16 @@ export interface SerializedGeometry {
 export interface SerializedComponentResult {
   full: SerializedGeometry;
   cutVC: SerializedGeometry;
+  /** OPTIONAL GPU-instancing payload (versioned/optional — old consumers
+   *  ignore it and render `full`/`cutVC` as a single mesh). When present,
+   *  `full`/`cutVC` are the CANONICAL CHILD mesh (serialized ONCE) and
+   *  `instanced.instances` is the list of N rigid 4×4 transforms (each a
+   *  16-float column-major array, THREE.Matrix4 order). The renderer draws a
+   *  THREE.InstancedMesh of the child under each matrix. */
+  instanced?: {
+    instances: number[][];
+    count: number;
+  };
 }
 
 function serializeGeometry(geo: THREE.BufferGeometry): SerializedGeometry {
@@ -71,19 +81,35 @@ function deserializeGeometry(s: SerializedGeometry): THREE.BufferGeometry {
 export function serializeComponentResult(r: {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
+  /** When present (instancing applied), full/cutVC are the canonical child
+   *  and these are the N per-copy 16-float column-major transforms. */
+  instances?: number[][];
 }): SerializedComponentResult {
-  return {
+  const out: SerializedComponentResult = {
     full: serializeGeometry(r.full),
     cutVC: serializeGeometry(r.cutVC),
   };
+  if (r.instances && r.instances.length > 0) {
+    out.instanced = { instances: r.instances, count: r.instances.length };
+  }
+  return out;
 }
 
 export function deserializeComponentResult(s: SerializedComponentResult): {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
+  instanced?: { instances: number[][]; count: number };
 } {
-  return {
+  const out: {
+    full: THREE.BufferGeometry;
+    cutVC: THREE.BufferGeometry;
+    instanced?: { instances: number[][]; count: number };
+  } = {
     full: deserializeGeometry(s.full),
     cutVC: deserializeGeometry(s.cutVC),
   };
+  if (s.instanced && Array.isArray(s.instanced.instances) && s.instanced.instances.length > 0) {
+    out.instanced = { instances: s.instanced.instances, count: s.instanced.count };
+  }
+  return out;
 }

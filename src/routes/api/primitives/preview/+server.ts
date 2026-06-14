@@ -25,7 +25,14 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, instanced } = body ?? {};
+  // OPT-IN GPU instancing (LIVE-mesh path only). When true, finalize tries to
+  // detect a Stack/Repeat of N identical bodies and returns the canonical child
+  // mesh ONCE + N transforms (response carries `instanced`). When the body
+  // isn't a uniform repeat, finalize falls back to the merged mesh transparently
+  // → the response is the normal merged shape. Absent/false → byte-identical to
+  // the pre-instancing behaviour (SVG tab, GLB, typed builders never send it).
+  const instancedReq = instanced === true;
   // Optional per-request circular-segment override (the SVG tab asks for a
   // coarse 32 so the vector drawing renders fast + below the high-poly warning).
   // Clamp to a sane range; non-finite / out-of-range → undefined → full default
@@ -76,7 +83,10 @@ export const POST = async ({ request, fetch }) => {
   // trip identically across calls.
   const cacheableParams = args.every((a) => typeof a === 'number') ? (args as number[]) : null;
   let cacheHash: string | null = null;
-  const cacheable = cacheableParams !== null && /^[a-z_][a-z0-9_]*$/i.test(name) && mode !== 'bundle';
+  // Instanced requests bypass the persistent bake cache: the cached payload
+  // schema predates the `instanced` field, and the client fetch-cache already
+  // memoises the instanced response. Keeps the non-instanced cache byte-identical.
+  const cacheable = cacheableParams !== null && /^[a-z_][a-z0-9_]*$/i.test(name) && mode !== 'bundle' && !instancedReq;
   if (cacheable) {
     cacheHash = hashBakeKey(source, name, cacheableParams as number[], cacheOpts);
     // bust=1 skips the lookup but we still compute the hash + write to cache
@@ -229,7 +239,7 @@ export const POST = async ({ request, fetch }) => {
       args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
       material,
       parts,
-      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner },
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq },
     );
     mark('finalize', t); t = performance.now();
     serialized = serializeComponentResult(result);
@@ -260,6 +270,10 @@ export const POST = async ({ request, fetch }) => {
     ok: true,
     full: serialized.full,
     cutVC: serialized.cutVC,
+    // Present only when instancing was requested AND applied (uniform repeat):
+    // full/cutVC are then the canonical child + this carries the N transforms.
+    // Omitted entirely otherwise → response shape is the normal merged mesh.
+    ...(serialized.instanced ? { instanced: serialized.instanced } : {}),
     cutawaySkipped,
     cached: false,
     cacheHash,
