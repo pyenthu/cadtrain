@@ -1,3 +1,19 @@
+<script module lang="ts">
+  // Module-scoped guard so RectAreaLightUniformsLib.init() (which rebuilds the
+  // LTC area-light lookup textures) runs ONCE across every mounted instance of
+  // this scene, not once per /primitives tab.
+  let rectAreaLibInit = false;
+  let rectAreaLibPending: Promise<void> | null = null;
+  async function ensureRectAreaLib(): Promise<void> {
+    if (rectAreaLibInit) return;
+    if (!rectAreaLibPending) {
+      rectAreaLibPending = import('three/examples/jsm/lights/RectAreaLightUniformsLib.js')
+        .then((m) => { m.RectAreaLightUniformsLib.init(); rectAreaLibInit = true; });
+    }
+    return rectAreaLibPending;
+  }
+</script>
+
 <script lang="ts">
   // ONE scene rendering BOTH the live mesh (left) and the baked GLB (right)
   // side-by-side under a single camera / single WebGL context. Replaces the
@@ -7,6 +23,7 @@
   import { OrbitControls, Edges } from '@threlte/extras';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import * as THREE from 'three';
+  import { onMount } from 'svelte';
   import { scene } from '$lib/shared/scene-state.svelte';
   // TEMP warp experiment — mirror ComponentScene/ComponentSceneGlb so the
   // warp toggle works in the combined canvas too (was dropped in the rewrite).
@@ -44,29 +61,69 @@
   let full = $derived(geo?.full ?? null);
   let cutVC = $derived(geo?.cutVC ?? null);
 
+  // --- lit-mesh material factory (shared by the live mesh + the GLB) ---
+  // When the rectangular AREA light is on the lit meshes MUST be
+  // MeshStandardMaterial — RectAreaLight has no effect on MeshPhong. When off
+  // we recreate the EXACT MeshPhong used before (same color / vertexColors /
+  // specular / shininess / flatShading / DoubleSide) so the render is
+  // unchanged. The red-outer / grey-bore vertexColors + the solid-mesh
+  // `#cc2222` convention are preserved on BOTH materials.
+  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean): THREE.Material {
+    if (useStd) {
+      return new THREE.MeshStandardMaterial({
+        color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
+        roughness: 0.5, metalness: 0.0, flatShading: flat, side: THREE.DoubleSide,
+      });
+    }
+    return new THREE.MeshPhongMaterial({
+      color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
+      specular: '#666666', shininess: 120, flatShading: flat, side: THREE.DoubleSide,
+    });
+  }
+
   // --- baked GLB (mirrors ComponentSceneGlb.dressGltfScene) ---
   let loaded = $state<THREE.Object3D | null>(null);
+  // Tracks which material family the loaded GLB currently wears ('' = none yet)
+  // so the reactive material effect only re-dresses on an actual change.
+  let glbMatMode = '';
+  // Strip normals + cache warp geos; the lit material is assigned reactively by
+  // the GLB-material effect below (so it can swap Phong↔Standard on toggle).
   function dressGltfScene(root: THREE.Object3D) {
     root.traverse((obj: any) => {
       if (!obj.isMesh) return;
-      if (obj.material?.dispose) obj.material.dispose();
       const g = obj.geometry as THREE.BufferGeometry;
       if (g.attributes.normal) g.deleteAttribute('normal');
-      const hasColor = !!g.attributes.color;
-      obj.material = new THREE.MeshPhongMaterial({
-        color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
-        specular: '#666666', shininess: 120, flatShading: true, side: THREE.DoubleSide,
-      });
-      attachWarpShader(obj.material);
       obj.userData.warpOriginalGeo = g;
       obj.userData.warpSubdividedGeo = subdivideAlongZ(g);
     });
   }
   $effect(() => {
     const myUrl = glbUrl;
-    if (!myUrl) { loaded = null; return; }
+    if (!myUrl) { loaded = null; glbMatMode = ''; return; }
     const loader = new GLTFLoader();
-    loader.load(myUrl, (gltf) => { if (myUrl !== glbUrl) return; dressGltfScene(gltf.scene); loaded = gltf.scene; }, undefined, () => {});
+    loader.load(myUrl, (gltf) => {
+      if (myUrl !== glbUrl) return;
+      dressGltfScene(gltf.scene);
+      glbMatMode = '';          // force the material effect to (re)dress
+      loaded = gltf.scene;
+    }, undefined, () => {});
+  });
+  // Assign / swap the GLB mesh materials reactively. Phong when the rect light
+  // is off (byte-identical to the previous dressGltfScene material), Standard
+  // when on so the RectAreaLight actually shades it. GLB is always flatShading.
+  $effect(() => {
+    const useStd = scene.zRectLight;
+    if (!loaded) return;
+    const want = useStd ? 'std' : 'phong';
+    if (want === glbMatMode) return;
+    loaded.traverse((obj: any) => {
+      if (!obj.isMesh) return;
+      const hasColor = !!(obj.geometry as THREE.BufferGeometry).attributes.color;
+      if (obj.material?.dispose) obj.material.dispose();
+      obj.material = makeLitMaterial(hasColor, useStd, true);
+      attachWarpShader(obj.material as any);
+    });
+    glbMatMode = want;
   });
   // TEMP warp experiment — swap GLB geometry to the subdivided variant on toggle.
   $effect(() => {
@@ -189,9 +246,46 @@
     const diam = bbox ? Math.max(bbox.ex, bbox.ey) * scene.xScale : 20;
     return scene.zStripRadius * 2 + diam * 1.5;
   });
-  // While the strip is on, drop the three fixed lights to a small fill so the
-  // strip is the key; off → full strength (no change vs. before).
-  let fillFactor = $derived(scene.zStripLight ? 0.15 : 1);
+  // While EITHER Z-light mode is on, drop the three fixed lights to a small
+  // fill so the strip / rectangle is the key; off → full strength (no change
+  // vs. before — byte-identical when both are off).
+  let fillFactor = $derived(scene.zStripLight || scene.zRectLight ? 0.15 : 1);
+
+  // --- true rectangular AREA light along Z (RectAreaLight) ---
+  // A literal emissive panel whose WIDTH runs ALONG the part's Z (drilling)
+  // extent and whose HEIGHT spans a few diameters across, sitting `zRectOffset`
+  // off the axis (+Y) and aimed at the part. RectAreaLight only lights
+  // MeshStandard/Physical, so the lit meshes swap to MeshStandardMaterial while
+  // scene.zRectLight is on (see makeLitMaterial + the material branches below).
+  // One-time uniforms-lib init (LTC textures) on mount.
+  onMount(() => { void ensureRectAreaLib(); });
+  let rectLight = $state<any>(null);
+  $effect(() => {
+    const l = rectLight;
+    if (!l || !scene.zRectLight) return;
+    // Touch reactive deps so the panel re-orients/-sizes as the part or dials
+    // change. partZExtent is already in post-view-scale world units (the light
+    // lives at the scene ROOT, outside the view-scale group, like the strip).
+    const { min, max } = scene.partZExtent;
+    const cz = (min + max) / 2;
+    const along = scene.zRectWidth && scene.zRectWidth > 0
+      ? scene.zRectWidth
+      : Math.max(1, (max - min) * 1.05);   // full part Z span + ~5% headroom
+    l.position.set(0, scene.zRectOffset, cz);
+    l.width = along;                         // WIDTH = local X → world Z (length)
+    l.height = scene.zRectHeight;            // HEIGHT = local Y → world X (across)
+    l.intensity = scene.zRectIntensity;
+    l.color.set('#ffffff');
+    // Orient: local +X → world Z (width along the drill axis), emissive face
+    // (local −Z) pointing at the axis from the +Y/−Y side per the offset sign.
+    const s = Math.sign(scene.zRectOffset) || 1;
+    const lx = new THREE.Vector3(0, 0, 1);   // width axis → world Z
+    const lz = new THREE.Vector3(0, s, 0);   // normal (away from axis)
+    const ly = new THREE.Vector3().crossVectors(lz, lx).normalize();
+    const m = new THREE.Matrix4().makeBasis(lx, ly, lz);
+    l.quaternion.setFromRotationMatrix(m);
+    l.updateMatrixWorld?.(true);
+  });
 
   // --- auto-fit the camera to the combined (stacked) bounding box ---
   // View axis is +Y (camera at +Y looking toward the part), up = -Z, so the
@@ -252,6 +346,15 @@
   <T.PointLight position={L.pos} intensity={scene.zStripIntensity} distance={zStripDistance} />
 {/each}
 
+<!-- True rectangular AREA light: a literal emissive panel running ALONG the
+     part's Z extent, lighting MeshStandard meshes (the lit meshes swap to
+     Standard while this is on). Position / size / orientation are driven by the
+     $effect above via the bound ref. Mounted only while scene.zRectLight is on
+     so the off-state render is unchanged. -->
+{#if scene.zRectLight}
+  <T.RectAreaLight bind:ref={rectLight} intensity={scene.zRectIntensity} width={1} height={1} />
+{/if}
+
 <!-- VIEW-ONLY scale: X/Y = diameter exaggeration (xScale), Z = depth
      compression (zScale). Wraps BOTH stacked renders + their offsets so the
      whole composition scales together; the geometry on disk + the bake stay
@@ -259,18 +362,28 @@
 <T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
-  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '')}
+  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '') + (scene.zRectLight ? '_r' : '')}
     {#if showCutaway && cutVC}
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
       <T.Mesh geometry={cg}>
-        <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+        {#if scene.zRectLight}
+          <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+        {:else}
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+        {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
     {:else if full}
       {@const hasVC = !!full?.getAttribute?.('color')}
       {@const fg = scene.warpEnabled ? subdivideAlongZ(full) : full}
       <T.Mesh geometry={fg}>
-        {#if hasVC}
+        {#if scene.zRectLight}
+          {#if hasVC}
+            <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          {:else}
+            <T.MeshStandardMaterial color="#cc2222" roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          {/if}
+        {:else if hasVC}
           <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
         {:else}
           <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />

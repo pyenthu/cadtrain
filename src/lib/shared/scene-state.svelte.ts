@@ -60,6 +60,27 @@ export const scene = $state({
    *  units after the view scale. Written by PrimitiveDualScene's geometry
    *  effect alongside partCenter; the strip lights span [min, max]. */
   partZExtent: { min: 0, max: 0 },
+  /** True rectangular AREA light along Z — VIEW ONLY. Independent of
+   *  `zStripLight` (the point-light strip): this is a literal
+   *  `THREE.RectAreaLight` whose long (width) dimension runs ALONG the part's
+   *  Z (drilling) extent, emitting an even soft wash at the whole length of a
+   *  tall stack. RectAreaLight only affects MeshStandard/Physical materials,
+   *  so while this is ON the lit meshes render as MeshStandardMaterial instead
+   *  of MeshPhong; OFF → the MeshPhong path is byte-identical to before.
+   *  Option B from docs/plans/z-axis-light.md. Master OFF by default. */
+  zRectLight: false,
+  /** RectAreaLight intensity (luminance-ish units — NOT point-light candela;
+   *  small values 1–10 are normal once RectAreaLightUniformsLib.init() runs). */
+  zRectIntensity: 4,
+  /** Rectangle WIDTH = the dimension running ALONG Z (the part's length). 0 =
+   *  auto-derive from `partZExtent` (full part span + ~5% headroom). */
+  zRectWidth: 0,
+  /** Rectangle HEIGHT = the dimension ACROSS the part (a few diameters wide so
+   *  the wash wraps the whole circumference). World units after view scale. */
+  zRectHeight: 40,
+  /** Radial offset (world units, +Y) of the rectangle off the part axis — how
+   *  far the emissive panel sits away from the part. */
+  zRectOffset: 30,
   /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
    *  renders (per-vertex RGB: red outer / grey bore). When false, the
    *  solid `full` mesh renders in flat red. UI in SceneControls. */

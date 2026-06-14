@@ -90,6 +90,23 @@
       <span class="sv-sub">⌀</span>
       <input type="number" step="1" min={0} bind:value={scene.zStripRadius} disabled={!scene.zStripLight} />
     </div>
+    <!-- True rectangular AREA light running along Z — even soft wash down a
+         long/tall part. Independent of the point-light strip above; swaps the
+         lit meshes to MeshStandardMaterial while on. -->
+    <div class="sv-row sv-zlight">
+      <label class="sv-check sv-zlight-master">
+        <input type="checkbox" bind:checked={scene.zRectLight} />
+        Rect light (Z)
+      </label>
+      <span class="sv-sub">i</span>
+      <input type="number" step="0.5" min={0} bind:value={scene.zRectIntensity} disabled={!scene.zRectLight} />
+      <span class="sv-sub">w</span>
+      <input type="number" step="1" min={0} bind:value={scene.zRectWidth} disabled={!scene.zRectLight} title="width along Z (0 = auto-span the part)" />
+      <span class="sv-sub">h</span>
+      <input type="number" step="1" min={0} bind:value={scene.zRectHeight} disabled={!scene.zRectLight} title="height across the part" />
+      <span class="sv-sub">⌀</span>
+      <input type="number" step="1" bind:value={scene.zRectOffset} disabled={!scene.zRectLight} title="radial offset off the axis" />
+    </div>
     <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
          row + scene.warp* fields + warp.ts to retire the feature. -->
     <div class="sv-row sv-warp">
