@@ -156,7 +156,42 @@
     // times that scale.
     const xs = scene.xScale, zs = scene.zScale;
     scene.partCenter = { x: bbox.cx * xs, y: bbox.cy * xs, z: bbox.cz * zs };
+    // Visual Z range of the WHOLE stacked composition (mesh + GLB), in world
+    // units after the view scale, so the Z-axis light strip spans both copies
+    // end-to-end. Combined centre-to-centre sep = ez + gap, so the full span is
+    // 2·ez + gap centred on cz; half-span = (ez + gap/2). Z-down: min = top.
+    const halfSpan = (bbox.ez + gap / 2) * zs;
+    const cz = bbox.cz * zs;
+    scene.partZExtent = { min: cz - halfSpan, max: cz + halfSpan };
   });
+
+  // --- Z-axis light strip (Option A — docs/plans/z-axis-light.md) ---
+  // N point lights distributed evenly along the part's visual Z extent at a
+  // fixed radial (+Y) offset, so a long/tall part is lit down its whole length
+  // rather than from the origin-clustered fixed lights. Placed at the scene
+  // ROOT (outside the view-scale group) so positions/intensity read in world
+  // units. Empty (no lights) unless scene.zStripLight is on → zero overhead and
+  // a byte-identical render when off.
+  let zStripLights = $derived.by(() => {
+    if (!scene.zStripLight) return [];
+    const n = Math.max(1, Math.round(scene.zStripCount));
+    const { min, max } = scene.partZExtent;
+    const out: { pos: [number, number, number] }[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      out.push({ pos: [0, scene.zStripRadius, min + (max - min) * t] });
+    }
+    return out;
+  });
+  // Falloff distance: reach across the part diameter (× view scale) from the
+  // radial offset, with headroom so the lobes overlap into an even wash.
+  let zStripDistance = $derived.by(() => {
+    const diam = bbox ? Math.max(bbox.ex, bbox.ey) * scene.xScale : 20;
+    return scene.zStripRadius * 2 + diam * 1.5;
+  });
+  // While the strip is on, drop the three fixed lights to a small fill so the
+  // strip is the key; off → full strength (no change vs. before).
+  let fillFactor = $derived(scene.zStripLight ? 0.15 : 1);
 
   // --- auto-fit the camera to the combined (stacked) bounding box ---
   // View axis is +Y (camera at +Y looking toward the part), up = -Z, so the
@@ -205,10 +240,17 @@
      back to the CSS (the prior dev-white / prod-black mismatch). -->
 <T.Color args={['#ffffff']} attach="background" />
 <T.AmbientLight intensity={0.3} />
-<T.PointLight position={light1Pos} intensity={scene.l1.i} distance={50} />
-<T.PointLight position={light2Pos} intensity={scene.l2.i} distance={50} />
+<T.PointLight position={light1Pos} intensity={scene.l1.i * fillFactor} distance={50} />
+<T.PointLight position={light2Pos} intensity={scene.l2.i * fillFactor} distance={50} />
 <!-- Fill light from below to lift the previously-shaded quadrant. -->
-<T.PointLight position={light3Pos} intensity={scene.l3.i} distance={50} />
+<T.PointLight position={light3Pos} intensity={scene.l3.i * fillFactor} distance={50} />
+
+<!-- Z-axis light strip: N point lights running down the part's Z (drilling)
+     extent, Phong-compatible. Rendered only while scene.zStripLight is on so
+     the off-state render is unchanged. -->
+{#each zStripLights as L, i (i)}
+  <T.PointLight position={L.pos} intensity={scene.zStripIntensity} distance={zStripDistance} />
+{/each}
 
 <!-- VIEW-ONLY scale: X/Y = diameter exaggeration (xScale), Z = depth
      compression (zScale). Wraps BOTH stacked renders + their offsets so the
