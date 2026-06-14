@@ -202,6 +202,52 @@
     const a = document.createElement('a'); a.href = glbBlobUrl; a.download = `${id}.glb`;
     document.body.appendChild(a); a.click(); a.remove();
   }
+
+  // --- Z-pan slider range, derived from the rendered part's Z extent ---
+  // scene.partZExtent + scene.partCenter are written by PrimitiveDualScene's
+  // geometry effect in POST-view-scale world units (they already bake in
+  // xScale/zScale AND the stacked mesh+GLB span). zFocus is ADDED to
+  // partCenter.z to drive the OrbitControls look-at, so mapping the slider's
+  // min/max to the extent measured as an OFFSET FROM that centre makes full
+  // slider travel scroll the target from the TOP (lower z, Z-down convention)
+  // to the BOTTOM (higher z) of the visible composition. zFocus 0 sits at the
+  // centre → the camera auto-fit frames the whole part by default. Falls back
+  // to a small symmetric range before any geometry has been measured.
+  let zSpan = $derived.by(() => {
+    const { min, max } = scene.partZExtent;
+    const cz = scene.partCenter.z;
+    if (!(max > min)) return { min: -10, max: 10 };
+    const pad = (max - min) * 0.05; // headroom so the ends aren't flush against the stop
+    return { min: min - cz - pad, max: max - cz + pad };
+  });
+  // Pan STEP scales with ZOOM so the slider stays in sync with what's framed:
+  // the on-screen vertical span is 2·dist·tan(fov/2) (fov 45°, camera looks
+  // along ±Y), so a step of (visible span)/120 keeps the pan resolution
+  // proportional to the visible part length — fine when zoomed in, coarse when
+  // zoomed out. Distance is to the PANNED target (partCenter + zFocus on z),
+  // which is invariant under the pan itself, so dragging the slider never
+  // changes its own step (no jitter); only zoom / orbit (scene.cam) does.
+  const TAN_HALF_FOV = Math.tan((45 * Math.PI) / 180 / 2);
+  let zStep = $derived.by(() => {
+    const pc = scene.partCenter;
+    const tz = pc.z + scene.zFocus;
+    const dist = Math.hypot(scene.cam.x - pc.x, scene.cam.y - pc.y, scene.cam.z - tz);
+    const visible = 2 * dist * TAN_HALF_FOV;
+    const total = Math.max(1e-3, zSpan.max - zSpan.min);
+    return Math.min(total / 20, Math.max(0.02, visible / 120));
+  });
+  // Keep zFocus inside the current part's range — a stale value left by a
+  // taller part (or a hand-set zFocus) would aim the look-at off the new part.
+  // Guarded so it ONLY writes when actually out of range: zSpan depends on
+  // partZExtent/partCenter (NOT zFocus), so the re-run after a clamp finds
+  // zFocus already in range and writes nothing → no effect loop with the
+  // slider read or the pan effect in PrimitiveDualScene.
+  $effect(() => {
+    const { min, max } = zSpan;
+    const z = scene.zFocus;
+    const c = z < min ? min : z > max ? max : z;
+    if (c !== z) scene.zFocus = c;
+  });
 </script>
 
 <div class="pd-stage">
@@ -237,10 +283,11 @@
   <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).
        Top = z 0 (top of the part), drag down to follow it deeper (Z-down). -->
   <div class="pd-zpan">
-    <!-- Z-pan range expanded 90 units (−10 → 80) → 250 units (−50 → 200)
-         so tall multi-joint assemblies (drill stands, completion strings)
-         can be scrolled end-to-end without the slider hitting its stop. -->
-    <input class="pd-zslider" type="range" min="-50" max="200" step="0.5"
+    <!-- Z-pan range is DERIVED from the rendered part's Z extent (zSpan, above)
+         so full slider travel scrolls exactly from the top of the mesh/GLB to
+         the bottom — no fixed stops. The step (zStep) scales with zoom so the
+         pan resolution tracks the visible part length as the canvas is dollied. -->
+    <input class="pd-zslider" type="range" min={zSpan.min} max={zSpan.max} step={zStep}
       bind:value={scene.zFocus} aria-label="Pan camera along Z" title="Pan view along Z ({scene.zFocus.toFixed(1)})" />
     <button class="pd-zreset" type="button" title="Reset Z pan" onclick={() => (scene.zFocus = 0)}>⊙</button>
   </div>
