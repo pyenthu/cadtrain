@@ -147,6 +147,10 @@
      *  Ignored for parts that already exist on disk (save writes back in
      *  place server-side). Defaults to 'basic'. */
     createDir?: string;
+    /** Fired after a successful Save — lets /primitives refresh the sidebar
+     *  list (+ optimistically surface a brand-new part immediately, since the
+     *  proxied /list lags writes by seconds). (id, dir). */
+    onSaved?: (id: string, dir: string) => void;
   }
   const props: Props = $props();
   // exemplarId is the WRITABLE working id — Save / Save-as / typing in the
@@ -4373,6 +4377,7 @@
       });
       if (r.ok) {
         saveStatus = `✓ ${exemplarId} saved to ${props.createDir || 'basic'}/`;
+        props.onSaved?.(exemplarId, props.createDir || 'basic');
       } else {
         saveStatus = `✗ save ${r.status}: ${(await r.text()).slice(0, 160)}`;
       }

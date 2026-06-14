@@ -79,6 +79,36 @@
     return n;
   }
   let currentNode = $derived(nodeAt(navPath));
+
+  // Optimistic-insert for brand-new parts: the proxied /list lags writes by
+  // seconds (memory prod_list_staleness), so a just-saved part wouldn't appear
+  // until a later refresh. Track pending ids → merge them into the tree after
+  // every loadList until the real list catches up, then drop them.
+  let pendingCreated = $state<Map<string, string>>(new Map());
+  function treeHasId(node: FolderNode, id: string): boolean {
+    return node.parts.some((p) => p.id === id) || node.children.some((c) => treeHasId(c, id));
+  }
+  function mergePending() {
+    if (!tree || pendingCreated.size === 0) return;
+    let changed = false;
+    for (const [id, dir] of [...pendingCreated]) {
+      if (treeHasId(tree, id)) { pendingCreated.delete(id); changed = true; continue; }
+      const node = nodeAt(dir) ?? tree;
+      if (node && !node.parts.some((p) => p.id === id)) {
+        node.parts = [...node.parts, { id, source: 'volume', name: id, description: '', params: {} } as any];
+        changed = true;
+      }
+    }
+    if (changed) pendingCreated = new Map(pendingCreated);
+  }
+  /** Fired by a tab's editor after a successful Save — surface the part now
+   *  (optimistic) and reconcile against the server. */
+  function onPartSaved(id: string, dir: string) {
+    pendingCreated.set(id, dir);
+    pendingCreated = new Map(pendingCreated);
+    mergePending();
+    void loadList();
+  }
   /** Breadcrumb segments for navPath, each with its cumulative path. */
   let crumbs = $derived(
     navPath
@@ -364,6 +394,7 @@
       profiles  = Array.isArray(pf.profiles)
         ? pf.profiles.map((p: any) => ({ id: p.id, set: p.set, hasSource: !!p.hasSource }))
         : [];
+      mergePending();   // re-surface any just-created parts the server hasn't caught up to yet
     } catch (e: any) {
       listError = e?.message ?? String(e);
     } finally {
@@ -961,6 +992,7 @@
                  editor state mounted; their canvas remounts on activate. -->
             <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph}
               createDir={t.createDir}
+              onSaved={onPartSaved}
               onGenerated={(id) => renameActiveTab(id)} />
           </div>
         {/each}
