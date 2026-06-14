@@ -166,6 +166,22 @@
     const group = new THREE.Group();
     group.scale.set(scene.xScale, scene.xScale, scene.zScale);
     group.add(new THREE.Mesh(geo, mat));
+    // Edge outline — black crease/silhouette lines at a 20° threshold, matching
+    // the 3D pane's <Edges thresholdAngle={20}>. SVGRenderer strokes
+    // LineSegments as <path>s in correct painter's-algorithm depth order, so the
+    // drawing reads as outlined shapes instead of a borderless colour mass.
+    // Gated on scene.showEdges (the same toggle the 3D pane uses). No HLR — all
+    // creases draw, which is fine for a technical line drawing.
+    let edgeLines: THREE.LineSegments | null = null;
+    let edgeGeo: THREE.EdgesGeometry | null = null;
+    if (scene.showEdges) {
+      edgeGeo = new THREE.EdgesGeometry(geo, 20);
+      edgeLines = new THREE.LineSegments(
+        edgeGeo,
+        new THREE.LineBasicMaterial({ color: 0x000000 }),
+      );
+      group.add(edgeLines);
+    }
     threeScene.add(group);
 
     // Lights — same directions as PrimitiveDualScene's l1/l2/l3, but as
