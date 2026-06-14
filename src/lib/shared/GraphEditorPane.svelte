@@ -2294,7 +2294,10 @@
       // arrows + 14 px × button + 16 px padding. Title row has the ▶ chevron
       // + name + ⚙ gear so the header itself needs room; account for the min.
       const titleW = 90; // ▶ Output + gear with padding
-      const rowW = longest * 7 + 18 + 44 + 14 + 16;
+      // Stack rows carry two inline editable fields (×N count + z-offset)
+      // between the label and the ▲▼× chrome — reserve ~96px for them.
+      const inlineFieldsW = node.type === 'stack' ? 96 : 0;
+      const rowW = longest * 7 + 18 + inlineFieldsW + 44 + 14 + 16;
       // 120 px floor matches the Call card's min and reads as a real
       // container, not a half-collapsed sliver.
       return Math.max(120, Math.max(rowW, titleW));
@@ -5600,6 +5603,53 @@
                   <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={containerSlotY(i)} r="5"
                     onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
                   <text x="10" y={containerSlotY(i) + 4} class="ge-sock-label">{childLabel}</text>
+                  <!-- Inline per-child controls on STACK cards: ×N count +
+                       z-offset, mirroring the ⚙ popover so the common case
+                       needs no popover. HTML inputs inside a foreignObject;
+                       pointerdown stopPropagation so editing doesn't drag the
+                       node. Commit on Enter/blur (Apply-on-Enter). -->
+                  {#if n.type === 'stack'}
+                    {@const countVal = (container.childCounts ?? {})[childId]}
+                    {@const countDisplay = countVal == null ? ''
+                      : countVal.kind === 'literal' ? String(countVal.value)
+                      : countVal.kind === 'param' ? `p.${countVal.param}`
+                      : countVal.expr}
+                    {@const overrideRef = (container.childRefs ?? {})[childId]}
+                    {@const inheritedRef = childNode?.type === 'call' ? expectedDefaults[(childNode as any).src]?.[STACK_REF_PARAM] : undefined}
+                    <foreignObject x={size.w - 148} y={containerSlotY(i) - 10} width="42" height="20" class="ge-fo">
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <input class="ge-stack-inline-input" type="text"
+                        value={countDisplay} placeholder="×1"
+                        title="Copies of this child mated end-to-end (blank/1 = single · a number or a param expr like p.n)"
+                        onpointerdown={(e) => e.stopPropagation()}
+                        onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                        onchange={(e) => {
+                          const raw = (e.target as HTMLInputElement).value.trim();
+                          let next = null;
+                          if (raw !== '') {
+                            const v = Number(raw);
+                            if (Number.isFinite(v)) next = v <= 1 ? null : asLiteral(Math.floor(v));
+                            else next = asExpr(raw);
+                          }
+                          graph = setStackChildCount(graph, n.id, childId, next);
+                        }} />
+                    </foreignObject>
+                    <foreignObject x={size.w - 104} y={containerSlotY(i) - 10} width="48" height="20" class="ge-fo">
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <input class="ge-stack-inline-input" type="text" inputmode="decimal"
+                        value={overrideRef ?? ''} placeholder={inheritedRef != null ? `z ${inheritedRef}` : 'z'}
+                        title={overrideRef != null
+                          ? `z-offset override: ${overrideRef} (clear to inherit ${inheritedRef ?? 0})`
+                          : `z-offset — inheriting ${inheritedRef != null ? `the part's ${inheritedRef}` : '0'}; type a number to override (0 = flush · + = gap · − = overlap)`}
+                        onpointerdown={(e) => e.stopPropagation()}
+                        onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                        onchange={(e) => {
+                          const raw = (e.target as HTMLInputElement).value.trim();
+                          const v = raw === '' ? null : Number(raw);
+                          graph = setStackChildRef(graph, n.id, childId, v == null || Number.isNaN(v) ? null : v);
+                        }} />
+                    </foreignObject>
+                  {/if}
                   <!-- ▲▼ reorder this part up / down in the stack. The slots
                        (and the stacked geometry) re-derive from children order.
                        Hidden at the ends so you can't move past the edge. -->
@@ -7169,12 +7219,11 @@
       {:else}
         <table class="ge-container-table">
           <thead>
-            <tr><th>#</th><th>node</th><th>kind</th>{#if isStack}<th title="Per-child z-offset: blank = inherit the part's own stack_ref · 0 = end-to-end flush · negative = overlap into the next · positive = leave a gap">stack ref</th><th title="Copies of this child, mated end-to-end (replaces a Repeat node): blank/1 = single · a number or a param expr like p.n">× N</th>{/if}<th>order</th><th></th></tr>
+            <tr><th>#</th><th>node</th>{#if isStack}<th title="Copies of this child, mated end-to-end (replaces a Repeat node): blank/1 = single · a number or a param expr like p.n">× N</th><th title="Per-child z-offset: blank = inherit the part's own stack_ref · 0 = end-to-end flush · negative = overlap into the next · positive = leave a gap">z-offset</th>{/if}<th>order</th><th></th></tr>
           </thead>
           <tbody>
             {#each cnode.children as childId, i (childId)}
               {@const cn = graph.nodes[childId]}
-              {@const kind = cn?.type === 'repeat' && (cn as any).op === 'list' ? 'list (×N)' : cn?.type ?? '?'}
               {@const label = cn?.type === 'call' ? `${(cn as any).alias} · ${(cn as any).src}`
                 : cn?.type === 'method' ? `${(cn as any).op}(…)`
                 : cn?.type === 'mv' ? 'mv(…)'
@@ -7187,29 +7236,7 @@
               <tr>
                 <td class="ge-cp-idx">{i + 1}</td>
                 <td class="ge-cp-name">{label}</td>
-                <td class="ge-cp-kind">{kind}</td>
                 {#if isStack}
-                  <td class="ge-cp-ref">
-                    <!-- Per-child stack-ref OVERRIDE. Blank value = inherit the
-                         part's own stack_ref (shown as the placeholder when we
-                         know it). Commit on Enter/blur (Apply-on-Enter convention);
-                         empty clears the override → inherit. -->
-                    <input
-                      class="ge-cp-ref-input"
-                      type="text"
-                      inputmode="decimal"
-                      value={overrideRef ?? ''}
-                      placeholder={inheritedRef != null ? String(inheritedRef) : 'inherit'}
-                      title={overrideRef != null
-                        ? `Override for this stack: ${overrideRef} (clear to inherit ${inheritedRef ?? 0})`
-                        : `Inheriting ${inheritedRef != null ? `the part's ${inheritedRef}` : '0 (no stack_ref on the part)'} — type a number to override here`}
-                      onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                      onchange={(e) => {
-                        const raw = (e.target as HTMLInputElement).value.trim();
-                        const v = raw === '' ? null : Number(raw);
-                        graph = setStackChildRef(graph, cnode.id, childId, v == null || Number.isNaN(v) ? null : v);
-                      }} />
-                  </td>
                   {@const countVal = (cnode.childCounts ?? {})[childId]}
                   {@const countDisplay = countVal == null ? ''
                     : countVal.kind === 'literal' ? String(countVal.value)
@@ -7238,6 +7265,27 @@
                           else next = asExpr(raw);
                         }
                         graph = setStackChildCount(graph, cnode.id, childId, next);
+                      }} />
+                  </td>
+                  <td class="ge-cp-ref">
+                    <!-- Per-child z-offset OVERRIDE. Blank value = inherit the
+                         part's own stack_ref (shown as the placeholder when we
+                         know it). Commit on Enter/blur (Apply-on-Enter convention);
+                         empty clears the override → inherit. -->
+                    <input
+                      class="ge-cp-ref-input"
+                      type="text"
+                      inputmode="decimal"
+                      value={overrideRef ?? ''}
+                      placeholder={inheritedRef != null ? String(inheritedRef) : 'inherit'}
+                      title={overrideRef != null
+                        ? `Override for this stack: ${overrideRef} (clear to inherit ${inheritedRef ?? 0})`
+                        : `Inheriting ${inheritedRef != null ? `the part's ${inheritedRef}` : '0 (no stack_ref on the part)'} — type a number to override here`}
+                      onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      onchange={(e) => {
+                        const raw = (e.target as HTMLInputElement).value.trim();
+                        const v = raw === '' ? null : Number(raw);
+                        graph = setStackChildRef(graph, cnode.id, childId, v == null || Number.isNaN(v) ? null : v);
                       }} />
                   </td>
                 {/if}
@@ -8011,6 +8059,10 @@
   .ge-cp-ref-input { width: 56px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #0c4a6e; background: #fff; }
   .ge-cp-ref-input::placeholder { color: #b0b7c0; font-style: italic; }
   .ge-cp-ref-input:focus { outline: none; border-color: #0ea5e9; }
+  /* Inline ×N / z-offset fields on the Stack node card (foreignObject). */
+  .ge-stack-inline-input { width: 100%; height: 18px; box-sizing: border-box; padding: 1px 3px; font: 10px ui-monospace, monospace; text-align: right; border: 1px solid #cbd5e1; border-radius: 3px; color: #0f172a; background: #fff; }
+  .ge-stack-inline-input::placeholder { color: #b8c0cc; font-style: italic; }
+  .ge-stack-inline-input:focus { outline: none; border-color: #0ea5e9; }
   .ge-cp-count { width: 56px; }
   .ge-cp-count-input { width: 48px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #166534; background: #fff; }
   .ge-cp-count-input::placeholder { color: #b0b7c0; font-style: italic; }
