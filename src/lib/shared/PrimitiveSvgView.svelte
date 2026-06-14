@@ -199,32 +199,37 @@
     addDir(scene.l3, 0.25);
 
     // Camera. Z-down convention (up = [0,0,-1]) in both modes.
+    // renderW/renderH = the SVG's pixel size. PERSP fills the container (fit, no
+    // scroll). ORTHO renders at the part's NATURAL proportions (a long tool →
+    // tall SVG) so the stage scrolls and you can read it at size.
     let camera: THREE.Camera;
+    let renderW = Math.max(1, w);
+    let renderH = Math.max(1, h);
+    let fitToContainer = true;
     if (projection === 'ortho') {
       // ORTHOGRAPHIC = a straight perpendicular technical ELEVATION. We IGNORE
       // the orbited 3D camera and look dead-on perpendicular to the Z (drilling)
-      // axis: camera sits on the +Y axis at z=0, looking at the ORIGIN, with Z
-      // running vertically. Parallel edges stay parallel (no foreshortening).
+      // axis at the centreline (x=0, y=0), centred on the part's Z span so the
+      // whole length frames. Z runs vertically; parallel edges stay parallel.
       geo.computeBoundingBox();
       const bb = geo.boundingBox;
-      // World (scaled) extents of what's actually drawn (the [xScale,xScale,
-      // zScale] group). Radial half-width (x/y) is horizontal; the z reach FROM
-      // THE ORIGIN is vertical (the part extends away from z=0, and we look at 0,
-      // so the frustum must reach the farthest z end to keep the part framed).
       const halfX = bb ? 0.5 * (bb.max.x - bb.min.x) * scene.xScale : 1;
       const halfY = bb ? 0.5 * (bb.max.y - bb.min.y) * scene.xScale : 1;
-      const radial = Math.hypot(halfX, halfY) || 1;
-      const zReach = bb
-        ? Math.max(Math.abs(bb.min.z), Math.abs(bb.max.z)) * scene.zScale
-        : 1;
-      const halfH = Math.max(zReach, radial) * 1.05; // pad; frame from origin
-      const aspect = w / h;
-      camera = new THREE.OrthographicCamera(
-        -halfH * aspect, halfH * aspect, halfH, -halfH, 0.1, 100000,
-      );
+      const padH = (Math.hypot(halfX, halfY) || 1) * 1.05;   // radial → horizontal
+      const halfZ = bb ? 0.5 * (bb.max.z - bb.min.z) * scene.zScale : 1;
+      const padV = (Math.max(halfZ, 0.001)) * 1.05;          // z half-span → vertical
+      const czWorld = bb ? 0.5 * (bb.min.z + bb.max.z) * scene.zScale : 0;
+      // Render at the part's true V/H aspect, width pinned to the container.
+      // Cap the longest side so a very long tool doesn't produce a monster SVG.
+      renderW = Math.max(1, w);
+      renderH = Math.max(1, Math.round(renderW * (padV / padH)));
+      const MAXPX = 8000;
+      if (renderH > MAXPX) { renderH = MAXPX; renderW = Math.max(1, Math.round(MAXPX * (padH / padV))); }
+      fitToContainer = false;
+      camera = new THREE.OrthographicCamera(-padH, padH, padV, -padV, 0.1, 100000);
       camera.up.set(0, 0, -1);
-      camera.position.set(0, 1000, 0); // +Y axis, z=0; ortho → distance is cosmetic
-      camera.lookAt(0, 0, 0);
+      camera.position.set(0, 1000, czWorld); // +Y axis; ortho → distance is cosmetic
+      camera.lookAt(0, 0, czWorld);
     } else {
       // PERSPECTIVE: mirror the 3D pane — fov 45, the live (orbitable) camera.
       camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100000);
@@ -242,17 +247,25 @@
       renderer.setQuality('high');
     }
     renderer.setClearColor('#ffffff');
-    renderer.setSize(w, h);
+    renderer.setSize(renderW, renderH);
     renderer.render(threeScene, camera);
 
     // Mount / refresh the produced <svg>. SVGRenderer reuses its domElement and
     // clears it each render (autoClear), so we only (re)attach if detached.
     if (container && renderer.domElement.parentNode !== container) {
       container.replaceChildren(renderer.domElement);
-      const el = renderer.domElement as SVGElement;
+    }
+    const el = renderer.domElement as SVGElement;
+    el.style.display = 'block';
+    if (fitToContainer) {
+      // PERSP: fill the stage, no scroll.
       el.style.width = '100%';
       el.style.height = '100%';
-      el.style.display = 'block';
+    } else {
+      // ORTHO: natural pixel size → overflows the stage → scrollbar.
+      el.style.width = `${renderW}px`;
+      el.style.height = `${renderH}px`;
+      el.style.margin = '0 auto';
     }
 
     // Dispose the previous frame's material now that the new one is drawn.
@@ -440,12 +453,15 @@
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;        /* scroll when the SVG (ortho, natural size) overflows */
     background: #ffffff;
   }
   .svg-canvas {
-    position: absolute;
-    inset: 0;
+    /* Fills the stage for perspective (svg = 100%); grows with the svg's
+       natural pixel size for ortho so the stage scrolls. */
+    position: relative;
+    width: 100%;
+    min-height: 100%;
   }
   .svg-overlay {
     position: absolute;
