@@ -41,10 +41,21 @@
     meshJson = null,
     name = 'part',
     active = false,
+    res = 'coarse',
+    onSetRes = undefined,
+    busy = false,
   }: {
     meshJson?: SerializedComponentResult | null;
     name?: string;
     active?: boolean;
+    /** Bake resolution shown in the toolbar toggle. 'coarse' = 32-segment bake
+     *  (default, fast/light), 'high' = full 256. The actual bake (segments) is
+     *  driven by the parent via onSetRes — this component only renders the
+     *  toggle + the mesh it's handed. */
+    res?: 'coarse' | 'high';
+    onSetRes?: (v: 'coarse' | 'high') => void;
+    /** Parent is re-baking at a new resolution → show a hint. */
+    busy?: boolean;
   } = $props();
 
   // One filled polygon PER triangle with no hidden-line removal — above this
@@ -79,9 +90,10 @@
   let renderer: any = null;
   let lastMat: THREE.Material | null = null;
 
-  // persp (default) vs ortho projection — persisted so the choice sticks across
-  // tab/part switches. Ortho is the technical-drawing projection (no foreshorten).
-  let projection = $state<'persp' | 'ortho'>('persp');
+  // ortho (default) vs persp projection — persisted so the choice sticks across
+  // tab/part switches. Ortho is the technical-drawing projection (no foreshorten),
+  // which is what an SVG export usually wants.
+  let projection = $state<'persp' | 'ortho'>('ortho');
   $effect(() => {
     try {
       const p = localStorage.getItem('ge-svg-projection');
@@ -343,9 +355,21 @@
   <div class="svg-toolbar">
     <span class="svg-title" title={name}>{name || 'part'}</span>
     {#if hasRendered && triCount > 0}
-      <span class="svg-tris">{triCount.toLocaleString()} tris</span>
+      <span class="svg-tris">{triCount.toLocaleString()} tris{busy ? ' · re-baking…' : ''}</span>
     {/if}
-    <!-- Projection toggle — persp (default) vs ortho (technical drawing). -->
+    <!-- Resolution toggle — coarse (32-seg, default, fast) vs high (full 256).
+         Drives the parent's bake via onSetRes. -->
+    {#if onSetRes}
+      <div class="svg-proj" role="group" aria-label="Resolution">
+        <button class="svg-proj-btn" class:on={res === 'coarse'}
+          title="Coarse — 32-segment bake (fast, light; the right choice for a vector drawing)"
+          onclick={() => onSetRes?.('coarse')}>coarse</button>
+        <button class="svg-proj-btn" class:on={res === 'high'}
+          title="High — full 256-segment bake (smoother circles, heavier SVG)"
+          onclick={() => onSetRes?.('high')}>high</button>
+      </div>
+    {/if}
+    <!-- Projection toggle — ortho (default, technical drawing) vs persp. -->
     <div class="svg-proj" role="group" aria-label="Projection">
       <button class="svg-proj-btn" class:on={projection === 'persp'}
         title="Perspective projection" onclick={() => setProjection('persp')}>persp</button>

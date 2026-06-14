@@ -2832,18 +2832,26 @@
   let svgMeshJson = $state<{ full: any; cutVC: any } | null>(null);
   let svgMeshKey = $state<string>('');
   let svgMeshBusy = $state(false);
+  // SVG resolution: 'coarse' (32 segments, DEFAULT — a vector drawing doesn't
+  // need 256-facet circles; ~an order of magnitude lighter so it renders fast +
+  // stays under the high-poly warning) vs 'high' (full 256). Toggle lives in the
+  // SVG view toolbar; persisted. Only this SVG fetch passes `segments`; the
+  // 3D/GLB panes stay full-res.
+  let svgRes = $state<'coarse' | 'high'>('coarse');
+  onMount(() => {
+    try { const v = localStorage.getItem('ge-svg-res'); if (v === 'coarse' || v === 'high') svgRes = v; } catch { /* ignore */ }
+  });
+  function setSvgRes(v: 'coarse' | 'high') {
+    svgRes = v;
+    try { localStorage.setItem('ge-svg-res', v); } catch { /* ignore */ }
+  }
   $effect(() => {
     if (rightTab !== 'svg') return;
     if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; return; }
     const src = bake.source;
     const params = bake.args ?? paramDefaults;
-    // Coarse circular-segment count for the SVG tab — a vector drawing doesn't
-    // need 256-facet circles, and 32 keeps the mesh ~an order of magnitude
-    // lighter so the SVG renders fast and stays below the high-poly warning.
-    // The 3D/GLB panes (PrimitiveDualCanvas) request the full default; only
-    // this SVG fetch passes `segments`. Part of the key so a change re-fetches.
-    const SVG_SEGMENTS = 32;
-    const key = JSON.stringify({ s: src, a: params, seg: SVG_SEGMENTS });
+    const segs = svgRes === 'coarse' ? 32 : undefined; // undefined → full default (256)
+    const key = JSON.stringify({ s: src, a: params, seg: segs ?? 'full' });
     if (key === svgMeshKey) return; // already have this mesh
     svgMeshKey = key;
     svgMeshBusy = true;
@@ -2852,9 +2860,11 @@
         // Mirror PrimitiveDualCanvas's preview request shape: name = the geom
         // function, params = the ordered value array, mode = sandbox (we always
         // have source here). cutaway:true forces the cut even for big stacks.
+        const body: any = { id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true };
+        if (segs != null) body.segments = segs;
         const r = await fetch('/api/primitives/preview', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true, segments: SVG_SEGMENTS }),
+          body: JSON.stringify(body),
         });
         if (!r.ok) { svgMeshJson = null; return; }
         const data = await r.json();
@@ -7110,7 +7120,7 @@
         <div class="ge-svg-body" class:hidden={rightTab !== 'svg'}>
           {#if rightTab === 'svg'}
             {#if PrimitiveSvgView && svgMeshJson}
-              <PrimitiveSvgView meshJson={svgMeshJson} name={exemplarId} active={rightTab === 'svg'} />
+              <PrimitiveSvgView meshJson={svgMeshJson} name={exemplarId} active={rightTab === 'svg'} res={svgRes} onSetRes={setSvgRes} busy={svgMeshBusy} />
             {:else if svgMeshBusy}
               <div class="ge-empty">Baking SVG…</div>
             {:else}
