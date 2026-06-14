@@ -1903,10 +1903,12 @@
   // pushed DOWN by the Properties card's live height + a gap (see CARD_Y0).
   // Collapsible — when collapsed only its header shows and Params tucks right
   // under it.
-  const PROPS_X0 = 8, PROPS_Y0 = 8, PROPS_W = 208, PROPS_GAP = 6;
-  const PROPS_ROW_H = 24, PROPS_ROWS = 4;
+  const PROPS_X0 = 8, PROPS_Y0 = 8, PROPS_W = 236, PROPS_GAP = 6;
+  // Column layout: a single label row above a single control row (2 rows
+  // tall, not 4 stacked rows). PROPS_BODY_H = label (14) + gap (4) + ctrl (22).
+  const PROPS_BODY_H = 40;
   let propsExpanded = $state(true);
-  let propsBodyH = $derived(propsExpanded ? PROPS_ROWS * PROPS_ROW_H + CARD_PAD * 2 : 0);
+  let propsBodyH = $derived(propsExpanded ? PROPS_BODY_H + CARD_PAD * 2 : 0);
   let propsCardH = $derived(CARD_TITLE_H + propsBodyH);
   // Params card top — slides below the Properties card so the two never overlap.
   let CARD_Y0 = $derived(PROPS_Y0 + propsCardH + PROPS_GAP);
@@ -6400,9 +6402,11 @@
               <span class="ttl">⚙ Properties</span>
             </div>
             {#if propsExpanded}
+              <!-- 4-column grid: label on TOP of each control.
+                   z-offset · outer · inner · material -->
               <div class="ge-props-body">
                 <!-- z-offset — surfaces the reserved stack_ref default -->
-                <div class="ge-props-row">
+                <div class="ge-props-col">
                   <span class="lbl" title="0 = end-to-end flush · + = leave a gap · − = overlap into the next">z-offset</span>
                   <input class="num" type="number" step="0.05"
                     value={zOffsetVal}
@@ -6411,34 +6415,24 @@
                     onkeydown={(e) => { if (e.key === 'Enter') { onZOffset(Number((e.currentTarget as HTMLInputElement).value)); (e.currentTarget as HTMLInputElement).blur(); } }}
                     onblur={(e) => onZOffset(Number((e.currentTarget as HTMLInputElement).value))}/>
                 </div>
-                <!-- OUTSIDE colour — outer body faces. swatch + native picker + clear -->
-                <div class="ge-props-row">
-                  <span class="lbl">outside</span>
-                  <span class="swatch" class:unset={!graph.colorOuter}
-                    style={`background:${graph.colorOuter ?? 'transparent'}`}></span>
+                <!-- OUTER colour — outer body faces. single native picker IS the swatch -->
+                <div class="ge-props-col">
+                  <span class="lbl">outer</span>
                   <input class="color" type="color"
                     value={graph.colorOuter ?? PROPS_DEFAULT_OUTER}
                     title={graph.colorOuter ? `Outside colour ${graph.colorOuter}` : 'Set OUTSIDE colour (unset → default red)'}
                     oninput={(e) => onPartColorOuter((e.currentTarget as HTMLInputElement).value)}/>
-                  <button class="clr" type="button" title="Clear outside colour (unset → default red)"
-                    disabled={!graph.colorOuter}
-                    onclick={() => onPartColorOuter(null)}>✕</button>
                 </div>
-                <!-- INSIDE colour — bore / cut faces shown in the cutaway -->
-                <div class="ge-props-row">
-                  <span class="lbl">inside</span>
-                  <span class="swatch" class:unset={!graph.colorInner}
-                    style={`background:${graph.colorInner ?? 'transparent'}`}></span>
+                <!-- INNER colour — bore / cut faces shown in the cutaway -->
+                <div class="ge-props-col">
+                  <span class="lbl">inner</span>
                   <input class="color" type="color"
                     value={graph.colorInner ?? PROPS_DEFAULT_INNER}
                     title={graph.colorInner ? `Inside (bore) colour ${graph.colorInner}` : 'Set INSIDE bore colour (unset → default grey)'}
                     oninput={(e) => onPartColorInner((e.currentTarget as HTMLInputElement).value)}/>
-                  <button class="clr" type="button" title="Clear inside colour (unset → default grey)"
-                    disabled={!graph.colorInner}
-                    onclick={() => onPartColorInner(null)}>✕</button>
                 </div>
                 <!-- material -->
-                <div class="ge-props-row">
+                <div class="ge-props-col">
                   <span class="lbl">material</span>
                   <select class="mat"
                     value={graph.material ?? 'none'}
@@ -9053,45 +9047,35 @@
     font: 700 11px Arial; color: #78350f;
     text-transform: uppercase; letter-spacing: 0.5px;
   }
-  .ge-props-body { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
-  .ge-props-row { display: flex; align-items: center; gap: 6px; height: 20px; }
-  .ge-props-row .lbl {
-    flex: 0 0 52px; color: #92400e;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* 4-column grid — each column is a top label + one control below. */
+  .ge-props-body {
+    padding: 8px; display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 6px; align-items: end;
   }
-  .ge-props-row .num {
-    flex: 0 0 56px; width: 56px; padding: 0 4px; height: 18px;
+  .ge-props-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .ge-props-col .lbl {
+    font-size: 10px; line-height: 1; color: #92400e; text-transform: uppercase;
+    letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ge-props-col .num {
+    width: 100%; padding: 0 4px; height: 22px;
     font: 10px ui-monospace, monospace; color: #92400e; text-align: center;
     background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
     box-sizing: border-box;
   }
-  .ge-props-row .num.unset { color: #b45309; opacity: 0.65; font-style: italic; }
-  .ge-props-row .num:focus { outline: 1px solid #d97706; background: #fff; }
-  .ge-props-row .swatch {
-    flex: 0 0 18px; width: 18px; height: 14px; border-radius: 3px;
-    border: 1px solid #d97706; box-sizing: border-box;
-  }
-  .ge-props-row .swatch.unset {
-    background:
-      linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%) 0 0/8px 8px,
-      #fff;
-  }
-  .ge-props-row .color {
-    flex: 0 0 28px; width: 28px; height: 18px; padding: 0;
+  .ge-props-col .num.unset { color: #b45309; opacity: 0.65; font-style: italic; }
+  .ge-props-col .num:focus { outline: 1px solid #d97706; background: #fff; }
+  /* The colour picker IS the swatch — one element, full-width of its column. */
+  .ge-props-col .color {
+    width: 100%; height: 22px; padding: 0;
     border: 1px solid #fbbf24; border-radius: 3px; background: #fff; cursor: pointer;
+    box-sizing: border-box;
   }
-  .ge-props-row .clr {
-    flex: 0 0 auto; width: 18px; height: 18px; padding: 0;
-    font: 11px Arial; line-height: 1; color: #b91c1c; cursor: pointer;
-    background: transparent; border: 0; border-radius: 3px; opacity: 0.6;
-  }
-  .ge-props-row .clr:hover:not(:disabled) { opacity: 1; background: rgba(220,38,38,0.12); }
-  .ge-props-row .clr:disabled { opacity: 0.2; cursor: default; }
-  .ge-props-row .mat {
-    flex: 1 1 auto; min-width: 0; height: 18px; padding: 0 2px;
+  .ge-props-col .mat {
+    width: 100%; min-width: 0; height: 22px; padding: 0 2px;
     font: 10px ui-monospace, monospace; color: #92400e;
     background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
-    cursor: pointer;
+    cursor: pointer; box-sizing: border-box;
   }
   /* Right-edge resize grip — semi-transparent slate, lights up on hover.
      Cursor: ew-resize so the affordance is obvious. */
