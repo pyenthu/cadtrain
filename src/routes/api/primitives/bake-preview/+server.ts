@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
-import { buildGlbBytes } from '$lib/server/manifold-bake';
+import { buildGlbBytes, DEFAULT_OUTER_HEX, DEFAULT_INNER_HEX, type ColorOverride } from '$lib/server/manifold-bake';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { analyzeParts } from '$lib/server/part-colors';
 
@@ -18,9 +18,21 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { id, name, source, params, args } = body ?? {};
+  const { id, name, source, params, args, colorOuter, colorInner } = body ?? {};
   if (typeof source !== 'string' || !source.trim()) throw error(400, 'source required');
   if (typeof name !== 'string' || !name) throw error(400, 'name required');
+
+  // Per-part viewer colours (outside ← outer body, inside ← bore/cut). Same
+  // validation as /api/primitives/preview: `#rgb` / `#rrggbb` only, anything
+  // else → undefined. Both undefined → no override → byte-identical default
+  // GLB (existing parts unaffected). When at least one is set, the unset side
+  // falls back to the historical default so the GLB matches the live Mesh pane.
+  const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+  const cOuter = (typeof colorOuter === 'string' && HEX_RE.test(colorOuter.trim())) ? colorOuter.trim().toLowerCase() : undefined;
+  const cInner = (typeof colorInner === 'string' && HEX_RE.test(colorInner.trim())) ? colorInner.trim().toLowerCase() : undefined;
+  const override: ColorOverride | undefined = (cOuter || cInner)
+    ? { outer: cOuter ?? DEFAULT_OUTER_HEX, inner: cInner ?? DEFAULT_INNER_HEX }
+    : undefined;
 
   // Pull the param ORDER from meta in source so we can dispatch the
   // positional call. If meta is missing, fall back to whatever key
@@ -82,7 +94,7 @@ export const POST = async ({ request, fetch }) => {
 
   let parts: any = undefined;
   try { parts = analyzeParts(source); } catch { /* legacy color path */ }
-  const r = await buildGlbBytes(geom, valuesRecord, material, parts);
+  const r = await buildGlbBytes(geom, valuesRecord, material, parts, override);
   mark('bake', t); // includes the WASM geom rebuild + GLB export (full + cut)
   if (!r.ok) throw error(400, `bake failed: ${r.error}`);
 
