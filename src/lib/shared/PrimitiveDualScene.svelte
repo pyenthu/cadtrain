@@ -60,6 +60,50 @@
 
   let full = $derived(geo?.full ?? null);
   let cutVC = $derived(geo?.cutVC ?? null);
+  // GPU-instancing payload (present only when the LIVE-mesh /preview detected a
+  // uniform Stack/Repeat): { instances: number[][], count }. When set, `full`/
+  // `cutVC` are the CANONICAL CHILD mesh and we draw a THREE.InstancedMesh of
+  // the child under each transform instead of the merged N-copy mesh. Absent →
+  // the existing single-Mesh path runs unchanged.
+  let instanced = $derived(geo?.instanced ?? null);
+
+  // Build the InstancedMesh imperatively (Threlte mounts it via `<T is>`).
+  // - Picks the canonical CHILD geo: cutVC under cutaway, else full — so the
+  //   half-section replicates per instance (cutting one child + translating ==
+  //   cutting the whole stack, since the transforms are pure translations).
+  // - Material via makeLitMaterial: SAME Phong/Standard + flatShading + vertex-
+  //   colour rules as the single-mesh path. InstancedMesh reads the geometry's
+  //   `color` attribute (shared across instances), so per-vertex red/grey (or
+  //   the colour-by-source / override colours baked on the child) render on
+  //   every copy — VERIFIED compatible: vertexColors is a geometry attribute,
+  //   orthogonal to the per-instance instanceMatrix InstancedMesh adds. When
+  //   the child has no colour attribute (legacy full mesh) makeLitMaterial uses
+  //   the solid #cc2222 + vertexColors:false, matching the non-instanced full
+  //   branch.
+  let instMesh = $derived.by(() => {
+    if (!instanced) return null;
+    const childGeo: THREE.BufferGeometry | null = (showCutaway && cutVC) ? cutVC : full;
+    if (!childGeo) return null;
+    const useStd = scene.zRectLight;
+    const hasColor = !!childGeo.getAttribute?.('color');
+    const mat = makeLitMaterial(hasColor, useStd, !smoothShade);
+    attachWarpShader(mat as any);
+    const count = instanced.count;
+    const mesh = new THREE.InstancedMesh(childGeo, mat, count);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < count; i++) {
+      m.fromArray(instanced.instances[i]);
+      mesh.setMatrixAt(i, m);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+  });
+  // Dispose the previous InstancedMesh's GPU resources when it's replaced (the
+  // shared child geometry is NOT disposed — the single-mesh path still uses it).
+  $effect(() => {
+    const m = instMesh;
+    return () => { try { m?.dispose?.(); (m?.material as any)?.dispose?.(); } catch { /* already gone */ } };
+  });
 
   // --- lit-mesh material factory (shared by the live mesh + the GLB) ---
   // When the rectangular AREA light is on the lit meshes MUST be
@@ -181,13 +225,32 @@
     g.computeBoundingBox?.();
     const bb = g.boundingBox;
     if (!bb) return null;
+    let minx = bb.min.x, miny = bb.min.y, minz = bb.min.z;
+    let maxx = bb.max.x, maxy = bb.max.y, maxz = bb.max.z;
+    // INSTANCED: the geo is one CHILD; the whole composition is that child under
+    // every (pure-translation) transform. Union the child bbox shifted by each
+    // instance's translation (matrix elements [12],[13],[14]) so the camera
+    // auto-fit + GLB stacking + Z-light strip frame the FULL stack, not one copy.
+    if (instanced) {
+      let tminx = Infinity, tminy = Infinity, tminz = Infinity;
+      let tmaxx = -Infinity, tmaxy = -Infinity, tmaxz = -Infinity;
+      for (const e of instanced.instances) {
+        const tx = e[12], ty = e[13], tz = e[14];
+        if (tx < tminx) tminx = tx; if (tx > tmaxx) tmaxx = tx;
+        if (ty < tminy) tminy = ty; if (ty > tmaxy) tmaxy = ty;
+        if (tz < tminz) tminz = tz; if (tz > tmaxz) tmaxz = tz;
+      }
+      minx = bb.min.x + tminx; maxx = bb.max.x + tmaxx;
+      miny = bb.min.y + tminy; maxy = bb.max.y + tmaxy;
+      minz = bb.min.z + tminz; maxz = bb.max.z + tmaxz;
+    }
     return {
-      ex: bb.max.x - bb.min.x,
-      ey: bb.max.y - bb.min.y,
-      ez: bb.max.z - bb.min.z,
+      ex: maxx - minx,
+      ey: maxy - miny,
+      ez: maxz - minz,
       cx: 0, // x centred at scene origin
-      cy: (bb.min.y + bb.max.y) / 2,
-      cz: (bb.min.z + bb.max.z) / 2,
+      cy: (miny + maxy) / 2,
+      cz: (minz + maxz) / 2,
     };
   });
 
@@ -363,7 +426,13 @@
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '') + (scene.zRectLight ? '_r' : '')}
-    {#if showCutaway && cutVC}
+    {#if instMesh}
+      <!-- GPU-instanced Stack/Repeat: ONE child mesh drawn under N transforms.
+           Material (Phong/Standard + flatShading + vertexColors) + the child's
+           red/grey (or override / colour-by-source) colours come baked into
+           instMesh above. showEdges is skipped in instanced mode. -->
+      <T is={instMesh} />
+    {:else if showCutaway && cutVC}
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
       <T.Mesh geometry={cg}>
         {#if scene.zRectLight}

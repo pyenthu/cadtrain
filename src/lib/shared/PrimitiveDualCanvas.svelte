@@ -111,10 +111,15 @@
     // cutaway ON renders blank. cutaway:true forces the server to compute it;
     // when off we omit the flag (auto-skip → fast). The flag is part of the body
     // so it keys the fetch cache separately for cut vs full.
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, ...(meshSegments ? { segments: meshSegments } : {}) });
+    // `instanced: true` — opt IN to GPU instancing for the LIVE mesh. The
+    // server returns the canonical child mesh + N transforms when this part is
+    // a uniform Stack/Repeat (else a normal merged mesh). Only THIS live-mesh
+    // call sends it; the SVG tab + GLB bake never do (they keep the merged
+    // mesh). The flag is in the body so it keys the fetch cache.
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(meshSegments ? { segments: meshSegments } : {}) });
     const cached = cacheGet(`mesh:${body}`);
     if (cached) {
-      geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC });
+      geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
       geoVersion++; meshStatus = 'ok'; err = null;
       return;
     }
@@ -129,8 +134,8 @@
       if (ac.signal.aborted) return;
       if (!r.ok) { err = `Preview ${r.status}`; meshStatus = 'error'; return; }
       const data = await r.json();
-      cachePut(`mesh:${body}`, { full: data.full, cutVC: data.cutVC });
-      geo = deserializeComponentResult({ full: data.full, cutVC: data.cutVC });
+      cachePut(`mesh:${body}`, { full: data.full, cutVC: data.cutVC, instanced: data.instanced });
+      geo = deserializeComponentResult({ full: data.full, cutVC: data.cutVC, instanced: data.instanced });
       geoVersion++; meshStatus = 'ok'; err = null;
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; } }
   }
