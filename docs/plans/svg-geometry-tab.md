@@ -82,6 +82,16 @@ a collar.
 - Confirm the SVGRenderer does NOT run while another tab is active (perf).
 - Check segment count: a tube must not produce a multi-MB SVG.
 
+## Follow-ups (post-ship)
+
+- **Orthographic projection toggle** (requested 2026-06-14): the SVG view
+  currently uses a `PerspectiveCamera`. Add a **persp ⇄ ortho** toggle in the
+  SVG-tab toolbar — orthographic is the correct projection for a dimensioned/
+  technical drawing (parallel edges stay parallel, no foreshortening). Cheap:
+  swap to `THREE.OrthographicCamera` (frustum from the part bbox + the
+  xScale/zScale) when ortho is selected; re-render on toggle. Keep perspective
+  as the other option. Lives entirely in `PrimitiveSvgView.svelte`.
+
 ## Reconcile
 Add a `/plan` lane when scoped (Rule 19). Relates to the archived
 `exporter.ts` (revive via `git mv` for Route 2) and the viewer scale/light
