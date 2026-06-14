@@ -141,6 +141,33 @@ export function setCircularSegmentCount(n: number): void {
   if (w) w.setCircularSegments(n);
 }
 
+// ── Coarse-bake segment CAP ─────────────────────────────────────────────────
+// `currentSegments` (above) only reaches the RAW helpers (cyl/tube/revolve),
+// which pass it explicitly to `M.cylinder(...)` / `cs.revolve(...)`. The ENGINE
+// primitives (r_revolve / r_tube / r_cylinder, …) instead take their own
+// explicit `segments` PARAM and feed it straight to `revolveProfile(pts, seg)`
+// — they never consult `currentSegments` OR the WASM global, so the SVG coarse
+// override never reached an assembly (whose circular geometry lives entirely
+// inside those engine-primitive deps). This cap is the second lever: the part
+// loader (primitive-loader.ts `wrapped`) clamps any `segments`-style positional
+// /object param DOWN to this value for EVERY part it calls — top-level AND
+// every dep — so an assembly actually bakes coarse.
+//
+// null = no cap (full-resolution bake; default). Set + restored by /preview in
+// the SAME race-safe synchronous window as `currentSegments` (set immediately
+// before the sync geom build, restored in `finally`, no `await` between), so a
+// concurrent full bake can't observe the cap.
+let currentSegmentCap: number | null = null;
+/** Read the active coarse-bake segment cap (null = no cap). */
+export function getCircularSegmentCap(): number | null {
+  return currentSegmentCap;
+}
+/** Set (or clear, with null) the coarse-bake segment cap. Pair with a restore
+ *  in a `finally` — see /api/primitives/preview. */
+export function setCircularSegmentCap(n: number | null): void {
+  currentSegmentCap = n;
+}
+
 export async function initManifold() {
   // If a sibling module instance already initialised the wasm, just
   // reapply this instance's segment count to the shared wasm and bail.
