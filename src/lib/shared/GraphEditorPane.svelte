@@ -7035,17 +7035,14 @@
               source={bake.source}
               colorOuter={graph.colorOuter} colorInner={graph.colorInner}
               bakeGlb={false}
-              meshSegments={meshDraft ? 64 : undefined}
+              onRebuild={rebuildCache}
               showControls={true} showLabels={false}/>
             <!-- Cache status row + Rebuild button (Phase 1.5) -->
             {@const bakeMeta = (bake as any).bake ?? {}}
             <div class="ge-bake-meta">
-              <!-- Draft toggle — bake the live mesh at a coarse 64-segment count
-                   (vs 256) so big stacks iterate ~4-8x faster. View-only; the
-                   saved part + the GLB/SVG tabs are unaffected. -->
-              <label class="ge-draft-toggle" title="Draft: coarse 64-segment mesh for fast iteration on big stacks (view-only)">
-                <input type="checkbox" bind:checked={meshDraft} /> ⚡ draft
-              </label>
+              <!-- Draft toggle + Rebuild moved into the 3D canvas (under the
+                   ⚙ scale gear): the canvas owns the adjustable segment count +
+                   the 🔄 fresh-bake button now. -->
               {#if bakeMeta.cached}
                 {@const cacheMs = Number(bakeMeta._t?.fetch_total) || 0}
                 <span class="ge-cache-badge cached"
@@ -7073,11 +7070,6 @@
                 {#if cutawayStatus}<span class="ge-rebuild-stat">{cutawayStatus}</span>{/if}
               {/if}
               <span class="ge-bake-meta-spacer"></span>
-              <button class="ge-rebuild-btn" type="button"
-                disabled={rebuildBusy} onclick={rebuildCache}
-                title="Clear this part's cache then re-bake from scratch">
-                {rebuildBusy ? '🔄 …' : '🔄 Rebuild'}
-              </button>
               {#if rebuildStatus}<span class="ge-rebuild-stat">{rebuildStatus}</span>{/if}
             </div>
           {:else}<div class="ge-empty">3D canvas loading…</div>

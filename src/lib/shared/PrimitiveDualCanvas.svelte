@@ -18,8 +18,12 @@
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Draft mode: coarse circular-segment count for the live mesh bake (e.g. 64
      *  vs the 256 default). Cuts geom+finalize+serialize roughly linearly so big
-     *  stacks iterate fast. undefined → full default. Keyed into the fetch cache. */
+     *  stacks iterate fast. undefined → full default. Keyed into the fetch cache.
+     *  Acts as the INITIAL value for the in-canvas segments control (segOverride). */
     meshSegments?: number;
+    /** Optional rebuild handler (e.g. the editor's cache-busting re-bake). When
+     *  provided, the in-canvas 🔄 button calls it; else it busts the local cache. */
+    onRebuild?: () => void;
     /** Bake/show the live MESH (left). Default true. The mesh bake is fast
      *  (~1-2 s); the 3D-bake tab uses mesh-only so iteration never waits on the
      *  slow GLB bake. */
@@ -54,6 +58,22 @@
   let geoVersion = $state(0);
   let glbBlobUrl = $state<string | null>(null);
   let glbCut = $state(false);
+  // In-canvas adjustable segment count for the live-mesh bake (the "segments"
+  // control). undefined → the prop default (meshSegments) / full 256. Drives the
+  // bake request + fetch-cache key.
+  let segOverride = $state<number | undefined>(undefined);
+  let effSegments = $derived(segOverride ?? meshSegments);
+  // Tri / vert stats of the current live mesh (instanced → child × N).
+  let stats = $derived.by(() => {
+    const g = (geo as any)?.full as any;
+    const pos = g?.getAttribute?.('position');
+    if (!pos) return null;
+    const childTris = Math.round((g.index ? g.index.count : pos.count) / 3);
+    const childVerts = pos.count;
+    const inst = (geo as any)?.instanced;
+    const n = inst ? (inst.count ?? inst.instances?.length ?? 1) : 1;
+    return { tris: childTris * n, verts: childVerts * n, instanced: !!inst, count: n, childTris };
+  });
   let scaleMenuOpen = $state(false);
   let meshStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
   let glbStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
@@ -103,7 +123,7 @@
 
   let meshAc: AbortController | null = null;
   let glbAc: AbortController | null = null;
-  async function rebuildMesh() {
+  async function rebuildMesh(bust = false) {
     if (!id) return;
     // Request the cutaway (cutVC) only when the user is VIEWING it. Large parts
     // (> ~15k tris, e.g. multi-part assemblies) auto-skip the cutaway server-side
@@ -116,8 +136,8 @@
     // a uniform Stack/Repeat (else a normal merged mesh). Only THIS live-mesh
     // call sends it; the SVG tab + GLB bake never do (they keep the merged
     // mesh). The flag is in the body so it keys the fetch cache.
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(meshSegments ? { segments: meshSegments } : {}) });
-    const cached = cacheGet(`mesh:${body}`);
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(effSegments ? { segments: effSegments } : {}) });
+    const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
       geoVersion++; meshStatus = 'ok'; err = null;
@@ -126,7 +146,7 @@
     meshStatus = 'building';
     meshAc?.abort(); const ac = new AbortController(); meshAc = ac;
     try {
-      const r = await fetch('/api/primitives/preview', {
+      const r = await fetch('/api/primitives/preview' + (bust ? '?bust=1' : ''), {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body,
         signal: ac.signal,
@@ -139,15 +159,15 @@
       geoVersion++; meshStatus = 'ok'; err = null;
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; } }
   }
-  async function rebuildGlb() {
+  async function rebuildGlb(bust = false) {
     if (!id) return;
     const body = JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut, colorOuter, colorInner });
-    const cachedB64 = cacheGet(`glb:${body}`);
+    const cachedB64 = bust ? undefined : cacheGet(`glb:${body}`);
     if (cachedB64) { setGlbBlob(cachedB64); glbStatus = 'ok'; return; }
     glbStatus = 'building';
     glbAc?.abort(); const ac = new AbortController(); glbAc = ac;
     try {
-      const r = await fetch('/api/primitives/bake-preview', {
+      const r = await fetch('/api/primitives/bake-preview' + (bust ? '?bust=1' : ''), {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body,
         signal: ac.signal,
@@ -165,9 +185,17 @@
   // bake (~20 s) hogs Node's single thread. Each is gated by its prop so the
   // mesh-only 3D tab never triggers the GLB bake, and the lazy GLB tab never
   // re-bakes the mesh.
-  async function rebuild() {
-    if (bakeMesh) await rebuildMesh();
-    if (bakeGlb) rebuildGlb();
+  async function rebuild(bust = false) {
+    if (bakeMesh) await rebuildMesh(bust);
+    if (bakeGlb) rebuildGlb(bust);
+  }
+  // 🔄 button: force a FRESH bake (?bust=1) — clears the local fetch cache so the
+  // server result is re-fetched, and notifies the parent (editor clears its own
+  // persistent cache + status). Reliable regardless of whether id/args changed.
+  function doRebuild() {
+    fetchCache.clear();
+    rebuild(true);
+    onRebuild?.();
   }
 
   onDestroy(() => {
@@ -193,7 +221,7 @@
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
     // part re-fetches WITH the cutaway computed. rebuildGlb's body is unchanged
     // by this, so it cache-hits and stays cheap.
-    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, meshSegments });
+    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();
@@ -289,6 +317,17 @@
         onclick={() => { scene.xScale = 1; scene.zScale = 1; }}>1:1 true scale</button>
     </div>
   {/if}
+  <!-- Bake tools right under the scale gear: a quick Rebuild + an adjustable
+       live-mesh segment count (lower = faster/coarser; 256 = full). -->
+  <div class="pd-bake-tools">
+    <button class="pd-mini-btn" type="button" title="Rebuild (fresh bake)"
+      onclick={doRebuild}>🔄</button>
+    <label class="pd-seg" title="Live-mesh circular segments — lower = faster/coarser, 256 = full">
+      <span>seg</span>
+      <input type="number" min="8" max="256" step="8" value={effSegments ?? 256}
+        onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); segOverride = (Number.isFinite(v) && v >= 8 && v < 256) ? Math.round(v) : undefined; }} />
+    </label>
+  </div>
   <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).
        Top = z 0 (top of the part), drag down to follow it deeper (Z-down). -->
   <div class="pd-zpan">
@@ -325,6 +364,12 @@
   {/if}
   {#if glbBlobUrl}<button class="pd-dl" type="button" title="Download {id}.glb" onclick={downloadGlb}>⬇ GLB</button>{/if}
   {#if err}<div class="pd-err">{err}</div>{/if}
+  <!-- Part stats at the bottom: tri / vert count (instanced → child × N). -->
+  {#if stats}
+    <div class="pd-stats" title={stats.instanced ? `${stats.childTris.toLocaleString()} tris/child × ${stats.count} instances` : ''}>
+      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -352,6 +397,12 @@
   }
   .pd-scale-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
   .pd-scale-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
+  .pd-bake-tools { position: absolute; top: 54px; left: 12px; z-index: 6; display: flex; align-items: center; gap: 4px; }
+  .pd-mini-btn { padding: 2px 6px; border: 1px solid #d6d3d1; border-radius: 4px; background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer; font: 600 11px Arial; }
+  .pd-mini-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
+  .pd-seg { display: inline-flex; align-items: center; gap: 3px; font: 600 10px Arial; color: #57534e; background: rgba(255,255,255,0.9); border: 1px solid #d6d3d1; border-radius: 4px; padding: 1px 4px; }
+  .pd-seg input { width: 40px; font: 10px ui-monospace, monospace; color: #57534e; border: 1px solid #e7e5e4; border-radius: 3px; padding: 1px 3px; background: #fff; }
+  .pd-stats { position: absolute; bottom: 6px; left: 12px; z-index: 6; font: 600 10px ui-monospace, monospace; color: #78716c; background: rgba(255,255,255,0.82); border-radius: 3px; padding: 1px 6px; pointer-events: none; }
   .pd-scale-menu {
     position: absolute; top: 56px; left: 12px; z-index: 7;
     display: flex; flex-direction: column; gap: 8px;
