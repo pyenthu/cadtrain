@@ -79,8 +79,8 @@ export const scene = $state({
    *  no LTC init). An OPTION (toggle) — default ON. */
   /** 3D-canvas camera projection — false = perspective (default), true =
    *  orthographic (parallel, no foreshortening; good for inspecting a part).
-   *  VIEW ONLY; OrbitControls works with both. */
-  cam3dOrtho: false,
+   *  VIEW ONLY; OrbitControls works with both. DEFAULT orthographic (user pref). */
+  cam3dOrtho: true,
   zDirLight: true,
   zDirIntensity: 1,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera
