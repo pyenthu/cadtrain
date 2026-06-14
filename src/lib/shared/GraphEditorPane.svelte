@@ -2784,13 +2784,13 @@
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
   /** Right-pane tab: 3D bake or live source. */
-  let rightTab = $state<'bake' | 'source' | 'md'>('bake');
+  let rightTab = $state<'bake' | 'source' | 'md' | 'svg'>('bake');
   onMount(() => {
     try {
       const a = Number(localStorage.getItem('ge-splitA-v4'));
       if (a >= 30 && a <= 85) splitA = a;
       const t = localStorage.getItem('ge-right-tab');
-      if (t === 'bake' || t === 'source' || t === 'md') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function startSplitDrag(ev: PointerEvent) {
@@ -2811,10 +2811,51 @@
     splitDragging = false;
     try { localStorage.setItem('ge-splitA-v4', String(splitA)); } catch { /* ignore */ }
   }
-  function setRightTab(t: 'bake' | 'source' | 'md') {
+  function setRightTab(t: 'bake' | 'source' | 'md' | 'svg') {
     rightTab = t;
     try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
+
+  // ─── SVG tab — vector render of the baked geometry (PrimitiveSvgView) ─────
+  // Lazy-loaded like PrimitiveDualCanvas. The SVG view needs the same
+  // { full, cutVC } mesh-JSON the 3D pane bakes; we fetch it from
+  // /api/primitives/preview only when the SVG tab is active (active-tab-only
+  // discipline) and the body changes, so it never duplicates work while hidden.
+  let PrimitiveSvgView = $state<any>(null);
+  onMount(async () => {
+    try {
+      const mod = await import('$lib/shared/PrimitiveSvgView.svelte');
+      PrimitiveSvgView = mod.default;
+    } catch { /* svg view unavailable */ }
+  });
+  let svgMeshJson = $state<{ full: any; cutVC: any } | null>(null);
+  let svgMeshKey = $state<string>('');
+  let svgMeshBusy = $state(false);
+  $effect(() => {
+    if (rightTab !== 'svg') return;
+    if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; return; }
+    const src = bake.source;
+    const params = bake.args ?? paramDefaults;
+    const key = JSON.stringify({ s: src, a: params });
+    if (key === svgMeshKey) return; // already have this mesh
+    svgMeshKey = key;
+    svgMeshBusy = true;
+    (async () => {
+      try {
+        // Mirror PrimitiveDualCanvas's preview request shape: name = the geom
+        // function, params = the ordered value array, mode = sandbox (we always
+        // have source here). cutaway:true forces the cut even for big stacks.
+        const r = await fetch('/api/primitives/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true }),
+        });
+        if (!r.ok) { svgMeshJson = null; return; }
+        const data = await r.json();
+        svgMeshJson = { full: data.full, cutVC: data.cutVC };
+      } catch { svgMeshJson = null; }
+      finally { svgMeshBusy = false; }
+    })();
+  });
 
   /** Drawing descriptor markdown — hand-authored "how to draw this part"
    *  reference. Stored alongside the graph as `meta.drawingMd` so it
@@ -6809,6 +6850,10 @@
           type="button" role="tab" aria-selected={rightTab === 'md'}
           data-tip="MD — hand-authored drawing-descriptor markdown. Saved as meta.drawingMd."
           onclick={() => setRightTab('md')}>MD{drawingMd ? ` · ${drawingMd.length}c` : ''}</button>
+        <button class="ge-pane-tab" class:active={rightTab === 'svg'}
+          type="button" role="tab" aria-selected={rightTab === 'svg'}
+          data-tip="SVG — vector render of the baked geometry (downloadable .svg)"
+          onclick={() => setRightTab('svg')}>SVG</button>
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
@@ -7032,6 +7077,17 @@
           <textarea class="ge-md-textarea"
             placeholder="# How to draw this part&#10;&#10;Notes, sketch references, parameter meanings, gotchas…"
             bind:value={drawingMd}></textarea>
+        </div>
+        <div class="ge-svg-body" class:hidden={rightTab !== 'svg'}>
+          {#if rightTab === 'svg'}
+            {#if PrimitiveSvgView && svgMeshJson}
+              <PrimitiveSvgView meshJson={svgMeshJson} name={exemplarId} active={rightTab === 'svg'} />
+            {:else if svgMeshBusy}
+              <div class="ge-empty">Baking SVG…</div>
+            {:else}
+              <div class="ge-empty">No geometry to render yet — bake the part first.</div>
+            {/if}
+          {/if}
         </div>
       </div>
     </section>
@@ -8998,7 +9054,11 @@
   .ge-pane-bodies { position: relative; display: grid; min-height: 0; overflow: hidden; }
   .ge-pane-bodies > .ge-bake-body,
   .ge-pane-bodies > .ge-source-body,
+  .ge-pane-bodies > .ge-svg-body,
   .ge-pane-bodies > .ge-md-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  /* SVG tab — PrimitiveSvgView fills the pane (it manages its own toolbar +
+     scroll). Give it a defined height so the renderer's container isn't 0px. */
+  .ge-svg-body { min-height: 0; }
   /* SRC tab — filename header above the <pre>. Light row, monospace
      filename + a faded hint reminding the user the file is generated. */
   .ge-source-header {
