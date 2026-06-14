@@ -732,6 +732,7 @@
          git-tracked src, NOT volume folders → not addable. The trailing ＋
          creates a new folder-tab on the volume. Tabs are PINNED (outside the
          scroll); only the active tab's content scrolls. -->
+    <div class="prim-body">
     <div class="prim-tabrail" role="tablist" aria-label="Primitive folders">
       {#each topFolders as f (f.path)}
         <button class="prim-tabbtn" class:active={activeTab === f.name}
@@ -881,6 +882,7 @@
     {/if}
 
     </div><!-- /.prim-rail-scroll -->
+    </div><!-- /.prim-body -->
 
     <!-- Broken-refs toast (#165) — surfaced when a rename leaves OTHER
          primitives' meta.graph still pointing at the old id. Lets the user
@@ -1085,24 +1087,31 @@
   /* A pinned column of folder-tabs above the scrolling content. Each tab is
      a full-width button; the active one is inverted (slate) so it reads as
      "selected". Wraps to multiple rows when there are many folders. */
-  /* Vertical-tab strip — tabs sit side-by-side, each label rotated to read
-     vertically (filing-cabinet style). Horizontal scroll if they overflow. */
+  /* Body = a horizontal split: a narrow LEFT rail of vertical-text folder-tabs
+     + the folder content to its right. Fills the remaining sidebar height. */
+  .prim-body {
+    display: flex; flex-direction: row;
+    flex: 1 1 0; min-height: 0; min-width: 0;
+  }
+  /* Vertical tab rail — a left column of tabs whose labels are rotated to read
+     vertically (filing-cabinet style). Scrolls vertically if many folders. */
   .prim-tabrail {
-    display: flex; flex-direction: row; gap: 3px;
-    padding: 6px 8px;
-    border-bottom: 1px solid #e5e7eb; background: #f3f4f6;
-    overflow-x: auto; overflow-y: hidden;
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 6px 5px;
+    border-right: 1px solid #e5e7eb; background: #f3f4f6;
+    overflow-y: auto; overflow-x: hidden;
     scrollbar-width: thin; scrollbar-color: #cbd5e1 #f3f4f6;
   }
   .prim-tabbtn {
     flex: 0 0 auto;
     writing-mode: vertical-rl;            /* text runs top→bottom */
     display: flex; align-items: center; justify-content: center;
-    padding: 10px 5px; border: 1px solid transparent; border-radius: 5px;
+    padding: 8px 4px; border: 1px solid transparent; border-radius: 5px;
     background: transparent; cursor: pointer;
     font: 600 11px Arial; color: #44403c;
     text-transform: uppercase; letter-spacing: 0.6px;
-    white-space: nowrap; min-height: 96px;
+    white-space: nowrap; min-height: 78px;
     transition: background 100ms, color 100ms, border-color 100ms;
   }
   .prim-tabbtn:hover { background: #e7e5e4; }
@@ -1118,9 +1127,9 @@
     flex: 0 0 auto;
     writing-mode: vertical-rl;
     display: flex; align-items: center; justify-content: center;
-    padding: 8px 5px;
+    padding: 6px 4px;
     border: 1px dashed #86efac; border-radius: 5px;
-    background: transparent; cursor: pointer; min-height: 96px;
+    background: transparent; cursor: pointer; min-height: 70px;
     font: 600 10px Arial; color: #15803d; letter-spacing: 0.4px;
   }
   .prim-tabadd:hover:not(:disabled) { background: #d1fae5; border-color: #4ade80; color: #166534; }
