@@ -19,7 +19,7 @@
   // side-by-side under a single camera / single WebGL context. Replaces the
   // two stacked PrimitiveCanvas + PrimitiveGlbCanvas (was 2 contexts per tab
   // → the WebGL-context leak). Chrome (camera / lights) mirrors ComponentScene.
-  import { T } from '@threlte/core';
+  import { T, useThrelte } from '@threlte/core';
   import { OrbitControls, Edges } from '@threlte/extras';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import * as THREE from 'three';
@@ -322,6 +322,10 @@
   // scene.zRectLight is on (see makeLitMaterial + the material branches below).
   // One-time uniforms-lib init (LTC textures) on mount.
   onMount(() => { void ensureRectAreaLib(); });
+  // On Threlte's on-demand render loop, mutating the RectAreaLight object
+  // directly (below) doesn't invalidate a frame — so changes wouldn't show
+  // live. invalidate() requests a re-render after each update.
+  const { invalidate } = useThrelte();
   let rectLight = $state<any>(null);
   $effect(() => {
     const l = rectLight;
@@ -348,6 +352,7 @@
     const m = new THREE.Matrix4().makeBasis(lx, ly, lz);
     l.quaternion.setFromRotationMatrix(m);
     l.updateMatrixWorld?.(true);
+    invalidate(); // request a frame so the rect-light change renders live
   });
 
   // --- auto-fit the camera to the combined (stacked) bounding box ---
