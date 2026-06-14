@@ -218,9 +218,34 @@ export async function brepFromSource(
     return wrap(sh);
   };
   const place = (...args: any[]) => { const last = args[args.length - 1]; return last; };
-  // Stack-ref offset (graded-delta z mate) — BREP compounds at built positions,
-  // so passthrough the part (offset affects Manifold stacking, not the compound).
-  const withStackRef = (s: any) => s;
+  // Stack-ref offset (graded-delta z mate): stash the delta on the underlying
+  // OCCT shape so stack() can read it (mirrors Manifold's `_stackRef`).
+  const stackRefMap = new WeakMap<object, number>();
+  const withStackRef = (s: any, offset?: number) => {
+    const u = unwrap(s);
+    if (u && typeof u === 'object') { try { stackRefMap.set(u, Number(offset) || 0); } catch { /* */ } }
+    return s;
+  };
+  const stackRefOf = (s: any): number => { const u = unwrap(s); return (u && stackRefMap.get(u)) || 0; };
+  const tailZ = (shape: any): number => { try { return shape.boundingBox.bounds[1][2]; } catch { return 0; } };
+  // stack([A,B,C]) — Z-down end-to-end: each child sits at the previous child's
+  // tail (z-max) + its stackRef delta (0=flush, +=gap, −=overlap). Matches
+  // manifold-helpers.stack(). list/group stay origin-compounds (compoundOf).
+  const stackOcct = (...xs: any[]) => {
+    const arr: any[] = []; collectShapes(xs, arr);
+    if (arr.length === 0) return undefined;
+    let cursor = 0;
+    const placed: any[] = [];
+    for (let i = 0; i < arr.length; i++) {
+      const ref = stackRefOf(arr[i]);
+      let base: any; try { base = arr[i].clone(); } catch { base = arr[i]; }
+      const p = i === 0 ? base : base.translate([0, 0, cursor]);
+      cursor = tailZ(p) + ref;
+      placed.push(p);
+    }
+    const safe = placed.map((s) => { try { return s.clone(); } catch { return s; } });
+    return wrap(safe.length === 1 ? safe[0] : makeCompound(safe));
+  };
   const sketch = (ops: any[], segs = 64) => compileSketch(ops, segs);
 
   // Collect wrapped OCCT solids out of any return value (shape | array | stack).
@@ -270,7 +295,7 @@ export async function brepFromSource(
   ];
   const baseVals = (p: any) => [
     p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid,
-    mv, rot, place, withStackRef, compoundOf, compoundOf, compoundOf, Math.cos, Math.sin, Math.tan, 2 * Math.PI, Math.PI,
+    mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf, Math.cos, Math.sin, Math.tan, 2 * Math.PI, Math.PI,
     Math.sqrt, Math.abs, Math.min, Math.max, Math.pow, Math.floor, Math.round,
   ];
   function bodyOf(src: string): string | null {

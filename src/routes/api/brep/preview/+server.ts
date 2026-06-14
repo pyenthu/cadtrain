@@ -21,29 +21,25 @@ export const POST = async ({ request, fetch }) => {
     angularTolerance: typeof angularTolerance === 'number' ? angularTolerance : undefined,
   };
 
-  // Explicit half-section → revolve directly.
-  if (kind === 'revolve' && Array.isArray(profile)) {
-    if (profile.length < 3) throw error(400, 'profile must be ≥3 [r,z] points');
-    try {
+  // ISOLATION CONTRACT: the BREP path is OPTIONAL/experimental. It must NEVER
+  // 500 or otherwise destabilise the system — every failure (bad input, OCCT
+  // build error, WASM hiccup) returns 200 + supported:false with a reason, so
+  // the BREP tab degrades to a message and the rest of the app is untouched.
+  try {
+    // Explicit half-section → revolve directly.
+    if (kind === 'revolve' && Array.isArray(profile)) {
+      if (profile.length < 3) return json({ supported: false, reason: 'profile must be ≥3 [r,z] points' });
       const mesh = await revolveBrep(profile as [number, number][], opts);
       return json({ supported: true, ...mesh });
-    } catch (e: any) { throw error(500, `OCCT revolve failed: ${e?.message ?? e}`); }
-  }
-
-  // Part source → full graph→OCCT executor (revolve · extrude · loft · CSG).
-  if (typeof source === 'string' && source.trim()) {
-    try {
-      const mesh = await brepFromSource(source, (paramValues && typeof paramValues === 'object') ? paramValues : {}, opts, fetch);
-      if (!mesh) {
-        return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
-      }
-      return json({ supported: true, ...mesh });
-    } catch (e: any) {
-      // OCCT couldn't build/mesh it (unmapped op, bad profile, boolean failure)
-      // → report gracefully so the tab shows the reason, not a 500.
-      return json({ supported: false, reason: String(e?.message ?? e).slice(0, 200) });
     }
+    // Part source → full graph→OCCT executor (revolve · extrude · loft · CSG).
+    if (typeof source === 'string' && source.trim()) {
+      const mesh = await brepFromSource(source, (paramValues && typeof paramValues === 'object') ? paramValues : {}, opts, fetch);
+      if (!mesh) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
+      return json({ supported: true, ...mesh });
+    }
+    return json({ supported: false, reason: 'provide { kind:"revolve", profile } or { source, paramValues }' });
+  } catch (e: any) {
+    return json({ supported: false, reason: String(e?.message ?? e).slice(0, 200) });
   }
-
-  throw error(400, 'provide { kind:"revolve", profile } or { source, paramValues }');
 };
