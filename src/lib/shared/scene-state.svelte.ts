@@ -35,6 +35,12 @@ export const scene = $state({
    *  OD/wall in the viewport. Read by builder.finalizeManifold via
    *  the setRenderZScale getter. UI lives in the SceneControls gear. */
   zScale: 1.0,
+  /** Render-time X (diameter / radial) exaggeration — VIEW ONLY. >1 fattens the
+   *  diameter so a long thin tool's bore/wall detail stays readable when zScale
+   *  compresses the length; <1 thins it. Applied (with zScale) as a scene-level
+   *  scale on the whole render group in PrimitiveDualScene; the part on disk +
+   *  the bake stay TRUE scale. The camera auto-fit accounts for both. */
+  xScale: 1.0,
   /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
    *  renders (per-vertex RGB: red outer / grey bore). When false, the
    *  solid `full` mesh renders in flat red. UI in SceneControls. */

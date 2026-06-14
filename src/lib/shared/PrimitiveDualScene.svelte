@@ -151,7 +151,11 @@
   // every Z-down part) and the part hangs below the look-at, off-centre.
   $effect(() => {
     if (!bbox) return;
-    scene.partCenter = { x: bbox.cx, y: bbox.cy, z: bbox.cz };
+    // The whole render group is scaled [xScale, xScale, zScale] (view-only), so
+    // the visual centre the OrbitControls target follows is the bbox centre
+    // times that scale.
+    const xs = scene.xScale, zs = scene.zScale;
+    scene.partCenter = { x: bbox.cx * xs, y: bbox.cy * xs, z: bbox.cz * zs };
   });
 
   // --- auto-fit the camera to the combined (stacked) bounding box ---
@@ -169,12 +173,15 @@
   let lastFitKey = '';
   $effect(() => {
     if (!bbox) return;
-    const { ex, ey, ez, cy, cz } = bbox;
+    // Fit the VISUAL extent = bbox × the view scale [xScale, xScale, zScale].
+    const xs = scene.xScale, zs = scene.zScale;
+    const ex = bbox.ex * xs, ey = bbox.ey * xs, ez = bbox.ez * zs;
+    const cy = bbox.cy * xs, cz = bbox.cz * zs, gapV = gap * zs;
     const key = `${ex.toFixed(2)}|${ey.toFixed(2)}|${ez.toFixed(2)}|${cy.toFixed(2)}|${cz.toFixed(2)}`;
     if (key === lastFitKey) return;
     lastFitKey = key;
     const tanHalf = Math.tan((FIT_FOV_DEG * Math.PI) / 180 / 2);
-    const halfZspan = ez + gap / 2; // half of the combined stacked Z span (2·ez + gap)/2
+    const halfZspan = ez + gapV / 2; // half of the combined stacked Z span (2·ez + gap)/2
     const halfX = ex / 2;
     const distV = halfZspan / tanHalf;          // fit the vertical (Z) span
     const distH = halfX / tanHalf;              // fit the horizontal (X) span, aspect≈1
@@ -203,8 +210,12 @@
 <!-- Fill light from below to lift the previously-shaded quadrant. -->
 <T.PointLight position={light3Pos} intensity={scene.l3.i} distance={50} />
 
-<!-- TOP — live mesh, stacked on the part (Z) axis (zScale already baked
-     server-side, so no scale.z here) -->
+<!-- VIEW-ONLY scale: X/Y = diameter exaggeration (xScale), Z = depth
+     compression (zScale). Wraps BOTH stacked renders + their offsets so the
+     whole composition scales together; the geometry on disk + the bake stay
+     true. The camera auto-fit + OrbitControls target above account for it. -->
+<T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
+<!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '')}
     {#if showCutaway && cutVC}
@@ -231,13 +242,14 @@
   <T.Mesh position={[0,0,AX_LEN/2]} rotation={[Math.PI/2,0,0]}><T.CylinderGeometry args={[AX_R,AX_R,AX_LEN,12]} /><T.MeshBasicMaterial color="#3060ff" /></T.Mesh>
 </T.Group>
 
-<!-- BOTTOM — baked GLB, stacked below the mesh on the part (Z) axis (scaled
-     along Z to match the SceneControls zScale, like ComponentSceneGlb) -->
+<!-- BOTTOM — baked GLB, stacked below the mesh on the part (Z) axis. The view
+     scale is applied by the parent group. -->
 {#if loaded}
-  <T.Group position={glbPos} scale.z={scene.zScale}>
+  <T.Group position={glbPos}>
     <T is={loaded} />
   </T.Group>
 {/if}
+</T.Group><!-- /view-scale group -->
 
 <!-- Title + description are now DOM overlays in PrimitiveDualCanvas (.pd-stage),
      not a Threlte <HTML> overlay — the latter's wrapper rendered with

@@ -35,6 +35,7 @@
   let geoVersion = $state(0);
   let glbBlobUrl = $state<string | null>(null);
   let glbCut = $state(false);
+  let scaleMenuOpen = $state(false);
   let meshStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
   let glbStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
   let err = $state<string | null>(null);
@@ -191,6 +192,26 @@
   {/if}
   {#if name}<div class="pd-title">{name}</div>{/if}
   {#if description}<div class="pd-desc">{description}</div>{/if}
+  <!-- View-scale settings — a gear below the title opens a small menu to
+       exaggerate the X-diameter and compress the Z-depth (view-only) so long
+       thin tools stay readable without losing diametric detail. -->
+  <button class="pd-scale-btn" type="button" class:on={scaleMenuOpen}
+    title="Diameter / depth view scale"
+    onclick={() => (scaleMenuOpen = !scaleMenuOpen)}>⚙ scale</button>
+  {#if scaleMenuOpen}
+    <div class="pd-scale-menu">
+      <div class="pd-scale-row">
+        <span class="pd-scale-lbl">X-dia ×{scene.xScale.toFixed(2)}</span>
+        <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale} />
+      </div>
+      <div class="pd-scale-row">
+        <span class="pd-scale-lbl">Z-depth ×{scene.zScale.toFixed(2)}</span>
+        <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale} />
+      </div>
+      <button class="pd-scale-reset" type="button"
+        onclick={() => { scene.xScale = 1; scene.zScale = 1; }}>1:1 true scale</button>
+    </div>
+  {/if}
   <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).
        Top = z 0 (top of the part), drag down to follow it deeper (Z-down). -->
   <div class="pd-zpan">
@@ -242,6 +263,30 @@
      (per .pd-stage), so the title and description need dark-on-light. Drop
      the dark drop-shadow and switch to a contrasting deep red / charcoal. */
   .pd-title { position: absolute; top: 8px; left: 12px; z-index: 5; pointer-events: none; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; color: #a02520; letter-spacing: 0.3px; text-shadow: 0 1px 2px rgba(255,255,255,0.95); }
+  /* View-scale gear — sits just below the title. */
+  .pd-scale-btn {
+    position: absolute; top: 30px; left: 12px; z-index: 6;
+    padding: 2px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
+    background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer;
+    font: 600 10px Arial; letter-spacing: 0.3px;
+  }
+  .pd-scale-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
+  .pd-scale-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
+  .pd-scale-menu {
+    position: absolute; top: 56px; left: 12px; z-index: 7;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px 12px; min-width: 184px;
+    background: rgba(255,255,255,0.97); border: 1px solid #e5e7eb; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+  }
+  .pd-scale-row { display: flex; flex-direction: column; gap: 3px; }
+  .pd-scale-lbl { font: 600 10px ui-monospace, monospace; color: #44403c; }
+  .pd-scale-menu input[type="range"] { width: 100%; accent-color: #cc2222; height: 14px; }
+  .pd-scale-reset {
+    margin-top: 2px; padding: 3px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
+    background: #f5f5f4; color: #44403c; cursor: pointer; font: 600 10px Arial;
+  }
+  .pd-scale-reset:hover { background: #e7e5e4; }
   .pd-desc { position: absolute; bottom: 8px; left: 12px; right: 96px; z-index: 5; pointer-events: none; font: 11px Arial; color: #333; line-height: 1.35; text-align: center; text-shadow: 0 1px 2px rgba(255,255,255,0.95); }
   .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 6; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }
