@@ -2810,13 +2810,13 @@
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
   /** Right-pane tab: 3D bake or live source. */
-  let rightTab = $state<'bake' | 'source' | 'md' | 'svg' | 'glb'>('bake');
+  let rightTab = $state<'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep'>('bake');
   onMount(() => {
     try {
       const a = Number(localStorage.getItem('ge-splitA-v4'));
       if (a >= 30 && a <= 85) splitA = a;
       const t = localStorage.getItem('ge-right-tab');
-      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function startSplitDrag(ev: PointerEvent) {
@@ -2837,10 +2837,30 @@
     splitDragging = false;
     try { localStorage.setItem('ge-splitA-v4', String(splitA)); } catch { /* ignore */ }
   }
-  function setRightTab(t: 'bake' | 'source' | 'md' | 'svg' | 'glb') {
+  function setRightTab(t: 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep') {
     rightTab = t;
     try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
+
+  // ─── BREP tab — server-side OpenCascade (OCCT) render (PrimitiveBrepView) ──
+  // Lazy-loaded. Posts the emitted source + current param values to
+  // /api/brep/preview; the server extracts the revolve (r,z) profile, revolves
+  // it in OCCT, adaptively tessellates → true-curve mesh with exact normals.
+  // Revolve parts only for now; others show "no BREP path".
+  let PrimitiveBrepView = $state<any>(null);
+  onMount(async () => {
+    try {
+      const mod = await import('$lib/shared/PrimitiveBrepView.svelte');
+      PrimitiveBrepView = mod.default;
+    } catch { /* brep view unavailable */ }
+  });
+  // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
+  let brepParamValues = $derived.by(() => {
+    const vals = (bake?.args ?? paramDefaults) as number[];
+    const out: Record<string, number> = {};
+    Object.keys(graph.params).forEach((k, i) => { out[k] = vals[i]; });
+    return out;
+  });
 
   // ─── SVG tab — vector render of the baked geometry (PrimitiveSvgView) ─────
   // Lazy-loaded like PrimitiveDualCanvas. The SVG view needs the same
@@ -3595,27 +3615,31 @@
 
   function dropSolid(op: 'revolve' | 'extrude' | 'loft') {
     closePicker();
-    // Find an existing polygon, or create one — a revolve / extrude is
-    // useless without a profile to operate on. Auto-attached polygons
-    // become non-deletable while the revolve consumes them (the × on
-    // the polygon card greys out + the title carries a 🔒). User must
-    // delete the revolve first to unlock the polygon.
-    let polyId: string | undefined =
-      (Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any)?.id;
-    if (!polyId) {
-      // Seed the new polygon with a default appropriate to the producer:
-      // a small (0..1, 0..1) triangle for revolve (sits on the r ≥ 0 half
-      // and reads as a half-section), a unit square centered on (0, 0)
-      // for extrude (cartesian cross-section, respects the origin-centered
-      // viewport in cartesian SVG preview mode).
-      // loft + extrude both take a cartesian (x,y) cross-section; revolve takes
-      // an r≥0 half-section.
-      const initial = op === 'revolve' ? POLY_REVOLVE_DEFAULT : POLY_EXTRUDE_DEFAULT;
-      const r = addPolygon(graph, initial);
-      graph = r.graph;
-      polyId = r.id;
+    // Find an existing PROFILE PRODUCER to feed the solid, or create one.
+    // REVOLVE defaults to the SKETCH engine (line/spline/fillet (r,z) ops) —
+    // smoother, CAD-style half-sections beat a raw polygon, and the sketch
+    // wires into the profile arg the same `__POLY__<id>` way (per dropSketch).
+    // EXTRUDE / LOFT keep the cartesian (x,y) polygon. The producer becomes
+    // non-deletable while the solid consumes it (× greys out + 🔒 on the card);
+    // delete the solid first to unlock it.
+    let profileId: string | undefined;
+    if (op === 'revolve') {
+      profileId = (Object.values(graph.nodes).find((n) => (n as any).type === 'sketch') as any)?.id;
+      if (!profileId) {
+        const r = addSketch(graph);
+        graph = r.graph;
+        profileId = r.id;
+      }
+    } else {
+      // loft + extrude both take a cartesian (x,y) cross-section.
+      profileId = (Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any)?.id;
+      if (!profileId) {
+        const r = addPolygon(graph, POLY_EXTRUDE_DEFAULT);
+        graph = r.graph;
+        profileId = r.id;
+      }
     }
-    const profileArg = { kind: 'expr' as const, expr: '__POLY__' + polyId };
+    const profileArg = { kind: 'expr' as const, expr: '__POLY__' + profileId };
     if (op === 'revolve') {
       graph = addCall(graph, 'r_revolve', {
         profile: profileArg as any,
@@ -6929,6 +6953,10 @@
           type="button" role="tab" aria-selected={rightTab === 'glb'}
           data-tip="GLB — half-sectioned bake (downloadable). Baked on demand — the bake is slow, so it only runs when you open this tab."
           onclick={() => setRightTab('glb')}>GLB</button>
+        <button class="ge-pane-tab" class:active={rightTab === 'brep'}
+          type="button" role="tab" aria-selected={rightTab === 'brep'}
+          data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve parts only for now."
+          onclick={() => setRightTab('brep')}>BREP</button>
       </div>
       <div class="ge-pane-bodies">
         <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
@@ -7179,6 +7207,19 @@
                 showControls={true} showLabels={false}/>
             {:else}
               <div class="ge-empty">No geometry yet — bake the part first (open the 3D bake tab).</div>
+            {/if}
+          {/if}
+        </div>
+        <!-- BREP tab — server-side OpenCascade (OCCT) true-curve render. Posts
+             the emitted source + current param values to /api/brep/preview; the
+             server extracts the revolve (r,z) profile + revolves it in OCCT. -->
+        <div class="ge-glb-body" class:hidden={rightTab !== 'brep'}>
+          {#if rightTab === 'brep'}
+            {#if PrimitiveBrepView && bake && typeof bake === 'object' && bake.source}
+              <PrimitiveBrepView source={bake.source} paramValues={brepParamValues}
+                name={exemplarId} active={rightTab === 'brep'} />
+            {:else}
+              <div class="ge-empty">No source yet — bake the part first.</div>
             {/if}
           {/if}
         </div>
