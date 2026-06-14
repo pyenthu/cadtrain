@@ -85,6 +85,10 @@ export const scene = $state({
   /** Radial offset (world units, +Y) of the rectangle off the part axis — how
    *  far the emissive panel sits away from the part. */
   zRectOffset: 200,
+  /** Bearing (degrees) of the rect light AROUND the part's Z (drilling) axis.
+   *  0° = +Y (the default front, same side as the camera), 90° = +X, 180° = −Y
+   *  (behind), etc. Spins the panel's position + facing around the axis. */
+  zRectAngle: 0,
   /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
    *  renders (per-vertex RGB: red outer / grey bore). When false, the
    *  solid `full` mesh renders in flat red. UI in SceneControls. */

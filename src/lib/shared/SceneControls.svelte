@@ -73,6 +73,8 @@
       <input type="number" step="1" min={0} bind:value={scene.zRectHeight} title="height across the part" />
       <span class="sv-sub">⌀</span>
       <input type="number" step="1" bind:value={scene.zRectOffset} title="radial offset off the axis" />
+      <span class="sv-sub">∠</span>
+      <input type="number" step="15" bind:value={scene.zRectAngle} title="bearing around the Z axis (deg): 0=+Y front, 90=+X, 180=behind" />
     </div>
     <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
          row + scene.warp* fields + warp.ts to retire the feature. -->

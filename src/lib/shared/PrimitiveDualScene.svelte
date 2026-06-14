@@ -320,12 +320,15 @@
   // off the axis (+Y) and aimed at the part. RectAreaLight only lights
   // MeshStandard/Physical, so the lit meshes swap to MeshStandardMaterial while
   // scene.zRectLight is on (see makeLitMaterial + the material branches below).
-  // One-time uniforms-lib init (LTC textures) on mount.
-  onMount(() => { void ensureRectAreaLib(); });
   // On Threlte's on-demand render loop, mutating the RectAreaLight object
   // directly (below) doesn't invalidate a frame — so changes wouldn't show
   // live. invalidate() requests a re-render after each update.
   const { invalidate } = useThrelte();
+  // One-time uniforms-lib init (LTC textures the RectAreaLight needs). It's
+  // async — the light renders UNLIT until init completes, and the on-demand
+  // loop won't re-render on its own, so invalidate() once it's ready (this was
+  // why the rect light looked dead / intensity changes did nothing on load).
+  onMount(() => { ensureRectAreaLib().then(() => invalidate()); });
   let rectLight = $state<any>(null);
   $effect(() => {
     const l = rectLight;
@@ -338,16 +341,20 @@
     const along = scene.zRectWidth && scene.zRectWidth > 0
       ? scene.zRectWidth
       : Math.max(1, (max - min) * 1.05);   // full part Z span + ~5% headroom
-    l.position.set(0, scene.zRectOffset, cz);
+    // Bearing AROUND the Z (drilling) axis: 0° = +Y (front), 90° = +X, etc.
+    const ang = (scene.zRectAngle || 0) * Math.PI / 180;
+    const dx = Math.sin(ang), dy = Math.cos(ang);  // unit dir in the X/Y plane
+    l.position.set(scene.zRectOffset * dx, scene.zRectOffset * dy, cz);
     l.width = along;                         // WIDTH = local X → world Z (length)
     l.height = scene.zRectHeight;            // HEIGHT = local Y → world X (across)
     l.intensity = scene.zRectIntensity;
     l.color.set('#ffffff');
     // Orient: local +X → world Z (width along the drill axis), emissive face
-    // (local −Z) pointing at the axis from the +Y/−Y side per the offset sign.
+    // (local −Z) pointing at the axis from the bearing direction (offset sign
+    // flips which side, so a negative offset is the same as +180°).
     const s = Math.sign(scene.zRectOffset) || 1;
     const lx = new THREE.Vector3(0, 0, 1);   // width axis → world Z
-    const lz = new THREE.Vector3(0, s, 0);   // normal (away from axis)
+    const lz = new THREE.Vector3(dx * s, dy * s, 0).normalize();  // outward normal
     const ly = new THREE.Vector3().crossVectors(lz, lx).normalize();
     const m = new THREE.Matrix4().makeBasis(lx, ly, lz);
     l.quaternion.setFromRotationMatrix(m);
