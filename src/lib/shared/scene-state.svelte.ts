@@ -67,8 +67,10 @@ export const scene = $state({
    *  tall stack. RectAreaLight only affects MeshStandard/Physical materials,
    *  so while this is ON the lit meshes render as MeshStandardMaterial instead
    *  of MeshPhong; OFF → the MeshPhong path is byte-identical to before.
-   *  Option B from docs/plans/z-axis-light.md. Master OFF by default. */
-  zRectLight: false,
+   *  Option B from docs/plans/z-axis-light.md. DEFAULT ON (user preference
+   *  2026-06-14) — the soft even wash reads better on long tools than the
+   *  point lights; toggle off in the SceneControls gear. */
+  zRectLight: true,
   /** RectAreaLight intensity (luminance-ish units — NOT point-light candela;
    *  small values 1–10 are normal once RectAreaLightUniformsLib.init() runs). */
   zRectIntensity: 4,

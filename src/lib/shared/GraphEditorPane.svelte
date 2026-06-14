@@ -1909,7 +1909,10 @@
   const PROPS_BODY_H = 40;
   let propsExpanded = $state(true);
   let propsBodyH = $derived(propsExpanded ? PROPS_BODY_H + CARD_PAD * 2 : 0);
-  let propsCardH = $derived(CARD_TITLE_H + propsBodyH);
+  // +5 = the card's 1.5px top+bottom border + drop-shadow clearance, which the
+  // foreignObject height must include or the PARAMS card (positioned from
+  // propsCardH) overlaps the collapsed Properties header.
+  let propsCardH = $derived(CARD_TITLE_H + propsBodyH + 5);
   // Params card top — slides below the Properties card so the two never overlap.
   let CARD_Y0 = $derived(PROPS_Y0 + propsCardH + PROPS_GAP);
   // PARAM_W is DYNAMIC — derived from the longest label so chips like
