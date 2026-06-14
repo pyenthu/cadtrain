@@ -424,8 +424,10 @@ export interface ComponentResult {
   cutVC: THREE.BufferGeometry;
   manifold: any;
   /** True when finalize auto-skipped the cutaway CSG step (manifold too
-   *  large, > 30k tris). cutVC will be an empty BufferGeometry in that
-   *  case. The bake panel can surface a "cutaway disabled" hint. */
+   *  large, > 120k tris — a genuinely huge SINGLE connected body where the
+   *  per-body decompose-and-cut win can't apply). cutVC will be an empty
+   *  BufferGeometry in that case. The bake panel can surface a "cutaway
+   *  disabled" hint. */
   cutawaySkipped?: boolean;
   /** GPU-instancing payload — present ONLY when `opts.instanced` was set AND
    *  finalize detected N≥2 identical-up-to-translation bodies (a Stack/Repeat
@@ -578,21 +580,22 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
     const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway);
     if (inst) return inst;
   }
-  // Auto-skip the cutaway when the manifold gets large. The cutVC step
-  // does a CSG subtract over the WHOLE manifold and scales super-linearly:
-  // 36k verts → 163 ms, 73k → 853 ms, 121k → 2.9 s, 181k → 5.9 s.
-  // Without this guard a Repeat × 15 of dt_joint takes ~6 s per re-bake,
-  // which the user reported as "quite slow beyond 3 or 4 Ns".
-  //
-  // Threshold lowered to 15k tris (~5 joints' worth) — anything beyond
-  // gets the fast path, and the on-demand /api/primitives/preview-cutaway
-  // endpoint computes cutVC lazily when the user toggles cutaway ON.
+  // Auto-skip the cutaway only as a far-out safety valve. The cutVC step used
+  // to do ONE pass (subtract + calculateNormals + getMesh) over the WHOLE
+  // composed manifold; calculateNormals scales super-linearly (30k→204ms,
+  // 100k→3776ms), forcing a 15k-tri skip → long stacks / big assemblies showed
+  // NO cross-section ("cutaway off (perf)"). `cutawayVC` now decomposes into
+  // bodies and cuts each (small) body, distributing that ~linearly, so a normal
+  // long string (g_dp_stand ~47k tris) computes its cutaway by default. The
+  // threshold is raised 15k → 120k so only a genuinely huge SINGLE connected
+  // body (where the per-body win can't apply) still skips. `opts.skipCutaway
+  // ===false` still force-computes regardless; ===true still force-skips.
   const skipCutaway = opts?.skipCutaway === true ? true
     : opts?.skipCutaway === false ? false
-    : (typeof scaled.numTri === 'function' ? scaled.numTri() > 15_000 : false);
+    : (typeof scaled.numTri === 'function' ? scaled.numTri() > 120_000 : false);
   return {
     full: manifoldToGeo(scaled, material, lut, override),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, lut, override),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : cutawayVC(scaled, cutBox, maxOD, material, lut, override),
     manifold: scaled,
     cutawaySkipped: skipCutaway,
   } as ComponentResult & { cutawaySkipped: boolean };
@@ -860,6 +863,88 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
     geo.computeVertexNormals();
   }
   return geo;
+}
+
+/**
+ * Concatenate NON-INDEXED BufferGeometries by appending their position /
+ * normal / color attributes. Every cutVC geometry (the legacy red/grey
+ * heuristic, the material path, the per-part override, AND the color-by-source
+ * path) is non-indexed and carries position + color + a normal attribute, so a
+ * flat attribute concat is exact — there is no index buffer to renumber. An
+ * attribute is carried only when EVERY input geo has it (defensive). Empty
+ * inputs (a body fully removed by the cut) contribute zero vertices. Used by
+ * the per-body cutaway path (`cutawayVC`); no equivalent helper exists in the
+ * repo (no THREE BufferGeometryUtils bundled).
+ */
+function mergeBufferGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const out = new THREE.BufferGeometry();
+  if (geos.length === 0) return out;
+  if (geos.length === 1) return geos[0];
+  for (const name of ['position', 'normal', 'color'] as const) {
+    if (!geos.every((g) => g.getAttribute(name))) continue;
+    const first = geos[0].getAttribute(name) as THREE.BufferAttribute;
+    const itemSize = first.itemSize;
+    let total = 0;
+    for (const g of geos) total += (g.getAttribute(name) as THREE.BufferAttribute).array.length;
+    const merged = new Float32Array(total);
+    let off = 0;
+    for (const g of geos) {
+      const arr = (g.getAttribute(name) as THREE.BufferAttribute).array as ArrayLike<number>;
+      merged.set(arr as Float32Array, off);
+      off += arr.length;
+    }
+    out.setAttribute(name, new THREE.BufferAttribute(merged, itemSize));
+  }
+  return out;
+}
+
+/**
+ * Compute the half-cutaway cross-section geometry (`cutVC`) for a finalized
+ * manifold, PER-BODY where possible. The cut is DISTRIBUTIVE over `compose`:
+ * composed bodies occupy disjoint regions and `M.compose` merges meshes without
+ * fusing them, so for the global cut-box C
+ *   (A ∪ B).subtract(C)  ≡  A.subtract(C) ∪ B.subtract(C).
+ * That equivalence lets us cut each (small) body separately and merge the
+ * resulting cross-section geometries. The dominant cutaway cost is actually the
+ * `calculateNormals(3,60)` that `manifoldToCutVC` runs over the subtracted
+ * result — it scales SUPER-linearly in triangle count (measured: 30k→204ms,
+ * 100k→3776ms), and one pass over the whole N-copy stack is what forced the old
+ * 15k-tri skip (long strings showed NO cutaway). Running it per body instead
+ * (Σ O(N_body) ≈ linear) drops a 50-body stack's cutaway from ~3.8s to ~0.16s
+ * (≈26×, measured), so the cutaway can be computed by default for normal long
+ * stacks. The boolean subtract itself is cheap and roughly linear either way;
+ * decompose distributes both.
+ *
+ * `decompose()` preserves `runOriginalID` (verified in scripts/spike_csg_originalid.ts),
+ * so color-by-source survives the round-trip; the SECTION_ID-tagged cutBox stamps
+ * each per-body cross-section face exactly as the monolithic path did. Single body
+ * (or decompose unavailable / throwing / ≤1 body) falls through to the original
+ * monolithic `manifoldToCutVC(scaled.subtract(cutBox), …)` — BYTE-IDENTICAL to the
+ * pre-change output. Any error anywhere falls back to that same monolithic path
+ * (bulletproof).
+ */
+function cutawayVC(
+  scaled: any,
+  cutBox: any,
+  maxOD: number,
+  material?: RenderMaterial,
+  parts?: PartColorLUT,
+  override?: ColorOverride,
+): THREE.BufferGeometry {
+  try {
+    if (typeof scaled.decompose === 'function') {
+      const bodies = scaled.decompose();
+      if (Array.isArray(bodies) && bodies.length > 1) {
+        const geos = bodies.map((b: any) =>
+          manifoldToCutVC(b.subtract(cutBox), maxOD, material, parts, override),
+        );
+        return mergeBufferGeometries(geos);
+      }
+    }
+  } catch {
+    // decompose missing / threw / per-body cut failed → monolithic fallback.
+  }
+  return manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, parts, override);
 }
 
 /**
