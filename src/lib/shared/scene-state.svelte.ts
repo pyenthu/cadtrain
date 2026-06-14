@@ -75,7 +75,7 @@ export const scene = $state({
   zRectLight: true,
   /** RectAreaLight intensity (luminance-ish units — NOT point-light candela).
    *  Higher now that it's the sole directional source (was 4 as a fill). */
-  zRectIntensity: 9,
+  zRectIntensity: 2,
   /** Rectangle WIDTH = the dimension running ALONG Z (the part's length). 0 =
    *  auto-derive from `partZExtent` (full part span + ~5% headroom). */
   zRectWidth: 0,
@@ -84,7 +84,7 @@ export const scene = $state({
   zRectHeight: 40,
   /** Radial offset (world units, +Y) of the rectangle off the part axis — how
    *  far the emissive panel sits away from the part. */
-  zRectOffset: 30,
+  zRectOffset: 200,
   /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
    *  renders (per-vertex RGB: red outer / grey bore). When false, the
    *  solid `full` mesh renders in flat red. UI in SceneControls. */
