@@ -62,6 +62,42 @@ rewriting `mesh-serial.ts`, the bake `{full,cutVC}` format, the cache schema,
 and `PrimitiveDualScene`. It does NOT address the bake-time CSG bottleneck.
 Not recommended for the perf complaint; revisit only for GPU-memory at scale.
 
+## P1 concrete plan — decompose → per-body cut → merge (Route A)
+
+Deep-dived 2026-06-14. **The cut is distributive over `compose`**: composed
+bodies occupy disjoint regions and `M.compose` is non-destructive (merges meshes,
+no fusion), so
+`(A ∪ B).subtract(cutBox)  ≡  A.subtract(cutBox) ∪ B.subtract(cutBox)`
+for the GLOBAL cutBox (`getCutBox` = `M.cube([20,20,100],false).translate([0,0,-50])`,
+`manifold-helpers.ts:485-488`). That equivalence is the whole fix.
+
+- `Manifold.decompose(): Manifold[]` exists (`manifold-3d/manifold.d.ts:985`,
+  used in `scripts/spike_csg_originalid.ts:134`) and **preserves `runOriginalID`**,
+  so color-by-source survives decompose→cut→recompose.
+- Change ONLY `finalizeManifold` (`builder.ts:516-561`): when NOT skipping,
+  `bodies = scaled.decompose()`; if `>1` body, cut each by `cutBox` via the
+  existing `manifoldToCutVC` path and **merge the BufferGeometries** (new
+  `mergeBufferGeometries` helper — manual position/normal/color attribute concat;
+  no THREE merge util in repo). Single body → cut directly. `decompose`
+  missing/throws/empty → **fall back to `manifoldToCutVC(scaled.subtract(cutBox))`**
+  (bulletproof try/catch). Cost: super-linear O(N_total) → ~linear Σ O(N_body).
+- ONE code path: live preview, composition-bake, and GLB bake ALL call
+  `finalizeManifold` → one change fixes all three. `cutawaySkipped` flag, the
+  bake-cache `cutaway` bucketing, and the `/preview` signature are unchanged.
+- Keep the 15k skip as a safety valve initially; once per-body cut is cheap,
+  raise/drop it so long strings get cutaway by default.
+- **Preserve**: `_stackRef/_refHead/_refTail` (manifold props, survive decompose),
+  the empty-child guard, the graded-delta cursor, the SECTION_ID cut-box tag
+  (`builder.ts:542`) that the color-by-source path keys on.
+- **Test**: a single part's `cutVC` must be byte-identical via the new path
+  (decompose()[0] == the whole); a 3-joint stack must render the cut (badge gone);
+  color-by-source keeps per-body colours.
+
+**SEQUENCING (2026-06-14):** the per-part inside/outside COLOUR feature (running)
+also edits `finalizeManifold`/`manifoldToCutVC`/the colour LUT. Land the colour
+refactor FIRST, then build per-part cutaway on top so `manifoldToCutVCSingleBody`
+passes the colour params — avoids a builder.ts conflict.
+
 ## Reconcile
 Add a `/plan` lane when scoped (Rule 19). P1 is the high-leverage item; P2 is a
 cheap immediate UX win.
