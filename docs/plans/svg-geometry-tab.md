@@ -92,6 +92,32 @@ a collar.
   xScale/zScale) when ortho is selected; re-render on toggle. Keep perspective
   as the other option. Lives entirely in `PrimitiveSvgView.svelte`.
 
+## GPU rendering — verdict (explored 2026-06-14): DON'T
+
+"Can the SVGRenderer run in pure GPU code if we pass the BufferGeometry?" —
+**No, it's a category error.** SVG is a vector **DOM** format; the GPU emits
+rasters/buffers, not `<path>` elements. The final path-DOM assembly is
+inherently main-thread. And that DOM assembly (~10–100 ms for 100s–1000s of
+`<path>`s) is the ACTUAL bottleneck — the projection+sort math the GPU could
+accelerate is only ~50–100 µs, so GPU offload nets ~0 or negative:
+- GPU projection + readback → the GPU→CPU readback stall (~1–5 ms) > the savings.
+- Rasterize → vectorize (potrace/marching-squares) → loses true-vector crispness,
+  bloated output, +500 ms; no such lib in node_modules anyway.
+- Worker + OffscreenCanvas → moves the math off-thread but the DOM cost stays on
+  main; IPC overhead cancels the win.
+- WebGPU compute → three 0.183 has no stable WebGPU backend + browser-compat
+  cliff (no Firefox); 6–12 wk for a gain the DOM cost eats.
+
+**The real lever is triangle count, not the renderer.** Bake the SVG tab at
+**32–48 circular segments** (vs the 256 default — `CIRCULAR_SEGMENTS_DEFAULT`)
+→ ~8–10× faster SVG, well under the HIGH_TRI=4000 warning, with the
+line-drawing aesthetic that suits a vector drawing. Keep the existing
+`EdgesGeometry` silhouette/crease outlines (free, CPU-linear). True hidden-line
+removal (the archived `three-svg-renderer` HLR) stays the post-ship quality
+upgrade. This matches the LOD findings (`docs/plans/stack-cutaway-perf.md` /
+the triangle-optimization report): segment count is the lever, THREE.LOD /
+client decimation / GPU are not.
+
 ## Reconcile
 Add a `/plan` lane when scoped (Rule 19). Relates to the archived
 `exporter.ts` (revive via `git mv` for Route 2) and the viewer scale/light
