@@ -2838,9 +2838,14 @@
   // SVG view toolbar; persisted. Only this SVG fetch passes `segments`; the
   // 3D/GLB panes stay full-res.
   let svgRes = $state<'coarse' | 'high'>('coarse');
+  // Draft mode for the 3D-bake live mesh (coarse 64-seg → fast iteration on big
+  // stacks). View-only; persisted. Off by default (full fidelity).
+  let meshDraft = $state(false);
   onMount(() => {
     try { const v = localStorage.getItem('ge-svg-res'); if (v === 'coarse' || v === 'high') svgRes = v; } catch { /* ignore */ }
+    try { meshDraft = localStorage.getItem('ge-mesh-draft') === '1'; } catch { /* ignore */ }
   });
+  $effect(() => { try { localStorage.setItem('ge-mesh-draft', meshDraft ? '1' : '0'); } catch { /* ignore */ } });
   function setSvgRes(v: 'coarse' | 'high') {
     svgRes = v;
     try { localStorage.setItem('ge-svg-res', v); } catch { /* ignore */ }
@@ -7033,10 +7038,17 @@
               source={bake.source}
               colorOuter={graph.colorOuter} colorInner={graph.colorInner}
               bakeGlb={false}
+              meshSegments={meshDraft ? 64 : undefined}
               showControls={true} showLabels={false}/>
             <!-- Cache status row + Rebuild button (Phase 1.5) -->
             {@const bakeMeta = (bake as any).bake ?? {}}
             <div class="ge-bake-meta">
+              <!-- Draft toggle — bake the live mesh at a coarse 64-segment count
+                   (vs 256) so big stacks iterate ~4-8x faster. View-only; the
+                   saved part + the GLB/SVG tabs are unaffected. -->
+              <label class="ge-draft-toggle" title="Draft: coarse 64-segment mesh for fast iteration on big stacks (view-only)">
+                <input type="checkbox" bind:checked={meshDraft} /> ⚡ draft
+              </label>
               {#if bakeMeta.cached}
                 {@const cacheMs = Number(bakeMeta._t?.fetch_total) || 0}
                 <span class="ge-cache-badge cached"
@@ -9173,6 +9185,8 @@
   /* Bake cache status row + Rebuild button */
   .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
   .ge-bake-meta-spacer { flex: 1 1 auto; }
+  .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
+  .ge-draft-toggle input { margin: 0; cursor: pointer; }
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
   .ge-cache-badge.cached { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
   .ge-cache-badge.fresh { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
