@@ -267,6 +267,14 @@ export type Graph = {
   layout: Record<NodeId, LayoutXY>;
   /** Canvas-level state — captured at save time, restored at hydrate time. */
   viewport?: Viewport;
+  /** Part-level appearance — surfaced by the editor's Properties card.
+   *  Both are SPARSE/optional: absent means "unset" (the viewer falls back
+   *  to its default colour-by-source / red-outer convention). They round-trip
+   *  through emit (`meta.color` / `meta.material` + the serialised graph block)
+   *  and `hydrateGraph`. Existing parts need no migration — a file without
+   *  these keys hydrates with both undefined. */
+  color?: string;
+  material?: string;
 };
 
 export function newGraph(): Graph {
@@ -415,6 +423,19 @@ export function hydrateGraph(serialised: any): Graph {
     if (changed) migratedNodes[id] = { ...sk, ops: newOps };
   }
 
+  // Part-level appearance round-trips through the serialised graph block.
+  // Sparse: only attach when present + well-formed so legacy files stay
+  // undefined (= unset → default appearance).
+  const savedColor =
+    (typeof serialised.color === 'string' &&
+     /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(serialised.color.trim()))
+      ? serialised.color.trim().toLowerCase()
+      : undefined;
+  const savedMaterial =
+    (typeof serialised.material === 'string' && serialised.material.trim() &&
+     serialised.material.trim() !== 'none')
+      ? serialised.material.trim()
+      : undefined;
   let g: Graph = {
     nodes: migratedNodes,
     root: serialised.root,
@@ -423,6 +444,8 @@ export function hydrateGraph(serialised: any): Graph {
     imports: serialised.imports ?? [],
     layout: migratedLayout,
     viewport: savedViewport,
+    ...(savedColor ? { color: savedColor } : {}),
+    ...(savedMaterial ? { material: savedMaterial } : {}),
   };
   // Fill missing positions only — preserves any saved entry, populates the
   // rest via the same rough-grid heuristic used at create-time. Inline
@@ -1459,6 +1482,35 @@ export function addStackRef(graph: Graph, def = 0): Graph {
     ...graph,
     params: { ...graph.params, [STACK_REF_PARAM]: { default: def, step: 0.05, label: 'stack ref' } },
   });
+}
+
+/** Set (or clear) the part-level viewer COLOUR — surfaced by the editor's
+ *  Properties card. A `#rrggbb`/`#rgb` hex stores; `null`/empty/invalid CLEARS
+ *  the field (drops the key → "unset", the historical default appearance).
+ *  Sparse by design so existing parts never gain a `color` key until the user
+ *  picks one. Round-trips via serialiseGraph + meta.color. */
+export function setPartColor(graph: Graph, hex: string | null | undefined): Graph {
+  const isHex = typeof hex === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex.trim());
+  if (!isHex) {
+    if (graph.color === undefined) return graph; // already unset
+    const { color: _drop, ...rest } = graph;
+    return rest;
+  }
+  return { ...graph, color: (hex as string).trim().toLowerCase() };
+}
+
+/** Set (or clear) the part-level MATERIAL tag — surfaced by the editor's
+ *  Properties card. A non-empty string stores; `null`/empty/`'none'` CLEARS
+ *  the field (drops the key → "unset"). Sparse by design. Round-trips via
+ *  serialiseGraph + meta.material. */
+export function setPartMaterial(graph: Graph, mat: string | null | undefined): Graph {
+  const v = typeof mat === 'string' ? mat.trim() : '';
+  if (!v || v === 'none') {
+    if (graph.material === undefined) return graph; // already unset
+    const { material: _drop, ...rest } = graph;
+    return rest;
+  }
+  return { ...graph, material: v };
 }
 
 /** Set (or clear) the per-child STACK REFERENCE override on a stack node.

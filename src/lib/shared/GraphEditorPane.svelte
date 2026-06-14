@@ -77,6 +77,8 @@
     setParamSchema,
     addStackRef,
     hasStackRef,
+    setPartColor,
+    setPartMaterial,
     setStackChildRef,
     setStackChildCount,
     STACK_REF_PARAM,
@@ -1893,7 +1895,20 @@
   // PARAM_W × PARAM_H, with PARAM_GAP between rows. The whole card is wide
   // enough to wrap the chip + padding; the socket sits OUTSIDE the card's
   // right edge so it can be drag-wired from.
-  const CARD_X0 = 8, CARD_Y0 = 8, CARD_PAD = 8, CARD_TITLE_H = 26;
+  const CARD_X0 = 8, CARD_PAD = 8, CARD_TITLE_H = 26;
+  // ─── Properties card (pinned ABOVE Params) ────────────────────────────────
+  // A small viewport-glued card holding part-level z-offset / colour / material.
+  // It sits at the very top-left (PROPS_X0, PROPS_Y0); the Params card is then
+  // pushed DOWN by the Properties card's live height + a gap (see CARD_Y0).
+  // Collapsible — when collapsed only its header shows and Params tucks right
+  // under it.
+  const PROPS_X0 = 8, PROPS_Y0 = 8, PROPS_W = 208, PROPS_GAP = 6;
+  const PROPS_ROW_H = 24, PROPS_ROWS = 3;
+  let propsExpanded = $state(true);
+  let propsBodyH = $derived(propsExpanded ? PROPS_ROWS * PROPS_ROW_H + CARD_PAD * 2 : 0);
+  let propsCardH = $derived(CARD_TITLE_H + propsBodyH);
+  // Params card top — slides below the Properties card so the two never overlap.
+  let CARD_Y0 = $derived(PROPS_Y0 + propsCardH + PROPS_GAP);
   // PARAM_W is DYNAMIC — derived from the longest label so chips like
   // p.totalLen don't clip. Constants below are the FIXED footprint of the
   // pin + input + trash; the label slot expands to fit the longest name.
@@ -1936,7 +1951,12 @@
       h: CARD_TITLE_H + CARD_PAD * 2 + Math.max(1, n) * PARAM_H + Math.max(0, n - 1) * PARAM_GAP,
     };
   }
-  let pcs = $derived(paramCardSize(Object.entries(graph.params ?? {}).length, PARAM_W));
+  // stack_ref no longer renders as a chip (it lives in the Properties card),
+  // so exclude it from the Params card row count.
+  let pcs = $derived(paramCardSize(
+    Object.keys(graph.params ?? {}).filter((n) => n !== STACK_REF_PARAM).length,
+    PARAM_W,
+  ));
   /** Where a param chip's OUTPUT socket sits — in GRAPH space (the wires
    *  render inside the pan/zoom group, so we convert from the chip's fixed
    *  viewport position back into graph coords). The conversion ensures the
@@ -4320,6 +4340,31 @@
     graph = addStackRef(graph);
     addParamPop = null;
   }
+  // ─── Properties card handlers ─────────────────────────────────────────────
+  /** The live z-offset value the Properties card shows. Falls back to 0 when
+   *  the part hasn't opted into the reserved stack_ref param yet. */
+  let zOffsetVal = $derived(
+    hasStackRef(graph) ? Number((graph.params[STACK_REF_PARAM] as any)?.default) || 0 : 0,
+  );
+  /** Apply-on-Enter z-offset commit. Lazily adds the reserved stack_ref param
+   *  the first time the user edits it (a 0 with no param stays "unset"). */
+  function onZOffset(value: number) {
+    const v = Number.isFinite(value) ? value : 0;
+    let g = graph;
+    if (!hasStackRef(g)) {
+      if (v === 0) return; // editing to 0 with no param yet → no-op (stays unset)
+      g = addStackRef(g);
+    }
+    const cur = g.params[STACK_REF_PARAM];
+    if (!cur) return;
+    graph = setParamSchema(g, STACK_REF_PARAM, { ...cur, default: v });
+  }
+  function onPartColor(hex: string | null) { graph = setPartColor(graph, hex); }
+  function onPartMaterial(mat: string | null) { graph = setPartMaterial(graph, mat); }
+  /** Default swatch colour shown when the part has no colour set yet — the
+   *  classic red-outer body hue, so the picker opens on a sensible value. */
+  const PROPS_DEFAULT_COLOR = '#cc2222';
+  const PROPS_MATERIALS = ['none', 'steel', 'aluminum', 'titanium', 'brass'];
   function onRemoveParam(name: string) {
     if (name === STACK_REF_PARAM) return; // reserved — no trash button anyway
     const r = removeParam(graph, name);
@@ -4453,13 +4498,13 @@
     }
     return set;
   });
-  // Display order: the reserved stack-reference param is PINNED first (no
-  // trash button); the rest keep insertion order. paramEntries is the single
-  // source for both the chip render AND the param-wire `findIndex` lookups, so
-  // reordering here keeps every socket index aligned automatically.
+  // The reserved stack-reference param is EXCLUDED from the chip list — its
+  // z-offset now lives in the Properties card above the Params card, not as a
+  // duplicate chip. (The model keeps it reserved/undeletable.) paramEntries is
+  // the single source for both the chip render AND the param-wire `findIndex`
+  // lookups, so filtering here keeps every socket index aligned automatically.
   let paramEntries = $derived(
-    Object.entries(graph.params).sort(([a], [b]) =>
-      a === STACK_REF_PARAM ? -1 : b === STACK_REF_PARAM ? 1 : 0),
+    Object.entries(graph.params).filter(([name]) => name !== STACK_REF_PARAM),
   );
   let filteredSrcs = $derived.by(() => {
     const q = pickerFilter.trim().toLowerCase();
@@ -6271,6 +6316,64 @@
             <text x="80" y="100" class="ge-canvas-hint">Click <tspan font-weight="bold">+ Drop</tspan> to add a Call, CSG op, or transform.</text>
           {/if}
         </g>
+
+        <!-- PROPERTIES CARD — pinned ABOVE the Params card, also viewport-glued
+             (outside the pan/zoom group). Collapsible: when collapsed only the
+             header shows and Params tucks right under it. Holds part-level
+             z-offset / colour / material. Single foreignObject so the rows use
+             plain HTML/flex like the param chips. -->
+        <foreignObject x={PROPS_X0} y={PROPS_Y0} width={PROPS_W} height={propsCardH}>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="ge-props-card" xmlns="http://www.w3.org/1999/xhtml"
+               onpointerdown={(e) => e.stopPropagation()}>
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <div class="ge-props-head" role="button" tabindex="-1"
+                 title={propsExpanded ? 'Collapse properties' : 'Expand properties'}
+                 onclick={() => (propsExpanded = !propsExpanded)}>
+              <span class="tw">{propsExpanded ? '▾' : '▸'}</span>
+              <span class="ttl">⚙ Properties</span>
+            </div>
+            {#if propsExpanded}
+              <div class="ge-props-body">
+                <!-- z-offset — surfaces the reserved stack_ref default -->
+                <div class="ge-props-row">
+                  <span class="lbl" title="0 = end-to-end flush · + = leave a gap · − = overlap into the next">z-offset</span>
+                  <input class="num" type="number" step="0.05"
+                    value={zOffsetVal}
+                    class:unset={!hasStackRef(graph)}
+                    title="0 = end-to-end flush · + = leave a gap · − = overlap into the next"
+                    onkeydown={(e) => { if (e.key === 'Enter') { onZOffset(Number((e.currentTarget as HTMLInputElement).value)); (e.currentTarget as HTMLInputElement).blur(); } }}
+                    onblur={(e) => onZOffset(Number((e.currentTarget as HTMLInputElement).value))}/>
+                </div>
+                <!-- colour — swatch + native picker + clear -->
+                <div class="ge-props-row">
+                  <span class="lbl">color</span>
+                  <span class="swatch" class:unset={!graph.color}
+                    style={`background:${graph.color ?? 'transparent'}`}></span>
+                  <input class="color" type="color"
+                    value={graph.color ?? PROPS_DEFAULT_COLOR}
+                    title={graph.color ? `Part colour ${graph.color}` : 'Set part colour (unset → default)'}
+                    oninput={(e) => onPartColor((e.currentTarget as HTMLInputElement).value)}/>
+                  <button class="clr" type="button" title="Clear colour (unset)"
+                    disabled={!graph.color}
+                    onclick={() => onPartColor(null)}>✕</button>
+                </div>
+                <!-- material -->
+                <div class="ge-props-row">
+                  <span class="lbl">material</span>
+                  <select class="mat"
+                    value={graph.material ?? 'none'}
+                    title="Part material tag"
+                    onchange={(e) => onPartMaterial((e.currentTarget as HTMLSelectElement).value)}>
+                    {#each PROPS_MATERIALS as m}
+                      <option value={m}>{m}</option>
+                    {/each}
+                  </select>
+                </div>
+              </div>
+            {/if}
+          </div>
+        </foreignObject>
 
         <!-- PARAMS CARD — tacked outside the pan/zoom group so it stays
              glued to the viewport top-left. Holds N param chips vertically,
@@ -8807,6 +8910,65 @@
   .ge-sock.out.param { stroke: #d97706; fill: #fef3c7; }
   .ge-sock.in.param:hover, .ge-sock.out.param:hover { fill: #fde68a; }
   .ge-sock.tiny { stroke-width: 1.5; }
+  /* ─── Properties card (above Params) ─────────────────────────────────────
+     Same amber lineage as the Params card; a touch lighter so the two read
+     as a stacked pair. The whole card lives inside one foreignObject. */
+  .ge-props-card {
+    box-sizing: border-box; width: 100%;
+    background: #fffbeb; border: 1.5px solid #d97706; border-radius: 8px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.06));
+    overflow: hidden; font: 700 10px ui-monospace, monospace; color: #78350f;
+  }
+  .ge-props-head {
+    display: flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 8px; box-sizing: border-box;
+    cursor: pointer; user-select: none; border-bottom: 1px solid #fde68a;
+  }
+  .ge-props-head .tw { width: 10px; text-align: center; opacity: 0.8; }
+  .ge-props-head .ttl {
+    font: 700 11px Arial; color: #78350f;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .ge-props-body { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .ge-props-row { display: flex; align-items: center; gap: 6px; height: 20px; }
+  .ge-props-row .lbl {
+    flex: 0 0 52px; color: #92400e;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ge-props-row .num {
+    flex: 0 0 56px; width: 56px; padding: 0 4px; height: 18px;
+    font: 10px ui-monospace, monospace; color: #92400e; text-align: center;
+    background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
+    box-sizing: border-box;
+  }
+  .ge-props-row .num.unset { color: #b45309; opacity: 0.65; font-style: italic; }
+  .ge-props-row .num:focus { outline: 1px solid #d97706; background: #fff; }
+  .ge-props-row .swatch {
+    flex: 0 0 18px; width: 18px; height: 14px; border-radius: 3px;
+    border: 1px solid #d97706; box-sizing: border-box;
+  }
+  .ge-props-row .swatch.unset {
+    background:
+      linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%) 0 0/8px 8px,
+      #fff;
+  }
+  .ge-props-row .color {
+    flex: 0 0 28px; width: 28px; height: 18px; padding: 0;
+    border: 1px solid #fbbf24; border-radius: 3px; background: #fff; cursor: pointer;
+  }
+  .ge-props-row .clr {
+    flex: 0 0 auto; width: 18px; height: 18px; padding: 0;
+    font: 11px Arial; line-height: 1; color: #b91c1c; cursor: pointer;
+    background: transparent; border: 0; border-radius: 3px; opacity: 0.6;
+  }
+  .ge-props-row .clr:hover:not(:disabled) { opacity: 1; background: rgba(220,38,38,0.12); }
+  .ge-props-row .clr:disabled { opacity: 0.2; cursor: default; }
+  .ge-props-row .mat {
+    flex: 1 1 auto; min-width: 0; height: 18px; padding: 0 2px;
+    font: 10px ui-monospace, monospace; color: #92400e;
+    background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
+    cursor: pointer;
+  }
   /* Right-edge resize grip — semi-transparent slate, lights up on hover.
      Cursor: ew-resize so the affordance is obvious. */
   .ge-resize-grip {
