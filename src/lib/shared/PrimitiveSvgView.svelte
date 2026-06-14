@@ -79,6 +79,20 @@
   let renderer: any = null;
   let lastMat: THREE.Material | null = null;
 
+  // persp (default) vs ortho projection — persisted so the choice sticks across
+  // tab/part switches. Ortho is the technical-drawing projection (no foreshorten).
+  let projection = $state<'persp' | 'ortho'>('persp');
+  $effect(() => {
+    try {
+      const p = localStorage.getItem('ge-svg-projection');
+      if (p === 'persp' || p === 'ortho') projection = p;
+    } catch { /* localStorage blocked — fine */ }
+  });
+  function setProjection(p: 'persp' | 'ortho') {
+    projection = p;
+    try { localStorage.setItem('ge-svg-projection', p); } catch { /* ignore */ }
+  }
+
   let size = $state({ w: 0, h: 0 });
   let hasRendered = $state(false);
   let warnHighPoly = $state(false);
@@ -168,9 +182,30 @@
     addDir(scene.l2, 0.4);
     addDir(scene.l3, 0.25);
 
-    // Camera — mirror PrimitiveDualScene: fov 45, position from scene.cam,
-    // up = [0,0,-1] (Z-down), look at partCenter (+ zFocus pan along Z).
-    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100000);
+    // Camera — mirror PrimitiveDualScene's position/up/look-at (Z-down).
+    // PERSPECTIVE: fov 45 like the 3D pane. ORTHOGRAPHIC: parallel projection
+    // (the correct one for a technical/dimensioned drawing — parallel edges stay
+    // parallel, no foreshortening). The ortho frustum is fit to the SCALED
+    // geometry's bounding sphere so the part fills the view in any orientation.
+    let camera: THREE.Camera;
+    if (projection === 'ortho') {
+      geo.computeBoundingBox();
+      const bb = geo.boundingBox;
+      // Scale the local extents by the view-only [xScale, xScale, zScale] group
+      // so the frustum matches what's actually drawn.
+      const dx = bb ? (bb.max.x - bb.min.x) * scene.xScale : 1;
+      const dy = bb ? (bb.max.y - bb.min.y) * scene.xScale : 1;
+      const dz = bb ? (bb.max.z - bb.min.z) * scene.zScale : 1;
+      const radius = 0.5 * Math.hypot(dx, dy, dz) || 1;
+      const halfH = radius * 1.05; // small padding
+      const aspect = w / h;
+      const ortho = new THREE.OrthographicCamera(
+        -halfH * aspect, halfH * aspect, halfH, -halfH, 0.1, 100000,
+      );
+      camera = ortho;
+    } else {
+      camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100000);
+    }
     camera.up.set(0, 0, -1);
     camera.position.set(scene.cam.x, scene.cam.y, scene.cam.z);
     camera.lookAt(
@@ -216,6 +251,7 @@
     void scene.partCenter.x; void scene.partCenter.y; void scene.partCenter.z;
     void scene.zFocus; void scene.xScale; void scene.zScale;
     void scene.showCutaway;
+    void projection;
 
     if (!isActive) { teardown(); return; }
     if (!container || !pair || w === 0 || h === 0) return;
@@ -273,6 +309,14 @@
     {#if hasRendered && triCount > 0}
       <span class="svg-tris">{triCount.toLocaleString()} tris</span>
     {/if}
+    <!-- Projection toggle — persp (default) vs ortho (technical drawing). -->
+    <div class="svg-proj" role="group" aria-label="Projection">
+      <button class="svg-proj-btn" class:on={projection === 'persp'}
+        title="Perspective projection" onclick={() => setProjection('persp')}>persp</button>
+      <button class="svg-proj-btn" class:on={projection === 'ortho'}
+        title="Orthographic projection — parallel edges, no foreshortening (technical drawing)"
+        onclick={() => setProjection('ortho')}>ortho</button>
+    </div>
     <button class="svg-dl" onclick={downloadSvg} disabled={!hasRendered}>
       ⤓ .svg
     </button>
@@ -328,8 +372,25 @@
     color: #888;
     white-space: nowrap;
   }
-  .svg-dl {
+  .svg-proj {
     margin-left: auto;
+    display: inline-flex;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .svg-proj-btn {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    border: 0;
+    background: #fafafa;
+    color: #555;
+    cursor: pointer;
+  }
+  .svg-proj-btn + .svg-proj-btn { border-left: 1px solid #ddd; }
+  .svg-proj-btn:hover { background: #f0f0f0; }
+  .svg-proj-btn.on { background: #0369a1; color: #fff; }
+  .svg-dl {
     font-size: 0.78rem;
     padding: 0.2rem 0.55rem;
     border: 1px solid #bbb;
