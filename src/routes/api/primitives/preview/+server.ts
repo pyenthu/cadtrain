@@ -25,10 +25,16 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner } = body ?? {};
   // Request-local Z-scale — passed into finalizeManifold (no shared global to
   // race on between concurrent previews). undefined → finalize uses 1.0.
   const zArg = (typeof zScale === 'number' && zScale > 0) ? zScale : undefined;
+  // Per-part viewer colours (outside ← outer body, inside ← bore/cut). Validated
+  // to `#rrggbb`/`#rgb`; anything else → undefined → legacy red/grey heuristic.
+  // Both undefined → byte-identical default bake (cache key unchanged too).
+  const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+  const cOuter = (typeof colorOuter === 'string' && HEX_RE.test(colorOuter.trim())) ? colorOuter.trim().toLowerCase() : undefined;
+  const cInner = (typeof colorInner === 'string' && HEX_RE.test(colorInner.trim())) ? colorInner.trim().toLowerCase() : undefined;
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   // Args may be mixed number | string (string carries JSON-encoded
@@ -49,6 +55,10 @@ export const POST = async ({ request, fetch }) => {
     cutaway: typeof cutaway === 'boolean' ? cutaway : undefined,
     zScale: typeof zScale === 'number' ? zScale : undefined,
     mode: typeof mode === 'string' ? mode : undefined,
+    // Colour overrides change the baked vertex colours → must key the cache
+    // so a colour change re-bakes (undefined keys are dropped by hashBakeKey).
+    colorOuter: cOuter,
+    colorInner: cInner,
   };
   // Numeric params only — string params (e.g. JSON polygons) don't round
   // trip identically across calls.
@@ -102,7 +112,7 @@ export const POST = async ({ request, fetch }) => {
     if (!manifold || typeof manifold.getMesh !== 'function') {
       throw error(400, 'primitive did not return a Manifold');
     }
-    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg });
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner });
     const s = serializeComponentResult(r);
     return json({ ok: true, full: s.full, cutVC: s.cutVC });
   }
@@ -178,7 +188,7 @@ export const POST = async ({ request, fetch }) => {
       args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
       material,
       parts,
-      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg },
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner },
     );
     mark('finalize', t); t = performance.now();
     serialized = serializeComponentResult(result);

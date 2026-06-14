@@ -77,7 +77,8 @@
     setParamSchema,
     addStackRef,
     hasStackRef,
-    setPartColor,
+    setPartColorOuter,
+    setPartColorInner,
     setPartMaterial,
     setStackChildRef,
     setStackChildCount,
@@ -1903,7 +1904,7 @@
   // Collapsible — when collapsed only its header shows and Params tucks right
   // under it.
   const PROPS_X0 = 8, PROPS_Y0 = 8, PROPS_W = 208, PROPS_GAP = 6;
-  const PROPS_ROW_H = 24, PROPS_ROWS = 3;
+  const PROPS_ROW_H = 24, PROPS_ROWS = 4;
   let propsExpanded = $state(true);
   let propsBodyH = $derived(propsExpanded ? PROPS_ROWS * PROPS_ROW_H + CARD_PAD * 2 : 0);
   let propsCardH = $derived(CARD_TITLE_H + propsBodyH);
@@ -4400,11 +4401,14 @@
     if (!cur) return;
     graph = setParamSchema(g, STACK_REF_PARAM, { ...cur, default: v });
   }
-  function onPartColor(hex: string | null) { graph = setPartColor(graph, hex); }
+  function onPartColorOuter(hex: string | null) { graph = setPartColorOuter(graph, hex); }
+  function onPartColorInner(hex: string | null) { graph = setPartColorInner(graph, hex); }
   function onPartMaterial(mat: string | null) { graph = setPartMaterial(graph, mat); }
-  /** Default swatch colour shown when the part has no colour set yet — the
-   *  classic red-outer body hue, so the picker opens on a sensible value. */
-  const PROPS_DEFAULT_COLOR = '#cc2222';
+  /** Default swatch colours shown when the part has no colour set yet — the
+   *  classic red-outer / grey-inner hues, so each picker opens on a sensible
+   *  value. (Match builder.ts DEFAULT_OUTER_HEX / DEFAULT_INNER_HEX.) */
+  const PROPS_DEFAULT_OUTER = '#cc2222';
+  const PROPS_DEFAULT_INNER = '#888888';
   const PROPS_MATERIALS = ['none', 'steel', 'aluminum', 'titanium', 'brass'];
   function onRemoveParam(name: string) {
     if (name === STACK_REF_PARAM) return; // reserved — no trash button anyway
@@ -6386,18 +6390,31 @@
                     onkeydown={(e) => { if (e.key === 'Enter') { onZOffset(Number((e.currentTarget as HTMLInputElement).value)); (e.currentTarget as HTMLInputElement).blur(); } }}
                     onblur={(e) => onZOffset(Number((e.currentTarget as HTMLInputElement).value))}/>
                 </div>
-                <!-- colour — swatch + native picker + clear -->
+                <!-- OUTSIDE colour — outer body faces. swatch + native picker + clear -->
                 <div class="ge-props-row">
-                  <span class="lbl">color</span>
-                  <span class="swatch" class:unset={!graph.color}
-                    style={`background:${graph.color ?? 'transparent'}`}></span>
+                  <span class="lbl">outside</span>
+                  <span class="swatch" class:unset={!graph.colorOuter}
+                    style={`background:${graph.colorOuter ?? 'transparent'}`}></span>
                   <input class="color" type="color"
-                    value={graph.color ?? PROPS_DEFAULT_COLOR}
-                    title={graph.color ? `Part colour ${graph.color}` : 'Set part colour (unset → default)'}
-                    oninput={(e) => onPartColor((e.currentTarget as HTMLInputElement).value)}/>
-                  <button class="clr" type="button" title="Clear colour (unset)"
-                    disabled={!graph.color}
-                    onclick={() => onPartColor(null)}>✕</button>
+                    value={graph.colorOuter ?? PROPS_DEFAULT_OUTER}
+                    title={graph.colorOuter ? `Outside colour ${graph.colorOuter}` : 'Set OUTSIDE colour (unset → default red)'}
+                    oninput={(e) => onPartColorOuter((e.currentTarget as HTMLInputElement).value)}/>
+                  <button class="clr" type="button" title="Clear outside colour (unset → default red)"
+                    disabled={!graph.colorOuter}
+                    onclick={() => onPartColorOuter(null)}>✕</button>
+                </div>
+                <!-- INSIDE colour — bore / cut faces shown in the cutaway -->
+                <div class="ge-props-row">
+                  <span class="lbl">inside</span>
+                  <span class="swatch" class:unset={!graph.colorInner}
+                    style={`background:${graph.colorInner ?? 'transparent'}`}></span>
+                  <input class="color" type="color"
+                    value={graph.colorInner ?? PROPS_DEFAULT_INNER}
+                    title={graph.colorInner ? `Inside (bore) colour ${graph.colorInner}` : 'Set INSIDE bore colour (unset → default grey)'}
+                    oninput={(e) => onPartColorInner((e.currentTarget as HTMLInputElement).value)}/>
+                  <button class="clr" type="button" title="Clear inside colour (unset → default grey)"
+                    disabled={!graph.colorInner}
+                    onclick={() => onPartColorInner(null)}>✕</button>
                 </div>
                 <!-- material -->
                 <div class="ge-props-row">
@@ -6994,6 +7011,7 @@
             <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
               args={bake.args ?? paramDefaults}
               source={bake.source}
+              colorOuter={graph.colorOuter} colorInner={graph.colorInner}
               showControls={true} showLabels={false}/>
             <!-- Cache status row + Rebuild button (Phase 1.5) -->
             {@const bakeMeta = (bake as any).bake ?? {}}

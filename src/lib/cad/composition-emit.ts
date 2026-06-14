@@ -312,7 +312,8 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     // Part-level appearance — sparse top-level mirror of the values that also
     // live inside the serialised graph block. External consumers (the viewer
     // tint, loaders) can read these without parsing meta.graph.
-    ...(graph.color ? { color: graph.color } : {}),
+    ...(graph.colorOuter ? { colorOuter: graph.colorOuter } : {}),
+    ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
     params: graph.params,
     graph: serialiseGraph(graph),
@@ -656,8 +657,9 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     // Default fallback (0, 0, zoom=1) lives in hydrateGraph for legacy files.
     ...(graph.viewport ? { viewport: graph.viewport } : {}),
     // Part-level appearance — sparse so legacy files stay clean. hydrateGraph
-    // reads these back into graph.color / graph.material.
-    ...(graph.color ? { color: graph.color } : {}),
+    // reads these back into graph.colorOuter / graph.colorInner / graph.material.
+    ...(graph.colorOuter ? { colorOuter: graph.colorOuter } : {}),
+    ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
   };
 }
