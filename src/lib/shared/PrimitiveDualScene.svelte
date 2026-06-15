@@ -87,7 +87,7 @@
     const useStd = scene.zRectLight;
     const hasColor = !!childGeo.getAttribute?.('color');
     const mat = makeLitMaterial(hasColor, useStd, !smoothShade);
-    attachWarpShader(mat as any);
+    // (Warp is now baked into childGeo server-side — no render-time shader.)
     const count = instanced.count;
     const mesh = new THREE.InstancedMesh(childGeo, mat, count);
     const m = new THREE.Matrix4();
@@ -114,21 +114,13 @@
     if (!instanced || !instMesh || !scene.showEdges) return null;
     const childGeo: THREE.BufferGeometry | null = (showCutaway && cutVC) ? cutVC : full;
     if (!childGeo) return null;
-    // When warp is on, build edges from the Z-SUBDIVIDED child (same pass the
-    // mesh uses). EdgesGeometry otherwise collapses each edge to its 2 endpoints
-    // — the warp shader displaces those, but the GPU draws a STRAIGHT line
-    // between them, so a tall edge stays straight while the dense mesh wall
-    // bulges. Subdividing gives the edge intermediate Z-samples to follow the
-    // sinusoid. (subdivideAlongZ is cached + childGeo is ONE joint, so cheap.)
-    const edgeBase = scene.warpEnabled ? subdivideAlongZ(childGeo) : childGeo;
-    const eg = new THREE.EdgesGeometry(edgeBase, 20);
+    // childGeo is now the genuinely-warped Manifold mesh (baked server-side), so
+    // EdgesGeometry traces the bulged edges for free — no subdivide / shader hack
+    // needed. (This was the whole point of moving warp into Manifold space: the
+    // old render-time shader displaced edge ENDPOINTS but the GPU still drew a
+    // straight line between them, so the wire border stayed straight.)
+    const eg = new THREE.EdgesGeometry(childGeo, 20);
     const mat = new THREE.LineBasicMaterial({ color: 0x000000 });
-    // Edges share the instanced mesh's LOCAL child geometry + per-instance
-    // transform, so attaching the SAME warp shader makes them bend WITH the
-    // mesh when warp is on (LineBasicMaterial uses the `basic` program, which
-    // has the <common>/<project_vertex> chunks the warp hook rewrites). Without
-    // this the mesh warps but the black wire border stays straight.
-    attachWarpShader(mat as any);
     const group = new THREE.Group();
     const m = new THREE.Matrix4();
     for (let i = 0; i < instanced.count; i++) {
@@ -527,7 +519,7 @@
 <T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
-  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.warpEnabled ? '_w' : '') + (scene.zRectLight ? '_r' : '')}
+  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '')}
     {#if instMesh}
       <!-- GPU-instanced Stack/Repeat: ONE child mesh drawn under N transforms.
            Material (Phong/Standard + flatShading + vertexColors) + the child's
@@ -537,29 +529,29 @@
       <T is={instMesh} />
       {#if instEdges}<T is={instEdges} />{/if}
     {:else if showCutaway && cutVC}
-      {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
-      <T.Mesh geometry={cg}>
+      <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
+      <T.Mesh geometry={cutVC}>
         {#if scene.zRectLight}
-          <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
     {:else if full}
       {@const hasVC = !!full?.getAttribute?.('color')}
-      {@const fg = scene.warpEnabled ? subdivideAlongZ(full) : full}
-      <T.Mesh geometry={fg}>
+      <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
+      <T.Mesh geometry={full}>
         {#if scene.zRectLight}
           {#if hasVC}
-            <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+            <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} />
           {:else}
-            <T.MeshStandardMaterial color="#cc2222" roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+            <T.MeshStandardMaterial color="#cc2222" roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} />
           {/if}
         {:else if hasVC}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} oncreate={(mat) => attachWarpShader(mat)} />
+          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>

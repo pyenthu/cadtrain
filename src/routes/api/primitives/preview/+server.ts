@@ -25,7 +25,7 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, instanced } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, instanced, warp } = body ?? {};
   // OPT-IN GPU instancing (LIVE-mesh path only). When true, finalize tries to
   // detect a Stack/Repeat of N identical bodies and returns the canonical child
   // mesh ONCE + N transforms (response carries `instanced`). When the body
@@ -51,6 +51,16 @@ export const POST = async ({ request, fetch }) => {
   const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
   const cOuter = (typeof colorOuter === 'string' && HEX_RE.test(colorOuter.trim())) ? colorOuter.trim().toLowerCase() : undefined;
   const cInner = (typeof colorInner === 'string' && HEX_RE.test(colorInner.trim())) ? colorInner.trim().toLowerCase() : undefined;
+  // Optional sinusoidal warp baked into the geometry (`amp·sin(z·freq)` on x|y).
+  // Validate fully: finite amp/freq, axis ∈ {x,y}, and amp ≠ 0 (a zero-amp warp
+  // is a no-op → treat as absent so the bake + cache key stay byte-identical to
+  // the un-warped default). Anything malformed → undefined → no warp.
+  const warpArg = (warp && typeof warp === 'object'
+    && Number.isFinite(warp.amp) && Number(warp.amp) !== 0
+    && Number.isFinite(warp.freq)
+    && (warp.axis === 'x' || warp.axis === 'y'))
+    ? { amp: Number(warp.amp), freq: Number(warp.freq), axis: warp.axis as 'x' | 'y' }
+    : undefined;
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   // Args may be mixed number | string (string carries JSON-encoded
@@ -78,6 +88,9 @@ export const POST = async ({ request, fetch }) => {
     // Coarse-segment override keys the cache so a coarse (SVG) bake stores
     // separately from the full bake; undefined → dropped → default key unchanged.
     segments: segArg,
+    // Warp bakes into the vertex positions → must key the cache so a warped
+    // bake stores separately; undefined → dropped → default key unchanged.
+    warp: warpArg,
   };
   // Numeric params only — string params (e.g. JSON polygons) don't round
   // trip identically across calls.
@@ -134,7 +147,7 @@ export const POST = async ({ request, fetch }) => {
     if (!manifold || typeof manifold.getMesh !== 'function') {
       throw error(400, 'primitive did not return a Manifold');
     }
-    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner });
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner, warp: warpArg });
     const s = serializeComponentResult(r);
     return json({ ok: true, full: s.full, cutVC: s.cutVC });
   }
@@ -239,7 +252,7 @@ export const POST = async ({ request, fetch }) => {
       args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
       material,
       parts,
-      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq },
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq, warp: warpArg },
     );
     mark('finalize', t); t = performance.now();
     serialized = serializeComponentResult(result);

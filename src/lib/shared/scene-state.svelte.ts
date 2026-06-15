@@ -110,9 +110,17 @@ export const scene = $state({
   /** Black edge overlay on the mesh, drawn at a 20° threshold. UI in
    *  SceneControls. */
   showEdges: true,
-  // TEMP warp experiment — remove with attachWarpShader plumbing
-  warpEnabled: false, // master on/off — false keeps shader uniform at 0
+  // Warp is now baked into the Manifold geometry server-side (so the black
+  // wire EDGES follow the bulge too — see builder.finalizeManifold). These
+  // fields drive the SceneControls UI + the /preview request body.
+  warpEnabled: false, // master on/off
   warpAmp: 0.3,       // magnitude in geom units when enabled
   warpFreq: 1.5,      // cycles per unit Z
   warpAxis: 'x' as 'x' | 'y',
+  /** Bumped by SceneControls on a warp COMMIT — the master toggle, an axis
+   *  change, or an amp/freq `change` event (Enter / blur / step), NOT per
+   *  keystroke or drag tick. PrimitiveDualCanvas keys its re-bake $effect on
+   *  this so the (~hundreds-of-ms) Manifold re-bake fires only on commit, while
+   *  the live `warp*` values still update the input fields continuously. */
+  warpBakeNonce: 0,
 });

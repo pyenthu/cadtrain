@@ -57,6 +57,11 @@ export interface BakeCacheOptions {
    *  (256) bake, so the legacy cache key is byte-identical and existing
    *  default-bake entries still hit. */
   segments?: number | undefined;
+  /** Sinusoidal warp baked into the geometry (`amp·sin(z·freq)` on x|y).
+   *  Changes the baked vertex positions → must key the cache; undefined →
+   *  no warp → the legacy cache key is byte-identical (hashBakeKey drops
+   *  undefined option keys). */
+  warp?: { amp: number; freq: number; axis: 'x' | 'y' } | undefined;
 }
 
 export interface BakeCachePayload {

@@ -136,7 +136,13 @@
     // a uniform Stack/Repeat (else a normal merged mesh). Only THIS live-mesh
     // call sends it; the SVG tab + GLB bake never do (they keep the merged
     // mesh). The flag is in the body so it keys the fetch cache.
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(effSegments ? { segments: effSegments } : {}) });
+    // Warp is BAKED into the geometry server-side (so the wire edges follow the
+    // bulge) — send the committed warp params when enabled. `undefined` when off
+    // omits the key from the JSON body → byte-identical request + cache key to
+    // the pre-warp default. The body IS the fetch-cache key, so warp variants
+    // memoise separately.
+    const warp = scene.warpEnabled ? { amp: scene.warpAmp, freq: scene.warpFreq, axis: scene.warpAxis } : undefined;
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
@@ -221,7 +227,11 @@
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
     // part re-fetches WITH the cutaway computed. rebuildGlb's body is unchanged
     // by this, so it cache-hits and stays cheap.
-    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments });
+    // `warpBakeNonce` re-bakes the live mesh on a warp COMMIT (toggle / axis /
+    // amp|freq change — see SceneControls.commitWarp), NOT per keystroke or
+    // drag tick. rebuildMesh reads the live warp* values at fetch time; the GLB
+    // body is unaffected so it cache-hits (the GLB pane warps via its own shader).
+    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();

@@ -9,6 +9,12 @@
   // position:relative container.
   import { scene } from '$lib/shared/scene-state.svelte';
   let open = $state(false);
+  // Warp now bakes into the geometry server-side (a ~hundreds-of-ms re-bake),
+  // so trigger it only on COMMIT — the master toggle, an axis switch, or an
+  // amp/freq `change` (Enter / blur / step-arrow), NOT per keystroke. Bumping
+  // this nonce is the single signal PrimitiveDualCanvas keys its re-bake on;
+  // `bind:value` still updates the live warp* values continuously.
+  function commitWarp() { scene.warpBakeNonce++; }
 </script>
 
 <button
@@ -77,19 +83,20 @@
       <span class="sv-sub">∠</span>
       <input type="number" step="15" bind:value={scene.zDirAngle} disabled={!scene.zDirLight} title="bearing θ around Z (deg): 0=+Y front, 90=+X, 180=behind" />
     </div>
-    <!-- TEMP warp experiment — sinusoidal Z displacement. Remove this
-         row + scene.warp* fields + warp.ts to retire the feature. -->
+    <!-- Warp — sinusoidal Z displacement, BAKED into the Manifold geometry
+         server-side (so the black wire edges follow the bulge). Each control
+         calls commitWarp() to re-bake only on commit, not per keystroke. -->
     <div class="sv-row sv-warp">
       <label class="sv-check sv-warp-master">
-        <input type="checkbox" bind:checked={scene.warpEnabled} />
+        <input type="checkbox" bind:checked={scene.warpEnabled} onchange={commitWarp} />
         Warp
       </label>
-      <label class="sv-warp-radio" class:dim={!scene.warpEnabled}><input type="radio" name="warpAxis" value="x" bind:group={scene.warpAxis} disabled={!scene.warpEnabled} />X</label>
-      <label class="sv-warp-radio" class:dim={!scene.warpEnabled}><input type="radio" name="warpAxis" value="y" bind:group={scene.warpAxis} disabled={!scene.warpEnabled} />Y</label>
+      <label class="sv-warp-radio" class:dim={!scene.warpEnabled}><input type="radio" name="warpAxis" value="x" bind:group={scene.warpAxis} onchange={commitWarp} disabled={!scene.warpEnabled} />X</label>
+      <label class="sv-warp-radio" class:dim={!scene.warpEnabled}><input type="radio" name="warpAxis" value="y" bind:group={scene.warpAxis} onchange={commitWarp} disabled={!scene.warpEnabled} />Y</label>
       <span class="sv-sub">a</span>
-      <input type="number" step="0.05" min={0} max={2} bind:value={scene.warpAmp} disabled={!scene.warpEnabled} />
+      <input type="number" step="0.05" min={0} max={2} bind:value={scene.warpAmp} onchange={commitWarp} disabled={!scene.warpEnabled} />
       <span class="sv-sub">ƒ</span>
-      <input type="number" step="0.1" min={0} max={4} bind:value={scene.warpFreq} disabled={!scene.warpEnabled} />
+      <input type="number" step="0.1" min={0} max={4} bind:value={scene.warpFreq} onchange={commitWarp} disabled={!scene.warpEnabled} />
     </div>
   </div>
 {/if}
