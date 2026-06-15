@@ -2514,12 +2514,37 @@
   function nodePos(id: NodeId): { x: number; y: number } {
     return graph.layout[id] ?? { x: 0, y: 0 };
   }
+  // Height a Call card grows by per inline transform block (compact horizontal
+  // layout: a header row + the x/y/z inputs row + a bottom socket row). Shared
+  // by the render (cardH) AND outputSocketAt so the visible socket and the wire
+  // endpoint can't diverge.
+  const INLINE_XFORM_H = 50;
+  function inlineCardH(callId: NodeId): number {
+    const node = graph.nodes[callId];
+    if (!node) return 80;
+    const { h } = nodeSize(node);
+    let extra = 0;
+    if (inlineTransformOf(graph, callId, 'mv'))  extra += INLINE_XFORM_H;
+    if (inlineTransformOf(graph, callId, 'rot')) extra += INLINE_XFORM_H;
+    return h + extra;
+  }
   function outputSocketAt(id: NodeId): { x: number; y: number } {
     const node = graph.nodes[id];
     if (!node) return { x: 0, y: 0 };
     const { w, h } = nodeSize(node);
     const p = nodePos(id);
-    // mv / rot put their OUTPUT socket on the title row's right edge
+    // An INLINE mv/rot wrapper renders inside its host Call card (it has no
+    // layout slot of its own), so its output socket lives on the HOST card's
+    // right edge at cardH/2 — NOT at this wrapper's phantom standalone position.
+    // Without this, a consumer wired to the wrapper draws to nowhere once a
+    // transform is added (the "connector disconnects" bug).
+    if ((node.type === 'mv' || node.type === 'rot') && isInlineWrapper(id)) {
+      const hostId = (node as MvNode | RotNode).child;
+      const hp = nodePos(hostId);
+      const hw = nodeSize(graph.nodes[hostId]).w;
+      return { x: hp.x + hw, y: hp.y + inlineCardH(hostId) / 2 };
+    }
+    // Standalone mv / rot put their OUTPUT socket on the title row's right edge
     // (y=16) — same vertical line as the child input on the left. Other
     // node types keep the middle-right edge default.
     if (node.type === 'mv' || node.type === 'rot') return { x: p.x + w, y: p.y + 16 };
@@ -5244,7 +5269,7 @@
                 {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
                 {@const mvNode    = inlineMv  ? (graph.nodes[inlineMv]  as MvNode)  : null}
                 {@const rotNode   = inlineRot ? (graph.nodes[inlineRot] as RotNode) : null}
-                {@const cardH     = size.h + (inlineMv ? 80 : 0) + (inlineRot ? 80 : 0)}
+                {@const cardH     = inlineCardH(n.id)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={cardH} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
@@ -5431,78 +5456,78 @@
                     {/each}
                   </div>
                 </foreignObject>
+                <!-- Inline transforms: a COMPACT HORIZONTAL block (x/y/z side by
+                     side) with the per-axis wire sockets along the BOTTOM edge,
+                     under each input. Far less tall than the old vertical stack
+                     and visually tidy on the card. Geometry shared with
+                     inlineCardH / outputSocketAt via INLINE_XFORM_H. -->
                 {#if mvNode}
-                  <foreignObject x="6" y={size.h + 4} width={size.w - 12} height="72">
+                  {@const mvY = size.h}
+                  <foreignObject x="6" y={mvY} width={size.w - 12} height={INLINE_XFORM_H - 8}>
                     <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-label">⇄ mv</div>
-                      {#each ['x','y','z'] as axis, i (axis)}
-                        {@const av = mvNode.offset[i] as any}
-                        <div class="ge-arg-row tight">
-                          <span class="ge-arg-key">{axis}</span>
-                          {#if av.kind === 'param'}
-                            <span class="ge-arg-pchip" title="Wired to param">
-                              p.{av.param}
-                              <button class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(inlineMv!, i as 0|1|2)}>×</button>
-                            </span>
-                          {:else}
-                            <input class="ge-arg-input" type="number" step="0.5"
-                              value={av.kind === 'literal' ? av.value : 0}
-                              use:dragNumber={{
-                                step: 0.5,
-                                get: () => Number(av.value ?? 0),
-                                set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val),
-                              }}
-                              oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                            />
-                          {/if}
-                        </div>
-                      {/each}
+                      <div class="ge-inline-hdr">⇄ mv</div>
+                      <div class="ge-inline-axes">
+                        {#each ['x','y','z'] as axis, i (axis)}
+                          {@const av = mvNode.offset[i] as any}
+                          <div class="ge-inline-axis">
+                            <span class="ge-inline-axkey">{axis}</span>
+                            {#if av.kind === 'param'}
+                              <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
+                                class="ge-arg-pchip-x" type="button"
+                                onclick={() => unwireTransformAxis(inlineMv!, i as 0|1|2)}>×</button></span>
+                            {:else}
+                              <input class="ge-inline-input" type="number" step="0.5"
+                                value={av.kind === 'literal' ? av.value : 0}
+                                use:dragNumber={{ step: 0.5, get: () => Number(av.value ?? 0),
+                                  set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val) }}
+                                oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                              />
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
                     </div>
                   </foreignObject>
-                  <!-- Per-axis input sockets on the LEFT edge — drag a param chip
-                       output socket onto one to wire that axis. -->
+                  <!-- Per-axis input sockets along the BOTTOM edge of the block,
+                       centred under each x/y/z input. -->
                   {#each [0,1,2] as i (i)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                      cx="0" cy={size.h + 4 + 18 + i * 18} r="4"
+                      cx={6 + (i + 0.5) * (size.w - 12) / 3} cy={mvY + INLINE_XFORM_H - 5} r="4"
                       onpointerup={(ev) => endWireOnTransformAxis(ev, inlineMv!, i as 0|1|2)}/>
                   {/each}
                 {/if}
                 {#if rotNode}
-                  {@const rotY = size.h + 4 + (inlineMv ? 80 : 0)}
-                  <foreignObject x="6" y={rotY} width={size.w - 12} height="72">
+                  {@const rotY = size.h + (inlineMv ? INLINE_XFORM_H : 0)}
+                  <foreignObject x="6" y={rotY} width={size.w - 12} height={INLINE_XFORM_H - 8}>
                     <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-label">↻ rot</div>
-                      {#each ['rx','ry','rz'] as axis, i (axis)}
-                        {@const av = rotNode.rot[i] as any}
-                        <div class="ge-arg-row tight">
-                          <span class="ge-arg-key">{axis}</span>
-                          {#if av.kind === 'param'}
-                            <span class="ge-arg-pchip" title="Wired to param">
-                              p.{av.param}
-                              <button class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(inlineRot!, i as 0|1|2)}>×</button>
-                            </span>
-                          {:else}
-                            <input class="ge-arg-input" type="number" step="1"
-                              value={av.kind === 'literal' ? av.value : 0}
-                              use:dragNumber={{
-                                step: 1,
-                                get: () => Number(av.value ?? 0),
-                                set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val),
-                              }}
-                              oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                            />
-                          {/if}
-                        </div>
-                      {/each}
+                      <div class="ge-inline-hdr">↻ rot</div>
+                      <div class="ge-inline-axes">
+                        {#each ['rx','ry','rz'] as axis, i (axis)}
+                          {@const av = rotNode.rot[i] as any}
+                          <div class="ge-inline-axis">
+                            <span class="ge-inline-axkey">{axis}</span>
+                            {#if av.kind === 'param'}
+                              <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
+                                class="ge-arg-pchip-x" type="button"
+                                onclick={() => unwireTransformAxis(inlineRot!, i as 0|1|2)}>×</button></span>
+                            {:else}
+                              <input class="ge-inline-input" type="number" step="1"
+                                value={av.kind === 'literal' ? av.value : 0}
+                                use:dragNumber={{ step: 1, get: () => Number(av.value ?? 0),
+                                  set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val) }}
+                                oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                              />
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
                     </div>
                   </foreignObject>
                   {#each [0,1,2] as i (i)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                      cx="0" cy={rotY + 18 + i * 18} r="4"
+                      cx={6 + (i + 0.5) * (size.w - 12) / 3} cy={rotY + INLINE_XFORM_H - 5} r="4"
                       onpointerup={(ev) => endWireOnTransformAxis(ev, inlineRot!, i as 0|1|2)}/>
                   {/each}
                 {/if}
@@ -9020,10 +9045,21 @@
   .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }
   .ge-drift-btn { font: 700 14px Arial; fill: #d97706; cursor: pointer; user-select: none; }
   .ge-drift-btn:hover { fill: #92400e; }
-  .ge-inline-xform { font: 11px Arial; color: #1f2937; line-height: 1.4; padding: 4px 0 0; border-top: 1px dashed #c4b5fd; }
+  /* Inline mv/rot transform block — compact HORIZONTAL layout (x/y/z side by
+     side); sockets render as SVG along the bottom edge (see markup). */
+  .ge-inline-xform { font: 11px Arial; color: #1f2937; padding: 3px 0 0; border-top: 1px dashed #c4b5fd; }
   .ge-inline-xform.mv  { color: #5b21b6; }
   .ge-inline-xform.rot { color: #831843; border-top-color: #f9a8d4; }
-  .ge-inline-label { font: 600 10px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 2px; }
+  .ge-inline-hdr { font: 700 9px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 2px; }
+  .ge-inline-axes { display: flex; gap: 5px; align-items: center; }
+  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 2px; }
+  .ge-inline-axkey { font: 600 9px Arial; color: #9ca3af; flex: 0 0 auto; }
+  .ge-inline-input { width: 100%; min-width: 0; box-sizing: border-box; font: 11px Arial; padding: 1px 3px;
+    border: 1px solid #d1d5db; border-radius: 3px; text-align: right; background: #fff; }
+  .ge-inline-input:focus { outline: none; border-color: #7c3aed; }
+  .ge-inline-pchip { display: inline-flex; align-items: center; gap: 1px; max-width: 100%; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis; font: 600 10px Arial; color: #5b21b6;
+    background: #ede9fe; border-radius: 3px; padding: 1px 3px; }
   .ge-arg-row.tight { padding: 0; }
   .ge-canvas-hint { font: 13px Arial; fill: #9ca3af; }
 
