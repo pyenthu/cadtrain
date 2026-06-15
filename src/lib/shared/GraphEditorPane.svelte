@@ -98,6 +98,7 @@
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
   import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
+  import { sketchColLayout, sketchEntryH, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
   import { dragNumber } from '$lib/shared/dragNumber';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
 
@@ -2389,23 +2390,35 @@
   // Each line/spline op renders two STACKED sub-rows (r over z) like a polygon
   // vertex; fillet/chamfer is a single short row. SVG wire sockets sit at the
   // computed sub-row centres so params can be wired onto a coord.
-  function sketchEntryH(op: any): number {
-    return (op?.op === 'fillet' || op?.op === 'chamfer') ? 24 : 45; // 45 = POLY_VTX_PITCH (socket math +12/+31)
+  // sketchEntryH + sketchColLayout live in $lib/cad/sketch-layout (pure, tested).
+  // All row/socket geometry delegates to sketchColLayout so the HTML rows and
+  // SVG sockets share ONE column partition. `cols` defaults to 1 → byte-identical
+  // to the legacy single-column walk (36 + Σ sketchEntryH(prior ops)).
+  function sketchCols(node: any): 1 | 2 | 3 {
+    const c = (graph.layout[node?.id] as any)?.cols;
+    return c === 2 || c === 3 ? c : 1;
   }
-  function sketchRowTop(node: any, idx: number): number {
-    const ops: any[] = node?.ops ?? [];
-    let y = 36; // header + divider
-    for (let i = 0; i < Math.min(idx, ops.length); i++) y += sketchEntryH(ops[i]);
-    return y;
+  function setSketchCols(id: NodeId, cols: 1 | 2 | 3) {
+    const cur = graph.layout[id] ?? { x: 0, y: 0 };
+    graph = setLayout(graph, id, { ...cur, cols });
   }
-  function sketchSockR(node: any, idx: number): number { return sketchRowTop(node, idx) + 12; }
-  function sketchSockZ(node: any, idx: number): number { return sketchRowTop(node, idx) + 31; }
-  function sketchSockVal(node: any, idx: number): number { return sketchRowTop(node, idx) + 12; }
+  function sketchRowTop(node: any, idx: number, cols: 1 | 2 | 3 = 1): number {
+    return sketchColLayout(node?.ops ?? [], cols).byIdx[idx]?.yTop ?? 36;
+  }
+  function sketchSockR(node: any, idx: number, cols: 1 | 2 | 3 = 1): number { return sketchRowTop(node, idx, cols) + 12; }
+  function sketchSockZ(node: any, idx: number, cols: 1 | 2 | 3 = 1): number { return sketchRowTop(node, idx, cols) + 31; }
+  function sketchSockVal(node: any, idx: number, cols: 1 | 2 | 3 = 1): number { return sketchRowTop(node, idx, cols) + 12; }
+  /** Column left-socket X. Col 0 keeps cx=0 (hangs on the card's left border, as
+   *  today); col>0 sits at that column's left content edge. */
+  function sketchSockX(node: any, idx: number, cols: 1 | 2 | 3 = 1): number {
+    const c = sketchColLayout(node?.ops ?? [], cols).byIdx[idx]?.col ?? 0;
+    return c === 0 ? 0 : c * (SKETCH_COL_W + SKETCH_COL_GAP);
+  }
   /** When the ops list scrolls, the left-edge SVG sockets must shift up by the
    *  same amount (they don't live inside the scrolling HTML). Hide a row's
    *  sockets once its top scrolls outside the visible card band [36, scH]. */
-  function sketchRowVisible(node: any, idx: number, scH: number): boolean {
-    const top = sketchRowTop(node, idx) - sketchOpsScrollTop;
+  function sketchRowVisible(node: any, idx: number, scH: number, cols: 1 | 2 | 3 = 1): boolean {
+    const top = sketchRowTop(node, idx, cols) - sketchOpsScrollTop;
     return top >= 36 && top <= scH;
   }
   /** Wire a param's output onto a sketch op coord/field (r|z|radius|dist). */
@@ -2462,14 +2475,18 @@
       return { w, h };
     }
     if (node.type === 'sketch') {
-      // header + per-op rows (line/spline = stacked r/z = 45, corner = 24) +
-      // footer. Uses sketchEntryH so the card height matches the socket row math.
-      const ops: any[] = (node as any).ops ?? [];
-      const rowsH = ops.reduce((a, o) => a + sketchEntryH(o), 0);
+      // Column-aware: height = TALLEST column + chrome (not the op sum); width
+      // grows with the column count. sketchColLayout is the single source of
+      // truth shared with the socket math. At cols=1 this is byte-identical to
+      // the legacy formula: tallestH = Σ sketchEntryH (= old rowsH), autoW=152
+      // < the 210 floor, cols*80=80 < 210 → w = max(w, 210) exactly as before.
+      const cols = sketchCols(node);
+      const cl = sketchColLayout((node as any).ops ?? [], cols);
       const savedH = graph.layout[node.id]?.h;
-      const autoH = 36 + Math.max(44, rowsH) + 62;
+      const autoH = 36 + Math.max(44, cl.tallestH) + 62;
       const h = typeof savedH === 'number' ? Math.max(140, savedH) : autoH;
-      return { w: Math.max(w, 210), h };
+      const autoW = 12 + cl.innerW; // 12 = foreignObject 6px insets
+      return { w: Math.max(w, 210, autoW, cols * 80), h };
     }
     if (node.type === 'poly_repeat') {
       // 3-section card (#157) — params + bindings + loop. Variable height
@@ -3118,11 +3135,15 @@
     const se = sketchEditor;
     if (!se) return null;
     const sx = MINI_PX + pcs.w + MINI_GAP, sy = MINI_PY;
-    const opsH = (se.node.ops as any[]).reduce((a, op) => a + sketchEntryH(op), 0);
-    const sch = 36 + opsH + MINI_FOOT_H;
-    const w = sx + MINI_SCW + 12;
+    // Column-aware (mirrors nodeSize): height = TALLEST column + footer; width =
+    // 12 (insets) + innerW. At cols=1: tallestH = op-sum (= old opsH) and
+    // scW = 12 + 140 = 152 = MINI_SCW → byte-identical to today.
+    const cl = sketchColLayout(se.node.ops as any[], sketchCols(se.node));
+    const sch = 36 + cl.tallestH + MINI_FOOT_H;
+    const scW = 12 + cl.innerW;
+    const w = sx + scW + 12;
     const h = Math.max(MINI_PY + pcs.h, sy + sch) + 12;
-    return { sx, sy, sch, w, h };
+    return { sx, sy, sch, scW, w, h };
   });
   /** Simple cubic for the mini wire layer. (The main `bezier` routes around
    *  main-graph card obstacles whose coords don't apply in this space.) */
@@ -6613,6 +6634,12 @@
             <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
             <div class="ge-stool-sep"></div>
             <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
+            <div class="ge-stool-sep"></div>
+            {#each [1, 2, 3] as n (n)}
+              <button class="ge-stool" class:on={sketchCols(se.node) === n}
+                title="{n}-column op layout"
+                onclick={() => setSketchCols(se.node.id, n as 1 | 2 | 3)}>{n}</button>
+            {/each}
           </div>
           <!-- S.2: the 2D draw stage fills the sketcher (minus the tool rail +
                the 3D pane). The PARAMS card + sketch card FLOAT over it as a
@@ -6704,7 +6731,7 @@
             {#if miniLayout}
               {@const ml = miniLayout}
               {@const sn = se.node}
-              {@const scW = sketchCardSize?.w ?? MINI_SCW}
+              {@const scW = sketchCardSize?.w ?? ml.scW}
               {@const scH = sketchCardSize?.h ?? ml.sch}
               <svg class="ge-sketch-cards" bind:this={miniSvgEl}>
                 <!-- committed wires: every param-driven coord → its param socket -->

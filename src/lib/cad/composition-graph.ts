@@ -241,7 +241,7 @@ export type Edge = {
  *  user can grow the scrollable vertex list. Other node types don't
  *  consult `h` (their height auto-fits content); the field persists
  *  harmlessly. */
-export type LayoutXY = { x: number; y: number; w?: number; h?: number };
+export type LayoutXY = { x: number; y: number; w?: number; h?: number; cols?: 1 | 2 | 3 };
 
 /** Canvas viewport — the pan offset + zoom level the editor was at when
  *  this graph was last saved. Persists alongside layout so the user lands
