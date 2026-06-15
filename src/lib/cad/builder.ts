@@ -9,7 +9,7 @@ import { COMPONENTS } from './library';
 // here for back-compat with anything still importing them from this file.
 import { M, cyl, tube, mv, rot, getCutBox, tagManifold } from './manifold-helpers';
 import { SECTION_ID, triSourceIds } from './part-id';
-import { warpVertex, type WarpSpec } from './warp-geom';
+import { warpVertex, subdivideForWarp, type WarpSpec } from './warp-geom';
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
 
 /** Per-part color table (built server-side by analyzeParts). When present
@@ -546,7 +546,13 @@ export interface ColorOverride { outer: string; inner: string }
 function applyWarp(m: any, w?: WarpSpec): any {
   if (!w) return m;
   try {
-    return m.warp((v: [number, number, number]) => warpVertex(v, w.amp, w.freq, w.axis));
+    // Z-subdivide FIRST so the sine has enough samples to render smooth, not
+    // faceted (`warp()` only moves existing verts). The density is derived from
+    // `w.freq` and capped for tall stacks — see `subdivideForWarp` in
+    // warp-geom.ts. On the instanced path this runs on the small canonical
+    // child, so a long stack stays cheap.
+    const refined = subdivideForWarp(m, w.freq, w.axis);
+    return refined.warp((v: [number, number, number]) => warpVertex(v, w.amp, w.freq, w.axis));
   } catch {
     // warp unsupported on this Manifold build → leave geometry un-warped.
     return m;
