@@ -1,12 +1,13 @@
 {
   "$schema": "./vocabulary.schema.json",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "notes": [
     "K.68 Phase 1 draft, 2026-06-05; exemplar repoint 2026-06-14.",
     "Each entry is a TERM in the compositional grammar.",
     "A rule compiles deterministically to AsmSource via rule-translator.ts (Phase 2).",
     "Synonyms are aliases the RAG retrieval treats as the same term.",
-    "2026-06-14: exemplars repointed from the deleted dt_* parts to the live g_* migration (dt_*->g_*). expects_bake now reflects the EXEMPLAR part baked at its OWN meta.params defaults (was: translator output at vocab params). GAPS (frustum, mule_shoe) have no live g_* twin and are flagged stale:true; xover reuses dt_sub geometry. New terms spiral (g_spiral) + star (g_star) added."
+    "2026-06-14: exemplars repointed from the deleted dt_* parts to the live g_* migration (dt_*->g_*). expects_bake now reflects the EXEMPLAR part baked at its OWN meta.params defaults (was: translator output at vocab params). GAPS (frustum, mule_shoe) have no live g_* twin and are flagged stale:true; xover reuses dt_sub geometry. New terms spiral (g_spiral) + star (g_star) added.",
+    "0.5.0 (2026-06-15): SVTC completion batch — 36 graph-emitted r_revolve parts promoted as retrieval/exemplar anchors (kind:'asm', rule.kind:'graph_emitted', like spiral/star — NOT K.68 translator targets). Families: landing/seating nipples (BN/BX/BXN/AR/R), flow couplings + pup joints, sliding sleeve (SSD), TR-SCSSV safety valves (ball/flapper), bell guide, crossover, expansion/travel joints, tubing pup, gas-lift / side-pocket / gauge mandrels, reciprocating & shearable mule shoes, tubing hanger, and 12 production/sand-control packers. Existing 'mule_shoe' term repointed to the live g_mule_shoe (was stale)."
   ],
   "terms": {
     "shaft": {
@@ -1059,7 +1060,7 @@
           }
         ]
       },
-      "exemplar": "dt_mule_shoe",
+      "exemplar": "g_mule_shoe",
       "expects_bake": {
         "verts_approx": "~3000",
         "z_extent_in": 9,
@@ -1069,8 +1070,7 @@
       },
       "promoted_at": "2026-06-09T06:14:26Z",
       "source": "proposed-vocab-entries.json",
-      "stale": true,
-      "stale_note": "2026-06-14: exemplar dt_mule_shoe was deleted in the dt_*->g_* migration and has NO live g_* twin (no g_mule_shoe / g_mule_shoe_basic on the store). Rich K.69 entry (boolean_modify rule) retained; exemplar is dead. USER DECISION: regenerate the exemplar via /api/vocab/promote-proposed (the boolean_modify rule still compiles) or author a g_mule_shoe."
+      "exemplar_note": "2026-06-15: SVTC batch — exemplar repointed from the deleted dt_mule_shoe to the live g_mule_shoe (graph-emitted r_revolve). Rich K.69 boolean_modify rule retained as the descriptive rule; the live exemplar is the retrieval anchor."
     },
     "spiral": {
       "kind": "asm",
@@ -1194,6 +1194,823 @@
         "outer_r": 2,
         "_note": "g_star @ its meta.params defaults."
       }
+    },
+    "nipple_bn": {
+      "kind": "asm",
+      "definition": "Baker 'BN' bottom no-go landing nipple — heavy-wall tubing sub with a lock profile, honed seal bore, and a no-go restriction at the bottom so a wireline tool passes the profile and lands on the lower shoulder.",
+      "synonyms": [
+        "Baker BN no-go nipple",
+        "BN nipple",
+        "bottom no-go nipple",
+        "no-go landing nipple",
+        "landing nipple",
+        "seating nipple"
+      ],
+      "tags": [
+        "landing_nipple",
+        "no_go",
+        "flow_control",
+        "wireline",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_nipple_bn"
+    },
+    "nipple_bx": {
+      "kind": "asm",
+      "definition": "'BX' selective landing nipple — X-profile lock recess plus seal bore with NO diameter restriction, so multiple same-bore nipples can be run in one string and addressed individually by the running tool.",
+      "synonyms": [
+        "BX nipple",
+        "X-profile nipple",
+        "selective landing nipple",
+        "no-no-go nipple",
+        "X nipple",
+        "seating nipple"
+      ],
+      "tags": [
+        "landing_nipple",
+        "selective",
+        "flow_control",
+        "wireline",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_nipple_bx"
+    },
+    "nipple_bxn": {
+      "kind": "asm",
+      "definition": "'BXN' no-go landing nipple — the no-go counterpart of the BX selective profile (XN-style), adding a bottom diameter restriction so an oversized tool bottoms out and lands.",
+      "synonyms": [
+        "BXN nipple",
+        "XN nipple",
+        "XN no-go nipple",
+        "no-go seating nipple",
+        "bottom no-go nipple",
+        "landing nipple"
+      ],
+      "tags": [
+        "landing_nipple",
+        "no_go",
+        "flow_control",
+        "wireline",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_nipple_bxn"
+    },
+    "nipple_ar_no_go": {
+      "kind": "asm",
+      "definition": "'AR' no-go landing nipple — lock profile and seal bore with an inward no-go shoulder, giving a wireline mandrel a positive landing point that an oversized tool cannot pass.",
+      "synonyms": [
+        "AR no-go nipple",
+        "AR nipple",
+        "no-go landing nipple",
+        "no-go seating nipple",
+        "landing shoulder nipple",
+        "seating nipple"
+      ],
+      "tags": [
+        "landing_nipple",
+        "no_go",
+        "flow_control",
+        "wireline",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_nipple_ar_no_go"
+    },
+    "nipple_r_landing": {
+      "kind": "asm",
+      "definition": "Baker 'R' selective landing nipple — R-profile lock recess plus honed seal bore for locking and sealing wireline-run devices; the RN variant adds a bottom no-go restriction.",
+      "synonyms": [
+        "Baker R nipple",
+        "R-profile nipple",
+        "R landing nipple",
+        "selective landing nipple",
+        "RN nipple",
+        "seating nipple"
+      ],
+      "tags": [
+        "landing_nipple",
+        "selective",
+        "flow_control",
+        "wireline",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_nipple_r_landing"
+    },
+    "flow_coupling": {
+      "kind": "asm",
+      "definition": "Flow coupling — a plain, heavy-wall tubular sub run adjacent to a nipple or restriction to absorb the turbulence and erosion ('fluid hammer') where flow accelerates. No internal profile; essentially a thick-wall tube.",
+      "synonyms": [
+        "flow coupling",
+        "flow nipple",
+        "erosion sub",
+        "heavy-wall coupling",
+        "BFC flow coupling",
+        "blast joint"
+      ],
+      "tags": [
+        "flow_coupling",
+        "erosion",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_flow_coupling"
+    },
+    "flow_pup_upper": {
+      "kind": "asm",
+      "definition": "Upper flow-coupling pup joint — a short heavy-wall sub placed ABOVE a nipple/restriction to take the downstream erosion; a short flow coupling for spacing the string.",
+      "synonyms": [
+        "upper flow coupling",
+        "flow coupling pup",
+        "upper erosion sub",
+        "flow pup joint",
+        "pup joint"
+      ],
+      "tags": [
+        "flow_coupling",
+        "pup_joint",
+        "erosion",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_flow_pup_upper"
+    },
+    "flow_pup_lower": {
+      "kind": "asm",
+      "definition": "Lower flow-coupling pup joint — a short heavy-wall sub placed BELOW a nipple/restriction to take the upstream erosion; a short flow coupling for spacing the string.",
+      "synonyms": [
+        "lower flow coupling",
+        "flow coupling pup",
+        "lower erosion sub",
+        "flow pup joint",
+        "pup joint"
+      ],
+      "tags": [
+        "flow_coupling",
+        "pup_joint",
+        "erosion",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_flow_pup_lower"
+    },
+    "ssd_1": {
+      "kind": "asm",
+      "definition": "Sliding side door / sliding sleeve (SSD) — a ported tubing sub whose inner sleeve shifts on wireline to open or close communication between the tubing bore and the annulus for circulation or selective production.",
+      "synonyms": [
+        "sliding side door",
+        "SSD",
+        "sliding sleeve",
+        "circulating sleeve",
+        "ported sleeve",
+        "sliding sleeve door"
+      ],
+      "tags": [
+        "sliding_sleeve",
+        "flow_control",
+        "circulation",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_ssd_1"
+    },
+    "trsssv_sp": {
+      "kind": "asm",
+      "definition": "Tubing-retrievable surface-controlled subsurface safety valve (TR-SCSSV) — a fail-safe downhole valve held open by control-line hydraulic pressure that closes to isolate the well on loss of pressure; run and retrieved as part of the tubing string.",
+      "synonyms": [
+        "TRSSSV",
+        "TR-SCSSV",
+        "tubing retrievable safety valve",
+        "surface controlled subsurface safety valve",
+        "downhole safety valve",
+        "SCSSV",
+        "safety valve"
+      ],
+      "tags": [
+        "safety_valve",
+        "scsssv",
+        "flow_control",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_trsssv_sp"
+    },
+    "trssv_ball": {
+      "kind": "asm",
+      "definition": "Tubing-retrievable subsurface safety valve with a BALL-type closure — a rotating ball seals the bore when the valve closes; fail-safe, control-line operated.",
+      "synonyms": [
+        "ball-type safety valve",
+        "TRSV ball",
+        "ball safety valve",
+        "SCSSV ball valve",
+        "subsurface safety valve",
+        "safety valve"
+      ],
+      "tags": [
+        "safety_valve",
+        "scsssv",
+        "ball_valve",
+        "flow_control",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_trssv_ball"
+    },
+    "trssv_flapper": {
+      "kind": "asm",
+      "definition": "Tubing-retrievable subsurface safety valve with a FLAPPER-type closure — a spring-loaded flapper swings shut across the bore when control pressure is lost; the common SCSSV closure mechanism.",
+      "synonyms": [
+        "flapper safety valve",
+        "TRSV flapper",
+        "flapper valve",
+        "SCSSV flapper",
+        "subsurface safety valve",
+        "safety valve"
+      ],
+      "tags": [
+        "safety_valve",
+        "scsssv",
+        "flapper_valve",
+        "flow_control",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_trssv_flapper"
+    },
+    "bell_guide": {
+      "kind": "asm",
+      "definition": "Bell guide / bellmouth — a flared entry guide at the bottom of a completion or seal assembly that funnels a stinger or wireline tool into the bore during re-entry.",
+      "synonyms": [
+        "bell guide",
+        "bellmouth",
+        "bell mouth",
+        "entry guide",
+        "re-entry guide",
+        "stab-in guide"
+      ],
+      "tags": [
+        "guide",
+        "entry_guide",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_bell_guide"
+    },
+    "crossover": {
+      "kind": "asm",
+      "definition": "Crossover sub — a short connector that joins two different thread forms or tubing sizes inline; the field 'x-over' used throughout completion and BHA make-up.",
+      "synonyms": [
+        "crossover",
+        "x-over",
+        "crossover sub",
+        "thread adapter",
+        "size crossover",
+        "xo sub"
+      ],
+      "tags": [
+        "crossover",
+        "connection",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_crossover"
+    },
+    "union_adjustable": {
+      "kind": "asm",
+      "definition": "Adjustable union — a make-up union that lets the string length or clocking be trimmed during installation, then locks; provides a field-adjustable tubing connection.",
+      "synonyms": [
+        "adjustable union",
+        "union sub",
+        "adjustable connector",
+        "make-up union",
+        "spacer union"
+      ],
+      "tags": [
+        "union",
+        "connection",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_union_adjustable"
+    },
+    "expansion_joint": {
+      "kind": "asm",
+      "definition": "Tubing expansion joint — a telescoping sub that strokes to absorb thermal expansion/contraction and applied loads in the tubing string while maintaining a sealed bore.",
+      "synonyms": [
+        "expansion joint",
+        "telescoping joint",
+        "thermal expansion joint",
+        "slip joint",
+        "stroke joint"
+      ],
+      "tags": [
+        "expansion_joint",
+        "telescoping",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_expansion_joint"
+    },
+    "travel_joint": {
+      "kind": "asm",
+      "definition": "Travel joint — a telescoping tubing sub that allows axial movement (stroke) of the string to accommodate thermal growth or contraction above a packer.",
+      "synonyms": [
+        "travel joint",
+        "telescoping joint",
+        "slip joint",
+        "stroke joint",
+        "expansion joint"
+      ],
+      "tags": [
+        "expansion_joint",
+        "telescoping",
+        "tubular",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_travel_joint"
+    },
+    "tubing_pup": {
+      "kind": "asm",
+      "definition": "Tubing pup joint — a short length of tubing (sub-standard length) made up into the string for precise depth spacing of downhole equipment.",
+      "synonyms": [
+        "tubing pup",
+        "pup joint",
+        "spacer joint",
+        "short joint",
+        "tubing spacer"
+      ],
+      "tags": [
+        "pup_joint",
+        "tubular",
+        "spacer",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_tubing_pup"
+    },
+    "gas_lift_mandrel": {
+      "kind": "asm",
+      "definition": "Gas lift mandrel — a tubing sub that houses a gas-lift valve so injection gas from the annulus can be metered into the tubing bore to lighten the fluid column (artificial lift).",
+      "synonyms": [
+        "gas lift mandrel",
+        "GLM",
+        "gas-lift mandrel",
+        "injection mandrel",
+        "gas lift valve mandrel"
+      ],
+      "tags": [
+        "gas_lift",
+        "mandrel",
+        "artificial_lift",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_gas_lift_mandrel"
+    },
+    "side_pocket_mandrel": {
+      "kind": "asm",
+      "definition": "Side pocket mandrel (SPM) — an eccentric tubing sub with an offset side pocket that holds a gas-lift valve or chemical-injection valve while keeping a full-bore main passage for wireline access.",
+      "synonyms": [
+        "side pocket mandrel",
+        "SPM",
+        "eccentric mandrel",
+        "gas lift side pocket mandrel",
+        "side-pocket mandrel"
+      ],
+      "tags": [
+        "gas_lift",
+        "mandrel",
+        "artificial_lift",
+        "side_pocket",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_side_pocket_mandrel"
+    },
+    "gauge_mandrel": {
+      "kind": "asm",
+      "definition": "Gauge mandrel / gauge carrier — a tubing sub that carries downhole pressure and temperature gauges (and their control lines) in a protected pocket while maintaining the production bore.",
+      "synonyms": [
+        "gauge mandrel",
+        "gauge carrier",
+        "instrument mandrel",
+        "DHPG carrier",
+        "downhole gauge mandrel"
+      ],
+      "tags": [
+        "gauge",
+        "mandrel",
+        "instrumentation",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_gauge_mandrel"
+    },
+    "mule_shoe_reciprocating": {
+      "kind": "asm",
+      "definition": "Reciprocating mule shoe — a beveled guide shoe that permits the work/seal string to reciprocate (stroke up and down) while still guiding stab-in into a seal bore or polished bore receptacle.",
+      "synonyms": [
+        "reciprocating mule shoe",
+        "mule shoe",
+        "guide shoe",
+        "reciprocating guide",
+        "stab-in guide"
+      ],
+      "tags": [
+        "mule_shoe",
+        "guide",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_mule_shoe_reciprocating"
+    },
+    "mule_shoe_shearable": {
+      "kind": "asm",
+      "definition": "Shearable mule shoe — a beveled guide shoe with a shear feature that releases or shears off under load, leaving a clean bore; an expendable guide for run-in.",
+      "synonyms": [
+        "shearable mule shoe",
+        "shear shoe",
+        "expendable guide shoe",
+        "shear-off mule shoe",
+        "guide shoe"
+      ],
+      "tags": [
+        "mule_shoe",
+        "guide",
+        "shearable",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_mule_shoe_shearable"
+    },
+    "tbghanger": {
+      "kind": "asm",
+      "definition": "Tubing hanger — the load-bearing sub that lands and seals the production tubing string in the tubing head spool/wellhead, transferring string weight and isolating the annulus while routing control/injection lines.",
+      "synonyms": [
+        "tubing hanger",
+        "TH",
+        "tubing hanger mandrel",
+        "donut hanger",
+        "tubing head hanger",
+        "hanger"
+      ],
+      "tags": [
+        "tubing_hanger",
+        "wellhead",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_tbghanger"
+    },
+    "ahc_packer": {
+      "kind": "asm",
+      "definition": "Baker 'AHC' hydraulic-set production packer — a retrievable packer set by applied tubing/annulus hydraulic pressure to seal the tubing-casing annulus.",
+      "synonyms": [
+        "AHC packer",
+        "hydraulic set packer",
+        "AHC",
+        "retrievable hydraulic packer",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "hydraulic_set",
+        "retrievable",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_ahc_packer"
+    },
+    "packer_ahr_ahc": {
+      "kind": "asm",
+      "definition": "Baker 'AHR/AHC' retrievable hydraulic-set packer — the AHR retrievable body paired with AHC hydraulic-set elements; sets on pressure and retrieves on pull.",
+      "synonyms": [
+        "AHR packer",
+        "AHC packer",
+        "AHR/AHC packer",
+        "retrievable hydraulic packer",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "hydraulic_set",
+        "retrievable",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_ahr_ahc"
+    },
+    "packer_asv": {
+      "kind": "asm",
+      "definition": "ASV packer — a production packer integrated with an annular safety valve provision, sealing the annulus and accommodating an annular-isolation/safety function.",
+      "synonyms": [
+        "ASV packer",
+        "annular safety valve packer",
+        "ASV",
+        "production packer with ASV"
+      ],
+      "tags": [
+        "packer",
+        "annular_safety_valve",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_asv"
+    },
+    "packer_baker_permanent": {
+      "kind": "asm",
+      "definition": "Baker permanent production packer — a set-and-leave packer that anchors and seals the annulus permanently; removed only by milling/drilling. Used as the base packer in many production completions.",
+      "synonyms": [
+        "permanent packer",
+        "Baker permanent packer",
+        "set-and-leave packer",
+        "retainer packer",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "permanent",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_baker_permanent"
+    },
+    "packer_baker_signature_df": {
+      "kind": "asm",
+      "definition": "Baker 'SIGNATURE' series production packer, DF variant — a premium retrievable production packer (Signature family) configured for the DF (dual-flow/downhole-feed) application.",
+      "synonyms": [
+        "Baker Signature packer",
+        "Signature series packer",
+        "Signature DF packer",
+        "premium production packer",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "retrievable",
+        "premium",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_baker_signature_df"
+    },
+    "packer_direct": {
+      "kind": "asm",
+      "definition": "Direct-set production packer — a packer set by direct mechanical/hydraulic action without a separate setting trip, sealing the tubing-casing annulus.",
+      "synonyms": [
+        "direct set packer",
+        "direct packer",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_direct"
+    },
+    "packer_mhr_ratch": {
+      "kind": "asm",
+      "definition": "Baker 'MHR' retrievable packer with ratchet body-lock — mechanically/hydraulically set, held by a ratchet (body lock ring) and retrievable on pull or rotation.",
+      "synonyms": [
+        "MHR packer",
+        "MHR ratchet packer",
+        "ratchet packer",
+        "retrievable packer",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "retrievable",
+        "ratchet",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_mhr_ratch"
+    },
+    "packer_rdh": {
+      "kind": "asm",
+      "definition": "'RDH' retrievable hydraulic-set production packer — a hydraulically set, retrievable packer sealing the annulus, releasable on straight pull.",
+      "synonyms": [
+        "RDH packer",
+        "retrievable hydraulic packer",
+        "RDH",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "hydraulic_set",
+        "retrievable",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_rdh"
+    },
+    "packer_rh": {
+      "kind": "asm",
+      "definition": "'RH' retrievable hydraulic-set production packer — set by applied hydraulic pressure and retrieved on pull; a common single-string production packer.",
+      "synonyms": [
+        "RH packer",
+        "retrievable hydraulic packer",
+        "RH",
+        "production packer"
+      ],
+      "tags": [
+        "packer",
+        "hydraulic_set",
+        "retrievable",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_rh"
+    },
+    "packer_sand_control_pin_down": {
+      "kind": "asm",
+      "definition": "Sand-control packer, pin-down configuration — a gravel-pack/sand-control packer with the pin (male) connection oriented downward to land the screen/gravel-pack assembly below.",
+      "synonyms": [
+        "sand control packer",
+        "gravel pack packer",
+        "pin down packer",
+        "sand-control packer pin down",
+        "GP packer"
+      ],
+      "tags": [
+        "packer",
+        "sand_control",
+        "gravel_pack",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_sand_control_pin_down"
+    },
+    "packer_sand_ctrol_ctrl_bx_dn": {
+      "kind": "asm",
+      "definition": "Sand-control packer, control box-down configuration — a gravel-pack/sand-control packer with the control/box (female) connection oriented downward for the lower screen assembly.",
+      "synonyms": [
+        "sand control packer",
+        "gravel pack packer",
+        "box down packer",
+        "sand-control packer box down",
+        "GP packer"
+      ],
+      "tags": [
+        "packer",
+        "sand_control",
+        "gravel_pack",
+        "completion"
+      ],
+      "rule": {
+        "kind": "graph_emitted",
+        "engine": "r_revolve",
+        "_note": "Graph-emitted SVTC completion part (meta.graph + r_revolve). Retrieval/exemplar anchor only — NOT a K.68 rule-translator target, like spiral/star."
+      },
+      "exemplar": "g_packer_sand_ctrol_ctrl_bx_dn"
     }
   }
 }
