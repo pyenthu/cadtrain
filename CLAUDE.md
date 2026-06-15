@@ -63,27 +63,25 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 23. **Non-trivial UI flow rebuilds ship with a subagent test spec** in `.claude/agents/<name>.md` (gitignored) BEFORE "done": drives the real UI via `mcp__claude-in-chrome__*` AND verifies server-side via curl; outputs a summary table + GIF; **must run twice with identical output**; patch the spec in-place when a run surfaces a wrinkle. Reference: `.claude/agents/test-dp-build.md`.
 24. **Generative authoring — RAG-then-translate against the vocabulary first.** On a "new part" request, retrieve from `docs/parts/vocabulary.json` and compose via the deterministic translator (`src/lib/authoring/rule-translator.ts`): (1) synonym match → params only, (2) `extends` parent, (3) `kind:'compose'`, (4) hand-author ONLY when nothing fits — and say so before extending the schema. Save via `/api/primitives/save`; bake-verify via `/api/primitives/preview` (report verts/z-extent/outer-r). Patches via `scripts/promote-to-vocab.ts`; regen `vocabulary-graph.mmd` via `bun scripts/render-vocab-graph.ts`. **NEVER hand-author `/tmp/<id>_swap.ts` ad-hoc scripts when a vocab path exists.**
 
-## Current focus (2026-06-11 — resume point)
+## Current focus (2026-06-16 — resume point)
 
 > Keep ≤ 20 lines. Shipped detail → `docs/HISTORY.md` + session-handoff
 > memories; roadmap → `/plan` (Rule 19).
 > **Launch `claude --chrome` for fast visual iteration on /primitives + /vocab.**
 
-- **Latest session**: memory `session_handoff_2026-06-11` — polygon repeat-loop
-  architecture (#155–#157), g_* graph-part migration Round 1, RAG Phase 1,
-  sidebar UX cluster, mv/rot ƒ popover.
-- **RAG Phase 2 SHIPPED 2026-06-11 PM** (`5355374`): `POST /api/rag/prompt`
-  (BM25 top-5 + one Claude call, `RAG_MODEL` default claude-sonnet-4-6,
-  prod-proxied) → ✨ sidebar prompt box → proposed graph opens in a NEW
-  seeded tab (`seedGraph` prop; volume untouched until Save). Same PM:
-  polygon socket alignment (`polyRowTop` walk), active-tab-only WebGL
-  context + fetch cache, profiles/resolve dedupe, canvas effect content-key
-  guard (memory `fresh-array-props-effect-loops`).
-- **Deferred next**: `g_dt_joint` (#167) — graph emit must handle `place([...])`.
-- **Gotchas to keep warm**: `entryIdxForEvalIdx(node, i)` for per-point polygon
-  UI (memory `entry_idx_eval_idx_gotcha`); regex meta extractors must accept
-  JSON-quoted keys (memory `json_stringify_meta_regex_traps`).
-- Research findings live in `docs/FINDINGS.md` — not day-to-day rules.
+- **Latest session**: memory `session_handoff_2026-06-16` — READ IT FIRST.
+- **MERGE these in-flight subagent branches** (committed in worktrees, unmerged):
+  `worktree-agent-a46a12af22f81facf` (sidebar Windows-Explorer tree #5 + single
+  `+` menu) and `worktree-agent-a73be3cc945c7010a` (Manifold-space warp — bake
+  `manifold.warp()` so edges follow; then curl-verify with `warp:{amp,freq,axis}`).
+- **Uncommitted, has a BLOCKER**: `tests/e2e/graph-editor.spec.ts` (user's e2e
+  repair) — its `deletePart`/saves hit the PROD-proxied volume (no local FS) →
+  floods/wedges servers; needs an isolated seeded test volume before it's safe.
+- **Open**: camera auto-fit doesn't frame tall stacks (`ORTHO_LEN_DIAMETERS=3`
+  cap in PrimitiveDualScene); `dt_sub` broken (stale arg keys) + `g_dp_pin`
+  `fileld_top` typo; sketch PR-2/PR-3; plans for AI-multishot / BREP-parity /
+  part-editor-window / K.65 modularize all written, not built.
+- Plans live in `docs/plans/`; research in `docs/FINDINGS.md`.
 
 ## Tech stack + commands
 
