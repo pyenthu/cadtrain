@@ -12,10 +12,25 @@
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
+  import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+    /** Geometry backend. 'manifold' (default) → /api/primitives/preview (the 3D +
+     *  GLB tabs, byte-identical). 'brep' → /api/brep/preview (server-side OCCT
+     *  true-curve mesh); the GLB half, segment dial + ⬇GLB are suppressed and the
+     *  segment dial is relabelled to the OCCT linear-deflection `tol`. */
+    backend?: 'manifold' | 'brep';
+    /** BREP mode: the emitted part source POSTed to /api/brep/preview. */
+    brepSource?: string;
+    /** BREP mode: param name → current value (graph.params order ↔ bake.args). */
+    brepParams?: Record<string, number>;
+    /** BREP mode: OCCT linear deflection (lower = finer). Seeds the in-canvas
+     *  `tol` dial and is keyed into the fetch cache. Default 0.05. */
+    tolerance?: number;
+    /** BREP mode: surfaced bake meta after each fetch (drives the parent badge). */
+    onBakeMeta?: (m: { cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string }) => void;
     /** Draft mode: coarse circular-segment count for the live mesh bake (e.g. 64
      *  vs the 256 default). Cuts geom+finalize+serialize roughly linearly so big
      *  stacks iterate fast. undefined → full default. Keyed into the fetch cache.
@@ -63,9 +78,22 @@
   // bake request + fetch-cache key.
   let segOverride = $state<number | undefined>(undefined);
   let effSegments = $derived(segOverride ?? meshSegments);
-  // Tri / vert stats of the current live mesh (instanced → child × N).
+  // BREP backend (server-side OCCT). When on, the GLB half is suppressed and the
+  // segment dial becomes the OCCT linear-deflection `tol` dial.
+  let isBrep = $derived(backend === 'brep');
+  let effBakeGlb = $derived(isBrep ? false : bakeGlb);
+  // In-canvas adjustable OCCT tolerance (the relabelled "tol" dial). undefined →
+  // the prop default (tolerance). Drives the BREP fetch + fetch-cache key.
+  let tolOverride = $state<number | undefined>(undefined);
+  let effTol = $derived(tolOverride ?? tolerance ?? 0.05);
+  // OCCT bake time (ms) for the current BREP mesh — appended to the stats line.
+  let brepMs = $state<number | null>(null);
+  // BREP "no path for this part" reason (supported:false) — shown in the canvas.
+  let brepReason = $state<string | null>(null);
+  // Tri / vert stats of the current live mesh (instanced → child × N). For the
+  // BREP cut mode the geo carries only `cutVC`, so fall back to it.
   let stats = $derived.by(() => {
-    const g = (geo as any)?.full as any;
+    const g = ((geo as any)?.full ?? (geo as any)?.cutVC) as any;
     const pos = g?.getAttribute?.('position');
     if (!pos) return null;
     const childTris = Math.round((g.index ? g.index.count : pos.count) / 3);
@@ -187,13 +215,50 @@
       glbStatus = 'ok';
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); glbStatus = 'error'; } }
   }
+  // BREP backend: POST /api/brep/preview (server-side OCCT). Builds a
+  // THREE.BufferGeometry from the response via the shared adapter and sets
+  // geo = { full } (solid) or { cutVC } (coloured half-section, when the
+  // Cross-section checkbox is on → cut:true re-bakes server-side). Reuses the
+  // module-scope fetch cache (key includes tolerance + cut). supported:false →
+  // an empty scene + a reason message in the chrome.
+  let brepAc: AbortController | null = null;
+  async function rebuildBrep(bust = false) {
+    const cut = scene.showCutaway || undefined;
+    const body = JSON.stringify({ source: brepSource ?? source ?? '', paramValues: brepParams ?? {}, tolerance: effTol, cut });
+    const key = `brep:${body}`;
+    const emit = (data: BrepPreviewResponse, cached: boolean) => {
+      if (data.supported === false) {
+        geo = null; geoVersion++; brepReason = data.reason ?? 'no BREP path for this part'; brepMs = null; meshStatus = 'ok'; err = null;
+        onBakeMeta?.({ cached, ms: 0, tris: 0, verts: 0, supported: false, reason: data.reason });
+        return;
+      }
+      geo = brepResponseToGeo(data); geoVersion++; brepReason = null;
+      brepMs = data.meta?.ms ?? null; meshStatus = 'ok'; err = null;
+      onBakeMeta?.({ cached, ms: data.meta?.ms ?? 0, tris: data.meta?.tris ?? 0, verts: data.meta?.verts ?? 0, supported: true });
+    };
+    const cached = bust ? undefined : cacheGet(key);
+    if (cached) { emit(cached, true); return; }
+    meshStatus = 'building'; brepReason = null;
+    brepAc?.abort(); const ac = new AbortController(); brepAc = ac;
+    try {
+      const r = await fetch('/api/brep/preview' + (bust ? '?bust=1' : ''), {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: ac.signal,
+      });
+      if (ac.signal.aborted) return;
+      if (!r.ok) { err = `BREP ${r.status}`; meshStatus = 'error'; onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason: `HTTP ${r.status}` }); return; }
+      const data = await r.json();
+      cachePut(key, data);
+      emit(data, false);
+    } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason: String(e?.message ?? e) }); } }
+  }
   // Mesh FIRST, then GLB — so the fast mesh (~2 s) renders before the slow GLB
   // bake (~20 s) hogs Node's single thread. Each is gated by its prop so the
   // mesh-only 3D tab never triggers the GLB bake, and the lazy GLB tab never
-  // re-bakes the mesh.
+  // re-bakes the mesh. BREP routes to its own server-side OCCT fetch.
   async function rebuild(bust = false) {
+    if (isBrep) { await rebuildBrep(bust); return; }
     if (bakeMesh) await rebuildMesh(bust);
-    if (bakeGlb) rebuildGlb(bust);
+    if (effBakeGlb) rebuildGlb(bust);
   }
   // 🔄 button: force a FRESH bake (?bust=1) — clears the local fetch cache so the
   // server result is re-fetched, and notifies the parent (editor clears its own
@@ -209,7 +274,7 @@
     // unmounting inactive tabs' canvases is freeing the browser's ~16
     // context budget. dispose() drops GPU resources; forceContextLoss()
     // tells the browser the context is reclaimable immediately.
-    meshAc?.abort(); glbAc?.abort();
+    meshAc?.abort(); glbAc?.abort(); brepAc?.abort();
     if (glbBlobUrl) URL.revokeObjectURL(glbBlobUrl);
     try { renderer?.dispose(); renderer?.forceContextLoss(); } catch { /* already lost */ }
     renderer = null;
@@ -231,13 +296,18 @@
     // amp|freq change — see SceneControls.commitWarp), NOT per keystroke or
     // drag tick. rebuildMesh reads the live warp* values at fetch time; the GLB
     // body is unaffected so it cache-hits (the GLB pane warps via its own shader).
-    const key = JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce });
+    // BREP keys on its own request shape (source/params/tolerance/cut); the
+    // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
+    const key = isBrep
+      ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
+      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();
   });
   let lastGlbCut: boolean | null = null;
   $effect(() => {
+    if (isBrep) return; // no GLB half in BREP mode
     if (!Scene || glbCut === lastGlbCut) return;
     const first = lastGlbCut === null; // initial run is covered by rebuild()
     lastGlbCut = glbCut;
@@ -332,11 +402,19 @@
   <div class="pd-bake-tools">
     <button class="pd-mini-btn" type="button" title="Rebuild (fresh bake)"
       onclick={doRebuild}>🔄</button>
-    <label class="pd-seg" title="Live-mesh circular segments — lower = faster/coarser, 256 = full">
-      <span>seg</span>
-      <input type="number" min="8" max="256" step="8" value={effSegments ?? 256}
-        onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); segOverride = (Number.isFinite(v) && v >= 8 && v < 256) ? Math.round(v) : undefined; }} />
-    </label>
+    {#if isBrep}
+      <label class="pd-seg" title="OCCT linear deflection (tolerance) — lower = finer/slower">
+        <span>tol</span>
+        <input type="number" min="0.005" max="1" step="0.005" value={effTol}
+          onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); tolOverride = (Number.isFinite(v) && v > 0) ? v : undefined; }} />
+      </label>
+    {:else}
+      <label class="pd-seg" title="Live-mesh circular segments — lower = faster/coarser, 256 = full">
+        <span>seg</span>
+        <input type="number" min="8" max="256" step="8" value={effSegments ?? 256}
+          onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); segOverride = (Number.isFinite(v) && v >= 8 && v < 256) ? Math.round(v) : undefined; }} />
+      </label>
+    {/if}
   </div>
   <!-- Z-pan: scroll the camera + look-at down the drilling axis (tall assemblies).
        Top = z 0 (top of the part), drag down to follow it deeper (Z-down). -->
@@ -361,23 +439,29 @@
            (profile, height, twist, divs). Smooth-shade only when |twist| > 0.
          All other primitives keep flatShading (cube/hex stay faceted). -->
     {@const twistArg = Number((args as any[])?.[2] ?? 0)}
+    <!-- BREP carries OCCT exact-surface normals → smooth-shade the solid so the
+         true curvature reads (the cut half-section is faceted regardless). -->
     {@const smoothShade =
+      isBrep ||
       id === 'r_weld_extrude' ||
       (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={(bakeMesh && bakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}
     <div class="pd-loading">loading…</div>
   {/if}
-  {#if glbBlobUrl}<button class="pd-dl" type="button" title="Download {id}.glb" onclick={downloadGlb}>⬇ GLB</button>{/if}
+  {#if glbBlobUrl && !isBrep}<button class="pd-dl" type="button" title="Download {id}.glb" onclick={downloadGlb}>⬇ GLB</button>{/if}
   {#if err}<div class="pd-err">{err}</div>{/if}
-  <!-- Part stats at the bottom: tri / vert count (instanced → child × N). -->
+  <!-- BREP: no OCCT-buildable solid for this part (revolve / extrude / loft / CSG only). -->
+  {#if isBrep && brepReason}<div class="pd-brep-reason">{brepReason}</div>{/if}
+  <!-- Part stats at the bottom: tri / vert count (instanced → child × N).
+       BREP appends the OCCT bake time. -->
   {#if stats}
     <div class="pd-stats" title={stats.instanced ? `${stats.childTris.toLocaleString()} tris/child × ${stats.count} instances` : ''}>
-      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}
+      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}
     </div>
   {/if}
 </div>
@@ -432,6 +516,8 @@
   .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 6; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
+  /* BREP "no path for this part" — centred, dark-on-light over the empty scene. */
+  .pd-brep-reason { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; max-width: 70%; text-align: center; color: #a16207; background: rgba(255,255,255,0.9); border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; font: 600 12px Arial; }
   /* Vertical Z-pan slider, left edge. */
   /* Z-pan vertical slider on the RIGHT edge — keeps the left clear for the
      2D SVG overlay (and the 'Mesh (live)' label sitting top-left). */
