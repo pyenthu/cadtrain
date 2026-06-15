@@ -1461,6 +1461,12 @@
       const forceBust = manualBustPending;
       manualBustPending = false;
       const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1 || forceBust, ghosts: ghostIds });
+      // A manual 🔄 Rebuild is FRESH by definition — the server re-baked
+      // (bust=1). Pin cached:false on the stored result so the badge shows the
+      // yellow "fresh · N ms", never green "✓ cached", even if a later
+      // server/response nuance reports otherwise. (User-reported: badge stuck
+      // on "cached" after rebuild though the bake genuinely re-ran.)
+      if (forceBust && r.ok) (r as any).cached = false;
       // Hand the canvas the EXACT same source the bake just ran on (the
       // ghost-flag aware emit) so its own /preview re-fetch returns the
       // same mesh — otherwise the cuboids get baked once + immediately

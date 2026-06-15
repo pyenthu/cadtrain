@@ -30,6 +30,7 @@ import { compileProfileBuild } from './profile-fn';
 import { recognizeComposite } from './recognize-composite';
 import { partHashId } from '$lib/cad/part-id';
 import { paramKeysOf } from '$lib/cad/param-keys';
+import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 /**
  * Wrap each recognized named PART instance's init with `__tag(<init>,
@@ -236,6 +237,22 @@ export async function buildPrimitiveGeom(
   //      `p` isn't already a positional name (the rewritten signature decides).
   //      Either way the body's `p.X` works without a duplicate declaration.
   const metaKeys = paramKeysOf(source);
+  // meta.params DEFAULTS, for the object-style default-merge below. A composed
+  // body calls a sub-part as `g_dp_joint({ od_body, wall })` and omits the
+  // rest; without this the sub-part's `p.od_collar` is `undefined` → NaN/empty
+  // geometry deep in the chain (the g_dp_stand regression: omitted od_collar →
+  // the pin collapsed → "stack item 3 EMPTY"). Merging the sub-part's own
+  // defaults makes an omitted key fall back to its default, not undefined.
+  let metaDefaults: Record<string, any> = {};
+  try {
+    const mp = (extractMetaFromSource(source) as any)?.params ?? {};
+    for (const [k, v] of Object.entries(mp)) {
+      if (v && typeof v === 'object' && 'default' in (v as any)) metaDefaults[k] = (v as any).default;
+    }
+  } catch { /* meta-less / unparseable → no defaults to merge */ }
+  const defaultsLiteral = Object.entries(metaDefaults)
+    .map(([k, dv]) => `${JSON.stringify(k)}: ${JSON.stringify(dv)}`)
+    .join(', ');
   // Detect object-arg style: signature `function id(p)` (single param, any
   // name). When detected, leave the signature ALONE — no rewrite, no `const p`
   // injection. The caller will pass a single object built from meta.params,
@@ -260,10 +277,16 @@ export async function buildPrimitiveGeom(
     (full: string, params: string) => {
       const sigNames = String(params).split(',').map((s) => s.trim().split(/[\s=:]/)[0].trim()).filter((n) => /^[a-zA-Z_$][\w$]*$/.test(n));
       // Single-positional + has meta.params keys → object-arg style. Leave
-      // signature unchanged so `fn(obj)` binds obj to the function's `p`.
+      // signature unchanged so `fn(obj)` binds obj to the function's `p`, but
+      // inject a default-merge: when `p` is a plain object (the call-with-named-
+      // args path), fill any OMITTED meta.params key from this part's own
+      // defaults so `p.X` is never `undefined`. Guarded so a positional/number
+      // `p` (defensive) is left untouched.
       if (sigNames.length === 1 && metaKeys.length > 0) {
         isObjectStyle = true;
-        return full;
+        if (!defaultsLiteral) return full;
+        const pn = sigNames[0];
+        return `${full} ${pn} = (${pn} && typeof ${pn} === 'object' && !Array.isArray(${pn})) ? { ${defaultsLiteral}, ...${pn} } : ${pn};`;
       }
       // Legacy positional path — rewrite signature to canonical positional
       // names so `fn(...args)` at the call site binds each `args[i]` to

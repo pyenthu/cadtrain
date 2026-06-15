@@ -312,8 +312,23 @@ export async function brepFromSource(
     if (arr.length === 0) return null;
     return arr.length === 1 ? arr[0] : makeCompound(arr);
   }
+  // meta.params defaults of a dep source, so an omitted named-arg falls back to
+  // the sub-part's default (mirrors the primitive-loader object-style merge —
+  // the g_dp_stand → g_dp_joint({…}) omits od_collar fix).
+  const defaultsOf = (src: string): Record<string, number> => {
+    const out: Record<string, number> = {};
+    const blkM = src.match(/params:\s*\{([\s\S]*?)\n  \}/);
+    const blk = blkM ? blkM[1] : src;
+    for (const mm of blk.matchAll(/(\w+):\s*\{[^{}]*?default:\s*([-\d.]+)/g)) out[mm[1]] = parseFloat(mm[2]);
+    return out;
+  };
   for (const nm of Object.keys(depSrc)) {
-    depFns[nm] = (args?: any) => { const s = runBody(depSrc[nm], args ?? {}); return s ? wrap(s) : s; };
+    const dd = defaultsOf(depSrc[nm]);
+    depFns[nm] = (args?: any) => {
+      const merged = (args && typeof args === 'object' && !Array.isArray(args)) ? { ...dd, ...args } : args;
+      const s = runBody(depSrc[nm], merged ?? {});
+      return s ? wrap(s) : s;
+    };
   }
 
   const t0 = Date.now();
