@@ -9177,12 +9177,13 @@
   .ge-source-pane:has(.ge-legacy-banner) { grid-template-rows: auto auto 1fr; }
   /* Combined right pane (tabbed): bake + source in one column with a tab strip.
      30 % default width gives the canvas 70 % to show the graph. */
-  .ge-right-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border-left: 1px solid #e5e7eb; }
-  .ge-pane-tabs { display: flex; gap: 0; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; }
-  .ge-pane-tab { flex: 1 1 auto; padding: 6px 12px; font: 600 11px Arial; color: #78716c; background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+  /* Right pane: VERTICAL tab rail on the left + content. */
+  .ge-right-pane { display: grid; grid-template-columns: auto 1fr; overflow: hidden; border-left: 1px solid #e5e7eb; }
+  .ge-pane-tabs { display: flex; flex-direction: column; gap: 0; background: #f5f5f4; border-right: 1px solid #e7e5e4; }
+  .ge-pane-tab { flex: 0 0 auto; text-align: left; white-space: nowrap; padding: 8px 12px; font: 600 11px Arial; color: #78716c; background: transparent; border: 0; border-left: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
   .ge-pane-tab code { font: 11px ui-monospace, monospace; color: #57534e; text-transform: none; letter-spacing: 0; }
   .ge-pane-tab:hover { background: #fafaf9; color: #1c1917; }
-  .ge-pane-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; background: #fff; }
+  .ge-pane-tab.active { color: #0c4a6e; border-left-color: #0369a1; background: #fff; }
   .ge-pane-tab.active code { color: #0c4a6e; }
   .ge-pane-bodies { position: relative; display: grid; min-height: 0; overflow: hidden; }
   .ge-pane-bodies > .ge-bake-body,
