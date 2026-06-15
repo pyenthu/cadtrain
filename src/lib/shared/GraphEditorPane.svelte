@@ -2514,19 +2514,18 @@
   function nodePos(id: NodeId): { x: number; y: number } {
     return graph.layout[id] ?? { x: 0, y: 0 };
   }
-  // Height a Call card grows by per inline transform block (compact horizontal
-  // layout: a header row + the x/y/z inputs row + a bottom socket row). Shared
-  // by the render (cardH) AND outputSocketAt so the visible socket and the wire
-  // endpoint can't diverge.
-  const INLINE_XFORM_H = 50;
+  // Height of the single inline-transform block attached below a Call card.
+  // mv + rot now share ONE side-by-side block (mv = left half, rot = right
+  // half), so the card grows by this much when EITHER is present — not twice.
+  // Shared by the render (cardH), outputSocketAt, AND the param→axis wires so
+  // the visible socket and the wire endpoint can't diverge.
+  const INLINE_XFORM_H = 52;
   function inlineCardH(callId: NodeId): number {
     const node = graph.nodes[callId];
     if (!node) return 80;
     const { h } = nodeSize(node);
-    let extra = 0;
-    if (inlineTransformOf(graph, callId, 'mv'))  extra += INLINE_XFORM_H;
-    if (inlineTransformOf(graph, callId, 'rot')) extra += INLINE_XFORM_H;
-    return h + extra;
+    const hasXform = !!inlineTransformOf(graph, callId, 'mv') || !!inlineTransformOf(graph, callId, 'rot');
+    return h + (hasXform ? INLINE_XFORM_H : 0);
   }
   function outputSocketAt(id: NodeId): { x: number; y: number } {
     const node = graph.nodes[id];
@@ -5009,20 +5008,27 @@
                   {/if}
                 {/if}
               {/each}
-              <!-- Inline transform axis wires (mv/rot wrapping this Call) -->
+              <!-- Inline transform axis wires (mv/rot wrapping this Call).
+                   Endpoints MUST match the visible sockets in the render block:
+                   mv on the TOP edge of the LEFT half, rot on the BOTTOM edge of
+                   the RIGHT half. Geometry (xfGap/xfHalfW/cx/cy) is identical to
+                   the render's so wires land exactly on the moved sockets. -->
               {@const cSize = nodeSize(n)}
+              {@const xfGap = 6}
+              {@const xfHalfW = (cSize.w - 12 - xfGap) / 2}
               {@const inlMv  = inlineTransformOf(graph, n.id, 'mv')}
               {@const inlRot = inlineTransformOf(graph, n.id, 'rot')}
               {#if inlMv}
                 {@const mvN = graph.nodes[inlMv] as MvNode}
                 {#each [0,1,2] as i (i)}
+                  {@const ax = 6 + (i + 0.5) * xfHalfW / 3}
+                  {@const ay = cSize.h + 5}
                   {#if (mvN.offset[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
                     {#if pIdx >= 0}
                       {@const ps = paramSocketPos((mvN.offset[i] as any).param, pIdx)}
                       {@const pos = nodePos(n.id)}
-                      {@const axisY = pos.y + cSize.h + 4 + 18 + i * 18}
-                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, axisY)}/>
+                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x + ax, pos.y + ay)}/>
                     {/if}
                   {:else if (mvN.offset[i] as any).kind === 'expr'}
                     {#each extractParamRefs((mvN.offset[i] as any).expr) as refName (refName)}
@@ -5030,8 +5036,7 @@
                       {#if pIdx >= 0}
                         {@const ps = paramSocketPos(refName, pIdx)}
                         {@const pos = nodePos(n.id)}
-                        {@const axisY = pos.y + cSize.h + 4 + 18 + i * 18}
-                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, axisY)}/>
+                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x + ax, pos.y + ay)}/>
                       {/if}
                     {/each}
                   {/if}
@@ -5040,13 +5045,14 @@
               {#if inlRot}
                 {@const rotN = graph.nodes[inlRot] as RotNode}
                 {#each [0,1,2] as i (i)}
+                  {@const ax = 6 + xfHalfW + xfGap + (i + 0.5) * xfHalfW / 3}
+                  {@const ay = cSize.h + INLINE_XFORM_H - 5}
                   {#if (rotN.rot[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
                     {#if pIdx >= 0}
                       {@const ps = paramSocketPos((rotN.rot[i] as any).param, pIdx)}
                       {@const pos = nodePos(n.id)}
-                      {@const rotY = pos.y + cSize.h + 4 + (inlMv ? 80 : 0) + 18 + i * 18}
-                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, rotY)}/>
+                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x + ax, pos.y + ay)}/>
                     {/if}
                   {:else if (rotN.rot[i] as any).kind === 'expr'}
                     {#each extractParamRefs((rotN.rot[i] as any).expr) as refName (refName)}
@@ -5054,8 +5060,7 @@
                       {#if pIdx >= 0}
                         {@const ps = paramSocketPos(refName, pIdx)}
                         {@const pos = nodePos(n.id)}
-                        {@const rotY = pos.y + cSize.h + 4 + (inlMv ? 80 : 0) + 18 + i * 18}
-                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, rotY)}/>
+                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x + ax, pos.y + ay)}/>
                       {/if}
                     {/each}
                   {/if}
@@ -5453,80 +5458,90 @@
                     {/each}
                   </div>
                 </foreignObject>
-                <!-- Inline transforms: a COMPACT HORIZONTAL block (x/y/z side by
-                     side) with the per-axis wire sockets along the BOTTOM edge,
-                     under each input. Far less tall than the old vertical stack
-                     and visually tidy on the card. Geometry shared with
-                     inlineCardH / outputSocketAt via INLINE_XFORM_H. -->
-                {#if mvNode}
-                  {@const mvY = size.h}
-                  <foreignObject x="6" y={mvY} width={size.w - 12} height={INLINE_XFORM_H - 8}>
-                    <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-hdr">⇄ mv</div>
-                      <div class="ge-inline-axes">
-                        {#each ['x','y','z'] as axis, i (axis)}
-                          {@const av = mvNode.offset[i] as any}
-                          <div class="ge-inline-axis">
-                            <span class="ge-inline-axkey">{axis}</span>
-                            {#if av.kind === 'param'}
-                              <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
-                                class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(inlineMv!, i as 0|1|2)}>×</button></span>
-                            {:else}
-                              <input class="ge-inline-input" type="number" step="0.5"
-                                value={av.kind === 'literal' ? av.value : 0}
-                                use:dragNumber={{ step: 0.5, get: () => Number(av.value ?? 0),
-                                  set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val) }}
-                                oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                              />
-                            {/if}
-                          </div>
-                        {/each}
+                <!-- Inline transforms: ONE COMPACT side-by-side block attached
+                     below the card. mv = LEFT half (its x/y/z sockets on the TOP
+                     edge), rot = RIGHT half (its rx/ry/rz sockets on the BOTTOM
+                     edge) so the two socket rows face outward. Grows the card by
+                     a single INLINE_XFORM_H. Geometry (halfW/gap/socket cx,cy) is
+                     mirrored EXACTLY by the param→axis wires + inlineCardH. -->
+                {#if mvNode || rotNode}
+                  {@const blockY = size.h}
+                  {@const xfGap = 6}
+                  {@const halfW = (size.w - 12 - xfGap) / 2}
+                  <!-- block top divider + (when both halves present) the vertical
+                       split between mv | rot -->
+                  <line x1="0" y1={blockY} x2={size.w} y2={blockY} class="ge-node-divider"/>
+                  {#if mvNode && rotNode}
+                    <line x1={6 + halfW + xfGap / 2} y1={blockY} x2={6 + halfW + xfGap / 2} y2={blockY + INLINE_XFORM_H} class="ge-node-divider"/>
+                  {/if}
+                  {#if mvNode}
+                    <foreignObject x="6" y={blockY + 9} width={halfW} height={INLINE_XFORM_H - 11}>
+                      <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
+                        <div class="ge-inline-hdr">⇄ mv</div>
+                        <div class="ge-inline-axes">
+                          {#each ['x','y','z'] as axis, i (axis)}
+                            {@const av = mvNode.offset[i] as any}
+                            <div class="ge-inline-axis">
+                              <span class="ge-inline-axkey">{axis}</span>
+                              {#if av.kind === 'param'}
+                                <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
+                                  class="ge-arg-pchip-x" type="button"
+                                  onclick={() => unwireTransformAxis(inlineMv!, i as 0|1|2)}>×</button></span>
+                              {:else}
+                                <input class="ge-inline-input" type="number" step="0.5"
+                                  value={av.kind === 'literal' ? av.value : 0}
+                                  use:dragNumber={{ step: 0.5, get: () => Number(av.value ?? 0),
+                                    set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val) }}
+                                  oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                                />
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
                       </div>
-                    </div>
-                  </foreignObject>
-                  <!-- Per-axis input sockets along the BOTTOM edge of the block,
-                       centred under each x/y/z input. -->
-                  {#each [0,1,2] as i (i)}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                      cx={6 + (i + 0.5) * (size.w - 12) / 3} cy={mvY + INLINE_XFORM_H - 5} r="4"
-                      onpointerup={(ev) => endWireOnTransformAxis(ev, inlineMv!, i as 0|1|2)}/>
-                  {/each}
-                {/if}
-                {#if rotNode}
-                  {@const rotY = size.h + (inlineMv ? INLINE_XFORM_H : 0)}
-                  <foreignObject x="6" y={rotY} width={size.w - 12} height={INLINE_XFORM_H - 8}>
-                    <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-hdr">↻ rot</div>
-                      <div class="ge-inline-axes">
-                        {#each ['rx','ry','rz'] as axis, i (axis)}
-                          {@const av = rotNode.rot[i] as any}
-                          <div class="ge-inline-axis">
-                            <span class="ge-inline-axkey">{axis}</span>
-                            {#if av.kind === 'param'}
-                              <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
-                                class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(inlineRot!, i as 0|1|2)}>×</button></span>
-                            {:else}
-                              <input class="ge-inline-input" type="number" step="1"
-                                value={av.kind === 'literal' ? av.value : 0}
-                                use:dragNumber={{ step: 1, get: () => Number(av.value ?? 0),
-                                  set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val) }}
-                                oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                              />
-                            {/if}
-                          </div>
-                        {/each}
+                    </foreignObject>
+                    <!-- mv per-axis input sockets along the TOP edge of the left half. -->
+                    {#each [0,1,2] as i (i)}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle role="button" tabindex="-1" class="ge-sock in param tiny"
+                        cx={6 + (i + 0.5) * halfW / 3} cy={blockY + 5} r="4"
+                        onpointerup={(ev) => endWireOnTransformAxis(ev, inlineMv!, i as 0|1|2)}/>
+                    {/each}
+                  {/if}
+                  {#if rotNode}
+                    <foreignObject x={6 + halfW + xfGap} y={blockY + 1} width={halfW} height={INLINE_XFORM_H - 11}>
+                      <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
+                        <div class="ge-inline-hdr">↻ rot</div>
+                        <div class="ge-inline-axes">
+                          {#each ['rx','ry','rz'] as axis, i (axis)}
+                            {@const av = rotNode.rot[i] as any}
+                            <div class="ge-inline-axis">
+                              <span class="ge-inline-axkey">{axis}</span>
+                              {#if av.kind === 'param'}
+                                <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
+                                  class="ge-arg-pchip-x" type="button"
+                                  onclick={() => unwireTransformAxis(inlineRot!, i as 0|1|2)}>×</button></span>
+                              {:else}
+                                <input class="ge-inline-input" type="number" step="1"
+                                  value={av.kind === 'literal' ? av.value : 0}
+                                  use:dragNumber={{ step: 1, get: () => Number(av.value ?? 0),
+                                    set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val) }}
+                                  oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                                />
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
                       </div>
-                    </div>
-                  </foreignObject>
-                  {#each [0,1,2] as i (i)}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                      cx={6 + (i + 0.5) * (size.w - 12) / 3} cy={rotY + INLINE_XFORM_H - 5} r="4"
-                      onpointerup={(ev) => endWireOnTransformAxis(ev, inlineRot!, i as 0|1|2)}/>
-                  {/each}
+                    </foreignObject>
+                    <!-- rot per-axis input sockets along the BOTTOM edge of the right half. -->
+                    {#each [0,1,2] as i (i)}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <circle role="button" tabindex="-1" class="ge-sock in param tiny"
+                        cx={6 + halfW + xfGap + (i + 0.5) * halfW / 3} cy={blockY + INLINE_XFORM_H - 5} r="4"
+                        onpointerup={(ev) => endWireOnTransformAxis(ev, inlineRot!, i as 0|1|2)}/>
+                    {/each}
+                  {/if}
                 {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- Output: if a Call has an inline mv/rot wrapper, the visible
@@ -9060,14 +9075,16 @@
   .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }
   .ge-drift-btn { font: 700 14px Arial; fill: #d97706; cursor: pointer; user-select: none; }
   .ge-drift-btn:hover { fill: #92400e; }
-  /* Inline mv/rot transform block — compact HORIZONTAL layout (x/y/z side by
-     side); sockets render as SVG along the bottom edge (see markup). */
-  .ge-inline-xform { font: 11px Arial; color: #1f2937; padding: 3px 0 0; border-top: 1px dashed #c4b5fd; }
+  /* Inline mv/rot transform block — compact SIDE-BY-SIDE layout: mv = left half
+     (sockets on the TOP edge), rot = right half (sockets on the BOTTOM edge).
+     Sockets + dividers render as SVG (see markup); the half itself is just the
+     header + x/y/z input row. */
+  .ge-inline-xform { font: 11px Arial; color: #1f2937; padding: 1px 0 0; }
   .ge-inline-xform.mv  { color: #5b21b6; }
-  .ge-inline-xform.rot { color: #831843; border-top-color: #f9a8d4; }
+  .ge-inline-xform.rot { color: #831843; }
   .ge-inline-hdr { font: 700 9px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 2px; }
-  .ge-inline-axes { display: flex; gap: 5px; align-items: center; }
-  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 2px; }
+  .ge-inline-axes { display: flex; gap: 3px; align-items: center; }
+  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 1px; }
   .ge-inline-axkey { font: 600 9px Arial; color: #9ca3af; flex: 0 0 auto; }
   .ge-inline-input { width: 100%; min-width: 0; box-sizing: border-box; font: 11px Arial; padding: 1px 3px;
     border: 1px solid #d1d5db; border-radius: 3px; text-align: right; background: #fff; }
