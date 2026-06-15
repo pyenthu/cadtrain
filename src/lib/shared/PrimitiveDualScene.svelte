@@ -114,7 +114,14 @@
     if (!instanced || !instMesh || !scene.showEdges) return null;
     const childGeo: THREE.BufferGeometry | null = (showCutaway && cutVC) ? cutVC : full;
     if (!childGeo) return null;
-    const eg = new THREE.EdgesGeometry(childGeo, 20);
+    // When warp is on, build edges from the Z-SUBDIVIDED child (same pass the
+    // mesh uses). EdgesGeometry otherwise collapses each edge to its 2 endpoints
+    // — the warp shader displaces those, but the GPU draws a STRAIGHT line
+    // between them, so a tall edge stays straight while the dense mesh wall
+    // bulges. Subdividing gives the edge intermediate Z-samples to follow the
+    // sinusoid. (subdivideAlongZ is cached + childGeo is ONE joint, so cheap.)
+    const edgeBase = scene.warpEnabled ? subdivideAlongZ(childGeo) : childGeo;
+    const eg = new THREE.EdgesGeometry(edgeBase, 20);
     const mat = new THREE.LineBasicMaterial({ color: 0x000000 });
     // Edges share the instanced mesh's LOCAL child geometry + per-instance
     // transform, so attaching the SAME warp shader makes them bend WITH the

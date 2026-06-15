@@ -112,6 +112,32 @@ export function subdivideAlongZ(geo: THREE.BufferGeometry, maxZSpan = 0.25): THR
 const patchedShaders = new Set<any>();
 
 export function attachWarpShader(material: THREE.MeshPhongMaterial): void {
+  // three caches every COMPILED program in ONE global map keyed by
+  // getProgramCacheKey(material) = shaderID + params + booleans +
+  // material.customProgramCacheKey(). onBeforeCompile does NOT contribute to
+  // that key on its own — so when a program with the same key already exists,
+  // acquireProgram returns the CACHED one and the freshly-injected
+  // `shader.vertexShader` from this hook is silently thrown away.
+  //
+  // The instanced black EDGE overlay (PrimitiveDualScene `instEdges`) is a
+  // LineBasicMaterial → shaderID 'basic'. The scene's RGB axis arrows are
+  // MeshBasicMaterial → ALSO shaderID 'basic'. They share every program
+  // parameter, so without a distinguishing key the warp-hooked edge material
+  // can collide with the axes' un-hooked 'basic' program: the edges then keep
+  // the straight (un-warped) program while the mesh — a different shaderID
+  // ('phong'/'standard') that never collides with anything un-hooked — warps.
+  // That is exactly the reported symptom (mesh bends, wire border stays
+  // straight). The Phong/Standard mesh path "just works" only because nothing
+  // un-hooked shares its shaderID.
+  //
+  // Pin a dedicated cache-key bucket so EVERY warp-hooked material is guaranteed
+  // its own program family, independent of three's default keying (which has
+  // varied across versions and can be defeated by a minifier collapsing two
+  // distinct onBeforeCompile sources). It's APPENDED to shaderID + params, so
+  // basic vs phong vs standard and the instancing/vertexColors variants still
+  // resolve to the distinct programs they each need — this only ever SPLITS a
+  // hooked material away from an un-hooked one, never merges two that differ.
+  material.customProgramCacheKey = () => 'cadtrain-warp';
   material.onBeforeCompile = (shader) => {
     // Initialize with the SAME master-toggle gating the rAF tick uses
     // (amp = 0 when warp is off). Otherwise the first render — before any
