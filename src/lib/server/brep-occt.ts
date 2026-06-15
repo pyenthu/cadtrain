@@ -143,11 +143,13 @@ async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<Br
     const bb = solid.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
     maxOD = 2 * Math.max(Math.abs(bb[0][0]), Math.abs(bb[1][0]), Math.abs(bb[0][1]), Math.abs(bb[1][1])) || 1;
     if (opts.cut) {
-      const cx = (bb[0][0] + bb[1][0]) / 2, cz = (bb[0][2] + bb[1][2]) / 2;
+      const cz = (bb[0][2] + bb[1][2]) / 2;
       const span = (Math.max(bb[1][0] - bb[0][0], bb[1][1] - bb[0][1], bb[1][2] - bb[0][2]) + 10) * 3;
-      // makeBaseBox is centred in x/y, z from 0..d → translate so it covers
-      // y ∈ [-span, 0] (removes the near half; cut plane lands at y = 0).
-      const box = makeBaseBox(span, span, span).translate([cx, -span / 2, cz - span / 2]);
+      // makeBaseBox is centred in x/y, z from 0..d → translate so it covers the
+      // +x,+y QUADRANT (x ≥ 0 ∧ y ≥ 0), removing a QUARTER to match the 3D-bake
+      // cutaway (getCutBox = a cube in the +x,+y octant). The two cut planes
+      // land at x = 0 and y = 0 (world axes, like the Manifold path).
+      const box = makeBaseBox(span, span, span).translate([span / 2, span / 2, cz - span / 2]);
       target = solid.cut(box);
       didCut = true;
     }
@@ -181,10 +183,13 @@ async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<Br
     const centroidR = Math.sqrt(mx * mx + my * my);
     const radialDot = centroidR > 0.01 ? (nx * mx + ny * my) / (centroidR * nLen) : 0;
     const isBore = radialDot < -0.3;
+    // Quarter cut → TWO exposed cross-section planes (y = 0 and x = 0); a
+    // triangle lying flat on EITHER is bore-grey cut surface.
     const onCutY = Math.abs(ay) < eps && Math.abs(by) < eps && Math.abs(cyv) < eps;
+    const onCutX = Math.abs(ax) < eps && Math.abs(bx) < eps && Math.abs(cxv) < eps;
     const nzNorm = Math.abs(nz / nLen);
     const maxR = Math.max(Math.sqrt(ax * ax + ay * ay), Math.sqrt(bx * bx + by * by), Math.sqrt(cxv * cxv + cyv * cyv));
-    const isGrey = isBore || onCutY || (nzNorm > 0.8 && maxR < maxOD / 2 + 0.05);
+    const isGrey = isBore || onCutY || onCutX || (nzNorm > 0.8 && maxR < maxOD / 2 + 0.05);
     const r = isGrey ? 0.45 : 0.8, g = isGrey ? 0.45 : 0.06, bl = isGrey ? 0.45 : 0.06;
     const o = i * 9;
     outPos[o] = ax; outPos[o + 1] = ay; outPos[o + 2] = az;
