@@ -104,6 +104,46 @@
     const m = instMesh;
     return () => { try { m?.dispose?.(); (m?.material as any)?.dispose?.(); } catch { /* already gone */ } };
   });
+  // Black wire border for the INSTANCED path. A Threlte <Edges> is per-geometry
+  // and can't ride an InstancedMesh's per-instance matrices, so a Stack/Repeat
+  // (e.g. g_dp_stand) rendered instanced lost the showEdges overlay the
+  // single-mesh path gets. Rebuild it as a Group of LineSegments — one per
+  // instance, all SHARING one EdgesGeometry + material — placed at the same
+  // instance transforms. Matches <Edges thresholdAngle={20} color="black">.
+  let instEdges = $derived.by(() => {
+    if (!instanced || !instMesh || !scene.showEdges) return null;
+    const childGeo: THREE.BufferGeometry | null = (showCutaway && cutVC) ? cutVC : full;
+    if (!childGeo) return null;
+    const eg = new THREE.EdgesGeometry(childGeo, 20);
+    const mat = new THREE.LineBasicMaterial({ color: 0x000000 });
+    // Edges share the instanced mesh's LOCAL child geometry + per-instance
+    // transform, so attaching the SAME warp shader makes them bend WITH the
+    // mesh when warp is on (LineBasicMaterial uses the `basic` program, which
+    // has the <common>/<project_vertex> chunks the warp hook rewrites). Without
+    // this the mesh warps but the black wire border stays straight.
+    attachWarpShader(mat as any);
+    const group = new THREE.Group();
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < instanced.count; i++) {
+      const ls = new THREE.LineSegments(eg, mat);
+      m.fromArray(instanced.instances[i]);
+      ls.applyMatrix4(m);
+      group.add(ls);
+    }
+    return group;
+  });
+  // Dispose the shared EdgesGeometry + material when the overlay is replaced.
+  $effect(() => {
+    const g = instEdges;
+    return () => {
+      try {
+        let disposed = false;
+        g?.traverse?.((o: any) => {
+          if (!disposed) { o.geometry?.dispose?.(); o.material?.dispose?.(); disposed = true; }
+        });
+      } catch { /* already gone */ }
+    };
+  });
 
   // --- lit-mesh material factory (shared by the live mesh + the GLB) ---
   // When the rectangular AREA light is on the lit meshes MUST be
@@ -485,8 +525,10 @@
       <!-- GPU-instanced Stack/Repeat: ONE child mesh drawn under N transforms.
            Material (Phong/Standard + flatShading + vertexColors) + the child's
            red/grey (or override / colour-by-source) colours come baked into
-           instMesh above. showEdges is skipped in instanced mode. -->
+           instMesh above. showEdges rides along as instEdges (a Group of
+           per-instance LineSegments) since <Edges> can't follow instanceMatrix. -->
       <T is={instMesh} />
+      {#if instEdges}<T is={instEdges} />{/if}
     {:else if showCutaway && cutVC}
       {@const cg = scene.warpEnabled ? subdivideAlongZ(cutVC) : cutVC}
       <T.Mesh geometry={cg}>
