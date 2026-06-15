@@ -579,7 +579,8 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // Tag the cut-box with SECTION_ID so the new cross-section faces it
   // creates are distinguishable (→ inner/section color) from the part
   // surfaces it reveals. Only matters on the color-by-source path.
-  const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
+  const _cutBB = scaled.boundingBox();
+  const cutBox = lut ? tagManifold(getCutBox(_cutBB), SECTION_ID) : getCutBox(_cutBB);
   // Per-part colour override — present only when the caller passed at least
   // one of colorOuter/colorInner. Fills the unset side with the historical
   // default so a one-sided pick still renders the other side sanely. When

@@ -534,7 +534,18 @@ export function helix_band(od: number, length: number, tpi: number, depth: numbe
 // inside scaled.subtract(cutBox) and throwing "Expected null or
 // instance of Manifold, got an instance of Manifold". /components is
 // unaffected because it builds client-side in one realm.
-export function getCutBox(): any {
+export function getCutBox(bbox?: { min: number[]; max: number[] }): any {
   if (!G.__cadtrain_manifold__.M) return null;
-  return M.cube([20, 20, 100], false).translate([0, 0, -50]);
+  // Quarter cutaway: remove the +x,+y quadrant over the part's FULL Z height.
+  // Cut planes stay at world x=0 / y=0; the box just has to fully cover the
+  // part on the +x,+y side and span its whole Z range (tall stacks reach
+  // z=500+, so the old fixed [20,20,100]@z[-50,50] under-cut them). Bbox-
+  // derived with a generous margin so warp displacement / z-scale can't leave
+  // an uncut sliver. No bbox (legacy callers) → the historical fixed box.
+  if (!bbox) return M.cube([20, 20, 100], false).translate([0, 0, -50]);
+  const MARGIN = 20;
+  const xspan = Math.max(Math.abs(bbox.min[0]), Math.abs(bbox.max[0])) + MARGIN;
+  const yspan = Math.max(Math.abs(bbox.min[1]), Math.abs(bbox.max[1])) + MARGIN;
+  const zlen = (bbox.max[2] - bbox.min[2]) + 2 * MARGIN;
+  return M.cube([xspan, yspan, zlen], false).translate([0, 0, bbox.min[2] - MARGIN]);
 }

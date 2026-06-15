@@ -524,7 +524,8 @@ export async function buildGlbBytes(
     //    color-by-source path tag the cut box with SECTION_ID so the
     //    cross-section faces it creates get the section color.
     try {
-      const cutBox = lut ? tagManifold(getCutBox(), SECTION_ID) : getCutBox();
+      const _cutBB = manifold.boundingBox();
+      const cutBox = lut ? tagManifold(getCutBox(_cutBB), SECTION_ID) : getCutBox(_cutBB);
       const cutManifold = manifold.subtract(cutBox);
       const cutDoc = manifoldToGltf(cutManifold, maxOD, true, undefined, lut, override);
       result.cut = await io.writeBinary(cutDoc);
