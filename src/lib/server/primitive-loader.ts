@@ -286,7 +286,13 @@ export async function buildPrimitiveGeom(
         isObjectStyle = true;
         if (!defaultsLiteral) return full;
         const pn = sigNames[0];
-        return `${full} ${pn} = (${pn} && typeof ${pn} === 'object' && !Array.isArray(${pn})) ? { ${defaultsLiteral}, ...${pn} } : ${pn};`;
+        // Default-merge for omitted named args (see comment above). ALSO warn on
+        // UNKNOWN keys — a passed key that isn't in this part's meta.params is a
+        // stale/misspelled arg (e.g. a dep renamed `len`→`length` but a consumer
+        // still passes `len`). The merge would otherwise swallow it silently and
+        // fall the real key back to its default with no error (the g_tube bug).
+        const knownArr = `[${metaKeys.map((k) => JSON.stringify(k)).join(', ')}]`;
+        return `${full} if (${pn} && typeof ${pn} === 'object' && !Array.isArray(${pn})) { var __known = ${knownArr}; for (var __k of Object.keys(${pn})) { if (__known.indexOf(__k) === -1) { try { console.warn("[primitive ${name}] unknown arg key '" + __k + "' (not in meta.params: " + __known.join(", ") + ") — ignored; a dep likely renamed this param"); } catch (e) {} } } ${pn} = { ${defaultsLiteral}, ...${pn} }; }`;
       }
       // Legacy positional path — rewrite signature to canonical positional
       // names so `fn(...args)` at the call site binds each `args[i]` to
