@@ -4361,12 +4361,21 @@
     // CONSTRUCTION: rowGap 220 clears the tallest cards within a column,
     // and the __POLY__ profile edges (K.78) put polygons in the column
     // BEFORE their consumer calls instead of piling into depth 0.
-    graph = autoLayoutGraph(graph, { rowGap: 220, columnGap: 300 });
-    // Finish with a PURE push-apart (no params-card obstacle / wires /
-    // bounds — those were compressing the clean columns). With the column
-    // gaps this is usually a no-op, but it cleanly de-overlaps any residual
-    // collision (e.g. many same-depth siblings) without pulling columns in.
-    try { applyPushApart({ useBounds: false, useObstacles: false, useWires: false }); }
+    // The PROPERTIES + PARAMS cards are passed as obstacles so the placement
+    // shoves any node off them FROM THE START (not just in the nudge pass).
+    graph = autoLayoutGraph(graph, {
+      rowGap: 220,
+      columnGap: 300,
+      obstacles: overlayCardObstacles(),
+      nodeSize: (id) => nodeSize(graph.nodes[id]),
+    });
+    // Finish with a push-apart that keeps the card obstacles ON (so the
+    // pairwise de-overlap can't shove a node back onto the PROPERTIES /
+    // PARAMS cards) but leaves wires + viewport bounds OFF — those pull
+    // cards toward the viewport/params channel and were COMPRESSING the
+    // clean columns. The card obstacles only repel nodes that actually
+    // overlap the top-left cards, so they don't compress the layout.
+    try { applyPushApart({ useBounds: false, useObstacles: true, useWires: false }); }
     catch (e) { console.warn('[graph-editor] push-apart after auto-layout failed', e); }
   }
   function undoAutoLayout() {
@@ -4384,24 +4393,47 @@
     undoLayout = { ...graph.layout };
     applyPushApart();
   }
+  /** The two viewport-tacked overlay cards — PROPERTIES (top) and PARAMS
+   *  (below it) — projected from screen-fixed coords into GRAPH space at the
+   *  current pan/zoom. Returned as forceSeparate/autoLayoutGraph obstacles so
+   *  node cards get pushed clear of BOTH and never overlap them. Both cards
+   *  are glued to the top-left of the viewport (CARD_X0/PROPS_X0 px from the
+   *  left), so `(screenX - pan.x) / zoom` maps the card's screen rect into
+   *  graph space; a larger card footprint at low zoom maps to a larger graph
+   *  rect, which is correct. */
+  function overlayCardObstacles(): { id: string; x: number; y: number; w: number; h: number }[] {
+    const obs: { id: string; x: number; y: number; w: number; h: number }[] = [];
+    // PROPERTIES card — pinned at (PROPS_X0, PROPS_Y0); height collapses to
+    // its header when propsExpanded is false (propsCardH already reflects it).
+    obs.push({
+      id: '__obs_props_card',
+      x: (PROPS_X0 - pan.x) / zoom,
+      y: (PROPS_Y0 - pan.y) / zoom,
+      w: PROPS_W / zoom,
+      h: propsCardH / zoom,
+    });
+    // PARAMS card — sits just below PROPERTIES (CARD_Y0 derives from it).
+    const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
+    obs.push({
+      id: '__obs_params_card',
+      x: (CARD_X0 - pan.x) / zoom,
+      y: (CARD_Y0 - pan.y) / zoom,
+      // socket spills past the card's right edge by ~12 px — pad accordingly
+      w: (pcardSize.w + 14) / zoom,
+      h: pcardSize.h / zoom,
+    });
+    return obs;
+  }
   function applyPushApart(opts: { useBounds?: boolean; useObstacles?: boolean; useWires?: boolean } = {}) {
     const { useBounds = true, useObstacles = true, useWires = true } = opts;
-    // The params card is a viewport-fixed obstacle nodes get pushed clear
-    // of. PURE mode (auto-layout's pass) skips it + the wires + the bounds —
-    // those pull cards toward the viewport/params channel and were
+    // The PROPERTIES + PARAMS cards are viewport-fixed obstacles nodes get
+    // pushed clear of. PURE mode skips them + the wires + the bounds — wires
+    // and bounds pull cards toward the viewport/params channel and were
     // COMPRESSING the clean column layout back together. Pure pairwise
     // separation only de-overlaps, never compresses.
     const obstacles: { id: string; x: number; y: number; w: number; h: number }[] = [];
     if (useObstacles) {
-      const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
-      obstacles.push({
-        id: '__obs_params_card',
-        x: (CARD_X0 - pan.x) / zoom,
-        y: (CARD_Y0 - pan.y) / zoom,
-        // socket spills past the card's right edge by ~12 px — pad accordingly
-        w: (pcardSize.w + 14) / zoom,
-        h: pcardSize.h / zoom,
-      });
+      obstacles.push(...overlayCardObstacles());
     }
     // Boundary walls (#116). The visible canvas region in graph space is
     // ([0, rect.width]/zoom shifted by -pan.x, etc.). Repellant walls

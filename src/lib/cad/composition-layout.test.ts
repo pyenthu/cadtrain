@@ -164,6 +164,63 @@ describe('composition-layout — phase 20 heuristic layered layout', () => {
     }
   });
 
+  it('pushes laid-out nodes off obstacles (PROPERTIES + PARAMS cards) at placement time', () => {
+    // The default origin {80,80} places column 0 right under where the two
+    // top-left overlay cards live. Feed both as obstacles and assert no laid
+    // node ends up overlapping either card.
+    let g = newGraph();
+    const a = addCall(g, 'dt_shaft', { r: asLiteral(1) }); g = a.graph;
+    const b = addCall(g, 'dt_shaft', { r: asLiteral(2) }); g = b.graph;
+    const c = addCall(g, 'dt_shaft', { r: asLiteral(3) }); g = c.graph;
+    const m = addMethod(g, 'subtract', a.id, b.id); g = m.graph;
+
+    // Two stacked card rects covering the top-left region (x:0..260).
+    const propsCard = { id: '__obs_props_card', x: 0, y: 0, w: 260, h: 80 };
+    const paramsCard = { id: '__obs_params_card', x: 0, y: 90, w: 260, h: 260 };
+    const nodeSize = () => ({ w: 160, h: 120 });
+
+    const laid = autoLayoutGraph(g, {
+      origin: { x: 80, y: 80 },
+      obstacles: [propsCard, paramsCard],
+      nodeSize,
+      obstaclePadding: 20,
+    });
+
+    const overlaps = (p: { x: number; y: number }, ob: { x: number; y: number; w: number; h: number }) => {
+      const ox = Math.min(p.x + 160, ob.x + ob.w) - Math.max(p.x, ob.x);
+      const oy = Math.min(p.y + 120, ob.y + ob.h) - Math.max(p.y, ob.y);
+      // "Clear" iff at least one axis has a >= padding gap (overlap <= -pad).
+      return !(ox <= -20 || oy <= -20);
+    };
+
+    for (const id of [a.id, b.id, c.id, m.id, laid.root]) {
+      const p = laid.layout[id]!;
+      expect(p, `node ${id} laid out`).toBeDefined();
+      expect(overlaps(p, propsCard), `node ${id} clears PROPERTIES card`).toBe(false);
+      expect(overlaps(p, paramsCard), `node ${id} clears PARAMS card`).toBe(false);
+    }
+  });
+
+  it('leaves layout untouched when obstacles are given without nodeSize', () => {
+    // Guard: obstacles are a no-op without nodeSize (the editor always pairs
+    // them, but the option is independently optional — don't crash / mutate).
+    let g = newGraph();
+    const a = addCall(g, 'dt_shaft', { r: asLiteral(1) }); g = a.graph;
+
+    const withSize = autoLayoutGraph(g, {
+      obstacles: [{ x: 0, y: 0, w: 999, h: 999 }],
+      nodeSize: () => ({ w: 100, h: 100 }),
+    });
+    const withoutSize = autoLayoutGraph(g, {
+      obstacles: [{ x: 0, y: 0, w: 999, h: 999 }],
+    });
+    // Without nodeSize the obstacle pass is skipped → matches the plain layout.
+    const plain = autoLayoutGraph(g);
+    expect(withoutSize.layout[a.id]).toEqual(plain.layout[a.id]);
+    // With nodeSize the huge obstacle DID move the node off origin.
+    expect(withSize.layout[a.id]).not.toEqual(plain.layout[a.id]);
+  });
+
   it('honours opts.origin + columnGap — first column at origin.x, second at origin.x + columnGap', () => {
     let g = newGraph();
     const a = addCall(g, 'dt_shaft', { r: asLiteral(1) });

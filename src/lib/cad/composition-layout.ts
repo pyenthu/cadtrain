@@ -44,6 +44,21 @@ export interface AutoLayoutOptions {
   /** When true, keep the node's existing layout if pinned[node.id] is true.
    *  Used by the editor to honour "tacked" / user-locked nodes. */
   pinned?: Record<NodeId, boolean>;
+  /** Virtual obstacles in GRAPH space (e.g. the viewport-tacked PROPERTIES /
+   *  PARAMS cards). After column placement, any non-pinned node whose
+   *  bounding box overlaps an obstacle is pushed clear along the axis of
+   *  least displacement — the SAME rect-repulsion model forceSeparate uses
+   *  for its `obstacles`, applied at PLACEMENT time so the cards are avoided
+   *  from the start, not just nudged afterwards by a separate pass. Requires
+   *  `nodeSize` so each card's footprint is known; ignored without it. */
+  obstacles?: { id?: string; x: number; y: number; w: number; h: number }[];
+  /** Per-node bounding size in graph space; required when `obstacles` are
+   *  given (this file has no Svelte deps — the editor passes its own helper).
+   *  Mirrors ForceSeparateOptions.nodeSize. */
+  nodeSize?: (id: NodeId) => { w: number; h: number };
+  /** Padding kept between a node and an obstacle. Default 20 (matches the
+   *  forceSeparate padding default). */
+  obstaclePadding?: number;
 }
 
 /** Same predicate hydrateGraph uses when filling missing layout entries —
@@ -203,6 +218,47 @@ export function autoLayoutGraph(graph: Graph, opts: AutoLayoutOptions = {}): Gra
         y: origin.y + row * rowGap,
       };
       row++;
+    }
+  }
+
+  // ── 3.5 obstacle avoidance. Push any node that landed on top of a
+  // viewport-tacked obstacle (the PROPERTIES / PARAMS cards) clear of it,
+  // along the axis of least displacement. Obstacles are immovable, so the
+  // node moves fully out (full push, not the half-share forceSeparate uses
+  // between two movable cards). This mirrors the forceSeparate.obstacles
+  // rect-repulsion model so the cards are honoured FROM THE START — the
+  // post-layout separation pass in the editor only has to clean up residual
+  // node↔node overlaps it might re-introduce. Pinned nodes never move.
+  const obstacles = opts.obstacles ?? [];
+  if (obstacles.length > 0 && opts.nodeSize) {
+    const obsPad = opts.obstaclePadding ?? 20;
+    for (const id of Object.keys(result)) {
+      if (pinned[id]) continue;
+      const sz = opts.nodeSize(id);
+      // A few passes: pushing off one obstacle may slide a node onto the
+      // adjacent card (PROPS sits directly above PARAMS), so re-test.
+      for (let pass = 0; pass < 6; pass++) {
+        let moved = false;
+        const p = result[id]!;
+        for (const ob of obstacles) {
+          const overlapX = Math.min(p.x + sz.w, ob.x + ob.w) - Math.max(p.x, ob.x);
+          const overlapY = Math.min(p.y + sz.h, ob.y + ob.h) - Math.max(p.y, ob.y);
+          // Clear (with padding margin) on either axis → not colliding.
+          if (overlapX <= -obsPad || overlapY <= -obsPad) continue;
+          const ncx = p.x + sz.w / 2, ncy = p.y + sz.h / 2;
+          const ocx = ob.x + ob.w / 2, ocy = ob.y + ob.h / 2;
+          // Resolve along the axis of least penetration.
+          if (overlapX < overlapY) {
+            const push = overlapX + obsPad;
+            p.x += ncx >= ocx ? push : -push;
+          } else {
+            const push = overlapY + obsPad;
+            p.y += ncy >= ocy ? push : -push;
+          }
+          moved = true;
+        }
+        if (!moved) break;
+      }
     }
   }
 
