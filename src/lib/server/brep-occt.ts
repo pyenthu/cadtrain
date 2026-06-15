@@ -358,8 +358,16 @@ async function getDepSource(name: string, fetchFn?: typeof fetch): Promise<strin
     const std = stdlibSource(name);
     if (std) return std;
     if (fetchFn) {
-      const r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(name)}`);
-      if (r.ok) { const d = await r.json(); if (d?.source) return d.source as string; }
+      // Retry once — the source endpoint is proxied to prod and can transiently
+      // fail/throttle under concurrent load (e.g. while a batch job hammers it),
+      // which otherwise surfaces as "<dep> is not defined" for a transitive dep.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(name)}`);
+          if (r.ok) { const d = await r.json(); if (d?.source) return d.source as string; }
+        } catch { /* transient — retry */ }
+        if (attempt === 0) await new Promise((res) => setTimeout(res, 150));
+      }
     }
     const { findPrim } = await import('$lib/server/primitive-paths');
     const hit = await findPrim(name);
