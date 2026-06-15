@@ -19,6 +19,7 @@
   let status = $state<'idle' | 'building' | 'ok' | 'empty' | 'error'>('idle');
   let info = $state<string>('');
   let stats = $state<{ tris: number; verts: number; ms: number } | null>(null);
+  let clientMs = $state<number>(0);
 
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
@@ -72,11 +73,13 @@
     if (!active || !source || !scene) return;
     status = 'building'; info = ''; stats = null;
     try {
+      const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
       const r = await fetch('/api/brep/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ source, paramValues, tolerance: 0.05 }),
       });
       const data = await r.json();
+      clientMs = +(((typeof performance !== 'undefined' ? performance : Date).now() - t0)).toFixed(0);
       if (!r.ok) { status = 'error'; info = data?.message ?? `HTTP ${r.status}`; return; }
       if (!data.supported) { status = 'empty'; info = data.reason ?? 'no BREP path'; return; }
       const geo = new THREE.BufferGeometry();
@@ -96,6 +99,10 @@
   onMount(() => { setup(); const ro = new ResizeObserver(resize); if (host) ro.observe(host); return () => ro.disconnect(); });
   onDestroy(() => { cancelAnimationFrame(raf); controls?.dispose(); renderer?.dispose(); renderer?.domElement?.remove(); });
 
+  // Independent rebuild — re-runs the OCCT call regardless of the key guard so
+  // it doubles as a perf probe (the 🔄 button), like the 3D bake's rebuild.
+  function forceRebuild() { lastKey = ''; rebuild(); }
+
   // Rebuild when the tab activates or the part/source changes.
   let lastKey = '';
   $effect(() => {
@@ -106,10 +113,12 @@
 
 <div class="brep-wrap">
   <div class="brep-host" bind:this={host}></div>
+  <button class="brep-rebuild" type="button" title="Re-run the OCCT BREP call (fresh — measures server + round-trip time)"
+    onclick={forceRebuild} disabled={status === 'building'}>🔄</button>
   <div class="brep-hud">
     <span class="brep-title">{name} · BREP <span class="brep-kernel">OCCT</span></span>
     {#if status === 'building'}<span class="brep-stat">tessellating…</span>
-    {:else if status === 'ok' && stats}<span class="brep-stat ok">{stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts · {stats.ms}ms · adaptive</span>
+    {:else if status === 'ok' && stats}<span class="brep-stat ok">{stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts · <b>{stats.ms}ms</b> OCCT{#if clientMs} · {clientMs}ms round-trip{/if} · adaptive</span>
     {:else if status === 'empty'}<span class="brep-stat warn">{info}</span>
     {:else if status === 'error'}<span class="brep-stat err">⚠ {info}</span>{/if}
   </div>
@@ -122,6 +131,9 @@
   .brep-title { font-weight: 700; color: #b23a1a; }
   .brep-kernel { font-weight: 400; font-size: 10px; color: #fff; background: #7a5; padding: 1px 5px; border-radius: 3px; vertical-align: middle; }
   .brep-stat { color: #555; font-size: 11px; }
+  .brep-rebuild { position: absolute; right: 10px; top: 8px; z-index: 4; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 14px; }
+  .brep-rebuild:hover { background: #fff; border-color: #7a5; }
+  .brep-rebuild:disabled { opacity: 0.4; cursor: progress; }
   .brep-stat.ok { color: #2a7; }
   .brep-stat.warn { color: #a70; }
   .brep-stat.err { color: #c33; }
