@@ -9,6 +9,7 @@ import { COMPONENTS } from './library';
 // here for back-compat with anything still importing them from this file.
 import { M, cyl, tube, mv, rot, getCutBox, tagManifold } from './manifold-helpers';
 import { SECTION_ID, triSourceIds } from './part-id';
+import { warpVertex, type WarpSpec } from './warp-geom';
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
 
 /** Per-part color table (built server-side by analyzeParts). When present
@@ -536,7 +537,23 @@ export const DEFAULT_INNER_HEX = '#888888';
  *  in the legacy classification WITHOUT changing the classification itself. */
 export interface ColorOverride { outer: string; inner: string }
 
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean }): ComponentResult {
+/** Bake the sinusoidal warp INTO the Manifold (returns a new warped Manifold).
+ *  Absent spec → the original manifold, untouched (byte-identical bake). The
+ *  callback receives each vertex as a Vec3 tuple `[x, y, z]` (manifold-3d
+ *  3.4.1) and mutates it in place via the shared `warpVertex` math — the SAME
+ *  `amp·sin(z·freq)` the old render-time shader used, so the geometry AND its
+ *  EdgesGeometry now both follow the bulge (the shader couldn't bend edges). */
+function applyWarp(m: any, w?: WarpSpec): any {
+  if (!w) return m;
+  try {
+    return m.warp((v: [number, number, number]) => warpVertex(v, w.amp, w.freq, w.axis));
+  } catch {
+    // warp unsupported on this Manifold build → leave geometry un-warped.
+    return m;
+  }
+}
+
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -577,7 +594,7 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // instead of O(N·tris). Falls through to the merged path (below, BYTE-
   // IDENTICAL) when bodies are not all identical / there's only one body.
   if (opts?.instanced) {
-    const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway);
+    const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway, opts?.warp);
     if (inst) return inst;
   }
   // Auto-skip the cutaway only as a far-out safety valve. The cutVC step used
@@ -593,10 +610,16 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   const skipCutaway = opts?.skipCutaway === true ? true
     : opts?.skipCutaway === false ? false
     : (typeof scaled.numTri === 'function' ? scaled.numTri() > 120_000 : false);
+  // Bake the warp into the geometry LAST (after z-scale, before meshing). The
+  // tri count is unchanged by warp, so the skip threshold above is judged on
+  // `scaled`; we mesh + cut the warped result so both the surface mesh and the
+  // cross-section follow the bend. `opts.warp` absent → `warped === scaled` →
+  // byte-identical to the pre-warp bake.
+  const warped = applyWarp(scaled, opts?.warp);
   return {
-    full: manifoldToGeo(scaled, material, lut, override),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : cutawayVC(scaled, cutBox, maxOD, material, lut, override),
-    manifold: scaled,
+    full: manifoldToGeo(warped, material, lut, override),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override),
+    manifold: warped,
     cutawaySkipped: skipCutaway,
   } as ComponentResult & { cutawaySkipped: boolean };
 }
@@ -643,6 +666,7 @@ function tryInstanceFinalize(
   lut: PartColorLUT | undefined,
   override: ColorOverride | undefined,
   skipCutawayOpt: boolean | 'auto' | undefined,
+  warp: WarpSpec | undefined,
 ): ComponentResult | null {
   let bodies: any[];
   try {
@@ -678,7 +702,14 @@ function tryInstanceFinalize(
 
   // All identical. Canonical child = body[0] (kept in its own world position);
   // each instance is the pure translation of its centre relative to body[0].
-  const canonical = bodies[0];
+  // Warp the CANONICAL child in its LOCAL frame so every instance + its edges
+  // inherit the SAME displacement — matching the old shader, whose
+  // `sin(transformed.z)` ran on the child's local geometry z BEFORE the
+  // per-instance matrix (so all copies bent identically). Detection above used
+  // the UN-warped bodies (warp by absolute z would break the identical-up-to-Z
+  // signature), so this must come after the signature match. Tri count is
+  // unchanged → `childTris`/`skipCutaway` below stay valid.
+  const canonical = applyWarp(bodies[0], warp);
   const instances: number[][] = centres.map((c) => {
     const m = new THREE.Matrix4().makeTranslation(c.cx - ref.cx, c.cy - ref.cy, c.cz - ref.cz);
     return Array.from(m.elements as Float32Array | number[]); // column-major 16
