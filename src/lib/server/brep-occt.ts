@@ -108,9 +108,96 @@ export async function extractRevolveProfile(
 
 export interface BrepMesh {
   positions: number[];
-  index: number[];
+  index?: number[];
   normals?: number[];
+  colors?: number[];
+  cut?: boolean;
   meta: { tris: number; verts: number; ms: number; tolerance: number };
+}
+
+export interface MeshOpts {
+  tolerance?: number;
+  angularTolerance?: number;
+  cut?: boolean;        // half-section cutaway (remove the y<0 half)
+}
+
+/**
+ * Tessellate an OCCT solid → BrepMesh, optionally with a HALF-SECTION CUTAWAY
+ * coloured red (outer skin) / grey (bore + cut cross-section), mirroring the
+ * Manifold cutVC convention (manifoldToCutVC). When cut, removes the y<0 half
+ * with a box, then classifies each triangle red/grey by the SAME rule the
+ * Manifold path uses (radial-inward normal = bore; on the y≈0 cut plane;
+ * near-axis cap) and emits a NON-INDEXED coloured mesh. No cut → plain indexed
+ * mesh + OCCT normals (the existing fast path).
+ */
+async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<BrepMesh> {
+  const replicad: any = await import('replicad');
+  const { makeBaseBox } = replicad;
+  const tol = opts.tolerance ?? 0.05;
+  const ang = opts.angularTolerance ?? 0.3;
+
+  let target = solid;
+  let didCut = false;
+  let maxOD = 1;
+  try {
+    const bb = solid.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
+    maxOD = 2 * Math.max(Math.abs(bb[0][0]), Math.abs(bb[1][0]), Math.abs(bb[0][1]), Math.abs(bb[1][1])) || 1;
+    if (opts.cut) {
+      const cx = (bb[0][0] + bb[1][0]) / 2, cz = (bb[0][2] + bb[1][2]) / 2;
+      const span = (Math.max(bb[1][0] - bb[0][0], bb[1][1] - bb[0][1], bb[1][2] - bb[0][2]) + 10) * 3;
+      // makeBaseBox is centred in x/y, z from 0..d → translate so it covers
+      // y ∈ [-span, 0] (removes the near half; cut plane lands at y = 0).
+      const box = makeBaseBox(span, span, span).translate([cx, -span / 2, cz - span / 2]);
+      target = solid.cut(box);
+      didCut = true;
+    }
+  } catch { target = solid; didCut = false; }
+
+  const meshed = target.mesh({ tolerance: tol, angularTolerance: ang });
+  const ms = Date.now() - t0;
+  const verts: number[] = Array.from(meshed.vertices ?? []);
+  const tris: number[] = Array.from(meshed.triangles ?? []);
+  const nrm: number[] | undefined = meshed.normals ? Array.from(meshed.normals) : undefined;
+
+  if (!didCut) {
+    return { positions: verts, index: tris, normals: nrm, cut: false, meta: { tris: tris.length / 3, verts: verts.length / 3, ms, tolerance: tol } };
+  }
+
+  // Cut path → NON-INDEXED + per-vertex colours (classification is per-tri).
+  const nt = tris.length / 3;
+  const outPos = new Array(nt * 9);
+  const outCol = new Array(nt * 9);
+  const outNrm: number[] | null = nrm ? new Array(nt * 9) : null;
+  const eps = 0.02;
+  for (let i = 0; i < nt; i++) {
+    const a = tris[i * 3], b = tris[i * 3 + 1], c = tris[i * 3 + 2];
+    const ax = verts[a * 3], ay = verts[a * 3 + 1], az = verts[a * 3 + 2];
+    const bx = verts[b * 3], by = verts[b * 3 + 1], bz = verts[b * 3 + 2];
+    const cxv = verts[c * 3], cyv = verts[c * 3 + 1], cz2 = verts[c * 3 + 2];
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az, e2x = cxv - ax, e2y = cyv - ay, e2z = cz2 - az;
+    const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    const mx = (ax + bx + cxv) / 3, my = (ay + by + cyv) / 3;
+    const centroidR = Math.sqrt(mx * mx + my * my);
+    const radialDot = centroidR > 0.01 ? (nx * mx + ny * my) / (centroidR * nLen) : 0;
+    const isBore = radialDot < -0.3;
+    const onCutY = Math.abs(ay) < eps && Math.abs(by) < eps && Math.abs(cyv) < eps;
+    const nzNorm = Math.abs(nz / nLen);
+    const maxR = Math.max(Math.sqrt(ax * ax + ay * ay), Math.sqrt(bx * bx + by * by), Math.sqrt(cxv * cxv + cyv * cyv));
+    const isGrey = isBore || onCutY || (nzNorm > 0.8 && maxR < maxOD / 2 + 0.05);
+    const r = isGrey ? 0.45 : 0.8, g = isGrey ? 0.45 : 0.06, bl = isGrey ? 0.45 : 0.06;
+    const o = i * 9;
+    outPos[o] = ax; outPos[o + 1] = ay; outPos[o + 2] = az;
+    outPos[o + 3] = bx; outPos[o + 4] = by; outPos[o + 5] = bz;
+    outPos[o + 6] = cxv; outPos[o + 7] = cyv; outPos[o + 8] = cz2;
+    for (let k = 0; k < 3; k++) { outCol[o + k * 3] = r; outCol[o + k * 3 + 1] = g; outCol[o + k * 3 + 2] = bl; }
+    if (outNrm && nrm) {
+      outNrm[o] = nrm[a * 3]; outNrm[o + 1] = nrm[a * 3 + 1]; outNrm[o + 2] = nrm[a * 3 + 2];
+      outNrm[o + 3] = nrm[b * 3]; outNrm[o + 4] = nrm[b * 3 + 1]; outNrm[o + 5] = nrm[b * 3 + 2];
+      outNrm[o + 6] = nrm[c * 3]; outNrm[o + 7] = nrm[c * 3 + 1]; outNrm[o + 8] = nrm[c * 3 + 2];
+    }
+  }
+  return { positions: outPos, colors: outCol, normals: outNrm ?? undefined, cut: true, meta: { tris: nt, verts: nt * 3, ms, tolerance: tol } };
 }
 
 /**
@@ -131,15 +218,13 @@ export interface BrepMesh {
 export async function brepFromSource(
   source: string,
   paramValues: Record<string, number> = {},
-  opts: { tolerance?: number; angularTolerance?: number } = {},
+  opts: MeshOpts = {},
   fetchFn?: typeof fetch,
 ): Promise<BrepMesh | null> {
   await ensureOC();
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
   const { draw, makeBaseBox, makeCompound } = replicad;
-  const tol = opts.tolerance ?? 0.05;
-  const ang = opts.angularTolerance ?? 0.3;
 
   const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
   if (!m) return null;
@@ -339,13 +424,7 @@ export async function brepFromSource(
     throw new Error('BREP build failed: ' + (e?.message ?? e));
   }
   if (!solid) return null;
-
-  const meshed = solid.mesh({ tolerance: tol, angularTolerance: ang });
-  const ms = Date.now() - t0;
-  const positions: number[] = Array.from(meshed.vertices ?? []);
-  const index: number[] = Array.from(meshed.triangles ?? []);
-  const normals: number[] | undefined = meshed.normals ? Array.from(meshed.normals) : undefined;
-  return { positions, index, normals, meta: { tris: index.length / 3, verts: positions.length / 3, ms, tolerance: tol } };
+  return meshBrepSolid(solid, opts, t0);
 }
 
 /** Resolve a part/engine source by name. stdlib (local, canonical) first; then
@@ -387,13 +466,11 @@ async function getDepSource(name: string, fetchFn?: typeof fetch): Promise<strin
  */
 export async function revolveBrep(
   profile: [number, number][],
-  opts: { tolerance?: number; angularTolerance?: number } = {},
+  opts: MeshOpts = {},
 ): Promise<BrepMesh> {
   await ensureOC();
   const replicad = await import('replicad');
   const { draw } = replicad as any;
-  const tol = opts.tolerance ?? 0.05;
-  const ang = opts.angularTolerance ?? 0.3;
 
   const t0 = Date.now();
   // Draw the half-section in the XZ plane (x = radial, z = axial), revolve
@@ -402,18 +479,5 @@ export async function revolveBrep(
   for (let i = 1; i < profile.length; i++) d = d.lineTo([profile[i][0], profile[i][1]]);
   const sketch = d.close().sketchOnPlane('XZ');
   const solid = sketch.revolve(); // default axis = Z through origin
-
-  const meshed = solid.mesh({ tolerance: tol, angularTolerance: ang });
-  const ms = Date.now() - t0;
-
-  const positions: number[] = Array.from(meshed.vertices ?? []);
-  const index: number[] = Array.from(meshed.triangles ?? []);
-  const normals: number[] | undefined = meshed.normals ? Array.from(meshed.normals) : undefined;
-
-  return {
-    positions,
-    index,
-    normals,
-    meta: { tris: index.length / 3, verts: positions.length / 3, ms, tolerance: tol },
-  };
+  return meshBrepSolid(solid, opts, t0);
 }

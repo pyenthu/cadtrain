@@ -15,10 +15,11 @@ export const POST = async ({ request, fetch }) => {
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
 
-  const { kind, profile, source, paramValues, tolerance, angularTolerance } = body ?? {};
+  const { kind, profile, source, paramValues, tolerance, angularTolerance, cut } = body ?? {};
   const opts = {
     tolerance: typeof tolerance === 'number' ? tolerance : undefined,
     angularTolerance: typeof angularTolerance === 'number' ? angularTolerance : undefined,
+    cut: cut === true,   // half-section cutaway (inner-grey / outer-red)
   };
 
   // ISOLATION CONTRACT: the BREP path is OPTIONAL/experimental. It must NEVER

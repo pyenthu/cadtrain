@@ -20,6 +20,8 @@
   let info = $state<string>('');
   let stats = $state<{ tris: number; verts: number; ms: number } | null>(null);
   let clientMs = $state<number>(0);
+  let cut = $state(false); // half-section cutaway (inner-grey / outer-red)
+  function toggleCut() { cut = !cut; lastKey = ''; rebuild(); }
 
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
@@ -76,7 +78,7 @@
       const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
       const r = await fetch('/api/brep/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source, paramValues, tolerance: 0.05 }),
+        body: JSON.stringify({ source, paramValues, tolerance: 0.05, cut }),
       });
       const data = await r.json();
       clientMs = +(((typeof performance !== 'undefined' ? performance : Date).now() - t0)).toFixed(0);
@@ -85,10 +87,16 @@
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
       if (data.index) geo.setIndex(new THREE.BufferAttribute(new Uint32Array(data.index), 1));
+      const hasColor = Array.isArray(data.colors) && data.colors.length === data.positions.length;
+      if (hasColor) geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(data.colors), 3));
       if (data.normals) geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
       else geo.computeVertexNormals();
       if (mesh) { scene.remove(mesh); (mesh.geometry as any)?.dispose?.(); (mesh.material as any)?.dispose?.(); }
-      const mat = new THREE.MeshStandardMaterial({ color: '#c0613a', metalness: 0.15, roughness: 0.5, side: THREE.DoubleSide });
+      // Cutaway → per-vertex red(outer)/grey(bore+cut) like the Manifold view;
+      // solid → flat reddish skin.
+      const mat = new THREE.MeshStandardMaterial(hasColor
+        ? { vertexColors: true, metalness: 0.1, roughness: 0.55, side: THREE.DoubleSide }
+        : { color: '#c0613a', metalness: 0.15, roughness: 0.5, side: THREE.DoubleSide });
       mesh = new THREE.Mesh(geo, mat);
       scene.add(mesh);
       fit(geo);
@@ -106,15 +114,19 @@
   // Rebuild when the tab activates or the part/source changes.
   let lastKey = '';
   $effect(() => {
-    const key = active ? source + '|' + JSON.stringify(paramValues) : '';
+    const key = active ? source + '|' + JSON.stringify(paramValues) + '|cut' + cut : '';
     if (active && scene && key && key !== lastKey) { lastKey = key; rebuild(); }
   });
 </script>
 
 <div class="brep-wrap">
   <div class="brep-host" bind:this={host}></div>
-  <button class="brep-rebuild" type="button" title="Re-run the OCCT BREP call (fresh — measures server + round-trip time)"
-    onclick={forceRebuild} disabled={status === 'building'}>🔄</button>
+  <div class="brep-tools">
+    <button class="brep-tool" class:on={cut} type="button" title="Half-section cutaway (inner grey / outer red)"
+      onclick={toggleCut} disabled={status === 'building'}>✂ cut</button>
+    <button class="brep-tool" type="button" title="Re-run the OCCT BREP call (fresh — measures server + round-trip time)"
+      onclick={forceRebuild} disabled={status === 'building'}>🔄</button>
+  </div>
   <div class="brep-hud">
     <span class="brep-title">{name} · BREP <span class="brep-kernel">OCCT</span></span>
     {#if status === 'building'}<span class="brep-stat">tessellating…</span>
@@ -131,9 +143,11 @@
   .brep-title { font-weight: 700; color: #b23a1a; }
   .brep-kernel { font-weight: 400; font-size: 10px; color: #fff; background: #7a5; padding: 1px 5px; border-radius: 3px; vertical-align: middle; }
   .brep-stat { color: #555; font-size: 11px; }
-  .brep-rebuild { position: absolute; right: 10px; top: 8px; z-index: 4; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 14px; }
-  .brep-rebuild:hover { background: #fff; border-color: #7a5; }
-  .brep-rebuild:disabled { opacity: 0.4; cursor: progress; }
+  .brep-tools { position: absolute; right: 10px; top: 8px; z-index: 4; display: flex; gap: 5px; }
+  .brep-tool { height: 28px; padding: 0 9px; display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font: 600 11px Arial; color: #44403c; }
+  .brep-tool:hover { background: #fff; border-color: #7a5; }
+  .brep-tool.on { background: #0c4a6e; color: #fff; border-color: #0c4a6e; }
+  .brep-tool:disabled { opacity: 0.4; cursor: progress; }
   .brep-stat.ok { color: #2a7; }
   .brep-stat.warn { color: #a70; }
   .brep-stat.err { color: #c33; }
