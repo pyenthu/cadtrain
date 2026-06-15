@@ -50,27 +50,70 @@
   interface FolderNode { name: string; path: string; parts: Entry[]; children: FolderNode[]; }
   let tree = $state<FolderNode | null>(null);
   let topFolders = $derived(tree?.children ?? []);
-  /** Active top-level tab: a volume folder name OR a fixed src group
-   *  ('stdlib' | 'stdstale'). */
+
+  // ─── Single expand/collapse FILE TREE (Windows-Explorer / VS-Code style) ──
+  /** Expanded folders keyed by tree path ('basic', 'completions/svtc', plus
+   *  the synthetic src roots '__stdlib'/'__stdstale'). Persisted to
+   *  localStorage. `basic` + `completions` default-expand on first load. */
+  let expanded = $state<Record<string, boolean>>({});
+  function isExpanded(path: string): boolean {
+    return expanded[path] ?? (path === 'basic' || path === 'completions');
+  }
+  function persistExpanded() {
+    try { localStorage.setItem('prim-tree-expanded', JSON.stringify(expanded)); } catch { /* ignore */ }
+  }
+  function toggleExpand(path: string) {
+    expanded = { ...expanded, [path]: !isExpanded(path) };
+    persistExpanded();
+  }
+  function ensureExpanded(path: string) {
+    if (!isExpanded(path)) { expanded = { ...expanded, [path]: true }; persistExpanded(); }
+  }
+  /** Active vertical-tab — scopes the tree to ONE top-level branch. A volume
+   *  folder name ('basic' | 'completions' | 'archive' | …) OR a synthetic src
+   *  root ('__stdlib' | '__stdstale'). The tree below shows only that branch's
+   *  contents; subfolders within it still expand/collapse in place. */
   let activeTab = $state<string>('basic');
-  /** Current navigation path within the active VOLUME tab — relative to
-   *  primitives/, always rooted at the tab name (e.g. 'completions/drill_pipe'). */
-  let navPath = $state<string>('basic');
-  /** Remember the last subfolder visited per tab so switching away + back
-   *  returns to where you were (in-memory; only activeTab/navPath persist). */
-  let navByTab: Record<string, string> = {};
-  let isSrcTab = $derived(activeTab === 'stdlib' || activeTab === 'stdstale');
-  let isArchiveTab = $derived(activeTab === 'archive');
-  /** ⛁ Cache inspector — a non-folder rail tab. When active the MAIN area
-   *  shows <CacheBrowser/> instead of the per-part editor tabs; the sidebar
-   *  scroll body shows a short hint (the cache's own parts-list lives in
-   *  main). Treated like the read-only src tabs: no navPath, no create. */
-  let isCacheTab = $derived(activeTab === 'cache');
+  function selectTab(name: string) {
+    activeTab = name;
+    try { localStorage.setItem('prim-active-tab', name); } catch { /* ignore */ }
+  }
+  /** The FolderNode the active tab points at (falls back to the first volume
+   *  folder so the tree never renders empty after a deleted folder). */
+  let activeNode = $derived.by<FolderNode | null>(() => {
+    if (activeTab === '__stdlib') return stdlibNode;
+    if (activeTab === '__stdstale') return stdstaleNode;
+    return topFolders.find((f) => f.name === activeTab) ?? topFolders[0] ?? null;
+  });
+  let activeKind = $derived<'volume' | 'archive' | 'stdlib' | 'stdstale'>(
+    activeTab === '__stdlib' ? 'stdlib'
+      : activeTab === '__stdstale' ? 'stdstale'
+      : activeNode?.name === 'archive' ? 'archive' : 'volume',
+  );
+  /** ⛁ Cache inspector — when on, the MAIN area shows <CacheBrowser/> instead
+   *  of the per-part editor tabs. Toggled from a footer row in the tree. */
+  let showCache = $state(false);
 
   function tabLabel(name: string): string {
     if (name === 'archive') return 'Archived';
     if (name === 'stdlib' || name === 'stdstale') return name;
     return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  /** Total parts in a subtree (direct parts + all descendants) — shown as the
+   *  folder's count badge so a collapsed folder still advertises its size. */
+  function subtreeCount(node: FolderNode): number {
+    return node.parts.length + node.children.reduce((n, c) => n + subtreeCount(c), 0);
+  }
+  /** True when `node` (or any descendant) has a part matching the live filter.
+   *  Folders that match nothing are hidden while a filter is active. */
+  function subtreeMatches(node: FolderNode): boolean {
+    if (!filter.trim()) return true;
+    return node.parts.some(pass) || node.children.some(subtreeMatches);
+  }
+  /** Folder children in the current sort mode (alpha sorts by name; default
+   *  keeps the server's readdir order). */
+  function sortFolders(xs: FolderNode[]): FolderNode[] {
+    return sortMode === 'alpha' ? [...xs].sort((a, b) => a.name.localeCompare(b.name)) : xs;
   }
   /** Walk the tree to the node at a relative path ('' → root, else by name). */
   function nodeAt(path: string): FolderNode | null {
@@ -84,8 +127,6 @@
     }
     return n;
   }
-  let currentNode = $derived(nodeAt(navPath));
-
   // Optimistic-insert for brand-new parts: the proxied /list lags writes by
   // seconds (memory prod_list_staleness), so a just-saved part wouldn't appear
   // until a later refresh. Track pending ids → merge them into the tree after
@@ -115,33 +156,7 @@
     mergePending();
     void loadList();
   }
-  /** Breadcrumb segments for navPath, each with its cumulative path. */
-  let crumbs = $derived(
-    navPath
-      ? navPath.split('/').map((seg, i, arr) => ({ seg, path: arr.slice(0, i + 1).join('/') }))
-      : [],
-  );
-
-  function persistNav() {
-    try {
-      localStorage.setItem('prim-active-tab', activeTab);
-      localStorage.setItem('prim-nav-path', navPath);
-    } catch { /* ignore */ }
-  }
-  function selectTab(name: string) {
-    activeTab = name;
-    // stdlib / stdstale / cache are non-folder tabs — navPath isn't a real
-    // on-volume dir for them, so just park it at the tab name.
-    navPath = (name === 'stdlib' || name === 'stdstale' || name === 'cache') ? name : (navByTab[name] ?? name);
-    persistNav();
-  }
-  function descend(path: string) {
-    navPath = path;
-    navByTab[activeTab] = path;
-    persistNav();
-  }
-
-  // ─── Create folder (folder-tab + nested subfolder) ────────────────────────
+  // ─── Create folder (top-level + nested subfolder) ─────────────────────────
   let folderBusy = $state(false);
   async function mkFolder(path: string): Promise<boolean> {
     folderBusy = true;
@@ -161,21 +176,22 @@
     }
   }
   async function addTopFolder() {
-    const raw = typeof window !== 'undefined' ? window.prompt?.('New folder-tab name (lowercase, _ allowed)', '') : null;
+    const raw = typeof window !== 'undefined' ? window.prompt?.('New top-level folder name (lowercase, _ allowed)', '') : null;
     if (!raw) return;
     const name = raw.trim();
     if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
-    if (await mkFolder(name)) selectTab(name);
+    if (await mkFolder(name)) ensureExpanded(name);
   }
-  async function addSubfolder() {
-    if (isSrcTab) return;
+  /** Create a subfolder under `parent` (a tree path). Expands both so the
+   *  new folder is visible in place. */
+  async function createSubfolderIn(parent: string) {
     const raw = typeof window !== 'undefined' ? window.prompt?.('New subfolder name (lowercase, _ allowed)', '') : null;
     if (!raw) return;
     const name = raw.trim();
     if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
-    const path = `${navPath}/${name}`;
+    const path = `${parent}/${name}`;
     if (path.split('/').length > 3) { alert('Max folder depth is 3 (cat / family / subfolder)'); return; }
-    if (await mkFolder(path)) descend(path);
+    if (await mkFolder(path)) { ensureExpanded(parent); ensureExpanded(path); }
   }
 
   /** Profile entries — `.prvl.ts` (revolve) and `.prex.ts` (extrude) files
@@ -492,60 +508,83 @@
   let sortMode = $state<'default' | 'alpha'>('default');
   const sortBy = (xs: Entry[]) =>
     sortMode === 'alpha' ? [...xs].sort((a, b) => a.id.localeCompare(b.id)) : xs;
-  let basicSorted     = $derived(sortBy(basic));
+  // The tree drives rendering (sortBy is applied to each node's parts in the
+  // folderNode snippet); only the synthetic stdlib/stdstale src roots need a
+  // pre-sorted Entry list here.
   let stdlibSorted    = $derived(sortBy(stdlib));
   let stdstaleSorted  = $derived(sortBy(stdstale));
-  let archivedSorted  = $derived(sortBy(archived));
-  // For completions, sort the entries inside each family but leave the
-  // family-name order unchanged (families come back from /list in a deliberate
-  // order and shouldn't get re-shuffled). Object.entries() iteration order is
-  // the insertion order of the keys.
-  let completionsSorted = $derived(
-    Object.fromEntries(Object.entries(completions).map(([fam, items]) => [fam, sortBy(items)]))
-  );
+  // Synthetic read-only tree roots for the engine SOURCES (git-tracked src,
+  // NOT volume folders → no real path, no create/rename/trash). Rendered as
+  // their own branches at the bottom of the tree.
+  let stdlibNode = $derived<FolderNode>({ name: 'stdlib', path: '__stdlib', parts: stdlibSorted, children: [] });
+  let stdstaleNode = $derived<FolderNode>({ name: 'stdstale', path: '__stdstale', parts: stdstaleSorted, children: [] });
   function toggleSortMode() {
     sortMode = sortMode === 'alpha' ? 'default' : 'alpha';
     try { localStorage.setItem('prim-sidebar-sort', sortMode); } catch { /* ignore */ }
   }
-  // Expand/collapse per group. Persisted to localStorage.
-  let openGroups = $state<Record<string, boolean>>({
-    profiles: true, basic: true, stdlib: true, stdstale: false, completions: true, archived: false,
-  });
-  let openFamilies = $state<Record<string, boolean>>({});
   onMount(() => {
     try {
-      const og = localStorage.getItem('prim-open-groups');
-      if (og) openGroups = { ...openGroups, ...JSON.parse(og) };
-      const of = localStorage.getItem('prim-open-families');
-      if (of) openFamilies = JSON.parse(of);
+      const te = localStorage.getItem('prim-tree-expanded');
+      if (te) expanded = JSON.parse(te);
       const sm = localStorage.getItem('prim-sidebar-sort');
       if (sm === 'alpha' || sm === 'default') sortMode = sm;
+      const at = localStorage.getItem('prim-active-tab');
+      if (at) activeTab = at;
     } catch { /* ignore */ }
   });
-  function toggleGroup(k: string) {
-    openGroups = { ...openGroups, [k]: !openGroups[k] };
-    try { localStorage.setItem('prim-open-groups', JSON.stringify(openGroups)); } catch { /* ignore */ }
-  }
-  function toggleFamily(fam: string) {
-    openFamilies = { ...openFamilies, [fam]: !openFamilies[fam] };
-    try { localStorage.setItem('prim-open-families', JSON.stringify(openFamilies)); } catch { /* ignore */ }
-  }
 
   /** Create a new entry by opening a fresh tab with the typed id. The
    *  file isn't written until the user clicks Save inside the editor —
    *  fetching /source for an id that doesn't exist 404s, GraphEditorPane
    *  treats that as a fresh graph + lets the first save create the file. */
-  function createNewEntry() {
+  function createPartIn(dir: string) {
     const prompt = typeof window !== 'undefined' ? window.prompt : null;
     if (!prompt) return;
-    const raw = prompt(`new part id in ${navPath}/ (lowercase, _ allowed)`, '');
+    const raw = prompt(`new part id in ${dir}/ (lowercase, _ allowed)`, '');
     if (!raw) return;
     const id = raw.trim();
     if (!ID_RE.test(id)) { alert(`bad id "${id}" — must match [a-z][a-z0-9_]*`); return; }
-    // First Save lands the .prim.ts in the active folder-tab / subfolder
-    // (location IS category, Rule 16). The pane carries `createDir`.
-    void openTab(id, navPath);
+    // First Save lands the .prim.ts in this folder (location IS category,
+    // Rule 16). The pane carries `createDir`.
+    ensureExpanded(dir);
+    void openTab(id, dir);
   }
+
+  // ─── Single "+" create menu (per-folder New part / New folder) ─────────────
+  /** The two-button ＋part / ＋subfolder hover affordance was replaced by ONE
+   *  `+` button on each volume folder row that opens a small anchored popover
+   *  (New part here / New folder here). Only one menu is open at a time. The
+   *  popover is `position:fixed` (z-index 1000) so it escapes the rail's
+   *  overflow:auto clipping; it dismisses on outside-click + Escape. */
+  let createMenu = $state<{ path: string; x: number; y: number } | null>(null);
+  function openCreateMenu(path: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    if (createMenu?.path === path) { createMenu = null; return; }
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    // Anchor just under the + button, nudged left so the menu doesn't overflow
+    // the rail's right edge.
+    createMenu = { path, x: Math.max(8, r.right - 150), y: r.bottom + 2 };
+  }
+  function closeCreateMenu() { createMenu = null; }
+  function menuNewPart() { const p = createMenu?.path; closeCreateMenu(); if (p != null) createPartIn(p); }
+  function menuNewFolder() { const p = createMenu?.path; closeCreateMenu(); if (p != null) void createSubfolderIn(p); }
+  // Outside-click + Escape dismissal — only wired while a menu is open.
+  $effect(() => {
+    if (!createMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeCreateMenu(); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('.prim-create-menu')) return; // click inside the menu
+      if (t && t.closest('.prim-folder-add')) return;  // the + button toggles itself
+      closeCreateMenu();
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+    };
+  });
 
   // ─── Tab strip ────────────────────────────────────────────────────────────
   /** UNIFIED tab — every tab mounts the same GraphEditorPane. The graph's
@@ -660,24 +699,6 @@
       if (rw >= 180 && rw <= 480) railWidth = rw;
     } catch { /* ignore */ }
     await loadList();
-    // Restore the active folder-tab + nav path. Validate against the freshly
-    // loaded tree — a stored path whose dir was deleted falls back to the tab
-    // root, then to the first available folder-tab, so the sidebar never lands
-    // on a blank (null) node.
-    try {
-      const at = localStorage.getItem('prim-active-tab');
-      if (at) activeTab = at;
-      const np = localStorage.getItem('prim-nav-path');
-      if (np) navPath = np;
-    } catch { /* ignore */ }
-    if (!isSrcTab && !isCacheTab) {
-      if (!nodeAt(navPath)) navPath = nodeAt(activeTab) ? activeTab : '';
-      if (!nodeAt(navPath)) {
-        const first = topFolders[0];
-        if (first) { activeTab = first.name; navPath = first.name; }
-      }
-      navByTab[activeTab] = navPath;
-    }
     // Restore previously-open tabs from this browser's last session.
     // New format: `id|kind` per entry; legacy entries (no `|`) default to
     // 'part' so old saves keep working.
@@ -765,41 +786,19 @@
       {/if}
     </div>
 
-    <!-- Vertical tab rail — one tab per top-level volume folder (sourced from
-         the /list `tree`, so user-created dirs appear automatically; Rule 16),
-         plus the two fixed read-only SRC groups (stdlib / stdstale) which are
-         git-tracked src, NOT volume folders → not addable. The trailing ＋
-         creates a new folder-tab on the volume. Tabs are PINNED (outside the
-         scroll); only the active tab's content scrolls. -->
-    <div class="prim-body">
-    <div class="prim-tabrail" role="tablist" aria-label="Primitive folders">
-      {#each topFolders as f (f.path)}
-        <button class="prim-tabbtn" class:active={activeTab === f.name}
-          role="tab" type="button" aria-selected={activeTab === f.name}
-          title={`${tabLabel(f.name)} — primitives/${f.name}/`}
-          onclick={() => selectTab(f.name)}>{tabLabel(f.name)}</button>
-      {/each}
-      <!-- stdlib / stdstale are read-only engine SOURCES the user doesn't
-           author in — hidden from the rail (the source files + resolver
-           behaviour are untouched; parts still bake against them). -->
-      <!-- ⛁ Cache inspector — a non-folder tab; selecting it swaps the main
-           area to <CacheBrowser/>. -->
-      <button class="prim-tabbtn cache" class:active={activeTab === 'cache'}
-        role="tab" type="button" aria-selected={activeTab === 'cache'}
-        title="Bake-cache inspector (local volume)"
-        onclick={() => selectTab('cache')}>⛁ Cache</button>
-      <button class="prim-tabadd" type="button"
-        title="New folder-tab — creates primitives/<name>/ on the volume"
-        disabled={folderBusy} onclick={addTopFolder}>＋ folder</button>
-    </div>
-
-    <!-- Reusable part row — open / drag / rename / trash. `tag` is the source
-         badge; `trashKind` picks soft-delete (🗑 → archive/), permanent
-         (irreversible, Archived tab) or none (read-only src). -->
-    {#snippet partRow(e: Entry, tag: string, canRename: boolean, trashKind: 'none' | 'soft' | 'perm')}
+    <!-- Reusable part (file) row — open / drag / rename / trash. `kind` is the
+         provenance, which decides the badge + which row-actions are offered:
+           volume   → vol badge,  ✎ rename + 🗑 soft-delete (→ archive/)
+           archive  → arch badge, permanent 🗑 (irreversible), no rename
+           stdlib   → src badge,  read-only (no rename / trash)
+           stdstale → stale badge,read-only
+         `depth` indents the row to match its folder nesting. -->
+    {#snippet partRow(e: Entry, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale')}
+      {@const tag = kind === 'archive' ? 'arch' : kind === 'stdlib' ? 'src' : kind === 'stdstale' ? 'stale' : 'vol'}
+      {@const canRename = kind === 'volume'}
       <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
         {#if renamingId === e.id}
-          <div class="prim-row prim-row-rename">
+          <div class="prim-row prim-row-rename" style="padding-left: {12 + depth * 14}px">
             <input class="prim-rename-input" type="text" use:focusRenameInput
               bind:value={renameValue}
               disabled={renameBusy}
@@ -812,6 +811,7 @@
           </div>
         {:else}
           <button class="prim-row" type="button"
+            style="padding-left: {12 + depth * 14}px"
             draggable={!isCoarsePointer}
             ondragstart={(ev) => {
               if (ev.dataTransfer) {
@@ -820,6 +820,7 @@
               }
             }}
             onclick={() => openTab(e.id)}>
+            <span class="prim-file-ic">📄</span>
             <span class="prim-name">{e.id}</span>
             <span class="prim-tag {tag}">{tag}</span>
           </button>
@@ -829,12 +830,12 @@
               aria-label="Rename {e.id}"
               onclick={() => startRename(e.id, e.source)}>✎</button>
           {/if}
-          {#if trashKind === 'soft'}
+          {#if kind === 'volume'}
             <button class="prim-trash" type="button"
               title="Archive — soft delete (recoverable from primitives/archive/)"
               disabled={deleteBusy === e.id}
               onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
-          {:else if trashKind === 'perm'}
+          {:else if kind === 'archive'}
             <button class="prim-trash perm" type="button"
               title="Permanent delete — removes the file from the volume (irreversible)"
               disabled={deleteBusy === e.id}
@@ -860,74 +861,139 @@
       </div>
     {/snippet}
 
-    <!-- Active tab's content scrolls here. Only ONE pane is rendered (the
-         active tab), so there's no display:none grid/track phantom to blank
-         the next pane (memory grid_display_none_auto_placement). -->
-    <div class="prim-rail-scroll">
-
-    {#if listLoading}<div class="prim-empty">loading…</div>{/if}
-    {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
-
-    {#if isCacheTab}
-      <!-- Cache tab — the inspector's own parts-list lives in the MAIN panel
-           (it needs the width); the rail just orients the user. -->
-      <div class="prim-empty">⛁ Bake-cache inspector — see the main panel. The
-        cache is on the local volume (not proxied).</div>
-    {:else if isSrcTab}
-      <!-- Fixed SRC group — flat, read-only (no create / rename / trash). -->
-      {@const srcList = activeTab === 'stdlib' ? stdlibSorted : stdstaleSorted}
-      {@const srcTag = activeTab === 'stdlib' ? 'src' : 'stale'}
-      {#each srcList.filter(pass) as e (e.id)}
-        {@render partRow(e, srcTag, false, 'none')}
-      {/each}
-      {#if srcList.filter(pass).length === 0}<div class="prim-empty">no entries</div>{/if}
-    {:else}
-      <!-- Breadcrumb — descend by clicking a child folder, climb by clicking a
-           crumb. Each segment is a real on-volume dir. -->
-      <div class="prim-crumbs">
-        {#each crumbs as c, i (c.path)}
-          {#if i > 0}<span class="prim-crumb-sep">/</span>{/if}
-          <button class="prim-crumb" class:current={c.path === navPath} type="button"
-            onclick={() => descend(c.path)}>{i === 0 ? tabLabel(c.seg) : c.seg}</button>
-        {/each}
+    <!-- Recursive FOLDER node — chevron + 📁 + name + subtree count. Clicking
+         the row expands/collapses IN PLACE; children (subfolders then files)
+         render indented one level deeper. A filter forces every folder open
+         and hides anything that doesn't match. `kind` propagates so an
+         archive subtree gets permanent-delete + no create, src groups stay
+         read-only, and volume folders offer a single `+` create menu on hover. -->
+    {#snippet folderNode(node: FolderNode, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale')}
+      {@const open = filter.trim() ? true : isExpanded(node.path)}
+      {@const kids = sortFolders(node.children).filter(subtreeMatches)}
+      {@const files = sortBy(node.parts).filter(pass)}
+      <div class="prim-tree-node">
+        <div class="prim-folder-row-wrap">
+          <button class="prim-folder-row" type="button"
+            style="padding-left: {8 + depth * 14}px"
+            title={`primitives/${node.path}/`}
+            onclick={() => toggleExpand(node.path)}>
+            <span class="prim-chev">{open ? '▾' : '▸'}</span>
+            <span class="prim-folder-ic">{open ? '📂' : '📁'}</span>
+            <span class="prim-name">{depth === 0 ? tabLabel(node.name) : node.name}</span>
+            <span class="prim-count">({subtreeCount(node)})</span>
+          </button>
+          {#if kind === 'volume'}
+            <button class="prim-folder-add" class:open={createMenu?.path === node.path}
+              type="button" aria-haspopup="menu"
+              aria-expanded={createMenu?.path === node.path}
+              title={`New part or folder in primitives/${node.path}/`}
+              onclick={(ev) => openCreateMenu(node.path, ev)}>+</button>
+          {/if}
+        </div>
+        {#if open}
+          {#each kids as c (c.path)}
+            {@render folderNode(c, depth + 1, kind)}
+          {/each}
+          {#each files as e (e.id)}
+            {@render partRow(e, depth + 1, kind)}
+          {/each}
+          {#if kids.length === 0 && files.length === 0}
+            <div class="prim-empty" style="padding-left: {12 + (depth + 1) * 14}px">{filter.trim() ? 'no matches' : 'empty'}</div>
+          {/if}
+        {/if}
       </div>
-      <!-- Folder-level actions: new part (writes into THIS dir — location IS
-           category) + new subfolder (mkdir on the volume). Hidden where they
-           don't apply (no new parts into the archive graveyard). -->
-      <div class="prim-folder-actions">
-        {#if !isArchiveTab}
+    {/snippet}
+
+    <!-- Body = a thin LEFT vertical-tab rail (one filing-cabinet tab per
+         top-level folder, plus the read-only stdlib/stdstale branches) +
+         the scoped file tree to its right. Each tab SCOPES the tree to that
+         one top-level branch — selecting 'Archived' shows only archive/'s
+         contents; subfolders within the active branch still expand in place. -->
+    <div class="prim-body">
+    <nav class="prim-tabrail" role="tablist" aria-label="Top-level folders">
+      {#each topFolders as f (f.path)}
+        <button class="prim-tabbtn" class:active={activeTab === f.name}
+          role="tab" type="button" aria-selected={activeTab === f.name}
+          title={`primitives/${f.name}/`}
+          onclick={() => selectTab(f.name)}>{tabLabel(f.name)}</button>
+      {/each}
+      <button class="prim-tabbtn src" class:active={activeTab === '__stdlib'}
+        role="tab" type="button" aria-selected={activeTab === '__stdlib'}
+        title="stdlib engine sources (read-only)"
+        onclick={() => selectTab('__stdlib')}>stdlib</button>
+      <button class="prim-tabbtn src" class:active={activeTab === '__stdstale'}
+        role="tab" type="button" aria-selected={activeTab === '__stdstale'}
+        title="stdstale engine sources (read-only)"
+        onclick={() => selectTab('__stdstale')}>stdstale</button>
+    </nav>
+
+    <!-- ONE expand/collapse file tree. Volume folders first (archive subtree
+         flagged so its files get permanent-delete), then the read-only engine
+         SRC groups (stdlib / stdstale) as their own branches, then a ⛁ Cache
+         footer row that swaps the MAIN panel to the bake-cache inspector. -->
+    <div class="prim-tree-scroll prim-rail-scroll">
+
+      {#if listLoading}<div class="prim-empty">loading…</div>{/if}
+      {#if listError}<div class="prim-error">list failed: {listError}</div>{/if}
+
+      <!-- Toolbar scoped to the ACTIVE tab: a `+` to create a part/folder
+           directly in this top-level folder (volume only) + the global
+           ＋folder to add a new top-level folder. -->
+      <div class="prim-tree-toolbar">
+        {#if activeKind === 'volume' && activeNode}
           <button class="prim-mini" type="button"
-            title={`Create a new part in primitives/${navPath}/ — opens a fresh tab; first save writes the file`}
-            onclick={createNewEntry}>＋ part</button>
+            title={`New part or folder in primitives/${activeNode.path}/`}
+            onclick={(ev) => openCreateMenu(activeNode.path, ev)}>＋ new</button>
         {/if}
         <button class="prim-mini" type="button"
-          title={`Create a subfolder in primitives/${navPath}/`}
-          disabled={folderBusy} onclick={addSubfolder}>＋ subfolder</button>
+          title="New top-level folder — creates primitives/<name>/ on the volume"
+          disabled={folderBusy} onclick={addTopFolder}>＋ folder</button>
       </div>
 
-      {#if currentNode}
-        {#each currentNode.children as c (c.path)}
-          <button class="prim-folder-row" type="button"
-            title={`Open primitives/${c.path}/`}
-            onclick={() => descend(c.path)}>
-            <span class="prim-folder-ic">📁</span>
-            <span class="prim-name">{c.name}</span>
-            <span class="prim-count">({c.parts.length})</span>
-          </button>
+      <!-- The tree is SCOPED to the active tab: render only that branch's
+           subfolders (expand/collapse in place) + its direct files. The tab
+           itself is the branch header, so there's no redundant top folder row. -->
+      {#if activeNode}
+        {@const kids = sortFolders(activeNode.children).filter(subtreeMatches)}
+        {@const files = sortBy(activeNode.parts).filter(pass)}
+        {#each kids as c (c.path)}
+          {@render folderNode(c, 0, activeKind)}
         {/each}
-        {#each sortBy(currentNode.parts).filter(pass) as e (e.id)}
-          {@render partRow(e, isArchiveTab ? 'arch' : 'vol', !isArchiveTab, isArchiveTab ? 'perm' : 'soft')}
+        {#each files as e (e.id)}
+          {@render partRow(e, 0, activeKind)}
         {/each}
-        {#if currentNode.children.length === 0 && currentNode.parts.filter(pass).length === 0}
-          <div class="prim-empty">{filter.trim() ? 'no matches' : 'empty folder'}</div>
+        {#if kids.length === 0 && files.length === 0}
+          <div class="prim-empty">{filter.trim() ? 'no matches' : 'empty'}</div>
         {/if}
       {:else}
-        <div class="prim-empty">folder not found</div>
+        <div class="prim-empty">no folder</div>
       {/if}
-    {/if}
 
-    </div><!-- /.prim-rail-scroll -->
+      <!-- ⛁ Bake-cache inspector — a non-folder leaf; selecting it swaps the
+           main area to <CacheBrowser/>. -->
+      <button class="prim-cache-row" class:active={showCache} type="button"
+        title="Bake-cache inspector (local volume, not proxied)"
+        onclick={() => { showCache = !showCache; }}>
+        <span class="prim-folder-ic">⛁</span>
+        <span class="prim-name">Cache</span>
+      </button>
+
+    </div><!-- /.prim-tree-scroll -->
     </div><!-- /.prim-body -->
+
+    <!-- Single "+" create menu — anchored popover (one at a time). position:fixed
+         so it escapes the rail's overflow:auto clipping (memory
+         floating_panel_z_index). Dismisses on outside-click / Escape. -->
+    {#if createMenu}
+      <div class="prim-create-menu" role="menu"
+        style="left: {createMenu.x}px; top: {createMenu.y}px">
+        <div class="prim-create-menu-head">primitives/{createMenu.path}/</div>
+        <button class="prim-create-menu-item" type="button" role="menuitem"
+          onclick={menuNewPart}>＋ New part here</button>
+        <button class="prim-create-menu-item" type="button" role="menuitem"
+          disabled={folderBusy} onclick={menuNewFolder}>📁 New folder here</button>
+      </div>
+    {/if}
 
     <!-- Broken-refs toast (#165) — surfaced when a rename leaves OTHER
          primitives' meta.graph still pointing at the old id. Lets the user
@@ -966,8 +1032,8 @@
     ondblclick={() => { railWidth = 240; try { localStorage.setItem('prim-rail-width', '240'); } catch { /* ignore */ } }}></div>
 
   <main class="prim-main">
-    {#if isCacheTab}
-      <!-- ⛁ Cache tab active — the inspector replaces the editor tab strip. -->
+    {#if showCache}
+      <!-- ⛁ Cache row active — the inspector replaces the editor tab strip. -->
       <CacheBrowser active={true} />
     {:else if tabs.length === 0}
       <div class="prim-empty-state">
@@ -1132,18 +1198,22 @@
   }
   .prim-rag-err { color: #b91c1c; }
 
-  /* ─── Vertical tab rail (folder-tabs) ────────────────────────────────── */
-  /* A pinned column of folder-tabs above the scrolling content. Each tab is
-     a full-width button; the active one is inverted (slate) so it reads as
-     "selected". Wraps to multiple rows when there are many folders. */
-  /* Body = a horizontal split: a narrow LEFT rail of vertical-text folder-tabs
-     + the folder content to its right. Fills the remaining sidebar height. */
+  /* ─── Single expand/collapse file tree ───────────────────────────────── */
+  /* The whole sidebar body is ONE scrolling tree (Windows-Explorer / VS-Code
+     style): folder rows expand/collapse in place, files nest underneath,
+     subfolders open beside their siblings. Indent is applied inline per
+     depth so there's no fixed per-level class to maintain. */
+  .prim-tree-scroll { padding-bottom: 8px; min-width: 0; }
+
+  /* Body = horizontal split: a narrow LEFT vertical-tab rail + the file tree.
+     Fills the remaining rail height after the header + filter + RAG foot. */
   .prim-body {
     display: flex; flex-direction: row;
     flex: 1 1 0; min-height: 0; min-width: 0;
   }
-  /* Vertical tab rail — a left column of tabs whose labels are rotated to read
-     vertically (filing-cabinet style). Scrolls vertically if many folders. */
+  /* Vertical jump rail — a left column of filing-cabinet tabs whose labels are
+     rotated to read top→bottom. Scrolls if there are many folders. Clicking a
+     tab expands + scrolls its top-level folder into view (jumpToFolder). */
   .prim-tabrail {
     flex: 0 0 auto;
     display: flex; flex-direction: column; gap: 3px;
@@ -1160,49 +1230,17 @@
     background: transparent; cursor: pointer;
     font: 600 11px Arial; color: #44403c;
     text-transform: uppercase; letter-spacing: 0.6px;
-    white-space: nowrap; min-height: 78px;
+    white-space: nowrap; min-height: 60px;
     transition: background 100ms, color 100ms, border-color 100ms;
   }
   .prim-tabbtn:hover { background: #e7e5e4; }
-  .prim-tabbtn.active {
-    background: #0c4a6e; color: #fff; border-color: #0c4a6e;
-  }
-  /* SRC tabs (stdlib / stdstale) — blue tint so their read-only provenance
-     reads at a glance; still inverts when active. */
+  /* Active = that top-level folder is currently expanded in the tree. */
+  .prim-tabbtn.active { background: #0c4a6e; color: #fff; border-color: #0c4a6e; }
+  /* SRC tabs (stdlib / stdstale) — blue tint for read-only provenance. */
   .prim-tabbtn.src { color: #1e40af; }
   .prim-tabbtn.src.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
-  /* ⛁ Cache tab — amber tint so the inspector reads as a distinct utility
-     surface, not a part folder; inverts to amber when active. */
-  .prim-tabbtn.cache { color: #92400e; }
-  .prim-tabbtn.cache.active { background: #92400e; color: #fff; border-color: #92400e; }
-  /* + folder-tab — dashed green affordance, set apart from the real tabs. */
-  .prim-tabadd {
-    flex: 0 0 auto;
-    writing-mode: vertical-rl;
-    display: flex; align-items: center; justify-content: center;
-    padding: 6px 4px;
-    border: 1px dashed #86efac; border-radius: 5px;
-    background: transparent; cursor: pointer; min-height: 70px;
-    font: 600 10px Arial; color: #15803d; letter-spacing: 0.4px;
-  }
-  .prim-tabadd:hover:not(:disabled) { background: #d1fae5; border-color: #4ade80; color: #166534; }
-  .prim-tabadd:disabled { cursor: wait; opacity: 0.5; }
-
-  /* ─── Breadcrumb + folder-level actions ──────────────────────────────── */
-  .prim-crumbs {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 1px;
-    padding: 6px 12px 2px; font: 11px Arial;
-  }
-  .prim-crumb {
-    padding: 1px 4px; border: 0; border-radius: 3px; background: transparent;
-    cursor: pointer; color: #0369a1; font: 600 11px Arial;
-  }
-  .prim-crumb:hover { background: #e0f2fe; }
-  .prim-crumb.current { color: #44403c; cursor: default; }
-  .prim-crumb.current:hover { background: transparent; }
-  .prim-crumb-sep { color: #a8a29e; font-size: 10px; }
-  .prim-folder-actions {
-    display: flex; gap: 6px; padding: 2px 12px 6px;
+  .prim-tree-toolbar {
+    display: flex; gap: 6px; padding: 6px 12px;
     border-bottom: 1px solid #f3f4f6;
   }
   .prim-mini {
@@ -1212,48 +1250,66 @@
   .prim-mini:hover:not(:disabled) { background: #d1fae5; border-color: #86efac; color: #166534; }
   .prim-mini:disabled { cursor: wait; opacity: 0.5; }
 
-  /* Subfolder row — clicking descends into it. Folder icon + count badge. */
+  /* Folder row — chevron + 📁 + name + count. The wrap hosts the row button
+     plus the hover-revealed single `+` create-menu trigger as a sibling
+     (can't nest <button>s). */
+  .prim-folder-row-wrap { display: flex; align-items: stretch; }
+  .prim-folder-row-wrap:hover .prim-folder-row { background: #e7e5e4; }
+  .prim-folder-row-wrap:hover .prim-folder-add,
+  .prim-folder-add.open { opacity: 0.85; }
   .prim-folder-row {
-    display: flex; align-items: center; gap: 8px; width: 100%;
-    padding: 5px 12px; background: transparent; border: 0; cursor: pointer;
-    text-align: left; font: 12px Arial; color: #1f2937;
-  }
-  .prim-folder-row:hover { background: #e7e5e4; }
-  .prim-folder-ic { font-size: 13px; flex: 0 0 auto; }
-
-  .prim-group { padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
-  /* Row wrapping the group toggle + the trailing + button so they share
-     a single hover region without nesting buttons. */
-  .prim-group-row { display: flex; align-items: stretch; }
-  .prim-group-row:hover .prim-group-head,
-  .prim-group-row:hover .prim-group-new { background: #f3f4f6; }
-  .prim-group-head {
     display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
-    padding: 6px 12px; background: transparent; border: 0; cursor: pointer;
-    text-align: left; font: 600 11px Arial; color: #44403c;
-    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 5px 12px; background: transparent; border: 0; cursor: pointer;
+    text-align: left; font: 600 12px Arial; color: #292524;
   }
-  /* + new entry button — hover-revealed at the right edge of the group row.
-     Click opens a name prompt + a fresh tab. The file is created on the
-     editor's first Save, so there's no risk of dangling empty files. */
-  .prim-group-new {
-    width: 28px; padding: 0; background: transparent; border: 0;
-    color: #15803d; cursor: pointer;
-    font: 600 16px Arial; line-height: 1;
-    opacity: 0; transition: opacity 100ms;
+  .prim-folder-ic { font-size: 13px; flex: 0 0 auto; }
+  .prim-file-ic { font-size: 11px; flex: 0 0 auto; opacity: 0.65; }
+  .prim-chev {
+    flex: 0 0 auto; width: 10px; color: #78716c; font-size: 9px; line-height: 1;
+  }
+  /* Hover-revealed single `+` create trigger — green so it reads as "create".
+     Opens the anchored New part / New folder popover. */
+  .prim-folder-add {
+    flex: 0 0 auto;
+    min-width: 24px; padding: 0 7px; background: transparent; border: 0;
+    color: #15803d; cursor: pointer; font: 700 15px Arial; line-height: 1;
+    opacity: 0; transition: opacity 100ms, background 100ms;
     display: flex; align-items: center; justify-content: center;
   }
-  .prim-group-row:hover .prim-group-new { opacity: 0.85; }
-  .prim-group-new:hover { opacity: 1 !important; background: #d1fae5; color: #166534; }
-  .prim-caret { color: #78716c; font-size: 9px; width: 10px; }
-  .prim-count { color: #a8a29e; font-weight: 400; font-size: 10px; }
+  .prim-folder-add:hover, .prim-folder-add.open { opacity: 1 !important; background: #d1fae5; color: #166534; }
 
-  .prim-family-head {
-    display: flex; align-items: center; gap: 6px; width: 100%;
-    padding: 4px 12px 4px 22px; background: transparent; border: 0; cursor: pointer;
-    text-align: left; font: 500 11px Arial; color: #57534e;
+  /* Anchored create-menu popover (position:fixed, z-index 1000 — escapes the
+     rail's overflow clipping; see floating_panel_z_index memory). */
+  .prim-create-menu {
+    position: fixed; z-index: 1000; min-width: 150px;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16); padding: 4px;
+    display: flex; flex-direction: column; gap: 1px;
   }
-  .prim-family-head:hover { background: #f3f4f6; }
+  .prim-create-menu-head {
+    padding: 4px 8px 6px; font: 600 10px Arial; color: #a8a29e;
+    border-bottom: 1px solid #f3f4f6; margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+  }
+  .prim-create-menu-item {
+    text-align: left; padding: 6px 10px; border: 0; border-radius: 4px;
+    background: transparent; cursor: pointer; font: 12px Arial; color: #292524;
+  }
+  .prim-create-menu-item:hover:not(:disabled) { background: #d1fae5; color: #166534; }
+  .prim-create-menu-item:disabled { cursor: wait; opacity: 0.5; }
+
+  /* ⛁ Cache footer row — amber tint so the inspector reads as a distinct
+     utility surface, not a part folder; inverts to amber when active. */
+  .prim-cache-row {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    margin-top: 6px; padding: 6px 12px;
+    border: 0; border-top: 1px solid #f3f4f6; background: transparent;
+    cursor: pointer; text-align: left; font: 600 12px Arial; color: #92400e;
+  }
+  .prim-cache-row:hover { background: #fef3c7; }
+  .prim-cache-row.active { background: #92400e; color: #fff; }
+
+  .prim-count { color: #a8a29e; font-weight: 400; font-size: 10px; }
 
   /* Row wrapper carries the active-tab highlight + hosts the trash button
      beside the row's open button. Two siblings, can't be nested <button>s. */
