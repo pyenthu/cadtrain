@@ -98,7 +98,19 @@
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
   import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
-  import { sketchColLayout, sketchEntryH, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
+  import { sketchColLayout, sketchEntryH } from '$lib/cad/sketch-layout';
+  // Pure socket / card / position geometry (P1/G1 extraction — see
+  // docs/plans/modularize.md). These take captured state (graph, pan/zoom,
+  // CARD_Y0, PARAM_W, cardObstacles, sketchOpsScrollTop) as explicit args.
+  import {
+    bezier, chipWidthFor, paramPos, paramCardSize, extractParamRefs, paramSocketPos,
+    cardMinWidth, polySockR, polySockZ, polySockRef,
+    sketchCols, sketchSockR, sketchSockZ, sketchSockVal,
+    sketchRowVisible, nodeSize, containerSlotY, inlineXformStrip, inlineXformSocket,
+    inlineXformOutput, inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
+    entryIdxForEvalIdx, miniBez,
+    CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
+  } from '$lib/cad/graph-editor-geom';
   import { dragNumber } from '$lib/shared/dragNumber';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
 
@@ -754,7 +766,7 @@
       if (d < hitR && d < bestVd) { bestVd = d; bestVi = i; }
     }
     if (bestVi >= 0) {
-      const entryIdx = entryIdxForEvalIdx(node, bestVi);
+      const entryIdx = entryIdxForEvalIdx(graph,node, bestVi);
       const inRepeat = entryIdx === null;
       const entry = entryIdx !== null ? node.points[entryIdx] : null;
       const parametric = inRepeat
@@ -789,7 +801,7 @@
     }
     if (bestI < 0) { polyInsertHover = null; return; }
     const b = pts[(bestI + 1) % pts.length];
-    const blocked = entryIdxForEvalIdx(node, bestI) === null;
+    const blocked = entryIdxForEvalIdx(graph,node, bestI) === null;
     polyInsertHover = {
       i: bestI,
       ax: pts[bestI][0], ay: pts[bestI][1],
@@ -797,61 +809,6 @@
       px: bestPx, py: bestPy,
       blocked,
     };
-  }
-  /** Cheap PARAMS-only eval for an ArgValue → number. Mirrors the
-   *  evalCoord pipeline inside polyToPoints but standalone (no extra
-   *  loop-var bindings). Used by entryIdxForEvalIdx to size each
-   *  repeat-ref / repeat span without re-expanding the whole polygon. */
-  function evalArgValueScalar(val: any): number {
-    try {
-      if (!val) return 0;
-      if (val.kind === 'literal') return Number(val.value) || 0;
-      if (val.kind === 'param') {
-        return Number((graph.params as any)?.[val.param]?.default ?? 0);
-      }
-      if (val.kind === 'expr') {
-        const params: Record<string, number> = {};
-        for (const [k, v] of Object.entries(graph.params ?? {})) {
-          params[k] = Number((v as any)?.default ?? 0);
-        }
-        const fn = new Function(
-          'p', 'Math', 'PI', 'tau', 'cos', 'sin', 'tan', 'sqrt', 'abs',
-          `return (${String(val.expr)});`,
-        );
-        const out = fn(params, Math, Math.PI, 2 * Math.PI, Math.cos, Math.sin, Math.tan, Math.sqrt, Math.abs);
-        return Number.isFinite(out) ? Number(out) : 0;
-      }
-    } catch { /* ignore */ }
-    return 0;
-  }
-  /** Map an evaluated-points-index back to the ENTRY index in the polygon's
-   *  `points` array. Walks entries advancing `cursor` by each entry's
-   *  expansion span. Repeat-ref / inline-repeat entries with N points
-   *  cover [cursor..cursor+N); literal vertices cover {cursor}. Returns
-   *  the entry index when the eval idx lands on a literal vertex; returns
-   *  null when it falls inside a repeat expansion (those edges can't
-   *  be UI-inserted — the user tweaks count/expressions instead). */
-  function entryIdxForEvalIdx(node: any, evalIdx: number): number | null {
-    let cursor = 0;
-    for (let i = 0; i < node.points.length; i++) {
-      const entry = node.points[i];
-      let span = 1;
-      if (entry?.kind === 'repeat-ref') {
-        const src = graph.nodes[entry.sourceId] as any;
-        span = (src && src.type === 'poly_repeat')
-          ? Math.max(0, Math.min(2048, Math.round(evalArgValueScalar(src.count))))
-          : 0;
-      } else if (entry?.kind === 'repeat') {
-        span = Math.max(0, Math.min(2048, Math.round(evalArgValueScalar(entry.count))));
-      }
-      if (evalIdx < cursor + span) {
-        // Fell inside this entry. Only literal vertices accept a UI insert.
-        if (entry?.kind === 'point' || !entry?.kind) return i;
-        return null;
-      }
-      cursor += span;
-    }
-    return null;
   }
   /** Click anywhere on the SVG background while polyInsertMode is on:
    *  find the polygon edge closest to the click point, insert a new
@@ -889,7 +846,7 @@
       if (d < bestD) { bestD = d; bestI = i; bestPx = px; bestPy = py; }
     }
     if (bestI < 0) return;
-    const entryIdx = entryIdxForEvalIdx(node, bestI);
+    const entryIdx = entryIdxForEvalIdx(graph,node, bestI);
     if (entryIdx === null) return; // edge inside a repeat block — refuse
     const r = Math.round(bestPx * 1000) / 1000;
     const z = Math.round(bestPy * 1000) / 1000;
@@ -1893,7 +1850,7 @@
     resizeStartY = ev.clientY;
     const node = graph.nodes[id];
     if (!node) return;
-    const sz = nodeSize(node);
+    const sz = nodeSize(graph,node);
     resizeOrigW = sz.w;
     resizeOrigH = sz.h;
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
@@ -1928,7 +1885,7 @@
   // PARAM_W × PARAM_H, with PARAM_GAP between rows. The whole card is wide
   // enough to wrap the chip + padding; the socket sits OUTSIDE the card's
   // right edge so it can be drag-wired from.
-  const CARD_X0 = 8, CARD_PAD = 8, CARD_TITLE_H = 26;
+  // CARD_X0 / CARD_PAD / CARD_TITLE_H are imported from $lib/cad/graph-editor-geom.
   // ─── Properties card (pinned ABOVE Params) ────────────────────────────────
   // A small viewport-glued card holding part-level z-offset / colour / material.
   // It sits at the very top-left (PROPS_X0, PROPS_Y0); the Params card is then
@@ -1950,22 +1907,8 @@
   // PARAM_W is DYNAMIC — derived from the longest label so chips like
   // p.totalLen don't clip. Constants below are the FIXED footprint of the
   // pin + input + trash; the label slot expands to fit the longest name.
-  const PARAM_W_MIN = 124, PARAM_H = 22, PARAM_GAP = 2;
-  const PARAM_PIN_W = 14;        // 📌 column (icon only)
-  const PARAM_INPUT_W = 48;      // numeric input column
-  const PARAM_TRASH_W = 18;      // 🗑 column
-  const PARAM_GAPS = 4 * 6;      // 4× 6 px gap between pin/name/val/trash
-  const PARAM_CHIP_PAD = 12;     // 6 px L + R chip padding
-  /** Approx char width for 11 px monospace — used to widen the chip to fit
-   *  the longest `p.<name>` label without clipping. Caller passes the
-   *  longest label CHAR COUNT (including the `p.` prefix). The 7.5 px
-   *  bias gives a little extra slack so labels don't sit RIGHT against
-   *  the ellipsis threshold. */
-  function chipWidthFor(longestLabelChars: number): number {
-    const labelPx = Math.max(40, Math.ceil(longestLabelChars * 7.5));
-    const w = PARAM_CHIP_PAD + PARAM_PIN_W + PARAM_GAPS + labelPx + PARAM_INPUT_W + PARAM_TRASH_W;
-    return Math.max(PARAM_W_MIN, w);
-  }
+  // PARAM_W_MIN / PARAM_H / PARAM_GAP (+ the chip-footprint consts used by
+  // chipWidthFor) are imported from $lib/cad/graph-editor-geom.
   // Live longest-label-len → live chip width. Updates as params are added
   // / renamed / deleted; the wire endpoints + socket positions all read
   // PARAM_W so they track the chip's growing/shrinking right edge.
@@ -1975,55 +1918,12 @@
     const longest = Math.max(...names.map((n) => ('p.' + n).length));
     return chipWidthFor(longest);
   });
-  /** Position of the i-th chip's top-left INSIDE the params card. */
-  function paramPos(_name: string, i: number): { x: number; y: number } {
-    return {
-      x: CARD_X0 + CARD_PAD,
-      y: CARD_Y0 + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP),
-    };
-  }
-  /** Card outer rect dimensions — derived from chip count + chip width. */
-  function paramCardSize(n: number, chipW: number): { w: number; h: number } {
-    return {
-      w: CARD_PAD * 2 + chipW,
-      h: CARD_TITLE_H + CARD_PAD * 2 + Math.max(1, n) * PARAM_H + Math.max(0, n - 1) * PARAM_GAP,
-    };
-  }
   // stack_ref no longer renders as a chip (it lives in the Properties card),
   // so exclude it from the Params card row count.
   let pcs = $derived(paramCardSize(
     Object.keys(graph.params ?? {}).filter((n) => n !== STACK_REF_PARAM).length,
     PARAM_W,
   ));
-  /** Where a param chip's OUTPUT socket sits — in GRAPH space (the wires
-   *  render inside the pan/zoom group, so we convert from the chip's fixed
-   *  viewport position back into graph coords). The conversion ensures the
-   *  wire's endpoint always lands on the visual chip socket regardless of
-   *  pan/zoom. The chip's group is translated to paramPos, and the socket
-   *  inside that group sits at (PARAM_W + CARD_PAD + 4, PARAM_H / 2).  */
-  /** Pull every `p.<ident>` reference out of an expression string. Returns
-   *  unique names in first-occurrence order. Used to render wires from the
-   *  referenced param chips into the arg slot when arg.kind === 'expr'. */
-  function extractParamRefs(expr: string): string[] {
-    if (!expr) return [];
-    const re = /\bp\.([a-zA-Z_]\w*)\b/g;
-    const seen = new Set<string>();
-    const out: string[] = [];
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(expr)) !== null) {
-      const name = m[1]!;
-      if (!seen.has(name)) { seen.add(name); out.push(name); }
-    }
-    return out;
-  }
-  function paramSocketPos(name: string, i: number): { x: number; y: number } {
-    const p = paramPos(name, i);
-    const vx = p.x + PARAM_W + CARD_PAD + 4;
-    const vy = p.y + PARAM_H / 2;
-    // viewport → graph: invert outer transform `translate(pan) ∘ scale(zoom)`.
-    return { x: (vx - pan.x) / zoom, y: (vy - pan.y) / zoom };
-  }
-
   // ─── drag-to-wire ───────────────────────────────────────────────────────
   // wireFrom is either a node's output socket OR a param's output chip. On
   // release over an input socket, the connection is committed.
@@ -2180,88 +2080,11 @@
       if (isInlineWrapper(id)) continue;
       const pos = graph.layout[id];
       if (!pos) continue;
-      const sz = nodeSize(node);
+      const sz = nodeSize(graph,node);
       out.push({ id, x: pos.x, y: pos.y, w: sz.w, h: sz.h });
     }
     return out;
   });
-
-  /** Bezier from (x1,y1) to (x2,y2) — orthogonally routed AROUND any card
-   *  whose body the default S-curve would cut through. The source + target
-   *  endpoint cards are auto-detected (point sits within EDGE_TOLERANCE
-   *  of a card's bounding box → that card is excluded from the obstacle
-   *  set). If any non-endpoint obstacle intrudes, the curve's control
-   *  points lift to the closer clear Y level (above or below all
-   *  blockers), giving the wire a clean arch instead of a straight line
-   *  through the offending card body. */
-  function bezier(x1: number, y1: number, x2: number, y2: number): string {
-    const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
-    const cx1 = x1 + dx, cy1 = y1;
-    const cx2 = x2 - dx, cy2 = y2;
-    const defaultPath = `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-    // Tiny wires (e.g. a self-edge or the in-flight stub) don't need routing.
-    const span = Math.hypot(x2 - x1, y2 - y1);
-    if (span < 60 || cardObstacles.length === 0) return defaultPath;
-
-    const EDGE_TOLERANCE = 10;
-    const CLEAR_BUF = 28; // px above/below blocking cards (was 18 — bump
-                          // so the arch reads clearly outside the body)
-    const onEdge = (px: number, py: number, o: { x: number; y: number; w: number; h: number }) =>
-      px >= o.x - EDGE_TOLERANCE && px <= o.x + o.w + EDGE_TOLERANCE &&
-      py >= o.y - EDGE_TOLERANCE && py <= o.y + o.h + EDGE_TOLERANCE;
-
-    // Endpoint cards — wires START and END on socket points that sit on
-    // card edges; those cards are NOT obstacles for this wire.
-    const endpointCards = new Set<string>();
-    for (const o of cardObstacles) {
-      if (onEdge(x1, y1, o) || onEdge(x2, y2, o)) endpointCards.add(o.id);
-    }
-
-    // Sample a cubic bezier given its control points; returns the worst
-    // intrusion (top + bottom clearance of every offending card). The
-    // router runs this on the default path AND on each lifted iteration
-    // to catch wires whose arch itself crosses another card.
-    function intrudeBounds(ax: number, ay: number, bx: number, by: number, cAx: number, cAy: number, cBx: number, cBy: number) {
-      const samples = 14;
-      let topClear = Infinity, botClear = -Infinity;
-      let hits = 0;
-      for (let i = 1; i < samples; i++) {
-        const t = i / samples;
-        const t1 = 1 - t;
-        const sx = t1*t1*t1*ax + 3*t1*t1*t*cAx + 3*t1*t*t*cBx + t*t*t*bx;
-        const sy = t1*t1*t1*ay + 3*t1*t1*t*cAy + 3*t1*t*t*cBy + t*t*t*by;
-        for (const o of cardObstacles) {
-          if (endpointCards.has(o.id)) continue;
-          if (sx >= o.x && sx <= o.x + o.w && sy >= o.y && sy <= o.y + o.h) {
-            hits++;
-            if (o.y < topClear) topClear = o.y - CLEAR_BUF;
-            if (o.y + o.h > botClear) botClear = o.y + o.h + CLEAR_BUF;
-          }
-        }
-      }
-      return { hits, topClear, botClear };
-    }
-
-    // First pass — default bezier. Picks an arch side + a Y level.
-    const first = intrudeBounds(x1, y1, x2, y2, cx1, cy1, cx2, cy2);
-    if (first.hits === 0) return defaultPath;
-    const midY = (y1 + y2) / 2;
-    let goUp = (midY - first.topClear) <= (first.botClear - midY);
-    let arcY = goUp ? first.topClear : first.botClear;
-
-    // Iterative refinement — lift the arch until it ALSO clears any card
-    // its bend would otherwise cross. Caps at 4 passes (rarely needed for
-    // typical graphs) and at the canvas bounds so we don't fly off.
-    for (let pass = 0; pass < 4; pass++) {
-      const re = intrudeBounds(x1, y1, x2, y2, cx1, arcY, cx2, arcY);
-      if (re.hits === 0) break;
-      // The arch itself is hitting a new card. Bump arcY further in the
-      // same direction by the worst clearance we just collected.
-      if (goUp)  arcY = Math.min(arcY, re.topClear);
-      else       arcY = Math.max(arcY, re.botClear);
-    }
-    return `M ${x1} ${y1} C ${cx1} ${arcY}, ${cx2} ${arcY}, ${x2} ${y2}`;
-  }
 
   // Socket position helpers — match the node card geometries below.
   // Call card: 200×<auto>; output socket on right edge mid-card.
@@ -2294,103 +2117,6 @@
     const cur = graph.layout[id] ?? { x: 0, y: 0 };
     graph = setLayout(graph, id, { ...cur, w: clampedW, h: clampedH });
   }
-  /** Minimum width the card can shrink to — derived from the row content.
-   *  For Call cards: key column (70 px for "label") + value cell (input +
-   *  actions = ~76 px) + horizontal padding ~16 px. Everything else uses
-   *  its native fixed default — the user resizes those rarely. */
-  function cardMinWidth(node: any): number {
-    if (node.type === 'call')   return 168; // 70 key + 76 value + 22 chrome
-    if (node.type === 'method') return 96;  // ⊖ + label + × (sockets sit on edges)
-    if (node.type === 'mv' || node.type === 'rot') return 116;
-    if (node.type === 'repeat') return 170;
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
-    if (node.type === 'polygon') return 180; // tighter vertical layout — input + chrome fits at 180
-    return 130;
-  }
-  /** Auto-fit width based on the card's content — title length + longest
-   *  arg key character count + value cell footprint. The result is the
-   *  DEFAULT width when no user override is set; the user can always
-   *  drag the grip to override. */
-  function cardAutoWidth(node: any): number {
-    if (node.type === 'call') {
-      const argKeys = Object.keys(node.args ?? {});
-      const titleChars = (node.alias?.length ?? 0) + 3 + (node.src?.length ?? 0); // "A · dt_tube"
-      const longestKey = argKeys.length ? Math.max(...argKeys.map((k) => k.length)) : 4;
-      // 70 key column was a constant; widen if the longest key needs more
-      // (still letting the input cell breathe).
-      const keyW = Math.max(70, longestKey * 8 + 8);
-      const valueW = 124; // input + ƒ + × comfortably
-      const padding = 22;
-      const fromArgs = keyW + valueW + padding;
-      const fromTitle = titleChars * 7 + 50; // ⇄ ↻ × glyphs + side padding
-      return Math.max(220, fromArgs, fromTitle);
-    }
-    if (node.type === 'method') return 110;
-    if (node.type === 'mv' || node.type === 'rot') return 136;
-    if (node.type === 'repeat') return 230;
-    if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
-      // Auto-width based on the LONGEST child-slot label. Each slot prints
-      // either the child's "alias · src" (call), "op(…)" (method/transform),
-      // or a fallback. Width = padding + socket + longest_label + chrome.
-      const labels: string[] = [];
-      for (const cid of (node as any).children ?? []) {
-        const child = graph.nodes[cid];
-        if (!child) continue;
-        labels.push(
-          child.type === 'call'   ? `${(child as any).alias} · ${(child as any).src}` :
-          child.type === 'method' ? `${(child as any).op}(…)` :
-          child.type === 'mv'     ? 'mv(…)' :
-          child.type === 'rot'    ? 'rot(…)' :
-          child.type === 'stack'  ? 'stack(…)' :
-          child.type === 'repeat' ? `repeat × ${(child as any).count?.kind === 'literal' ? (child as any).count.value : '…'}` :
-          '(missing)',
-        );
-      }
-      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
-      // ~7 px per char monospace + 18 px socket + 44 px for the ▲▼ reorder
-      // arrows + 14 px × button + 16 px padding. Title row has the ▶ chevron
-      // + name + ⚙ gear so the header itself needs room; account for the min.
-      const titleW = 90; // ▶ Output + gear with padding
-      // Stack rows carry two inline editable fields (×N count + z-offset)
-      // between the label and the ▲▼× chrome — reserve ~96px for them.
-      const inlineFieldsW = node.type === 'stack' ? 96 : 0;
-      const rowW = longest * 7 + 18 + inlineFieldsW + 44 + 14 + 16;
-      // 120 px floor matches the Call card's min and reads as a real
-      // container, not a half-collapsed sliver.
-      return Math.max(120, Math.max(rowW, titleW));
-    }
-    return 180;
-  }
-  // ─── Polygon card row geometry ──────────────────────────────────────
-  // The left-edge sockets + incoming wires are SVG, but the rows are HTML
-  // inside a foreignObject — these constants MUST mirror the CSS:
-  //   .ge-poly-vertex  border 1 + pad 2 + 18 + gap 1 + 18 + pad 2 + border 1
-  //                    = 43px + 2px margin-bottom            → 45px pitch
-  //   .ge-poly-rref    36px border-box + 2px margin-bottom   → 38px pitch
-  //   .ge-poly-repeat  (deprecated inline block) ≈ 72px + 2px margin
-  // Rows are heterogeneous, so socket Y is a cumulative walk, not idx*pitch.
-  const POLY_VTX_PITCH = 45;
-  const POLY_RREF_PITCH = 38;
-  function polyEntryH(pt: any): number {
-    if (pt?.kind === 'repeat-ref') return POLY_RREF_PITCH;
-    if (pt?.kind === 'repeat') return 74; // deprecated inline block
-    return POLY_VTX_PITCH;
-  }
-  /** Y of the idx-th row's top edge, in CARD coords (0 = card top). */
-  function polyRowTop(node: any, idx: number): number {
-    const pts: any[] = node?.points ?? [];
-    let y = 36; // header + divider = the foreignObject's y offset
-    for (let i = 0; i < Math.min(idx, pts.length); i++) y += polyEntryH(pts[i]);
-    return y;
-  }
-  /** Socket centers in CARD coords. r/z sit on the two stacked sub-rows
-   *  (border 1 + pad 2 + half of 18 = 12; + row 18 + gap 1 = 31); a
-   *  repeat-ref row has ONE socket centered on its 36px body. */
-  function polySockR(node: any, idx: number): number { return polyRowTop(node, idx) + 12; }
-  function polySockZ(node: any, idx: number): number { return polyRowTop(node, idx) + 31; }
-  function polySockRef(node: any, idx: number): number { return polyRowTop(node, idx) + 18; }
-
   // ─── Sketch op row geometry (mirrors the polygon pattern) ───────────────
   // Each line/spline op renders two STACKED sub-rows (r over z) like a polygon
   // vertex; fillet/chamfer is a single short row. SVG wire sockets sit at the
@@ -2399,32 +2125,9 @@
   // All row/socket geometry delegates to sketchColLayout so the HTML rows and
   // SVG sockets share ONE column partition. `cols` defaults to 1 → byte-identical
   // to the legacy single-column walk (36 + Σ sketchEntryH(prior ops)).
-  function sketchCols(node: any): 1 | 2 | 3 {
-    const c = (graph.layout[node?.id] as any)?.cols;
-    return c === 2 || c === 3 ? c : 1;
-  }
   function setSketchCols(id: NodeId, cols: 1 | 2 | 3) {
     const cur = graph.layout[id] ?? { x: 0, y: 0 };
     graph = setLayout(graph, id, { ...cur, cols });
-  }
-  function sketchRowTop(node: any, idx: number, cols: 1 | 2 | 3 = 1): number {
-    return sketchColLayout(node?.ops ?? [], cols).byIdx[idx]?.yTop ?? 36;
-  }
-  function sketchSockR(node: any, idx: number, cols: 1 | 2 | 3 = 1): number { return sketchRowTop(node, idx, cols) + 12; }
-  function sketchSockZ(node: any, idx: number, cols: 1 | 2 | 3 = 1): number { return sketchRowTop(node, idx, cols) + 31; }
-  function sketchSockVal(node: any, idx: number, cols: 1 | 2 | 3 = 1): number { return sketchRowTop(node, idx, cols) + 12; }
-  /** Column left-socket X. Col 0 keeps cx=0 (hangs on the card's left border, as
-   *  today); col>0 sits at that column's left content edge. */
-  function sketchSockX(node: any, idx: number, cols: 1 | 2 | 3 = 1): number {
-    const c = sketchColLayout(node?.ops ?? [], cols).byIdx[idx]?.col ?? 0;
-    return c === 0 ? 0 : c * (SKETCH_COL_W + SKETCH_COL_GAP);
-  }
-  /** When the ops list scrolls, the left-edge SVG sockets must shift up by the
-   *  same amount (they don't live inside the scrolling HTML). Hide a row's
-   *  sockets once its top scrolls outside the visible card band [36, scH]. */
-  function sketchRowVisible(node: any, idx: number, scH: number, cols: 1 | 2 | 3 = 1): boolean {
-    const top = sketchRowTop(node, idx, cols) - sketchOpsScrollTop;
-    return top >= 36 && top <= scH;
   }
   /** Wire a param's output onto a sketch op coord/field (r|z|radius|dist). */
   function endWireOnSketchCoord(ev: PointerEvent, sketchId: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist') {
@@ -2446,68 +2149,6 @@
     wireFrom = null; wireMouse = null;
   }
 
-  function nodeSize(node: any): { w: number; h: number } {
-    // Width source of truth: graph.layout[id].w (persisted) → cardAutoWidth
-    // fallback. The min clamp protects rows from collapsing below the
-    // input+actions footprint even when a stale saved width is too small.
-    const savedW = graph.layout[node.id]?.w;
-    const baseW = typeof savedW === 'number' ? savedW : cardAutoWidth(node);
-    const w = Math.max(cardMinWidth(node), baseW);
-    if (node.type === 'call') {
-      const argCount = Object.keys(node.args ?? {}).length;
-      return { w, h: Math.max(80, 50 + argCount * 22) };
-    }
-    if (node.type === 'method') return { w, h: 64 };
-    if (node.type === 'mv' || node.type === 'rot') return { w, h: 110 };
-    if (node.type === 'repeat') return { w, h: 110 };
-    if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
-      const slots = (node.children?.length ?? 0) + 1;
-      return { w, h: Math.max(60, 40 + slots * 22) };
-    }
-    if (node.type === 'polygon') {
-      // Default height: header + N visible vertices + footer. User can
-      // resize (corner grip works for height too now) to grow/shrink.
-      // Persisted height in layout[id].h wins over the auto-fit.
-      const MAX_VISIBLE = 8;
-      const pts: any[] = (node as any).points ?? [];
-      const rows = pts.slice(0, MAX_VISIBLE);
-      const savedH = graph.layout[node.id]?.h;
-      const rowsH = rows.length
-        ? rows.reduce((a, pt) => a + polyEntryH(pt), 0)
-        : POLY_VTX_PITCH;
-      const autoH = 36 + rowsH + 30;
-      const h = typeof savedH === 'number' ? Math.max(120, savedH) : autoH;
-      return { w, h };
-    }
-    if (node.type === 'sketch') {
-      // Column-aware: height = TALLEST column + chrome (not the op sum); width
-      // grows with the column count. sketchColLayout is the single source of
-      // truth shared with the socket math. At cols=1 this is byte-identical to
-      // the legacy formula: tallestH = Σ sketchEntryH (= old rowsH), autoW=152
-      // < the 210 floor, cols*80=80 < 210 → w = max(w, 210) exactly as before.
-      const cols = sketchCols(node);
-      const cl = sketchColLayout((node as any).ops ?? [], cols);
-      const savedH = graph.layout[node.id]?.h;
-      const autoH = 36 + Math.max(44, cl.tallestH) + 62;
-      const h = typeof savedH === 'number' ? Math.max(140, savedH) : autoH;
-      const autoW = 12 + cl.innerW; // 12 = foreignObject 6px insets
-      return { w: Math.max(w, 210, autoW, cols * 80), h };
-    }
-    if (node.type === 'poly_repeat') {
-      // 3-section card (#157) — params + bindings + loop. Variable height
-      // so the bindings list can grow. Base: 154 px for params + loop +
-      // chrome; each binding adds 22 px; section header + add-button add
-      // a baseline 50 px when bindings exist; the no-binding case still
-      // shows a compact `+ binding` add button so the affordance is
-      // always visible.
-      const bindings = (node as any).bindings ?? [];
-      const bindingsH = 28 + bindings.length * 22 + 24; // hdr + rows + add btn
-      return { w: 240, h: 154 + bindingsH - 24 };
-    }
-    return { w, h: 80 };
-  }
-  /** Input socket Y for the i-th child slot of a container (list/stack/group). */
-  function containerSlotY(i: number): number { return 40 + i * 22; }
   /** Drag-wire target — when a wire ends on a container's slot, append the
    *  source node as a child of that container. Idempotent (won't double-add). */
   function endWireOnContainerSlot(ev: PointerEvent, containerId: NodeId) {
@@ -2519,121 +2160,11 @@
   function nodePos(id: NodeId): { x: number; y: number } {
     return graph.layout[id] ?? { x: 0, y: 0 };
   }
-  // ─── inline mv/rot transform STRIPS — geometry source of truth ──────────
-  // Inline transforms render as compact STRIPS that hang off the Call card's
-  // RIGHT edge, cascading down-then-right. They no longer grow the card's
-  // HEIGHT. The per-axis socket positions, the param→axis wire endpoints, and
-  // the wrapper OUTPUT socket are ALL derived from the helpers below so the
-  // visible circle and the wire endpoint can never diverge.
-  //   • Fill order is column-major (2 rows per column): present transform i →
-  //     col = ⌊i/2⌋, row = i%2. Order is [rot, mv] so rot sits on row 0 (top)
-  //     and mv on row 1 (below). A single transform is always row 0 (top).
-  //   • Row-0 strips put their 3 axis sockets on the strip's TOP edge; row-1
-  //     strips put them on the BOTTOM edge (sockets face OUTWARD).
-  //   • The wrapper output exits the cluster's right edge at the OUTERMOST
-  //     transform's (row-0) vertical centre — matching startWire(inlineRot ??
-  //     inlineMv …) — so the card→rot→mv chain and param wires don't cross.
-  const STRIP_W = 92;
-  const STRIP_H = 44;
-  const STRIP_GAP = 2;        // card right edge → first strip column (flush)
-  const STRIP_ROW_GAP = 10;   // vertical gap between row 0 and row 1
-  const STRIP_COL_GAP = 8;    // horizontal gap between columns (≥3 transforms)
-  const STRIP_TOP = 2;        // cluster top, relative to card top
-  const STRIP_PAD = 6;        // strip inner horizontal padding (socket x math)
-  /** Present inline transforms for a Call, in render order (rot, then mv). */
-  function inlineXformOrder(callId: NodeId): ('rot' | 'mv')[] {
-    const order: ('rot' | 'mv')[] = [];
-    if (inlineTransformOf(graph, callId, 'rot')) order.push('rot');
-    if (inlineTransformOf(graph, callId, 'mv'))  order.push('mv');
-    return order;
-  }
-  /** Card-LOCAL top-left of a transform's strip (+ its grid cell), or null. */
-  function inlineXformStrip(callId: NodeId, kind: 'rot' | 'mv'):
-      { x: number; y: number; col: number; row: number } | null {
-    const i = inlineXformOrder(callId).indexOf(kind);
-    if (i < 0) return null;
-    const col = Math.floor(i / 2), row = i % 2;
-    const { w } = nodeSize(graph.nodes[callId]);
-    const x = w + STRIP_GAP + col * (STRIP_W + STRIP_COL_GAP);
-    const y = STRIP_TOP + row * (STRIP_H + STRIP_ROW_GAP);
-    return { x, y, col, row };
-  }
-  /** Card-LOCAL centre of the i-th axis socket on a transform strip. Sockets
-   *  sit on the TOP edge for row-0 strips, the BOTTOM edge for row-1 strips. */
-  function inlineXformSocket(callId: NodeId, kind: 'rot' | 'mv', i: number):
-      { x: number; y: number } | null {
-    const s = inlineXformStrip(callId, kind);
-    if (!s) return null;
-    const usable = STRIP_W - 2 * STRIP_PAD;
-    const x = s.x + STRIP_PAD + (i + 0.5) * usable / 3;
-    const y = s.row % 2 === 0 ? s.y : s.y + STRIP_H; // top edge / bottom edge
-    return { x, y };
-  }
-  /** Card-LOCAL wrapper output socket — right edge of the strip cluster, at the
-   *  outermost (row-0) strip's vertical centre. */
-  function inlineXformOutput(callId: NodeId): { x: number; y: number } {
-    const order = inlineXformOrder(callId);
-    const { w } = nodeSize(graph.nodes[callId]);
-    const cols = Math.max(1, Math.ceil(order.length / 2));
-    const x = w + STRIP_GAP + cols * STRIP_W + (cols - 1) * STRIP_COL_GAP;
-    const y = STRIP_TOP + STRIP_H / 2;
-    return { x, y };
-  }
-  /** Call card height — inline transforms hang off the RIGHT edge now, so they
-   *  no longer grow the card. Kept for the bg rect + (legacy) callers. */
-  function inlineCardH(callId: NodeId): number {
-    const node = graph.nodes[callId];
-    if (!node) return 80;
-    return nodeSize(node).h;
-  }
-  function outputSocketAt(id: NodeId): { x: number; y: number } {
-    const node = graph.nodes[id];
-    if (!node) return { x: 0, y: 0 };
-    const { w, h } = nodeSize(node);
-    const p = nodePos(id);
-    // An INLINE mv/rot wrapper renders inside its host Call card (it has no
-    // layout slot of its own), so its output socket lives on the HOST card's
-    // strip-cluster right edge — NOT at this wrapper's phantom standalone
-    // position. Without this a consumer wired to the wrapper draws to nowhere
-    // once a transform is added (the "connector disconnects" bug). Uses the
-    // SAME inlineXformOutput() the render draws the socket from → lockstep.
-    if ((node.type === 'mv' || node.type === 'rot') && isInlineWrapper(id)) {
-      const hostId = (node as MvNode | RotNode).child;
-      const hp = nodePos(hostId);
-      const o = inlineXformOutput(hostId);
-      return { x: hp.x + o.x, y: hp.y + o.y };
-    }
-    // Standalone mv / rot put their OUTPUT socket on the title row's right edge
-    // (y=16) — same vertical line as the child input on the left. Other
-    // node types keep the middle-right edge default.
-    if (node.type === 'mv' || node.type === 'rot') return { x: p.x + w, y: p.y + 16 };
-    if (node.type === 'method') return { x: p.x + w, y: p.y + 14 };
-    return { x: p.x + w, y: p.y + h / 2 };
-  }
-  function inputSocketAt(id: NodeId, slot: 'obj' | 'arg' | 'child'): { x: number; y: number } {
-    const p = nodePos(id);
-    const node = graph.nodes[id];
-    if (!node) return p;
-    if (slot === 'obj')  return { x: p.x, y: p.y + 42 };
-    if (slot === 'arg')  return { x: p.x, y: p.y + 56 };
-    // mv / rot put their child socket on the LEFT EDGE, vertically aligned
-    // with the title row (y=16). Axis sockets line the rest of the left
-    // edge underneath. Repeat keeps the legacy bottom-edge position via
-    // its own renderer.
-    if (slot === 'child' && (node.type === 'mv' || node.type === 'rot')) {
-      return { x: p.x, y: p.y + 16 };
-    }
-    /* child (legacy left-edge for method/repeat) */
-    return { x: p.x, y: p.y + 50 };
-  }
-  /** Container slot input socket position — the i-th child slot of a
-   *  list/stack/group container's card. Used to draw the visible "piped
-   *  into output" wires from each child node's output socket to its slot
-   *  in the Output (root list) card. */
-  function containerSlotInputAt(containerId: NodeId, i: number): { x: number; y: number } {
-    const p = nodePos(containerId);
-    return { x: p.x, y: p.y + containerSlotY(i) };
-  }
+  // ─── inline mv/rot transform STRIPS + socket positions ──────────────────
+  // The strip geometry + socket/output position math (inlineXform*, nodeSize,
+  // outputSocketAt / inputSocketAt / containerSlotInputAt, the STRIP_* consts)
+  // now live in `$lib/cad/graph-editor-geom.ts` (pure, tested). They take
+  // `graph` as their first argument; the render code below passes it in.
 
   // ─── picker — drops graph nodes (polygon, solids, ops, position) ────────
   let pickerOpen = $state(false);
@@ -3201,15 +2732,6 @@
   // sketchSock* row math + the in-flight wireFrom/wireMouse preview.
   let miniSvgEl = $state<SVGSVGElement | null>(null);
   const MINI_PX = 10, MINI_PY = 10, MINI_GAP = 46, MINI_SCW = 152, MINI_FOOT_H = 58;
-  /** i-th param chip top-left in mini coords. */
-  function miniParamPos(i: number) {
-    return { x: MINI_PX + CARD_PAD, y: MINI_PY + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP) };
-  }
-  /** i-th param OUTPUT socket centre in mini coords (mirrors the main card). */
-  function miniParamSock(i: number) {
-    const p = miniParamPos(i);
-    return { x: p.x + PARAM_W + CARD_PAD + 4, y: p.y + PARAM_H / 2 };
-  }
   /** Whole mini-canvas layout (sketch card rect + viewBox), derived from the
    *  live param count + sketch ops so socket rows + the viewBox track edits. */
   let miniLayout = $derived.by(() => {
@@ -3219,19 +2741,13 @@
     // Column-aware (mirrors nodeSize): height = TALLEST column + footer; width =
     // 12 (insets) + innerW. At cols=1: tallestH = op-sum (= old opsH) and
     // scW = 12 + 140 = 152 = MINI_SCW → byte-identical to today.
-    const cl = sketchColLayout(se.node.ops as any[], sketchCols(se.node));
+    const cl = sketchColLayout(se.node.ops as any[], sketchCols(graph,se.node));
     const sch = 36 + cl.tallestH + MINI_FOOT_H;
     const scW = 12 + cl.innerW;
     const w = sx + scW + 12;
     const h = Math.max(MINI_PY + pcs.h, sy + sch) + 12;
     return { sx, sy, sch, scW, w, h };
   });
-  /** Simple cubic for the mini wire layer. (The main `bezier` routes around
-   *  main-graph card obstacles whose coords don't apply in this space.) */
-  function miniBez(x1: number, y1: number, x2: number, y2: number): string {
-    const dx = Math.max(18, Math.abs(x2 - x1) * 0.5);
-    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-  }
   /** client → cards-overlay coords. The overlay SVG (S.2) has NO viewBox and
    *  fills the stage at width/height:100% ⇒ user units are 1:1 with CSS px,
    *  so the mapping is just the rect offset. Drives the in-flight wire. */
@@ -4369,7 +3885,7 @@
       rowGap: 220,
       columnGap: 300,
       obstacles: overlayCardObstacles(),
-      nodeSize: (id) => nodeSize(graph.nodes[id]),
+      nodeSize: (id) => nodeSize(graph,graph.nodes[id]),
     });
     // Finish with a push-apart that keeps the card obstacles ON (so the
     // pairwise de-overlap can't shove a node back onto the PROPERTIES /
@@ -4512,7 +4028,7 @@
     }
     graph = forceSeparate(graph, {
       nodeSize: (id) => {
-        const est = nodeSize(graph.nodes[id]);
+        const est = nodeSize(graph,graph.nodes[id]);
         const measured = realH.get(id);
         // Use the larger of estimate / measured, with a sane floor so
         // small estimates can't pack cards too tightly.
@@ -4537,8 +4053,8 @@
       if (!node) continue;
       const addInputWire = (srcId: NodeId, slot: 'obj' | 'arg' | 'child') => {
         if (!graph.nodes[srcId]) return;
-        const a = outputSocketAt(srcId);
-        const b = inputSocketAt(id, slot);
+        const a = outputSocketAt(graph,srcId);
+        const b = inputSocketAt(graph,id, slot);
         out.push({ fromId: srcId, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
       };
       if (node.type === 'method') {
@@ -4549,16 +4065,16 @@
       } else if (node.type === 'stack' || node.type === 'group') {
         node.children.forEach((c, i) => {
           if (!graph.nodes[c]) return;
-          const a = outputSocketAt(c);
-          const b = containerSlotInputAt(id, i);
+          const a = outputSocketAt(graph,c);
+          const b = containerSlotInputAt(graph,id, i);
           out.push({ fromId: c, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
         });
       } else if (node.type === 'list' && id === graph.root) {
         // Root-list children draw a wire to the Output card's slots.
         node.children.forEach((c, i) => {
           if (!graph.nodes[c]) return;
-          const a = outputSocketAt(c);
-          const b = containerSlotInputAt(id, i);
+          const a = outputSocketAt(graph,c);
+          const b = containerSlotInputAt(graph,id, i);
           out.push({ fromId: c, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
         });
       }
@@ -5063,10 +4579,10 @@
                 {#if (v as any).kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === (v as any).param)}
                   {#if pIdx >= 0}
-                    {@const ps = paramSocketPos((v as any).param, pIdx)}
+                    {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(v as any).param, pIdx)}
                     {@const pos = nodePos(n.id)}
                     {@const argY = pos.y + 36 + 14 + argIdx * 22}
-                    <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, argY)}/>
+                    <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, argY)}/>
                   {/if}
                 {:else if (v as any).kind === 'expr'}
                   <!-- Expression arg — draw a wire from EACH referenced
@@ -5076,10 +4592,10 @@
                   {#each extractParamRefs((v as any).expr) as refName (refName)}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                     {#if pIdx >= 0}
-                      {@const ps = paramSocketPos(refName, pIdx)}
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                       {@const pos = nodePos(n.id)}
                       {@const argY = pos.y + 36 + 14 + argIdx * 22}
-                      <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, argY)}/>
+                      <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, argY)}/>
                     {/if}
                   {/each}
                   <!-- NODE-REF expr — `__POLY__<sourceId>` sentinel set by
@@ -5091,12 +4607,12 @@
                   {@const polyMatch = String((v as any).expr ?? '').match(/^__POLY__(n_[a-z0-9]+)$/i)}
                   {#if polyMatch && graph.nodes[polyMatch[1]]}
                     {@const sourceId = polyMatch[1]}
-                    {@const srcSize = nodeSize(graph.nodes[sourceId])}
+                    {@const srcSize = nodeSize(graph,graph.nodes[sourceId])}
                     {@const srcPos = nodePos(sourceId)}
                     {@const pos = nodePos(n.id)}
                     {@const argY = pos.y + 36 + 14 + argIdx * 22}
                     <path class="ge-wire noderef"
-                      d={bezier(srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, pos.x, argY)}/>
+                      d={bezier(cardObstacles,srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, pos.x, argY)}/>
                   {/if}
                 {/if}
               {/each}
@@ -5111,19 +4627,19 @@
                   {#if (mvN.offset[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
                     {#if pIdx >= 0}
-                      {@const ps = paramSocketPos((mvN.offset[i] as any).param, pIdx)}
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(mvN.offset[i] as any).param, pIdx)}
                       {@const pos = nodePos(n.id)}
-                      {@const sk = inlineXformSocket(n.id, 'mv', i)!}
-                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
+                      {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
+                      <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                     {/if}
                   {:else if (mvN.offset[i] as any).kind === 'expr'}
                     {#each extractParamRefs((mvN.offset[i] as any).expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                       {#if pIdx >= 0}
-                        {@const ps = paramSocketPos(refName, pIdx)}
+                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                         {@const pos = nodePos(n.id)}
-                        {@const sk = inlineXformSocket(n.id, 'mv', i)!}
-                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
+                        {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
+                        <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                       {/if}
                     {/each}
                   {/if}
@@ -5135,19 +4651,19 @@
                   {#if (rotN.rot[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
                     {#if pIdx >= 0}
-                      {@const ps = paramSocketPos((rotN.rot[i] as any).param, pIdx)}
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(rotN.rot[i] as any).param, pIdx)}
                       {@const pos = nodePos(n.id)}
-                      {@const sk = inlineXformSocket(n.id, 'rot', i)!}
-                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
+                      {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
+                      <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                     {/if}
                   {:else if (rotN.rot[i] as any).kind === 'expr'}
                     {#each extractParamRefs((rotN.rot[i] as any).expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                       {#if pIdx >= 0}
-                        {@const ps = paramSocketPos(refName, pIdx)}
+                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                         {@const pos = nodePos(n.id)}
-                        {@const sk = inlineXformSocket(n.id, 'rot', i)!}
-                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
+                        {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
+                        <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                       {/if}
                     {/each}
                   {/if}
@@ -5158,17 +4674,17 @@
               {#if (n as any).count?.kind === 'param'}
                 {@const pIdx = paramEntries.findIndex(([nm]) => nm === (n as any).count.param)}
                 {#if pIdx >= 0}
-                  {@const ps = paramSocketPos((n as any).count.param, pIdx)}
+                  {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(n as any).count.param, pIdx)}
                   {@const pos = nodePos(n.id)}
-                  <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, pos.y + 17)}/>
+                  <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + 17)}/>
                 {/if}
               {:else if (n as any).count?.kind === 'expr'}
                 {#each extractParamRefs((n as any).count.expr) as refName (refName)}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                   {#if pIdx >= 0}
-                    {@const ps = paramSocketPos(refName, pIdx)}
+                    {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                     {@const pos = nodePos(n.id)}
-                    <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, pos.y + 17)}/>
+                    <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + 17)}/>
                   {/if}
                 {/each}
               {/if}
@@ -5187,30 +4703,30 @@
                 {#if pt.r?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.r.param)}
                   {#if pIdx >= 0}
-                    {@const ps = paramSocketPos(pt.r.param, pIdx)}
-                    <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, rTopY)}/>
+                    {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,pt.r.param, pIdx)}
+                    <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, rTopY)}/>
                   {/if}
                 {:else if pt.r?.kind === 'expr'}
                   {#each extractParamRefs(pt.r.expr) as refName (refName)}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                     {#if pIdx >= 0}
-                      {@const ps = paramSocketPos(refName, pIdx)}
-                      <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, rTopY)}/>
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
+                      <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, rTopY)}/>
                     {/if}
                   {/each}
                 {/if}
                 {#if pt.z?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.z.param)}
                   {#if pIdx >= 0}
-                    {@const ps = paramSocketPos(pt.z.param, pIdx)}
-                    <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, zTopY)}/>
+                    {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,pt.z.param, pIdx)}
+                    <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, zTopY)}/>
                   {/if}
                 {:else if pt.z?.kind === 'expr'}
                   {#each extractParamRefs(pt.z.expr) as refName (refName)}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                     {#if pIdx >= 0}
-                      {@const ps = paramSocketPos(refName, pIdx)}
-                      <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, zTopY)}/>
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
+                      <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, zTopY)}/>
                     {/if}
                   {/each}
                 {/if}
@@ -5222,12 +4738,12 @@
                   {@const src = graph.nodes[pt.sourceId]}
                   {#if src && src.type === 'poly_repeat'}
                     {@const srcXY = nodePos(src.id)}
-                    {@const srcSize = nodeSize(src as any)}
+                    {@const srcSize = nodeSize(graph,src as any)}
                     {@const srcX = srcXY.x + srcSize.w}
                     {@const srcY = srcXY.y + srcSize.h / 2}
                     {@const tgtX = pos.x}
                     {@const tgtY = pos.y + polySockRef(n, idx)}
-                    <path class="ge-wire poly-rref" d={bezier(srcX, srcY, tgtX, tgtY)} fill="none"/>
+                    <path class="ge-wire poly-rref" d={bezier(cardObstacles,srcX, srcY, tgtX, tgtY)} fill="none"/>
                   {/if}
                 {/if}
               {/each}
@@ -5248,15 +4764,15 @@
                   {#if av?.kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === av.param)}
                     {#if pIdx >= 0}
-                      {@const ps = paramSocketPos(av.param, pIdx)}
-                      <path class="ge-wire param" d={bezier(ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,av.param, pIdx)}
+                      <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
                     {/if}
                   {:else if av?.kind === 'expr'}
                     {#each extractParamRefs(av.expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                       {#if pIdx >= 0}
-                        {@const ps = paramSocketPos(refName, pIdx)}
-                        <path class="ge-wire param expr" d={bezier(ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
+                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
+                        <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
                       {/if}
                     {/each}
                   {/if}
@@ -5274,15 +4790,15 @@
               {#if (n as any).count?.kind === 'param'}
                 {@const pIdx = paramEntries.findIndex(([nm]) => nm === (n as any).count.param)}
                 {#if pIdx >= 0}
-                  {@const ps = paramSocketPos((n as any).count.param, pIdx)}
-                  <path class="ge-wire param" d={bezier(ps.x, ps.y, tgtX, tgtY)}/>
+                  {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(n as any).count.param, pIdx)}
+                  <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, tgtX, tgtY)}/>
                 {/if}
               {:else if (n as any).count?.kind === 'expr'}
                 {#each extractParamRefs((n as any).count.expr) as refName (refName)}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                   {#if pIdx >= 0}
-                    {@const ps = paramSocketPos(refName, pIdx)}
-                    <path class="ge-wire param expr" d={bezier(ps.x, ps.y, tgtX, tgtY)}/>
+                    {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
+                    <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, tgtX, tgtY)}/>
                   {/if}
                 {/each}
               {/if}
@@ -5293,28 +4809,28 @@
           {#each allNodes as n (n.id)}
             {#if n.type === 'method'}
               {#if (n as any).obj && graph.nodes[(n as any).obj]}
-                {@const src = outputSocketAt((n as any).obj)}
-                {@const tgt = inputSocketAt(n.id, 'obj')}
-                <path class="ge-wire obj" d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                {@const src = outputSocketAt(graph,(n as any).obj)}
+                {@const tgt = inputSocketAt(graph,n.id, 'obj')}
+                <path class="ge-wire obj" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
               {#if (n as any).arg && graph.nodes[(n as any).arg]}
-                {@const src = outputSocketAt((n as any).arg)}
-                {@const tgt = inputSocketAt(n.id, 'arg')}
-                <path class="ge-wire arg" d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                {@const src = outputSocketAt(graph,(n as any).arg)}
+                {@const tgt = inputSocketAt(graph,n.id, 'arg')}
+                <path class="ge-wire arg" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
             {:else if n.type === 'mv' || n.type === 'rot'}
               {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outputSocketAt((n as any).child)}
-                {@const tgt = inputSocketAt(n.id, 'child')}
-                <path class="ge-wire child" d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                {@const src = outputSocketAt(graph,(n as any).child)}
+                {@const tgt = inputSocketAt(graph,n.id, 'child')}
+                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
             {:else if n.type === 'repeat'}
               <!-- Repeat node's child wire — bottom-left input socket -->
               {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outputSocketAt((n as any).child)}
+                {@const src = outputSocketAt(graph,(n as any).child)}
                 {@const pos = nodePos(n.id)}
-                {@const size = nodeSize(n)}
-                <path class="ge-wire child" d={bezier(src.x, src.y, pos.x, pos.y + size.h - 18)} fill="none"/>
+                {@const size = nodeSize(graph,n)}
+                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + size.h - 18)} fill="none"/>
               {/if}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each visible child of a container shows as
@@ -5327,10 +4843,10 @@
                 : (n as any).children) as string[]}
               {#each visKids as childId, i (childId)}
                 {#if graph.nodes[childId]}
-                  {@const src = outputSocketAt(childId)}
-                  {@const tgt = containerSlotInputAt(n.id, i)}
+                  {@const src = outputSocketAt(graph,childId)}
+                  {@const tgt = containerSlotInputAt(graph,n.id, i)}
                   <path class="ge-wire output" class:root={n.id === graph.root}
-                    d={bezier(src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                    d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
                 {/if}
               {/each}
             {/if}
@@ -5338,14 +4854,14 @@
 
           <!-- In-flight wire being dragged -->
           {#if wireFrom && wireMouse}
-            {@const src = outputSocketAt(wireFrom.nodeId)}
-            <path class="ge-wire in-flight" d={bezier(src.x, src.y, wireMouse.x, wireMouse.y)} fill="none"/>
+            {@const src = outputSocketAt(graph,wireFrom.nodeId)}
+            <path class="ge-wire in-flight" d={bezier(cardObstacles,src.x, src.y, wireMouse.x, wireMouse.y)} fill="none"/>
           {/if}
 
           <!-- NODE CARDS -->
           {#each allNodes as n (n.id)}
             {@const pos = nodePos(n.id)}
-            {@const size = nodeSize(n)}
+            {@const size = nodeSize(graph,n)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <g transform="translate({pos.x},{pos.y})" class="ge-node"
@@ -5358,7 +4874,7 @@
                 {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
                 {@const mvNode    = inlineMv  ? (graph.nodes[inlineMv]  as MvNode)  : null}
                 {@const rotNode   = inlineRot ? (graph.nodes[inlineRot] as RotNode) : null}
-                {@const cardH     = inlineCardH(n.id)}
+                {@const cardH     = inlineCardH(graph,n.id)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={cardH} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
@@ -5554,7 +5070,7 @@
                      so the visible sockets, the param→axis wire endpoints, and
                      outputSocketAt() stay in lockstep. -->
                 {#if rotNode}
-                  {@const rs = inlineXformStrip(n.id, 'rot')!}
+                  {@const rs = inlineXformStrip(graph,n.id, 'rot')!}
                   <foreignObject x={rs.x} y={rs.y} width={STRIP_W} height={STRIP_H}>
                     <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
                       <div class="ge-inline-hdr">↻ rot</div>
@@ -5582,7 +5098,7 @@
                   </foreignObject>
                   <!-- rot is row 0 → axis sockets on the strip's TOP edge -->
                   {#each [0,1,2] as i (i)}
-                    {@const sk = inlineXformSocket(n.id, 'rot', i)!}
+                    {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in param tiny"
                       cx={sk.x} cy={sk.y} r="4"
@@ -5590,7 +5106,7 @@
                   {/each}
                 {/if}
                 {#if mvNode}
-                  {@const ms = inlineXformStrip(n.id, 'mv')!}
+                  {@const ms = inlineXformStrip(graph,n.id, 'mv')!}
                   <foreignObject x={ms.x} y={ms.y} width={STRIP_W} height={STRIP_H}>
                     <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
                       <div class="ge-inline-hdr">⇄ mv</div>
@@ -5618,7 +5134,7 @@
                   </foreignObject>
                   <!-- mv is row 1 → axis sockets on the strip's BOTTOM edge -->
                   {#each [0,1,2] as i (i)}
-                    {@const sk = inlineXformSocket(n.id, 'mv', i)!}
+                    {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in param tiny"
                       cx={sk.x} cy={sk.y} r="4"
@@ -5633,7 +5149,7 @@
                      centre — same point outputSocketAt() returns. Without this
                      downstream methods would bypass the inline transform — emit
                      would be `A.subtract(B)` instead of `mv(A,...).subtract(B)`. -->
-                {@const outPt = (mvNode || rotNode) ? inlineXformOutput(n.id) : { x: size.w, y: cardH / 2 }}
+                {@const outPt = (mvNode || rotNode) ? inlineXformOutput(graph,n.id) : { x: size.w, y: cardH / 2 }}
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={outPt.x} cy={outPt.y} r="6"
                   onpointerdown={(ev) => startWire(ev, inlineRot ?? inlineMv ?? n.id)}/>
                 <!-- Per-arg input sockets on the left edge of the Call card.
@@ -6679,7 +6195,7 @@
         <!-- Chips render in viewport coords too. Output sockets stick out
              of the card's right edge so they can still be drag-targeted. -->
         {#each paramEntries as [name, p], i (name)}
-          {@const pos = paramPos(name, i)}
+          {@const pos = paramPos(CARD_Y0,name, i)}
           <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
             <!-- Chip body — HTML/CSS flex layout inside a foreignObject so
                  pin / name / input / trash align cleanly without manual
@@ -6758,7 +6274,7 @@
             <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
             <div class="ge-stool-sep"></div>
             {#each [1, 2, 3] as n (n)}
-              <button class="ge-stool" class:on={sketchCols(se.node) === n}
+              <button class="ge-stool" class:on={sketchCols(graph,se.node) === n}
                 title="{n}-column op layout"
                 onclick={() => setSketchCols(se.node.id, n as 1 | 2 | 3)}>{n}</button>
             {/each}
@@ -6858,7 +6374,7 @@
               <svg class="ge-sketch-cards" bind:this={miniSvgEl}>
                 <!-- committed wires: every param-driven coord → its param socket -->
                 {#each (sn.ops as Array<any>) as op, idx (idx)}
-                  {#if sketchRowVisible(sn, idx, scH)}
+                  {#if sketchRowVisible(sketchOpsScrollTop,sn, idx, scH)}
                     {@const fields = (op.op === 'line' || op.op === 'spline')
                       ? [['r', sketchSockR(sn, idx)], ['z', sketchSockZ(sn, idx)]]
                       : op.op === 'fillet' ? [['radius', sketchSockVal(sn, idx)]]
@@ -6987,7 +6503,7 @@
                        shift up by sketchOpsScrollTop and hide once their row
                        scrolls out of the visible card band. -->
                   {#each (sn.ops as Array<any>) as op, idx (idx)}
-                    {#if sketchRowVisible(sn, idx, scH)}
+                    {#if sketchRowVisible(sketchOpsScrollTop,sn, idx, scH)}
                       {#if op.op === 'line' || op.op === 'spline'}
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
@@ -7160,7 +6676,7 @@
                            preview so loop-generated points read their
                            true entry kind instead of falling off the
                            array. (2026-06-11) -->
-                      {@const entryIdx = rootPoly ? entryIdxForEvalIdx(rootPoly, i) : null}
+                      {@const entryIdx = rootPoly ? entryIdxForEvalIdx(graph,rootPoly, i) : null}
                       {@const entry = entryIdx !== null ? rootPoly?.points?.[entryIdx] : null}
                       {@const fromLoop = entryIdx === null}
                       {@const parametricVertex = !!entry && entry.kind === 'point'
@@ -7978,7 +7494,7 @@
                  entry kind (a single repeat-ref entry expands to N
                  points; without this all but the first would look up
                  the wrong entry or undefined and render as red). -->
-            {@const entryIdx = entryIdxForEvalIdx(popupPolyNode, i)}
+            {@const entryIdx = entryIdxForEvalIdx(graph,popupPolyNode, i)}
             {@const entry = entryIdx !== null ? popupPolyNode?.points?.[entryIdx] : null}
             {@const fromLoop = entryIdx === null}
             {@const parametricVertex = !!entry && entry.kind === 'point'
