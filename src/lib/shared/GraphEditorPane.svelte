@@ -115,6 +115,10 @@
   } from '$lib/cad/graph-editor-geom';
   import { dragNumber } from '$lib/shared/dragNumber';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
+  import {
+    argStr, argFrom, argToDraftStr, evalArg, sketchParamScope,
+    profileProducers, producerLabel, parseProfileExpr, kindsForSet,
+  } from '$lib/cad/graph-editor-args';
 
   /** Props (component contract — same surface mounted by /graph-editor for
    *  full-page work and by /primitives for the tabbed multi-instance view).
@@ -2665,18 +2669,7 @@
     graph = addSketch(graph).graph;
   }
   /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
-  function argStr(a: any): string {
-    if (!a) return '0';
-    if (a.kind === 'literal') return String(a.value);
-    if (a.kind === 'param') return `p.${a.param}`;
-    return String(a.expr ?? '');
-  }
-  /** Editable string → ArgValue: a bare number → literal, else expr. */
-  function argFrom(s: string): any {
-    const t = (s ?? '').trim();
-    if (/^-?\d*\.?\d+$/.test(t)) return { kind: 'literal', value: Number(t) };
-    return { kind: 'expr', expr: t };
-  }
+  // argStr / argFrom → graph-editor-args.ts (P2/G2).
 
   // ─── Full-tab sketch editor (plan M.2) ─────────────────────────────────
   let editingSketchId = $state<string | null>(null);
@@ -2685,25 +2678,14 @@
   function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; sketchCardSize = null; sketchOpsScrollTop = 0; }
   function closeSketchEditor() { editingSketchId = null; sketchDrag = null; splineDrag = null; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; sketchCardSize = null; sketchOpsScrollTop = 0; }
 
-  /** Param scope {name: default} for evaluating ArgValue fields to numbers. */
-  function sketchParamScope(): Record<string, number> {
-    const s: Record<string, number> = {};
-    for (const [k, v] of Object.entries(graph.params)) s[k] = Number((v as any)?.default ?? 0);
-    return s;
-  }
-  function evalArg(a: any, p: Record<string, number>): number {
-    if (!a) return 0;
-    if (a.kind === 'literal') return Number(a.value) || 0;
-    if (a.kind === 'param') return Number(p[a.param] ?? 0);
-    try { return Number(new Function('p', `with(p){ return (${String(a.expr)}); }`)(p)) || 0; } catch { return 0; }
-  }
+  // sketchParamScope(graph) / evalArg → graph-editor-args.ts (P2/G2).
   /** The active sketch resolved to numbers: compiled outline + draggable
    *  anchors + extents (for the editor viewBox). */
   let sketchEditor = $derived.by(() => {
     if (!editingSketchId) return null;
     const node = graph.nodes[editingSketchId] as any;
     if (!node || node.type !== 'sketch') return null;
-    const p = sketchParamScope();
+    const p = sketchParamScope(graph);
     const ops: SketchOp[] = node.ops.map((o: any) => {
       if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode };
       if (o.op === 'spline') return {
@@ -2878,7 +2860,7 @@
     const node = graph.nodes[editingSketchId] as any;
     const o = node?.ops?.[selectedCornerOpIdx];
     if (!o || (o.op !== 'fillet' && o.op !== 'chamfer')) return null;
-    const p = sketchParamScope();
+    const p = sketchParamScope(graph);
     const field = o.op === 'fillet' ? 'radius' : 'dist';
     const arg = o[field];                 // the raw ArgValue (literal | param | expr)
     const bound = arg?.kind === 'param' || arg?.kind === 'expr';
@@ -2961,7 +2943,7 @@
     const prev = se.anchors[(ai - 1 + se.anchors.length) % se.anchors.length];
     const a: [number, number] = [prev.r, prev.z];
     const o = se.node.ops[selectedSplineOpIdx] as any;
-    const p = sketchParamScope();
+    const p = sketchParamScope(graph);
     const pts = (o.pts ?? []).map((c: any, k: number) => {
       const u = evalArg(c[0], p), v = evalArg(c[1], p);
       const abs = chordToAbs(a, b, u, v);
@@ -3657,13 +3639,7 @@
   function moveSvgTip(ev: PointerEvent) { if (svgTip) svgTip = { ...svgTip, x: ev.clientX, y: ev.clientY }; }
   function hideSvgTip(polyId: string, entryIdx: number | null) { if (entryIdx !== null) clearHoverVertex(polyId, entryIdx); svgTip = null; }
   /** Format an ArgValue as a string the popover textarea can edit. */
-  function argToDraftStr(v: any): string {
-    if (!v) return '';
-    if (v.kind === 'expr')    return String(v.expr ?? '');
-    if (v.kind === 'param')   return `p.${v.param}`;
-    if (v.kind === 'literal') return String(v.value ?? 0);
-    return '';
-  }
+  // argToDraftStr → graph-editor-args.ts (P2/G2).
   function openPolyExprPop(ev: MouseEvent, polygonId: string, idx: number, axis: 'r' | 'z', currentExpr: string) {
     ev.stopPropagation();
     // Populate BOTH axis drafts so the tab strip can switch without
@@ -3803,16 +3779,7 @@
   }
   function closeProfileRefPop() { profileRefPop = null; }
   /** All profile-producing nodes (polygon + sketch) — the swap candidates. */
-  function profileProducers() {
-    return Object.values(graph.nodes).filter((n: any) => n.type === 'polygon' || n.type === 'sketch') as any[];
-  }
-  function producerLabel(id: NodeId): string {
-    const n = graph.nodes[id] as any;
-    if (!n) return '(missing)';
-    if (n.type === 'sketch') return `sketch`;
-    if (n.type === 'polygon') return `polygon · ${(n.points ?? []).length} pts`;
-    return n.type;
-  }
+  // profileProducers(graph) / producerLabel(graph, id) → graph-editor-args.ts (P2/G2).
   function swapProfileRef(callId: NodeId, key: string, nodeId: NodeId) {
     graph = setCallArg(graph, callId, key, asExpr(`__POLY__${nodeId}`));
     profileRefPop = null;
@@ -3829,20 +3796,7 @@
     graph = setCallArg(graph, profilePop.callId, profilePop.key, asExpr(JSON.stringify(desc)));
     profilePop = null;
   }
-  /** Parse the current expr ArgValue into a `{kind, params}` descriptor.
-   *  Returns null when the expr isn't a parseable JSON object (e.g. the
-   *  user wrote a custom math expression). The chip renderer falls back
-   *  to "expr ƒ" in that case. */
-  function parseProfileExpr(expr: string): { kind?: string; params?: Record<string, number> } | null {
-    if (!expr || !expr.trim().startsWith('{')) return null;
-    try { return JSON.parse(expr); } catch { return null; }
-  }
-  /** Curated kinds available for a given set, sorted by label. */
-  function kindsForSet(set: 'revolve' | 'cartesian'): ProfileDef[] {
-    return Object.values(PROFILE_REGISTRY)
-      .filter((d) => d.set === set)
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }
+  // parseProfileExpr / kindsForSet → graph-editor-args.ts (P2/G2).
 
   function insertParamIntoDraft(name: string) {
     if (!argExprPop) return;
@@ -4973,7 +4927,7 @@
                               <span class="ge-arg-profilechip noderef" role="button" tabindex="-1"
                                 title="Click to swap to a different profile"
                                 onclick={(ev) => openProfileRefPop(ev, n.id, k)}>
-                                <span class="ge-arg-profilechip-kind">▢ {producerLabel(polyM[1])} ▾</span>
+                                <span class="ge-arg-profilechip-kind">▢ {producerLabel(graph, polyM[1])} ▾</span>
                               </span>
                               <span class="ge-arg-actions">
                                 <button class="ge-arg-action edit" type="button" title="Detach this profile"
@@ -6975,17 +6929,17 @@
         <span class="ge-profile-pop-hint">{profileRefPop.key} · wire a polygon / sketch</span>
       </div>
       <div class="ge-profile-pop-list">
-        {#each profileProducers() as prod (prod.id)}
+        {#each profileProducers(graph) as prod (prod.id)}
           {@const curExpr = String((graph.nodes[profileRefPop.callId] as any)?.args?.[profileRefPop.key]?.expr ?? '')}
           <button class="ge-profile-pop-item"
             class:active={curExpr === `__POLY__${prod.id}`}
             type="button"
             onclick={() => swapProfileRef(profileRefPop!.callId, profileRefPop!.key, prod.id)}>
-            <span class="ge-profile-pop-item-name">{prod.type === 'sketch' ? '✐ ' : '◇ '}{producerLabel(prod.id)}</span>
+            <span class="ge-profile-pop-item-name">{prod.type === 'sketch' ? '✐ ' : '◇ '}{producerLabel(graph, prod.id)}</span>
             <span class="ge-profile-pop-item-id">{prod.id}</span>
           </button>
         {/each}
-        {#if profileProducers().length === 0}
+        {#if profileProducers(graph).length === 0}
           <div class="ge-profile-pop-empty">No polygon or sketch in this graph yet. Drop one (✎ → polygon / sketch) first.</div>
         {/if}
       </div>
