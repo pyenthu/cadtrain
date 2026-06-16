@@ -62,6 +62,12 @@ export interface BakeCacheOptions {
    *  no warp → the legacy cache key is byte-identical (hashBakeKey drops
    *  undefined option keys). */
   warp?: { amp: number; freq: number; axis: 'x' | 'y' } | undefined;
+  /** Crease (minSharpAngle, deg) fed to Manifold.calculateNormals at bake time.
+   *  Changes the baked per-vertex normals + the crease vertex-split → must key
+   *  the cache so a crease change re-bakes; undefined (the default 60° bake) →
+   *  dropped by hashBakeKey → the legacy cache key is byte-identical, so existing
+   *  default-bake entries still hit. */
+  creaseAngle?: number | undefined;
 }
 
 export interface BakeCachePayload {

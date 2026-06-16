@@ -553,7 +553,18 @@ function applyWarp(m: any, w?: WarpSpec): any {
   }
 }
 
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec }): ComponentResult {
+/** Crease (minSharpAngle) for Manifold.calculateNormals: edges whose dihedral
+ *  exceeds this stay HARD (split vertices); below it shade smooth. Hardcoded 60°
+ *  historically; now a per-bake dial threaded through finalizeManifold opts.
+ *  Clamp to a sane range so a stray value can't break the WASM call; undefined →
+ *  60 → byte-identical to the legacy bake (and the legacy cache key). */
+const DEFAULT_CREASE_ANGLE = 60;
+function clampCrease(a?: number): number {
+  if (typeof a !== 'number' || !Number.isFinite(a)) return DEFAULT_CREASE_ANGLE;
+  return Math.max(1, Math.min(180, a));
+}
+
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -594,8 +605,11 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // + N transforms instead of the merged N-copy mesh — O(1)+N transfer/render
   // instead of O(N·tris). Falls through to the merged path (below, BYTE-
   // IDENTICAL) when bodies are not all identical / there's only one body.
+  // Crease angle for calculateNormals — build-time, baked into the vertex
+  // split, so it MUST be applied here (not a render-time flip). Default 60.
+  const crease = clampCrease(opts?.creaseAngle);
   if (opts?.instanced) {
-    const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway, opts?.warp);
+    const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway, opts?.warp, crease);
     if (inst) return inst;
   }
   // Auto-skip the cutaway only as a far-out safety valve. The cutVC step used
@@ -618,8 +632,8 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // byte-identical to the pre-warp bake.
   const warped = applyWarp(scaled, opts?.warp);
   return {
-    full: manifoldToGeo(warped, material, lut, override),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override),
+    full: manifoldToGeo(warped, material, lut, override, crease),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override, crease),
     manifold: warped,
     cutawaySkipped: skipCutaway,
   } as ComponentResult & { cutawaySkipped: boolean };
@@ -668,6 +682,7 @@ function tryInstanceFinalize(
   override: ColorOverride | undefined,
   skipCutawayOpt: boolean | 'auto' | undefined,
   warp: WarpSpec | undefined,
+  crease: number,
 ): ComponentResult | null {
   let bodies: any[];
   try {
@@ -723,8 +738,8 @@ function tryInstanceFinalize(
     : childTris > 15_000;
 
   return {
-    full: manifoldToGeo(canonical, material, lut, override),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(canonical.subtract(cutBox), maxOD, material, lut, override),
+    full: manifoldToGeo(canonical, material, lut, override, crease),
+    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(canonical.subtract(cutBox), maxOD, material, lut, override, crease),
     manifold: scaled,
     cutawaySkipped: skipCutaway,
     instances,
@@ -749,9 +764,9 @@ export function buildComponent(componentId: string, params: Record<string, numbe
 // directly, so it doesn't care about winding inversions, and splitting
 // at the 60° threshold keeps hard corners (cylinder caps, hex faces)
 // crisp.
-function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride): THREE.BufferGeometry {
+function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride, crease: number = DEFAULT_CREASE_ANGLE): THREE.BufferGeometry {
   let withNormals: any;
-  try { withNormals = manifold.calculateNormals(3, 60); }
+  try { withNormals = manifold.calculateNormals(3, crease); }
   catch { withNormals = manifold; }
   // Per-part colour override wins over both color-by-source and material:
   // the user explicitly painted THIS part's outside, so the full mesh is a
@@ -798,11 +813,11 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   return geo;
 }
 
-function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride): THREE.BufferGeometry {
+function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride, crease: number = DEFAULT_CREASE_ANGLE): THREE.BufferGeometry {
   // Same calculateNormals path as manifoldToGeo — keeps shading
   // consistent across the cross-section overlay.
   let withNormals: any;
-  try { withNormals = manifold.calculateNormals(3, 60); }
+  try { withNormals = manifold.calculateNormals(3, crease); }
   catch { withNormals = manifold; }
   // Per-part colour override wins over color-by-source (user's explicit pick).
   // Color-by-source path: per-triangle color from the relation. SECTION_ID
@@ -962,13 +977,14 @@ function cutawayVC(
   material?: RenderMaterial,
   parts?: PartColorLUT,
   override?: ColorOverride,
+  crease: number = DEFAULT_CREASE_ANGLE,
 ): THREE.BufferGeometry {
   try {
     if (typeof scaled.decompose === 'function') {
       const bodies = scaled.decompose();
       if (Array.isArray(bodies) && bodies.length > 1) {
         const geos = bodies.map((b: any) =>
-          manifoldToCutVC(b.subtract(cutBox), maxOD, material, parts, override),
+          manifoldToCutVC(b.subtract(cutBox), maxOD, material, parts, override, crease),
         );
         return mergeBufferGeometries(geos);
       }
@@ -976,7 +992,7 @@ function cutawayVC(
   } catch {
     // decompose missing / threw / per-body cut failed → monolithic fallback.
   }
-  return manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, parts, override);
+  return manifoldToCutVC(scaled.subtract(cutBox), maxOD, material, parts, override, crease);
 }
 
 /**
