@@ -37,6 +37,18 @@
 | `src/lib/cad/graph-editor-args.ts` (79) | ArgValue/expr formatting + profile-kind lookups | P2 ✓ |
 | `src/lib/shared/RightPane.svelte` (485) | the 6-tab right column (bake/src/md/svg/glb/brep) | P5 ✓ |
 | `src/lib/shared/graph-editor/Popovers.svelte` (413) + `popover-clamp.ts` (26) | the 4 self-contained popovers (container · argExpr · profile · profileRef) | **A ✓** (642b00e) |
+| `graph-editor-bake.ts` (50, pure+tested) + `graph-editor-bake.svelte.ts` (115, rune) | source/meta parsers + the expected-params cache (drift detection) | **B ✓** (2e71155) |
+
+> **Phase B landed 2026-06-16 — REFINED.** "Bake glue" turned out to be mostly
+> NOT movable: `runBake` is just `bakeNonce++` and the real bake is a reactive
+> `$derived` chain (immovable); the `drop*` handlers are trivial 1-liners
+> (`closePicker(); graph = addX(graph).graph` — no win to move). What WAS a clean,
+> cohesive unit: the **source/meta parsers** (pure) + the **expected-params cache**
+> (drift detection). Split across two files so the pure logic is vitest-able (a
+> `.svelte.ts` rune module can't be imported by a plain test — `$state` won't
+> compile there). `expected` is a SHARED `$state` singleton (keyed by src, global
+> cache, shared across /primitives tabs). Graph-touching fns take graph explicitly;
+> `refreshCallArgs` returns the new graph. GEP 8429 → 8308 (−121).
 
 > **Phase A landed 2026-06-16 — REFINED scope.** The inventory showed the 8
 > popovers are NOT one clean unit: each `apply*` belongs to a different feature
@@ -61,7 +73,7 @@ its render arms already pull from extracted, tested helpers.
 | # | Extract → | What moves (current L) | Risk | Notes |
 |---|---|---|---|---|
 | ~~**A**~~ ✓ | `graph-editor/Popovers.svelte` — DONE (642b00e). | 4 self-contained pops (container · argExpr · profile · profileRef). | — | See the refined-scope note above. The other 4 pops ride D/E/F, below. |
-| **B** | `graph-editor-bake.ts` (glue) | `runBake`/`setAutoBake`/`rebuildCache`/`restartDevServer`/`extractGraphFromSource`/`extractDrawingMd…`/`loadExpectedParamsFor`/`refreshCallArgs`/`isCallDrifted` (L1081–2441 scattered) + the `drop*` palette handlers (`dropCall/Csg/Mv/Rot/Stack/Pen/Polygon/Sketch/Solid/Repeat`, L2330–3292). | MED | Orchestration; several mutate `graph` → pass a graph getter/setter or keep thin wrappers in the shell. Pure-ish bits (`extractGraphFromSource`) can go to a `.ts`; mutators may need a `.svelte.ts`. |
+| ~~**B**~~ ✓ | `graph-editor-bake.ts` + `.svelte.ts` — DONE (2e71155). | parsers + expected-params cache (see refined note above). | — | `runBake`/bake-pipeline stay (reactive); `drop*` stay (trivial 1-liners); `setAutoBake`/`rebuildCache`/`restartDevServer` stay (small, bake-pipeline-coupled $state). |
 | **C** | `wire-state.svelte.ts` (rune module) | the 23 wire+drop fns: `wireFrom` state + `armWire`/`startWire`/`startParamWire` + the full `endWireOn*` family + `unwireTransformAxis` + `releaseImplicitCapture`. | MED | Cross-cutting + pointer-capture (memory `touch_implicit_pointer_capture`). Keep the text-substitution wiring AS-IS so K.67 has one small file to rewrite. **Browser wire-drag + touch test mandatory.** |
 | **D** | `ParamsCard.svelte` + `PropertiesCard.svelte` | the viewport-glued overlay cards (the tabbed Params \| Properties block) **+ `addParamPop` + `wirePop`** (still in GEP — they sit with `onAddParam`/`onZOffset`/`wireArgToParam`). | MED | Stay OUTSIDE the pan/zoom group (don't reparent). `CARD_Y0`/socket positions already in geom — keep passing them. |
 | **E** | `SketchEditorPane.svelte` | the full-tab sketch editor: 21 `sketch*` handlers (`sketchCanvas*`/`sketchAnchor*`/`sketchBar*`/`sketchCardResize*`/`splineComp*`/`fitSketchFrame`/`cornerAtOpIdx`…), the `sketchEditor` `$derived` (L2609) + frozen-frame, the tools rail + 2D canvas markup **+ `sketchExprPop`** (the coord ƒ-editor — its drag/`toggleSketchOpMode`/`sketchPopPtCount` couple to the sketch state). | MED-HIGH | Largest self-contained chunk. Props: the sketch node + param scope + callbacks. Verify vs `sketch*.test.ts`. **This is where the M.5 sketch-repeat UI will land — do E before sketch-repeat.** |
@@ -75,9 +87,11 @@ follows each component out.
 
 1. ~~**A — popovers.**~~ ✓ DONE (642b00e) — 4 self-contained pops only (refined
    scope above). **B is the next phase.**
-2. **B — bake glue.** Verify bake / auto-bake / rebuild / drop-each-palette-item.
+2. ~~**B — bake glue.**~~ ✓ DONE (2e71155) — parsers + expected-params cache only
+   (the bake pipeline is reactive; drops are 1-liners). **D is the next phase.**
 3. **D — Params/Properties cards.** Verify param edit + color/material + the tab
-   switch + param→arg wires still land (socket lockstep).
+   switch + param→arg wires still land (socket lockstep). Also carries `addParamPop`
+   + `wirePop`.
 4. **C — wire-state.** Verify every wire-drag kind + touch + the
    "connector-disconnects" path.
 5. **E — SketchEditorPane.** Verify enter/edit/exit, each tool, spline/fillet/

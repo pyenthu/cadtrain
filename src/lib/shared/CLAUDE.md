@@ -10,7 +10,10 @@ src/lib/shared/
 ├── graph-editor/               # THE CAD editor, decomposed (modularize K.65 / docs/plans/graph-editor-pane.md)
 │   ├── GraphEditorPane.svelte  #   the editor shell — node-graph canvas + bake. Mounted by /graph-editor (full-screen) and /primitives (one per tab)
 │   ├── RightPane.svelte        #   the 6-tab right column (3D bake / SRC / MD / SVG / GLB / BREP)
-│   ├── Popovers.svelte         #   the anchored expr/profile/wire dropdowns
+│   ├── Popovers.svelte         #   the anchored container/argExpr/profile/profileRef dropdowns (Phase A)
+│   ├── popover-clamp.ts        #   shared viewport-clamp action for the popovers
+│   ├── graph-editor-bake.ts (+ .test.ts) #   pure source/meta parsers + callDrift (Phase B)
+│   ├── graph-editor-bake.svelte.ts       #   expected-params cache ($state singleton) + drift loaders (Phase B)
 │   ├── geom.ts (+ .test.ts)    #   pure socket/wire/card position math
 │   └── args.ts                 #   pure ArgValue/expr formatting + profile-kind lookups
 ├── PrimitiveDualCanvas.svelte  # mesh + GLB dual canvas (+ PrimitiveDualScene; smoothShade gate)
