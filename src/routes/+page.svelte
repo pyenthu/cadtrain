@@ -2,9 +2,7 @@
   <div class="menu">
     <div class="menu-header">CAD Train</div>
     <a href="/primitives" class="menu-item">Primitives <span class="hint">parts library · graph CAD editor</span></a>
-    <a href="/forge" class="menu-item">Forge <span class="hint">image → 3D</span></a>
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
-    <a href="/fem" class="menu-item">FEM <span class="hint">finite element analysis</span></a>
     <a href="/plan" class="menu-item">Plan <span class="hint">Gantt roadmap</span></a>
     <a href="/research" class="menu-item">Research <span class="hint">parked notes · findings</span></a>
   </div>

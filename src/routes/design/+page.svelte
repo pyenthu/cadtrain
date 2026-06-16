@@ -66,16 +66,6 @@
       body: 'Describe a part in plain language. A BM25 retrieval pass against the parts vocabulary plus one Claude call proposes a composition graph — RAG-then-translate, deterministic where it can be, hand-authored only when nothing fits.',
     },
     {
-      icon: '⊿',
-      title: 'FEM analysis',
-      body: 'An encapsulated finite-element layer — pure-logic engine in src/lib/fem, oilfield units (lbf / ft-lbf / in / ksi). Stress at /fem/[id], a 3D tension viewer at /fem/[id]/tension.',
-    },
-    {
-      icon: '⬡',
-      title: 'Image → 3D forge',
-      body: 'Drop an image, get a 3D scaffold. /forge wraps a FAL Hunyuan3D pipeline to bootstrap geometry from a reference photo of a downhole tool.',
-    },
-    {
       icon: '⟳',
       title: 'Instancing & performance',
       body: 'One shared WebGL context per active tab, fetch caching, profiles/resolve de-duplication, and stable-reference props that avoid re-mount loops. Heavy assemblies bake server-side to GLB so the browser never touches WASM.',
@@ -106,8 +96,6 @@
     { path: '/graph-editor', purpose: 'The CAD editor — a single primitive, full-screen.' },
     { path: '/primitives', purpose: 'Sidebar of volume parts + a multi-tab graph editor.' },
     { path: '/vocab', purpose: 'Vocabulary editor — browse · infer · bake · promote.' },
-    { path: '/fem', purpose: 'FEM index, per-part stress, and a 3D tension viewer.' },
-    { path: '/forge', purpose: 'Image → 3D scaffold (FAL Hunyuan3D).' },
     { path: '/volume', purpose: 'File manager for the persistent data volume.' },
     { path: '/plan', purpose: 'Gantt roadmap — the single source of truth for scope.' },
     { path: '/design', purpose: 'This page — what the project is and how it is designed.' },
