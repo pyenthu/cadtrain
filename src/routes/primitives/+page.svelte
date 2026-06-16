@@ -1033,7 +1033,7 @@
          read-only, and volume folders offer a single `+` create menu on hover. -->
     {#snippet folderNode(node: FolderNode, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale')}
       {@const open = filter.trim() ? true : isExpanded(node.path)}
-      {@const kids = sortFolders(node.children, sortMode).filter((n) => subtreeMatches(n, pass))}
+      {@const kids = sortFolders(node.children, sortMode).filter((n) => !filter.trim() || subtreeMatches(n, pass))}
       {@const files = sortBy(node.parts).filter(pass)}
       <div class="prim-tree-node">
         <div class="prim-folder-row-wrap">
@@ -1131,7 +1131,7 @@
            subfolders (expand/collapse in place) + its direct files. The tab
            itself is the branch header, so there's no redundant top folder row. -->
       {#if activeNode}
-        {@const kids = sortFolders(activeNode.children, sortMode).filter((n) => subtreeMatches(n, pass))}
+        {@const kids = sortFolders(activeNode.children, sortMode).filter((n) => !filter.trim() || subtreeMatches(n, pass))}
         {@const files = sortBy(activeNode.parts).filter(pass)}
         {#each kids as c (c.path)}
           {@render folderNode(c, 0, activeKind)}

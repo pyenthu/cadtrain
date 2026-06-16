@@ -1809,15 +1809,30 @@
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ev.stopPropagation();
   }
+  // rAF-coalesce the layout write: a pointermove fires up to ~120 Hz and each
+  // `graph = setLayout(...)` re-renders every card/wire/bezier — on a dense graph
+  // that exceeds the inter-event budget and the dragged card trails the cursor.
+  // Stash the latest target and apply at most once per painted frame.
+  let dragRaf = 0;
+  let dragPending: { x: number; y: number; w?: number } | null = null;
+  function flushDrag() {
+    dragRaf = 0;
+    if (!dragging || !dragPending) return;
+    graph = setLayout(graph, dragging, dragPending);
+  }
   function onNodePointerMove(ev: PointerEvent) {
     if (!dragging) return;
     const dx = (ev.clientX - dragStart.x) / zoom;
     const dy = (ev.clientY - dragStart.y) / zoom;
     // Preserve `w` so a position drag doesn't wipe out a previous resize.
-    graph = setLayout(graph, dragging, { x: dragOrig.x + dx, y: dragOrig.y + dy, w: dragOrig.w });
+    dragPending = { x: dragOrig.x + dx, y: dragOrig.y + dy, w: (dragOrig as any).w };
+    if (!dragRaf) dragRaf = requestAnimationFrame(flushDrag);
   }
   function onNodePointerUp(ev: PointerEvent) {
     if (dragging) {
+      // Flush the final position so the card lands exactly where released.
+      if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+      if (dragPending) { graph = setLayout(graph, dragging, dragPending); dragPending = null; }
       (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
       dragging = null;
     }

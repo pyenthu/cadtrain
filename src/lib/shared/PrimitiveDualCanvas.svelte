@@ -344,15 +344,8 @@
   // zoomed out. Distance is to the PANNED target (partCenter + zFocus on z),
   // which is invariant under the pan itself, so dragging the slider never
   // changes its own step (no jitter); only zoom / orbit (scene.cam) does.
-  const TAN_HALF_FOV = Math.tan((45 * Math.PI) / 180 / 2);
-  let zStep = $derived.by(() => {
-    const pc = scene.partCenter;
-    const tz = pc.z + scene.zFocus;
-    const dist = Math.hypot(scene.cam.x - pc.x, scene.cam.y - pc.y, scene.cam.z - tz);
-    const visible = 2 * dist * TAN_HALF_FOV;
-    const total = Math.max(1e-3, zSpan.max - zSpan.min);
-    return Math.min(total / 20, Math.max(0.02, visible / 120));
-  });
+  // (zStep removed — the slider is now step="any"; a value-dependent step caused
+  //  the thumb to re-snap mid-drag, which read as blocky scrolling on long parts.)
   // Keep zFocus inside the current part's range — a stale value left by a
   // taller part (or a hand-set zFocus) would aim the look-at off the new part.
   // Guarded so it ONLY writes when actually out of range: zSpan depends on
@@ -421,9 +414,9 @@
   <div class="pd-zpan">
     <!-- Z-pan range is DERIVED from the rendered part's Z extent (zSpan, above)
          so full slider travel scrolls exactly from the top of the mesh/GLB to
-         the bottom — no fixed stops. The step (zStep) scales with zoom so the
-         pan resolution tracks the visible part length as the canvas is dollied. -->
-    <input class="pd-zslider" type="range" min={zSpan.min} max={zSpan.max} step={zStep}
+         the bottom. step="any" → continuous: a dynamic step that depended on the
+         slider's own zFocus re-snapped the thumb mid-drag (blocky on long parts). -->
+    <input class="pd-zslider" type="range" min={zSpan.min} max={zSpan.max} step="any"
       bind:value={scene.zFocus} aria-label="Pan camera along Z" title="Pan view along Z ({scene.zFocus.toFixed(1)})" />
     <button class="pd-zreset" type="button" title="Reset Z pan" onclick={() => (scene.zFocus = 0)}>⊙</button>
   </div>
