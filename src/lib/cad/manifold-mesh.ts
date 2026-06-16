@@ -87,9 +87,12 @@ export function gridPatch(
 //   axialMaxZSpan from the warp FREQUENCY (≈8 samples/cycle → maxZSpan =
 //   (2π / freq) / 8) and gate it on warpEnabled, set race-safely right before the
 //   synchronous geom build (same pattern as manifold-helpers setCircularSegmentCount,
-//   from /api/primitives/preview). Until then the default is always-on so warp
-//   is smooth without any extra wiring.
-let _axialMaxZSpan: number | null = 0.25;
+//   from /api/primitives/preview).
+// DONE: default is now OFF — /api/primitives/preview drives it from the warp
+//   FREQUENCY only when a warp option is present (≈16 samples/cycle), set
+//   race-safely around the synchronous build and restored after. Non-warp
+//   revolves stay light (an always-on 0.25 made g_dp_stand bake 26 s / 751k verts).
+let _axialMaxZSpan: number | null = null;
 let _axialMaxSegPerEdge = 64;
 /** Read the active axial max-Z-span dial (null = subdivision off). */
 export function getAxialMaxZSpan(): number | null { return _axialMaxZSpan; }
