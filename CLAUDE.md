@@ -30,8 +30,9 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
   `ArgValue = literal | expr | param`. Graph → source via
   `composition-emit*.ts` (parts carry `meta.graph` + emitted body); bake via
   `composition-bake.ts` + server bake cache (`src/lib/server/bake-cache.ts`).
-- **Engines**: `src/lib/cad/stdlib/` (active: `r_cuboid`) + `stdstale/`
-  (`r_revolve`, `r_extrude`, `r_weld_extrude` — deprecated, still resolvable).
+- **Engines**: `src/lib/cad/stdlib/` (active: `r_cuboid`, `r_loft`,
+  `r_weld_extrude` — the last used by g_cube/g_spiral/g_star/g_barrel) +
+  `stdstale/` (`r_revolve`, `r_extrude` — deprecated, still resolvable).
 - **Legacy** lives in the top-level **tracked** `archive/` dir (2026-06-01):
   old `/archive/*` routes, identify/RAG chain, wells extraction, KB endpoints,
   old authoring stack. Invisible to vite/tsc/router. `/wells` is a stub.
