@@ -406,7 +406,9 @@
   const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
   /** Calendar date for an ABSOLUTE sequence-week (frontier ⇒ today). */
   function dateForWeek(absW: number): Date {
-    return new Date(TODAY.getTime() + (absW - doneFrontier) * WEEK_MS);
+    // Anchor the EARLIEST visible task (minStart) to TODAY so the chart starts
+    // at today (16 Jun) and nothing renders before it; weeks flow forward.
+    return new Date(TODAY.getTime() + (absW - minStart) * WEEK_MS);
   }
   function fmtDate(d: Date): string {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -520,8 +522,8 @@
         {#each Array(totalWeeks + 1) as _, w}
           <div class="gridline" class:heavy={w % 2 === 0} style="left:{w * WEEK_PX}px;"></div>
         {/each}
-        <div class="today-line" style="left:{weekX(doneFrontier)}px; top:{HEAD_H}px;"></div>
-        <div class="today-label" style="left:{weekX(doneFrontier) + 4}px; top:{HEAD_H}px;">Today · {fmtDate(TODAY)}</div>
+        <div class="today-line" style="left:{weekX(minStart)}px; top:{HEAD_H}px;"></div>
+        <div class="today-label" style="left:{weekX(minStart) + 4}px; top:{HEAD_H}px;">Today · {fmtDate(TODAY)}</div>
       </div>
 
       <!-- Date-axis header row (frozen top). -->
