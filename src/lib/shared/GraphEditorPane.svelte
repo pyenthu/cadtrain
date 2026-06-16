@@ -2944,18 +2944,15 @@
     try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
 
-  // ─── BREP tab — server-side OpenCascade (OCCT) render (PrimitiveBrepView) ──
-  // Lazy-loaded. Posts the emitted source + current param values to
-  // /api/brep/preview; the server extracts the revolve (r,z) profile, revolves
-  // it in OCCT, adaptively tessellates → true-curve mesh with exact normals.
-  // Revolve parts only for now; others show "no BREP path".
-  let PrimitiveBrepView = $state<any>(null);
-  onMount(async () => {
-    try {
-      const mod = await import('$lib/shared/PrimitiveBrepView.svelte');
-      PrimitiveBrepView = mod.default;
-    } catch { /* brep view unavailable */ }
-  });
+  // ─── BREP tab — server-side OpenCascade (OCCT) render ──────────────────────
+  // Reuses the SHARED PrimitiveDualCanvas chrome (backend="brep"): same canvas,
+  // camera/lights/orbit, ⚙ scale gear, SceneControls, Z-pan, stats + 🔄. Posts
+  // the emitted source + current param values to /api/brep/preview; the server
+  // extracts the (revolve / extrude / loft / CSG) solid, builds it in OCCT, and
+  // adaptively tessellates → true-curve mesh with exact normals. Parts with no
+  // OCCT-buildable solid come back supported:false → the reason shows in-chrome.
+  // brepMeta is fed by the canvas's onBakeMeta and drives the cached/fresh badge.
+  let brepMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -7363,14 +7360,32 @@
             {/if}
           {/if}
         </div>
-        <!-- BREP tab — server-side OpenCascade (OCCT) true-curve render. Posts
-             the emitted source + current param values to /api/brep/preview; the
-             server extracts the revolve (r,z) profile + revolves it in OCCT. -->
+        <!-- BREP tab — server-side OpenCascade (OCCT) true-curve render in the
+             SHARED PrimitiveDualCanvas chrome (backend="brep"): same canvas,
+             camera/lights/orbit, ⚙ scale gear, SceneControls, Z-pan, stats + 🔄.
+             Posts the emitted source + current param values to /api/brep/preview. -->
         <div class="ge-glb-body" class:hidden={rightTab !== 'brep'}>
           {#if rightTab === 'brep'}
-            {#if PrimitiveBrepView && bake && typeof bake === 'object' && bake.source}
-              <PrimitiveBrepView source={bake.source} paramValues={brepParamValues}
-                name={exemplarId} active={rightTab === 'brep'} />
+            {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
+              <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
+                args={bake.args ?? paramDefaults}
+                source={bake.source}
+                backend="brep"
+                brepSource={bake.source}
+                brepParams={brepParamValues}
+                onBakeMeta={(m) => (brepMeta = m)}
+                showControls={true} showLabels={false}/>
+              <!-- Cache/fresh badge row — mirrors the 3D-bake .ge-bake-meta. -->
+              <div class="ge-bake-meta">
+                {#if brepMeta && brepMeta.supported === false}
+                  <span class="ge-cache-badge skipped" title="No OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG).">{brepMeta.reason ?? 'no BREP path for this part'}</span>
+                {:else if brepMeta?.cached}
+                  <span class="ge-cache-badge cached" title="Served from the client BREP fetch cache">✓ cached</span>
+                {:else if brepMeta}
+                  <span class="ge-cache-badge fresh" title="Freshly tessellated by OCCT">fresh · {Math.round(brepMeta.ms)} ms OCCT</span>
+                {/if}
+                <span class="ge-bake-meta-spacer"></span>
+              </div>
             {:else}
               <div class="ge-empty">No source yet — bake the part first.</div>
             {/if}
