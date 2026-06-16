@@ -1,5 +1,10 @@
 # Sketch REPEAT — repeat a span of sketch ops N times (plan)
 
+> ⚠️ **SUPERSEDED 2026-06-16 by `docs/plans/repeat-and-sketch-repeat.md`** —
+> this design is reproduced in full as §3 of that combined plan (which also
+> covers the Repeat-card windowed editor). Read the combined plan; this file is
+> kept for history only.
+
 > Status: design (read-only study, 2026-06-16). Adds a **REPEAT** affordance to
 > the 2D sketch editor so a contiguous run of sketch ops (line / spline /
 > fillet / chamfer) tiles N times — threads, serrations, racks, stacked
