@@ -1,68 +1,48 @@
-## TODO PLAN
+### Open — build work
 
-Spawn separate sub processes to do the following.
+1. **RAG multi-shot AI + tab context** — engine MERGED (`ge-assist.`*). LEFT: mount the
+  panel/button in GraphEditorPane + add `route` to EditorContext/readEditorState +
+   populate `selectedId` (node-click) + optional `/api/ai/fix-errors` sink.
+   Plan: `docs/plans/ai-rag-system.md`.
+2. **web-llm local backend** — in-browser Qwen2.5-1.5B + XGrammar, default-OFF, local
+  few-shot DB (no data leaves org). Plan: `docs/research/web-llm-functionary.md`.
+3. **Modularize round 2** — A/B/C/D **and E Step 1 done** (`SketchState` per-instance
+  class, ~233 refs rewired, GEP 8029→7384, browser-verified). LEFT: **Phase E Step 2**
+   = SketchEditorPane + SketchNodeCard components (both take the `sketch` instance);
+   + dead-code prune (builder.ts/library.ts chain). Plans: `docs/plans/graph-editor-pane.md`
+   + `modularize-round2.md`.
+4. **Right nav menu restructure** — group the RightPane rail into VIEW/DATA + pinned
+  settings. Plan: `docs/plans/right-nav-menu.md`.
+5. **Sketch repeat** — poly_repeat-style loop in the sketch. *(Blocked on #3 E+F.)*
+  Plan: `docs/plans/repeat-and-sketch-repeat.md`.
+6. **/design svelte-flow architecture graph** — interactive route/api graph (needs the
+  `@xyflow/svelte` dep). Plan: `docs/plans/design-route-svelteflow.md`.
+7. **Repeat windowed editor** — open the Repeat card in its own in-tab window (sketch-
+  overlay pattern): PARAMS + iterators on top, two tabs (Loop body / graphical
+   modifiers). *(Blocked on #3 E+F.)* Plan: `docs/plans/repeat-and-sketch-repeat.md`.
+8. **Client-side execution + server-builder** — server stays the compiler (graph→script),
+  client executes in a Worker (Manifold first, OCCT via replicad); preserve the server
+   Manifold+OCCT builder under `/api/server-builder/`. Also retires the deja-vu bake bug.
+   Plan: `docs/plans/client-side-execution.md`.
+9. **TXFMN transform card** — **model layer done** (`TxfmnNode` type + emit + mutators +
+  hydrate fold + 11 tests, merged `e267231`, 23/23 green). LEFT: the **card render** in
+   GEP (one ROT/MV table replacing the inline mv/rot strips). Plan: `docs/plans/transform-card.md`.
+10. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
+  /conditional expressions (sparse `graph.exprs[]`, topo eval). Plan: `docs/plans/expressions-tab.md`.
 
-1. Plan a RAG based AI system with multi shots. Like we have in SVTC. The AI system should have context of the tab being used. 
+### Quick / contained (not yet done)
 
-2. PLAN. Also i would like to have the option of running a web-llm and build the prompt databases so we dont have to send data outside the organization.
+- **Deja-vu bake bug** (`bake-cache.ts`) — cache key ignores dep bodies → stale parent
+mesh when a dep changes. Medium fix (plumb dep sources to `hashBakeKey`), or let #8
+retire it structurally.
 
-3. Plan to modularize the code. Deep dive for stale code, debug for failire, edge cases etc. Reduce file sizes.
+### PARKED
 
-4. PLAN THIS: We need to have the nav menu on the right properly structured. 
-
-5. PLAN THIS: In the sketch. we need to have the option of repeat.
-
-6. PLAN THIS. http://localhost:3333/design. Need to make a proper graph of the architecture and navigatioj for this app. Use svelteflow.
-
-7. PLAN THIS: In the repeat card we need to enhance it what i would want is the abilty to open it in its own windowwithin the tab like we do for sketch, show the params ont he top.. along with the iterators.. and then have two tabs in there one for editing inside the "Loop and " one for using the graphical modifiers. 
-
-8. PLAN Right now we are baking everything in the server. Would it be better to serve only the code load that and execute in the client? We could do this for both the manifold and the occt.
-Since the server is creating a translater from the json to the script anyway, there is some protection in the graph to script logic that should be quick. But we will use the client horsepower to execute? However I want one option. I want to preserve the SERVER BREP and PART builder to be used int he future undere the api directory. Call it server builder. Don't throw it.
-
-9. Prune the scripts directory with whatever is not relevant. Also the tests directory. 
-
-10. Consolidate the ai direcvtory and trining_data. 
-
-11. Also do we need the FEM, forge, directories.. 
-
-12. Now for the move/rotate. I think this is better addressed as a TXFMN transformation card on its own and attached to a part.. with a node.. The TXfmn card will just be a table with rows being added  x,y,z generally or rx,ry, rz. and each row will have these rows with sockets to the right.  It will be compact.  
-the structure willbe 
-TXFMN  
-______________
-ROT 
-RX
-RY
-RZ
-______________
-MV 
-X
-Y
-Z
-______________
-
-13. PLAN We should incorporate conditional expressions tab on the top along with PARAMS and PROPS.. this will be a list of calculatedf expressions that we can use.. 
-
-14. PLAN Is there merit in explorign svelte-flow for the graph editor? 
-
-15. BREP.io experimentation. Possible?
-
-16. For the 3D BAKE CAN WE plan on thjis normals smotheming process?
-
-https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/shading-lights.html
-https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/shading-normals.html
-
-17. PLAN AND PUT INTO RESEARCH. Explore the optopn of web-llm based calls using https://github.com/MeetKai/functionary
-
-18. Create a dedicated research route. Whwre we park our research.. 
-
-19. One error. When I create a folder int he side bar it is not appearing. In basic i tried to create a sub folder. It did not appear.
-
-20. Plan For long parts, the z browser is a bit blocky. Can we fix that. Something to do with the scrolling.
-
-21. Plan There is slippage when dragging. Need to plan to fix it
-
-PARKED. 
-1. We need to build a parametric casing visualizaiton. Here basically we will have a function thst will determine the number of columns.
-2. By default new revolve, extrude parts should use sketch not the polygon.
-3. The autolayout is not working well. The params and the properties card should never overlap with any other card. We need to mae them repel all other cards.
+1. New revolve/extrude parts default to **sketch** not polygon. *(May be partly done in
+  the BREP session — verify.)*
+2. Auto-layout: the PARAMS + PROPERTIES card must never overlap other cards (repel all).
+  *(Likely already done — K.79 made them auto-layout obstacles; verify, then close.)*
+3. We need cability of having params, props and calculated. Basicallty the calculated fields are based on the params and are functions of the params. They can be in the thrid tab, in a table. Similar popover for the function. Then those can be wired into other params in other parts.  
+4. In the sketch editor can we also have the expansion for scale in x and y direction? the setings button can be in the tool bar on the top.
+5. In the design page we should have a sub-route for each of the panes desribing the component layout and if possible, optionally show the nodal connections bettwenn them. 
 
