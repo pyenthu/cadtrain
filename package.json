@@ -13,6 +13,8 @@
     "extract:generate": "bun run scripts/overnight_extract.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "deadcode": "knip",
+    "deadcode:exports": "knip --include exports,types",
     "test:e2e": "playwright test",
     "test:e2e:headed": "PWHEAD=1 playwright test",
     "test:graph": "playwright test tests/e2e/graph-editor.spec.ts",
@@ -31,6 +33,7 @@
     "@vitest/expect": "^4.1.4",
     "flowbite": "^4.0.2",
     "flowbite-svelte": "^1.33.1",
+    "knip": "^6.17.1",
     "tailwindcss": "^4",
     "vite": "^8.0.8",
     "vitest": "^4.1.4"

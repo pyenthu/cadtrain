@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/routes/**/+page.svelte",
+    "src/routes/**/+page.ts",
+    "src/routes/**/+layout.svelte",
+    "src/routes/**/+layout.ts",
+    "src/routes/**/+server.ts",
+    "src/hooks.server.ts",
+    "scripts/**/*.ts",
+    "vite.config.ts",
+    "svelte.config.js",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "src/lib/cad/stdlib/*.ts",
+    "src/lib/cad/stdstale/*.ts"
+  ],
+  "project": ["src/**/*.{ts,svelte}"],
+  "ignore": [
+    "archive/**",
+    "src/volume_backup/**",
+    ".dev-volume/**"
+  ],
+  "ignoreDependencies": []
+}
