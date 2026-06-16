@@ -361,45 +361,162 @@ export function isInlineWrapper(graph: Graph, nodeId: NodeId): boolean {
   return child?.type === 'call' && inlineTransformOf(graph, childId, n.type) === nodeId;
 }
 
-// ─── inline mv/rot transform STRIPS — geometry source of truth ─────────────
-/** Present inline transforms for a Call, in render order (rot, then mv). */
-export function inlineXformOrder(graph: Graph, callId: NodeId): ('rot' | 'mv')[] {
-  const order: ('rot' | 'mv')[] = [];
-  if (inlineTransformOf(graph, callId, 'rot')) order.push('rot');
-  if (inlineTransformOf(graph, callId, 'mv'))  order.push('mv');
-  return order;
+// ─── Attached mv/rot transform CHAINS — geometry source of truth ───────────
+// An mv/rot whose `.child` chain bottoms out at a Call renders as a STRIP on
+// that Call (inline-registered OR free-standing), and is HIDDEN as a card.
+// These helpers unify both kinds into ONE ordered list per Call so the strip
+// render, the param→axis wires, the wrapper output, and the sequence arrows all
+// read from the same geometry.
+function isTransformNode(graph: Graph, id: NodeId): boolean {
+  const n = graph.nodes[id];
+  return !!n && (n.type === 'mv' || n.type === 'rot');
 }
-/** Card-LOCAL top-left of a transform's strip (+ its grid cell), or null. */
-export function inlineXformStrip(graph: Graph, callId: NodeId, kind: 'rot' | 'mv'):
-    { x: number; y: number; col: number; row: number } | null {
-  const i = inlineXformOrder(graph, callId).indexOf(kind);
-  if (i < 0) return null;
+/** Follow `.child` from `nodeId` through nested mv/rot transforms to the first
+ *  non-transform node; returns that base node id (cycle-guarded). */
+export function transformChainBase(graph: Graph, nodeId: NodeId): NodeId {
+  let cur = nodeId;
+  const seen = new Set<NodeId>();
+  while (isTransformNode(graph, cur) && !seen.has(cur)) {
+    seen.add(cur);
+    const child = (graph.nodes[cur] as MvNode | RotNode).child;
+    if (!child || !graph.nodes[child]) break;
+    cur = child;
+  }
+  return cur;
+}
+/** All mv/rot transforms whose `.child` chain bottoms out at `callId`, ordered
+ *  NEAREST-CALL-FIRST (the transform directly wrapping the Call, then its
+ *  wrapper, …). Walks UP the wrapper references; cycle-guarded. This is the
+ *  single ordered list the strip renderer iterates (index i → col=⌊i/2⌋,
+ *  row=i%2). Replaces the old rot-then-mv `inlineXformOrder`. */
+export function attachedTransforms(graph: Graph, callId: NodeId): NodeId[] {
+  // Only a CALL hosts attached transform strips. A mv/rot whose chain bottoms
+  // out at a Method/Stack/etc. stays a normal card, so that base node must NOT
+  // collect wrappers (otherwise the wrapper double-renders: a strip here AND
+  // its own card, since isAttachedTransform correctly reports false for it).
+  if (graph.nodes[callId]?.type !== 'call') return [];
+  const chain: NodeId[] = [];
+  const seen = new Set<NodeId>();
+  let target = callId;
+  for (;;) {
+    let wrapper: NodeId | null = null;
+    for (const n of Object.values(graph.nodes)) {
+      if ((n.type === 'mv' || n.type === 'rot') && (n as MvNode | RotNode).child === target) {
+        wrapper = n.id;
+        break;
+      }
+    }
+    if (!wrapper || seen.has(wrapper)) break;
+    seen.add(wrapper);
+    chain.push(wrapper);
+    target = wrapper;
+  }
+  return chain;
+}
+/** From any node, resolve the base Call it (transitively) transforms + that
+ *  Call's full attached-transform list. null when the node is not a mv/rot, or
+ *  its chain does NOT bottom out at a Call (it wraps a Method/Stack/etc., which
+ *  stays a normal card). */
+export function transformBaseCall(graph: Graph, nodeId: NodeId): { callId: NodeId; chain: NodeId[] } | null {
+  if (!isTransformNode(graph, nodeId)) return null;
+  const baseId = transformChainBase(graph, nodeId);
+  const base = graph.nodes[baseId];
+  if (!base || base.type !== 'call') return null;
+  return { callId: baseId, chain: attachedTransforms(graph, baseId) };
+}
+/** Should this mv/rot render as a STRIP on a Call (and be HIDDEN as a card)?
+ *  True iff its chain bottoms out at a Call. Supersedes `isInlineWrapper` —
+ *  it also catches free-standing transforms (chain depth > 1). */
+export function isAttachedTransform(graph: Graph, nodeId: NodeId): boolean {
+  return transformBaseCall(graph, nodeId) !== null;
+}
+
+// ─── strip geometry, keyed by the transform's INDEX in attachedTransforms ───
+/** Card-LOCAL top-left of the i-th attached transform's strip (+ its grid
+ *  cell). Cascades down-then-right: col=⌊i/2⌋, row=i%2. */
+export function xformStripAt(graph: Graph, callId: NodeId, i: number):
+    { x: number; y: number; col: number; row: number } {
   const col = Math.floor(i / 2), row = i % 2;
   const { w } = nodeSize(graph, graph.nodes[callId]);
   const x = w + STRIP_GAP + col * (STRIP_W + STRIP_COL_GAP);
   const y = STRIP_TOP + row * (STRIP_H + STRIP_ROW_GAP);
   return { x, y, col, row };
 }
-/** Card-LOCAL centre of the i-th axis socket on a transform strip. Sockets sit
- *  on the TOP edge for row-0 strips, the BOTTOM edge for row-1 strips. */
-export function inlineXformSocket(graph: Graph, callId: NodeId, kind: 'rot' | 'mv', i: number):
-    { x: number; y: number } | null {
-  const s = inlineXformStrip(graph, callId, kind);
-  if (!s) return null;
+/** Card-LOCAL centre of the `axis`-th socket on the i-th strip. Sockets sit on
+ *  the TOP edge for row-0 strips, the BOTTOM edge for row-1 strips. */
+export function xformSocketAt(graph: Graph, callId: NodeId, i: number, axis: number):
+    { x: number; y: number } {
+  const s = xformStripAt(graph, callId, i);
   const usable = STRIP_W - 2 * STRIP_PAD;
-  const x = s.x + STRIP_PAD + (i + 0.5) * usable / 3;
-  const y = s.row % 2 === 0 ? s.y : s.y + STRIP_H; // top edge / bottom edge
+  const x = s.x + STRIP_PAD + (axis + 0.5) * usable / 3;
+  const y = s.row % 2 === 0 ? s.y : s.y + STRIP_H;
   return { x, y };
 }
 /** Card-LOCAL wrapper output socket — right edge of the strip cluster, at the
  *  outermost (row-0) strip's vertical centre. */
-export function inlineXformOutput(graph: Graph, callId: NodeId): { x: number; y: number } {
-  const order = inlineXformOrder(graph, callId);
+export function xformOutputAt(graph: Graph, callId: NodeId): { x: number; y: number } {
+  const n = attachedTransforms(graph, callId).length;
   const { w } = nodeSize(graph, graph.nodes[callId]);
-  const cols = Math.max(1, Math.ceil(order.length / 2));
+  const cols = Math.max(1, Math.ceil(n / 2));
   const x = w + STRIP_GAP + cols * STRIP_W + (cols - 1) * STRIP_COL_GAP;
   const y = STRIP_TOP + STRIP_H / 2;
   return { x, y };
+}
+/** Card-LOCAL SEQUENCE arrows tracing the operation order:
+ *  card right edge → strip0 → (↓) strip1 → (→) strip2 (next col) → … →
+ *  wrapper output. Endpoints derive from the SAME xformStripAt / xformOutputAt
+ *  geometry, so the arrows stay glued to the strips. Returns line segments. */
+export function xformArrows(graph: Graph, callId: NodeId):
+    { x1: number; y1: number; x2: number; y2: number }[] {
+  const n = attachedTransforms(graph, callId).length;
+  if (n === 0) return [];
+  const { w } = nodeSize(graph, graph.nodes[callId]);
+  const strips = Array.from({ length: n }, (_, i) => xformStripAt(graph, callId, i));
+  const cx = (s: { x: number }) => s.x + STRIP_W / 2;
+  const cy = (s: { y: number }) => s.y + STRIP_H / 2;
+  const segs: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  // card right edge → first strip's left-centre
+  const s0 = strips[0]!;
+  segs.push({ x1: w - 10, y1: cy(s0), x2: s0.x, y2: cy(s0) });
+  for (let i = 0; i < strips.length - 1; i++) {
+    const a = strips[i]!, b = strips[i + 1]!;
+    if (a.col === b.col) {
+      // same column → vertical: bottom-centre(a) → top-centre(b)
+      segs.push({ x1: cx(a), y1: a.y + STRIP_H, x2: cx(b), y2: b.y });
+    } else {
+      // column change → right-centre(a) → left-centre(b)
+      segs.push({ x1: a.x + STRIP_W, y1: cy(a), x2: b.x, y2: cy(b) });
+    }
+  }
+  // last strip's right-centre → wrapper output socket (skip if coincident)
+  const last = strips[strips.length - 1]!;
+  const out = xformOutputAt(graph, callId);
+  if (Math.hypot(out.x - (last.x + STRIP_W), out.y - cy(last)) > 3) {
+    segs.push({ x1: last.x + STRIP_W, y1: cy(last), x2: out.x, y2: out.y });
+  }
+  return segs;
+}
+
+// ─── legacy kind-keyed shims (kept for the unit test + back-compat) ─────────
+/** Present attached transforms for a Call, as kinds in chain order. */
+export function inlineXformOrder(graph: Graph, callId: NodeId): ('rot' | 'mv')[] {
+  return attachedTransforms(graph, callId).map((id) => graph.nodes[id]!.type as 'rot' | 'mv');
+}
+/** Card-LOCAL strip for the first transform of `kind` on the Call, or null. */
+export function inlineXformStrip(graph: Graph, callId: NodeId, kind: 'rot' | 'mv'):
+    { x: number; y: number; col: number; row: number } | null {
+  const i = inlineXformOrder(graph, callId).indexOf(kind);
+  return i < 0 ? null : xformStripAt(graph, callId, i);
+}
+/** Card-LOCAL socket centre for the first transform of `kind`, axis `i`. */
+export function inlineXformSocket(graph: Graph, callId: NodeId, kind: 'rot' | 'mv', i: number):
+    { x: number; y: number } | null {
+  const idx = inlineXformOrder(graph, callId).indexOf(kind);
+  return idx < 0 ? null : xformSocketAt(graph, callId, idx, i);
+}
+/** Card-LOCAL wrapper output socket (delegates to xformOutputAt). */
+export function inlineXformOutput(graph: Graph, callId: NodeId): { x: number; y: number } {
+  return xformOutputAt(graph, callId);
 }
 /** Call card height — inline transforms hang off the RIGHT edge now, so they no
  *  longer grow the card. Kept for the bg rect + (legacy) callers. */
@@ -414,18 +531,23 @@ export function outputSocketAt(graph: Graph, id: NodeId): { x: number; y: number
   if (!node) return { x: 0, y: 0 };
   const { w, h } = nodeSize(graph, node);
   const p = nodePos(graph, id);
-  // An INLINE mv/rot wrapper renders inside its host Call card (it has no layout
-  // slot of its own), so its output socket lives on the HOST card's strip-
-  // cluster right edge. Uses the SAME inlineXformOutput() the render draws from.
-  if ((node.type === 'mv' || node.type === 'rot') && isInlineWrapper(graph, id)) {
-    const hostId = (node as MvNode | RotNode).child;
-    const hp = nodePos(graph, hostId);
-    const o = inlineXformOutput(graph, hostId);
-    return { x: hp.x + o.x, y: hp.y + o.y };
+  // A mv/rot whose chain bottoms out at a Call renders as a STRIP on that Call
+  // (it has no layout slot of its own), so its output socket lives on the base
+  // Call card's strip-cluster right edge — the SAME point xformOutputAt() (and
+  // the render's output circle) use. Every transform in the chain shares this
+  // cluster output, so a downstream consumer wired to the OUTERMOST transform
+  // still lands on the cluster edge.
+  if (node.type === 'mv' || node.type === 'rot') {
+    const bc = transformBaseCall(graph, id);
+    if (bc) {
+      const hp = nodePos(graph, bc.callId);
+      const o = xformOutputAt(graph, bc.callId);
+      return { x: hp.x + o.x, y: hp.y + o.y };
+    }
+    // Free-standing transform wrapping a Method/Stack/etc. → title-row right edge.
+    return { x: p.x + w, y: p.y + 16 };
   }
-  // Standalone mv / rot put their OUTPUT socket on the title row's right edge
-  // (y=16); method at y=14; other node types keep the middle-right edge.
-  if (node.type === 'mv' || node.type === 'rot') return { x: p.x + w, y: p.y + 16 };
+  // Method at y=14; other node types keep the middle-right edge.
   if (node.type === 'method') return { x: p.x + w, y: p.y + 14 };
   return { x: p.x + w, y: p.y + h / 2 };
 }

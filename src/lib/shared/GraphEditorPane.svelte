@@ -106,8 +106,10 @@
     bezier, chipWidthFor, paramPos, paramCardSize, extractParamRefs, paramSocketPos,
     cardMinWidth, polySockR, polySockZ, polySockRef,
     sketchCols, sketchSockR, sketchSockZ, sketchSockVal,
-    sketchRowVisible, nodeSize, containerSlotY, inlineXformStrip, inlineXformSocket,
-    inlineXformOutput, inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
+    sketchRowVisible, nodeSize, containerSlotY,
+    attachedTransforms, isAttachedTransform,
+    xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
+    inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
     entryIdxForEvalIdx, miniBez,
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
   } from '$lib/cad/graph-editor-geom';
@@ -4097,15 +4099,13 @@
       graph = wrapInTransform(graph, callId, kind).graph;
     }
   }
-  /** Inline wrappers should NOT render on the main canvas — their xyz inputs
-   *  surface inside their child's Call card instead. */
+  /** Attached transforms should NOT render on the main canvas — their xyz
+   *  inputs surface as STRIPS inside their base Call card instead. This now
+   *  catches free-standing mv/rot whose `.child` chain reaches a Call (not just
+   *  the directly-wrapping inline case); a transform wrapping a Method/Stack/etc.
+   *  stays a normal card. */
   function isInlineWrapper(nodeId: NodeId): boolean {
-    const n = graph.nodes[nodeId];
-    if (!n || (n.type !== 'mv' && n.type !== 'rot')) return false;
-    const childId = (n as MvNode | RotNode).child;
-    if (!childId) return false;
-    const child = graph.nodes[childId];
-    return child?.type === 'call' && inlineTransformOf(graph, childId, n.type) === nodeId;
+    return isAttachedTransform(graph, nodeId);
   }
 
   // ─── assembly-level params (Slice 3 first cut) ──────────────────────────
@@ -4566,6 +4566,11 @@
             <pattern id="ge-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M40 0 L0 0 0 40" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
             </pattern>
+            <!-- Sequence-arrow head for the inline transform-chain arrows. -->
+            <marker id="ge-xform-arrowhead" viewBox="0 0 8 8" refX="6" refY="4"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L8 4 L0 8 z" fill="#7c3aed"/>
+            </marker>
           </defs>
           <rect x="-2000" y="-2000" width="4000" height="4000" fill="url(#ge-grid)"/>
 
@@ -4622,59 +4627,35 @@
                   {/if}
                 {/if}
               {/each}
-              <!-- Inline transform axis wires (mv/rot wrapping this Call) —
-                   endpoints come from inlineXformSocket() so each wire lands on
-                   the moved strip socket exactly. -->
-              {@const inlMv  = inlineTransformOf(graph, n.id, 'mv')}
-              {@const inlRot = inlineTransformOf(graph, n.id, 'rot')}
-              {#if inlMv}
-                {@const mvN = graph.nodes[inlMv] as MvNode}
+              <!-- Attached transform axis wires (every mv/rot in the chain that
+                   bottoms out at this Call) — endpoints come from xformSocketAt()
+                   so each wire lands on the moved strip socket exactly. -->
+              {#each attachedTransforms(graph, n.id) as xId, xi (xId)}
+                {@const xn = graph.nodes[xId]}
+                {@const vals = xn.type === 'rot' ? (xn as RotNode).rot : (xn as MvNode).offset}
                 {#each [0,1,2] as i (i)}
-                  {#if (mvN.offset[i] as any).kind === 'param'}
-                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
+                  {@const av = vals[i] as any}
+                  {#if av.kind === 'param'}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === av.param)}
                     {#if pIdx >= 0 && leftTab === 'params'}
-                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(mvN.offset[i] as any).param, pIdx)}
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, av.param, pIdx)}
                       {@const pos = nodePos(n.id)}
-                      {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
+                      {@const sk = xformSocketAt(graph, n.id, xi, i)}
                       <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                     {/if}
-                  {:else if (mvN.offset[i] as any).kind === 'expr'}
-                    {#each extractParamRefs((mvN.offset[i] as any).expr) as refName (refName)}
+                  {:else if av.kind === 'expr'}
+                    {#each extractParamRefs(av.expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
                       {#if pIdx >= 0 && leftTab === 'params'}
-                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
+                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, refName, pIdx)}
                         {@const pos = nodePos(n.id)}
-                        {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
+                        {@const sk = xformSocketAt(graph, n.id, xi, i)}
                         <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                       {/if}
                     {/each}
                   {/if}
                 {/each}
-              {/if}
-              {#if inlRot}
-                {@const rotN = graph.nodes[inlRot] as RotNode}
-                {#each [0,1,2] as i (i)}
-                  {#if (rotN.rot[i] as any).kind === 'param'}
-                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
-                    {#if pIdx >= 0 && leftTab === 'params'}
-                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(rotN.rot[i] as any).param, pIdx)}
-                      {@const pos = nodePos(n.id)}
-                      {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
-                      <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
-                    {/if}
-                  {:else if (rotN.rot[i] as any).kind === 'expr'}
-                    {#each extractParamRefs((rotN.rot[i] as any).expr) as refName (refName)}
-                      {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                      {#if pIdx >= 0 && leftTab === 'params'}
-                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
-                        {@const pos = nodePos(n.id)}
-                        {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
-                        <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
-                      {/if}
-                    {/each}
-                  {/if}
-                {/each}
-              {/if}
+              {/each}
             {:else if n.type === 'repeat'}
               <!-- Repeat count param-wire — chip → top-left count socket -->
               {#if (n as any).count?.kind === 'param'}
@@ -4878,8 +4859,7 @@
                 {@const call = n as any}
                 {@const inlineMv  = inlineTransformOf(graph, n.id, 'mv')}
                 {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
-                {@const mvNode    = inlineMv  ? (graph.nodes[inlineMv]  as MvNode)  : null}
-                {@const rotNode   = inlineRot ? (graph.nodes[inlineRot] as RotNode) : null}
+                {@const xforms    = attachedTransforms(graph, n.id)}
                 {@const cardH     = inlineCardH(graph,n.id)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={cardH} rx="6"
@@ -5067,34 +5047,40 @@
                     {/each}
                   </div>
                 </foreignObject>
-                <!-- Inline transforms: compact STRIPS hanging off the card's
-                     RIGHT edge, cascading down-then-right. rot = row 0 (top),
-                     mv = row 1 (below); a single transform sits on row 0. Each
-                     strip's 3 axis sockets face OUTWARD — top edge for row 0,
-                     bottom edge for row 1. Strip/socket/output geometry comes
-                     from inlineXformStrip / inlineXformSocket / inlineXformOutput
-                     so the visible sockets, the param→axis wire endpoints, and
-                     outputSocketAt() stay in lockstep. -->
-                {#if rotNode}
-                  {@const rs = inlineXformStrip(graph,n.id, 'rot')!}
-                  <foreignObject x={rs.x} y={rs.y} width={STRIP_W} height={STRIP_H}>
-                    <div class="ge-inline-xform rot" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-hdr">↻ rot</div>
+                <!-- Attached transforms: compact STRIPS hanging off the card's
+                     RIGHT edge, cascading down-then-right. One strip per mv/rot
+                     in attachedTransforms() — the chain that bottoms out at this
+                     Call (inline-registered AND free-standing), ordered nearest-
+                     call-first. Strip i sits at col=⌊i/2⌋, row=i%2; its 3 axis
+                     sockets face OUTWARD (top edge for row 0, bottom for row 1).
+                     Strip/socket/output geometry comes from xformStripAt /
+                     xformSocketAt / xformOutputAt so the visible sockets, the
+                     param→axis wire endpoints, and outputSocketAt() stay in
+                     lockstep. -->
+                {#each xforms as xId, xi (xId)}
+                  {@const xn = graph.nodes[xId]}
+                  {@const isRot = xn.type === 'rot'}
+                  {@const st = xformStripAt(graph, n.id, xi)}
+                  {@const vals = isRot ? (xn as RotNode).rot : (xn as MvNode).offset}
+                  {@const axisKeys = isRot ? ['rx','ry','rz'] : ['x','y','z']}
+                  <foreignObject x={st.x} y={st.y} width={STRIP_W} height={STRIP_H}>
+                    <div class="ge-inline-xform" class:rot={isRot} class:mv={!isRot} xmlns="http://www.w3.org/1999/xhtml">
+                      <div class="ge-inline-hdr">{isRot ? '↻ rot' : '⇄ mv'}</div>
                       <div class="ge-inline-axes">
-                        {#each ['rx','ry','rz'] as axis, i (axis)}
-                          {@const av = rotNode.rot[i] as any}
+                        {#each axisKeys as axis, i (axis)}
+                          {@const av = vals[i] as any}
                           <div class="ge-inline-axis">
                             <span class="ge-inline-axkey">{axis}</span>
                             {#if av.kind === 'param'}
                               <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
                                 class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(inlineRot!, i as 0|1|2)}>×</button></span>
+                                onclick={() => unwireTransformAxis(xId, i as 0|1|2)}>×</button></span>
                             {:else}
-                              <input class="ge-inline-input" type="number" step="1"
+                              <input class="ge-inline-input" type="number" step={isRot ? 1 : 0.5}
                                 value={av.kind === 'literal' ? av.value : 0}
-                                use:dragNumber={{ step: 1, get: () => Number(av.value ?? 0),
-                                  set: (val) => onTransformAxis(inlineRot!, i as 0|1|2, val) }}
-                                oninput={(e) => onTransformAxis(inlineRot!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
+                                use:dragNumber={{ step: isRot ? 1 : 0.5, get: () => Number(av.value ?? 0),
+                                  set: (val) => onTransformAxis(xId, i as 0|1|2, val) }}
+                                oninput={(e) => onTransformAxis(xId, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
                               />
                             {/if}
                           </div>
@@ -5102,62 +5088,35 @@
                       </div>
                     </div>
                   </foreignObject>
-                  <!-- rot is row 0 → axis sockets on the strip's TOP edge -->
+                  <!-- row 0 → sockets on the strip's TOP edge; row 1 → BOTTOM -->
                   {#each [0,1,2] as i (i)}
-                    {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
+                    {@const sk = xformSocketAt(graph, n.id, xi, i)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in param tiny"
                       cx={sk.x} cy={sk.y} r="4"
-                      onpointerup={(ev) => endWireOnTransformAxis(ev, inlineRot!, i as 0|1|2)}/>
+                      onpointerup={(ev) => endWireOnTransformAxis(ev, xId, i as 0|1|2)}/>
                   {/each}
-                {/if}
-                {#if mvNode}
-                  {@const ms = inlineXformStrip(graph,n.id, 'mv')!}
-                  <foreignObject x={ms.x} y={ms.y} width={STRIP_W} height={STRIP_H}>
-                    <div class="ge-inline-xform mv" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-hdr">⇄ mv</div>
-                      <div class="ge-inline-axes">
-                        {#each ['x','y','z'] as axis, i (axis)}
-                          {@const av = mvNode.offset[i] as any}
-                          <div class="ge-inline-axis">
-                            <span class="ge-inline-axkey">{axis}</span>
-                            {#if av.kind === 'param'}
-                              <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
-                                class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(inlineMv!, i as 0|1|2)}>×</button></span>
-                            {:else}
-                              <input class="ge-inline-input" type="number" step="0.5"
-                                value={av.kind === 'literal' ? av.value : 0}
-                                use:dragNumber={{ step: 0.5, get: () => Number(av.value ?? 0),
-                                  set: (val) => onTransformAxis(inlineMv!, i as 0|1|2, val) }}
-                                oninput={(e) => onTransformAxis(inlineMv!, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                              />
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
-                    </div>
-                  </foreignObject>
-                  <!-- mv is row 1 → axis sockets on the strip's BOTTOM edge -->
-                  {#each [0,1,2] as i (i)}
-                    {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                      cx={sk.x} cy={sk.y} r="4"
-                      onpointerup={(ev) => endWireOnTransformAxis(ev, inlineMv!, i as 0|1|2)}/>
-                  {/each}
-                {/if}
+                {/each}
+                <!-- Sequence arrows: card → strip0 → (↓) strip1 → (→) strip2 → …
+                     → wrapper output, so the operation order reads at a glance.
+                     Endpoints derive from the same strip/output geometry. -->
+                {#each xformArrows(graph, n.id) as ar (ar.x1 + '_' + ar.y1 + '_' + ar.x2 + '_' + ar.y2)}
+                  <path class="ge-xform-arrow" d={`M ${ar.x1} ${ar.y1} L ${ar.x2} ${ar.y2}`}
+                    marker-end="url(#ge-xform-arrowhead)"/>
+                {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <!-- Output: if a Call has an inline mv/rot wrapper, the visible
-                     output is the WRAPPER's output (the transformed result), so
-                     wires originate from the wrapper id (rot ?? mv). It exits the
-                     strip cluster's right edge at the outermost (row-0) strip's
-                     centre — same point outputSocketAt() returns. Without this
-                     downstream methods would bypass the inline transform — emit
-                     would be `A.subtract(B)` instead of `mv(A,...).subtract(B)`. -->
-                {@const outPt = (mvNode || rotNode) ? inlineXformOutput(graph,n.id) : { x: size.w, y: cardH / 2 }}
+                <!-- Output: when the Call carries attached transforms the visible
+                     output is the OUTERMOST transform's output (the fully
+                     transformed result), so wires originate from that wrapper id
+                     (last in chain order). It exits the strip cluster's right edge
+                     at the outermost (row-0) strip's centre — same point
+                     outputSocketAt() returns. Without this downstream methods
+                     would bypass the transform — emit would be `A.subtract(B)`
+                     instead of `mv(A,...).subtract(B)`. -->
+                {@const outPt = xforms.length ? xformOutputAt(graph, n.id) : { x: size.w, y: cardH / 2 }}
+                {@const outSrc = xforms.length ? xforms[xforms.length - 1] : n.id}
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={outPt.x} cy={outPt.y} r="6"
-                  onpointerdown={(ev) => startWire(ev, inlineRot ?? inlineMv ?? n.id)}/>
+                  onpointerdown={(ev) => startWire(ev, outSrc)}/>
                 <!-- Per-arg input sockets on the left edge of the Call card.
                      Drag a param chip's output socket onto one to wire. -->
                 {#each Object.keys(call.args ?? {}) as ak, ai (ak)}
@@ -8767,6 +8726,10 @@
      "value flow" rather than "param injection". */
   .ge-wire.noderef { stroke: #c2410c; stroke-width: 2.4; fill: none; opacity: 0.9; }
   .ge-wire.in-flight { stroke: #15803d; stroke-dasharray: 6 4; }
+  /* Inline transform-chain SEQUENCE arrows — show the op order (card → strips
+     → output). Subtle purple, non-interactive (sits under the sockets). */
+  .ge-xform-arrow { stroke: #7c3aed; stroke-width: 1.4; fill: none; opacity: 0.7;
+    stroke-linecap: round; pointer-events: none; }
   /* output: piping a node into a container's slot. Green = "this is what the
      function returns / what gets stacked". root variant is slightly thicker
      to mark "this lands in the function's final return". */

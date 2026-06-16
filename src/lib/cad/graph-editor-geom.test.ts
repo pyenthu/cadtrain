@@ -4,6 +4,8 @@ import {
   sketchRowTop, sketchSockR, sketchSockZ, sketchSockVal,
   entryIdxForEvalIdx, nodeSize, cardMinWidth, chipWidthFor, paramCardSize, paramPos,
   inlineXformStrip, inlineXformSocket, inlineXformOutput,
+  attachedTransforms, transformBaseCall, transformChainBase, isAttachedTransform,
+  xformStripAt, xformOutputAt, xformArrows,
   STRIP_W, STRIP_H, STRIP_TOP, PARAM_H, CARD_PAD, CARD_TITLE_H, POLY_VTX_PITCH, POLY_RREF_PITCH,
 } from './graph-editor-geom';
 import type { Graph } from './composition-graph';
@@ -159,5 +161,72 @@ describe('inline mv/rot strip + output socket consistency', () => {
     const out = inlineXformOutput(graph, 'c');
     expect(out.x).toBe(strip.x + STRIP_W);
     expect(out.y).toBe(STRIP_TOP + STRIP_H / 2);
+  });
+});
+
+describe('transform CHAIN walk (standalone mv/rot auto-attach)', () => {
+  // A standalone mv whose `.child` is a Call resolves to that Call.
+  it('a standalone mv whose child is a Call resolves to that Call', () => {
+    const g = {
+      root: 'root',
+      nodes: {
+        root: { id: 'root', type: 'list', children: ['m'] },
+        m: { id: 'm', type: 'mv', child: 'c', offset: [] },
+        c: { id: 'c', type: 'call', src: 'x', args: {} },
+      },
+      layout: { c: { x: 0, y: 0 } },
+      params: {},
+    } as unknown as Graph;
+    expect(transformChainBase(g, 'm')).toBe('c');
+    expect(transformBaseCall(g, 'm')).toEqual({ callId: 'c', chain: ['m'] });
+    expect(attachedTransforms(g, 'c')).toEqual(['m']);
+    expect(isAttachedTransform(g, 'm')).toBe(true);
+  });
+
+  // A rot→mv chain on a Call lists BOTH transforms, nearest-call-first.
+  // Wiring: container → mv → rot → call  (rot.child=call, mv.child=rot), so the
+  // transform nearest the Call (rot) comes first, its wrapper (mv) second.
+  it('a chain rot→mv on a Call lists both in chain order', () => {
+    const g = {
+      root: 'root',
+      nodes: {
+        root: { id: 'root', type: 'list', children: ['m'] },
+        m: { id: 'm', type: 'mv', child: 'r', offset: [] },
+        r: { id: 'r', type: 'rot', child: 'c', rot: [] },
+        c: { id: 'c', type: 'call', src: 'x', args: {} },
+      },
+      layout: { c: { x: 0, y: 0 } },
+      params: {},
+    } as unknown as Graph;
+    expect(attachedTransforms(g, 'c')).toEqual(['r', 'm']);
+    // both transforms see the same base Call + full chain
+    expect(transformBaseCall(g, 'm')).toEqual({ callId: 'c', chain: ['r', 'm'] });
+    expect(transformBaseCall(g, 'r')).toEqual({ callId: 'c', chain: ['r', 'm'] });
+    // strips cascade: rot index 0 (row 0), mv index 1 (row 1, same column)
+    expect(xformStripAt(g, 'c', 0).row).toBe(0);
+    expect(xformStripAt(g, 'c', 1).row).toBe(1);
+    // output socket clears 1 column (2 strips → 1 col)
+    const out = xformOutputAt(g, 'c');
+    expect(out.x).toBe(xformStripAt(g, 'c', 0).x + STRIP_W);
+    // sequence arrows connect card → strip0 → strip1 → output
+    expect(xformArrows(g, 'c').length).toBeGreaterThanOrEqual(3);
+  });
+
+  // A mv wrapping a Method (not a Call) stays a normal card → null.
+  it('a mv wrapping a Method resolves to null', () => {
+    const g = {
+      root: 'root',
+      nodes: {
+        root: { id: 'root', type: 'list', children: ['m'] },
+        m: { id: 'm', type: 'mv', child: 'meth', offset: [] },
+        meth: { id: 'meth', type: 'method', op: 'subtract', obj: 'a', arg: 'b' },
+      },
+      layout: {},
+      params: {},
+    } as unknown as Graph;
+    expect(transformChainBase(g, 'm')).toBe('meth');
+    expect(transformBaseCall(g, 'm')).toBeNull();
+    expect(isAttachedTransform(g, 'm')).toBe(false);
+    expect(attachedTransforms(g, 'meth')).toEqual([]);
   });
 });
