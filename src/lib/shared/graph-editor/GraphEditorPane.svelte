@@ -122,6 +122,7 @@
   // viewport-clamp action is shared via popover-clamp.ts so the two callers
   // (Popovers' argExpr + GEP's sketch/poly expr popovers) can't drift.
   import Popovers from './Popovers.svelte';
+  import PropertiesCard from './PropertiesCard.svelte';
   import { clampToViewport } from './popover-clamp';
   // Source/meta parsers + the expected-params cache (drift detection) —
   // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
@@ -3834,12 +3835,7 @@
   function onPartColorOuter(hex: string | null) { graph = setPartColorOuter(graph, hex); }
   function onPartColorInner(hex: string | null) { graph = setPartColorInner(graph, hex); }
   function onPartMaterial(mat: string | null) { graph = setPartMaterial(graph, mat); }
-  /** Default swatch colours shown when the part has no colour set yet — the
-   *  classic red-outer / grey-inner hues, so each picker opens on a sensible
-   *  value. (Match builder.ts DEFAULT_OUTER_HEX / DEFAULT_INNER_HEX.) */
-  const PROPS_DEFAULT_OUTER = '#cc2222';
-  const PROPS_DEFAULT_INNER = '#888888';
-  const PROPS_MATERIALS = ['none', 'steel', 'aluminum', 'titanium', 'brass'];
+  // Default swatch colours + material list moved into PropertiesCard.svelte (Phase D).
   function onRemoveParam(name: string) {
     if (name === STACK_REF_PARAM) return; // reserved — no trash button anyway
     const r = removeParam(graph, name);
@@ -5778,55 +5774,17 @@
         </foreignObject>
 
         {#if leftTab === 'properties'}
-        <!-- PROPERTIES body — directly below the tab header. -->
-        <foreignObject x={PROPS_X0} y={PROPS_Y0 + TAB_HEADER_H} width={PROPS_W} height={propsBodyH}>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="ge-props-card" xmlns="http://www.w3.org/1999/xhtml"
-               onpointerdown={(e) => e.stopPropagation()}>
-              <!-- 4-column grid: label on TOP of each control.
-                   z-offset · outer · inner · material -->
-              <div class="ge-props-body">
-                <!-- z-offset — surfaces the reserved stack_ref default -->
-                <div class="ge-props-col">
-                  <span class="lbl" title="0 = end-to-end flush · + = leave a gap · − = overlap into the next">z-offset</span>
-                  <input class="num" type="number" step="0.05"
-                    value={zOffsetVal}
-                    class:unset={!hasStackRef(graph)}
-                    title="0 = end-to-end flush · + = leave a gap · − = overlap into the next"
-                    onkeydown={(e) => { if (e.key === 'Enter') { onZOffset(Number((e.currentTarget as HTMLInputElement).value)); (e.currentTarget as HTMLInputElement).blur(); } }}
-                    onblur={(e) => onZOffset(Number((e.currentTarget as HTMLInputElement).value))}/>
-                </div>
-                <!-- OUTER colour — outer body faces. single native picker IS the swatch -->
-                <div class="ge-props-col">
-                  <span class="lbl">outer</span>
-                  <input class="color" type="color"
-                    value={graph.colorOuter ?? PROPS_DEFAULT_OUTER}
-                    title={graph.colorOuter ? `Outside colour ${graph.colorOuter}` : 'Set OUTSIDE colour (unset → default red)'}
-                    oninput={(e) => onPartColorOuter((e.currentTarget as HTMLInputElement).value)}/>
-                </div>
-                <!-- INNER colour — bore / cut faces shown in the cutaway -->
-                <div class="ge-props-col">
-                  <span class="lbl">inner</span>
-                  <input class="color" type="color"
-                    value={graph.colorInner ?? PROPS_DEFAULT_INNER}
-                    title={graph.colorInner ? `Inside (bore) colour ${graph.colorInner}` : 'Set INSIDE bore colour (unset → default grey)'}
-                    oninput={(e) => onPartColorInner((e.currentTarget as HTMLInputElement).value)}/>
-                </div>
-                <!-- material -->
-                <div class="ge-props-col">
-                  <span class="lbl">material</span>
-                  <select class="mat"
-                    value={graph.material ?? 'none'}
-                    title="Part material tag"
-                    onchange={(e) => onPartMaterial((e.currentTarget as HTMLSelectElement).value)}>
-                    {#each PROPS_MATERIALS as m}
-                      <option value={m}>{m}</option>
-                    {/each}
-                  </select>
-                </div>
-              </div>
-          </div>
-        </foreignObject>
+          <!-- PROPERTIES body (PropertiesCard.svelte, Phase D) — directly below
+               the tab header. Positioned with GEP's layout constants; edits
+               route back through the graph mutators passed as callbacks. -->
+          <PropertiesCard
+            x={PROPS_X0} y={PROPS_Y0 + TAB_HEADER_H} w={PROPS_W} h={propsBodyH}
+            {graph}
+            {zOffsetVal}
+            onZOffset={onZOffset}
+            onColorOuter={onPartColorOuter}
+            onColorInner={onPartColorInner}
+            onMaterial={onPartMaterial} />
         {/if}
 
         {#if leftTab === 'params'}
@@ -8085,42 +8043,7 @@
   .ge-left-tab + .ge-left-tab { border-left: 1px solid #fde68a; }
   .ge-left-tab:hover { opacity: 1; }
   .ge-left-tab.on { background: #fde68a; color: #78350f; opacity: 1; }
-  .ge-props-card {
-    box-sizing: border-box; width: 100%;
-    background: #fffbeb; border: 1.5px solid #d97706; border-radius: 8px;
-    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.06));
-    overflow: hidden; font: 700 10px ui-monospace, monospace; color: #78350f;
-  }
-  /* 4-column grid — each column is a top label + one control below. */
-  .ge-props-body {
-    padding: 8px; display: grid; grid-template-columns: repeat(4, 1fr);
-    gap: 6px; align-items: end;
-  }
-  .ge-props-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .ge-props-col .lbl {
-    font-size: 10px; line-height: 1; color: #92400e; text-transform: uppercase;
-    letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .ge-props-col .num {
-    width: 100%; padding: 0 4px; height: 22px;
-    font: 10px ui-monospace, monospace; color: #92400e; text-align: center;
-    background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
-    box-sizing: border-box;
-  }
-  .ge-props-col .num.unset { color: #b45309; opacity: 0.65; font-style: italic; }
-  .ge-props-col .num:focus { outline: 1px solid #d97706; background: #fff; }
-  /* The colour picker IS the swatch — one element, full-width of its column. */
-  .ge-props-col .color {
-    width: 100%; height: 22px; padding: 0;
-    border: 1px solid #fbbf24; border-radius: 3px; background: #fff; cursor: pointer;
-    box-sizing: border-box;
-  }
-  .ge-props-col .mat {
-    width: 100%; min-width: 0; height: 22px; padding: 0 2px;
-    font: 10px ui-monospace, monospace; color: #92400e;
-    background: rgba(255,255,255,0.9); border: 1px solid #fbbf24; border-radius: 3px;
-    cursor: pointer; box-sizing: border-box;
-  }
+  /* .ge-props-card / .ge-props-body / .ge-props-col CSS → PropertiesCard.svelte (Phase D) */
   /* Right-edge resize grip — semi-transparent slate, lights up on hover.
      Cursor: ew-resize so the affordance is obvious. */
   .ge-resize-grip {
