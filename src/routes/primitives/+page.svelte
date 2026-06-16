@@ -23,15 +23,16 @@
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
   import CacheBrowser from '$lib/shared/CacheBrowser.svelte';
+  import {
+    type Entry, type FolderNode, MOVE_TARGET_RE,
+    tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir, moveTargets,
+  } from './primitives-tree';
 
   /** Same regex the server uses for primitive ids — keep them in sync.
    *  Server: src/routes/api/primitives/rename/+server.ts ID_RE. */
   const ID_RE = /^[a-z][a-z0-9_]*$/i;
 
-  interface Entry {
-    id: string;
-    source: 'bundle' | 'volume' | 'stdlib' | 'stdstale';
-  }
+  // Entry / FolderNode types + the pure tree helpers → ./primitives-tree.
 
   // Live primitive lists, by group.
   let basic: Entry[] = $state([]);
@@ -47,7 +48,6 @@
    *  tree root's children (each a volume folder); nested dirs are navigable
    *  subfolders. Sourced from /api/primitives/list `tree` so it always
    *  mirrors the on-volume dirs incl. user-created ones (Rule 16). */
-  interface FolderNode { name: string; path: string; parts: Entry[]; children: FolderNode[]; }
   let tree = $state<FolderNode | null>(null);
   let topFolders = $derived(tree?.children ?? []);
 
@@ -94,39 +94,9 @@
    *  of the per-part editor tabs. Toggled from a footer row in the tree. */
   let showCache = $state(false);
 
-  function tabLabel(name: string): string {
-    if (name === 'archive') return 'Archived';
-    if (name === 'stdlib' || name === 'stdstale') return name;
-    return name.charAt(0).toUpperCase() + name.slice(1);
-  }
-  /** Total parts in a subtree (direct parts + all descendants) — shown as the
-   *  folder's count badge so a collapsed folder still advertises its size. */
-  function subtreeCount(node: FolderNode): number {
-    return node.parts.length + node.children.reduce((n, c) => n + subtreeCount(c), 0);
-  }
-  /** True when `node` (or any descendant) has a part matching the live filter.
-   *  Folders that match nothing are hidden while a filter is active. */
-  function subtreeMatches(node: FolderNode): boolean {
-    if (!filter.trim()) return true;
-    return node.parts.some(pass) || node.children.some(subtreeMatches);
-  }
-  /** Folder children in the current sort mode (alpha sorts by name; default
-   *  keeps the server's readdir order). */
-  function sortFolders(xs: FolderNode[]): FolderNode[] {
-    return sortMode === 'alpha' ? [...xs].sort((a, b) => a.name.localeCompare(b.name)) : xs;
-  }
-  /** Walk the tree to the node at a relative path ('' → root, else by name). */
-  function nodeAt(path: string): FolderNode | null {
-    if (!tree) return null;
-    if (!path) return tree;
-    let n: FolderNode = tree;
-    for (const seg of path.split('/')) {
-      const c = n.children.find((x) => x.name === seg);
-      if (!c) return null;
-      n = c;
-    }
-    return n;
-  }
+  // tabLabel / subtreeCount / subtreeMatches / sortFolders / nodeAt → ./primitives-tree
+  // (pure; called with `tree` / `sortMode` / `pass` passed in at the call sites).
+
   // Optimistic-insert for brand-new parts: the proxied /list lags writes by
   // seconds (memory prod_list_staleness), so a just-saved part wouldn't appear
   // until a later refresh. Track pending ids → merge them into the tree after
@@ -140,7 +110,7 @@
     let changed = false;
     for (const [id, dir] of [...pendingCreated]) {
       if (treeHasId(tree, id)) { pendingCreated.delete(id); changed = true; continue; }
-      const node = nodeAt(dir) ?? tree;
+      const node = nodeAt(tree, dir) ?? tree;
       if (node && !node.parts.some((p) => p.id === id)) {
         node.parts = [...node.parts, { id, source: 'volume', name: id, description: '', params: {} } as any];
         changed = true;
@@ -377,9 +347,7 @@
   // unchanged, so meta.uses refs (by id) stay valid — no broken-ref handling
   // (unlike rename). Server: POST /api/primitives/move?id=<id>&to=<category>
   // where <category> ∈ basic | basic/<sub> | archive | completions/<fam>(/<sub>).
-  // Read-only stdlib/stdstale reject server-side; we also gate them in the UI.
-  // Same shape as the move endpoint's CAT_RE — what `to` values it accepts.
-  const MOVE_TARGET_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
+  // MOVE_TARGET_RE → ./primitives-tree. findPartDir(tree, id) likewise.
   const PRIM_DND = 'application/x-cadtrain-prim';       // payload = the part id (also read by the canvas drop)
   const PRIM_DND_FROM = 'application/x-cadtrain-prim-from'; // payload = JSON { kind, dir } source meta
 
@@ -387,22 +355,11 @@
   /** Folder/tab path currently under a part-drag (drop-target highlight). */
   let dragOverPath = $state<string | null>(null);
 
-  /** Walk the tree to the folder path that holds `id`, or null. */
-  function findPartDir(id: string): string | null {
-    if (!tree) return null;
-    const walk = (n: FolderNode): string | null => {
-      if (n.parts.some((p) => p.id === id)) return n.path;
-      for (const c of n.children) { const r = walk(c); if (r != null) return r; }
-      return null;
-    };
-    return walk(tree);
-  }
-
   /** Optimistically relocate the entry between tree nodes (the proxied /list
    *  lags writes — memory prod_list_staleness). loadList reconciles after. */
   function moveEntryInTree(id: string, fromDir: string, toPath: string) {
-    const from = nodeAt(fromDir);
-    const to = nodeAt(toPath);
+    const from = nodeAt(tree, fromDir);
+    const to = nodeAt(tree, toPath);
     if (!from || !to || from === to) return;
     const entry = from.parts.find((p) => p.id === id);
     from.parts = from.parts.filter((p) => p.id !== id);
@@ -515,7 +472,7 @@
         : stdstale.some((e) => e.id === id) ? 'stdstale'
         : archived.some((e) => e.id === id) ? 'archive' : 'volume';
     }
-    if (!fromDir) fromDir = findPartDir(id) ?? '';
+    if (!fromDir) fromDir = findPartDir(tree, id) ?? '';
     if (srcKind !== 'volume' && srcKind !== 'archive') return; // read-only src part — can't move
     void movePart(id, srcKind, fromDir, path);
   }
@@ -533,15 +490,7 @@
   /** Valid move destinations from the tree — excludes the bare `completions`
    *  container, the read-only stdlib/stdstale src groups (not in the tree), and
    *  the part's CURRENT folder. */
-  function moveTargets(fromDir: string): { path: string; depth: number }[] {
-    const out: { path: string; depth: number }[] = [];
-    const walk = (n: FolderNode, depth: number) => {
-      if (n.path && n.path !== fromDir && MOVE_TARGET_RE.test(n.path)) out.push({ path: n.path, depth });
-      for (const c of n.children) walk(c, depth + 1);
-    };
-    if (tree) for (const c of tree.children) walk(c, 0);
-    return out;
-  }
+  // moveTargets(tree, fromDir) → ./primitives-tree.
   function pickMoveTarget(path: string) {
     const m = moveMenu;
     closeMoveMenu();
@@ -1084,7 +1033,7 @@
          read-only, and volume folders offer a single `+` create menu on hover. -->
     {#snippet folderNode(node: FolderNode, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale')}
       {@const open = filter.trim() ? true : isExpanded(node.path)}
-      {@const kids = sortFolders(node.children).filter(subtreeMatches)}
+      {@const kids = sortFolders(node.children, sortMode).filter((n) => subtreeMatches(n, pass))}
       {@const files = sortBy(node.parts).filter(pass)}
       <div class="prim-tree-node">
         <div class="prim-folder-row-wrap">
@@ -1182,7 +1131,7 @@
            subfolders (expand/collapse in place) + its direct files. The tab
            itself is the branch header, so there's no redundant top folder row. -->
       {#if activeNode}
-        {@const kids = sortFolders(activeNode.children).filter(subtreeMatches)}
+        {@const kids = sortFolders(activeNode.children, sortMode).filter((n) => subtreeMatches(n, pass))}
         {@const files = sortBy(activeNode.parts).filter(pass)}
         {#each kids as c (c.path)}
           {@render folderNode(c, 0, activeKind)}
@@ -1231,7 +1180,7 @@
     {#if moveMenu}
       <!-- Copy can target the CURRENT folder too (a duplicate in place), so it
            passes '' to include every valid folder; Move excludes the source. -->
-      {@const targets = moveTargets(moveMenu.mode === 'copy' ? '' : moveMenu.fromDir)}
+      {@const targets = moveTargets(tree, moveMenu.mode === 'copy' ? '' : moveMenu.fromDir)}
       <div class="prim-move-menu" role="menu"
         style="left: {moveMenu.x}px; top: {moveMenu.y}px">
         <div class="prim-create-menu-head">{moveMenu.mode === 'copy' ? 'Copy' : 'Move'} {moveMenu.id} to…</div>
