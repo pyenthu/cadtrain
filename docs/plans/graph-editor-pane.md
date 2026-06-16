@@ -113,12 +113,32 @@ its render arms already pull from extracted, tested helpers.
 > and `toggleSketchOpMode` reads the editor's `sketchEditor` derived — so the
 > editor and the node card are NOT separable while the node card lives in GEP.
 > Reverted cleanly to the committed state (A/B/C/D intact, GEP ~8021).
-> **CORRECTED PLAN: do E+F TOGETHER** as one "sketch consolidation" — move the
-> Sketch node card + the full-tab editor + `sketchExprPop` + all shared sketch-op
-> helpers into a `sketch/` unit in ONE pass — OR keep `sketchExprPop` + the shared
-> helpers in GEP and give the editor an `onOpenSketchExprPop` callback (still needs
-> `toggleSketchOpMode`/`sketchEditor` untangled). The /tmp extraction (line ranges,
-> import set) is documented in the handoff memory. **This unblocks M.5 sketch-repeat.**
+> **CORRECTED DESIGN — confirmed by re-inventory 2026-06-16 (the execution-ready spec):**
+> The shared helpers `sketchExprPop` + `openSketchExprPop` + `toggleSketchOpMode`
+> + `sketchAxisLabel` are called from BOTH the node-card arm (`{:else if
+> n.type==='sketch'}`, GEP ~5310–5400) AND the full-tab editor (~5673+) AND
+> `sketchAnchorTap` — so neither can move to a component while the other stays
+> (this is precisely what broke Phase E).
+>
+> **Step 1 = a per-instance `sketch-state.svelte.ts` class** (the proven WireState
+> pattern, scaled up): owns editingSketchId / sketchTool / the drags / frame /
+> cards state + `sketchExprPop` + all 21 `sketch*`/`mini*` handlers + the
+> `sketchEditor` + `miniLayout` `$derived`s; mutates graph via getGraph/setGraph
+> and takes the `wire` instance. GEP holds `const sketch = new SketchState(...)`;
+> BOTH the node-card arm and the editor block reference the ONE instance
+> (`sketch.openSketchEditor`, `sketch.toggleSketchOpMode`, `sketch.exprPop`, …).
+> Markup STAYS in GEP, rewired to `sketch.*`. **SCOPE: ~233 sketch-state refs +
+> ~80 handler call-sites** — large + fragile; INLINE, one focused pass, build +
+> **BROWSER-MOUNT verify mandatory** (g_dp_box: enter editor, draw line/spline/
+> fillet, drag anchor, abs/rel toggle, the coord ƒ-popover, AND the node-card
+> inline ops). Per-instance (NOT a singleton — /primitives mounts all panes).
+>
+> **Step 2 (after Step 1 lands):** move the editor block → `SketchEditorPane.svelte`
+> and the node-card arm → `SketchNodeCard.svelte` (both take the `sketch` instance).
+> This is what unblocks the **M.5 sketch-repeat** data model + the repeat windowed editor.
+>
+> _(superseded note: "do E+F together as one pass" — the SketchState class IS the
+> shared unit; markup components come after.)_
 | **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards **+ `polyExprPop`** (vertex/loop/binding/count **+ transform-axis** ƒ-editor; fused with `hlVertex`/`hoverVertex`/`svgTip`). | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
 
 After A–F the shell is props + the ~110 `$state` (many will move with their
