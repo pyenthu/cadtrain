@@ -98,7 +98,7 @@
   import { sketchColLayout, sketchEntryH } from '$lib/cad/sketch-layout';
   // Pure socket / card / position geometry (P1/G1 extraction — see
   // docs/plans/modularize.md). These take captured state (graph, pan/zoom,
-  // CARD_Y0, PARAM_W, cardObstacles, sketchOpsScrollTop) as explicit args.
+  // CARD_Y0, PARAM_W, cardObstacles, sketch.sketchOpsScrollTop) as explicit args.
   import {
     bezier, chipWidthFor, paramCardSize, extractParamRefs, paramSocketPos,
     cardMinWidth, polySockR, polySockZ, polySockRef,
@@ -1278,8 +1278,8 @@
       wire.from = null; wire.mouse = null; wire.justArmed = false;
       return;
     }
-    if (ev.key === 'Escape' && selectedSplineOpIdx != null) {
-      selectedSplineOpIdx = null;
+    if (ev.key === 'Escape' && sketch.selectedSplineOpIdx != null) {
+      sketch.selectedSplineOpIdx = null;
       return;
     }
     if (ev.key !== 'Enter') return;
@@ -1956,6 +1956,9 @@
   // Per-instance full-tab sketch editor state (Phase E). Shared home for the
   // sketch state referenced by BOTH the node-card arm and the full-tab editor.
   const sketch = new SketchState(() => graph, (g) => { graph = g; }, wire, () => pcs, () => PARAM_W);
+  /** Names of the graph's params (PARAMS card) — the wireable `p.*` set. Shared
+   *  by the main-graph param markup AND the sketch overlay. */
+  const paramNames = $derived(Object.keys(graph.params ?? {}));
   // endWireOnInput / endWireOnCallArg / endWireOnPolygonCoord /
   // endWireOnPolyRepeatCount / endWireOnPolygonRepeatRef / endWireOnTransformAxis
   // / unwireTransformAxis → wire-state.svelte.ts (Phase C); called as `wire.*`.
@@ -2016,10 +2019,6 @@
   // All row/socket geometry delegates to sketchColLayout so the HTML rows and
   // SVG sockets share ONE column partition. `cols` defaults to 1 → byte-identical
   // to the legacy single-column walk (36 + Σ sketchEntryH(prior ops)).
-  function setSketchCols(id: NodeId, cols: 1 | 2 | 3) {
-    const cur = graph.layout[id] ?? { x: 0, y: 0 };
-    graph = setLayout(graph, id, { ...cur, cols });
-  }
   // endWireOnSketchCoord / endWireOnSketchPoint / endWireOnContainerSlot →
   // wire-state.svelte.ts (Phase C); called as `wire.*`.
   function nodePos(id: NodeId): { x: number; y: number } {
@@ -2356,542 +2355,16 @@
   /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
   // argStr / argFrom → graph-editor-args.ts (P2/G2).
 
-  // ─── Full-tab sketch editor (plan M.2) ─────────────────────────────────
-  let editingSketchId = $state<string | null>(null);
-  let sketchTool = $state<'select' | 'line' | 'spline' | 'fillet' | 'chamfer'>('select');
-  let sketchSvgEl = $state<SVGSVGElement | null>(null);
-  function openSketchEditor(id: string) { editingSketchId = id; sketchTool = 'select'; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; sketchCardSize = null; sketchOpsScrollTop = 0; }
-  function closeSketchEditor() { editingSketchId = null; sketchDrag = null; splineDrag = null; selectedCornerOpIdx = null; selectedSplineOpIdx = null; sketchFrame = null; sketchCardSize = null; sketchOpsScrollTop = 0; }
-
-  // sketchParamScope(graph) / evalArg → graph-editor-args.ts (P2/G2).
-  /** The active sketch resolved to numbers: compiled outline + draggable
-   *  anchors + extents (for the editor viewBox). */
-  let sketchEditor = $derived.by(() => {
-    if (!editingSketchId) return null;
-    const node = graph.nodes[editingSketchId] as any;
-    if (!node || node.type !== 'sketch') return null;
-    const p = sketchParamScope(graph);
-    const ops: SketchOp[] = node.ops.map((o: any) => {
-      if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode };
-      if (o.op === 'spline') return {
-        op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode,
-        pts: (o.pts ?? []).map((c: any) => [evalArg(c[0], p), evalArg(c[1], p)] as [number, number]),
-        h0: o.h0 ? [evalArg(o.h0[0], p), evalArg(o.h0[1], p)] as [number, number] : undefined,
-        h1: o.h1 ? [evalArg(o.h1[0], p), evalArg(o.h1[1], p)] as [number, number] : undefined,
-      };
-      if (o.op === 'fillet') return { op: 'fillet', radius: evalArg(o.radius, p) };
-      return { op: 'chamfer', dist: evalArg(o.dist, p) };
-    });
-    const seg = node.segments ? evalArg(node.segments, p) : 64;
-    let pts: [number, number][] = [];
-    try { pts = compileSketch(ops, seg); } catch { pts = []; }
-    const anchors: { opIdx: number; r: number; z: number; kind: string; literal: boolean; rel: boolean; corner: 'fillet' | 'chamfer' | null; cornerOpIdx: number | null }[] = [];
-    // Accumulate a running cursor so relative (Δr,Δz) ops resolve to their
-    // ABSOLUTE canvas positions — mirrors compileSketch/toVerts. The first
-    // point op is always absolute.
-    let cur: [number, number] = [0, 0]; let started = false;
-    node.ops.forEach((o: any, i: number) => {
-      if (o.op === 'line' || o.op === 'spline') {
-        const nx = node.ops[i + 1];
-        const corner = nx && (nx.op === 'fillet' || nx.op === 'chamfer') ? nx.op as 'fillet' | 'chamfer' : null;
-        const rel = o.mode === 'rel' && started;
-        const ar = rel ? cur[0] + evalArg(o.r, p) : evalArg(o.r, p);
-        const az = rel ? cur[1] + evalArg(o.z, p) : evalArg(o.z, p);
-        cur = [ar, az]; started = true;
-        anchors.push({ opIdx: i, r: ar, z: az, kind: o.op, literal: o.r?.kind === 'literal' && o.z?.kind === 'literal', rel, corner, cornerOpIdx: corner ? i + 1 : null });
-      }
-    });
-    const all = [...pts, ...anchors.map((a) => [a.r, a.z] as [number, number])];
-    const xs = all.map((q) => q[0]); const ys = all.map((q) => q[1]);
-    const minX = Math.min(0, ...xs), maxX = Math.max(1, ...xs), minY = Math.min(0, ...ys), maxY = Math.max(1, ...ys);
-    return { node, ops, pts, anchors, ext: { minX, maxX, minY, maxY } };
-  });
-
-  // ─── S.1: focused, WIREABLE mini node-graph inside the sketcher ─────────
-  // The sketcher's left column renders TWO real cards — the PARAMS card and
-  // the sketch node card — in their OWN SVG coordinate space (no pan/zoom).
-  // A param's output socket can be drag-wired straight onto a sketch
-  // coordinate's input socket, exactly like the main graph but scoped to
-  // editingSketchId. Reuses startParamWire + endWireOnSketchCoord + the
-  // sketchSock* row math + the in-flight wire.from/wire.mouse preview.
-  let miniSvgEl = $state<SVGSVGElement | null>(null);
-  const MINI_PX = 10, MINI_PY = 10, MINI_GAP = 46, MINI_SCW = 152, MINI_FOOT_H = 58;
-  /** Whole mini-canvas layout (sketch card rect + viewBox), derived from the
-   *  live param count + sketch ops so socket rows + the viewBox track edits. */
-  let miniLayout = $derived.by(() => {
-    const se = sketchEditor;
-    if (!se) return null;
-    const sx = MINI_PX + pcs.w + MINI_GAP, sy = MINI_PY;
-    // Column-aware (mirrors nodeSize): height = TALLEST column + footer; width =
-    // 12 (insets) + innerW. At cols=1: tallestH = op-sum (= old opsH) and
-    // scW = 12 + 140 = 152 = MINI_SCW → byte-identical to today.
-    const cl = sketchColLayout(se.node.ops as any[], sketchCols(graph,se.node));
-    const sch = 36 + cl.tallestH + MINI_FOOT_H;
-    const scW = 12 + cl.innerW;
-    const w = sx + scW + 12;
-    const h = Math.max(MINI_PY + pcs.h, sy + sch) + 12;
-    return { sx, sy, sch, scW, w, h };
-  });
-  /** client → cards-overlay coords. The overlay SVG (S.2) has NO viewBox and
-   *  fills the stage at width/height:100% ⇒ user units are 1:1 with CSS px,
-   *  so the mapping is just the rect offset. Drives the in-flight wire. */
-  function miniEventToCoord(ev: PointerEvent): { x: number; y: number } | null {
-    if (!miniSvgEl) return null;
-    const r = miniSvgEl.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
-  }
-  function miniPointerMove(ev: PointerEvent) {
-    if (wire.from) { const p = miniEventToCoord(ev); if (p) wire.mouse = p; }
-  }
-  function miniPointerUp() {
-    if (!wire.from) return;
-    // Mirror the main canvas: a no-drag tap that armed the wire stays armed
-    // (tap-connect); any other release on empty space cancels the in-flight.
-    if (wire.tapConnect && wire.justArmed && !wire.pointerMoved) { wire.justArmed = false; return; }
-    wire.from = null; wire.mouse = null; wire.justArmed = false;
-  }
-
-  // FROZEN viewBox frame. Deriving the viewBox from the LIVE point extents
-  // made the canvas rescale on every point drag (jarring). Freeze the frame
-  // on open; only an explicit Fit re-derives it. Used for BOTH the SVG
-  // viewBox and pointer→coord mapping so they stay consistent.
-  let sketchFrame = $state<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null);
+  // FROZEN sketcher viewBox: deriving it from LIVE point extents rescaled the
+  // canvas on every drag. Freeze on open (only Fit re-derives). The state lives
+  // on `sketch` (SketchState); this $effect stays in the component for its
+  // effect context (Phase E).
   $effect(() => {
-    if (editingSketchId && sketchEditor && !sketchFrame) {
-      const e = sketchEditor.ext;
-      sketchFrame = { minX: e.minX, maxX: e.maxX, minY: e.minY, maxY: e.maxY };
+    if (sketch.editingSketchId && sketch.sketchEditor && !sketch.frame) {
+      const e = sketch.sketchEditor.ext;
+      sketch.frame = { minX: e.minX, maxX: e.maxX, minY: e.minY, maxY: e.maxY };
     }
   });
-  function fitSketchFrame() {
-    if (!sketchEditor) return;
-    const e = sketchEditor.ext;
-    sketchFrame = { minX: e.minX, maxX: e.maxX, minY: e.minY, maxY: e.maxY };
-  }
-
-  /** Map a pointer event to sketch (r,z) coords via the SVG viewBox. */
-  function sketchEventToCoord(ev: PointerEvent): [number, number] | null {
-    if (!sketchSvgEl || !sketchEditor) return null;
-    const rect = sketchSvgEl.getBoundingClientRect();
-    const { minX, maxX, minY, maxY } = sketchFrame ?? sketchEditor.ext;
-    const pad = Math.max(maxX - minX, maxY - minY) * 0.12 + 0.2;
-    const vbW = (maxX - minX) + 2 * pad, vbH = (maxY - minY) + 2 * pad;
-    const fx = (ev.clientX - rect.left) / rect.width;
-    const fy = (ev.clientY - rect.top) / rect.height;
-    const r = (minX - pad) + fx * vbW;
-    const z = (minY - pad) + fy * vbH;   // SVG y-down == z-down (revolve), so no flip
-    return [Math.round(r * 1000) / 1000, Math.round(z * 1000) / 1000];
-  }
-  let sketchDrag = $state<{ opIdx: number } | null>(null);
-  function sketchAnchorDown(ev: PointerEvent, opIdx: number, literal: boolean, kind?: string) {
-    ev.stopPropagation();
-    sketchTapMoved = false;
-    // With the fillet/chamfer tool active, clicking a vertex anchor rounds/
-    // bevels THAT corner (exact op index — no nearest-search needed).
-    if (sketchTool === 'fillet' || sketchTool === 'chamfer') { cornerAtOpIdx(opIdx); return; }
-    if (sketchTool !== 'select') return;
-    // Click a spline's endpoint anchor → select that spline (reveals its
-    // through-point + end-handle dots); clicking any other anchor clears it.
-    if (kind === 'spline') { selectedSplineOpIdx = opIdx; selectedCornerOpIdx = null; }
-    else selectedSplineOpIdx = null;
-    if (!literal) return;
-    sketchDrag = { opIdx };
-    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
-  }
-  function sketchAnchorMove(ev: PointerEvent) {
-    if (!sketchDrag || !editingSketchId) return;
-    sketchTapMoved = true;
-    const c = sketchEventToCoord(ev); if (!c) return;
-    // For a relative (Δ) op, write the delta from the previous vertex's
-    // absolute position so the increment is preserved; else write absolute.
-    const node = graph.nodes[editingSketchId] as any;
-    const op = node?.ops?.[sketchDrag.opIdx];
-    const se = sketchEditor;
-    let r = c[0], z = c[1];
-    if (op?.mode === 'rel' && se) {
-      const ai = se.anchors.findIndex((a) => a.opIdx === sketchDrag!.opIdx);
-      if (ai > 0) { const prev = se.anchors[ai - 1]; r = +(c[0] - prev.r).toFixed(3); z = +(c[1] - prev.z).toFixed(3); }
-    }
-    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'r', { kind: 'literal', value: r });
-    graph = setSketchOpField(graph, editingSketchId, sketchDrag.opIdx, 'z', { kind: 'literal', value: z });
-  }
-  function sketchAnchorUp() { sketchDrag = null; }
-  // Mobile equivalent of the mouse ondblclick → open the point's coordinate
-  // popover. `dblclick` doesn't reliably fire for touch, so detect a
-  // double-TAP (two quick taps on the same anchor with no drag between).
-  let sketchLastTap: { opIdx: number; t: number } | null = null;
-  let sketchTapMoved = false;
-  function sketchAnchorTap(ev: PointerEvent, sid: NodeId, opIdx: number, curR: string) {
-    if (ev.pointerType !== 'touch') return;        // mouse path is ondblclick
-    if (sketchTapMoved) { sketchLastTap = null; return; } // it was a drag, not a tap
-    if (sketchTool !== 'select') return;
-    const now = Date.now();
-    if (sketchLastTap && sketchLastTap.opIdx === opIdx && now - sketchLastTap.t < 350) {
-      sketchLastTap = null;
-      openSketchExprPop(ev as unknown as MouseEvent, sid, opIdx, 'r', curR);
-    } else {
-      sketchLastTap = { opIdx, t: now };
-    }
-  }
-
-  // ─── M.3: per-corner fillet/chamfer by click + a live radius dial ───────
-  // With the fillet/chamfer tool active, clicking near a CORNER inserts that
-  // op right after the corner's vertex (so the engine rounds THAT corner with
-  // its own radius), and selects it so the toolbar radius/dist dial edits it
-  // live. Clicking a corner that already has the op just selects it.
-  let selectedCornerOpIdx = $state<number | null>(null);
-  const selectedCorner = $derived.by(() => {
-    if (selectedCornerOpIdx == null || !editingSketchId) return null;
-    const node = graph.nodes[editingSketchId] as any;
-    const o = node?.ops?.[selectedCornerOpIdx];
-    if (!o || (o.op !== 'fillet' && o.op !== 'chamfer')) return null;
-    const p = sketchParamScope(graph);
-    const field = o.op === 'fillet' ? 'radius' : 'dist';
-    const arg = o[field];                 // the raw ArgValue (literal | param | expr)
-    const bound = arg?.kind === 'param' || arg?.kind === 'expr';
-    const label = arg?.kind === 'param' ? `p.${arg.param}` : arg?.kind === 'expr' ? String(arg.expr) : null;
-    return { idx: selectedCornerOpIdx, kind: o.op as 'fillet' | 'chamfer', field, value: evalArg(arg, p), bound, label, paramName: arg?.kind === 'param' ? arg.param : null };
-  });
-  /** Names of the graph's params (PARAMS card) — the wireable `p.*` set. */
-  const paramNames = $derived(Object.keys(graph.params ?? {}));
-  /** Bind / unbind the selected corner's radius|dist to a param `p.<name>`. */
-  function bindCornerParam(name: string) {
-    const sc = selectedCorner; if (!sc || !editingSketchId) return;
-    if (name === '__literal__' || name === '') {
-      graph = setSketchOpField(graph, editingSketchId, sc.idx, sc.field as any, { kind: 'literal', value: Math.max(0, Math.round(sc.value * 1000) / 1000) });
-    } else {
-      graph = setSketchOpField(graph, editingSketchId, sc.idx, sc.field as any, asParam(name));
-    }
-  }
-  /** Round/bevel the corner at vertex op `vIdx` with the active tool, then
-   *  select it for the radius/dist dial. Inserts the corner op right after the
-   *  vertex; if the corner already has one, switches its kind or just selects. */
-  function cornerAtOpIdx(vIdx: number) {
-    if (!editingSketchId) return;
-    selectedSplineOpIdx = null;
-    const node = graph.nodes[editingSketchId] as any;
-    const next = node.ops[vIdx + 1];
-    if (next && (next.op === 'fillet' || next.op === 'chamfer')) {
-      if (next.op !== sketchTool) {
-        graph = removeSketchOp(graph, editingSketchId, vIdx + 1);
-        graph = addSketchOp(graph, editingSketchId, sketchTool as any, vIdx);
-      }
-    } else {
-      graph = addSketchOp(graph, editingSketchId, sketchTool as any, vIdx);
-    }
-    selectedCornerOpIdx = vIdx + 1;
-  }
-  /** Canvas click with the fillet/chamfer tool → round the NEAREST vertex. */
-  function applyCornerAt(c: [number, number]) {
-    if (!editingSketchId) return;
-    const se = sketchEditor;
-    if (!se || !se.anchors.length) {
-      graph = addSketchOp(graph, editingSketchId, sketchTool as any);
-      selectedCornerOpIdx = (graph.nodes[editingSketchId] as any).ops.length - 1;
-      return;
-    }
-    let bestOpIdx = -1, bestD = Infinity;
-    for (const a of se.anchors) {
-      const d = Math.hypot(a.r - c[0], a.z - c[1]);
-      if (d < bestD) { bestD = d; bestOpIdx = a.opIdx; }
-    }
-    cornerAtOpIdx(bestOpIdx);
-  }
-  function setCornerValue(v: number) {
-    const sc = selectedCorner; if (!sc || !editingSketchId) return;
-    graph = setSketchOpField(graph, editingSketchId, sc.idx, sc.field as any, { kind: 'literal', value: Math.max(0, Math.round(v * 1000) / 1000) });
-  }
-  function removeSelectedCorner() {
-    if (selectedCornerOpIdx == null || !editingSketchId) return;
-    graph = removeSketchOp(graph, editingSketchId, selectedCornerOpIdx);
-    selectedCornerOpIdx = null;
-  }
-
-  // ─── Phase 2: spline-as-entity editing (docs/plans/spline-redesign.md §6a) ─
-  // Selecting a spline endpoint anchor (SELECT tool) sets selectedSplineOpIdx.
-  // That reveals draggable through-point dots + two relative end-handle dots,
-  // all stored in the chord-affine frame (a=prev vertex, b=this op's r,z).
-  let selectedSplineOpIdx = $state<number | null>(null);
-  const r3 = (n: number) => Math.round(n * 1000) / 1000;
-  /** Resolve the selected spline to absolute on-canvas geometry: chord
-   *  endpoints a/b, through-point dots, and the two end-handle dots (each
-   *  carries `set` — true when the op stores it, false = a ghost default the
-   *  user can grab to CREATE the handle). */
-  const selectedSpline = $derived.by(() => {
-    if (selectedSplineOpIdx == null || !sketchEditor) return null;
-    const se = sketchEditor;
-    const ai = se.anchors.findIndex((x) => x.opIdx === selectedSplineOpIdx);
-    if (ai < 0 || se.anchors[ai].kind !== 'spline') return null;
-    const b: [number, number] = [se.anchors[ai].r, se.anchors[ai].z];
-    // Previous vertex (wraps — the sketch outline is closed), same as the
-    // engine's chord start `a`.
-    const prev = se.anchors[(ai - 1 + se.anchors.length) % se.anchors.length];
-    const a: [number, number] = [prev.r, prev.z];
-    const o = se.node.ops[selectedSplineOpIdx] as any;
-    const p = sketchParamScope(graph);
-    const pts = (o.pts ?? []).map((c: any, k: number) => {
-      const u = evalArg(c[0], p), v = evalArg(c[1], p);
-      const abs = chordToAbs(a, b, u, v);
-      return { k, x: abs[0], y: abs[1] };
-    });
-    // Handle dot: stored h displaces off `a` (h0) or `b` (h1); absent → a
-    // sensible default along the chord (±1/3) shown as a ghost.
-    const handleDot = (h: any, base: 'a' | 'b') => {
-      const set = !!h;
-      const u = set ? evalArg(h[0], p) : (base === 'a' ? 1 / 3 : -1 / 3);
-      const v = set ? evalArg(h[1], p) : 0;
-      const absA = chordToAbs(a, b, u, v);        // a + chord-frame disp
-      const dx = absA[0] - a[0], dy = absA[1] - a[1];
-      const O = base === 'a' ? a : b;
-      return { set, x: O[0] + dx, y: O[1] + dy };
-    };
-    return { opIdx: selectedSplineOpIdx, a, b, pts, h0: handleDot(o.h0, 'a'), h1: handleDot(o.h1, 'b') };
-  });
-
-  let splineDrag = $state<{ which: 'pt' | 'h0' | 'h1'; ptIdx?: number } | null>(null);
-  function splineCompDown(ev: PointerEvent, which: 'pt' | 'h0' | 'h1', ptIdx?: number) {
-    ev.stopPropagation();
-    if (sketchTool !== 'select') return;
-    splineDrag = { which, ptIdx };
-    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
-  }
-  function splineCompMove(ev: PointerEvent) {
-    if (!splineDrag || !editingSketchId) return;
-    const ss = selectedSpline; if (!ss) return;
-    const c = sketchEventToCoord(ev); if (!c) return;
-    const { a, b } = ss;
-    if (splineDrag.which === 'pt') {
-      const [u, v] = absToChord(a, b, c);
-      graph = setSketchSplinePoint(graph, editingSketchId, ss.opIdx, splineDrag.ptIdx!, 'u', asLiteral(r3(u)));
-      graph = setSketchSplinePoint(graph, editingSketchId, ss.opIdx, splineDrag.ptIdx!, 'v', asLiteral(r3(v)));
-    } else {
-      // h0 displaces off a (use the pointer directly); h1 displaces off b —
-      // shift the pointer into a's frame so absToChord yields the (u,v) of the
-      // displacement off b.
-      const which = splineDrag.which;
-      const p: [number, number] = which === 'h0' ? c : [a[0] + (c[0] - b[0]), a[1] + (c[1] - b[1])];
-      const [u, v] = absToChord(a, b, p);
-      graph = setSketchSplineHandle(graph, editingSketchId, ss.opIdx, which, 'u', asLiteral(r3(u)));
-      graph = setSketchSplineHandle(graph, editingSketchId, ss.opIdx, which, 'v', asLiteral(r3(v)));
-    }
-  }
-  function splineCompUp(ev: PointerEvent) { releaseImplicitCapture(ev); splineDrag = null; }
-
-  function addSplinePt() {
-    if (selectedSplineOpIdx == null || !editingSketchId) return;
-    graph = addSketchSplinePoint(graph, editingSketchId, selectedSplineOpIdx);
-  }
-  function removeSplinePt() {
-    const ss = selectedSpline; if (!ss || ss.pts.length === 0 || !editingSketchId) return;
-    graph = removeSketchSplinePoint(graph, editingSketchId, ss.opIdx, ss.pts.length - 1);
-  }
-  function autoTangentSpline() {
-    if (selectedSplineOpIdx == null || !editingSketchId) return;
-    graph = clearSketchSplineHandle(graph, editingSketchId, selectedSplineOpIdx, 'h0');
-    graph = clearSketchSplineHandle(graph, editingSketchId, selectedSplineOpIdx, 'h1');
-  }
-  /** Shortest distance from point (px,py) to segment a→b (clamped to the ends). */
-  function ptSegDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-    const dx = bx - ax, dy = by - ay;
-    const len2 = dx * dx + dy * dy;
-    let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
-    t = Math.max(0, Math.min(1, t));
-    const cx = ax + t * dx, cy = ay + t * dy;
-    return Math.hypot(px - cx, py - cy);
-  }
-  /** Click on the canvas with a tool active → add an op. With the line/spline
-   *  tool and ≥2 vertices, the new point is inserted ON the nearest EDGE
-   *  (splitting that segment at the right sequence position) rather than always
-   *  appended; clicks far from every edge fall back to the append behaviour. */
-  function sketchCanvasClick(ev: PointerEvent) {
-    if (!editingSketchId) return;
-    if (sketchTool === 'select') {
-      selectedSplineOpIdx = null;
-      // Begin a view PAN — drag the empty canvas to reposition the view for
-      // better visibility. (Anchors/sockets stopPropagation on their own
-      // pointerdown, so this only fires on empty canvas.) A click with no
-      // movement leaves the frame unchanged (just deselects, above).
-      const se2 = sketchEditor;
-      if (se2 && sketchSvgEl) {
-        const f = sketchFrame ?? se2.ext;
-        const pad = Math.max(f.maxX - f.minX, f.maxY - f.minY) * 0.12 + 0.2;
-        const vbW = (f.maxX - f.minX) + 2 * pad, vbH = (f.maxY - f.minY) + 2 * pad;
-        const rect = sketchSvgEl.getBoundingClientRect();
-        sketchPanDrag = { minX: f.minX, maxX: f.maxX, minY: f.minY, maxY: f.maxY,
-          px: ev.clientX, py: ev.clientY, sx: vbW / rect.width, sy: vbH / rect.height };
-        try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
-      }
-      return;
-    }
-    const c = sketchEventToCoord(ev); if (!c) return;
-    if (sketchTool === 'fillet' || sketchTool === 'chamfer') { applyCornerAt(c); return; }
-    // Edge-aware insertion (line/spline): find the nearest edge between
-    // consecutive vertices (incl. the closing edge back to the first), then
-    // insert the op after that edge's START vertex so it lands between them.
-    let afterIdx: number | undefined;
-    const se = sketchEditor;
-    if (se && se.anchors.length >= 2) {
-      const an = se.anchors;
-      const f = sketchFrame ?? se.ext;
-      const span = Math.max(f.maxX - f.minX, f.maxY - f.minY) || 1;
-      const thresh = span * 0.15;
-      let bestD = Infinity, bestStart = -1;
-      for (let i = 0; i < an.length; i++) {
-        const a = an[i], b = an[(i + 1) % an.length];
-        const d = ptSegDist(c[0], c[1], a.r, a.z, b.r, b.z);
-        if (d < bestD) { bestD = d; bestStart = i; }
-      }
-      if (bestStart >= 0 && bestD <= thresh) {
-        const start = an[bestStart];
-        // Skip past the start vertex's own corner op (if any) so the fillet/
-        // chamfer stays attached to the original vertex, not the new one.
-        afterIdx = start.cornerOpIdx ?? start.opIdx;
-      }
-    }
-    graph = addSketchOp(graph, editingSketchId, sketchTool, afterIdx);
-    const node = graph.nodes[editingSketchId] as any;
-    const idx = typeof afterIdx === 'number' ? afterIdx + 1 : node.ops.length - 1;
-    graph = setSketchOpField(graph, editingSketchId, idx, 'r', { kind: 'literal', value: c[0] });
-    graph = setSketchOpField(graph, editingSketchId, idx, 'z', { kind: 'literal', value: c[1] });
-  }
-
-  // ─── Pan + zoom the sketcher VIEW (sketchFrame is the view rect) ─────────
-  // Drag empty canvas to pan; wheel to zoom toward the cursor. Both just move
-  // sketchFrame; Fit (⤢) re-frames to the sketch.
-  let sketchPanDrag = $state<{ minX: number; maxX: number; minY: number; maxY: number; px: number; py: number; sx: number; sy: number } | null>(null);
-  function sketchCanvasWheel(ev: WheelEvent) {
-    if (!editingSketchId) return;
-    const f = sketchFrame ?? sketchEditor?.ext;
-    if (!f) return;
-    ev.preventDefault();
-    const c = sketchEventToCoord(ev as unknown as PointerEvent); if (!c) return;
-    const k = ev.deltaY > 0 ? 1.12 : 1 / 1.12;   // out / in, zoom toward cursor
-    sketchFrame = {
-      minX: c[0] - (c[0] - f.minX) * k, maxX: c[0] + (f.maxX - c[0]) * k,
-      minY: c[1] - (c[1] - f.minY) * k, maxY: c[1] + (f.maxY - c[1]) * k,
-    };
-  }
-
-  // ─── Draggable top toolbar in the sketch editor ─────────────────────────
-  // The status / radius-dial / Done bar floats over the stage and can be
-  // dragged anywhere (offsets are relative to the editor container).
-  let sketchBarPos = $state<{ x: number; y: number }>({ x: 16, y: 10 });
-  let sketchBarDrag: { sx: number; sy: number; px: number; py: number } | null = null;
-  function sketchBarDown(ev: PointerEvent) {
-    ev.stopPropagation();
-    sketchBarDrag = { sx: sketchBarPos.x, sy: sketchBarPos.y, px: ev.clientX, py: ev.clientY };
-    try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
-  }
-  function sketchBarMove(ev: PointerEvent) {
-    if (!sketchBarDrag) return;
-    sketchBarPos = { x: sketchBarDrag.sx + (ev.clientX - sketchBarDrag.px), y: sketchBarDrag.sy + (ev.clientY - sketchBarDrag.py) };
-  }
-  function sketchBarUp(ev: PointerEvent) {
-    if (!sketchBarDrag) return;
-    sketchBarDrag = null;
-    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* ignore */ }
-  }
-
-  // ─── S.2: floating, draggable PARAMS + sketch cards over the 2D canvas ───
-  // The two mini-graph cards float ON TOP of the big 2D draw stage (like the
-  // main graph's PARAMS overlay), each draggable by its title bar. Positions
-  // live in the cards-overlay SVG's pixel space (1:1 with the stage; the
-  // overlay has no viewBox). The wire layer + sockets re-route from these
-  // positions, so wiring a param → coord keeps working as the cards move.
-  let sketchCardPos = $state<{ params: { x: number; y: number }; sketch: { x: number; y: number } }>(
-    { params: { x: 64, y: 56 }, sketch: { x: 64, y: 244 } }
-  );
-  let sketchCardDrag: { which: 'params' | 'sketch'; sx: number; sy: number; px: number; py: number } | null = null;
-  // Resizable sketch card (overrides MINI_SCW / ml.sch when set). null = auto-fit.
-  let sketchCardSize = $state<{ w: number; h: number } | null>(null);
-  let sketchCardResize: { sw: number; sh: number; px: number; py: number } | null = null;
-  // Live scroll offset of the ops list — left-edge SVG sockets must shift by
-  // this (and hide when scrolled out of the card) since they don't scroll with
-  // the inner HTML.
-  let sketchOpsScrollTop = $state(0);
-  function sketchCardResizeDown(ev: PointerEvent) {
-    if (ev.button !== 0) return;
-    ev.stopPropagation();
-    const w = sketchCardSize?.w ?? MINI_SCW;
-    const h = sketchCardSize?.h ?? (miniLayout?.sch ?? 200);
-    sketchCardResize = { sw: w, sh: h, px: ev.clientX, py: ev.clientY };
-    try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
-  }
-  function sketchCardResizeMove(ev: PointerEvent) {
-    if (!sketchCardResize) return;
-    const d = sketchCardResize;
-    sketchCardSize = {
-      w: Math.max(140, d.sw + (ev.clientX - d.px)),
-      h: Math.max(120, d.sh + (ev.clientY - d.py)),
-    };
-  }
-  function sketchCardResizeUp(ev: PointerEvent) {
-    if (!sketchCardResize) return;
-    sketchCardResize = null;
-    releaseImplicitCapture(ev);
-  }
-  function sketchCardDown(ev: PointerEvent, which: 'params' | 'sketch') {
-    if (ev.button !== 0) return;
-    ev.stopPropagation();
-    releaseImplicitCapture(ev);
-    const p = sketchCardPos[which];
-    sketchCardDrag = { which, sx: p.x, sy: p.y, px: ev.clientX, py: ev.clientY };
-  }
-  /** Stage-level pointermove. The cards overlay is pointer-events:none over
-   *  its empty area (so drawing passes through), so an in-flight wire over the
-   *  empty canvas would lose its move events — the STAGE always gets them. One
-   *  handler covers both: a card-title drag OR in-flight wire tracking. */
-  function sketchStageMove(ev: PointerEvent) {
-    if (sketchPanDrag) {
-      const d = sketchPanDrag;
-      const dx = (ev.clientX - d.px) * d.sx, dy = (ev.clientY - d.py) * d.sy;
-      sketchFrame = { minX: d.minX - dx, maxX: d.maxX - dx, minY: d.minY - dy, maxY: d.maxY - dy };
-      return;
-    }
-    if (sketchCardDrag) {
-      const d = sketchCardDrag;
-      sketchCardPos = { ...sketchCardPos, [d.which]: { x: d.sx + (ev.clientX - d.px), y: d.sy + (ev.clientY - d.py) } };
-      return;
-    }
-    if (wire.from) { const p = miniEventToCoord(ev); if (p) wire.mouse = p; }
-  }
-  function sketchStageUp(_ev: PointerEvent) {
-    if (sketchPanDrag) { sketchPanDrag = null; return; }
-    if (sketchCardDrag) { sketchCardDrag = null; return; }
-    miniPointerUp();
-  }
-  /** Param OUTPUT socket centre, ABS in cards-overlay px — tracks the params
-   *  card as it drags (mirrors miniParamSock but offset by sketchCardPos). */
-  function miniParamSockAbs(i: number) {
-    return {
-      x: sketchCardPos.params.x + CARD_PAD + PARAM_W + CARD_PAD + 4,
-      y: sketchCardPos.params.y + CARD_TITLE_H + CARD_PAD + i * (PARAM_H + PARAM_GAP) + PARAM_H / 2,
-    };
-  }
-  /** S.3: map a sketch (r,z) coord → cards-overlay px so a param→point wire can
-   *  be drawn in the overlay (where the PARAMS card lives) but land on the
-   *  point as it actually renders in the 2D SVG. Replicates the SVG's
-   *  preserveAspectRatio="xMidYMid meet" letterboxing (anchors render with meet,
-   *  so the wire must too). Reads sketchFrame (reactive) so it re-evaluates on
-   *  Fit and on anchor drags; the SVG pixel size is read live from the DOM. */
-  function sketchPtToOverlay(r: number, z: number): { x: number; y: number } | null {
-    const f = sketchFrame ?? sketchEditor?.ext;
-    if (!f || !sketchSvgEl) return null;
-    const rect = sketchSvgEl.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-    const span = Math.max(f.maxX - f.minX, f.maxY - f.minY) || 1;
-    const pad = span * 0.12 + 0.2;
-    const minVX = f.minX - pad, minVY = f.minY - pad;
-    const vbW = (f.maxX - f.minX) + 2 * pad, vbH = (f.maxY - f.minY) + 2 * pad;
-    const scale = Math.min(rect.width / vbW, rect.height / vbH);
-    const ox = (rect.width - vbW * scale) / 2;
-    const oy = (rect.height - vbH * scale) / 2;
-    const sx = rect.left + ox + (r - minVX) * scale;
-    const sy = rect.top + oy + (z - minVY) * scale;
-    if (!miniSvgEl) return { x: sx, y: sy };
-    const orect = miniSvgEl.getBoundingClientRect();
-    return { x: sx - orect.left, y: sy - orect.top };
-  }
 
   /** Drop an r_revolve / r_weld_extrude Call inside a profile graph.
    *  These are 3D solid producers — the polygon's output flows into the
@@ -3080,135 +2553,6 @@
   // `clampToViewport` is now imported from ./popover-clamp (the sketch/poly
   // expression popovers below still use it).
 
-  // ─── Sketch coord expression popover (S.2) ─────────────────────────────
-  /** The ƒ button on a sketch-card coord row (r / z / fillet radius /
-   *  chamfer dist) opens this. Same UX as the Call-arg argExprPop: edit a JS
-   *  expression like `p.od / 2 - p.wall`, apply → the coord becomes
-   *  kind:'expr'. Keyed to a sketch op field, written via setSketchOpField. */
-  let sketchExprPop = $state<{ sid: NodeId; opIdx: number; field: 'r' | 'z' | 'radius' | 'dist'; draft: string; drafts?: { r: string; z: string }; x: number; y: number } | null>(null);
-  function openSketchExprPop(ev: MouseEvent, sid: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist', currentExpr: string) {
-    ev.stopPropagation();
-    // For a point coordinate (line/spline r/z) populate BOTH axis drafts so
-    // the popover shows r AND z behind a tab strip — same UX as the polygon
-    // vertex editor. fillet radius / chamfer dist are single-value, no tabs.
-    let drafts: { r: string; z: string } | undefined;
-    if (field === 'r' || field === 'z') {
-      const op = (graph.nodes[sid] as any)?.ops?.[opIdx];
-      const other: 'r' | 'z' = field === 'r' ? 'z' : 'r';
-      drafts = { [field]: currentExpr, [other]: argToDraftStr(op?.[other]) } as { r: string; z: string };
-    }
-    sketchExprPop = { sid, opIdx, field, draft: currentExpr, drafts, x: ev.clientX, y: ev.clientY };
-    sketchDelArmed = false;
-  }
-  /** Switch the active r/z tab — stash the current draft into the inactive
-   *  axis, load the other axis's draft. Pure state; Apply writes both. */
-  /** Flip the popover's point between abs and Δ relative, then refresh the
-   *  drafts from the (possibly converted) stored coords so the textarea +
-   *  tabs show the new values. */
-  function toggleSketchExprPopMode() {
-    if (!sketchExprPop || !sketchExprPop.drafts) return;
-    const op = (graph.nodes[sketchExprPop.sid] as any)?.ops?.[sketchExprPop.opIdx];
-    if (!op || (op.op !== 'line' && op.op !== 'spline')) return;
-    toggleSketchOpMode(sketchExprPop.sid, sketchExprPop.opIdx, op);
-    const op2 = (graph.nodes[sketchExprPop.sid] as any)?.ops?.[sketchExprPop.opIdx];
-    if (!op2) return;
-    const drafts = { r: argToDraftStr(op2.r), z: argToDraftStr(op2.z) } as { r: string; z: string };
-    const field = sketchExprPop.field === 'z' ? 'z' : 'r';
-    sketchExprPop = { ...sketchExprPop, drafts, draft: drafts[field] };
-  }
-  function switchSketchExprAxis(newAxis: 'r' | 'z') {
-    if (!sketchExprPop || !sketchExprPop.drafts) return;
-    const old = sketchExprPop.field;
-    if (old === newAxis) return;
-    sketchExprPop = {
-      ...sketchExprPop,
-      drafts: { ...sketchExprPop.drafts, [old]: sketchExprPop.draft } as { r: string; z: string },
-      field: newAxis,
-      draft: sketchExprPop.drafts[newAxis],
-    };
-  }
-  // Per-line abs/relative coord toggle. The axis label doubles as the control:
-  // click it to flip the op between absolute (r/z) and incremental (Δr/Δz).
-  // For LITERAL coords we convert the value (abs↔delta vs the previous vertex)
-  // so the point doesn't jump; expr/param coords just flip the flag.
-  function toggleSketchOpMode(sid: NodeId, idx: number, op: any) {
-    const toRel = op?.mode !== 'rel';
-    const se = sketchEditor;
-    if (se && op?.r?.kind === 'literal' && op?.z?.kind === 'literal') {
-      const ai = se.anchors.findIndex((a) => a.opIdx === idx);
-      if (ai > 0) {
-        const prev = se.anchors[ai - 1], curAbs = se.anchors[ai]; // anchors are resolved absolutes
-        const r = toRel ? +(curAbs.r - prev.r).toFixed(3) : +curAbs.r.toFixed(3);
-        const z = toRel ? +(curAbs.z - prev.z).toFixed(3) : +curAbs.z.toFixed(3);
-        graph = setSketchOpField(graph, sid, idx, 'r', { kind: 'literal', value: r });
-        graph = setSketchOpField(graph, sid, idx, 'z', { kind: 'literal', value: z });
-      }
-    }
-    graph = setSketchOpMode(graph, sid, idx, toRel ? 'rel' : 'abs');
-  }
-  /** Axis label that reflects the op's coord mode: Δr/Δz when relative,
-   *  r/z (or spl r/spl z for splines) when absolute. */
-  function sketchAxisLabel(op: any, axis: 'r' | 'z'): string {
-    if (op?.mode === 'rel') return axis === 'r' ? 'Δr' : 'Δz';
-    return op?.op === 'spline' ? (axis === 'r' ? 'spl r' : 'spl z') : axis;
-  }
-  // # of point ops in the popover's sketch — guards the delete button (can't
-  // remove the only point).
-  const sketchPopPtCount = $derived(
-    sketchExprPop ? ((graph.nodes[sketchExprPop.sid] as any)?.ops ?? []).filter((o: any) => o.op === 'line' || o.op === 'spline').length : 0
-  );
-  function closeSketchExprPop() { sketchExprPop = null; sketchDelArmed = false; }
-  // Two-step delete confirm (no native dialog — that blocks the extension):
-  // first click ARMS the button, second click within the armed state deletes.
-  let sketchDelArmed = $state(false);
-  function onSketchDeleteClick() {
-    if (!sketchDelArmed) { sketchDelArmed = true; return; }
-    deleteSketchExprPopPoint();
-  }
-  /** Delete the point (op) the popover is editing, then close. */
-  function deleteSketchExprPopPoint() {
-    if (!sketchExprPop) return;
-    graph = removeSketchOp(graph, sketchExprPop.sid, sketchExprPop.opIdx);
-    sketchExprPop = null;
-    sketchDelArmed = false;
-  }
-  // Drag the point popover by its header (grab the title bar). Mirrors the
-  // sketch-toolbar drag — offset-based so the cursor stays where you grabbed.
-  let sketchExprPopDrag: { dx: number; dy: number } | null = null;
-  function sketchExprPopDown(ev: PointerEvent) {
-    if (!sketchExprPop) return;
-    ev.preventDefault(); ev.stopPropagation();
-    sketchExprPopDrag = { dx: ev.clientX - sketchExprPop.x, dy: ev.clientY - sketchExprPop.y };
-    try { (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
-  }
-  function sketchExprPopMove(ev: PointerEvent) {
-    if (!sketchExprPopDrag || !sketchExprPop) return;
-    sketchExprPop = { ...sketchExprPop, x: ev.clientX - sketchExprPopDrag.dx, y: ev.clientY - sketchExprPopDrag.dy };
-  }
-  function sketchExprPopUp(ev: PointerEvent) {
-    if (!sketchExprPopDrag) return;
-    sketchExprPopDrag = null;
-    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* ignore */ }
-  }
-  function applySketchExprPop() {
-    if (!sketchExprPop) return;
-    if (sketchExprPop.drafts) {
-      // Dual r/z: fold the active tab's live draft back in, write both axes.
-      const drafts = { ...sketchExprPop.drafts, [sketchExprPop.field]: sketchExprPop.draft } as { r: string; z: string };
-      graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, 'r', asExpr(drafts.r));
-      graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, 'z', asExpr(drafts.z));
-    } else {
-      graph = setSketchOpField(graph, sketchExprPop.sid, sketchExprPop.opIdx, sketchExprPop.field, asExpr(sketchExprPop.draft));
-    }
-    sketchExprPop = null;
-  }
-  function insertParamIntoSketchDraft(name: string) {
-    if (!sketchExprPop) return;
-    const ref = `p.${name}`;
-    const draft = sketchExprPop.draft;
-    const sep = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
-    sketchExprPop = { ...sketchExprPop, draft: draft + sep + ref };
-  }
 
   // ─── Polygon coord expression popover ──────────────────────────────────
   /** Click on a polygon vertex's wired `p.<name>` chip (or the ƒ button on
@@ -5330,7 +4674,7 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 32} y="22" class="ge-sketch-edit-btn"
                   data-tip="Edit in the full-tab sketch editor"
-                  onpointerdown={(ev) => { ev.stopPropagation(); openSketchEditor(n.id); }}>✎</text>
+                  onpointerdown={(ev) => { ev.stopPropagation(); sketch.openSketchEditor(n.id); }}>✎</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   class:disabled={skConsumed}
@@ -5345,22 +4689,22 @@
                           <!-- Two STACKED sub-rows (r over z) — compact + each
                                coord has a left-edge wire socket (rendered as SVG
                                siblings below) so a param can be wired in. -->
-                          <div class="ge-sketch-vtx" class:editing={sketchExprPop?.sid === n.id && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
+                          <div class="ge-sketch-vtx" class:editing={sketch.sketchExprPop?.sid === n.id && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
-                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(n.id, idx, op)}>{sketchAxisLabel(op, 'r')}</button>
+                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(n.id, idx, op)}>{sketch.sketchAxisLabel(op, 'r')}</button>
                               <input class="ge-sketch-in" type="text" value={argStr(op.r)} title={op.mode === 'rel' ? 'Δr — offset from previous point' : 'r — number or p.param'}
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-fx" type="button" title="Write/edit an expression for r" class:on={op.r?.kind === 'expr'}
-                                onclick={(ev) => openSketchExprPop(ev, n.id, idx, 'r', argStr(op.r))}>ƒ</button>
+                                onclick={(ev) => sketch.openSketchExprPop(ev, n.id, idx, 'r', argStr(op.r))}>ƒ</button>
                               <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
                                 onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
                             </div>
                             <div class="ge-sketch-srow">
-                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(n.id, idx, op)}>{sketchAxisLabel(op, 'z')}</button>
+                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(n.id, idx, op)}>{sketch.sketchAxisLabel(op, 'z')}</button>
                               <input class="ge-sketch-in" type="text" value={argStr(op.z)} title={op.mode === 'rel' ? 'Δz — offset from previous point' : 'z'}
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-fx" type="button" title="Write/edit an expression for z" class:on={op.z?.kind === 'expr'}
-                                onclick={(ev) => openSketchExprPop(ev, n.id, idx, 'z', argStr(op.z))}>ƒ</button>
+                                onclick={(ev) => sketch.openSketchExprPop(ev, n.id, idx, 'z', argStr(op.z))}>ƒ</button>
                               <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
                                 onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
                               <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
@@ -5368,13 +4712,13 @@
                             </div>
                           </div>
                         {:else}
-                          <div class="ge-sketch-vtx corner" class:editing={sketchExprPop?.sid === n.id && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
+                          <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === n.id && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                             <div class="ge-sketch-srow">
                               <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                               <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
                                 onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
                               <button class="ge-sketch-fx" type="button" title="Write/edit an expression" class:on={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'expr'}
-                                onclick={(ev) => openSketchExprPop(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argStr(op.op === 'fillet' ? op.radius : op.dist))}>ƒ</button>
+                                onclick={(ev) => sketch.openSketchExprPop(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argStr(op.op === 'fillet' ? op.radius : op.dist))}>ƒ</button>
                               <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
                                 onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
                               <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
@@ -5674,10 +5018,10 @@
            draggable divider, and re-bakes live as the sketch changes. Tools
            rail + PARAMS + OPS on the LEFT, the 2D sketch in the CENTRE.
            ✓ Done returns to the graph. -->
-      {#if editingSketchId && sketchEditor}
-        {@const se = sketchEditor}
-        {@const sid = editingSketchId}
-        {@const fr = sketchFrame ?? se.ext}
+      {#if sketch.editingSketchId && sketch.sketchEditor}
+        {@const se = sketch.sketchEditor}
+        {@const sid = sketch.editingSketchId}
+        {@const fr = sketch.frame ?? se.ext}
         {@const span = Math.max(fr.maxX - fr.minX, fr.maxY - fr.minY) || 1}
         {@const pad = span * 0.12 + 0.2}
         {@const vb = `${fr.minX - pad} ${fr.minY - pad} ${(fr.maxX - fr.minX) + 2 * pad} ${(fr.maxY - fr.minY) + 2 * pad}`}
@@ -5686,19 +5030,19 @@
         <div class="ge-sketch-editor">
           <!-- Tool palette — LEFT vertical rail (matches the main editor vrail). -->
           <div class="ge-sketch-vtools">
-            <button class="ge-stool" class:on={sketchTool === 'select'} title="Select / drag points" onclick={() => (sketchTool = 'select')}>⬚</button>
+            <button class="ge-stool" class:on={sketch.sketchTool === 'select'} title="Select / drag points" onclick={() => (sketch.sketchTool = 'select')}>⬚</button>
             <div class="ge-stool-sep"></div>
-            <button class="ge-stool" class:on={sketchTool === 'line'} title="Line — click the canvas to add points" onclick={() => (sketchTool = 'line')}>╱</button>
-            <button class="ge-stool" class:on={sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketchTool = 'spline')}>∿</button>
-            <button class="ge-stool" class:on={sketchTool === 'fillet'} title="Fillet — click a corner to round it" onclick={() => (sketchTool = 'fillet')}>◜</button>
-            <button class="ge-stool" class:on={sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketchTool = 'chamfer')}>⊿</button>
+            <button class="ge-stool" class:on={sketch.sketchTool === 'line'} title="Line — click the canvas to add points" onclick={() => (sketch.sketchTool = 'line')}>╱</button>
+            <button class="ge-stool" class:on={sketch.sketchTool === 'spline'} title="Spline — click to add a Bézier point" onclick={() => (sketch.sketchTool = 'spline')}>∿</button>
+            <button class="ge-stool" class:on={sketch.sketchTool === 'fillet'} title="Fillet — click a corner to round it" onclick={() => (sketch.sketchTool = 'fillet')}>◜</button>
+            <button class="ge-stool" class:on={sketch.sketchTool === 'chamfer'} title="Chamfer — click a corner to bevel it" onclick={() => (sketch.sketchTool = 'chamfer')}>⊿</button>
             <div class="ge-stool-sep"></div>
-            <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={fitSketchFrame}>⤢</button>
+            <button class="ge-stool" title="Fit — re-frame the view to the sketch (the view stays fixed while you drag points)" onclick={sketch.fitSketchFrame}>⤢</button>
             <div class="ge-stool-sep"></div>
             {#each [1, 2, 3] as n (n)}
               <button class="ge-stool" class:on={sketchCols(graph,se.node) === n}
                 title="{n}-column op layout"
-                onclick={() => setSketchCols(se.node.id, n as 1 | 2 | 3)}>{n}</button>
+                onclick={() => sketch.setSketchCols(se.node.id, n as 1 | 2 | 3)}>{n}</button>
             {/each}
           </div>
           <!-- S.2: the 2D draw stage fills the sketcher (minus the tool rail +
@@ -5712,11 +5056,11 @@
                track both a card-title drag and an in-flight wire that crosses
                the empty canvas (which would otherwise eat the move events). -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="ge-sketch-stage" onpointermove={sketchStageMove} onpointerup={sketchStageUp}>
+          <div class="ge-sketch-stage" onpointermove={sketch.sketchStageMove} onpointerup={sketch.sketchStageUp}>
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <svg bind:this={sketchSvgEl} class="ge-sketch-svg" class:tool={sketchTool !== 'select'} class:panning={!!sketchPanDrag}
+            <svg bind:this={sketch.sketchSvgEl} class="ge-sketch-svg" class:tool={sketch.sketchTool !== 'select'} class:panning={!!sketch.sketchPanDrag}
               viewBox={vb} preserveAspectRatio="xMidYMid meet"
-              onpointerdown={sketchCanvasClick} onwheel={sketchCanvasWheel}>
+              onpointerdown={sketch.sketchCanvasClick} onwheel={sketch.sketchCanvasWheel}>
               <!-- revolve axis at r = 0 -->
               <line x1="0" y1={fr.minY - pad} x2="0" y2={fr.maxY + pad} stroke="#cbd5e1" stroke-width={sw * 0.5} stroke-dasharray={`${sw * 4} ${sw * 3}`}/>
               {#if se.pts.length > 2}
@@ -5726,17 +5070,17 @@
                 <!-- corner badge: ring on filleted/chamfered vertices; gold when selected -->
                 {#if a.corner}
                   <circle cx={a.r} cy={a.z} r={hr * 1.9} fill="none"
-                    stroke={a.cornerOpIdx === selectedCornerOpIdx ? '#f59e0b' : (a.corner === 'fillet' ? '#0e7490' : '#b45309')}
+                    stroke={a.cornerOpIdx === sketch.selectedCornerOpIdx ? '#f59e0b' : (a.corner === 'fillet' ? '#0e7490' : '#b45309')}
                     stroke-width={hr * 0.4} pointer-events="none"/>
                 {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle cx={a.r} cy={a.z} r={hr}
                   class="ge-sk-anchor" class:locked={!a.literal}
                   fill={a.kind === 'spline' ? '#0891b2' : '#7c3aed'} stroke="#fff" stroke-width={hr * 0.25}
-                  onpointerdown={(ev) => sketchAnchorDown(ev, a.opIdx, a.literal, a.kind)}
-                  onpointermove={sketchAnchorMove}
-                  onpointerup={(ev) => { sketchAnchorUp(); sketchAnchorTap(ev, sid, a.opIdx, argStr(se.node.ops[a.opIdx].r)); }}
-                  ondblclick={(ev) => openSketchExprPop(ev, sid, a.opIdx, 'r', argStr(se.node.ops[a.opIdx].r))}/>
+                  onpointerdown={(ev) => sketch.sketchAnchorDown(ev, a.opIdx, a.literal, a.kind)}
+                  onpointermove={sketch.sketchAnchorMove}
+                  onpointerup={(ev) => { sketch.sketchAnchorUp(); sketch.sketchAnchorTap(ev, sid, a.opIdx, argStr(se.node.ops[a.opIdx].r)); }}
+                  ondblclick={(ev) => sketch.openSketchExprPop(ev, sid, a.opIdx, 'r', argStr(se.node.ops[a.opIdx].r))}/>
                 <!-- Number every point (1,2,3…) in small font next to it. -->
                 <text x={a.r + hr * 1.7} y={a.z - hr * 1.3} font-size={hr * 2.0} fill={i === 0 ? '#15803d' : '#6d28d9'} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={hr * 0.5}>{i + 1}</text>
                 <!-- (Param→point on-canvas sockets/badges removed — param links
@@ -5746,8 +5090,8 @@
                    Amber dots; thin dashed handle lines off the endpoints. Ghost
                    (low-opacity) end handles are defaults the user grabs to create
                    an h0/h1; solid ones are stored. -->
-              {#if selectedSpline}
-                {@const ss = selectedSpline}
+              {#if sketch.selectedSpline}
+                {@const ss = sketch.selectedSpline}
                 <line x1={ss.a[0]} y1={ss.a[1]} x2={ss.h0.x} y2={ss.h0.y} stroke="#d97706"
                   stroke-width={sw * 0.7} stroke-dasharray={`${sw * 2} ${sw * 2}`}
                   opacity={ss.h0.set ? 0.9 : 0.4} pointer-events="none"/>
@@ -5758,14 +5102,14 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle cx={pt.x} cy={pt.y} r={hr} class="ge-sk-spt"
                     fill="#f59e0b" stroke="#fff" stroke-width={hr * 0.25}
-                    onpointerdown={(ev) => splineCompDown(ev, 'pt', pt.k)}
-                    onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+                    onpointerdown={(ev) => sketch.splineCompDown(ev, 'pt', pt.k)}
+                    onpointermove={sketch.splineCompMove} onpointerup={sketch.splineCompUp}/>
                   <!-- per-point delete: a small × above-right of THIS through-point -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle class="ge-sk-spt-del-hit" role="button" tabindex="-1"
                     cx={pt.x + hr * 1.5} cy={pt.y - hr * 1.5} r={hr * 0.9}
                     data-tip="Delete this through-point"
-                    onpointerdown={(ev) => { ev.stopPropagation(); if (editingSketchId) graph = removeSketchSplinePoint(graph, editingSketchId, ss.opIdx, pt.k); }}/>
+                    onpointerdown={(ev) => { ev.stopPropagation(); if (sketch.editingSketchId) graph = removeSketchSplinePoint(graph, sketch.editingSketchId, ss.opIdx, pt.k); }}/>
                   <text x={pt.x + hr * 1.5} y={pt.y - hr * 1.5 + hr * 0.5} font-size={hr * 1.4} text-anchor="middle"
                     fill="#fff" font-weight="700" pointer-events="none">×</text>
                 {/each}
@@ -5773,44 +5117,44 @@
                 <circle cx={ss.h0.x} cy={ss.h0.y} r={hr * 0.82} class="ge-sk-spt"
                   fill="#fbbf24" stroke="#b45309" stroke-width={hr * 0.3}
                   opacity={ss.h0.set ? 1 : 0.45}
-                  onpointerdown={(ev) => splineCompDown(ev, 'h0')}
-                  onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+                  onpointerdown={(ev) => sketch.splineCompDown(ev, 'h0')}
+                  onpointermove={sketch.splineCompMove} onpointerup={sketch.splineCompUp}/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle cx={ss.h1.x} cy={ss.h1.y} r={hr * 0.82} class="ge-sk-spt"
                   fill="#fbbf24" stroke="#b45309" stroke-width={hr * 0.3}
                   opacity={ss.h1.set ? 1 : 0.45}
-                  onpointerdown={(ev) => splineCompDown(ev, 'h1')}
-                  onpointermove={splineCompMove} onpointerup={splineCompUp}/>
+                  onpointerdown={(ev) => sketch.splineCompDown(ev, 'h1')}
+                  onpointermove={sketch.splineCompMove} onpointerup={sketch.splineCompUp}/>
               {/if}
             </svg>
             <!-- Floating, draggable cards overlay (S.2): the real PARAMS card +
                  sketch node card, on top of the 2D stage. 1:1 px coordinate
                  space (no viewBox). Root is pointer-events:none so the canvas
                  underneath stays drawable; each card group re-enables events.
-                 Wires + the in-flight preview route from sketchCardPos. -->
-            {#if miniLayout}
-              {@const ml = miniLayout}
+                 Wires + the in-flight preview route from sketch.sketchCardPos. -->
+            {#if sketch.miniLayout}
+              {@const ml = sketch.miniLayout}
               {@const sn = se.node}
-              {@const scW = sketchCardSize?.w ?? ml.scW}
-              {@const scH = sketchCardSize?.h ?? ml.sch}
-              <svg class="ge-sketch-cards" bind:this={miniSvgEl}>
+              {@const scW = sketch.sketchCardSize?.w ?? ml.scW}
+              {@const scH = sketch.sketchCardSize?.h ?? ml.sch}
+              <svg class="ge-sketch-cards" bind:this={sketch.miniSvgEl}>
                 <!-- committed wires: every param-driven coord → its param socket -->
                 {#each (sn.ops as Array<any>) as op, idx (idx)}
-                  {#if sketchRowVisible(sketchOpsScrollTop,sn, idx, scH)}
+                  {#if sketchRowVisible(sketch.sketchOpsScrollTop,sn, idx, scH)}
                     {@const fields = (op.op === 'line' || op.op === 'spline')
                       ? [['r', sketchSockR(sn, idx)], ['z', sketchSockZ(sn, idx)]]
                       : op.op === 'fillet' ? [['radius', sketchSockVal(sn, idx)]]
                       : op.op === 'chamfer' ? [['dist', sketchSockVal(sn, idx)]] : []}
                     {#each fields as [field, sy] (field)}
                       {@const av = (op as any)[field]}
-                      {@const ty = sketchCardPos.sketch.y + (sy as number) - sketchOpsScrollTop}
+                      {@const ty = sketch.sketchCardPos.sketch.y + (sy as number) - sketch.sketchOpsScrollTop}
                       {#if av?.kind === 'param'}
                         {@const pi = paramNames.indexOf(av.param)}
-                        {#if pi >= 0}{@const a = miniParamSockAbs(pi)}<path class="ge-wire param" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, ty)}/>{/if}
+                        {#if pi >= 0}{@const a = sketch.miniParamSockAbs(pi)}<path class="ge-wire param" d={miniBez(a.x, a.y, sketch.sketchCardPos.sketch.x, ty)}/>{/if}
                       {:else if av?.kind === 'expr'}
                         {#each extractParamRefs(av.expr) as ref (ref)}
                           {@const pi = paramNames.indexOf(ref)}
-                          {#if pi >= 0}{@const a = miniParamSockAbs(pi)}<path class="ge-wire param expr" d={miniBez(a.x, a.y, sketchCardPos.sketch.x, ty)}/>{/if}
+                          {#if pi >= 0}{@const a = sketch.miniParamSockAbs(pi)}<path class="ge-wire param expr" d={miniBez(a.x, a.y, sketch.sketchCardPos.sketch.x, ty)}/>{/if}
                         {/each}
                       {/if}
                     {/each}
@@ -5820,11 +5164,11 @@
                      on the sketch CARD only, per user. Card→coord wires below.) -->
 
                 <!-- PARAMS card — drag by its title bar -->
-                <g class="card" transform="translate({sketchCardPos.params.x},{sketchCardPos.params.y})">
+                <g class="card" transform="translate({sketch.sketchCardPos.params.x},{sketch.sketchCardPos.params.y})">
                   <rect class="ge-params-card-bg" width={pcs.w} height={pcs.h} rx="8"/>
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <rect class="ge-sketch-card-title" x="0" y="0" width={pcs.w} height={CARD_TITLE_H} rx="8"
-                    onpointerdown={(ev) => sketchCardDown(ev, 'params')}/>
+                    onpointerdown={(ev) => sketch.sketchCardDown(ev, 'params')}/>
                   <text x="10" y={CARD_TITLE_H - 9} class="ge-params-card-title" pointer-events="none">Params</text>
                   <!-- + add a new param (same handler as the main params card) -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -5858,35 +5202,35 @@
 
                 <!-- SKETCH node card — drag by its title bar; per-coord wire
                      sockets (LEFT edge) + a ƒ button on every coord row. -->
-                <g class="card" transform="translate({sketchCardPos.sketch.x},{sketchCardPos.sketch.y})">
+                <g class="card" transform="translate({sketch.sketchCardPos.sketch.x},{sketch.sketchCardPos.sketch.y})">
                   <rect class="ge-node-bg sketch" width={scW} height={scH} rx="6"/>
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <rect class="ge-sketch-card-title" x="0" y="0" width={scW} height="32" rx="6"
-                    onpointerdown={(ev) => sketchCardDown(ev, 'sketch')}/>
+                    onpointerdown={(ev) => sketch.sketchCardDown(ev, 'sketch')}/>
                   <text x="10" y="22" class="ge-node-title" pointer-events="none">✐ sketch</text>
                   <line x1="0" y1="32" x2={scW} y2="32" class="ge-node-divider" pointer-events="none"/>
                   <foreignObject x="6" y="36" width={scW - 12} height={scH - 40} class="ge-fo">
                     <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <div class="ge-sketch-ops" onscroll={(e) => (sketchOpsScrollTop = (e.currentTarget as HTMLElement).scrollTop)}>
+                      <div class="ge-sketch-ops" onscroll={(e) => (sketch.sketchOpsScrollTop = (e.currentTarget as HTMLElement).scrollTop)}>
                         {#each (sn.ops as Array<any>) as op, idx (idx)}
                           {#if op.op === 'line' || op.op === 'spline'}
-                            <div class="ge-sketch-vtx" class:editing={sketchExprPop?.sid === sid && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
+                            <div class="ge-sketch-vtx" class:editing={sketch.sketchExprPop?.sid === sid && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                               <div class="ge-sketch-srow">
-                                <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(sid, idx, op)}>{sketchAxisLabel(op, 'r')}</button>
+                                <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(sid, idx, op)}>{sketch.sketchAxisLabel(op, 'r')}</button>
                                 <input class="ge-sketch-in" type="text" value={argStr(op.r)} title={op.mode === 'rel' ? 'Δr — offset from previous point' : 'r — number or p.param'}
                                   onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
                                 <button class="ge-sketch-fx" type="button" title="Write/edit an expression for r" class:on={op.r?.kind === 'expr'}
-                                  onclick={(ev) => openSketchExprPop(ev, sid, idx, 'r', argStr(op.r))}>ƒ</button>
+                                  onclick={(ev) => sketch.openSketchExprPop(ev, sid, idx, 'r', argStr(op.r))}>ƒ</button>
                                 <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
                                   onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
                               </div>
                               <div class="ge-sketch-srow">
-                                <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => toggleSketchOpMode(sid, idx, op)}>{sketchAxisLabel(op, 'z')}</button>
+                                <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(sid, idx, op)}>{sketch.sketchAxisLabel(op, 'z')}</button>
                                 <input class="ge-sketch-in" type="text" value={argStr(op.z)} title={op.mode === 'rel' ? 'Δz — offset from previous point' : 'z'}
                                   onchange={(e) => { graph = setSketchOpField(graph, sid, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
                                 <button class="ge-sketch-fx" type="button" title="Write/edit an expression for z" class:on={op.z?.kind === 'expr'}
-                                  onclick={(ev) => openSketchExprPop(ev, sid, idx, 'z', argStr(op.z))}>ƒ</button>
+                                  onclick={(ev) => sketch.openSketchExprPop(ev, sid, idx, 'z', argStr(op.z))}>ƒ</button>
                                 <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
                                   onclick={() => { graph = moveSketchOp(graph, sid, idx, 1); }}>▼</button>
                                 <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sn.ops.length <= 1}
@@ -5894,13 +5238,13 @@
                               </div>
                             </div>
                           {:else}
-                            <div class="ge-sketch-vtx corner" class:editing={sketchExprPop?.sid === sid && sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
+                            <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === sid && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                               <div class="ge-sketch-srow">
                                 <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                                 <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
                                   onchange={(e) => { graph = setSketchOpField(graph, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
                                 <button class="ge-sketch-fx" type="button" title="Write/edit an expression" class:on={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'expr'}
-                                  onclick={(ev) => openSketchExprPop(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argStr(op.op === 'fillet' ? op.radius : op.dist))}>ƒ</button>
+                                  onclick={(ev) => sketch.openSketchExprPop(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist', argStr(op.op === 'fillet' ? op.radius : op.dist))}>ƒ</button>
                                 <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
                                   onclick={() => { graph = moveSketchOp(graph, sid, idx, -1); }}>▲</button>
                                 <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
@@ -5922,23 +5266,23 @@
                   </foreignObject>
                   <!-- Per-coord INPUT sockets (drop a param's output socket here).
                        They live in card-space, so when the ops list scrolls they
-                       shift up by sketchOpsScrollTop and hide once their row
+                       shift up by sketch.sketchOpsScrollTop and hide once their row
                        scrolls out of the visible card band. -->
                   {#each (sn.ops as Array<any>) as op, idx (idx)}
-                    {#if sketchRowVisible(sketchOpsScrollTop,sn, idx, scH)}
+                    {#if sketchRowVisible(sketch.sketchOpsScrollTop,sn, idx, scH)}
                       {#if op.op === 'line' || op.op === 'spline'}
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
-                          cx="0" cy={sketchSockR(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here → r"
+                          cx="0" cy={sketchSockR(sn, idx) - sketch.sketchOpsScrollTop} r="4" data-tip="Drag a param here → r"
                           onpointerup={(ev) => wire.endWireOnSketchCoord(ev, sid, idx, 'r')}/>
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.z?.kind === 'param' ? ' wired' : ''}`}
-                          cx="0" cy={sketchSockZ(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here → z"
+                          cx="0" cy={sketchSockZ(sn, idx) - sketch.sketchOpsScrollTop} r="4" data-tip="Drag a param here → z"
                           onpointerup={(ev) => wire.endWireOnSketchCoord(ev, sid, idx, 'z')}/>
                       {:else}
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param' ? ' wired' : ''}`}
-                          cx="0" cy={sketchSockVal(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here"
+                          cx="0" cy={sketchSockVal(sn, idx) - sketch.sketchOpsScrollTop} r="4" data-tip="Drag a param here"
                           onpointerup={(ev) => wire.endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
                       {/if}
                     {/if}
@@ -5947,14 +5291,14 @@
                        (the ops list then scrolls when ops overflow). -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <path class="ge-sketch-resize-grip" d={`M ${scW - 3} ${scH - 14} L ${scW - 3} ${scH - 3} L ${scW - 14} ${scH - 3} Z`}
-                    onpointerdown={sketchCardResizeDown} onpointermove={sketchCardResizeMove} onpointerup={sketchCardResizeUp}/>
+                    onpointerdown={sketch.sketchCardResizeDown} onpointermove={sketch.sketchCardResizeMove} onpointerup={sketch.sketchCardResizeUp}/>
                 </g>
 
                 <!-- in-flight preview: param out socket → cursor -->
                 {#if wire.from?.kind === 'param-out' && wire.mouse}
                   {@const pi = paramNames.indexOf(wire.from.paramName)}
                   {#if pi >= 0}
-                    {@const a = miniParamSockAbs(pi)}
+                    {@const a = sketch.miniParamSockAbs(pi)}
                     <path class="ge-wire in-flight" d={miniBez(a.x, a.y, wire.mouse.x, wire.mouse.y)} pointer-events="none"/>
                   {/if}
                 {/if}
@@ -5964,50 +5308,50 @@
                  controls. Floats over the stage; drag the ⣿ handle to reposition.
                  Only rendered when a corner or spline is selected — otherwise it
                  would show as an empty floating box (just the grip). -->
-            {#if selectedCorner || selectedSpline}
-            <div class="ge-sketch-topbar" style="left: {sketchBarPos.x}px; top: {sketchBarPos.y}px">
+            {#if sketch.selectedCorner || sketch.selectedSpline}
+            <div class="ge-sketch-topbar" style="left: {sketch.sketchBarPos.x}px; top: {sketch.sketchBarPos.y}px">
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <span class="ge-sketch-grip" title="Drag the toolbar"
-                onpointerdown={sketchBarDown} onpointermove={sketchBarMove} onpointerup={sketchBarUp}>⣿</span>
-              {#if selectedCorner}
+                onpointerdown={sketch.sketchBarDown} onpointermove={sketch.sketchBarMove} onpointerup={sketch.sketchBarUp}>⣿</span>
+              {#if sketch.selectedCorner}
                 <div class="ge-stool-sep"></div>
                 <span class="ge-sketch-dial">
-                  <span class="ge-sketch-dial-lbl">{selectedCorner.kind === 'fillet' ? '◜ radius' : '⊿ dist'}</span>
-                  {#if selectedCorner.bound}
+                  <span class="ge-sketch-dial-lbl">{sketch.selectedCorner.kind === 'fillet' ? '◜ radius' : '⊿ dist'}</span>
+                  {#if sketch.selectedCorner.bound}
                     <!-- Param/expr-driven: show the binding + live resolved value;
                          ↩ unties back to a literal you can drag. -->
-                    <span class="ge-sketch-bound" title="Driven by {selectedCorner.label}">ƒ {selectedCorner.label}</span>
-                    <span class="ge-sketch-resolved">= {Math.round(selectedCorner.value * 1000) / 1000}</span>
-                    <button class="ge-sketch-dial-x untie" title="Unbind → literal" onclick={() => bindCornerParam('__literal__')}>↩</button>
+                    <span class="ge-sketch-bound" title="Driven by {sketch.selectedCorner.label}">ƒ {sketch.selectedCorner.label}</span>
+                    <span class="ge-sketch-resolved">= {Math.round(sketch.selectedCorner.value * 1000) / 1000}</span>
+                    <button class="ge-sketch-dial-x untie" title="Unbind → literal" onclick={() => sketch.bindCornerParam('__literal__')}>↩</button>
                   {:else}
                     <input class="ge-sketch-range" type="range" min="0" max={span * 0.5} step={span / 200}
-                      value={selectedCorner.value}
-                      oninput={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+                      value={sketch.selectedCorner.value}
+                      oninput={(e) => sketch.setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
                     <input class="ge-sketch-num" type="number" min="0" step="0.01"
-                      value={Math.round(selectedCorner.value * 1000) / 1000}
-                      onchange={(e) => setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
+                      value={Math.round(sketch.selectedCorner.value * 1000) / 1000}
+                      onchange={(e) => sketch.setCornerValue(+(e.currentTarget as HTMLInputElement).value)} />
                     <span class="ge-sketch-wire-hint">↦ tap a param →</span>
                   {/if}
-                  <button class="ge-sketch-dial-x" title="Remove this corner" onclick={removeSelectedCorner}>✕</button>
+                  <button class="ge-sketch-dial-x" title="Remove this corner" onclick={sketch.removeSelectedCorner}>✕</button>
                 </span>
               {/if}
-              {#if selectedSpline}
+              {#if sketch.selectedSpline}
                 <div class="ge-stool-sep"></div>
                 <span class="ge-sketch-dial">
-                  <span class="ge-sketch-dial-lbl">∿ spline · {selectedSpline.pts.length} pt</span>
-                  <button class="ge-stool" title="Add a through-point (mid-chord)" onclick={addSplinePt}>+ pt</button>
-                  <button class="ge-stool" title="Remove the last through-point" disabled={selectedSpline.pts.length === 0} onclick={removeSplinePt}>− pt</button>
-                  <button class="ge-stool" title="Clear both end handles → auto Catmull-Rom tangent" disabled={!selectedSpline.h0.set && !selectedSpline.h1.set} onclick={autoTangentSpline}>auto tangent</button>
+                  <span class="ge-sketch-dial-lbl">∿ spline · {sketch.selectedSpline.pts.length} pt</span>
+                  <button class="ge-stool" title="Add a through-point (mid-chord)" onclick={sketch.addSplinePt}>+ pt</button>
+                  <button class="ge-stool" title="Remove the last through-point" disabled={sketch.selectedSpline.pts.length === 0} onclick={sketch.removeSplinePt}>− pt</button>
+                  <button class="ge-stool" title="Clear both end handles → auto Catmull-Rom tangent" disabled={!sketch.selectedSpline.h0.set && !sketch.selectedSpline.h1.set} onclick={sketch.autoTangentSpline}>auto tangent</button>
                 </span>
               {/if}
             </div>
             {/if}
             <!-- Standalone Done tick — pinned top-right, above the canvas/overlay. -->
-            <button class="ge-sketch-done-tick" title="Done — back to the graph" onclick={closeSketchEditor}>✓</button>
+            <button class="ge-sketch-done-tick" title="Done — back to the graph" onclick={sketch.closeSketchEditor}>✓</button>
             <div class="ge-sketch-hint">
-              {#if sketchTool === 'select'}Drag the violet points to reshape · pick a tool to add ops
-              {:else if sketchTool === 'fillet' || sketchTool === 'chamfer'}Click a corner to {sketchTool} it, then use the dial to set the {sketchTool === 'fillet' ? 'radius' : 'distance'}
-              {:else}Click the canvas to add a {sketchTool}{/if}
+              {#if sketch.sketchTool === 'select'}Drag the violet points to reshape · pick a tool to add ops
+              {:else if sketch.sketchTool === 'fillet' || sketch.sketchTool === 'chamfer'}Click a corner to {sketch.sketchTool} it, then use the dial to set the {sketch.sketchTool === 'fillet' ? 'radius' : 'distance'}
+              {:else}Click the canvas to add a {sketch.sketchTool}{/if}
             </div>
           </div>
         </div>
@@ -6185,47 +5529,47 @@
     expectedDefaults={expected.defaults}
     {paramEntries} />
 
-  {#if sketchExprPop}
+  {#if sketch.sketchExprPop}
     <!-- Sketch coord ƒ-expression editor (S.2) — same UX as argExprPop, keyed
          to a sketch op field (r / z / fillet radius / chamfer dist). Apply →
          setSketchOpField with kind:'expr'; the 3D re-bakes live. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-wire-shade" onclick={closeSketchExprPop}></div>
+    <div class="ge-wire-shade" onclick={sketch.closeSketchExprPop}></div>
     <div class="ge-wire-pop ge-expr-pop"
-      use:clampToViewport={sketchExprPop}
-      style="left: {sketchExprPop.x}px; top: {sketchExprPop.y}px">
+      use:clampToViewport={sketch.sketchExprPop}
+      style="left: {sketch.sketchExprPop.x}px; top: {sketch.sketchExprPop.y}px">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="ge-wire-head ge-wire-head-drag" title="Drag to move"
-        onpointerdown={sketchExprPopDown} onpointermove={sketchExprPopMove} onpointerup={sketchExprPopUp}>ƒ sketch point <code>{sketchExprPop.field}</code> expression</div>
-      {#if sketchExprPop.drafts}
-        {@const _op = (graph.nodes[sketchExprPop.sid] as any)?.ops?.[sketchExprPop.opIdx]}
+        onpointerdown={sketch.sketchExprPopDown} onpointermove={sketch.sketchExprPopMove} onpointerup={sketch.sketchExprPopUp}>ƒ sketch point <code>{sketch.sketchExprPop.field}</code> expression</div>
+      {#if sketch.sketchExprPop.drafts}
+        {@const _op = (graph.nodes[sketch.sketchExprPop.sid] as any)?.ops?.[sketch.sketchExprPop.opIdx]}
         {@const _rel = _op?.mode === 'rel'}
         <!-- r / z tab strip + abs/Δ toggle — edit both coordinates of the point
              without closing the popover (mirrors the polygon vertex editor).
              Apply writes BOTH axes. -->
         <div class="ge-expr-pop-tabs">
           <button class="ge-expr-pop-tab" type="button"
-            class:on={sketchExprPop.field === 'r'}
-            onclick={() => switchSketchExprAxis('r')}>{_rel ? 'Δr' : 'r'}</button>
+            class:on={sketch.sketchExprPop.field === 'r'}
+            onclick={() => sketch.switchSketchExprAxis('r')}>{_rel ? 'Δr' : 'r'}</button>
           <button class="ge-expr-pop-tab" type="button"
-            class:on={sketchExprPop.field === 'z'}
-            onclick={() => switchSketchExprAxis('z')}>{_rel ? 'Δz' : 'z'}</button>
+            class:on={sketch.sketchExprPop.field === 'z'}
+            onclick={() => sketch.switchSketchExprAxis('z')}>{_rel ? 'Δz' : 'z'}</button>
           <button class="ge-expr-pop-mode" type="button" class:rel={_rel}
             title="Toggle absolute / Δ relative (offset from previous point)"
-            onclick={toggleSketchExprPopMode}>{_rel ? 'Δ rel' : 'abs'}</button>
+            onclick={sketch.toggleSketchExprPopMode}>{_rel ? 'Δ rel' : 'abs'}</button>
         </div>
       {/if}
       <textarea class="ge-expr-textarea" rows="3"
         placeholder="e.g. p.od / 2 - p.wall"
-        value={sketchExprPop.draft}
-        onkeydown={(e) => { if (e.key === 'Enter' && !(e as KeyboardEvent).shiftKey) { (e as KeyboardEvent).preventDefault(); applySketchExprPop(); } }}
-        oninput={(e) => { if (sketchExprPop) sketchExprPop = { ...sketchExprPop, draft: (e.target as HTMLTextAreaElement).value }; }}></textarea>
+        value={sketch.sketchExprPop.draft}
+        onkeydown={(e) => { if (e.key === 'Enter' && !(e as KeyboardEvent).shiftKey) { (e as KeyboardEvent).preventDefault(); sketch.applySketchExprPop(); } }}
+        oninput={(e) => { if (sketch.sketchExprPop) sketch.sketchExprPop = { ...sketch.sketchExprPop, draft: (e.target as HTMLTextAreaElement).value }; }}></textarea>
       <div class="ge-expr-pop-row">
         <span class="ge-expr-pop-label">insert:</span>
         {#each paramEntries as [name, p] (name)}
           <button class="ge-expr-pop-chip" type="button"
-            onclick={() => insertParamIntoSketchDraft(name)}
+            onclick={() => sketch.insertParamIntoSketchDraft(name)}
             title={`Append p.${name} to the expression (default ${(p as any).default})`}>p.{name}</button>
         {/each}
         {#if paramEntries.length === 0}
@@ -6233,11 +5577,11 @@
         {/if}
       </div>
       <div class="ge-expr-pop-row right">
-        <button class="ge-param-add danger" type="button" class:armed={sketchDelArmed} disabled={sketchPopPtCount <= 1}
-          title={sketchPopPtCount <= 1 ? 'Can’t delete the only point' : (sketchDelArmed ? 'Click again to confirm' : 'Delete this point')}
-          onclick={onSketchDeleteClick}>{sketchDelArmed ? 'confirm delete?' : '🗑 delete'}</button>
-        <button class="ge-param-add ghost" type="button" onclick={closeSketchExprPop}>cancel</button>
-        <button class="ge-param-add" type="button" onclick={applySketchExprPop}>apply</button>
+        <button class="ge-param-add danger" type="button" class:armed={sketch.sketchDelArmed} disabled={sketch.sketchPopPtCount <= 1}
+          title={sketch.sketchPopPtCount <= 1 ? 'Can’t delete the only point' : (sketch.sketchDelArmed ? 'Click again to confirm' : 'Delete this point')}
+          onclick={sketch.onSketchDeleteClick}>{sketch.sketchDelArmed ? 'confirm delete?' : '🗑 delete'}</button>
+        <button class="ge-param-add ghost" type="button" onclick={sketch.closeSketchExprPop}>cancel</button>
+        <button class="ge-param-add" type="button" onclick={sketch.applySketchExprPop}>apply</button>
       </div>
     </div>
   {/if}

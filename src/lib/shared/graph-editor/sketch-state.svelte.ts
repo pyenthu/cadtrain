@@ -189,9 +189,6 @@ export class SketchState {
     return { idx: this.selectedCornerOpIdx, kind: o.op as 'fillet' | 'chamfer', field, value: evalArg(arg, p), bound, label, paramName: arg?.kind === 'param' ? arg.param : null };
   });
 
-  /** Names of the graph's params (PARAMS card) — the wireable `p.*` set. */
-  paramNames = $derived.by(() => Object.keys(this.#getGraph().params ?? {}));
-
   selectedSpline = $derived.by(() => {
     if (this.selectedSplineOpIdx == null || !this.sketchEditor) return null;
     const se = this.sketchEditor;
