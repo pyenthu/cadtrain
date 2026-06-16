@@ -32,6 +32,7 @@ import {
   setPolyRepeatCount,
   setTransformAxisValue,
   setTransformAxis,
+  setTxfmnAxis,
   setSketchOpField,
   appendContainerChild,
   setRepeatCount,
@@ -190,6 +191,17 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setTransformAxisValue(this.#getGraph(), transformId, axis, asParam(from.paramName)));
+    }
+    this.from = null; this.mouse = null;
+  };
+
+  /** Wire a param's output onto one of a txfmn's six axes (rot.xyz / mv.xyz). */
+  endWireOnTxfmnAxis = (ev: PointerEvent, txfmnId: NodeId, section: 'rot' | 'mv', axis: 0 | 1 | 2) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (!from) return;
+    if (from.kind === 'param-out') {
+      this.#setGraph(setTxfmnAxis(this.#getGraph(), txfmnId, section, axis, asParam(from.paramName)));
     }
     this.from = null; this.mouse = null;
   };

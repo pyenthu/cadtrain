@@ -54,8 +54,10 @@
     addMethodPlaceholder,
     addMvPlaceholder,
     addRotPlaceholder,
+    addTxfmnPlaceholder,
     setTransformAxis,
     setTransformAxisValue,
+    setTxfmnAxis,
     setViewport,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -2307,6 +2309,7 @@
   function dropCsg(op: CsgOp) { closePicker(); graph = addMethodPlaceholder(graph, op).graph; }
   function dropMv()  { closePicker(); graph = addMvPlaceholder(graph).graph; }
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
+  function dropTxfmn() { closePicker(); graph = addTxfmnPlaceholder(graph).graph; }
   function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
 
   /** Profile-mode "pen" nodes — turtle-graphics-style polygon authoring.
@@ -2756,6 +2759,30 @@
   function onTransformAxisExprEdit(id: string, axis: 0 | 1 | 2, expr: string) {
     graph = setTransformAxisValue(graph, id, axis, asExpr(expr));
   }
+
+  // ─── TXFMN (unified ROT/MV transform card) axis helpers ──────────────────
+  // The standalone TxfmnNode carries rot:[x,y,z] + offset:[x,y,z]; all six
+  // axis cells edit through setTxfmnAxis(graph, id, section, axis, value).
+  function onTxfmnAxis(id: string, section: 'rot' | 'mv', axis: 0 | 1 | 2, value: number) {
+    graph = setTxfmnAxis(graph, id, section, axis, asLiteral(Number.isFinite(value) ? value : 0));
+  }
+  /** ƒ toggle on a txfmn axis — literal/param ⇄ expression (mirrors
+   *  toggleTransformAxisExprMode but section-aware). */
+  function toggleTxfmnAxisExprMode(id: string, section: 'rot' | 'mv', axis: 0 | 1 | 2) {
+    const node = graph.nodes[id] as any;
+    if (!node || node.type !== 'txfmn') return;
+    const cur = (section === 'rot' ? node.rot : node.offset)[axis];
+    if (cur?.kind === 'expr') {
+      const n = Number(cur.expr);
+      graph = setTxfmnAxis(graph, id, section, axis, asLiteral(Number.isFinite(n) ? n : 0));
+      return;
+    }
+    const seed = cur?.kind === 'param' ? `p.${cur.param}` : cur?.kind === 'literal' ? String(cur.value) : '';
+    graph = setTxfmnAxis(graph, id, section, axis, asExpr(seed));
+  }
+  function onTxfmnAxisExprEdit(id: string, section: 'rot' | 'mv', axis: 0 | 1 | 2, expr: string) {
+    graph = setTxfmnAxis(graph, id, section, axis, asExpr(expr));
+  }
   function resetGraph() { graph = newGraph(); }
 
   // ─── auto-layout (Phase 20) ────────────────────────────────────────────
@@ -2944,7 +2971,7 @@
       if (node.type === 'method') {
         if (node.obj) addInputWire(node.obj, 'obj');
         if (node.arg) addInputWire(node.arg, 'arg');
-      } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'repeat') {
+      } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn' || node.type === 'repeat') {
         if (node.child) addInputWire(node.child, 'child');
       } else if (node.type === 'stack' || node.type === 'group') {
         node.children.forEach((c, i) => {
@@ -3141,7 +3168,7 @@
       if (n.type === 'method') {
         if ((n as any).obj) set.add((n as any).obj);
         if ((n as any).arg) set.add((n as any).arg);
-      } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'repeat') {
+      } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat') {
         if ((n as any).child) set.add((n as any).child);
       } else if (n.type === 'stack' || n.type === 'group') {
         for (const c of (n as any).children) set.add(c);
@@ -3682,6 +3709,13 @@
                 {@const tgt = inputSocketAt(graph,n.id, 'child')}
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
+            {:else if n.type === 'txfmn'}
+              <!-- txfmn child wire — same left-edge child socket as mv/rot. -->
+              {#if (n as any).child && graph.nodes[(n as any).child]}
+                {@const src = outputSocketAt(graph,(n as any).child)}
+                {@const tgt = inputSocketAt(graph,n.id, 'child')}
+                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+              {/if}
             {:else if n.type === 'repeat'}
               <!-- Repeat node's child wire — bottom-left input socket -->
               {#if (n as any).child && graph.nodes[(n as any).child]}
@@ -4133,6 +4167,92 @@
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
                 <!-- OUTPUT socket on the title-row RIGHT EDGE (y=16) —
                      same vertical line as the child input on the left. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+
+              {:else if n.type === 'txfmn'}
+                {@const t = n as any}
+                {@const axisStartY = 40}
+                {@const axisRowH = 24}
+                <!-- Unified TXFMN card — one ROT/MV table (rx/ry/rz over x/y/z)
+                     replacing a composed Rot+Mv. Each cell edits via
+                     setTxfmnAxis(section, axis). Standalone card (never inline). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg transform"
+                  width={size.w} height={size.h} rx="6"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="14" y="22" class="ge-node-title">⇆ xform</text>
+                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
+                <!-- CHILD socket — left edge, title-row aligned (y=16). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy="16" r="6"
+                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
+                <foreignObject x="14" y={axisStartY - 4} width={size.w - 18} height={6 * axisRowH + 6}>
+                  <div class="ge-xyz" xmlns="http://www.w3.org/1999/xhtml">
+                    {#each [0, 1, 2, 3, 4, 5] as i (i)}
+                      {@const section = i < 3 ? 'rot' : 'mv'}
+                      {@const sa = (i % 3) as 0 | 1 | 2}
+                      {@const axis = (section === 'rot' ? t.rot : t.offset)[sa]}
+                      {@const axisLetter = ['x', 'y', 'z'][sa]}
+                      <div class="ge-arg-row">
+                        <span class="ge-arg-key axis">{section === 'rot' ? 'r' : ''}{axisLetter}</span>
+                        {#if axis.kind === 'param'}
+                          <span class="ge-arg-cell wired">
+                            <span class="ge-arg-pchip" title="Wired to param">p.{axis.param}</span>
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx" type="button" title="Edit as expression"
+                                onclick={() => toggleTxfmnAxisExprMode(n.id, section, sa)}>ƒ</button>
+                              <button class="ge-arg-action x" type="button" title="Unwire — back to literal 0"
+                                onclick={() => onTxfmnAxis(n.id, section, sa, 0)}>×</button>
+                            </span>
+                          </span>
+                        {:else if axis.kind === 'expr'}
+                          <span class="ge-arg-cell">
+                            <input class="ge-arg-input expr" type="text" placeholder="e.g. p.od / 2"
+                              value={axis.expr}
+                              oninput={(e) => onTxfmnAxisExprEdit(n.id, section, sa, (e.target as HTMLInputElement).value)}/>
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx on" type="button" title="Back to a number"
+                                onclick={() => toggleTxfmnAxisExprMode(n.id, section, sa)}>ƒ</button>
+                            </span>
+                          </span>
+                        {:else}
+                          <span class="ge-arg-cell">
+                            <input class="ge-arg-input" type="number" step={section === 'rot' ? 1 : 0.5}
+                              value={axis.value}
+                              use:dragNumber={{
+                                step: section === 'rot' ? 1 : 0.5,
+                                get: () => Number(axis.value ?? 0),
+                                set: (val) => onTxfmnAxis(n.id, section, sa, val),
+                              }}
+                              oninput={(e) => onTxfmnAxis(n.id, section, sa, Number((e.target as HTMLInputElement).value))}/>
+                            <span class="ge-arg-actions">
+                              <button class="ge-arg-action fx" type="button" title="Write an expression"
+                                onclick={() => toggleTxfmnAxisExprMode(n.id, section, sa)}>ƒ</button>
+                            </span>
+                          </span>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </foreignObject>
+                <!-- ROT / MV divider — between row 2 and row 3. -->
+                <line x1="10" y1={axisStartY + 3 * axisRowH} x2={size.w - 6} y2={axisStartY + 3 * axisRowH} class="ge-node-divider"/>
+                <!-- Per-axis param-drop sockets — left edge (cx=0). -->
+                {#each [0, 1, 2, 3, 4, 5] as i}
+                  {@const section = i < 3 ? 'rot' : 'mv'}
+                  {@const sa = (i % 3) as 0 | 1 | 2}
+                  {@const cy = axisStartY + i * axisRowH + axisRowH / 2 - 4}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="0" cy={cy} r="4"
+                    onpointerup={(ev) => wire.endWireOnTxfmnAxis(ev, n.id, section, sa)}/>
+                {/each}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 22} y="22" class="ge-node-x"
+                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
@@ -6011,6 +6131,9 @@
         </button>
         <button class="ge-pick-item" type="button" onclick={() => { dropRot(); submenuKey = null; }}>
           <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">rx ry rz</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropTxfmn(); submenuKey = null; }}>
+          <span class="ge-pick-icon">⇆</span><span class="ge-pick-name">xform</span><span class="ge-pick-hint">rot + mv</span>
         </button>
       </div>
     {:else if submenuKey === 'container'}

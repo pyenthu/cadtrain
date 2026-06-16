@@ -202,6 +202,7 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'call')   return 168; // 70 key + 76 value + 22 chrome
   if (node.type === 'method') return 96;  // ⊖ + label + × (sockets sit on edges)
   if (node.type === 'mv' || node.type === 'rot') return 116;
+  if (node.type === 'txfmn') return 150; // combined ROT/MV table
   if (node.type === 'repeat') return 170;
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
   if (node.type === 'polygon') return 180; // input + chrome fits at 180
@@ -224,6 +225,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   }
   if (node.type === 'method') return 110;
   if (node.type === 'mv' || node.type === 'rot') return 136;
+  if (node.type === 'txfmn') return 168;
   if (node.type === 'repeat') return 230;
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
@@ -236,6 +238,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
         child.type === 'method' ? `${(child as any).op}(…)` :
         child.type === 'mv'     ? 'mv(…)' :
         child.type === 'rot'    ? 'rot(…)' :
+        child.type === 'txfmn'  ? 'xform(…)' :
         child.type === 'stack'  ? 'stack(…)' :
         child.type === 'repeat' ? `repeat × ${(child as any).count?.kind === 'literal' ? (child as any).count.value : '…'}` :
         '(missing)',
@@ -308,6 +311,9 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   }
   if (node.type === 'method') return { w, h: 64 };
   if (node.type === 'mv' || node.type === 'rot') return { w, h: 110 };
+  // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
+  // label. Fixed height matches the card render's block layout below.
+  if (node.type === 'txfmn') return { w, h: 226 };
   if (node.type === 'repeat') return { w, h: 110 };
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const slots = (node.children?.length ?? 0) + 1;
@@ -547,6 +553,8 @@ export function outputSocketAt(graph: Graph, id: NodeId): { x: number; y: number
     // Free-standing transform wrapping a Method/Stack/etc. → title-row right edge.
     return { x: p.x + w, y: p.y + 16 };
   }
+  // txfmn is always a standalone card — output on the title-row right edge.
+  if (node.type === 'txfmn') return { x: p.x + w, y: p.y + 16 };
   // Method at y=14; other node types keep the middle-right edge.
   if (node.type === 'method') return { x: p.x + w, y: p.y + 14 };
   return { x: p.x + w, y: p.y + h / 2 };
@@ -560,7 +568,7 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
   if (slot === 'arg')  return { x: p.x, y: p.y + 56 };
   // mv / rot put their child socket on the LEFT EDGE, aligned with the title
   // row (y=16). Repeat keeps the legacy bottom-edge position via its renderer.
-  if (slot === 'child' && (node.type === 'mv' || node.type === 'rot')) {
+  if (slot === 'child' && (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn')) {
     return { x: p.x, y: p.y + 16 };
   }
   /* child (legacy left-edge for method/repeat) */
