@@ -438,6 +438,47 @@
     }
   }
 
+  /** COPY a part: fetch its source, rewrite the id (meta.id / meta.name / the
+   *  `export function <id>` — the only places a part's OWN id appears; deps in
+   *  meta.graph are referenced by their own ids, untouched), and save the dup
+   *  under a NEW id in `toPath`. Prompts for the new id (part ids are unique, so
+   *  a copy can't reuse the source id). */
+  async function copyPart(id: string, kind: string, toPath: string) {
+    if (kind !== 'volume' && kind !== 'archive') return;
+    const to = toPath.replace(/\/+$/, '');
+    if (!MOVE_TARGET_RE.test(to)) { alert(`"${to}" isn't a valid destination.`); return; }
+    const prompt = typeof window !== 'undefined' ? window.prompt : null;
+    if (!prompt) return;
+    const raw = prompt(`Copy "${id}" into ${to}/ as (new id, lowercase, _ allowed):`, `${id}_copy`);
+    if (!raw) return;
+    const newId = raw.trim();
+    if (!ID_RE.test(newId)) { alert(`bad id "${newId}" — must match [a-z][a-z0-9_]*`); return; }
+    if (newId === id) { alert('Pick a different id for the copy.'); return; }
+    moveBusy = id;
+    try {
+      const sr = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`, { cache: 'no-store' });
+      if (!sr.ok) { alert(`Copy failed: couldn't read ${id} (${sr.status}).`); return; }
+      const src = (await sr.json())?.source as string;
+      if (typeof src !== 'string') { alert('Copy failed: no source.'); return; }
+      const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const dup = src
+        .replace(new RegExp(`(\\bid:\\s*['"])${esc}(['"])`), `$1${newId}$2`)
+        .replace(new RegExp(`(\\bname:\\s*['"])${esc}(['"])`), `$1${newId}$2`)
+        .replace(new RegExp(`(export\\s+function\\s+)${esc}\\b`), `$1${newId}`);
+      const r = await fetch('/api/primitives/save', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: newId, source: dup, dir: to }),
+      });
+      if (!r.ok) { alert(`Copy failed (${r.status}): ${(await r.text()).slice(0, 200)}`); return; }
+      ensureExpanded(to);
+      await loadList();
+    } catch (e: any) {
+      alert(`Copy error: ${e?.message ?? e}`);
+    } finally {
+      moveBusy = null;
+    }
+  }
+
   // Drag-and-drop: part rows carry { id, kind, dir } in the dataTransfer;
   // folder rows + the basic/archive top tabs accept the drop.
   /** True when a folder/tab at `path` can RECEIVE a dropped part. Excludes the
@@ -480,13 +521,13 @@
   }
 
   // ─── "Move to…" dialog (anchored popover — mirrors the create menu) ───────
-  let moveMenu = $state<{ id: string; kind: string; fromDir: string; x: number; y: number } | null>(null);
-  function openMoveMenu(id: string, kind: string, fromDir: string, ev: MouseEvent) {
+  let moveMenu = $state<{ id: string; kind: string; fromDir: string; mode: 'move' | 'copy'; x: number; y: number } | null>(null);
+  function openMoveMenu(id: string, kind: string, fromDir: string, mode: 'move' | 'copy', ev: MouseEvent) {
     ev.stopPropagation();
-    if (moveMenu?.id === id) { moveMenu = null; return; }
+    if (moveMenu?.id === id && moveMenu?.mode === mode) { moveMenu = null; return; }
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     // Anchor under the trigger, nudged left so the menu doesn't overflow the rail.
-    moveMenu = { id, kind, fromDir, x: Math.max(8, r.right - 200), y: r.bottom + 2 };
+    moveMenu = { id, kind, fromDir, mode, x: Math.max(8, r.right - 200), y: r.bottom + 2 };
   }
   function closeMoveMenu() { moveMenu = null; }
   /** Valid move destinations from the tree — excludes the bare `completions`
@@ -504,7 +545,9 @@
   function pickMoveTarget(path: string) {
     const m = moveMenu;
     closeMoveMenu();
-    if (m) void movePart(m.id, m.kind, m.fromDir, path);
+    if (!m) return;
+    if (m.mode === 'copy') void copyPart(m.id, m.kind, path);
+    else void movePart(m.id, m.kind, m.fromDir, path);
   }
   // Outside-click + Escape dismissal — only wired while the move menu is open.
   $effect(() => {
@@ -991,7 +1034,12 @@
               title="Move to another folder…"
               aria-label="Move {e.id} to another folder"
               disabled={moveBusy === e.id}
-              onclick={(ev) => openMoveMenu(e.id, kind, dir, ev)}>{moveBusy === e.id ? '…' : '↪'}</button>
+              onclick={(ev) => openMoveMenu(e.id, kind, dir, 'move', ev)}>{moveBusy === e.id ? '…' : '↪'}</button>
+            <button class="prim-move" type="button"
+              title="Copy to a folder (duplicate under a new id)…"
+              aria-label="Copy {e.id}"
+              disabled={moveBusy === e.id}
+              onclick={(ev) => openMoveMenu(e.id, kind, dir, 'copy', ev)}>⎘</button>
           {/if}
           {#if kind === 'volume'}
             <button class="prim-trash" type="button"
@@ -1177,10 +1225,12 @@
          the tree). position:fixed to escape the rail's overflow clipping;
          dismisses on outside-click / Escape (same as the create menu). -->
     {#if moveMenu}
-      {@const targets = moveTargets(moveMenu.fromDir)}
+      <!-- Copy can target the CURRENT folder too (a duplicate in place), so it
+           passes '' to include every valid folder; Move excludes the source. -->
+      {@const targets = moveTargets(moveMenu.mode === 'copy' ? '' : moveMenu.fromDir)}
       <div class="prim-move-menu" role="menu"
         style="left: {moveMenu.x}px; top: {moveMenu.y}px">
-        <div class="prim-create-menu-head">Move {moveMenu.id} to…</div>
+        <div class="prim-create-menu-head">{moveMenu.mode === 'copy' ? 'Copy' : 'Move'} {moveMenu.id} to…</div>
         {#if targets.length === 0}
           <div class="prim-move-empty">no other folders</div>
         {:else}
