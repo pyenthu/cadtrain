@@ -127,6 +127,7 @@
   // (NOT a singleton — /primitives mounts all tab panes at once); `wire` is
   // constructed below once `graph`/`clientToGraph` are in scope.
   import { WireState } from './wire-state.svelte';
+  import { SketchState } from './sketch-state.svelte';
   // Source/meta parsers + the expected-params cache (drift detection) —
   // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
   // by primitive src; the graph-touching fns take/return graph explicitly.
@@ -1952,6 +1953,9 @@
     return { x: ((cx - r.left) - pan.x) / zoom, y: ((cy - r.top) - pan.y) / zoom };
   }
   const wire = new WireState(() => graph, (g) => { graph = g; }, clientToGraph);
+  // Per-instance full-tab sketch editor state (Phase E). Shared home for the
+  // sketch state referenced by BOTH the node-card arm and the full-tab editor.
+  const sketch = new SketchState(() => graph, (g) => { graph = g; }, wire, () => pcs, () => PARAM_W);
   // endWireOnInput / endWireOnCallArg / endWireOnPolygonCoord /
   // endWireOnPolyRepeatCount / endWireOnPolygonRepeatRef / endWireOnTransformAxis
   // / unwireTransformAxis → wire-state.svelte.ts (Phase C); called as `wire.*`.
