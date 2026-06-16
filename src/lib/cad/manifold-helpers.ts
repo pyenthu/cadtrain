@@ -12,6 +12,10 @@
  */
 
 import Module from 'manifold-3d';
+// Build-time axial (Z) densification for smooth warp — shared with the welded
+// revolve path (revolveProfile). manifold-mesh imports nothing from here (it
+// reads the wasm singleton off globalThis), so this import is acyclic.
+import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge } from './manifold-mesh';
 
 // CIRCULAR_SEGMENTS_DEFAULT — used when nothing overrides.
 // CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via
@@ -474,7 +478,11 @@ export function revolve(contourJson: string, _unused1?: number, _unused2?: numbe
   } catch (e: any) {
     throw new Error(`revolve: bad contour JSON: ${e?.message ?? e}`);
   }
-  const cs = new CS([pts]);
+  // Densify the contour along Z (same build-time dial as the welded revolve) so
+  // a later Manifold.warp bends the side walls smoothly. Collinear interpolation
+  // → identical solid, just more axial rings. null dial → unchanged contour.
+  const dense = subdivideProfileAxial(pts, getAxialMaxZSpan(), getAxialMaxSegPerEdge());
+  const cs = new CS([dense]);
   // CrossSection.revolve sweeps around the Y axis of the cross-section
   // (then maps Y → Z in the resulting manifold), matching the Z-down
   // convention we use everywhere else.

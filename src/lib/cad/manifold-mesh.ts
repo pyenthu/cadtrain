@@ -58,6 +58,82 @@ export function gridPatch(
   return { verts, tris };
 }
 
+// ── Build-time AXIAL (Z) segmentation — smooth warp without a mesh rebuild ────
+// A revolve only carries rings at the PROFILE's z-points, so `Manifold.warp`
+// (which only MOVES existing vertices) turns a coarse side-wall into faceted
+// chords under a sine. We fix that at BUILD time, on the 2D (r,z) profile,
+// BEFORE the revolve: insert COLLINEAR interior points along every long-Z edge.
+// Because the inserted points lie exactly on the original straight edge the
+// revolved solid is geometrically IDENTICAL (same bbox + volume), just denser
+// along Z — so a later warp bends it as a smooth curve instead of chords. This
+// is crash-safe: it feeds the SAME revolveProfile + weldAndBuild pipeline with
+// MORE rings and never touches a built MeshGL, so it can never produce the
+// non-manifold soup that OOB-crashed the prior post-bake split (reverted 3fb1fa8,
+// Rule 25). Operating on the 2D profile (not the final Manifold) is the safe path.
+//
+// DIAL ("expose dials, don't hide constants"):
+//   • axialMaxZSpan      target max length of a side edge along Z. Smaller =
+//                        smoother sine, more triangles. Default 0.25 ≈ 16
+//                        samples / cycle at the scene-default warp (freq 1.5 →
+//                        period ≈ 4.19 z-units) and matches the proven old
+//                        render-time stopgap (shared/warp.ts subdivideAlongZ,
+//                        maxZSpan ≈ 0.25). null / ≤0 → OFF (byte-identical revolve).
+//   • axialMaxSegPerEdge CAP on splits per edge so ONE very long single revolve
+//                        can't explode the vertex count. A tall STACK is many
+//                        SHORT-profile parts each revolved separately, so each
+//                        part's own side edge is short and the cap rarely bites;
+//                        it only guards a genuinely 100+-unit single profile edge.
+// Follow-up (deferred — needs a file outside this pass's scope): drive
+//   axialMaxZSpan from the warp FREQUENCY (≈8 samples/cycle → maxZSpan =
+//   (2π / freq) / 8) and gate it on warpEnabled, set race-safely right before the
+//   synchronous geom build (same pattern as manifold-helpers setCircularSegmentCount,
+//   from /api/primitives/preview). Until then the default is always-on so warp
+//   is smooth without any extra wiring.
+let _axialMaxZSpan: number | null = 0.25;
+let _axialMaxSegPerEdge = 64;
+/** Read the active axial max-Z-span dial (null = subdivision off). */
+export function getAxialMaxZSpan(): number | null { return _axialMaxZSpan; }
+/** Set the axial max-Z-span (≤0 / null disables; smaller = smoother + denser). */
+export function setAxialMaxZSpan(v: number | null): void { _axialMaxZSpan = (v != null && v > 0) ? v : null; }
+/** Read the per-edge split cap. */
+export function getAxialMaxSegPerEdge(): number { return _axialMaxSegPerEdge; }
+/** Set the per-edge split cap (≥1). */
+export function setAxialMaxSegPerEdge(n: number): void { _axialMaxSegPerEdge = Math.max(1, Math.floor(n)); }
+
+/**
+ * Densify a closed (r,z) profile loop along Z: insert COLLINEAR interior points
+ * on each edge so no edge spans more than `maxZSpan` in Z (capped at
+ * `maxSegPerEdge` splits/edge). Takes + returns the UNIQUE loop verts (no wrap
+ * copy) — a drop-in for `revolveProfile`. Interpolation is linear in BOTH r and
+ * z, so the added points sit exactly on the original straight edge: the revolved
+ * solid is unchanged geometrically, only denser. `maxZSpan` null/≤0 → input
+ * returned unchanged. Horizontal edges (Δz≈0: caps) get no extra points; only
+ * Z-spanning edges (the side walls a sine actually bends) are densified.
+ */
+export function subdivideProfileAxial(
+  profile: [number, number][],
+  maxZSpan: number | null,
+  maxSegPerEdge = 64,
+): [number, number][] {
+  if (!Array.isArray(profile) || profile.length < 2) return profile;
+  if (maxZSpan == null || !(maxZSpan > 0)) return profile;
+  const cap = Math.max(1, Math.floor(maxSegPerEdge));
+  const N = profile.length;
+  const out: [number, number][] = [];
+  for (let k = 0; k < N; k++) {
+    const [r0, z0] = profile[k];
+    const [r1, z1] = profile[(k + 1) % N];
+    out.push([r0, z0]); // edge start — the unique loop vert
+    const dz = Math.abs(z1 - z0);
+    const n = Math.min(cap, Math.max(1, Math.ceil(dz / maxZSpan)));
+    for (let s = 1; s < n; s++) {
+      const t = s / n;
+      out.push([r0 + (r1 - r0) * t, z0 + (z1 - z0) * t]);
+    }
+  }
+  return out;
+}
+
 /**
  * Surface of revolution: spin a CLOSED 2D profile (a loop in the
  * radial–axial plane, `[r, z]` with r ≥ 0) a full 360° around the z-axis.
@@ -81,6 +157,12 @@ export function gridPatch(
  * inverted; the volume sign caught it.)
  */
 export function revolveProfile(profile: [number, number][], segments: number): Patch {
+  // BUILD-TIME axial densification (Rule 25): insert collinear interior points
+  // along long-Z edges so a later Manifold.warp bends the side walls as a smooth
+  // sine, not faceted chords. Geometrically identical (points on the straight
+  // edge) → bbox/volume unchanged; just more rings. Dial: _axialMaxZSpan (null
+  // disables → byte-identical to the pre-change revolve).
+  const prof = subdivideProfileAxial(profile, _axialMaxZSpan, _axialMaxSegPerEdge);
   const segN = Math.max(3, Math.floor(segments));
   const dT = (2 * Math.PI) / segN;
   const EPS = 1e-9;
@@ -90,10 +172,10 @@ export function revolveProfile(profile: [number, number][], segments: number): P
     verts.push(r * Math.cos(theta), r * Math.sin(theta), z);
     return verts.length / 3 - 1;
   };
-  const M = profile.length;
+  const M = prof.length;
   for (let k = 0; k < M; k++) {
-    const [r0, z0] = profile[k];
-    const [r1, z1] = profile[(k + 1) % M];
+    const [r0, z0] = prof[k];
+    const [r1, z1] = prof[(k + 1) % M];
     const r0z = r0 < EPS;
     const r1z = r1 < EPS;
     if (r0z && r1z) continue; // edge lies on the axis → nothing to revolve
