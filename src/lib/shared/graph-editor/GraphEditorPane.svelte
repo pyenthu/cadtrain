@@ -123,6 +123,13 @@
   // (Popovers' argExpr + GEP's sketch/poly expr popovers) can't drift.
   import Popovers from './Popovers.svelte';
   import { clampToViewport } from './popover-clamp';
+  // Source/meta parsers + the expected-params cache (drift detection) —
+  // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
+  // by primitive src; the graph-touching fns take/return graph explicitly.
+  import {
+    extractGraphFromSource, extractDrawingMdFromSource,
+    expected, ingestMeta, loadExpectedParamsFor, isCallDrifted, refreshCallArgs,
+  } from './graph-editor-bake.svelte';
   import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
   import {
     argStr, argFrom, argToDraftStr, evalArg, sketchParamScope,
@@ -196,22 +203,10 @@
    *  nav so the chrome doesn't double-up. The page's own .ge-bar stays
    *  since it hosts Save / + Drop / id input — the in-context controls. */
   let embed = $state<boolean>(!!props.embed);
-  /** Drift detection (Phase 11). Per src-name → its meta.params keys
-   *  as last seen on the volume. Compared to each Call's args keys; a
-   *  mismatch marks the Call as drifted. Refresh syncs the Call's args
-   *  back to the expected shape (preserves existing values for shared
-   *  keys, fills new keys with the primitive's defaults). */
-  let expectedParams = $state<Record<string, string[]>>({});
-  let expectedDefaults = $state<Record<string, Record<string, number>>>({});
-  /** Profile-typed arg keys per src. `expectedProfileKeys['r_revolve'] = {profile}`.
-   *  Populated alongside expectedParams from the primitive's meta.params
-   *  scan; lookup at Call-card render time decides whether to show the
-   *  profile chip + picker (#119) instead of a generic expression input. */
-  let expectedProfileKeys = $state<Record<string, Set<string>>>({});
-  /** Which "set" the primitive's profile uses — drives the kind filter in
-   *  the profile picker popover. r_revolve → 'revolve' (r,z half-section);
-   *  r_extrude / r_weld_extrude → 'cartesian' (x,y polygon). */
-  let expectedProfileSet = $state<Record<string, 'revolve' | 'cartesian'>>({});
+  // Drift detection (Phase 11) — the expected-params cache + loaders moved to
+  // graph-editor-bake.svelte.ts (Phase B). `expected.{params,defaults,
+  // profileKeys,profileSet}` is the shared singleton cache; isCallDrifted /
+  // refreshCallArgs / loadExpectedParamsFor are imported above.
 
   // The extracted popover component (Phase A). Bound via `bind:this` so the
   // node-render arms can call `popovers.openContainerPop/openArgExprPop/
@@ -1652,36 +1647,7 @@
     } catch { /* URL parse / network failures are non-fatal */ }
   });
 
-  /** Client-side graph-block extractor — walks balanced braces to isolate
-   *  the `graph: {...}` literal inside the meta block, then evals as plain
-   *  data via `new Function`. Pure object/array literals → safe.
-   *  Returns undefined when the source has no graph block (legacy part). */
-  function extractGraphFromSource(src: string): any | undefined {
-    if (!src) return undefined;
-    const m = /(^|[\s,{])graph\s*:\s*\{/m.exec(src);
-    if (!m) return undefined;
-    const startBrace = src.indexOf('{', m.index + m[0].length - 1);
-    if (startBrace < 0) return undefined;
-    let depth = 0;
-    let end = -1;
-    for (let i = startBrace; i < src.length; i++) {
-      const c = src[i];
-      if (c === '{') depth++;
-      else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
-    }
-    if (end < 0) return undefined;
-    const block = src.slice(startBrace, end + 1);
-    try { return new Function(`return (${block});`)(); } catch { return undefined; }
-  }
-  /** Pull `drawingMd: '...'` (single-quoted, newlines escaped) out of a
-   *  saved meta block. Companion to extractGraphFromSource for endpoints
-   *  that don't return the parsed meta field. Returns '' when absent. */
-  function extractDrawingMdFromSource(src: string): string {
-    if (!src) return '';
-    const m = /(^|[\s,{])drawingMd\s*:\s*'((?:\\'|[^'])*)'/m.exec(src);
-    if (!m) return '';
-    return (m[2] ?? '').replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
-  }
+  // extractGraphFromSource / extractDrawingMdFromSource → graph-editor-bake.svelte.ts (Phase B).
 
   // ─── canvas state — pan + zoom ─────────────────────────────────────────
   let pan = $state({ x: 0, y: 0 });
@@ -2344,12 +2310,9 @@
     closePicker();
     bumpRecent(src);
     let args: Record<string, any> = {};
-    let paramKeys: string[] = [];
-    let defaults: Record<string, number> = {};
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
       const d = await r.json() as any;
-      const profileKeys = new Set<string>();
       for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
         // Profile-typed args (r_revolve / r_extrude) carry a {kind, params}
         // DESCRIPTOR as their default — not a number. Encode as an `expr`
@@ -2360,67 +2323,20 @@
         // can still hand-edit the JSON in the ƒ popup.
         if (p && typeof p === 'object' && p.type === 'profile' && p.default && typeof p.default === 'object') {
           args[k] = asExpr(JSON.stringify(p.default));
-          profileKeys.add(k);
         } else {
           args[k] = asLiteral(p?.default ?? 0);
         }
-        paramKeys.push(k);
-        defaults[k] = Number(p?.default ?? 0);
       }
-      // Infer the profile "set" (revolve vs cartesian) from the primitive
-      // name. r_revolve → revolve (r,z); r_extrude / r_weld_extrude →
-      // cartesian (x,y). Drives the kind filter in the picker.
-      if (profileKeys.size > 0) {
-        expectedProfileKeys = { ...expectedProfileKeys, [src]: profileKeys };
-        expectedProfileSet = {
-          ...expectedProfileSet,
-          [src]: src === 'r_revolve' ? 'revolve' : 'cartesian',
-        };
-      }
+      // Cache expected params (keys/defaults/profile set) for drift detection —
+      // same fetch we just did; shared singleton in graph-editor-bake.svelte.ts.
+      ingestMeta(src, d.params ?? {});
     } catch { /* leave args empty */ }
     const result = addCall(graph, src, args);
     graph = result.graph;
-    // Cache the expected params for drift detection — same fetch we just did.
-    if (paramKeys.length > 0) {
-      expectedParams = { ...expectedParams, [src]: paramKeys };
-      expectedDefaults = { ...expectedDefaults, [src]: defaults };
-    }
   }
 
-  /** Lazy-load expected params for any Call whose src we haven't fetched
-   *  yet (URL hydrate, paste-in from clipboard, etc.). Idempotent — only
-   *  fetches each src once per session. */
-  // Attempted-once guard — without it a `src` that 404s (renamed/missing
-  // dependency) never lands in expectedParams, so the reactive effect below
-  // re-fires and re-fetches it on every graph change → a tight loop that
-  // floods /api/primitives/source (hammered prod, 2026-06-13). Record the
-  // attempt FIRST so failures don't retry.
-  const attemptedParams = new Set<string>();
-  async function loadExpectedParamsFor(src: string) {
-    if (!src || expectedParams[src] || attemptedParams.has(src)) return;
-    attemptedParams.add(src);
-    try {
-      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
-      if (!r.ok) return;
-      const d = await r.json() as any;
-      const keys = Object.keys(d.params ?? {});
-      const defaults: Record<string, number> = {};
-      const profileKeys = new Set<string>();
-      for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
-        defaults[k] = Number(p.default ?? 0);
-        if (p && typeof p === 'object' && p.type === 'profile') profileKeys.add(k);
-      }
-      expectedParams = { ...expectedParams, [src]: keys };
-      expectedDefaults = { ...expectedDefaults, [src]: defaults };
-      if (profileKeys.size > 0) {
-        expectedProfileKeys = { ...expectedProfileKeys, [src]: profileKeys };
-        expectedProfileSet = {
-          ...expectedProfileSet,
-          [src]: src === 'r_revolve' ? 'revolve' : 'cartesian',
-        };
-      }
-    } catch { /* skip */ }
-  }
+  // loadExpectedParamsFor / isCallDrifted / refreshCallArgs → graph-editor-bake.svelte.ts
+  // (Phase B). isCallDrifted/refreshCallArgs now take `graph`; markup passes it.
 
   // Whenever the graph changes, fetch expected params for any new src.
   $effect(() => {
@@ -2431,43 +2347,6 @@
     for (const src of srcs) loadExpectedParamsFor(src);
   });
 
-  /** A Call is "drifted" when its args keys differ from the underlying
-   *  primitive's CURRENT meta.params keys. Returns false when expected
-   *  params haven't been fetched yet (don't false-positive). */
-  function isCallDrifted(callId: NodeId): boolean {
-    const node = graph.nodes[callId];
-    if (!node || node.type !== 'call') return false;
-    const expected = expectedParams[node.src];
-    if (!expected) return false;
-    const have = Object.keys(node.args ?? {}).sort();
-    const want = [...expected].sort();
-    if (have.length !== want.length) return true;
-    return have.some((k, i) => k !== want[i]);
-  }
-
-  /** Sync a drifted Call's args back to the primitive's CURRENT params:
-   *    • keep existing arg values for keys that survive
-   *    • add new keys with the primitive's default values
-   *    • drop orphan keys
-   *  Wholesale args replacement instead of incremental setCallArg so
-   *  the graph diff is one transaction. */
-  function refreshCallArgs(callId: NodeId) {
-    const node = graph.nodes[callId];
-    if (!node || node.type !== 'call') return;
-    const expected = expectedParams[node.src];
-    const defaults = expectedDefaults[node.src] ?? {};
-    if (!expected) return;
-    const newArgs: Record<string, any> = {};
-    for (const k of expected) {
-      const existing = (node.args as any)?.[k];
-      newArgs[k] = existing ?? asLiteral(defaults[k] ?? 0);
-    }
-    // Replace the args wholesale (adds new keys, strips orphans), then
-    // finalize() so graph.edges + imports are rebuilt — a raw node-spread
-    // left graph.edges stale (phantom wires / wrong orphan detection). #2.
-    const updated = { ...node, args: { ...newArgs } } as any;
-    graph = finalize({ ...graph, nodes: { ...graph.nodes, [callId]: updated } });
-  }
   // ─── Resizable 2-pane divider ──────────────────────────────────────────
   // The editor's main area is split canvas | (bake/source tabs). Default
   // ratio is canvas 76 % / right 24 %, giving the node graph more room and a
@@ -4693,11 +4572,11 @@
                 <!-- Drift badge (Phase 11) — when the underlying primitive's params
                      differ from this Call's args keys, surface ⚠ + a Refresh
                      pointerdown handler that brings the Call back into sync. -->
-                {#if isCallDrifted(n.id)}
+                {#if isCallDrifted(graph, n.id)}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" x={size.w - 96} y="22"
                     class="ge-drift-btn"
-                    onpointerdown={(ev) => { ev.stopPropagation(); refreshCallArgs(n.id); }}>⚠</text>
+                    onpointerdown={(ev) => { ev.stopPropagation(); graph = refreshCallArgs(graph, n.id); }}>⚠</text>
                 {/if}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 56} y="22" class="ge-xform-btn" class:on={!!inlineMv}
@@ -4765,7 +4644,7 @@
                         {:else}
                           {@const expr = (v as any).expr ?? ''}
                           {@const refs = extractParamRefs(expr)}
-                          {@const isProfileSlot = !!expectedProfileKeys[call.src]?.has(k)}
+                          {@const isProfileSlot = !!expected.profileKeys[call.src]?.has(k)}
                           {@const polyM = String(expr).match(/^__POLY__(n_[a-z0-9]+)$/i)}
                           {@const profileDesc = isProfileSlot ? parseProfileExpr(expr) : null}
                           {#if isProfileSlot && polyM && graph.nodes[polyM[1]]}
@@ -5224,7 +5103,7 @@
                       : countVal.kind === 'param' ? `p.${countVal.param}`
                       : countVal.expr}
                     {@const overrideRef = (container.childRefs ?? {})[childId]}
-                    {@const inheritedRef = childNode?.type === 'call' ? expectedDefaults[(childNode as any).src]?.[STACK_REF_PARAM] : undefined}
+                    {@const inheritedRef = childNode?.type === 'call' ? expected.defaults[(childNode as any).src]?.[STACK_REF_PARAM] : undefined}
                     <foreignObject x={size.w - 148} y={containerSlotY(i) - 10} width="42" height="20" class="ge-fo">
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <input class="ge-stack-inline-input" type="text"
@@ -6535,8 +6414,8 @@
   <Popovers
     bind:this={popovers}
     bind:graph
-    {expectedProfileSet}
-    {expectedDefaults}
+    expectedProfileSet={expected.profileSet}
+    expectedDefaults={expected.defaults}
     {paramEntries} />
 
   {#if sketchExprPop}
