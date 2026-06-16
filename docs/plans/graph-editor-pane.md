@@ -36,6 +36,22 @@
 | `src/lib/cad/graph-editor-geom.ts` (644) | socket/wire/card position math (+ test) | P1 ✓ |
 | `src/lib/cad/graph-editor-args.ts` (79) | ArgValue/expr formatting + profile-kind lookups | P2 ✓ |
 | `src/lib/shared/RightPane.svelte` (485) | the 6-tab right column (bake/src/md/svg/glb/brep) | P5 ✓ |
+| `src/lib/shared/graph-editor/Popovers.svelte` (413) + `popover-clamp.ts` (26) | the 4 self-contained popovers (container · argExpr · profile · profileRef) | **A ✓** (642b00e) |
+
+> **Phase A landed 2026-06-16 — REFINED scope.** The inventory showed the 8
+> popovers are NOT one clean unit: each `apply*` belongs to a different feature
+> card, and `polyExprPop` is fused with the `hlVertex`/`svgTip` highlight read by
+> node arms + SVGs. So Phase A extracted only the **4 self-contained** ones
+> (container, argExpr, profile, profileRef) — `graph = $bindable()`, exported
+> `open*`/`moveChild`/`detachProfile`, driven via `bind:this={popovers}`. The
+> other 4 ride their owning card's phase, NOT a future "Popovers part 2":
+> `sketchExprPop` → **E** (SketchEditorPane), `polyExprPop` (+ transform-axis +
+> poly_repeat + hlVertex/svgTip) → **F** (NodeCard), `addParamPop` + `wirePop` →
+> **D** (Params/Props cards). `clampToViewport` is now shared via `popover-clamp.ts`
+> (the sketch/poly expr popovers in GEP still use it). The shared
+> `.ge-wire-*`/`.ge-expr-*`/`.ge-param-add`/`.ge-empty` CSS is DUPLICATED in
+> Popovers transitionally — it collapses out of GEP once D/E/F move the rest.
+> GraphEditorPane 8737 → 8429 (−308).
 
 ## 2. Remaining carve targets (current locations, smallest-safest-FIRST)
 
@@ -44,12 +60,12 @@ its render arms already pull from extracted, tested helpers.
 
 | # | Extract → | What moves (current L) | Risk | Notes |
 |---|---|---|---|---|
-| **A** | one `graph-editor/Popovers.svelte` (the dir is set up — A0 done) | 8 pops (container · argExpr · sketchExpr · polyExpr(+polyRepeat{Count,Binding}) · transformAxis · profile · profileRef · addParam · wire): handlers L3231–4057, markup across 9 `{#if *Pop}` blocks L6564–6850, CSS in many groups. | **MED** (revised up from LOW-MED after inventory 2026-06-16 — NOT a quick win) | The ~826 handler lines are INTERLEAVED with graph mutators + sketch-mode/poly-binding/profile-select logic (`applySketchExprPop`→`toggleSketchOpMode`; `polyExprPop` has tabs+bindings; `profilePop`→`selectProfileKind`/`swapProfileRef`). Every `apply*` mutates `graph`; every `open*` is called from the node-render arms (stay in GEP). Boundary: Popovers owns pop `$state`+open/close/apply+markup+CSS, takes `graph = $bindable()`, imports the mutators, EXPORTS `open*` so GEP calls `popovers.openX(...)` via `bind:this`. Verify all 8 open/edit/apply/dismiss. Do as a FOCUSED pass, not at the tail of a long session. |
+| ~~**A**~~ ✓ | `graph-editor/Popovers.svelte` — DONE (642b00e). | 4 self-contained pops (container · argExpr · profile · profileRef). | — | See the refined-scope note above. The other 4 pops ride D/E/F, below. |
 | **B** | `graph-editor-bake.ts` (glue) | `runBake`/`setAutoBake`/`rebuildCache`/`restartDevServer`/`extractGraphFromSource`/`extractDrawingMd…`/`loadExpectedParamsFor`/`refreshCallArgs`/`isCallDrifted` (L1081–2441 scattered) + the `drop*` palette handlers (`dropCall/Csg/Mv/Rot/Stack/Pen/Polygon/Sketch/Solid/Repeat`, L2330–3292). | MED | Orchestration; several mutate `graph` → pass a graph getter/setter or keep thin wrappers in the shell. Pure-ish bits (`extractGraphFromSource`) can go to a `.ts`; mutators may need a `.svelte.ts`. |
 | **C** | `wire-state.svelte.ts` (rune module) | the 23 wire+drop fns: `wireFrom` state + `armWire`/`startWire`/`startParamWire` + the full `endWireOn*` family + `unwireTransformAxis` + `releaseImplicitCapture`. | MED | Cross-cutting + pointer-capture (memory `touch_implicit_pointer_capture`). Keep the text-substitution wiring AS-IS so K.67 has one small file to rewrite. **Browser wire-drag + touch test mandatory.** |
-| **D** | `ParamsCard.svelte` + `PropertiesCard.svelte` | the viewport-glued overlay cards (the tabbed Params \| Properties block) + add-param pop. | MED | Stay OUTSIDE the pan/zoom group (don't reparent). `CARD_Y0`/socket positions already in geom — keep passing them. |
-| **E** | `SketchEditorPane.svelte` | the full-tab sketch editor: 21 `sketch*` handlers (`sketchCanvas*`/`sketchAnchor*`/`sketchBar*`/`sketchCardResize*`/`splineComp*`/`fitSketchFrame`/`cornerAtOpIdx`…), the `sketchEditor` `$derived` (L2609) + frozen-frame, the tools rail + 2D canvas markup. | MED-HIGH | Largest self-contained chunk. Props: the sketch node + param scope + callbacks. Verify vs `sketch*.test.ts`. **This is where the M.5 sketch-repeat UI will land — do E before sketch-repeat.** |
-| **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards. | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
+| **D** | `ParamsCard.svelte` + `PropertiesCard.svelte` | the viewport-glued overlay cards (the tabbed Params \| Properties block) **+ `addParamPop` + `wirePop`** (still in GEP — they sit with `onAddParam`/`onZOffset`/`wireArgToParam`). | MED | Stay OUTSIDE the pan/zoom group (don't reparent). `CARD_Y0`/socket positions already in geom — keep passing them. |
+| **E** | `SketchEditorPane.svelte` | the full-tab sketch editor: 21 `sketch*` handlers (`sketchCanvas*`/`sketchAnchor*`/`sketchBar*`/`sketchCardResize*`/`splineComp*`/`fitSketchFrame`/`cornerAtOpIdx`…), the `sketchEditor` `$derived` (L2609) + frozen-frame, the tools rail + 2D canvas markup **+ `sketchExprPop`** (the coord ƒ-editor — its drag/`toggleSketchOpMode`/`sketchPopPtCount` couple to the sketch state). | MED-HIGH | Largest self-contained chunk. Props: the sketch node + param scope + callbacks. Verify vs `sketch*.test.ts`. **This is where the M.5 sketch-repeat UI will land — do E before sketch-repeat.** |
+| **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards **+ `polyExprPop`** (vertex/loop/binding/count **+ transform-axis** ƒ-editor; fused with `hlVertex`/`hoverVertex`/`svgTip`). | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
 
 After A–F the shell is props + the ~110 `$state` (many will move with their
 feature) + `onMount`/keydown + the `<svg>` canvas host + child slots. The CSS
@@ -57,8 +73,8 @@ follows each component out.
 
 ## 3. Phase sequence (each = one inline PR, build + browser-verify, then commit)
 
-1. **A — popovers.** Lowest-risk, biggest easy line-win. Verify each popover
-   opens/edits/applies/dismisses.
+1. ~~**A — popovers.**~~ ✓ DONE (642b00e) — 4 self-contained pops only (refined
+   scope above). **B is the next phase.**
 2. **B — bake glue.** Verify bake / auto-bake / rebuild / drop-each-palette-item.
 3. **D — Params/Properties cards.** Verify param edit + color/material + the tab
    switch + param→arg wires still land (socket lockstep).
