@@ -23,32 +23,75 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
-async function openEditor(page: Page) {
-  await page.goto('/graph-editor');
-  await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+/** Best-effort permanent delete so a subsequent ?id= load 404s → blank
+ *  canvas. Keeps build-from-scratch save tests idempotent across re-runs
+ *  (Rule 23): a re-run starts blank again instead of loading run-1's part. */
+async function deletePart(page: Page, id: string) {
+  await page.request.delete(`/api/primitives/delete?id=${encodeURIComponent(id)}&permanent=true`);
+}
+
+/** Open the editor. With `id`, the part is deleted first then loaded via
+ *  ?id= so onMount 404s → blank canvas with exemplarId seeded to `id`
+ *  (the left-rail editor has NO in-page id input — the old `.ge-bar`
+ *  header + `input.ge-id` were replaced by the vertical icon rail). Without
+ *  `id`, a plain blank editor opens under the default exemplarId. */
+async function openEditor(page: Page, id?: string) {
+  if (id) {
+    await deletePart(page, id);
+    await page.goto(`/graph-editor?id=${encodeURIComponent(id)}`);
+  } else {
+    await page.goto('/graph-editor');
+  }
   await page.locator('.ge-canvas').waitFor({ state: 'visible' });
 }
 
-async function setExemplar(page: Page, id: string) {
-  const idInput = page.locator('input.ge-id');
-  await idInput.fill(id);
+/** No-op: the working id is now seeded by openEditor(page, id) via the
+ *  ?id= URL param (there is no in-page id input on the left-rail editor).
+ *  Kept so existing call sites read clearly without a churny mass delete. */
+async function setExemplar(_page: Page, _id: string) { /* no-op — see openEditor */ }
+
+/** Parts-library picker — the `+` rail button (search box + saved primitives). */
+async function openCallPicker(page: Page) {
+  await page.locator('.ge-vrail-btn[data-tip^="Fetch a part"]').click();
+  await page.locator('.ge-picker-search').waitFor({ state: 'visible' });
 }
 
-async function openPicker(page: Page) {
-  await page.getByRole('button', { name: '+ Drop' }).click();
-  await page.locator('.ge-picker').waitFor({ state: 'visible' });
+/** Operations picker — the ✎ rail button (polygon / sketch + solids / ops /
+ *  position / container parents, the last four as click/hover flyout submenus). */
+async function openOpsPicker(page: Page) {
+  await page.locator('.ge-vrail-btn[data-tip^="Drop an operation"]').click();
+  await page.locator('.ge-picker').first().waitFor({ state: 'visible' });
 }
 
 async function pickPrimitive(page: Page, name: string) {
-  await openPicker(page);
+  await openCallPicker(page);
   await page.locator('.ge-picker-search').fill(name);
-  // Pick exact match
-  await page.locator('.ge-pick', { hasText: new RegExp(`^${name}$`) }).first().click();
+  // Exact-match the primitive id in the call list, then click its row.
+  await page.locator('.ge-pick-item', {
+    has: page.locator('.ge-pick-name', { hasText: new RegExp(`^${name}$`) }),
+  }).first().click();
 }
 
 async function pickCsg(page: Page, op: 'subtract' | 'add' | 'intersect') {
-  await openPicker(page);
-  await page.locator('.ge-pick.csg', { hasText: op }).click();
+  await openOpsPicker(page);
+  // CSG ops now live under the "ops" parent → flyout submenu.
+  await page.locator('.ge-pick-item.parent', {
+    has: page.locator('.ge-pick-name', { hasText: /^ops$/ }),
+  }).click();
+  await page.locator('.ge-pick-item', {
+    has: page.locator('.ge-pick-name', { hasText: new RegExp(`^${op}$`) }),
+  }).click();
+}
+
+/** Drop a Repeat from the container submenu of the ops picker. */
+async function pickRepeat(page: Page) {
+  await openOpsPicker(page);
+  await page.locator('.ge-pick-item.parent', {
+    has: page.locator('.ge-pick-name', { hasText: /^container$/ }),
+  }).click();
+  await page.locator('.ge-pick-item', {
+    has: page.locator('.ge-pick-name', { hasText: /^repeat$/ }),
+  }).click();
 }
 
 async function callCount(page: Page): Promise<number> {
@@ -105,12 +148,13 @@ async function dragBetween(page: Page, from: Locator, to: Locator) {
 // ─── smoke ──────────────────────────────────────────────────────────────
 
 test.describe('graph-editor — smoke', () => {
-  test('loads with empty canvas + working title bar', async ({ page }) => {
+  test('loads with empty canvas + working action rail', async ({ page }) => {
     await openEditor(page);
-    // Headline elements present.
-    await expect(page.locator('.ge-bar h1')).toBeVisible();
-    await expect(page.getByRole('button', { name: '+ Drop' })).toBeVisible();
-    await expect(page.locator('.ge-bar', { hasText: /Save/ })).toBeVisible();
+    // Left vertical action rail + its primary buttons present (the old
+    // `.ge-bar` header was replaced by this icon rail).
+    await expect(page.locator('.ge-vrail')).toBeVisible();
+    await expect(page.locator('.ge-vrail-btn[data-tip^="Fetch a part"]')).toBeVisible();
+    await expect(page.locator('.ge-vrail-btn.save')).toBeVisible();
     // Canvas hint + zero nodes. Two .ge-canvas-hint elements render in the
     // empty state (one for params, one for nodes); pick the +Drop one.
     await expect(page.locator('.ge-canvas-hint', { hasText: '+ Drop' })).toBeVisible();
@@ -138,9 +182,9 @@ test.describe('graph-editor — smoke', () => {
     await openEditor(page);
     await addParam(page, 'outerOD', 4);
     await expect(page.locator('.ge-param-card')).toHaveCount(1);
-    await expect(page.locator('.ge-param-card-name')).toContainText('p.outerOD');
+    await expect(page.locator('.ge-param-card .name')).toContainText('p.outerOD');
     // Inline value input has the default.
-    await expect(page.locator('.ge-param-card-input')).toHaveValue('4');
+    await expect(page.locator('.ge-param-card .val')).toHaveValue('4');
     // Source pane includes the param in meta.params.
     await expect(page.locator('.ge-source')).toContainText('outerOD');
   });
@@ -149,7 +193,7 @@ test.describe('graph-editor — smoke', () => {
     await openEditor(page);
     await addParam(page, 'outerOD', 4);
     await pickPrimitive(page, 'dt_shaft');
-    const input = page.locator('.ge-param-card-input').first();
+    const input = page.locator('.ge-param-card .val').first();
     await input.fill('6.5');
     // Source pane reflects the new default in meta.params (params: { outerOD: { default: 6.5 } }).
     await expect(page.locator('.ge-source')).toContainText('default: 6.5');
@@ -161,7 +205,7 @@ test.describe('graph-editor — smoke', () => {
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
     await pickPrimitive(page, 'dt_shaft');
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
-    await page.getByRole('button', { name: 'Reset' }).click();
+    await page.locator('.ge-vrail-btn.reset').click();
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(0);
   });
 });
@@ -197,7 +241,7 @@ test.describe('graph-editor — phase 1: mv axis param wiring', () => {
     await expect(mvToggle).toBeVisible();
     await mvToggle.click({ position: { x: 5, y: 5 } });
     // The inline mv label appears in the card.
-    await expect(page.locator('.ge-inline-label', { hasText: 'mv' })).toBeVisible();
+    await expect(page.locator('.ge-inline-hdr', { hasText: 'mv' })).toBeVisible();
 
     // Step 3 — three tiny amber axis sockets appear on the LEFT edge.
     const axisSockets = page.locator('.ge-sock.in.param.tiny');
@@ -213,7 +257,7 @@ test.describe('graph-editor — phase 1: mv axis param wiring', () => {
     await dragBetween(page, paramOut, mvZ);
 
     // Step 5 — z slot now renders as the amber p.outerOD chip with × to unwire.
-    const zChip = page.locator('.ge-inline-xform.mv .ge-arg-pchip', { hasText: 'p.outerOD' });
+    const zChip = page.locator('.ge-inline-xform.mv .ge-inline-pchip', { hasText: 'p.outerOD' });
     await expect(zChip).toBeVisible();
     await expect(zChip.locator('.ge-arg-pchip-x')).toBeVisible();
 
@@ -229,15 +273,15 @@ test.describe('graph-editor — phase 1: mv axis param wiring', () => {
     await expect(page.locator('.ge-source')).toContainText(/mv\(\s*A,\s*\[/);
 
     // Step 8 — editing the param's default value drives a re-bake.
-    // The param chip's foreignObject input — we fill via .ge-param-card-input.
-    const defaultInput = page.locator('.ge-param-card-input').first();
+    // The param chip's foreignObject input — we fill via .ge-param-card .val.
+    const defaultInput = page.locator('.ge-param-card .val').first();
     await defaultInput.fill('6.5');
     // Source pane reflects the new default.
     await expect(page.locator('.ge-source')).toContainText('default: 6.5');
 
     // Sanity — unwiring restores a literal slot + drops the wire from canvas.
     await zChip.locator('.ge-arg-pchip-x').click();
-    await expect(page.locator('.ge-inline-xform.mv .ge-arg-pchip')).toHaveCount(0);
+    await expect(page.locator('.ge-inline-xform.mv .ge-inline-pchip')).toHaveCount(0);
     await expect(page.locator('path.ge-wire.param')).toHaveCount(0);
   });
 });
@@ -314,8 +358,8 @@ test.describe('graph-editor — phase 2: CSG composition', () => {
 test.describe('graph-editor — phase 3: save round-trip', () => {
   test('build → save → re-fetch — disk file has meta.graph + p.outerR wire', async ({ page }) => {
     test.setTimeout(40_000);
-    await openEditor(page);
     const exId = 'test_phase3_save';
+    await openEditor(page, exId);
     await setExemplar(page, exId);
 
     // Build a small graph: one Call, one param, wired.
@@ -327,8 +371,8 @@ test.describe('graph-editor — phase 3: save round-trip', () => {
     await dragBetween(page, paramOut, callAArg0);
 
     // Click Save → status confirms.
-    await page.getByRole('button', { name: /Save/ }).click();
-    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+    await page.locator('.ge-vrail-btn.save').click();
+    await expect(page.locator('.ge-canvas-status-save')).toContainText(/saved to basic\//);
 
     // Re-fetch via API — verify the source file round-tripped.
     const r = await page.request.get(`/api/primitives/source?name=${exId}`);
@@ -392,7 +436,7 @@ test.describe('graph-editor — phase 4: shared dial across multiple Calls', () 
 
     // Edit the dial — both Calls should keep referencing p.outerR (the literal
     // value bubbles through the param resolution at bake time).
-    const defaultInput = page.locator('.ge-param-card-input').first();
+    const defaultInput = page.locator('.ge-param-card .val').first();
     await defaultInput.fill('7.5');
     await expect(page.locator('.ge-source')).toContainText('default: 7.5');
 
@@ -407,7 +451,7 @@ test.describe('graph-editor — phase 4: shared dial across multiple Calls', () 
 test.describe('graph-editor — generates parts via UI', () => {
   test('builds_dt_box_with_param_wired and saves to volume', async ({ page }) => {
     test.setTimeout(40_000);
-    await openEditor(page);
+    await openEditor(page, 'test_graph_built');
     await setExemplar(page, 'test_graph_built');
 
     // 1. Drop a Call.
@@ -429,8 +473,8 @@ test.describe('graph-editor — generates parts via UI', () => {
     await expect(page.locator('.ge-source')).toContainText('p.outerR');
 
     // 5. Save → status confirms write to basic/.
-    await page.getByRole('button', { name: /Save/ }).click();
-    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+    await page.locator('.ge-vrail-btn.save').click();
+    await expect(page.locator('.ge-canvas-status-save')).toContainText(/saved to basic\//);
 
     // 6. Verify via API — the file exists with the expected source.
     const r = await page.request.get('/api/primitives/source?name=test_graph_built');
@@ -459,7 +503,7 @@ test.describe('graph-editor — generates parts via UI', () => {
 test.describe('graph-editor — phase 5: vocab replication (dt_tube)', () => {
   test('rebuilds dt_tube — A.subtract(B) with expressions + shared length param', async ({ page }) => {
     test.setTimeout(60_000);
-    await openEditor(page);
+    await openEditor(page, 'dt_tube_v2');
     await setExemplar(page, 'dt_tube_v2');
 
     // ── 1. Add params: od (outer dia), wall, length — vocab `tube` schema.
@@ -526,8 +570,8 @@ test.describe('graph-editor — phase 5: vocab replication (dt_tube)', () => {
     await expect(page.locator('.ge-err')).toHaveCount(0);
 
     // ── 11. Save → volume.
-    await page.getByRole('button', { name: /Save/ }).click();
-    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+    await page.locator('.ge-vrail-btn.save').click();
+    await expect(page.locator('.ge-canvas-status-save')).toContainText(/saved to basic\//);
 
     // ── 12. Fetch back from volume; the on-disk source carries:
     //       (a) meta.graph block (proof of new format)
@@ -569,11 +613,11 @@ test.describe('graph-editor — phase 6: URL load + legacy banner', () => {
     // Direct navigation with the load param. The phase 5 test must have run
     // earlier in the same suite to deposit dt_tube_v2.asm.ts on the volume.
     await page.goto('/graph-editor?id=dt_tube_v2');
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
     await page.locator('.ge-canvas').waitFor({ state: 'visible' });
 
     // 1. Exemplar id picked up from the URL.
-    await expect(page.locator('input.ge-id')).toHaveValue('dt_tube_v2');
+    await expect(page.locator('.ge-source-header code')).toHaveText('dt_tube_v2.asm.ts');
 
     // 2. Two Call cards + one method node (A.subtract(B)).
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
@@ -626,7 +670,7 @@ export function ${legacyId}(p) {
     expect(save.ok()).toBe(true);
 
     await page.goto(`/graph-editor?id=${legacyId}`);
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
 
     // Wait for the URL-load onMount handler to FINISH — its completion is
     // signaled by the legacy banner appearing (legacyLoad state is set
@@ -636,7 +680,7 @@ export function ${legacyId}(p) {
     await expect(page.locator('.ge-legacy-banner')).toBeVisible({ timeout: 15_000 });
 
     // 1. Exemplar id picked up from the URL — set in the same onMount.
-    await expect(page.locator('input.ge-id')).toHaveValue(legacyId);
+    await expect(page.locator('.ge-source-header code')).toHaveText(legacyId + '.asm.ts');
 
     // 2. Canvas stays empty — no node cards hydrated.
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(0);
@@ -689,8 +733,8 @@ test.describe('graph-editor — phase 14: vocab.json → translator → editor',
 
     // 3. Load in /graph-editor — canvas should hydrate, NO legacy banner.
     await page.goto('/graph-editor?id=dt_tube');
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
-    await expect(page.locator('input.ge-id')).toHaveValue('dt_tube');
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
+    await expect(page.locator('.ge-source-header code')).toHaveText('dt_tube.asm.ts');
 
     // 4. Two Call cards + one method node — A.subtract(B) shape.
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(2);
@@ -736,7 +780,7 @@ test.describe('graph-editor — phase 10: multi-axis wiring on a transform', () 
     const callA = page.locator('g.ge-node:has(rect.ge-node-bg.call)').first();
     await callA.locator('text.ge-xform-btn').nth(0).dispatchEvent('pointerdown',
       { button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true });
-    await expect(callA.locator('.ge-inline-label')).toHaveText(/mv/);
+    await expect(callA.locator('.ge-inline-hdr')).toHaveText(/mv/);
 
     // 3. The Call card now has 3 tiny axis sockets on its LEFT edge (one per xyz).
     const tinySockets = callA.locator('circle.ge-sock.in.param.tiny');
@@ -749,7 +793,7 @@ test.describe('graph-editor — phase 10: multi-axis wiring on a transform', () 
     //    via a sub-locator on the name <text> instead.
     const paramByName = (name: string) =>
       page.locator('g.ge-param-card')
-        .filter({ has: page.locator('text.ge-param-card-name', { hasText: new RegExp(`^p\\.${name}$`) }) })
+        .filter({ has: page.locator('.name', { hasText: new RegExp(`^p\\.${name}$`) }) })
         .locator('circle.ge-sock.out.param').first();
     const paramX = paramByName('x');
     const paramY = paramByName('y');
@@ -764,10 +808,10 @@ test.describe('graph-editor — phase 10: multi-axis wiring on a transform', () 
     // 6. Three chips on the mv card (the inline mv block shows
     //    `p.x` / `p.y` / `p.z` in the xyz slots).
     const mvBlock = callA.locator('.ge-inline-xform.mv');
-    await expect(mvBlock.locator('.ge-arg-pchip')).toHaveCount(3);
-    await expect(mvBlock.locator('.ge-arg-pchip', { hasText: 'p.x' })).toHaveCount(1);
-    await expect(mvBlock.locator('.ge-arg-pchip', { hasText: 'p.y' })).toHaveCount(1);
-    await expect(mvBlock.locator('.ge-arg-pchip', { hasText: 'p.z' })).toHaveCount(1);
+    await expect(mvBlock.locator('.ge-inline-pchip')).toHaveCount(3);
+    await expect(mvBlock.locator('.ge-inline-pchip', { hasText: 'p.x' })).toHaveCount(1);
+    await expect(mvBlock.locator('.ge-inline-pchip', { hasText: 'p.y' })).toHaveCount(1);
+    await expect(mvBlock.locator('.ge-inline-pchip', { hasText: 'p.z' })).toHaveCount(1);
 
     // 7. Source emits `mv(A, [p.x, p.y, p.z])` — proves all 3 axes resolved.
     const src = page.locator('.ge-source');
@@ -821,14 +865,14 @@ export function ${targetId}(r, len) {
     expect(saveV1.ok()).toBe(true);
 
     // ── 2. Build a graph that uses targetId. Save it.
-    await openEditor(page);
+    await openEditor(page, graphId);
     await setExemplar(page, graphId);
     await pickPrimitive(page, targetId);
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
     // No drift yet — the target's params match the dropped Call's args.
     await expect(page.locator('.ge-drift-btn')).toHaveCount(0);
-    await page.getByRole('button', { name: /Save/ }).click();
-    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+    await page.locator('.ge-vrail-btn.save').click();
+    await expect(page.locator('.ge-canvas-status-save')).toContainText(/saved to basic\//);
 
     // ── 3. v2 target: params { r, len, tag } — tag is the NEW param.
     const targetV2 = `
@@ -856,7 +900,7 @@ export function ${targetId}(r, len, tag) {
     // ── 4. Reload the saved graph — drift badge should appear after the
     //    editor's $effect fetches the target's NEW params.
     await page.goto(`/graph-editor?id=${graphId}`);
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
 
     // Drift badge surfaces once the async fetch completes.
@@ -966,10 +1010,10 @@ test.describe('graph-editor — phase 9: inline transforms compose with CSG', ()
     //    fires the handler directly — sidesteps any bake-pane hit-test.
     await callA.locator('text.ge-xform-btn').nth(0).dispatchEvent('pointerdown',
       { button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true });
-    await expect(callA.locator('.ge-inline-label')).toHaveText(/mv/);
+    await expect(callA.locator('.ge-inline-hdr')).toHaveText(/mv/);
 
     // 3. Edit mv.z to 3 — the third axis input on the inline mv block.
-    const mvZ = callA.locator('.ge-inline-xform.mv .ge-arg-row').nth(2).locator('input.ge-arg-input');
+    const mvZ = callA.locator('.ge-inline-xform.mv .ge-inline-axis').nth(2).locator('input.ge-inline-input');
     await mvZ.fill('3', { force: true });
 
     // 4. Drop a ⊖ subtract method node.
@@ -1081,8 +1125,8 @@ test.describe('graph-editor — phase 15: stack composition round-trip', () => {
     // 3. Load in /graph-editor — canvas hydrates with the box + pin Calls
     //    + the stack container. NO legacy banner.
     await page.goto('/graph-editor?id=dt_sub');
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
-    await expect(page.locator('input.ge-id')).toHaveValue('dt_sub');
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
+    await expect(page.locator('.ge-source-header code')).toHaveText('dt_sub.asm.ts');
 
     // Two Call cards (box + pin). The stack container itself is a list-like
     // node — it currently has no visible card on the canvas (renders only
@@ -1108,7 +1152,7 @@ test.describe('graph-editor — phase 15: stack composition round-trip', () => {
 test.describe('graph-editor — phase 18: layout persists across reload', () => {
   test('drag a node, save, reload — node lands at the same x, not the default grid', async ({ page }) => {
     test.setTimeout(45_000);
-    await openEditor(page);
+    await openEditor(page, 'test_phase18_layout');
     await setExemplar(page, 'test_phase18_layout');
 
     // 1. Drop two Calls + 1 method so there's a layout to remember.
@@ -1138,8 +1182,8 @@ test.describe('graph-editor — phase 18: layout persists across reload', () => 
     const xAfterDrag = after.x;
 
     // 3. Save the graph.
-    await page.getByRole('button', { name: /Save/ }).click();
-    await expect(page.locator('.ge-save-stat')).toContainText(/saved to basic\//);
+    await page.locator('.ge-vrail-btn.save').click();
+    await expect(page.locator('.ge-canvas-status-save')).toContainText(/saved to basic\//);
 
     // 4. Reload via URL — fresh page, fresh hydrate.
     await page.goto('/graph-editor?id=test_phase18_layout');
@@ -1198,8 +1242,8 @@ test.describe('graph-editor — phase 17: repeat composition (stand)', () => {
 
     // 3. Load in /graph-editor — canvas hydrates, no legacy banner, no bake error.
     await page.goto('/graph-editor?id=dt_stand');
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
-    await expect(page.locator('input.ge-id')).toHaveValue('dt_stand');
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
+    await expect(page.locator('.ge-source-header code')).toHaveText('dt_stand.asm.ts');
 
     // One Call card (J = joint). The repeat container itself isn't a Call
     // and renders differently; the Call count is the child Call.
@@ -1246,8 +1290,8 @@ test.describe('graph-editor — phase 7: /vocab launches the graph editor', () =
     await page.goto(href!);
 
     // 5. Lands on /graph-editor with the exemplar pre-filled.
-    await expect(page.locator('.ge-bar h1')).toHaveText(/Graph editor/);
-    await expect(page.locator('input.ge-id')).toHaveValue(/^dt_/);
+    await page.locator('.ge-canvas').waitFor({ state: 'visible' });
+    await expect(page.locator('.ge-source-header code')).toHaveText(/^dt_.+\.asm\.ts$/);
 
     // 6. Either hydrates or shows the legacy banner — both are acceptable;
     //    this test cares that the cross-page contract holds, not which
@@ -1297,8 +1341,10 @@ test.describe('graph-editor — phase 20: auto-layout', () => {
     const beforeM = await method.boundingBox();
     if (!beforeA || !beforeB || !beforeM) throw new Error('pre-layout bbox missing');
 
-    // 3. Click Auto-layout. The button is in the header bar.
-    await page.getByRole('button', { name: /Auto-layout/ }).click();
+    // 3. Auto-layout now lives in the ⚙ canvas-settings popover off the
+    //    left rail. Open it, then click the Auto-layout row (auto-closes).
+    await page.locator('.ge-vrail-btn.settings').click();
+    await page.locator('.ge-canvas-menu .ge-cm-row.action', { hasText: 'Auto-layout' }).click();
 
     // 4. The two Calls should share a column (same x within tolerance) and
     //    the method should sit to the right of either Call. Output (root list,
@@ -1325,7 +1371,7 @@ test.describe('graph-editor — phase 20: auto-layout', () => {
     expect(outputBox.x).toBeGreaterThan(afterM.x);
 
     // 6. ↶ Undo button is now visible. Click it — the prior layout returns.
-    const undoBtn = page.getByRole('button', { name: /Undo/ });
+    const undoBtn = page.locator('.ge-vrail-btn[data-tip^="Restore the prior layout"]');
     await expect(undoBtn).toBeVisible();
     await undoBtn.click();
 
@@ -1357,8 +1403,7 @@ test.describe('graph-editor — phase 23: visual Repeat × N node', () => {
     await expect(page.locator('.ge-node-bg.call')).toHaveCount(1);
 
     // 2. Drop a Repeat from the picker — under the Container section.
-    await openPicker(page);
-    await page.locator('.ge-pick.container', { hasText: 'repeat' }).click();
+    await pickRepeat(page);
     await expect(page.locator('.ge-node-bg.repeat')).toHaveCount(1);
 
     // 3. Drag-wire the Call's output → Repeat's child input socket.
@@ -1391,8 +1436,7 @@ test.describe('graph-editor — phase 24: drop Repeat auto-creates Stack', () =>
     await setExemplar(page, 'test_phase24_auto_stack');
 
     // Drop one Repeat from the picker (no wire-up yet).
-    await openPicker(page);
-    await page.locator('.ge-pick.container', { hasText: 'repeat' }).click();
+    await pickRepeat(page);
 
     // BOTH the Repeat AND a Stack should appear on the canvas.
     await expect(page.locator('.ge-node-bg.repeat')).toHaveCount(1);
