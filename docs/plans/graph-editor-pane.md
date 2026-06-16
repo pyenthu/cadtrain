@@ -39,6 +39,18 @@
 | `src/lib/shared/graph-editor/Popovers.svelte` (413) + `popover-clamp.ts` (26) | the 4 self-contained popovers (container · argExpr · profile · profileRef) | **A ✓** (642b00e) |
 | `graph-editor-bake.ts` (50, pure+tested) + `graph-editor-bake.svelte.ts` (115, rune) | source/meta parsers + the expected-params cache (drift detection) | **B ✓** (2e71155) |
 | `PropertiesCard.svelte` (~140) + `ParamsCard.svelte` (~165) | the PROPERTIES + PARAMS tab bodies of the overlay card | **D ✓** (aa6c74f + aebb3cd) |
+| `wire-state.svelte.ts` (262, per-instance class) + `pointer-capture.ts` (19) | the drag-to-wire subsystem | **C ✓** (54e8505) |
+
+> **Phase C DONE 2026-06-16.** `WireState` is a PER-INSTANCE class (one `new
+> WireState(getGraph, setGraph, clientToGraph)` per pane), NOT a module `$state`
+> singleton — /primitives mounts all tab panes at once, so a singleton would
+> leak drag-state. Owns from/mouse/justArmed/pointerMoved/downAt/connectMode/
+> isCoarse/tapConnect + all 16 handlers (arrow fields → `this` stays bound as
+> Svelte event handlers); graph mutated via getGraph/setGraph. `clientToGraph`
+> stayed in GEP (needs canvasEl/pan/zoom); `releaseImplicitCapture` → shared
+> `pointer-capture.ts` (also used by sketch-card drags). ~130 refs rewired to
+> `wire.*`. Verified end-to-end with a synthetic param→coord wire-drag (in-memory,
+> reverted; disk untouched). GEP 8192 → 8024 (−168).
 
 > **Phase D DONE 2026-06-16 (both cards).** `PropertiesCard.svelte` (clean HTML
 > foreignObject) + `ParamsCard.svelte` (SVG: card `<g>` + chip foreignObjects +
@@ -85,7 +97,7 @@ its render arms already pull from extracted, tested helpers.
 |---|---|---|---|---|
 | ~~**A**~~ ✓ | `graph-editor/Popovers.svelte` — DONE (642b00e). | 4 self-contained pops (container · argExpr · profile · profileRef). | — | See the refined-scope note above. The other 4 pops ride D/E/F, below. |
 | ~~**B**~~ ✓ | `graph-editor-bake.ts` + `.svelte.ts` — DONE (2e71155). | parsers + expected-params cache (see refined note above). | — | `runBake`/bake-pipeline stay (reactive); `drop*` stay (trivial 1-liners); `setAutoBake`/`rebuildCache`/`restartDevServer` stay (small, bake-pipeline-coupled $state). |
-| **C** | `wire-state.svelte.ts` (rune module) | the 23 wire+drop fns: `wireFrom` state + `armWire`/`startWire`/`startParamWire` + the full `endWireOn*` family + `unwireTransformAxis` + `releaseImplicitCapture`. | MED | Cross-cutting + pointer-capture (memory `touch_implicit_pointer_capture`). Keep the text-substitution wiring AS-IS so K.67 has one small file to rewrite. **Browser wire-drag + touch test mandatory.** |
+| ~~**C**~~ ✓ | `wire-state.svelte.ts` (per-instance `WireState` class) + `pointer-capture.ts` — DONE (54e8505). | wireFrom→`wire.from` + all start/endWireOn*/unwire handlers. | — | Per-instance class (NOT singleton). The endWireOn* text-substitution wiring is kept AS-IS for K.67. |
 | ~~**D**~~ ✓ | `PropertiesCard.svelte` (aa6c74f) + `ParamsCard.svelte` (aebb3cd). | both overlay-card bodies done. `addParamPop`/`wirePop` left in GEP (minor). | — | ParamsCard took startParamWire/openAddParamPop as props — didn't need C first. |
 | **E** | `SketchEditorPane.svelte` | the full-tab sketch editor: 21 `sketch*` handlers (`sketchCanvas*`/`sketchAnchor*`/`sketchBar*`/`sketchCardResize*`/`splineComp*`/`fitSketchFrame`/`cornerAtOpIdx`…), the `sketchEditor` `$derived` (L2609) + frozen-frame, the tools rail + 2D canvas markup **+ `sketchExprPop`** (the coord ƒ-editor — its drag/`toggleSketchOpMode`/`sketchPopPtCount` couple to the sketch state). | MED-HIGH | Largest self-contained chunk. Props: the sketch node + param scope + callbacks. Verify vs `sketch*.test.ts`. **This is where the M.5 sketch-repeat UI will land — do E before sketch-repeat.** |
 | **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards **+ `polyExprPop`** (vertex/loop/binding/count **+ transform-axis** ƒ-editor; fused with `hlVertex`/`hoverVertex`/`svgTip`). | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
@@ -102,19 +114,16 @@ follows each component out.
    (the bake pipeline is reactive; drops are 1-liners). **D is the next phase.**
 3. ~~**D — Params/Properties cards.**~~ ✓ DONE (aa6c74f + aebb3cd) — both bodies
    extracted; ParamsCard took startParamWire/openAddParamPop as props. **C is next.**
-4. **C — wire-state.svelte.ts.** THE risky one: ~130 edits to the core wire-drag
-   interaction. MUST be a per-instance class (`WireState`), NOT a module $state
-   singleton — /primitives keeps all tab panes mounted (`{#each tabs}` +
-   `class:visible`), so a singleton would leak drag-state across panes. Holds
-   `from`/`mouse`/`justArmed` + armWire/startWire/startParamWire + the endWireOn*
-   family + unwireTransformAxis + releaseImplicitCapture; graph mutated via
-   getGraph/setGraph passed at construction. Browser wire-drag + TOUCH test
-   mandatory (memory `touch_implicit_pointer_capture`). Optionally fold
-   addParamPop + wirePop into Popovers while here.
-5. **E — SketchEditorPane.** Verify enter/edit/exit, each tool, spline/fillet/
-   chamfer; THEN unblock M.5 sketch-repeat UI.
-6. **F — NodeCard.** Last. Full graph e2e: every node type renders + wires +
-   the inline mv/rot strips + the container slots.
+4. ~~**C — wire-state.svelte.ts.**~~ ✓ DONE (54e8505) — per-instance `WireState`
+   class; verified with a synthetic param→coord wire-drag. **E is next.**
+5. **E — SketchEditorPane.svelte.** The largest self-contained chunk: the full-tab
+   sketch editor (21 sketch* handlers, the `sketchEditor` $derived, the tools rail
+   + 2D canvas markup + the mini params/sketch cards). Carries `sketchExprPop` +
+   the sketch mini-card (which can then drop GEP's duplicated `.ge-param-chip`/
+   `.ge-params-card-*` CSS). Props: the sketch node + param scope + the `wire`
+   instance + callbacks. **This unblocks the M.5 sketch-repeat UI — do E first.**
+6. **F — NodeCard.svelte.** Last. The per-node render arms + `polyExprPop`. Full
+   graph e2e: every node type renders + wires + the inline mv/rot strips + slots.
 
 Stop-and-bank after any phase — each leaves a smaller, working shell.
 

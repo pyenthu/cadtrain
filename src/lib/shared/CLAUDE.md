@@ -13,6 +13,8 @@ src/lib/shared/
 │   ├── Popovers.svelte         #   the anchored container/argExpr/profile/profileRef dropdowns (Phase A)
 │   ├── PropertiesCard.svelte   #   the PROPERTIES tab body (z-offset/colour/material grid) (Phase D)
 │   ├── ParamsCard.svelte       #   the PARAMS tab body — SVG param chips + wire-feeding output sockets (Phase D)
+│   ├── wire-state.svelte.ts     #   per-instance WireState class — drag-to-wire (from/mouse + start/endWireOn*) (Phase C)
+│   ├── pointer-capture.ts       #   releaseImplicitCapture (shared: wire-drag + sketch-card drags)
 │   ├── popover-clamp.ts        #   shared viewport-clamp action for the popovers
 │   ├── graph-editor-bake.ts (+ .test.ts) #   pure source/meta parsers + callDrift (Phase B)
 │   ├── graph-editor-bake.svelte.ts       #   expected-params cache ($state singleton) + drift loaders (Phase B)
