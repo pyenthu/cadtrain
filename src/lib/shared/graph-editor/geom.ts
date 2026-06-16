@@ -245,10 +245,12 @@ export function cardAutoWidth(graph: Graph, node: any): number {
       );
     }
     const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 12;
-    const titleW = 90; // ▶ Output + gear with padding
+    const titleW = 86; // ▶ Output + gear with padding
     const inlineFieldsW = node.type === 'stack' ? 96 : 0;
-    const rowW = longest * 7 + 18 + inlineFieldsW + 44 + 14 + 16;
-    return Math.max(120, Math.max(rowW, titleW));
+    // Tightened (#10) — child labels are short ("A · r_revolve"); the old
+    // 7px/char + 74px chrome made the Output card wider than it needs to be.
+    const rowW = longest * 6 + 16 + inlineFieldsW + 38;
+    return Math.max(104, Math.max(rowW, titleW));
   }
   return 180;
 }
