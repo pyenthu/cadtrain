@@ -126,6 +126,15 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
         if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
         node.rot.forEach((v, i) => checkArg(id, `rot[${i}]`, v));
         break;
+      case 'txfmn':
+        // Both triples are checked so a wired-then-deleted param surfaces as
+        // `missing-param`; child resolves like mv/rot (null/unwired = missing).
+        if (node.child == null || !has(node.child)) {
+          errs.push({ nodeId: id, slot: 'child', badRef: String(node.child ?? ''), kind: 'missing-node' });
+        }
+        node.rot.forEach((v, i) => checkArg(id, `rot[${i}]`, v));
+        node.offset.forEach((v, i) => checkArg(id, `offset[${i}]`, v));
+        break;
       case 'repeat':
         if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
         checkArg(id, 'count', node.count);
@@ -260,7 +269,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     // subtract/add/intersect, container) is consumed differently.
     const consumersOf = new Map<NodeId, NodeId>();
     for (const n of Object.values(graph.nodes)) {
-      if (n?.type === 'mv' || n?.type === 'rot') {
+      if (n?.type === 'mv' || n?.type === 'rot' || n?.type === 'txfmn') {
         if (n.child) consumersOf.set(n.child, n.id);
       }
     }
@@ -439,6 +448,21 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       const r = node.rot.map(emitValueExpr).join(', ');
       return `rot(${child}, [${r}])`;
     }
+    case 'txfmn': {
+      // Re-expand the single node into the SAME nested helper calls the legacy
+      // two-node mv(rot(...)) form produced, in rotate-then-translate order
+      // (rot INNER, mv OUTER) so existing baked geometry is byte-identical.
+      // Identity elision: a pure-mv txfmn emits exactly `mv(child, [...])`, a
+      // pure-rot exactly `rot(child, [...])`, and an all-zero txfmn emits the
+      // bare child — the regression guard for existing mv/rot parts.
+      const child = ref(node.child ?? '', 'child');
+      const rotIsId = node.rot.every(isLiteralZero);
+      const mvIsId = node.offset.every(isLiteralZero);
+      let e = child;
+      if (!rotIsId) e = `rot(${e}, [${node.rot.map(emitValueExpr).join(', ')}])`;     // INNER — applied first
+      if (!mvIsId)  e = `mv(${e}, [${node.offset.map(emitValueExpr).join(', ')}])`;   // OUTER — applied second
+      return e;
+    }
     case 'repeat': {
       // Instantiate the child N times. The `op` field decides how the N
       // copies are combined:
@@ -539,6 +563,13 @@ function emitValueExpr(v: ArgValue): string {
   }
 }
 
+/** True for a literal `0` ArgValue — used by the txfmn emit to elide an
+ *  identity rotation / translation so a pure-mv or pure-rot TXFMN emits the
+ *  same bare `mv(...)` / `rot(...)` the legacy two-node form did. */
+function isLiteralZero(v: ArgValue): boolean {
+  return v.kind === 'literal' && Number(v.value) === 0;
+}
+
 // ─── consumed-set (output filtering) ──────────────────────────────────────
 //
 // A node is "consumed" when another node references it as an input slot:
@@ -568,7 +599,7 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
     if (n.type === 'method') {
       if (n.obj) consumed.add(n.obj);
       if (n.arg) consumed.add(n.arg);
-    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'repeat') {
+    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat') {
       if (n.child) consumed.add(n.child);
     } else if (n.type === 'stack' || n.type === 'group') {
       // Stack + group are EXPRESSIONS that operate on their children
@@ -625,6 +656,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'group'   ? 'group' :
         node.type === 'method'  ? `${node.op}_obj` :
         node.type === 'mv'      ? 'mv_obj' :
+        node.type === 'txfmn'   ? 'txfmn_obj' :
         node.type === 'polygon' ? 'poly' :
         node.type === 'sketch'  ? 'sketch' :
                                    'rot_obj';

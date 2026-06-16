@@ -85,6 +85,29 @@ export type MethodNode = {
 export type MvNode  = { id: NodeId; type: 'mv';  child: NodeId; offset: [ArgValue, ArgValue, ArgValue] };
 export type RotNode = { id: NodeId; type: 'rot'; child: NodeId; rot:    [ArgValue, ArgValue, ArgValue] };
 
+/** Unified transform node (TXFMN card) — carries BOTH a rotation and a
+ *  translation on ONE node so the editor can render a single compact card
+ *  instead of two nested mv/rot wrapper strips. Mirrors the field NAMES of
+ *  MvNode (`offset`) + RotNode (`rot`) so the edge/emit/value machinery needs
+ *  the smallest possible diff.
+ *
+ *  APPLICATION ORDER (load-bearing, Z-down convention): rotate FIRST, then
+ *  translate — `A.rotate(rot).translate(offset)` = `mv(rot(A, rot), offset)`.
+ *  So `rot` is the INNER helper call, `mv` is the OUTER one (see
+ *  composition-emit `case 'txfmn'`). All-zero rot+offset emits the bare child
+ *  (identity passthrough).
+ *
+ *  MvNode/RotNode are KEPT as resolvable legacy types (mirror PolygonRepeat):
+ *  hydrateGraph folds them into TxfmnNode at load time; new code creates only
+ *  TxfmnNode. `child` is nullable for an unwired placeholder drop. */
+export type TxfmnNode = {
+  id: NodeId;
+  type: 'txfmn';
+  child: NodeId | null;
+  rot:    [ArgValue, ArgValue, ArgValue];   // [rx, ry, rz] degrees   — applied FIRST  (inner)
+  offset: [ArgValue, ArgValue, ArgValue];   // [x, y, z] translate    — applied SECOND (outer)
+};
+
 /** Repeat — instantiate the child N times. The `op` decides how the N
  *  copies are combined:
  *    'stack' (default) — end-to-end mate via manifold-helpers.stack().
@@ -200,7 +223,7 @@ export type SketchNode = {
   segments?: ArgValue;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode;
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

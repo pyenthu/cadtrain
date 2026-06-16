@@ -9,7 +9,7 @@
  */
 
 import type {
-  NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode,
+  NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
   RepeatOp, RepeatNode, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
@@ -31,7 +31,7 @@ export function defaultCallPosition(graph: Graph): LayoutXY {
   const dropped = Object.values(graph.nodes).filter((n) =>
     n.type === 'call' || n.type === 'polygon' || n.type === 'method' ||
     n.type === 'mv'   || n.type === 'rot'     || n.type === 'repeat' ||
-    n.type === 'poly_repeat',
+    n.type === 'txfmn' || n.type === 'poly_repeat',
   ).length;
   return { x: 80 + (dropped % 4) * 240, y: 80 + Math.floor(dropped / 4) * 180 };
 }
@@ -77,6 +77,15 @@ export function collectEdges(graph: Graph): Edge[] {
     } else if (node.type === 'rot') {
       node.rot.forEach((v, i) => {
         if (v.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.rot.${i}` });
+      });
+    } else if (node.type === 'txfmn') {
+      // Both families ride one node: `<id>.rot.<i>` + `<id>.offset.<i>` — same
+      // edge shape the legacy mv/rot nodes produced, so wiring round-trips.
+      node.rot.forEach((v, i) => {
+        if (v.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.rot.${i}` });
+      });
+      node.offset.forEach((v, i) => {
+        if (v.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.offset.${i}` });
       });
     } else if (node.type === 'repeat') {
       // The repeat's count slot can be wired to a param (e.g. p.n on `stand`).
@@ -839,12 +848,19 @@ export function addRotPlaceholder(graph: Graph, parentId?: NodeId) {
   return addRot(graph, '', undefined, parentId);
 }
 
-/** Rebind a transform node's child to point at another node. */
+/** Rebind a transform node's child to point at another node. Generic over the
+ *  legacy mv/rot wrappers AND the unified txfmn node. */
 export function setTransformChild(graph: Graph, transformId: NodeId, childId: NodeId): Graph {
   const node = graph.nodes[transformId];
-  if (!node || (node.type !== 'mv' && node.type !== 'rot')) return graph;
-  const updated = { ...node, child: childId } as MvNode | RotNode;
+  if (!node || (node.type !== 'mv' && node.type !== 'rot' && node.type !== 'txfmn')) return graph;
+  const updated = { ...node, child: childId } as MvNode | RotNode | TxfmnNode;
   return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: updated } });
+}
+
+/** Rebind a TXFMN node's child socket. Thin alias over the generic
+ *  `setTransformChild` so callers reading as "txfmn-specific" stay clear. */
+export function setTxfmnChild(graph: Graph, txfmnId: NodeId, childId: NodeId): Graph {
+  return setTransformChild(graph, txfmnId, childId);
 }
 
 /** Edit one of a transform's three xyz literal values. */
@@ -864,6 +880,56 @@ export function setTransformAxisValue(graph: Graph, transformId: NodeId, axis: 0
   updated[axis] = value;
   const newNode = { ...node, [field]: updated } as MvNode | RotNode;
   return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: newNode } });
+}
+
+// ─── TXFMN (unified transform) ─────────────────────────────────────────────
+// One node carrying BOTH a rotation (`rot`) and a translation (`offset`).
+// Replaces the nested mv(rot(...)) wrapper pair; emits to the identical nested
+// helper calls (composition-emit `case 'txfmn'`). New code creates TxfmnNode;
+// hydrateGraph migrates legacy mv/rot wrappers into it.
+
+/** Add a TXFMN transform wrapping a child. Identity defaults (all-zero rot +
+ *  offset) emit the bare child. `child` may be null for an unwired drop. */
+export function addTxfmn(
+  graph: Graph,
+  child: NodeId | null,
+  rot: [ArgValue, ArgValue, ArgValue] = [asLiteral(0), asLiteral(0), asLiteral(0)],
+  offset: [ArgValue, ArgValue, ArgValue] = [asLiteral(0), asLiteral(0), asLiteral(0)],
+  parentId?: NodeId,
+): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: TxfmnNode = { id, type: 'txfmn', child, rot, offset };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  const final = appendChild(next, parentId ?? graph.root, id);
+  return { graph: finalize(final), id };
+}
+
+/** Drop an UNWIRED TXFMN node — child is null until the user wires a shape in. */
+export function addTxfmnPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addTxfmn(graph, null, undefined, undefined, parentId);
+}
+
+/** Replace one axis of a TXFMN node's ROT or MV (offset) triple with any
+ *  ArgValue — literal, param-wire, or expression. `section` selects the
+ *  triple: 'rot' → the rotation, 'mv' → the translation (`offset` field).
+ *  Mirrors setTransformAxisValue but the field is explicit (both live on one
+ *  node now). No-op when the node isn't a txfmn. */
+export function setTxfmnAxis(
+  graph: Graph,
+  id: NodeId,
+  section: 'rot' | 'mv',
+  axis: 0 | 1 | 2,
+  value: ArgValue,
+): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'txfmn') return graph;
+  const field = section === 'rot' ? 'rot' : 'offset';
+  const current = node[field] as [ArgValue, ArgValue, ArgValue];
+  const updated = [...current] as [ArgValue, ArgValue, ArgValue];
+  updated[axis] = value;
+  const newNode: TxfmnNode = { ...node, [field]: updated };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: newNode } });
 }
 
 /** Find the parent container (list/stack/group) whose children include nodeId.
@@ -968,7 +1034,7 @@ export function removeNode(graph: Graph, id: NodeId): Graph {
       // If we'd orphan the method (obj or arg gone), drop it too.
       if (n.obj === id || n.arg === id) continue;
       next[nid] = n;
-    } else if (n.type === 'mv' || n.type === 'rot') {
+    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
       if (n.child === id) continue;
       next[nid] = n;
     } else {
@@ -1168,8 +1234,8 @@ export function topoOrder(graph: Graph): NodeId[] {
     } else if (node.type === 'method') {
       visit(node.obj);
       visit(node.arg);
-    } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'repeat') {
-      visit(node.child);
+    } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn' || node.type === 'repeat') {
+      if (node.child) visit(node.child);
     } else if (node.type === 'call') {
       // A Call arg can carry a `__POLY__<id>` ref to a producer (polygon /
       // sketch) feeding e.g. a revolve's `profile`. Visit those producers

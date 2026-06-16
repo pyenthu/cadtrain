@@ -5,7 +5,7 @@
  * (12 steps) tested at the data layer. Phase B (bake) + Phase C (editor)
  * extend this — emit-correctness is the foundation.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   newGraph,
   addCall,
@@ -22,6 +22,12 @@ import {
   asParam,
   nextAlias,
   takenAliases,
+  addMv,
+  addRot,
+  addTxfmn,
+  setTxfmnAxis,
+  setTxfmnChild,
+  hydrateGraph,
 } from './composition-graph';
 import { emitGraph } from './composition-emit';
 
@@ -212,5 +218,204 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     g = removeNode(g, b.id);
     const d = addCall(g, 'dt_box'); g = d.graph;
     expect((g.nodes[d.id] as any).alias).toBe('B');   // alphabet pool reused
+  });
+});
+
+// ─── TXFMN (unified transform card) — model layer ────────────────────────────
+describe('composition-graph — TxfmnNode (transform card)', () => {
+  // --- Emit byte-identity vs the legacy mv/rot single nodes ---
+
+  it('pure-mv TXFMN emits the SAME mv(...) expression as a legacy MvNode', () => {
+    // legacy mv
+    let g1 = newGraph();
+    const a1 = addCall(g1, 'dt_box'); g1 = a1.graph;
+    g1 = addMv(g1, a1.id, [asLiteral(0), asLiteral(0), asLiteral(5)]).graph;
+    const r1 = emitGraph(g1, { id: 't' });
+    // txfmn with rot=identity, offset=[0,0,5]
+    let g2 = newGraph();
+    const a2 = addCall(g2, 'dt_box'); g2 = a2.graph;
+    g2 = addTxfmn(g2, a2.id,
+      [asLiteral(0), asLiteral(0), asLiteral(0)],
+      [asLiteral(0), asLiteral(0), asLiteral(5)]).graph;
+    const r2 = emitGraph(g2, { id: 't' });
+
+    expect(r1.body).toContain('mv(A, [0, 0, 5])');
+    expect(r2.body).toContain('mv(A, [0, 0, 5])');   // byte-identical expression
+    expect(r2.body).not.toContain('rot(');            // identity rot elided
+    expect(r2.validationErrors).toEqual([]);
+  });
+
+  it('pure-rot TXFMN emits the SAME rot(...) expression as a legacy RotNode', () => {
+    let g1 = newGraph();
+    const a1 = addCall(g1, 'dt_box'); g1 = a1.graph;
+    g1 = addRot(g1, a1.id, [asLiteral(0), asLiteral(0), asLiteral(90)]).graph;
+    const r1 = emitGraph(g1, { id: 't' });
+    let g2 = newGraph();
+    const a2 = addCall(g2, 'dt_box'); g2 = a2.graph;
+    g2 = addTxfmn(g2, a2.id,
+      [asLiteral(0), asLiteral(0), asLiteral(90)],
+      [asLiteral(0), asLiteral(0), asLiteral(0)]).graph;
+    const r2 = emitGraph(g2, { id: 't' });
+
+    expect(r1.body).toContain('rot(A, [0, 0, 90])');
+    expect(r2.body).toContain('rot(A, [0, 0, 90])');  // byte-identical expression
+    expect(r2.body).not.toContain('mv(');             // identity offset elided
+  });
+
+  it('rot+offset TXFMN emits nested mv(rot(...)) — rot inner, mv outer', () => {
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    g = addTxfmn(g, a.id,
+      [asLiteral(0), asLiteral(0), asLiteral(90)],
+      [asLiteral(0), asLiteral(0), asLiteral(5)]).graph;
+    const r = emitGraph(g, { id: 't' });
+    expect(r.body).toContain('mv(rot(A, [0, 0, 90]), [0, 0, 5])');
+  });
+
+  it('identity TXFMN (all zero) emits the bare child (passthrough)', () => {
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const t = addTxfmn(g, a.id); g = t.graph;
+    const r = emitGraph(g, { id: 't' });
+    expect(r.body).not.toContain('mv(');
+    expect(r.body).not.toContain('rot(');
+    // the txfmn const aliases the child directly: `const _txfmn_obj_1 = A;`
+    expect(r.body).toMatch(/=\s*A;/);
+  });
+
+  // --- Mutators ---
+
+  it('setTxfmnAxis updates the rot + mv (offset) triples independently', () => {
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const t = addTxfmn(g, a.id); g = t.graph;
+    g = setTxfmnAxis(g, t.id, 'rot', 2, asLiteral(45));
+    g = setTxfmnAxis(g, t.id, 'mv', 2, asParam('len'));
+    const tx = g.nodes[t.id] as any;
+    expect(tx.type).toBe('txfmn');
+    expect(tx.rot[2]).toEqual(asLiteral(45));
+    expect(tx.offset[2]).toEqual(asParam('len'));
+    expect(tx.rot[0]).toEqual(asLiteral(0));     // untouched axes preserved
+    expect(tx.offset[0]).toEqual(asLiteral(0));
+  });
+
+  it('setTxfmnChild rebinds the wrapped shape', () => {
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const b = addCall(g, 'dt_pin'); g = b.graph;
+    const t = addTxfmn(g, a.id); g = t.graph;
+    g = setTxfmnChild(g, t.id, b.id);
+    expect((g.nodes[t.id] as any).child).toBe(b.id);
+  });
+
+  it('collectEdges emits rot.<i> + offset.<i> edges for wired txfmn axes', () => {
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const t = addTxfmn(g, a.id); g = t.graph;
+    g = addParam(g, 'tilt', { default: 0 });
+    g = addParam(g, 'len', { default: 1 });
+    g = setTxfmnAxis(g, t.id, 'rot', 0, asParam('tilt'));
+    g = setTxfmnAxis(g, t.id, 'mv', 2, asParam('len'));
+    expect(g.edges).toContainEqual({ from: 'p.tilt', to: `${t.id}.rot.0` });
+    expect(g.edges).toContainEqual({ from: 'p.len', to: `${t.id}.offset.2` });
+    // collectEdges (pure) agrees with the finalized index.
+    expect(collectEdges(g)).toEqual(g.edges);
+  });
+
+  // --- Hydrate migration of legacy mv/rot ---
+
+  const callN = (id: string, alias: string) =>
+    ({ id, type: 'call', src: 'dt_box', alias, args: {} });
+  const listN = (id: string, children: string[]) =>
+    ({ id, type: 'list', children });
+
+  it('migration folds mv(rot(C)) into one txfmn (rot-inner/mv-outer); emit byte-identical', () => {
+    const serialised = {
+      root: 'n_root00',
+      nodes: {
+        n_root00: listN('n_root00', ['n_mv0000']),
+        n_mv0000: { id: 'n_mv0000', type: 'mv', child: 'n_rot000', offset: [asLiteral(0), asLiteral(0), asLiteral(5)] },
+        n_rot000: { id: 'n_rot000', type: 'rot', child: 'n_call00', rot: [asLiteral(0), asLiteral(0), asLiteral(90)] },
+        n_call00: callN('n_call00', 'A'),
+      },
+      params: {}, imports: ['dt_box'], layout: {},
+    };
+    const g = hydrateGraph(serialised);
+    // The inner rot is absorbed; the mv's id now carries a txfmn.
+    expect(g.nodes['n_rot000']).toBeUndefined();
+    const tx = g.nodes['n_mv0000'] as any;
+    expect(tx.type).toBe('txfmn');
+    expect(tx.child).toBe('n_call00');
+    expect(tx.rot).toEqual([asLiteral(0), asLiteral(0), asLiteral(90)]);
+    expect(tx.offset).toEqual([asLiteral(0), asLiteral(0), asLiteral(5)]);
+    const r = emitGraph(g, { id: 't' });
+    expect(r.body).toContain('mv(rot(A, [0, 0, 90]), [0, 0, 5])');
+    expect(r.validationErrors).toEqual([]);
+  });
+
+  it('migration lifts a lone mv into a txfmn{rot:0, offset}', () => {
+    const serialised = {
+      root: 'n_root00',
+      nodes: {
+        n_root00: listN('n_root00', ['n_mv0000']),
+        n_mv0000: { id: 'n_mv0000', type: 'mv', child: 'n_call00', offset: [asLiteral(0), asLiteral(0), asLiteral(5)] },
+        n_call00: callN('n_call00', 'A'),
+      },
+      params: {}, imports: ['dt_box'], layout: {},
+    };
+    const g = hydrateGraph(serialised);
+    const tx = g.nodes['n_mv0000'] as any;
+    expect(tx.type).toBe('txfmn');
+    expect(tx.rot).toEqual([asLiteral(0), asLiteral(0), asLiteral(0)]);
+    expect(tx.offset).toEqual([asLiteral(0), asLiteral(0), asLiteral(5)]);
+    const r = emitGraph(g, { id: 't' });
+    expect(r.body).toContain('mv(A, [0, 0, 5])');
+    expect(r.body).not.toContain('rot(');
+  });
+
+  it('migration lifts a lone rot into a txfmn{rot, offset:0}', () => {
+    const serialised = {
+      root: 'n_root00',
+      nodes: {
+        n_root00: listN('n_root00', ['n_rot000']),
+        n_rot000: { id: 'n_rot000', type: 'rot', child: 'n_call00', rot: [asLiteral(0), asLiteral(0), asLiteral(90)] },
+        n_call00: callN('n_call00', 'A'),
+      },
+      params: {}, imports: ['dt_box'], layout: {},
+    };
+    const g = hydrateGraph(serialised);
+    const tx = g.nodes['n_rot000'] as any;
+    expect(tx.type).toBe('txfmn');
+    expect(tx.rot).toEqual([asLiteral(0), asLiteral(0), asLiteral(90)]);
+    expect(tx.offset).toEqual([asLiteral(0), asLiteral(0), asLiteral(0)]);
+    const r = emitGraph(g, { id: 't' });
+    expect(r.body).toContain('rot(A, [0, 0, 90])');
+    expect(r.body).not.toContain('mv(');
+  });
+
+  it('migration WARNS and KEEPS two nodes for rot(mv(C)) (translate-then-rotate)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const serialised = {
+      root: 'n_root00',
+      nodes: {
+        n_root00: listN('n_root00', ['n_rot000']),
+        n_rot000: { id: 'n_rot000', type: 'rot', child: 'n_mv0000', rot: [asLiteral(0), asLiteral(0), asLiteral(90)] },
+        n_mv0000: { id: 'n_mv0000', type: 'mv', child: 'n_call00', offset: [asLiteral(0), asLiteral(0), asLiteral(5)] },
+        n_call00: callN('n_call00', 'A'),
+      },
+      params: {}, imports: ['dt_box'], layout: {},
+    };
+    const g = hydrateGraph(serialised);
+    // Both legacy nodes are KEPT (not mis-folded into one card).
+    expect((g.nodes['n_rot000'] as any).type).toBe('rot');
+    expect((g.nodes['n_mv0000'] as any).type).toBe('mv');
+    expect(warn).toHaveBeenCalled();
+    const r = emitGraph(g, { id: 't' });
+    // Geometry preserved: the two legacy nodes emit as two consts exactly as
+    // before the migration — translate first (inner mv), then rotate (outer rot).
+    expect(r.body).toContain('mv(A, [0, 0, 5])');
+    expect(r.body).toMatch(/rot\(_mv_obj_1, \[0, 0, 90\]\)/);
+    expect(r.validationErrors).toEqual([]);
+    warn.mockRestore();
   });
 });
