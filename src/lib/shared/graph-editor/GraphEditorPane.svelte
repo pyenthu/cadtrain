@@ -54,14 +54,11 @@
     addMethodPlaceholder,
     addMvPlaceholder,
     addRotPlaceholder,
-    setMethodInput,
-    setTransformChild,
     setTransformAxis,
     setTransformAxisValue,
     setViewport,
     addStackPlaceholder,
     addRepeatPlaceholder,
-    setRepeatChild,
     setRepeatCount,
     setRepeatOp,
     appendContainerChild,
@@ -125,6 +122,11 @@
   import PropertiesCard from './PropertiesCard.svelte';
   import ParamsCard from './ParamsCard.svelte';
   import { clampToViewport } from './popover-clamp';
+  import { releaseImplicitCapture } from './pointer-capture';
+  // Per-pane drag-to-wire state + handlers (Phase C). A per-instance class
+  // (NOT a singleton — /primitives mounts all tab panes at once); `wire` is
+  // constructed below once `graph`/`clientToGraph` are in scope.
+  import { WireState } from './wire-state.svelte';
   // Source/meta parsers + the expected-params cache (drift detection) —
   // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
   // by primitive src; the graph-touching fns take/return graph explicitly.
@@ -1271,8 +1273,8 @@
       polyDeleteMode = false; polyInsertMode = false;
       return;
     }
-    if (ev.key === 'Escape' && wireFrom) {
-      wireFrom = null; wireMouse = null; wireJustArmed = false;
+    if (ev.key === 'Escape' && wire.from) {
+      wire.from = null; wire.mouse = null; wire.justArmed = false;
       return;
     }
     if (ev.key === 'Escape' && selectedSplineOpIdx != null) {
@@ -1294,7 +1296,7 @@
   }
   onMount(() => {
     window.addEventListener('keydown', onWindowKeydown);
-    try { isCoarse = window.matchMedia('(pointer: coarse)').matches; } catch { /* SSR/off */ }
+    try { wire.isCoarse = window.matchMedia('(pointer: coarse)').matches; } catch { /* SSR/off */ }
     return () => window.removeEventListener('keydown', onWindowKeydown);
   });
   // ─── Global dark tooltip ────────────────────────────────────────────────
@@ -1689,26 +1691,26 @@
     if (panning) {
       pan = { x: panOrig.x + (ev.clientX - panStart.x), y: panOrig.y + (ev.clientY - panStart.y) };
     }
-    if (wireFrom) {
-      if (!wirePointerMoved) {
-        const dx = ev.clientX - wireDownAt.x, dy = ev.clientY - wireDownAt.y;
-        if (dx * dx + dy * dy > 36) wirePointerMoved = true; // moved >6px ⇒ a drag, not a tap
+    if (wire.from) {
+      if (!wire.pointerMoved) {
+        const dx = ev.clientX - wire.downAt.x, dy = ev.clientY - wire.downAt.y;
+        if (dx * dx + dy * dy > 36) wire.pointerMoved = true; // moved >6px ⇒ a drag, not a tap
       }
       const pt = clientToGraph(ev.clientX, ev.clientY);
-      wireMouse = pt;
+      wire.mouse = pt;
     }
   }
   function onCanvasPointerUp(ev: PointerEvent) {
     if (panning) { panning = false; canvasEl?.releasePointerCapture(ev.pointerId); }
-    if (wireFrom) {
+    if (wire.from) {
       // Tap-to-connect: a no-drag tap that just ARMED the wire stays armed so
       // the NEXT tap on a target socket completes it (touch + connect-mode).
       // Any other release — a drag that missed its target, or a tap on empty
       // canvas while already armed — cancels the in-flight wire.
-      if (tapConnect && wireJustArmed && !wirePointerMoved) {
-        wireJustArmed = false; // consume; the wire is now parked, waiting for a target tap
+      if (wire.tapConnect && wire.justArmed && !wire.pointerMoved) {
+        wire.justArmed = false; // consume; the wire is now parked, waiting for a target tap
       } else {
-        wireFrom = null; wireMouse = null; wireJustArmed = false;
+        wire.from = null; wire.mouse = null; wire.justArmed = false;
       }
     }
   }
@@ -1924,149 +1926,20 @@
     PARAM_W,
   ));
   // ─── drag-to-wire ───────────────────────────────────────────────────────
-  // wireFrom is either a node's output socket OR a param's output chip. On
-  // release over an input socket, the connection is committed.
-  type WireSource =
-    | { kind: 'out'; nodeId: NodeId }
-    | { kind: 'param-out'; paramName: string };
-  let wireFrom = $state<WireSource | null>(null);
-  let wireMouse = $state<{ x: number; y: number } | null>(null);
-  // Tap-to-connect. Drag-from-socket-to-socket is unreliable on touch (the
-  // drop never registers), so instead of press-drag-release the user can TAP
-  // a source socket to ARM a wire, then TAP a target socket to complete it.
-  // Always on for coarse (touch) pointers; desktop users opt in via the 🔗
-  // toolbar toggle. The drag path still works unchanged for the mouse.
-  let connectMode = $state(false);
-  let isCoarse = $state(false);
-  const tapConnect = $derived(connectMode || isCoarse);
-  let wireJustArmed = false;    // true only for the one pointerup right after arming
-  let wirePointerMoved = false; // set once the pointer drags past threshold since arming
-  let wireDownAt = { x: 0, y: 0 };
+  // The wire-drag state (from/mouse/justArmed/pointerMoved/downAt/wire.connectMode/
+  // wire.isCoarse/wire.tapConnect) + every start*/endWireOn*/unwireTransformAxis handler
+  // moved to wire-state.svelte.ts (Phase C) as the per-instance `wire` below.
+  // GEP's canvas + sketch-stage pointer handlers read/write `wire.*`.
+  // clientToGraph stays here (needs canvasEl/pan/zoom) and is handed to `wire`.
   function clientToGraph(cx: number, cy: number) {
     if (!canvasEl) return { x: cx, y: cy };
     const r = canvasEl.getBoundingClientRect();
     return { x: ((cx - r.left) - pan.x) / zoom, y: ((cy - r.top) - pan.y) / zoom };
   }
-  // On touch/pen, the browser sets IMPLICIT pointer capture on the element
-  // that received pointerdown, so every later pointermove/pointerup for this
-  // pointerId is dispatched to the SOURCE socket — the target socket's
-  // onpointerup never fires and the wire can't complete. Release it here so
-  // events route to whatever element is under the finger (same as mouse).
-  function releaseImplicitCapture(ev: PointerEvent) {
-    try {
-      const el = ev.currentTarget as Element;
-      if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
-    } catch { /* older browsers */ }
-  }
-  function armWire(ev: PointerEvent) {
-    wireJustArmed = true;
-    wirePointerMoved = false;
-    wireDownAt = { x: ev.clientX, y: ev.clientY };
-  }
-  function startWire(ev: PointerEvent, nodeId: NodeId) {
-    ev.stopPropagation();
-    releaseImplicitCapture(ev);
-    wireFrom = { kind: 'out', nodeId };
-    wireMouse = clientToGraph(ev.clientX, ev.clientY);
-    armWire(ev);
-  }
-  function startParamWire(ev: PointerEvent, paramName: string) {
-    ev.stopPropagation();
-    releaseImplicitCapture(ev);
-    wireFrom = { kind: 'param-out', paramName };
-    wireMouse = clientToGraph(ev.clientX, ev.clientY);
-    armWire(ev);
-  }
-  function endWireOnInput(ev: PointerEvent, targetId: NodeId, slot: 'obj' | 'arg' | 'child') {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    // Only node-output wires fit method/transform sockets (those carry shapes).
-    if (wireFrom.kind !== 'out' || wireFrom.nodeId === targetId) { wireFrom = null; wireMouse = null; return; }
-    if (slot === 'obj' || slot === 'arg') {
-      graph = setMethodInput(graph, targetId, slot, wireFrom.nodeId);
-    } else {
-      graph = setTransformChild(graph, targetId, wireFrom.nodeId);
-    }
-    wireFrom = null; wireMouse = null;
-  }
-  function endWireOnCallArg(ev: PointerEvent, callId: NodeId, key: string) {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'param-out') {
-      graph = setCallArg(graph, callId, key, asParam(wireFrom.paramName));
-    } else if (wireFrom.kind === 'out' && wireFrom.nodeId !== callId) {
-      // Wire from another node's OUTPUT into this Call's arg. Today the
-      // only producer that flows into a Call arg is a Polygon node (the
-      // profile slot on r_revolve / r_weld_extrude). We encode the link
-      // as an `expr` ArgValue carrying the `__POLY__<sourceId>` sentinel;
-      // composition-emit.ts post-substitutes it with the source node's
-      // varName at emit time. Visible wire renders from the source's
-      // output socket to this arg's input socket via the same bezier
-      // path used for param wires.
-      graph = setCallArg(graph, callId, key, asExpr(`__POLY__${wireFrom.nodeId}`));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-  /** Wire a param's output onto a polygon vertex's r or z coord. */
-  function endWireOnPolygonCoord(ev: PointerEvent, polygonId: NodeId, idx: number, axis: 'r' | 'z') {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'param-out') {
-      graph = setPolygonCoord(graph, polygonId, idx, axis, asParam(wireFrom.paramName));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-
-  /** Drop a wire onto a PolyRepeatNode's NPts (count) input socket
-   *  (2026-06-11). Wires `p.<name>` → loop.count = { kind:'param',
-   *  param:<name> }. Drops from a node output (poly_repeat or other)
-   *  are ignored — count takes a SCALAR, not a node. */
-  function endWireOnPolyRepeatCount(ev: PointerEvent, repeatId: NodeId) {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'param-out') {
-      graph = setPolyRepeatCount(graph, repeatId, asParam(wireFrom.paramName));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-  /** Drop a wire onto a polygon's repeat-ref row (#157). When the wire's
-   *  source is a poly_repeat node's output socket, REPOINT the row to
-   *  that source. Drops from anything else are ignored. */
-  function endWireOnPolygonRepeatRef(ev: PointerEvent, polygonId: NodeId, idx: number) {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'node-out') {
-      const src = graph.nodes[wireFrom.nodeId];
-      if (src && (src as any).type === 'poly_repeat') {
-        const poly = graph.nodes[polygonId] as any;
-        if (poly?.type === 'polygon') {
-          const points = [...poly.points];
-          points[idx] = { kind: 'repeat-ref', sourceId: wireFrom.nodeId };
-          graph = { ...graph, nodes: { ...graph.nodes, [polygonId]: { ...poly, points } } };
-        }
-      }
-    }
-    wireFrom = null; wireMouse = null;
-  }
-
-  /** Wire a param's output onto one of a mv/rot's three xyz slots. */
-  function endWireOnTransformAxis(ev: PointerEvent, transformId: NodeId, axis: 0 | 1 | 2) {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'param-out') {
-      graph = setTransformAxisValue(graph, transformId, axis, asParam(wireFrom.paramName));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-  /** Replace a param-wired transform axis with a literal default. */
-  function unwireTransformAxis(transformId: NodeId, axis: 0 | 1 | 2, fallback = 0) {
-    const node = graph.nodes[transformId];
-    if (!node || (node.type !== 'mv' && node.type !== 'rot')) return;
-    const field = node.type === 'mv' ? (node as MvNode).offset : (node as RotNode).rot;
-    const cur = field[axis];
-    const literal = cur?.kind === 'literal' ? cur.value : (cur?.kind === 'param' ? (graph.params[cur.param]?.default ?? fallback) : fallback);
-    graph = setTransformAxis(graph, transformId, axis, typeof literal === 'number' ? literal : fallback);
-  }
+  const wire = new WireState(() => graph, (g) => { graph = g; }, clientToGraph);
+  // endWireOnInput / endWireOnCallArg / endWireOnPolygonCoord /
+  // endWireOnPolyRepeatCount / endWireOnPolygonRepeatRef / endWireOnTransformAxis
+  // / unwireTransformAxis → wire-state.svelte.ts (Phase C); called as `wire.*`.
   /** Card bounding boxes in graph space — used by `bezier()` to route
    *  wires AROUND non-endpoint cards instead of straight through them.
    *  Inline mv/rot wrappers (rendered as decorations on the parent Call,
@@ -2128,34 +2001,8 @@
     const cur = graph.layout[id] ?? { x: 0, y: 0 };
     graph = setLayout(graph, id, { ...cur, cols });
   }
-  /** Wire a param's output onto a sketch op coord/field (r|z|radius|dist). */
-  function endWireOnSketchCoord(ev: PointerEvent, sketchId: NodeId, opIdx: number, field: 'r' | 'z' | 'radius' | 'dist') {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'param-out') {
-      graph = setSketchOpField(graph, sketchId, opIdx, field, asParam(wireFrom.paramName));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-  /** S.3: wire a param's output onto a POINT's r/z socket on the 2D canvas.
-   *  Mirrors endWireOnSketchCoord but is invoked from the on-canvas sockets. */
-  function endWireOnSketchPoint(ev: PointerEvent, sketchId: NodeId, opIdx: number, axis: 'r' | 'z') {
-    ev.stopPropagation();
-    if (!wireFrom) return;
-    if (wireFrom.kind === 'param-out') {
-      graph = setSketchOpField(graph, sketchId, opIdx, axis, asParam(wireFrom.paramName));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-
-  /** Drag-wire target — when a wire ends on a container's slot, append the
-   *  source node as a child of that container. Idempotent (won't double-add). */
-  function endWireOnContainerSlot(ev: PointerEvent, containerId: NodeId) {
-    if (!wireFrom) return;
-    ev.stopPropagation();
-    graph = appendContainerChild(graph, containerId, wireFrom.nodeId);
-    wireFrom = null; wireMouse = null;
-  }
+  // endWireOnSketchCoord / endWireOnSketchPoint / endWireOnContainerSlot →
+  // wire-state.svelte.ts (Phase C); called as `wire.*`.
   function nodePos(id: NodeId): { x: number; y: number } {
     return graph.layout[id] ?? { x: 0, y: 0 };
   }
@@ -2547,7 +2394,7 @@
   // A param's output socket can be drag-wired straight onto a sketch
   // coordinate's input socket, exactly like the main graph but scoped to
   // editingSketchId. Reuses startParamWire + endWireOnSketchCoord + the
-  // sketchSock* row math + the in-flight wireFrom/wireMouse preview.
+  // sketchSock* row math + the in-flight wire.from/wire.mouse preview.
   let miniSvgEl = $state<SVGSVGElement | null>(null);
   const MINI_PX = 10, MINI_PY = 10, MINI_GAP = 46, MINI_SCW = 152, MINI_FOOT_H = 58;
   /** Whole mini-canvas layout (sketch card rect + viewBox), derived from the
@@ -2576,14 +2423,14 @@
     return { x: ev.clientX - r.left, y: ev.clientY - r.top };
   }
   function miniPointerMove(ev: PointerEvent) {
-    if (wireFrom) { const p = miniEventToCoord(ev); if (p) wireMouse = p; }
+    if (wire.from) { const p = miniEventToCoord(ev); if (p) wire.mouse = p; }
   }
   function miniPointerUp() {
-    if (!wireFrom) return;
+    if (!wire.from) return;
     // Mirror the main canvas: a no-drag tap that armed the wire stays armed
     // (tap-connect); any other release on empty space cancels the in-flight.
-    if (tapConnect && wireJustArmed && !wirePointerMoved) { wireJustArmed = false; return; }
-    wireFrom = null; wireMouse = null; wireJustArmed = false;
+    if (wire.tapConnect && wire.justArmed && !wire.pointerMoved) { wire.justArmed = false; return; }
+    wire.from = null; wire.mouse = null; wire.justArmed = false;
   }
 
   // FROZEN viewBox frame. Deriving the viewBox from the LIVE point extents
@@ -2987,7 +2834,7 @@
       sketchCardPos = { ...sketchCardPos, [d.which]: { x: d.sx + (ev.clientX - d.px), y: d.sy + (ev.clientY - d.py) } };
       return;
     }
-    if (wireFrom) { const p = miniEventToCoord(ev); if (p) wireMouse = p; }
+    if (wire.from) { const p = miniEventToCoord(ev); if (p) wire.mouse = p; }
   }
   function sketchStageUp(_ev: PointerEvent) {
     if (sketchPanDrag) { sketchPanDrag = null; return; }
@@ -3178,26 +3025,8 @@
     g2 = setLayout(g2, s.id, { x: rPos.x + 260, y: rPos.y });
     graph = g2;
   }
-  /** Drag-wire ending on a Repeat node's count socket — sets the count
-   *  to a param (when wireFrom is a param chip). Same pattern as the
-   *  Call arg wire targets. */
-  function endWireOnRepeatCount(ev: PointerEvent, repeatId: NodeId) {
-    if (!wireFrom) return;
-    ev.stopPropagation();
-    if (wireFrom.kind === 'param-out') {
-      graph = setRepeatCount(graph, repeatId, asParam(wireFrom.paramName));
-    }
-    wireFrom = null; wireMouse = null;
-  }
-  /** Drag-wire ending on a Repeat node's child slot — set the wire source
-   *  as the new child. Idempotent and works for any node type that has an
-   *  output socket. */
-  function endWireOnRepeatChild(ev: PointerEvent, repeatId: NodeId) {
-    if (!wireFrom) return;
-    ev.stopPropagation();
-    graph = setRepeatChild(graph, repeatId, wireFrom.nodeId);
-    wireFrom = null; wireMouse = null;
-  }
+  // endWireOnRepeatCount / endWireOnRepeatChild → wire-state.svelte.ts (Phase C);
+  // called as `wire.*` from the Repeat node's count + child slot sockets.
 
   function deleteNode(id: string) { graph = removeNode(graph, id); }
   function onArgEdit(id: string, key: string, value: number) {
@@ -4066,9 +3895,9 @@
          dragging. Always available on touch; this toggle turns it on for the
          mouse too. Drag-to-wire still works regardless. -->
     <button class="ge-vrail-btn connect" type="button"
-      class:on={connectMode}
-      onclick={() => { connectMode = !connectMode; if (!connectMode) { wireFrom = null; wireMouse = null; } }}
-      data-tip={connectMode
+      class:on={wire.connectMode}
+      onclick={() => { wire.connectMode = !wire.connectMode; if (!wire.connectMode) { wire.from = null; wire.mouse = null; } }}
+      data-tip={wire.connectMode
         ? 'Click-to-connect ON — tap a source socket, then a target (Esc cancels)'
         : 'Click-to-connect — wire two sockets by tapping them, no dragging'}>🔗</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
@@ -4219,7 +4048,7 @@
     style="grid-template-columns: {splitA}% 6px 1fr">
     <!-- LEFT — graph canvas -->
     <section class="ge-canvas-pane">
-      {#if wireFrom && tapConnect}
+      {#if wire.from && wire.tapConnect}
         <div class="ge-connect-hint">🔗 Tap a target socket to connect · <kbd>Esc</kbd> to cancel</div>
       {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -4227,7 +4056,7 @@
       <svg
         bind:this={canvasEl}
         class="ge-canvas"
-        class:dragging={!!dragging || !!wireFrom}
+        class:dragging={!!dragging || !!wire.from}
         class:drop-target={dragOverActive}
         xmlns="http://www.w3.org/2000/svg"
         role="application"
@@ -4519,9 +4348,9 @@
           {/each}
 
           <!-- In-flight wire being dragged -->
-          {#if wireFrom && wireMouse}
-            {@const src = outputSocketAt(graph,wireFrom.nodeId)}
-            <path class="ge-wire in-flight" d={bezier(cardObstacles,src.x, src.y, wireMouse.x, wireMouse.y)} fill="none"/>
+          {#if wire.from && wire.mouse}
+            {@const src = outputSocketAt(graph,wire.from.nodeId)}
+            <path class="ge-wire in-flight" d={bezier(cardObstacles,src.x, src.y, wire.mouse.x, wire.mouse.y)} fill="none"/>
           {/if}
 
           <!-- NODE CARDS -->
@@ -4753,7 +4582,7 @@
                             {#if av.kind === 'param'}
                               <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
                                 class="ge-arg-pchip-x" type="button"
-                                onclick={() => unwireTransformAxis(xId, i as 0|1|2)}>×</button></span>
+                                onclick={() => wire.unwireTransformAxis(xId, i as 0|1|2)}>×</button></span>
                             {:else}
                               <input class="ge-inline-input" type="number" step={isRot ? 1 : 0.5}
                                 value={av.kind === 'literal' ? av.value : 0}
@@ -4773,7 +4602,7 @@
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in param tiny"
                       cx={sk.x} cy={sk.y} r="4"
-                      onpointerup={(ev) => endWireOnTransformAxis(ev, xId, i as 0|1|2)}/>
+                      onpointerup={(ev) => wire.endWireOnTransformAxis(ev, xId, i as 0|1|2)}/>
                   {/each}
                 {/each}
                 <!-- Sequence arrows: card → strip0 → (↓) strip1 → (→) strip2 → …
@@ -4795,14 +4624,14 @@
                 {@const outPt = xforms.length ? xformOutputAt(graph, n.id) : { x: size.w, y: cardH / 2 }}
                 {@const outSrc = xforms.length ? xforms[xforms.length - 1] : n.id}
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={outPt.x} cy={outPt.y} r="6"
-                  onpointerdown={(ev) => startWire(ev, outSrc)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, outSrc)}/>
                 <!-- Per-arg input sockets on the left edge of the Call card.
                      Drag a param chip's output socket onto one to wire. -->
                 {#each Object.keys(call.args ?? {}) as ak, ai (ak)}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock in param"
                     cx="0" cy={36 + 14 + ai * 22} r="5"
-                    onpointerup={(ev) => endWireOnCallArg(ev, n.id, ak)}/>
+                    onpointerup={(ev) => wire.endWireOnCallArg(ev, n.id, ak)}/>
                 {/each}
 
               {:else if n.type === 'method'}
@@ -4826,16 +4655,16 @@
                 <!-- Input sockets, stacked under the divider -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in obj" cx="0" cy="42" r="6"
-                  onpointerup={(ev) => endWireOnInput(ev, n.id, 'obj')}/>
+                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'obj')}/>
                 <text x="10" y="45" class="ge-sock-label">obj</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in arg" cx="0" cy="56" r="6"
-                  onpointerup={(ev) => endWireOnInput(ev, n.id, 'arg')}/>
+                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'arg')}/>
                 <text x="10" y="59" class="ge-sock-label">arg</text>
                 <!-- OUTPUT socket on the title-row right edge -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="14" r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'mv' || n.type === 'rot'}
                 {@const t = n as any}
@@ -4861,7 +4690,7 @@
                      wires draw correctly. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy="16" r="6"
-                  onpointerup={(ev) => endWireOnInput(ev, n.id, 'child')}/>
+                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
                 <!-- Each axis row: edge socket + label + input + × — same
                      column model as the params card so wiring is obvious
                      + the right edge stays consistent. -->
@@ -4932,7 +4761,7 @@
                   {@const cy = axisStartY + i * axisRowH + axisRowH / 2 - 4}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="0" cy={cy} r="4"
-                    onpointerup={(ev) => endWireOnTransformAxis(ev, n.id, i as 0|1|2)}/>
+                    onpointerup={(ev) => wire.endWireOnTransformAxis(ev, n.id, i as 0|1|2)}/>
                 {/each}
                 <!-- × delete — moved further from the right edge so it
                      doesn't crowd the title-row output socket. -->
@@ -4943,7 +4772,7 @@
                      same vertical line as the child input on the left. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'repeat'}
                 {@const rep = n as any}
@@ -4973,7 +4802,7 @@
                 <text x="14" y="22" class="ge-node-title">↻ Repeat ×</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in param" cx="0" cy="17" r="5"
-                  onpointerup={(ev) => endWireOnRepeatCount(ev, n.id)}/>
+                  onpointerup={(ev) => wire.endWireOnRepeatCount(ev, n.id)}/>
                 {#if countKind === 'literal'}
                   <foreignObject x="92" y="6" width="56" height="22">
                     <input class="ge-repeat-count-inline" type="number" min="1" step="1"
@@ -5018,12 +4847,12 @@
                 <!-- Child input socket — drop any node's output here to repeat it. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={size.h - 18} r="6"
-                  onpointerup={(ev) => endWireOnRepeatChild(ev, n.id)}/>
+                  onpointerup={(ev) => wire.endWireOnRepeatChild(ev, n.id)}/>
                 <text x="10" y={size.h - 14} class="ge-sock-label">child</text>
                 <!-- Output -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
                 {@const isRoot = n.id === graph.root}
@@ -5086,7 +4915,7 @@
                     : '(missing)'}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={containerSlotY(i)} r="5"
-                    onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
+                    onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
                   <text x="10" y={containerSlotY(i) + 4} class="ge-sock-label">{childLabel}</text>
                   <!-- Inline per-child controls on STACK cards: ×N count +
                        z-offset, mirroring the ⚙ popover so the common case
@@ -5162,14 +4991,14 @@
                 {@const trailY = containerSlotY(visibleChildren.length)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={trailY} r="5"
-                  onpointerup={(ev) => endWireOnContainerSlot(ev, n.id)}/>
+                  onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
                 <text x="10" y={trailY + 4} class="ge-sock-label trail">+ drop here</text>
                 <!-- Non-root containers have an OUTPUT socket — their result
                      can feed upstream (e.g. into a method.obj). -->
                 {#if !isRoot}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
-                    onpointerdown={(ev) => startWire(ev, n.id)}/>
+                    onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
                 {/if}
 
               {:else if n.type === 'polygon'}
@@ -5443,25 +5272,25 @@
                     <circle role="button" tabindex="-1"
                       class="ge-sock in poly-rref-in wired"
                       cx="0" cy={polySockRef(n, idx)} r="6"
-                      onpointerup={(ev) => endWireOnPolygonRepeatRef(ev, n.id, idx)}/>
+                      onpointerup={(ev) => wire.endWireOnPolygonRepeatRef(ev, n.id, idx)}/>
                   {:else if idx < 8 && pt?.kind !== 'repeat'}
                     <!-- Vertex r/z sockets — two stacked, one per axis. -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
                       cx="0" cy={polySockR(n, idx)} r="5"
-                      onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
+                      onpointerup={(ev) => wire.endWireOnPolygonCoord(ev, n.id, idx, 'r')}/>
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.z.kind === 'param' ? ' wired' : ''}`}
                       cx="0" cy={polySockZ(n, idx)} r="5"
-                      onpointerup={(ev) => endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
+                      onpointerup={(ev) => wire.endWireOnPolygonCoord(ev, n.id, idx, 'z')}/>
                   {/if}
                 {/each}
                 <!-- OUTPUT socket on right edge — wires to the Output card. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'sketch'}
                 {@const sk = n as any}
@@ -5553,21 +5382,21 @@
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockR(n, idx)} r="4"
                       class:wired={op.r?.kind === 'param'} data-tip="Drag a param here → r"
-                      onpointerup={(ev) => endWireOnSketchCoord(ev, n.id, idx, 'r')}/>
+                      onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, 'r')}/>
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockZ(n, idx)} r="4"
                       class:wired={op.z?.kind === 'param'} data-tip="Drag a param here → z"
-                      onpointerup={(ev) => endWireOnSketchCoord(ev, n.id, idx, 'z')}/>
+                      onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, 'z')}/>
                   {:else}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockVal(n, idx)} r="4"
                       class:wired={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param'} data-tip="Drag a param here"
-                      onpointerup={(ev) => endWireOnSketchCoord(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
+                      onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
                   {/if}
                 {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'poly_repeat'}
                 {@const pr = n as any}
@@ -5710,7 +5539,7 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out poly-repeat-out"
                   cx={size.w} cy={size.h / 2} r="6"
-                  onpointerdown={(ev) => startWire(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
                 <!-- NPts input socket — left edge, aligned with the NPts
                      row inside the foreignObject (header 28 + section
                      head 18 + half-row 11 ≈ 57). Drag a param's output
@@ -5719,7 +5548,7 @@
                 <circle role="button" tabindex="-1"
                   class={`ge-sock in poly-repeat-in${pr.count?.kind === 'param' ? ' wired' : ''}`}
                   cx="0" cy="57" r="5"
-                  onpointerup={(ev) => endWireOnPolyRepeatCount(ev, pr.id)}/>
+                  onpointerup={(ev) => wire.endWireOnPolyRepeatCount(ev, pr.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -5801,7 +5630,7 @@
             onOpenAddParamPop={openAddParamPop}
             {onParamDefault}
             {onRemoveParam}
-            onStartParamWire={startParamWire} />
+            onStartParamWire={wire.startParamWire} />
         {/if}
       </svg>
       <!-- In-canvas status strip — bottom-left. Lifted out of the top
@@ -6003,7 +5832,7 @@
                       <circle role="button" tabindex="-1" class="ge-sock out param"
                         cx={PARAM_W + CARD_PAD + 4} cy={PARAM_H / 2} r="5"
                         data-tip="Drag onto a sketch coord to wire p.{name}"
-                        onpointerdown={(ev) => startParamWire(ev, name)}/>
+                        onpointerdown={(ev) => wire.startParamWire(ev, name)}/>
                     </g>
                   {/each}
                 </g>
@@ -6082,16 +5911,16 @@
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.r?.kind === 'param' ? ' wired' : ''}`}
                           cx="0" cy={sketchSockR(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here → r"
-                          onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'r')}/>
+                          onpointerup={(ev) => wire.endWireOnSketchCoord(ev, sid, idx, 'r')}/>
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${op.z?.kind === 'param' ? ' wired' : ''}`}
                           cx="0" cy={sketchSockZ(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here → z"
-                          onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, 'z')}/>
+                          onpointerup={(ev) => wire.endWireOnSketchCoord(ev, sid, idx, 'z')}/>
                       {:else}
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <circle role="button" tabindex="-1" class={`ge-sock in poly-coord${(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param' ? ' wired' : ''}`}
                           cx="0" cy={sketchSockVal(sn, idx) - sketchOpsScrollTop} r="4" data-tip="Drag a param here"
-                          onpointerup={(ev) => endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
+                          onpointerup={(ev) => wire.endWireOnSketchCoord(ev, sid, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
                       {/if}
                     {/if}
                   {/each}
@@ -6103,11 +5932,11 @@
                 </g>
 
                 <!-- in-flight preview: param out socket → cursor -->
-                {#if wireFrom?.kind === 'param-out' && wireMouse}
-                  {@const pi = paramNames.indexOf(wireFrom.paramName)}
+                {#if wire.from?.kind === 'param-out' && wire.mouse}
+                  {@const pi = paramNames.indexOf(wire.from.paramName)}
                   {#if pi >= 0}
                     {@const a = miniParamSockAbs(pi)}
-                    <path class="ge-wire in-flight" d={miniBez(a.x, a.y, wireMouse.x, wireMouse.y)} pointer-events="none"/>
+                    <path class="ge-wire in-flight" d={miniBez(a.x, a.y, wire.mouse.x, wire.mouse.y)} pointer-events="none"/>
                   {/if}
                 {/if}
               </svg>
