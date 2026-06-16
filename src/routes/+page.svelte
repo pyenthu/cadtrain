@@ -6,6 +6,7 @@
     <a href="/wells" class="menu-item">Wells <span class="hint">document extraction</span></a>
     <a href="/fem" class="menu-item">FEM <span class="hint">finite element analysis</span></a>
     <a href="/plan" class="menu-item">Plan <span class="hint">Gantt roadmap</span></a>
+    <a href="/research" class="menu-item">Research <span class="hint">parked notes · findings</span></a>
   </div>
 </div>
 
