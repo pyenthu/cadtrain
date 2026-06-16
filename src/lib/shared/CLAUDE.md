@@ -12,6 +12,7 @@ src/lib/shared/
 │   ├── RightPane.svelte        #   the 6-tab right column (3D bake / SRC / MD / SVG / GLB / BREP)
 │   ├── Popovers.svelte         #   the anchored container/argExpr/profile/profileRef dropdowns (Phase A)
 │   ├── PropertiesCard.svelte   #   the PROPERTIES tab body (z-offset/colour/material grid) (Phase D)
+│   ├── ParamsCard.svelte       #   the PARAMS tab body — SVG param chips + wire-feeding output sockets (Phase D)
 │   ├── popover-clamp.ts        #   shared viewport-clamp action for the popovers
 │   ├── graph-editor-bake.ts (+ .test.ts) #   pure source/meta parsers + callDrift (Phase B)
 │   ├── graph-editor-bake.svelte.ts       #   expected-params cache ($state singleton) + drift loaders (Phase B)
