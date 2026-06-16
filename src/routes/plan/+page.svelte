@@ -262,7 +262,42 @@
   };
 
   // Layout
-  const LABEL_W  = 320;
+  // Flexible first-column width (the frozen task-label column). Drives the
+  // `--label-w` CSS var; drag the divider handle to resize, persisted to
+  // localStorage. Replaces the old fixed LABEL_W = 320 const.
+  let labelW = $state(320);
+  const LABEL_W_MIN = 180;
+  const LABEL_W_MAX = 600;
+  if (typeof localStorage !== 'undefined') {
+    const saved = Number(localStorage.getItem('plan-label-w'));
+    if (Number.isFinite(saved) && saved >= LABEL_W_MIN && saved <= LABEL_W_MAX) labelW = saved;
+  }
+  function startResize(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = labelW;
+    const move = (ev: PointerEvent) => {
+      labelW = Math.max(LABEL_W_MIN, Math.min(LABEL_W_MAX, startW + (ev.clientX - startX)));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      try { localStorage.setItem('plan-label-w', String(Math.round(labelW))); } catch { /* ignore */ }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+  function resetResize() {
+    labelW = 320;
+    try { localStorage.setItem('plan-label-w', '320'); } catch { /* ignore */ }
+  }
+  /** Translate a 0..1 opacity into an 8-bit hex alpha suffix for a 6-hex color,
+   *  so bars fade like the old SVG fill-opacity (grid shows through) without
+   *  fading the ✓ glyph or the active/hover outline (element opacity would). */
+  function alphaHex(o: number): string {
+    return Math.round(Math.max(0, Math.min(1, o)) * 255).toString(16).padStart(2, '0');
+  }
+
   const ROW_H    = 26;
   const ROW_GAP  = 4;
   const WEEK_PX  = 56;
@@ -465,120 +500,118 @@
     <button onclick={collapseAll}>Collapse all</button>
   </div>
 
-  <div class="chart-wrap">
-    <svg
-      width={LABEL_W + chartWidth}
-      height={chartHeight}
-      class="gantt"
-      role="img"
-      aria-label="cadtrain Gantt"
-    >
-      <!-- Grid + week labels -->
-      <g transform="translate({LABEL_W}, 0)">
-        <!-- Date axis: a gridline every week, a DATE label every 2 weeks
-             (each computed from the today-anchored frontier). -->
+  <!--
+    HTML/CSS Gantt. Single scroll container (.chart-wrap, overflow:auto) so
+    BOTH freezes work off the same scroller:
+      • each row's .label-cell is position:sticky; left:0  → frozen first column
+      • the .axis-row is position:sticky; top:0            → frozen date header
+      • the corner cell is sticky on BOTH axes (sits in the sticky-top row AND
+        is itself sticky-left) → frozen top-left corner.
+    Column width is driven by the --label-w CSS var (let labelW). A tall drag
+    handle on the divider resizes it (startResize). Week gridlines + the today
+    frontier live in one full-height .grid-overlay behind the rows.
+  -->
+  <div class="chart-wrap" style="--label-w:{labelW}px;">
+    <div class="chart-inner" style="width: calc(var(--label-w) + {chartWidth}px); min-height:{chartHeight}px;">
+      <!-- Full-height grid overlay: a gridline each week (heavier every 2nd) +
+           the red dashed today frontier. Offset by the label column; sits
+           BEHIND the rows so it shows through transparent task tracks. -->
+      <div class="grid-overlay" style="left: var(--label-w); width:{chartWidth}px;">
         {#each Array(totalWeeks + 1) as _, w}
-          {@const absW = w + minStart}
-          <line x1={w * WEEK_PX} y1={0} x2={w * WEEK_PX} y2={chartHeight}
-                stroke={w % 2 === 0 ? '#cbd5e1' : '#eef2f6'} stroke-width={w % 2 === 0 ? 1 : 0.5} />
-          {#if w < totalWeeks && w % 2 === 0}
-            <text x={w * WEEK_PX + 5} y={16} fill="#64748b" style="font: 9.5px system-ui">
-              {fmtDate(dateForWeek(absW))}
-            </text>
-          {/if}
+          <div class="gridline" class:heavy={w % 2 === 0} style="left:{w * WEEK_PX}px;"></div>
         {/each}
+        <div class="today-line" style="left:{weekX(doneFrontier)}px; top:{HEAD_H}px;"></div>
+        <div class="today-label" style="left:{weekX(doneFrontier) + 4}px; top:{HEAD_H}px;">Today · {fmtDate(TODAY)}</div>
+      </div>
 
-        <line x1={0} y1={HEAD_H - 2} x2={chartWidth} y2={HEAD_H - 2} stroke="#cbd5e1" stroke-width="1" />
-
-        <!-- Today marker — pinned to the work frontier (latest done END),
-             which the axis anchors to TODAY. Self-maintaining: advances as
-             items flip to done and as the calendar advances. -->
-        <line x1={weekX(doneFrontier)} y1={HEAD_H} x2={weekX(doneFrontier)} y2={chartHeight}
-              stroke="#ef4444" stroke-width="2" stroke-dasharray="4 3" />
-        <text x={weekX(doneFrontier) + 4} y={HEAD_H + 12} fill="#dc2626" style="font: 10px system-ui; font-weight: 700">Today · {fmtDate(TODAY)}</text>
-      </g>
-
-      <!-- Left label column header -->
-      <rect x={0} y={0} width={LABEL_W} height={HEAD_H - 2} fill="#f8fafc" />
-      <text x={12} y={18} fill="#334155" style="font: 11px system-ui; font-weight: 600">#</text>
-      <text x={48} y={18} fill="#334155" style="font: 11px system-ui; font-weight: 600">Task</text>
-      <text x={LABEL_W - 60} y={18} fill="#334155" style="font: 11px system-ui; font-weight: 600">Bundle</text>
-      <line x1={LABEL_W} y1={0} x2={LABEL_W} y2={chartHeight} stroke="#cbd5e1" stroke-width="1" />
-
-      <!-- Bundle headers + task rows -->
-      <g transform="translate(0, {HEAD_H + 8})">
-        {#each flatRows as row, i}
-          {@const yOff = rowYAt(i)}
-          {#if row.type === 'header'}
-            {@const expanded = expandedBundles.has(row.bundle.id)}
-            <rect x={0} y={yOff} width={LABEL_W + chartWidth} height={HEADER_ROW_H} fill={row.bundle.tint} fill-opacity="0.12" />
-            <rect x={0} y={yOff} width={6} height={HEADER_ROW_H} fill={row.bundle.tint} />
-            <rect x={0} y={yOff} width={LABEL_W + chartWidth} height={HEADER_ROW_H}
-                  fill="transparent" onclick={() => toggleBundle(row.bundle.id)} style="cursor: pointer">
-              <title>Click to {expanded ? 'collapse' : 'expand'} {row.bundle.id} — {row.bundle.name}</title>
-            </rect>
-            <text x={20} y={yOff + HEADER_ROW_H / 2 + 4} fill="#334155"
-                  style="font: 12px system-ui; font-weight: 700; pointer-events: none">{expanded ? '▾' : '▸'}</text>
-            <rect x={36} y={yOff + HEADER_ROW_H / 2 - 9} width={22} height={18} rx={3} fill={row.bundle.tint} />
-            <text x={47} y={yOff + HEADER_ROW_H / 2 + 4} fill="#fff"
-                  style="font: 11px system-ui; font-weight: 700; text-anchor: middle; pointer-events: none">{row.bundle.id}</text>
-            <text x={68} y={yOff + HEADER_ROW_H / 2 + 4} fill="#1e293b"
-                  style="font: 12px system-ui; font-weight: 600; pointer-events: none">
-              {row.bundle.name}
-            </text>
-            <text x={68 + row.bundle.name.length * 6.8 + 14} y={yOff + HEADER_ROW_H / 2 + 4}
-                  fill="#64748b" style="font: 10px system-ui; pointer-events: none">
-              · {row.count} task{row.count !== 1 ? 's' : ''} · {row.totalWeeks.toFixed(1)}w{row.activeCount ? ` · ${row.activeCount} active` : ''}
-            </text>
-          {:else}
-            {@const t = row.task}
-            {@const barX = LABEL_W + weekX(t.start)}
-            {@const barW = Math.max(t.weeks * WEEK_PX, 12)}
-            {@const color = PRIORITY_COLOR[t.priority] ?? '#64748b'}
-            {@const active = activeIds.has(t.id)}
-            {@const isHover = hoverId === t.id}
-
-            <text x={32} y={yOff + ROW_H / 2 + 4} fill="#64748b" style="font: 11px ui-monospace, monospace">
-              {codeFor(t.id)}
-            </text>
-            <text x={68} y={yOff + ROW_H / 2 + 4} fill="#1e293b" style="font: 12px system-ui">
-              {t.title.length > 46 ? t.title.slice(0, 44) + '…' : t.title}
-            </text>
-            <rect x={LABEL_W - 28} y={yOff + ROW_H / 2 - 8} width={20} height={16} rx={3}
-                  fill={BUNDLES.find(b => b.id === t.bundle)?.tint ?? '#94a3b8'} />
-            <text x={LABEL_W - 18} y={yOff + ROW_H / 2 + 4} fill="#fff"
-                  style="font: 10px system-ui; font-weight: 700; text-anchor: middle">{t.bundle}</text>
-
-            <rect
-              x={barX} y={yOff}
-              width={barW} height={ROW_H}
-              rx={4} ry={4}
-              fill={color}
-              fill-opacity={t.status === 'deferred' ? 0.35 : t.status === 'done' ? 0.55 : isHover ? 1 : 0.85}
-              stroke={active ? '#f59e0b' : (isHover ? '#0f172a' : 'none')}
-              stroke-width={active ? 2.5 : (isHover ? 1.5 : 0)}
-              onmouseenter={() => hoverId = t.id}
-              onmouseleave={() => hoverId = null}
-              onclick={() => selectedId = t.id}
-              style="cursor: pointer; transition: fill-opacity 120ms"
-            >
-              <title>{codeFor(t.id)} (#{t.id}) — {t.title}
-Bundle: {t.bundle} · Priority: {t.priority} · Status: {t.status}
-{fmtDate(dateForWeek(t.start))} → {fmtDate(dateForWeek(t.start + t.weeks))}
-Click for plan details</title>
-            </rect>
-
-            {#if t.status === 'done'}
-              <text x={barX + barW / 2} y={yOff + ROW_H / 2 + 4} fill="#fff"
-                    style="font: 10px system-ui; font-weight: 700; text-anchor: middle; pointer-events: none">✓</text>
+      <!-- Date-axis header row (frozen top). -->
+      <div class="row axis-row" style="height:{HEAD_H}px;">
+        <div class="label-cell corner">
+          <span class="col-h hash">#</span>
+          <span class="col-h task">Task</span>
+          <span class="col-h bundle">Bundle</span>
+          <!-- Divider drag handle — spans the full chart height. Lives in the
+               corner cell, which is frozen top+left, so it tracks the divider
+               through both scroll axes. Double-click resets to 320. -->
+          <div
+            class="resize-handle"
+            style="height:{chartHeight}px;"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize task column"
+            title="Drag to resize · double-click to reset"
+            onpointerdown={startResize}
+            ondblclick={resetResize}
+          ></div>
+        </div>
+        <div class="axis-track" style="width:{chartWidth}px;">
+          {#each Array(totalWeeks + 1) as _, w}
+            {@const absW = w + minStart}
+            {#if w < totalWeeks && w % 2 === 0}
+              <span class="axis-date" style="left:{w * WEEK_PX + 5}px;">{fmtDate(dateForWeek(absW))}</span>
             {/if}
+          {/each}
+        </div>
+      </div>
 
-            <text x={barX + barW + 6} y={yOff + ROW_H / 2 + 4} fill="#64748b"
-                  style="font: 10px ui-monospace, monospace">{t.weeks}w</text>
-          {/if}
-        {/each}
-      </g>
-    </svg>
+      <!-- Bundle swimlane headers + task rows -->
+      {#each flatRows as row, i (i)}
+        {#if row.type === 'header'}
+          {@const expanded = expandedBundles.has(row.bundle.id)}
+          <div
+            class="row header-row"
+            style="height:{HEADER_ROW_H}px; background:{row.bundle.tint}1f;"
+            role="button"
+            tabindex="0"
+            title={`Click to ${expanded ? 'collapse' : 'expand'} ${row.bundle.id} — ${row.bundle.name}`}
+            onclick={() => toggleBundle(row.bundle.id)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBundle(row.bundle.id); } }}
+          >
+            <div class="label-cell header-label" style="background:{row.bundle.tint}1f;">
+              <span class="spine" style="background:{row.bundle.tint};"></span>
+              <span class="caret">{expanded ? '▾' : '▸'}</span>
+              <span class="bchip" style="background:{row.bundle.tint};">{row.bundle.id}</span>
+              <span class="bname">{row.bundle.name}</span>
+              <span class="bmeta">· {row.count} task{row.count !== 1 ? 's' : ''} · {row.totalWeeks.toFixed(1)}w{row.activeCount ? ` · ${row.activeCount} active` : ''}</span>
+            </div>
+            <div class="track header-track" style="width:{chartWidth}px;"></div>
+          </div>
+        {:else}
+          {@const t = row.task}
+          {@const barLeft = weekX(t.start)}
+          {@const barW = Math.max(t.weeks * WEEK_PX, 12)}
+          {@const color = PRIORITY_COLOR[t.priority] ?? '#64748b'}
+          {@const active = activeIds.has(t.id)}
+          {@const isHover = hoverId === t.id}
+          {@const op = t.status === 'deferred' ? 0.35 : t.status === 'done' ? 0.55 : isHover ? 1 : 0.85}
+          <div class="row task-row" style="height:{ROW_H + ROW_GAP}px;">
+            <div class="label-cell task-label">
+              <span class="tcode">{codeFor(t.id)}</span>
+              <span class="ttitle">{t.title}</span>
+              <span class="tchip" style="background:{BUNDLES.find(b => b.id === t.bundle)?.tint ?? '#94a3b8'};">{t.bundle}</span>
+            </div>
+            <div class="track task-track" style="width:{chartWidth}px;">
+              <div
+                class="bar"
+                class:active
+                class:hover={isHover}
+                style="left:{barLeft}px; width:{barW}px; height:{ROW_H}px; background:{color}{alphaHex(op)};"
+                role="button"
+                tabindex="0"
+                title={`${codeFor(t.id)} (#${t.id}) — ${t.title}\nBundle: ${t.bundle} · Priority: ${t.priority} · Status: ${t.status}\n${fmtDate(dateForWeek(t.start))} → ${fmtDate(dateForWeek(t.start + t.weeks))}\nClick for plan details`}
+                onmouseenter={() => hoverId = t.id}
+                onmouseleave={() => hoverId = null}
+                onclick={() => selectedId = t.id}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedId = t.id; } }}
+              >
+                {#if t.status === 'done'}<span class="check">✓</span>{/if}
+              </div>
+              <span class="weeks" style="left:{barLeft + barW + 6}px;">{t.weeks}w</span>
+            </div>
+          </div>
+        {/if}
+      {/each}
+    </div>
   </div>
 
   <footer class="foot">
@@ -688,8 +721,117 @@ Click for plan details</title>
   .pri-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #475569; }
   .active-dot { border: 2px solid #f59e0b; background: #fff; }
 
-  .chart-wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); overflow: auto; }
-  .gantt { display: block; user-select: none; }
+  /* ── Gantt chart (HTML/CSS) ──────────────────────────────────────────
+     Single scroll container; sticky freezes resolve against it. */
+  .chart-wrap {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    overflow: auto;                 /* scrolls BOTH axes */
+    max-height: calc(100vh - 210px);
+    min-height: 320px;
+    user-select: none;
+    position: relative;
+  }
+  .chart-inner {
+    position: relative;
+    z-index: 0;                     /* stacking context for overlay/rows */
+  }
+
+  /* Full-height week grid + today frontier — behind the rows (z 1). */
+  .grid-overlay { position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none; }
+  .gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: #eef2f6; }
+  .gridline.heavy { background: #cbd5e1; }
+  .today-line { position: absolute; bottom: 0; width: 0; border-left: 2px dashed #ef4444; }
+  .today-label { position: absolute; font: 700 10px system-ui; color: #dc2626; white-space: nowrap; transform: translateY(2px); }
+
+  /* Rows: flex [ sticky label cell | track ]. */
+  .row { display: flex; position: relative; z-index: 2; }
+  .axis-row {
+    position: sticky; top: 0; z-index: 3;     /* frozen date header */
+    background: #fff;
+    border-bottom: 1px solid #cbd5e1;
+  }
+
+  .label-cell {
+    position: sticky; left: 0; z-index: 4;    /* frozen first column */
+    flex: 0 0 var(--label-w);
+    width: var(--label-w);
+    box-sizing: border-box;
+    border-right: 1px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    overflow: hidden;
+    background: #fff;                          /* opaque → occludes scrolled track/grid */
+  }
+  .label-cell.corner {
+    z-index: 6;                                /* above task rows AND its own track */
+    background: #f8fafc;
+    font: 600 11px system-ui;
+    color: #334155;
+  }
+  .corner .col-h.hash { width: 22px; }
+  .corner .col-h.task { flex: 1 1 auto; }
+  .corner .col-h.bundle { margin-left: auto; }
+
+  /* Divider drag handle — full chart height, pinned via the corner cell. */
+  .resize-handle {
+    position: absolute; top: 0; right: -4px;
+    width: 8px;
+    z-index: 10;
+    cursor: col-resize;
+    touch-action: none;
+    background: transparent;
+  }
+  .resize-handle:hover { background: rgba(37, 99, 235, 0.18); }
+
+  /* Date axis */
+  .axis-track { position: relative; flex: 0 0 auto; }
+  .axis-date { position: absolute; top: 8px; font: 9.5px system-ui; color: #64748b; white-space: nowrap; }
+
+  /* Bundle swimlane header rows */
+  .header-row { cursor: pointer; align-items: stretch; }
+  .header-label { gap: 8px; position: relative; padding-left: 18px; }
+  .header-label .spine { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; }
+  .header-label .caret { font: 700 12px system-ui; color: #334155; }
+  .header-label .bchip {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 18px; padding: 0 4px; border-radius: 3px;
+    color: #fff; font: 700 11px system-ui;
+  }
+  .header-label .bname { font: 600 12px system-ui; color: #1e293b; white-space: nowrap; }
+  .header-label .bmeta { font: 10px system-ui; color: #64748b; white-space: nowrap; }
+  .header-track { flex: 0 0 auto; }
+
+  /* Task rows */
+  .task-label { background: #fff; }
+  .task-label .tcode { flex: 0 0 auto; font: 11px ui-monospace, monospace; color: #64748b; }
+  .task-label .ttitle {
+    flex: 1 1 auto; min-width: 0;
+    font: 12px system-ui; color: #1e293b;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;   /* CSS truncation */
+  }
+  .task-label .tchip {
+    flex: 0 0 auto; margin-left: auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 16px; padding: 0 3px; border-radius: 3px;
+    color: #fff; font: 700 10px system-ui;
+  }
+  .task-track { position: relative; flex: 0 0 auto; }
+
+  .bar {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    border-radius: 4px; cursor: pointer;
+    transition: background-color 120ms;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bar.hover { outline: 1.5px solid #0f172a; }
+  .bar.active { outline: 2.5px solid #f59e0b; }     /* active wins over hover */
+  .bar .check { color: #fff; font: 700 10px system-ui; pointer-events: none; }
+  .weeks { position: absolute; top: 50%; transform: translateY(-50%); font: 10px ui-monospace, monospace; color: #64748b; white-space: nowrap; pointer-events: none; }
 
   .foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 11px; color: #64748b; }
   .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font: 11px ui-monospace, monospace; }
