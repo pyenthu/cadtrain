@@ -567,6 +567,41 @@
     };
   });
 
+  // ─── Per-row actions menu (one ⋯ kebab + right-click) — clubs rename / move /
+  //     copy / delete into ONE anchored popover so rows stay compact (no more
+  //     four hover buttons). Opened by the kebab OR a contextmenu (Mac: two-
+  //     finger tap). Move/Copy hand off to the existing moveMenu popover. ──────
+  let rowMenu = $state<{ id: string; kind: string; dir: string; source: string; canRename: boolean; x: number; y: number } | null>(null);
+  function openRowMenu(id: string, kind: string, dir: string, source: string, canRename: boolean, ev: MouseEvent) {
+    ev.preventDefault(); ev.stopPropagation();
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 9999;
+    rowMenu = { id, kind, dir, source, canRename, x: Math.min(ev.clientX, vw - 180), y: ev.clientY };
+  }
+  function closeRowMenu() { rowMenu = null; }
+  function rowMenuRename() { const m = rowMenu; closeRowMenu(); if (m) startRename(m.id, m.source); }
+  function rowMenuMoveCopy(mode: 'move' | 'copy') {
+    const m = rowMenu; closeRowMenu();
+    if (m) moveMenu = { id: m.id, kind: m.kind, fromDir: m.dir, mode, x: m.x, y: m.y };
+  }
+  function rowMenuDelete() {
+    const m = rowMenu; closeRowMenu();
+    if (!m) return;
+    void deletePrim(m.id, m.source, m.kind === 'archive' ? 'permanent' : 'archive');
+  }
+  $effect(() => {
+    if (!rowMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRowMenu(); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('.prim-row-menu')) return;
+      if (t && t.closest('.prim-kebab')) return;
+      closeRowMenu();
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown, true); };
+  });
+
   /** Build a FolderNode tree from the legacy flat groups (fallback when the
    *  proxied /list has no recursive `tree` — old prod). */
   function legacyTree(pr: any): FolderNode {
@@ -1018,55 +1053,24 @@
                 ev.dataTransfer.effectAllowed = 'copyMove';
               }
             }}
-            onclick={() => openTab(e.id)}>
+            onclick={() => openTab(e.id)}
+            oncontextmenu={(ev) => { if (kind === 'volume' || kind === 'archive') openRowMenu(e.id, kind, dir, e.source, canRename, ev); }}>
             <span class="prim-file-ic">📄</span>
             <span class="prim-name">{e.id}</span>
-            <span class="prim-tag {tag}">{tag}</span>
+            <!-- `vol` is the common case → no badge (declutter); only the
+                 exceptions (arch / src / stale) get a tag. -->
+            {#if tag !== 'vol'}<span class="prim-tag {tag}">{tag}</span>{/if}
           </button>
-          {#if canRename}
-            <button class="prim-rename" type="button"
-              title="Rename — type a new id, Enter to commit"
-              aria-label="Rename {e.id}"
-              onclick={() => startRename(e.id, e.source)}>✎</button>
-          {/if}
+          <!-- All row actions live in ONE ⋯ menu now (rename / move / copy /
+               delete) — also opened by right-click on the row. Keeps the row
+               compact. Read-only src groups (stdlib/stdstale) get no menu. -->
           {#if kind === 'volume' || kind === 'archive'}
-            <button class="prim-move" type="button"
-              title="Move to another folder…"
-              aria-label="Move {e.id} to another folder"
-              disabled={moveBusy === e.id}
-              onclick={(ev) => openMoveMenu(e.id, kind, dir, 'move', ev)}>{moveBusy === e.id ? '…' : '↪'}</button>
-            <button class="prim-move" type="button"
-              title="Copy to a folder (duplicate under a new id)…"
-              aria-label="Copy {e.id}"
-              disabled={moveBusy === e.id}
-              onclick={(ev) => openMoveMenu(e.id, kind, dir, 'copy', ev)}>⎘</button>
-          {/if}
-          {#if kind === 'volume'}
-            <button class="prim-trash" type="button"
-              title="Archive — soft delete (recoverable from primitives/archive/)"
-              disabled={deleteBusy === e.id}
-              onclick={() => deletePrim(e.id, e.source)}>{deleteBusy === e.id ? '…' : '🗑'}</button>
-          {:else if kind === 'archive'}
-            <button class="prim-trash perm" type="button"
-              title="Permanent delete — removes the file from the volume (irreversible)"
-              disabled={deleteBusy === e.id}
-              onclick={() => deletePrim(e.id, e.source, 'permanent')}
-              aria-label="Permanently delete {e.id}">
-              {#if deleteBusy === e.id}
-                …
-              {:else}
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
-                  aria-hidden="true">
-                  <path d="M3 6h18"/>
-                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                  <path d="M19 6l-1.2 13.2A2 2 0 0 1 15.8 21H8.2a2 2 0 0 1-2-1.8L5 6"/>
-                  <path d="M10 11v6"/>
-                  <path d="M14 11v6"/>
-                </svg>
-              {/if}
-            </button>
+            <button class="prim-kebab" type="button"
+              title="Actions — rename, move, copy, delete (or right-click)"
+              aria-label="Actions for {e.id}"
+              disabled={moveBusy === e.id || deleteBusy === e.id}
+              onclick={(ev) => openRowMenu(e.id, kind, dir, e.source, canRename, ev)}
+              >{(moveBusy === e.id || deleteBusy === e.id) ? '…' : '⋯'}</button>
           {/if}
         {/if}
       </div>
@@ -1240,6 +1244,25 @@
               onclick={() => pickMoveTarget(t.path)}>📁 {t.path}</button>
           {/each}
         {/if}
+      </div>
+    {/if}
+
+    <!-- Per-row actions menu — the single ⋯ kebab / right-click popover. Move &
+         Copy hand off to the moveMenu above; Rename + Delete fire inline. -->
+    {#if rowMenu}
+      <div class="prim-move-menu prim-row-menu" role="menu"
+        style="left: {rowMenu.x}px; top: {rowMenu.y}px">
+        <div class="prim-create-menu-head">{rowMenu.id}</div>
+        {#if rowMenu.canRename}
+          <button class="prim-create-menu-item" type="button" role="menuitem"
+            onclick={rowMenuRename}>✎ Rename</button>
+        {/if}
+        <button class="prim-create-menu-item" type="button" role="menuitem"
+          onclick={() => rowMenuMoveCopy('move')}>↪ Move to…</button>
+        <button class="prim-create-menu-item" type="button" role="menuitem"
+          onclick={() => rowMenuMoveCopy('copy')}>⎘ Copy to…</button>
+        <button class="prim-create-menu-item danger" type="button" role="menuitem"
+          onclick={rowMenuDelete}>{rowMenu.kind === 'archive' ? '🗑 Delete permanently' : '🗑 Archive'}</button>
       </div>
     {/if}
 
@@ -1569,6 +1592,20 @@
   }
   .prim-move:hover { opacity: 1 !important; background: #e0f2fe; }
   .prim-move:disabled { cursor: wait; opacity: 0.4 !important; }
+
+  /* The single ⋯ row-actions kebab — hover-revealed, opens the row menu. */
+  .prim-row-wrap:hover .prim-kebab { opacity: 0.8; }
+  .prim-kebab {
+    flex: 0 0 auto;
+    width: 22px; padding: 0; background: transparent; border: 0; cursor: pointer;
+    font: 700 16px Arial; line-height: 1; color: #57534e; opacity: 0;
+    transition: opacity 100ms, background 100ms;
+  }
+  .prim-kebab:hover { opacity: 1 !important; background: #f3f4f6; color: #1f2937; }
+  .prim-kebab:disabled { cursor: wait; opacity: 0.4 !important; }
+  /* Delete row in the actions menu — red so it reads as destructive. */
+  .prim-create-menu-item.danger { color: #b91c1c; }
+  .prim-create-menu-item.danger:hover:not(:disabled) { background: #fee2e2; color: #991b1b; }
 
   /* Drop-target highlight while dragging a part over a folder row / top tab —
      green wash + inset ring so the target reads clearly during the drag. */
