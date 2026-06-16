@@ -32,7 +32,12 @@ export const POST = async ({ url }) => {
   // Resolve where it currently lives (active only — don't fish parts out of
   // archive/ unless that's explicitly the target).
   const includeArchive = /^archive$/i.test(to);
-  const hit = await findPrim(id, { includeArchive });
+  let hit = await findPrim(id, { includeArchive });
+  // The part may itself live in archive/ (archive → active move). When the
+  // active-only search came up empty, retry including archive. The first
+  // search already covered every active dir, so this can only resolve to the
+  // archived copy — it can never shadow an active part of the same id.
+  if (!hit && !includeArchive) hit = await findPrim(id, { includeArchive: true });
   if (!hit) throw error(404, `primitive "${id}" not found on volume`);
 
   const destDir = volumePath(join('primitives', to));

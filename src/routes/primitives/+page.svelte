@@ -372,6 +372,158 @@
   }
   function dismissRefToast() { refToast = null; }
 
+  // ─── Move to another folder (#5 — drag-drop + "Move to…" dialog) ──────────
+  // Moving changes ONLY a part's DIRECTORY (its category, Rule 16). The id is
+  // unchanged, so meta.uses refs (by id) stay valid — no broken-ref handling
+  // (unlike rename). Server: POST /api/primitives/move?id=<id>&to=<category>
+  // where <category> ∈ basic | basic/<sub> | archive | completions/<fam>(/<sub>).
+  // Read-only stdlib/stdstale reject server-side; we also gate them in the UI.
+  // Same shape as the move endpoint's CAT_RE — what `to` values it accepts.
+  const MOVE_TARGET_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
+  const PRIM_DND = 'application/x-cadtrain-prim';       // payload = the part id (also read by the canvas drop)
+  const PRIM_DND_FROM = 'application/x-cadtrain-prim-from'; // payload = JSON { kind, dir } source meta
+
+  let moveBusy = $state<string | null>(null);
+  /** Folder/tab path currently under a part-drag (drop-target highlight). */
+  let dragOverPath = $state<string | null>(null);
+
+  /** Walk the tree to the folder path that holds `id`, or null. */
+  function findPartDir(id: string): string | null {
+    if (!tree) return null;
+    const walk = (n: FolderNode): string | null => {
+      if (n.parts.some((p) => p.id === id)) return n.path;
+      for (const c of n.children) { const r = walk(c); if (r != null) return r; }
+      return null;
+    };
+    return walk(tree);
+  }
+
+  /** Optimistically relocate the entry between tree nodes (the proxied /list
+   *  lags writes — memory prod_list_staleness). loadList reconciles after. */
+  function moveEntryInTree(id: string, fromDir: string, toPath: string) {
+    const from = nodeAt(fromDir);
+    const to = nodeAt(toPath);
+    if (!from || !to || from === to) return;
+    const entry = from.parts.find((p) => p.id === id);
+    from.parts = from.parts.filter((p) => p.id !== id);
+    if (entry && !to.parts.some((p) => p.id === id)) to.parts = [...to.parts, entry];
+  }
+
+  /** POST the move, then optimistically reflect it + refresh the list. `kind`
+   *  is the moved part's provenance — only volume/archive parts can move (the
+   *  src groups are read-only and reject server-side). */
+  async function movePart(id: string, kind: string, fromDir: string, toPath: string) {
+    if (kind !== 'volume' && kind !== 'archive') return;
+    const to = toPath.replace(/\/+$/, '');
+    if (!MOVE_TARGET_RE.test(to)) {
+      if (typeof alert === 'function') alert(`"${to}" isn't a valid destination (basic | archive | completions/<family>).`);
+      return;
+    }
+    if (to === fromDir) return; // no-op — already in this folder
+    moveBusy = id;
+    try {
+      const r = await fetch(`/api/primitives/move?id=${encodeURIComponent(id)}&to=${encodeURIComponent(to)}`, { method: 'POST' });
+      if (!r.ok) {
+        const t = await r.text();
+        if (typeof alert === 'function') alert(`Move failed (${r.status}): ${t.slice(0, 200)}`);
+        return;
+      }
+      moveEntryInTree(id, fromDir, to);  // optimistic — surface it in the new folder now
+      ensureExpanded(to);
+      await loadList();                  // reconcile against the server
+    } catch (e: any) {
+      if (typeof alert === 'function') alert(`Move error: ${e?.message ?? e}`);
+    } finally {
+      moveBusy = null;
+    }
+  }
+
+  // Drag-and-drop: part rows carry { id, kind, dir } in the dataTransfer;
+  // folder rows + the basic/archive top tabs accept the drop.
+  /** True when a folder/tab at `path` can RECEIVE a dropped part. Excludes the
+   *  bare `completions` container + arbitrary top folders (server only accepts
+   *  basic | archive | completions/<family>). */
+  function isDropTarget(path: string, kind: string): boolean {
+    return (kind === 'volume' || kind === 'archive') && MOVE_TARGET_RE.test(path);
+  }
+  function onFolderDragOver(ev: DragEvent, path: string, kind: string) {
+    if (!isDropTarget(path, kind)) return;
+    if (!ev.dataTransfer || !ev.dataTransfer.types.includes(PRIM_DND)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+    if (dragOverPath !== path) dragOverPath = path;
+  }
+  function onFolderDragLeave(path: string) {
+    if (dragOverPath === path) dragOverPath = null;
+  }
+  function onFolderDrop(ev: DragEvent, path: string, kind: string) {
+    if (!isDropTarget(path, kind)) return;
+    ev.preventDefault();
+    dragOverPath = null;
+    const id = ev.dataTransfer?.getData(PRIM_DND);
+    if (!id) return;
+    // Source meta from the drag payload (kind + current dir); fall back to a
+    // tree walk + the live lists when it's absent (drag from another surface).
+    let srcKind = '', fromDir = '';
+    try {
+      const raw = ev.dataTransfer?.getData(PRIM_DND_FROM);
+      if (raw) { const j = JSON.parse(raw); srcKind = j.kind ?? ''; fromDir = j.dir ?? ''; }
+    } catch { /* ignore malformed payload */ }
+    if (!srcKind) {
+      srcKind = stdlib.some((e) => e.id === id) ? 'stdlib'
+        : stdstale.some((e) => e.id === id) ? 'stdstale'
+        : archived.some((e) => e.id === id) ? 'archive' : 'volume';
+    }
+    if (!fromDir) fromDir = findPartDir(id) ?? '';
+    if (srcKind !== 'volume' && srcKind !== 'archive') return; // read-only src part — can't move
+    void movePart(id, srcKind, fromDir, path);
+  }
+
+  // ─── "Move to…" dialog (anchored popover — mirrors the create menu) ───────
+  let moveMenu = $state<{ id: string; kind: string; fromDir: string; x: number; y: number } | null>(null);
+  function openMoveMenu(id: string, kind: string, fromDir: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    if (moveMenu?.id === id) { moveMenu = null; return; }
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    // Anchor under the trigger, nudged left so the menu doesn't overflow the rail.
+    moveMenu = { id, kind, fromDir, x: Math.max(8, r.right - 200), y: r.bottom + 2 };
+  }
+  function closeMoveMenu() { moveMenu = null; }
+  /** Valid move destinations from the tree — excludes the bare `completions`
+   *  container, the read-only stdlib/stdstale src groups (not in the tree), and
+   *  the part's CURRENT folder. */
+  function moveTargets(fromDir: string): { path: string; depth: number }[] {
+    const out: { path: string; depth: number }[] = [];
+    const walk = (n: FolderNode, depth: number) => {
+      if (n.path && n.path !== fromDir && MOVE_TARGET_RE.test(n.path)) out.push({ path: n.path, depth });
+      for (const c of n.children) walk(c, depth + 1);
+    };
+    if (tree) for (const c of tree.children) walk(c, 0);
+    return out;
+  }
+  function pickMoveTarget(path: string) {
+    const m = moveMenu;
+    closeMoveMenu();
+    if (m) void movePart(m.id, m.kind, m.fromDir, path);
+  }
+  // Outside-click + Escape dismissal — only wired while the move menu is open.
+  $effect(() => {
+    if (!moveMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMoveMenu(); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('.prim-move-menu')) return; // click inside the menu
+      if (t && t.closest('.prim-move')) return;      // the trigger toggles itself
+      closeMoveMenu();
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+    };
+  });
+
   /** Build a FolderNode tree from the legacy flat groups (fallback when the
    *  proxied /list has no recursive `tree` — old prod). */
   function legacyTree(pr: any): FolderNode {
@@ -793,7 +945,7 @@
            stdlib   → src badge,  read-only (no rename / trash)
            stdstale → stale badge,read-only
          `depth` indents the row to match its folder nesting. -->
-    {#snippet partRow(e: Entry, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale')}
+    {#snippet partRow(e: Entry, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale', dir: string)}
       {@const tag = kind === 'archive' ? 'arch' : kind === 'stdlib' ? 'src' : kind === 'stdstale' ? 'stale' : 'vol'}
       {@const canRename = kind === 'volume'}
       <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
@@ -815,8 +967,12 @@
             draggable={!isCoarsePointer}
             ondragstart={(ev) => {
               if (ev.dataTransfer) {
-                ev.dataTransfer.setData('application/x-cadtrain-prim', e.id);
-                ev.dataTransfer.effectAllowed = 'copy';
+                ev.dataTransfer.setData(PRIM_DND, e.id);
+                // Source meta so a folder/tab drop knows the from-dir + provenance
+                // (for the no-op guard + the read-only-src gate). copyMove allows
+                // BOTH the canvas copy-drop and a folder move-drop.
+                ev.dataTransfer.setData(PRIM_DND_FROM, JSON.stringify({ kind, dir }));
+                ev.dataTransfer.effectAllowed = 'copyMove';
               }
             }}
             onclick={() => openTab(e.id)}>
@@ -829,6 +985,13 @@
               title="Rename — type a new id, Enter to commit"
               aria-label="Rename {e.id}"
               onclick={() => startRename(e.id, e.source)}>✎</button>
+          {/if}
+          {#if kind === 'volume' || kind === 'archive'}
+            <button class="prim-move" type="button"
+              title="Move to another folder…"
+              aria-label="Move {e.id} to another folder"
+              disabled={moveBusy === e.id}
+              onclick={(ev) => openMoveMenu(e.id, kind, dir, ev)}>{moveBusy === e.id ? '…' : '↪'}</button>
           {/if}
           {#if kind === 'volume'}
             <button class="prim-trash" type="button"
@@ -874,8 +1037,12 @@
       <div class="prim-tree-node">
         <div class="prim-folder-row-wrap">
           <button class="prim-folder-row" type="button"
+            class:drop-target={dragOverPath === node.path}
             style="padding-left: {8 + depth * 14}px"
             title={`primitives/${node.path}/`}
+            ondragover={(ev) => onFolderDragOver(ev, node.path, kind)}
+            ondragleave={() => onFolderDragLeave(node.path)}
+            ondrop={(ev) => onFolderDrop(ev, node.path, kind)}
             onclick={() => toggleExpand(node.path)}>
             <span class="prim-chev">{open ? '▾' : '▸'}</span>
             <span class="prim-folder-ic">{open ? '📂' : '📁'}</span>
@@ -895,7 +1062,7 @@
             {@render folderNode(c, depth + 1, kind)}
           {/each}
           {#each files as e (e.id)}
-            {@render partRow(e, depth + 1, kind)}
+            {@render partRow(e, depth + 1, kind, node.path)}
           {/each}
           {#if kids.length === 0 && files.length === 0}
             <div class="prim-empty" style="padding-left: {12 + (depth + 1) * 14}px">{filter.trim() ? 'no matches' : 'empty'}</div>
@@ -912,9 +1079,18 @@
     <div class="prim-body">
     <nav class="prim-tabrail" role="tablist" aria-label="Top-level folders">
       {#each topFolders as f (f.path)}
+        <!-- Top tabs double as cross-branch drop targets: dropping a part onto
+             Basic / Archived moves it there (the tree is scoped to ONE branch,
+             so this is how a drag reaches a different top-level folder). The
+             bare `completions` container + user folders aren't valid `to`s, so
+             isDropTarget rejects them. -->
         <button class="prim-tabbtn" class:active={activeTab === f.name}
+          class:drop-target={dragOverPath === f.path}
           role="tab" type="button" aria-selected={activeTab === f.name}
           title={`primitives/${f.name}/`}
+          ondragover={(ev) => onFolderDragOver(ev, f.path, f.name === 'archive' ? 'archive' : 'volume')}
+          ondragleave={() => onFolderDragLeave(f.path)}
+          ondrop={(ev) => onFolderDrop(ev, f.path, f.name === 'archive' ? 'archive' : 'volume')}
           onclick={() => selectTab(f.name)}>{tabLabel(f.name)}</button>
       {/each}
       <button class="prim-tabbtn src" class:active={activeTab === '__stdlib'}
@@ -960,7 +1136,7 @@
           {@render folderNode(c, 0, activeKind)}
         {/each}
         {#each files as e (e.id)}
-          {@render partRow(e, 0, activeKind)}
+          {@render partRow(e, 0, activeKind, activeNode.path)}
         {/each}
         {#if kids.length === 0 && files.length === 0}
           <div class="prim-empty">{filter.trim() ? 'no matches' : 'empty'}</div>
@@ -992,6 +1168,28 @@
           onclick={menuNewPart}>＋ New part here</button>
         <button class="prim-create-menu-item" type="button" role="menuitem"
           disabled={folderBusy} onclick={menuNewFolder}>📁 New folder here</button>
+      </div>
+    {/if}
+
+    <!-- "Move to…" dialog — anchored popover (one at a time). Lists the volume
+         folder tree as destinations (basic / completions/<family>/<sub> /
+         archive — NOT the read-only stdlib/stdstale src groups, which aren't in
+         the tree). position:fixed to escape the rail's overflow clipping;
+         dismisses on outside-click / Escape (same as the create menu). -->
+    {#if moveMenu}
+      {@const targets = moveTargets(moveMenu.fromDir)}
+      <div class="prim-move-menu" role="menu"
+        style="left: {moveMenu.x}px; top: {moveMenu.y}px">
+        <div class="prim-create-menu-head">Move {moveMenu.id} to…</div>
+        {#if targets.length === 0}
+          <div class="prim-move-empty">no other folders</div>
+        {:else}
+          {#each targets as t (t.path)}
+            <button class="prim-create-menu-item" type="button" role="menuitem"
+              style="padding-left: {10 + t.depth * 10}px"
+              onclick={() => pickMoveTarget(t.path)}>📁 {t.path}</button>
+          {/each}
+        {/if}
       </div>
     {/if}
 
@@ -1297,6 +1495,35 @@
   }
   .prim-create-menu-item:hover:not(:disabled) { background: #d1fae5; color: #166534; }
   .prim-create-menu-item:disabled { cursor: wait; opacity: 0.5; }
+
+  /* "Move to…" dialog — same anchored-popover chrome as the create menu, but
+     scrollable (a part can have many destination folders). Reuses
+     .prim-create-menu-head + .prim-create-menu-item for the rows. */
+  .prim-move-menu {
+    position: fixed; z-index: 1000; min-width: 190px; max-height: 320px;
+    overflow-y: auto;
+    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16); padding: 4px;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .prim-move-empty { padding: 6px 10px; font: 11px Arial; color: #a8a29e; }
+
+  /* Move (↪) row action — blue like rename (it's an "edit", not a delete),
+     hover-revealed beside ✎. Always reachable for volume + archive parts. */
+  .prim-row-wrap:hover .prim-move { opacity: 0.85; }
+  .prim-move {
+    flex: 0 0 auto;
+    width: 22px; padding: 0; background: transparent; border: 0; cursor: pointer;
+    font-size: 13px; color: #0369a1; opacity: 0;
+    transition: opacity 100ms, background 100ms;
+  }
+  .prim-move:hover { opacity: 1 !important; background: #e0f2fe; }
+  .prim-move:disabled { cursor: wait; opacity: 0.4 !important; }
+
+  /* Drop-target highlight while dragging a part over a folder row / top tab —
+     green wash + inset ring so the target reads clearly during the drag. */
+  .prim-folder-row.drop-target { background: #dcfce7; box-shadow: inset 0 0 0 2px #86efac; }
+  .prim-tabbtn.drop-target { background: #166534; color: #fff; border-color: #166534; }
 
   /* ⛁ Cache footer row — amber tint so the inspector reads as a distinct
      utility surface, not a part folder; inverts to amber when active. */
