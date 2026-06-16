@@ -99,7 +99,26 @@ its render arms already pull from extracted, tested helpers.
 | ~~**B**~~ ✓ | `graph-editor-bake.ts` + `.svelte.ts` — DONE (2e71155). | parsers + expected-params cache (see refined note above). | — | `runBake`/bake-pipeline stay (reactive); `drop*` stay (trivial 1-liners); `setAutoBake`/`rebuildCache`/`restartDevServer` stay (small, bake-pipeline-coupled $state). |
 | ~~**C**~~ ✓ | `wire-state.svelte.ts` (per-instance `WireState` class) + `pointer-capture.ts` — DONE (54e8505). | wireFrom→`wire.from` + all start/endWireOn*/unwire handlers. | — | Per-instance class (NOT singleton). The endWireOn* text-substitution wiring is kept AS-IS for K.67. |
 | ~~**D**~~ ✓ | `PropertiesCard.svelte` (aa6c74f) + `ParamsCard.svelte` (aebb3cd). | both overlay-card bodies done. `addParamPop`/`wirePop` left in GEP (minor). | — | ParamsCard took startParamWire/openAddParamPop as props — didn't need C first. |
-| **E** | `SketchEditorPane.svelte` | the full-tab sketch editor: 21 `sketch*` handlers (`sketchCanvas*`/`sketchAnchor*`/`sketchBar*`/`sketchCardResize*`/`splineComp*`/`fitSketchFrame`/`cornerAtOpIdx`…), the `sketchEditor` `$derived` (L2609) + frozen-frame, the tools rail + 2D canvas markup **+ `sketchExprPop`** (the coord ƒ-editor — its drag/`toggleSketchOpMode`/`sketchPopPtCount` couple to the sketch state). | MED-HIGH | Largest self-contained chunk. Props: the sketch node + param scope + callbacks. Verify vs `sketch*.test.ts`. **This is where the M.5 sketch-repeat UI will land — do E before sketch-repeat.** |
+| **E** | `SketchEditorPane.svelte` — **ATTEMPTED + REVERTED 2026-06-16; do WITH F.** | the full-tab sketch editor: 21 `sketch*` handlers, the `sketchEditor` `$derived` + frozen-frame, the tools rail + 2D canvas markup + the mini params/sketch cards. | **HIGH (entangled with F)** | See the failure note below. |
+
+> **Phase E — ATTEMPTED + REVERTED 2026-06-16.** Built `SketchEditorPane.svelte`
+> as a `bind:this` component owning all sketch state + `open(id)` (1407 lines,
+> via sed-extract of the 3 script chunks + 2 markup chunks). It MOUNTED but the
+> graph wouldn't load — TWO runtime `ReferenceError`s (build didn't catch them;
+> Svelte treats unknown markup idents as runtime-resolved): (1) the markup_pop
+> range over-grabbed the polygon `{#if svgTip}` tooltip (Phase F), and worse
+> (2) **the Sketch NODE CARD (Phase F, stays in GEP) shares `sketchExprPop` +
+> `sketchAxisLabel` + `openSketchExprPop` + `toggleSketchOpMode` with the full-tab
+> editor.** `sketchExprPop` is ONE popover that can't render in two components,
+> and `toggleSketchOpMode` reads the editor's `sketchEditor` derived — so the
+> editor and the node card are NOT separable while the node card lives in GEP.
+> Reverted cleanly to the committed state (A/B/C/D intact, GEP ~8021).
+> **CORRECTED PLAN: do E+F TOGETHER** as one "sketch consolidation" — move the
+> Sketch node card + the full-tab editor + `sketchExprPop` + all shared sketch-op
+> helpers into a `sketch/` unit in ONE pass — OR keep `sketchExprPop` + the shared
+> helpers in GEP and give the editor an `onOpenSketchExprPop` callback (still needs
+> `toggleSketchOpMode`/`sketchEditor` untangled). The /tmp extraction (line ranges,
+> import set) is documented in the handoff memory. **This unblocks M.5 sketch-repeat.**
 | **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards **+ `polyExprPop`** (vertex/loop/binding/count **+ transform-axis** ƒ-editor; fused with `hlVertex`/`hoverVertex`/`svgTip`). | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
 
 After A–F the shell is props + the ~110 `$state` (many will move with their
@@ -116,7 +135,8 @@ follows each component out.
    extracted; ParamsCard took startParamWire/openAddParamPop as props. **C is next.**
 4. ~~**C — wire-state.svelte.ts.**~~ ✓ DONE (54e8505) — per-instance `WireState`
    class; verified with a synthetic param→coord wire-drag. **E is next.**
-5. **E — SketchEditorPane.svelte.** The largest self-contained chunk: the full-tab
+5. **E — SketchEditorPane.svelte. ATTEMPTED + REVERTED (see note above) — do E+F TOGETHER.**
+   The largest self-contained chunk: the full-tab
    sketch editor (21 sketch* handlers, the `sketchEditor` $derived, the tools rail
    + 2D canvas markup + the mini params/sketch cards). Carries `sketchExprPop` +
    the sketch mini-card (which can then drop GEP's duplicated `.ge-param-chip`/
