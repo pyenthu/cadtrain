@@ -68,6 +68,12 @@ const VOLUME_PROXY_PATHS = new Set([
   // generate button proxies like rebuild/stats. X-Volume-Local: 1 forces
   // the local handler (needs a local .env key + corpus).
   '/api/rag/prompt',
+  // ai-rag-system §D — the per-turn "edit this part" assistant proxy. It
+  // calls Claude directly (createAnthropicClient), so ANTHROPIC_API_KEY must
+  // live prod-side; proxy it like /api/rag/prompt so local dev hits the prod
+  // key instead of running keyless. (/api/primitives/refine is the opposite:
+  // it stays LOCAL on purpose, using the local key.)
+  '/api/rag/assist',
 ]);
 
 /** Routes subject to rate limiting (prefix match).
