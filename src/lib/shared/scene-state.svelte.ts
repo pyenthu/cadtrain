@@ -123,4 +123,20 @@ export const scene = $state({
    *  this so the (~hundreds-of-ms) Manifold re-bake fires only on commit, while
    *  the live `warp*` values still update the input fields continuously. */
   warpBakeNonce: 0,
+  /** Smooth-shading override — RENDER-TIME (free, no re-bake). Drives the live
+   *  material's `flatShading` flag in PrimitiveDualScene via PrimitiveDualCanvas.
+   *  - 'auto' (default): keep the existing per-part heuristic (curved engines +
+   *    twisted extrudes + BREP smooth; cubes/hex/everything else flat). This is
+   *    the hard-won default — flat faces read dull when smooth-shaded (the
+   *    8297314 regression), so we DON'T smooth everything by default.
+   *  - 'smooth': force smooth (flatShading:false) for the open part.
+   *  - 'flat': force flat (flatShading:true) for the open part. */
+  smoothShade: 'auto' as 'auto' | 'smooth' | 'flat',
+  /** Crease angle (minSharpAngle, deg) for the BAKED per-vertex normals
+   *  (Manifold.calculateNormals). BUILD-TIME — changing it re-bakes (it changes
+   *  the vertex split), so it's threaded into the /preview request body + the
+   *  bake-cache key. Default 60 (the historical hardcoded value): edges above 60°
+   *  (cube corners, cylinder caps) stay hard; below it shade smooth. Lower it to
+   *  keep designed shallow chamfers hard; raise it to smooth a coarse mesh more. */
+  creaseAngle: 60,
 });

@@ -170,7 +170,11 @@
     // the pre-warp default. The body IS the fetch-cache key, so warp variants
     // memoise separately.
     const warp = scene.warpEnabled ? { amp: scene.warpAmp, freq: scene.warpFreq, axis: scene.warpAxis } : undefined;
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}) });
+    // Crease angle for the baked smooth normals — BUILD-TIME, so it must be in
+    // the request body (re-bakes). Sent only when it differs from the default 60
+    // → the default request + cache key stay byte-identical to the legacy bake.
+    const crease = (typeof scene.creaseAngle === 'number' && scene.creaseAngle !== 60) ? scene.creaseAngle : undefined;
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
@@ -300,7 +304,7 @@
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
     const key = isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
-      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce });
+      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();
@@ -434,10 +438,17 @@
     {@const twistArg = Number((args as any[])?.[2] ?? 0)}
     <!-- BREP carries OCCT exact-surface normals → smooth-shade the solid so the
          true curvature reads (the cut half-section is faceted regardless). -->
-    {@const smoothShade =
+    {@const smoothShadeAuto =
       isBrep ||
       id === 'r_weld_extrude' ||
       (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
+    <!-- The user's SceneControls "Shading" override wins over the per-part
+         heuristic: 'auto' keeps the heuristic, 'smooth'/'flat' force it.
+         Render-time only (a material flatShading flip — no re-bake). -->
+    {@const smoothShade =
+      scene.smoothShade === 'smooth' ? true
+      : scene.smoothShade === 'flat' ? false
+      : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
       <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />

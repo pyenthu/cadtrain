@@ -71,6 +71,25 @@
         Ortho
       </label>
     </div>
+    <!-- Smooth-shading: render-time flatShading flip (free, no re-bake).
+         Auto = the per-part heuristic (curved engines smooth, cubes/hex flat);
+         Smooth / Flat force it. Crease = the BUILD-TIME minSharpAngle baked into
+         calculateNormals — changing it RE-BAKES (it splits the crease vertices).
+         Default 60°; edges above it stay hard, below it shade smooth. -->
+    <div class="sv-row sv-shade" title="Smooth shading (render-time) + crease angle (re-bakes)">
+      <span class="sv-label">Shade</span>
+      <select class="sv-select" bind:value={scene.smoothShade} title="Auto = per-part heuristic; Smooth/Flat override it (render-time, no re-bake)">
+        <option value="auto">Auto</option>
+        <option value="smooth">Smooth</option>
+        <option value="flat">Flat</option>
+      </select>
+      <span class="sv-sub" title="Crease angle (°) — baked into the normals; re-bakes on change">∠</span>
+      <input
+        type="number" step="5" min="1" max="180" value={scene.creaseAngle}
+        title="Crease angle (degrees): edges sharper than this stay hard, softer ones smooth. Default 60. Re-bakes on Enter/blur."
+        onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); if (Number.isFinite(v)) scene.creaseAngle = Math.max(1, Math.min(180, Math.round(v))); }}
+      />
+    </div>
     <!-- Z-axis DIRECTIONAL light — parallel rays perpendicular to Z (even
          length-wise illumination). A theta spins the bearing around the axis. -->
     <div class="sv-row sv-zlight">
@@ -160,6 +179,18 @@
   .sv-warp-radio input[type='radio'] { appearance: auto; -webkit-appearance: auto; accent-color: #cc2222; cursor: pointer; }
   .sv-warp-radio.dim { opacity: 0.4; }
   .sv-warp-master { margin-right: 4px; }
+  /* Shading row — Auto/Smooth/Flat select + crease-angle number */
+  .sv-shade { gap: 6px; margin-top: 2px; }
+  .sv-select {
+    padding: 2px 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .sv-select option { background: #222; color: #fff; }
   .sv-panel input[type='number']:disabled { opacity: 0.35; cursor: not-allowed; }
   .sv-label { width: 22px; opacity: 0.85; }
   .sv-sub   { width: 8px; text-align: center; opacity: 0.7; }
