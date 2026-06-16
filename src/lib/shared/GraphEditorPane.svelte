@@ -114,6 +114,7 @@
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
   } from '$lib/cad/graph-editor-geom';
   import { dragNumber } from '$lib/shared/dragNumber';
+  import RightPane from '$lib/shared/RightPane.svelte';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
   import {
     argStr, argFrom, argToDraftStr, evalArg, sketchParamScope,
@@ -1552,7 +1553,6 @@
     }
   }
 
-  let PrimitiveDualCanvas = $state<any>(null);
   /** Set when a URL `?id=<name>` is given but the loaded source has no
    *  meta.graph (legacy text-format assembly OR a leaf primitive). The
    *  canvas stays empty + a banner surfaces above the source pane explaining
@@ -1560,10 +1560,7 @@
    *  but we don't fight the user with auto-translation. */
   let legacyLoad = $state<{ id: string; reason: 'no-graph' | 'fetch-failed' } | null>(null);
   onMount(async () => {
-    try {
-      const mod = await import('$lib/shared/PrimitiveDualCanvas.svelte');
-      PrimitiveDualCanvas = mod.default;
-    } catch { /* canvas unavailable */ }
+    // (PrimitiveDualCanvas lazy import moved into RightPane.svelte — P5/G5.)
 
     // Id load: when the `id` prop is set, fetch the part's source from the
     // volume + hydrate meta.graph into the canvas. If the source is missing
@@ -2468,14 +2465,14 @@
   let splitA = $state(56);          // canvas pane % — 3D preview gets the rest (~44%, prominent)
   let gridEl: HTMLElement | undefined = $state();
   let splitDragging = false;
-  /** Right-pane tab: 3D bake or live source. */
+  /** Right-pane tab: 3D bake or live source. RightPane owns persistence
+   *  (localStorage `ge-right-tab`) + setRightTab; this stays as the bound
+   *  value so the legacy-load path below can force it to 'source'. */
   let rightTab = $state<'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep'>('bake');
   onMount(() => {
     try {
       const a = Number(localStorage.getItem('ge-splitA-v4'));
       if (a >= 30 && a <= 85) splitA = a;
-      const t = localStorage.getItem('ge-right-tab');
-      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function startSplitDrag(ev: PointerEvent) {
@@ -2496,89 +2493,17 @@
     splitDragging = false;
     try { localStorage.setItem('ge-splitA-v4', String(splitA)); } catch { /* ignore */ }
   }
-  function setRightTab(t: 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep') {
-    rightTab = t;
-    try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
-  }
 
-  // ─── BREP tab — server-side OpenCascade (OCCT) render ──────────────────────
-  // Reuses the SHARED PrimitiveDualCanvas chrome (backend="brep"): same canvas,
-  // camera/lights/orbit, ⚙ scale gear, SceneControls, Z-pan, stats + 🔄. Posts
-  // the emitted source + current param values to /api/brep/preview; the server
-  // extracts the (revolve / extrude / loft / CSG) solid, builds it in OCCT, and
-  // adaptively tessellates → true-curve mesh with exact normals. Parts with no
-  // OCCT-buildable solid come back supported:false → the reason shows in-chrome.
-  // brepMeta is fed by the canvas's onBakeMeta and drives the cached/fresh badge.
-  let brepMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
-  // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
-  let brepParamValues = $derived.by(() => {
-    const vals = (bake?.args ?? paramDefaults) as number[];
-    const out: Record<string, number> = {};
-    Object.keys(graph.params).forEach((k, i) => { out[k] = vals[i]; });
-    return out;
-  });
+  // (BREP brepMeta/brepParamValues + SVG PrimitiveSvgView/svgMeshJson/svgRes +
+  //  the SVG-bake $effect moved into RightPane.svelte — P5/G5.)
 
-  // ─── SVG tab — vector render of the baked geometry (PrimitiveSvgView) ─────
-  // Lazy-loaded like PrimitiveDualCanvas. The SVG view needs the same
-  // { full, cutVC } mesh-JSON the 3D pane bakes; we fetch it from
-  // /api/primitives/preview only when the SVG tab is active (active-tab-only
-  // discipline) and the body changes, so it never duplicates work while hidden.
-  let PrimitiveSvgView = $state<any>(null);
-  onMount(async () => {
-    try {
-      const mod = await import('$lib/shared/PrimitiveSvgView.svelte');
-      PrimitiveSvgView = mod.default;
-    } catch { /* svg view unavailable */ }
-  });
-  let svgMeshJson = $state<{ full: any; cutVC: any } | null>(null);
-  let svgMeshKey = $state<string>('');
-  let svgMeshBusy = $state(false);
-  // SVG resolution: 'coarse' (32 segments, DEFAULT — a vector drawing doesn't
-  // need 256-facet circles; ~an order of magnitude lighter so it renders fast +
-  // stays under the high-poly warning) vs 'high' (full 256). Toggle lives in the
-  // SVG view toolbar; persisted. Only this SVG fetch passes `segments`; the
-  // 3D/GLB panes stay full-res.
-  let svgRes = $state<'coarse' | 'high'>('coarse');
   // Draft mode for the 3D-bake live mesh (coarse 64-seg → fast iteration on big
   // stacks). View-only; persisted. Off by default (full fidelity).
   let meshDraft = $state(false);
   onMount(() => {
-    try { const v = localStorage.getItem('ge-svg-res'); if (v === 'coarse' || v === 'high') svgRes = v; } catch { /* ignore */ }
     try { meshDraft = localStorage.getItem('ge-mesh-draft') === '1'; } catch { /* ignore */ }
   });
   $effect(() => { try { localStorage.setItem('ge-mesh-draft', meshDraft ? '1' : '0'); } catch { /* ignore */ } });
-  function setSvgRes(v: 'coarse' | 'high') {
-    svgRes = v;
-    try { localStorage.setItem('ge-svg-res', v); } catch { /* ignore */ }
-  }
-  $effect(() => {
-    if (rightTab !== 'svg') return;
-    if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; return; }
-    const src = bake.source;
-    const params = bake.args ?? paramDefaults;
-    const segs = svgRes === 'coarse' ? 32 : undefined; // undefined → full default (256)
-    const key = JSON.stringify({ s: src, a: params, seg: segs ?? 'full' });
-    if (key === svgMeshKey) return; // already have this mesh
-    svgMeshKey = key;
-    svgMeshBusy = true;
-    (async () => {
-      try {
-        // Mirror PrimitiveDualCanvas's preview request shape: name = the geom
-        // function, params = the ordered value array, mode = sandbox (we always
-        // have source here). cutaway:true forces the cut even for big stacks.
-        const body: any = { id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true };
-        if (segs != null) body.segments = segs;
-        const r = await fetch('/api/primitives/preview', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) { svgMeshJson = null; return; }
-        const data = await r.json();
-        svgMeshJson = { full: data.full, cutVC: data.cutVC };
-      } catch { svgMeshJson = null; }
-      finally { svgMeshBusy = false; }
-    })();
-  });
 
   /** Drawing descriptor markdown — hand-authored "how to draw this part"
    *  reference. Stored alongside the graph as `meta.drawingMd` so it
@@ -6527,38 +6452,20 @@
       onpointermove={onSplitMove}
       onpointerup={endSplitDrag}></div>
 
-    <!-- RIGHT pane — tabbed: 3D bake / live source. One tab visible at a
-         time; both keep their state mounted so switching is instant. -->
-    <section class="ge-right-pane">
-      <div class="ge-pane-tabs" role="tablist">
-        <button class="ge-pane-tab" class:active={rightTab === 'bake'}
-          type="button" role="tab" aria-selected={rightTab === 'bake'}
-          data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
-          onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : '3D bake'}</button>
-        <button class="ge-pane-tab" class:active={rightTab === 'source'}
-          type="button" role="tab" aria-selected={rightTab === 'source'}
-          data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
-          onclick={() => setRightTab('source')}>SRC</button>
-        <button class="ge-pane-tab" class:active={rightTab === 'md'}
-          type="button" role="tab" aria-selected={rightTab === 'md'}
-          data-tip="MD — hand-authored drawing-descriptor markdown. Saved as meta.drawingMd."
-          onclick={() => setRightTab('md')}>MD{drawingMd ? ` · ${drawingMd.length}c` : ''}</button>
-        <button class="ge-pane-tab" class:active={rightTab === 'svg'}
-          type="button" role="tab" aria-selected={rightTab === 'svg'}
-          data-tip="SVG — vector render of the baked geometry (downloadable .svg)"
-          onclick={() => setRightTab('svg')}>SVG</button>
-        <button class="ge-pane-tab" class:active={rightTab === 'glb'}
-          type="button" role="tab" aria-selected={rightTab === 'glb'}
-          data-tip="GLB — half-sectioned bake (downloadable). Baked on demand — the bake is slow, so it only runs when you open this tab."
-          onclick={() => setRightTab('glb')}>GLB</button>
-        <button class="ge-pane-tab" class:active={rightTab === 'brep'}
-          type="button" role="tab" aria-selected={rightTab === 'brep'}
-          data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve · extrude · loft · CSG · composed parts."
-          onclick={() => setRightTab('brep')}>BREP</button>
-      </div>
-      <div class="ge-pane-bodies">
-        <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
-          {#if !hasSolidProducer}
+    <!-- RIGHT pane — tabbed: 3D bake / source / md / svg / glb / brep.
+         Extracted to RightPane.svelte (P5/G5). The 2D profile preview stays
+         here as a parent-scoped snippet (drag-wired to the polygon machinery
+         + tooltip + `.ge-profile-2d*` styles). STABLE refs only — bake /
+         paramDefaults / graph are passed as-is (no inline literals). -->
+    <RightPane
+      {bake} {exemplarId} {paramDefaults} {graph} {hasSolidProducer}
+      active={props.active}
+      {legacyLoad} {sourceText}
+      {cutawayBusy} {cutawayStatus} {rebuildStatus} {restartBusy} {restartStatus} {mdAiBusy}
+      bind:rightTab bind:drawingMd
+      onRebuild={rebuildCache} onRestart={restartDevServer}
+      onLoadCutaway={loadCutaway} onGenerateMd={generateMdWithAi}>
+      {#snippet profilePreview()}
             <!-- Profile mode: inline SVG of the resolved polygon. The
                  graph-driven re-emit is Phase 2.2 — for now this shows
                  the on-disk build()'s shape at default params. Closure
@@ -6650,197 +6557,8 @@
             {:else}
               <div class="ge-empty">resolving polygon…</div>
             {/if}
-          {:else if !bake}<div class="ge-empty">Drop nodes to bake.</div>
-          {:else if bake === 'loading'}<div class="ge-empty">baking…</div>
-          {:else if !bake.ok}
-            <div class="ge-err">
-              <div>{bake.message ?? 'bake failed'}</div>
-              {#if /EMPTY solid|stack: item|degenerate|parameter 0 has unknown type|memory access out of bounds/.test(bake.message ?? '')}
-                {#if /EMPTY solid|stack: item|degenerate|\[in .+→|\(in .+→/.test(bake.message ?? '')}
-                  <!-- A dependency CHAIN ([in X → Y]) means this came from a
-                       named primitive's geometry, NOT a stale server. It's a
-                       GEOMETRY error: a CSG/revolve produced invalid/empty
-                       geometry (subtract that removes everything, NaN/0 param,
-                       degenerate profile). Point the user at the params, and do
-                       NOT offer the restart button (clicking it wedged the dev
-                       server, 2026-06-13). -->
-                  <div class="ge-err-hint geom">
-                    ⚠ A primitive produced <strong>invalid or empty geometry</strong> — e.g. a
-                    subtract that removes everything (same OD on both sides), or a
-                    NaN/0 parameter feeding a revolve. Check the parameters of the
-                    part(s) in the chain above. This is a geometry issue, not a
-                    server problem — no restart needed.
-                  </div>
-                {:else}
-                  <!-- Bare OOB with no dep chain — can be a stale dev server
-                       (Vite HMR skips server modules: primitive-loader /
-                       composition-graph / emit). -->
-                  <div class="ge-err-hint">
-                    ⚠ Looks like a stale dev server (Vite HMR skips server modules after
-                    edits to composition-graph / composition-emit / primitive-loader).
-                    <div class="ge-err-hint-actions">
-                      <button class="ge-err-restart-btn" type="button"
-                        disabled={restartBusy} onclick={restartDevServer}>
-                        {restartBusy ? '🔄 restarting…' : '🔄 Restart dev server'}
-                      </button>
-                      <span class="ge-err-hint-or">or manually:</span>
-                      <code>pkill -f 'bun run dev' && bun run dev</code>
-                    </div>
-                    {#if restartStatus}<div class="ge-err-restart-stat">{restartStatus}</div>{/if}
-                  </div>
-                {/if}
-              {/if}
-            </div>
-          {:else if PrimitiveDualCanvas && (props.active ?? true)}
-            <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-              args={bake.args ?? paramDefaults}
-              source={bake.source}
-              colorOuter={graph.colorOuter} colorInner={graph.colorInner}
-              bakeGlb={false}
-              onRebuild={rebuildCache}
-              showControls={true} showLabels={false}/>
-            <!-- Cache status row + Rebuild button (Phase 1.5) -->
-            {@const bakeMeta = (bake as any).bake ?? {}}
-            <div class="ge-bake-meta">
-              <!-- Draft toggle + Rebuild moved into the 3D canvas (under the
-                   ⚙ scale gear): the canvas owns the adjustable segment count +
-                   the 🔄 fresh-bake button now. -->
-              {#if bakeMeta.cached}
-                {@const cacheMs = Number(bakeMeta._t?.fetch_total) || 0}
-                <span class="ge-cache-badge cached"
-                  title={`hash: ${bakeMeta.cacheHash ?? '?'} · client round-trip ${cacheMs} ms (mesh decode + paint)`}>
-                  ✓ cached{cacheMs > 0 ? ` · ${Math.round(cacheMs)} ms` : ''}
-                </span>
-              {:else if bakeMeta.cacheHash}
-                {@const serverMs = Object.entries(bakeMeta._t ?? {}).reduce((a: number, [k, b]: [string, any]) => {
-                  // fetch_total is the client-perspective round-trip we
-                  // stash in composition-bake; don't double-count it
-                  // against the server-side phase sum.
-                  if (k === 'fetch_total') return a;
-                  const n = Number(b);
-                  return a + (Number.isFinite(n) ? n : 0);
-                }, 0)}
-                <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(serverMs as number)} ms</span>
-              {/if}
-              {#if bakeMeta.cutawaySkipped}
-                <span class="ge-cache-badge skipped" title="Cutaway CSG auto-skipped for big manifolds (> 15k tris). Click Load to compute it.">cutaway off (perf)</span>
-                <button class="ge-cutaway-load-btn" type="button"
-                  disabled={cutawayBusy} onclick={loadCutaway}
-                  title="Bake cutaway on-demand for this part">
-                  {cutawayBusy ? '🔄 …' : 'Load'}
-                </button>
-                {#if cutawayStatus}<span class="ge-rebuild-stat">{cutawayStatus}</span>{/if}
-              {/if}
-              <span class="ge-bake-meta-spacer"></span>
-              {#if rebuildStatus}<span class="ge-rebuild-stat">{rebuildStatus}</span>{/if}
-            </div>
-          {:else}<div class="ge-empty">3D canvas loading…</div>
-          {/if}
-        </div>
-        <div class="ge-source-body" class:hidden={rightTab !== 'source'}>
-          {#if legacyLoad}
-            <div class="ge-legacy-banner">
-              {#if legacyLoad.reason === 'no-graph'}
-                <strong>{legacyLoad.id}</strong> opened in legacy mode — its source has
-                no <code>meta.graph</code> block, so the canvas can't hydrate. Save
-                here to overwrite with a graph-format part. The legacy PrimitiveView
-                editor was removed 2026-06-09 — graph editor is the only editor now.
-              {:else}
-                Could not fetch <strong>{legacyLoad.id}</strong> from the volume.
-                Check the id + your volume connection.
-              {/if}
-            </div>
-          {/if}
-          <!-- Filename header — the SAM info that used to live in the tab
-               label. Moved into the body so the tab strip stays compact. -->
-          <div class="ge-source-header">
-            <code>{exemplarId}.asm.ts</code>
-            <span class="ge-source-header-hint">auto-generated from the graph — edits here are discarded on next save</span>
-          </div>
-          <pre class="ge-source">{sourceText}</pre>
-        </div>
-        <div class="ge-md-body" class:hidden={rightTab !== 'md'}>
-          <div class="ge-md-toolbar">
-            <span class="ge-md-hint">Drawing-descriptor markdown — saved as <code>meta.drawingMd</code></span>
-            <span class="ge-md-toolbar-actions">
-              <!-- ✨ AI generate — kicks off a Claude-vision describe call
-                   that drafts a markdown description from the current
-                   bake + source + node graph. Endpoint TBD (#117 follow-up);
-                   today this just toasts a stub message. -->
-              <button class="ge-md-ai-btn" type="button"
-                onclick={generateMdWithAi}
-                disabled={mdAiBusy}
-                data-tip="Generate description with AI (Claude vision — uses the current bake + graph as context)">
-                {mdAiBusy ? '…' : '✨ AI'}
-              </button>
-              <span class="ge-md-count">{drawingMd.length} char{drawingMd.length === 1 ? '' : 's'}</span>
-            </span>
-          </div>
-          <textarea class="ge-md-textarea"
-            placeholder="# How to draw this part&#10;&#10;Notes, sketch references, parameter meanings, gotchas…"
-            bind:value={drawingMd}></textarea>
-        </div>
-        <div class="ge-svg-body" class:hidden={rightTab !== 'svg'}>
-          {#if rightTab === 'svg'}
-            {#if PrimitiveSvgView && svgMeshJson}
-              <PrimitiveSvgView meshJson={svgMeshJson} name={exemplarId} active={rightTab === 'svg'} res={svgRes} onSetRes={setSvgRes} busy={svgMeshBusy} />
-            {:else if svgMeshBusy}
-              <div class="ge-empty">Baking SVG…</div>
-            {:else}
-              <div class="ge-empty">No geometry to render yet — bake the part first.</div>
-            {/if}
-          {/if}
-        </div>
-        <!-- GLB tab — the slow GLB bake (full cutaway subtract, ~20 s cold)
-             runs ONLY when this tab is open, and ONLY bakes the GLB (no mesh).
-             Mounted on demand so iteration on the 3D-bake tab never waits on it. -->
-        <div class="ge-glb-body" class:hidden={rightTab !== 'glb'}>
-          {#if rightTab === 'glb'}
-            {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
-              <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-                args={bake.args ?? paramDefaults}
-                source={bake.source}
-                colorOuter={graph.colorOuter} colorInner={graph.colorInner}
-                bakeMesh={false}
-                showControls={true} showLabels={false}/>
-            {:else}
-              <div class="ge-empty">No geometry yet — bake the part first (open the 3D bake tab).</div>
-            {/if}
-          {/if}
-        </div>
-        <!-- BREP tab — server-side OpenCascade (OCCT) true-curve render in the
-             SHARED PrimitiveDualCanvas chrome (backend="brep"): same canvas,
-             camera/lights/orbit, ⚙ scale gear, SceneControls, Z-pan, stats + 🔄.
-             Posts the emitted source + current param values to /api/brep/preview. -->
-        <div class="ge-glb-body" class:hidden={rightTab !== 'brep'}>
-          {#if rightTab === 'brep'}
-            {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
-              <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-                args={bake.args ?? paramDefaults}
-                source={bake.source}
-                backend="brep"
-                brepSource={bake.source}
-                brepParams={brepParamValues}
-                onBakeMeta={(m) => (brepMeta = m)}
-                showControls={true} showLabels={false}/>
-              <!-- Cache/fresh badge row — mirrors the 3D-bake .ge-bake-meta. -->
-              <div class="ge-bake-meta">
-                {#if brepMeta && brepMeta.supported === false}
-                  <span class="ge-cache-badge skipped" title="No OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG).">{brepMeta.reason ?? 'no BREP path for this part'}</span>
-                {:else if brepMeta?.cached}
-                  <span class="ge-cache-badge cached" title="Served from the client BREP fetch cache">✓ cached</span>
-                {:else if brepMeta}
-                  <span class="ge-cache-badge fresh" title="Freshly tessellated by OCCT">fresh · {Math.round(brepMeta.ms)} ms OCCT</span>
-                {/if}
-                <span class="ge-bake-meta-spacer"></span>
-              </div>
-            {:else}
-              <div class="ge-empty">No source yet — bake the part first.</div>
-            {/if}
-          {/if}
-        </div>
-      </div>
-    </section>
+      {/snippet}
+    </RightPane>
   </main>
 
   {#if addParamPop}
@@ -8825,97 +8543,11 @@
 
   .ge-bake-pane, .ge-source-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
   .ge-source-pane:has(.ge-legacy-banner) { grid-template-rows: auto auto 1fr; }
-  /* Combined right pane (tabbed): bake + source in one column with a tab strip.
-     30 % default width gives the canvas 70 % to show the graph. */
-  /* Right pane: VERTICAL tab rail on the left + content. */
-  .ge-right-pane { display: grid; grid-template-columns: auto 1fr; overflow: hidden; border-left: 1px solid #e5e7eb; }
-  .ge-pane-tabs { display: flex; flex-direction: column; gap: 0; background: #f5f5f4; border-right: 1px solid #e7e5e4; }
-  .ge-pane-tab { flex: 0 0 auto; writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center; min-height: 70px; white-space: nowrap; padding: 4px 7px; font: 600 11px Arial; color: #78716c; background: transparent; border: 0; border-left: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.6px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
-  .ge-pane-tab code { font: 11px ui-monospace, monospace; color: #57534e; text-transform: none; letter-spacing: 0; }
-  .ge-pane-tab:hover { background: #fafaf9; color: #1c1917; }
-  .ge-pane-tab.active { color: #0c4a6e; border-left-color: #0369a1; background: #fff; }
-  .ge-pane-tab.active code { color: #0c4a6e; }
-  .ge-pane-bodies { position: relative; display: grid; min-height: 0; overflow: hidden; }
-  .ge-pane-bodies > .ge-bake-body,
-  .ge-pane-bodies > .ge-source-body,
-  .ge-pane-bodies > .ge-svg-body,
-  .ge-pane-bodies > .ge-glb-body,
-  .ge-pane-bodies > .ge-md-body { grid-area: 1 / 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
-  /* SVG tab — PrimitiveSvgView fills the pane (it manages its own toolbar +
-     scroll). Give it a defined height so the renderer's container isn't 0px. */
-  .ge-svg-body { min-height: 0; }
-  /* SRC tab — filename header above the <pre>. Light row, monospace
-     filename + a faded hint reminding the user the file is generated. */
-  .ge-source-header {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; padding: 6px 10px;
-    border-bottom: 1px solid #e5e7eb; background: #f8fafc;
-  }
-  .ge-source-header code { font: 12px ui-monospace, monospace; color: #0c4a6e; }
-  .ge-source-header-hint { font: 10px Arial; color: #78716c; }
-  /* MD tab — toolbar row + full-pane textarea. Stays mounted while hidden
-     so the user can flip between SRC/MD without losing in-progress typing. */
-  .ge-md-body { padding: 8px; gap: 6px; }
-  .ge-md-toolbar {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; font: 10px Arial; color: #78716c;
-  }
-  .ge-md-toolbar code { font-family: ui-monospace, monospace; color: #44403c; }
-  .ge-md-toolbar-actions { display: flex; align-items: center; gap: 8px; }
-  .ge-md-count { flex: 0 0 auto; color: #a8a29e; }
-  /* ✨ AI button — small violet pill, the established "smart / generated"
-     colour in the editor (matches ƒ promote-to-expression chips). */
-  .ge-md-ai-btn {
-    background: #ede9fe; color: #5b21b6;
-    border: 1px solid #c4b5fd; border-radius: 4px;
-    padding: 2px 8px; font: 600 11px Arial; cursor: pointer;
-    transition: background 100ms, color 100ms;
-  }
-  .ge-md-ai-btn:hover { background: #c4b5fd; color: #3b0764; }
-  .ge-md-ai-btn:disabled { opacity: 0.6; cursor: wait; }
-  .ge-md-textarea {
-    flex: 1 1 auto; min-height: 0; resize: none;
-    padding: 8px 10px;
-    font: 12px ui-monospace, monospace; line-height: 1.5; color: #1f2937;
-    background: #fafaf9; border: 1px solid #d6d3d1; border-radius: 4px;
-    box-sizing: border-box;
-  }
-  .ge-md-textarea:focus { outline: 1px solid #0369a1; background: #fff; }
-  .ge-pane-bodies > .hidden { display: none; }
-  .ge-legacy-banner { padding: 8px 12px; font: 11px ui-monospace, monospace; line-height: 1.5; color: #78350f; background: #fef3c7; border-bottom: 1px solid #fbbf24; }
-  .ge-legacy-banner strong { color: #92400e; }
-  .ge-legacy-banner a { color: #0369a1; }
-  .ge-pane-head { padding: 6px 12px; font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; }
-  .ge-pane-head code { font: 11px ui-monospace, monospace; color: #0c4a6e; text-transform: none; letter-spacing: 0; }
-  .ge-bake-body { overflow: hidden; min-height: 0; }
+  /* Right-pane tab/body/bake-meta/source/md/legacy/err-hint styles moved to
+     RightPane.svelte (P5/G5). `.ge-empty` + base `.ge-err` stay here because
+     the parent-scoped profile-preview snippet still uses them. */
   .ge-empty { padding: 20px; text-align: center; color: #9ca3af; font: 12px Arial; }
   .ge-err { padding: 20px; color: #b91c1c; font: 12px ui-monospace, monospace; display: flex; flex-direction: column; gap: 10px; }
-  .ge-err-hint { padding: 10px 12px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 4px; font: 11px Arial; line-height: 1.4; }
-  .ge-err-hint code { font: 11px ui-monospace, monospace; background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 2px; }
-  .ge-err-hint-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-  .ge-err-hint-or { font: 11px Arial; color: #92400e; }
-  .ge-err-restart-btn { font: 600 11px Arial; color: #fff; background: #d97706; border: 1px solid #b45309; border-radius: 4px; padding: 4px 10px; cursor: pointer; transition: background 0.12s; }
-  .ge-err-restart-btn:hover:not(:disabled) { background: #b45309; }
-  .ge-err-restart-btn:disabled { opacity: 0.7; cursor: progress; }
-  .ge-err-restart-stat { margin-top: 6px; font: 11px ui-monospace, monospace; color: #92400e; }
-  /* Bake cache status row + Rebuild button */
-  .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
-  .ge-bake-meta-spacer { flex: 1 1 auto; }
-  .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
-  .ge-draft-toggle input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #d97706; width: 13px; height: 13px; }
-  .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
-  .ge-cache-badge.cached { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-  .ge-cache-badge.fresh { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-  .ge-cache-badge.skipped { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-  .ge-rebuild-btn { font: 600 11px Arial; color: #1c1917; background: #fff; border: 1px solid #d6d3d1; border-radius: 4px; padding: 3px 10px; cursor: pointer; transition: background 0.12s; }
-  .ge-rebuild-btn:hover:not(:disabled) { background: #f5f5f4; }
-  .ge-rebuild-btn:disabled { opacity: 0.7; cursor: progress; }
-  .ge-rebuild-stat { font: 11px ui-monospace, monospace; color: #57534e; }
-  /* Lazy cutaway load button — sits next to the "cutaway off (perf)" badge */
-  .ge-cutaway-load-btn { font: 600 10px Arial; color: #fff; background: #b91c1c; border: 1px solid #991b1b; border-radius: 4px; padding: 2px 8px; cursor: pointer; transition: background 0.12s; }
-  .ge-cutaway-load-btn:hover:not(:disabled) { background: #991b1b; }
-  .ge-cutaway-load-btn:disabled { opacity: 0.7; cursor: progress; }
-  .ge-source { margin: 0; padding: 10px 14px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; background: #fafaf9; overflow: auto; white-space: pre; }
   .ge-source-pane { border-left: 1px solid #e5e7eb; }
 
   .ge-picker-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.2); z-index: 100; }
