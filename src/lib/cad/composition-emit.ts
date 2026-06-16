@@ -539,6 +539,17 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
         return '';
       }).filter(Boolean);
       const seg = (node as any).segments != null ? emitValueExpr((node as any).segments) : '64';
+      // Whole-sketch scale → trailing positional args of the `sketch(...)` call
+      // (compileSketch(ops, segments, scaleX, scaleY)). Omitted entirely when
+      // both are absent / literal 1 so pre-scale parts round-trip byte-identically.
+      const sx = (node as any).scaleX;
+      const sy = (node as any).scaleY;
+      const isOne = (v: any) => v == null || (v.kind === 'literal' && v.value === 1);
+      if (!isOne(sx) || !isOne(sy)) {
+        const sxE = sx != null ? emitValueExpr(sx) : '1';
+        const syE = sy != null ? emitValueExpr(sy) : '1';
+        return `sketch([${ops.join(', ')}], ${seg}, ${sxE}, ${syE})`;
+      }
       return `sketch([${ops.join(', ')}], ${seg})`;
     }
   }

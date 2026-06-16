@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { compileSketch, chordToAbs, absToChord, type SketchOp } from './sketch';
-import { hydrateGraph, collectEdges, type Graph } from './composition-graph';
+import { hydrateGraph, collectEdges, setSketchScale, type Graph } from './composition-graph';
 import { validateGraph } from './composition-emit';
 
 type Pt = [number, number];
@@ -226,6 +226,30 @@ describe('compileSketch — grouped spline op', () => {
   });
 });
 
+describe('compileSketch — whole-sketch scale (scaleX / scaleY)', () => {
+  it('scaleX=2, scaleY=1 doubles every r, leaves z unchanged', () => {
+    const base = compileSketch(square(), 64);
+    const scaled = compileSketch(square(), 64, 2, 1);
+    expect(scaled.length).toBe(base.length);
+    scaled.forEach((p, i) => {
+      expect(p[0]).toBeCloseTo(base[i][0] * 2, 9); // r doubled
+      expect(p[1]).toBeCloseTo(base[i][1], 9);     // z untouched
+    });
+  });
+
+  it('absent scale === scale 1 (byte-identical to a no-scale compile)', () => {
+    // all-line sketch
+    expect(compileSketch(square(), 64, 1, 1)).toEqual(compileSketch(square(), 64));
+    // and a curved (spline) sketch — exercises the sampling return path
+    const sp: SketchOp[] = [
+      { op: 'line', r: 0, z: 0 },
+      { op: 'spline', r: 2, z: 2 },
+      { op: 'line', r: 0, z: 2 },
+    ];
+    expect(compileSketch(sp, 96, 1, 1)).toEqual(compileSketch(sp, 96));
+  });
+});
+
 describe('sketch graph — edges, validation + migration', () => {
   const splineGraph = (): any => ({
     nodes: {
@@ -261,6 +285,20 @@ describe('sketch graph — edges, validation + migration', () => {
     const g2 = { ...g, params: { tan: { default: 0.4 } } } as Graph; // drop `bulge`
     const errs = validateGraph(g2);
     expect(errs.some((e) => e.kind === 'missing-param' && e.badRef === 'bulge')).toBe(true);
+  });
+
+  it('setSketchScale sets scaleX / scaleY immutably', () => {
+    const g = hydrateGraph(splineGraph());
+    const g2 = setSketchScale(g, 'n_sk', 'x', { kind: 'literal', value: 2 });
+    expect((g2.nodes['n_sk'] as any).scaleX).toEqual({ kind: 'literal', value: 2 });
+    expect(g2).not.toBe(g);                                  // new graph object
+    expect((g.nodes['n_sk'] as any).scaleX).toBeUndefined(); // original untouched
+    // setting the other axis preserves the first
+    const g3 = setSketchScale(g2, 'n_sk', 'y', { kind: 'param', param: 'zk' });
+    expect((g3.nodes['n_sk'] as any).scaleY).toEqual({ kind: 'param', param: 'zk' });
+    expect((g3.nodes['n_sk'] as any).scaleX).toEqual({ kind: 'literal', value: 2 });
+    // no-op on a non-sketch id
+    expect(setSketchScale(g, 'n_root', 'x', { kind: 'literal', value: 5 })).toBe(g);
   });
 
   it('migrates legacy absolute spline ctrl → chord-relative pts', () => {

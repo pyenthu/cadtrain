@@ -466,6 +466,15 @@ export function setSketchSegments(graph: Graph, sketchId: NodeId, seg: ArgValue)
   return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, segments: seg } } });
 }
 
+/** Set the whole-sketch scale on the r (`'x'`) or z (`'y'`) axis. Mirrors
+ *  setSketchSegments — immutable, no-op on a non-sketch node. */
+export function setSketchScale(graph: Graph, sketchId: NodeId, axis: 'x' | 'y', value: ArgValue): Graph {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return graph;
+  const field = axis === 'x' ? 'scaleX' : 'scaleY';
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, [field]: value } } });
+}
+
 // ─── Spline through-points + end-handles (redesign 2026-06-13) ─────────────
 // A spline op is one grouped entity: its `(r,z)` endpoint plus chord-relative
 // through-points (`pts`) and optional end-tangent handles (`h0`/`h1`). All

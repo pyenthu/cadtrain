@@ -221,6 +221,12 @@ export type SketchNode = {
   ops: SketchOpEntry[];
   /** Sampling density of curved sections; defaults to a literal 64. */
   segments?: ArgValue;
+  /** Whole-sketch scale in the r (x) and z (y) directions. Absent / undefined
+   *  ⇒ 1 (no scale), so pre-scale parts hydrate + bake byte-identically. Both
+   *  are ArgValue so the scale can be param/expr-driven. Applied as a final
+   *  multiply on the compiled (r,z) points (see `compileSketch`). */
+  scaleX?: ArgValue;
+  scaleY?: ArgValue;
 };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode;

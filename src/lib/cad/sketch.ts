@@ -124,13 +124,28 @@ function chamferCorner(prev: Pt, corner: Pt, next: Pt, dist: number): [Pt, Pt] {
   return [add(corner, scale(inDir, d)), add(corner, scale(outDir, d))];
 }
 
+/** Multiply every point's r by `sx` and z by `sy`. A whole-sketch
+ *  non-uniform scale of the FINAL geometry (fillet arcs become elliptical,
+ *  etc.) — the correct "scale the shape" semantics vs. scaling raw op coords. */
+function applyScale(pts: Pt[], sx: number, sy: number): Pt[] {
+  if (sx === 1 && sy === 1) return pts; // identity → byte-identical to no-scale
+  return pts.map(([r, z]) => [r * sx, z * sy] as Pt);
+}
+
 /**
  * Compile a sketch to a closed `(r,z)` point list ready for r_revolve /
  * r_extrude. `segments` controls the sampling density of curved sections.
+ *
+ * `scaleX` / `scaleY` scale the WHOLE compiled sketch in r (x) / z (y). They
+ * default to 1 (no scale) so existing callers are unaffected. This is the
+ * SINGLE place the scale multiply lives: both the editor's live `sketchEditor`
+ * preview (via geom.ts) AND the emitted/baked geometry (composition-emit.ts
+ * emits `sketch(ops, segments, scaleX, scaleY)`) call THIS function, so the
+ * scale flows to preview + bake from one implementation.
  */
-export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
+export function compileSketch(ops: SketchOp[], segments = 64, scaleX = 1, scaleY = 1): Pt[] {
   const verts = toVerts(ops);
-  if (verts.length < 2) return verts.map((v) => v.pt);
+  if (verts.length < 2) return applyScale(verts.map((v) => v.pt), scaleX, scaleY);
 
   // ── 1. Apply CHAMFERS at the point level (each splits a vertex in two) ──
   const chamfered: { pt: Pt; edge: 'line' | 'spline'; pts?: Pt[]; h0?: Pt; h1?: Pt; fillet?: number }[] = [];
@@ -216,8 +231,8 @@ export function compileSketch(ops: SketchOp[], segments = 64): Pt[] {
     } catch { /* leave this corner sharp on failure (e.g. radius too large) */ }
   }
 
-  // ── 4. SAMPLE the chain → evenly-spaced (r,z) ──────────────────────────
-  return sampleModel(model, segments);
+  // ── 4. SAMPLE the chain → evenly-spaced (r,z), then apply whole-sketch scale
+  return applyScale(sampleModel(model, segments), scaleX, scaleY);
 }
 
 /** Walk the model's single chain into ~`segments` evenly-spaced points. */
