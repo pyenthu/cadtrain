@@ -38,6 +38,15 @@
 | `src/lib/shared/RightPane.svelte` (485) | the 6-tab right column (bake/src/md/svg/glb/brep) | P5 ✓ |
 | `src/lib/shared/graph-editor/Popovers.svelte` (413) + `popover-clamp.ts` (26) | the 4 self-contained popovers (container · argExpr · profile · profileRef) | **A ✓** (642b00e) |
 | `graph-editor-bake.ts` (50, pure+tested) + `graph-editor-bake.svelte.ts` (115, rune) | source/meta parsers + the expected-params cache (drift detection) | **B ✓** (2e71155) |
+| `PropertiesCard.svelte` (~140) | the PROPERTIES tab body (z-offset / outer / inner / material 4-col grid) | **D (part) ✓** (aa6c74f) |
+
+> **Phase D landed PARTIAL 2026-06-16.** Only `PropertiesCard.svelte` (the clean,
+> independent HTML foreignObject card) shipped. The **PARAMS card is SVG with
+> wire-feeding sockets** (`<g>` + chip foreignObjects + `.ge-sock out param`
+> circles that call `startParamWire`) — it depends on the shared `.ge-sock` CSS
+> family + wire-state (Phase C). Its natural cluster — ParamsCard + `addParamPop`
+> (adds params) + `wirePop` (wires args→params) — is all wire/params-bound, so it
+> moves WITH/after Phase C (`ParamsCard.svelte`), not scattered now. GEP 8308 → 8231 (−77).
 
 > **Phase B landed 2026-06-16 — REFINED.** "Bake glue" turned out to be mostly
 > NOT movable: `runBake` is just `bakeNonce++` and the real bake is a reactive
@@ -75,7 +84,7 @@ its render arms already pull from extracted, tested helpers.
 | ~~**A**~~ ✓ | `graph-editor/Popovers.svelte` — DONE (642b00e). | 4 self-contained pops (container · argExpr · profile · profileRef). | — | See the refined-scope note above. The other 4 pops ride D/E/F, below. |
 | ~~**B**~~ ✓ | `graph-editor-bake.ts` + `.svelte.ts` — DONE (2e71155). | parsers + expected-params cache (see refined note above). | — | `runBake`/bake-pipeline stay (reactive); `drop*` stay (trivial 1-liners); `setAutoBake`/`rebuildCache`/`restartDevServer` stay (small, bake-pipeline-coupled $state). |
 | **C** | `wire-state.svelte.ts` (rune module) | the 23 wire+drop fns: `wireFrom` state + `armWire`/`startWire`/`startParamWire` + the full `endWireOn*` family + `unwireTransformAxis` + `releaseImplicitCapture`. | MED | Cross-cutting + pointer-capture (memory `touch_implicit_pointer_capture`). Keep the text-substitution wiring AS-IS so K.67 has one small file to rewrite. **Browser wire-drag + touch test mandatory.** |
-| **D** | `ParamsCard.svelte` + `PropertiesCard.svelte` | the viewport-glued overlay cards (the tabbed Params \| Properties block) **+ `addParamPop` + `wirePop`** (still in GEP — they sit with `onAddParam`/`onZOffset`/`wireArgToParam`). | MED | Stay OUTSIDE the pan/zoom group (don't reparent). `CARD_Y0`/socket positions already in geom — keep passing them. |
+| ~~**D**~~ ½ | `PropertiesCard.svelte` ✓ (aa6c74f). REMAINING: `ParamsCard.svelte` + `addParamPop` + `wirePop` → bundle with **C** (wire-coupled). | PROPERTIES body done; PARAMS card (SVG sockets) + the 2 param/wire popovers deferred. | MED | Stay OUTSIDE the pan/zoom group. ParamsCard sockets call `startParamWire` + use the shared `.ge-sock` CSS → do alongside wire-state (C). |
 | **E** | `SketchEditorPane.svelte` | the full-tab sketch editor: 21 `sketch*` handlers (`sketchCanvas*`/`sketchAnchor*`/`sketchBar*`/`sketchCardResize*`/`splineComp*`/`fitSketchFrame`/`cornerAtOpIdx`…), the `sketchEditor` `$derived` (L2609) + frozen-frame, the tools rail + 2D canvas markup **+ `sketchExprPop`** (the coord ƒ-editor — its drag/`toggleSketchOpMode`/`sketchPopPtCount` couple to the sketch state). | MED-HIGH | Largest self-contained chunk. Props: the sketch node + param scope + callbacks. Verify vs `sketch*.test.ts`. **This is where the M.5 sketch-repeat UI will land — do E before sketch-repeat.** |
 | **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards **+ `polyExprPop`** (vertex/loop/binding/count **+ transform-axis** ƒ-editor; fused with `hlVertex`/`hoverVertex`/`svgTip`). | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
 
@@ -89,11 +98,13 @@ follows each component out.
    scope above). **B is the next phase.**
 2. ~~**B — bake glue.**~~ ✓ DONE (2e71155) — parsers + expected-params cache only
    (the bake pipeline is reactive; drops are 1-liners). **D is the next phase.**
-3. **D — Params/Properties cards.** Verify param edit + color/material + the tab
-   switch + param→arg wires still land (socket lockstep). Also carries `addParamPop`
-   + `wirePop`.
-4. **C — wire-state.** Verify every wire-drag kind + touch + the
-   "connector-disconnects" path.
+3. **D — Params/Properties cards.** ½ DONE (aa6c74f): PropertiesCard shipped.
+   REMAINING (ParamsCard + addParamPop + wirePop) folds into step 4 — it's
+   wire-coupled. **C is the next phase.**
+4. **C — wire-state** (+ the deferred ParamsCard cluster). Verify every wire-drag
+   kind + touch + the "connector-disconnects" path; then ParamsCard.svelte (its
+   sockets import startParamWire from the new wire-state module) + addParamPop +
+   wirePop. Verify param edit + add-param + arg→param wiring + socket lockstep.
 5. **E — SketchEditorPane.** Verify enter/edit/exit, each tool, spline/fillet/
    chamfer; THEN unblock M.5 sketch-repeat UI.
 6. **F — NodeCard.** Last. Full graph e2e: every node type renders + wires +
