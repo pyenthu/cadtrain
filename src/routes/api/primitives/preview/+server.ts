@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan } from '$lib/cad/manifold-mesh';
-import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
+import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
 import { finalizeManifold } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
@@ -114,6 +114,16 @@ export const POST = async ({ request, fetch }) => {
   // memoises the instanced response. Keeps the non-instanced cache byte-identical.
   const cacheable = cacheableParams !== null && /^[a-z_][a-z0-9_]*$/i.test(name) && mode !== 'bundle' && !instancedReq;
   if (cacheable) {
+    // DEP-AWARE KEY — fold a hash of the resolved `meta.uses` dep sources
+    // (transitive) into the key so editing a DEP busts this parent's cache
+    // even when the parent's OWN body is byte-identical (the "deja-vu"
+    // stale-mesh bug). Reuses the loader's TTL dep-source cache, so the
+    // fetches dedupe with buildPrimitiveGeom's below. undefined (leaf part /
+    // bundle-only deps) → dropped by hashBakeKey → legacy key byte-identical.
+    // Tolerant: a resolution failure here just leaves the dep hash off — the
+    // real error surfaces from buildPrimitiveGeom on the miss path.
+    try { cacheOpts.depSourcesHash = await hashDepSources(source, fetch); }
+    catch { /* dep resolution error → surfaces in buildPrimitiveGeom below */ }
     cacheHash = hashBakeKey(source, name, cacheableParams as number[], cacheOpts);
     // bust=1 skips the lookup but we still compute the hash + write to cache
     // so the rebuild flow leaves the next call ready for a cache hit.

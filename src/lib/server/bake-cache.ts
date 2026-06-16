@@ -68,6 +68,14 @@ export interface BakeCacheOptions {
    *  dropped by hashBakeKey → the legacy cache key is byte-identical, so existing
    *  default-bake entries still hit. */
   creaseAngle?: number | undefined;
+  /** Hash of this part's RESOLVED dependency sources (its `meta.uses` deps,
+   *  walked transitively, sorted by id — see `hashDepSources` in
+   *  primitive-loader.ts). Folds dep bodies into the key so editing a DEP
+   *  busts the parent's cache even when the parent's OWN body is byte-identical
+   *  — the "deja-vu" stale-mesh bug. undefined (leaf part / no resolvable
+   *  volume deps) → dropped by hashBakeKey → the legacy cache key is
+   *  byte-identical, so existing leaf-part entries still hit. */
+  depSourcesHash?: string | undefined;
 }
 
 export interface BakeCachePayload {

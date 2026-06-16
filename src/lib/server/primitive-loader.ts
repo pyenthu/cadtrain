@@ -23,6 +23,7 @@
  * Mirrors what component-loader.ts does for library components, but for
  * the single-file volume-primitive sandbox.
  */
+import { createHash } from 'node:crypto';
 import { transformSync } from 'esbuild';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
@@ -468,6 +469,72 @@ function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
   })().catch((e) => { depSourceCache.delete(id); throw e; });
   depSourceCache.set(id, { p, ts: Date.now() });
   return p;
+}
+
+/** Test-only: drop the dep-source TTL cache so a test can simulate the cache
+ *  expiring between two dep-source versions. No production caller. */
+export function _resetDepSourceCacheForTest(): void {
+  depSourceCache.clear();
+}
+
+// ── Dep-aware bake-cache key ────────────────────────────────────────────────
+// The bake-cache key (bake-cache.ts) hashes only the PARENT's own body +
+// params + options. A parent that composes `meta.uses` deps can be byte-
+// identical while a DEP it calls changed → the cache returns the parent's
+// STALE mesh ("deja-vu"). The fix: fold a hash of the resolved dep sources
+// into the parent's key (depSourcesHash option). These helpers do the
+// resolution — they reuse fetchDepSource's TTL promise-cache, so when
+// buildPrimitiveGeom runs right after for the same part, the dep fetches
+// dedupe to the same promises (≈ no extra network).
+
+/**
+ * Resolve the FULL TRANSITIVE set of a primitive's dependency sources, keyed
+ * by id. Walks `meta.uses` recursively (the same resolution buildPrimitiveGeom
+ * uses). Deps with no volume source — bundle helpers like `cyl` / `tube`,
+ * whose source is baked into the build and never changes at runtime — are
+ * skipped (a failed fetch ⇒ skip). Cycle- and re-visit-guarded.
+ */
+export async function collectDepSources(
+  source: string,
+  fetchFn: typeof fetch,
+  acc: Map<string, string> = new Map(),
+  visited: Set<string> = new Set(),
+): Promise<Map<string, string>> {
+  const declared = [...new Set(usesOf(source))];
+  await Promise.all(declared.map(async (dep) => {
+    if (visited.has(dep)) return;   // already resolved or attempted (cycle / shared dep)
+    visited.add(dep);
+    let src: string;
+    try { src = await fetchDepSource(dep, fetchFn); }
+    catch { return; }               // bundle helper / missing → no volume source to hash
+    acc.set(dep, src);
+    await collectDepSources(src, fetchFn, acc, visited);
+  }));
+  return acc;
+}
+
+/**
+ * SHA-256 (hex, first 16 chars) of a primitive's resolved dependency sources,
+ * sorted by id for determinism. Returns `undefined` when there are no
+ * resolvable volume deps (a leaf part, or one whose only deps are bundle
+ * helpers) — so passing it into BakeCacheOptions leaves the legacy cache key
+ * byte-identical (hashBakeKey drops undefined option keys). Pair with the
+ * `depSourcesHash` option in bake-cache.ts.
+ */
+export async function hashDepSources(
+  source: string,
+  fetchFn: typeof fetch,
+): Promise<string | undefined> {
+  const map = await collectDepSources(source, fetchFn);
+  if (map.size === 0) return undefined;
+  const h = createHash('sha256');
+  for (const id of [...map.keys()].sort()) {
+    h.update(id);
+    h.update('\0');
+    h.update(map.get(id)!);
+    h.update('\0');
+  }
+  return h.digest('hex').slice(0, 16);
 }
 
 // ── P6: VOLUME profile bake-resolve ─────────────────────────────────────────
