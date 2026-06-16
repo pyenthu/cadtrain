@@ -21,7 +21,7 @@
    * delete (those live inside the graph editor itself).
    */
   import { onMount, tick } from 'svelte';
-  import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
+  import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
   import CacheBrowser from '$lib/shared/CacheBrowser.svelte';
   import {
     type Entry, type FolderNode, MOVE_TARGET_RE,

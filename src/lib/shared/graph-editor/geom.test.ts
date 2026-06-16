@@ -7,7 +7,7 @@ import {
   attachedTransforms, transformBaseCall, transformChainBase, isAttachedTransform,
   xformStripAt, xformOutputAt, xformArrows,
   STRIP_W, STRIP_H, STRIP_TOP, PARAM_H, CARD_PAD, CARD_TITLE_H, POLY_VTX_PITCH, POLY_RREF_PITCH,
-} from './graph-editor-geom';
+} from './geom';
 import type { Graph } from './composition-graph';
 
 // These tests PIN the socket↔DOM row-height contract that the whole editor's

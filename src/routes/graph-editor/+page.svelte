@@ -10,7 +10,7 @@
    * Empty/missing `?id` → component opens a fresh `test_graph_a` graph.
    */
   import { onMount } from 'svelte';
-  import GraphEditorPane from '$lib/shared/GraphEditorPane.svelte';
+  import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
 
   let id = $state<string | null>(null);
   let embed = $state(false);

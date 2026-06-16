@@ -112,14 +112,14 @@
     inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
     entryIdxForEvalIdx, miniBez,
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
-  } from '$lib/cad/graph-editor-geom';
+  } from './geom';
   import { dragNumber } from '$lib/shared/dragNumber';
-  import RightPane from '$lib/shared/RightPane.svelte';
+  import RightPane from './RightPane.svelte';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
   import {
     argStr, argFrom, argToDraftStr, evalArg, sketchParamScope,
     profileProducers, producerLabel, parseProfileExpr, kindsForSet,
-  } from '$lib/cad/graph-editor-args';
+  } from './args';
 
   /** Props (component contract — same surface mounted by /graph-editor for
    *  full-page work and by /primitives for the tabbed multi-instance view).

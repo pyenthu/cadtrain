@@ -7,7 +7,12 @@ domain libs.
 
 ```
 src/lib/shared/
-├── GraphEditorPane.svelte      # THE CAD editor (node-graph canvas + sidebar + bake). Mounted by /graph-editor (full-screen) and /primitives (one per tab)
+├── graph-editor/               # THE CAD editor, decomposed (modularize K.65 / docs/plans/graph-editor-pane.md)
+│   ├── GraphEditorPane.svelte  #   the editor shell — node-graph canvas + bake. Mounted by /graph-editor (full-screen) and /primitives (one per tab)
+│   ├── RightPane.svelte        #   the 6-tab right column (3D bake / SRC / MD / SVG / GLB / BREP)
+│   ├── Popovers.svelte         #   the anchored expr/profile/wire dropdowns
+│   ├── geom.ts (+ .test.ts)    #   pure socket/wire/card position math
+│   └── args.ts                 #   pure ArgValue/expr formatting + profile-kind lookups
 ├── PrimitiveDualCanvas.svelte  # mesh + GLB dual canvas (+ PrimitiveDualScene; smoothShade gate)
 ├── PrimitiveDualScene.svelte / ProfileFn3DCanvas.svelte
 ├── ComponentSceneGlb.svelte    # Threlte scene (flatShading rules — see cad/CLAUDE.md); used by /fem/[id]/tension
