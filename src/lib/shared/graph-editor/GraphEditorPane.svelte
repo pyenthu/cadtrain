@@ -7085,11 +7085,14 @@
      updating ALL three sites: the cy expression on socket circles,
      argY computation for the param/expr wires, and inline mv/rot axis
      positions. Misalignment of even 3-4 px per row stacks visibly. */
-  .ge-arg-row { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; padding: 0; height: 22px; box-sizing: border-box; }
+  /* minmax(0,1fr) (not bare 1fr) so a long expr/fnchip in the value column
+     can't force the track wider than the card — the `auto` min of a plain
+     1fr is the cell's min-content, which overflowed (#7). */
+  .ge-arg-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px; align-items: center; padding: 0; height: 22px; box-sizing: border-box; }
   /* mv/rot axis rows live inside .ge-xyz — collapse the key column to
      14 px and drop the gap so the input box sits right next to the
      rx/ry/rz label, no wasted horizontal space. */
-  .ge-xyz .ge-arg-row { grid-template-columns: 14px 1fr; gap: 2px; }
+  .ge-xyz .ge-arg-row { grid-template-columns: 14px minmax(0, 1fr); gap: 2px; }
   .ge-arg-key { font: 11px ui-monospace, monospace; color: #6b7280; }
   /* Axis labels (x/y/z, rx/ry/rz) on the mv/rot single-column card. Slim
      fixed column, LEFT-justified so the rx/ry/rz labels read in a clean
@@ -7346,7 +7349,9 @@
 
   .ge-picker-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.2); z-index: 100; }
   /* Multi-source ƒ-chip — shown on a Call's arg row when expr references 2+ params */
-  .ge-arg-fnchip { display: inline-flex; align-items: center; gap: 2px; flex: 1 1 auto; padding: 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #f59e0b; border-radius: 9999px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.12s; }
+  .ge-arg-fnchip { display: inline-flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; padding: 1px 6px; font: 600 10px ui-monospace, monospace; background: #fef3c7; color: #78350f; border: 1px solid #f59e0b; border-radius: 9999px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.12s; }
+  /* The refs sub-span must also shrink, else its min-content keeps the chip wide. */
+  .ge-arg-fnchip-refs { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .ge-arg-fnchip:hover { background: #fde68a; }
   .ge-arg-fnchip-refs { color: #b45309; font-weight: 500; }
   /* Profile chip (#119) — appears on r_revolve / r_extrude / r_weld_extrude
