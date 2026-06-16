@@ -2,9 +2,9 @@
 
 Spawn separate sub process to do the following.
 
-1. PLAN. Create a dedicated planning directory. I want to be able to modify the lan and feed to claude.
+1. Plan a RAG based AI system with multi shots. Like we have in SVTC. The AI system should have context of the tab being used. 
 
-2. Plan a RAG based AI system with multi shots. Like we have in SVTC. The AI system should have context of the tab being used. Also i would like to have the option of running a web-llm and build the prompt databases so we dont have to send data outside the organization.
+2. Also i would like to have the option of running a web-llm and build the prompt databases so we dont have to send data outside the organization.
 
 3. Plan to modularize the code. Deep dive for stale code, debug for failire, edge cases etc. Reduce file sizes.
 
@@ -41,8 +41,20 @@ Y
 Z
 ______________
 
+13. PLAN We should incorporate conditional expressions tab on the top along with PARAMS and PROPS.. this will be a list of calculatedf expressions that we can use.. 
+
+14. PLAN Is there merit in explorign svelte-flow for the graph editor? 
+
+15. BREP.io experimentation. Possible?
+
+16. For the 3D BAKE CAN WE plan on thjis normals smotheming process?
+
 https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/shading-lights.html
 https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/shading-normals.html
+
+17. PLAN AND PUT INTO RESEARCH. Explore the optopn of web-llm based calls using https://github.com/MeetKai/functionary
+
+18. Create a dedicated research route. Whwre we park our research.. 
 
 
 PARKED. 
