@@ -103,7 +103,7 @@
   // docs/plans/modularize.md). These take captured state (graph, pan/zoom,
   // CARD_Y0, PARAM_W, cardObstacles, sketchOpsScrollTop) as explicit args.
   import {
-    bezier, chipWidthFor, paramPos, paramCardSize, extractParamRefs, paramSocketPos,
+    bezier, chipWidthFor, paramCardSize, extractParamRefs, paramSocketPos,
     cardMinWidth, polySockR, polySockZ, polySockRef,
     sketchCols, sketchSockR, sketchSockZ, sketchSockVal,
     sketchRowVisible, nodeSize, containerSlotY,
@@ -123,6 +123,7 @@
   // (Popovers' argExpr + GEP's sketch/poly expr popovers) can't drift.
   import Popovers from './Popovers.svelte';
   import PropertiesCard from './PropertiesCard.svelte';
+  import ParamsCard from './ParamsCard.svelte';
   import { clampToViewport } from './popover-clamp';
   // Source/meta parsers + the expected-params cache (drift detection) —
   // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
@@ -5788,59 +5789,19 @@
         {/if}
 
         {#if leftTab === 'params'}
-        <!-- PARAMS CARD — tacked outside the pan/zoom group so it stays
-             glued to the viewport top-left, directly under the tab header.
-             Holds N param chips vertically, with a + rounded button to add a
-             new param. Each chip is vertically symmetric, with: 📌 pin (left),
-             p.name + input value, 🗑 trash (right), output socket OUTSIDE
-             the card's right edge for drag-wiring. -->
-        <g class="ge-params-card" transform="translate({CARD_X0},{CARD_Y0})">
-          <rect class="ge-params-card-bg" width={pcs.w} height={pcs.h} rx="8"/>
-          <text x="10" y={CARD_TITLE_H - 9} class="ge-params-card-title">Params</text>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <circle role="button" tabindex="-1" class="ge-params-add-btn"
-            cx={pcs.w - 14} cy={CARD_TITLE_H - 13} r="9"
-            onpointerdown={(ev) => { ev.stopPropagation(); openAddParamPop(ev); }}/>
-          <text x={pcs.w - 14} y={CARD_TITLE_H - 9} class="ge-params-add-glyph" text-anchor="middle" pointer-events="none">+</text>
-          <line x1="0" y1={CARD_TITLE_H} x2={pcs.w} y2={CARD_TITLE_H} class="ge-params-card-divider"/>
-        </g>
-        <!-- Chips render in viewport coords too. Output sockets stick out
-             of the card's right edge so they can still be drag-targeted. -->
-        {#each paramEntries as [name, p], i (name)}
-          {@const pos = paramPos(CARD_Y0,name, i)}
-          <g class="ge-param-card" transform="translate({pos.x},{pos.y})">
-            <!-- Chip body — HTML/CSS flex layout inside a foreignObject so
-                 pin / name / input / trash align cleanly without manual
-                 SVG-coordinate math. Dynamic chip width (PARAM_W) tracks
-                 the longest label so labels never clip; the label cell
-                 itself flex-grows to absorb the slack. -->
-            <foreignObject x="0" y="0" width={PARAM_W} height={PARAM_H}>
-              <div class="ge-param-chip" class:stackref={name === STACK_REF_PARAM} xmlns="http://www.w3.org/1999/xhtml">
-                <span class="pin">{name === STACK_REF_PARAM ? '🔗' : '📌'}</span>
-                <span class="name" title={name === STACK_REF_PARAM ? 'z-offset — how this part mates in a stack() (0 = end-to-end flush · negative = overlap into the next by that much · positive = leave that much gap). Reserved; cannot be deleted.' : `p.${name}`}>p.{name}</span>
-                <input class="val" type="number" step="0.05"
-                  value={(p as any).default}
-                  use:dragNumber={{
-                    step: 0.05,
-                    get: () => Number((p as any).default) || 0,
-                    set: (val) => onParamDefault(name, val),
-                  }}
-                  oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
-                {#if name !== STACK_REF_PARAM}
-                  <button class="trash" type="button" title="Remove p.{name}"
-                    onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</button>
-                {:else}
-                  <span class="trash locked" title="Reserved — cannot be deleted">🔒</span>
-                {/if}
-              </div>
-            </foreignObject>
-            <!-- Output socket — OUTSIDE the chip right edge so it's never clipped -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <circle role="button" tabindex="-1" class="ge-sock out param"
-              cx={PARAM_W + CARD_PAD + 4} cy={PARAM_H / 2} r="5"
-              onpointerdown={(ev) => startParamWire(ev, name)}/>
-          </g>
-        {/each}
+          <!-- PARAMS card (ParamsCard.svelte, Phase D) — viewport-glued, outside
+               the pan/zoom group. Position math from geom (shared with the
+               param→arg wires in the node arms); wire-state + add-param popover
+               stay in GEP, passed as callbacks. -->
+          <ParamsCard
+            {paramEntries}
+            {pcs}
+            cardY0={CARD_Y0}
+            paramW={PARAM_W}
+            onOpenAddParamPop={openAddParamPop}
+            {onParamDefault}
+            {onRemoveParam}
+            onStartParamWire={startParamWire} />
         {/if}
       </svg>
       <!-- In-canvas status strip — bottom-left. Lifted out of the top
