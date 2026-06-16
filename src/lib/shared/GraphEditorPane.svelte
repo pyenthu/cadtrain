@@ -1854,6 +1854,11 @@
   }
   function onNodePointerDown(ev: PointerEvent, id: string) {
     if (ev.button !== 0) return;
+    // preventDefault stops the browser from ALSO starting a native text
+    // selection on the card's foreignObject content — without it the drag
+    // selects swathes of text AND the native selection-drag can swallow the
+    // pointerup so the card "sticks" to the cursor (never releases).
+    ev.preventDefault();
     bringToFront(id);
     dragging = id;
     dragStart = { x: ev.clientX, y: ev.clientY };
@@ -2528,9 +2533,9 @@
   //   • The wrapper output exits the cluster's right edge at the OUTERMOST
   //     transform's (row-0) vertical centre — matching startWire(inlineRot ??
   //     inlineMv …) — so the card→rot→mv chain and param wires don't cross.
-  const STRIP_W = 128;
-  const STRIP_H = 40;
-  const STRIP_GAP = 14;       // card right edge → first strip column
+  const STRIP_W = 92;
+  const STRIP_H = 44;
+  const STRIP_GAP = 2;        // card right edge → first strip column (flush)
   const STRIP_ROW_GAP = 10;   // vertical gap between row 0 and row 1
   const STRIP_COL_GAP = 8;    // horizontal gap between columns (≥3 transforms)
   const STRIP_TOP = 2;        // cluster top, relative to card top
@@ -8467,8 +8472,14 @@
   .ge-param-add.danger.armed { background: #dc2626; color: #fff; }
   .ge-param-add.danger.armed:hover { background: #b91c1c; color: #fff; }
 
-  .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none; }
+  .ge-canvas { width: 100%; height: 100%; background: #fafaf9; cursor: grab; touch-action: none;
+    /* No text selection while dragging cards / panning. Inputs + editable
+       fields opt back IN below so values stay selectable. */
+    user-select: none; -webkit-user-select: none; }
   .ge-canvas.dragging { cursor: grabbing; }
+  /* Re-enable selection inside editable fields (card inputs, expr boxes). */
+  .ge-canvas input, .ge-canvas textarea, .ge-canvas [contenteditable] {
+    user-select: text; -webkit-user-select: text; }
 
   .ge-node-bg { fill: #fff; stroke: #0369a1; stroke-width: 2; cursor: grab; touch-action: none; }
   .ge-node-bg.method { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
@@ -9168,11 +9179,17 @@
   .ge-inline-xform.mv  { color: #5b21b6; border-color: #c4b5fd; background: #f5f3ff; }
   .ge-inline-xform.rot { color: #831843; border-color: #f9a8d4; background: #fdf2f8; }
   .ge-inline-hdr { font: 700 9px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0; }
-  .ge-inline-axes { display: flex; gap: 4px; align-items: center; }
-  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 2px; }
-  .ge-inline-axkey { font: 600 9px Arial; color: #9ca3af; flex: 0 0 auto; }
-  .ge-inline-input { width: 100%; min-width: 0; box-sizing: border-box; font: 11px Arial; padding: 1px 3px;
-    border: 1px solid #d1d5db; border-radius: 3px; text-align: right; background: #fff; }
+  .ge-inline-axes { display: flex; gap: 3px; align-items: flex-start; }
+  /* Label ABOVE the input (stacked) so each axis is a narrow column → the whole
+     strip is narrower than a label-beside-input row. */
+  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .ge-inline-axkey { font: 600 8px Arial; color: #9ca3af; text-align: center; line-height: 1.1; }
+  .ge-inline-input { width: 100%; min-width: 0; box-sizing: border-box; font: 11px Arial; padding: 1px 2px;
+    border: 1px solid #d1d5db; border-radius: 3px; text-align: center; background: #fff;
+    /* No number spinners — they clutter the tiny strips. */
+    appearance: textfield; -moz-appearance: textfield; }
+  .ge-inline-input::-webkit-inner-spin-button,
+  .ge-inline-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .ge-inline-input:focus { outline: none; border-color: #7c3aed; }
   .ge-inline-pchip { display: inline-flex; align-items: center; gap: 1px; max-width: 100%; overflow: hidden;
     white-space: nowrap; text-overflow: ellipsis; font: 600 10px Arial; color: #5b21b6;
