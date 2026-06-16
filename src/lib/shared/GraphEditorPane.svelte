@@ -1892,18 +1892,33 @@
   // pushed DOWN by the Properties card's live height + a gap (see CARD_Y0).
   // Collapsible — when collapsed only its header shows and Params tucks right
   // under it.
-  const PROPS_X0 = 8, PROPS_Y0 = 8, PROPS_W = 236, PROPS_GAP = 6;
+  const PROPS_X0 = 8, PROPS_Y0 = 8, PROPS_W = 236;
+  // Combined left card: ONE viewport-glued card with a tab header
+  // (Params | Properties) pinned at (PROPS_X0, PROPS_Y0). The tab header is
+  // TAB_HEADER_H tall; the ACTIVE tab's body renders directly below it. This
+  // replaces the old stacked PROPERTIES-above-PARAMS layout to save vertical
+  // space.
+  const TAB_HEADER_H = 26;
   // Column layout: a single label row above a single control row (2 rows
   // tall, not 4 stacked rows). PROPS_BODY_H = label (14) + gap (4) + ctrl (22).
   const PROPS_BODY_H = 40;
-  let propsExpanded = $state(true);
-  let propsBodyH = $derived(propsExpanded ? PROPS_BODY_H + CARD_PAD * 2 : 0);
-  // +5 = the card's 1.5px top+bottom border + drop-shadow clearance, which the
-  // foreignObject height must include or the PARAMS card (positioned from
-  // propsCardH) overlaps the collapsed Properties header.
-  let propsCardH = $derived(CARD_TITLE_H + propsBodyH + 5);
-  // Params card top — slides below the Properties card so the two never overlap.
-  let CARD_Y0 = $derived(PROPS_Y0 + propsCardH + PROPS_GAP);
+  // Active left tab — persisted across reloads. REPLACES the old propsExpanded
+  // collapse: the properties body shows whenever its tab is active.
+  let leftTab = $state<'params' | 'properties'>('params');
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('ge-left-tab');
+    if (saved === 'params' || saved === 'properties') leftTab = saved;
+  }
+  $effect(() => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ge-left-tab', leftTab);
+  });
+  // Properties-tab body height (+5 = 1.5px border top+bottom + drop-shadow
+  // clearance, so the foreignObject doesn't clip the card's shadow).
+  const propsBodyH = PROPS_BODY_H + CARD_PAD * 2 + 5;
+  // Params card top — pinned directly under the tab header. CONSTANT now (was
+  // derived off the stacked Properties card): the param rows / output sockets /
+  // param→arg wires ALL derive from CARD_Y0, so they follow this single source.
+  const CARD_Y0 = PROPS_Y0 + TAB_HEADER_H;
   // PARAM_W is DYNAMIC — derived from the longest label so chips like
   // p.totalLen don't clip. Constants below are the FIXED footprint of the
   // pin + input + trash; the label slot expands to fit the longest name.
@@ -3911,36 +3926,27 @@
     undoLayout = { ...graph.layout };
     applyPushApart();
   }
-  /** The two viewport-tacked overlay cards — PROPERTIES (top) and PARAMS
-   *  (below it) — projected from screen-fixed coords into GRAPH space at the
-   *  current pan/zoom. Returned as forceSeparate/autoLayoutGraph obstacles so
-   *  node cards get pushed clear of BOTH and never overlap them. Both cards
-   *  are glued to the top-left of the viewport (CARD_X0/PROPS_X0 px from the
-   *  left), so `(screenX - pan.x) / zoom` maps the card's screen rect into
-   *  graph space; a larger card footprint at low zoom maps to a larger graph
-   *  rect, which is correct. */
+  /** The single viewport-tacked overlay card — the combined tab card
+   *  (header + the ACTIVE tab's body) — projected from screen-fixed coords
+   *  into GRAPH space at the current pan/zoom. Returned as
+   *  forceSeparate/autoLayoutGraph obstacle so node cards get pushed clear of
+   *  it and never overlap. The card is glued to the top-left of the viewport
+   *  (PROPS_X0 px from the left), so `(screenX - pan.x) / zoom` maps the
+   *  card's screen rect into graph space; a larger card footprint at low zoom
+   *  maps to a larger graph rect, which is correct. */
   function overlayCardObstacles(): { id: string; x: number; y: number; w: number; h: number }[] {
-    const obs: { id: string; x: number; y: number; w: number; h: number }[] = [];
-    // PROPERTIES card — pinned at (PROPS_X0, PROPS_Y0); height collapses to
-    // its header when propsExpanded is false (propsCardH already reflects it).
-    obs.push({
-      id: '__obs_props_card',
+    // Card height = tab header + whichever tab body is showing. The params
+    // body socket spills ~14 px past the card's right edge, so pad the width.
+    const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
+    const bodyH = leftTab === 'params' ? pcardSize.h : propsBodyH;
+    const w = Math.max(PROPS_W, pcardSize.w + 14);
+    return [{
+      id: '__obs_left_card',
       x: (PROPS_X0 - pan.x) / zoom,
       y: (PROPS_Y0 - pan.y) / zoom,
-      w: PROPS_W / zoom,
-      h: propsCardH / zoom,
-    });
-    // PARAMS card — sits just below PROPERTIES (CARD_Y0 derives from it).
-    const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
-    obs.push({
-      id: '__obs_params_card',
-      x: (CARD_X0 - pan.x) / zoom,
-      y: (CARD_Y0 - pan.y) / zoom,
-      // socket spills past the card's right edge by ~12 px — pad accordingly
-      w: (pcardSize.w + 14) / zoom,
-      h: pcardSize.h / zoom,
-    });
-    return obs;
+      w: w / zoom,
+      h: (TAB_HEADER_H + bodyH) / zoom,
+    }];
   }
   function applyPushApart(opts: { useBounds?: boolean; useObstacles?: boolean; useWires?: boolean } = {}) {
     const { useBounds = true, useObstacles = true, useWires = true } = opts;
@@ -4578,7 +4584,7 @@
               {#each Object.entries((n as any).args ?? {}) as [k, v], argIdx (k)}
                 {#if (v as any).kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === (v as any).param)}
-                  {#if pIdx >= 0}
+                  {#if pIdx >= 0 && leftTab === 'params'}
                     {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(v as any).param, pIdx)}
                     {@const pos = nodePos(n.id)}
                     {@const argY = pos.y + 36 + 14 + argIdx * 22}
@@ -4591,7 +4597,7 @@
                        param wires (amber dashed vs orange dashed). -->
                   {#each extractParamRefs((v as any).expr) as refName (refName)}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                    {#if pIdx >= 0}
+                    {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                       {@const pos = nodePos(n.id)}
                       {@const argY = pos.y + 36 + 14 + argIdx * 22}
@@ -4626,7 +4632,7 @@
                 {#each [0,1,2] as i (i)}
                   {#if (mvN.offset[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (mvN.offset[i] as any).param)}
-                    {#if pIdx >= 0}
+                    {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(mvN.offset[i] as any).param, pIdx)}
                       {@const pos = nodePos(n.id)}
                       {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
@@ -4635,7 +4641,7 @@
                   {:else if (mvN.offset[i] as any).kind === 'expr'}
                     {#each extractParamRefs((mvN.offset[i] as any).expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                      {#if pIdx >= 0}
+                      {#if pIdx >= 0 && leftTab === 'params'}
                         {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                         {@const pos = nodePos(n.id)}
                         {@const sk = inlineXformSocket(graph,n.id, 'mv', i)!}
@@ -4650,7 +4656,7 @@
                 {#each [0,1,2] as i (i)}
                   {#if (rotN.rot[i] as any).kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === (rotN.rot[i] as any).param)}
-                    {#if pIdx >= 0}
+                    {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(rotN.rot[i] as any).param, pIdx)}
                       {@const pos = nodePos(n.id)}
                       {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
@@ -4659,7 +4665,7 @@
                   {:else if (rotN.rot[i] as any).kind === 'expr'}
                     {#each extractParamRefs((rotN.rot[i] as any).expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                      {#if pIdx >= 0}
+                      {#if pIdx >= 0 && leftTab === 'params'}
                         {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                         {@const pos = nodePos(n.id)}
                         {@const sk = inlineXformSocket(graph,n.id, 'rot', i)!}
@@ -4673,7 +4679,7 @@
               <!-- Repeat count param-wire — chip → top-left count socket -->
               {#if (n as any).count?.kind === 'param'}
                 {@const pIdx = paramEntries.findIndex(([nm]) => nm === (n as any).count.param)}
-                {#if pIdx >= 0}
+                {#if pIdx >= 0 && leftTab === 'params'}
                   {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(n as any).count.param, pIdx)}
                   {@const pos = nodePos(n.id)}
                   <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + 17)}/>
@@ -4681,7 +4687,7 @@
               {:else if (n as any).count?.kind === 'expr'}
                 {#each extractParamRefs((n as any).count.expr) as refName (refName)}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                  {#if pIdx >= 0}
+                  {#if pIdx >= 0 && leftTab === 'params'}
                     {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                     {@const pos = nodePos(n.id)}
                     <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + 17)}/>
@@ -4702,14 +4708,14 @@
                 {@const zTopY = pos.y + polySockZ(n, idx)}
                 {#if pt.r?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.r.param)}
-                  {#if pIdx >= 0}
+                  {#if pIdx >= 0 && leftTab === 'params'}
                     {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,pt.r.param, pIdx)}
                     <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, rTopY)}/>
                   {/if}
                 {:else if pt.r?.kind === 'expr'}
                   {#each extractParamRefs(pt.r.expr) as refName (refName)}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                    {#if pIdx >= 0}
+                    {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                       <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, rTopY)}/>
                     {/if}
@@ -4717,14 +4723,14 @@
                 {/if}
                 {#if pt.z?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.z.param)}
-                  {#if pIdx >= 0}
+                  {#if pIdx >= 0 && leftTab === 'params'}
                     {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,pt.z.param, pIdx)}
                     <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, zTopY)}/>
                   {/if}
                 {:else if pt.z?.kind === 'expr'}
                   {#each extractParamRefs(pt.z.expr) as refName (refName)}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                    {#if pIdx >= 0}
+                    {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                       <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, zTopY)}/>
                     {/if}
@@ -4763,14 +4769,14 @@
                   {@const av = (op as any)[field]}
                   {#if av?.kind === 'param'}
                     {@const pIdx = paramEntries.findIndex(([nm]) => nm === av.param)}
-                    {#if pIdx >= 0}
+                    {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,av.param, pIdx)}
                       <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
                     {/if}
                   {:else if av?.kind === 'expr'}
                     {#each extractParamRefs(av.expr) as refName (refName)}
                       {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                      {#if pIdx >= 0}
+                      {#if pIdx >= 0 && leftTab === 'params'}
                         {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                         <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
                       {/if}
@@ -4789,14 +4795,14 @@
               {@const tgtY = pos.y + 57}
               {#if (n as any).count?.kind === 'param'}
                 {@const pIdx = paramEntries.findIndex(([nm]) => nm === (n as any).count.param)}
-                {#if pIdx >= 0}
+                {#if pIdx >= 0 && leftTab === 'params'}
                   {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,(n as any).count.param, pIdx)}
                   <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, tgtX, tgtY)}/>
                 {/if}
               {:else if (n as any).count?.kind === 'expr'}
                 {#each extractParamRefs((n as any).count.expr) as refName (refName)}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                  {#if pIdx >= 0}
+                  {#if pIdx >= 0 && leftTab === 'params'}
                     {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                     <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, tgtX, tgtY)}/>
                   {/if}
@@ -6113,23 +6119,29 @@
           {/if}
         </g>
 
-        <!-- PROPERTIES CARD — pinned ABOVE the Params card, also viewport-glued
-             (outside the pan/zoom group). Collapsible: when collapsed only the
-             header shows and Params tucks right under it. Holds part-level
-             z-offset / colour / material. Single foreignObject so the rows use
-             plain HTML/flex like the param chips. -->
-        <foreignObject x={PROPS_X0} y={PROPS_Y0} width={PROPS_W} height={propsCardH}>
+        <!-- COMBINED LEFT CARD — ONE viewport-glued card (outside the pan/zoom
+             group) with a tab header. Tab "Params" shows the param chips +
+             their output sockets (and the param→arg wires); tab "Properties"
+             shows part-level z-offset / colour / material. Replaces the old
+             stacked PROPERTIES-above-PARAMS pair to save vertical space. -->
+        <foreignObject x={PROPS_X0} y={PROPS_Y0} width={PROPS_W} height={TAB_HEADER_H}>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="ge-left-tabs" xmlns="http://www.w3.org/1999/xhtml"
+               onpointerdown={(e) => e.stopPropagation()}>
+            <button class="ge-left-tab" class:on={leftTab === 'params'} type="button"
+              title="Part parameters" onclick={() => (leftTab = 'params')}>Params</button>
+            <button class="ge-left-tab" class:on={leftTab === 'properties'} type="button"
+              title="Part properties — z-offset, colours, material"
+              onclick={() => (leftTab = 'properties')}>⚙ Properties</button>
+          </div>
+        </foreignObject>
+
+        {#if leftTab === 'properties'}
+        <!-- PROPERTIES body — directly below the tab header. -->
+        <foreignObject x={PROPS_X0} y={PROPS_Y0 + TAB_HEADER_H} width={PROPS_W} height={propsBodyH}>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="ge-props-card" xmlns="http://www.w3.org/1999/xhtml"
                onpointerdown={(e) => e.stopPropagation()}>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <div class="ge-props-head" role="button" tabindex="-1"
-                 title={propsExpanded ? 'Collapse properties' : 'Expand properties'}
-                 onclick={() => (propsExpanded = !propsExpanded)}>
-              <span class="tw">{propsExpanded ? '▾' : '▸'}</span>
-              <span class="ttl">⚙ Properties</span>
-            </div>
-            {#if propsExpanded}
               <!-- 4-column grid: label on TOP of each control.
                    z-offset · outer · inner · material -->
               <div class="ge-props-body">
@@ -6172,14 +6184,15 @@
                   </select>
                 </div>
               </div>
-            {/if}
           </div>
         </foreignObject>
+        {/if}
 
+        {#if leftTab === 'params'}
         <!-- PARAMS CARD — tacked outside the pan/zoom group so it stays
-             glued to the viewport top-left. Holds N param chips vertically,
-             with a title bar that has a + rounded button to add a new param.
-             Each chip is vertically symmetric, with: 📌 pin (left),
+             glued to the viewport top-left, directly under the tab header.
+             Holds N param chips vertically, with a + rounded button to add a
+             new param. Each chip is vertically symmetric, with: 📌 pin (left),
              p.name + input value, 🗑 trash (right), output socket OUTSIDE
              the card's right edge for drag-wiring. -->
         <g class="ge-params-card" transform="translate({CARD_X0},{CARD_Y0})">
@@ -6229,6 +6242,7 @@
               onpointerdown={(ev) => startParamWire(ev, name)}/>
           </g>
         {/each}
+        {/if}
       </svg>
       <!-- In-canvas status strip — bottom-left. Lifted out of the top
            toolbar so the canvas itself carries the local feedback
@@ -8825,21 +8839,27 @@
   /* ─── Properties card (above Params) ─────────────────────────────────────
      Same amber lineage as the Params card; a touch lighter so the two read
      as a stacked pair. The whole card lives inside one foreignObject. */
+  /* Combined left card — tab header (Params | Properties). Matches the amber
+     props/params palette. Two equal-width buttons; the active one fills. */
+  .ge-left-tabs {
+    display: flex; width: 100%; height: 26px; box-sizing: border-box;
+    background: #fffbeb; border: 1.5px solid #d97706; border-radius: 8px;
+    overflow: hidden; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.06));
+  }
+  .ge-left-tab {
+    flex: 1 1 0; min-width: 0; height: 100%; padding: 0; border: none;
+    background: transparent; cursor: pointer; user-select: none;
+    font: 700 11px Arial; color: #b45309; opacity: 0.7;
+    text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+  }
+  .ge-left-tab + .ge-left-tab { border-left: 1px solid #fde68a; }
+  .ge-left-tab:hover { opacity: 1; }
+  .ge-left-tab.on { background: #fde68a; color: #78350f; opacity: 1; }
   .ge-props-card {
     box-sizing: border-box; width: 100%;
     background: #fffbeb; border: 1.5px solid #d97706; border-radius: 8px;
     filter: drop-shadow(0 2px 3px rgba(0,0,0,0.06));
     overflow: hidden; font: 700 10px ui-monospace, monospace; color: #78350f;
-  }
-  .ge-props-head {
-    display: flex; align-items: center; gap: 6px;
-    height: 26px; padding: 0 8px; box-sizing: border-box;
-    cursor: pointer; user-select: none; border-bottom: 1px solid #fde68a;
-  }
-  .ge-props-head .tw { width: 10px; text-align: center; opacity: 0.8; }
-  .ge-props-head .ttl {
-    font: 700 11px Arial; color: #78350f;
-    text-transform: uppercase; letter-spacing: 0.5px;
   }
   /* 4-column grid — each column is a top label + one control below. */
   .ge-props-body {
