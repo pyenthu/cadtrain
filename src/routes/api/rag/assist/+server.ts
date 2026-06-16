@@ -43,7 +43,48 @@ import { toClaudeTools, toolListText } from '$lib/cad/editor-tools-schema';
 const MODEL = () => env.RAG_ASSIST_MODEL || 'claude-opus-4-8';
 const MAX_TOKENS = 4096;
 
-function buildAssistSystem(graphState: unknown): string {
+/**
+ * The STABLE half of the system prompt: persona + ArgValue shape + rules +
+ * the (deterministic) tool list. This is byte-identical on every turn of the
+ * loop, so it carries the prompt-cache breakpoint. `tools` renders before
+ * `system`, so the cached span is `tools + this block` — keep everything
+ * VOLATILE (the editor state) out of here or the cache never reads (see
+ * docs/plans/ai-rag-system.md §D and shared/prompt-caching.md). Note the
+ * volatile state block deliberately sits AFTER this breakpoint.
+ */
+const ASSIST_STATIC_SYSTEM = [
+  'You are an assistant embedded in cadtrain\'s node-graph parametric CAD editor.',
+  'You help the user EDIT the part currently open by calling editor tools — you',
+  'do not write code or return a whole new graph. Make the smallest set of tool',
+  'calls that satisfies the request, then stop with a one-line confirmation.',
+  '',
+  'KEY SHAPE — every Call arg and every polygon coordinate is an ArgValue union:',
+  '  {"kind":"literal","value":N}   a fixed number/string/boolean',
+  '  {"kind":"expr","expr":"p.od/2 - p.wall"}  a JS expression (params bound as p.<name>)',
+  '  {"kind":"param","param":"OD"}  wired to the PARAMS row named OD',
+  '',
+  'RULES:',
+  '- Node ids look like "n_ab12cd" and cannot be guessed. Use the CURRENT EDITOR',
+  '  STATE (or call getEditorState) to find the right id/alias before any',
+  '  tool that targets a node. Call nodes can also be addressed by alias (A, B…).',
+  '- To wire an arg to a slider that does not exist yet, addParam first, then',
+  '  wireArgToParam.',
+  '- When the task is done (or no tool fits), reply with a short plain-text summary',
+  '  and DO NOT call a tool.',
+  '',
+  'AVAILABLE TOOLS:',
+  toolListText(),
+].join('\n');
+
+type SystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
+
+/**
+ * Two system content blocks: a CACHED stable prefix (persona + tools) and an
+ * UNCACHED volatile suffix (the current editor state, re-injected every turn).
+ * Splitting them keeps the per-turn graph state past the cache_control
+ * breakpoint so it doesn't invalidate the cached prefix on every loop step.
+ */
+function buildAssistSystem(graphState: unknown): SystemBlock[] {
   const stateJson = (() => {
     try {
       return JSON.stringify(graphState ?? {}, null, 2);
@@ -53,31 +94,14 @@ function buildAssistSystem(graphState: unknown): string {
   })();
 
   return [
-    'You are an assistant embedded in cadtrain\'s node-graph parametric CAD editor.',
-    'You help the user EDIT the part currently open by calling editor tools — you',
-    'do not write code or return a whole new graph. Make the smallest set of tool',
-    'calls that satisfies the request, then stop with a one-line confirmation.',
-    '',
-    'KEY SHAPE — every Call arg and every polygon coordinate is an ArgValue union:',
-    '  {"kind":"literal","value":N}   a fixed number/string/boolean',
-    '  {"kind":"expr","expr":"p.od/2 - p.wall"}  a JS expression (params bound as p.<name>)',
-    '  {"kind":"param","param":"OD"}  wired to the PARAMS row named OD',
-    '',
-    'RULES:',
-    '- Node ids look like "n_ab12cd" and cannot be guessed. Use the CURRENT EDITOR',
-    '  STATE below (or call getEditorState) to find the right id/alias before any',
-    '  tool that targets a node. Call nodes can also be addressed by alias (A, B…).',
-    '- To wire an arg to a slider that does not exist yet, addParam first, then',
-    '  wireArgToParam.',
-    '- When the task is done (or no tool fits), reply with a short plain-text summary',
-    '  and DO NOT call a tool.',
-    '',
-    'AVAILABLE TOOLS:',
-    toolListText(),
-    '',
-    'CURRENT EDITOR STATE (the part you are editing):',
-    stateJson,
-  ].join('\n');
+    // Stable prefix — breakpoint here caches tools + this block.
+    { type: 'text', text: ASSIST_STATIC_SYSTEM, cache_control: { type: 'ephemeral' } },
+    // Volatile suffix — changes each turn, intentionally AFTER the breakpoint.
+    {
+      type: 'text',
+      text: `CURRENT EDITOR STATE (the part you are editing):\n${stateJson}`,
+    },
+  ];
 }
 
 type AnthMessage = { role: 'user' | 'assistant'; content: unknown };
