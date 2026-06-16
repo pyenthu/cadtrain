@@ -115,10 +115,18 @@
   } from './geom';
   import { dragNumber } from '$lib/shared/dragNumber';
   import RightPane from './RightPane.svelte';
-  import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
+  // The 4 self-contained popovers (container reorder · arg ƒ-expr · profile-kind
+  // · profile-node-ref) live in Popovers.svelte (modularize K.65 Phase A). GEP
+  // drives them via `bind:this={popovers}` from its node-render arms. The
+  // sketch/poly/param/wire popovers stay here (coupled to phases E/F/D). The
+  // viewport-clamp action is shared via popover-clamp.ts so the two callers
+  // (Popovers' argExpr + GEP's sketch/poly expr popovers) can't drift.
+  import Popovers from './Popovers.svelte';
+  import { clampToViewport } from './popover-clamp';
+  import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
   import {
     argStr, argFrom, argToDraftStr, evalArg, sketchParamScope,
-    profileProducers, producerLabel, parseProfileExpr, kindsForSet,
+    producerLabel, parseProfileExpr,
   } from './args';
 
   /** Props (component contract — same surface mounted by /graph-editor for
@@ -204,6 +212,11 @@
    *  the profile picker popover. r_revolve → 'revolve' (r,z half-section);
    *  r_extrude / r_weld_extrude → 'cartesian' (x,y polygon). */
   let expectedProfileSet = $state<Record<string, 'revolve' | 'cartesian'>>({});
+
+  // The extracted popover component (Phase A). Bound via `bind:this` so the
+  // node-render arms can call `popovers.openContainerPop/openArgExprPop/
+  // openProfilePop/openProfileRefPop/moveChild/detachProfile(...)`.
+  let popovers: Popovers | undefined = $state();
 
   let emitted = $derived(emitGraph(graph, { id: exemplarId, drawingMd }));
   // The SOURCE the LIVE SOURCE tab + the bake canvas see — it's the
@@ -3223,25 +3236,9 @@
     }
   }
 
-  // ─── stack/list reorder popover ─────────────────────────────────────────
-  // ⚙ button on container cards (stack / list / group / root output) opens
-  // a popover showing each child as a row with ▲ / ▼ to reorder. Mutates
-  // container.children directly; the visible slots + wires re-derive.
-  let containerPop = $state<{ containerId: NodeId; x: number; y: number } | null>(null);
-  function openContainerPop(ev: MouseEvent, containerId: NodeId) {
-    ev.stopPropagation();
-    containerPop = { containerId, x: ev.clientX, y: ev.clientY };
-  }
-  function closeContainerPop() { containerPop = null; }
-  function moveChild(containerId: NodeId, index: number, delta: -1 | 1) {
-    const node = graph.nodes[containerId] as any;
-    if (!node || !Array.isArray(node.children)) return;
-    const newIndex = index + delta;
-    if (newIndex < 0 || newIndex >= node.children.length) return;
-    const newChildren = [...node.children];
-    [newChildren[index], newChildren[newIndex]] = [newChildren[newIndex]!, newChildren[index]!];
-    graph = { ...graph, nodes: { ...graph.nodes, [containerId]: { ...node, children: newChildren } } };
-  }
+  // The stack/list reorder popover (containerPop + openContainerPop/moveChild)
+  // moved to Popovers.svelte (Phase A) — driven via `popovers.openContainerPop`
+  // / `popovers.moveChild` from the container card arms.
 
   // ─── dev-server restart from the bake error ─────────────────────────────
   // POSTs to /api/__dev_restart which spawns a detached restart of `bun run
@@ -3349,40 +3346,10 @@
     graph = setCallArg(graph, id, key, asExpr(expr));
   }
 
-  // ─── multi-source ƒ-expression popup editor ─────────────────────────────
-  // When an arg's kind === 'expr' AND the expression references 2+ distinct
-  // params, the inline text input is too cramped to author cleanly. The
-  // collapsed chip — "ƒ(p.od, p.wall)" — opens this popup with a bigger
-  // text area + click-to-insert chips for every declared param. Applied
-  // value commits back to the arg via setCallArg(asExpr(...)).
-  /** Svelte action — after a fixed-position popover paints, measure it and
-   *  shift left/up so the WHOLE thing stays on-screen (the expr popovers
-   *  open at the click point and otherwise spill off the bottom/right when
-   *  the vertex is near an edge). Re-runs when the bound value changes. */
-  function clampToViewport(node: HTMLElement, _dep?: unknown) {
-    const margin = 10;
-    const fit = () => {
-      const r = node.getBoundingClientRect();
-      let l = r.left, t = r.top;
-      if (r.right > window.innerWidth - margin) l = Math.max(margin, window.innerWidth - r.width - margin);
-      if (r.bottom > window.innerHeight - margin) t = Math.max(margin, window.innerHeight - r.height - margin);
-      if (l !== r.left) node.style.left = `${l}px`;
-      if (t !== r.top) node.style.top = `${t}px`;
-    };
-    requestAnimationFrame(fit);
-    return { update: () => requestAnimationFrame(fit) };
-  }
-  let argExprPop = $state<{ callId: NodeId; key: string; draft: string; x: number; y: number } | null>(null);
-  function openArgExprPop(ev: MouseEvent, callId: NodeId, key: string, currentExpr: string) {
-    ev.stopPropagation();
-    argExprPop = { callId, key, draft: currentExpr, x: ev.clientX, y: ev.clientY };
-  }
-  function closeArgExprPop() { argExprPop = null; }
-  function applyArgExprPop() {
-    if (!argExprPop) return;
-    graph = setCallArg(graph, argExprPop.callId, argExprPop.key, asExpr(argExprPop.draft));
-    argExprPop = null;
-  }
+  // The multi-source ƒ-expression popup editor (argExprPop) moved to
+  // Popovers.svelte (Phase A) — opened via `popovers.openArgExprPop(...)`.
+  // `clampToViewport` is now imported from ./popover-clamp (the sketch/poly
+  // expression popovers below still use it).
 
   // ─── Sketch coord expression popover (S.2) ─────────────────────────────
   /** The ƒ button on a sketch-card coord row (r / z / fillet radius /
@@ -3680,57 +3647,14 @@
     const sep = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
     polyExprPop = { ...polyExprPop, draft: draft + sep + ref };
   }
-  // ─── Profile picker popover (#119) ─────────────────────────────────────
-  /** Open when the user clicks a profile chip on a Call card. Lists every
-   *  curated kind from PROFILE_REGISTRY filtered by the primitive's `set`
-   *  (revolve vs cartesian). Selecting a kind rewrites the arg's expr to
-   *  a fresh `{kind, params}` JSON descriptor seeded with defaults. */
-  let profilePop = $state<{ callId: NodeId; key: string; src: string; set: 'revolve' | 'cartesian'; currentKind: string; x: number; y: number } | null>(null);
-  function openProfilePop(ev: MouseEvent, callId: NodeId, key: string, src: string, currentKind: string) {
-    ev.stopPropagation();
-    const set = expectedProfileSet[src] ?? (src === 'r_revolve' ? 'revolve' : 'cartesian');
-    profilePop = { callId, key, src, set, currentKind, x: ev.clientX, y: ev.clientY };
-  }
-  function closeProfilePop() { profilePop = null; }
+  // The profile-kind picker (profilePop) + profile-node-ref swap/detach
+  // (profileRefPop, swapProfileRef, detachProfile, selectProfileKind) moved to
+  // Popovers.svelte (Phase A). Opened via `popovers.openProfilePop(...)` /
+  // `popovers.openProfileRefPop(...)`; `popovers.detachProfile(...)` is the × on
+  // the chip. producerLabel/parseProfileExpr/PROFILE_REGISTRY stay here for the
+  // node-card profile chip; profileProducers/kindsForSet/defaultsFor are now
+  // used only inside Popovers.svelte.
 
-  // ─── Node-ref profile (a wired polygon/sketch) — swap / detach ──────────
-  // A revolve/extrude `profile` arg wired to a producer carries a
-  // `__POLY__<id>` expr. This popover lets the user SWAP it to a different
-  // polygon/sketch in the graph or DETACH it entirely (× on the chip).
-  let profileRefPop = $state<{ callId: NodeId; key: string; x: number; y: number } | null>(null);
-  function openProfileRefPop(ev: MouseEvent, callId: NodeId, key: string) {
-    ev.stopPropagation();
-    profileRefPop = { callId, key, x: ev.clientX, y: ev.clientY };
-  }
-  function closeProfileRefPop() { profileRefPop = null; }
-  /** All profile-producing nodes (polygon + sketch) — the swap candidates. */
-  // profileProducers(graph) / producerLabel(graph, id) → graph-editor-args.ts (P2/G2).
-  function swapProfileRef(callId: NodeId, key: string, nodeId: NodeId) {
-    graph = setCallArg(graph, callId, key, asExpr(`__POLY__${nodeId}`));
-    profileRefPop = null;
-  }
-  /** Detach the profile — clears the arg to an empty slot the user re-fills. */
-  function detachProfile(callId: NodeId, key: string) {
-    graph = setCallArg(graph, callId, key, asExpr(''));
-  }
-  function selectProfileKind(kindId: string) {
-    if (!profilePop) return;
-    const def: ProfileDef | undefined = PROFILE_REGISTRY[kindId];
-    if (!def) return;
-    const desc = { kind: kindId, params: defaultsFor(def) };
-    graph = setCallArg(graph, profilePop.callId, profilePop.key, asExpr(JSON.stringify(desc)));
-    profilePop = null;
-  }
-  // parseProfileExpr / kindsForSet → graph-editor-args.ts (P2/G2).
-
-  function insertParamIntoDraft(name: string) {
-    if (!argExprPop) return;
-    const ref = `p.${name}`;
-    const draft = argExprPop.draft;
-    // Append with a space if there's existing text + the last char isn't whitespace.
-    const sep = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
-    argExprPop = { ...argExprPop, draft: draft + sep + ref };
-  }
   function onTransformAxis(id: string, axis: 0 | 1 | 2, value: number) {
     graph = setTransformAxis(graph, id, axis, value);
   }
@@ -4819,7 +4743,7 @@
                             />
                             <span class="ge-arg-actions">
                               <button class="ge-arg-action fx" type="button" title="Edit as an expression (ƒ)"
-                                onclick={(ev) => openArgExprPop(ev, n.id, k, String((v as any).value ?? 0))}>ƒ</button>
+                                onclick={(ev) => popovers!.openArgExprPop(ev, n.id, k, String((v as any).value ?? 0))}>ƒ</button>
                             </span>
                           </span>
                         {:else if (v as any).kind === 'param'}
@@ -4832,7 +4756,7 @@
                             <span class="ge-arg-actions">
                               <button class="ge-arg-action fx" type="button"
                                 title="Edit as an expression (e.g. p.wall / 2)"
-                                onclick={(ev) => openArgExprPop(ev, n.id, k, 'p.' + (v as any).param)}>ƒ</button>
+                                onclick={(ev) => popovers!.openArgExprPop(ev, n.id, k, 'p.' + (v as any).param)}>ƒ</button>
                               <button class="ge-arg-action x" type="button"
                                 title="Unwire — back to literal"
                                 onclick={() => unwireArgToLiteral(n.id, k)}>×</button>
@@ -4851,12 +4775,12 @@
                               <!-- svelte-ignore a11y_click_events_have_key_events -->
                               <span class="ge-arg-profilechip noderef" role="button" tabindex="-1"
                                 title="Click to swap to a different profile"
-                                onclick={(ev) => openProfileRefPop(ev, n.id, k)}>
+                                onclick={(ev) => popovers!.openProfileRefPop(ev, n.id, k)}>
                                 <span class="ge-arg-profilechip-kind">▢ {producerLabel(graph, polyM[1])} ▾</span>
                               </span>
                               <span class="ge-arg-actions">
                                 <button class="ge-arg-action edit" type="button" title="Detach this profile"
-                                  onclick={() => detachProfile(n.id, k)}>×</button>
+                                  onclick={() => popovers!.detachProfile(n.id, k)}>×</button>
                               </span>
                             </span>
                           {:else if isProfileSlot && profileDesc && profileDesc.kind}
@@ -4869,14 +4793,14 @@
                               <!-- svelte-ignore a11y_click_events_have_key_events -->
                               <span class="ge-arg-profilechip" role="button" tabindex="-1"
                                 title={`Click to swap profile kind · current: ${profileDesc.kind}`}
-                                onclick={(ev) => openProfilePop(ev, n.id, k, call.src, profileDesc.kind ?? '')}>
+                                onclick={(ev) => popovers!.openProfilePop(ev, n.id, k, call.src, profileDesc.kind ?? '')}>
                                 <span class="ge-arg-profilechip-kind">▾ {kindDef?.label ?? profileDesc.kind}</span>
                               </span>
                               <span class="ge-arg-actions">
                                 <button class="ge-arg-action edit" type="button" title="Swap to a polygon/sketch profile"
-                                  onclick={(ev) => openProfileRefPop(ev, n.id, k)}>▢</button>
+                                  onclick={(ev) => popovers!.openProfileRefPop(ev, n.id, k)}>▢</button>
                                 <button class="ge-arg-action edit" type="button" title="Edit raw JSON descriptor"
-                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>✎</button>
+                                  onclick={(ev) => popovers!.openArgExprPop(ev, n.id, k, expr)}>✎</button>
                               </span>
                             </span>
                           {:else if isProfileSlot && (!expr || expr.trim() === '')}
@@ -4886,7 +4810,7 @@
                               <!-- svelte-ignore a11y_click_events_have_key_events -->
                               <span class="ge-arg-profilechip empty" role="button" tabindex="-1"
                                 title="Pick a profile for this revolve/extrude"
-                                onclick={(ev) => openProfileRefPop(ev, n.id, k)}>
+                                onclick={(ev) => popovers!.openProfileRefPop(ev, n.id, k)}>
                                 <span class="ge-arg-profilechip-kind">▢ pick a profile ▾</span>
                               </span>
                             </span>
@@ -4896,12 +4820,12 @@
                               <!-- svelte-ignore a11y_click_events_have_key_events -->
                               <span class="ge-arg-fnchip" role="button" tabindex="-1"
                                 title={`Click to edit · expression: ${expr}`}
-                                onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>
+                                onclick={(ev) => popovers!.openArgExprPop(ev, n.id, k, expr)}>
                                 ƒ(<span class="ge-arg-fnchip-refs">{refs.map((r) => 'p.' + r).join(', ')}</span>) ✎
                               </span>
                               <span class="ge-arg-actions">
                                 <button class="ge-arg-action fx on" type="button" title="Edit expression"
-                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>ƒ</button>
+                                  onclick={(ev) => popovers!.openArgExprPop(ev, n.id, k, expr)}>ƒ</button>
                                 <button class="ge-arg-action x" type="button" title="Back to literal"
                                   onclick={() => toggleArgExprMode(n.id, k)}>×</button>
                               </span>
@@ -4915,7 +4839,7 @@
                               />
                               <span class="ge-arg-actions">
                                 <button class="ge-arg-action fx on" type="button" title="Edit expression in popover"
-                                  onclick={(ev) => openArgExprPop(ev, n.id, k, expr)}>ƒ</button>
+                                  onclick={(ev) => popovers!.openArgExprPop(ev, n.id, k, expr)}>ƒ</button>
                                 <button class="ge-arg-action x" type="button" title="Back to literal"
                                   onclick={() => toggleArgExprMode(n.id, k)}>×</button>
                               </span>
@@ -5253,7 +5177,7 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={isRoot ? size.w - 14 : size.w - 32} y="22"
                   class="ge-container-cog"
-                  onpointerdown={(ev) => openContainerPop(ev, n.id)}>⚙</text>
+                  onpointerdown={(ev) => popovers!.openContainerPop(ev, n.id)}>⚙</text>
                 {#if !isRoot}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
@@ -5343,14 +5267,14 @@
                     <text role="button" tabindex="-1" class="ge-container-slot-move"
                       x={size.w - 50} y={containerSlotY(i) + 4}
                       data-tip="Move up in the stack"
-                      onpointerdown={(ev) => { ev.stopPropagation(); moveChild(n.id, origIdx, -1); }}>▲</text>
+                      onpointerdown={(ev) => { ev.stopPropagation(); popovers!.moveChild(n.id, origIdx, -1); }}>▲</text>
                   {/if}
                   {#if i < visibleChildren.length - 1}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <text role="button" tabindex="-1" class="ge-container-slot-move"
                       x={size.w - 32} y={containerSlotY(i) + 4}
                       data-tip="Move down in the stack"
-                      onpointerdown={(ev) => { ev.stopPropagation(); moveChild(n.id, origIdx, 1); }}>▼</text>
+                      onpointerdown={(ev) => { ev.stopPropagation(); popovers!.moveChild(n.id, origIdx, 1); }}>▼</text>
                   {/if}
                   <!-- × removes this child from the container -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -6605,97 +6529,15 @@
     </div>
   {/if}
 
-  {#if profilePop}
-    <!-- Profile-kind picker popover (#119). Lists curated kinds filtered
-         by the primitive's `set` (revolve = r,z half-section; cartesian =
-         x,y polygon). Click a kind → arg's expr is replaced with a fresh
-         {kind, params} JSON descriptor seeded with defaults. -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-wire-shade" onclick={closeProfilePop}></div>
-    <div class="ge-profile-pop"
-      style="left: {Math.min(profilePop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 280)}px; top: {Math.min(profilePop.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 360)}px">
-      <div class="ge-profile-pop-head">
-        <span class="ge-profile-pop-title">Profile · {profilePop.set}</span>
-        <span class="ge-profile-pop-hint">{profilePop.key} · {profilePop.src}</span>
-      </div>
-      <div class="ge-profile-pop-list">
-        {#each kindsForSet(profilePop.set) as def (def.id)}
-          <button class="ge-profile-pop-item"
-            class:active={def.id === profilePop.currentKind}
-            type="button"
-            onclick={() => selectProfileKind(def.id)}>
-            <span class="ge-profile-pop-item-name">{def.label}</span>
-            <span class="ge-profile-pop-item-id">{def.id}</span>
-          </button>
-        {/each}
-      </div>
-    </div>
-  {/if}
-
-  {#if profileRefPop}
-    <!-- Node-ref profile swap picker. Lists every polygon/sketch in the graph
-         (the new sketch IS a profile producer — combining the 2D drawing
-         program with the profile editor) + a shortcut to the built-in kinds. -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-wire-shade" onclick={closeProfileRefPop}></div>
-    <div class="ge-profile-pop"
-      style="left: {Math.min(profileRefPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 280)}px; top: {Math.min(profileRefPop.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 360)}px">
-      <div class="ge-profile-pop-head">
-        <span class="ge-profile-pop-title">Choose a profile</span>
-        <span class="ge-profile-pop-hint">{profileRefPop.key} · wire a polygon / sketch</span>
-      </div>
-      <div class="ge-profile-pop-list">
-        {#each profileProducers(graph) as prod (prod.id)}
-          {@const curExpr = String((graph.nodes[profileRefPop.callId] as any)?.args?.[profileRefPop.key]?.expr ?? '')}
-          <button class="ge-profile-pop-item"
-            class:active={curExpr === `__POLY__${prod.id}`}
-            type="button"
-            onclick={() => swapProfileRef(profileRefPop!.callId, profileRefPop!.key, prod.id)}>
-            <span class="ge-profile-pop-item-name">{prod.type === 'sketch' ? '✐ ' : '◇ '}{producerLabel(graph, prod.id)}</span>
-            <span class="ge-profile-pop-item-id">{prod.id}</span>
-          </button>
-        {/each}
-        {#if profileProducers(graph).length === 0}
-          <div class="ge-profile-pop-empty">No polygon or sketch in this graph yet. Drop one (✎ → polygon / sketch) first.</div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  {#if argExprPop}
-    <!-- ƒ-expression editor popup — wider input + click-to-insert chips for
-         every declared param. Used when an arg references 2+ params (the
-         inline text box becomes too cramped to read). -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-wire-shade" onclick={closeArgExprPop}></div>
-    <div class="ge-wire-pop ge-expr-pop"
-      use:clampToViewport={argExprPop}
-      style="left: {Math.min(argExprPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 460)}px; top: {argExprPop.y}px">
-      <div class="ge-wire-head">ƒ <code>{argExprPop.key}</code> expression</div>
-      <textarea class="ge-expr-textarea" rows="3"
-        placeholder="e.g. p.od / 2 - p.wall"
-        value={argExprPop.draft}
-        oninput={(e) => { if (argExprPop) argExprPop = { ...argExprPop, draft: (e.target as HTMLTextAreaElement).value }; }}></textarea>
-      <div class="ge-expr-pop-row">
-        <span class="ge-expr-pop-label">insert:</span>
-        {#each paramEntries as [name, p] (name)}
-          <button class="ge-expr-pop-chip" type="button"
-            onclick={() => insertParamIntoDraft(name)}
-            title={`Append p.${name} to the expression (default ${(p as any).default})`}>p.{name}</button>
-        {/each}
-        {#if paramEntries.length === 0}
-          <span class="ge-empty">no params declared</span>
-        {/if}
-      </div>
-      <div class="ge-expr-pop-row right">
-        <button class="ge-param-add ghost" type="button" onclick={closeArgExprPop}>cancel</button>
-        <button class="ge-param-add" type="button" onclick={applyArgExprPop}>apply</button>
-      </div>
-    </div>
-  {/if}
+  <!-- The container · arg-ƒ-expr · profile-kind · profile-node-ref popovers
+       (Phase A). `bind:graph` lets the apply* handlers mutate the graph; the
+       open* fns are called from the node-render arms via `bind:this={popovers}`. -->
+  <Popovers
+    bind:this={popovers}
+    bind:graph
+    {expectedProfileSet}
+    {expectedDefaults}
+    {paramEntries} />
 
   {#if sketchExprPop}
     <!-- Sketch coord ƒ-expression editor (S.2) — same UX as argExprPop, keyed
@@ -6831,111 +6673,7 @@
     </div>
   {/if}
 
-  {#if containerPop}
-    {@const cnode = graph.nodes[containerPop.containerId] as any}
-    {@const ctitle = cnode?.id === graph.root ? '▶ Output' : cnode?.type === 'stack' ? '↕ Stack' : cnode?.type === 'group' ? '{} Group' : '[ ] List'}
-    {@const isStack = cnode?.type === 'stack'}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-wire-shade" onclick={closeContainerPop}></div>
-    <div class="ge-wire-pop ge-container-pop"
-      style="left: {Math.min(containerPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 380)}px; top: {containerPop.y}px">
-      <div class="ge-wire-head">{ctitle} · order</div>
-      {#if (cnode?.children ?? []).length === 0}
-        <div class="ge-empty">no children yet — drag-wire something into this card</div>
-      {:else}
-        <table class="ge-container-table">
-          <thead>
-            <tr><th>#</th><th>node</th>{#if isStack}<th title="Copies of this child, mated end-to-end (replaces a Repeat node): blank/1 = single · a number or a param expr like p.n">× N</th><th title="Per-child z-offset: blank = inherit the part's own stack_ref · 0 = end-to-end flush · negative = overlap into the next · positive = leave a gap">z-offset</th>{/if}<th>order</th><th></th></tr>
-          </thead>
-          <tbody>
-            {#each cnode.children as childId, i (childId)}
-              {@const cn = graph.nodes[childId]}
-              {@const label = cn?.type === 'call' ? `${(cn as any).alias} · ${(cn as any).src}`
-                : cn?.type === 'method' ? `${(cn as any).op}(…)`
-                : cn?.type === 'mv' ? 'mv(…)'
-                : cn?.type === 'rot' ? 'rot(…)'
-                : cn?.type === 'stack' ? 'stack(…)'
-                : cn?.type === 'repeat' ? `repeat × ${(cn as any).count?.kind === 'literal' ? (cn as any).count.value : '…'}`
-                : '(missing)'}
-              {@const inheritedRef = cn?.type === 'call' ? expectedDefaults[(cn as any).src]?.[STACK_REF_PARAM] : undefined}
-              {@const overrideRef = (cnode.childRefs ?? {})[childId]}
-              <tr>
-                <td class="ge-cp-idx">{i + 1}</td>
-                <td class="ge-cp-name">{label}</td>
-                {#if isStack}
-                  {@const countVal = (cnode.childCounts ?? {})[childId]}
-                  {@const countDisplay = countVal == null ? ''
-                    : countVal.kind === 'literal' ? String(countVal.value)
-                    : countVal.kind === 'param' ? `p.${countVal.param}`
-                    : countVal.expr}
-                  <td class="ge-cp-count">
-                    <!-- Per-child COUNT (×N). Blank/1 = a single copy; a number
-                         or a param expr (e.g. p.n) places N copies mated
-                         end-to-end — no separate Repeat node. Commit on
-                         Enter/blur; empty or ≤1 clears. -->
-                    <input
-                      class="ge-cp-count-input"
-                      type="text"
-                      value={countDisplay}
-                      placeholder="1"
-                      title={countVal != null
-                        ? `Placing ${countDisplay} copies mated end-to-end (clear or set 1 for a single copy)`
-                        : 'Single copy — type a number (or a param expr like p.n) to stack N copies'}
-                      onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                      onchange={(e) => {
-                        const raw = (e.target as HTMLInputElement).value.trim();
-                        let next = null;
-                        if (raw !== '') {
-                          const n = Number(raw);
-                          if (Number.isFinite(n)) next = n <= 1 ? null : asLiteral(Math.floor(n));
-                          else next = asExpr(raw);
-                        }
-                        graph = setStackChildCount(graph, cnode.id, childId, next);
-                      }} />
-                  </td>
-                  <td class="ge-cp-ref">
-                    <!-- Per-child z-offset OVERRIDE. Blank value = inherit the
-                         part's own stack_ref (shown as the placeholder when we
-                         know it). Commit on Enter/blur (Apply-on-Enter convention);
-                         empty clears the override → inherit. -->
-                    <input
-                      class="ge-cp-ref-input"
-                      type="text"
-                      inputmode="decimal"
-                      value={overrideRef ?? ''}
-                      placeholder={inheritedRef != null ? String(inheritedRef) : 'inherit'}
-                      title={overrideRef != null
-                        ? `Override for this stack: ${overrideRef} (clear to inherit ${inheritedRef ?? 0})`
-                        : `Inheriting ${inheritedRef != null ? `the part's ${inheritedRef}` : '0 (no stack_ref on the part)'} — type a number to override here`}
-                      onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                      onchange={(e) => {
-                        const raw = (e.target as HTMLInputElement).value.trim();
-                        const v = raw === '' ? null : Number(raw);
-                        graph = setStackChildRef(graph, cnode.id, childId, v == null || Number.isNaN(v) ? null : v);
-                      }} />
-                  </td>
-                {/if}
-                <td class="ge-cp-order">
-                  <button type="button" class="ge-cp-arrow" title="Move up" disabled={i === 0}
-                    onclick={() => moveChild(containerPop!.containerId, i, -1)}>▲</button>
-                  <button type="button" class="ge-cp-arrow" title="Move down" disabled={i === cnode.children.length - 1}
-                    onclick={() => moveChild(containerPop!.containerId, i, 1)}>▼</button>
-                </td>
-                <td class="ge-cp-del">
-                  <button type="button" class="ge-cp-remove" title="Remove from container"
-                    onclick={() => { graph = removeContainerChildAt(graph, containerPop!.containerId, i); }}>×</button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-      <div class="ge-expr-pop-row right">
-        <button class="ge-param-add" type="button" onclick={closeContainerPop}>done</button>
-      </div>
-    </div>
-  {/if}
+  <!-- container reorder popover moved to Popovers.svelte (Phase A). -->
 
   {#if polyPreviewFor && graph.nodes[polyPreviewFor]}
     {@const previewMode = polygonModeFor(polyPreviewFor)}
@@ -7683,33 +7421,11 @@
   }
   .ge-container-cog { font: 13px Arial; fill: #047857; cursor: pointer; user-select: none; }
   .ge-container-cog:hover { fill: #065f46; }
-  /* Reorder popover table */
-  .ge-container-pop { min-width: 340px; max-width: 480px; padding: 8px 6px 4px; }
-  .ge-container-table { width: 100%; border-collapse: collapse; font: 11px Arial; }
-  .ge-container-table th { text-align: left; padding: 4px 6px; font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; }
-  .ge-container-table td { padding: 4px 6px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-  .ge-cp-idx { width: 24px; color: #9ca3af; font: 600 11px ui-monospace, monospace; }
-  .ge-cp-name { font: 600 11px ui-monospace, monospace; color: #0c4a6e; }
-  .ge-cp-kind { font: 10px ui-monospace, monospace; color: #6b7280; }
-  .ge-cp-ref { width: 64px; }
-  .ge-cp-ref-input { width: 56px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #0c4a6e; background: #fff; }
-  .ge-cp-ref-input::placeholder { color: #b0b7c0; font-style: italic; }
-  .ge-cp-ref-input:focus { outline: none; border-color: #0ea5e9; }
+  /* container reorder popover CSS (.ge-container-* / .ge-cp-*) → Popovers.svelte (Phase A) */
   /* Inline ×N / z-offset fields on the Stack node card (foreignObject). */
   .ge-stack-inline-input { width: 100%; height: 18px; box-sizing: border-box; padding: 1px 3px; font: 10px ui-monospace, monospace; text-align: right; border: 1px solid #cbd5e1; border-radius: 3px; color: #0f172a; background: #fff; }
   .ge-stack-inline-input::placeholder { color: #b8c0cc; font-style: italic; }
   .ge-stack-inline-input:focus { outline: none; border-color: #0ea5e9; }
-  .ge-cp-count { width: 56px; }
-  .ge-cp-count-input { width: 48px; box-sizing: border-box; padding: 2px 4px; font: 11px ui-monospace, monospace; text-align: right; border: 1px solid #d1d5db; border-radius: 3px; color: #166534; background: #fff; }
-  .ge-cp-count-input::placeholder { color: #b0b7c0; font-style: italic; }
-  .ge-cp-count-input:focus { outline: none; border-color: #22c55e; }
-  .ge-cp-order { width: 56px; white-space: nowrap; }
-  .ge-cp-arrow { background: transparent; border: 1px solid #d1d5db; color: #6b7280; padding: 1px 5px; font: 10px Arial; cursor: pointer; border-radius: 3px; margin-right: 2px; }
-  .ge-cp-arrow:hover:not(:disabled) { background: #f3f4f6; color: #111827; }
-  .ge-cp-arrow:disabled { opacity: 0.3; cursor: default; }
-  .ge-cp-del { width: 24px; text-align: right; }
-  .ge-cp-remove { background: transparent; border: 0; font: 14px Arial; color: #b91c1c; cursor: pointer; padding: 0 4px; }
-  .ge-cp-remove:hover { color: #7f1d1d; }
   .ge-sock-label.trail { fill: #9ca3af; font-style: italic; }
   .ge-sock.trail { fill: #fff; stroke: #9ca3af; stroke-dasharray: 2 2; }
   .ge-node-title { font: 600 12px Arial; fill: #0c4a6e; pointer-events: none; }
@@ -8575,31 +8291,7 @@
   .ge-arg-profilechip.noderef:hover { background: #a5f3fc; color: #164e63; }
   .ge-arg-profilechip.empty { background: #fff; color: #b45309; border: 1px dashed #fbbf24; }
   .ge-arg-profilechip.empty:hover { background: #fffbeb; }
-  .ge-profile-pop-empty { padding: 10px; font: 11px Arial; color: #94a3b8; line-height: 1.4; }
-  /* Profile picker popover */
-  .ge-profile-pop {
-    position: fixed; width: 280px; max-height: 360px;
-    background: #fff; border: 1px solid #d6d3d1; border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
-    z-index: 200; display: flex; flex-direction: column;
-  }
-  .ge-profile-pop-head {
-    display: flex; flex-direction: column; gap: 1px;
-    padding: 8px 12px; border-bottom: 1px solid #f1f5f9;
-  }
-  .ge-profile-pop-title { font: 600 11px Arial; color: #5b21b6; text-transform: uppercase; letter-spacing: 0.6px; }
-  .ge-profile-pop-hint { font: 10px ui-monospace, monospace; color: #78716c; }
-  .ge-profile-pop-list { flex: 1 1 auto; overflow-y: auto; padding: 4px 0; }
-  .ge-profile-pop-item {
-    display: flex; align-items: center; justify-content: space-between;
-    width: 100%; padding: 6px 12px; box-sizing: border-box;
-    background: transparent; border: 0; cursor: pointer;
-    text-align: left; font: 12px Arial; color: #1f2937;
-  }
-  .ge-profile-pop-item:hover { background: #f3f4f6; color: #5b21b6; }
-  .ge-profile-pop-item.active { background: #ede9fe; color: #4c1d95; font-weight: 600; }
-  .ge-profile-pop-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ge-profile-pop-item-id { font: 10px ui-monospace, monospace; color: #a8a29e; }
+  /* profile picker popover CSS (.ge-profile-pop*) → Popovers.svelte (Phase A) */
   /* ƒ expression popup */
   .ge-expr-pop { min-width: 420px; max-width: 460px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
   .ge-expr-textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; resize: vertical; background: #faf5ff; color: #5b21b6; }
