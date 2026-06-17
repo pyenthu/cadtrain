@@ -196,19 +196,22 @@
     }
     threeScene.add(group);
 
-    // Lights — same directions as PrimitiveDualScene's l1/l2/l3, but as
-    // DirectionalLights at SVGRenderer-appropriate intensities (its lighting
-    // model multiplies raw intensity, so the scene's WebGL 500s would blow out;
-    // these give a readable flat-shaded drawing).
-    threeScene.add(new THREE.AmbientLight(0xffffff, 0.45));
+    // Lights — same directions as PrimitiveDualScene's l1/l2/l3, as
+    // DirectionalLights. SVGRenderer's lighting model multiplies raw intensity
+    // and CLAMPS, so the old sum (~1.65) blew every lit face to its base colour
+    // (red → washed pink, no shading read). Rebalanced: a low ambient FLOOR
+    // (shadowed faces) + a dominant key + softer fill/back so a fully-lit face
+    // peaks ~0.8 (rich, un-blown) and the face-to-face contrast actually shows
+    // the curvature on rounder parts. Per-face flat fills regardless (SVG limit).
+    threeScene.add(new THREE.AmbientLight(0xffffff, 0.22));
     const addDir = (p: { x: number; y: number; z: number }, i: number) => {
       const d = new THREE.DirectionalLight(0xffffff, i);
       d.position.set(p.x, p.y, p.z);
       threeScene.add(d);
     };
-    addDir(scene.l1, 0.55);
-    addDir(scene.l2, 0.4);
-    addDir(scene.l3, 0.25);
+    addDir(scene.l1, 0.58); // key
+    addDir(scene.l2, 0.28); // fill
+    addDir(scene.l3, 0.14); // back
 
     // Camera. Z-down convention (up = [0,0,-1]) in both modes.
     // renderW/renderH = the SVG's pixel size. PERSP fills the container (fit, no
