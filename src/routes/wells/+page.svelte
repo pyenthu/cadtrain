@@ -1,14 +1,20 @@
 <script lang="ts">
+  import { Canvas } from '@threlte/core';
   import { sampleWells, type WellSample } from '$lib/wells/samples';
   import { isDeviated, completionExtents } from '$lib/wells/wson';
+  import { assembleWell } from '$lib/wells/assemble';
+  import WellScene from '$lib/wells/WellScene.svelte';
 
-  // W0 scaffold (docs/plans/well-schematic.md): load a WSON, prove the model
-  // parses + the depth-ordered component breakdown. The 3D assembler (W1) and
-  // 2D schematic view (W2) hang off this same model next.
+  // W0 model + W1 3D assembler (docs/plans/well-schematic.md): the canonical 3D
+  // well (parts placed along the survey by depth) is the hero; the breakdown is
+  // a derived view of the same model.
   let activeSlug = $state(sampleWells[0]?.slug ?? '');
   const active = $derived<WellSample | undefined>(sampleWells.find((w) => w.slug === activeSlug) ?? sampleWells[0]);
   const wson = $derived(active?.wson);
   const deviated = $derived(wson ? isDeviated(wson) : false);
+  // W1 — assemble the 3D well from the WSON.
+  const assembled = $derived(wson ? assembleWell(wson) : null);
+  let radialExag = $state(48);
   // Completion stack with resolved absolute extents (handles cumulative length).
   const comps = $derived.by(() => {
     const cs = wson?.completions ?? [];
@@ -43,6 +49,20 @@
           {#if wson.meta.rkbToGl != null}<span class="chip">RKB→GL {wson.meta.rkbToGl} m</span>{/if}
         </div>
       </header>
+
+      <!-- W1 — the canonical 3D well (hero). -->
+      <section class="scene3d">
+        {#if assembled}
+          <Canvas>
+            <WellScene {assembled} {radialExag} />
+          </Canvas>
+        {/if}
+        <div class="scene-ctl">
+          <span class="sc-lbl">radial ×{radialExag}</span>
+          <input class="sc-range" type="range" min="6" max="80" step="2" bind:value={radialExag} />
+          <span class="sc-tag">3D well · z-down · drag to orbit</span>
+        </div>
+      </section>
 
       <section class="cols">
         <!-- Casing / tubular strings -->
@@ -121,6 +141,11 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font: 600 11px ui-monospace, monospace; background: #232340; border: 1px solid #34345a; border-radius: 9999px; padding: 2px 10px; color: #aab; }
 
+  .scene3d { position: relative; height: 460px; margin-top: 16px; border: 1px solid #2a2a3e; border-radius: 10px; overflow: hidden; background: radial-gradient(circle at 50% 30%, #20203a 0%, #10101a 80%); }
+  .scene-ctl { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 10px; background: rgba(16,16,26,0.8); border: 1px solid #2a2a3e; border-radius: 8px; padding: 6px 12px; }
+  .sc-lbl { font: 600 11px ui-monospace, monospace; color: #aab; min-width: 64px; }
+  .sc-range { width: 140px; accent-color: #cc2222; }
+  .sc-tag { font: 10px ui-monospace, monospace; color: #667; }
   .cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 18px; }
   .card { background: #1b1b2c; border: 1px solid #2a2a3e; border-radius: 8px; padding: 12px 14px; }
   .card.wide { grid-column: 1 / -1; }
