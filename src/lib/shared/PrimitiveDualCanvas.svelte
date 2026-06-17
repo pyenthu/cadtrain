@@ -474,13 +474,8 @@
   <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
     title="Fit the whole part length in view (toggle)"
     onclick={() => (scene.fitLength = !scene.fitLength)}>⇕ fit</button>
-  <!-- Shading toggle (render-time, free, no re-bake) — cycles the SAME
-       scene.smoothShade state the gear's Shade control uses. Smooth = baked
-       vertex normals (a coarse mesh still shades round); Flat = per-face. -->
-  <button class="pd-shade-btn" type="button"
-    title={`Shading: ${scene.smoothShade} — click to cycle Auto → Smooth → Flat. Smooth uses baked vertex normals so even a low-seg mesh shades round (silhouette stays faceted).`}
-    onclick={() => (scene.smoothShade = scene.smoothShade === 'auto' ? 'smooth' : scene.smoothShade === 'smooth' ? 'flat' : 'auto')}>
-    ◐ {scene.smoothShade}</button>
+  <!-- Shade mode (Smooth/Auto/Flat) lives in the gear Shade control now — the
+       canvas ◐ quick-toggle was removed 2026-06-18 to keep one home. -->
   <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
   {#if meshBackend && meshStatus === 'ok'}
     <span class="pd-backend-badge {meshBackend}"

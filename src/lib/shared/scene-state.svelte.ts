@@ -136,13 +136,15 @@ export const scene = $state({
   warpBakeNonce: 0,
   /** Smooth-shading override — RENDER-TIME (free, no re-bake). Drives the live
    *  material's `flatShading` flag in PrimitiveDualScene via PrimitiveDualCanvas.
-   *  - 'auto' (default): keep the existing per-part heuristic (curved engines +
-   *    twisted extrudes + BREP smooth; cubes/hex/everything else flat). This is
-   *    the hard-won default — flat faces read dull when smooth-shaded (the
-   *    8297314 regression), so we DON'T smooth everything by default.
-   *  - 'smooth': force smooth (flatShading:false) for the open part.
-   *  - 'flat': force flat (flatShading:true) for the open part. */
-  smoothShade: 'auto' as 'auto' | 'smooth' | 'flat',
+   *  - 'smooth' (DEFAULT since 2026-06-18): smooth-shade everything. Safe now that
+   *    calculateNormals(slot 0, crease 60°) bakes REAL, crease-aware normals — flat
+   *    faces (cube/hex 90° edges) stay sharp because they exceed the crease, so
+   *    they no longer read dull (the old 8297314 worry is gone with the slot fix).
+   *  - 'auto': the legacy per-part heuristic (curved engines + twisted extrudes +
+   *    BREP smooth; cubes/hex flat). Kept as an option.
+   *  - 'flat': force flat (flatShading:true).
+   *  Selectable in the gear Shade control (SceneControls). */
+  smoothShade: 'smooth' as 'auto' | 'smooth' | 'flat',
   /** Crease angle (minSharpAngle, deg) for the BAKED per-vertex normals
    *  (Manifold.calculateNormals). BUILD-TIME — changing it re-bakes (it changes
    *  the vertex split), so it's threaded into the /preview request body + the
