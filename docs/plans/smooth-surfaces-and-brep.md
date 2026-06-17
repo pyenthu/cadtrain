@@ -4,6 +4,22 @@
 > in play and the question "why isn't it smooth / faithful?" keeps recurring.
 > This sequences the work; each phase is independently shippable.
 
+## STATUS (2026-06-18)
+- ✅ **Faceted BREP revolve** — BREP honors `segments` (4→square prism), N-gon loft ≤48, exact above (7112f8a).
+- ✅ **Manifold shading root-fixed** — `calculateNormals(3→0)`: slot 3 was a deprecated compat path
+  returning ALL-ZERO normals on welded/revolved meshes (proven in bun); slot 0 = real crease-aware
+  normals, no extra triangles, no extraction change (b322bf3). Smooth is now the DEFAULT (c645b66).
+- ✅ **Verified the smoothness levers** (deep dive): (a) **normals** = smooth shading, free, silhouette
+  stays faceted; (b) **`smoothOut(60).refineToTolerance`** = real round geometry, reconstructs our
+  welded revolves to ±0.001 of the true circle (the earlier "wavy r≈0.75" was a measurement artifact —
+  cap-transition verts, which Manifold's own test excludes); (c) **`levelSet` (SDF)** = organic surfaces
+  (gyroid runs, 77k tris). Probes: `scripts/{test-normals-slot,verify-normals-fix,test-gyroid-and-smooth}.ts`.
+- ⏳ **LEFT (optional):** wire the smoothOut+refine prototype (`builder.ts`, bbd7de9) to a "true round
+  silhouette" toggle on the full bake. Not started — it's opt-in, costs triangles.
+- 🗑 **Dropped:** the NURBS-port + BREP→Manifold-hybrid spikes (P2/P3 below) — not needed for our parts.
+
+---
+
 ## Context — the three kernels
 
 | Kernel | Surface | Booleans | In cadtrain |

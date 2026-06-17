@@ -42,39 +42,26 @@
   - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
   `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
-10. **Faceted BREP revolve** — ✅ DONE 2026-06-17 (7112f8a). BREP honored `segments` (4→square prism)
-  by lofting regular N-gon sections; faceted ≤48, exact above. Plan `docs/plans/smooth-surfaces-and-brep.md`.
-11. **Manifold shading — ROOT-FIXED via normal slot 3→0** ✅ (b322bf3, 2026-06-18). The "too coarse"
-  shading was `calculateNormals(3,…)` — slot 3 is a DEPRECATED compat path that returns ALL-ZERO
-  normals on welded/revolved meshes (proven in bun: slot 3 → 50/50 zero; slot 0 → real radial). Slot 0
-  ("standard slot") writes real crease-aware normals into channels 3..5 where extraction already reads
-  → one-arg swap, no extraction change, NO extra triangles (48-tri revolve stays 48). Removed the need
-  for the degenerate-normals recompute workaround (kept inert). Defaulted shading to SMOOTH + control
-  in the gear (c645b66). Probes: scripts/{test-normals-slot,verify-normals-fix}.ts.
-  - **Two genuine smoothness levers, both verified** (deep dive — the earlier "smoothOut wavy r≈0.75"
-    was a MEASUREMENT ARTIFACT; it sampled cap-transition verts, which Manifold's own test excludes):
-    (a) **normals** = smooth SHADING, free, silhouette stays faceted (the slot fix above).
-    (b) **`smoothOut(60).refineToTolerance(tol)`** = real ROUND geometry — PROVEN to reconstruct our
-    welded revolves to within 0.001 of the true circle (R=10 test, exclude caps + refine(2)), same as a
-    clean cylinder. Costs triangles. Opt-in `smooth` option + `scripts/bench-smooth-refine.ts` live in
-    builder.ts (bbd7de9), NOT wired to a toggle. This is the genuine round-silhouette path when needed.
-  - **organic/implicit** (gyroids, lattices, blends) → `Manifold.levelSet(sdf, box, edge, level)`
-    (marching-tets an SDF, intrinsically smooth; confirmed working: gyroid 77k tris in bun).
-  - For /wells curvature-adaptive subdivision: segment density along the spline OR smoothOut+refine.
+10. **Smooth surfaces — shading DONE, roundness OPTIONAL.** Manifold shading is root-fixed (normal
+  slot 3→0; smooth is now the default; crease-aware). What's LEFT is optional: wire the PROVEN
+  `smoothOut(60).refineToTolerance` as a "true round silhouette" toggle (build-time, crease-aware,
+  costs triangles — reconstructs welded revolves to ±0.001; prototype in `builder.ts` bbd7de9, unwired);
+  `Manifold.levelSet(sdf,…)` is available for organic/lattice parts (verified). Plan:
+  `docs/plans/smooth-surfaces-and-brep.md`. (The "smoothOut is wavy r≈0.75" scare was a measurement
+  artifact — it sampled cap-transition verts; the wall reconstructs cleanly.)
+
+### Shipped 2026-06-18
+Faceted BREP revolve (7112f8a) · SVG artificial per-face shader + light/rim dials (24137c3, 2b3d1c1) ·
+in-place shade toggle / no re-bake (dd5602c) · **normal slot 3→0 root fix** + smooth default + 1-row
+bake controls (b322bf3, c645b66, 47edb2a) · smoothOut+refine prototype + bench (bbd7de9) · worker-pool
+spec (`docs/plans/bake-worker-pool.md`). Probes under `scripts/` (25fe1e2).
 
 ### PARKED
 
-1. ✅ FIXED 2026-06-17 (d75cca0). BUG. Smooth normals not implemented on the 3D BAKE.
-   Root cause: `calculateNormals(3,crease)` returned an ALL-ZERO normal buffer on
-   welded/revolved meshes → smooth mode (flatShading:false) had nothing to shade.
-   Fix: detect degenerate normals + recompute (indexed→smooth; non-indexed paths
-   build indexed smooth normals first then scatter). Verified radial-outward.
-2. ✅ FIXED (same as #1). The ◐ smooth button showed flat / no shading — now shades
-   radially (the recompute gives outward radial normals, exactly what was wanted).
-3. We need cability of having params, props and calculated. Basicallty the calculated fields are based on the params and are functions of the params. They can be in the thrid tab, in a table. Similar popover for the function. Then those can be wired into other params in other parts.
-4. In the 2D sketch editor can we also have the expansion for scale in x and y direction? the setings button can be in the tool bar on the top. 
-5. In the design page we should have a sub-route for each of the panes desribing the component layout and if possible, optionally show the nodal connections bettwenn them.
-6. RESEARCH. Explore this for possibility of improving cad generation. [https://arxiv.org/html/2606.05515v1](https://arxiv.org/html/2606.05515v1)
-7. PLAN We need to introduce the concept of units here. Like diameter in inches or mm generslly, z in m or ft. We ill need a centralized units repository.
-8. The TXForm card is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added. Right now there is a redundancy in each card's operation. There should be a selactor of what we want for each row. and the ability to move one transform up or down.
+1. We need cability of having params, props and calculated. Basicallty the calculated fields are based on the params and are functions of the params. They can be in the thrid tab, in a table. Similar popover for the function. Then those can be wired into other params in other parts.
+2. In the 2D sketch editor can we also have the expansion for scale in x and y direction? the setings button can be in the tool bar on the top. 
+3. In the design page we should have a sub-route for each of the panes desribing the component layout and if possible, optionally show the nodal connections bettwenn them.
+4. RESEARCH. Explore this for possibility of improving cad generation. [https://arxiv.org/html/2606.05515v1](https://arxiv.org/html/2606.05515v1)
+5. PLAN We need to introduce the concept of units here. Like diameter in inches or mm generslly, z in m or ft. We ill need a centralized units repository.
+6. The TXForm card is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added. Right now there is a redundancy in each card's operation. There should be a selactor of what we want for each row. and the ability to move one transform up or down.
 
