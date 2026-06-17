@@ -24,48 +24,32 @@
 8. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
   /conditional expressions (sparse `graph.exprs[]`, topo eval). Plan: `docs/plans/expressions-tab.md`.
 9. **Well schematic → 3D well diagram (`/wells`)** — **3D-FIRST**: the canonical model is
-   the 3D well (cadtrain `g_*` parts placed along the survey by depth, baked with Manifold);
+  the 3D well (cadtrain `g_*` parts placed along the survey by depth, baked with Manifold);
    the 2D schematic is a derived VIEW, not the source of truth. Leverage SVTC's engine
    (`~/code/SVTC/src/lib/apps/wson/` — interface + trajectory warp + depth auto-scale +
    10 sample `.wson`) which LACKS components; supply them from cadtrain's parts via the
    `tool_comp`→`g_*` registry. WSON = the shared model. Replaces the `/wells` stub.
-   - **SHIPPED:** W0 (`517f0ed`) WSON model+linter + `/wells` scaffold (4 samples);
-     W1 (`ab19a38`) 3D assembler + registry + Threlte scene (primitive cylinders); ⇕fit
-     bug (`afa88df`).
-   - **DECIDED:** scale pipeline `MD → DTX(straight) → warp along spline → ×zScale`; 3D
-     scale = **spread-spacing / true-size** parts (faithful CAD; geometry-stretch is 2D-only);
-     **flatten** (azimuth-ignoring 2D projection) toggle; **curvature-adaptive Z-subdivision**
-     at BUILD time (Rule 25); the assembler **passes the spline to the builder** which
-     adaptive-meshes along it — a well↔builder **sync contract** to lock first.
-   - **NEXT:** port SVTC's 3D scene; DTX+scale layer; W1.3 real `g_*` bakes; flatten;
-     curvature subdivision via the spline→builder contract; W2 2D schematic view; W3 editor/BOM.
-   - Plan: **`docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,
-     `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
-
-10. **Bake perf — coarse-during-drag + smooth normals** — ✅ DONE 2026-06-17 (19cd6b0 +
-  follow-up). P0 gated the `cad-bake-timings` logs; P1 coarse-during-drag (seg 64 instant →
-  full on 220ms settle); P1b smooth-normals shade quick-toggle (◐) on the bake pane; P2
-  lazy-cutVC (cutaway:false force-skip when Cross-section OFF). P3 (serialize/transfer)
-  measured + DROPPED — deserialize is 0.8ms, not the bottleneck (the cost is the geometry,
-  fixed by P1). Plan: `docs/plans/bake-perf.md`.
-
-### Quick / contained (not yet done)
-
-- **Deja-vu bake bug** (`bake-cache.ts`) — cache key ignores dep bodies → stale parent
-mesh when a dep changes. Medium fix (plumb dep sources to `hashBakeKey`), or let #8
-retire it structurally.
+  - **SHIPPED:** W0 (`517f0ed`) WSON model+linter + `/wells` scaffold (4 samples);
+  W1 (`ab19a38`) 3D assembler + registry + Threlte scene (primitive cylinders); ⇕fit
+  bug (`afa88df`).
+  - **DECIDED:** scale pipeline `MD → DTX(straight) → warp along spline → ×zScale`; 3D
+  scale = **spread-spacing / true-size** parts (faithful CAD; geometry-stretch is 2D-only);
+  **flatten** (azimuth-ignoring 2D projection) toggle; **curvature-adaptive Z-subdivision**
+  at BUILD time (Rule 25); the assembler **passes the spline to the builder** which
+  adaptive-meshes along it — a well↔builder **sync contract** to lock first.
+  - **NEXT:** port SVTC's 3D scene; DTX+scale layer; W1.3 real `g_*` bakes; flatten;
+  curvature subdivision via the spline→builder contract; W2 2D schematic view; W3 editor/BOM.
+  - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
+  `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
 ### PARKED
 
-1. New revolve/extrude parts default to **sketch** not polygon. *(May be partly done in
-  the BREP session — verify.)*
-2. Auto-layout: the PARAMS + PROPERTIES card must never overlap other cards (repel all).
-  *(Likely already done — K.79 made them auto-layout obstacles; verify, then close.)*
+1. BUG. The smooth normals not implement on the BAKE 3D.
+2. **Bake perf — coarse-during-drag + smooth normals** — ✅ DONE 2026-06-17 (19cd6b0). The mooth botton only shows a flat shading... there is NO shading. do we need to build it? one option is to shade radially because thats all we want.
 3. We need cability of having params, props and calculated. Basicallty the calculated fields are based on the params and are functions of the params. They can be in the thrid tab, in a table. Similar popover for the function. Then those can be wired into other params in other parts.
-4. In the sketch editor can we also have the expansion for scale in x and y direction? the setings button can be in the tool bar on the top.
+4. In the 2D sketch editor can we also have the expansion for scale in x and y direction? the setings button can be in the tool bar on the top. 
 5. In the design page we should have a sub-route for each of the panes desribing the component layout and if possible, optionally show the nodal connections bettwenn them.
 6. RESEARCH. Explore this for possibility of improving cad generation. [https://arxiv.org/html/2606.05515v1](https://arxiv.org/html/2606.05515v1)
 7. PLAN We need to introduce the concept of units here. Like diameter in inches or mm generslly, z in m or ft. We ill need a centralized units repository.
 8. The TXForm card is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added. Right now there is a redundancy in each card's operation. There should be a selactor of what we want for each row. and the ability to move one transform up or down.
-9. Can we make the output card less wide. Each item in there can have a tool tip. And it should be high enoug only for the rows we have added, plus one more row spare to add more.
-10. **BUG. BREP build failed: "This object has been deleted"** — OCCT handle freed/reused; needs a repro part.
+

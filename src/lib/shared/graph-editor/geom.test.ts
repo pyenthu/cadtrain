@@ -108,10 +108,12 @@ describe('entryIdxForEvalIdx (entry-idx vs eval-idx gotcha)', () => {
 describe('card sizing', () => {
   const graph = { nodes: {}, layout: {}, params: {} } as unknown as Graph;
 
-  it('nodeSize clamps to the per-type minimum width', () => {
+  it('a CSG method renders as a fixed compact circle (40×40)', () => {
+    // CSG subtract/add/intersect is a compact circle operator, not a card —
+    // fixed size, ignores auto/min width.
     const method = nodeSize(graph, { id: 'm', type: 'method' });
-    expect(method.w).toBeGreaterThanOrEqual(cardMinWidth({ type: 'method' }));
-    expect(method.h).toBe(64);
+    expect(method.w).toBe(40);
+    expect(method.h).toBe(40);
   });
 
   it('a call card height grows 22px per arg (above the 80px floor)', () => {

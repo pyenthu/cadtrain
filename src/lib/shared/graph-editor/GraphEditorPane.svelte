@@ -1812,6 +1812,10 @@
   // ─── drag-to-move node cards ────────────────────────────────────────────
   let dragging: string | null = null;
   let dragOrig = { x: 0, y: 0 }; let dragStart = { x: 0, y: 0 };
+  // Tracks whether a node pointer-gesture actually MOVED — distinguishes a drag
+  // from a click (pointerdown preventDefault suppresses the native click event,
+  // so the CSG circle opens its popover on a no-move pointerup instead).
+  let dragMoved = false;
   /** Z-order ordering of node ids — last one wins (renders ON TOP). When the
    *  user clicks a node, we move its id to the END of this array so it pops
    *  to the front. Nodes not in this list render BEFORE the listed ones,
@@ -1830,6 +1834,7 @@
     ev.preventDefault();
     bringToFront(id);
     dragging = id;
+    dragMoved = false;
     dragStart = { x: ev.clientX, y: ev.clientY };
     dragOrig = graph.layout[id] ?? { x: 0, y: 0 };
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
@@ -1850,17 +1855,25 @@
     if (!dragging) return;
     const dx = (ev.clientX - dragStart.x) / zoom;
     const dy = (ev.clientY - dragStart.y) / zoom;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
     // Preserve `w` so a position drag doesn't wipe out a previous resize.
     dragPending = { x: dragOrig.x + dx, y: dragOrig.y + dy, w: (dragOrig as any).w };
     if (!dragRaf) dragRaf = requestAnimationFrame(flushDrag);
   }
   function onNodePointerUp(ev: PointerEvent) {
     if (dragging) {
+      const id = dragging;
       // Flush the final position so the card lands exactly where released.
       if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
       if (dragPending) { graph = setLayout(graph, dragging, dragPending); dragPending = null; }
       (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
       dragging = null;
+      // A no-move tap on a compact CSG circle opens its action popover (the
+      // native click is suppressed by pointerdown's preventDefault).
+      if (!dragMoved) {
+        const node = graph.nodes[id] as any;
+        if (node?.type === 'method') popovers?.openCsgPop(ev, id, node.op);
+      }
     }
   }
 
@@ -4162,34 +4175,34 @@
 
               {:else if n.type === 'method'}
                 {@const m = n as any}
-                <!-- Compact title-row layout (matches mv/rot): op glyph +
-                     name in the title at top, obj/arg sockets on the left
-                     below, output on the title-row right edge. -->
+                {@const glyph = m.op === 'subtract' ? '−' : m.op === 'add' ? '+' : '×'}
+                {@const cx = size.w / 2}
+                {@const cy = size.h / 2}
+                <!-- COMPACT CSG operator: a circle with the op glyph, A wired in
+                     on TOP, B on the BOTTOM, result out the RIGHT (A op B). No
+                     card — it reads as a wire-in operator, not a container. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect role="button" tabindex="-1" class="ge-node-bg method" width={size.w} height={size.h} rx="6"
+                <circle role="button" tabindex="-1" class="ge-csg-circle" cx={cx} cy={cy} r={cx}
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
                 />
-                <text x="14" y="20" class="ge-node-title">
-                  {m.op === 'subtract' ? '⊖' : m.op === 'add' ? '⊕' : '⊗'} {m.op}
-                </text>
-                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 22} y="20" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
-                <!-- Input sockets, stacked under the divider -->
+                <text role="button" tabindex="-1" x={cx} y={cy + 6} class="ge-csg-glyph" text-anchor="middle"
+                  onpointerdown={(ev) => { ev.stopPropagation(); popovers!.openCsgPop(ev, n.id, m.op); }}>{glyph}</text>
+                <!-- A (obj) input — TOP, label OUTSIDE above -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in obj" cx="0" cy="42" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock in obj" cx={cx} cy="0" r="6"
                   onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'obj')}/>
-                <text x="10" y="45" class="ge-sock-label">obj</text>
+                <text x={cx + 11} y="-2" class="ge-csg-ab">A</text>
+                <!-- B (arg) input — BOTTOM, label OUTSIDE below -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in arg" cx="0" cy="56" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock in arg" cx={cx} cy={size.h} r="6"
                   onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'arg')}/>
-                <text x="10" y="59" class="ge-sock-label">arg</text>
-                <!-- OUTPUT socket on the title-row right edge -->
+                <text x={cx + 11} y={size.h + 12} class="ge-csg-ab">B</text>
+                <!-- OUTPUT — RIGHT -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="14" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={cy} r="6"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'mv' || n.type === 'rot'}
@@ -5197,7 +5210,7 @@
                    x=size.w, vertically centred). Two short stacked
                    strokes give the classic "↘" resize-handle look at
                    ~10 × 10 px. The Output card (root) skips the grip. -->
-              {#if n.id !== graph.root}
+              {#if n.id !== graph.root && n.type !== 'method'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <g class="ge-resize-corner"
                   data-tip="Drag to resize"
@@ -6772,6 +6785,16 @@
 
   .ge-node-bg { fill: #fff; stroke: #0369a1; stroke-width: 2; cursor: grab; touch-action: none; }
   .ge-node-bg.method { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+  /* Compact CSG operator circle (subtract/add/intersect) — amber like the old method card. */
+  .ge-csg-circle { fill: #fef3c7; stroke: #d97706; stroke-width: 2; cursor: grab; touch-action: none; }
+  .ge-csg-circle:hover { fill: #fde68a; }
+  .ge-csg-glyph { fill: #92400e; font: 700 22px Arial; cursor: pointer; user-select: none; }
+  .ge-csg-glyph:hover { fill: #b45309; }
+  /* A/B input titles — bigger, sit OUTSIDE the circle (above A, below B). */
+  .ge-csg-ab { fill: #b45309; font: 800 13px Arial; pointer-events: none; user-select: none; }
+  /* Trash delete tucked at the circle's top-right edge. */
+  .ge-csg-trash { font-size: 12px; cursor: pointer; user-select: none; opacity: 0.75; }
+  .ge-csg-trash:hover { opacity: 1; }
   .ge-node-bg.transform { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-node-bg.transform.rot { fill: #fce7f3; stroke: #be185d; }
   .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }

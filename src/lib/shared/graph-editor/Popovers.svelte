@@ -30,6 +30,8 @@
     removeContainerChildAt,
     setStackChildCount,
     setStackChildRef,
+    setMethodInput,
+    removeNode,
     STACK_REF_PARAM,
     type Graph,
     type NodeId,
@@ -62,6 +64,18 @@
     containerPop = { containerId, x: ev.clientX, y: ev.clientY };
   }
   function closeContainerPop() { containerPop = null; }
+
+  // ─── CSG operator (− / + / ×) popover ───────────────────────────────────
+  // Click the compact CSG circle to open a tiny menu: delete the whole
+  // operation, or clear an input (A/B) back to unwired ('').
+  let csgPop = $state<{ nodeId: NodeId; op: string; x: number; y: number } | null>(null);
+  export function openCsgPop(ev: MouseEvent, nodeId: NodeId, op: string) {
+    ev.stopPropagation();
+    csgPop = { nodeId, op, x: ev.clientX, y: ev.clientY };
+  }
+  function closeCsgPop() { csgPop = null; }
+  function csgDeleteOp() { if (csgPop) { graph = removeNode(graph, csgPop.nodeId); csgPop = null; } }
+  function csgClearInput(slot: 'obj' | 'arg') { if (csgPop) { graph = setMethodInput(graph, csgPop.nodeId, slot, ''); csgPop = null; } }
   export function moveChild(containerId: NodeId, index: number, delta: -1 | 1) {
     const node = graph.nodes[containerId] as any;
     if (!node || !Array.isArray(node.children)) return;
@@ -231,6 +245,20 @@
   </div>
 {/if}
 
+{#if csgPop}
+  {@const glyph = csgPop.op === 'subtract' ? '−' : csgPop.op === 'add' ? '+' : '×'}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="ge-wire-shade" onclick={closeCsgPop}></div>
+  <div class="ge-wire-pop ge-csg-pop"
+    style="left: {Math.min(csgPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 200)}px; top: {csgPop.y}px">
+    <div class="ge-wire-head">{glyph} {csgPop.op}</div>
+    <button class="ge-csg-pop-btn" type="button" onclick={() => csgClearInput('obj')}>Clear input A</button>
+    <button class="ge-csg-pop-btn" type="button" onclick={() => csgClearInput('arg')}>Clear input B</button>
+    <button class="ge-csg-pop-btn danger" type="button" onclick={csgDeleteOp}>🗑 Delete operation</button>
+  </div>
+{/if}
+
 {#if containerPop}
   {@const cnode = graph.nodes[containerPop.containerId] as any}
   {@const ctitle = cnode?.id === graph.root ? '▶ Output' : cnode?.type === 'stack' ? '↕ Stack' : cnode?.type === 'group' ? '{} Group' : '[ ] List'}
@@ -390,6 +418,12 @@
 
   /* ── Container reorder popover (containerPop) — RELOCATED from GEP. ────── */
   .ge-container-pop { min-width: 340px; max-width: 480px; padding: 8px 6px 4px; }
+  /* CSG operator menu */
+  .ge-csg-pop { min-width: 180px; }
+  .ge-csg-pop-btn { display: block; width: 100%; text-align: left; padding: 7px 12px; border: none; background: none; font: 500 12px Arial; color: #374151; cursor: pointer; }
+  .ge-csg-pop-btn:hover { background: #fef3c7; }
+  .ge-csg-pop-btn.danger { color: #b91c1c; border-top: 1px solid #fef3c7; }
+  .ge-csg-pop-btn.danger:hover { background: #fee2e2; }
   .ge-container-table { width: 100%; border-collapse: collapse; font: 11px Arial; }
   .ge-container-table th { text-align: left; padding: 4px 6px; font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; }
   .ge-container-table td { padding: 4px 6px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }

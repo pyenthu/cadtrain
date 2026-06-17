@@ -311,7 +311,9 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     const argCount = Object.keys(node.args ?? {}).length;
     return { w, h: Math.max(80, 50 + argCount * 22) };
   }
-  if (node.type === 'method') return { w, h: 64 };
+  // CSG method (subtract/add/intersect) renders as a COMPACT CIRCLE operator
+  // (glyph + A-top/B-bottom inputs + right output) — fixed size, ignore auto-width.
+  if (node.type === 'method') return { w: 40, h: 40 };
   if (node.type === 'mv' || node.type === 'rot') return { w, h: 110 };
   // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
   // label. Fixed height matches the card render's block layout below.
@@ -562,8 +564,8 @@ export function outputSocketAt(graph: Graph, id: NodeId): { x: number; y: number
   }
   // txfmn is always a standalone card — output on the title-row right edge.
   if (node.type === 'txfmn') return { x: p.x + w, y: p.y + 16 };
-  // Method at y=14; other node types keep the middle-right edge.
-  if (node.type === 'method') return { x: p.x + w, y: p.y + 14 };
+  // Method (compact CSG circle) + every other node type: output on the
+  // middle-right edge.
   return { x: p.x + w, y: p.y + h / 2 };
 }
 
@@ -571,8 +573,11 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
   const p = nodePos(graph, id);
   const node = graph.nodes[id];
   if (!node) return p;
-  if (slot === 'obj')  return { x: p.x, y: p.y + 42 };
-  if (slot === 'arg')  return { x: p.x, y: p.y + 56 };
+  // CSG method circle: A (obj) wires in on TOP, B (arg) on the BOTTOM.
+  if (slot === 'obj' || slot === 'arg') {
+    const { w, h } = nodeSize(graph, node);
+    return slot === 'obj' ? { x: p.x + w / 2, y: p.y } : { x: p.x + w / 2, y: p.y + h };
+  }
   // mv / rot put their child socket on the LEFT EDGE, aligned with the title
   // row (y=16). Repeat keeps the legacy bottom-edge position via its renderer.
   if (slot === 'child' && (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn')) {
