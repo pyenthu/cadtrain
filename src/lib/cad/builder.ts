@@ -564,7 +564,7 @@ function clampCrease(a?: number): number {
   return Math.max(1, Math.min(180, a));
 }
 
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number }): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number; smooth?: { minSharpAngle?: number; tolerance?: number } }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -585,7 +585,29 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // two simultaneous preview requests clobbered the shared _renderZScale before
   // either finalized (GRAPH_EDITOR_REVIEW / robustness-plan 1d).
   const z = opts?.zScale ?? _renderZScale;
-  const scaled = z === 1.0 ? manifold : manifold.scale([1, 1, z]);
+  let scaled = z === 1.0 ? manifold : manifold.scale([1, 1, z]);
+  // ─── Build-time smoothing (opt-in, PROTOTYPE) ────────────────────────────
+  // Manifold can lift a COARSE/faceted mesh onto a smooth (near-NURBS) surface
+  // at build time: `smoothOut` fills the halfedge tangents CREASE-AWARE (edges
+  // sharper than minSharpAngle stay sharp, flat faces stay flat, curves → G1)
+  // WITHOUT moving any geometry; `refineToTolerance` then adaptively splits
+  // edges so every vertex lands within `tolerance` of that smooth surface —
+  // fine in tight curves, coarse on flats. Run on the BASE (pre-warp) manifold
+  // so the warp below displaces an already-smooth surface, and on `scaled` so
+  // the full mesh, the cutaway, AND the instanced canonical child all inherit
+  // it. Absent `opts.smooth` → untouched (byte-identical bake). Smoothing only
+  // ADDS verts within the existing hull, so the cut-box bbox is unchanged.
+  // tolerance default = 0.4% of the part's max diameter (a cylinder reads round
+  // without an explosive tri count). Guarded: any WASM hiccup falls back to the
+  // un-smoothed manifold rather than failing the bake.
+  if (opts?.smooth) {
+    try {
+      const tol = opts.smooth.tolerance ?? maxOD * 0.004;
+      scaled = scaled.smoothOut(opts.smooth.minSharpAngle ?? 60, 0).refineToTolerance(tol);
+    } catch {
+      scaled = z === 1.0 ? manifold : manifold.scale([1, 1, z]);
+    }
+  }
   const lut = parts?.active ? parts : undefined;
   // Tag the cut-box with SECTION_ID so the new cross-section faces it
   // creates are distinguishable (→ inner/section color) from the part
