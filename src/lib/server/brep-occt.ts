@@ -229,7 +229,7 @@ export async function brepFromSource(
   await ensureOC();
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
-  const { draw, makeBaseBox, makeCompound } = replicad;
+  const { draw, makeBaseBox, makeCompound, drawPolysides } = replicad;
 
   const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
   if (!m) return null;
@@ -268,8 +268,36 @@ export async function brepFromSource(
     (typeof p === 'string' ? JSON.parse(p) : p) as [number, number][];
 
   // ── OCCT-backed engines ──────────────────────────────────────────────────
+  // Faceted (N-gon) revolve — OCCT's revolve() is the EXACT (round) surface and
+  // ignores `segments`, so a low-poly design (segments=4 → square prism) rendered
+  // round in BREP. Loft regular N-gon sections (circumradius r at each off-axis
+  // profile point, height z), ruled = flat faces → a true faceted solid that
+  // matches Manifold. Throws on profiles that don't reduce to a simple z-stack
+  // (annular/cone/non-monotonic) → caller falls back to the exact revolve.
+  const FACET_MAX = 48; // above this, exact revolve (visually round + cheaper)
+  const facetedRevolve = (prof: [number, number][], seg: number) => {
+    const n = Math.max(3, Math.floor(seg));
+    const eps = 1e-6;
+    const sections: any[] = [];
+    let lastZ: number | undefined;
+    for (const [r, z] of prof) {
+      if (r <= eps) continue;
+      if (lastZ !== undefined && Math.abs(z - lastZ) < eps) {
+        throw new Error('faceted revolve: coincident-z sections (annular/step) — exact fallback');
+      }
+      sections.push(drawPolysides(r, n).sketchOnPlane('XY', z));
+      lastZ = z;
+    }
+    if (sections.length < 2) throw new Error('faceted revolve needs ≥2 off-axis profile points');
+    return wrap(sections[0].loftWith(sections.slice(1), { ruled: true }));
+  };
   const r_revolve = (a: any, b?: any) => {
     const prof = asPts(Array.isArray(a) ? a : a.profile);
+    const seg = typeof b === 'number' ? b
+      : (a && typeof a.segments === 'number' ? a.segments : undefined);
+    if (typeof seg === 'number' && seg >= 3 && seg <= FACET_MAX) {
+      try { return facetedRevolve(prof, seg); } catch { /* fall through to exact */ }
+    }
     return wrap(sketchPoly(prof, 'XZ').revolve());
   };
   const extrudeXY = (profile: any, length: number, twist = 0) => {
