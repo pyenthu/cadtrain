@@ -64,138 +64,62 @@ function tagInstanceSources(source: string): string {
 
 type GeomFn = (...args: any[]) => any;
 
-/** True for a meta.params key that controls circular tessellation resolution
- *  (engine primitives expose it as an explicit param, e.g. `segments`). Used by
- *  the coarse-bake clamp so an assembly's deps actually bake low-poly. */
-function isSegmentKey(key: string): boolean {
-  const k = key.toLowerCase();
-  return k === 'segments' || k === 'segment' || k === 'seg' || k === 'segs'
-    || k === 'nseg' || k === 'nsegments' || k === 'circularsegments'
-    || k.endsWith('segments');
-}
-
-/** Compact one-line shape for an args list — used to annotate the
- *  `[in parent → dep(<shape>)]` suffix on a decorated dep error. Hides
- *  Manifold objects (huge) + truncates long arrays. */
-function argShape(args: any[]): string {
-  if (args.length === 0) return '';
-  if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
-    const o = args[0];
-    const keys = Object.keys(o).slice(0, 6);
-    const body = keys.map((k) => {
-      const v = (o as any)[k];
-      if (v === null || v === undefined) return `${k}:${v}`;
-      if (typeof v === 'number') return `${k}:${Number.isFinite(v) ? v : 'NaN'}`;
-      if (typeof v === 'string') return `${k}:${JSON.stringify(v).slice(0, 24)}`;
-      return `${k}:?`;
-    }).join(',');
-    return `{${body}${Object.keys(o).length > keys.length ? ',…' : ''}}`;
-  }
-  return args.slice(0, 6).map((a) =>
-    typeof a === 'number' ? (Number.isFinite(a) ? String(a) : 'NaN') :
-    typeof a === 'string' ? JSON.stringify(a).slice(0, 24) :
-    a == null ? String(a) : '?',
-  ).join(',');
-}
-
-const IMPORT_RE = /import\s+(?:type\s+)?(?:\{([^}]*)\})?\s*(?:from\s*)?['"]([^'"]+)['"]\s*;?/g;
-function stripImports(src: string): string {
-  let out = src;
-  let m: RegExpExecArray | null;
-  IMPORT_RE.lastIndex = 0;
-  while ((m = IMPORT_RE.exec(src)) !== null) out = out.replace(m[0], '');
-  return out;
-}
-
-/** Pull declared dependency ids from `meta.uses: ['a', 'b']`. Regex over
- *  the source (independent of the full meta parser) — robust to whatever
- *  else the meta carries. Accepts BOTH unquoted (`uses: [...]`) AND
- *  quoted (`"uses": [...]`) property forms — JSON.stringify-emitted
- *  metas use quotes, and without the optional-quote sentinel the loader
- *  failed to resolve any deps and the body errored "X is not defined"
- *  at preview time. Mirrors paramKeysOf's quote-aware match in
- *  assembly-deps.ts. */
-export function usesOf(source: string): string[] {
-  const m = /["']?\buses\b["']?\s*:\s*\[([^\]]*)\]/.exec(source);
-  if (!m) return [];
-  return [...m[1].matchAll(/['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g)].map((x) => x[1]);
-}
-
-function transpile(source: string): string {
-  return transformSync(stripImports(source), { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
+/** Result of the pure source→runnable-body rewrite step. The SAME object is
+ *  consumed two ways:
+ *   - `buildPrimitiveGeom` feeds `wrapper` + `injectNames` to `new Function`
+ *     and INJECTS the resolved dep geom-functions positionally (unchanged
+ *     server-executor behaviour);
+ *   - `compilePrimitiveScript` feeds `body` + `injectNames` into a
+ *     self-contained text IIFE and INLINES each dep as nested text instead.
+ *  Extracting it keeps the (load-bearing, much-commented) signature-rewrite
+ *  byte-identical across both paths — no drift. */
+export interface AssembledBody {
+  /** Rewritten + transpiled function body (signature canonicalised, deps
+   *  aliased, `__tag` instance-tagging spliced). Does NOT include the
+   *  `"use strict"` / module-exports wrapper. */
+  body: string;
+  /** The full `new Function` body: `"use strict"` + module/exports shims +
+   *  `body` + the `return module.exports[name] ?? …` tail. */
+  wrapper: string;
+  /** Per-dep argument names, aligned to the caller-supplied `depNames`. A dep
+   *  that collides with a sandbox helper or a body-local const is renamed to a
+   *  `__dep_<i>` alias (and its call sites in `body` are rewritten to match). */
+  injectNames: string[];
+  /** Canonical meta.params key order (drives the adaptive call boundary). */
+  metaKeys: string[];
+  /** True when the part takes a single object arg (`function id(p)`), false for
+   *  legacy positional signatures. */
+  isObjectStyle: boolean;
 }
 
 /**
- * Build a geom function from a primitive source string, resolving its
- * `meta.uses` dependencies and injecting them by name.
+ * PURE source→body rewrite — the careful signature-rewriting half of
+ * `buildPrimitiveGeom`, factored out so the server executor (inject dep
+ * FUNCTIONS) and the client-script compiler (inline dep TEXT) share ONE
+ * implementation and can never drift.
  *
- * @param fetchFn  SvelteKit `event.fetch` — used to read dep sources from
- *                 /api/volume (local FS on prod, proxied to prod in dev).
+ * Takes the ALREADY-PARTITIONED list of dependency names that resolved to a
+ * volume source (`depNames`) — i.e. the deps that will be injected/inlined by
+ * name. Bundle-helper deps (which stay in the sandbox scope) are NOT in this
+ * list. No async, no I/O.
+ *
+ * `stripMetaFromBody` (compiler path only): drop the `export const meta = {…}`
+ * block from the TRANSPILED body so the emitted text — and therefore the
+ * script's sha256 — is invariant to meta-only churn (random NodeIds, layout,
+ * whitespace), mirroring bake-cache's body-only hash philosophy. The schema
+ * (paramKeysOf / extractMetaFromSource) is still read from the FULL `source`,
+ * so behaviour is unchanged. The geom FUNCTION text is byte-identical either
+ * way (meta is a dead sibling statement at runtime), so executor↔compiler
+ * parity holds; the executor passes `false` → its body is unchanged.
  */
-export async function buildPrimitiveGeom(
+export function assemblePrimitiveBody(
   source: string,
   name: string,
-  fetchFn: typeof fetch,
-  visited: Set<string> = new Set(),
-): Promise<GeomFn> {
-  // Resolve declared deps. PARALLEL — composites had their deps resolved
-  // one-at-a-time, so each dep's source.ts fetch (a prod round-trip in dev)
-  // blocked the next.
-  //
-  // SANDBOX-COLLISION RESOLUTION (the tube/cyl/mv naming trap):
-  //   Names like `tube`, `cyl`, `mv` exist as raw helpers in SANDBOX_ARG_NAMES
-  //   AND can legitimately exist as user-authored volume primitives. The old
-  //   filter dropped any volume dep matching a sandbox name — silently — so
-  //   the raw helper won and the user's primitive was invisible at runtime.
-  //   New behaviour: try to LOAD every declared dep; if the load fails AND
-  //   the name is a sandbox helper, fall back silently (the raw helper takes
-  //   over); if the load succeeds, the volume version wins via aliasing.
-  //
-  // DEDUPE: `new Function(...depNames, body)` throws "Invalid parameters … in
-  // strict mode" on a duplicate param name. meta.uses can legitimately list
-  // the same primitive twice (e.g. adding a 2nd r_extrude part), so we
-  // de-dupe before the Function ctor.
-  const declared = [...new Set(usesOf(source))];
-  for (const dep of declared) {
-    if (visited.has(dep)) {
-      throw new Error(`circular primitive dependency: ${[...visited, dep].join(' → ')}`);
-    }
-  }
-  const settled = await Promise.allSettled(
-    declared.map((dep) => loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))),
-  );
-  // Partition into loaded (volume hit) vs deferred-to-sandbox (sandbox helper
-  // takes over). A failed load for a name that is NOT a sandbox helper is a
-  // real error and gets re-thrown with the parent's name + chain attached so
-  // the user can see WHICH part needed the missing dependency.
-  const depNames: string[] = [];
-  const depFns: GeomFn[] = [];
-  for (let i = 0; i < declared.length; i++) {
-    const dep = declared[i]!;
-    const r = settled[i]!;
-    if (r.status === 'fulfilled') {
-      depNames.push(dep);
-      depFns.push(r.value);
-    } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
-      // Decorate the underlying "dependency primitive 'X' not found" with
-      // the calling part's name, the full dep chain (parent → child),
-      // and an action hint. Avoids the user seeing a bare "shaft not
-      // found" with no clue what brought it in.
-      const chain = visited.size
-        ? [...visited, dep].join(' → ')
-        : `${name} → ${dep}`;
-      const inner = (r.reason as Error)?.message ?? String(r.reason);
-      const looksMissing = /not found|HTTP 404/i.test(inner);
-      const hint = looksMissing
-        ? ` (the primitive doesn't exist on the volume — either restore it from the archive, drop it from "${name}"'s meta.uses if the body doesn't actually call it, or re-create it)`
-        : '';
-      throw new Error(`primitive "${name}" needs dependency "${dep}" but it failed to load: ${inner} [dep chain: ${chain}]${hint}`);
-    }
-    // else: defer to the sandbox helper of the same name (raw helper wins
-    // when there's no volume primitive with this id).
-  }
-
-  let body = transpile(tagInstanceSources(source));
+  depNames: string[],
+  stripMetaFromBody = false,
+): AssembledBody {
+  const toTranspile = stripMetaFromBody ? stripMetaBlock(source) : source;
+  let body = transpile(tagInstanceSources(toTranspile));
   // ALIAS POLICY — rewrite a dep's call sites in the body to a collision-proof
   // alias when any of:
   //   (a) the body declares a `const/let/var <dep>` shadowing the dep arg
@@ -325,6 +249,168 @@ export async function buildPrimitiveGeom(
     ${body}
     return module.exports[${JSON.stringify(name)}]
         ?? Object.values(module.exports).find((v) => typeof v === 'function');`;
+  return { body, wrapper, injectNames, metaKeys, isObjectStyle };
+}
+
+/** True for a meta.params key that controls circular tessellation resolution
+ *  (engine primitives expose it as an explicit param, e.g. `segments`). Used by
+ *  the coarse-bake clamp so an assembly's deps actually bake low-poly. */
+function isSegmentKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return k === 'segments' || k === 'segment' || k === 'seg' || k === 'segs'
+    || k === 'nseg' || k === 'nsegments' || k === 'circularsegments'
+    || k.endsWith('segments');
+}
+
+/** Compact one-line shape for an args list — used to annotate the
+ *  `[in parent → dep(<shape>)]` suffix on a decorated dep error. Hides
+ *  Manifold objects (huge) + truncates long arrays. */
+function argShape(args: any[]): string {
+  if (args.length === 0) return '';
+  if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+    const o = args[0];
+    const keys = Object.keys(o).slice(0, 6);
+    const body = keys.map((k) => {
+      const v = (o as any)[k];
+      if (v === null || v === undefined) return `${k}:${v}`;
+      if (typeof v === 'number') return `${k}:${Number.isFinite(v) ? v : 'NaN'}`;
+      if (typeof v === 'string') return `${k}:${JSON.stringify(v).slice(0, 24)}`;
+      return `${k}:?`;
+    }).join(',');
+    return `{${body}${Object.keys(o).length > keys.length ? ',…' : ''}}`;
+  }
+  return args.slice(0, 6).map((a) =>
+    typeof a === 'number' ? (Number.isFinite(a) ? String(a) : 'NaN') :
+    typeof a === 'string' ? JSON.stringify(a).slice(0, 24) :
+    a == null ? String(a) : '?',
+  ).join(',');
+}
+
+const IMPORT_RE = /import\s+(?:type\s+)?(?:\{([^}]*)\})?\s*(?:from\s*)?['"]([^'"]+)['"]\s*;?/g;
+function stripImports(src: string): string {
+  let out = src;
+  let m: RegExpExecArray | null;
+  IMPORT_RE.lastIndex = 0;
+  while ((m = IMPORT_RE.exec(src)) !== null) out = out.replace(m[0], '');
+  return out;
+}
+
+/** Pull declared dependency ids from `meta.uses: ['a', 'b']`. Regex over
+ *  the source (independent of the full meta parser) — robust to whatever
+ *  else the meta carries. Accepts BOTH unquoted (`uses: [...]`) AND
+ *  quoted (`"uses": [...]`) property forms — JSON.stringify-emitted
+ *  metas use quotes, and without the optional-quote sentinel the loader
+ *  failed to resolve any deps and the body errored "X is not defined"
+ *  at preview time. Mirrors paramKeysOf's quote-aware match in
+ *  assembly-deps.ts. */
+export function usesOf(source: string): string[] {
+  const m = /["']?\buses\b["']?\s*:\s*\[([^\]]*)\]/.exec(source);
+  if (!m) return [];
+  return [...m[1].matchAll(/['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g)].map((x) => x[1]);
+}
+
+function transpile(source: string): string {
+  return transformSync(stripImports(source), { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
+}
+
+/** Remove a top-level `export const meta = { … }` declaration (balanced-brace
+ *  walk; tolerant of a `: Type` annotation and a trailing `;`). The meta block
+ *  is dead weight at runtime — the wrapper returns the geom FUNCTION, never meta
+ *  — so dropping it from the compiled script makes the script's hash invariant
+ *  to meta-only churn (NodeIds / layout / whitespace). Used by the script
+ *  compiler only; the executor keeps meta so its body stays byte-identical. */
+function stripMetaBlock(source: string): string {
+  const m = /export\s+const\s+meta\b[^={]*=\s*\{/.exec(source);
+  if (!m) return source;
+  const braceStart = source.indexOf('{', m.index + m[0].length - 1);
+  if (braceStart < 0) return source;
+  let depth = 0;
+  let i = braceStart;
+  for (; i < source.length; i++) {
+    const c = source[i];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
+  }
+  // Swallow an immediately-following `;` and trailing spaces/newline.
+  while (i < source.length && (source[i] === ';' || source[i] === ' ' || source[i] === '\t')) i++;
+  return source.slice(0, m.index) + source.slice(i);
+}
+
+/**
+ * Build a geom function from a primitive source string, resolving its
+ * `meta.uses` dependencies and injecting them by name.
+ *
+ * @param fetchFn  SvelteKit `event.fetch` — used to read dep sources from
+ *                 /api/volume (local FS on prod, proxied to prod in dev).
+ */
+export async function buildPrimitiveGeom(
+  source: string,
+  name: string,
+  fetchFn: typeof fetch,
+  visited: Set<string> = new Set(),
+): Promise<GeomFn> {
+  // Resolve declared deps. PARALLEL — composites had their deps resolved
+  // one-at-a-time, so each dep's source.ts fetch (a prod round-trip in dev)
+  // blocked the next.
+  //
+  // SANDBOX-COLLISION RESOLUTION (the tube/cyl/mv naming trap):
+  //   Names like `tube`, `cyl`, `mv` exist as raw helpers in SANDBOX_ARG_NAMES
+  //   AND can legitimately exist as user-authored volume primitives. The old
+  //   filter dropped any volume dep matching a sandbox name — silently — so
+  //   the raw helper won and the user's primitive was invisible at runtime.
+  //   New behaviour: try to LOAD every declared dep; if the load fails AND
+  //   the name is a sandbox helper, fall back silently (the raw helper takes
+  //   over); if the load succeeds, the volume version wins via aliasing.
+  //
+  // DEDUPE: `new Function(...depNames, body)` throws "Invalid parameters … in
+  // strict mode" on a duplicate param name. meta.uses can legitimately list
+  // the same primitive twice (e.g. adding a 2nd r_extrude part), so we
+  // de-dupe before the Function ctor.
+  const declared = [...new Set(usesOf(source))];
+  for (const dep of declared) {
+    if (visited.has(dep)) {
+      throw new Error(`circular primitive dependency: ${[...visited, dep].join(' → ')}`);
+    }
+  }
+  const settled = await Promise.allSettled(
+    declared.map((dep) => loadPrimitiveGeomById(dep, fetchFn, new Set([...visited, dep]))),
+  );
+  // Partition into loaded (volume hit) vs deferred-to-sandbox (sandbox helper
+  // takes over). A failed load for a name that is NOT a sandbox helper is a
+  // real error and gets re-thrown with the parent's name + chain attached so
+  // the user can see WHICH part needed the missing dependency.
+  const depNames: string[] = [];
+  const depFns: GeomFn[] = [];
+  for (let i = 0; i < declared.length; i++) {
+    const dep = declared[i]!;
+    const r = settled[i]!;
+    if (r.status === 'fulfilled') {
+      depNames.push(dep);
+      depFns.push(r.value);
+    } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
+      // Decorate the underlying "dependency primitive 'X' not found" with
+      // the calling part's name, the full dep chain (parent → child),
+      // and an action hint. Avoids the user seeing a bare "shaft not
+      // found" with no clue what brought it in.
+      const chain = visited.size
+        ? [...visited, dep].join(' → ')
+        : `${name} → ${dep}`;
+      const inner = (r.reason as Error)?.message ?? String(r.reason);
+      const looksMissing = /not found|HTTP 404/i.test(inner);
+      const hint = looksMissing
+        ? ` (the primitive doesn't exist on the volume — either restore it from the archive, drop it from "${name}"'s meta.uses if the body doesn't actually call it, or re-create it)`
+        : '';
+      throw new Error(`primitive "${name}" needs dependency "${dep}" but it failed to load: ${inner} [dep chain: ${chain}]${hint}`);
+    }
+    // else: defer to the sandbox helper of the same name (raw helper wins
+    // when there's no volume primitive with this id).
+  }
+
+  // Pure source→body rewrite (signature canonicalisation + dep aliasing +
+  // instance tagging). Extracted into assemblePrimitiveBody so the client-script
+  // COMPILER (compilePrimitiveScript) reuses byte-identical text transforms —
+  // the executor INJECTS dep functions here; the compiler INLINES dep text.
+  const { wrapper, injectNames, metaKeys, isObjectStyle } = assemblePrimitiveBody(source, name, depNames);
 
   const factory = new Function(...SANDBOX_ARG_NAMES, ...injectNames, wrapper);
   const argValues = await profileAwareArgValues(source, fetchFn);
@@ -535,6 +621,166 @@ export async function hashDepSources(
     h.update('\0');
   }
   return h.digest('hex').slice(0, 16);
+}
+
+// ── PR1: self-contained client SCRIPT compiler ──────────────────────────────
+// `buildPrimitiveGeom` (the server EXECUTOR) resolves each `meta.uses` dep to a
+// geom FUNCTION and INJECTS it positionally into `new Function(...)`. For the
+// client-side executor we instead emit a single self-contained SCRIPT (text)
+// that INLINES every transitive dep's code, so the client fetches nothing and
+// bakes locally. Both paths share `assemblePrimitiveBody` → the load-bearing
+// signature-rewriting is byte-identical → no drift.
+//
+// The script is meant to be run the SAME way the server runs `wrapper`:
+//   new Function(...SANDBOX_ARG_NAMES, script)(...sandboxArgValues())  → geomFn
+// i.e. the SANDBOX_ARG_NAMES helpers are injected exactly as today; only the
+// deps move from injected-functions to inlined-text. Because the script folds
+// in the resolved dep source, its sha256 changes whenever a dep changes — the
+// "deja-vu" stale-bake bug becomes impossible by construction.
+
+/** Runtime prelude inlined ONCE at the top of every compiled script. It ports
+ *  the adaptive call boundary (`wrapped` in buildPrimitiveGeom) + segment-clamp
+ *  + autoPlace to TEXT so each inlined part can wrap its raw fn identically.
+ *  References ONLY sandbox names (`place`, optionally `getCircularSegmentCap`)
+ *  — both resolved defensively so the script stays self-contained. */
+const SCRIPT_PRELUDE = `
+function __isSegmentKey(key) {
+  var k = String(key).toLowerCase();
+  return k === 'segments' || k === 'segment' || k === 'seg' || k === 'segs'
+    || k === 'nseg' || k === 'nsegments' || k === 'circularsegments'
+    || k.endsWith('segments');
+}
+function __adapt(fn, metaKeys, isObjectStyle) {
+  var __place = (typeof place === 'function') ? place : function (v) { return v; };
+  function autoPlace(v) { if (Array.isArray(v)) { return __place(v.map(autoPlace)); } return v; }
+  var segKeyIdx = metaKeys.findIndex(__isSegmentKey);
+  function clampSegInObj(obj, cap) {
+    if (segKeyIdx < 0) return obj;
+    var k = metaKeys[segKeyIdx]; var v = obj && obj[k];
+    if (typeof v === 'number' && isFinite(v) && v > cap) { var o = Object.assign({}, obj); o[k] = cap; return o; }
+    return obj;
+  }
+  function clampSegInArgs(a, cap) {
+    if (segKeyIdx < 0 || segKeyIdx >= a.length) return a;
+    var v = a[segKeyIdx];
+    if (typeof v === 'number' && isFinite(v) && v > cap) { var out = a.slice(); out[segKeyIdx] = cap; return out; }
+    return a;
+  }
+  return function () {
+    var args = Array.prototype.slice.call(arguments);
+    var cap = (typeof getCircularSegmentCap === 'function') ? getCircularSegmentCap() : null;
+    var objectInbound = args.length === 1 && args[0] && typeof args[0] === 'object'
+      && !Array.isArray(args[0]) && args[0].__cadtrain_manifold__ === undefined
+      && !(args[0].constructor && args[0].constructor.name && args[0].constructor.name.indexOf('Manifold') === 0);
+    if (isObjectStyle) {
+      var obj;
+      if (objectInbound) { obj = args[0]; }
+      else { obj = {}; for (var i = 0; i < metaKeys.length; i++) { obj[metaKeys[i]] = args[i]; } }
+      if (cap != null) obj = clampSegInObj(obj, cap);
+      return autoPlace(fn(obj));
+    }
+    if (objectInbound && metaKeys.length > 0) {
+      var positional = metaKeys.map(function (k) { return args[0][k]; });
+      if (cap != null) positional = clampSegInArgs(positional, cap);
+      return autoPlace(fn.apply(null, positional));
+    }
+    var finalArgs = (cap != null) ? clampSegInArgs(args, cap) : args;
+    return autoPlace(fn.apply(null, finalArgs));
+  };
+}`;
+
+/**
+ * Emit the IIFE EXPRESSION that evaluates (in the sandbox scope) to ONE part's
+ * adapted geom fn, with every dependency inlined recursively as a nested IIFE.
+ * Mirrors buildPrimitiveGeom's partition (volume-source deps inline; bundle
+ * helpers stay sandbox-resolved) + cycle guard. `visited` tracks the current
+ * PATH only (copied per branch) so a shared dep is inlined once per use, not
+ * blocked — the script must contain all resolved code.
+ */
+async function emitInlinedPart(
+  source: string,
+  name: string,
+  fetchFn: typeof fetch,
+  visited: Set<string>,
+): Promise<string> {
+  const declared = [...new Set(usesOf(source))];
+  for (const dep of declared) {
+    if (visited.has(dep)) {
+      throw new Error(`circular primitive dependency: ${[...visited, dep].join(' → ')}`);
+    }
+  }
+  // Resolve each declared dep's SOURCE (volume hit) in parallel; a failed fetch
+  // for a sandbox-helper name is fine (it stays a sandbox arg), otherwise error.
+  const settled = await Promise.allSettled(
+    declared.map((dep) => fetchDepSource(dep, fetchFn)),
+  );
+  const depNames: string[] = [];
+  const depSources: string[] = [];
+  for (let i = 0; i < declared.length; i++) {
+    const dep = declared[i]!;
+    const r = settled[i]!;
+    if (r.status === 'fulfilled') {
+      depNames.push(dep);
+      depSources.push(r.value);
+    } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
+      const chain = visited.size ? [...visited, dep].join(' → ') : `${name} → ${dep}`;
+      const inner = (r.reason as Error)?.message ?? String(r.reason);
+      throw new Error(`primitive "${name}" needs dependency "${dep}" but it failed to load: ${inner} [dep chain: ${chain}]`);
+    }
+    // else: bundle helper — stays in the sandbox scope, not inlined.
+  }
+  const { body, injectNames, metaKeys, isObjectStyle } = assemblePrimitiveBody(source, name, depNames, true);
+  // Inline each loaded dep as a nested IIFE, bound to the SAME injectName the
+  // body's (already-aliased) call sites reference.
+  const depDecls: string[] = [];
+  for (let i = 0; i < depNames.length; i++) {
+    const inj = injectNames[i]!;
+    const expr = await emitInlinedPart(depSources[i]!, depNames[i]!, fetchFn, new Set([...visited, depNames[i]!]));
+    depDecls.push(`  const ${inj} = ${expr};`);
+  }
+  // Each part gets its OWN module/exports scope (mirrors the per-dep
+  // `new Function` the executor uses) so nested IIFEs never collide.
+  return `(function () {
+  "use strict";
+  const module = { exports: {} };
+  const exports = module.exports;
+  const currentSegments = CIRCULAR_SEGMENTS_DEFAULT;
+${depDecls.join('\n')}
+  ${body}
+  const __fn = module.exports[${JSON.stringify(name)}] ?? Object.values(module.exports).find((v) => typeof v === 'function');
+  if (typeof __fn !== 'function') throw new Error(${JSON.stringify(`primitive "${name}" did not export a function`)});
+  return __adapt(__fn, ${JSON.stringify(metaKeys)}, ${isObjectStyle});
+})()`;
+}
+
+export interface CompiledScript {
+  /** Self-contained text. Run as
+   *  `new Function(...SANDBOX_ARG_NAMES, script)(...sandboxArgValues())` to get
+   *  the part's adapted geom fn (then call it with positional/object params). */
+  script: string;
+  /** sha256(script), hex. The script folds in resolved dep source, so this hash
+   *  changes when ANY dep changes — the dep-aware cache key, for free. */
+  scriptHash: string;
+  /** Transitive volume-dep ids inlined into the script (deduped, sorted). */
+  depNames: string[];
+}
+
+/**
+ * Compile a primitive into a self-contained Manifold script + its sha256.
+ * Resolves `meta.uses` transitively (reusing the loader's TTL dep-source cache)
+ * and inlines every dep as text. Throws on a genuinely missing dep / cycle —
+ * the /compile endpoint catches and reports supported:false (never-500).
+ */
+export async function compilePrimitiveScript(
+  source: string,
+  name: string,
+  fetchFn: typeof fetch,
+): Promise<CompiledScript> {
+  const rootExpr = await emitInlinedPart(source, name, fetchFn, new Set());
+  const script = `${SCRIPT_PRELUDE}\nreturn ${rootExpr};\n`;
+  const scriptHash = createHash('sha256').update(script).digest('hex');
+  const depMap = await collectDepSources(source, fetchFn);
+  return { script, scriptHash, depNames: [...depMap.keys()].sort() };
 }
 
 // ── P6: VOLUME profile bake-resolve ─────────────────────────────────────────
