@@ -172,14 +172,19 @@ export function setCircularSegmentCap(n: number | null): void {
   currentSegmentCap = n;
 }
 
-export async function initManifold() {
+export async function initManifold(opts?: { locateFile?: (path: string, dir: string) => string }) {
   // If a sibling module instance already initialised the wasm, just
   // reapply this instance's segment count to the shared wasm and bail.
   if (G.__cadtrain_manifold__.wasm) {
     G.__cadtrain_manifold__.wasm.setCircularSegments(currentSegments);
     return;
   }
-  const wasm = await Module();
+  // `opts.locateFile` lets a non-default host (the client bake Web Worker) point
+  // Emscripten at the Vite-served `manifold.wasm` asset URL instead of the
+  // default `new URL('manifold.wasm', import.meta.url)` resolution — which can
+  // miss inside a bundled worker. On the main thread / Node, opts is omitted and
+  // the default resolution (proven by manifoldcad.org + the server bake) runs.
+  const wasm = await Module(opts?.locateFile ? { locateFile: opts.locateFile } : undefined);
   wasm.setup();
   const m = wasm.Manifold;
   wasm.setCircularSegments(currentSegments);
