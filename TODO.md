@@ -44,17 +44,23 @@
 
 10. **Faceted BREP revolve** — ✅ DONE 2026-06-17 (7112f8a). BREP honored `segments` (4→square prism)
   by lofting regular N-gon sections; faceted ≤48, exact above. Plan `docs/plans/smooth-surfaces-and-brep.md`.
-11. **Manifold under-smooth → use Manifold's BUILD-TIME smoothing (smoothOut + refineToTolerance)**.
-  Smooth normals can't fix the faceted SILHOUETTE (it's the geometry). Manifold has the fix natively:
-  `smoothOut(minSharpAngle=60, minSmoothness=0)` fills crease-AWARE tangents (sharp edges >60° stay
-  sharp, flat faces stay flat, curves → G1), then `refineToTolerance(tol)` adaptively subdivides ONTO
-  the smooth surface (fine only where it curves → no excess tris = the curvature-adaptive idea). Result:
-  near-NURBS smooth geometry (smooth silhouette + shading), sharp edges intact, BUILD-TIME (Rule 25
-  safe — NOT the post-bake MeshGL rewrite that OOB-crashed). Ref: manifoldcad.org Smooth Gyroid +
-  manifold-encapsulated-types.d.ts:726-798. PLAN: prototype in finalizeManifold/manifoldToGeo, opt-in
-  (a "smooth" toggle or settle-bake only — coarse-during-drag stays faceted), BENCH the cost
-  (refineToLength was 4× in bench_extrude_findings; refineToTolerance is adaptive so should be better).
-  Also unblocks the /wells curvature-adaptive subdivision with the SAME primitive.
+11. **Manifold shading — ROOT-FIXED via normal slot 3→0** ✅ (b322bf3, 2026-06-18). The "too coarse"
+  shading was `calculateNormals(3,…)` — slot 3 is a DEPRECATED compat path that returns ALL-ZERO
+  normals on welded/revolved meshes (proven in bun: slot 3 → 50/50 zero; slot 0 → real radial). Slot 0
+  ("standard slot") writes real crease-aware normals into channels 3..5 where extraction already reads
+  → one-arg swap, no extraction change, NO extra triangles (48-tri revolve stays 48). Removed the need
+  for the degenerate-normals recompute workaround (kept inert). Defaulted shading to SMOOTH + control
+  in the gear (c645b66). Probes: scripts/{test-normals-slot,verify-normals-fix}.ts.
+  - **Two genuine smoothness levers, both verified** (deep dive — the earlier "smoothOut wavy r≈0.75"
+    was a MEASUREMENT ARTIFACT; it sampled cap-transition verts, which Manifold's own test excludes):
+    (a) **normals** = smooth SHADING, free, silhouette stays faceted (the slot fix above).
+    (b) **`smoothOut(60).refineToTolerance(tol)`** = real ROUND geometry — PROVEN to reconstruct our
+    welded revolves to within 0.001 of the true circle (R=10 test, exclude caps + refine(2)), same as a
+    clean cylinder. Costs triangles. Opt-in `smooth` option + `scripts/bench-smooth-refine.ts` live in
+    builder.ts (bbd7de9), NOT wired to a toggle. This is the genuine round-silhouette path when needed.
+  - **organic/implicit** (gyroids, lattices, blends) → `Manifold.levelSet(sdf, box, edge, level)`
+    (marching-tets an SDF, intrinsically smooth; confirmed working: gyroid 77k tris in bun).
+  - For /wells curvature-adaptive subdivision: segment density along the spline OR smoothOut+refine.
 
 ### PARKED
 
