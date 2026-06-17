@@ -196,12 +196,13 @@
     // segArg overrides the user's seg ONLY for this bake (coarse-during-drag).
     // It is NOT folded into the keyed $effect, so the draft pass can't re-trigger.
     const segUsed = segArg ?? effSegments;
-    // Request the cutaway (cutVC) only when the user is VIEWING it. Large parts
-    // (> ~15k tris, e.g. multi-part assemblies) auto-skip the cutaway server-side
-    // for speed, so without this the live mesh's cutVC stays empty and toggling
-    // cutaway ON renders blank. cutaway:true forces the server to compute it;
-    // when off we omit the flag (auto-skip → fast). The flag is part of the body
-    // so it keys the fetch cache separately for cut vs full.
+    // P2 lazy-cutVC: bake the cutaway (cutVC) ONLY when the user is VIEWING the
+    // cross-section. cutaway:true forces the compute; cutaway:FALSE (not undefined)
+    // force-SKIPS it — the old `|| undefined` left it to the tri-count threshold,
+    // which still computed the ~45ms cut on medium parts (g_dp_joint ~13.6k tris)
+    // even with Cross-section OFF. Toggling it ON re-bakes (showCutaway is in both
+    // the body + the keyed $effect), so no blank. The flag keys the fetch cache.
+    const cutFlag = scene.showCutaway;
     // `instanced: true` — opt IN to GPU instancing for the LIVE mesh. The
     // server returns the canonical child mesh + N transforms when this part is
     // a uniform Stack/Repeat (else a normal merged mesh). Only THIS live-mesh
@@ -217,7 +218,7 @@
     // the request body (re-bakes). Sent only when it differs from the default 60
     // → the default request + cache key stay byte-identical to the legacy bake.
     const crease = (typeof scene.creaseAngle === 'number' && scene.creaseAngle !== 60) ? scene.creaseAngle : undefined;
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}) });
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
@@ -240,7 +241,7 @@
         const _tCompile = performance.now() - _tc0;
         if (ac.signal.aborted) return;
         if (cd?.supported && cd.script) {
-          const options = { cutaway: scene.showCutaway || undefined, instanced: true,
+          const options = { cutaway: cutFlag, instanced: true,
             ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
             ...(crease ? { creaseAngle: crease } : {}), colorOuter, colorInner };
           const _tb0 = performance.now();

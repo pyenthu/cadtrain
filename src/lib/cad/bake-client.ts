@@ -97,7 +97,10 @@ function getWorker(): Worker {
         // Cache even a SUPERSEDED bake — it's a valid mesh; storing it makes the
         // next identical request instant. Best-effort (cache failure is benign).
         void idbPut(job.key, payload);
-        settle(job, deserializeComponentResult(payload as any) as BakeGeo);
+        const _td0 = (typeof performance !== 'undefined' ? performance.now() : 0);
+        const geo = deserializeComponentResult(payload as any) as BakeGeo;
+        if (timingsOn()) { try { console.log(`[bake-deserialize] main-thread BufferGeometry build=${((typeof performance !== 'undefined' ? performance.now() : 0) - _td0).toFixed(1)} ms`); } catch {} }
+        settle(job, geo);
       } else if (!job.settled) {
         job.settled = true;
         job.reject(new Error(data.error));

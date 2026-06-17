@@ -42,15 +42,12 @@
    - Plan: **`docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,
      `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
-10. **Bake perf — coarse-during-drag + smooth normals** — MEASURED (2026-06-17, client
-  bake of g_dp_stand @ seg 220): build 70ms · mesh 47ms · cutaway 45ms · transfer ~117ms;
-  all of build/mesh/cutaway scale with `seg` (circumferential, NOT vertical). compile cache
-  already shipped (0.3ms). Win = bake at **seg ~64 while dragging**, snap to 256 on settle;
-  use **smooth normals** (`scene.smoothShade`/`flatShading:false` — already baked via
-  `calculateNormals(3, crease 60°)`) so the coarse mesh still shades round (only the
-  silhouette facets). Cutaway ≈ mesh, so lazy-cutVC is secondary. Cleanup: gate the
-  `__bakeTimings` console logs. Plan: `docs/plans/bake-perf.md`. (Shade quick-toggle added
-  to the 3D bake pane, wired to the gear's existing Shade control.)
+10. **Bake perf — coarse-during-drag + smooth normals** — ✅ DONE 2026-06-17 (19cd6b0 +
+  follow-up). P0 gated the `cad-bake-timings` logs; P1 coarse-during-drag (seg 64 instant →
+  full on 220ms settle); P1b smooth-normals shade quick-toggle (◐) on the bake pane; P2
+  lazy-cutVC (cutaway:false force-skip when Cross-section OFF). P3 (serialize/transfer)
+  measured + DROPPED — deserialize is 0.8ms, not the bottleneck (the cost is the geometry,
+  fixed by P1). Plan: `docs/plans/bake-perf.md`.
 
 ### Quick / contained (not yet done)
 

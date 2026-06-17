@@ -52,21 +52,34 @@ edges (cube corners, hex seams) crisp — smoothing only rounds curved surfaces.
 - Caveat: smooth normals can't fix the silhouette polygon at very low seg — but
   during an active drag that's acceptable; the settle re-bake restores it.
 
-### P2 — Lazy-cutVC (smaller win)
-Only bake the cutVC when the cross-section is actually being viewed AND not in a
-draft frame. Saves ~45ms when Cross-section is on. Secondary to P1.
+### P2 — Lazy-cutVC ✅ DONE 2026-06-17
+The live-mesh bake now sends `cutaway: scene.showCutaway` (a hard BOOLEAN), not
+`scene.showCutaway || undefined`. The old `undefined` left it to the tri-count
+threshold, which still computed the ~45ms cut on medium parts (g_dp_joint ~13.6k
+tris < the 15k skip line) even with Cross-section OFF. Now OFF → `cutaway:false` →
+force-skip (both worker `coerceOptions` and server `preview` treat false as skip);
+toggling ON re-bakes (showCutaway is in the body + the keyed $effect). Saves the
+full cut cost whenever you're not viewing the cross-section.
 
-### P3 — Transfer/deserialize (~117ms)
-For big parts the worker→main transfer + `deserializeComponentResult` (build
-THREE.BufferGeometry) is ~117ms. Investigate: avoid the number[]→Float32 repack
-(already transferable), and whether the main-thread BufferGeometry build can be
-trimmed. Lower priority — P1 shrinks the mesh that's transferred.
+### P3 — Transfer/deserialize — MEASURED, NOT WORTH IT 2026-06-17
+The ~117ms "gap" was assumed to be the worker→main transfer + deserialize. Direct
+measurement ([bake-deserialize] log) says otherwise: **deserialize = 0.8ms**,
+serialize = ~19ms. The `Float32Array → number[] → Float32Array` round-trip is real
+but costs ~20ms total, NOT the bottleneck. The dominant cost is the GEOMETRY
+(build/mesh/cutaway), which scales with seg and is already handled by P1
+coarse-during-drag. The remaining gap is worker queue / message latency (the
+coarse draft + full bake serialize on the ONE worker). Skipping the invasive
+serialize refactor — ~20ms isn't worth touching the tested mesh-serial path.
 
-### P0 — Cleanup
-Gate the `__bakeTimings` console logs behind a flag (currently always-on in the
-worker for measurement) before shipping.
+### P0 — Cleanup ✅ DONE 2026-06-17
+The `[bake-client]`/`[bake-worker]`/`[bake-deserialize]`/finalize logs are gated
+behind `localStorage.cad-bake-timings === '1'` (default OFF). The worker reads a
+per-message `timings` flag (no longer always-on); the server preview path never
+logs (globalThis.__bakeTimings is only set in the worker).
 
-## Order
-P0 (gate logs) → **P1 + P1b together** (coarse-drag with smooth normals — the
-win) → P2 (lazy-cutVC) → P3 (transfer). P1+P1b is the bulk of the interactive
-gain.
+## Status
+- ✅ **P0** (gate logs), **P1 + P1b** (coarse-during-drag + smooth normals — the
+  bulk of the win), **P2** (lazy-cutVC force-skip when not viewing) — all shipped.
+- ❌ **P3** (serialize/transfer) — measured, NOT worth it (deserialize 0.8ms).
+- The interactive bake is now: instant coarse feedback while editing, full-res on
+  settle, no wasted cut when the cross-section is hidden.
