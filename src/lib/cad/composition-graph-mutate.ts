@@ -100,6 +100,12 @@ export function collectEdges(graph: Graph): Edge[] {
       ((node as any).bindings as any[] ?? []).forEach((b, k) => {
         if (b?.value?.kind === 'param') edges.push({ from: `p.${b.value.param}`, to: `${node.id}.bindings.${k}.value` });
       });
+      // Per-part modifier axes can also be wired to params.
+      Object.entries(((node as any).partModifiers ?? {}) as Record<string, any[]>).forEach(([cid, ms]) =>
+        (ms ?? []).forEach((m, k) =>
+          (m?.vec ?? []).forEach((v: any, ax: number) => {
+            if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.partModifiers.${cid}.${k}.vec.${ax}` });
+          })));
     } else if (node.type === 'polygon') {
       // Each vertex's r + z can be wired to a param — same edge shape as
       // mv.offset, indexed by point index and axis. Repeat-refs + legacy
@@ -475,6 +481,49 @@ export function moveRepeatModifier(graph: Graph, repeatId: NodeId, idx: number, 
 }
 export function removeRepeatModifier(graph: Graph, repeatId: NodeId, idx: number): Graph {
   return updateRepeat(graph, repeatId, (n) => ({ ...n, modifiers: (n.modifiers ?? []).filter((_, i) => i !== idx) }));
+}
+
+// ─── Per-PART modifiers — each repeated part gets its own mv/rot stack,
+//     keyed by child id, folded around just that part inside place([…]). ──────
+function updatePartMods(graph: Graph, repeatId: NodeId, childId: NodeId,
+  fn: (mods: NodeTransform[]) => NodeTransform[]): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const all = { ...(n.partModifiers ?? {}) };
+    const next = fn([...(all[childId] ?? [])]);
+    if (next.length) all[childId] = next; else delete all[childId];
+    return { ...n, partModifiers: all };
+  });
+}
+export function addPartModifier(graph: Graph, repeatId: NodeId, childId: NodeId, kind: 'mv' | 'rot', vec?: [ArgValue, ArgValue, ArgValue]): Graph {
+  const v: [ArgValue, ArgValue, ArgValue] = vec ?? [asLiteral(0), asLiteral(0), asLiteral(0)];
+  return updatePartMods(graph, repeatId, childId, (mods) => [...mods, { kind, vec: v } as NodeTransform]);
+}
+export function setPartModifierAxis(graph: Graph, repeatId: NodeId, childId: NodeId, idx: number, axis: 0 | 1 | 2, value: ArgValue): Graph {
+  return updatePartMods(graph, repeatId, childId, (mods) => {
+    if (!mods[idx]) return mods;
+    const vec = [...mods[idx].vec] as [ArgValue, ArgValue, ArgValue];
+    vec[axis] = value;
+    mods[idx] = { ...mods[idx], vec };
+    return mods;
+  });
+}
+export function setPartModifierKind(graph: Graph, repeatId: NodeId, childId: NodeId, idx: number, kind: 'mv' | 'rot'): Graph {
+  return updatePartMods(graph, repeatId, childId, (mods) => {
+    if (!mods[idx]) return mods;
+    mods[idx] = { ...mods[idx], kind };
+    return mods;
+  });
+}
+export function movePartModifier(graph: Graph, repeatId: NodeId, childId: NodeId, idx: number, dir: -1 | 1): Graph {
+  return updatePartMods(graph, repeatId, childId, (mods) => {
+    const j = idx + dir;
+    if (idx < 0 || idx >= mods.length || j < 0 || j >= mods.length) return mods;
+    [mods[idx], mods[j]] = [mods[j], mods[idx]];
+    return mods;
+  });
+}
+export function removePartModifier(graph: Graph, repeatId: NodeId, childId: NodeId, idx: number): Graph {
+  return updatePartMods(graph, repeatId, childId, (mods) => mods.filter((_, i) => i !== idx));
 }
 
 // ─── Polygon helpers ────────────────────────────────────────────────────────

@@ -487,22 +487,36 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // Default 'stack' so existing graphs without an op field keep the
       // historical drilling-string idiom (every BUILD_ORDER part works).
       const count = emitValueExpr(node.count);
-      // The repeated UNIT: multiple parts combine per-iteration via place([...])
-      // (compose — each keeps its own position); a single part emits bare so
-      // legacy parts stay byte-identical. A raw `bodyExpr` (code mode) overrides
-      // the children-derived body verbatim; i/N/bindings/part-names are in scope.
-      const parts = (node.children ?? []).map((c, i) => ref(c, `children[${i}]`));
+      // Fold an mv/rot modifier stack around an expression, innermost-first
+      // (modifiers[0] closest to the part). Axis values may reference i/N/binds.
+      const foldMods = (expr: string, ms: any[]): string => {
+        let e = expr;
+        for (const m of (ms ?? [])) {
+          const fn = m?.kind === 'rot' ? 'rot' : 'mv';
+          const v = (m?.vec ?? []) as any[];
+          e = `${fn}(${e}, [${emitValueExpr(v[0])}, ${emitValueExpr(v[1])}, ${emitValueExpr(v[2])}])`;
+        }
+        return e;
+      };
+      // The repeated UNIT: each part is wrapped in its OWN partModifiers stack,
+      // then the parts combine per-iteration via place([...]) (compose — each
+      // keeps its own position); a single part with no per-part mods emits bare
+      // so legacy parts stay byte-identical. A raw `bodyExpr` (code mode)
+      // overrides the children-derived body verbatim.
+      const partMods: Record<string, any[]> = ((node as any).partModifiers ?? {}) as any;
+      const anyPartMods = Object.values(partMods).some((m) => Array.isArray(m) && m.length > 0);
+      const parts = (node.children ?? []).map((c, i) => foldMods(ref(c, `children[${i}]`), partMods[c]));
       const rawBody = typeof (node as any).bodyExpr === 'string' ? (node as any).bodyExpr.trim() : '';
       const child = rawBody
         ? rawBody
         : parts.length === 1 ? parts[0] : `place([${parts.join(', ')}])`;
-      // Patterned repeat (#7): per-copy transforms keyed to the loop var.
+      // Patterned repeat (#7): GLOBAL per-copy transforms keyed to the loop var.
       const mods: any[] = Array.isArray((node as any).modifiers) ? (node as any).modifiers : [];
       const rawBinds: any[] = Array.isArray((node as any).bindings) ? (node as any).bindings : [];
       const binds = rawBinds.filter((b) => b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name));
       const hasLoopVar = typeof (node as any).loopVar === 'string' && (node as any).loopVar.length > 0;
       let array: string;
-      if (mods.length === 0 && binds.length === 0 && !hasLoopVar && !rawBody) {
+      if (mods.length === 0 && binds.length === 0 && !hasLoopVar && !rawBody && !anyPartMods) {
         // Backward-compat: identity clone, byte-identical to the historical form.
         array = `Array.from({ length: ${count} }, () => ${child})`;
       } else {
@@ -510,14 +524,9 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
           ? String((node as any).loopVar) : 'i';
         const bindLines = binds.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
         const preamble = bindLines ? `const N = ${count}; ${bindLines}` : `const N = ${count};`;
-        // Fold modifiers innermost-first — modifiers[0] is closest to the child.
-        let body = child;
-        for (const m of mods) {
-          const fn = m?.kind === 'rot' ? 'rot' : 'mv';
-          const v = (m?.vec ?? []) as any[];
-          const vec = `[${emitValueExpr(v[0])}, ${emitValueExpr(v[1])}, ${emitValueExpr(v[2])}]`;
-          body = `${fn}(${body}, ${vec})`;
-        }
+        // Global modifiers wrap the whole place([…]) unit (per-part mods are
+        // already folded inside each part). Innermost-first.
+        const body = foldMods(child, mods);
         array = `Array.from({ length: ${count} }, (_, ${loopVar}) => { ${preamble} return ${body}; })`;
       }
       const op = node.op ?? 'stack';

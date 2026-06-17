@@ -141,8 +141,9 @@ export type RepeatNode = {
   id: NodeId; type: 'repeat'; children: NodeId[]; count: ArgValue; op?: RepeatOp;
   child?: NodeId;                 // legacy single child — folded into children[] at hydrate
   loopVar?: string;
-  bindings?: PolyRepeatBinding[];
-  modifiers?: NodeTransform[];
+  bindings?: PolyRepeatBinding[]; // the "PARAMS" section — per-iteration named values
+  modifiers?: NodeTransform[];    // GLOBAL per-copy transforms (wrap the whole place([…]))
+  partModifiers?: Record<NodeId, NodeTransform[]>; // PER-PART transforms, keyed by child id
   bodyExpr?: string;              // raw per-iteration body override (verbatim emit)
 };
 

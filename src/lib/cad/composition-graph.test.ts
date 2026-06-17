@@ -165,6 +165,24 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(out.source).not.toMatch(/place\(\[/);
   });
 
+  it('Repeat per-part modifiers wrap each part independently (repeat-enhance)', async () => {
+    const { addCall, addRepeat, addRepeatChild, addPartModifier, setRepeatOp, asLiteral, asExpr } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const b = addCall(g, 'dt_pin'); g = b.graph;
+    const r = addRepeat(g, a.id, asLiteral(2)); g = r.graph;
+    g = addRepeatChild(g, r.id, b.id);
+    g = setRepeatOp(g, r.id, 'list');
+    // Only the FIRST part gets a per-iteration mv; the second is bare.
+    g = addPartModifier(g, r.id, a.id, 'mv', [asLiteral(0), asLiteral(0), asExpr('i*5')]);
+    const out = emitGraph(g, { id: 'tPart' });
+    expect(out.source).toMatch(/place\(\[/);
+    expect(out.source).toMatch(/mv\([^,]+, \[0, 0, i\*5\]\)/);   // first part wrapped
+    // The repeat enters the full loop form so i is in scope.
+    expect(out.source).toMatch(/Array\.from\(\{ length: 2 \}, \(_, i\)/);
+  });
+
   it('Repeat bodyExpr overrides the wired body verbatim with i/N in scope (repeat-enhance)', async () => {
     const { addCall, addRepeat, setRepeatBodyExpr, asLiteral } = await import('./composition-graph');
     const { emitGraph } = await import('./composition-emit');
