@@ -1,0 +1,225 @@
+{
+  "meta": {
+    "wellName": "SAMPLE-9 HPHT Gas-Condensate Producer",
+    "rkbToGl": 30,
+    "td": 4500,
+    "pbtd": 4490,
+    "location": {
+      "x": 334380,
+      "y": 4262540,
+      "crs": "UTM 12N",
+      "lon": -112.89,
+      "lat": 38.488
+    },
+    "_wellType": "producer"
+  },
+  "oh": [
+    {
+      "bitSize": 36,
+      "top": 0,
+      "bot": 120
+    },
+    {
+      "bitSize": 26,
+      "top": 120,
+      "bot": 700
+    },
+    {
+      "bitSize": 17.5,
+      "top": 700,
+      "bot": 2200
+    },
+    {
+      "bitSize": 12.25,
+      "top": 2200,
+      "bot": 3700
+    },
+    {
+      "bitSize": 8.5,
+      "top": 3700,
+      "bot": 4500
+    }
+  ],
+  "ch": [
+    {
+      "od": 30,
+      "id": 28.5,
+      "top": 0,
+      "bot": 120,
+      "grade": "X56",
+      "weight": 310,
+      "type": "conductor"
+    },
+    {
+      "od": 20,
+      "id": 19.124,
+      "top": 0,
+      "bot": 700,
+      "grade": "N-80",
+      "weight": 133,
+      "type": "surface"
+    },
+    {
+      "od": 13.375,
+      "id": 12.415,
+      "top": 0,
+      "bot": 2200,
+      "grade": "Q-125",
+      "weight": 72,
+      "type": "intermediate"
+    },
+    {
+      "od": 9.625,
+      "id": 8.535,
+      "top": 0,
+      "bot": 3700,
+      "grade": "L80-13Cr",
+      "weight": 53.5,
+      "type": "production"
+    },
+    {
+      "od": 7,
+      "id": 6.004,
+      "top": 3500,
+      "bot": 4500,
+      "grade": "13Cr-95",
+      "weight": 32,
+      "type": "liner"
+    }
+  ],
+  "perforations": [
+    {
+      "top": 4450,
+      "bot": 4480,
+      "label": "HPHT reservoir"
+    }
+  ],
+  "completions": [
+    {
+      "description": "Tubing Hanger (Completions)",
+      "tool_comp": "tbgHanger",
+      "od": 8.681,
+      "top": 0,
+      "bot": 0.5
+    },
+    {
+      "description": "Tubing Joints (5-1/2\" 13Cr-95)",
+      "tool_comp": "MISC.TUBING",
+      "od": 5.5,
+      "top": 0.5,
+      "bot": 400
+    },
+    {
+      "description": "TRSSSV-SP (SCSSV - Barrier #1, HPHT-rated)",
+      "tool_comp": "FLOW_CONTROL.TRSSSV_SP",
+      "od": 5.5,
+      "top": 400,
+      "bot": 400.5
+    },
+    {
+      "description": "Tubing Joints",
+      "tool_comp": "MISC.TUBING",
+      "od": 5.5,
+      "top": 400.5,
+      "bot": 3000
+    },
+    {
+      "description": "Gauge Mandrel (downhole P/T monitoring)",
+      "tool_comp": "MISC.GAUGE_MANDREL",
+      "od": 5.5,
+      "top": 3000,
+      "bot": 3001
+    },
+    {
+      "description": "Tubing Joints",
+      "tool_comp": "MISC.TUBING",
+      "od": 5.5,
+      "top": 3001,
+      "bot": 4430
+    },
+    {
+      "description": "Nipple R Landing",
+      "tool_comp": "FLOW_CONTROL.NIPPLE_R_LANDING",
+      "od": 5.5,
+      "top": 4430,
+      "bot": 4430.3
+    },
+    {
+      "description": "Tubing Pup",
+      "tool_comp": "MISC.TUBING_PUP",
+      "od": 5.5,
+      "top": 4430.3,
+      "bot": 4435
+    },
+    {
+      "description": "Packer AHR-AHC (HPHT permanent packer - Barrier #2)",
+      "tool_comp": "PACKERS.PACKER_AHR_AHC",
+      "od": 6.004,
+      "top": 4435,
+      "bot": 4435.5
+    },
+    {
+      "description": "Tubing Pup",
+      "tool_comp": "MISC.TUBING_PUP",
+      "od": 5.5,
+      "top": 4435.5,
+      "bot": 4440
+    },
+    {
+      "description": "Mule Shoe",
+      "tool_comp": "MISC.MULE_SHOE",
+      "od": 5.5,
+      "top": 4440,
+      "bot": 4445
+    }
+  ],
+  "cementing": [
+    {
+      "od": 30,
+      "top": 0,
+      "bot": 120
+    },
+    {
+      "od": 20,
+      "top": 0,
+      "bot": 700
+    },
+    {
+      "od": 13.375,
+      "top": 0,
+      "bot": 2200
+    },
+    {
+      "od": 9.625,
+      "top": 2500,
+      "bot": 3700
+    },
+    {
+      "od": 7,
+      "top": 3500,
+      "bot": 4500
+    }
+  ],
+  "profile": [
+    {
+      "md": 0,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 2500,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 3200,
+      "dev": 25,
+      "az": 60
+    },
+    {
+      "md": 4500,
+      "dev": 25,
+      "az": 60
+    }
+  ]
+}
