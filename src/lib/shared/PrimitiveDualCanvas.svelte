@@ -611,13 +611,13 @@
   }
   .pd-shade-btn:hover { background: #fff; border-color: #6366f1; color: #4338ca; }
   .pd-backend-badge {
-    position: absolute; top: 30px; left: 205px; z-index: 6;
+    position: absolute; top: 30px; left: 175px; z-index: 6;
     padding: 2px 8px; border-radius: 4px; font: 700 10px Arial; letter-spacing: 0.3px;
     pointer-events: none;
   }
   .pd-backend-badge.client { background: #ecfdf5; border: 1px solid #34d399; color: #047857; }
   .pd-backend-badge.server { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
-  .pd-bake-tools { position: absolute; top: 54px; left: 12px; z-index: 6; display: flex; align-items: center; gap: 4px; }
+  .pd-bake-tools { position: absolute; top: 30px; left: 130px; z-index: 6; display: flex; align-items: center; gap: 4px; }
   .pd-mini-btn { padding: 2px 6px; border: 1px solid #d6d3d1; border-radius: 4px; background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer; font: 600 11px Arial; }
   .pd-mini-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
   .pd-seg { display: inline-flex; align-items: center; gap: 3px; font: 600 10px Arial; color: #57534e; background: rgba(255,255,255,0.9); border: 1px solid #d6d3d1; border-radius: 4px; padding: 1px 4px; }
