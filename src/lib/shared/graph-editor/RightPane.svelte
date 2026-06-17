@@ -445,12 +445,13 @@
   /* SRC tab — filename header above the <pre>. Light row, monospace
      filename + a faded hint reminding the user the file is generated. */
   .ge-source-header {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; padding: 6px 10px;
+    display: flex; align-items: center; gap: 8px; padding: 3px 10px;
     border-bottom: 1px solid #e5e7eb; background: #f8fafc;
+    white-space: nowrap; overflow: hidden; min-height: 0;
   }
   .ge-source-header code { font: 12px ui-monospace, monospace; color: #0c4a6e; }
-  .ge-source-header-hint { font: 10px Arial; color: #78716c; }
+  /* Truncate the hint so the header stays ONE slim row instead of wrapping. */
+  .ge-source-header-hint { font: 10px Arial; color: #78716c; margin-left: auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .ge-src-subtabs { display: inline-flex; gap: 4px; }
   .ge-src-subtab { font: 600 11px ui-monospace, monospace; padding: 2px 8px; border: 1px solid #e7e5e4; border-radius: 4px; background: #fff; color: #57534e; cursor: pointer; }
   .ge-src-subtab:hover { border-color: #0ea5e9; color: #0c4a6e; }

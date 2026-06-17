@@ -19,6 +19,7 @@
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { scene } from '$lib/shared/scene-state.svelte';
   import {
     newGraph,
     addCall,
@@ -3419,6 +3420,15 @@
       onclick={() => setAutoBake(!autoBake)}
       data-tip={autoBake ? 'Auto-bake ON — toggle off to bake only on demand' : 'Auto-bake OFF — toggle on to bake on every change (700 ms debounce)'}>
       ⚡
+    </button>
+    <!-- Bake BACKEND toggle (client-exec): 💻 local (Manifold Web Worker) vs
+         ☁ remote (server /api/primitives/preview). Persisted; the bake pane's
+         badge + the SRC ⚡compiled subtab reflect it. -->
+    <button class="ge-vrail-btn bakeloc" type="button"
+      class:on={scene.clientBake}
+      onclick={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} }}
+      data-tip={scene.clientBake ? 'Bake = LOCAL (client Web Worker). Click → switch to remote (server).' : 'Bake = REMOTE (server). Click → switch to local (client Web Worker).'}>
+      {scene.clientBake ? '💻' : '☁'}
     </button>
     {#if ghostIds.length > 0}
       <button class="ge-vrail-btn ghost-clear" type="button"
