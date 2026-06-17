@@ -139,6 +139,62 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(out3.source).toMatch(/place\(\s*Array\.from\(/);
   });
 
+  it('Repeat with multiple parts emits place([...]) as the per-iteration unit (repeat-enhance)', async () => {
+    const { addCall, addRepeat, addRepeatChild, setRepeatOp, asLiteral } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const b = addCall(g, 'dt_pin'); g = b.graph;
+    const r = addRepeat(g, a.id, asLiteral(2)); g = r.graph;
+    g = addRepeatChild(g, r.id, b.id);          // second part → place([...])
+    g = setRepeatOp(g, r.id, 'list');
+    const out = emitGraph(g, { id: 'tMulti' });
+    // The per-iteration body composes both parts via place([...]).
+    expect(out.source).toMatch(/place\(\[/);
+    expect(out.source).toMatch(/Array\.from\(/);
+  });
+
+  it('Repeat single part + no modifiers stays byte-identical (no place wrapper)', async () => {
+    const { addCall, addRepeat, asLiteral } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const r = addRepeat(g, a.id, asLiteral(3)); g = r.graph;
+    const out = emitGraph(g, { id: 'tSingle' });
+    expect(out.source).toMatch(/Array\.from\(\{ length: 3 \}, \(\) =>/);
+    expect(out.source).not.toMatch(/place\(\[/);
+  });
+
+  it('Repeat bodyExpr overrides the wired body verbatim with i/N in scope (repeat-enhance)', async () => {
+    const { addCall, addRepeat, setRepeatBodyExpr, asLiteral } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    const r = addRepeat(g, a.id, asLiteral(4)); g = r.graph;
+    g = setRepeatBodyExpr(g, r.id, 'mv(A_box, [0, 0, i * 2])');
+    const out = emitGraph(g, { id: 'tBody' });
+    expect(out.source).toContain('mv(A_box, [0, 0, i * 2])');
+    // bodyExpr forces the full loop form so i + N are bound.
+    expect(out.source).toMatch(/Array\.from\(\{ length: 4 \}, \(_, i\)/);
+  });
+
+  it('legacy Repeat {child} hydrates to children:[child] (repeat-enhance fold)', async () => {
+    const { hydrateGraph } = await import('./composition-graph');
+    // A serialised graph in the OLD single-`child` shape.
+    const serialised = {
+      nodes: {
+        n_box: { id: 'n_box', type: 'call', src: 'dt_box', alias: 'box', args: {} },
+        n_rep: { id: 'n_rep', type: 'repeat', child: 'n_box', count: { kind: 'literal', value: 3 }, op: 'list' },
+        n_root: { id: 'n_root', type: 'list', children: ['n_rep'] },
+      },
+      root: 'n_root', params: {}, imports: [], layout: {},
+    };
+    const g = hydrateGraph(serialised as any);
+    const rep = g.nodes['n_rep'] as any;
+    expect(rep.children).toEqual(['n_box']);
+    expect(rep.child).toBeUndefined();
+  });
+
   it('adding meta.params row with no edges is structurally legal but orphan-detectable (Step 8)', () => {
     let g = newGraph();
     const a = addCall(g, 'dt_mule_shoe', { pipeOD: asLiteral(3.56) }); g = a.graph;

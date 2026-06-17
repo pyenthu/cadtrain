@@ -165,6 +165,22 @@ export function hydrateGraph(serialised: any): Graph {
     if (changed) migratedNodes[id] = { ...sk, ops: newOps };
   }
 
+  // Fold legacy Repeat single `child` → `children: [child]` (#repeat-enhance
+  // 2026-06-17). Forward, one-way, lossless: pre-existing parts saved a single
+  // `child` NodeId; new code reads `children[]`. A Repeat that already has a
+  // `children` array is left as-is. The stray `child` field is dropped so it
+  // can't drift out of sync with children[].
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id] as any;
+    if (n?.type !== 'repeat') continue;
+    if (!Array.isArray(n.children)) {
+      const child = typeof n.child === 'string' ? n.child : '';
+      n.children = child ? [child] : [];
+    }
+    if ('child' in n) delete n.child;
+    migratedNodes[id] = n;
+  }
+
   // Migrate legacy mv/rot wrapper nodes → the unified TxfmnNode (mirror the
   // {kind:'repeat'}→PolyRepeat precedent: forward, one-way, lossless). The
   // editor only ever produced mv-OUTER / rot-INNER (rotate-then-translate), so:
@@ -187,8 +203,10 @@ export function hydrateGraph(serialised: any): Graph {
         } else if (n.type === 'method') {
           if (n.obj === targetId) c++;
           if (n.arg === targetId) c++;
-        } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat') {
+        } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
           if (n.child === targetId) c++;
+        } else if (n.type === 'repeat') {
+          c += ((n.children as string[]) ?? []).filter((x) => x === targetId).length;
         }
       }
       return c;

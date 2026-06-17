@@ -63,6 +63,22 @@
     addRepeatPlaceholder,
     setRepeatCount,
     setRepeatOp,
+    setRepeatChild,
+    addRepeatChild,
+    removeRepeatChildAt,
+    moveRepeatChild,
+    setRepeatBodyExpr,
+    clearRepeatBodyExpr,
+    setRepeatLoopVar,
+    addRepeatBinding,
+    setRepeatBindingName,
+    setRepeatBindingValue,
+    removeRepeatBinding,
+    addRepeatModifier,
+    setRepeatModifierAxis,
+    setRepeatModifierKind,
+    moveRepeatModifier,
+    removeRepeatModifier,
     appendContainerChild,
     removeContainerChildAt,
     setCallArg,
@@ -1961,6 +1977,82 @@
   /** Names of the graph's params (PARAMS card) — the wireable `p.*` set. Shared
    *  by the main-graph param markup AND the sketch overlay. */
   const paramNames = $derived(Object.keys(graph.params ?? {}));
+
+  // ─── Repeat windowed editor (#7) ─────────────────────────────────────────
+  // Per-instance GEP-local state (each /primitives tab is its own GEP instance).
+  // The Repeat card's ✎ opens a full-tab overlay (mirrors the sketch editor):
+  // iterators top strip + two tabs (Loop body / Graphical modifiers).
+  let editingRepeatId = $state<string | null>(null);
+  let repeatTab = $state<'body' | 'modifiers'>('body');
+  function openRepeatEditor(id: string) { editingRepeatId = id; repeatTab = 'body'; }
+  function closeRepeatEditor() { editingRepeatId = null; }
+  const repeatNode = $derived(editingRepeatId ? (graph.nodes[editingRepeatId] as any) : null);
+  /** Short label for a node, shown in the Repeat PARTS list (card + editor). */
+  function nodeShortLabel(c: any): string {
+    if (!c) return '(unwired)';
+    return c.type === 'call' ? `${c.alias} · ${c.src}`
+      : c.type === 'method' ? `${c.op}(…)`
+      : c.type === 'repeat' ? `repeat × ${c.count?.kind === 'literal' ? c.count.value : '…'}`
+      : c.type === 'sketch' ? '✐ sketch' : c.type;
+  }
+  /** The repeated PARTS of the node being edited, as {id,label} rows. */
+  const repeatParts = $derived.by(() =>
+    ((repeatNode?.children ?? []) as string[]).map((id) => ({ id, label: nodeShortLabel(graph.nodes[id]) })));
+  /** The emitted var-name a part resolves to inside the loop body. Call nodes
+   *  emit a const named by their alias (matches composition-emit); other node
+   *  types fall back to their id. Used to seed the editable code box so the
+   *  initial code references the same names that bake. */
+  function partVarName(c: any): string {
+    if (!c) return '__part';
+    return c.type === 'call' && c.alias ? c.alias : c.id;
+  }
+  /** Seed code for the per-iteration body = the array of parts (place([...])),
+   *  matching what the wired body emits. Shown when the user switches to code
+   *  mode with no override yet. */
+  function repeatBodySeed(): string {
+    const names = ((repeatNode?.children ?? []) as string[]).map((id) => partVarName(graph.nodes[id]));
+    if (names.length === 0) return 'place([\n  // wire parts on the canvas, or write the body here\n])';
+    if (names.length === 1) return names[0];
+    return `place([\n  ${names.join(',\n  ')},\n])`;
+  }
+  /** Whether the Repeat being edited has a raw code-body override. */
+  const repeatHasBody = $derived(typeof repeatNode?.bodyExpr === 'string' && repeatNode.bodyExpr.trim().length > 0);
+  /** Current bake error message (if the last bake failed) — surfaced INSIDE the
+   *  code editor so a bad hand-written body isn't a silent no-op. */
+  const repeatBakeError = $derived(
+    typeof bake === 'object' && bake && bake.ok === false ? (bake.message ?? 'bake failed') : null);
+  /** The identifiers a hand-written loop body may reference: the loop var, N,
+   *  the PARAMS bindings, and the wired part var-names. (Helpers mv/rot/place
+   *  are always in scope.) Engine primitives like r_cuboid are NOT — they must
+   *  be wired as a part first. */
+  const repeatScopeNames = $derived.by(() => {
+    const lv = (repeatNode?.loopVar && /^[A-Za-z_$][\w$]*$/.test(repeatNode.loopVar)) ? repeatNode.loopVar : 'i';
+    const binds = ((repeatNode?.bindings ?? []) as any[]).map((b) => b?.name).filter((n) => typeof n === 'string' && n);
+    const parts = ((repeatNode?.children ?? []) as string[]).map((id) => partVarName(graph.nodes[id]));
+    return { lv, binds, parts };
+  });
+  /** Switch the Loop-body tab into code mode — seed bodyExpr from the parts if
+   *  not already set. Switching to wired clears the override. */
+  function setRepeatBodyMode(mode: 'wired' | 'code') {
+    if (!editingRepeatId) return;
+    if (mode === 'code') {
+      if (!repeatHasBody) graph = setRepeatBodyExpr(graph, editingRepeatId, repeatBodySeed());
+    } else {
+      graph = clearRepeatBodyExpr(graph, editingRepeatId);
+    }
+  }
+  /** Seed the modifier rows for a named pattern preset (Linear / Circular). */
+  function applyRepeatPreset(preset: 'linear' | 'circular') {
+    if (!editingRepeatId) return;
+    const lv = (repeatNode?.loopVar && /^[A-Za-z_$][\w$]*$/.test(repeatNode.loopVar)) ? repeatNode.loopVar : 'i';
+    if (preset === 'linear') {
+      // mv [i*1, 0, 0] — a linear array along x; user retunes the step.
+      graph = addRepeatModifier(graph, editingRepeatId, 'mv', [asExpr(`${lv}*1`), asLiteral(0), asLiteral(0)]);
+    } else {
+      // rot [0, 0, i*360/N] — a circular array about z.
+      graph = addRepeatModifier(graph, editingRepeatId, 'rot', [asLiteral(0), asLiteral(0), asExpr(`${lv}*360/N`)]);
+    }
+  }
   // endWireOnInput / endWireOnCallArg / endWireOnPolygonCoord /
   // endWireOnPolyRepeatCount / endWireOnPolygonRepeatRef / endWireOnTransformAxis
   // / unwireTransformAxis → wire-state.svelte.ts (Phase C); called as `wire.*`.
@@ -4265,12 +4357,8 @@
                   : countKind === 'expr' ? rep.count.expr
                   : String(countLiteral)}
                 {@const repOp = (rep.op ?? 'stack') as 'stack' | 'list' | 'place'}
-                {@const childNode = rep.child ? graph.nodes[rep.child] : null}
-                {@const childLabel = !childNode ? '(drop a node into the child socket)'
-                  : childNode.type === 'call' ? `${childNode.alias} · ${childNode.src}`
-                  : childNode.type === 'method' ? `${childNode.op}(…)`
-                  : childNode.type === 'repeat' ? `repeat × ${childNode.count?.kind === 'literal' ? childNode.count.value : '…'}`
-                  : childNode.type}
+                {@const repParts = (rep.children ?? []) as string[]}
+                {@const hasBodyExpr = typeof rep.bodyExpr === 'string' && rep.bodyExpr.trim().length > 0}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg repeat"
                   width={size.w} height={size.h} rx="6"
@@ -4311,6 +4399,13 @@
                       onpointerdown={(ev) => { ev.stopPropagation(); graph = setRepeatCount(graph, n.id, asLiteral(graph.params[rep.count.param]?.default ?? 1)); }}>×</text>
                   {/if}
                 {/if}
+                <!-- ✎ open the Repeat pattern editor (#7). Tinted when the
+                     repeat carries modifiers/bindings (a real pattern). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 32} y="22"
+                  class="ge-sketch-edit-btn" class:patterned={((rep.modifiers?.length ?? 0) + (rep.bindings?.length ?? 0)) > 0}
+                  data-tip="Open the Repeat pattern editor (iterators · graphical modifiers)"
+                  onpointerdown={(ev) => { ev.stopPropagation(); openRepeatEditor(n.id); }}>✎</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   onpointerdown={(ev) => { ev.stopPropagation(); deleteNode(n.id); }}>×</text>
@@ -4321,17 +4416,41 @@
                      emit defaults to a bare Array.from(...). Legacy parts
                      without an `op` field still emit stack(Array.from(...))
                      for backward compat. -->
-                <text x={size.w / 2} y="56" class="ge-repeat-sub" text-anchor="middle">
-                  builds a list of {countDisplay} ×
+                <text x="14" y="52" class="ge-repeat-sub">
+                  builds {countDisplay} × of{repParts.length > 1 ? ` place([${repParts.length} parts])` : ':'}
                 </text>
-                <text x={size.w / 2} y="78" class="ge-repeat-child" text-anchor="middle">
-                  {childLabel}
-                </text>
-                <!-- Child input socket — drop any node's output here to repeat it. -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={size.h - 18} r="6"
-                  onpointerup={(ev) => wire.endWireOnRepeatChild(ev, n.id)}/>
-                <text x="10" y={size.h - 14} class="ge-sock-label">child</text>
+                <!-- PARTS list — one socket row per repeated part (combined
+                     per-iteration via place([...])); a trailing "+ part" socket
+                     appends. Each row's socket rebinds that index. -->
+                {#each repParts as cid, ci (cid + ':' + ci)}
+                  {@const py = 68 + ci * 24}
+                  {@const cLabel = nodeShortLabel(graph.nodes[cid])}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={py} r="6"
+                    onpointerup={(ev) => wire.endWireOnRepeatChildAt(ev, n.id, ci)}/>
+                  <text x="12" y={py + 4} class="ge-repeat-part-label">{cLabel}</text>
+                  {#if repParts.length > 1}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" x={size.w - 58} y={py + 4} class="ge-repeat-part-mv" class:disabled={ci === 0}
+                      onpointerdown={(ev) => { ev.stopPropagation(); if (ci > 0) graph = moveRepeatChild(graph, n.id, ci, -1); }}>▲</text>
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" x={size.w - 44} y={py + 4} class="ge-repeat-part-mv" class:disabled={ci === repParts.length - 1}
+                      onpointerdown={(ev) => { ev.stopPropagation(); if (ci < repParts.length - 1) graph = moveRepeatChild(graph, n.id, ci, 1); }}>▼</text>
+                  {/if}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <text role="button" tabindex="-1" x={size.w - 28} y={py + 4} class="ge-repeat-part-x"
+                    onpointerdown={(ev) => { ev.stopPropagation(); graph = removeRepeatChildAt(graph, n.id, ci); }}>×</text>
+                {/each}
+                {#if hasBodyExpr}
+                  <text x="14" y={68 + repParts.length * 24 + 4} class="ge-repeat-sub code">⟨ code body — ✎ to edit ⟩</text>
+                {:else}
+                  <!-- "+ part" drop socket — append a new repeated part. -->
+                  {@const addY = 68 + repParts.length * 24}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in child add" cx="0" cy={addY} r="6"
+                    onpointerup={(ev) => wire.endWireOnRepeatChild(ev, n.id)}/>
+                  <text x="12" y={addY + 4} class="ge-sock-label add">{repParts.length === 0 ? '+ drop a part to repeat' : '+ part'}</text>
+                {/if}
                 <!-- Output -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
@@ -5476,6 +5595,131 @@
           </div>
         </div>
       {/if}
+
+      <!-- Repeat pattern editor (#7) — full-tab overlay over the canvas pane,
+           mirroring the sketch editor. Iterators on top, two tabs below. The
+           3D pane re-bakes live on every `graph` reassignment. -->
+      {#if editingRepeatId && repeatNode}
+        {@const rid = editingRepeatId}
+        {@const rep = repeatNode}
+        {@const lv = rep.loopVar && /^[A-Za-z_$][\w$]*$/.test(rep.loopVar) ? rep.loopVar : 'i'}
+        <div class="ge-repeat-editor">
+          <div class="ge-rep-head">
+            <span class="ge-rep-title">↻ Repeat pattern</span>
+            <button class="ge-sketch-done-tick" title="Done — back to the graph" onclick={closeRepeatEditor}>✓</button>
+          </div>
+          <!-- Iterators strip (always visible) -->
+          <div class="ge-rep-iter">
+            <label class="ge-rep-field">count
+              <input class="ge-rep-in" type="text" value={argStr(rep.count)}
+                onchange={(e) => { graph = setRepeatCount(graph, rid, argFrom((e.target as HTMLInputElement).value)); }}/>
+            </label>
+            <label class="ge-rep-field">op
+              <select class="ge-rep-sel" value={rep.op ?? 'stack'}
+                onchange={(e) => { graph = setRepeatOp(graph, rid, (e.target as HTMLSelectElement).value as any); }}>
+                <option value="stack">stack</option><option value="list">list</option><option value="place">place</option>
+              </select>
+            </label>
+            <label class="ge-rep-field">loop var
+              <input class="ge-rep-in narrow" type="text" value={rep.loopVar ?? ''} placeholder="i"
+                onchange={(e) => { graph = setRepeatLoopVar(graph, rid, (e.target as HTMLInputElement).value); }}/>
+            </label>
+            <span class="ge-rep-hint"><code>N</code> = count · <code>{lv}</code> = 0…N−1</span>
+          </div>
+          <!-- Per-iteration bindings ƒ(i) -->
+          <div class="ge-rep-binds">
+            <span class="ge-rep-binds-lbl">ƒ({lv}):</span>
+            {#each (rep.bindings ?? []) as b, bi (bi)}
+              <span class="ge-rep-bind">
+                <input class="ge-rep-in narrow" type="text" value={b.name} placeholder="name"
+                  onchange={(e) => { graph = setRepeatBindingName(graph, rid, bi, (e.target as HTMLInputElement).value); }}/>
+                <span class="ge-rep-eq">=</span>
+                <input class="ge-rep-in" type="text" value={argStr(b.value)} placeholder="expr"
+                  onchange={(e) => { graph = setRepeatBindingValue(graph, rid, bi, argFrom((e.target as HTMLInputElement).value)); }}/>
+                <button class="ge-rep-x" type="button" title="Remove binding" onclick={() => { graph = removeRepeatBinding(graph, rid, bi); }}>×</button>
+              </span>
+            {/each}
+            <button class="ge-rep-add" type="button" onclick={() => { graph = addRepeatBinding(graph, rid); }}>+ binding</button>
+          </div>
+          <!-- Tabs -->
+          <div class="ge-rep-tabs">
+            <button class="ge-rep-tab" class:on={repeatTab === 'body'} onclick={() => (repeatTab = 'body')}>Loop body</button>
+            <button class="ge-rep-tab" class:on={repeatTab === 'modifiers'} onclick={() => (repeatTab = 'modifiers')}>Graphical modifiers</button>
+          </div>
+          <div class="ge-rep-tabbody">
+            {#if repeatTab === 'body'}
+              <!-- PARTS section — the repeated unit (combined per-iteration via
+                   place([...])). Add by wiring on the canvas; reorder/remove here. -->
+              <div class="ge-rep-parts">
+                <div class="ge-rep-section-lbl">PARTS <span class="ge-rep-section-sub">repeated {argStr(rep.count)}× · combined per-iteration via place([…])</span></div>
+                {#if repeatParts.length === 0}
+                  <div class="ge-rep-note">No parts yet — drag a node's output socket onto the Repeat's <code>+ part</code> socket on the canvas, or write the body as code below.</div>
+                {/if}
+                {#each repeatParts as p, pi (p.id + ':' + pi)}
+                  <div class="ge-rep-part-row">
+                    <span class="ge-rep-part-idx">{pi}</span>
+                    <span class="ge-rep-part-name">{p.label}</span>
+                    <button class="ge-rep-mv" type="button" title="Move up" disabled={pi === 0} onclick={() => { graph = moveRepeatChild(graph, rid, pi, -1); }}>▲</button>
+                    <button class="ge-rep-mv" type="button" title="Move down" disabled={pi === repeatParts.length - 1} onclick={() => { graph = moveRepeatChild(graph, rid, pi, 1); }}>▼</button>
+                    <button class="ge-rep-x" type="button" title="Remove part" onclick={() => { graph = removeRepeatChildAt(graph, rid, pi); }}>×</button>
+                  </div>
+                {/each}
+              </div>
+              <!-- Loop-body: wired (read-only generated) ⇄ code (editable override) -->
+              <div class="ge-rep-bodymode">
+                <span class="ge-rep-section-lbl">LOOP BODY</span>
+                <button class="ge-rep-seg" class:on={!repeatHasBody} onclick={() => setRepeatBodyMode('wired')}>wired</button>
+                <button class="ge-rep-seg" class:on={repeatHasBody} onclick={() => setRepeatBodyMode('code')}>code</button>
+                {#if repeatHasBody}
+                  <button class="ge-rep-revert" type="button" title="Discard the code override, back to the wired parts" onclick={() => setRepeatBodyMode('wired')}>↺ revert to wired</button>
+                {/if}
+              </div>
+              {#if repeatHasBody}
+                <textarea class="ge-rep-code" class:err={repeatBakeError} spellcheck="false" rows="6"
+                  value={rep.bodyExpr}
+                  oninput={(e) => { graph = setRepeatBodyExpr(graph, rid, (e.target as HTMLTextAreaElement).value); }}></textarea>
+                {#if repeatBakeError}
+                  <div class="ge-rep-bakeerr">⚠ bake failed: {repeatBakeError}</div>
+                {/if}
+                <div class="ge-rep-note">
+                  Raw per-iteration body — emitted verbatim inside the loop. <strong>In scope:</strong>
+                  <code>mv</code> <code>rot</code> <code>place</code> ·
+                  <code>{repeatScopeNames.lv}</code> (0…N−1) · <code>N</code>{#if repeatScopeNames.binds.length} · bindings {#each repeatScopeNames.binds as b}<code>{b}</code> {/each}{/if}{#if repeatScopeNames.parts.length} · parts {#each repeatScopeNames.parts as p}<code>{p}</code> {/each}{/if}.
+                  <br>Engine primitives (e.g. <code>r_cuboid</code>) are NOT callable here — wire them as a part first.
+                </div>
+              {:else}
+                <pre class="ge-rep-code readonly">{repeatBodySeed()}</pre>
+                <div class="ge-rep-note">Generated from the parts above. Switch to <strong>code</strong> to hand-edit (initially seeded with this array of parts).</div>
+              {/if}
+            {:else}
+              <div class="ge-rep-presets">
+                <span class="ge-rep-presets-lbl">presets</span>
+                <button class="ge-rep-preset" type="button" onclick={() => applyRepeatPreset('linear')}>＋ Linear ({lv}·step)</button>
+                <button class="ge-rep-preset" type="button" onclick={() => applyRepeatPreset('circular')}>＋ Circular ({lv}·360/N)</button>
+              </div>
+              {#each (rep.modifiers ?? []) as m, mi (mi)}
+                <div class="ge-rep-mod">
+                  <button class="ge-rep-kind" class:rot={m.kind === 'rot'} type="button" title="Toggle mv / rot"
+                    onclick={() => { graph = setRepeatModifierKind(graph, rid, mi, m.kind === 'mv' ? 'rot' : 'mv'); }}>{m.kind === 'mv' ? '⇄ mv' : '↻ rot'}</button>
+                  {#each [0, 1, 2] as ax (ax)}
+                    <input class="ge-rep-in axis" type="text" value={argStr(m.vec[ax])}
+                      title={(m.kind === 'rot' ? 'r' : '') + ['x', 'y', 'z'][ax]}
+                      onchange={(e) => { graph = setRepeatModifierAxis(graph, rid, mi, ax as 0 | 1 | 2, argFrom((e.target as HTMLInputElement).value)); }}/>
+                  {/each}
+                  <button class="ge-rep-mv" type="button" title="Move up" disabled={mi === 0} onclick={() => { graph = moveRepeatModifier(graph, rid, mi, -1); }}>▲</button>
+                  <button class="ge-rep-mv" type="button" title="Move down" disabled={mi === (rep.modifiers.length - 1)} onclick={() => { graph = moveRepeatModifier(graph, rid, mi, 1); }}>▼</button>
+                  <button class="ge-rep-x" type="button" title="Remove" onclick={() => { graph = removeRepeatModifier(graph, rid, mi); }}>×</button>
+                </div>
+              {/each}
+              <div class="ge-rep-mod-add">
+                <button class="ge-rep-add" type="button" onclick={() => { graph = addRepeatModifier(graph, rid, 'mv'); }}>+ mv</button>
+                <button class="ge-rep-add" type="button" onclick={() => { graph = addRepeatModifier(graph, rid, 'rot'); }}>+ rot</button>
+              </div>
+              <div class="ge-rep-note">Axis values may be expressions using <code>{lv}</code>, <code>N</code>, and bindings — e.g. <code>{lv}*2</code> or <code>{lv}*360/N</code>. Innermost row applied first.</div>
+            {/if}
+          </div>
+        </div>
+      {/if}
     </section>
 
     <!-- Divider: canvas ↔ right pane -->
@@ -6521,7 +6765,15 @@
   .ge-repeat-count-x:hover { fill: #7f1d1d; }
   /* Body labels — "builds a list of N ×" + child name */
   .ge-repeat-sub { font: 11px Arial; fill: #831843; opacity: 0.85; }
+  .ge-repeat-sub.code { font: italic 11px ui-monospace, monospace; fill: #be185d; }
   .ge-repeat-child { font: 600 12px ui-monospace, monospace; fill: #831843; }
+  /* PARTS list rows on the Repeat card (multi-child) */
+  .ge-repeat-part-label { font: 600 11px ui-monospace, monospace; fill: #831843; pointer-events: none; }
+  .ge-repeat-part-mv { font: 9px Arial; fill: #9d174d; cursor: pointer; user-select: none; }
+  .ge-repeat-part-mv.disabled { opacity: 0.3; pointer-events: none; }
+  .ge-repeat-part-x { font: 600 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  .ge-sock.in.child.add { fill: #fff; stroke: #db2777; stroke-dasharray: 2 2; }
+  .ge-sock-label.add { fill: #be185d; font-style: italic; }
   .ge-repeat-op-hint { font: 9px ui-monospace, monospace; fill: #9d174d; opacity: 0.6; }
   .ge-container-slot-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-container-slot-x:hover { fill: #7f1d1d; }
@@ -6852,6 +7104,70 @@
   }
   .ge-sketch-done-tick:hover { background: #d1fae5; border-color: #34d399; }
   .ge-sketch-hint { position: absolute; left: 12px; bottom: 10px; font: 11px Arial; color: #6b7280; background: rgba(255,255,255,0.85); padding: 3px 8px; border-radius: 4px; pointer-events: none; }
+  /* ✎ on the Repeat card tints when the repeat carries a pattern. */
+  .ge-sketch-edit-btn.patterned { fill: #be185d; }
+  /* ─── Repeat pattern editor overlay (#7) ─────────────────────────────── */
+  .ge-repeat-editor {
+    position: absolute; inset: 0; z-index: 60; background: #fdf2f8;
+    display: flex; flex-direction: column; gap: 0; overflow: auto;
+    font: 12px ui-monospace, monospace; color: #1f2937;
+  }
+  .ge-rep-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #fbcfe8; background: #fff; }
+  .ge-rep-title { font: 700 13px Arial; color: #9d174d; }
+  .ge-rep-iter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #fce7f3; }
+  .ge-rep-field { display: flex; flex-direction: column; gap: 2px; font: 600 10px Arial; color: #9d174d; text-transform: uppercase; letter-spacing: 0.4px; }
+  .ge-rep-in { font: 12px ui-monospace, monospace; padding: 3px 6px; border: 1px solid #f9a8d4; border-radius: 4px; width: 120px; box-sizing: border-box; }
+  .ge-rep-in.narrow { width: 70px; }
+  .ge-rep-in.axis { width: 86px; }
+  .ge-rep-in:focus { outline: 1px solid #db2777; background: #fff; }
+  .ge-rep-sel { font: 12px ui-monospace, monospace; padding: 3px 6px; border: 1px solid #f9a8d4; border-radius: 4px; }
+  .ge-rep-hint { font: 11px Arial; color: #9ca3af; align-self: center; }
+  .ge-rep-hint code, .ge-rep-note code { background: #fce7f3; color: #9d174d; padding: 0 4px; border-radius: 3px; }
+  .ge-rep-binds { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #fce7f3; }
+  .ge-rep-binds-lbl { font: 600 11px ui-monospace, monospace; color: #be185d; }
+  .ge-rep-bind { display: inline-flex; align-items: center; gap: 4px; }
+  .ge-rep-eq { color: #9ca3af; }
+  .ge-rep-add { font: 600 11px Arial; padding: 3px 9px; background: #fdf2f8; color: #9d174d; border: 1px dashed #f9a8d4; border-radius: 5px; cursor: pointer; }
+  .ge-rep-add:hover { background: #fce7f3; border-style: solid; }
+  .ge-rep-x { width: 20px; height: 20px; padding: 0; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; color: #b91c1c; cursor: pointer; font: 11px Arial; }
+  .ge-rep-x:hover { background: #fee2e2; }
+  .ge-rep-tabs { display: flex; gap: 0; padding: 0 12px; border-bottom: 1px solid #fbcfe8; background: #fff; }
+  .ge-rep-tab { font: 600 12px Arial; padding: 8px 14px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: #9ca3af; cursor: pointer; }
+  .ge-rep-tab.on { color: #9d174d; border-bottom-color: #db2777; }
+  .ge-rep-tab:hover { color: #be185d; }
+  .ge-rep-tabbody { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .ge-rep-body-card { background: #fff; border: 1px solid #fbcfe8; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px; max-width: 520px; }
+  .ge-rep-body-lbl { font: 600 11px Arial; color: #9d174d; }
+  .ge-rep-child { font: 13px ui-monospace, monospace; color: #1f2937; background: #fce7f3; border-radius: 4px; padding: 4px 8px; align-self: flex-start; }
+  .ge-rep-note { font: 11px Arial; color: #6b7280; line-height: 1.5; max-width: 560px; }
+  .ge-rep-presets { display: flex; align-items: center; gap: 8px; }
+  .ge-rep-presets-lbl { font: 600 10px Arial; color: #9d174d; text-transform: uppercase; letter-spacing: 0.4px; }
+  .ge-rep-preset { font: 600 11px Arial; padding: 4px 10px; background: #fce7f3; color: #9d174d; border: 1px solid #f9a8d4; border-radius: 9999px; cursor: pointer; }
+  .ge-rep-preset:hover { background: #fbcfe8; }
+  .ge-rep-mod { display: flex; align-items: center; gap: 6px; }
+  .ge-rep-kind { font: 600 11px ui-monospace, monospace; padding: 4px 8px; background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; border-radius: 5px; cursor: pointer; width: 64px; }
+  .ge-rep-kind.rot { background: #fce7f3; color: #be185d; border-color: #f9a8d4; }
+  .ge-rep-mv { width: 22px; height: 24px; padding: 0; background: #fff; border: 1px solid #d6d3d1; border-radius: 4px; font: 9px Arial; color: #57534e; cursor: pointer; }
+  .ge-rep-mv:hover:not(:disabled) { background: #f3e8ff; }
+  .ge-rep-mv:disabled { opacity: 0.35; cursor: default; }
+  .ge-rep-mod-add { display: flex; gap: 6px; }
+  /* PARTS section + wired⇄code body (Loop-body tab) */
+  .ge-rep-section-lbl { font: 700 10px Arial; color: #9d174d; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ge-rep-section-sub { font: 400 10px Arial; color: #9ca3af; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+  .ge-rep-parts { display: flex; flex-direction: column; gap: 5px; padding-bottom: 8px; border-bottom: 1px solid #fce7f3; margin-bottom: 8px; }
+  .ge-rep-part-row { display: flex; align-items: center; gap: 8px; }
+  .ge-rep-part-idx { font: 600 10px ui-monospace, monospace; color: #f9a8d4; width: 14px; text-align: right; }
+  .ge-rep-part-name { font: 12px ui-monospace, monospace; color: #1f2937; background: #fce7f3; border-radius: 4px; padding: 3px 8px; flex: 1; }
+  .ge-rep-bodymode { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .ge-rep-seg { font: 600 11px Arial; padding: 3px 12px; background: #fff; color: #9ca3af; border: 1px solid #f9a8d4; border-radius: 9999px; cursor: pointer; }
+  .ge-rep-seg.on { background: #db2777; color: #fff; border-color: #db2777; }
+  .ge-rep-revert { font: 600 11px Arial; padding: 3px 10px; background: #fff; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; margin-left: auto; }
+  .ge-rep-revert:hover { background: #fee2e2; }
+  .ge-rep-code { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; color: #1f2937; background: #fff; border: 1px solid #f9a8d4; border-radius: 6px; padding: 8px 10px; resize: vertical; }
+  .ge-rep-code:focus { outline: 1px solid #db2777; }
+  .ge-rep-code.readonly { background: #fdf2f8; color: #6b7280; white-space: pre; overflow: auto; margin: 0; }
+  .ge-rep-code.err { border-color: #f87171; }
+  .ge-rep-bakeerr { font: 600 11px ui-monospace, monospace; color: #b91c1c; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 5px; padding: 6px 10px; margin-top: 6px; }
   .ge-poly-axis-label {
     font: 600 9px ui-monospace, monospace; color: #94a3b8;
     text-transform: uppercase; letter-spacing: 0.5px;

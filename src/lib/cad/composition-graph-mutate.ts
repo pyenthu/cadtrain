@@ -303,7 +303,7 @@ export function addRepeat(
   parentId?: NodeId,
 ): { graph: Graph; id: NodeId } {
   const id = newNodeId();
-  const node: RepeatNode = { id, type: 'repeat', child, count };
+  const node: RepeatNode = { id, type: 'repeat', children: child ? [child] : [], count };
   const xy = defaultCallPosition(graph);
   const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
   const final = appendChild(next, parentId ?? graph.root, id);
@@ -325,12 +325,67 @@ export function addRepeatPlaceholder(graph: Graph, parentId?: NodeId) {
   return { graph: next, id: r.id };
 }
 
-/** Rebind a Repeat node's child socket to point at another node. */
+/** Append a PART to a Repeat's repeated unit (the PARTS section). Multiple
+ *  parts combine per-iteration via place([...]); see RepeatNode doc. */
+export function addRepeatChild(graph: Graph, repeatId: NodeId, childId: NodeId): Graph {
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, children: [...(n.children ?? []), childId] }));
+}
+
+/** Rebind the part at `idx` to a different node (drag onto an existing row). */
+export function setRepeatChildAt(graph: Graph, repeatId: NodeId, idx: number, childId: NodeId): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const children = [...(n.children ?? [])];
+    if (idx < 0 || idx >= children.length) return n;
+    children[idx] = childId;
+    return { ...n, children };
+  });
+}
+
+/** Remove the part at `idx` from the Repeat's PARTS list. */
+export function removeRepeatChildAt(graph: Graph, repeatId: NodeId, idx: number): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const children = [...(n.children ?? [])];
+    if (idx < 0 || idx >= children.length) return n;
+    children.splice(idx, 1);
+    return { ...n, children };
+  });
+}
+
+/** Reorder a part up (-1) or down (+1) — order = place([...]) order. */
+export function moveRepeatChild(graph: Graph, repeatId: NodeId, idx: number, dir: -1 | 1): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const children = [...(n.children ?? [])];
+    const j = idx + dir;
+    if (idx < 0 || idx >= children.length || j < 0 || j >= children.length) return n;
+    [children[idx], children[j]] = [children[j], children[idx]];
+    return { ...n, children };
+  });
+}
+
+/** Legacy single-slot setter — kept for the primary wire path. Replaces the
+ *  FIRST part (or appends if the Repeat has none). New code prefers
+ *  addRepeatChild / setRepeatChildAt. */
 export function setRepeatChild(graph: Graph, repeatId: NodeId, childId: NodeId): Graph {
-  const node = graph.nodes[repeatId];
-  if (!node || node.type !== 'repeat') return graph;
-  const updated: RepeatNode = { ...node, child: childId };
-  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+  return updateRepeat(graph, repeatId, (n) => {
+    const children = [...(n.children ?? [])];
+    if (children.length === 0) children.push(childId);
+    else children[0] = childId;
+    return { ...n, children };
+  });
+}
+
+/** Set the RAW per-iteration body override (windowed editor code mode). Emits
+ *  verbatim, overriding the children-derived body. */
+export function setRepeatBodyExpr(graph: Graph, repeatId: NodeId, src: string): Graph {
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, bodyExpr: src }));
+}
+
+/** Clear the body override → back to the wired children body. */
+export function clearRepeatBodyExpr(graph: Graph, repeatId: NodeId): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const { bodyExpr: _drop, ...rest } = n;
+    return { ...rest };
+  });
 }
 
 /** Update a Repeat node's count slot. */
@@ -1324,8 +1379,10 @@ export function topoOrder(graph: Graph): NodeId[] {
     } else if (node.type === 'method') {
       visit(node.obj);
       visit(node.arg);
-    } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn' || node.type === 'repeat') {
+    } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn') {
       if (node.child) visit(node.child);
+    } else if (node.type === 'repeat') {
+      for (const c of node.children ?? []) visit(c);
     } else if (node.type === 'call') {
       // A Call arg can carry a `__POLY__<id>` ref to a producer (polygon /
       // sketch) feeding e.g. a revolve's `profile`. Visit those producers

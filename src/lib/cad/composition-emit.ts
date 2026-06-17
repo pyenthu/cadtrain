@@ -135,9 +135,19 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
         node.rot.forEach((v, i) => checkArg(id, `rot[${i}]`, v));
         node.offset.forEach((v, i) => checkArg(id, `offset[${i}]`, v));
         break;
-      case 'repeat':
-        if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
+      case 'repeat': {
+        // A bodyExpr (code mode) supplies the body without wired parts, so an
+        // empty PARTS list is only an error when there is no code override.
+        const hasBody = typeof (node as any).bodyExpr === 'string' && (node as any).bodyExpr.trim().length > 0;
+        const kids = node.children ?? [];
+        if (kids.length === 0 && !hasBody) {
+          errs.push({ nodeId: id, slot: 'child', badRef: '', kind: 'missing-node' });
+        }
+        kids.forEach((c, i) => {
+          if (!has(c)) errs.push({ nodeId: id, slot: `children[${i}]`, badRef: c, kind: 'missing-node' });
+        });
         checkArg(id, 'count', node.count);
+      }
         // Patterned-repeat modifier/binding ArgValues (#7) — same as poly_repeat.
         ((node as any).modifiers as any[] ?? []).forEach((m, k) =>
           (m?.vec ?? []).forEach((v: any, ax: number) => checkArg(id, `modifiers[${k}].vec[${ax}]`, v)));
@@ -477,14 +487,22 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // Default 'stack' so existing graphs without an op field keep the
       // historical drilling-string idiom (every BUILD_ORDER part works).
       const count = emitValueExpr(node.count);
-      const child = ref(node.child, 'child');
+      // The repeated UNIT: multiple parts combine per-iteration via place([...])
+      // (compose — each keeps its own position); a single part emits bare so
+      // legacy parts stay byte-identical. A raw `bodyExpr` (code mode) overrides
+      // the children-derived body verbatim; i/N/bindings/part-names are in scope.
+      const parts = (node.children ?? []).map((c, i) => ref(c, `children[${i}]`));
+      const rawBody = typeof (node as any).bodyExpr === 'string' ? (node as any).bodyExpr.trim() : '';
+      const child = rawBody
+        ? rawBody
+        : parts.length === 1 ? parts[0] : `place([${parts.join(', ')}])`;
       // Patterned repeat (#7): per-copy transforms keyed to the loop var.
       const mods: any[] = Array.isArray((node as any).modifiers) ? (node as any).modifiers : [];
       const rawBinds: any[] = Array.isArray((node as any).bindings) ? (node as any).bindings : [];
       const binds = rawBinds.filter((b) => b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name));
       const hasLoopVar = typeof (node as any).loopVar === 'string' && (node as any).loopVar.length > 0;
       let array: string;
-      if (mods.length === 0 && binds.length === 0 && !hasLoopVar) {
+      if (mods.length === 0 && binds.length === 0 && !hasLoopVar && !rawBody) {
         // Backward-compat: identity clone, byte-identical to the historical form.
         array = `Array.from({ length: ${count} }, () => ${child})`;
       } else {
@@ -638,8 +656,12 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
     if (n.type === 'method') {
       if (n.obj) consumed.add(n.obj);
       if (n.arg) consumed.add(n.arg);
-    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat') {
+    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
       if (n.child) consumed.add(n.child);
+    } else if (n.type === 'repeat') {
+      // Every wired PART is an input to the repeat — consumed so it doesn't
+      // double-emit as an Output and its delete button greys.
+      for (const c of n.children ?? []) consumed.add(c);
     } else if (n.type === 'stack' || n.type === 'group') {
       // Stack + group are EXPRESSIONS that operate on their children
       // (`stack(a, b, c)` / `group(a, b, c)`). The children are inputs,

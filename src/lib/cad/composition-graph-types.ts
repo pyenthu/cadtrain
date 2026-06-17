@@ -123,17 +123,27 @@ export type RepeatOp = 'stack' | 'list' | 'place';
  *  values are ArgValues so they can be exprs referencing the loop var `i`,
  *  the resolved count `N`, or per-iteration bindings. */
 export type NodeTransform = { kind: 'mv' | 'rot'; vec: [ArgValue, ArgValue, ArgValue] };
-/** A Repeat clones its `child` `count` times. The optional fields turn it into
- *  a parametric pattern (linear/circular array): `loopVar` (default 'i') + `N`
- *  (auto = resolved count) are in scope for `bindings` (per-iteration locals,
- *  reusing PolyRepeatBinding) and `modifiers` (per-copy transform stack,
- *  innermost-first). All optional+sparse — absent ⇒ today's identity clone
- *  (round-trips for free; hydrateGraph spreads them, no migration). */
+/** A Repeat clones its repeated UNIT `count` times. The unit is `children`
+ *  combined per-iteration via `place([...])` (compose — each part keeps its own
+ *  position); a single child emits bare so legacy parts stay byte-identical.
+ *  The optional fields turn it into a parametric pattern (linear/circular
+ *  array): `loopVar` (default 'i') + `N` (auto = resolved count) are in scope
+ *  for `bindings` (per-iteration named values — the "PARAMS" section, value is
+ *  any ArgValue so it can be wired to a graph param) and `modifiers` (per-copy
+ *  transform stack, innermost-first). `bodyExpr`, when set, is a RAW per-
+ *  iteration body that emits verbatim (the windowed editor's code mode),
+ *  overriding the `children`-derived body; `i`/`N`/bindings/part var-names are
+ *  in scope. All optional+sparse — absent ⇒ today's identity clone.
+ *
+ *  `child` is the LEGACY single-slot field (pre-2026-06-17). hydrateGraph folds
+ *  it into `children: [child]`; new code writes only `children`. */
 export type RepeatNode = {
-  id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue; op?: RepeatOp;
+  id: NodeId; type: 'repeat'; children: NodeId[]; count: ArgValue; op?: RepeatOp;
+  child?: NodeId;                 // legacy single child — folded into children[] at hydrate
   loopVar?: string;
   bindings?: PolyRepeatBinding[];
   modifiers?: NodeTransform[];
+  bodyExpr?: string;              // raw per-iteration body override (verbatim emit)
 };
 
 /** 2D polygon — the SOLE producer node for profile graphs (replaces the

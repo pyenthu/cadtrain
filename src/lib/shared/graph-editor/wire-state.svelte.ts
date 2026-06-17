@@ -36,7 +36,8 @@ import {
   setSketchOpField,
   appendContainerChild,
   setRepeatCount,
-  setRepeatChild,
+  addRepeatChild,
+  setRepeatChildAt,
   type Graph,
   type NodeId,
   type MvNode,
@@ -262,13 +263,23 @@ export class WireState {
     this.from = null; this.mouse = null;
   };
 
-  /** Drag-wire ending on a Repeat node's child slot — set the wire source as
-   *  the new child. Works for any node type that has an output socket. */
+  /** Drag-wire ending on a Repeat node's "+ part" slot — APPEND the wire source
+   *  as a new repeated part (the Repeat now accepts multiple children, combined
+   *  per-iteration via place([...])). Works for any node with an output socket. */
   endWireOnRepeatChild = (ev: PointerEvent, repeatId: NodeId) => {
     const from = this.from;
     if (!from) return;
     ev.stopPropagation();
-    this.#setGraph(setRepeatChild(this.#getGraph(), repeatId, (from as any).nodeId));
+    this.#setGraph(addRepeatChild(this.#getGraph(), repeatId, (from as any).nodeId));
+    this.from = null; this.mouse = null;
+  };
+
+  /** Drag-wire ending on an EXISTING part row's socket — rebind that index. */
+  endWireOnRepeatChildAt = (ev: PointerEvent, repeatId: NodeId, idx: number) => {
+    const from = this.from;
+    if (!from) return;
+    ev.stopPropagation();
+    this.#setGraph(setRepeatChildAt(this.#getGraph(), repeatId, idx, (from as any).nodeId));
     this.from = null; this.mouse = null;
   };
 }

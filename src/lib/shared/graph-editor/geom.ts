@@ -316,7 +316,12 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
   // label. Fixed height matches the card render's block layout below.
   if (node.type === 'txfmn') return { w, h: 226 };
-  if (node.type === 'repeat') return { w, h: 110 };
+  if (node.type === 'repeat') {
+    // Header (title + "builds a list of N ×") + one row per PART + a "+ part"
+    // row. Single-part repeats keep the historical 110px height.
+    const parts = (node.children?.length ?? 0);
+    return { w, h: Math.max(110, 64 + (parts + 1) * 24) };
+  }
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const slots = (node.children?.length ?? 0) + 1;
     return { w, h: Math.max(60, 40 + slots * 22) };

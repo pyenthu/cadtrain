@@ -49,5 +49,6 @@ retire it structurally.
 6. Explore this for possibility of improving cad generation. [https://arxiv.org/html/2606.05515v1](https://arxiv.org/html/2606.05515v1)
 7. Bug in the part cad. when an expression becomes too big, the input box mecmes bigger than the card. this should be limited.
 8. PLAN We need to introduce the concept of units here. Like diameter in inches or mm generslly, z in m or ft. We ill need a centralized units repository.
-9. The XForm is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added 
+9. The TXForm card is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added. Right now there is a redundancy in each card's operation. There should be a selactor of what we want for each row. and the ability to move one transform up or down.
+10. Can we make the output card less wide. Each item in there can have a tool tip. And it should be high enoug only for the rows we have added, plus one more row spare to add more.
 

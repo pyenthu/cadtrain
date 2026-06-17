@@ -110,9 +110,10 @@ function predecessorsOf(graph: Graph, id: NodeId): NodeId[] {
     if (n.arg && graph.nodes[n.arg]) out.push(n.arg);
     return out;
   }
-  if (n.type === 'mv' || n.type === 'rot' || n.type === 'repeat') {
+  if (n.type === 'mv' || n.type === 'rot') {
     return n.child && graph.nodes[n.child] ? [n.child] : [];
   }
+  // repeat — its PARTS flow in, same shape as a container's children.
   // list / stack / group — children flow INTO this container. Guard the
   // field too: a malformed container missing `children` should yield [],
   // not throw.
