@@ -133,6 +133,8 @@ export async function runCompiledManifold(
   const axialPrev = (warpArg && warpArg.freq > 0) ? getAxialMaxZSpan() : undefined;
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
 
+  const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const _tBuild0 = _now();
   let manifold: any;
   try {
     manifold = Array.isArray(params) ? geomFn(...params) : geomFn(params);
@@ -142,11 +144,13 @@ export async function runCompiledManifold(
     if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); }
     if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
   }
+  const _tBuild = _now() - _tBuild0;
 
   if (!manifold || typeof manifold.getMesh !== 'function') {
     throw new Error('primitive did not return a Manifold');
   }
 
+  const _tFin0 = _now();
   const result = finalizeManifold(
     manifold,
     maxOD,
@@ -162,7 +166,19 @@ export async function runCompiledManifold(
       creaseAngle: creaseArg,
     },
   );
-  return serializeComponentResult(result);
+  const _tFin = _now() - _tFin0;
+  const _tSer0 = _now();
+  const out = serializeComponentResult(result);
+  const _tSer = _now() - _tSer0;
+  // Timing breakdown (perf): build (script→Manifold) · finalize (mesh+cutaway,
+  // split inside finalizeManifold's own log) · serialize. Logged when
+  // globalThis.__bakeTimings is set; also attached for the client to surface.
+  const fin = (result as any).timings ?? { full: 0, cut: 0 };
+  if ((globalThis as any).__bakeTimings) {
+    try { console.log(`[bake-worker] build=${_tBuild.toFixed(1)} · mesh=${(fin.full ?? 0).toFixed(1)} · cutaway=${(fin.cut ?? 0).toFixed(1)} · finalize=${_tFin.toFixed(1)} · serialize=${_tSer.toFixed(1)} ms`); } catch {}
+  }
+  (out as any).timings = { build: _tBuild, mesh: fin.full ?? 0, cutaway: fin.cut ?? 0, finalize: _tFin, serialize: _tSer };
+  return out;
 }
 
 /** A serialized result re-packed onto TRANSFERABLE typed-array buffers so the
@@ -197,6 +213,7 @@ export function packTransferable(
     cutVC: packGeo(s.cutVC),
   };
   if (s.instanced) payload.instanced = s.instanced;
+  if ((s as any).timings) (payload as any).timings = (s as any).timings;
   return { payload, transfer };
 }
 

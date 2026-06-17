@@ -27,6 +27,11 @@ import { runCompiledManifold, packTransferable, type BakeOptions } from './bake-
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
+// Perf instrumentation: log the bake breakdown (build · mesh · cutaway ·
+// serialize) to the worker console — surfaces in the browser console. Temporary
+// measurement aid for the client-exec perf pass.
+(globalThis as any).__bakeTimings = true;
+
 /** Request from the main thread (bake-client). */
 export interface BakeWorkerRequest {
   id: number;

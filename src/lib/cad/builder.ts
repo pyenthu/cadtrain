@@ -631,12 +631,24 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // cross-section follow the bend. `opts.warp` absent → `warped === scaled` →
   // byte-identical to the pre-warp bake.
   const warped = applyWarp(scaled, opts?.warp);
+  // Timing breakdown (perf instrumentation): full-mesh extraction vs the
+  // cutaway CSG. Attached as `timings` (callers ignore it) + logged when
+  // globalThis.__bakeTimings is truthy. The cutaway is the known super-linear
+  // cost — this isolates it from the initial mesh.
+  const _t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const full = manifoldToGeo(warped, material, lut, override, crease);
+  const _t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const cutVC = skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override, crease);
+  const _t2 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const timings = { full: _t1 - _t0, cut: skipCutaway ? 0 : _t2 - _t1 };
+  if ((globalThis as any).__bakeTimings) { try { console.log(`[bake-finalize] mesh=${timings.full.toFixed(1)}ms · cutaway=${timings.cut.toFixed(1)}ms${skipCutaway ? ' (skipped)' : ''}`); } catch {} }
   return {
-    full: manifoldToGeo(warped, material, lut, override, crease),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override, crease),
+    full,
+    cutVC,
     manifold: warped,
     cutawaySkipped: skipCutaway,
-  } as ComponentResult & { cutawaySkipped: boolean };
+    timings,
+  } as ComponentResult & { cutawaySkipped: boolean; timings: { full: number; cut: number } };
 }
 
 /**
@@ -737,13 +749,21 @@ function tryInstanceFinalize(
     : skipCutawayOpt === false ? false
     : childTris > 15_000;
 
+  const _ti0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const full = manifoldToGeo(canonical, material, lut, override, crease);
+  const _ti1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const cutVC = skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(canonical.subtract(cutBox), maxOD, material, lut, override, crease);
+  const _ti2 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const timings = { full: _ti1 - _ti0, cut: skipCutaway ? 0 : _ti2 - _ti1 };
+  if ((globalThis as any).__bakeTimings) { try { console.log(`[bake-finalize-inst] mesh=${timings.full.toFixed(1)}ms · cutaway=${timings.cut.toFixed(1)}ms${skipCutaway ? ' (skipped)' : ''}`); } catch {} }
   return {
-    full: manifoldToGeo(canonical, material, lut, override, crease),
-    cutVC: skipCutaway ? new THREE.BufferGeometry() : manifoldToCutVC(canonical.subtract(cutBox), maxOD, material, lut, override, crease),
+    full,
+    cutVC,
     manifold: scaled,
     cutawaySkipped: skipCutaway,
     instances,
-  };
+    timings,
+  } as ComponentResult & { cutawaySkipped: boolean; instances: any; timings: { full: number; cut: number } };
 }
 
 export function buildComponent(componentId: string, params: Record<string, number>): ComponentResult {

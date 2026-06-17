@@ -220,15 +220,20 @@
     if (clientBake && name) {
       try {
         // Cached compile (skips the /compile fetch on param scrubs — same source).
+        const _tc0 = performance.now();
         const cd = await getCompiled(name, source ?? '', ac.signal);
+        const _tCompile = performance.now() - _tc0;
         if (ac.signal.aborted) return;
         if (cd?.supported && cd.script) {
           const options = { cutaway: scene.showCutaway || undefined, instanced: true,
             ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}),
             ...(crease ? { creaseAngle: crease } : {}), colorOuter, colorInner };
+          const _tb0 = performance.now();
           const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
+          const _tBake = performance.now() - _tb0;
           if (ac.signal.aborted || isCancelled(result)) return;
           geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';
+          try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${effSegments ?? 'full(256)'}`); } catch {}
           return;
         }
         // unsupported by the client kernel → fall through to the server path.
@@ -440,6 +445,13 @@
   <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
     title="Fit the whole part length in view (toggle)"
     onclick={() => (scene.fitLength = !scene.fitLength)}>⇕ fit</button>
+  <!-- Shading toggle (render-time, free, no re-bake) — cycles the SAME
+       scene.smoothShade state the gear's Shade control uses. Smooth = baked
+       vertex normals (a coarse mesh still shades round); Flat = per-face. -->
+  <button class="pd-shade-btn" type="button"
+    title={`Shading: ${scene.smoothShade} — click to cycle Auto → Smooth → Flat. Smooth uses baked vertex normals so even a low-seg mesh shades round (silhouette stays faceted).`}
+    onclick={() => (scene.smoothShade = scene.smoothShade === 'auto' ? 'smooth' : scene.smoothShade === 'smooth' ? 'flat' : 'auto')}>
+    ◐ {scene.smoothShade}</button>
   <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
   {#if meshBackend && meshStatus === 'ok'}
     <span class="pd-backend-badge {meshBackend}"
@@ -569,8 +581,15 @@
   }
   .pd-fit-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
   .pd-fit-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
-  .pd-backend-badge {
+  .pd-shade-btn {
     position: absolute; top: 30px; left: 130px; z-index: 6;
+    padding: 2px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
+    background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer;
+    font: 600 10px Arial; letter-spacing: 0.3px; text-transform: capitalize;
+  }
+  .pd-shade-btn:hover { background: #fff; border-color: #6366f1; color: #4338ca; }
+  .pd-backend-badge {
+    position: absolute; top: 30px; left: 205px; z-index: 6;
     padding: 2px 8px; border-radius: 4px; font: 700 10px Arial; letter-spacing: 0.3px;
     pointer-events: none;
   }
