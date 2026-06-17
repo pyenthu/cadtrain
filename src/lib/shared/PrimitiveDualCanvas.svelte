@@ -154,6 +154,31 @@
 
   let meshAc: AbortController | null = null;
   let glbAc: AbortController | null = null;
+
+  // Compiled-script cache (client-exec perf): the compiled script depends ONLY
+  // on (name, source) — NOT on params. So param SCRUBBING reuses the cached
+  // script and skips the /compile round-trip, baking locally each tick. Keyed on
+  // name|source; bounded LRU. Only successes are cached.
+  type CompiledEntry = { supported: boolean; script?: string; scriptHash?: string; reason?: string };
+  const compileCache = new Map<string, CompiledEntry>();
+  const COMPILE_CACHE_MAX = 24;
+  async function getCompiled(name: string, src: string, signal: AbortSignal): Promise<CompiledEntry> {
+    const key = `${name}|${src}`;
+    const hit = compileCache.get(key);
+    if (hit) { compileCache.delete(key); compileCache.set(key, hit); return hit; } // LRU touch
+    const cr = await fetch('/api/primitives/compile', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, source: src }), signal,
+    });
+    const cd = await cr.json();
+    const entry: CompiledEntry = { supported: !!cd?.supported, script: cd?.script, scriptHash: cd?.scriptHash, reason: cd?.reason };
+    if (entry.supported && entry.script) {
+      compileCache.set(key, entry);
+      while (compileCache.size > COMPILE_CACHE_MAX) compileCache.delete(compileCache.keys().next().value as string);
+    }
+    return entry;
+  }
+
   async function rebuildMesh(bust = false) {
     if (!id) return;
     // Request the cutaway (cutVC) only when the user is VIEWING it. Large parts
@@ -194,12 +219,9 @@
     const clientBake = scene.clientBake;
     if (clientBake && name) {
       try {
-        const cr = await fetch('/api/primitives/compile', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, source: source ?? '' }), signal: ac.signal,
-        });
+        // Cached compile (skips the /compile fetch on param scrubs — same source).
+        const cd = await getCompiled(name, source ?? '', ac.signal);
         if (ac.signal.aborted) return;
-        const cd = await cr.json();
         if (cd?.supported && cd.script) {
           const options = { cutaway: scene.showCutaway || undefined, instanced: true,
             ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}),
