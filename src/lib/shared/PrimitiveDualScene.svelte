@@ -371,6 +371,16 @@
   // directly (below) doesn't invalidate a frame — so changes wouldn't show
   // live. invalidate() requests a re-render after each update.
   const { invalidate, size } = useThrelte();
+
+  // Live-mesh material ref — the ◐ Auto/Smooth/Flat toggle flips flatShading IN
+  // PLACE (no mesh remount / no re-bake). flatShading is a shader-recompile prop,
+  // so we also set needsUpdate + invalidate a frame. Only one material is active
+  // at a time, so they all bind to the same ref.
+  let liveMat: any = null;
+  $effect(() => {
+    const flat = !smoothShade; // tracked
+    if (liveMat) { liveMat.flatShading = flat; liveMat.needsUpdate = true; invalidate(); }
+  });
   // One-time uniforms-lib init (LTC textures the RectAreaLight needs). It's
   // async — the light renders UNLIT until init completes, and the on-demand
   // loop won't re-render on its own, so invalidate() once it's ready (this was
@@ -536,11 +546,7 @@
 <T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
-  <!-- smoothShade is in the key: flatShading is a SHADER-RECOMPILE property in
-       three.js (changing it on a live material does nothing without
-       material.needsUpdate). Re-keying recreates the material with the right
-       flatShading from the start, so the ◐ Smooth/Flat toggle actually takes. -->
-  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '') + (smoothShade ? '_s' : '_f')}
+  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '')}
     {#if instMesh}
       <!-- GPU-instanced Stack/Repeat: ONE child mesh drawn under N transforms.
            Material (Phong/Standard + flatShading + vertexColors) + the child's
@@ -553,9 +559,9 @@
       <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
       <T.Mesh geometry={cutVC}>
         {#if scene.zRectLight}
-          <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} />
+          <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
@@ -565,14 +571,14 @@
       <T.Mesh geometry={full}>
         {#if scene.zRectLight}
           {#if hasVC}
-            <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} />
+            <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
           {:else}
-            <T.MeshStandardMaterial color="#cc2222" roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} />
+            <T.MeshStandardMaterial color="#cc2222" roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
           {/if}
         {:else if hasVC}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>

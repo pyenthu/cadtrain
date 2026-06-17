@@ -507,16 +507,14 @@
     <button class="pd-mini-btn" type="button" title="Rebuild (fresh bake)"
       onclick={doRebuild}>🔄</button>
     {#if isBrep}
+      <!-- BREP tolerance only. The live-mesh "seg" override was removed (2026-06-17):
+           it only CAPPED the part's segments param (no effect when the param was
+           already lower) — confusing + redundant. The part's `segments` param is the
+           control; coarse-during-drag still coarsens internally via DRAFT_SEG. -->
       <label class="pd-seg" title="OCCT linear deflection (tolerance) — lower = finer/slower">
         <span>tol</span>
         <input type="number" min="0.005" max="1" step="0.005" value={effTol}
           onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); tolOverride = (Number.isFinite(v) && v > 0) ? v : undefined; }} />
-      </label>
-    {:else}
-      <label class="pd-seg" title="Live-mesh circular segments — lower = faster/coarser, 256 = full">
-        <span>seg</span>
-        <input type="number" min="8" max="256" step="8" value={effSegments ?? 256}
-          onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); segOverride = (Number.isFinite(v) && v >= 8 && v < 256) ? Math.round(v) : undefined; }} />
       </label>
     {/if}
   </div>
