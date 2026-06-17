@@ -12,6 +12,7 @@
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
+  import { bakeClient, isCancelled } from '$lib/cad/bake-client';
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
@@ -104,6 +105,8 @@
   });
   let scaleMenuOpen = $state(false);
   let meshStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
+  /** Which backend produced the current live mesh — shown as a badge. */
+  let meshBackend = $state<'client'|'server'|null>(null);
   let glbStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
   let err = $state<string | null>(null);
 
@@ -183,6 +186,36 @@
     }
     meshStatus = 'building';
     meshAc?.abort(); const ac = new AbortController(); meshAc = ac;
+    // CLIENT-SIDE BAKE (PR3) — behind `localStorage.cad-client-bake === '1'`
+    // (default OFF; server path below is the untouched fallback). Compile the
+    // LIVE source → run the Manifold worker. The `{full,cutVC,instanced}` shape
+    // matches the server exactly, so the scene needs no changes. zScale/xScale
+    // stay render-time (not sent), keeping byte-parity with the server bake.
+    const clientBake = scene.clientBake;
+    if (clientBake && name) {
+      try {
+        const cr = await fetch('/api/primitives/compile', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, source: source ?? '' }), signal: ac.signal,
+        });
+        if (ac.signal.aborted) return;
+        const cd = await cr.json();
+        if (cd?.supported && cd.script) {
+          const options = { cutaway: scene.showCutaway || undefined, instanced: true,
+            ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}),
+            ...(crease ? { creaseAngle: crease } : {}), colorOuter, colorInner };
+          const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
+          if (ac.signal.aborted || isCancelled(result)) return;
+          geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';
+          return;
+        }
+        // unsupported by the client kernel → fall through to the server path.
+      } catch (e: any) {
+        if (e?.name === 'AbortError' || ac.signal.aborted) return;
+        // any client-bake failure → fall through to the server path (fallback intact).
+        console.warn('[client-bake] failed, falling back to server:', e?.message ?? e);
+      }
+    }
     try {
       const r = await fetch('/api/primitives/preview' + (bust ? '?bust=1' : ''), {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -194,7 +227,7 @@
       const data = await r.json();
       cachePut(`mesh:${body}`, { full: data.full, cutVC: data.cutVC, instanced: data.instanced });
       geo = deserializeComponentResult({ full: data.full, cutVC: data.cutVC, instanced: data.instanced });
-      geoVersion++; meshStatus = 'ok'; err = null;
+      geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'server';
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; } }
   }
   async function rebuildGlb(bust = false) {
@@ -304,7 +337,7 @@
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
     const key = isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
-      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle });
+      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, clientBake: scene.clientBake });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     rebuild();
@@ -385,6 +418,12 @@
   <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
     title="Fit the whole part length in view (toggle)"
     onclick={() => (scene.fitLength = !scene.fitLength)}>⇕ fit</button>
+  <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
+  {#if meshBackend && meshStatus === 'ok'}
+    <span class="pd-backend-badge {meshBackend}"
+      title={meshBackend === 'client' ? 'Baked client-side (Manifold Web Worker)' : 'Baked server-side (/api/primitives/preview)'}>
+      {meshBackend === 'client' ? '⚡ client' : '☁ server'}</span>
+  {/if}
   {#if scaleMenuOpen}
     <div class="pd-scale-menu">
       <div class="pd-scale-row">
@@ -508,6 +547,13 @@
   }
   .pd-fit-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
   .pd-fit-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
+  .pd-backend-badge {
+    position: absolute; top: 30px; left: 130px; z-index: 6;
+    padding: 2px 8px; border-radius: 4px; font: 700 10px Arial; letter-spacing: 0.3px;
+    pointer-events: none;
+  }
+  .pd-backend-badge.client { background: #ecfdf5; border: 1px solid #34d399; color: #047857; }
+  .pd-backend-badge.server { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
   .pd-bake-tools { position: absolute; top: 54px; left: 12px; z-index: 6; display: flex; align-items: center; gap: 4px; }
   .pd-mini-btn { padding: 2px 6px; border: 1px solid #d6d3d1; border-radius: 4px; background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer; font: 600 11px Arial; }
   .pd-mini-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }

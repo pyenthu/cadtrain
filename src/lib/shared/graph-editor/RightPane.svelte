@@ -131,6 +131,25 @@
   onMount(() => {
     try { const v = localStorage.getItem('ge-svg-res'); if (v === 'coarse' || v === 'high') svgRes = v; } catch { /* ignore */ }
   });
+
+  // SRC subtab (client-exec): EMITTED .asm.ts vs the COMPILED dep-inlined Manifold
+  // script (/api/primitives/compile — what the client Worker runs). Fetched on
+  // demand from the LIVE sourceText so it tracks edits.
+  let srcSubtab = $state<'emitted' | 'compiled'>('emitted');
+  let compiledScript = $state('');
+  let compiledStatus = $state<'idle' | 'loading' | 'error'>('idle');
+  let lastCompileKey = '';
+  $effect(() => {
+    if (rightTab !== 'source' || srcSubtab !== 'compiled') return;
+    const key = `${exemplarId}|${sourceText}`;
+    if (key === lastCompileKey) return;
+    lastCompileKey = key;
+    compiledStatus = 'loading';
+    fetch('/api/primitives/compile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: exemplarId, source: sourceText }) })
+      .then((r) => r.json())
+      .then((d) => { compiledScript = d?.supported ? d.script : `// not supported by the client kernel:\n// ${d?.reason ?? 'unknown'}`; compiledStatus = 'idle'; })
+      .catch((e) => { compiledScript = `// compile failed: ${e?.message ?? e}`; compiledStatus = 'error'; });
+  });
   function setSvgRes(v: 'coarse' | 'high') {
     svgRes = v;
     try { localStorage.setItem('ge-svg-res', v); } catch { /* ignore */ }
@@ -304,10 +323,23 @@
       <!-- Filename header — the SAM info that used to live in the tab
            label. Moved into the body so the tab strip stays compact. -->
       <div class="ge-source-header">
-        <code>{exemplarId}.asm.ts</code>
-        <span class="ge-source-header-hint">auto-generated from the graph — edits here are discarded on next save</span>
+        <div class="ge-src-subtabs">
+          <button class="ge-src-subtab" class:on={srcSubtab === 'emitted'} type="button"
+            onclick={() => (srcSubtab = 'emitted')}>{exemplarId}.asm.ts</button>
+          <button class="ge-src-subtab" class:on={srcSubtab === 'compiled'} type="button"
+            data-tip="The self-contained, dep-inlined Manifold script /api/primitives/compile emits — what the client Worker runs"
+            onclick={() => (srcSubtab = 'compiled')}>⚡ compiled</button>
+        </div>
+        <span class="ge-source-header-hint">
+          {srcSubtab === 'emitted' ? 'auto-generated from the graph — edits here are discarded on next save'
+            : 'dep-inlined client bake script' + (compiledStatus === 'loading' ? ' · compiling…' : compiledScript ? ` · ${compiledScript.length} chars` : '')}
+        </span>
       </div>
-      <pre class="ge-source">{sourceText}</pre>
+      {#if srcSubtab === 'emitted'}
+        <pre class="ge-source">{sourceText}</pre>
+      {:else}
+        <pre class="ge-source compiled">{compiledScript || (compiledStatus === 'loading' ? '// compiling…' : '// (no script)')}</pre>
+      {/if}
     </div>
     <div class="ge-md-body" class:hidden={rightTab !== 'md'}>
       <div class="ge-md-toolbar">
@@ -419,6 +451,11 @@
   }
   .ge-source-header code { font: 12px ui-monospace, monospace; color: #0c4a6e; }
   .ge-source-header-hint { font: 10px Arial; color: #78716c; }
+  .ge-src-subtabs { display: inline-flex; gap: 4px; }
+  .ge-src-subtab { font: 600 11px ui-monospace, monospace; padding: 2px 8px; border: 1px solid #e7e5e4; border-radius: 4px; background: #fff; color: #57534e; cursor: pointer; }
+  .ge-src-subtab:hover { border-color: #0ea5e9; color: #0c4a6e; }
+  .ge-src-subtab.on { background: #e0f2fe; border-color: #0ea5e9; color: #0c4a6e; }
+  .ge-source.compiled { background: #f0fdf4; }
   /* MD tab — toolbar row + full-pane textarea. Stays mounted while hidden
      so the user can flip between SRC/MD without losing in-progress typing. */
   .ge-md-body { padding: 8px; gap: 6px; }

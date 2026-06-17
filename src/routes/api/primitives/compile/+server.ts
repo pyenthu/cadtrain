@@ -26,43 +26,47 @@ import { readScriptCache, writeScriptCache } from '$lib/server/script-cache';
 
 const NAME_RE = /^[a-z_][a-z0-9_]*$/i;
 
+/** Shared compile + cache. `source` undefined → fetch the saved source by name
+ *  (GET, saved parts); `source` provided → compile it verbatim (POST, the live
+ *  graph-editor emit, which differs from the saved file while editing). */
+async function compileAndCache(name: string, source: string | undefined, bust: boolean, fetch: typeof globalThis.fetch) {
+  let src = source;
+  if (src == null) {
+    const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
+    if (!r.ok) return json({ supported: false, kernel: 'manifold', reason: `primitive "${name}" not found (HTTP ${r.status})` });
+    const data = await r.json();
+    src = typeof data?.source === 'string' ? data.source : '';
+  }
+  if (!src) return json({ supported: false, kernel: 'manifold', reason: `primitive "${name}" returned empty source` });
+
+  const { script, scriptHash, depNames } = await compilePrimitiveScript(src, name, fetch);
+
+  // Cache by (id, scriptHash) — keyed on the script, so a live edit (different
+  // source → different hash) caches separately from the saved part.
+  if (!bust) {
+    const hit = await readScriptCache(name, scriptHash);
+    if (hit) return json({ script: hit, scriptHash, kernel: 'manifold', supported: true, cached: true, depNames });
+  }
+  writeScriptCache(name, scriptHash, script).catch((e) => console.warn('[script-cache] write failed:', e?.message ?? e));
+  return json({ script, scriptHash, kernel: 'manifold', supported: true, cached: false, depNames });
+}
+
+// GET ?name=<id> — compile the SAVED part by name.
 export const GET = async ({ url, fetch }) => {
   const name = url.searchParams.get('name');
   if (!name) throw error(400, 'name query param required');
   if (!NAME_RE.test(name)) throw error(400, 'invalid primitive name');
-  // ?bust=1 forces a fresh compile (skips the cache lookup); the result is
-  // still written back so the next call hits.
-  const bust = url.searchParams.get('bust') === '1';
+  try { return await compileAndCache(name, undefined, url.searchParams.get('bust') === '1', fetch); }
+  catch (e: any) { return json({ supported: false, kernel: 'manifold', reason: String(e?.message ?? e).slice(0, 300) }); }
+};
 
-  try {
-    // Read the part's own source via the category-aware source endpoint (same
-    // resolution the loader uses for deps — stdlib/stdstale + volume).
-    const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
-    if (!r.ok) {
-      return json({ supported: false, kernel: 'manifold', reason: `primitive "${name}" not found (HTTP ${r.status})` });
-    }
-    const data = await r.json();
-    const source = typeof data?.source === 'string' ? data.source : '';
-    if (!source) {
-      return json({ supported: false, kernel: 'manifold', reason: `primitive "${name}" returned empty source` });
-    }
-
-    const { script, scriptHash, depNames } = await compilePrimitiveScript(source, name, fetch);
-
-    // Cache by (id, scriptHash). On hit, serve the cached text (byte-identical
-    // to a recompile of the same inputs); on miss, store what we just compiled.
-    if (!bust) {
-      const hit = await readScriptCache(name, scriptHash);
-      if (hit) {
-        return json({ script: hit, scriptHash, kernel: 'manifold', supported: true, cached: true, depNames });
-      }
-    }
-    writeScriptCache(name, scriptHash, script).catch((e) => {
-      console.warn('[script-cache] write failed:', e?.message ?? e);
-    });
-    return json({ script, scriptHash, kernel: 'manifold', supported: true, cached: false, depNames });
-  } catch (e: any) {
-    // Never-500: a missing dep / cycle / parse error degrades to supported:false.
-    return json({ supported: false, kernel: 'manifold', reason: String(e?.message ?? e).slice(0, 300) });
-  }
+// POST { name, source, bust? } — compile the GIVEN source (the live editor emit).
+export const POST = async ({ request, fetch }) => {
+  let body: any;
+  try { body = await request.json(); } catch { throw error(400, 'invalid JSON body'); }
+  const name = body?.name;
+  if (typeof name !== 'string' || !NAME_RE.test(name)) throw error(400, 'valid name required');
+  const source = typeof body?.source === 'string' ? body.source : undefined;
+  try { return await compileAndCache(name, source, body?.bust === true, fetch); }
+  catch (e: any) { return json({ supported: false, kernel: 'manifold', reason: String(e?.message ?? e).slice(0, 300) }); }
 };

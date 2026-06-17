@@ -87,6 +87,11 @@ export const scene = $state({
    *  orthographic (parallel, no foreshortening; good for inspecting a part).
    *  VIEW ONLY; OrbitControls works with both. DEFAULT orthographic (user pref). */
   cam3dOrtho: true,
+  /** Geometry BAKE backend — false = server (`/api/primitives/preview`, the
+   *  default), true = client (compile → Manifold Web Worker, the client-exec
+   *  path). Persisted in localStorage (`cad-client-bake`); the SceneControls
+   *  toggle flips it and the canvas re-bakes reactively. */
+  clientBake: typeof localStorage !== 'undefined' && localStorage.getItem('cad-client-bake') === '1',
   zDirLight: true,
   zDirIntensity: 1,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera

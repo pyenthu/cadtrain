@@ -71,6 +71,16 @@
         Ortho
       </label>
     </div>
+    <!-- Geometry bake backend (client-exec). OFF = server (/preview); ON =
+         client (compile → Manifold Web Worker). Persisted to localStorage so it
+         survives reload; the canvas keys its re-bake on scene.clientBake. -->
+    <div class="sv-row sv-row-toggles">
+      <label class="sv-check" title="Bake geometry in a client Web Worker (Manifold) instead of the server. Experimental — falls back to server on unsupported parts.">
+        <input type="checkbox" checked={scene.clientBake}
+          onchange={(e) => { const v = (e.currentTarget as HTMLInputElement).checked; scene.clientBake = v; try { localStorage.setItem('cad-client-bake', v ? '1' : '0'); } catch {} }} />
+        ⚡ Client bake (Worker)
+      </label>
+    </div>
     <!-- Smooth-shading: render-time flatShading flip (free, no re-bake).
          Auto = the per-part heuristic (curved engines smooth, cubes/hex flat);
          Smooth / Flat force it. Crease = the BUILD-TIME minSharpAngle baked into

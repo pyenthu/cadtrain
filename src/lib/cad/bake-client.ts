@@ -147,7 +147,12 @@ async function dispatch(): Promise<void> {
       return;
     }
     pending.set(job.id, job);
-    getWorker().postMessage({ id: job.id, script: job.args.script, params: job.args.params, options: job.args.options ?? {} });
+    // Strip any non-cloneable wrapper (callers pass Svelte $state PROXY arrays,
+    // which structured-clone rejects → DataCloneError). A JSON round-trip yields
+    // plain numbers/strings/arrays/objects — params + options are all JSON data.
+    const plainParams = JSON.parse(JSON.stringify(job.args.params ?? []));
+    const plainOptions = JSON.parse(JSON.stringify(job.args.options ?? {}));
+    getWorker().postMessage({ id: job.id, script: job.args.script, params: plainParams, options: plainOptions });
   } finally {
     dispatching = false;
     if (waiting) void dispatch();                  // a newer job arrived mid-dispatch
