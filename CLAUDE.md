@@ -85,6 +85,18 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
   part-editor-window / K.65 modularize all written, not built.
 - Plans live in `docs/plans/`; research in `docs/FINDINGS.md`.
 
+## Client-side execution (in progress)
+
+Geometry **execution** is moving off the server into a browser **Web Worker**
+(`src/lib/cad/bake-worker.ts` + `bake-client.ts`): the server stays the COMPILER
+(`/api/primitives/compile` → dep-inlined Manifold script + `scriptHash`), the
+client EXECUTOR bakes the script. **Toggle:** 💻/☁ button in the graph-editor
+left rail (or `localStorage.cad-client-bake`) → `scene.clientBake`; the bake pane
+shows a `⚡client`/`☁server` badge, and the SRC tab has a `⚡compiled` subtab.
+Default OFF (server `/preview` fallback intact). Kills the deja-vu stale-bake bug
+structurally. PR1–3 shipped; plan `docs/plans/client-side-execution.md`; memory
+`client_side_execution`. **Tests: `bun run test` (vitest), NOT `bun test`.**
+
 ## Tech stack + commands
 
 Bun (dev) / Node 22 (prod, adapter-node) · SvelteKit (Svelte 5 runes) ·
