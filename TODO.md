@@ -44,8 +44,13 @@
 
 ### PARKED
 
-1. BUG. The smooth normals not implement on the BAKE 3D.
-2. **Bake perf — coarse-during-drag + smooth normals** — ✅ DONE 2026-06-17 (19cd6b0). The mooth botton only shows a flat shading... there is NO shading. do we need to build it? one option is to shade radially because thats all we want.
+1. ✅ FIXED 2026-06-17 (d75cca0). BUG. Smooth normals not implemented on the 3D BAKE.
+   Root cause: `calculateNormals(3,crease)` returned an ALL-ZERO normal buffer on
+   welded/revolved meshes → smooth mode (flatShading:false) had nothing to shade.
+   Fix: detect degenerate normals + recompute (indexed→smooth; non-indexed paths
+   build indexed smooth normals first then scatter). Verified radial-outward.
+2. ✅ FIXED (same as #1). The ◐ smooth button showed flat / no shading — now shades
+   radially (the recompute gives outward radial normals, exactly what was wanted).
 3. We need cability of having params, props and calculated. Basicallty the calculated fields are based on the params and are functions of the params. They can be in the thrid tab, in a table. Similar popover for the function. Then those can be wired into other params in other parts.
 4. In the 2D sketch editor can we also have the expansion for scale in x and y direction? the setings button can be in the tool bar on the top. 
 5. In the design page we should have a sub-route for each of the panes desribing the component layout and if possible, optionally show the nodal connections bettwenn them.
