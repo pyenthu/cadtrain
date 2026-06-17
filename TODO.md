@@ -44,11 +44,17 @@
 
 10. **Faceted BREP revolve** — ✅ DONE 2026-06-17 (7112f8a). BREP honored `segments` (4→square prism)
   by lofting regular N-gon sections; faceted ≤48, exact above. Plan `docs/plans/smooth-surfaces-and-brep.md`.
-11. **BUG — Manifold material normals too coarse (under-smooth)** — even with valid recomputed normals
-  + the working ◐ toggle, the Manifold live mesh shades too COARSE: it's faceted geometry, so smooth
-  normals can't make the silhouette truly smooth. (BREP shades smooth via exact per-face OCCT normals;
-  the over-rounding/crease concern was a BREP framing, not this.) Options to track: denser default
-  segments for display, smoother per-vertex normals, or a NURBS/exact display path. Not crease-aware.
+11. **Manifold under-smooth → use Manifold's BUILD-TIME smoothing (smoothOut + refineToTolerance)**.
+  Smooth normals can't fix the faceted SILHOUETTE (it's the geometry). Manifold has the fix natively:
+  `smoothOut(minSharpAngle=60, minSmoothness=0)` fills crease-AWARE tangents (sharp edges >60° stay
+  sharp, flat faces stay flat, curves → G1), then `refineToTolerance(tol)` adaptively subdivides ONTO
+  the smooth surface (fine only where it curves → no excess tris = the curvature-adaptive idea). Result:
+  near-NURBS smooth geometry (smooth silhouette + shading), sharp edges intact, BUILD-TIME (Rule 25
+  safe — NOT the post-bake MeshGL rewrite that OOB-crashed). Ref: manifoldcad.org Smooth Gyroid +
+  manifold-encapsulated-types.d.ts:726-798. PLAN: prototype in finalizeManifold/manifoldToGeo, opt-in
+  (a "smooth" toggle or settle-bake only — coarse-during-drag stays faceted), BENCH the cost
+  (refineToLength was 4× in bench_extrude_findings; refineToTolerance is adaptive so should be better).
+  Also unblocks the /wells curvature-adaptive subdivision with the SAME primitive.
 
 ### PARKED
 
