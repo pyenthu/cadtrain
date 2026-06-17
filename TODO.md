@@ -42,6 +42,21 @@
   - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
   `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
+10. **Smooth surfaces + BREP fidelity (SEQUENTIAL)** — plan `docs/plans/smooth-surfaces-and-brep.md`.
+  Three kernels: Manifold (faceted by `segments`, fast CSG), OCCT/BREP (exact curves, CSG done in
+  **OCCT space**, meshed at the end), NURBS (smooth, GPU-evaluated — **SVTC dgeo** uses it:
+  `~/code/SVTC/src/lib/apps/dgeo/nurbs/` railsToNURBS + nurbsEval.glsl + WebGPU→WebGL→CPU). Do in order:
+  - **P1 — Faceted BREP revolve** (small, IN PROGRESS): BREP honors `segments` (4→square prism) by
+    lofting regular N-gon sections (`drawPolysides(r,N)` + `sk.loftWith([...],{ruled:true})`); wire
+    `segments` into `r_revolve`/`revolveBrep`. Faceted ≤~48, else exact `.revolve()`.
+  - **P2 — NURBS smooth-surface spike**: borrow SVTC's NURBS pipeline; first target = `/wells` layer/
+    horizon surfaces. Output: `docs/plans/nurbs-surfaces.md`.
+  - **P3 — BREP→Manifold hybrid + BREP.io spike**: CSG exact-in-OCCT vs tessellate→Manifold booleans
+    (we already half-do `target.mesh()`→Manifold). Study `mmiscool/BREP.io` (JS BREP on manifold-3d).
+    Output: update `docs/plans/kernel-strategy.md`.
+  - **P4 — Crease-aware Manifold normals**: smooth mode must keep sharp edges sharp (no over-rounding
+    faceted parts); fix `calculateNormals` zeros or split verts at dihedral > crease.
+
 ### PARKED
 
 1. ✅ FIXED 2026-06-17 (d75cca0). BUG. Smooth normals not implemented on the 3D BAKE.
