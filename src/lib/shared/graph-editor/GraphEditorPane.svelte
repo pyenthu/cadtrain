@@ -3801,13 +3801,15 @@
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
             {:else if n.type === 'repeat'}
-              <!-- Repeat node's child wire — bottom-left input socket -->
-              {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outputSocketAt(graph,(n as any).child)}
-                {@const pos = nodePos(n.id)}
-                {@const size = nodeSize(graph,n)}
-                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + size.h - 18)} fill="none"/>
-              {/if}
+              <!-- Repeat node's PART wires — one per child, into its row socket
+                   on the left edge (cy = 68 + ci*24 in the card markup). -->
+              {@const pos = nodePos(n.id)}
+              {#each ((n as any).children ?? []) as cid, ci (cid + ':' + ci)}
+                {#if graph.nodes[cid]}
+                  {@const src = outputSocketAt(graph, cid)}
+                  <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + 68 + ci * 24)} fill="none"/>
+                {/if}
+              {/each}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each visible child of a container shows as
                    a bezier from the child's output socket → the container's
