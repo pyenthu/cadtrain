@@ -52,11 +52,6 @@
       <input type="number" step="0.1" bind:value={scene.cam.y} />
       <input type="number" step="0.1" bind:value={scene.cam.z} />
     </div>
-    <div class="sv-row sv-row-wide">
-      <span class="sv-label">Z×</span>
-      <input class="sv-range" type="range" min="0.05" max="1" step="0.05" bind:value={scene.zScale} />
-      <input type="number" step="0.05" min={0.05} max={1} bind:value={scene.zScale} />
-    </div>
     <div class="sv-row sv-row-toggles">
       <label class="sv-check">
         <input type="checkbox" bind:checked={scene.showCutaway} />
@@ -89,18 +84,6 @@
         title="Crease angle (degrees): edges sharper than this stay hard, softer ones smooth. Default 60. Re-bakes on Enter/blur."
         onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); if (Number.isFinite(v)) scene.creaseAngle = Math.max(1, Math.min(180, Math.round(v))); }}
       />
-    </div>
-    <!-- Z-axis DIRECTIONAL light — parallel rays perpendicular to Z (even
-         length-wise illumination). A theta spins the bearing around the axis. -->
-    <div class="sv-row sv-zlight">
-      <label class="sv-check sv-zlight-master">
-        <input type="checkbox" bind:checked={scene.zDirLight} />
-        Z light
-      </label>
-      <span class="sv-sub">i</span>
-      <input type="number" step="0.2" min={0} bind:value={scene.zDirIntensity} disabled={!scene.zDirLight} title="intensity" />
-      <span class="sv-sub">∠</span>
-      <input type="number" step="15" bind:value={scene.zDirAngle} disabled={!scene.zDirLight} title="bearing θ around Z (deg): 0=+Y front, 90=+X, 180=behind" />
     </div>
     <!-- Warp — sinusoidal Z displacement, BAKED into the Manifold geometry
          server-side (so the black wire edges follow the bulge). Each control
