@@ -74,6 +74,35 @@ can't bend — warp just rotates it rigidly; the Z-rings must exist before the
 warp; post-bake subdivide OOB-crashes the WASM core). Net: smooth bends + far
 fewer triangles than uniform subdivision.
 
+**ARCHITECTURE (decided):** the assembler **passes the SPLINE (the part's
+trajectory MD-span) to the builder**, which **adaptively meshes ALONG it at build
+time** — the curvature-adaptive Z-rings are created already-warped, in one bake.
+No straight-bake-then-warp, no post-bake rewrite. This is precisely what the
+welded-mesh system was built for (Rule 25: "build along a spline for the coming
+deviated/curved profiles" — `warp-spline.ts` + `weldAndBuild`'s Z-segmentation
+in `manifold-mesh.ts`). So a `g_*` part bake gains a `spline`/`path` + segment-
+density input; vertical wells pass a straight spline (→ today's behaviour). The
+assembler computes each part's spline segment + DTX-adjusted position + scale,
+and hands it to the builder.
+
+**SYNCHRONIZATION (interface contract — define BEFORE building the warp):** the
+well-layer (spline producer) and the builder (consumer) must agree on ONE shared
+contract, or parts warp wrong / mis-tessellate:
+- **Spline format** — polyline of points? a `MD→[x,y,z]` sampler? arc-length
+  parameterization? (Maps the spline param to the part's local Z.)
+- **Segment-density signal** — well layer passes a target seg count /
+  `maxChordAngle`, or passes the raw spline and the builder derives curvature?
+- **Frame + units** — **Z-down**; well is **metres (depth) / inches (dia)**, parts
+  are in native units → a units boundary sits right here (ties to the parked
+  centralized-units-repo TODO).
+- **Warp semantics** — builder maps each cross-section's local Z → a station on
+  the spline + offsets radially perpendicular to the tangent (true-shape, like
+  SVTC's `dirWarp`). DTX (spacing) is applied to POSITIONS in the assembler, NOT
+  re-applied in the builder (avoid double-apply).
+- **Action:** audit the existing builder spline path (`warp-spline.ts`,
+  `weldAndBuild` in `manifold-mesh.ts`) and define this one contract; vertical =
+  straight spline → byte-identical to today.
+
 **Why this is achievable now (the key bridge):** SVTC's **3D** scene already
 runs cadtrain's exact THREE + Manifold stack, warps geometry along the survey
 (`direction.ts` + `warpGeometry`), AND has a **`tool_comp` → parametric-builder
