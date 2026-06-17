@@ -320,4 +320,15 @@ export type Graph = {
   colorOuter?: string;
   colorInner?: string;
   material?: string;
+  /** PER-PART appearance overrides, keyed by output-part node id (the Output
+   *  list's Call children, shown as A/B/C…). Sparse: a part absent here uses
+   *  the part-level colour above. Round-trips via `meta.partAppearance` +
+   *  hydrate. Like the part-level colours, these are stored + round-tripped
+   *  now; the actual per-part 3D VIEWER tint is the deferred #86 (GeomAcc
+   *  segment refactor). Per-part z-offset is NOT here — it uses the Stack's
+   *  existing per-child ref (`setStackChildRef`). */
+  partAppearance?: Record<NodeId, PartAppearance>;
 };
+
+/** One part's appearance overrides (all sparse/optional). */
+export type PartAppearance = { colorOuter?: string; colorInner?: string; material?: string };

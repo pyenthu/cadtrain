@@ -100,6 +100,7 @@
     setPartColorOuter,
     setPartColorInner,
     setPartMaterial,
+    setPartAppearance,
     setStackChildRef,
     setStackChildCount,
     STACK_REF_PARAM,
@@ -1937,9 +1938,13 @@
   $effect(() => {
     if (typeof localStorage !== 'undefined') localStorage.setItem('ge-left-tab', leftTab);
   });
-  // Properties-tab body height (+5 = 1.5px border top+bottom + drop-shadow
-  // clearance, so the foreignObject doesn't clip the card's shadow).
-  const propsBodyH = PROPS_BODY_H + CARD_PAD * 2 + 5;
+  // Properties-tab body height — grows with the per-part table (#13): a
+  // z-offset row + table header + (Default + N parts) rows. Computed off the
+  // Output's child count directly to avoid declaration-order coupling.
+  const propsBodyH = $derived.by(() => {
+    const nRows = partsForProps.length + 1; // + the "Default" row
+    return 64 + nRows * 22 + CARD_PAD * 2 + 5;
+  });
   // Params card top — pinned directly under the tab header. CONSTANT now (was
   // derived off the stacked Properties card): the param rows / output sockets /
   // param→arg wires ALL derive from CARD_Y0, so they follow this single source.
@@ -3139,6 +3144,32 @@
   function onPartColorOuter(hex: string | null) { graph = setPartColorOuter(graph, hex); }
   function onPartColorInner(hex: string | null) { graph = setPartColorInner(graph, hex); }
   function onPartMaterial(mat: string | null) { graph = setPartMaterial(graph, mat); }
+  /** Per-part appearance patch (OUT/IN colour + material), keyed by part id. */
+  function onPartAppearance(id: string, patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null }) {
+    graph = setPartAppearance(graph, id, patch);
+  }
+  /** The LEAF parts of the Output (A/B/C…) shown as rows in the PROPERTIES
+   *  table. Recurses through containers (list/stack/group) and repeats so the
+   *  actual Call parts surface (not the wrapping Stack). Labelled by Call alias;
+   *  deduped by node id. */
+  const partsForProps = $derived.by(() => {
+    const out: { id: string; label: string; appearance: any }[] = [];
+    const seen = new Set<string>();
+    const visit = (id: string) => {
+      const n = graph.nodes[id] as any;
+      if (!n || seen.has(id)) return;
+      seen.add(id);
+      if (n.type === 'list' || n.type === 'stack' || n.type === 'group' || n.type === 'repeat') {
+        for (const c of (n.children ?? [])) visit(c);
+        return;
+      }
+      const label = n.type === 'call' ? (n.alias || n.src)
+        : n.type === 'method' ? `${n.op}(…)` : n.type;
+      out.push({ id, label, appearance: (graph.partAppearance?.[id] ?? {}) });
+    };
+    visit(graph.root);
+    return out;
+  });
   // Default swatch colours + material list moved into PropertiesCard.svelte (Phase D).
   function onRemoveParam(name: string) {
     if (name === STACK_REF_PARAM) return; // reserved — no trash button anyway
@@ -5207,10 +5238,12 @@
             x={PROPS_X0} y={PROPS_Y0 + TAB_HEADER_H} w={PROPS_W} h={propsBodyH}
             {graph}
             {zOffsetVal}
+            parts={partsForProps}
             onZOffset={onZOffset}
             onColorOuter={onPartColorOuter}
             onColorInner={onPartColorInner}
-            onMaterial={onPartMaterial} />
+            onMaterial={onPartMaterial}
+            onPartAppearance={onPartAppearance} />
         {/if}
 
         {#if leftTab === 'params'}

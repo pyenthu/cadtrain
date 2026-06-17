@@ -339,6 +339,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     ...(graph.colorOuter ? { colorOuter: graph.colorOuter } : {}),
     ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
+    ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
     params: graph.params,
     graph: serialiseGraph(graph),
   };
@@ -763,6 +764,7 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     ...(graph.colorOuter ? { colorOuter: graph.colorOuter } : {}),
     ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
+    ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
   };
 }
 

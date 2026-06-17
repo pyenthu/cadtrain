@@ -196,6 +196,32 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(out.source).toMatch(/Array\.from\(\{ length: 4 \}, \(_, i\)/);
   });
 
+  it('per-part appearance: set/prune mutator + emit + hydrate round-trip (#13)', async () => {
+    const { addCall, setPartAppearance, hydrateGraph } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    g = setPartAppearance(g, a.id, { colorOuter: '#112233', material: 'steel' });
+    expect(g.partAppearance?.[a.id]).toEqual({ colorOuter: '#112233', material: 'steel' });
+    // Emit writes the override into meta.
+    const out = emitGraph(g, { id: 'tPA' });
+    expect(out.source).toContain('partAppearance');
+    // Hydrate from a serialised block carrying the override.
+    const g2 = hydrateGraph({
+      nodes: { [a.id]: { id: a.id, type: 'call', src: 'dt_box', alias: 'A', args: {} }, root: { id: 'root', type: 'list', children: [a.id] } },
+      root: 'root', params: {}, imports: [], layout: {},
+      partAppearance: { [a.id]: { colorOuter: '#112233', material: 'steel', colorInner: 'bad' } },
+    } as any);
+    expect(g2.partAppearance?.[a.id]?.colorOuter).toBe('#112233');
+    expect(g2.partAppearance?.[a.id]?.material).toBe('steel');
+    expect(g2.partAppearance?.[a.id]?.colorInner).toBeUndefined(); // 'bad' sanitised out
+    // Clearing a field prunes it; clearing the last field drops the entry.
+    let g3 = setPartAppearance(g, a.id, { material: null });
+    expect(g3.partAppearance?.[a.id]).toEqual({ colorOuter: '#112233' });
+    g3 = setPartAppearance(g3, a.id, { colorOuter: null });
+    expect(g3.partAppearance).toBeUndefined();
+  });
+
   it('legacy Repeat {child} hydrates to children:[child] (repeat-enhance fold)', async () => {
     const { hydrateGraph } = await import('./composition-graph');
     // A serialised graph in the OLD single-`child` shape.

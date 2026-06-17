@@ -1335,6 +1335,34 @@ export function setPartMaterial(graph: Graph, mat: string | null | undefined): G
   return { ...graph, material: v };
 }
 
+/** Patch ONE output part's appearance override (keyed by node id). Pass a
+ *  field as a hex/material string to set it, or `null` to clear that field.
+ *  Empty entries are pruned so `partAppearance` stays sparse (and the whole
+ *  map drops when no part has any override). The actual 3D viewer tint is the
+ *  deferred #86; this stores + round-trips the data. */
+export function setPartAppearance(
+  graph: Graph, nodeId: NodeId,
+  patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null },
+): Graph {
+  const isHex = (h: any) => typeof h === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(h.trim());
+  const all: Record<NodeId, any> = { ...(graph.partAppearance ?? {}) };
+  const cur = { ...(all[nodeId] ?? {}) };
+  if ('colorOuter' in patch) { if (isHex(patch.colorOuter)) cur.colorOuter = patch.colorOuter!.trim().toLowerCase(); else delete cur.colorOuter; }
+  if ('colorInner' in patch) { if (isHex(patch.colorInner)) cur.colorInner = patch.colorInner!.trim().toLowerCase(); else delete cur.colorInner; }
+  if ('material' in patch) {
+    const m = typeof patch.material === 'string' ? patch.material.trim() : '';
+    if (m && m !== 'none') cur.material = m; else delete cur.material;
+  }
+  if (Object.keys(cur).length) all[nodeId] = cur; else delete all[nodeId];
+  const hasAny = Object.keys(all).length > 0;
+  if (!hasAny) {
+    if (graph.partAppearance === undefined) return graph;
+    const { partAppearance: _drop, ...rest } = graph;
+    return finalize(rest);
+  }
+  return finalize({ ...graph, partAppearance: all });
+}
+
 /** Set (or clear) the per-child STACK REFERENCE override on a stack node.
  *  `value` of `null`/`undefined`/non-finite CLEARS the override (the child
  *  reverts to inheriting the part's own `stack_ref`); a finite number stores

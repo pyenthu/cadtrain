@@ -288,6 +288,23 @@ export function hydrateGraph(serialised: any): Graph {
      serialised.material.trim() !== 'none')
       ? serialised.material.trim()
       : undefined;
+  // Per-part appearance overrides (sparse, keyed by node id). Sanitise each
+  // entry's fields the same way as the part-level colours.
+  const savedPartAppearance = (() => {
+    const raw = (serialised as any).partAppearance;
+    if (!raw || typeof raw !== 'object') return undefined;
+    const out: Record<string, any> = {};
+    for (const [id, v] of Object.entries(raw as Record<string, any>)) {
+      if (!v || typeof v !== 'object') continue;
+      const e: any = {};
+      const co = hexOrUndef(v.colorOuter); if (co) e.colorOuter = co;
+      const ci = hexOrUndef(v.colorInner); if (ci) e.colorInner = ci;
+      const m = typeof v.material === 'string' ? v.material.trim() : '';
+      if (m && m !== 'none') e.material = m;
+      if (Object.keys(e).length) out[id] = e;
+    }
+    return Object.keys(out).length ? out : undefined;
+  })();
   let g: Graph = {
     nodes: migratedNodes,
     root: serialised.root,
@@ -299,6 +316,7 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedColorOuter ? { colorOuter: savedColorOuter } : {}),
     ...(savedColorInner ? { colorInner: savedColorInner } : {}),
     ...(savedMaterial ? { material: savedMaterial } : {}),
+    ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),
   };
   // Fill missing positions only — preserves any saved entry, populates the
   // rest via the same rough-grid heuristic used at create-time. Inline
