@@ -10,7 +10,7 @@
 
 import type {
   NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
-  RepeatOp, RepeatNode, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
+  RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
@@ -92,6 +92,14 @@ export function collectEdges(graph: Graph): Edge[] {
       if (node.count.kind === 'param') {
         edges.push({ from: `p.${node.count.param}`, to: `${node.id}.count` });
       }
+      // Patterned-repeat (#7): per-copy modifier axes + per-iteration bindings.
+      ((node as any).modifiers as any[] ?? []).forEach((m, k) =>
+        (m?.vec ?? []).forEach((v: any, ax: number) => {
+          if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.modifiers.${k}.vec.${ax}` });
+        }));
+      ((node as any).bindings as any[] ?? []).forEach((b, k) => {
+        if (b?.value?.kind === 'param') edges.push({ from: `p.${b.value.param}`, to: `${node.id}.bindings.${k}.value` });
+      });
     } else if (node.type === 'polygon') {
       // Each vertex's r + z can be wired to a param — same edge shape as
       // mv.offset, indexed by point index and axis. Repeat-refs + legacy
@@ -339,6 +347,79 @@ export function setRepeatOp(graph: Graph, repeatId: NodeId, op: RepeatOp): Graph
   if (!node || node.type !== 'repeat') return graph;
   const updated: RepeatNode = { ...node, op };
   return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: updated } });
+}
+
+// ─── Patterned-repeat helpers (#7) — loop var · per-iteration bindings ·
+//     per-copy modifier transform stack. All immutable + finalize-wrapped so
+//     modifier/binding param-wires land in the edge index + orphan check. ───
+/** Internal: apply `fn` to the repeat node, no-op when id isn't a repeat. */
+function updateRepeat(graph: Graph, repeatId: NodeId, fn: (n: RepeatNode) => RepeatNode): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'repeat') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: fn(node) } });
+}
+
+/** Set the iteration variable name (blank ⇒ emit falls back to 'i'). */
+export function setRepeatLoopVar(graph: Graph, repeatId: NodeId, name: string): Graph {
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, loopVar: name }));
+}
+
+export function addRepeatBinding(graph: Graph, repeatId: NodeId): Graph {
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, bindings: [...(n.bindings ?? []), { name: '', value: asLiteral(0) }] }));
+}
+export function setRepeatBindingName(graph: Graph, repeatId: NodeId, idx: number, name: string): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const bindings = [...(n.bindings ?? [])];
+    if (!bindings[idx]) return n;
+    bindings[idx] = { ...bindings[idx], name };
+    return { ...n, bindings };
+  });
+}
+export function setRepeatBindingValue(graph: Graph, repeatId: NodeId, idx: number, value: ArgValue): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const bindings = [...(n.bindings ?? [])];
+    if (!bindings[idx]) return n;
+    bindings[idx] = { ...bindings[idx], value };
+    return { ...n, bindings };
+  });
+}
+export function removeRepeatBinding(graph: Graph, repeatId: NodeId, idx: number): Graph {
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, bindings: (n.bindings ?? []).filter((_, i) => i !== idx) }));
+}
+
+export function addRepeatModifier(graph: Graph, repeatId: NodeId, kind: 'mv' | 'rot', vec?: [ArgValue, ArgValue, ArgValue]): Graph {
+  const v: [ArgValue, ArgValue, ArgValue] = vec ?? [asLiteral(0), asLiteral(0), asLiteral(0)];
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, modifiers: [...(n.modifiers ?? []), { kind, vec: v } as NodeTransform] }));
+}
+export function setRepeatModifierAxis(graph: Graph, repeatId: NodeId, idx: number, axis: 0 | 1 | 2, value: ArgValue): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const modifiers = [...(n.modifiers ?? [])];
+    if (!modifiers[idx]) return n;
+    const vec = [...modifiers[idx].vec] as [ArgValue, ArgValue, ArgValue];
+    vec[axis] = value;
+    modifiers[idx] = { ...modifiers[idx], vec };
+    return { ...n, modifiers };
+  });
+}
+export function setRepeatModifierKind(graph: Graph, repeatId: NodeId, idx: number, kind: 'mv' | 'rot'): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const modifiers = [...(n.modifiers ?? [])];
+    if (!modifiers[idx]) return n;
+    modifiers[idx] = { ...modifiers[idx], kind };
+    return { ...n, modifiers };
+  });
+}
+export function moveRepeatModifier(graph: Graph, repeatId: NodeId, idx: number, dir: -1 | 1): Graph {
+  return updateRepeat(graph, repeatId, (n) => {
+    const modifiers = [...(n.modifiers ?? [])];
+    const j = idx + dir;
+    if (idx < 0 || idx >= modifiers.length || j < 0 || j >= modifiers.length) return n;
+    [modifiers[idx], modifiers[j]] = [modifiers[j], modifiers[idx]];
+    return { ...n, modifiers };
+  });
+}
+export function removeRepeatModifier(graph: Graph, repeatId: NodeId, idx: number): Graph {
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, modifiers: (n.modifiers ?? []).filter((_, i) => i !== idx) }));
 }
 
 // ─── Polygon helpers ────────────────────────────────────────────────────────

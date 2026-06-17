@@ -138,6 +138,11 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
       case 'repeat':
         if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
         checkArg(id, 'count', node.count);
+        // Patterned-repeat modifier/binding ArgValues (#7) — same as poly_repeat.
+        ((node as any).modifiers as any[] ?? []).forEach((m, k) =>
+          (m?.vec ?? []).forEach((v: any, ax: number) => checkArg(id, `modifiers[${k}].vec[${ax}]`, v)));
+        ((node as any).bindings as any[] ?? []).forEach((b, k) =>
+          checkArg(id, `bindings[${k}].value`, b?.value));
         break;
       case 'sketch':
         // Mirror the polygon path: every per-op ArgValue component is checked
@@ -473,7 +478,30 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // historical drilling-string idiom (every BUILD_ORDER part works).
       const count = emitValueExpr(node.count);
       const child = ref(node.child, 'child');
-      const array = `Array.from({ length: ${count} }, () => ${child})`;
+      // Patterned repeat (#7): per-copy transforms keyed to the loop var.
+      const mods: any[] = Array.isArray((node as any).modifiers) ? (node as any).modifiers : [];
+      const rawBinds: any[] = Array.isArray((node as any).bindings) ? (node as any).bindings : [];
+      const binds = rawBinds.filter((b) => b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name));
+      const hasLoopVar = typeof (node as any).loopVar === 'string' && (node as any).loopVar.length > 0;
+      let array: string;
+      if (mods.length === 0 && binds.length === 0 && !hasLoopVar) {
+        // Backward-compat: identity clone, byte-identical to the historical form.
+        array = `Array.from({ length: ${count} }, () => ${child})`;
+      } else {
+        const loopVar = /^[A-Za-z_$][\w$]*$/.test(String((node as any).loopVar || ''))
+          ? String((node as any).loopVar) : 'i';
+        const bindLines = binds.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
+        const preamble = bindLines ? `const N = ${count}; ${bindLines}` : `const N = ${count};`;
+        // Fold modifiers innermost-first — modifiers[0] is closest to the child.
+        let body = child;
+        for (const m of mods) {
+          const fn = m?.kind === 'rot' ? 'rot' : 'mv';
+          const v = (m?.vec ?? []) as any[];
+          const vec = `[${emitValueExpr(v[0])}, ${emitValueExpr(v[1])}, ${emitValueExpr(v[2])}]`;
+          body = `${fn}(${body}, ${vec})`;
+        }
+        array = `Array.from({ length: ${count} }, (_, ${loopVar}) => { ${preamble} return ${body}; })`;
+      }
       const op = node.op ?? 'stack';
       if (op === 'list')  return array;
       if (op === 'place') return `place(${array})`;

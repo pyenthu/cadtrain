@@ -119,7 +119,22 @@ export type TxfmnNode = {
  *  count is an ArgValue (literal, param, or expression). child is a single
  *  NodeId (any node type can be the repeating unit). */
 export type RepeatOp = 'stack' | 'list' | 'place';
-export type RepeatNode = { id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue; op?: RepeatOp };
+/** A single per-copy transform step (the "graphical modifier"). `vec` axis
+ *  values are ArgValues so they can be exprs referencing the loop var `i`,
+ *  the resolved count `N`, or per-iteration bindings. */
+export type NodeTransform = { kind: 'mv' | 'rot'; vec: [ArgValue, ArgValue, ArgValue] };
+/** A Repeat clones its `child` `count` times. The optional fields turn it into
+ *  a parametric pattern (linear/circular array): `loopVar` (default 'i') + `N`
+ *  (auto = resolved count) are in scope for `bindings` (per-iteration locals,
+ *  reusing PolyRepeatBinding) and `modifiers` (per-copy transform stack,
+ *  innermost-first). All optional+sparse — absent ⇒ today's identity clone
+ *  (round-trips for free; hydrateGraph spreads them, no migration). */
+export type RepeatNode = {
+  id: NodeId; type: 'repeat'; child: NodeId; count: ArgValue; op?: RepeatOp;
+  loopVar?: string;
+  bindings?: PolyRepeatBinding[];
+  modifiers?: NodeTransform[];
+};
 
 /** 2D polygon — the SOLE producer node for profile graphs (replaces the
  *  pen_mv/pen_line/lineR/lineZ chain). A compact ordered list of vertices

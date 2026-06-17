@@ -419,3 +419,62 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
     warn.mockRestore();
   });
 });
+
+describe('composition-graph — patterned Repeat (#7)', () => {
+  it('a plain Repeat (no modifiers/bindings/loopVar) emits byte-identically to today', async () => {
+    const { addCall, addRepeat, setRepeatOp, asLiteral } = await import('./composition-graph');
+    let g = newGraph();
+    const c = addCall(g, 'dt_box'); g = c.graph;
+    const r = addRepeat(g, c.id, asLiteral(3)); g = setRepeatOp(r.graph, r.id, 'list');
+    const out = emitGraph(g, { id: 't' });
+    expect(out.body).toContain('Array.from({ length: 3 }, () => ');
+    expect(out.body).not.toContain('(_, i)');
+    expect(out.validationErrors).toEqual([]);
+  });
+
+  it('modifiers fold innermost-first into a per-index arrow with N + i in scope', async () => {
+    const { addCall, addRepeat, setRepeatOp, addRepeatModifier, setRepeatModifierAxis, asLiteral, asExpr } = await import('./composition-graph');
+    let g = newGraph();
+    const c = addCall(g, 'dt_box'); g = c.graph;
+    const r = addRepeat(g, c.id, asLiteral(4)); g = setRepeatOp(r.graph, r.id, 'list');
+    g = addRepeatModifier(g, r.id, 'mv');  g = setRepeatModifierAxis(g, r.id, 0, 0, asExpr('i*2'));
+    g = addRepeatModifier(g, r.id, 'rot'); g = setRepeatModifierAxis(g, r.id, 1, 2, asExpr('i*30'));
+    const out = emitGraph(g, { id: 't' });
+    expect(out.body).toContain('Array.from({ length: 4 }, (_, i) => {');
+    expect(out.body).toContain('const N = 4;');
+    // modifiers[0]=mv is closest to the child; rot wraps it.
+    expect(out.body).toMatch(/rot\(mv\([A-Za-z_]\w*, \[i\*2, 0, 0\]\), \[0, 0, i\*30\]\)/);
+    expect(out.validationErrors).toEqual([]);
+  });
+
+  it('loopVar + bindings appear in the emitted closure', async () => {
+    const { addCall, addRepeat, setRepeatOp, setRepeatLoopVar, addRepeatBinding, setRepeatBindingName, setRepeatBindingValue, addRepeatModifier, setRepeatModifierAxis, asLiteral, asExpr } = await import('./composition-graph');
+    let g = newGraph();
+    const c = addCall(g, 'dt_box'); g = c.graph;
+    const r = addRepeat(g, c.id, asLiteral(6)); g = setRepeatOp(r.graph, r.id, 'list');
+    g = setRepeatLoopVar(g, r.id, 'k');
+    g = addRepeatBinding(g, r.id); g = setRepeatBindingName(g, r.id, 0, 'pitch'); g = setRepeatBindingValue(g, r.id, 0, asExpr('p.pitch'));
+    g = addRepeatModifier(g, r.id, 'mv'); g = setRepeatModifierAxis(g, r.id, 0, 0, asExpr('k*pitch'));
+    const out = emitGraph(g, { id: 't' });
+    expect(out.body).toContain('(_, k) => {');
+    expect(out.body).toContain('const N = 6;');
+    expect(out.body).toContain('const pitch = p.pitch;');
+    expect(out.body).toContain('[k*pitch, 0, 0]');
+  });
+
+  it('repeat modifier mutators add/move/set-kind/remove immutably', async () => {
+    const { addCall, addRepeat, addRepeatModifier, setRepeatModifierKind, moveRepeatModifier, removeRepeatModifier, asLiteral } = await import('./composition-graph');
+    let g = newGraph();
+    const c = addCall(g, 'dt_box'); g = c.graph;
+    const r = addRepeat(g, c.id, asLiteral(2)); g = r.graph;
+    g = addRepeatModifier(g, r.id, 'mv');
+    g = addRepeatModifier(g, r.id, 'rot');
+    expect((g.nodes[r.id] as any).modifiers.map((m: any) => m.kind)).toEqual(['mv', 'rot']);
+    g = moveRepeatModifier(g, r.id, 0, 1);
+    expect((g.nodes[r.id] as any).modifiers.map((m: any) => m.kind)).toEqual(['rot', 'mv']);
+    g = setRepeatModifierKind(g, r.id, 0, 'mv');
+    expect((g.nodes[r.id] as any).modifiers[0].kind).toEqual('mv');
+    g = removeRepeatModifier(g, r.id, 0);
+    expect((g.nodes[r.id] as any).modifiers.length).toEqual(1);
+  });
+});
