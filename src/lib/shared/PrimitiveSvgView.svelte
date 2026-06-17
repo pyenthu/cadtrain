@@ -23,12 +23,18 @@
    *       discipline). When false the renderer is torn down and the <svg>
    *       detached — nothing renders, no leak.
    *
-   * The component exposes nothing else. Camera + lights are read from the shared
+   * The component exposes nothing else. The camera is read from the shared
    * `scene` store (scene-state.svelte.ts, READ-ONLY here): camera position from
    * `scene.cam`, look-at from `scene.partCenter` (+ `scene.zFocus`), the
    * view-only `scene.xScale` / `scene.zScale` exaggeration group, and
    * `scene.showCutaway` to pick `cutVC` vs `full`. Z-down convention: up =
    * [0, 0, -1], mirroring PrimitiveDualScene.
+   *
+   * SHADING — we do NOT use SVGRenderer's lighting (it clamp-and-multiplies and
+   * washes rounded parts out). Instead we bake an ARTIFICIAL per-face shade into
+   * vertex colours (axial Lambert key + fresnel-style silhouette falloff) and
+   * render FLAT (MeshBasicMaterial). `smooth`/`cel` toolbar toggle picks a
+   * gradient vs a 4-band toon ramp.
    */
   import * as THREE from 'three';
   import { scene } from '$lib/shared/scene-state.svelte';
@@ -89,6 +95,9 @@
   let container = $state<HTMLDivElement | null>(null);
   let renderer: any = null;
   let lastMat: THREE.Material | null = null;
+  // The per-render non-indexed, shaded geometry copy (disposed on the next
+  // render / teardown — toNonIndexed() always allocates a fresh buffer).
+  let lastShadedGeo: THREE.BufferGeometry | null = null;
 
   // ortho (default) vs persp projection — persisted so the choice sticks across
   // tab/part switches. Ortho is the technical-drawing projection (no foreshorten),
@@ -103,6 +112,20 @@
   function setProjection(p: 'persp' | 'ortho') {
     projection = p;
     try { localStorage.setItem('ge-svg-projection', p); } catch { /* ignore */ }
+  }
+
+  // Cel / toon toggle — quantizes the artificial shade into 4 bands for a
+  // technical-illustration look (off = smooth gradient). Persisted like the
+  // projection so the choice sticks across tab/part switches.
+  let cel = $state(false);
+  $effect(() => {
+    try {
+      if (localStorage.getItem('ge-svg-cel') === '1') cel = true;
+    } catch { /* localStorage blocked — fine */ }
+  });
+  function setCel(v: boolean) {
+    cel = v;
+    try { localStorage.setItem('ge-svg-cel', v ? '1' : '0'); } catch { /* ignore */ }
   }
 
   let size = $state({ w: 0, h: 0 });
@@ -127,6 +150,7 @@
 
   function teardown() {
     if (lastMat) { lastMat.dispose(); lastMat = null; }
+    if (lastShadedGeo) { lastShadedGeo.dispose(); lastShadedGeo = null; }
     if (container) container.replaceChildren();
     renderer = null;
     hasRendered = false;
@@ -156,20 +180,6 @@
     triCount = Math.round(tris);
     warnHighPoly = tris > HIGH_TRI;
 
-    // SVGRenderer does flat per-face fills. MeshPhongMaterial maps to flat
-    // diffuse lighting; vertex colours (cutVC) multiply the white base so the
-    // red/grey split survives. The solid mesh renders flat red (#cc2222),
-    // matching PrimitiveDualScene's full-mesh convention.
-    const hasVC = !!geo.getAttribute('color');
-    const mat = new THREE.MeshPhongMaterial({
-      color: hasVC ? '#ffffff' : '#cc2222',
-      vertexColors: hasVC,
-      flatShading: true,
-      side: THREE.DoubleSide,
-      shininess: 0,
-      specular: '#000000',
-    });
-
     const threeScene = new THREE.Scene();
     threeScene.background = new THREE.Color('#ffffff');
 
@@ -177,43 +187,9 @@
     // so the SVG frames long thin tools the same way the 3D pane does.
     const group = new THREE.Group();
     group.scale.set(scene.xScale, scene.xScale, scene.zScale);
-    group.add(new THREE.Mesh(geo, mat));
-    // Edge outline — black crease/silhouette lines at a 20° threshold, matching
-    // the 3D pane's <Edges thresholdAngle={20}>. SVGRenderer strokes
-    // LineSegments as <path>s in correct painter's-algorithm depth order, so the
-    // drawing reads as outlined shapes instead of a borderless colour mass.
-    // Gated on scene.showEdges (the same toggle the 3D pane uses). No HLR — all
-    // creases draw, which is fine for a technical line drawing.
-    let edgeLines: THREE.LineSegments | null = null;
-    let edgeGeo: THREE.EdgesGeometry | null = null;
-    if (scene.showEdges) {
-      edgeGeo = new THREE.EdgesGeometry(geo, 20);
-      edgeLines = new THREE.LineSegments(
-        edgeGeo,
-        new THREE.LineBasicMaterial({ color: 0x000000 }),
-      );
-      group.add(edgeLines);
-    }
-    threeScene.add(group);
 
-    // Lights — same directions as PrimitiveDualScene's l1/l2/l3, as
-    // DirectionalLights. SVGRenderer's lighting model multiplies raw intensity
-    // and CLAMPS, so the old sum (~1.65) blew every lit face to its base colour
-    // (red → washed pink, no shading read). Rebalanced: a low ambient FLOOR
-    // (shadowed faces) + a dominant key + softer fill/back so a fully-lit face
-    // peaks ~0.8 (rich, un-blown) and the face-to-face contrast actually shows
-    // the curvature on rounder parts. Per-face flat fills regardless (SVG limit).
-    threeScene.add(new THREE.AmbientLight(0xffffff, 0.22));
-    const addDir = (p: { x: number; y: number; z: number }, i: number) => {
-      const d = new THREE.DirectionalLight(0xffffff, i);
-      d.position.set(p.x, p.y, p.z);
-      threeScene.add(d);
-    };
-    addDir(scene.l1, 0.58); // key
-    addDir(scene.l2, 0.28); // fill
-    addDir(scene.l3, 0.14); // back
-
-    // Camera. Z-down convention (up = [0,0,-1]) in both modes.
+    // Camera. Built FIRST: the artificial shader (below) needs the view
+    // direction. Z-down convention (up = [0,0,-1]) in both modes.
     // renderW/renderH = the SVG's pixel size. PERSP fills the container (fit, no
     // scroll). ORTHO renders at the part's NATURAL proportions (a long tool →
     // tall SVG) so the stage scrolls and you can read it at size.
@@ -257,6 +233,75 @@
       );
     }
 
+    // ── Artificial per-face shader ───────────────────────────────────────
+    // We DON'T let SVGRenderer light the mesh (its clamp-and-multiply model
+    // washes rounded parts out). Instead we bake our OWN shade into per-face
+    // colours and render them FLAT (MeshBasicMaterial, no lights in the scene):
+    // an axial Lambert key + a fresnel-style silhouette falloff so a revolved
+    // tool reads as ROUND. The colours ARE the shading. Non-indexed first → each
+    // triangle owns its 3 verts, so a face can carry one flat colour.
+    const viewDir = (camera as THREE.Camera).getWorldDirection(new THREE.Vector3()); // points INTO the scene
+    const shadedGeo = geo.toNonIndexed();
+    const pos = shadedGeo.getAttribute('position') as THREE.BufferAttribute;
+    // cutVC carries per-vertex red-outer / grey-bore colours; preserve them and
+    // just multiply by shade. No colour attribute → the solid-mesh red.
+    const srcCol = shadedGeo.getAttribute('color') as THREE.BufferAttribute | undefined;
+    const nFaces = Math.floor(pos.count / 3);
+    const colArr = new Float32Array(pos.count * 3);
+    // Fixed key light. Z-down: -z is "up"; +y points toward the (default) viewer
+    // so dead-on faces read bright and the silhouette falls away.
+    const L = new THREE.Vector3(0.35, 0.55, -0.75).normalize();
+    const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nrm = new THREE.Vector3();
+    const DEF = [0.8, 0.133, 0.133] as const; // #cc2222 solid-mesh red
+    for (let f = 0; f < nFaces; f++) {
+      const i0 = 3 * f, i1 = i0 + 1, i2 = i0 + 2;
+      va.fromBufferAttribute(pos, i0);
+      vb.fromBufferAttribute(pos, i1);
+      vc.fromBufferAttribute(pos, i2);
+      // Face normal = (b−a) × (c−a), normalized.
+      nrm.copy(e1.copy(vb).sub(va)).cross(e2.copy(vc).sub(va)).normalize();
+      // DoubleSide: flip the normal toward the camera so back-faces shade right.
+      if (nrm.dot(viewDir) > 0) nrm.negate();
+      const ndl = Math.max(0, nrm.dot(L));
+      const lambert = 0.32 + 0.68 * ndl;              // ambient floor + key
+      const facing = Math.abs(nrm.dot(viewDir));       // 1 = facing camera, 0 = silhouette
+      const rim = 0.5 + 0.5 * Math.pow(facing, 1.5);   // silhouette darkens → reads ROUND
+      let shade = Math.min(1, lambert * rim);
+      if (cel) shade = Math.max(0.35, Math.round(shade * 3) / 3); // 4-band toon, 0.35 floor
+      // Base colour for THIS face = vertex a's colour, shaded + clamped.
+      const br = srcCol ? srcCol.getX(i0) : DEF[0];
+      const bg = srcCol ? srcCol.getY(i0) : DEF[1];
+      const bl = srcCol ? srcCol.getZ(i0) : DEF[2];
+      const r = Math.min(1, br * shade), g = Math.min(1, bg * shade), b = Math.min(1, bl * shade);
+      colArr[i0 * 3] = r; colArr[i0 * 3 + 1] = g; colArr[i0 * 3 + 2] = b;
+      colArr[i1 * 3] = r; colArr[i1 * 3 + 1] = g; colArr[i1 * 3 + 2] = b;
+      colArr[i2 * 3] = r; colArr[i2 * 3 + 1] = g; colArr[i2 * 3 + 2] = b;
+    }
+    shadedGeo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+
+    // Flat: the baked vertex colours ARE the shading, so no lighting model.
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    group.add(new THREE.Mesh(shadedGeo, mat));
+
+    // Edge outline — black crease/silhouette lines at a 20° threshold, matching
+    // the 3D pane's <Edges thresholdAngle={20}>. SVGRenderer strokes
+    // LineSegments as <path>s in correct painter's-algorithm depth order, so the
+    // drawing reads as outlined shapes instead of a borderless colour mass.
+    // Built from the original `geo` (indexed → crisp crease detection). Gated on
+    // scene.showEdges. No HLR — all creases draw, fine for a technical drawing.
+    let edgeLines: THREE.LineSegments | null = null;
+    let edgeGeo: THREE.EdgesGeometry | null = null;
+    if (scene.showEdges) {
+      edgeGeo = new THREE.EdgesGeometry(geo, 20);
+      edgeLines = new THREE.LineSegments(
+        edgeGeo,
+        new THREE.LineBasicMaterial({ color: 0x000000 }),
+      );
+      group.add(edgeLines);
+    }
+    threeScene.add(group);
+
     if (!renderer) {
       renderer = new Ctor();
       renderer.setQuality('high');
@@ -283,9 +328,12 @@
       el.style.margin = '0 auto';
     }
 
-    // Dispose the previous frame's material now that the new one is drawn.
+    // Dispose the previous frame's material + shaded geometry now the new one
+    // is drawn (toNonIndexed() + the baked colour buffer allocate every render).
     if (lastMat && lastMat !== mat) lastMat.dispose();
     lastMat = mat;
+    if (lastShadedGeo && lastShadedGeo !== shadedGeo) lastShadedGeo.dispose();
+    lastShadedGeo = shadedGeo;
     hasRendered = true;
   }
 
@@ -303,6 +351,7 @@
     void scene.zFocus; void scene.xScale; void scene.zScale;
     void scene.showCutaway;
     void projection;
+    void cel;
 
     if (!isActive) { teardown(); return; }
     if (!container || !pair || w === 0 || h === 0) return;
@@ -379,6 +428,15 @@
       <button class="svg-proj-btn" class:on={projection === 'ortho'}
         title="Orthographic projection — parallel edges, no foreshortening (technical drawing)"
         onclick={() => setProjection('ortho')}>ortho</button>
+    </div>
+    <!-- Shading toggle — smooth gradient (default) vs 4-band cel/toon. -->
+    <div class="svg-proj" role="group" aria-label="Shading">
+      <button class="svg-proj-btn" class:on={!cel}
+        title="Smooth artificial shading (axial Lambert + silhouette falloff)"
+        onclick={() => setCel(false)}>smooth</button>
+      <button class="svg-proj-btn" class:on={cel}
+        title="Cel / toon — quantize the shade into 4 bands (technical illustration)"
+        onclick={() => setCel(true)}>cel</button>
     </div>
     <button class="svg-dl" onclick={downloadSvg} disabled={!hasRendered}>
       ⤓ .svg
