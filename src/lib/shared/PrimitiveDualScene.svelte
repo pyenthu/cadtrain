@@ -536,7 +536,11 @@
 <T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
-  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '')}
+  <!-- smoothShade is in the key: flatShading is a SHADER-RECOMPILE property in
+       three.js (changing it on a live material does nothing without
+       material.needsUpdate). Re-keying recreates the material with the right
+       flatShading from the start, so the ◐ Smooth/Flat toggle actually takes. -->
+  {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '') + (smoothShade ? '_s' : '_f')}
     {#if instMesh}
       <!-- GPU-instanced Stack/Repeat: ONE child mesh drawn under N transforms.
            Material (Phong/Standard + flatShading + vertexColors) + the child's
