@@ -23,6 +23,14 @@
    Plan: `docs/plans/client-side-execution.md`.
 8. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
   /conditional expressions (sparse `graph.exprs[]`, topo eval). Plan: `docs/plans/expressions-tab.md`.
+9. **Well schematic → 3D well diagram (`/well` route)** — **3D-FIRST**: build the well in 3D
+  (cadtrain parts assembled by depth/trajectory), the 2D schematic is a VIEW/projection of
+  it (not the source of truth). Leverage SVTC's well-diagram engine (good interface +
+  trajectory/direction + depth auto-scale + 10 sample `.wson`) which LACKS components;
+  supply the component layer from cadtrain's `g_*` completion parts + the WBD smart-icon
+  vocabulary. WSON as the data model. Maybe new libs. Plan: `docs/plans/well-schematic.md`
+  (in progress). Research: `docs/research/wbd-powerdraw-visio.md`. Memories: [[svtc_repo]],
+  [[wells_eval_dataset]]. Replaces the `/wells` stub.
 
 ### Quick / contained (not yet done)
 
