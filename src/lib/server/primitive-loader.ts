@@ -388,6 +388,19 @@ export async function buildPrimitiveGeom(
       depNames.push(dep);
       depFns.push(r.value);
     } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
+      const inner = (r.reason as Error)?.message ?? String(r.reason);
+      const looksMissing = /not found|HTTP 404/i.test(inner);
+      // LOADER TOLERANCE: a dangling `meta.uses` entry whose primitive was
+      // deleted is only FATAL if the body actually calls it. When the dep is
+      // missing AND the body never invokes `dep(...)`, it's a stale leftover
+      // (e.g. a renamed/replaced child) — skip it with a warning so the bake
+      // still succeeds, instead of failing the whole part. `dep(` matches a
+      // CALL but not the quoted `'dep'` string in meta.uses.
+      const callRe = new RegExp('\\b' + dep.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\(');
+      if (looksMissing && !callRe.test(source)) {
+        console.warn(`[primitive ${name}] meta.uses lists "${dep}" but that primitive is missing AND the body never calls it — skipping the dangling ref (clean it from "${name}"'s meta.uses to silence this).`);
+        continue; // not injected; the body doesn't reference it
+      }
       // Decorate the underlying "dependency primitive 'X' not found" with
       // the calling part's name, the full dep chain (parent → child),
       // and an action hint. Avoids the user seeing a bare "shaft not
@@ -395,8 +408,6 @@ export async function buildPrimitiveGeom(
       const chain = visited.size
         ? [...visited, dep].join(' → ')
         : `${name} → ${dep}`;
-      const inner = (r.reason as Error)?.message ?? String(r.reason);
-      const looksMissing = /not found|HTTP 404/i.test(inner);
       const hint = looksMissing
         ? ` (the primitive doesn't exist on the volume — either restore it from the archive, drop it from "${name}"'s meta.uses if the body doesn't actually call it, or re-create it)`
         : '';
@@ -723,8 +734,16 @@ async function emitInlinedPart(
       depNames.push(dep);
       depSources.push(r.value);
     } else if (!SANDBOX_ARG_NAMES.includes(dep)) {
-      const chain = visited.size ? [...visited, dep].join(' → ') : `${name} → ${dep}`;
       const inner = (r.reason as Error)?.message ?? String(r.reason);
+      // LOADER TOLERANCE (mirror of buildPrimitiveGeom): a dangling meta.uses
+      // entry that the body never calls is skipped, not fatal — so the COMPILED
+      // client script matches the server bake on parts with stale refs.
+      const callRe = new RegExp('\\b' + dep.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\(');
+      if (/not found|HTTP 404/i.test(inner) && !callRe.test(source)) {
+        console.warn(`[compile ${name}] meta.uses lists "${dep}" but it's missing AND never called — skipping the dangling ref.`);
+        continue;
+      }
+      const chain = visited.size ? [...visited, dep].join(' → ') : `${name} → ${dep}`;
       throw new Error(`primitive "${name}" needs dependency "${dep}" but it failed to load: ${inner} [dep chain: ${chain}]`);
     }
     // else: bundle helper — stays in the sandbox scope, not inlined.
