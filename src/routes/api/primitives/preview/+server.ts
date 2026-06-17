@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
-import { setAxialMaxZSpan, getAxialMaxZSpan } from '$lib/cad/manifold-mesh';
+import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/cad/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
 import { finalizeManifold } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
@@ -215,7 +215,8 @@ export const POST = async ({ request, fetch }) => {
   //     30 MB bake at segments:32 vs 256).
   const segPrev = segArg !== undefined ? helpers.getCircularSegmentCount() : undefined;
   const capPrev = segArg !== undefined ? helpers.getCircularSegmentCap() : undefined;
-  if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); }
+  const weldCapPrev = segArg !== undefined ? getCircSegCap() : undefined;
+  if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); setCircSegCap(segArg); }
   // Build-time axial Z-densification (smooth warp) — ONLY when a warp option is
   // present, so non-warp revolves stay light. Drive the target Z-edge length
   // from the warp frequency (period 2π/freq, ~16 samples/cycle). Same race-safe
@@ -224,7 +225,7 @@ export const POST = async ({ request, fetch }) => {
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
   try { manifold = primFn(...args); }
   catch (e: any) {
-    if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); }
+    if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); setCircSegCap(weldCapPrev ?? null); }
     if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
     // Surface the structured fail-trail buildPrimitiveGeom's dep wrapper
     // attached when the crash came out of a sub-call. Keeps the legacy

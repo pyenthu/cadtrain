@@ -103,6 +103,16 @@ export function getAxialMaxSegPerEdge(): number { return _axialMaxSegPerEdge; }
 /** Set the per-edge split cap (≥1). */
 export function setAxialMaxSegPerEdge(n: number): void { _axialMaxSegPerEdge = Math.max(1, Math.floor(n)); }
 
+// CIRCUMFERENTIAL segment CAP — the bake's "seg" override (preview coarsening +
+// coarse-during-drag). Welded revolves use their OWN explicit segments arg and
+// ignore Manifold's global circular count, so the override never reached them.
+// When set, revolveProfile clamps its segN to this cap. null = no cap.
+let _circSegCap: number | null = null;
+/** Read the circumferential segment cap (null = uncapped). */
+export function getCircSegCap(): number | null { return _circSegCap; }
+/** Set the circumferential segment cap (≥3; ≤0/null clears it). */
+export function setCircSegCap(v: number | null): void { _circSegCap = (v != null && v >= 3) ? Math.floor(v) : null; }
+
 /**
  * Densify a closed (r,z) profile loop along Z: insert COLLINEAR interior points
  * on each edge so no edge spans more than `maxZSpan` in Z (capped at
@@ -166,7 +176,10 @@ export function revolveProfile(profile: [number, number][], segments: number): P
   // edge) → bbox/volume unchanged; just more rings. Dial: _axialMaxZSpan (null
   // disables → byte-identical to the pre-change revolve).
   const prof = subdivideProfileAxial(profile, _axialMaxZSpan, _axialMaxSegPerEdge);
-  const segN = Math.max(3, Math.floor(segments));
+  // Clamp to the bake's circumferential cap (preview seg override / coarse-drag)
+  // so the pane "seg" + draft-seg actually coarsen welded revolves.
+  let segN = Math.max(3, Math.floor(segments));
+  if (_circSegCap != null) segN = Math.max(3, Math.min(segN, _circSegCap));
   const dT = (2 * Math.PI) / segN;
   const EPS = 1e-9;
   const verts: number[] = [];

@@ -24,7 +24,7 @@
  */
 
 import * as helpers from './manifold-helpers';
-import { setAxialMaxZSpan, getAxialMaxZSpan } from './manifold-mesh';
+import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from './primitive-sandbox';
 import { finalizeManifold, type RenderMaterial } from './builder';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
@@ -129,7 +129,8 @@ export async function runCompiledManifold(
   // NO await between, so a concurrent bake can't observe the coarse setting.
   const segPrev = segArg !== undefined ? helpers.getCircularSegmentCount() : undefined;
   const capPrev = segArg !== undefined ? helpers.getCircularSegmentCap() : undefined;
-  if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); }
+  const weldCapPrev = segArg !== undefined ? getCircSegCap() : undefined;
+  if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); setCircSegCap(segArg); }
   const axialPrev = (warpArg && warpArg.freq > 0) ? getAxialMaxZSpan() : undefined;
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
 
@@ -141,7 +142,7 @@ export async function runCompiledManifold(
   } catch (e: any) {
     throw new Error(`primitive call failed: ${e?.message ?? e}`);
   } finally {
-    if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); }
+    if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); setCircSegCap(weldCapPrev ?? null); }
     if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
   }
   const _tBuild = _now() - _tBuild0;
