@@ -24,6 +24,12 @@ export const scene = $state({
    *  scene scrolls a tall assembly without changing the view angle. Both the
    *  camera and its target shift by this Z amount (a pure pan). */
   zFocus: 0,
+  /** Fit-vertical (#11): when true, the ortho camera frames the WHOLE part
+   *  length instead of the ~3-diameter window (which leaves long parts only
+   *  partly visible until you scroll the Z-pan — bug #10). Toggled by the ⇕ Fit
+   *  button in SceneControls; auto-enabled at part load when the part is much
+   *  longer than the default window. */
+  fitLength: false,
   l1:  { x: 10,  y: 10,  z:  0,   i: 500 },
   l2:  { x: -40, y: 20,  z:  0,   i: 500 },
   /** Fill light from the previously-dark quadrant (below origin, pointing

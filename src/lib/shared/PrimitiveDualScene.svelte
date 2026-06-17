@@ -463,10 +463,27 @@
       // the width (so it reads big), and we only frame ~ORTHO_LEN_DIAMETERS of
       // length (or the whole part if it's shorter) instead of the full length.
       const breadthFit = radius / aspect;                            // dia fills the width
-      const lenWindowHalf = Math.min(halfZspan, radius * ORTHO_LEN_DIAMETERS);
+      // Fit-vertical (#11): frame the FULL length; else the ~3-diameter window.
+      const lenWindowHalf = scene.fitLength ? halfZspan : Math.min(halfZspan, radius * ORTHO_LEN_DIAMETERS);
       halfH = Math.max(breadthFit, lenWindowHalf) * 1.15 || 10;
     }
     return { l: -halfH * aspect, r: halfH * aspect, t: halfH, b: -halfH };
+  });
+  // Auto-fit (#11): when a part loads that's MUCH longer than the default
+  // window (length > 2× what 3 diameters would show), enable fit-vertical once
+  // so it isn't cut off at load (bug #10). Keyed on the bbox so it re-evaluates
+  // per part; only flips ON (never fights a user who turns it back off).
+  let lastAutoFitKey = '';
+  $effect(() => {
+    if (!bbox) return;
+    const ez = bbox.ez * scene.zScale;
+    const ex = bbox.ex * scene.xScale;
+    const halfZspan = ez + (gap * scene.zScale) / 2;
+    const radius = (ex / 2) || 1;
+    const key = `${bbox.ez.toFixed(2)}:${bbox.ex.toFixed(2)}`;
+    if (key === lastAutoFitKey) return;     // same geometry — don't re-trigger
+    lastAutoFitKey = key;
+    if (halfZspan > radius * ORTHO_LEN_DIAMETERS * 2) scene.fitLength = true;
   });
   $effect(() => {
     const c = orthoCam;

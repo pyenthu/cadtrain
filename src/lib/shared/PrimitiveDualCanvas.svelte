@@ -380,6 +380,11 @@
   <button class="pd-scale-btn" type="button" class:on={scaleMenuOpen}
     title="Diameter / depth view scale"
     onclick={() => (scaleMenuOpen = !scaleMenuOpen)}>⚙ scale</button>
+  <!-- Fit-vertical (#11): frame the WHOLE part length. Auto-on for long parts
+       at load (bug #10 — long parts cut off until you scroll). -->
+  <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
+    title="Fit the whole part length in view (toggle)"
+    onclick={() => (scene.fitLength = !scene.fitLength)}>⇕ fit</button>
   {#if scaleMenuOpen}
     <div class="pd-scale-menu">
       <div class="pd-scale-row">
@@ -495,6 +500,14 @@
   }
   .pd-scale-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
   .pd-scale-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
+  .pd-fit-btn {
+    position: absolute; top: 30px; left: 76px; z-index: 6;
+    padding: 2px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
+    background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer;
+    font: 600 10px Arial; letter-spacing: 0.3px;
+  }
+  .pd-fit-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
+  .pd-fit-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
   .pd-bake-tools { position: absolute; top: 54px; left: 12px; z-index: 6; display: flex; align-items: center; gap: 4px; }
   .pd-mini-btn { padding: 2px 6px; border: 1px solid #d6d3d1; border-radius: 4px; background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer; font: 600 11px Arial; }
   .pd-mini-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
