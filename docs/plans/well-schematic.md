@@ -38,8 +38,41 @@ well**, and the 2D schematic is a *derived view* of it.
   well in MD space BEFORE the spline warp.
 - **Flatten** — a 2D projection that **ignores azimuth** (the vertical-section
   view): project the trajectory onto its azimuth plane so a deviated well reads
-  as a 2D bend. A build-in toggle (full-3D ↔ flattened). [zScale × spline
-  methodology + flatten still under discussion with the user.]
+  as a 2D bend. A build-in toggle (full-3D ↔ flattened).
+
+### Scale methodology — DECIDED + grounded (`docs/research/svtc-autoscale-dtx.md`)
+
+- **Pipeline (= SVTC, the deep-dive answer):** `raw MD → DTX (straight MD space)
+  → warp along survey spline → × zScale`. DTX is applied FIRST, straight, BEFORE
+  the bend.
+- **DTX** = a monotonic piecewise-linear depth-transform that gives every short
+  tool (< 50 m, inside a component) a constant weighted footprint (`len·w =
+  50/0.3 ≈ 166.67`) so jewellery isn't sub-pixel, compressing gaps to keep total
+  height fixed. Port `autoNodes` + `lerpDTX` verbatim (pure JS).
+- **3D scale mode = (A) SPREAD SPACING, TRUE-SIZE PARTS** *(user-chosen)*: DTX/zScale
+  magnify the *positions/spacing* of parts along the bore (small tools get
+  breathing room) while each part keeps real proportions — faithful 3D CAD.
+  Stretching the geometry itself (SVTC-style "schematic mode") is NOT done in 3D
+  (it would distort real parts); reserve it for the 2D schematic view (W2) where
+  parts are icons.
+
+### Curvature-adaptive Z-subdivision (for the spline warp) — to build
+
+When a part is warped along the trajectory it must have enough Z-segments to
+follow the bend smoothly; but a uniform high segment count over-tessellates the
+long straight runs (excessive triangles). So **subdivide each part's Z axis
+ADAPTIVELY by the LOCAL CURVATURE of the spline over that span**: dense segments
+where the trajectory bends, sparse where it's straight. A simple formula —
+`nseg = clamp(1, ceil(totalBendAngle_over_span / maxChordAngle), cap)` where
+`maxChordAngle` is the quality knob (~5°, equivalent to a sagitta/chord-error
+bound) — concentrates triangles at the dogleg and keeps vertical/tangent sections
+cheap. TWO rules to honour: (1) **curvature is sampled from the SURVEY (the
+spline) over the part's MD span**, not from the part; (2) it is a **BUILD-TIME**
+decision fed into the part bake (Rule 25 — the weld builders' build-time
+Z-segmentation), NEVER a post-bake mesh rewrite (a plain top+bottom-ring cylinder
+can't bend — warp just rotates it rigidly; the Z-rings must exist before the
+warp; post-bake subdivide OOB-crashes the WASM core). Net: smooth bends + far
+fewer triangles than uniform subdivision.
 
 **Why this is achievable now (the key bridge):** SVTC's **3D** scene already
 runs cadtrain's exact THREE + Manifold stack, warps geometry along the survey

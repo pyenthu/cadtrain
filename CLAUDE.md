@@ -40,7 +40,7 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 ## Rules for Claude (read me first)
 
 1. **Bun + SvelteKit + adapter-node.** Never adapter-static (API routes need SSR); never add Python to the runtime.
-2. **Product structure.** Active: `/primitives` + `/graph-editor` (CAD), `/vocab`, `/fem`, `/forge`, `/wells` (stub), `/volume`, `/plan`. The old `/components` product was deleted 2026-05-27; the old `/archive/*` implementation moved to top-level `archive/` 2026-06-01. New code goes in `src/lib/{cad,fem,forge,authoring}`; cross-domain UI in `src/lib/shared/`.
+2. **Product structure.** Active: `/primitives` + `/graph-editor` (CAD), `/vocab`, `/fem`, `/forge`, `/wells` (**3D-first well schematic, WIP** — `src/lib/wells/`, plan `docs/plans/well-schematic.md`), `/volume`, `/plan`. The old `/components` product was deleted 2026-05-27; the old `/archive/*` implementation moved to top-level `archive/` 2026-06-01. New code goes in `src/lib/{cad,fem,forge,authoring}`; cross-domain UI in `src/lib/shared/`.
 3. API endpoints use `$env/dynamic/private` (not static) so env vars are read at runtime.
 4. **Durable JSON/JSONL stores get atomic writes** (temp file + rename) — volume caches, `docs/parts/vocabulary*.json`. Never delete one without backup.
 5. Follow plan files in `~/.claude/plans/`. Don't add features outside the current plan's scope.
@@ -113,7 +113,7 @@ bun run record:task <id> # e2e + harvest WEBMs for a /plan task (Rule 12)
 | `/vocab` | Vocabulary editor (browse/topology · infer · bake · promote) |
 | `/fem` | FEM index + `/fem/[id]` stress + `/fem/[id]/tension` 3D viewer |
 | `/forge` | Image → 3D scaffold (FAL Hunyuan3D; needs `FAL_API_KEY`) |
-| `/wells` | Stub — wells extraction archived pending port |
+| `/wells` | **3D-first well schematic** (WIP) — WSON → 3D well diagram. Plan: `docs/plans/well-schematic.md`; engine `src/lib/wells/`. Old extraction stub replaced. |
 | `/volume` | Volume file manager |
 | `/plan` | Gantt roadmap (Rule 19) |
 
