@@ -62,7 +62,7 @@
         title="Part z-offset (how this part mates in a parent Stack)"
         onkeydown={(e) => { if (e.key === 'Enter') { onZOffset(Number((e.currentTarget as HTMLInputElement).value)); (e.currentTarget as HTMLInputElement).blur(); } }}
         onblur={(e) => onZOffset(Number((e.currentTarget as HTMLInputElement).value))}/>
-      <span class="zoff-hint">per-part colours · viewer tint = #86</span>
+      <span class="zoff-hint" title="Per-part 3D viewer tint is the deferred #86">tint → #86</span>
     </div>
 
     <!-- Per-part appearance table: PART · OUT · IN · Matl. -->
@@ -111,8 +111,8 @@
     overflow: hidden; font: 700 10px ui-monospace, monospace; color: #78350f;
     padding: 6px;
   }
-  .ge-props-zoff { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-  .ge-props-zoff .lbl { font-size: 10px; color: #92400e; text-transform: uppercase; letter-spacing: 0.3px; }
+  .ge-props-zoff { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; white-space: nowrap; }
+  .ge-props-zoff .lbl { font-size: 10px; color: #92400e; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; flex: none; }
   .ge-props-zoff .num {
     width: 56px; padding: 0 4px; height: 20px;
     font: 10px ui-monospace, monospace; color: #92400e; text-align: center;

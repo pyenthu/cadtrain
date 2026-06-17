@@ -3163,8 +3163,10 @@
         for (const c of (n.children ?? [])) visit(c);
         return;
       }
-      const label = n.type === 'call' ? (n.alias || n.src)
-        : n.type === 'method' ? `${n.op}(…)` : n.type;
+      // Only 3D geometry producers are PARTS — polygon/sketch/poly_repeat are
+      // 2D profile producers (consumed by a Call via __POLY__), not parts.
+      if (n.type !== 'call' && n.type !== 'method') return;
+      const label = n.type === 'call' ? (n.alias || n.src) : `${n.op}(…)`;
       out.push({ id, label, appearance: (graph.partAppearance?.[id] ?? {}) });
     };
     visit(graph.root);
