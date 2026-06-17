@@ -773,6 +773,40 @@ export function buildComponent(componentId: string, params: Record<string, numbe
   return finalizeManifold(manifold, maxOD);
 }
 
+/** True when the extracted vertex normals are degenerate (the first verts are
+ *  all the zero vector) — calculateNormals sometimes returns an all-zero normal
+ *  buffer on welded/revolved meshes, which would leave smooth shading unlit. A
+ *  valid mesh's leading normals are never all exactly zero. */
+function normalsDegenerate(nrm: Float32Array): boolean {
+  const n = Math.min(nrm.length, 150); // first ~50 verts
+  for (let i = 0; i < n; i++) if (nrm[i] !== 0) return false;
+  return true;
+}
+
+/** Degeneracy check for normals stored STRIDED in a vertProperties buffer
+ *  (np floats/vert, normals at slots 3..5) — the color-by-source path. */
+function bakedNormalsDegenerate(vp: Float32Array, np: number, nv: number): boolean {
+  const lim = Math.min(nv, 50);
+  for (let i = 0; i < lim; i++) {
+    if (vp[i * np + 3] !== 0 || vp[i * np + 4] !== 0 || vp[i * np + 5] !== 0) return false;
+  }
+  return true;
+}
+
+/** Smooth per-vertex normals from the INDEXED (position + triVerts) topology,
+ *  so a non-indexed builder (color-by-source / cutVC) can scatter SMOOTH normals
+ *  instead of flat ones. Winding is outward-consistent (Manifold canonicalises
+ *  it) → these face outward. Returns one normal per indexed vertex (nv*3). */
+function indexedSmoothNormals(vp: Float32Array, np: number, nv: number, tri: Uint32Array): Float32Array {
+  const p = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) { p[i * 3] = vp[i * np]; p[i * 3 + 1] = vp[i * np + 1]; p[i * 3 + 2] = vp[i * np + 2]; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  g.setIndex(new THREE.BufferAttribute(tri, 1));
+  g.computeVertexNormals();
+  return g.getAttribute('normal').array as Float32Array;
+}
+
 // Shading: use Manifold's calculateNormals(propIdx=3, minSharpAngle=60°)
 // so the BufferGeometry carries geometrically correct per-vertex
 // normals. THREE.computeVertexNormals after toNonIndexed() produced
@@ -815,7 +849,12 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setIndex(new THREE.BufferAttribute(tri, 1));
-  if (nrm) geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  // calculateNormals returns ALL-ZERO normals on some welded/revolved meshes
+  // (numProp becomes 6 but the normal slots stay zero) — that leaves smooth
+  // shading (flatShading:false) with nothing to shade. Detect the degenerate
+  // case + recompute valid smooth vertex normals from the indexed geometry
+  // (radial on a swept surface — exactly what we want for smooth mode).
+  if (nrm && !normalsDegenerate(nrm)) geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   else geo.computeVertexNormals();
   // When a per-part override OR a material is declared, bake a uniform
   // per-vertex `color` = outer so ComponentScene's full (non-cutaway) branch
@@ -914,7 +953,7 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
-  if (norms.length === pos.length) {
+  if (norms.length === pos.length && !normalsDegenerate(norms as unknown as Float32Array)) {
     // Scatter Manifold-computed per-vertex normals into the non-indexed
     // buffer (3 vertices per triangle, same layout as outPos).
     const outNrm = new Float32Array(nt * 9);
@@ -927,6 +966,8 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
     }
     geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   } else {
+    // Degenerate/missing baked normals → recompute (winding is outward-consistent
+    // — Manifold canonicalises it — so these face the right way).
     geo.computeVertexNormals();
   }
   return geo;
@@ -1052,7 +1093,14 @@ function colorBySourceGeo(
 
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
-  const outNrm = hasNrm ? new Float32Array(nt * 9) : null;
+  // Baked normals come back ALL-ZERO on welded/revolved meshes — recompute smooth
+  // normals from the INDEXED topology (a non-indexed computeVertexNormals would be
+  // FLAT). Use them when the baked normals are missing or degenerate; either way
+  // we always emit a normal buffer (smooth shading needs per-vertex normals).
+  const nv = vp.length / np;
+  const smoothNrm = (!hasNrm || bakedNormalsDegenerate(vp, np, nv))
+    ? indexedSmoothNormals(vp, np, nv, tri) : null;
+  const outNrm = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
     const id = ids[i];
     let rgb: [number, number, number];
@@ -1068,7 +1116,11 @@ function colorBySourceGeo(
       outCol[idx + v * 3]     = rgb[0];
       outCol[idx + v * 3 + 1] = rgb[1];
       outCol[idx + v * 3 + 2] = rgb[2];
-      if (outNrm) {
+      if (smoothNrm) {
+        outNrm[idx + v * 3]     = smoothNrm[vi * 3];
+        outNrm[idx + v * 3 + 1] = smoothNrm[vi * 3 + 1];
+        outNrm[idx + v * 3 + 2] = smoothNrm[vi * 3 + 2];
+      } else {
         outNrm[idx + v * 3]     = vp[vi * np + 3];
         outNrm[idx + v * 3 + 1] = vp[vi * np + 4];
         outNrm[idx + v * 3 + 2] = vp[vi * np + 5];
@@ -1078,7 +1130,6 @@ function colorBySourceGeo(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
-  if (outNrm) geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
-  else geo.computeVertexNormals();
+  geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   return geo;
 }
