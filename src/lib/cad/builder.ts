@@ -829,9 +829,15 @@ function indexedSmoothNormals(vp: Float32Array, np: number, nv: number, tri: Uin
   return g.getAttribute('normal').array as Float32Array;
 }
 
-// Shading: use Manifold's calculateNormals(propIdx=3, minSharpAngle=60°)
+// Shading: use Manifold's calculateNormals(propIdx=0, minSharpAngle=60°)
 // so the BufferGeometry carries geometrically correct per-vertex
-// normals. THREE.computeVertexNormals after toNonIndexed() produced
+// normals. propIdx MUST be 0 (the "standard slot"): non-zero slots are a
+// deprecated compat path that returns ALL-ZERO normals on welded/revolved
+// meshes (was propIdx=3 — the root cause of the empty-normals bug we used to
+// detect + recompute below). Slot 0 records real normals into channels 3..5,
+// exactly where the extraction reads them. (Verified in bun, manifold-3d 3.4.1:
+// slot 3 → 50/50 zero; slot 0 → real radial unit normals.)
+// THREE.computeVertexNormals after toNonIndexed() produced
 // alternating bright/dark stripes on extrude+warp surfaces (thread
 // cutters, helix_band) because the CSG output sometimes emits adjacent
 // triangles with flipped winding — the recomputed face normals point
@@ -842,7 +848,7 @@ function indexedSmoothNormals(vp: Float32Array, np: number, nv: number, tri: Uin
 // crisp.
 function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartColorLUT, override?: ColorOverride, crease: number = DEFAULT_CREASE_ANGLE): THREE.BufferGeometry {
   let withNormals: any;
-  try { withNormals = manifold.calculateNormals(3, crease); }
+  try { withNormals = manifold.calculateNormals(0, crease); }
   catch { withNormals = manifold; }
   // Per-part colour override wins over both color-by-source and material:
   // the user explicitly painted THIS part's outside, so the full mesh is a
@@ -898,7 +904,7 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
   // Same calculateNormals path as manifoldToGeo — keeps shading
   // consistent across the cross-section overlay.
   let withNormals: any;
-  try { withNormals = manifold.calculateNormals(3, crease); }
+  try { withNormals = manifold.calculateNormals(0, crease); }
   catch { withNormals = manifold; }
   // Per-part colour override wins over color-by-source (user's explicit pick).
   // Color-by-source path: per-triangle color from the relation. SECTION_ID
