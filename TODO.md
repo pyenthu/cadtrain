@@ -23,14 +23,24 @@
    Plan: `docs/plans/client-side-execution.md`.
 8. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
   /conditional expressions (sparse `graph.exprs[]`, topo eval). Plan: `docs/plans/expressions-tab.md`.
-9. **Well schematic → 3D well diagram (`/well` route)** — **3D-FIRST**: build the well in 3D
-  (cadtrain parts assembled by depth/trajectory), the 2D schematic is a VIEW/projection of
-  it (not the source of truth). Leverage SVTC's well-diagram engine (good interface +
-  trajectory/direction + depth auto-scale + 10 sample `.wson`) which LACKS components;
-  supply the component layer from cadtrain's `g_*` completion parts + the WBD smart-icon
-  vocabulary. WSON as the data model. Maybe new libs. Plan: `docs/plans/well-schematic.md`
-  (in progress). Research: `docs/research/wbd-powerdraw-visio.md`. Memories: [[svtc_repo]],
-  [[wells_eval_dataset]]. Replaces the `/wells` stub.
+9. **Well schematic → 3D well diagram (`/wells`)** — **3D-FIRST**: the canonical model is
+   the 3D well (cadtrain `g_*` parts placed along the survey by depth, baked with Manifold);
+   the 2D schematic is a derived VIEW, not the source of truth. Leverage SVTC's engine
+   (`~/code/SVTC/src/lib/apps/wson/` — interface + trajectory warp + depth auto-scale +
+   10 sample `.wson`) which LACKS components; supply them from cadtrain's parts via the
+   `tool_comp`→`g_*` registry. WSON = the shared model. Replaces the `/wells` stub.
+   - **SHIPPED:** W0 (`517f0ed`) WSON model+linter + `/wells` scaffold (4 samples);
+     W1 (`ab19a38`) 3D assembler + registry + Threlte scene (primitive cylinders); ⇕fit
+     bug (`afa88df`).
+   - **DECIDED:** scale pipeline `MD → DTX(straight) → warp along spline → ×zScale`; 3D
+     scale = **spread-spacing / true-size** parts (faithful CAD; geometry-stretch is 2D-only);
+     **flatten** (azimuth-ignoring 2D projection) toggle; **curvature-adaptive Z-subdivision**
+     at BUILD time (Rule 25); the assembler **passes the spline to the builder** which
+     adaptive-meshes along it — a well↔builder **sync contract** to lock first.
+   - **NEXT:** port SVTC's 3D scene; DTX+scale layer; W1.3 real `g_*` bakes; flatten;
+     curvature subdivision via the spline→builder contract; W2 2D schematic view; W3 editor/BOM.
+   - Plan: **`docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,
+     `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
 ### Quick / contained (not yet done)
 
