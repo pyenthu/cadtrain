@@ -141,6 +141,9 @@
   let hasRendered = $state(false);
   let warnHighPoly = $state(false);
   let triCount = $state(0);
+  // Polygons actually written to the SVG — higher than triCount when Phong
+  // refinement subdivides curved faces (the cost of the smooth-at-coarse look).
+  let emitCount = $state(0);
   let errorMsg = $state<string | null>(null);
 
   // Observe the stage so the SVG re-renders crisp at the container's size.
@@ -327,50 +330,35 @@
     bgRect.setAttribute('fill', '#ffffff');
     svg.appendChild(bgRect);
 
-    // One filled triangle per face, painter-ordered.
+    // Emit ONE screen-space triangle as an exact 2-stop Gouraud gradient (flat
+    // fill when its 3 shades are ~equal or it's degenerate). Shared by the
+    // K=1 fast path and every Phong sub-triangle. Returns 1 if it drew, else 0.
     let gid = 0;
-    for (let oi = 0; oi < triN; oi++) {
-      const t = order[oi];
-      const ia = a[t], ib = b[t], ic = c[t];
-      const ax = sx[ia], ay = sy[ia];
-      const bx = sx[ib], by = sy[ib];
-      const cx = sx[ic], cy = sy[ic];
+    function appendTri(
+      ax: number, ay: number, bx: number, by: number, cx: number, cy: number,
+      s0: number, s1: number, s2: number, br: number, bgc: number, bl: number,
+    ): number {
       // Signed screen area×2 (== the 3×3 determinant for the gradient solve).
       const det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-      if (!Number.isFinite(det) || Math.abs(det) < 1e-7) continue; // degenerate → skip
-
-      // Base colour for THIS face = vertex a's colour (cutaway boundary tris,
-      // where the 3 base colours differ, are rare — one base/face matches the
-      // per-face design and keeps the gradient a clean 2-stop ramp).
-      const br = cr[ia], bgc = cg[ia], bl = cb[ia];
-      const s0 = sh[ia], s1 = sh[ib], s2 = sh[ic];
-
+      if (!Number.isFinite(det) || Math.abs(det) < 1e-7) return 0; // degenerate
       const poly = document.createElementNS(SVG_NS, 'polygon');
       poly.setAttribute(
         'points',
         `${ax.toFixed(2)},${ay.toFixed(2)} ${bx.toFixed(2)},${by.toFixed(2)} ${cx.toFixed(2)},${cy.toFixed(2)}`,
       );
-
-      if (flatFill) {
-        // Monster mesh → one flat fill per face at the mean shade (no gradient).
-        const s = (s0 + s1 + s2) / 3;
-        poly.setAttribute('fill', rgbHex(br * s, bgc * s, bl * s));
-        svg.appendChild(poly);
-        continue;
-      }
-
-      // Gouraud: the 3 corner shades define a plane s(x,y)=A·x+B·y+C over screen
-      // coords. Solve A,B (the screen-space gradient ∇s) from the 2×2 system:
+      // The 3 corner shades define a plane s(x,y)=A·x+B·y+C over screen coords.
+      // Solve A,B (the screen-space gradient ∇s) from the 2×2 system:
       //   s1-s0 = A(bx-ax)+B(by-ay)
       //   s2-s0 = A(cx-ax)+B(cy-ay)
       const A = ((s1 - s0) * (cy - ay) - (s2 - s0) * (by - ay)) / det;
       const B = ((bx - ax) * (s2 - s0) - (cx - ax) * (s1 - s0)) / det;
       const gmag = Math.hypot(A, B);
       if (gmag < 1e-6) {
-        // ∇s≈0 → the face is uniformly lit → flat fill at that shade.
+        // ∇s≈0 → uniformly lit → flat fill at that shade (the common flat-face
+        // case, and the no-op case after subdivision shrinks the shade range).
         poly.setAttribute('fill', rgbHex(br * s0, bgc * s0, bl * s0));
         svg.appendChild(poly);
-        continue;
+        return 1;
       }
       // Unit gradient direction. Project the 3 vertices onto it: shade is a
       // monotonic-linear function of that projection (s = gmag·tproj + const),
@@ -384,7 +372,7 @@
       if (thi - tlo < 1e-4) {
         poly.setAttribute('fill', rgbHex(br * s0, bgc * s0, bl * s0));
         svg.appendChild(poly);
-        continue;
+        return 1;
       }
       const grad = document.createElementNS(SVG_NS, 'linearGradient');
       const id = `g${gid++}`;
@@ -404,7 +392,122 @@
       defs.appendChild(grad);
       poly.setAttribute('fill', `url(#${id})`);
       svg.appendChild(poly);
+      return 1;
     }
+
+    // PHONG REFINEMENT (no re-bake). Plain Gouraud samples the shade only at the
+    // bake's vertices, so on a COARSE curve (32-seg) the highlight — which peaks
+    // mid-face — reads flat and pulses as the light turns. We fix it at emit
+    // time: where the surface curves, subdivide the triangle in barycentric
+    // space and sample the INTERPOLATED-then-renormalised normal (true Phong) at
+    // each sub-point. So shading fidelity tracks the normal field, not the
+    // triangle count — a coarse bake shades like a fine one. The bake, the edge
+    // outline, and every other pane stay coarse/cheap. Flat faces (cut plane,
+    // shoulders) have ~0 normal spread → K=1 → zero extra polygons.
+    const KMAX = 6;            // cap subdivision so the SVG can't explode
+    const TARGET = 0.05;       // ~2.9° per sub-step — finer than the eye resolves
+    const EMIT_BUDGET = 24000; // ceiling on emitted polys (SVG tab is used rarely)
+    let emitted = 0;
+    const Pa = new THREE.Vector3(), Pb = new THREE.Vector3(), Pc = new THREE.Vector3();
+    const Na = new THREE.Vector3(), Nb = new THREE.Vector3(), Nc = new THREE.Vector3();
+    const Pg = new THREE.Vector3(), Ng = new THREE.Vector3();
+    const shadeOf = (n: THREE.Vector3) =>
+      Math.min(1, AMBIENT + KEY * Math.max(0, n.dot(L)) + FILL * Math.max(0, n.dot(V)));
+
+    for (let oi = 0; oi < triN; oi++) {
+      const t = order[oi];
+      const ia = a[t], ib = b[t], ic = c[t];
+      // Base colour for THIS face = vertex a's colour (cutaway boundary tris,
+      // where the 3 base colours differ, are rare — one base/face keeps the
+      // gradient a clean 2-stop ramp).
+      const br = cr[ia], bgc = cg[ia], bl = cb[ia];
+
+      if (flatFill) {
+        // Monster mesh → one flat fill per face at the mean shade (no gradient,
+        // no subdivision) so the SVG stays bounded.
+        const s = (sh[ia] + sh[ib] + sh[ic]) / 3;
+        const ax = sx[ia], ay = sy[ia], bx = sx[ib], by = sy[ib], cx = sx[ic], cy = sy[ic];
+        const det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        if (!Number.isFinite(det) || Math.abs(det) < 1e-7) continue;
+        const poly = document.createElementNS(SVG_NS, 'polygon');
+        poly.setAttribute('points', `${ax.toFixed(2)},${ay.toFixed(2)} ${bx.toFixed(2)},${by.toFixed(2)} ${cx.toFixed(2)},${cy.toFixed(2)}`);
+        poly.setAttribute('fill', rgbHex(br * s, bgc * s, bl * s));
+        svg.appendChild(poly);
+        emitted++;
+        continue;
+      }
+
+      // How far does the normal turn across this face? → subdivision level K.
+      let K = 1;
+      if (nrmAttr) {
+        Na.set(nrmAttr.getX(ia), nrmAttr.getY(ia), nrmAttr.getZ(ia));
+        Nb.set(nrmAttr.getX(ib), nrmAttr.getY(ib), nrmAttr.getZ(ib));
+        Nc.set(nrmAttr.getX(ic), nrmAttr.getY(ic), nrmAttr.getZ(ic));
+        const dmin = Math.min(Na.dot(Nb), Nb.dot(Nc), Na.dot(Nc));
+        const spread = Math.acos(Math.max(-1, Math.min(1, dmin)));
+        K = Math.max(1, Math.min(KMAX, Math.ceil(spread / TARGET)));
+        if (emitted + K * K > EMIT_BUDGET) K = 1; // budget guard
+      }
+
+      if (K <= 1) {
+        // Flat enough (or no normals) → one gradient from the corner shades.
+        emitted += appendTri(
+          sx[ia], sy[ia], sx[ib], sy[ib], sx[ic], sy[ic],
+          sh[ia], sh[ib], sh[ic], br, bgc, bl,
+        );
+        continue;
+      }
+
+      // Sample a barycentric grid: row i (i=0..K) holds points j=0..K-i, with
+      // weights wa=(K-i-j)/K, wb=i/K, wc=j/K. Interpolate the LOCAL position
+      // (→ reproject, perspective-correct) and the normal (→ renormalise → shade).
+      Pa.set(posAttr.getX(ia), posAttr.getY(ia), posAttr.getZ(ia));
+      Pb.set(posAttr.getX(ib), posAttr.getY(ib), posAttr.getZ(ib));
+      Pc.set(posAttr.getX(ic), posAttr.getY(ic), posAttr.getZ(ic));
+      const gpx: number[] = [], gpy: number[] = [], gps: number[] = [];
+      const rowStart: number[] = [];
+      let gi = 0;
+      for (let i = 0; i <= K; i++) {
+        rowStart[i] = gi;
+        for (let j = 0; j <= K - i; j++) {
+          const wa = (K - i - j) / K, wb = i / K, wc = j / K;
+          Pg.set(
+            (Pa.x * wa + Pb.x * wb + Pc.x * wc) * sX,
+            (Pa.y * wa + Pb.y * wb + Pc.y * wc) * sX,
+            (Pa.z * wa + Pb.z * wb + Pc.z * wc) * sZ,
+          ).project(camera);
+          gpx[gi] = (Pg.x * 0.5 + 0.5) * renderW;
+          gpy[gi] = (-Pg.y * 0.5 + 0.5) * renderH;
+          Ng.set(
+            Na.x * wa + Nb.x * wb + Nc.x * wc,
+            Na.y * wa + Nb.y * wb + Nc.y * wc,
+            Na.z * wa + Nb.z * wb + Nc.z * wc,
+          );
+          Ng.divideScalar(Ng.length() || 1);
+          gps[gi] = shadeOf(Ng);
+          gi++;
+        }
+      }
+      // Stitch the grid into up/down sub-triangles and emit each as a gradient.
+      for (let i = 0; i < K; i++) {
+        const r0 = rowStart[i], r1 = rowStart[i + 1];
+        for (let j = 0; j < K - i; j++) {
+          const p00 = r0 + j, p01 = r0 + j + 1, p10 = r1 + j;
+          emitted += appendTri(
+            gpx[p00], gpy[p00], gpx[p01], gpy[p01], gpx[p10], gpy[p10],
+            gps[p00], gps[p01], gps[p10], br, bgc, bl,
+          );
+          if (j < K - i - 1) {
+            const p11 = r1 + j + 1;
+            emitted += appendTri(
+              gpx[p01], gpy[p01], gpx[p11], gpy[p11], gpx[p10], gpy[p10],
+              gps[p01], gps[p11], gps[p10], br, bgc, bl,
+            );
+          }
+        }
+      }
+    }
+    emitCount = emitted;
 
     // Edge outline — black crease/silhouette lines at a 20° threshold (matches
     // the 3D pane's <Edges thresholdAngle={20}>), drawn ON TOP of the fills. No
@@ -516,7 +619,9 @@
   <div class="svg-toolbar">
     <span class="svg-title" title={name}>{name || 'part'}</span>
     {#if hasRendered && triCount > 0}
-      <span class="svg-tris">{triCount.toLocaleString()} tris{busy ? ' · re-baking…' : ''}</span>
+      <span class="svg-tris">{triCount.toLocaleString()} tris{emitCount > triCount
+        ? ` · ${emitCount.toLocaleString()} fills`
+        : ''}{busy ? ' · re-baking…' : ''}</span>
     {/if}
     <!-- Resolution toggle — coarse (32-seg, default, fast) vs high (full 256).
          Drives the parent's bake via onSetRes. -->
