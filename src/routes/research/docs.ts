@@ -32,6 +32,21 @@ export interface Doc {
   excerpt: string;
   body: string;
   group: DocGroup;
+  /** Display category (tab cluster). From an optional leading
+   *  `<!-- research-group: X -->` marker, else the group name. */
+  category: string;
+}
+
+/** Read an optional leading `<!-- research-group: X -->` marker — used to
+ *  cluster related docs into one tab group (e.g. "Node editors"). */
+function categoryMarkerOf(body: string): string | null {
+  const m = body.match(/<!--\s*research-group:\s*(.+?)\s*-->/i);
+  return m ? m[1].trim() : null;
+}
+
+/** Drop the marker comment line so it never renders. */
+function stripMarker(body: string): string {
+  return body.replace(/^\s*<!--\s*research-group:.*?-->\s*\n?/i, '');
 }
 
 /** First `#` heading in the body, else the prettified slug. */
@@ -44,7 +59,7 @@ function titleOf(body: string, slug: string): string {
 function excerptOf(body: string): string {
   for (const raw of body.split('\n')) {
     const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith('>')) continue;
+    if (!line || line.startsWith('#') || line.startsWith('>') || line.startsWith('<!--')) continue;
     // strip the most common inline markdown so the hint reads as plain text
     const plain = line
       .replace(/[*_`]+/g, '')
@@ -64,16 +79,19 @@ function slugOf(path: string): string {
 function build(): Doc[] {
   const out: Doc[] = [];
 
-  for (const [path, body] of Object.entries(researchRaw)) {
+  for (const [path, raw] of Object.entries(researchRaw)) {
     const slug = slugOf(path);
     // Skip archived snapshot variants for v1.
     if (/\.archived-/i.test(slug)) continue;
-    out.push({ slug, title: titleOf(body, slug), excerpt: excerptOf(body), body, group: 'Research' });
+    const category = categoryMarkerOf(raw) ?? 'Research';
+    const body = stripMarker(raw);
+    out.push({ slug, title: titleOf(body, slug), excerpt: excerptOf(body), body, group: 'Research', category });
   }
 
-  for (const [path, body] of Object.entries(findingsRaw)) {
+  for (const [path, raw] of Object.entries(findingsRaw)) {
     const slug = slugOf(path); // -> 'findings'
-    out.push({ slug, title: titleOf(body, slug), excerpt: excerptOf(body), body, group: 'Findings' });
+    const body = stripMarker(raw);
+    out.push({ slug, title: titleOf(body, slug), excerpt: excerptOf(body), body, group: 'Findings', category: 'Findings' });
   }
 
   out.sort((a, b) => {
@@ -86,6 +104,16 @@ function build(): Doc[] {
 export const docs: Doc[] = build();
 
 export const bySlug = new Map<string, Doc>(docs.map((d) => [d.slug, d]));
+
+/** Ordered category list (tab clusters): Node editors first, other Research,
+ *  then Findings. */
+export const categories: string[] = (() => {
+  const seen = new Set<string>();
+  const order: string[] = [];
+  for (const d of docs) if (!seen.has(d.category)) { seen.add(d.category); order.push(d.category); }
+  const rank = (c: string) => (c === 'Node editors' ? 0 : c === 'Findings' ? 2 : 1);
+  return order.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+})();
 
 export function getDoc(slug: string | undefined): Doc | undefined {
   if (!slug) return undefined;
