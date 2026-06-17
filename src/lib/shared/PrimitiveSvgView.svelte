@@ -128,6 +128,23 @@
     try { localStorage.setItem('ge-svg-cel', v ? '1' : '0'); } catch { /* ignore */ }
   }
 
+  // Adjustable artificial-shader dials (the slider IS the product). `light` =
+  // ambient floor (how bright the shadow side is; higher → flatter). `rim` =
+  // silhouette floor (lower → the edge crushes darker / reads rounder). Both
+  // span their term to 1.0 so a fully-lit face stays at full base colour.
+  let svgLight = $state(0.32);
+  let svgRim   = $state(0.5);
+  $effect(() => {
+    try {
+      const l = Number(localStorage.getItem('ge-svg-light'));
+      const r = Number(localStorage.getItem('ge-svg-rim'));
+      if (Number.isFinite(l) && l > 0) svgLight = l;
+      if (Number.isFinite(r) && r > 0) svgRim = r;
+    } catch { /* ignore */ }
+  });
+  function setSvgLight(v: number) { svgLight = v; try { localStorage.setItem('ge-svg-light', String(v)); } catch { /* ignore */ } }
+  function setSvgRim(v: number)   { svgRim = v;   try { localStorage.setItem('ge-svg-rim', String(v)); } catch { /* ignore */ } }
+
   let size = $state({ w: 0, h: 0 });
   let hasRendered = $state(false);
   let warnHighPoly = $state(false);
@@ -264,9 +281,9 @@
       // DoubleSide: flip the normal toward the camera so back-faces shade right.
       if (nrm.dot(viewDir) > 0) nrm.negate();
       const ndl = Math.max(0, nrm.dot(L));
-      const lambert = 0.32 + 0.68 * ndl;              // ambient floor + key
-      const facing = Math.abs(nrm.dot(viewDir));       // 1 = facing camera, 0 = silhouette
-      const rim = 0.5 + 0.5 * Math.pow(facing, 1.5);   // silhouette darkens → reads ROUND
+      const lambert = svgLight + (1 - svgLight) * ndl;          // ambient floor (dial) + key
+      const facing = Math.abs(nrm.dot(viewDir));                // 1 = facing camera, 0 = silhouette
+      const rim = svgRim + (1 - svgRim) * Math.pow(facing, 1.5); // silhouette floor (dial) → reads ROUND
       let shade = Math.min(1, lambert * rim);
       if (cel) shade = Math.max(0.35, Math.round(shade * 3) / 3); // 4-band toon, 0.35 floor
       // Base colour for THIS face = vertex a's colour, shaded + clamped.
@@ -352,6 +369,7 @@
     void scene.showCutaway;
     void projection;
     void cel;
+    void svgLight; void svgRim;
 
     if (!isActive) { teardown(); return; }
     if (!container || !pair || w === 0 || h === 0) return;
@@ -438,6 +456,16 @@
         title="Cel / toon — quantize the shade into 4 bands (technical illustration)"
         onclick={() => setCel(true)}>cel</button>
     </div>
+    <!-- Shader dials — drag to taste. light = shadow-side brightness (higher =
+         flatter), rim = silhouette darkening (lower = crushes darker / rounder). -->
+    <div class="svg-dials" title="Shading: light = shadow brightness · rim = silhouette falloff">
+      <label class="svg-dial"><span>light</span>
+        <input type="range" min="0.1" max="0.6" step="0.02" value={svgLight}
+          oninput={(e) => setSvgLight(Number((e.currentTarget as HTMLInputElement).value))} /></label>
+      <label class="svg-dial"><span>rim</span>
+        <input type="range" min="0.2" max="1" step="0.02" value={svgRim}
+          oninput={(e) => setSvgRim(Number((e.currentTarget as HTMLInputElement).value))} /></label>
+    </div>
     <button class="svg-dl" onclick={downloadSvg} disabled={!hasRendered}>
       ⤓ .svg
     </button>
@@ -511,6 +539,9 @@
   .svg-proj-btn + .svg-proj-btn { border-left: 1px solid #ddd; }
   .svg-proj-btn:hover { background: #f0f0f0; }
   .svg-proj-btn.on { background: #0369a1; color: #fff; }
+  .svg-dials { display: inline-flex; align-items: center; gap: 8px; }
+  .svg-dial { display: inline-flex; align-items: center; gap: 3px; font: 600 10px Arial; color: #57534e; }
+  .svg-dial input[type="range"] { width: 56px; accent-color: #0369a1; }
   .svg-dl {
     font-size: 0.78rem;
     padding: 0.2rem 0.55rem;
