@@ -30,6 +30,17 @@ well**, and the 2D schematic is a *derived view* of it.
   (`profile`) · strings · components-by-depth (`{tool_comp, depthTop,
   depthBottom, od, params}`). Both the 3D scene and the 2D schematic read it.
 
+**Scale + view dials (to design — see `docs/research/svtc-autoscale-dtx.md`):**
+- **xDiaScale** — radial exaggeration (thin strings visible).
+- **zScale** — vertical/along-hole magnification (= SVTC's `yScale`), WITH an
+  **auto-scale / DTX** that locally magnifies small-component-dense intervals so
+  short "jewellery" (nipples/valves/subs) isn't sub-pixel. Applied to the STRAIGHT
+  well in MD space BEFORE the spline warp.
+- **Flatten** — a 2D projection that **ignores azimuth** (the vertical-section
+  view): project the trajectory onto its azimuth plane so a deviated well reads
+  as a 2D bend. A build-in toggle (full-3D ↔ flattened). [zScale × spline
+  methodology + flatten still under discussion with the user.]
+
 **Why this is achievable now (the key bridge):** SVTC's **3D** scene already
 runs cadtrain's exact THREE + Manifold stack, warps geometry along the survey
 (`direction.ts` + `warpGeometry`), AND has a **`tool_comp` → parametric-builder
