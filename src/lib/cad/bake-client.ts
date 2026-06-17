@@ -75,6 +75,12 @@ function settle(job: Job, r: BakeResult): void {
   if (!job.settled) { job.settled = true; job.resolve(r); }
 }
 
+/** Opt-in perf logging — `localStorage.cad-bake-timings === '1'`. Gates both the
+ *  worker's internal logs (passed in the message) and the [bake-worker] log here. */
+function timingsOn(): boolean {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem('cad-bake-timings') === '1'; } catch { return false; }
+}
+
 let worker: Worker | null = null;
 function getWorker(): Worker {
   if (!worker) {
@@ -86,7 +92,7 @@ function getWorker(): Worker {
       pending.delete(data.id);
       if (data.ok) {
         const t = (data as any).timings;
-        if (t) { try { console.log(`[bake-worker] build=${(t.build ?? 0).toFixed(1)} · mesh=${(t.mesh ?? 0).toFixed(1)} · cutaway=${(t.cutaway ?? 0).toFixed(1)} · serialize=${(t.serialize ?? 0).toFixed(1)} ms`); } catch {} }
+        if (t && timingsOn()) { try { console.log(`[bake-worker] build=${(t.build ?? 0).toFixed(1)} · mesh=${(t.mesh ?? 0).toFixed(1)} · cutaway=${(t.cutaway ?? 0).toFixed(1)} · serialize=${(t.serialize ?? 0).toFixed(1)} ms`); } catch {} }
         const payload: TransferableComponentResult = { full: data.full, cutVC: data.cutVC, instanced: data.instanced };
         // Cache even a SUPERSEDED bake — it's a valid mesh; storing it makes the
         // next identical request instant. Best-effort (cache failure is benign).
@@ -154,7 +160,7 @@ async function dispatch(): Promise<void> {
     // plain numbers/strings/arrays/objects — params + options are all JSON data.
     const plainParams = JSON.parse(JSON.stringify(job.args.params ?? []));
     const plainOptions = JSON.parse(JSON.stringify(job.args.options ?? {}));
-    getWorker().postMessage({ id: job.id, script: job.args.script, params: plainParams, options: plainOptions });
+    getWorker().postMessage({ id: job.id, script: job.args.script, params: plainParams, options: plainOptions, timings: timingsOn() });
   } finally {
     dispatching = false;
     if (waiting) void dispatch();                  // a newer job arrived mid-dispatch

@@ -155,6 +155,18 @@
   let meshAc: AbortController | null = null;
   let glbAc: AbortController | null = null;
 
+  // Coarse-during-drag: while the part is changing fast, bake the live mesh at a
+  // low circular-seg count (cuts build+mesh+cutaway ~4×), then snap to full res
+  // once changes settle. Smooth normals (scene.smoothShade) keep the coarse mesh
+  // shading round, so the draft phase is barely noticeable. Plan: bake-perf.md.
+  const DRAFT_SEG = 64;
+  const DRAFT_SETTLE_MS = 220;
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  // Perf logs ([bake-client]/[bake-worker]/finalize) opt-in via this flag.
+  function bakeTimingsOn(): boolean {
+    try { return localStorage.getItem('cad-bake-timings') === '1'; } catch { return false; }
+  }
+
   // Compiled-script cache (client-exec perf): the compiled script depends ONLY
   // on (name, source) — NOT on params. So param SCRUBBING reuses the cached
   // script and skips the /compile round-trip, baking locally each tick. Keyed on
@@ -179,8 +191,11 @@
     return entry;
   }
 
-  async function rebuildMesh(bust = false) {
+  async function rebuildMesh(bust = false, segArg?: number) {
     if (!id) return;
+    // segArg overrides the user's seg ONLY for this bake (coarse-during-drag).
+    // It is NOT folded into the keyed $effect, so the draft pass can't re-trigger.
+    const segUsed = segArg ?? effSegments;
     // Request the cutaway (cutVC) only when the user is VIEWING it. Large parts
     // (> ~15k tris, e.g. multi-part assemblies) auto-skip the cutaway server-side
     // for speed, so without this the live mesh's cutVC stays empty and toggling
@@ -202,7 +217,7 @@
     // the request body (re-bakes). Sent only when it differs from the default 60
     // → the default request + cache key stay byte-identical to the legacy bake.
     const crease = (typeof scene.creaseAngle === 'number' && scene.creaseAngle !== 60) ? scene.creaseAngle : undefined;
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}) });
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: scene.showCutaway || undefined, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
@@ -226,14 +241,14 @@
         if (ac.signal.aborted) return;
         if (cd?.supported && cd.script) {
           const options = { cutaway: scene.showCutaway || undefined, instanced: true,
-            ...(effSegments ? { segments: effSegments } : {}), ...(warp ? { warp } : {}),
+            ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
             ...(crease ? { creaseAngle: crease } : {}), colorOuter, colorInner };
           const _tb0 = performance.now();
           const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
           const _tBake = performance.now() - _tb0;
           if (ac.signal.aborted || isCancelled(result)) return;
           geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';
-          try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${effSegments ?? 'full(256)'}`); } catch {}
+          if (bakeTimingsOn()) { try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${segUsed ?? 'full(256)'}${segArg ? ' (draft)' : ''}`); } catch {} }
           return;
         }
         // unsupported by the client kernel → fall through to the server path.
@@ -319,10 +334,22 @@
   // bake (~20 s) hogs Node's single thread. Each is gated by its prop so the
   // mesh-only 3D tab never triggers the GLB bake, and the lazy GLB tab never
   // re-bakes the mesh. BREP routes to its own server-side OCCT fetch.
-  async function rebuild(bust = false) {
+  async function rebuild(bust = false, segArg?: number) {
     if (isBrep) { await rebuildBrep(bust); return; }
-    if (bakeMesh) await rebuildMesh(bust);
+    if (bakeMesh) await rebuildMesh(bust, segArg);
     if (effBakeGlb) rebuildGlb(bust);
+  }
+
+  // Two-phase bake (coarse-during-drag): bake a coarse mesh NOW for instant
+  // feedback, then a full-res mesh (+ GLB) once changes idle for DRAFT_SETTLE_MS.
+  // Continuous scrubbing keeps resetting the timer → only coarse bakes until the
+  // user settles. Skipped (single full bake) for BREP, GLB-only, or already-coarse.
+  function scheduleBake(bust = false) {
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+    const full = effSegments ?? 256;
+    if (isBrep || !bakeMesh || full <= DRAFT_SEG) { rebuild(bust); return; }
+    rebuildMesh(bust, DRAFT_SEG);                       // coarse mesh, instant
+    draftTimer = setTimeout(() => { draftTimer = null; rebuild(false); }, DRAFT_SETTLE_MS); // full mesh + GLB on settle
   }
   // 🔄 button: force a FRESH bake (?bust=1) — clears the local fetch cache so the
   // server result is re-fetched, and notifies the parent (editor clears its own
@@ -339,6 +366,7 @@
     // context budget. dispose() drops GPU resources; forceContextLoss()
     // tells the browser the context is reclaimable immediately.
     meshAc?.abort(); glbAc?.abort(); brepAc?.abort();
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     if (glbBlobUrl) URL.revokeObjectURL(glbBlobUrl);
     try { renderer?.dispose(); renderer?.forceContextLoss(); } catch { /* already lost */ }
     renderer = null;
@@ -367,7 +395,7 @@
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, clientBake: scene.clientBake });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
-    rebuild();
+    scheduleBake();
   });
   let lastGlbCut: boolean | null = null;
   $effect(() => {

@@ -27,17 +27,15 @@ import { runCompiledManifold, packTransferable, type BakeOptions } from './bake-
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
-// Perf instrumentation: log the bake breakdown (build · mesh · cutaway ·
-// serialize) to the worker console — surfaces in the browser console. Temporary
-// measurement aid for the client-exec perf pass.
-(globalThis as any).__bakeTimings = true;
-
 /** Request from the main thread (bake-client). */
 export interface BakeWorkerRequest {
   id: number;
   script: string;
   params: Array<number | string> | Record<string, unknown>;
   options?: BakeOptions;
+  /** Opt-in perf logging (build · mesh · cutaway · serialize). Set per-message
+   *  from the client's `cad-bake-timings` flag — NOT always-on. */
+  timings?: boolean;
 }
 
 // Warm the Manifold singleton ONCE, with a worker-safe locateFile. Cached as a
@@ -54,7 +52,8 @@ function ensureInit(): Promise<void> {
 }
 
 ctx.onmessage = async (ev: MessageEvent<BakeWorkerRequest>) => {
-  const { id, script, params, options } = ev.data ?? ({} as BakeWorkerRequest);
+  const { id, script, params, options, timings } = ev.data ?? ({} as BakeWorkerRequest);
+  (globalThis as any).__bakeTimings = !!timings;
   try {
     await ensureInit();
     const serialized = await runCompiledManifold(script, params, options ?? {});
