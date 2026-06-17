@@ -46,7 +46,7 @@ export const meta = {
       vLabel: 'z ↓',
       default: { kind: 'cylinder', params: { r: 1.2, len: 3 } },
     },
-    segments: { label: 'segments', min: 8, max: 256, step: 1, default: 96 },
+    segments: { label: 'segments', min: 3, max: 256, step: 1, default: 96 },
   },
   material: {
     outer: { color: '#5f7d8a', metallic: 0.6, roughness: 0.4 },
@@ -61,6 +61,6 @@ export function r_revolve(profile: any, segments: number): any {
   // arrays straight through, so legacy r_revolve(points) callers still work).
   const pts: [number, number][] =
     typeof profile === 'string' ? JSON.parse(profile) : resolveProfile(profile);
-  const seg = Math.max(8, Math.floor(segments) || 64);
+  const seg = Math.max(3, Math.floor(segments) || 64); // 3 = triangular prism (was floored at 8 → "4 showed 8")
   return weldAndBuild([revolveProfile(pts, seg)]);
 }
