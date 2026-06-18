@@ -91,6 +91,23 @@
   // own per-vertex red-outer / grey-bore colours.
   const DEF_R = 0.8, DEF_G = 0.133, DEF_B = 0.133;
 
+  // Tone-match the 3D MeshPhong bake. The bake's white scene light desaturates +
+  // dims a saturated base colour (e.g. #23cd2e green → muted olive), but our
+  // base×shade keeps it neon. So before shading we mute each face's base toward
+  // its own luminance (DESAT) and dim it (BRIGHT) — a pure recolour of the base,
+  // so the Gouraud gradient stays exact. Tune to taste against the 3D pane.
+  const DESAT = 0.45;   // 0 = vivid (true colour) · 1 = greyscale
+  const BRIGHT = 0.82;  // overall multiplier (the bake reads darker than full colour)
+  /** Mute a base colour toward its luminance + dim — matches the lit 3D tone. */
+  function mute(r: number, g: number, b: number): [number, number, number] {
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    return [
+      (r + (lum - r) * DESAT) * BRIGHT,
+      (g + (lum - g) * DESAT) * BRIGHT,
+      (b + (lum - b) * DESAT) * BRIGHT,
+    ];
+  }
+
   // --- rehydrate mesh-JSON → THREE.BufferGeometry pair (only when it changes) ---
   let geos = $derived.by(() =>
     meshJson ? deserializeComponentResult(meshJson) : null,
@@ -342,9 +359,11 @@
     // depth (for the global sort). Returns 1 if it drew, else 0.
     function appendTri(
       ax: number, ay: number, bx: number, by: number, cx: number, cy: number,
-      s0: number, s1: number, s2: number, br: number, bgc: number, bl: number,
+      s0: number, s1: number, s2: number, br0: number, bg0: number, bl0: number,
       z: number,
     ): number {
+      // Mute the base toward the lit 3D tone (see `mute`) before shading.
+      const [br, bgc, bl] = mute(br0, bg0, bl0);
       // Signed screen area×2 (== the 3×3 determinant for the gradient solve).
       const det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
       if (!Number.isFinite(det) || Math.abs(det) < 1e-7) return 0; // degenerate
@@ -436,12 +455,13 @@
         // Monster mesh → one flat fill per face at the mean shade (no gradient,
         // no subdivision) so the SVG stays bounded.
         const s = (sh[ia] + sh[ib] + sh[ic]) / 3;
+        const [mr, mg, mb] = mute(br, bgc, bl);
         const ax = sx[ia], ay = sy[ia], bx = sx[ib], by = sy[ib], cx = sx[ic], cy = sy[ic];
         const det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
         if (!Number.isFinite(det) || Math.abs(det) < 1e-7) continue;
         const poly = document.createElementNS(SVG_NS, 'polygon');
         poly.setAttribute('points', `${ax.toFixed(2)},${ay.toFixed(2)} ${bx.toFixed(2)},${by.toFixed(2)} ${cx.toFixed(2)},${cy.toFixed(2)}`);
-        poly.setAttribute('fill', rgbHex(br * s, bgc * s, bl * s));
+        poly.setAttribute('fill', rgbHex(mr * s, mg * s, mb * s));
         draws.push({ z: zTri, poly });
         emitted++;
         continue;

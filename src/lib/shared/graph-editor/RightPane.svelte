@@ -175,7 +175,10 @@
         // Mirror PrimitiveDualCanvas's preview request shape: name = the geom
         // function, params = the ordered value array, mode = sandbox (we always
         // have source here). cutaway:true forces the cut even for big stacks.
-        const body: any = { id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true, instanced: true };
+        // NB: NO `instanced` — the SVG wants the plain merged mesh; the instanced
+        // bake returns canonical-child + instance data that inflates the bbox and
+        // renders blank/tiny here (regressed g_cone + g_barrel).
+        const body: any = { id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true };
         if (cOut) body.colorOuter = cOut;
         if (cIn) body.colorInner = cIn;
         if (segs != null) body.segments = segs;
