@@ -156,7 +156,11 @@
   }
   $effect(() => {
     if (rightTab !== 'svg') return;
-    if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; return; }
+    // bake transiently goes to 'loading'/null on a re-bake (e.g. after Save). Null
+    // the mesh AND reset the key, so when bake returns with the SAME source the
+    // key guard below doesn't block the re-fetch — otherwise the SVG vanishes on
+    // Save and never comes back (the mesh was cleared but the key still matched).
+    if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; svgMeshKey = ''; return; }
     const src = bake.source;
     const params = bake.args ?? paramDefaults;
     const segs = svgRes === 'coarse' ? 32 : undefined; // coarse → cap at 32
