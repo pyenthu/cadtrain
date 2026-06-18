@@ -163,17 +163,26 @@
   let emitCount = $state(0);
   let errorMsg = $state<string | null>(null);
 
-  // Observe the stage so the SVG re-renders crisp at the container's size.
+  // Observe the STABLE scroll viewport (.svg-stage), NOT the .svg-canvas inside
+  // it. In ortho the canvas GROWS to the rendered SVG's natural (tall) pixel
+  // size, and the vertical scrollbar appearing/disappearing oscillates its
+  // width — so observing the canvas feeds the render → ResizeObserver → render
+  // loop, which Svelte aborts as `effect_update_depth_exceeded` (the tab errored
+  // out / blanked on a 2nd segment toggle). The stage's size is layout-driven
+  // (flex), independent of content; `scrollbar-gutter: stable` (CSS below) pins
+  // its clientWidth whether or not the scrollbar is showing, killing the last
+  // oscillation source.
   $effect(() => {
     if (!container) return;
+    const stage = container.parentElement ?? container;
     const measure = () => {
-      const w = Math.max(0, Math.floor(container!.clientWidth));
-      const h = Math.max(0, Math.floor(container!.clientHeight));
+      const w = Math.max(0, Math.floor(stage.clientWidth));
+      const h = Math.max(0, Math.floor(stage.clientHeight));
       if (w !== size.w || h !== size.h) size = { w, h };
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(container);
+    ro.observe(stage);
     return () => ro.disconnect();
   });
 
@@ -796,6 +805,9 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;        /* scroll when the SVG (ortho, natural size) overflows */
+    scrollbar-gutter: stable; /* reserve the scrollbar gutter so clientWidth is
+                                 constant whether or not it shows — stops the
+                                 measure↔render oscillation (segment-toggle crash) */
     background: #ffffff;
   }
   .svg-canvas {
