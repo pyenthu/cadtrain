@@ -306,16 +306,6 @@
       else { a[t] = 3 * t; b[t] = 3 * t + 1; c[t] = 3 * t + 2; }
     }
 
-    // Painter's sort: order triangles back-to-front by mean NDC depth so nearer
-    // faces draw LAST (on top). +z is far → draw descending (far first).
-    const order = new Array<number>(triN);
-    const meanZ = new Float32Array(triN);
-    for (let t = 0; t < triN; t++) {
-      order[t] = t;
-      meanZ[t] = (sz[a[t]] + sz[b[t]] + sz[c[t]]) / 3;
-    }
-    order.sort((u, v) => meanZ[v] - meanZ[u]);
-
     // ── Build the <svg> ──────────────────────────────────────────────────────
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('width', String(renderW));
@@ -330,13 +320,23 @@
     bgRect.setAttribute('fill', '#ffffff');
     svg.appendChild(bgRect);
 
-    // Emit ONE screen-space triangle as an exact 2-stop Gouraud gradient (flat
-    // fill when its 3 shades are ~equal or it's degenerate). Shared by the
-    // K=1 fast path and every Phong sub-triangle. Returns 1 if it drew, else 0.
+    // GLOBAL painter's sort. We COLLECT every (sub-)triangle here with its own
+    // mean NDC depth, then sort the whole list back-to-front and paint once
+    // (below). A per-PARENT sort was unreliable for the cutaway: the flat grey
+    // cut face stays a few HUGE triangles while the curved red outer subdivides
+    // into thousands of tiny ones, and one mean-depth per huge face can't
+    // interleave correctly with the small ones → red bled over the grey bore
+    // (inner/outer mis-occluded). Sorting every emitted triangle individually
+    // fixes it. `grad` is undefined for a flat fill.
     let gid = 0;
+    const draws: { z: number; poly: SVGElement; grad?: SVGElement }[] = [];
+    // Emit ONE screen-space triangle as an exact 2-stop Gouraud gradient (flat
+    // fill when its 3 shades are ~equal or it's degenerate). `z` = its mean NDC
+    // depth (for the global sort). Returns 1 if it drew, else 0.
     function appendTri(
       ax: number, ay: number, bx: number, by: number, cx: number, cy: number,
       s0: number, s1: number, s2: number, br: number, bgc: number, bl: number,
+      z: number,
     ): number {
       // Signed screen area×2 (== the 3×3 determinant for the gradient solve).
       const det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
@@ -357,7 +357,7 @@
         // ∇s≈0 → uniformly lit → flat fill at that shade (the common flat-face
         // case, and the no-op case after subdivision shrinks the shade range).
         poly.setAttribute('fill', rgbHex(br * s0, bgc * s0, bl * s0));
-        svg.appendChild(poly);
+        draws.push({ z, poly });
         return 1;
       }
       // Unit gradient direction. Project the 3 vertices onto it: shade is a
@@ -371,7 +371,7 @@
       if (tc < tlo) { tlo = tc; slo = s2; }  if (tc > thi) { thi = tc; shi = s2; }
       if (thi - tlo < 1e-4) {
         poly.setAttribute('fill', rgbHex(br * s0, bgc * s0, bl * s0));
-        svg.appendChild(poly);
+        draws.push({ z, poly });
         return 1;
       }
       const grad = document.createElementNS(SVG_NS, 'linearGradient');
@@ -389,9 +389,8 @@
       stop1.setAttribute('offset', '1');
       stop1.setAttribute('stop-color', rgbHex(br * shi, bgc * shi, bl * shi));
       grad.appendChild(stop0); grad.appendChild(stop1);
-      defs.appendChild(grad);
       poly.setAttribute('fill', `url(#${id})`);
-      svg.appendChild(poly);
+      draws.push({ z, poly, grad });
       return 1;
     }
 
@@ -414,13 +413,12 @@
     const shadeOf = (n: THREE.Vector3) =>
       Math.min(1, AMBIENT + KEY * Math.max(0, n.dot(L)) + FILL * Math.max(0, n.dot(V)));
 
-    for (let oi = 0; oi < triN; oi++) {
-      const t = order[oi];
+    for (let t = 0; t < triN; t++) {
       const ia = a[t], ib = b[t], ic = c[t];
-      // Base colour for THIS face = vertex a's colour (cutaway boundary tris,
-      // where the 3 base colours differ, are rare — one base/face keeps the
-      // gradient a clean 2-stop ramp).
+      // Base colour for THIS face = vertex a's colour (the cutaway bakes one flat
+      // colour per face — all 3 verts equal — so vertex a IS the face colour).
       const br = cr[ia], bgc = cg[ia], bl = cb[ia];
+      const zTri = (sz[ia] + sz[ib] + sz[ic]) / 3; // face mean depth (sort key)
 
       if (flatFill) {
         // Monster mesh → one flat fill per face at the mean shade (no gradient,
@@ -432,7 +430,7 @@
         const poly = document.createElementNS(SVG_NS, 'polygon');
         poly.setAttribute('points', `${ax.toFixed(2)},${ay.toFixed(2)} ${bx.toFixed(2)},${by.toFixed(2)} ${cx.toFixed(2)},${cy.toFixed(2)}`);
         poly.setAttribute('fill', rgbHex(br * s, bgc * s, bl * s));
-        svg.appendChild(poly);
+        draws.push({ z: zTri, poly });
         emitted++;
         continue;
       }
@@ -453,18 +451,19 @@
         // Flat enough (or no normals) → one gradient from the corner shades.
         emitted += appendTri(
           sx[ia], sy[ia], sx[ib], sy[ib], sx[ic], sy[ic],
-          sh[ia], sh[ib], sh[ic], br, bgc, bl,
+          sh[ia], sh[ib], sh[ic], br, bgc, bl, zTri,
         );
         continue;
       }
 
       // Sample a barycentric grid: row i (i=0..K) holds points j=0..K-i, with
       // weights wa=(K-i-j)/K, wb=i/K, wc=j/K. Interpolate the LOCAL position
-      // (→ reproject, perspective-correct) and the normal (→ renormalise → shade).
+      // (→ reproject, perspective-correct, keeping NDC z for the sort) and the
+      // normal (→ renormalise → shade).
       Pa.set(posAttr.getX(ia), posAttr.getY(ia), posAttr.getZ(ia));
       Pb.set(posAttr.getX(ib), posAttr.getY(ib), posAttr.getZ(ib));
       Pc.set(posAttr.getX(ic), posAttr.getY(ic), posAttr.getZ(ic));
-      const gpx: number[] = [], gpy: number[] = [], gps: number[] = [];
+      const gpx: number[] = [], gpy: number[] = [], gpz: number[] = [], gps: number[] = [];
       const rowStart: number[] = [];
       let gi = 0;
       for (let i = 0; i <= K; i++) {
@@ -478,6 +477,7 @@
           ).project(camera);
           gpx[gi] = (Pg.x * 0.5 + 0.5) * renderW;
           gpy[gi] = (-Pg.y * 0.5 + 0.5) * renderH;
+          gpz[gi] = Pg.z;
           Ng.set(
             Na.x * wa + Nb.x * wb + Nc.x * wc,
             Na.y * wa + Nb.y * wb + Nc.y * wc,
@@ -496,18 +496,27 @@
           emitted += appendTri(
             gpx[p00], gpy[p00], gpx[p01], gpy[p01], gpx[p10], gpy[p10],
             gps[p00], gps[p01], gps[p10], br, bgc, bl,
+            (gpz[p00] + gpz[p01] + gpz[p10]) / 3,
           );
           if (j < K - i - 1) {
             const p11 = r1 + j + 1;
             emitted += appendTri(
               gpx[p01], gpy[p01], gpx[p11], gpy[p11], gpx[p10], gpy[p10],
               gps[p01], gps[p11], gps[p10], br, bgc, bl,
+              (gpz[p01] + gpz[p11] + gpz[p10]) / 3,
             );
           }
         }
       }
     }
     emitCount = emitted;
+
+    // Paint the collected triangles back-to-front (far first → near on top).
+    draws.sort((u, v) => v.z - u.z);
+    for (const dr of draws) {
+      if (dr.grad) defs.appendChild(dr.grad);
+      svg.appendChild(dr.poly);
+    }
 
     // Edge outline — black crease/silhouette lines at a 20° threshold (matches
     // the 3D pane's <Edges thresholdAngle={20}>), drawn ON TOP of the fills. No
