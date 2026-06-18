@@ -172,6 +172,23 @@ export function setCircularSegmentCap(n: number | null): void {
   currentSegmentCap = n;
 }
 
+// The COMPLEMENT of the cap: a FLOOR that RAISES an engine-prim `segments` param
+// UP to `n` at the call boundary. The cap can only reduce, so a part that
+// hard-codes `segments: 32` (e.g. g_shaft) stays 32 even under a high-res
+// request → curved bores read faceted/banded. The floor lets the SVG "high"
+// drawing bake those assemblies at full radial resolution. null = no floor
+// (default). Same race-safe set/restore window as the cap.
+let currentSegmentFloor: number | null = null;
+/** Read the active segment FLOOR (null = no floor). */
+export function getCircularSegmentFloor(): number | null {
+  return currentSegmentFloor;
+}
+/** Set (or clear, with null) the segment floor. Pair with a restore in a
+ *  `finally` — see /api/primitives/preview. */
+export function setCircularSegmentFloor(n: number | null): void {
+  currentSegmentFloor = n;
+}
+
 export async function initManifold(opts?: { locateFile?: (path: string, dir: string) => string }) {
   // If a sibling module instance already initialised the wasm, just
   // reapply this instance's segment count to the shared wasm and bail.

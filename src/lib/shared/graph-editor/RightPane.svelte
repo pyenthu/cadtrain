@@ -159,14 +159,18 @@
     if (typeof bake !== 'object' || !bake || !bake.source) { svgMeshJson = null; return; }
     const src = bake.source;
     const params = bake.args ?? paramDefaults;
-    const segs = svgRes === 'coarse' ? 32 : undefined; // undefined → full default (256)
+    const segs = svgRes === 'coarse' ? 32 : undefined; // coarse → cap at 32
+    // High → a segment FLOOR of 256 so assemblies whose deps hard-code a low
+    // `segments` (e.g. dt_tube → g_shaft @32) bake their curved bores SMOOTH
+    // instead of 32-faceted (the plain `segments` lever only caps DOWN).
+    const segFloor = svgRes === 'high' ? 256 : undefined;
     // Match the 3D pane's bake EXACTLY (PrimitiveDualCanvas l.221): same params
     // AND the part's assigned colours + instanced classification. Without these
     // the server fell back to a different cutVC colour path (default red/grey,
     // inner mis-classified) so the SVG ignored the part's selected colours and
     // painted the bore red. Key includes them so a colour edit re-fetches.
     const cOut = (graph as any)?.colorOuter, cIn = (graph as any)?.colorInner;
-    const key = JSON.stringify({ s: src, a: params, seg: segs ?? 'full', cOut, cIn });
+    const key = JSON.stringify({ s: src, a: params, seg: segs ?? 'full', floor: segFloor ?? 0, cOut, cIn });
     if (key === svgMeshKey) return; // already have this mesh
     svgMeshKey = key;
     svgMeshBusy = true;
@@ -182,6 +186,7 @@
         if (cOut) body.colorOuter = cOut;
         if (cIn) body.colorInner = cIn;
         if (segs != null) body.segments = segs;
+        if (segFloor != null) body.segmentsFloor = segFloor;
         const r = await fetch('/api/primitives/preview', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

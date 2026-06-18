@@ -26,7 +26,7 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, instanced, warp, creaseAngle } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, segmentsFloor, instanced, warp, creaseAngle } = body ?? {};
   // OPT-IN GPU instancing (LIVE-mesh path only). When true, finalize tries to
   // detect a Stack/Repeat of N identical bodies and returns the canonical child
   // mesh ONCE + N transforms (response carries `instanced`). When the body
@@ -42,6 +42,14 @@ export const POST = async ({ request, fetch }) => {
   // build, restored right after — see below).
   const segArg = (typeof segments === 'number' && Number.isFinite(segments) && segments >= 8 && segments <= 256)
     ? Math.round(segments)
+    : undefined;
+  // Optional segment FLOOR — RAISES a part's (and its deps') explicit `segments`
+  // param UP to this value for THIS bake. The SVG "high" drawing sends 256 so an
+  // assembly whose deps hard-code segments:32 (e.g. dt_tube → g_shaft) renders
+  // its curved bores smooth instead of 32-faceted. Same clamp range + race-safe
+  // set/restore window as segArg; undefined → no floor → byte-identical default.
+  const segFloorArg = (typeof segmentsFloor === 'number' && Number.isFinite(segmentsFloor) && segmentsFloor >= 8 && segmentsFloor <= 256)
+    ? Math.round(segmentsFloor)
     : undefined;
   // Request-local Z-scale — passed into finalizeManifold (no shared global to
   // race on between concurrent previews). undefined → finalize uses 1.0.
@@ -97,6 +105,9 @@ export const POST = async ({ request, fetch }) => {
     // Coarse-segment override keys the cache so a coarse (SVG) bake stores
     // separately from the full bake; undefined → dropped → default key unchanged.
     segments: segArg,
+    // Segment FLOOR (SVG "high") likewise keys the cache so a high-res bake
+    // stores separately; undefined → dropped → default key unchanged.
+    segmentsFloor: segFloorArg,
     // Warp bakes into the vertex positions → must key the cache so a warped
     // bake stores separately; undefined → dropped → default key unchanged.
     warp: warpArg,
@@ -213,10 +224,15 @@ export const POST = async ({ request, fetch }) => {
   //     an assembly's circular geometry lives entirely in those engine-prim
   //     deps, so without the cap the override was a no-op (byte-identical
   //     30 MB bake at segments:32 vs 256).
-  const segPrev = segArg !== undefined ? helpers.getCircularSegmentCount() : undefined;
+  const segActive = segArg !== undefined || segFloorArg !== undefined;
+  const segPrev = segActive ? helpers.getCircularSegmentCount() : undefined;
   const capPrev = segArg !== undefined ? helpers.getCircularSegmentCap() : undefined;
+  const floorPrev = segFloorArg !== undefined ? helpers.getCircularSegmentFloor() : undefined;
   const weldCapPrev = segArg !== undefined ? getCircSegCap() : undefined;
   if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); setCircSegCap(segArg); }
+  // High-res FLOOR (SVG "high"): raise the raw-helper segment count AND set the
+  // engine-prim floor, so deps that hard-code a low `segments` get lifted UP.
+  if (segFloorArg !== undefined) { helpers.setCircularSegmentCount(segFloorArg); helpers.setCircularSegmentFloor(segFloorArg); }
   // Build-time axial Z-densification (smooth warp) — ONLY when a warp option is
   // present, so non-warp revolves stay light. Drive the target Z-edge length
   // from the warp frequency (period 2π/freq, ~16 samples/cycle). Same race-safe
@@ -225,7 +241,9 @@ export const POST = async ({ request, fetch }) => {
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
   try { manifold = primFn(...args); }
   catch (e: any) {
-    if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); setCircSegCap(weldCapPrev ?? null); }
+    if (segActive) helpers.setCircularSegmentCount(segPrev as number);
+    if (segArg !== undefined) { helpers.setCircularSegmentCap(capPrev as number | null); setCircSegCap(weldCapPrev ?? null); }
+    if (segFloorArg !== undefined) helpers.setCircularSegmentFloor(floorPrev as number | null);
     if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
     // Surface the structured fail-trail buildPrimitiveGeom's dep wrapper
     // attached when the crash came out of a sub-call. Keeps the legacy
@@ -256,7 +274,9 @@ export const POST = async ({ request, fetch }) => {
   }
   // Restore both segment levers right after the sync build (success path). The
   // catch arms above already restored before throwing/returning.
-  if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); }
+  if (segActive) helpers.setCircularSegmentCount(segPrev as number);
+  if (segArg !== undefined) { helpers.setCircularSegmentCap(capPrev as number | null); setCircSegCap(weldCapPrev ?? null); }
+  if (segFloorArg !== undefined) helpers.setCircularSegmentFloor(floorPrev as number | null);
   if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
   mark('geom', t); t = performance.now();
 

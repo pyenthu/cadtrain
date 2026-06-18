@@ -492,27 +492,35 @@ export async function buildPrimitiveGeom(
   // cap is observed only while a coarse bake is in flight (deps execute
   // synchronously inside the parent's primFn, with the cap set).
   const segKeyIdx = metaKeys.findIndex(isSegmentKey);
-  const clampSegInObj = (obj: any, cap: number): any => {
+  // Apply the segment levers to a value: clamp DOWN to `cap`, then RAISE UP to
+  // `floor` (the cap can only lower a part's explicit segments; the floor lifts
+  // a hard-coded low value so the SVG "high" drawing renders smooth bores). null
+  // for either = inactive. Returns the adjusted value (or the original).
+  const adjustSeg = (v: any, cap: number | null, floor: number | null): any => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return v;
+    let nv = v;
+    if (cap != null && nv > cap) nv = cap;
+    if (floor != null && nv < floor) nv = floor;
+    return nv;
+  };
+  const adjustSegInObj = (obj: any, cap: number | null, floor: number | null): any => {
     if (segKeyIdx < 0) return obj;
     const k = metaKeys[segKeyIdx]!;
-    const v = obj?.[k];
-    if (typeof v === 'number' && Number.isFinite(v) && v > cap) {
-      return { ...obj, [k]: cap };
-    }
-    return obj;
+    const nv = adjustSeg(obj?.[k], cap, floor);
+    return nv === obj?.[k] ? obj : { ...obj, [k]: nv };
   };
-  const clampSegInArgs = (a: any[], cap: number): any[] => {
+  const adjustSegInArgs = (a: any[], cap: number | null, floor: number | null): any[] => {
     if (segKeyIdx < 0 || segKeyIdx >= a.length) return a;
-    const v = a[segKeyIdx];
-    if (typeof v === 'number' && Number.isFinite(v) && v > cap) {
-      const out = a.slice();
-      out[segKeyIdx] = cap;
-      return out;
-    }
-    return a;
+    const nv = adjustSeg(a[segKeyIdx], cap, floor);
+    if (nv === a[segKeyIdx]) return a;
+    const out = a.slice();
+    out[segKeyIdx] = nv;
+    return out;
   };
   const wrapped: GeomFn = (...args: any[]) => {
     const cap = helpers.getCircularSegmentCap();
+    const floor = helpers.getCircularSegmentFloor();
+    const segActive = cap != null || floor != null;
     const objectInbound = args.length === 1 && args[0] && typeof args[0] === 'object'
       && !Array.isArray(args[0]) && (args[0] as any).__cadtrain_manifold__ === undefined
       && !(args[0] as any).constructor?.name?.startsWith?.('Manifold');
@@ -522,17 +530,17 @@ export async function buildPrimitiveGeom(
       let obj = objectInbound
         ? args[0]
         : Object.fromEntries(metaKeys.map((k, i) => [k, args[i]]));
-      if (cap != null) obj = clampSegInObj(obj, cap);
+      if (segActive) obj = adjustSegInObj(obj, cap, floor);
       return autoPlace((fn as any)(obj));
     }
     // fn expects positional args. Pass through when already positional;
     // spread an object via metaKeys when single-object inbound.
     if (objectInbound && metaKeys.length > 0) {
       let positional = metaKeys.map((k) => (args[0] as any)[k]);
-      if (cap != null) positional = clampSegInArgs(positional, cap);
+      if (segActive) positional = adjustSegInArgs(positional, cap, floor);
       return autoPlace((fn as any)(...positional));
     }
-    const finalArgs = cap != null ? clampSegInArgs(args, cap) : args;
+    const finalArgs = segActive ? adjustSegInArgs(args, cap, floor) : args;
     return autoPlace((fn as any)(...finalArgs));
   };
   return wrapped;
