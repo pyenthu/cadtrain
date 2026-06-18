@@ -286,6 +286,13 @@
       sz[i] = p.z;
       if (nrmAttr) {
         nrm.set(nrmAttr.getX(i), nrmAttr.getY(i), nrmAttr.getZ(i));
+        // TWO-SIDED lighting (DoubleSide): flip the normal to face the camera
+        // before shading. A cutaway exposes CONCAVE inner walls + cut faces whose
+        // baked normals point AWAY from the lens; without the flip their n·L and
+        // n·V collapse to ~0 → the curved grey bore reads flat AND its shading
+        // runs reversed vs the outer skin. The convex outer already faces the
+        // camera (n·V≥0) so it's untouched.
+        if (nrm.dot(V) < 0) nrm.negate();
         // ambient floor + rotatable key highlight + constant camera headlight.
         sh[i] = Math.min(
           1,
@@ -410,8 +417,13 @@
     const Pa = new THREE.Vector3(), Pb = new THREE.Vector3(), Pc = new THREE.Vector3();
     const Na = new THREE.Vector3(), Nb = new THREE.Vector3(), Nc = new THREE.Vector3();
     const Pg = new THREE.Vector3(), Ng = new THREE.Vector3();
-    const shadeOf = (n: THREE.Vector3) =>
-      Math.min(1, AMBIENT + KEY * Math.max(0, n.dot(L)) + FILL * Math.max(0, n.dot(V)));
+    // TWO-SIDED: flip the (Phong-interpolated) normal toward the camera so
+    // concave inner / cut faces light like the outer skin (nv<0 → use −n).
+    const shadeOf = (n: THREE.Vector3) => {
+      const nv = n.dot(V);
+      const nl = nv < 0 ? -n.dot(L) : n.dot(L);
+      return Math.min(1, AMBIENT + KEY * Math.max(0, nl) + FILL * Math.abs(nv));
+    };
 
     for (let t = 0; t < triN; t++) {
       const ia = a[t], ib = b[t], ic = c[t];
