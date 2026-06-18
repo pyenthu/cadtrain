@@ -160,7 +160,13 @@
     const src = bake.source;
     const params = bake.args ?? paramDefaults;
     const segs = svgRes === 'coarse' ? 32 : undefined; // undefined → full default (256)
-    const key = JSON.stringify({ s: src, a: params, seg: segs ?? 'full' });
+    // Match the 3D pane's bake EXACTLY (PrimitiveDualCanvas l.221): same params
+    // AND the part's assigned colours + instanced classification. Without these
+    // the server fell back to a different cutVC colour path (default red/grey,
+    // inner mis-classified) so the SVG ignored the part's selected colours and
+    // painted the bore red. Key includes them so a colour edit re-fetches.
+    const cOut = (graph as any)?.colorOuter, cIn = (graph as any)?.colorInner;
+    const key = JSON.stringify({ s: src, a: params, seg: segs ?? 'full', cOut, cIn });
     if (key === svgMeshKey) return; // already have this mesh
     svgMeshKey = key;
     svgMeshBusy = true;
@@ -169,7 +175,9 @@
         // Mirror PrimitiveDualCanvas's preview request shape: name = the geom
         // function, params = the ordered value array, mode = sandbox (we always
         // have source here). cutaway:true forces the cut even for big stacks.
-        const body: any = { id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true };
+        const body: any = { id: exemplarId, name: exemplarId, source: src, params, mode: 'sandbox', cutaway: true, instanced: true };
+        if (cOut) body.colorOuter = cOut;
+        if (cIn) body.colorInner = cIn;
         if (segs != null) body.segments = segs;
         const r = await fetch('/api/primitives/preview', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
