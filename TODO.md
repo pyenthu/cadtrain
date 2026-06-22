@@ -65,3 +65,21 @@ spec (`docs/plans/bake-worker-pool.md`). Probes under `scripts/` (25fe1e2).
 5. PLAN We need to introduce the concept of units here. Like diameter in inches or mm generslly, z in m or ft. We ill need a centralized units repository.
 6. The TXForm card is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added. Right now there is a redundancy in each card's operation. There should be a selactor of what we want for each row. and the ability to move one transform up or down.
 
+1. SLOWING DOWN when a new tab is opened.
+2. Initial svg is bad. Need a deep dive. It is ok after changing segments.
+3. g_dp_box slows down everything. First time load is very slow and the svg comes out missing parts. Then it gets built right.
+
+
+5. Need to check how much time it takes to build these svg.
+6. dp_stand is still coarse.
+7. Is it possible to use a phase ange for the r_weld_extrude to "straighten the spiralled triangles.. ie.. we build the extrure buy offseting the vertices that are used to build the triangbles.." that way the triangles are kind of straight down on the latituude.. Like the lat and long on the globe.. perpendicular not offset skewed.
+8. g_star svg has g_star 1,466 tris · 24,248 fills ⚙ light 17°
+⤓ .svg... does having 24,248 fills slow things down? is it possible to have a formula for the fills to speed up. 
+4. Same with dp_joint 
+Also too many tris.. do we need to reduce?
+1,446 tris · 24,142 fills
+coarse
+high
+persp
+ortho
+light 0°
