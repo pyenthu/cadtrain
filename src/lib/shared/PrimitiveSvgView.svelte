@@ -139,6 +139,10 @@
     try { localStorage.setItem('ge-svg-projection', p); } catch { /* ignore */ }
   }
 
+  // The resolution (coarse/high) + camera (ortho/persp) toggles live in a small
+  // ⚙ popup so the toolbar stays clean — coarse + ortho are the defaults we keep.
+  let showSettings = $state(false);
+
   // Single light-angle dial (0–360°) — spins the key light L about the view axis
   // so the highlight sweeps across the part. Replaces the old light/rim/cel
   // artificial-shader controls. Persisted so the choice sticks.
@@ -673,25 +677,42 @@
         ? ` · ${emitCount.toLocaleString()} fills`
         : ''}{busy ? ' · re-baking…' : ''}</span>
     {/if}
-    <!-- Resolution toggle — coarse (32-seg, default, fast) vs high (full 256).
-         Drives the parent's bake via onSetRes. -->
-    {#if onSetRes}
-      <div class="svg-proj" role="group" aria-label="Resolution">
-        <button class="svg-proj-btn" class:on={res === 'coarse'}
-          title="Coarse — 32-segment bake (fast, light; the right choice for a vector drawing)"
-          onclick={() => onSetRes?.('coarse')}>coarse</button>
-        <button class="svg-proj-btn" class:on={res === 'high'}
-          title="High — full 256-segment bake (smoother circles, heavier SVG)"
-          onclick={() => onSetRes?.('high')}>high</button>
-      </div>
-    {/if}
-    <!-- Projection toggle — ortho (default, technical drawing) vs persp. -->
-    <div class="svg-proj" role="group" aria-label="Projection">
-      <button class="svg-proj-btn" class:on={projection === 'persp'}
-        title="Perspective projection" onclick={() => setProjection('persp')}>persp</button>
-      <button class="svg-proj-btn" class:on={projection === 'ortho'}
-        title="Orthographic projection — parallel edges, no foreshortening (technical drawing)"
-        onclick={() => setProjection('ortho')}>ortho</button>
+    <!-- Resolution (coarse/high) + camera (ortho/persp) folded into one ⚙ popup
+         — coarse + ortho are the defaults, so the toolbar stays uncluttered. -->
+    <div class="svg-settings">
+      <button class="svg-gear" class:on={showSettings}
+        title="View settings — resolution · camera"
+        aria-label="View settings"
+        onclick={() => (showSettings = !showSettings)}>⚙</button>
+      {#if showSettings}
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="svg-set-backdrop" onclick={() => (showSettings = false)}></div>
+        <div class="svg-set-pop">
+          {#if onSetRes}
+            <div class="svg-set-row">
+              <span class="svg-set-lbl">resolution</span>
+              <div class="svg-proj" role="group" aria-label="Resolution">
+                <button class="svg-proj-btn" class:on={res === 'coarse'}
+                  title="Coarse — 32-segment bake (fast, light; right for a vector drawing)"
+                  onclick={() => onSetRes?.('coarse')}>coarse</button>
+                <button class="svg-proj-btn" class:on={res === 'high'}
+                  title="High — full 256-segment bake (smoother circles, heavier SVG)"
+                  onclick={() => onSetRes?.('high')}>high</button>
+              </div>
+            </div>
+          {/if}
+          <div class="svg-set-row">
+            <span class="svg-set-lbl">camera</span>
+            <div class="svg-proj" role="group" aria-label="Projection">
+              <button class="svg-proj-btn" class:on={projection === 'ortho'}
+                title="Orthographic — parallel edges, no foreshortening (technical drawing)"
+                onclick={() => setProjection('ortho')}>ortho</button>
+              <button class="svg-proj-btn" class:on={projection === 'persp'}
+                title="Perspective projection" onclick={() => setProjection('persp')}>persp</button>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
     <!-- Light-angle dial — spins the key light L around the view so the Gouraud
          highlight sweeps across the part. -->
@@ -755,8 +776,27 @@
     color: #888;
     white-space: nowrap;
   }
+  /* ⚙ settings popup (resolution + camera) — pushed to the right of the toolbar. */
+  .svg-settings { position: relative; margin-left: auto; display: inline-flex; }
+  .svg-gear {
+    font-size: 0.9rem; line-height: 1; width: 1.5rem; height: 1.5rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid #bbb; border-radius: 4px; background: #fafafa; color: #555;
+    cursor: pointer;
+  }
+  .svg-gear:hover { background: #f0f0f0; }
+  .svg-gear.on { background: #0369a1; color: #fff; border-color: #0369a1; }
+  .svg-set-backdrop { position: fixed; inset: 0; z-index: 50; }
+  .svg-set-pop {
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 51;
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.5rem 0.6rem; background: #fff;
+    border: 1px solid #ccc; border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  }
+  .svg-set-row { display: flex; align-items: center; gap: 0.6rem; justify-content: space-between; }
+  .svg-set-lbl { font-size: 0.7rem; color: #57534e; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
   .svg-proj {
-    margin-left: auto;
     display: inline-flex;
     border: 1px solid #bbb;
     border-radius: 4px;
