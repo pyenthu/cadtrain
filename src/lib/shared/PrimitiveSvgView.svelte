@@ -123,6 +123,8 @@
   let container = $state<HTMLDivElement | null>(null);
   // The <svg> we built last render (download target; replaced each render).
   let svgEl: SVGSVGElement | null = null;
+  // First-paint fix (see renderToSvg): rAF handle for the deferred re-raster.
+  let repaintRaf = 0;
 
   // ortho (default) vs persp projection — persisted so the choice sticks across
   // tab/part switches. Ortho is the technical-drawing projection (no foreshorten),
@@ -444,7 +446,8 @@
     // shoulders) have ~0 normal spread → K=1 → zero extra polygons.
     const KMAX = 6;            // cap subdivision so the SVG can't explode
     const TARGET = 0.05;       // ~2.9° per sub-step — finer than the eye resolves
-    const EMIT_BUDGET = 24000; // ceiling on emitted polys (SVG tab is used rarely)
+    const SUBDIV_PX = 10;      // min on-screen sub-triangle edge (px) — see kScreen below
+    const EMIT_BUDGET = 16000; // ceiling on emitted polys (SVG tab is used rarely)
     let emitted = 0;
     const Pa = new THREE.Vector3(), Pb = new THREE.Vector3(), Pc = new THREE.Vector3();
     const Na = new THREE.Vector3(), Nb = new THREE.Vector3(), Nc = new THREE.Vector3();
@@ -480,7 +483,13 @@
         continue;
       }
 
-      // How far does the normal turn across this face? → subdivision level K.
+      // Subdivision level K = how finely to Phong-sample this face. Two caps:
+      //   (1) NORMAL spread — how much the surface curves across the face.
+      //   (2) SCREEN size  — never split below ~SUBDIV_PX px. Banding only shows
+      //       on LARGE faces; subdividing a tiny triangle just multiplies DOM
+      //       nodes for nothing. This is the main speed lever: a dense/twisted
+      //       bake (g_star, dp_joint — thousands of small tris) stops exploding
+      //       the fill count, while a coarse bake (few big tris) still refines.
       let K = 1;
       if (nrmAttr) {
         Na.set(nrmAttr.getX(ia), nrmAttr.getY(ia), nrmAttr.getZ(ia));
@@ -489,6 +498,14 @@
         const dmin = Math.min(Na.dot(Nb), Nb.dot(Nc), Na.dot(Nc));
         const spread = Math.acos(Math.max(-1, Math.min(1, dmin)));
         K = Math.max(1, Math.min(KMAX, Math.ceil(spread / TARGET)));
+        // cap by on-screen size (longest projected edge / SUBDIV_PX)
+        const ax = sx[ia], ay = sy[ia], bx = sx[ib], by = sy[ib], cx = sx[ic], cy = sy[ic];
+        const maxEdge = Math.max(
+          Math.hypot(bx - ax, by - ay),
+          Math.hypot(cx - bx, cy - by),
+          Math.hypot(ax - cx, ay - cy),
+        );
+        K = Math.min(K, Math.max(1, Math.floor(maxEdge / SUBDIV_PX)));
         if (emitted + K * K > EMIT_BUDGET) K = 1; // budget guard
       }
 
@@ -608,6 +625,22 @@
       svg.style.margin = '0 auto';
     }
     hasRendered = true;
+
+    // FIRST-PAINT FIX. A heavy SVG (1000s of <defs> userSpaceOnUse gradients —
+    // dt_tube 1.4k, g_dp_joint 9k polygons) can raster INCOMPLETE on its very first
+    // paint: scattered white gaps. Proven from the artifacts — the downloaded SVG is
+    // byte-identical whether it "looked broken" or fine, and a manual rebuild cleared
+    // it. So the DOM is correct; only the first raster pass glitches. Re-attach the
+    // SAME already-built <svg> on the next frame to force one clean re-raster (the
+    // cheap equivalent of the rebuild — NO geometry rebuild). Deduped via cancel so
+    // rapid re-renders (light slider) collapse to a single trailing repaint.
+    if (repaintRaf) cancelAnimationFrame(repaintRaf);
+    const el = svg;
+    repaintRaf = requestAnimationFrame(() => {
+      repaintRaf = 0;
+      // skip if a newer render replaced it (that render schedules its own repaint)
+      if (container && el.parentElement === container) container.replaceChildren(el);
+    });
   }
 
   // Render whenever active + geometry present, re-firing on camera / partCenter /
