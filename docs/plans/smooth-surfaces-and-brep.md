@@ -14,8 +14,15 @@
   welded revolves to ±0.001 of the true circle (the earlier "wavy r≈0.75" was a measurement artifact —
   cap-transition verts, which Manifold's own test excludes); (c) **`levelSet` (SDF)** = organic surfaces
   (gyroid runs, 77k tris). Probes: `scripts/{test-normals-slot,verify-normals-fix,test-gyroid-and-smooth}.ts`.
-- ⏳ **LEFT (optional):** wire the smoothOut+refine prototype (`builder.ts`, bbd7de9) to a "true round
-  silhouette" toggle on the full bake. Not started — it's opt-in, costs triangles.
+- ✅ **Round toggle SHIPPED (d587417):** the smoothOut+refine prototype is now wired end-to-end as the
+  ◯ round toggle in the 3D-bake gear (SceneControls) → `scene.roundSurface` → `/preview` body +
+  client bake-worker options (shared `coerceSmooth` validation, bake-cache + IndexedDB keyed),
+  `finalizeManifold({ smooth })`. Default OFF = byte-identical. Reuses the crease angle as the
+  sharp-edge threshold; tolerance fixed at ~0.4% of max-OD. Verified: server curl g_shaft seg=12
+  144→1152 / seg=24 288→1440; client browser seg=8 OFF 32 tris → ON 416. **A no-op at the default
+  192 segments** (the mesh is already within tolerance) — it rounds faceted/coarse parts, as designed.
+- ⏳ **LEFT (optional):** expose the tolerance as a dial; honour round on the GLB (bake-preview) tab;
+  `levelSet(sdf)` for organic/lattice parts.
 - 🗑 **Dropped:** the NURBS-port + BREP→Manifold-hybrid spikes (P2/P3 below) — not needed for our parts.
 
 ---

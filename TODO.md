@@ -40,11 +40,13 @@
   - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
   `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
-10. **Smooth surfaces — roundness toggle (OPTIONAL).** What's LEFT: wire the PROVEN
-  `smoothOut(60).refineToTolerance` as a "true round silhouette" toggle (build-time, crease-aware,
-  costs triangles — reconstructs welded revolves to ±0.001; prototype in `builder.ts` bbd7de9, unwired);
-  `Manifold.levelSet(sdf,…)` is available for organic/lattice parts (verified). Plan:
-  `docs/plans/smooth-surfaces-and-brep.md`.
+10. **Smooth surfaces — round toggle SHIPPED; levelSet OPTIONAL.** ✅ The ◯ round
+  toggle (build-time `smoothOut(crease).refineToTolerance`) is wired end-to-end (gear →
+  /preview + client worker, cache-keyed) — `d587417`. Rounds faceted/coarse parts; a
+  no-op at the default 192 segments (already within tolerance). LEFT (optional):
+  expose the tolerance as a dial (currently fixed at ~0.4% of max-OD); honour round on
+  the GLB (bake-preview) tab too; `Manifold.levelSet(sdf,…)` for organic/lattice parts
+  (verified, not wired). Plan: `docs/plans/smooth-surfaces-and-brep.md`.
 
 
 ### PARKED
