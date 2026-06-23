@@ -6,12 +6,9 @@
    Plan: `docs/plans/ai-rag-system.md`.
 2. **web-llm local backend** — in-browser Qwen2.5-1.5B + XGrammar, default-OFF, local
   few-shot DB (no data leaves org). Plan: `docs/research/web-llm-functionary.md`.
-3. **Modularize round 2** — A/B/C/D **and E (Step 1 + Step 2) done** (`SketchState`
-  per-instance class; `SketchNodeCard` + `SketchEditorPane` extracted, coord ƒ-popover
-  stays in the shell, GEP 7897→7376, browser-verified in /primitives + /graph-editor).
-  LEFT: **Phase F** = `NodeCard.svelte` (per-node render arms + `polyExprPop`, HIGH risk);
-  - dead-code prune (builder.ts/library.ts chain). Plans: `docs/plans/graph-editor-pane.md`
-  - `modularize-round2.md`.
+3. **Modularize round 2** — LEFT (A–E done): **Phase F** = `NodeCard.svelte` (per-node
+  render arms + `polyExprPop`, HIGH risk) + dead-code prune (builder.ts/library.ts chain).
+  Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 4. **Right nav menu restructure** — group the RightPane rail into VIEW/DATA + pinned
   settings. Plan: `docs/plans/right-nav-menu.md`.
 5. **Sketch repeat** — poly_repeat-style loop in the sketch. *(Unblocked by #3 Phase E
@@ -40,13 +37,13 @@
   - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
   `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
-10. **Smooth surfaces — round toggle SHIPPED; levelSet OPTIONAL.** ✅ The ◯ round
-  toggle (build-time `smoothOut(crease).refineToTolerance`) is wired end-to-end (gear →
-  /preview + client worker, cache-keyed) — `d587417`. Rounds faceted/coarse parts; a
-  no-op at the default 192 segments (already within tolerance). LEFT (optional):
-  expose the tolerance as a dial (currently fixed at ~0.4% of max-OD); honour round on
-  the GLB (bake-preview) tab too; `Manifold.levelSet(sdf,…)` for organic/lattice parts
-  (verified, not wired). Plan: `docs/plans/smooth-surfaces-and-brep.md`.
+10. **Smooth surfaces — round-toggle ENHANCEMENT (future).** The ◯ round toggle ships
+  (d587417) but only refines below ~28 segments — at 32/96/192 the mesh is already within
+  the fixed 0.4%-of-OD tolerance → visible NO-OP. To make it useful at typical seg counts:
+  (1) tighten the tolerance (~0.05% of OD), (2) expose a "roundness" strength dial next to
+  the checkbox. (High-seg parts that still look faceted = SHADING control, not this toggle.)
+  Optional: round on the GLB tab; `Manifold.levelSet(sdf,…)` for organic/lattice parts.
+  Plan: `docs/plans/smooth-surfaces-and-brep.md`. See [[round_silhouette_toggle]].
 
 
 ### PARKED
