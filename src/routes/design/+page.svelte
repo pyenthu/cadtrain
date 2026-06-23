@@ -1,58 +1,16 @@
 <script lang="ts">
   /**
-   * /design — a descriptive "what is this project + how it's designed" page
-   * for CAD Train. Self-contained: no shared components, no new deps, scoped
-   * CSS only. SSR is already off via the global +layout.ts; nothing here
-   * touches window/document at module scope, so it is SSR-safe regardless.
+   * /design — interactive architecture graph + descriptive prose for CAD Train.
    *
-   * Content is drawn from the root CLAUDE.md (architecture snapshot + route
-   * table + tech stack), docs/COMPOSITION.md, docs/CAD_AUTHORING.md, and the
-   * /plan bundle descriptions (A/G/K/M/N…). Kept accurate to the codebase.
+   * The three static diagram sections (Architecture, Bake flow, Routes table)
+   * are replaced by one interactive @xyflow/svelte canvas (ArchGraph.svelte).
+   * Hero + "What it is" prose + Capabilities + Tech stack are kept.
+   *
+   * SSR is globally off (src/+layout.ts: ssr = false) so top-level imports of
+   * browser-only libs are safe. ArchGraph.svelte is imported normally; it in
+   * turn imports @xyflow/svelte at module scope which is fine for client-only.
    */
-
-  const ACCENT = '#cc2222';
-
-  // Layer stack — raw helpers → engine primitives → volume parts → graph → bake → viewer.
-  const layers = [
-    {
-      tag: 'L0',
-      name: 'Raw helpers',
-      note: 'manifold-helpers.ts — cyl · tube · revolve · place · datums. Unstable toolkit, used ONLY inside engines.',
-    },
-    {
-      tag: 'L1',
-      name: 'Engine primitives',
-      note: 'stdlib/ (active: r_cuboid) + stdstale/ (r_revolve · r_extrude · r_weld_extrude). Canonical in src/, read-only.',
-    },
-    {
-      tag: 'L2',
-      name: 'Volume parts',
-      note: 'Typed source files on a persistent volume — .prim.ts composites & .asm.ts assemblies. Compose engines via .add/.subtract.',
-    },
-    {
-      tag: 'L3',
-      name: 'Composition graph',
-      note: 'Call · Container · Method · Mv · Rot · Repeat · Polygon · PolyRepeat. Each part carries meta.graph.',
-    },
-    {
-      tag: 'L4',
-      name: 'Bake — Manifold (WASM)',
-      note: 'graph → emit → Manifold CSG → mesh. Server bake cache de-dupes by param hash.',
-    },
-    {
-      tag: 'L5',
-      name: 'Viewer — Threlte',
-      note: 'Mesh / GLB / SVG out. Instancing, cutaway, per-part colour, Z-down convention.',
-    },
-  ];
-
-  // Bake pipeline flow — graph → emit → Manifold → outputs.
-  const flow = [
-    { k: 'Graph', d: 'typed nodes' },
-    { k: 'Emit', d: 'source body' },
-    { k: 'Manifold', d: 'WASM CSG' },
-    { k: 'Mesh · GLB · SVG', d: 'cached output' },
-  ];
+  import ArchGraph from './ArchGraph.svelte';
 
   const capabilities = [
     {
@@ -92,14 +50,6 @@
     { name: 'Docker → Railway', why: 'Dockerfile build, persistent volume at /app_data for parts, RAG corpus, and the bake cache.' },
   ];
 
-  const routes = [
-    { path: '/graph-editor', purpose: 'The CAD editor — a single primitive, full-screen.' },
-    { path: '/primitives', purpose: 'Sidebar of volume parts + a multi-tab graph editor.' },
-    { path: '/vocab', purpose: 'Vocabulary editor — browse · infer · bake · promote.' },
-    { path: '/volume', purpose: 'File manager for the persistent data volume.' },
-    { path: '/plan', purpose: 'Gantt roadmap — the single source of truth for scope.' },
-    { path: '/design', purpose: 'This page — what the project is and how it is designed.' },
-  ];
 </script>
 
 <svelte:head>
@@ -165,44 +115,20 @@
     </div>
   </section>
 
-  <!-- ───────────────────────── Architecture ───────────────────────── -->
+  <!-- ───────────────────────── Architecture graph ───────────────────────── -->
   <section class="section section-alt" aria-labelledby="arch-h">
     <div class="section-head">
       <span class="num">02</span>
       <h2 id="arch-h">Architecture</h2>
     </div>
     <p class="prose section-intro">
-      Three authoring layers feed one bake pipeline. Raw helpers harden into
-      engine primitives; primitives compose into volume parts; parts are a
-      composition graph that emits, bakes, and renders.
+      An interactive map of the app — routes, API groups, pipeline stages, and
+      persistent stores. Pan &amp; zoom freely; click a <strong>route</strong>
+      node to jump to the live page. The bake-pipeline edges animate to show
+      data flow direction.
     </p>
 
-    <div class="layers" role="list">
-      {#each layers as l, i}
-        <div class="layer" role="listitem">
-          <div class="layer-tag" style="--depth:{i}">{l.tag}</div>
-          <div class="layer-body">
-            <h3>{l.name}</h3>
-            <p>{l.note}</p>
-          </div>
-          {#if i < layers.length - 1}
-            <div class="layer-arrow" aria-hidden="true">↓</div>
-          {/if}
-        </div>
-      {/each}
-    </div>
-
-    <div class="flow" aria-label="Bake pipeline">
-      {#each flow as f, i}
-        <div class="flow-node">
-          <span class="flow-k">{f.k}</span>
-          <span class="flow-d">{f.d}</span>
-        </div>
-        {#if i < flow.length - 1}
-          <span class="flow-arrow" aria-hidden="true">→</span>
-        {/if}
-      {/each}
-    </div>
+    <ArchGraph />
   </section>
 
   <!-- ───────────────────────── Capabilities ───────────────────────── -->
@@ -247,21 +173,15 @@
       <span class="num">05</span>
       <h2 id="routes-h">The routes</h2>
     </div>
-    <div class="table-wrap">
-      <table class="routes">
-        <thead>
-          <tr><th scope="col">Route</th><th scope="col">Purpose</th></tr>
-        </thead>
-        <tbody>
-          {#each routes as r}
-            <tr>
-              <td><code>{r.path}</code></td>
-              <td>{r.purpose}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+    <p class="prose">
+      All active routes are shown as <strong>blue nodes</strong> in the
+      architecture graph above — click any to navigate directly.
+      Key routes: <code><a href="/graph-editor">/graph-editor</a></code> (the CAD
+      editor), <code><a href="/primitives">/primitives</a></code> (sidebar +
+      multi-tab editor), <code><a href="/vocab">/vocab</a></code> (vocabulary),
+      <code><a href="/volume">/volume</a></code> (file manager),
+      <code><a href="/plan">/plan</a></code> (Gantt roadmap).
+    </p>
   </section>
 
   <!-- ───────────────────────── Footer ───────────────────────── -->
@@ -436,101 +356,6 @@
     margin: 0;
   }
 
-  /* ───────── Architecture layers ───────── */
-  .layers {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    max-width: 54rem;
-  }
-  .layer {
-    position: relative;
-    display: grid;
-    grid-template-columns: 3.4rem 1fr;
-    align-items: start;
-    gap: 1.1rem;
-    padding: 1.1rem 1.2rem;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--accent);
-    border-radius: 10px;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-  }
-  .section-alt .layer {
-    background: #fff;
-  }
-  .layer:hover {
-    transform: translateX(4px);
-    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.06);
-  }
-  .layer-tag {
-    font-size: 0.8rem;
-    font-weight: 800;
-    letter-spacing: 0.03em;
-    color: #fff;
-    background: var(--accent);
-    opacity: calc(0.55 + var(--depth) * 0.08);
-    border-radius: 6px;
-    text-align: center;
-    padding: 0.3rem 0;
-  }
-  .layer-body h3 {
-    margin: 0 0 0.25rem;
-    font-size: 1.02rem;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-  }
-  .layer-body p {
-    margin: 0;
-    font-size: 0.9rem;
-    color: var(--ink-soft);
-  }
-  .layer-arrow {
-    position: absolute;
-    left: 1.5rem;
-    bottom: -0.55rem;
-    z-index: 1;
-    color: var(--ink-faint);
-    font-size: 0.85rem;
-    line-height: 1;
-  }
-
-  /* ───────── Bake flow ───────── */
-  .flow {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 0.65rem;
-    margin-top: 3rem;
-    max-width: 54rem;
-  }
-  .flow-node {
-    flex: 1 1 8rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    padding: 1rem 1.1rem;
-    background: var(--accent-soft);
-    border: 1px solid rgba(204, 34, 34, 0.18);
-    border-radius: 10px;
-  }
-  .flow-k {
-    font-weight: 700;
-    font-size: 0.98rem;
-    color: var(--accent);
-    letter-spacing: -0.01em;
-  }
-  .flow-d {
-    font-size: 0.8rem;
-    color: var(--ink-soft);
-  }
-  .flow-arrow {
-    align-self: center;
-    color: var(--accent);
-    font-size: 1.3rem;
-    font-weight: 700;
-  }
-
   /* ───────── Capability cards ───────── */
   .cards {
     display: grid;
@@ -613,41 +438,20 @@
     font-size: 0.95rem;
   }
 
-  /* ───────── Routes table ───────── */
-  .table-wrap {
-    max-width: 58rem;
-    overflow-x: auto;
-  }
-  .routes {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.95rem;
-  }
-  .routes th {
-    text-align: left;
-    font-weight: 700;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--ink-faint);
-    padding: 0 0.8rem 0.7rem;
-    border-bottom: 2px solid var(--line);
-  }
-  .routes td {
-    padding: 0.85rem 0.8rem;
-    border-bottom: 1px solid var(--line);
-    vertical-align: top;
-    color: var(--ink-soft);
-  }
-  .routes tr:hover td {
-    background: var(--paper-alt);
-  }
-  .routes code {
+  /* ───────── Route links in prose ───────── */
+  .prose code {
     font-family: 'SF Mono', Menlo, Consolas, monospace;
     font-size: 0.86rem;
     font-weight: 600;
     color: var(--accent);
     white-space: nowrap;
+  }
+  .prose code a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .prose code a:hover {
+    text-decoration: underline;
   }
 
   /* ───────── Footer ───────── */
