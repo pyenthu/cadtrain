@@ -30,9 +30,6 @@
    (`~/code/SVTC/src/lib/apps/wson/` — interface + trajectory warp + depth auto-scale +
    10 sample `.wson`) which LACKS components; supply them from cadtrain's parts via the
    `tool_comp`→`g_*` registry. WSON = the shared model. Replaces the `/wells` stub.
-  - **SHIPPED:** W0 (`517f0ed`) WSON model+linter + `/wells` scaffold (4 samples);
-  W1 (`ab19a38`) 3D assembler + registry + Threlte scene (primitive cylinders); ⇕fit
-  bug (`afa88df`).
   - **DECIDED:** scale pipeline `MD → DTX(straight) → warp along spline → ×zScale`; 3D
   scale = **spread-spacing / true-size** parts (faithful CAD; geometry-stretch is 2D-only);
   **flatten** (azimuth-ignoring 2D projection) toggle; **curvature-adaptive Z-subdivision**
@@ -43,13 +40,11 @@
   - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
   `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
-10. **Smooth surfaces — shading DONE, roundness OPTIONAL.** Manifold shading is root-fixed (normal
-  slot 3→0; smooth is now the default; crease-aware). What's LEFT is optional: wire the PROVEN
+10. **Smooth surfaces — roundness toggle (OPTIONAL).** What's LEFT: wire the PROVEN
   `smoothOut(60).refineToTolerance` as a "true round silhouette" toggle (build-time, crease-aware,
   costs triangles — reconstructs welded revolves to ±0.001; prototype in `builder.ts` bbd7de9, unwired);
   `Manifold.levelSet(sdf,…)` is available for organic/lattice parts (verified). Plan:
-  `docs/plans/smooth-surfaces-and-brep.md`. (The "smoothOut is wavy r≈0.75" scare was a measurement
-  artifact — it sampled cap-transition verts; the wall reconstructs cleanly.)
+  `docs/plans/smooth-surfaces-and-brep.md`.
 
 
 ### PARKED
