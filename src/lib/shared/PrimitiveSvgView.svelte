@@ -127,8 +127,6 @@
   let container = $state<HTMLDivElement | null>(null);
   // The <svg> we built last render (download target; replaced each render).
   let svgEl: SVGSVGElement | null = null;
-  // First-paint fix (see renderToSvg): rAF handle for the deferred re-raster.
-  let repaintRaf = 0;
 
   // ortho (default) vs persp projection — persisted so the choice sticks across
   // tab/part switches. Ortho is the technical-drawing projection (no foreshorten),
@@ -255,22 +253,6 @@
     if (container) container.replaceChildren(svg);
     svgEl = svg;
     hasRendered = true;
-
-    // FIRST-PAINT FIX. A heavy SVG (1000s of <defs> userSpaceOnUse gradients —
-    // dt_tube 1.4k, g_dp_joint 9k polygons) can raster INCOMPLETE on its very first
-    // paint: scattered white gaps. Proven from the artifacts — the downloaded SVG is
-    // byte-identical whether it "looked broken" or fine, and a manual rebuild cleared
-    // it. So the DOM is correct; only the first raster pass glitches. Re-attach the
-    // SAME already-built <svg> on the next frame to force one clean re-raster (the
-    // cheap equivalent of the rebuild — NO geometry rebuild). Deduped via cancel so
-    // rapid re-renders (light slider) collapse to a single trailing repaint.
-    if (repaintRaf) cancelAnimationFrame(repaintRaf);
-    const el = svg;
-    repaintRaf = requestAnimationFrame(() => {
-      repaintRaf = 0;
-      // skip if a newer render replaced it (that render schedules its own repaint)
-      if (container && el.parentElement === container) container.replaceChildren(el);
-    });
   }
 
   // Render whenever active + geometry present, re-firing on camera / partCenter /
