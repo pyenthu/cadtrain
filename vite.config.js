@@ -16,7 +16,6 @@ export default defineConfig({
     // syntax check (checkTypescriptSyntax) that catches most cases
     // before they ever hit disk; this is just the safety net.
     hmr: { overlay: false },
-    fs: { allow: ['/Users/neerajsethi/code/cadtrain/node_modules'] },
     // Exclude runtime-written data from Vite's file watcher so saving an
     // authored part / training cache record / eval result doesn't trigger
     // a full dev server restart. The symlink `static/training_data ->
