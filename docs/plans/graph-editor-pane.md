@@ -40,6 +40,8 @@
 | `graph-editor-bake.ts` (50, pure+tested) + `graph-editor-bake.svelte.ts` (115, rune) | source/meta parsers + the expected-params cache (drift detection) | **B ✓** (2e71155) |
 | `PropertiesCard.svelte` (~140) + `ParamsCard.svelte` (~165) | the PROPERTIES + PARAMS tab bodies of the overlay card | **D ✓** (aa6c74f + aebb3cd) |
 | `wire-state.svelte.ts` (262, per-instance class) + `pointer-capture.ts` (19) | the drag-to-wire subsystem | **C ✓** (54e8505) |
+| `sketch-state.svelte.ts` (710, per-instance class) | sketch state + 21 `sketch*` handlers + `sketchEditor`/`miniLayout` derived | **E Step 1 ✓** |
+| `SketchNodeCard.svelte` (~250) + `SketchEditorPane.svelte` (543) | the `n.type==='sketch'` node-card arm + the full-tab editor overlay (coord ƒ-popover stays in shell) | **E Step 2 ✓** (800d0e7 + 08ad8c4) |
 
 > **Phase C DONE 2026-06-16.** `WireState` is a PER-INSTANCE class (one `new
 > WireState(getGraph, setGraph, clientToGraph)` per pane), NOT a module `$state`
@@ -178,7 +180,22 @@ K.67 graph-promotion (the wire-state rewrite — C just relocates it), the
 client-side-execution split (`docs/plans/client-side-execution.md`), and the
 `/vocab` (P12) + `builder.ts` (P13) + `ProfileFnEditor` (P15) files.
 
-## 6. Phase E Step 2 — execution map (LOCKED 2026-06-23, do in a FRESH session)
+## 6. Phase E Step 2 — execution map (DONE 2026-06-23)
+
+> **DONE 2026-06-23** — `SketchNodeCard.svelte` (800d0e7) + `SketchEditorPane.svelte`
+> (08ad8c4). The node-card arm + the full-tab editor block both moved out, taking
+> the ONE per-pane `sketch` SketchState instance as a prop; the coord ƒ-popover
+> STAYED in the shell (`{#if sketch.sketchExprPop}`) — the Phase-E-revert fix.
+> SketchEditorPane self-guards on `sketch.editingSketchId` (GEP mounts it
+> unconditionally in the canvas pane). Graph mutations route through `setGraph()`.
+> GEP's now-dead sketch CSS pruned (kept only the Repeat card ✎ trigger + the
+> overlay Done tick). **GEP 7897 → 7376 (−521).** Browser-verified in BOTH
+> /primitives (multi-instance: g_dp_box + g_dp_pin panes) and /graph-editor: node
+> card + editor render + style correctly, ƒ-popover fires from BOTH into the shell,
+> wires + bake intact, no console errors. The lingering `.ge-param-chip .pin/.name/
+> .val/.trash` unused-CSS warnings in GEP are Phase-D leftovers (ParamsCard's local
+> copy; the `:global` spin-button rule there is still needed) — out of Step 2 scope.
+> **This unblocks M.5 sketch-repeat.** Only F (NodeCard) remains in the carve plan.
 
 Step 1 (the `SketchState` class) is DONE — `sketch-state.svelte.ts` (710 lines)
 homes all state + the 21 `sketch*` handlers + `sketchEditor`/`miniLayout`
