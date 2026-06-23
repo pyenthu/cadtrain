@@ -9,19 +9,17 @@
 3. **Modularize round 2** — LEFT (A–E done): **Phase F** = `NodeCard.svelte` (per-node
   render arms + `polyExprPop`, HIGH risk) + dead-code prune (builder.ts/library.ts chain).
   Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
-4. **Right nav menu restructure** — group the RightPane rail into VIEW/DATA + pinned
-  settings. Plan: `docs/plans/right-nav-menu.md`.
-5. **Sketch repeat** — poly_repeat-style loop in the sketch. *(Unblocked by #3 Phase E
+4. **Sketch repeat** — poly_repeat-style loop in the sketch. *(Unblocked by #3 Phase E
   Step 2.)* Plan: `docs/plans/repeat-and-sketch-repeat.md`.
-6. **/design svelte-flow architecture graph** — interactive route/api graph (needs the
+5. **/design svelte-flow architecture graph** — interactive route/api graph (needs the
   `@xyflow/svelte` dep). Plan: `docs/plans/design-route-svelteflow.md`.
-7. **Client-side execution + server-builder** — server stays the compiler (graph→script),
+6. **Client-side execution + server-builder** — server stays the compiler (graph→script),
   client executes in a Worker (Manifold first, OCCT via replicad); preserve the server
    Manifold+OCCT builder under `/api/server-builder/`. Also retires the deja-vu bake bug.
    Plan: `docs/plans/client-side-execution.md`.
-8. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
+7. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
   /conditional expressions (sparse `graph.exprs[]`, topo eval). Plan: `docs/plans/expressions-tab.md`.
-9. **Well schematic → 3D well diagram (`/wells`)** — **3D-FIRST**: the canonical model is
+8. **Well schematic → 3D well diagram (`/wells`)** — **3D-FIRST**: the canonical model is
   the 3D well (cadtrain `g_*` parts placed along the survey by depth, baked with Manifold);
    the 2D schematic is a derived VIEW, not the source of truth. Leverage SVTC's engine
    (`~/code/SVTC/src/lib/apps/wson/` — interface + trajectory warp + depth auto-scale +
@@ -37,7 +35,7 @@
   - Plan: `**docs/plans/well-schematic.md`** · Research: `wbd-powerdraw-visio.md`,  
   `svtc-autoscale-dtx.md` (on /research) · Memory: [[well_schematic_3d_first]] · [[svtc_repo]].
 
-10. **Smooth surfaces — round-toggle ENHANCEMENT (future).** The ◯ round toggle ships
+9. **Smooth surfaces — round-toggle ENHANCEMENT (future).** The ◯ round toggle ships
   (d587417) but only refines below ~28 segments — at 32/96/192 the mesh is already within
   the fixed 0.4%-of-OD tolerance → visible NO-OP. To make it useful at typical seg counts:
   (1) tighten the tolerance (~0.05% of OD), (2) expose a "roundness" strength dial next to
@@ -58,3 +56,10 @@
 
 5. Need to check how much time it takes to build these svg.
 7. Is it possible to use a phase ange for the r_weld_extrude to "straighten the spiralled triangles.. ie.. we build the extrure buy offseting the vertices that are used to build the triangbles.." that way the triangles are kind of straight down on the latituude.. Like the lat and long on the globe.. perpendicular not offset skewed.
+
+
+### DROPPED
+
+1. **Right nav menu restructure** — group the RightPane rail into VIEW/DATA + a pinned
+  settings entry. Dropped 2026-06-23: user prefers the flat 6-tab rail as-is. Plan doc
+  `docs/plans/right-nav-menu.md` kept for reference. (/plan O.4, id 908, status deferred.)
