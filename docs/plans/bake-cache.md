@@ -1,6 +1,11 @@
 # Bake cache — `$APP_DATA_DIR/cache/<part>/<hash>.{json,glb}`
 
-Status: PLAN. Q1 + Q2 locked. Q3 + Q4 still up for decision.
+Status: SHIPPED (core + deja-vu dep-hash). Q1 + Q2 locked. Q3 + Q4 still up for
+decision. The per-part cache + body-only hash (Q1–Q3) and the **dependency-aware
+key** (`depSourcesHash`, the deja-vu fix — `modularize-round2.md` R1, commit
+`8edfb05`) are live: `bake-cache.ts` + `primitive-loader.ts`
+(`collectDepSources`/`hashDepSources`) + `api/primitives/preview`, tested in
+`bake-cache.test.ts`.
 
 ## Decisions made — ALL LOCKED
 

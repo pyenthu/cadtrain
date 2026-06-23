@@ -1,6 +1,7 @@
 # Plan — Modularize cadtrain, Round 2 (K.65 continuation)
 
-> **Status:** PARTIAL — E+F shipped 2026-06-23; R6/R7/R1 remain. Author: 2026-06-16.
+> **Status:** PARTIAL — R1 (bake-cache deja-vu fix) + R5 (GEP E+F) shipped;
+> R2/R3/R4/R6/R7/R8/R9/R10 remain. Author: 2026-06-16. Re-verified 2026-06-23.
 > **Builds on** (does not replace)
 > `docs/plans/modularize.md` (round-1 thesis + rules) and
 > `docs/plans/graph-editor-pane.md` (the GEP phase ledger). Read those first —
@@ -64,9 +65,9 @@
 | 2 | `shared/graph-editor/NodeCard.svelte` | **2015** | G6 | extracted ✓ (Phase F) |
 | 3 | `routes/primitives/+page.svelte` | **1836** ↑ | P11 | Sidebar + TabStrip (§3) |
 | 4 | `routes/vocab/+page.svelte` | 1687 | P12 | tab bodies (§3) |
-| 5 | `cad/composition-graph-mutate.ts` | 1192 | P4 (partial) | thin the mutate family (§3) |
+| 5 | `cad/composition-graph-mutate.ts` | 1482 ↑ | P4 (partial) | thin the mutate family (§3) |
 | 6 | `shared/ProfileFnEditor.svelte` | 1156 | P15 | preview ↔ round-trip split (§3) |
-| 7 | `cad/builder.ts` | 1048 | P13 | legacy ↔ render-helpers split + retire (§3,§4) |
+| 7 | `cad/builder.ts` | 1163 ↑ | P13 | legacy ↔ render-helpers split + retire (§3,§4) |
 | 8 | `routes/plan/details.ts` | 929 | — | data file, leave (documented exception) |
 | 9 | `cad/composition-tree.ts` | 798 | low pri | leave unless >1000 |
 | 10 | `routes/plan/+page.svelte` | 720 | — | Gantt; leave |
@@ -136,11 +137,25 @@ Historical design rationale for the E+F consolidation:
 
 ### 2b. After E+F — **NEXT (R6)**
 
-Residual shell = props + the ~85 `$state` (many move with their feature) +
+Residual shell = props + the `$state` (many move with their feature) +
 `onMount`/keydown + the `<svg>` canvas host + pan/zoom group + child slots +
 `clientToGraph` (stays — needs `canvasEl`/pan/zoom). Add a module-map header
-comment mirroring the subtree CLAUDE.md style. Target ≤~1500 lines. CSS rides
-out with each component (NOT a standalone phase).
+comment mirroring the subtree CLAUDE.md style. CSS rides out with each
+component (NOT a standalone phase).
+
+> **Reality check (2026-06-23): GEP is still 6191 lines** (3342 script L20–3362
+> + 1504 markup + 1323 CSS). The ≤~1500 target is **NOT reachable by a
+> module-map header + `$state` audit alone** — those are genuinely-low-risk but
+> only trim the margins. The biggest feature still inline is the
+> **Polygon / PolyRepeat editor**: poly-preview overlay (resize/drag/zoom
+> ~L365–530), vertex drag + SVG insert (~L657–871), and the poly-expr-pop family
+> (~L2722–2845) — ~700 script lines plus its markup + CSS. R6 realistically =
+> **one more feature carve (a `PolygonNodeCard` + poly-preview overlay, same
+> pattern as the Sketch carve) → THEN** the residual header/`$state` cleanup.
+> Split R6 into **R6a (Polygon carve, HIGH-touch GEP, inline)** + **R6b (header
+> + `$state` audit + confirm the new line count, LOW)**. If ≤1500 still isn't
+> hit after R6a, set an honest target (~2500–3000) rather than carrying a stale
+> number.
 
 ---
 
@@ -217,22 +232,23 @@ chain — confirm those scripts are themselves archive-era before acting.
 
 ## 5. Failure-mode / edge-case hardening (the *point* of the exercise)
 
-### 5a. The deja-vu stale-bake bug — STILL LIVE (highest-value fix)
+### 5a. The deja-vu stale-bake bug — ✓ FIXED 2026-06-23 (R1, commit `8edfb05`)
 
-Confirmed in `server/bake-cache.ts:109` — `hashBakeKey(source, name, params,
-options)` hashes **only the part's own extracted body + params + options**. It
-does **NOT** fold in the bodies of `meta.uses` dependencies. So fixing a shared
-child (`g_tube`) changes the child's key but **not** the composed parent's
-(`g_dp_joint`/`g_dp_stand`) → the parent serves yesterday's mesh with the buggy
-child baked in. Recurs on every dep edit.
+**Near-term fix SHIPPED.** `bake-cache.ts` `BakeCacheOptions` now carries a
+`depSourcesHash` that folds the transitively-resolved `meta.uses` dependency
+bodies into the key. `primitive-loader.ts` exposes `collectDepSources` +
+`hashDepSources` (walks deps, sorts by id, hashes); `api/primitives/preview`
+computes it and passes it into the cache opts (`preview/+server.ts:146`).
+Tests in `bake-cache.test.ts`: a changed dep ⇒ different `depSourcesHash` ⇒
+different key; an undefined hash drops out so existing leaf-part entries still
+hit. So fixing a shared child (`g_tube`) now busts the composed parent's cache
+(`g_dp_joint`/`g_dp_stand`) — the deja-vu recurrence is gone.
 
-**Two fix paths — do the cheap one now, regardless of the big redesign:**
-- **Near-term (this round, ~1 PR):** in `hashBakeKey`, fold in a hash of each
-  resolved `meta.uses` dependency's body (reuse the resolver in
-  `primitive-loader.ts`). Add a unit test: edit a dep body → assert the
-  consumer's key changes; edit only layout → assert it does not. Plan stub:
-  `docs/plans/bake-cache.md`. **MED risk, high value, independent of §2/§3.**
-- **Structural (separate, large):** the compiler/executor split in
+**Was:** `hashBakeKey` hashed only the part's own body + params + options, never
+the `meta.uses` dependency bodies → a fixed child kept the parent serving
+yesterday's mesh. (Historical context retained for the structural path below.)
+
+- **Structural (separate, large — still open):** the compiler/executor split in
   `docs/plans/client-side-execution.md` caches *dep-inlined scripts* (text)
   instead of meshes → the key literally contains the resolved dep code → bug
   impossible by construction. **Out of scope for modularize**, but the near-term
@@ -274,21 +290,23 @@ previous one. **No parallel agents on GEP.**
 
 | # | PR | Risk | Independent of GEP? | Verify |
 |---|---|---|---|---|
-| **R1** | **bake-cache dep-hash** (§5a near-term) + unit test | MED | ✓ yes | dep-edit invalidation test; bake a composed part after a child edit |
+| **R1** | ~~**bake-cache dep-hash** (§5a near-term) + unit test~~ ✓ DONE 2026-06-23 (`8edfb05`) — `depSourcesHash` folded into the key; `collectDepSources`/`hashDepSources` in the loader; `bake-cache.test.ts` green. | MED | ✓ yes | — |
 | **R2** | **knip triage commit**: remove confirmed-dead deps (§4a) + `mime.ts`/`temp-file.ts` if dead; tune `knip.json` (`$types`/script-archive noise). **No file from the false-positive list.** | LOW-MED | ✓ yes | build green; vocab/profile/SVG pages load |
 | **R3** | **`/design` decision** (§4b) — link+document OR `git mv` to archive. **Ask user first.** | LOW | ✓ yes | route loads or is gone from router |
 | **R4** | **`primitives/+page` → Sidebar + TabStrip** (§3) | MED | ✓ yes | portrait + landscape; grid auto-placement |
 | **R5** | ~~**GEP E+F consolidation**~~ ✓ DONE 2026-06-23 — SketchState → SketchNodeCard + SketchEditorPane → NodeCard; browser-verified; `onDeleteNode` bugfix. | HIGH | — (GEP) | — |
-| **R6** | **GEP shell cleanup — NEXT** — module-map header, residual `$state` audit, confirm ≤~1500 lines | LOW | — (GEP) | full build + graph e2e |
+| **R6a** | **Polygon / PolyRepeat carve — NEXT** — `PolygonNodeCard` + poly-preview overlay out of GEP (~700 script lines + markup + CSS), same pattern as the Sketch carve | HIGH | — (GEP) | browser-mount-verify a polygon + poly_repeat part; full build + graph e2e |
+| **R6b** | **GEP shell cleanup** — module-map header, residual `$state` audit, record the honest post-carve line count (≤~1500 if reached, else set a real target) | LOW | — (GEP) | full build + graph e2e |
 | **R7** | **`builder.ts` split** → `builder-legacy.ts` + `render-helpers.ts`; **then** retire `library.ts` + legacy chain IF dead (§4a) — separate commit, Rule 6 approval | MED-HIGH | ✓ yes | `/preview` bakes the full g_* corpus; curl-prod parity |
 | **R8** | **`vocab/+page` → `_tabs/*`** (§3) | MED | ✓ yes | each vocab tab |
 | **R9** | **`ProfileFnEditor` split** — round-trip test FIRST, then preview ↔ source split | MED | ✓ yes | `composeSource` round-trip green |
 | **R10** | **warp-subdivide retire-if-redundant** (§4b) + **WASM-health banner** (§5b) | MED | ✓ yes | warp visual e2e (edges follow without `subdivideAlongZ`) |
 
-**Parallelism note:** R1–R4 + R7–R10 are all GEP-independent and can be done by
+**Parallelism note:** R2–R4 + R7–R10 are all GEP-independent and can be done by
 isolated-worktree subagents (they don't touch GEP). **R6 touches GEP → inline,
-sequential.** R5 (E+F) is done. Land R1 (bake-cache) early — it's
-the highest user-visible value and unblocks confident dep edits during the rest.
+sequential.** R1 (bake-cache) + R5 (E+F) are done. The remaining
+highest-leverage independent items are R2 (knip prune) and R7 (builder.ts split
++ legacy retire); R6 (GEP shell) is the only must-be-inline piece left.
 
 ---
 
@@ -299,7 +317,7 @@ the highest user-visible value and unblocks confident dep edits during the rest.
 - `bun run deadcode` triaged: confirmed-dead deps/exports removed with backups;
   `/design` resolved; `subdivideAlongZ` resolved; knip false-positives documented
   in `knip.json` ignores so future runs are signal-only.
-- `bake-cache` dependency-aware (dep-edit invalidates consumer) — deja-vu gone.
+- ✓ `bake-cache` dependency-aware (dep-edit invalidates consumer) — deja-vu gone (R1, `8edfb05`).
 - New/extended tests pin §5c edge cases + the socket↔DOM contract.
 - This plan reconciled INTO `/plan` (Rule 19) as the K.65-round-2 lane.
 
