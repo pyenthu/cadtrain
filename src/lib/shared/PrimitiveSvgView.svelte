@@ -114,6 +114,15 @@
     !!geos && (vertCount(geos.full) > 0 || vertCount(geos.cutVC) > 0),
   );
 
+  // Unique per-instance gradient-id namespace. /primitives mounts N of these and
+  // `url(#id)` resolves DOCUMENT-WIDE, so without a private prefix two instances'
+  // svgs (transiently coexisting during a tab switch) collide on `g{n}` ids → a
+  // polygon resolves to the WRONG instance's gradient → flat shading. See
+  // svg-emit's `idPrefix`. One stable token per mount.
+  const svgUid = `s${(
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+  ).replace(/-/g, '').slice(0, 10)}-`;
+
   // --- DOM handles (non-reactive; live across re-renders) ---
   let container = $state<HTMLDivElement | null>(null);
   // The <svg> we built last render (download target; replaced each render).
@@ -228,6 +237,7 @@
     // 2) Emit the Gouraud <svg> (project · shade · gradient · painter-sort ·
     //    edges). Pure — all tuning constants + view params passed in.
     const out = emitSvg(geo, cam.camera, cam.renderW, cam.renderH, cam.fitToContainer, {
+      idPrefix: svgUid,
       sX, sZ,
       lightAngle,
       showEdges: scene.showEdges,

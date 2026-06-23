@@ -14,6 +14,14 @@ import * as THREE from 'three';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export interface SvgEmitOptions {
+  /** Per-instance id namespace, prefixed onto every gradient id. `url(#id)`
+   *  resolves DOCUMENT-WIDE, so the N PrimitiveSvgView svgs mounted in
+   *  /primitives must NOT share an `g{n}` namespace — otherwise, in the
+   *  transient window where two instances' svgs coexist (tab/part switch
+   *  before the old pane's teardown), a polygon's `url(#gK)` resolves to
+   *  another instance's gradient → single flat stop → flat/incomplete shading.
+   *  A unique prefix per mount makes collisions impossible. */
+  idPrefix: string;
   /** View-only exaggeration [xScale, xScale, zScale] (positions only). */
   sX: number;
   sZ: number;
@@ -71,7 +79,7 @@ export function emitSvg(
   opts: SvgEmitOptions,
 ): SvgEmitResult {
   const {
-    sX, sZ, lightAngle, showEdges, HIGH_TRI,
+    idPrefix, sX, sZ, lightAngle, showEdges, HIGH_TRI,
     AMBIENT, KEY, FILL, DEF_R, DEF_G, DEF_B, DESAT, BRIGHT,
   } = opts;
 
@@ -224,7 +232,7 @@ export function emitSvg(
       return 1;
     }
     const grad = document.createElementNS(SVG_NS, 'linearGradient');
-    const id = `g${gid++}`;
+    const id = `${idPrefix}g${gid++}`;
     grad.setAttribute('id', id);
     grad.setAttribute('gradientUnits', 'userSpaceOnUse');
     grad.setAttribute('x1', (gx * tlo).toFixed(2));
