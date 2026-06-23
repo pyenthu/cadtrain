@@ -177,3 +177,70 @@ g_dp_box for sketch+sockets, g_mule_shoe for inline strips, a polygon part).
 K.67 graph-promotion (the wire-state rewrite — C just relocates it), the
 client-side-execution split (`docs/plans/client-side-execution.md`), and the
 `/vocab` (P12) + `builder.ts` (P13) + `ProfileFnEditor` (P15) files.
+
+## 6. Phase E Step 2 — execution map (LOCKED 2026-06-23, do in a FRESH session)
+
+Step 1 (the `SketchState` class) is DONE — `sketch-state.svelte.ts` (710 lines)
+homes all state + the 21 `sketch*` handlers + `sketchEditor`/`miniLayout`
+`$derived`s. GEP holds `const sketch = new SketchState(...)` and the markup is
+already rewired to `sketch.*`. Step 2 just MOVES three markup blocks out. **GEP
+is 7,897 lines — INLINE only (subagents stall on this file); browser-mount verify
+every sketch op (mandatory). Line anchors below WILL shift — read the file fresh,
+match on the `{:else if n.type === 'sketch'}` / `ge-sketch-editor` / `sketch.sketchExprPop`
+anchors, not raw line numbers.**
+
+### The blocks (anchors as of 7,897-line HEAD)
+1. **Sketch NODE CARD** — `{:else if n.type === 'sketch'}` at ~L4947, ends before
+   the `poly_repeat` arm ~L5053 (vertex rows, op rows, ✎ open-editor button,
+   +line/+spline/+fillet/+chamfer foot). → **`SketchNodeCard.svelte`**.
+2. **Full-tab EDITOR block** — `{#if sketch.editingSketchId && sketch.sketchEditor}`
+   at ~L5312, `.ge-sketch-editor` (tools rail `.ge-sketch-vtools`, the 2D canvas,
+   the mini params/sketch cards `sketch.miniLayout` ~L5426, the floating sketch
+   card ~L5494, the coord sockets ~L5566). Closes with the `.ge-sketch-editor`
+   `</div>` + its `{/if}` — VERIFY the close during extraction (nested `{#each}`/
+   `{#if}` cascade ~L5556-5566). → **`SketchEditorPane.svelte`**.
+3. **Coord ƒ-popover** — `{#if sketch.sketchExprPop}` at ~L5942 (uses
+   `clampToViewport`, `paramEntries`, `sketch.applySketchExprPop` /
+   `insertParamIntoSketchDraft`). **STAYS IN THE SHELL — DO NOT MOVE.** Both new
+   components only SET `sketch.sketchExprPop`; the shell renders the ONE popover.
+   **This is the fix for the original Phase-E revert** ("one popover can't render
+   in two components") — it already lives in the shell, so the entanglement is
+   already resolved by Step 1; Step 2 must not re-introduce it.
+
+### Do NOT conflate
+- The sketch per-coord param-WIRE pass `{:else if n.type === 'sketch'}` at ~L3775
+  (bezier wires from param sockets → sketch coord inputs; sibling to the
+  polygon/poly_repeat wire passes) lives in the canvas **wire `<svg>` layer**, NOT
+  the card. Leave it in the shell wire layer; do not move it into SketchNodeCard.
+- The mini params/sketch cards live INSIDE the editor block → move WITH
+  SketchEditorPane.
+
+### Component interfaces (both take the ONE `sketch` instance)
+- `SketchNodeCard.svelte`: `{ sketch, n (sketch node), graph, setGraph, wire,
+  consumedSet, paramEntries, geom: sketchEntryH/sketchSockR/sketchSockZ/sketchSockVal }`
+  + the `openSketchEditor` trigger. Sets `sketch.sketchExprPop` (popover in shell).
+- `SketchEditorPane.svelte`: `{ sketch, sid, se=sketch.sketchEditor, graph, setGraph,
+  wire, paramEntries, geom: sketchSockR/Z, sketchRowVisible, sketchEntryH, miniBez }`
+  + `addSketchOp`/`removeSketchSplinePoint`. Sets `sketch.sketchExprPop`.
+
+### CSS to move (the `.ge-sketch*` block, ~L7056-7110+)
+- → `SketchNodeCard`: `.ge-sketch`, `-ops`, `-vtx`(+`.corner`/`.editing`), `-srow`,
+  `-axis`(+rel/spline/corner/chamfer), `-in`, `-btn`, `-foot`, `-add`, `-edit-btn`.
+- → `SketchEditorPane`: `.ge-sketch-editor`, `-vtools`, `-topbar`, `-grip`, `-dial`,
+  `-cards`, `-fx`, `-stool-sep`, `-foot`(if used there too).
+- `.ge-sketch-vtx`/`-axis` are used by BOTH the node card AND the mini sketch card —
+  duplicate into both component `<style>`s (cheap) rather than a shared import.
+
+### Order (bank after each)
+1. **SketchNodeCard FIRST** (smaller, ~105 lines) — de-risks the `sketch.*`
+   prop-passing + the popover-in-shell pattern on the smaller block. Build +
+   browser-verify the node-card inline ops + the coord ƒ-popover firing from the
+   card. Commit.
+2. **SketchEditorPane** (the ~250-line block + mini cards). Build + browser-verify:
+   enter editor (✎ on g_dp_box), draw line/spline/fillet, drag an anchor, abs/rel
+   axis toggle, the coord ƒ-popover from the editor, the mini param wires. Commit.
+
+### Done-when (Step 2)
+GEP drops ~350-400 lines (sketch markup + CSS out); `bun run build` green; the
+sketch ƒ-popover still fires from BOTH the node card and the editor; recorded
+g_dp_box e2e green. Then **M.5 sketch-repeat** is unblocked.
