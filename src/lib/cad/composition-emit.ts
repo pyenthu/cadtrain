@@ -34,6 +34,7 @@ import {
   topoOrder,
   STACK_REF_PARAM,
 } from './composition-graph';
+import { emitExprConsts, rewriteExprRefs } from './graph-exprs';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -358,6 +359,26 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // lines emit, rewrite the sentinel to the polygon's actual varName so
   // the generated body is valid JS.
   let bodyText = lines.join('\n');
+
+  // ── Calculated-expression block (B.6 / id 914) ─────────────────────────
+  // When the graph declares `exprs`, prepend the topo-ordered
+  // `const e_<name> = <src>;` declarations ahead of the consuming body, then
+  // rewrite every `e.<name>` reference (in the const block AND any consuming
+  // ArgValue) to the flat `e_<name>` identifier those consts bind. `p.<param>`
+  // is untouched (`p` is the live params object). ABSENT/EMPTY exprs ⇒ this
+  // whole block is skipped ⇒ the emitted source is byte-identical to today.
+  const exprs = graph.exprs;
+  if (exprs && exprs.length > 0) {
+    const res = emitExprConsts(exprs);
+    const block = res.ok
+      ? res.lines.map((l) => `  ${l}`).join('\n')
+      // A cyclic / unparseable expr set emits a loud throw (same philosophy as
+      // missingRef) instead of silently dropping refs that would crash WASM.
+      : `  throw new Error(${JSON.stringify('expression error — ' + res.error)});`;
+    bodyText = `${block}\n${bodyText}`;
+    bodyText = rewriteExprRefs(bodyText);
+  }
+
   for (const [id, varName] of varNames.entries()) {
     const node = graph.nodes[id];
     if (!node || (node.type !== 'polygon' && node.type !== 'sketch')) continue;
@@ -765,6 +786,9 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
     ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
+    // Calculated expressions (B.6 / id 914) — sparse so legacy files stay
+    // byte-identical. hydrateGraph reads these back into graph.exprs.
+    ...(graph.exprs && graph.exprs.length ? { exprs: graph.exprs } : {}),
   };
 }
 

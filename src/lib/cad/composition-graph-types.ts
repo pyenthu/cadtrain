@@ -328,7 +328,25 @@ export type Graph = {
    *  segment refactor). Per-part z-offset is NOT here — it uses the Stack's
    *  existing per-child ref (`setStackChildRef`). */
   partAppearance?: Record<NodeId, PartAppearance>;
+  /** CALCULATED expressions (B.6 / id 914). SPARSE + optional → absent/empty
+   *  ⇒ the emitted source is byte-identical to today (no migration). When
+   *  non-empty, composition-emit prepends the topo-ordered `const e_<name> =
+   *  …;` block ahead of the body; references to `e.<name>` in any ArgValue
+   *  `expr` resolve to those consts. See src/lib/cad/graph-exprs.ts. */
+  exprs?: GraphExpr[];
 };
 
 /** One part's appearance overrides (all sparse/optional). */
 export type PartAppearance = { colorOuter?: string; colorInner?: string; material?: string };
+
+/** One CALCULATED expression (B.6 / id 914 — the expression builder).
+ *  `name` is the `e.<name>` output identifier (must be a unique, ident-safe
+ *  symbol); `src` is the expression source in the constrained mathjs grammar
+ *  (arithmetic + allowlisted CAD math, no assignments / no arbitrary JS).
+ *  An `e.*` is DERIVED from `p.*` params and other `e.*` exprs and lives in a
+ *  separate namespace from `p.*` so the positional bake signature never shifts.
+ *  See docs/plans/expression-builder.md §3 + src/lib/cad/graph-exprs.ts. */
+export type GraphExpr = {
+  name: string;
+  src: string;
+};

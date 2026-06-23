@@ -14,7 +14,7 @@ import { absToChord } from './sketch';
 
 import type {
   Graph, GraphNode, ContainerNode, LayoutXY, Viewport, PolygonNode, PolygonEntry,
-  PolyRepeatNode, SketchNode, TxfmnNode, ArgValue,
+  PolyRepeatNode, SketchNode, TxfmnNode, ArgValue, GraphExpr,
 } from './composition-graph-types';
 import { newNodeId, asLiteral } from './composition-graph-types';
 import { setLayout, defaultCallPosition, collectEdges } from './composition-graph-mutate';
@@ -305,6 +305,20 @@ export function hydrateGraph(serialised: any): Graph {
     }
     return Object.keys(out).length ? out : undefined;
   })();
+  // Calculated expressions (B.6 / id 914) — restore the sparse `exprs` array,
+  // keeping only well-formed {name, src} string rows (defensive against hand-
+  // edited / legacy files). Absent ⇒ undefined ⇒ emit byte-identical to today.
+  const savedExprs: GraphExpr[] | undefined = (() => {
+    const raw = (serialised as any).exprs;
+    if (!Array.isArray(raw)) return undefined;
+    const out: GraphExpr[] = [];
+    for (const e of raw) {
+      if (e && typeof e.name === 'string' && typeof e.src === 'string' && e.name.length) {
+        out.push({ name: e.name, src: e.src });
+      }
+    }
+    return out.length ? out : undefined;
+  })();
   let g: Graph = {
     nodes: migratedNodes,
     root: serialised.root,
@@ -317,6 +331,7 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedColorInner ? { colorInner: savedColorInner } : {}),
     ...(savedMaterial ? { material: savedMaterial } : {}),
     ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),
+    ...(savedExprs ? { exprs: savedExprs } : {}),
   };
   // Fill missing positions only — preserves any saved entry, populates the
   // rest via the same rough-grid heuristic used at create-time. Inline
