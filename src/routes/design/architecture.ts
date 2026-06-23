@@ -1,9 +1,19 @@
 /**
  * architecture.ts — curated node/edge dataset for the /design interactive graph.
  *
- * Node kinds:
+ * Laid out as a **C4 "Container" diagram (level 2)**: one system boundary
+ * ("CAD Train") holds four labeled container boxes, and the 29 component nodes
+ * live INSIDE those containers via xyflow parent/extent nesting.
+ *
+ *   sys-cadtrain  (system boundary, variant:'system')
+ *     ├─ c-webapp  Web App        — route pages + GraphEditorPane + Threlte viewer
+ *     ├─ c-api     API layer      — /api/* endpoint groups
+ *     ├─ c-kernel  CAD kernel     — composition graph/emit, Manifold WASM, engines, translator
+ *     └─ c-volume  Volume store   — persistent parts / vocabulary / caches
+ *
+ * Component node kinds:
  *   route  — a SvelteKit page route (clickable → navigates)
- *   api    — an HTTP endpoint group (shows in graph)
+ *   api    — an HTTP endpoint group
  *   lib    — an engine / pipeline stage
  *   store  — a persistent data sink
  *
@@ -14,10 +24,17 @@
  *   reads   — api → store (read)
  *   writes  — api → store (write)
  *   nav     — user navigation between routes
+ *   summary — container → container relationship (C4-level arrow)
+ *
+ * xyflow nesting rules honoured here:
+ *   - parents appear BEFORE their children in ARCH_NODES (system → containers → components)
+ *   - child `position` is RELATIVE to its parent container's top-left
+ *   - children carry `parentId` + `extent:'parent'`
+ *   - container/system nodes carry explicit width/height (style string)
  */
 
 export type NodeKind = 'route' | 'api' | 'lib' | 'store';
-export type EdgeKind = 'calls' | 'mounts' | 'flow' | 'reads' | 'writes' | 'nav';
+export type EdgeKind = 'calls' | 'mounts' | 'flow' | 'reads' | 'writes' | 'nav' | 'summary';
 
 export interface ArchNodeData {
   label: string;
@@ -28,29 +45,162 @@ export interface ArchNodeData {
   archived?: boolean; // archived/deprecated node
 }
 
+export interface ContainerNodeData {
+  label: string;
+  variant: 'system' | 'container';
+  tech?: string;      // technology label shown next to the title
+  accent?: string;    // border / title colour
+  blurb?: string;
+}
+
 export interface ArchEdgeData {
   edgeKind: EdgeKind;
   label?: string;
 }
 
-// ─────────────────────────────────────────────
-// COLUMN X POSITIONS (hand-tuned left-to-right)
-//   0: Routes
-// 280: API groups
-// 580: lib / pipeline
-// 860: store
-// ─────────────────────────────────────────────
-const COL = { route: 0, api: 290, lib: 590, store: 880 };
+// ──────────────────────────────────────────────────────────
+// CONTAINER GEOMETRY (absolute, within the system boundary)
+//
+// Children are positioned RELATIVE to these origins below.
+// ──────────────────────────────────────────────────────────
+const SYS = { x: 0, y: 0, w: 1400, h: 740 };
+
+// container boxes laid left→right inside the system boundary
+const C = {
+  webapp: { x: 24, y: 60, w: 470, h: 600 },
+  api: { x: 534, y: 60, w: 252, h: 660 },
+  kernel: { x: 826, y: 60, w: 252, h: 560 },
+  volume: { x: 1118, y: 60, w: 252, h: 470 },
+};
+
+// within-container layout constants (relative to each container's top-left)
+const PAD_X = 16;        // left inset for a single column
+const COL_A = 16;        // web-app column A x
+const COL_B = 240;       // web-app column B x
+const HEAD = 48;         // top inset (clears the title chip)
+const PITCH = 84;        // vertical gap between component nodes
 
 // ──────────────────────────────────────────────────────────
-// NODE DEFINITIONS
+// CONTAINER + SYSTEM NODES  (must come BEFORE their children)
+// ──────────────────────────────────────────────────────────
+export const ARCH_CONTAINERS = [
+  {
+    id: 'sys-cadtrain',
+    type: 'containerNode',
+    position: { x: SYS.x, y: SYS.y },
+    width: SYS.w,
+    height: SYS.h,
+    style: `width:${SYS.w}px;height:${SYS.h}px;`,
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+    data: {
+      label: 'CAD Train',
+      variant: 'system',
+      tech: 'Software System',
+      accent: '#475569',
+      blurb: 'The whole parametric-CAD pipeline — one SvelteKit app + WASM kernel over a persistent volume.',
+    } satisfies ContainerNodeData,
+  },
+  {
+    id: 'c-webapp',
+    type: 'containerNode',
+    position: { x: C.webapp.x, y: C.webapp.y },
+    width: C.webapp.w,
+    height: C.webapp.h,
+    style: `width:${C.webapp.w}px;height:${C.webapp.h}px;`,
+    parentId: 'sys-cadtrain',
+    extent: 'parent',
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+    data: {
+      label: 'Web App',
+      variant: 'container',
+      tech: 'SvelteKit · Svelte 5',
+      accent: '#3b82f6',
+      blurb: 'Client-only SPA (SSR off). Route pages + the GraphEditorPane editor + the Threlte 3D viewer.',
+    } satisfies ContainerNodeData,
+  },
+  {
+    id: 'c-api',
+    type: 'containerNode',
+    position: { x: C.api.x, y: C.api.y },
+    width: C.api.w,
+    height: C.api.h,
+    style: `width:${C.api.w}px;height:${C.api.h}px;`,
+    parentId: 'sys-cadtrain',
+    extent: 'parent',
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+    data: {
+      label: 'API layer',
+      variant: 'container',
+      tech: 'adapter-node',
+      accent: '#22c55e',
+      blurb: 'SvelteKit server endpoints (SSR). Proxy to the volume + run server-side bakes.',
+    } satisfies ContainerNodeData,
+  },
+  {
+    id: 'c-kernel',
+    type: 'containerNode',
+    position: { x: C.kernel.x, y: C.kernel.y },
+    width: C.kernel.w,
+    height: C.kernel.h,
+    style: `width:${C.kernel.w}px;height:${C.kernel.h}px;`,
+    parentId: 'sys-cadtrain',
+    extent: 'parent',
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+    data: {
+      label: 'CAD kernel',
+      variant: 'container',
+      tech: 'ManifoldCAD WASM',
+      accent: '#f97316',
+      blurb: 'Graph → source → mesh. Composition graph/emit, the Manifold CSG kernel, engine primitives, the vocabulary translator.',
+    } satisfies ContainerNodeData,
+  },
+  {
+    id: 'c-volume',
+    type: 'containerNode',
+    position: { x: C.volume.x, y: C.volume.y },
+    width: C.volume.w,
+    height: C.volume.h,
+    style: `width:${C.volume.w}px;height:${C.volume.h}px;`,
+    parentId: 'sys-cadtrain',
+    extent: 'parent',
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+    data: {
+      label: 'Volume store',
+      variant: 'container',
+      tech: '$APP_DATA_DIR',
+      accent: '#a855f7',
+      blurb: 'One persistent volume — parts, RAG corpus, vocabulary, and the bake cache. Survives redeploys.',
+    } satisfies ContainerNodeData,
+  },
+];
+
+// ──────────────────────────────────────────────────────────
+// COMPONENT NODES  (positions are RELATIVE to their parent container)
 // ──────────────────────────────────────────────────────────
 export const ARCH_NODES = [
-  // ── ROUTES ──
+  // ───────────────── Web App container (routes + GEP + viewer) ─────────────────
+  // Column A
   {
     id: 'r-primitives',
     type: 'archNode',
-    position: { x: COL.route, y: 0 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_A, y: HEAD },
     data: {
       kind: 'route',
       label: '/primitives',
@@ -61,7 +211,9 @@ export const ARCH_NODES = [
   {
     id: 'r-graph-editor',
     type: 'archNode',
-    position: { x: COL.route, y: 80 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_A, y: HEAD + PITCH },
     data: {
       kind: 'route',
       label: '/graph-editor',
@@ -72,7 +224,9 @@ export const ARCH_NODES = [
   {
     id: 'r-vocab',
     type: 'archNode',
-    position: { x: COL.route, y: 160 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_A, y: HEAD + PITCH * 2 },
     data: {
       kind: 'route',
       label: '/vocab',
@@ -83,7 +237,9 @@ export const ARCH_NODES = [
   {
     id: 'r-fem',
     type: 'archNode',
-    position: { x: COL.route, y: 240 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_A, y: HEAD + PITCH * 3 },
     data: {
       kind: 'route',
       label: '/fem',
@@ -94,7 +250,9 @@ export const ARCH_NODES = [
   {
     id: 'r-wells',
     type: 'archNode',
-    position: { x: COL.route, y: 320 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_A, y: HEAD + PITCH * 4 },
     data: {
       kind: 'route',
       label: '/wells',
@@ -105,7 +263,9 @@ export const ARCH_NODES = [
   {
     id: 'r-forge',
     type: 'archNode',
-    position: { x: COL.route, y: 400 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_A, y: HEAD + PITCH * 5 },
     data: {
       kind: 'route',
       label: '/forge',
@@ -113,10 +273,13 @@ export const ARCH_NODES = [
       blurb: 'Image → 3D scaffold via FAL Hunyuan3D v2. Requires FAL_API_KEY.',
     } satisfies ArchNodeData,
   },
+  // Column B
   {
     id: 'r-volume',
     type: 'archNode',
-    position: { x: COL.route, y: 480 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_B, y: HEAD },
     data: {
       kind: 'route',
       label: '/volume',
@@ -127,7 +290,9 @@ export const ARCH_NODES = [
   {
     id: 'r-plan',
     type: 'archNode',
-    position: { x: COL.route, y: 560 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_B, y: HEAD + PITCH },
     data: {
       kind: 'route',
       label: '/plan',
@@ -138,7 +303,9 @@ export const ARCH_NODES = [
   {
     id: 'r-design',
     type: 'archNode',
-    position: { x: COL.route, y: 640 },
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_B, y: HEAD + PITCH * 2 },
     data: {
       kind: 'route',
       label: '/design',
@@ -146,12 +313,38 @@ export const ARCH_NODES = [
       blurb: 'This page — interactive architecture graph of the project.',
     } satisfies ArchNodeData,
   },
+  {
+    id: 'l-gep',
+    type: 'archNode',
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_B, y: HEAD + PITCH * 3 },
+    data: {
+      kind: 'lib',
+      label: 'GraphEditorPane',
+      blurb: 'The CAD editor component. Wires nodes, sockets, params. Mounts in /graph-editor (full-screen) and /primitives (multi-tab).',
+    } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-threlte',
+    type: 'archNode',
+    parentId: 'c-webapp',
+    extent: 'parent',
+    position: { x: COL_B, y: HEAD + PITCH * 4 },
+    data: {
+      kind: 'lib',
+      label: 'Threlte viewer',
+      blurb: 'Declarative Three.js for Svelte. Mesh / GLB / SVG rendering, cutaway, per-part colour, Z-down convention.',
+    } satisfies ArchNodeData,
+  },
 
-  // ── API GROUPS ──
+  // ───────────────── API layer container ─────────────────
   {
     id: 'a-primitives',
     type: 'archNode',
-    position: { x: COL.api, y: 0 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD },
     data: {
       kind: 'api',
       label: '/api/primitives/*',
@@ -161,7 +354,9 @@ export const ARCH_NODES = [
   {
     id: 'a-rag',
     type: 'archNode',
-    position: { x: COL.api, y: 160 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH },
     data: {
       kind: 'api',
       label: '/api/rag/*',
@@ -171,7 +366,9 @@ export const ARCH_NODES = [
   {
     id: 'a-vocab',
     type: 'archNode',
-    position: { x: COL.api, y: 240 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 2 },
     data: {
       kind: 'api',
       label: '/api/vocab/*',
@@ -181,7 +378,9 @@ export const ARCH_NODES = [
   {
     id: 'a-cache',
     type: 'archNode',
-    position: { x: COL.api, y: 320 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 3 },
     data: {
       kind: 'api',
       label: '/api/cache/*',
@@ -191,7 +390,9 @@ export const ARCH_NODES = [
   {
     id: 'a-volume',
     type: 'archNode',
-    position: { x: COL.api, y: 400 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 4 },
     data: {
       kind: 'api',
       label: '/api/volume',
@@ -201,7 +402,9 @@ export const ARCH_NODES = [
   {
     id: 'a-forge',
     type: 'archNode',
-    position: { x: COL.api, y: 480 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 5 },
     data: {
       kind: 'api',
       label: '/api/forge/*',
@@ -211,7 +414,9 @@ export const ARCH_NODES = [
   {
     id: 'a-manifest',
     type: 'archNode',
-    position: { x: COL.api, y: 560 },
+    parentId: 'c-api',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 6 },
     data: {
       kind: 'api',
       label: '/api/manifest',
@@ -219,21 +424,13 @@ export const ARCH_NODES = [
     } satisfies ArchNodeData,
   },
 
-  // ── LIB / PIPELINE STAGES ──
-  {
-    id: 'l-gep',
-    type: 'archNode',
-    position: { x: COL.lib, y: 0 },
-    data: {
-      kind: 'lib',
-      label: 'GraphEditorPane',
-      blurb: 'The CAD editor component. Wires nodes, sockets, params. Mounts in /graph-editor (full-screen) and /primitives (multi-tab).',
-    } satisfies ArchNodeData,
-  },
+  // ───────────────── CAD kernel container ─────────────────
   {
     id: 'l-comp-graph',
     type: 'archNode',
-    position: { x: COL.lib, y: 100 },
+    parentId: 'c-kernel',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD },
     data: {
       kind: 'lib',
       label: 'composition-graph',
@@ -243,7 +440,9 @@ export const ARCH_NODES = [
   {
     id: 'l-emit',
     type: 'archNode',
-    position: { x: COL.lib, y: 200 },
+    parentId: 'c-kernel',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH },
     data: {
       kind: 'lib',
       label: 'composition-emit',
@@ -253,7 +452,9 @@ export const ARCH_NODES = [
   {
     id: 'l-manifold',
     type: 'archNode',
-    position: { x: COL.lib, y: 300 },
+    parentId: 'c-kernel',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 2 },
     data: {
       kind: 'lib',
       label: 'Manifold WASM',
@@ -263,7 +464,9 @@ export const ARCH_NODES = [
   {
     id: 'l-bake-cache',
     type: 'archNode',
-    position: { x: COL.lib, y: 400 },
+    parentId: 'c-kernel',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 3 },
     data: {
       kind: 'lib',
       label: 'bake-cache',
@@ -271,19 +474,11 @@ export const ARCH_NODES = [
     } satisfies ArchNodeData,
   },
   {
-    id: 'l-threlte',
-    type: 'archNode',
-    position: { x: COL.lib, y: 500 },
-    data: {
-      kind: 'lib',
-      label: 'Threlte viewer',
-      blurb: 'Declarative Three.js for Svelte. Mesh / GLB / SVG rendering, cutaway, per-part colour, Z-down convention.',
-    } satisfies ArchNodeData,
-  },
-  {
     id: 'l-stdlib',
     type: 'archNode',
-    position: { x: COL.lib, y: 600 },
+    parentId: 'c-kernel',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 4 },
     data: {
       kind: 'lib',
       label: 'stdlib / stdstale',
@@ -293,7 +488,9 @@ export const ARCH_NODES = [
   {
     id: 'l-rule-translator',
     type: 'archNode',
-    position: { x: COL.lib, y: 700 },
+    parentId: 'c-kernel',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 5 },
     data: {
       kind: 'lib',
       label: 'rule-translator',
@@ -301,11 +498,13 @@ export const ARCH_NODES = [
     } satisfies ArchNodeData,
   },
 
-  // ── STORES ──
+  // ───────────────── Volume store container ─────────────────
   {
     id: 's-primitives-vol',
     type: 'archNode',
-    position: { x: COL.store, y: 0 },
+    parentId: 'c-volume',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD },
     data: {
       kind: 'store',
       label: 'primitives/ (volume)',
@@ -315,7 +514,9 @@ export const ARCH_NODES = [
   {
     id: 's-rag-corpus',
     type: 'archNode',
-    position: { x: COL.store, y: 100 },
+    parentId: 'c-volume',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH },
     data: {
       kind: 'store',
       label: 'ai/rag/parts.jsonl',
@@ -325,7 +526,9 @@ export const ARCH_NODES = [
   {
     id: 's-vocab-json',
     type: 'archNode',
-    position: { x: COL.store, y: 200 },
+    parentId: 'c-volume',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 2 },
     data: {
       kind: 'store',
       label: 'vocabulary.json',
@@ -335,7 +538,9 @@ export const ARCH_NODES = [
   {
     id: 's-bake-cache-vol',
     type: 'archNode',
-    position: { x: COL.store, y: 300 },
+    parentId: 'c-volume',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 3 },
     data: {
       kind: 'store',
       label: 'cache/ (volume)',
@@ -345,7 +550,9 @@ export const ARCH_NODES = [
   {
     id: 's-volume-root',
     type: 'archNode',
-    position: { x: COL.store, y: 400 },
+    parentId: 'c-volume',
+    extent: 'parent',
+    position: { x: PAD_X, y: HEAD + PITCH * 4 },
     data: {
       kind: 'store',
       label: '$APP_DATA_DIR',
@@ -358,6 +565,12 @@ export const ARCH_NODES = [
 // EDGE DEFINITIONS
 // ──────────────────────────────────────────────────────────
 export const ARCH_EDGES = [
+  // ── Container-level C4 summary relationships (box → box) ──
+  { id: 's-webapp-api', source: 'c-webapp', target: 'c-api', data: { edgeKind: 'summary', label: 'calls /api/*' } satisfies ArchEdgeData },
+  { id: 's-api-kernel', source: 'c-api', target: 'c-kernel', data: { edgeKind: 'summary', label: 'bakes via' } satisfies ArchEdgeData },
+  { id: 's-kernel-volume', source: 'c-kernel', target: 'c-volume', data: { edgeKind: 'summary', label: 'reads / writes' } satisfies ArchEdgeData },
+
+  // ── Fine-grained component edges ──
   // Routes → API calls
   { id: 'e-prim-api', source: 'r-primitives', target: 'a-primitives', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
   { id: 'e-prim-rag', source: 'r-primitives', target: 'a-rag', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
@@ -387,7 +600,7 @@ export const ARCH_EDGES = [
   { id: 'e-vocab-rule', source: 'a-vocab', target: 'l-rule-translator', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
   { id: 'e-api-cache', source: 'a-primitives', target: 'l-bake-cache', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
 
-  // API → store (reads/writes)
+  // API / lib → store (reads/writes)
   { id: 'e-api-prim-vol', source: 'a-primitives', target: 's-primitives-vol', data: { edgeKind: 'writes', label: 'save/delete' } satisfies ArchEdgeData },
   { id: 'e-api-rag-corpus', source: 'a-rag', target: 's-rag-corpus', data: { edgeKind: 'writes', label: 'rebuild' } satisfies ArchEdgeData },
   { id: 'e-vocab-json', source: 'a-vocab', target: 's-vocab-json', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
