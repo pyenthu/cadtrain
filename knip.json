@@ -21,5 +21,9 @@
     "src/volume_backup/**",
     ".dev-volume/**"
   ],
+  "ignoreUnresolved": [
+    "./\\$types",
+    "../src/lib/training/.*"
+  ],
   "ignoreDependencies": []
 }
