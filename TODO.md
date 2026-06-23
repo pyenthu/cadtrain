@@ -6,15 +6,16 @@
    Plan: `docs/plans/ai-rag-system.md`.
 2. **web-llm local backend** — in-browser Qwen2.5-1.5B + XGrammar, default-OFF, local
   few-shot DB (no data leaves org). Plan: `docs/research/web-llm-functionary.md`.
-3. **Modularize round 2** — A/B/C/D **and E Step 1 done** (`SketchState` per-instance
-  class, ~233 refs rewired, GEP 8029→7384, browser-verified). LEFT: **Phase E Step 2**
-   = SketchEditorPane + SketchNodeCard components (both take the `sketch` instance);
+3. **Modularize round 2** — A/B/C/D **and E (Step 1 + Step 2) done** (`SketchState`
+  per-instance class; `SketchNodeCard` + `SketchEditorPane` extracted, coord ƒ-popover
+  stays in the shell, GEP 7897→7376, browser-verified in /primitives + /graph-editor).
+  LEFT: **Phase F** = `NodeCard.svelte` (per-node render arms + `polyExprPop`, HIGH risk);
   - dead-code prune (builder.ts/library.ts chain). Plans: `docs/plans/graph-editor-pane.md`
   - `modularize-round2.md`.
 4. **Right nav menu restructure** — group the RightPane rail into VIEW/DATA + pinned
   settings. Plan: `docs/plans/right-nav-menu.md`.
-5. **Sketch repeat** — poly_repeat-style loop in the sketch. *(Blocked on #3 E+F.)*
-  Plan: `docs/plans/repeat-and-sketch-repeat.md`.
+5. **Sketch repeat** — poly_repeat-style loop in the sketch. *(Unblocked by #3 Phase E
+  Step 2.)* Plan: `docs/plans/repeat-and-sketch-repeat.md`.
 6. **/design svelte-flow architecture graph** — interactive route/api graph (needs the
   `@xyflow/svelte` dep). Plan: `docs/plans/design-route-svelteflow.md`.
 7. **Client-side execution + server-builder** — server stays the compiler (graph→script),
@@ -50,11 +51,6 @@
   `docs/plans/smooth-surfaces-and-brep.md`. (The "smoothOut is wavy r≈0.75" scare was a measurement
   artifact — it sampled cap-transition verts; the wall reconstructs cleanly.)
 
-### Shipped 2026-06-18
-Faceted BREP revolve (7112f8a) · SVG artificial per-face shader + light/rim dials (24137c3, 2b3d1c1) ·
-in-place shade toggle / no re-bake (dd5602c) · **normal slot 3→0 root fix** + smooth default + 1-row
-bake controls (b322bf3, c645b66, 47edb2a) · smoothOut+refine prototype + bench (bbd7de9) · worker-pool
-spec (`docs/plans/bake-worker-pool.md`). Probes under `scripts/` (25fe1e2).
 
 ### PARKED
 
@@ -64,10 +60,6 @@ spec (`docs/plans/bake-worker-pool.md`). Probes under `scripts/` (25fe1e2).
 4. RESEARCH. Explore this for possibility of improving cad generation. [https://arxiv.org/html/2606.05515v1](https://arxiv.org/html/2606.05515v1)
 5. PLAN We need to introduce the concept of units here. Like diameter in inches or mm generslly, z in m or ft. We ill need a centralized units repository.
 6. The TXForm card is to allow multiple instances of sequential mv/rot or others in the same table as an option. so we need a section with rows of parsms that can be wired and where more txforms cn be added. Right now there is a redundancy in each card's operation. There should be a selactor of what we want for each row. and the ability to move one transform up or down.
-
-1. SLOWING DOWN when a new tab is opened.
-2. ~~Initial svg is bad. Need a deep dive. It is ok after changing segments.~~ **✅ SHIPPED 2026-06-23** — gradient-id collision: every `PrimitiveSvgView` numbered gradients `g0..gN` and `url(#id)` resolves document-wide, so the N instances in /primitives collided (verified 4 instances' gradients coexisting). Fix = per-instance id prefix (`6736f50`); surfaced by the `PrimitiveSvgView`→`svg-emit`/`svg-camera` split (`474e8f5`); dead first-paint band-aid stripped (`3ff4dfc`).
-3. g_dp_box slows down everything. First time load is very slow and the svg comes out missing parts. Then it gets built right.
 
 
 5. Need to check how much time it takes to build these svg.
