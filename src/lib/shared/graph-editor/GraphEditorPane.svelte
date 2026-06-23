@@ -146,6 +146,10 @@
   import Popovers from './Popovers.svelte';
   import PropertiesCard from './PropertiesCard.svelte';
   import ParamsCard from './ParamsCard.svelte';
+  // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
+  // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
+  // ƒ-popover still renders in the shell — the Phase-E-revert fix).
+  import SketchNodeCard from './SketchNodeCard.svelte';
   import { clampToViewport } from './popover-clamp';
   import { releaseImplicitCapture } from './pointer-capture';
   // Per-pane drag-to-wire state + handlers (Phase C). A per-instance class
@@ -4945,110 +4949,10 @@
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'sketch'}
-                {@const sk = n as any}
-                {@const skConsumed = consumedSet.has(n.id)}
-                <!-- Sketch card (plan M.1) — CAD-operator profile producer:
-                     line/spline points + fillet/chamfer corner mods compile
-                     to (r,z) via Maker.js. Output socket wires into a
-                     revolve/extrude profile arg like a polygon. -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect role="button" tabindex="-1" class="ge-node-bg sketch"
-                  width={size.w} height={size.h} rx="6"
-                  style="width: {size.w}px; height: {size.h}px"
-                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
-                  onpointermove={onNodePointerMove}
-                  onpointerup={onNodePointerUp}/>
-                <text x="10" y="22" class="ge-node-title">✐ sketch{skConsumed ? ' · 🔒' : ''}</text>
-                <!-- ✎ open the full-tab sketch editor (plan M.2). -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 32} y="22" class="ge-sketch-edit-btn"
-                  data-tip="Edit in the full-tab sketch editor"
-                  onpointerdown={(ev) => { ev.stopPropagation(); sketch.openSketchEditor(n.id); }}>✎</text>
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
-                  class:disabled={skConsumed}
-                  data-tip={skConsumed ? 'Wired into a Revolve/Extrude — delete the consumer first.' : 'Delete sketch'}
-                  onpointerdown={(ev) => { ev.stopPropagation(); if (!skConsumed) deleteNode(n.id); }}>×</text>
-                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
-                  <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
-                    <div class="ge-sketch-ops">
-                      {#each (sk.ops as Array<any>) as op, idx (idx)}
-                        {#if op.op === 'line' || op.op === 'spline'}
-                          <!-- Two STACKED sub-rows (r over z) — compact + each
-                               coord has a left-edge wire socket (rendered as SVG
-                               siblings below) so a param can be wired in. -->
-                          <div class="ge-sketch-vtx" class:editing={sketch.sketchExprPop?.sid === n.id && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
-                            <div class="ge-sketch-srow">
-                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(n.id, idx, op)}>{sketch.sketchAxisLabel(op, 'r')}</button>
-                              <input class="ge-sketch-in" type="text" value={argStr(op.r)} title={op.mode === 'rel' ? 'Δr — offset from previous point' : 'r — number or p.param'}
-                                onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'r', argFrom((e.target as HTMLInputElement).value)); }}/>
-                              <button class="ge-sketch-fx" type="button" title="Write/edit an expression for r" class:on={op.r?.kind === 'expr'}
-                                onclick={(ev) => sketch.openSketchExprPop(ev, n.id, idx, 'r', argStr(op.r))}>ƒ</button>
-                              <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
-                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
-                            </div>
-                            <div class="ge-sketch-srow">
-                              <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(n.id, idx, op)}>{sketch.sketchAxisLabel(op, 'z')}</button>
-                              <input class="ge-sketch-in" type="text" value={argStr(op.z)} title={op.mode === 'rel' ? 'Δz — offset from previous point' : 'z'}
-                                onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, 'z', argFrom((e.target as HTMLInputElement).value)); }}/>
-                              <button class="ge-sketch-fx" type="button" title="Write/edit an expression for z" class:on={op.z?.kind === 'expr'}
-                                onclick={(ev) => sketch.openSketchExprPop(ev, n.id, idx, 'z', argStr(op.z))}>ƒ</button>
-                              <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
-                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
-                              <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
-                                onclick={() => { graph = removeSketchOp(graph, n.id, idx); }}>×</button>
-                            </div>
-                          </div>
-                        {:else}
-                          <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === n.id && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
-                            <div class="ge-sketch-srow">
-                              <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
-                              <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
-                                onchange={(e) => { graph = setSketchOpField(graph, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value)); }}/>
-                              <button class="ge-sketch-fx" type="button" title="Write/edit an expression" class:on={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'expr'}
-                                onclick={(ev) => sketch.openSketchExprPop(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist', argStr(op.op === 'fillet' ? op.radius : op.dist))}>ƒ</button>
-                              <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
-                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, -1); }}>▲</button>
-                              <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sk.ops.length - 1}
-                                onclick={() => { graph = moveSketchOp(graph, n.id, idx, 1); }}>▼</button>
-                              <button class="ge-sketch-btn del" type="button" title="Remove op" disabled={sk.ops.length <= 1}
-                                onclick={() => { graph = removeSketchOp(graph, n.id, idx); }}>×</button>
-                            </div>
-                          </div>
-                        {/if}
-                      {/each}
-                    </div>
-                    <div class="ge-sketch-foot">
-                      <button class="ge-sketch-add" type="button" title="Add a line segment" onclick={() => { graph = addSketchOp(graph, n.id, 'line'); }}>+ line</button>
-                      <button class="ge-sketch-add" type="button" title="Add a Bézier spline" onclick={() => { graph = addSketchOp(graph, n.id, 'spline'); }}>+ spline</button>
-                      <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { graph = addSketchOp(graph, n.id, 'fillet'); }}>+ fillet</button>
-                      <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { graph = addSketchOp(graph, n.id, 'chamfer'); }}>+ chamfer</button>
-                    </div>
-                  </div>
-                </foreignObject>
-                <!-- Per-coord wire sockets (drag a PARAMS output onto one to
-                     wire p.<name> into that coord). Mirrors the polygon card. -->
-                {#each (sk.ops as Array<any>) as op, idx (idx)}
-                  {#if op.op === 'line' || op.op === 'spline'}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockR(n, idx)} r="4"
-                      class:wired={op.r?.kind === 'param'} data-tip="Drag a param here → r"
-                      onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, 'r')}/>
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockZ(n, idx)} r="4"
-                      class:wired={op.z?.kind === 'param'} data-tip="Drag a param here → z"
-                      onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, 'z')}/>
-                  {:else}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockVal(n, idx)} r="4"
-                      class:wired={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param'} data-tip="Drag a param here"
-                      onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, op.op === 'fillet' ? 'radius' : 'dist')}/>
-                  {/if}
-                {/each}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
-                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+                <SketchNodeCard {sketch} {n} {size} {graph} setGraph={(g) => (graph = g)} {wire}
+                  consumed={consumedSet.has(n.id)}
+                  {onNodePointerDown} {onNodePointerMove} {onNodePointerUp}
+                  onDeleteNode={deleteNode} />
 
               {:else if n.type === 'poly_repeat'}
                 {@const pr = n as any}
