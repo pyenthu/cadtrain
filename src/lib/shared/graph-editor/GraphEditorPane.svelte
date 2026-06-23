@@ -146,6 +146,12 @@
   import Popovers from './Popovers.svelte';
   import PropertiesCard from './PropertiesCard.svelte';
   import ParamsCard from './ParamsCard.svelte';
+  // Expression builder popover (B.6 / id 914, PR-3). A popover-first surface for
+  // authoring calculated `e.<name>` exprs (graph.exprs[]) — opened from the Σ
+  // rail launcher; expand-to-full inside the popup. Per-instance state lives in
+  // the popup; GEP owns only the open flag + anchor + commit→graph.exprs wiring.
+  import ExpressionBuilderPopup from './expr/ExpressionBuilderPopup.svelte';
+  import { buildExprSchema } from '$lib/cad/graph-exprs';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
   // ƒ-popover still renders in the shell — the Phase-E-revert fix).
@@ -250,6 +256,36 @@
   // node-render arms can call `popovers.openContainerPop/openArgExprPop/
   // openProfilePop/openProfileRefPop/moveChild/detachProfile(...)`.
   let popovers: Popovers | undefined = $state();
+
+  // ─── expression builder popover (B.6 / id 914, PR-3) ───────────────────────
+  // Opened from the Σ rail launcher. Authors ONE calculated `e.<name>` expr at a
+  // time; commit writes/updates it into graph.exprs (multi-output = PR-5). The
+  // schema excludes the expr being edited so it can't reference itself, and the
+  // name can't shadow a param or duplicate another expr (enforced in the popup).
+  let exprPop = $state<{ anchor: { x: number; y: number }; initial: { name: string; src: string } } | null>(null);
+  // Schema = the part's param names + OTHER declared expr names (minus the one
+  // being edited). Rebuilt each open.
+  let exprPopSchema = $derived(
+    exprPop
+      ? buildExprSchema(
+          paramEntries.map(([nm]) => nm),
+          (graph.exprs ?? []).map((e) => e.name).filter((nm) => nm !== exprPop!.initial.name),
+        )
+      : null,
+  );
+  function openExprPop(ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    // Anchor just right of the rail button.
+    exprPop = { anchor: { x: r.right + 8, y: r.top }, initial: { name: '', src: '' } };
+  }
+  function commitExpr(e: { name: string; src: string }) {
+    const list = (graph.exprs ?? []).slice();
+    const idx = list.findIndex((x) => x.name === e.name);
+    if (idx >= 0) list[idx] = { name: e.name, src: e.src };
+    else list.push({ name: e.name, src: e.src });
+    graph = { ...graph, exprs: list };
+    exprPop = null;
+  }
 
   let emitted = $derived(emitGraph(graph, { id: exemplarId, drawingMd }));
   // The SOURCE the LIVE SOURCE tab + the bake canvas see — it's the
@@ -3429,6 +3465,12 @@
       data-tip={wire.connectMode
         ? 'Click-to-connect ON — tap a source socket, then a target (Esc cancels)'
         : 'Click-to-connect — wire two sockets by tapping them, no dragging'}>🔗</button>
+    <!-- Σ Expression builder (B.6 / id 914) — open the calculated-expression
+         popover, seeded with the part's param names as the input schema. -->
+    <button class="ge-vrail-btn expr" type="button"
+      class:on={!!exprPop}
+      onclick={openExprPop}
+      data-tip="Expression builder — author a calculated e.* value from p.* params">Σ</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -3482,6 +3524,15 @@
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
+
+  {#if exprPop && exprPopSchema}
+    <ExpressionBuilderPopup
+      schema={exprPopSchema}
+      initial={exprPop.initial}
+      anchor={exprPop.anchor}
+      onCommit={commitExpr}
+      onCancel={() => (exprPop = null)} />
+  {/if}
 
   {#if aiMenuOpen}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
