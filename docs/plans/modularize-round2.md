@@ -1,6 +1,7 @@
 # Plan — Modularize cadtrain, Round 2 (K.65 continuation)
 
-> **Status:** PLAN. Author: 2026-06-16. **Builds on** (does not replace)
+> **Status:** PARTIAL — E+F shipped 2026-06-23; R6/R7/R1 remain. Author: 2026-06-16.
+> **Builds on** (does not replace)
 > `docs/plans/modularize.md` (round-1 thesis + rules) and
 > `docs/plans/graph-editor-pane.md` (the GEP phase ledger). Read those first —
 > this doc re-censuses against the *current* tree, folds in the `knip` run,
@@ -8,8 +9,11 @@
 > hardening items the round-1 plan only sketched.
 >
 > **What changed since round-1 was written (at GEP=9635):**
-> - GEP A/B/C/D extracted + the file **moved** to `src/lib/shared/graph-editor/`.
->   GEP is now **8021 lines / 100 `$state` / 26 `$derived` / 11 `$effect`**.
+> - GEP A–F extracted + the file **moved** to `src/lib/shared/graph-editor/`.
+>   GEP is now **6191 lines / 85 `$state`**; `NodeCard.svelte` (2015 lines) at
+>   `graph-editor/NodeCard.svelte` (flat path, not `node-cards/` subfolder).
+> - Phase F post-ship bugfix: `onDeleteNode` prop pass-through in NodeCard sketch
+>   arm — see `graph-editor-pane.md` §2 Phase F post-mortem.
 > - `composition-graph.ts` (was 1653) is **already split** →
 >   `composition-graph-mutate.ts` (1192) + `composition-graph-types.ts` (268)
 >   (+ `composition-emit*.ts`). Round-1 P4 is **partially done**; only a
@@ -52,24 +56,25 @@
 
 ---
 
-## 1. Re-census — biggest live files (`wc -l`, 2026-06-16)
+## 1. Re-census — biggest live files (`wc -l`, 2026-06-23)
 
 | Rank | File | Lines | Round-1 plan? | This-round target |
 |---|---|---:|---|---|
-| 1 | `shared/graph-editor/GraphEditorPane.svelte` | **8021** | GEP A–F | **E+F together** (§2) |
-| 2 | `routes/primitives/+page.svelte` | **1836** ↑ | P11 | Sidebar + TabStrip (§3) |
-| 3 | `routes/vocab/+page.svelte` | 1687 | P12 | tab bodies (§3) |
-| 4 | `cad/composition-graph-mutate.ts` | 1192 | P4 (partial) | thin the mutate family (§3) |
-| 5 | `shared/ProfileFnEditor.svelte` | 1156 | P15 | preview ↔ round-trip split (§3) |
-| 6 | `cad/builder.ts` | 1048 | P13 | legacy ↔ render-helpers split + retire (§3,§4) |
-| 7 | `routes/plan/details.ts` | 929 | — | data file, leave (documented exception) |
-| 8 | `cad/composition-tree.ts` | 798 | low pri | leave unless >1000 |
-| 9 | `routes/plan/+page.svelte` | 720 | — | Gantt; leave |
-| 10 | `cad/composition-emit.ts` | 699 | — | leave (focused) |
-| 11 | `routes/design/+page.svelte` | 696 | §3 orphan | **resolve: link+doc OR archive (§4)** |
-| 12 | `shared/graph-editor/geom.ts` | 644 | (extracted ✓) | — |
-| 13 | `routes/volume/+page.svelte` | 623 | — | leave |
-| 14 | `cad/library.ts` | 566 | §4 dead-chain | retire-if-dead with builder.ts (§4) |
+| 1 | `shared/graph-editor/GraphEditorPane.svelte` | **6191** | GEP A–F | **shell cleanup (R6)** — ≤~1500 lines |
+| 2 | `shared/graph-editor/NodeCard.svelte` | **2015** | G6 | extracted ✓ (Phase F) |
+| 3 | `routes/primitives/+page.svelte` | **1836** ↑ | P11 | Sidebar + TabStrip (§3) |
+| 4 | `routes/vocab/+page.svelte` | 1687 | P12 | tab bodies (§3) |
+| 5 | `cad/composition-graph-mutate.ts` | 1192 | P4 (partial) | thin the mutate family (§3) |
+| 6 | `shared/ProfileFnEditor.svelte` | 1156 | P15 | preview ↔ round-trip split (§3) |
+| 7 | `cad/builder.ts` | 1048 | P13 | legacy ↔ render-helpers split + retire (§3,§4) |
+| 8 | `routes/plan/details.ts` | 929 | — | data file, leave (documented exception) |
+| 9 | `cad/composition-tree.ts` | 798 | low pri | leave unless >1000 |
+| 10 | `routes/plan/+page.svelte` | 720 | — | Gantt; leave |
+| 11 | `cad/composition-emit.ts` | 699 | — | leave (focused) |
+| 12 | `routes/design/+page.svelte` | 696 | §3 orphan | **resolve: link+doc OR archive (§4)** |
+| 13 | `shared/graph-editor/geom.ts` | 644 | (extracted ✓) | — |
+| 14 | `routes/volume/+page.svelte` | 623 | — | leave |
+| 15 | `cad/library.ts` | 566 | §4 dead-chain | retire-if-dead with builder.ts (§4) |
 
 **Goal unchanged:** no live `src/` file > ~1000 lines without a documented
 reason; GEP → a ≤~1500-line composing shell.
@@ -79,15 +84,20 @@ Gantt data, not logic) — acceptable; everything else gets carved or retired.
 
 ---
 
-## 2. GraphEditorPane — the remaining carve (E+F as ONE unit)
+## 2. GraphEditorPane — E+F carve (DONE 2026-06-23)
 
-**Already done (do NOT redo):** A Popovers (4 self-contained pops) · B bake
-parsers+expected-params cache · C `WireState` per-instance class · D
-Properties/Params cards · plus pre-existing geom.ts/args.ts/RightPane.
+**Already done (do NOT redo):** A Popovers · B bake parsers+expected-params cache ·
+C `WireState` per-instance class · D Properties/Params cards · E SketchState +
+SketchNodeCard + SketchEditorPane · F `NodeCard.svelte` — plus pre-existing
+geom.ts/args.ts/RightPane.
 
-**Remaining = E (full-tab Sketch editor) + F (NodeCard arms).** Round-1 listed
-these as separate phases; **the E-revert proved they are one unit** and must
-ship together. The entanglement (from the revert post-mortem):
+**E + F shipped 2026-06-23.** SketchState class (approach 2a.1) → SketchNodeCard +
+SketchEditorPane (E) → NodeCard dispatcher (F). `polyExprPop` + coord ƒ-popover stay
+in the GEP shell (as designed). Post-ship bugfix: NodeCard sketch arm must pass
+`{onDeleteNode}` not `deleteNode` — see `graph-editor-pane.md` §2.
+
+The entanglement that blocked the 2026-06-16 E revert (historical — resolved by
+SketchState + shell-owned popovers):
 
 - `sketchExprPop` is **one popover** shared by the full-tab sketch editor AND
   the in-graph Sketch *node card*. One popover can't render in two components.
@@ -96,10 +106,9 @@ ship together. The entanglement (from the revert post-mortem):
 - `polyExprPop` (vertex/loop/binding/count + transform-axis ƒ-editor) is fused
   with `hlVertex`/`hoverVertex`/`svgTip`, which the node arms AND canvas SVGs read.
 
-### 2a. Recommended approach — `sketch/` + `node-cards/` in one PR, two seams
+### 2a. Approach used (shipped — matches 2a.1 SketchState pattern)
 
-Do it as a single "sketch+nodecard consolidation" PR with an internal ordering
-that keeps the shared popover in ONE owner:
+Historical design rationale for the E+F consolidation:
 
 1. **Lift the shared sketch surface into a per-instance rune class first**
    (`sketch-state.svelte.ts`, mirroring `WireState`): owns `sketchExprPop`,
@@ -114,22 +123,20 @@ that keeps the shared popover in ONE owner:
    handlers, taking the `sketch-state` instance + `wire` instance + param scope
    as props. Drops GEP's duplicated `.ge-param-chip`/`.ge-params-card-*` CSS
    (the sketch mini-card moves with it). ~1100–1400 lines out of GEP.
-3. **`node-cards/NodeCard.svelte` dispatcher** — the per-node render arms
-   (markup ~L4467–5340): Call / Container(list|stack|group) / Method / Mv / Rot /
-   Repeat / Polygon / PolyRepeat / Sketch + `polyExprPop` + `hlVertex`/`svgTip`.
-   One dispatcher with labelled `{#if}` arms is safer than N files for the first
-   cut (shared closure over `graph`/selection/`wire`/`geom`/`sketch-state`).
-   **Enumerate leaf types explicitly** — polygon/poly_repeat have no `children`
-   (memory `autolayout_predecessors_polygon_crash`). **Risk: HIGH.**
+3. **`graph-editor/NodeCard.svelte` dispatcher** — the per-node render arms
+   (shipped at flat `graph-editor/NodeCard.svelte`, not `node-cards/` subfolder):
+   Call / Container(list|stack|group) / Method / Mv / Rot / Repeat / Polygon /
+   PolyRepeat / Sketch (delegates to SketchNodeCard) + resize grip. `polyExprPop`
+   + `hlVertex`/`svgTip` stay in GEP shell.
 
 > **Fallback if (1) proves too entangled:** keep `sketchExprPop` + the shared
 > helpers in GEP and give `SketchEditorPane` an `onOpenSketchExprPop` callback +
 > read-only `sketchEditor` prop. Less clean (GEP keeps a sketch tendril) but
 > unblocks **M.5 sketch-repeat** sooner. Decide after attempting (1) for ≤1 session.
 
-### 2b. After E+F
+### 2b. After E+F — **NEXT (R6)**
 
-Residual shell = props + the ~100 `$state` (many move with their feature) +
+Residual shell = props + the ~85 `$state` (many move with their feature) +
 `onMount`/keydown + the `<svg>` canvas host + pan/zoom group + child slots +
 `clientToGraph` (stays — needs `canvasEl`/pan/zoom). Add a module-map header
 comment mirroring the subtree CLAUDE.md style. Target ≤~1500 lines. CSS rides
@@ -271,16 +278,16 @@ previous one. **No parallel agents on GEP.**
 | **R2** | **knip triage commit**: remove confirmed-dead deps (§4a) + `mime.ts`/`temp-file.ts` if dead; tune `knip.json` (`$types`/script-archive noise). **No file from the false-positive list.** | LOW-MED | ✓ yes | build green; vocab/profile/SVG pages load |
 | **R3** | **`/design` decision** (§4b) — link+document OR `git mv` to archive. **Ask user first.** | LOW | ✓ yes | route loads or is gone from router |
 | **R4** | **`primitives/+page` → Sidebar + TabStrip** (§3) | MED | ✓ yes | portrait + landscape; grid auto-placement |
-| **R5** | **GEP E+F consolidation** (§2): `sketch-state.svelte.ts` → `SketchEditorPane.svelte` → `node-cards/NodeCard.svelte`. INLINE. | HIGH | — (GEP) | full graph e2e; every node type renders+wires; sketch tab + node card both; the 3 reference parts |
-| **R6** | **GEP shell cleanup** — module-map header, residual `$state` audit, confirm ≤~1500 lines | LOW | — (GEP) | full build + graph e2e |
+| **R5** | ~~**GEP E+F consolidation**~~ ✓ DONE 2026-06-23 — SketchState → SketchNodeCard + SketchEditorPane → NodeCard; browser-verified; `onDeleteNode` bugfix. | HIGH | — (GEP) | — |
+| **R6** | **GEP shell cleanup — NEXT** — module-map header, residual `$state` audit, confirm ≤~1500 lines | LOW | — (GEP) | full build + graph e2e |
 | **R7** | **`builder.ts` split** → `builder-legacy.ts` + `render-helpers.ts`; **then** retire `library.ts` + legacy chain IF dead (§4a) — separate commit, Rule 6 approval | MED-HIGH | ✓ yes | `/preview` bakes the full g_* corpus; curl-prod parity |
 | **R8** | **`vocab/+page` → `_tabs/*`** (§3) | MED | ✓ yes | each vocab tab |
 | **R9** | **`ProfileFnEditor` split** — round-trip test FIRST, then preview ↔ source split | MED | ✓ yes | `composeSource` round-trip green |
 | **R10** | **warp-subdivide retire-if-redundant** (§4b) + **WASM-health banner** (§5b) | MED | ✓ yes | warp visual e2e (edges follow without `subdivideAlongZ`) |
 
 **Parallelism note:** R1–R4 + R7–R10 are all GEP-independent and can be done by
-isolated-worktree subagents (they don't touch GEP). **R5/R6 touch GEP → inline,
-sequential, never concurrent with each other.** Land R1 (bake-cache) early — it's
+isolated-worktree subagents (they don't touch GEP). **R6 touches GEP → inline,
+sequential.** R5 (E+F) is done. Land R1 (bake-cache) early — it's
 the highest user-visible value and unblocks confident dep edits during the rest.
 
 ---

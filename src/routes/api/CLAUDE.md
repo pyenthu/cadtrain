@@ -17,7 +17,9 @@ because it's the Railway health check.
 `/api/primitives/*`: `list`, `save`, `source`, `delete`, `restore`,
 `move`, `rename`, `recognize`, `refine` (Claude-assisted source refine —
 ACTIVE, distinct from the archived identify-chain `/api/refine`),
-`preview`, `bake-preview`, `prompts`, `instructions`, and
+`preview`, `bake-preview`, `compile` (dep-inlined Manifold script + `scriptHash` —
+client-exec compiler path; GET saved + POST live emit; local like preview),
+`prompts`, `instructions`, and
 `profiles/{list,save,delete,resolve,source}`.
 
 Sources are flat typed files on the volume (`<id>.prim.ts` / `.asm.ts`,
@@ -37,7 +39,7 @@ to prod when `CADTRAIN_VOLUME_REMOTE_URL` is set. The proxy is centralized
 in `src/hooks.server.ts` via the `VOLUME_PROXY_PATHS` allowlist (list,
 save, source, delete, restore, move, rename, prompts, instructions,
 profiles/{list,save,delete,source}, plus `rag/{rebuild,stats,scan-refs,prompt}`).
-Excluded (stay local): `preview`, `bake-preview`, `profiles/resolve`
+Excluded (stay local): `preview`, `bake-preview`, `compile`, `profiles/resolve`
 (stateless compute — fast local WASM).
 The hook also bypasses the proxy for stdlib/stdstale ids on `source` so
 local engine edits are visible without a redeploy. `X-Volume-Local: 1`

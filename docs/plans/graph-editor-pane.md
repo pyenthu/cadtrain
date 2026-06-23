@@ -1,9 +1,9 @@
 # Plan — Decompose `GraphEditorPane.svelte` (the elephant)
 
-> **Status:** PLAN. Focused successor to the GraphEditorPane section of
+> **Status:** PARTIAL — phases A–F shipped 2026-06-23; shell cleanup remains.
+> Focused successor to the GraphEditorPane section of
 > `docs/plans/modularize.md` (which was written at 9635 lines, pre-extraction).
-> **Current size: 8737 lines** = script (L20–4204, ~4180) + markup (L4205–7338,
-> ~3130) + scoped CSS (L7339–8737, ~1400). **110 `$state` declarations.**
+> **Current size: 6191 lines.** **85 `$state` declarations.**
 > **Goal:** carve to a thin shell (≤ ~1500 lines: props, top-level `$state`,
 > `onMount`/keydown, the `<svg>` host + pan/zoom group, and child slots).
 
@@ -42,6 +42,7 @@
 | `wire-state.svelte.ts` (262, per-instance class) + `pointer-capture.ts` (19) | the drag-to-wire subsystem | **C ✓** (54e8505) |
 | `sketch-state.svelte.ts` (710, per-instance class) | sketch state + 21 `sketch*` handlers + `sketchEditor`/`miniLayout` derived | **E Step 1 ✓** |
 | `SketchNodeCard.svelte` (~250) + `SketchEditorPane.svelte` (543) | the `n.type==='sketch'` node-card arm + the full-tab editor overlay (coord ƒ-popover stays in shell) | **E Step 2 ✓** (800d0e7 + 08ad8c4) |
+| `NodeCard.svelte` (2015) | per-node SVG cards — call/method/mv/rot/txfmn/repeat/container/polygon/poly_repeat + resize grip; sketch delegates to SketchNodeCard; `polyExprPop` stays in shell | **F ✓** (2026-06-23) |
 
 > **Phase C DONE 2026-06-16.** `WireState` is a PER-INSTANCE class (one `new
 > WireState(getGraph, setGraph, clientToGraph)` per pane), NOT a module `$state`
@@ -101,7 +102,7 @@ its render arms already pull from extracted, tested helpers.
 | ~~**B**~~ ✓ | `graph-editor-bake.ts` + `.svelte.ts` — DONE (2e71155). | parsers + expected-params cache (see refined note above). | — | `runBake`/bake-pipeline stay (reactive); `drop*` stay (trivial 1-liners); `setAutoBake`/`rebuildCache`/`restartDevServer` stay (small, bake-pipeline-coupled $state). |
 | ~~**C**~~ ✓ | `wire-state.svelte.ts` (per-instance `WireState` class) + `pointer-capture.ts` — DONE (54e8505). | wireFrom→`wire.from` + all start/endWireOn*/unwire handlers. | — | Per-instance class (NOT singleton). The endWireOn* text-substitution wiring is kept AS-IS for K.67. |
 | ~~**D**~~ ✓ | `PropertiesCard.svelte` (aa6c74f) + `ParamsCard.svelte` (aebb3cd). | both overlay-card bodies done. `addParamPop`/`wirePop` left in GEP (minor). | — | ParamsCard took startParamWire/openAddParamPop as props — didn't need C first. |
-| **E** | `SketchEditorPane.svelte` — **ATTEMPTED + REVERTED 2026-06-16; do WITH F.** | the full-tab sketch editor: 21 `sketch*` handlers, the `sketchEditor` `$derived` + frozen-frame, the tools rail + 2D canvas markup + the mini params/sketch cards. | **HIGH (entangled with F)** | See the failure note below. |
+| ~~**E**~~ ✓ | `sketch-state.svelte.ts` + `SketchNodeCard.svelte` + `SketchEditorPane.svelte` — DONE 2026-06-23. | SketchState class (Step 1) + markup extraction (Step 2); coord ƒ-popover stays in shell. | — | See §6 historical execution map + the Phase E revert note below. |
 
 > **Phase E — ATTEMPTED + REVERTED 2026-06-16.** Built `SketchEditorPane.svelte`
 > as a `bind:this` component owning all sketch state + `open(id)` (1407 lines,
@@ -141,9 +142,17 @@ its render arms already pull from extracted, tested helpers.
 >
 > _(superseded note: "do E+F together as one pass" — the SketchState class IS the
 > shared unit; markup components come after.)_
-| **F** | `NodeCard.svelte` (+ per-type arms) | the per-node render arms (markup L4467–5340): Call / Container(list/stack/group) / Method / Mv / Rot / Repeat / Polygon / PolyRepeat / Sketch cards **+ `polyExprPop`** (vertex/loop/binding/count **+ transform-axis** ƒ-editor; fused with `hlVertex`/`hoverVertex`/`svgTip`). | **HIGH** | Most shared-state-dependent — reads `graph`, selection, wire-state (C), geom (A-helpers). Do LAST. Enumerate leaf types explicitly — polygon/poly_repeat have no `children` (memory `autolayout_predecessors_polygon_crash`). One dispatcher with labelled `{#if}` arms, or N small components. |
+| ~~**F**~~ ✓ | `NodeCard.svelte` — DONE 2026-06-23. All node arms + resize grip; polyExprPop stays in shell. GEP 7376→6191. |
 
-After A–F the shell is props + the ~110 `$state` (many will move with their
+> **Phase F post-mortem (2026-06-23).** After extraction, `g_cube` and `g_dp_box`
+> failed to mount (sketch-heavy graphs); simpler parts could still load.
+> **Cause:** In `NodeCard.svelte`, the sketch arm passed `onDeleteNode={deleteNode}`
+> to `SketchNodeCard` — `deleteNode` is GEP-only; NodeCard's prop is `onDeleteNode`.
+> Svelte built clean (`ReferenceError` at runtime, same class as the Phase E revert).
+> **Fix:** `{onDeleteNode}` shorthand. **Verified:** `g_cube`, `g_dp_box` mount in
+> `/primitives`; sketch card + call card render; emit+preview 200.
+
+After A–F the shell is props + the ~85 `$state` (many will move with their
 feature) + `onMount`/keydown + the `<svg>` canvas host + child slots. The CSS
 follows each component out.
 
@@ -156,55 +165,39 @@ follows each component out.
 3. ~~**D — Params/Properties cards.**~~ ✓ DONE (aa6c74f + aebb3cd) — both bodies
    extracted; ParamsCard took startParamWire/openAddParamPop as props. **C is next.**
 4. ~~**C — wire-state.svelte.ts.**~~ ✓ DONE (54e8505) — per-instance `WireState`
-   class; verified with a synthetic param→coord wire-drag. **E is next.**
-5. **E — SketchEditorPane.svelte. ATTEMPTED + REVERTED (see note above) — do E+F TOGETHER.**
-   The largest self-contained chunk: the full-tab
-   sketch editor (21 sketch* handlers, the `sketchEditor` $derived, the tools rail
-   + 2D canvas markup + the mini params/sketch cards). Carries `sketchExprPop` +
-   the sketch mini-card (which can then drop GEP's duplicated `.ge-param-chip`/
-   `.ge-params-card-*` CSS). Props: the sketch node + param scope + the `wire`
-   instance + callbacks. **This unblocks the M.5 sketch-repeat UI — do E first.**
-6. **F — NodeCard.svelte.** Last. The per-node render arms + `polyExprPop`. Full
-   graph e2e: every node type renders + wires + the inline mv/rot strips + slots.
+   class; verified with a synthetic param→coord wire-drag.
+5. ~~**E — SketchState + SketchNodeCard + SketchEditorPane.**~~ ✓ DONE (2026-06-23)
+   — Step 1 class + Step 2 markup; coord ƒ-popover stays in shell.
+6. ~~**F — NodeCard.svelte.**~~ ✓ DONE (2026-06-23) — all per-node render arms +
+   resize grip; sketch delegates to SketchNodeCard; `polyExprPop` stays in shell.
+   Browser-verified: `g_cube`, `g_dp_box`, `g_mule_shoe`, polygon parts.
 
 Stop-and-bank after any phase — each leaves a smaller, working shell.
 
 ## 4. Done-when
-GraphEditorPane ≤ ~1500 lines; each extracted unit has its own scoped CSS + (where
-pure) a test; `bun run build` + `bun test` + a recorded graph e2e green; no
-behavior change (every phase browser-verified against the same parts:
-g_dp_box for sketch+sockets, g_mule_shoe for inline strips, a polygon part).
+
+**Interim (A–F) — met:** each extracted unit has its own scoped CSS + (where pure) a
+test; `bun run build` green; browser-verified against `g_dp_box` (sketch+sockets),
+`g_cube` (sketch+weld_extrude), `g_mule_shoe` (inline strips), a polygon part.
+
+**Final — open (R6 in `modularize-round2.md`):** GraphEditorPane ≤ ~1500 lines;
+module-map header; residual `$state` audit; recorded graph e2e green; no behavior
+change on shell cleanup.
 
 ## 5. Out of scope here
 K.67 graph-promotion (the wire-state rewrite — C just relocates it), the
 client-side-execution split (`docs/plans/client-side-execution.md`), and the
 `/vocab` (P12) + `builder.ts` (P13) + `ProfileFnEditor` (P15) files.
 
-## 6. Phase E Step 2 — execution map (DONE 2026-06-23)
+## 6. Phase E Step 2 — execution map (historical; DONE 2026-06-23)
 
-> **DONE 2026-06-23** — `SketchNodeCard.svelte` (800d0e7) + `SketchEditorPane.svelte`
-> (08ad8c4). The node-card arm + the full-tab editor block both moved out, taking
-> the ONE per-pane `sketch` SketchState instance as a prop; the coord ƒ-popover
-> STAYED in the shell (`{#if sketch.sketchExprPop}`) — the Phase-E-revert fix.
-> SketchEditorPane self-guards on `sketch.editingSketchId` (GEP mounts it
-> unconditionally in the canvas pane). Graph mutations route through `setGraph()`.
-> GEP's now-dead sketch CSS pruned (kept only the Repeat card ✎ trigger + the
-> overlay Done tick). **GEP 7897 → 7376 (−521).** Browser-verified in BOTH
-> /primitives (multi-instance: g_dp_box + g_dp_pin panes) and /graph-editor: node
-> card + editor render + style correctly, ƒ-popover fires from BOTH into the shell,
-> wires + bake intact, no console errors. The lingering `.ge-param-chip .pin/.name/
-> .val/.trash` unused-CSS warnings in GEP are Phase-D leftovers (ParamsCard's local
-> copy; the `:global` spin-button rule there is still needed) — out of Step 2 scope.
-> **This unblocks M.5 sketch-repeat.** Only F (NodeCard) remains in the carve plan.
-
-Step 1 (the `SketchState` class) is DONE — `sketch-state.svelte.ts` (710 lines)
-homes all state + the 21 `sketch*` handlers + `sketchEditor`/`miniLayout`
-`$derived`s. GEP holds `const sketch = new SketchState(...)` and the markup is
-already rewired to `sketch.*`. Step 2 just MOVES three markup blocks out. **GEP
-is 7,897 lines — INLINE only (subagents stall on this file); browser-mount verify
-every sketch op (mandatory). Line anchors below WILL shift — read the file fresh,
-match on the `{:else if n.type === 'sketch'}` / `ge-sketch-editor` / `sketch.sketchExprPop`
-anchors, not raw line numbers.**
+> Step 2 + Phase F are complete. Below is the execution map used for E Step 2.
+> **Phase E Step 2 DONE 2026-06-23** — SketchNodeCard + SketchEditorPane (see §6).
+> **Phase F DONE 2026-06-23** — `NodeCard.svelte` (2015 lines): call/method/mv/rot/
+> txfmn/repeat/container/polygon/poly_repeat + resize grip; sketch delegates to
+> SketchNodeCard; `polyExprPop` popover stays in shell. GEP 7376 → 6191 (−1185).
+> `bun run build` green; browser-verified. **LEFT:** shell cleanup (≤1500 target) +
+> dead-code prune. See Phase F post-mortem in §2.
 
 ### The blocks (anchors as of 7,897-line HEAD)
 1. **Sketch NODE CARD** — `{:else if n.type === 'sketch'}` at ~L4947, ends before

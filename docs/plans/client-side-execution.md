@@ -1,6 +1,8 @@
 # Plan — Client-side execution (server-translate / client-execute split)
 
-> **Status:** PLAN ONLY (no `src/` changes in this commit).
+> **Status:** **PARTIAL — PR1–3 SHIPPED** (2026-06-17, default OFF). The server
+> **compiler** path is live; the client **executor** path is live behind
+> `scene.clientBake` / `localStorage.cad-client-bake`. PR4–6 still open.
 > **Decision (user, 2026-06-16):** cadtrain is a **multi-user app**. Move geometry
 > **execution** OFF the server and INTO the browser for BOTH kernels (Manifold +
 > OCCT), while the server **keeps translating graph JSON → script**. The server
@@ -15,6 +17,43 @@
 > shared dep, `g_tube`, kept re-appearing because the server mesh-cache key for
 > parent parts didn't fold in dependency hashes — see §1). A *script* cache makes
 > that whole bug class structurally impossible.
+
+---
+
+## 0. Shipped (PR1–3) — what works today
+
+**Yes — compiling is done.** When client bake is ON, the flow is:
+
+```
+graph emit (live source) → POST /api/primitives/compile → dep-inlined script + scriptHash
+                         → bakeClient.run(script) in Web Worker → { full, cutVC, instanced }
+```
+
+| Piece | Shipped | Where |
+|---|---|---|
+| Server compile (GET saved + POST live source) | ✅ | `src/routes/api/primitives/compile/+server.ts` |
+| Dep-inlined script + `scriptHash` | ✅ | `compilePrimitiveScript` in `primitive-loader.ts` |
+| Server script text cache | ✅ | `src/lib/server/script-cache.ts` |
+| Manifold Web Worker executor | ✅ | `src/lib/cad/bake-worker.ts` + `bake-worker-core.ts` |
+| Main-thread client API + IndexedDB mesh cache | ✅ | `src/lib/cad/bake-client.ts` |
+| Canvas routes to worker behind flag | ✅ | `PrimitiveDualCanvas.svelte` (`scene.clientBake`) |
+| 💻/☁ rail toggle + persistence | ✅ | `GraphEditorPane.svelte` + `scene-state.svelte.ts` |
+| `⚡client`/`☁server` bake badge | ✅ | bake pane |
+| SRC `⚡ compiled` subtab | ✅ | `RightPane.svelte` (fetches compile on tab open) |
+| Client compile cache (param scrubs skip `/compile`) | ✅ | `PrimitiveDualCanvas.svelte` in-memory LRU |
+| Server `/preview` fallback | ✅ | default path when toggle OFF |
+
+**Verified:** `g_collar`, `g_nipple`, `g_dp_stand` bake client-side. Profile/revolve
+parts work when the toggle is on.
+
+**Not done yet:** PR4 server-builder relocation; PR5 OCCT-in-worker; PR6 default-flip.
+**Blocker before default-flip:** client mesh welds verts (e.g. `g_collar` 1624) vs
+server non-indexed (6036) — same geometry/tris, serialization difference; reconcile
+before flipping the default. Memory: `client_side_execution`.
+
+**Default today:** OFF — most users still hit `/api/primitives/preview` (server bake).
+Turn ON via the 💻 button in the graph-editor left rail or
+`localStorage.setItem('cad-client-bake', '1')`.
 
 ---
 
@@ -96,9 +135,9 @@ client. The server **executor is not deleted** — it is relocated and demoted f
 
 ---
 
-## 3. Server = compiler
+## 3. Server = compiler — ✅ SHIPPED (PR1)
 
-- New/extended endpoint: `/api/primitives/compile?name=<id>` →
+- Endpoint: `/api/primitives/compile` →
   `{ script, scriptHash, kernel: 'manifold' | 'occt', supported, reason? }`.
   - Resolves `meta.uses` recursively (reuse `usesOf` + the resolver logic in
     `primitive-loader.ts`), **inlines** each dep's emitted body so the returned
@@ -124,9 +163,9 @@ client. The server **executor is not deleted** — it is relocated and demoted f
 
 ---
 
-## 4. Client = executor (the Web Worker)
+## 4. Client = executor (the Web Worker) — ✅ SHIPPED (PR2–3, default OFF)
 
-- New `src/lib/cad/bake-worker.ts` (+ a thin `bake-client.ts` main-thread API):
+- `src/lib/cad/bake-worker.ts` (+ `bake-client.ts` main-thread API):
   - Lazy-initialises and caches the Manifold WASM module on first use; OCCT
     likewise (separately — don't pay OCCT's cold-init unless a BREP part is
     opened).
@@ -137,10 +176,10 @@ client. The server **executor is not deleted** — it is relocated and demoted f
     ArrayBuffers.
   - One worker, message-queued; cancellation for superseded requests (param
     drags supersede fast).
-- `PrimitiveDualCanvas` swaps its `fetch('/api/primitives/preview')` for
-  `bakeClient.run(...)` behind a flag (see §9). The scene/`geo` shape
-  (`{ full, cutVC, instanced }`) is **unchanged** → `PrimitiveDualScene` and
-  `SceneControls` need no edits.
+- `PrimitiveDualCanvas` swaps `fetch('/api/primitives/preview')` for
+  `bakeClient.run(...)` when `scene.clientBake` (see §9 PR3). The scene/`geo`
+  shape (`{ full, cutVC, instanced }`) is **unchanged** → `PrimitiveDualScene`
+  and `SceneControls` need no edits.
 - **IndexedDB mesh cache** keyed on `scriptHash + params + options`: hit →
   instant; miss → bake in worker, store. Per-client, survives reload. (Same key
   discipline as the script cache → no stale-dep recurrence.)
@@ -217,7 +256,7 @@ client. The server **executor is not deleted** — it is relocated and demoted f
 
 ---
 
-## 6. Server builder — preservation & relocation (do NOT delete)
+## 6. Server builder — preservation & relocation (do NOT delete) — OPEN (PR4)
 
 The existing server executor is an asset, not dead weight. It stays callable
 under an explicit namespace and keeps four real jobs:
@@ -329,25 +368,27 @@ path doesn't, but they're co-located in the same image, which is fine.)
 
 Each step ships `bun run build` green and leaves existing call sites working.
 
-### PR1 — Server `/api/primitives/compile` (Manifold) + script cache
-Pure addition. Returns the inlined Manifold script + `scriptHash`. Unit-test the
-inline-resolution (a dep edit changes the hash; a layout-only edit does not). No
-client change. **The deja-vu bug is gone the moment the client reads from this** —
-but PR1 alone is dormant.
+### PR1 — Server `/api/primitives/compile` (Manifold) + script cache — ✅ SHIPPED (`d35dcc4`)
+Returns the inlined Manifold script + `scriptHash` (GET saved part, POST live
+emit). `script-compile.test.ts` proves dep-edit changes the hash. **The deja-vu
+bug is structurally gone for clients that compile** — dep bodies are inlined into
+the script text, so `scriptHash` folds in every dependency change.
 
-### PR2 — Client Manifold worker + `bake-client` + IndexedDB cache
+### PR2 — Client Manifold worker + `bake-client` + IndexedDB cache — ✅ SHIPPED (`02b82e2`)
 `bake-worker.ts` runs a compiled Manifold script and returns `{ full, cutVC,
-instanced }`. Adapter unit-tested. Still not wired into the canvas. Confirm the
-worker resolves `manifold.wasm` (§4a locate gotcha).
+instanced }`. `bake-worker-core.test.ts` unit-tested. `manifold.wasm` resolves
+in the worker bundle (Vite worker-relative asset). `DataCloneError` fix: plain-ify
+Svelte `$state` proxies before `postMessage`.
 
-### PR3 — `PrimitiveDualCanvas` reads the worker behind a flag
-`localStorage('cad-client-bake') === '1'` (default OFF) → use `bakeClient`; else
-the current `/api/primitives/preview` path (fallback intact). Dogfood the flag;
-**byte-compare meshes against the server path on the g_\* corpus** (this is the
-parity-oracle use of the soon-to-be-relocated server builder — §6 reason 3).
-Browser-verify (Rule 11/12). When confident → flip the default.
+### PR3 — `PrimitiveDualCanvas` reads the worker behind a flag — ✅ SHIPPED (`a32dc02`, `4a0e92a`)
+`scene.clientBake` / `localStorage('cad-client-bake')` (default OFF) → compile +
+`bakeClient.run`; else `/api/primitives/preview`. Observability: 💻/☁ rail toggle,
+`⚡client`/`☁server` badge, SRC `⚡ compiled` subtab, in-memory compile cache (param
+scrubs skip `/compile`). Dogfooded on `g_collar` / `g_nipple` / `g_dp_stand`.
+**LEFT before default-flip:** full g_* corpus byte-compare + vert-weld vs
+non-indexed reconciliation (see §0).
 
-### PR4 — Relocate the server executor into the *server builder* (§6)
+### PR4 — Relocate the server executor into the *server builder* (§6) — OPEN
 `git mv` + re-export shims: `primitive-loader.ts`/`manifold-bake.ts` →
 `src/lib/server/server-builder/`, `brep-occt.ts` → same; new
 `/api/server-builder/{manifold,occt}` routes wrapping them. Old `/api/primitives/
@@ -355,13 +396,14 @@ preview` + `bake-preview` + `/api/brep/preview` become thin shims that call the
 server builder (so nothing breaks) OR are pointed at the new routes. Add to
 `RATE_LIMITED_PREFIXES`. **Nothing is deleted** — this is the preservation step.
 
-### PR5 — OCCT in the client worker
+### PR5 — OCCT in the client worker — OPEN
 Add the OCCT singleton (lazy, `replicad_single`, ~11 MB, worker-only) + the OCCT
-script path to `bake-worker.ts`; point the BREP tab (now on the shared canvas after
-BREP-parity) at the client OCCT backend behind the same flag. Server OCCT (now the
-server builder) stays as fallback for low-power clients + large boolean trees (§4b).
+script path to `bake-worker.ts`; point the BREP tab at the client OCCT backend
+behind the same flag. Server OCCT (relocated in PR4) stays as fallback for
+low-power clients + large boolean trees (§4b). `replicad` deps are already in
+`package.json` but not wired into the worker.
 
-### PR6 — Default-flip + demote the server path
+### PR6 — Default-flip + demote the server path — OPEN
 Once client baking is default and stable, the preview hot path no longer touches
 the server builder. The server builder remains callable for batch/headless/fallback
 (§6). Server Node processes no longer hold Manifold/OCCT resident *for previews*,
@@ -376,16 +418,16 @@ WASM from the image.
 
 ## 10. Files (by PR)
 
-- **PR1:** `src/routes/api/primitives/compile/+server.ts` (new);
-  `src/lib/server/primitive-loader.ts` (reuse the resolver to inline deps);
-  `src/lib/server/script-cache.ts` (new, mirrors `bake-cache.ts` shape but text);
-  unit test.
-- **PR2:** `src/lib/cad/bake-worker.ts` + `src/lib/cad/bake-client.ts` (new);
-  `primitive-sandbox.ts` / `manifold-helpers.ts` / `manifold-mesh.ts` confirmed
-  client-importable (already verified zero Node deps); adapter unit test.
-- **PR3:** `src/lib/shared/PrimitiveDualCanvas.svelte` (flag + backend switch);
-  e2e on the g_* corpus.
-- **PR4:** `git mv` → `src/lib/server/server-builder/{manifold-build,occt-build,
+- **PR1 ✅:** `src/routes/api/primitives/compile/+server.ts`;
+  `src/lib/server/primitive-loader.ts` (`compilePrimitiveScript`);
+  `src/lib/server/script-cache.ts`; `src/lib/server/script-compile.test.ts`.
+- **PR2 ✅:** `src/lib/cad/bake-worker.ts` + `bake-worker-core.ts` +
+  `bake-client.ts`; `bake-worker-core.test.ts`.
+- **PR3 ✅:** `src/lib/shared/PrimitiveDualCanvas.svelte` (flag + compile cache +
+  backend switch); `src/lib/shared/scene-state.svelte.ts` (`clientBake`);
+  `src/lib/shared/graph-editor/GraphEditorPane.svelte` (💻/☁ toggle);
+  `src/lib/shared/graph-editor/RightPane.svelte` (`⚡ compiled` subtab).
+- **PR4 (open):** `git mv` → `src/lib/server/server-builder/{manifold-build,occt-build,
   mesh-cache}.ts`; `src/routes/api/server-builder/{manifold,occt}/+server.ts`
   (new); re-export shims at old paths; `hooks.server.ts` (`RATE_LIMITED_PREFIXES`).
 - **PR5:** `bake-worker.ts` (OCCT singleton + path, lazy `replicad_single`);

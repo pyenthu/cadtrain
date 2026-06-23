@@ -15,7 +15,8 @@ src/lib/shared/
 │   ├── ParamsCard.svelte       #   the PARAMS tab body — SVG param chips + wire-feeding output sockets (Phase D)
 │   ├── sketch-state.svelte.ts  #   per-instance SketchState class — sketch editor state + 21 sketch* handlers + sketchEditor/miniLayout derived (Phase E Step 1)
 │   ├── SketchNodeCard.svelte   #   the n.type==='sketch' node-card render arm (Phase E Step 2)
-│   ├── SketchEditorPane.svelte #   the full-tab sketch editor overlay — tools rail + 2D stage + floating mini cards (Phase E Step 2); coord ƒ-popover stays in the GEP shell
+│   ├── SketchEditorPane.svelte #   the full-tab sketch editor overlay (Phase E Step 2); coord ƒ-popover stays in the GEP shell
+│   ├── NodeCard.svelte         #   per-node SVG cards — call/method/mv/rot/txfmn/repeat/container/polygon/poly_repeat + resize grip (Phase F)
 │   ├── wire-state.svelte.ts     #   per-instance WireState class — drag-to-wire (from/mouse + start/endWireOn*) (Phase C)
 │   ├── pointer-capture.ts       #   releaseImplicitCapture (shared: wire-drag + sketch-card drags)
 │   ├── popover-clamp.ts        #   shared viewport-clamp action for the popovers

@@ -13,8 +13,8 @@ import { readScriptCache, writeScriptCache } from '$lib/server/script-cache';
 // inject-functions path (proved by the PR1 parity unit test).
 //
 // Because the script folds in resolved dep source, scriptHash changes whenever
-// a dep changes → the "deja-vu" stale-bake bug becomes impossible the moment a
-// client reads from this. PR1 alone is dormant (no client wiring yet).
+// a dep changes → the "deja-vu" stale-bake bug becomes impossible when the
+// client reads from this (PR1–3 shipped; default OFF — see client-side-execution.md).
 //
 // Like /api/primitives/preview this is a LOCAL, stateless-compute endpoint
 // (excluded from the volume proxy) — it reads dep SOURCE via the loader's
