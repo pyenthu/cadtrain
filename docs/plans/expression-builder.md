@@ -1,11 +1,69 @@
-# Expression Builder — visual + source popup for calculated expressions (B.7 / id 914)
+# Expression Builder — calculated-expression BLOCK node (B.7 / id 914)
 
-> **Status: comprehensive plan, 2026-06-23.** Supersedes the thin
-> `docs/plans/expressions-tab.md` stub. This reframes B.7 from "a text
-> expressions tab" into a **wired-in expression builder popup** with a SRC pane
-> and a strictly-controlled VISUAL block builder, backed by a sparse
-> `graph.exprs[]` data model. Informed by a library survey (mathjs / jsep /
-> Rete / Blockly / Svelte Flow / acorn — see §9 sources).
+> **Status: v2 design (2026-06-23) — the expression is a CANVAS BLOCK NODE,
+> not a text-reference popover.** The §1–§11 below describe the earlier v1
+> popover/`e.<name>`-namespace model and are kept for the reusable parts
+> (mathjs engine, validation, autocomplete); the **v0 section immediately below
+> supersedes** them on the data model and integration.
+
+## v0. The agreed model — Expr block (SUPERSEDES the text-ref design)
+
+The expression is a **first-class node on the graph canvas**, wired like every
+other node — NOT a global `e.<name>` namespace referenced by typed names.
+
+- **`ExprNode`** — a new `composition-graph` node type:
+  - **input sockets** = variables *declared* on the block (`a`, `b`, …) — empty
+    slots on the left edge, **wired in** from other nodes' outputs (a `p.*` param,
+    another node's value, another Expr block's output).
+  - **named outputs** = several `{ name, formula }` rows; each formula uses only
+    the block's **local** input names + earlier output names; each gets an
+    **output socket** on the right edge (multi-output — user's choice).
+  - the formula NEVER names `p.*`/`e.*`; the graph **wiring** supplies values.
+- **Wiring** uses the existing socket/wire system (`WireState` + the SVG sockets,
+  same as poly_repeat refs + param feeds). Drag `p.od → input a`; drag
+  `output wall → a node's arg socket`.
+- **Validation** reuses the merged mathjs engine (`graph-exprs.ts` /
+  `expr-schema.ts`): parse each formula, AST-walk against {local input names +
+  prior output names} ∪ ALLOWED_FUNCTIONS, arity + safe-node-type gate. The
+  per-block editor's **autocomplete** suggests *local inputs + sibling outputs +
+  functions* (NOT global p./e.).
+- **Emit**: each wired input substitutes its source expression; each output emits
+  `const <block>_<out> = <formula-with-locals-substituted>;` in local topo order;
+  an output socket wired into an arg drops that identifier in place. Rides the
+  existing composition node→node emit + wire text-substitution.
+
+### What this changes vs v1 (below)
+- **Supersedes**: the sparse `graph.exprs[]` + global `e.<name>` namespace +
+  topo-prelude *as the integration mechanism*. Values flow by WIRES now.
+- **Reuses (not wasted)**: the mathjs parse/validate/AST layer (PR-1/PR-2) → the
+  block's **formula validator**; the v1 popover components (`expr/*.svelte`) → the
+  block's **editor** (declare inputs + name=formula rows + autocomplete + block
+  tree); the multi-line autocomplete SRC work in progress.
+
+### v2 PRs
+1. **`ExprNode` model + emit + tests** — node type (`inputs: string[]`,
+   `outputs: {name,formula}[]`), mutators, socket geometry in `geom.ts`, emit with
+   wired-input substitution + local topo over outputs. Pure/tested. (Build on the
+   merged `graph-exprs.ts` validator.)
+2. **Node card + sockets** — `ExprNode` render arm in `NodeCard.svelte`: input
+   sockets (left, one per declared input) + output sockets (right, one per
+   output), wired via `WireState`. Add/remove inputs + outputs inline.
+3. **Block editor popover** — repurpose `expr/ExpressionBuilderPopup` to edit ONE
+   block: declare input names, the `name = formula` rows (multi-line + autocomplete
+   over locals+sibling-outputs+functions), live per-row block tree + validation.
+4. **Wiring polish** — `e.*`-style autocomplete dropped; the ƒ arg path can also
+   reference a block output by wire. Drag-to-socket from the palette.
+
+> Decision log: single vs multiple outputs → **multiple named outputs** (user,
+> 2026-06-23). Conditionals → mathjs ternary `cond ? a : b` (ConditionalNode,
+> already allow-listed). Functions → autocomplete, never a static list.
+
+---
+
+> **v1 (below) — retained for the reusable engine/UI pieces only.** Reframed B.7
+> from a text expressions tab into a wired-in popup with a SRC pane + visual
+> block builder backed by `graph.exprs[]`. Library survey: mathjs / jsep / Rete /
+> Blockly / Svelte Flow / acorn (§9).
 
 ## 1. Goal
 
