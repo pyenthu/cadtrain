@@ -9,8 +9,12 @@
 
 ## 1. Goal
 
-A small **popup/panel** for authoring **calculated expressions** that get wired
-into a parametric CAD graph. Two synchronized sections:
+A small **popover** for authoring **calculated expressions** that get wired into
+a parametric CAD graph — anchored to the ƒ affordance, with an **expand-to-full**
+button that grows the SAME content into a full-screen editor (more room for the
+visual builder + multiple outputs). **It is a popover-first surface — NOT a
+persistent "expressions tab" beside PARAMS/PROPS.** The full view is the popover
+expanded, not a separate component. Two synchronized sections:
 
 1. **SRC** — the raw expression source text (editable).
 2. **VISUAL builder** — the same expression as a tree of modular blocks.
@@ -219,9 +223,12 @@ Each green on `bun run build` + `bun run test` (vitest — NOT bare `bun test`).
    drag a `p.*`/`e.*` chip or function into a slot → AST splice via mathjs
    `transform()` → `toString()` back to SRC; editable `ConstantChip`. Undo/redo via
    an AST-snapshot stack (serialize trivially).
-5. **PR-5 — multi-output rows + tab.** `[+ output]` adds `GraphExpr` rows; the
-   third **EXPR** tab beside PARAMS/PROPS in `RightPane.svelte` listing all exprs,
-   each opening the popup. (This is the original B.7 "tab", now a launcher.)
+5. **PR-5 — expand-to-full + multi-output.** An expand button on the popover
+   header grows it from the anchored FloatingPanel into a full-screen overlay
+   (same components, more room) — and back. `[+ output]` adds `GraphExpr` rows
+   (multi-output) in the expanded view. **No permanent tab** — the popover IS the
+   surface; "full" is just the expanded state. (Reuse the sketch-editor
+   overlay/expand pattern from `SketchEditorPane`.)
 6. **PR-6 (deferred) — xyflow multi-expression canvas.** Only if multi-output
    authoring needs a wired 2D view (§6 v2).
 
@@ -246,8 +253,8 @@ Each green on `bun run build` + `bun run test` (vitest — NOT bare `bun test`).
 
 1. **mathjs vs jsep** — recommend mathjs for v1 (live preview + roundtrip for
    free); switch to jsep only if bundle/Worker pressure appears. (Default: mathjs.)
-2. **Where the popup launches from** — the ƒ chip on any arg field (author an
-   inline `e.*`) AND/OR a dedicated EXPR tab. (Default: both, EXPR tab in PR-5.)
+2. **Launch surface** — RESOLVED: a popover anchored to the ƒ affordance,
+   expandable to a full-screen overlay (PR-5). No persistent EXPR tab.
 3. **Live numeric preview in v1?** — show `evaluate(src, currentParams)` result
    inline. (Default: yes, cheap with mathjs; cut if noisy.)
 4. **CodeMirror for the SRC pane** — syntax highlight + error squiggles, or a
