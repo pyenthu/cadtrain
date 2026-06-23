@@ -84,6 +84,10 @@
         title="Crease angle (degrees): edges sharper than this stay hard, softer ones smooth. Default 60. Re-bakes on Enter/blur."
         onchange={(e) => { const v = Number((e.currentTarget as HTMLInputElement).value); if (Number.isFinite(v)) scene.creaseAngle = Math.max(1, Math.min(180, Math.round(v))); }}
       />
+      <label class="sv-check" title="True round silhouette — BUILD-TIME geometry smoothing (not just shading). Lifts the faceted mesh onto a smooth surface so curves render truly round; edges sharper than the crease angle stay hard. Costs triangles. Re-bakes.">
+        <input type="checkbox" bind:checked={scene.roundSurface} />
+        ◯ round
+      </label>
     </div>
     <!-- Warp — sinusoidal Z displacement, BAKED into the Manifold geometry
          server-side (so the black wire edges follow the bulge). Each control

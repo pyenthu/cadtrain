@@ -72,6 +72,11 @@ export interface BakeCacheOptions {
    *  dropped by hashBakeKey → the legacy cache key is byte-identical, so existing
    *  default-bake entries still hit. */
   creaseAngle?: number | undefined;
+  /** Build-time "true round silhouette" smoothing (smoothOut+refineToTolerance).
+   *  Adds triangles + rounds the silhouette → must key the cache so a round bake
+   *  stores separately; undefined (default OFF) → dropped by hashBakeKey → the
+   *  legacy cache key is byte-identical, so existing default-bake entries hit. */
+  smooth?: { minSharpAngle?: number; tolerance?: number } | undefined;
   /** Hash of this part's RESOLVED dependency sources (its `meta.uses` deps,
    *  walked transitively, sorted by id — see `hashDepSources` in
    *  primitive-loader.ts). Folds dep bodies into the key so editing a DEP

@@ -152,4 +152,13 @@ export const scene = $state({
    *  (cube corners, cylinder caps) stay hard; below it shade smooth. Lower it to
    *  keep designed shallow chamfers hard; raise it to smooth a coarse mesh more. */
   creaseAngle: 60,
+  /** "True round silhouette" — BUILD-TIME geometry smoothing (NOT shading). When
+   *  on, finalizeManifold lifts the faceted welded/revolved mesh onto a smooth
+   *  (near-NURBS) surface via `smoothOut(creaseAngle).refineToTolerance(...)`:
+   *  edges sharper than the crease angle stay hard, curves become G1-smooth, and
+   *  the silhouette itself rounds (a 32-facet cylinder reads truly round). Costs
+   *  triangles, so it's opt-in. Default OFF → byte-identical bake. Re-bakes +
+   *  keys the cache (geometry change). Reuses `creaseAngle` as the sharp-edge
+   *  threshold; tolerance defaults to ~0.4% of the part's max diameter. */
+  roundSurface: false,
 });

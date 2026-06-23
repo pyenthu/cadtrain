@@ -54,6 +54,9 @@ export interface BakeOptions {
   colorInner?: string;
   /** calculateNormals crease angle (1..180; 60 == default). */
   creaseAngle?: number;
+  /** Build-time "true round silhouette" smoothing (smoothOut+refineToTolerance).
+   *  Present → on; absent → byte-identical default bake. */
+  smooth?: { minSharpAngle?: number; tolerance?: number };
   /** Opt-in GPU instancing of a uniform Stack/Repeat. */
   instanced?: boolean;
   /** Optional appearance passthrough (PR3 may thread meta.material here). */
@@ -62,10 +65,25 @@ export interface BakeOptions {
 
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/** Validate the build-time "round silhouette" smoothing option, identically to
+ *  preview/+server.ts. Truthy `smooth` → `{ minSharpAngle?, tolerance? }` with
+ *  only the finite/in-range fields kept (finalizeManifold supplies the defaults:
+ *  minSharpAngle 60, tolerance ≈ 0.4% of maxOD). Falsy / malformed → undefined =
+ *  byte-identical default bake. Shared shape exported for the server to mirror. */
+export function coerceSmooth(smooth: unknown): { minSharpAngle?: number; tolerance?: number } | undefined {
+  if (!smooth || typeof smooth !== 'object') return undefined;
+  const s = smooth as { minSharpAngle?: unknown; tolerance?: unknown };
+  const out: { minSharpAngle?: number; tolerance?: number } = {};
+  if (typeof s.minSharpAngle === 'number' && Number.isFinite(s.minSharpAngle)
+    && s.minSharpAngle >= 1 && s.minSharpAngle <= 180) out.minSharpAngle = Math.round(s.minSharpAngle);
+  if (typeof s.tolerance === 'number' && Number.isFinite(s.tolerance) && s.tolerance > 0) out.tolerance = s.tolerance;
+  return out;
+}
+
 /** Validate + normalise BakeOptions exactly like preview/+server.ts so a bake
  *  here keys/behaves identically. Returns the coerced render-affecting values. */
 function coerceOptions(options: BakeOptions = {}) {
-  const { zScale, cutaway, segments, warp, colorOuter, colorInner, creaseAngle, instanced } = options;
+  const { zScale, cutaway, segments, warp, colorOuter, colorInner, creaseAngle, smooth, instanced } = options;
   const segArg = (typeof segments === 'number' && Number.isFinite(segments) && segments >= 8 && segments <= 256)
     ? Math.round(segments)
     : undefined;
@@ -82,7 +100,8 @@ function coerceOptions(options: BakeOptions = {}) {
     && creaseAngle >= 1 && creaseAngle <= 180 && Math.round(creaseAngle) !== 60)
     ? Math.round(creaseAngle)
     : undefined;
-  return { segArg, zArg, cOuter, cInner, warpArg, creaseArg, instanced: instanced === true, cutaway };
+  const smoothArg = coerceSmooth(smooth);
+  return { segArg, zArg, cOuter, cInner, warpArg, creaseArg, smoothArg, instanced: instanced === true, cutaway };
 }
 
 /**
@@ -118,7 +137,7 @@ export async function runCompiledManifold(
     throw new Error('compiled script did not return a geom function');
   }
 
-  const { segArg, zArg, cOuter, cInner, warpArg, creaseArg, instanced, cutaway } = coerceOptions(options);
+  const { segArg, zArg, cOuter, cInner, warpArg, creaseArg, smoothArg, instanced, cutaway } = coerceOptions(options);
 
   // maxOD heuristic — mirror preview: first positional param * 1.5, else 6.
   const a0 = Array.isArray(params) ? params[0] : undefined;
@@ -165,6 +184,7 @@ export async function runCompiledManifold(
       instanced,
       warp: warpArg,
       creaseAngle: creaseArg,
+      smooth: smoothArg,
     },
   );
   const _tFin = _now() - _tFin0;

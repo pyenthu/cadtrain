@@ -4,6 +4,7 @@ import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
 import { finalizeManifold } from '$lib/cad/builder';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
+import { coerceSmooth } from '$lib/cad/bake-worker-core';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { analyzeParts } from '$lib/server/part-colors';
 import { hashBakeKey, readBakeCache, writeBakeCache, type BakeCacheOptions } from '$lib/server/bake-cache';
@@ -26,7 +27,7 @@ export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, segmentsFloor, instanced, warp, creaseAngle } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, segmentsFloor, instanced, warp, creaseAngle, smooth } = body ?? {};
   // OPT-IN GPU instancing (LIVE-mesh path only). When true, finalize tries to
   // detect a Stack/Repeat of N identical bodies and returns the canonical child
   // mesh ONCE + N transforms (response carries `instanced`). When the body
@@ -78,6 +79,11 @@ export const POST = async ({ request, fetch }) => {
     && creaseAngle >= 1 && creaseAngle <= 180 && Math.round(creaseAngle) !== 60)
     ? Math.round(creaseAngle)
     : undefined;
+  // Optional build-time "true round silhouette" smoothing (smoothOut+refine).
+  // Validated identically to the client executor via the shared `coerceSmooth`
+  // so a server bake and a client bake key + behave the same. Absent → undefined
+  // → byte-identical default bake.
+  const smoothArg = coerceSmooth(smooth);
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   // Args may be mixed number | string (string carries JSON-encoded
@@ -115,6 +121,10 @@ export const POST = async ({ request, fetch }) => {
     // the cache so a crease change re-bakes; undefined (default 60) → dropped →
     // default key unchanged (existing default-bake entries still hit).
     creaseAngle: creaseArg,
+    // Round-silhouette smoothing adds geometry → must key the cache so a round
+    // bake stores separately; undefined (default OFF) → dropped → default key
+    // unchanged (existing default-bake entries still hit).
+    smooth: smoothArg,
   };
   // Numeric params only — string params (e.g. JSON polygons) don't round
   // trip identically across calls.
@@ -181,7 +191,7 @@ export const POST = async ({ request, fetch }) => {
     if (!manifold || typeof manifold.getMesh !== 'function') {
       throw error(400, 'primitive did not return a Manifold');
     }
-    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner, warp: warpArg, creaseAngle: creaseArg });
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner, warp: warpArg, creaseAngle: creaseArg, smooth: smoothArg });
     const s = serializeComponentResult(r);
     return json({ ok: true, full: s.full, cutVC: s.cutVC });
   }
@@ -304,7 +314,7 @@ export const POST = async ({ request, fetch }) => {
       args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
       material,
       parts,
-      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq, warp: warpArg, creaseAngle: creaseArg },
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq, warp: warpArg, creaseAngle: creaseArg, smooth: smoothArg },
     );
     mark('finalize', t); t = performance.now();
     serialized = serializeComponentResult(result);

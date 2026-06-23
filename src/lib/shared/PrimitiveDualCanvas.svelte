@@ -218,7 +218,11 @@
     // the request body (re-bakes). Sent only when it differs from the default 60
     // → the default request + cache key stay byte-identical to the legacy bake.
     const crease = (typeof scene.creaseAngle === 'number' && scene.creaseAngle !== 60) ? scene.creaseAngle : undefined;
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}) });
+    // "True round silhouette" — BUILD-TIME geometry smoothing, sent only when ON
+    // (omitted → byte-identical default bake + cache key). Reuse the crease angle
+    // as the sharp-edge threshold; tolerance defaults server/worker-side.
+    const smooth = scene.roundSurface ? { minSharpAngle: scene.creaseAngle } : undefined;
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
@@ -243,7 +247,7 @@
         if (cd?.supported && cd.script) {
           const options = { cutaway: cutFlag, instanced: true,
             ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
-            ...(crease ? { creaseAngle: crease } : {}), colorOuter, colorInner };
+            ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), colorOuter, colorInner };
           const _tb0 = performance.now();
           const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
           const _tBake = performance.now() - _tb0;
@@ -393,7 +397,7 @@
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
     const key = isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
-      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, clientBake: scene.clientBake });
+      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
     if (!Scene || key === lastRebuildKey) return;
     lastRebuildKey = key;
     scheduleBake();
