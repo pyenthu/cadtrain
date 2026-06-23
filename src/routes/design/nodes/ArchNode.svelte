@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { NodeProps } from '@xyflow/svelte';
+  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import type { ArchNodeData } from '../architecture';
 
   let { data }: NodeProps<ArchNodeData> = $props();
@@ -33,6 +33,7 @@
   "
   title={data.blurb ?? ''}
 >
+  <Handle type="target" position={Position.Left} class="arch-handle" />
   <div class="kind-badge">{KIND_LABELS[data.kind]}</div>
   {#if data.href}
     <a href={data.href} class="node-label" target="_self">{data.label}</a>
@@ -45,6 +46,7 @@
   {#if data.archived}
     <div class="status-tag archived-tag">archived</div>
   {/if}
+  <Handle type="source" position={Position.Right} class="arch-handle" />
 </div>
 
 <style>
@@ -114,5 +116,14 @@
   .archived-tag {
     color: #6b7280;
     background: #f3f4f6;
+  }
+
+  /* xyflow renders the Handle as its own element — reach it with :global */
+  :global(.arch-handle) {
+    width: 7px;
+    height: 7px;
+    background: var(--border);
+    border: 1.5px solid #fff;
+    opacity: 0.55;
   }
 </style>
