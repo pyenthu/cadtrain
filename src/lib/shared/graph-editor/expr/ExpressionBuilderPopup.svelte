@@ -22,11 +22,11 @@
   import { setContext } from 'svelte';
   import { clampToViewport } from '../popover-clamp';
   import { parseExpr, validateExpr, type ExprError, type ExprSchema } from '$lib/cad/graph-exprs';
-  import { isIdentSafe } from '$lib/cad/expr-schema';
+  import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/cad/expr-schema';
   import { EXPR_FOCUS_KEY } from './block-util';
   import SchemaPanel from './SchemaPanel.svelte';
   import ExpressionVisualPane from './ExpressionVisualPane.svelte';
-  import ExpressionSrcPane from './ExpressionSrcPane.svelte';
+  import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
   import ValidationBanner from './ValidationBanner.svelte';
   import OutputRow from './OutputRow.svelte';
 
@@ -48,9 +48,21 @@
   } = $props();
 
   // ─── per-instance local state ─────────────────────────────────────────────
-  let src = $state(initial.src ?? '');
-  let name = $state(initial.name ?? '');
+  // Seeded from `initial` in an $effect (NOT the $state initializer) so reopening
+  // the SAME mounted popup against a different `initial` reseeds, and so Svelte
+  // doesn't warn that the initializer "only captures the initial value".
+  let src = $state('');
+  let name = $state('');
   let expanded = $state(false);
+
+  let seededFrom: { name: string; src: string } | null = null;
+  $effect(() => {
+    if (seededFrom !== initial) {
+      seededFrom = initial;
+      src = initial.src ?? '';
+      name = initial.name ?? '';
+    }
+  });
 
   // Focus highlight: blocks read this $state object from context and ring
   // themselves when their node matches (set by clicking a banner error).
@@ -70,6 +82,19 @@
   // Display lists derived from the schema's dotted member set.
   let paramNames = $derived([...schema.inputs.dotted].filter((d) => d.startsWith('p.')).map((d) => d.slice(2)));
   let exprNames = $derived([...schema.inputs.dotted].filter((d) => d.startsWith('e.')).map((d) => d.slice(2)));
+
+  // Autocomplete corpus for the SRC pane: the allowed INPUTS (dotted p.*/e.*)
+  // plus the allowlisted functions + constants. Sourced from the same `schema`
+  // prop + the shared allowlist — no new prop on the popup, so the parent (which
+  // another agent owns) is untouched.
+  let completions = $derived.by<Completion[]>(() => {
+    const out: Completion[] = [];
+    for (const nm of paramNames) out.push({ text: `p.${nm}`, kind: 'param' });
+    for (const nm of exprNames) out.push({ text: `e.${nm}`, kind: 'expr' });
+    for (const fn of ALLOWED_FUNCTIONS) out.push({ text: fn, kind: 'fn' });
+    for (const c of ALLOWED_CONSTANTS) out.push({ text: c, kind: 'const' });
+    return out;
+  });
 
   // ─── name validation (unique ident, no param-shadow) ───────────────────────
   let nameError = $derived.by<string | null>(() => {
@@ -123,7 +148,7 @@
       <div class="ge-expr-visual-col"><ExpressionVisualPane {ast} {errors} hasSrc={!srcEmpty} /></div>
     </div>
 
-    <ExpressionSrcPane bind:src />
+    <ExpressionSrcPane bind:src {completions} />
 
     <div class="ge-expr-foot">
       <ValidationBanner {errors} {nameError} onErrorClick={focusBlock} />
