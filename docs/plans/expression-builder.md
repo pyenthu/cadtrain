@@ -6,73 +6,168 @@
 > immediately below supersedes** v2/v0 on storage + reuse; v2's ExprNode becomes
 > the *instance*. v0/v1 below are kept only for the reusable engine pieces.
 
-## v3. Expression definitions + instances (per-part library) — PLAN
+## v3. Expression definitions + instances (per-part library) — DETAILED PLAN
 
-Decisions (user, 2026-06-24, after discussion):
-- **Scope: per-part first** (`graph.exprDefs[]`); a global volume library is a
-  later phase.
-- **Shared definition + instances**: editing a definition's formula updates ALL
-  its instances. Instances differ only by their local input WIRING.
-- **Menu home: the Σ left-rail popover** = the Expressions menu.
+> Locked after discussion (user, 2026-06-24). This is the build spec; v0/v1/v2
+> below are kept only for the reusable engine + UI pieces they already shipped.
 
-### Data model
+### v3.0 Decisions (all locked)
+- **Scope: per-part first.** Definitions live on the part (`graph.exprDefs[]`,
+  serialized in `meta.graph`). A global volume library (`expressions/<id>.expr.json`)
+  is an explicit later phase (§v3.9), out of scope here.
+- **Definition + instances, shared.** Editing a definition updates EVERY instance
+  at once (one source of truth, like parts/Calls). Instances differ ONLY by their
+  per-param input WIRING.
+- **Self-contained — NO graph `p.*`.** The builder shows none of the host graph's
+  params/variables. A definition declares all of its own names.
+- **Four declared sections** (the crux of this round): **PARAMS · CONSTS ·
+  VARIABLES · OUTPUTS**.
+- **Menu home: the Σ left-rail popover** becomes the Expressions menu.
+- **Editor layout: tabs OR accordions, user-switchable** (persisted pref).
+
+### v3.1 Data model
 ```ts
-// On the Graph (per-part, serialized into meta.graph):
+// composition-graph-types.ts — on the Graph (per-part, in meta.graph):
 exprDefs?: ExprDef[];
+
+export type ExprParam = { name: string; default?: number };          // PARAMS
+export type ExprConst = { name: string; value: number };             // CONSTS
+export type ExprVar   = { name: string; formula: string };           // VARIABLES (internal)
+export type ExprOut   = { name: string; formula: string };           // OUTPUTS
+
 export type ExprDef = {
-  id: NodeId;                       // stable def id (instances reference it)
-  name: string;                     // shown in the Σ menu
-  outputs: { name: string; formula: string }[];   // inputs are DERIVED (deriveExprInputs)
+  id: NodeId;            // stable; instances reference it
+  name: string;         // shown in the Σ menu + on the instance card
+  params:  ExprParam[]; // declared INPUTS → input sockets (wired per instance)
+  consts:  ExprConst[]; // fixed local values, same for every instance (no socket)
+  vars:    ExprVar[];   // internal intermediates, topo order (no socket)
+  outputs: ExprOut[];   // exposed results → output sockets
 };
 
-// ExprNode BECOMES the instance (refactor from v2's self-contained block):
+// The instance — refactor v2's self-contained ExprNode into a thin reference:
 export type ExprNode = {
   id: NodeId; type: 'expr';
-  defId: NodeId;                    // → ExprDef.id
-  bindings?: Record<string, ArgValue>;  // local wiring: derived-input NAME → source
+  defId: NodeId;                            // → ExprDef.id
+  bindings?: Record<string, ArgValue>;      // PARAM name → wired source (else default)
 };
 ```
-Derived inputs/outputs for an instance come from its `def` (look up `exprDefs`
-by `defId`, then `deriveExprInputs(def)` / `def.outputs`). The node card + emit
-read through the def.
+**Name scope inside a def** (one flat namespace): `params ∪ consts ∪ vars ∪
+outputs` names must be unique. A formula (in `vars`/`outputs`) may reference any
+name DECLARED-EARLIER in the eval order below + the allow-listed
+functions/constants. Any other free symbol = a validation error (NOT a new
+socket — sockets come only from `params`/`outputs`).
 
-### Σ popover = the Expressions menu
-Repurpose `openExprPop` (the Σ rail button) into a menu:
-- Lists `graph.exprDefs` — each row: `name  (inputs)→outputs`, a **✎** (edit →
-  the existing block-editor popover, bound to the DEF), and a **⦻ drop instance**
-  (adds an `ExprNode{defId}` to the canvas via `addExprInstance`).
-- A **`+`** creates a new def (block editor blank → on save, push to `exprDefs`).
-- The block-editor popover now edits a **definition** (name + `name=formula`
-  rows + autocomplete over the def's derived inputs + sibling outputs + funcs).
+### v3.2 Evaluation + emit order (per INSTANCE)
+A pure helper `orderExprDef(def)` returns the flat eval sequence; emit walks it
+once. For an instance node `n` with `bindings`, namespaced by `exprBlockVar(n.id)`
+(call it `V` — already exists, a pure fn of the node id so the wire handler and
+the emitter agree):
+```
+// 1. PARAMS — wired value, else the param default, else 0
+const V_<param> = <bindings[param] emit | default | 0>;
+// 2. CONSTS — literal values
+const V_<const> = <value>;
+// 3. VARIABLES — internal, in topo order over {params, consts, earlier vars}
+const V_<var>   = <formula, local names rewritten to V_*>;
+// 4. OUTPUTS — in topo order over {params, consts, vars, earlier outputs}
+const V_<out>   = <formula, local names rewritten to V_*>;
+```
+- **Topo order** within vars+outputs via mathjs free-symbol edges (reuse
+  `freeSymbols` + `topoOrderExprOutputs` from step 1.5, widened to the full
+  declared set); a cycle → fall back to declaration order + a validation error.
+- **Local-name rewrite**: `rewriteExprLocalRefs` (step 1.5) maps each declared
+  name → `V_<name>`. Functions/constants pass through.
+- **Two instances of one def** → two independent `V`-namespaced const groups
+  (distinct `V` per node id) — already how step 1.5 works.
+- **An OUTPUT socket wired into a consumer arg** sets that arg to
+  `{kind:'expr', expr:'V_<out>'}` (step 1.5 already does this for the v2 block).
+- **Empty `exprDefs` / no instances ⇒ byte-identical emit** (the prelude is
+  skipped entirely).
 
-### Migration (one-way, on hydrate)
-- v2 self-contained `ExprNode{outputs,bindings}` → synthesize an `ExprDef` from
-  its `outputs`, give the node a `defId`, keep `bindings`.
-- v1 `graph.exprs[]` (the `e.<name>` list) → one `ExprDef` per entry
-  (single output = the expr); the old `e.*` emit path stays for back-compat
-  until parts are re-saved.
+### v3.3 Validation (reuse the mathjs engine)
+Per formula (`vars` + `outputs`), `validateExpr(ast, schema)` where the allowed
+input set = {all names declared EARLIER in this def} ∪ ALLOWED_FUNCTIONS ∪
+ALLOWED_CONSTANTS. Errors: unknown symbol, disallowed/over-arity function,
+forward-reference (name declared later), name collision across the four sections,
+cycle. Surfaced per-row in the editor (red row + message) and as a node-level
+error chip on instances whose def is invalid.
 
-### Emit
-`emitExprBlocks` (step 1.5) already namespaces per-NODE via `exprBlockVar(nodeId)`
-— keep that so two instances of the same def emit DISTINCT consts. Change: the
-formulas + derived inputs come from the instance's `def` (not the node). Two
-`wall` instances with different bindings → two independent const groups. Empty
-`exprDefs`/no instances ⇒ byte-identical emit.
+### v3.4 The Σ popover = Expressions menu
+Repurpose `openExprPop` (the Σ rail button):
+```
+[Σ] → ┌ Expressions                     [+] ┐
+      │ wall   (od,id) → wall         ✎  ⦻ │   ✎ = edit def
+      │ taper  (a,i)   → r            ✎  ⦻ │   ⦻ = drop instance
+      └──────────────────────────────────────┘
+```
+- Lists `graph.exprDefs`: `name  (params) → outputs`.
+- **`+`** → create a new `ExprDef` (empty) and open the editor on it.
+- **✎** → open the editor bound to that def.
+- **⦻ drop instance** → `addExprInstance(graph, defId)` places an `ExprNode`
+  on the canvas at a free position.
+- Deleting a def warns if instances exist (offer: delete instances too / cancel).
 
-### Risk-sequenced PRs
-1. **Model + migration + emit** (pure, tested): add `exprDefs` + the `ExprDef`
-   type; refactor `ExprNode` → `{defId,bindings}`; `addExprDef`/`addExprInstance`/
-   def-output mutators; hydrate migration (v2 block + v1 `graph.exprs`); point
-   `emitExprBlocks` at the def. Extend `expr-emit.test.ts`: two instances of one
-   def with different bindings emit distinct consts; edit-def-propagates.
-2. **Σ menu popover**: turn the Σ launcher into the Expressions menu (list + ✎ +
-   ⦻ drop-instance + `+`). Reuse the block-editor popover for ✎/`+` (now editing a
-   def). Browser-verify on `:3333`.
-3. **Instance node card**: the v2 card reads through the def (title = def name,
-   derived input sockets, output sockets); ✎ on the instance opens the DEF
-   editor. Wiring unchanged (bindings). Browser-verify.
-4. **(later) global volume library** — promote `exprDefs` to volume files;
-   separate plan.
+### v3.5 The editor (the four-section builder)
+Refit the existing `expr/ExpressionBuilderPopup` to edit a **def** (not a node):
+- Header: def name field + the **tabs/accordions toggle** (a small ⊞/≡ button,
+  pref persisted in `localStorage` `cad-expr-editor-layout`).
+- Four sections **PARAMS · CONSTS · VARIABLES · OUTPUTS**, each a small table:
+  - PARAMS: `name` + optional `default` (number).
+  - CONSTS: `name` + `value` (number).
+  - VARIABLES / OUTPUTS: `name` + `formula` (the autocomplete SRC field from step
+    3) + per-row validation; OUTPUTS rows carry the output-socket marker.
+  - `+ row` on each; reorder = matters only as a readability aid (eval order is
+    topo, not positional).
+- **Autocomplete corpus** (step-3 component, repurposed) = names declared earlier
+  in THIS def + ALLOWED_FUNCTIONS + ALLOWED_CONSTANTS. **No `p.*`/`e.*`** —
+  remove the graph-param INPUTS panel entirely.
+- Live per-row block tree + validation banner stay.
+
+### v3.6 The instance node card
+The v2 card (already shipped) reads THROUGH the def (`graph.exprDefs.find(d =>
+d.id === n.defId)`):
+- Title = def name. Input sockets (left) = `def.params`; output sockets (right) =
+  `def.outputs` — line-aligned to rows.
+- Body = a compact read-only summary (params + outputs); editing is via **✎** →
+  opens the DEF editor (shared). Per-param inline value override is a stretch
+  (instance-level default override) — DEFER; v3 binds params by WIRE only.
+- Missing def (dangling `defId`) → an error chip + a "pick/recreate def" affordance.
+
+### v3.7 Migration (one-way, on hydrate; no data loss)
+`hydrateGraph` converts older shapes so existing parts keep working:
+- **v2 self-contained `ExprNode{outputs,bindings}`** → synthesize an `ExprDef`
+  (name `expr_<n>`, `outputs` = the node's outputs, derived inputs → `params`
+  with no default, `consts`/`vars` empty); set `node.defId`; keep `bindings`.
+- **v1 `graph.exprs[]`** (`e.<name>` list) → one `ExprDef` each (single output =
+  the expr). The legacy `e.*` emit path (`emitExprConsts`) stays for back-compat
+  until a part is re-saved in the new shape.
+- Migration is idempotent + covered by a hydrate test (old JSON in → new shape +
+  same emit out).
+
+### v3.8 Risk-sequenced PRs
+1. **PR-1 — model + emit + migration (PURE, tested, no UI).** Add the four-section
+   `ExprDef` + `exprDefs`; refactor `ExprNode → {defId,bindings}`; mutators
+   (`addExprDef`, `addExprInstance`, `set*`/`add*`/`remove*` for each section);
+   `orderExprDef` + point `emitExprBlocks` at the def; hydrate migration (v2 + v1).
+   Extend `expr-emit.test.ts`: params/consts/vars/outputs emit order; two
+   instances → distinct consts; edit-def-propagates; cycle → error+fallback;
+   migration round-trip; empty ⇒ byte-identical. **Build + test green; no
+   browser.** This is the load-bearing PR.
+2. **PR-2 — the four-section editor.** Refit `ExpressionBuilderPopup` to edit a
+   def: PARAMS/CONSTS/VARIABLES/OUTPUTS sections + the tabs/accordions toggle;
+   drop the graph-param INPUTS panel; autocomplete corpus = local names + funcs.
+   Browser-verify on `:3333`.
+3. **PR-3 — the Σ Expressions menu.** Turn the Σ launcher into the menu (list +
+   `+` + ✎ + ⦻ drop-instance); `addExprInstance`; delete-def guard. Browser-verify.
+4. **PR-4 — instance card through the def** + dangling-def handling + the live
+   end-to-end wire→bake check (drop instance, wire a param, see it compute).
+   Browser-verify + an e2e.
+5. **(later) global volume library** — promote `exprDefs` to volume files
+   (`expressions/<id>.expr.json`, resolver, save/load); separate plan (§v3.9).
+
+### v3.9 Out of scope (this round)
+Global/cross-part library (volume-backed defs); instance-level param-default
+overrides; typed/units params (kept scalar). All noted for a later phase.
 
 ---
 
