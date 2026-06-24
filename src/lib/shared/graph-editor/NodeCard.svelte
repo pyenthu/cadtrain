@@ -1449,7 +1449,7 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock out expr-out"
                     cx={size.w} cy={exprOutputSockY(oIdx)} r="5"
-                    onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+                    onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, out.name)}/>
                 {/each}
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────

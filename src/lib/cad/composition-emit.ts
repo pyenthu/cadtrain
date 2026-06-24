@@ -31,10 +31,14 @@ import {
   type GraphNode,
   type ArgValue,
   type NodeId,
+  type ExprNode,
   topoOrder,
   STACK_REF_PARAM,
 } from './composition-graph';
-import { emitExprConsts, rewriteExprRefs } from './graph-exprs';
+import {
+  emitExprConsts, rewriteExprRefs,
+  deriveExprInputs, freeSymbols, exprBlockVar, rewriteExprLocalRefs,
+} from './graph-exprs';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -177,6 +181,13 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
           if (o.op === 'chamfer') checkArg(id, `ops[${i}].dist`, o.dist);
         });
         if ((node as any).segments) checkArg(id, 'segments', (node as any).segments);
+        break;
+      case 'expr':
+        // An input binding wired to a since-deleted param surfaces as
+        // missing-param (same treatment as every other ArgValue slot).
+        for (const [inName, v] of Object.entries((node as any).bindings ?? {})) {
+          checkArg(id, `bindings.${inName}`, v as ArgValue);
+        }
         break;
     }
   }
@@ -377,6 +388,21 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
       : `  throw new Error(${JSON.stringify('expression error — ' + res.error)});`;
     bodyText = `${block}\n${bodyText}`;
     bodyText = rewriteExprRefs(bodyText);
+  }
+
+  // ── Expr blocks (B.7 / id 914 v2) ──────────────────────────────────────
+  // Each floating Expr node emits a numeric PRELUDE: one `const <blockvar>_<in>`
+  // per derived input (from its wired binding, or a safe 0) then one
+  // `const <blockvar>_<out>` per output in LOCAL topo order. A consumer arg
+  // wired to an output socket carries `{kind:'expr', expr:'<blockvar>_<out>'}`,
+  // so the prelude must sit ahead of the whole body. ABSENT/EMPTY ⇒ no expr
+  // nodes ⇒ no prelude ⇒ byte-identical to today. Kept OUT of the
+  // rewriteExprRefs pass above: expr-block consts use their own `<blockvar>_`
+  // namespace, never the `e.*` one.
+  const exprBlockLines = emitExprBlocks(graph);
+  if (exprBlockLines.length > 0) {
+    const block = exprBlockLines.map((l) => `  ${l}`).join('\n');
+    bodyText = `${block}\n${bodyText}`;
   }
 
   for (const [id, varName] of varNames.entries()) {
@@ -636,6 +662,67 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // value, so they contribute nothing to this node-expression pass.
       return null;
   }
+}
+
+// ─── Expr-block prelude (B.7 / id 914 v2, step 1.5) ────────────────────────
+//
+// Floating Expr nodes are NON-geometry CALCULATION blocks: their derived inputs
+// + declared outputs emit as flat `const <blockvar>_<member> = …;` PRELUDE
+// lines (NOT a node-expression — emitNodeExpr returns null for 'expr'). A
+// consumer that wires an output socket into an arg references the matching
+// `<blockvar>_<output>` const (see wire-state.endWireOnCallArg). `<blockvar>` is
+// a PURE function of the node id (exprBlockVar) so emit + wiring agree.
+
+/** Local topo order of a block's outputs: an output formula may reference
+ *  SIBLING outputs (+ inputs), so a referenced output must emit first. Edges =
+ *  freeSymbols(formula) ∩ output-names. DFS with cycle fallback to declaration
+ *  order (a cyclic block is a user error surfaced elsewhere; never throws). */
+function topoOrderExprOutputs(outputs: readonly ExprNode['outputs'][number][]): ExprNode['outputs'][number][] {
+  const byName = new Map(outputs.map((o) => [o.name, o]));
+  const outNames = new Set(byName.keys());
+  const colour = new Map<string, 0 | 1 | 2>();
+  const ordered: ExprNode['outputs'][number][] = [];
+  let cyclic = false;
+  const visit = (name: string): void => {
+    if (cyclic) return;
+    const c = colour.get(name);
+    if (c === 2) return;
+    if (c === 1) { cyclic = true; return; }
+    const o = byName.get(name);
+    if (!o) return;
+    colour.set(name, 1);
+    for (const dep of freeSymbols(o.formula)) if (outNames.has(dep) && dep !== name) visit(dep);
+    colour.set(name, 2);
+    ordered.push(o);
+  };
+  for (const o of outputs) { visit(o.name); if (cyclic) break; }
+  return cyclic ? [...outputs] : ordered;
+}
+
+/** The PRELUDE `const` lines for every Expr block in the graph (empty when
+ *  there are none — the byte-identical guarantee). */
+export function emitExprBlocks(graph: Graph): string[] {
+  const lines: string[] = [];
+  for (const node of Object.values(graph.nodes)) {
+    if (!node || node.type !== 'expr') continue;
+    const ex = node as ExprNode;
+    const blockVar = exprBlockVar(ex.id);
+    const inputs = deriveExprInputs(ex);
+    const bindings = ex.bindings ?? {};
+    // 1. INPUT consts — bound value (param / literal / expr) or a safe default.
+    for (const inName of inputs) {
+      const bound = bindings[inName];
+      const rhs = bound != null ? emitValueExpr(bound) : '0 /* unbound input */';
+      lines.push(`const ${blockVar}_${inName} = ${rhs};`);
+    }
+    // 2. OUTPUT consts — local topo order, local names → namespaced consts.
+    const locals = new Set<string>([...inputs, ...ex.outputs.map((o) => o.name)]);
+    for (const out of topoOrderExprOutputs(ex.outputs)) {
+      const rhs = rewriteExprLocalRefs(out.formula, blockVar, locals);
+      lines.push(`const ${blockVar}_${out.name} = ${rhs};`);
+    }
+  }
+  return lines;
 }
 
 function emitCallExpr(src: string, args: Record<string, ArgValue>): string {

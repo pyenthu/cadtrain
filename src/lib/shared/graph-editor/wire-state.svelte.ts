@@ -38,17 +38,21 @@ import {
   setRepeatCount,
   addRepeatChild,
   setRepeatChildAt,
+  setExprInputBinding,
   type Graph,
   type NodeId,
   type MvNode,
   type RotNode,
 } from '$lib/cad/composition-graph';
+import { exprBlockMember } from '$lib/cad/graph-exprs';
 import { releaseImplicitCapture } from './pointer-capture';
 
 /** wireFrom is either a node's output socket OR a param's output chip. On
- *  release over an input socket the connection is committed. */
+ *  release over an input socket the connection is committed. An Expr-block
+ *  output socket additionally carries `outName` (WHICH named output) so a
+ *  consumer can reference the matching `<blockvar>_<outName>` emitted const. */
 export type WireSource =
-  | { kind: 'out'; nodeId: NodeId }
+  | { kind: 'out'; nodeId: NodeId; outName?: string }
   | { kind: 'param-out'; paramName: string };
 
 export class WireState {
@@ -109,6 +113,17 @@ export class WireState {
     this.armWire(ev);
   };
 
+  /** Start a wire from an Expr-block OUTPUT socket — carries the named output
+   *  so the drop target (a Call arg or another block's input) references the
+   *  matching `<blockvar>_<outName>` emitted const. */
+  startExprOutWire = (ev: PointerEvent, nodeId: NodeId, outName: string) => {
+    ev.stopPropagation();
+    releaseImplicitCapture(ev);
+    this.from = { kind: 'out', nodeId, outName };
+    this.mouse = this.#clientToGraph(ev.clientX, ev.clientY);
+    this.armWire(ev);
+  };
+
   endWireOnInput = (ev: PointerEvent, targetId: NodeId, slot: 'obj' | 'arg' | 'child') => {
     ev.stopPropagation();
     const from = this.from;
@@ -130,12 +145,19 @@ export class WireState {
     if (from.kind === 'param-out') {
       this.#setGraph(setCallArg(this.#getGraph(), callId, key, asParam(from.paramName)));
     } else if (from.kind === 'out' && from.nodeId !== callId) {
-      // Wire from another node's OUTPUT into this Call's arg. Today the only
-      // producer that flows into a Call arg is a Polygon/Sketch node (the
-      // profile slot on r_revolve / r_weld_extrude). Encoded as an `expr`
-      // ArgValue carrying the `__POLY__<sourceId>` sentinel; composition-emit.ts
-      // post-substitutes it with the source node's varName at emit time.
-      this.#setGraph(setCallArg(this.#getGraph(), callId, key, asExpr(`__POLY__${from.nodeId}`)));
+      if (from.outName != null) {
+        // Wire from an Expr block's named OUTPUT → reference its emitted numeric
+        // const `<blockvar>_<outName>` (emitExprBlocks prelude). The arg becomes
+        // a plain `expr` ArgValue carrying that identifier.
+        this.#setGraph(setCallArg(this.#getGraph(), callId, key, asExpr(exprBlockMember(from.nodeId, from.outName))));
+      } else {
+        // Wire from another node's OUTPUT into this Call's arg. The only other
+        // producer that flows into a Call arg is a Polygon/Sketch node (the
+        // profile slot on r_revolve / r_weld_extrude). Encoded as an `expr`
+        // ArgValue carrying the `__POLY__<sourceId>` sentinel; composition-emit.ts
+        // post-substitutes it with the source node's varName at emit time.
+        this.#setGraph(setCallArg(this.#getGraph(), callId, key, asExpr(`__POLY__${from.nodeId}`)));
+      }
     }
     this.from = null; this.mouse = null;
   };
@@ -274,15 +296,22 @@ export class WireState {
     this.from = null; this.mouse = null;
   };
 
-  /** Drop a wire onto an Expr block's INPUT socket (B.7 v2). The block's
-   *  inputs are AUTO-DERIVED from its formulas and carry NO stored binding yet
-   *  (ExprNode has only `outputs`), and emitNodeExpr returns null, so there is
-   *  no persistence/emit target to commit a param→input wire to. This handler
-   *  therefore just clears the in-flight wire cleanly (the socket is a live
-   *  drop target so the user gets feedback) — committing the binding is a
-   *  later step (needs the input-binding + emit-consumption model). */
-  endWireOnExprInput = (ev: PointerEvent, _exprId: NodeId, _inputName: string) => {
+  /** Drop a wire onto an Expr block's INPUT socket (B.7 v2, step 1.5). Persists
+   *  the binding keyed by the derived input NAME:
+   *   - a PARAM-output chip → `{kind:'param'}` (emits `p.<name>`),
+   *   - another block's OUTPUT socket → `{kind:'expr'}` referencing its emitted
+   *     `<blockvar>_<outName>` const.
+   *  Other node outputs (geometry producers) are ignored — a block input is a
+   *  SCALAR, not a shape. */
+  endWireOnExprInput = (ev: PointerEvent, exprId: NodeId, inputName: string) => {
     ev.stopPropagation();
+    const from = this.from;
+    if (!from) { this.mouse = null; return; }
+    if (from.kind === 'param-out') {
+      this.#setGraph(setExprInputBinding(this.#getGraph(), exprId, inputName, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.nodeId !== exprId && from.outName != null) {
+      this.#setGraph(setExprInputBinding(this.#getGraph(), exprId, inputName, asExpr(exprBlockMember(from.nodeId, from.outName))));
+    }
     this.from = null; this.mouse = null;
   };
 

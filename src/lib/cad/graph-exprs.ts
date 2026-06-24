@@ -140,6 +140,53 @@ export function parseExpr(src: string): { ok: true; ast: MathNode } | { ok: fals
   }
 }
 
+/** Every bare value SYMBOL in a formula — function names + allow-listed
+ *  constants (pi, e, …) excluded. Used by the Expr-block emitter to discover
+ *  which sibling outputs a formula references (free-symbol ∩ output-names =
+ *  the local dependency edges → topo order). Unparseable ⇒ empty set. */
+export function freeSymbols(formula: string): Set<string> {
+  const out = new Set<string>();
+  const parsed = parseExpr(formula);
+  if (!parsed.ok) return out;
+  parsed.ast.traverse((n: any, _path: string, parent: any) => {
+    if (n.type !== 'SymbolNode') return;
+    if (parent?.type === 'FunctionNode' && parent.fn === n) return; // function name
+    if (ALLOWED_CONSTANTS.has(n.name)) return;                      // pi, e, …
+    out.add(n.name);
+  });
+  return out;
+}
+
+// ─── Expr-block emit naming (B.7 / id 914 v2, step 1.5) ─────────────────────
+//
+// An Expr block emits a flat `const <blockvar>_<member> = …;` per derived
+// INPUT and per declared OUTPUT into the body PRELUDE (see emitExprBlocks in
+// composition-emit.ts). `<blockvar>` is a PURE function of the node id so the
+// emitter AND the wire handler (which has no access to the topo order) compute
+// the SAME identifier when an output socket is wired into a consumer's arg.
+
+/** Stable per-block JS var prefix derived from the node id. `n_abc123` →
+ *  `_x_n_abc123`. Deterministic — no graph / topo dependency. */
+export function exprBlockVar(nodeId: string): string {
+  return '_x_' + nodeId.replace(/[^A-Za-z0-9_$]/g, '_');
+}
+
+/** The flat const name an Expr block input/output binds to:
+ *  `exprBlockMember('n_abc', 'wall')` → `_x_n_abc_wall`. */
+export function exprBlockMember(nodeId: string, member: string): string {
+  return `${exprBlockVar(nodeId)}_${member}`;
+}
+
+/** Rewrite a formula's LOCAL names (its derived inputs + sibling output names)
+ *  to the namespaced `<blockvar>_<name>` consts the block emits. Word-boundary
+ *  anchored; a name preceded by `.` (member access) is left alone. Formulas use
+ *  ONLY local names (never `p.*`/`e.*`), so a bare-symbol rewrite is safe —
+ *  mirrors `rewriteExprRefs`. */
+export function rewriteExprLocalRefs(formula: string, blockVar: string, locals: ReadonlySet<string>): string {
+  return formula.replace(/(^|[^\w$.])([A-Za-z_$][\w$]*)/g, (m, pre: string, id: string) =>
+    locals.has(id) ? `${pre}${blockVar}_${id}` : m);
+}
+
 // ─── topological order ──────────────────────────────────────────────────────
 
 /** Topologically order the declared exprs by their `e.<name>` dependencies so
