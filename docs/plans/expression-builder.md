@@ -1,10 +1,86 @@
 # Expression Builder — calculated-expression BLOCK node (B.7 / id 914)
 
+> **Status: v3 design (2026-06-24) — expressions are reusable per-part
+> DEFINITIONS, instanced as blocks on the canvas.** Builds on the shipped v2
+> block node (model/card/emit/autocomplete — all merged). The **v3 section
+> immediately below supersedes** v2/v0 on storage + reuse; v2's ExprNode becomes
+> the *instance*. v0/v1 below are kept only for the reusable engine pieces.
+
+## v3. Expression definitions + instances (per-part library) — PLAN
+
+Decisions (user, 2026-06-24, after discussion):
+- **Scope: per-part first** (`graph.exprDefs[]`); a global volume library is a
+  later phase.
+- **Shared definition + instances**: editing a definition's formula updates ALL
+  its instances. Instances differ only by their local input WIRING.
+- **Menu home: the Σ left-rail popover** = the Expressions menu.
+
+### Data model
+```ts
+// On the Graph (per-part, serialized into meta.graph):
+exprDefs?: ExprDef[];
+export type ExprDef = {
+  id: NodeId;                       // stable def id (instances reference it)
+  name: string;                     // shown in the Σ menu
+  outputs: { name: string; formula: string }[];   // inputs are DERIVED (deriveExprInputs)
+};
+
+// ExprNode BECOMES the instance (refactor from v2's self-contained block):
+export type ExprNode = {
+  id: NodeId; type: 'expr';
+  defId: NodeId;                    // → ExprDef.id
+  bindings?: Record<string, ArgValue>;  // local wiring: derived-input NAME → source
+};
+```
+Derived inputs/outputs for an instance come from its `def` (look up `exprDefs`
+by `defId`, then `deriveExprInputs(def)` / `def.outputs`). The node card + emit
+read through the def.
+
+### Σ popover = the Expressions menu
+Repurpose `openExprPop` (the Σ rail button) into a menu:
+- Lists `graph.exprDefs` — each row: `name  (inputs)→outputs`, a **✎** (edit →
+  the existing block-editor popover, bound to the DEF), and a **⦻ drop instance**
+  (adds an `ExprNode{defId}` to the canvas via `addExprInstance`).
+- A **`+`** creates a new def (block editor blank → on save, push to `exprDefs`).
+- The block-editor popover now edits a **definition** (name + `name=formula`
+  rows + autocomplete over the def's derived inputs + sibling outputs + funcs).
+
+### Migration (one-way, on hydrate)
+- v2 self-contained `ExprNode{outputs,bindings}` → synthesize an `ExprDef` from
+  its `outputs`, give the node a `defId`, keep `bindings`.
+- v1 `graph.exprs[]` (the `e.<name>` list) → one `ExprDef` per entry
+  (single output = the expr); the old `e.*` emit path stays for back-compat
+  until parts are re-saved.
+
+### Emit
+`emitExprBlocks` (step 1.5) already namespaces per-NODE via `exprBlockVar(nodeId)`
+— keep that so two instances of the same def emit DISTINCT consts. Change: the
+formulas + derived inputs come from the instance's `def` (not the node). Two
+`wall` instances with different bindings → two independent const groups. Empty
+`exprDefs`/no instances ⇒ byte-identical emit.
+
+### Risk-sequenced PRs
+1. **Model + migration + emit** (pure, tested): add `exprDefs` + the `ExprDef`
+   type; refactor `ExprNode` → `{defId,bindings}`; `addExprDef`/`addExprInstance`/
+   def-output mutators; hydrate migration (v2 block + v1 `graph.exprs`); point
+   `emitExprBlocks` at the def. Extend `expr-emit.test.ts`: two instances of one
+   def with different bindings emit distinct consts; edit-def-propagates.
+2. **Σ menu popover**: turn the Σ launcher into the Expressions menu (list + ✎ +
+   ⦻ drop-instance + `+`). Reuse the block-editor popover for ✎/`+` (now editing a
+   def). Browser-verify on `:3333`.
+3. **Instance node card**: the v2 card reads through the def (title = def name,
+   derived input sockets, output sockets); ✎ on the instance opens the DEF
+   editor. Wiring unchanged (bindings). Browser-verify.
+4. **(later) global volume library** — promote `exprDefs` to volume files;
+   separate plan.
+
+---
+
 > **Status: v2 design (2026-06-23) — the expression is a CANVAS BLOCK NODE,
 > not a text-reference popover.** The §1–§11 below describe the earlier v1
 > popover/`e.<name>`-namespace model and are kept for the reusable parts
-> (mathjs engine, validation, autocomplete); the **v0 section immediately below
-> supersedes** them on the data model and integration.
+> (mathjs engine, validation, autocomplete); the **v0 section** below
+> describes the v2 self-contained block (now refactored into the v3 instance).
 
 ## v0. The agreed model — Expr block (SUPERSEDES the text-ref design)
 
