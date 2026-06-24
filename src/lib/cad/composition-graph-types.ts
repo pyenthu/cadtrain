@@ -288,6 +288,13 @@ export type ExprNode = {
   /** Named output formulas → output sockets. Multiple per block. Inputs are
    *  NOT stored — they are derived from these formulas (see deriveExprInputs). */
   outputs: ExprOutput[];
+  /** Input WIRES, keyed by the DERIVED input NAME → the wired source value (a
+   *  `p.*` param, a literal, or an `expr` referencing another block's emitted
+   *  output const). Name-keyed (not index-keyed) so re-deriving inputs after a
+   *  formula edit reconciles ports without dropping wires; bindings whose name
+   *  no longer derives are pruned. SPARSE/optional → absent ⇒ all inputs emit
+   *  with a safe `0` default. Step 1.5 (B.7 v2). */
+  bindings?: Record<string, ArgValue>;
 };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | ExprNode;

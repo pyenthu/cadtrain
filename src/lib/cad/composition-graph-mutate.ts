@@ -16,6 +16,7 @@ import type {
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam } from './composition-graph-types';
+import { deriveExprInputs, parseExpr } from './graph-exprs';
 
 /** Update a node's canvas position. Pure (returns new graph). */
 export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {
@@ -148,6 +149,12 @@ export function collectEdges(graph: Graph): Edge[] {
         if (o.op === 'chamfer') push(o.dist,   `ops.${i}.dist`);
       });
       push(node.segments, 'segments');
+    } else if (node.type === 'expr') {
+      // An Expr block's input can be wired to a param — surfaced so the orphan
+      // check (slotsForParam) catches a param that's only used by a block input.
+      for (const [inName, v] of Object.entries(node.bindings ?? {})) {
+        if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.bindings.${inName}` });
+      }
     }
   }
   return edges;
@@ -918,7 +925,45 @@ export function addExprNode(graph: Graph, at?: LayoutXY): { graph: Graph; id: No
 function mapExpr(graph: Graph, id: NodeId, fn: (n: ExprNode) => ExprNode): Graph {
   const n = graph.nodes[id];
   if (!n || n.type !== 'expr') return graph;
-  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: fn(n) } });
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: reconcileExprBindings(fn(n)) } });
+}
+
+/** Prune input bindings whose key no longer derives from the block's formulas
+ *  (e.g. an input dropped out after a formula edit). FROZEN while any formula
+ *  is unparseable — deriveExprInputs skips broken formulas, so the ports (and
+ *  their bindings) hold their last-good shape mid-edit instead of being dropped
+ *  on a transient typo. Drops the whole `bindings` field when it empties. */
+function reconcileExprBindings(n: ExprNode): ExprNode {
+  const bindings = n.bindings;
+  if (!bindings || Object.keys(bindings).length === 0) return n;
+  if (n.outputs.some((o) => !parseExpr(o.formula).ok)) return n; // freeze on a broken formula
+  const names = new Set(deriveExprInputs(n));
+  const next: Record<string, ArgValue> = {};
+  let changed = false;
+  for (const [k, v] of Object.entries(bindings)) {
+    if (names.has(k)) next[k] = v; else changed = true;
+  }
+  if (!changed) return n;
+  if (Object.keys(next).length === 0) { const { bindings: _drop, ...rest } = n; return rest as ExprNode; }
+  return { ...n, bindings: next };
+}
+
+/** Bind an Expr block's derived INPUT (by name) to a wired source value — a
+ *  `p.*` param, a literal, or an `expr` referencing another block's output
+ *  const. Keyed by the input NAME so a later formula edit reconciles it. */
+export function setExprInputBinding(graph: Graph, id: NodeId, inputName: string, arg: ArgValue): Graph {
+  return mapExpr(graph, id, (n) => ({ ...n, bindings: { ...(n.bindings ?? {}), [inputName]: arg } }));
+}
+
+/** Remove an Expr block input binding (back to the emit-time `0` default).
+ *  Drops the whole `bindings` field when it empties. */
+export function clearExprInputBinding(graph: Graph, id: NodeId, inputName: string): Graph {
+  return mapExpr(graph, id, (n) => {
+    if (!n.bindings || !(inputName in n.bindings)) return n;
+    const { [inputName]: _drop, ...rest } = n.bindings;
+    if (Object.keys(rest).length === 0) { const { bindings: _b, ...node } = n; return node as ExprNode; }
+    return { ...n, bindings: rest };
+  });
 }
 
 /** Append a new named output (auto-named `out2`, `out3`, … empty formula). */
