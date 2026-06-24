@@ -62,6 +62,7 @@
     setViewport,
     addExprDef,
     addExprInstance,
+    removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
     setRepeatCount,
@@ -153,6 +154,7 @@
   // rail launcher; expand-to-full inside the popup. Per-instance state lives in
   // the popup; GEP owns only the open flag + anchor + commit→graph.exprs wiring.
   import ExpressionBuilderPopup from './expr/ExpressionBuilderPopup.svelte';
+  import ExpressionsMenu from './expr/ExpressionsMenu.svelte';
   import type { ExprDef } from '$lib/cad/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
@@ -272,13 +274,47 @@
   let exprPopDef = $derived.by<ExprDef | null>(() =>
     exprPop ? ((graph.exprDefs ?? []).find((d) => d.id === exprPop!.defId) ?? null) : null,
   );
-  /** Σ launcher — open the editor on the first ExprDef (creating an empty one if
-   *  the part has none yet) so the four-section builder is always reachable. */
+  // The Σ Expressions MENU (B.7 v3 PR-3) — lists graph.exprDefs and is the home
+  // of the define → instance → wire flow. Opening it is the Σ rail button's job;
+  // the four-section editor (exprPop) is opened FROM the menu (✎ / +).
+  let exprMenu = $state<{ anchor: { x: number; y: number } } | null>(null);
+  let vrailEl = $state<HTMLElement | null>(null); // the left rail (anchors the Σ menu from the picker)
+  // defId → how many ExprNode instances reference it (drives the delete guard).
+  let exprInstanceCounts = $derived.by<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    for (const n of Object.values(graph.nodes)) {
+      if (n.type === 'expr') counts[n.defId] = (counts[n.defId] ?? 0) + 1;
+    }
+    return counts;
+  });
+  /** Σ launcher — open the Expressions menu anchored to the Σ button. */
   function openExprPop(ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    let defId = (graph.exprDefs ?? [])[0]?.id;
-    if (!defId) { const made = addExprDef(graph); graph = made.graph; defId = made.id; }
-    exprPop = { anchor: { x: r.right + 8, y: r.top }, defId };
+    exprMenu = { anchor: { x: r.right + 8, y: r.top } };
+  }
+  /** Menu + → create a new (empty) def and open the editor on it right away. */
+  function addExprDefAndEdit(ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const made = addExprDef(graph); graph = made.graph;
+    exprMenu = null;
+    exprPop = { anchor: { x: r.right + 8, y: r.top }, defId: made.id };
+  }
+  /** Menu ✎ — close the menu and open the editor on this def. */
+  function editExprDefFromMenu(ev: MouseEvent, defId: string) {
+    exprMenu = null;
+    openExprDefEditor(ev, defId);
+  }
+  /** Menu ⦻ — drop an instance of this def onto the canvas. */
+  function dropExprInstance(defId: string) {
+    graph = addExprInstance(graph, defId).graph;
+  }
+  /** Menu × (after the inline confirm) — remove the def AND every instance of it. */
+  function deleteExprDef(defId: string) {
+    let g = graph;
+    for (const n of Object.values(g.nodes)) {
+      if (n.type === 'expr' && n.defId === defId) g = removeNode(g, n.id);
+    }
+    graph = removeExprDef(g, defId);
   }
   /** Instance-card ✎ — open the editor bound to that instance's def. */
   function openExprDefEditor(ev: MouseEvent, defId: string) {
@@ -2515,15 +2551,15 @@
     closePicker();
     graph = addSketch(graph).graph;
   }
-  /** Drop an Expr INSTANCE (B.7 v3) — a thin calculation node referencing an
-   *  ExprDef (input sockets = its params, output sockets = its outputs). Creates
-   *  an empty def if the part has none yet, then drops one instance of the first
-   *  def. The four-section def is edited via the instance card's ✎ button. */
+  /** Picker "ƒ expr" item (B.7 v3) — route to the Σ Expressions MENU instead of
+   *  silently dropping an instance of a (possibly empty, unwireable) def. The
+   *  menu is where you define a named expr with params/outputs and THEN drop a
+   *  wireable instance of it. Anchored to the Σ rail button. */
   function dropExpr() {
     closePicker();
-    let defId = (graph.exprDefs ?? [])[0]?.id;
-    if (!defId) { const made = addExprDef(graph); graph = made.graph; defId = made.id; }
-    graph = addExprInstance(graph, defId).graph;
+    const btn = vrailEl?.querySelector('.ge-vrail-btn.expr') as HTMLElement | null;
+    const r = btn?.getBoundingClientRect();
+    exprMenu = { anchor: r ? { x: r.right + 8, y: r.top } : { x: 56, y: 120 } };
   }
   /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
   // argStr / argFrom → graph-editor-args.ts (P2/G2).
@@ -3467,7 +3503,7 @@
        button is icon-only with a data-tip; the dark tooltip layer (mounted
        in onMount) renders the labels on hover. Auto-layout + Push apart
        moved to a canvas-settings popover. -->
-  <aside class="ge-vrail">
+  <aside class="ge-vrail" bind:this={vrailEl}>
     <!-- Operations: polygon, solids, ops, position, container.
          Pencil icon = "drop a graph operation" — drawing/structural ops. -->
     <button class="ge-vrail-btn" type="button"
@@ -3491,9 +3527,9 @@
     <!-- Σ Expression builder (B.6 / id 914) — open the calculated-expression
          popover, seeded with the part's param names as the input schema. -->
     <button class="ge-vrail-btn expr" type="button"
-      class:on={!!exprPop}
+      class:on={!!exprMenu || !!exprPop}
       onclick={openExprPop}
-      data-tip="Expression builder — author a calculated e.* value from p.* params">Σ</button>
+      data-tip="Expressions — define reusable calc blocks, then drop instances to wire">Σ</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -3547,6 +3583,18 @@
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
+
+  {#if exprMenu}
+    <ExpressionsMenu
+      defs={graph.exprDefs ?? []}
+      instanceCounts={exprInstanceCounts}
+      anchor={exprMenu.anchor}
+      onAdd={addExprDefAndEdit}
+      onEdit={editExprDefFromMenu}
+      onDrop={dropExprInstance}
+      onDelete={deleteExprDef}
+      onClose={() => (exprMenu = null)} />
+  {/if}
 
   {#if exprPop && exprPopDef}
     <ExpressionBuilderPopup
