@@ -12,6 +12,7 @@ import type {
   NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
+  ExprNode, ExprOutput,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam } from './composition-graph-types';
@@ -887,6 +888,68 @@ export function addPolygonRepeat(graph: Graph, polygonId: NodeId, afterIdx?: num
     nodes: { ...graph.nodes, [polygonId]: updatedPoly, [repeatId]: repeatNode },
     layout: { ...graph.layout, [repeatId]: xy },
   });
+}
+
+// ─── Expr block (B.7 / id 914, v2) ─────────────────────────────────────────
+// A floating calculation node: AUTO-DERIVED input sockets (from the formulas'
+// free symbols — see deriveExprInputs in graph-exprs.ts) + DECLARED named
+// output sockets. Not in the root list — referenced by wires, like poly_repeat.
+// Mutators return a new Graph (immutable).
+
+/** Add a floating Expr block (default: one output `out = a` ⇒ one derived
+ *  input `a`). */
+export function addExprNode(graph: Graph, at?: LayoutXY): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: ExprNode = {
+    id,
+    type: 'expr',
+    outputs: [{ name: 'out', formula: 'a' }],
+  };
+  const existing = Object.values(graph.nodes).filter((n) => n.type === 'expr').length;
+  const xy: LayoutXY = at ?? { x: 120 + (existing % 4) * 240, y: 120 + existing * 40 };
+  const g = finalize({
+    ...graph,
+    nodes: { ...graph.nodes, [id]: node },
+    layout: { ...graph.layout, [id]: xy },
+  });
+  return { graph: g, id };
+}
+
+function mapExpr(graph: Graph, id: NodeId, fn: (n: ExprNode) => ExprNode): Graph {
+  const n = graph.nodes[id];
+  if (!n || n.type !== 'expr') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: fn(n) } });
+}
+
+/** Append a new named output (auto-named `out2`, `out3`, … empty formula). */
+export function addExprOutput(graph: Graph, id: NodeId): Graph {
+  return mapExpr(graph, id, (n) => {
+    const used = n.outputs.map((o) => o.name);
+    let k = used.length + 1;
+    let name = `out${k}`;
+    while (used.includes(name)) name = `out${++k}`;
+    return { ...n, outputs: [...n.outputs, { name, formula: '' }] };
+  });
+}
+
+/** Set output `idx`'s name (caller validates ident/uniqueness). */
+export function setExprOutputName(graph: Graph, id: NodeId, idx: number, name: string): Graph {
+  return mapExpr(graph, id, (n) => ({
+    ...n, outputs: n.outputs.map((o, i) => (i === idx ? { ...o, name } : o)),
+  }));
+}
+
+/** Set output `idx`'s formula source. */
+export function setExprOutputFormula(graph: Graph, id: NodeId, idx: number, formula: string): Graph {
+  return mapExpr(graph, id, (n) => ({
+    ...n, outputs: n.outputs.map((o, i) => (i === idx ? { ...o, formula } : o)),
+  }));
+}
+
+/** Remove output `idx` (keeps at least one output). */
+export function removeExprOutput(graph: Graph, id: NodeId, idx: number): Graph {
+  return mapExpr(graph, id, (n) =>
+    n.outputs.length <= 1 ? n : { ...n, outputs: n.outputs.filter((_, i) => i !== idx) });
 }
 
 /** Mutate a PolyRepeatNode's `count` (number of points it generates). */

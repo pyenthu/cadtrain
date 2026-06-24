@@ -255,7 +255,42 @@ export type SketchNode = {
   scaleY?: ArgValue;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode;
+/** One named output of an Expr block — a result `name` + its `formula`. The
+ *  formula is mathjs source using ONLY the block's LOCAL names: its declared
+ *  `inputs` + the names of OTHER outputs on the same block (local topo). It
+ *  never references `p.*`/`e.*` — the graph wiring supplies the input values.
+ *  Each output gets its own output socket on the block's right edge. */
+export type ExprOutput = { name: string; formula: string };
+
+/** Expr block (B.7 / id 914, v2) — a first-class CALCULATION node. NOT a
+ *  geometry producer: it contributes numeric `const` bindings to the emit
+ *  prelude (one per output) rather than a Manifold expression.
+ *
+ *  **Hybrid port model** (prior art: Dynamo Code Block + Unreal Math Expression):
+ *  - **inputs are AUTO-DERIVED** from the formulas — every free symbol that is
+ *    NOT an output name and NOT an allow-listed function/constant becomes an
+ *    INPUT SOCKET on the left edge, wired in from an external value (a `p.*`
+ *    param, another node's value, or another block's output). Derivation lives
+ *    in `deriveExprInputs` (graph-exprs.ts, mathjs AST walk). Wires are keyed by
+ *    input NAME so editing a formula reconciles ports without dropping wires.
+ *  - **outputs are DECLARED** — named `{name, formula}` rows, each an OUTPUT
+ *    SOCKET on the right edge, referenced wherever its socket is wired. Outputs
+ *    are the block's stable contract to downstream nodes (they don't flicker as
+ *    you type, unlike Dynamo's per-line outputs).
+ *
+ *  Formula validation reuses the mathjs engine (`graph-exprs.ts` /
+ *  `expr-schema.ts`): a formula's allowed names are
+ *  {derived inputs} ∪ {prior output names} ∪ the function/constant allowlist.
+ *  See `docs/plans/expression-builder.md` (v0). */
+export type ExprNode = {
+  id: NodeId;
+  type: 'expr';
+  /** Named output formulas → output sockets. Multiple per block. Inputs are
+   *  NOT stored — they are derived from these formulas (see deriveExprInputs). */
+  outputs: ExprOutput[];
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | ExprNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

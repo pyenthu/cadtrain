@@ -41,13 +41,17 @@ other node — NOT a global `e.<name>` namespace referenced by typed names.
   tree); the multi-line autocomplete SRC work in progress.
 
 ### v2 PRs
-1. **`ExprNode` model + emit + tests** — node type (`inputs: string[]`,
-   `outputs: {name,formula}[]`), mutators, socket geometry in `geom.ts`, emit with
-   wired-input substitution + local topo over outputs. Pure/tested. (Build on the
-   merged `graph-exprs.ts` validator.)
+1. ✅ **`ExprNode` model + mutators + tests — DONE (step 1)**. Node type
+   `{ type:'expr', outputs:{name,formula}[] }` (inputs NOT stored — derived);
+   `deriveExprInputs` (graph-exprs.ts, mathjs AST walk = hybrid port model);
+   mutators (addExprNode/addExprOutput/setExprOutputName/Formula/removeExprOutput);
+   `emitNodeExpr case 'expr' → null` (non-geometry). `expr-node.test.ts` 8/8.
+   **LEFT for step 1.5:** the prelude EMIT (outputs → `const`s with wired-input
+   substitution + local topo) once wiring exists.
 2. **Node card + sockets** — `ExprNode` render arm in `NodeCard.svelte`: input
-   sockets (left, one per declared input) + output sockets (right, one per
-   output), wired via `WireState`. Add/remove inputs + outputs inline.
+   sockets (left, one per DERIVED input) + output sockets (right, one per
+   output), wired via `WireState`. Add/remove OUTPUTS inline (inputs follow the
+   formulas). Outputs line-aligned to their formula rows (Dynamo pattern).
 3. **Block editor popover** — repurpose `expr/ExpressionBuilderPopup` to edit ONE
    block: declare input names, the `name = formula` rows (multi-line + autocomplete
    over locals+sibling-outputs+functions), live per-row block tree + validation.
@@ -57,6 +61,15 @@ other node — NOT a global `e.<name>` namespace referenced by typed names.
 > Decision log: single vs multiple outputs → **multiple named outputs** (user,
 > 2026-06-23). Conditionals → mathjs ternary `cond ? a : b` (ConditionalNode,
 > already allow-listed). Functions → autocomplete, never a static list.
+>
+> **Research (prior-art survey, 2026-06-24 — Dynamo Code Block · Unreal Math
+> Expression · Grasshopper · Blender · n8n · Node-RED):** adopt the **hybrid
+> port model** — auto-derive inputs from undefined symbols (Dynamo/Unreal),
+> keep outputs declared. Key ports by NAME + reconcile (don't rebuild) so
+> editing-while-wired is non-destructive. Outputs line-aligned to formula rows;
+> soft-warn past ~6. Inline CodeMirror-style autocomplete + live resolved-value
+> preview, expandable to a modal (n8n). Per-output-row errors (parse vs evaluate
+> split). Keep formulas scalar/untyped — no units in the grammar (Blender).
 
 ---
 

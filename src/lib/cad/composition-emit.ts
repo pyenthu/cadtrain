@@ -629,6 +629,12 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       }
       return `sketch([${ops.join(', ')}], ${seg})`;
     }
+    case 'expr':
+      // Expr blocks are NON-geometry calculation nodes — their named outputs
+      // emit as prelude `const` bindings (see emitExprBlocks), referenced by
+      // whatever arg sockets they're wired into. They are never a geometry
+      // value, so they contribute nothing to this node-expression pass.
+      return null;
   }
 }
 

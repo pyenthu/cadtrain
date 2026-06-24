@@ -36,7 +36,7 @@
 // numeric preview will add `evaluateDependencies` if/when needed.
 import { create, parseDependencies, type MathNode } from 'mathjs';
 const { parse } = create(parseDependencies);
-import type { GraphExpr } from './composition-graph-types';
+import type { GraphExpr, ExprNode } from './composition-graph-types';
 import {
   ALLOWED_FUNCTIONS,
   ALLOWED_CONSTANTS,
@@ -105,6 +105,29 @@ export function extractExprRefs(ast: MathNode): Set<string> {
     }
   });
   return refs;
+}
+
+/** Auto-derive an Expr block's INPUT socket names (hybrid port model, B.7 v2).
+ *  An input is every FREE symbol across the block's output formulas that is
+ *  NOT one of the block's own output names and NOT an allow-listed
+ *  function/constant. Returns names in first-appearance order. Unparseable
+ *  formulas are skipped (the caller freezes the block's last-good ports). */
+export function deriveExprInputs(node: ExprNode): string[] {
+  const outNames = new Set(node.outputs.map((o) => o.name));
+  const seen = new Set<string>();
+  const inputs: string[] = [];
+  for (const out of node.outputs) {
+    const parsed = parseExpr(out.formula);
+    if (!parsed.ok) continue;
+    parsed.ast.traverse((n: any, _path: string, parent: any) => {
+      if (n.type !== 'SymbolNode') return;
+      if (parent?.type === 'FunctionNode' && parent.fn === n) return; // function name
+      if (ALLOWED_CONSTANTS.has(n.name)) return;                      // pi, e, …
+      if (outNames.has(n.name)) return;                               // sibling output
+      if (!seen.has(n.name)) { seen.add(n.name); inputs.push(n.name); }
+    });
+  }
+  return inputs;
 }
 
 /** Parse one expression source. Returns the AST or a parse error — never
