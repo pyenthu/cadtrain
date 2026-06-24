@@ -14,10 +14,11 @@ import { absToChord } from './sketch';
 
 import type {
   Graph, GraphNode, ContainerNode, LayoutXY, Viewport, PolygonNode, PolygonEntry,
-  PolyRepeatNode, SketchNode, TxfmnNode, ArgValue, GraphExpr,
+  PolyRepeatNode, SketchNode, TxfmnNode, ArgValue, GraphExpr, ExprDef, ExprOut,
 } from './composition-graph-types';
 import { newNodeId, asLiteral } from './composition-graph-types';
 import { setLayout, defaultCallPosition, collectEdges } from './composition-graph-mutate';
+import { deriveInputNames } from './graph-exprs';
 
 export function newGraph(): Graph {
   const rootId = newNodeId();
@@ -319,6 +320,68 @@ export function hydrateGraph(serialised: any): Graph {
     }
     return out.length ? out : undefined;
   })();
+  // Expression DEFINITIONS (B.7 / id 914 v3) — restore saved defs, then run the
+  // one-way migrations (idempotent): a v2 `ExprNode{outputs,bindings}` (no
+  // `defId`) synthesises a def (outputs = its outputs, params = the derived
+  // inputs with no default, consts/vars empty) and is rewritten to an instance;
+  // a v1 `graph.exprs[]` row becomes a single-output def (name-deduped so a
+  // re-saved part doesn't duplicate). Absent everywhere ⇒ undefined ⇒
+  // byte-identical emit.
+  const savedExprDefs = ((): ExprDef[] => {
+    const out: ExprDef[] = [];
+    const raw = (serialised as any).exprDefs;
+    if (!Array.isArray(raw)) return out;
+    const str = (v: any) => (typeof v === 'string' ? v : '');
+    const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    for (const d of raw) {
+      if (!d || typeof d.id !== 'string' || typeof d.name !== 'string') continue;
+      out.push({
+        id: d.id,
+        name: d.name,
+        params: Array.isArray(d.params) ? d.params.filter((p: any) => p && str(p.name)).map((p: any) => {
+          const def = num(p.default); return def == null ? { name: p.name } : { name: p.name, default: def };
+        }) : [],
+        consts: Array.isArray(d.consts) ? d.consts.filter((c: any) => c && str(c.name)).map((c: any) => ({ name: c.name, value: num(c.value) ?? 0 })) : [],
+        vars: Array.isArray(d.vars) ? d.vars.filter((v: any) => v && str(v.name)).map((v: any) => ({ name: v.name, formula: str(v.formula) })) : [],
+        outputs: Array.isArray(d.outputs) ? d.outputs.filter((o: any) => o && str(o.name)).map((o: any) => ({ name: o.name, formula: str(o.formula) })) : [],
+      });
+    }
+    return out;
+  })();
+  const exprDefsOut: ExprDef[] = [...savedExprDefs];
+  const exprDefNameSet = new Set(exprDefsOut.map((d) => d.name));
+  const uniqueDefName = (): string => {
+    let k = exprDefsOut.length + 1;
+    let name = `expr_${k}`;
+    while (exprDefNameSet.has(name)) name = `expr_${++k}`;
+    return name;
+  };
+  // v2 → v3: ExprNode{outputs,bindings} → ExprDef + instance{defId,bindings}.
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id] as any;
+    if (!n || n.type !== 'expr') continue;
+    if (typeof n.defId === 'string') continue; // already v3
+    const outputs: ExprOut[] = Array.isArray(n.outputs)
+      ? n.outputs.filter((o: any) => o && typeof o.name === 'string' && typeof o.formula === 'string')
+          .map((o: any) => ({ name: o.name, formula: o.formula }))
+      : [];
+    const params = deriveInputNames(outputs).map((nm) => ({ name: nm }));
+    const defId = newNodeId();
+    const name = uniqueDefName();
+    exprDefsOut.push({ id: defId, name, params, consts: [], vars: [], outputs });
+    exprDefNameSet.add(name);
+    const bindings = (n.bindings && typeof n.bindings === 'object' && Object.keys(n.bindings).length) ? n.bindings : undefined;
+    migratedNodes[id] = { id, type: 'expr', defId, ...(bindings ? { bindings } : {}) } as GraphNode;
+  }
+  // v1 graph.exprs[] → one single-output def each (name-deduped, idempotent).
+  // The legacy emit path (emitExprConsts) keeps driving geometry until re-save.
+  if (savedExprs) {
+    for (const e of savedExprs) {
+      if (exprDefNameSet.has(e.name)) continue;
+      exprDefsOut.push({ id: newNodeId(), name: e.name, params: [], consts: [], vars: [], outputs: [{ name: e.name, formula: e.src }] });
+      exprDefNameSet.add(e.name);
+    }
+  }
   let g: Graph = {
     nodes: migratedNodes,
     root: serialised.root,
@@ -332,6 +395,7 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedMaterial ? { material: savedMaterial } : {}),
     ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),
     ...(savedExprs ? { exprs: savedExprs } : {}),
+    ...(exprDefsOut.length ? { exprDefs: exprDefsOut } : {}),
   };
   // Fill missing positions only — preserves any saved entry, populates the
   // rest via the same rough-grid heuristic used at create-time. Inline

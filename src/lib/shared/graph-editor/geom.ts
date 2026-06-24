@@ -24,7 +24,6 @@ import {
   type RotNode,
 } from '$lib/cad/composition-graph';
 import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
-import { deriveExprInputs } from '$lib/cad/graph-exprs';
 
 // ─── Params-card geometry constants ────────────────────────────────────────
 // Outer card sits at (CARD_X0, CARD_Y0); the title bar takes CARD_TITLE_H;
@@ -376,10 +375,12 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     return { w: 240, h: 154 + bindingsH - 24 };
   }
   if (node.type === 'expr') {
-    // Height = the taller of {input sockets, output rows} so neither column
-    // clips, + the trailing "+ output" button row + bottom pad.
-    const outs = (node as any).outputs ?? [];
-    const ins = deriveExprInputs(node as any);
+    // Height = the taller of {input sockets = def.params, output rows =
+    // def.outputs} so neither column clips, + trailing pad. Reads THROUGH the
+    // instance's def (v3); a dangling defId falls back to a 1-row card.
+    const def = (graph.exprDefs ?? []).find((d: any) => d.id === (node as any).defId);
+    const ins = def?.params ?? [];
+    const outs = def?.outputs ?? [];
     const rows = Math.max(1, outs.length, ins.length);
     return { w, h: EXPR_BODY_TOP + rows * EXPR_ROW_H + 30 };
   }

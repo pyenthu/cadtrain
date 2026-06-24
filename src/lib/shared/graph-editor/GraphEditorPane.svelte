@@ -60,9 +60,8 @@
     setTransformAxisValue,
     setTxfmnAxis,
     setViewport,
-    addExprNode,
-    setExprOutputName,
-    setExprOutputFormula,
+    addExprDef,
+    addExprInstance,
     addStackPlaceholder,
     addRepeatPlaceholder,
     setRepeatCount,
@@ -154,7 +153,7 @@
   // rail launcher; expand-to-full inside the popup. Per-instance state lives in
   // the popup; GEP owns only the open flag + anchor + commit→graph.exprs wiring.
   import ExpressionBuilderPopup from './expr/ExpressionBuilderPopup.svelte';
-  import { buildExprSchema } from '$lib/cad/graph-exprs';
+  import type { ExprDef } from '$lib/cad/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
   // ƒ-popover still renders in the shell — the Phase-E-revert fix).
@@ -260,71 +259,44 @@
   // openProfilePop/openProfileRefPop/moveChild/detachProfile(...)`.
   let popovers: Popovers | undefined = $state();
 
-  // ─── expression builder popover (B.6 / id 914, PR-3) ───────────────────────
-  // Opened from the Σ rail launcher. Authors ONE calculated `e.<name>` expr at a
-  // time; commit writes/updates it into graph.exprs (multi-output = PR-5). The
-  // schema excludes the expr being edited so it can't reference itself, and the
-  // name can't shadow a param or duplicate another expr (enforced in the popup).
-  // `target` is set when the popover is editing ONE OUTPUT of an on-canvas Expr
-  // BLOCK node (B.7 v2, opened by its ✎ button) rather than a part-level
-  // graph.exprs entry (the rail-Σ launcher). Commit routes on it.
+  // ─── expression definition editor (B.7 / id 914, v3) ───────────────────────
+  // The four-section ExprDef editor (PARAMS · CONSTS · VARIABLES · OUTPUTS).
+  // Opened from the Σ rail launcher (on the part's first def, creating an empty
+  // one if none) or from an instance card's ✎ button (on that instance's def).
+  // Commit replaces the whole def in graph.exprDefs (so every instance updates).
+  // The full Expressions menu (list + drop-instance) is PR-3.
   let exprPop = $state<{
     anchor: { x: number; y: number };
-    initial: { name: string; src: string };
-    target?: { exprId: string; outputIdx: number };
+    defId: string;
   } | null>(null);
-  // Schema = the part's param names + OTHER declared expr names (minus the one
-  // being edited). For a BLOCK output the "other exprs" are the block's SIBLING
-  // output names; for the rail-Σ launcher they're the graph.exprs names. Rebuilt
-  // each open.
-  let exprPopSchema = $derived.by(() => {
-    if (!exprPop) return null;
-    let exprNames: string[];
-    if (exprPop.target) {
-      const node = graph.nodes[exprPop.target.exprId] as any;
-      exprNames = ((node?.outputs ?? []) as Array<{ name: string }>)
-        .map((o) => o.name)
-        .filter((_nm, i) => i !== exprPop!.target!.outputIdx);
-    } else {
-      exprNames = (graph.exprs ?? []).map((e) => e.name).filter((nm) => nm !== exprPop!.initial.name);
-    }
-    return buildExprSchema(paramEntries.map(([nm]) => nm), exprNames);
-  });
+  let exprPopDef = $derived.by<ExprDef | null>(() =>
+    exprPop ? ((graph.exprDefs ?? []).find((d) => d.id === exprPop!.defId) ?? null) : null,
+  );
+  /** Σ launcher — open the editor on the first ExprDef (creating an empty one if
+   *  the part has none yet) so the four-section builder is always reachable. */
   function openExprPop(ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    // Anchor just right of the rail button.
-    exprPop = { anchor: { x: r.right + 8, y: r.top }, initial: { name: '', src: '' } };
+    let defId = (graph.exprDefs ?? [])[0]?.id;
+    if (!defId) { const made = addExprDef(graph); graph = made.graph; defId = made.id; }
+    exprPop = { anchor: { x: r.right + 8, y: r.top }, defId };
   }
-  /** Open the expression builder bound to ONE output of an on-canvas Expr block
-   *  (the card's ✎ button). Prefills the output's name + formula; commit writes
-   *  back via setExprOutputName/setExprOutputFormula. */
-  function openExprNodeEditor(ev: MouseEvent, exprId: string, outputIdx: number) {
-    const node = graph.nodes[exprId] as any;
-    const out = node?.outputs?.[outputIdx];
-    if (!out) return;
+  /** Instance-card ✎ — open the editor bound to that instance's def. */
+  function openExprDefEditor(ev: MouseEvent, defId: string) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    exprPop = {
-      anchor: { x: r.right + 8, y: r.top },
-      initial: { name: out.name, src: out.formula },
-      target: { exprId, outputIdx },
-    };
-  }
-  function commitExpr(e: { name: string; src: string }) {
-    const target = exprPop?.target;
-    if (target) {
-      // Editing an on-canvas Expr BLOCK output — write back via the mutators.
-      let g = setExprOutputName(graph, target.exprId, target.outputIdx, e.name);
-      g = setExprOutputFormula(g, target.exprId, target.outputIdx, e.src);
-      graph = g;
-      exprPop = null;
-      return;
+    // A dangling defId (def deleted out from under the instance): make a fresh
+    // empty def and repoint nothing here (PR-4 owns recreation); just open one.
+    if (!(graph.exprDefs ?? []).some((d) => d.id === defId)) {
+      const made = addExprDef(graph); graph = made.graph; defId = made.id;
     }
-    // Part-level graph.exprs (rail-Σ launcher).
-    const list = (graph.exprs ?? []).slice();
-    const idx = list.findIndex((x) => x.name === e.name);
-    if (idx >= 0) list[idx] = { name: e.name, src: e.src };
-    else list.push({ name: e.name, src: e.src });
-    graph = { ...graph, exprs: list };
+    exprPop = { anchor: { x: r.right + 8, y: r.top }, defId };
+  }
+  /** Commit the whole edited def back into graph.exprDefs (every instance reads
+   *  through it, so this updates them all). */
+  function commitExpr(def: ExprDef) {
+    const list = (graph.exprDefs ?? []).slice();
+    const idx = list.findIndex((d) => d.id === def.id);
+    if (idx >= 0) list[idx] = def; else list.push(def);
+    graph = { ...graph, exprDefs: list };
     exprPop = null;
   }
 
@@ -2543,12 +2515,15 @@
     closePicker();
     graph = addSketch(graph).graph;
   }
-  /** Drop an Expr block (B.7 v2) — a floating calculation node with derived
-   *  input sockets + declared output sockets. Edited inline or via its ✎
-   *  popover. */
+  /** Drop an Expr INSTANCE (B.7 v3) — a thin calculation node referencing an
+   *  ExprDef (input sockets = its params, output sockets = its outputs). Creates
+   *  an empty def if the part has none yet, then drops one instance of the first
+   *  def. The four-section def is edited via the instance card's ✎ button. */
   function dropExpr() {
     closePicker();
-    graph = addExprNode(graph).graph;
+    let defId = (graph.exprDefs ?? [])[0]?.id;
+    if (!defId) { const made = addExprDef(graph); graph = made.graph; defId = made.id; }
+    graph = addExprInstance(graph, defId).graph;
   }
   /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
   // argStr / argFrom → graph-editor-args.ts (P2/G2).
@@ -3573,10 +3548,9 @@
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
 
-  {#if exprPop && exprPopSchema}
+  {#if exprPop && exprPopDef}
     <ExpressionBuilderPopup
-      schema={exprPopSchema}
-      initial={exprPop.initial}
+      def={exprPopDef}
       anchor={exprPop.anchor}
       onCommit={commitExpr}
       onCancel={() => (exprPop = null)} />
@@ -4038,7 +4012,7 @@
               {openPolyRepeatExprPop}
               {openPolyBindingExprPop}
               {openPolyRepeatCountExprPop}
-              {openExprNodeEditor}
+              {openExprDefEditor}
               {setHoverVertex}
               {clearHoverVertex}
               {openPolyPreview}

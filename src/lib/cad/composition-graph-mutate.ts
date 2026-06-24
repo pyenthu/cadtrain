@@ -12,11 +12,10 @@ import type {
   NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
-  ExprNode, ExprOutput,
+  ExprNode, ExprDef,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam } from './composition-graph-types';
-import { deriveExprInputs, parseExpr } from './graph-exprs';
 
 /** Update a node's canvas position. Pure (returns new graph). */
 export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {
@@ -897,21 +896,42 @@ export function addPolygonRepeat(graph: Graph, polygonId: NodeId, afterIdx?: num
   });
 }
 
-// ─── Expr block (B.7 / id 914, v2) ─────────────────────────────────────────
-// A floating calculation node: AUTO-DERIVED input sockets (from the formulas'
-// free symbols — see deriveExprInputs in graph-exprs.ts) + DECLARED named
-// output sockets. Not in the root list — referenced by wires, like poly_repeat.
-// Mutators return a new Graph (immutable).
+// ─── Expr definitions + instances (B.7 / id 914, v3) ───────────────────────
+// A reusable per-part calc DEFINITION (graph.exprDefs[]) with four declared
+// sections (PARAMS · CONSTS · VARIABLES · OUTPUTS), instanced by thin
+// ExprNode{defId,bindings} nodes (referenced by wires, like poly_repeat — not
+// in the root list). Editing a def updates every instance; instances differ
+// only by their per-PARAM wiring. All mutators return a new Graph (immutable).
 
-/** Add a floating Expr block (default: one output `out = a` ⇒ one derived
- *  input `a`). */
-export function addExprNode(graph: Graph, at?: LayoutXY): { graph: Graph; id: NodeId } {
+/** The full flat name set a def declares — for unique auto-naming new rows. */
+function exprDefNames(d: ExprDef): Set<string> {
+  return new Set<string>([...d.params, ...d.consts, ...d.vars, ...d.outputs].map((r) => r.name));
+}
+/** First `<base><k>` (k≥1) not already declared in the def. */
+function uniqueExprDefName(d: ExprDef, base: string): string {
+  const used = exprDefNames(d);
+  let k = 1; let name = `${base}${k}`;
+  while (used.has(name)) name = `${base}${++k}`;
+  return name;
+}
+
+/** Add an EMPTY expression definition to the part. Returns its id. */
+export function addExprDef(graph: Graph): { graph: Graph; id: NodeId } {
   const id = newNodeId();
-  const node: ExprNode = {
-    id,
-    type: 'expr',
-    outputs: [{ name: 'out', formula: 'a' }],
-  };
+  const existing = graph.exprDefs ?? [];
+  const used = new Set(existing.map((d) => d.name));
+  let k = existing.length + 1;
+  let name = `expr_${k}`;
+  while (used.has(name)) name = `expr_${++k}`;
+  const def: ExprDef = { id, name, params: [], consts: [], vars: [], outputs: [] };
+  const g = finalize({ ...graph, exprDefs: [...existing, def] });
+  return { graph: g, id };
+}
+
+/** Drop an INSTANCE of a def onto the canvas (a thin ExprNode). Returns its id. */
+export function addExprInstance(graph: Graph, defId: NodeId, at?: LayoutXY): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: ExprNode = { id, type: 'expr', defId };
   const existing = Object.values(graph.nodes).filter((n) => n.type === 'expr').length;
   const xy: LayoutXY = at ?? { x: 120 + (existing % 4) * 240, y: 120 + existing * 40 };
   const g = finalize({
@@ -922,79 +942,114 @@ export function addExprNode(graph: Graph, at?: LayoutXY): { graph: Graph; id: No
   return { graph: g, id };
 }
 
-function mapExpr(graph: Graph, id: NodeId, fn: (n: ExprNode) => ExprNode): Graph {
+/** Immutable update of one def by id (no-op if the id is unknown). */
+function mapDef(graph: Graph, defId: NodeId, fn: (d: ExprDef) => ExprDef): Graph {
+  const defs = graph.exprDefs ?? [];
+  const idx = defs.findIndex((d) => d.id === defId);
+  if (idx < 0) return graph;
+  const next = defs.slice();
+  next[idx] = fn(defs[idx]!);
+  return finalize({ ...graph, exprDefs: next });
+}
+
+/** Rename a def (shown in the Σ menu + on instance cards). */
+export function setExprDefName(graph: Graph, defId: NodeId, name: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, name }));
+}
+
+/** Remove a def (caller decides what to do with dangling instances — PR-3/4). */
+export function removeExprDef(graph: Graph, defId: NodeId): Graph {
+  const defs = graph.exprDefs ?? [];
+  if (!defs.some((d) => d.id === defId)) return graph;
+  return finalize({ ...graph, exprDefs: defs.filter((d) => d.id !== defId) });
+}
+
+// ── PARAMS section ──────────────────────────────────────────────────────────
+export function addExprDefParam(graph: Graph, defId: NodeId): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, params: [...d.params, { name: uniqueExprDefName(d, 'p') }] }));
+}
+export function setExprDefParamName(graph: Graph, defId: NodeId, idx: number, name: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, params: d.params.map((p, i) => (i === idx ? { ...p, name } : p)) }));
+}
+/** Set (or clear, via `undefined`) a param's numeric default. */
+export function setExprDefParamDefault(graph: Graph, defId: NodeId, idx: number, value: number | undefined): Graph {
+  return mapDef(graph, defId, (d) => ({
+    ...d,
+    params: d.params.map((p, i) => {
+      if (i !== idx) return p;
+      if (value == null || Number.isNaN(value)) { const { default: _drop, ...rest } = p; return rest; }
+      return { ...p, default: value };
+    }),
+  }));
+}
+export function removeExprDefParam(graph: Graph, defId: NodeId, idx: number): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, params: d.params.filter((_, i) => i !== idx) }));
+}
+
+// ── CONSTS section ──────────────────────────────────────────────────────────
+export function addExprDefConst(graph: Graph, defId: NodeId): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, consts: [...d.consts, { name: uniqueExprDefName(d, 'c'), value: 0 }] }));
+}
+export function setExprDefConstName(graph: Graph, defId: NodeId, idx: number, name: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, consts: d.consts.map((c, i) => (i === idx ? { ...c, name } : c)) }));
+}
+export function setExprDefConstValue(graph: Graph, defId: NodeId, idx: number, value: number): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, consts: d.consts.map((c, i) => (i === idx ? { ...c, value } : c)) }));
+}
+export function removeExprDefConst(graph: Graph, defId: NodeId, idx: number): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, consts: d.consts.filter((_, i) => i !== idx) }));
+}
+
+// ── VARIABLES section ───────────────────────────────────────────────────────
+export function addExprDefVar(graph: Graph, defId: NodeId): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, vars: [...d.vars, { name: uniqueExprDefName(d, 'v'), formula: '' }] }));
+}
+export function setExprDefVarName(graph: Graph, defId: NodeId, idx: number, name: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, vars: d.vars.map((v, i) => (i === idx ? { ...v, name } : v)) }));
+}
+export function setExprDefVarFormula(graph: Graph, defId: NodeId, idx: number, formula: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, vars: d.vars.map((v, i) => (i === idx ? { ...v, formula } : v)) }));
+}
+export function removeExprDefVar(graph: Graph, defId: NodeId, idx: number): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, vars: d.vars.filter((_, i) => i !== idx) }));
+}
+
+// ── OUTPUTS section ─────────────────────────────────────────────────────────
+export function addExprDefOutput(graph: Graph, defId: NodeId): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, outputs: [...d.outputs, { name: uniqueExprDefName(d, 'out'), formula: '' }] }));
+}
+export function setExprDefOutputName(graph: Graph, defId: NodeId, idx: number, name: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, outputs: d.outputs.map((o, i) => (i === idx ? { ...o, name } : o)) }));
+}
+export function setExprDefOutputFormula(graph: Graph, defId: NodeId, idx: number, formula: string): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, outputs: d.outputs.map((o, i) => (i === idx ? { ...o, formula } : o)) }));
+}
+export function removeExprDefOutput(graph: Graph, defId: NodeId, idx: number): Graph {
+  return mapDef(graph, defId, (d) => ({ ...d, outputs: d.outputs.filter((_, i) => i !== idx) }));
+}
+
+// ── Instance PARAM bindings ─────────────────────────────────────────────────
+function mapExprInstance(graph: Graph, id: NodeId, fn: (n: ExprNode) => ExprNode): Graph {
   const n = graph.nodes[id];
   if (!n || n.type !== 'expr') return graph;
-  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: reconcileExprBindings(fn(n)) } });
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: fn(n) } });
 }
 
-/** Prune input bindings whose key no longer derives from the block's formulas
- *  (e.g. an input dropped out after a formula edit). FROZEN while any formula
- *  is unparseable — deriveExprInputs skips broken formulas, so the ports (and
- *  their bindings) hold their last-good shape mid-edit instead of being dropped
- *  on a transient typo. Drops the whole `bindings` field when it empties. */
-function reconcileExprBindings(n: ExprNode): ExprNode {
-  const bindings = n.bindings;
-  if (!bindings || Object.keys(bindings).length === 0) return n;
-  if (n.outputs.some((o) => !parseExpr(o.formula).ok)) return n; // freeze on a broken formula
-  const names = new Set(deriveExprInputs(n));
-  const next: Record<string, ArgValue> = {};
-  let changed = false;
-  for (const [k, v] of Object.entries(bindings)) {
-    if (names.has(k)) next[k] = v; else changed = true;
-  }
-  if (!changed) return n;
-  if (Object.keys(next).length === 0) { const { bindings: _drop, ...rest } = n; return rest as ExprNode; }
-  return { ...n, bindings: next };
+/** Bind an instance's PARAM (by def param name) to a wired source value — a
+ *  `p.*` param, a literal, or an `expr` referencing another block's output. */
+export function setExprInputBinding(graph: Graph, id: NodeId, paramName: string, arg: ArgValue): Graph {
+  return mapExprInstance(graph, id, (n) => ({ ...n, bindings: { ...(n.bindings ?? {}), [paramName]: arg } }));
 }
 
-/** Bind an Expr block's derived INPUT (by name) to a wired source value — a
- *  `p.*` param, a literal, or an `expr` referencing another block's output
- *  const. Keyed by the input NAME so a later formula edit reconciles it. */
-export function setExprInputBinding(graph: Graph, id: NodeId, inputName: string, arg: ArgValue): Graph {
-  return mapExpr(graph, id, (n) => ({ ...n, bindings: { ...(n.bindings ?? {}), [inputName]: arg } }));
-}
-
-/** Remove an Expr block input binding (back to the emit-time `0` default).
- *  Drops the whole `bindings` field when it empties. */
-export function clearExprInputBinding(graph: Graph, id: NodeId, inputName: string): Graph {
-  return mapExpr(graph, id, (n) => {
-    if (!n.bindings || !(inputName in n.bindings)) return n;
-    const { [inputName]: _drop, ...rest } = n.bindings;
+/** Remove an instance PARAM binding (back to the param default / 0). Drops the
+ *  whole `bindings` field when it empties. */
+export function clearExprInputBinding(graph: Graph, id: NodeId, paramName: string): Graph {
+  return mapExprInstance(graph, id, (n) => {
+    if (!n.bindings || !(paramName in n.bindings)) return n;
+    const { [paramName]: _drop, ...rest } = n.bindings;
     if (Object.keys(rest).length === 0) { const { bindings: _b, ...node } = n; return node as ExprNode; }
     return { ...n, bindings: rest };
   });
-}
-
-/** Append a new named output (auto-named `out2`, `out3`, … empty formula). */
-export function addExprOutput(graph: Graph, id: NodeId): Graph {
-  return mapExpr(graph, id, (n) => {
-    const used = n.outputs.map((o) => o.name);
-    let k = used.length + 1;
-    let name = `out${k}`;
-    while (used.includes(name)) name = `out${++k}`;
-    return { ...n, outputs: [...n.outputs, { name, formula: '' }] };
-  });
-}
-
-/** Set output `idx`'s name (caller validates ident/uniqueness). */
-export function setExprOutputName(graph: Graph, id: NodeId, idx: number, name: string): Graph {
-  return mapExpr(graph, id, (n) => ({
-    ...n, outputs: n.outputs.map((o, i) => (i === idx ? { ...o, name } : o)),
-  }));
-}
-
-/** Set output `idx`'s formula source. */
-export function setExprOutputFormula(graph: Graph, id: NodeId, idx: number, formula: string): Graph {
-  return mapExpr(graph, id, (n) => ({
-    ...n, outputs: n.outputs.map((o, i) => (i === idx ? { ...o, formula } : o)),
-  }));
-}
-
-/** Remove output `idx` (keeps at least one output). */
-export function removeExprOutput(graph: Graph, id: NodeId, idx: number): Graph {
-  return mapExpr(graph, id, (n) =>
-    n.outputs.length <= 1 ? n : { ...n, outputs: n.outputs.filter((_, i) => i !== idx) });
 }
 
 /** Mutate a PolyRepeatNode's `count` (number of points it generates). */

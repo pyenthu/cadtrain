@@ -36,7 +36,7 @@
 // numeric preview will add `evaluateDependencies` if/when needed.
 import { create, parseDependencies, type MathNode } from 'mathjs';
 const { parse } = create(parseDependencies);
-import type { GraphExpr, ExprNode } from './composition-graph-types';
+import type { GraphExpr, ExprDef, ExprParam, ExprConst, ExprVar, ExprOut } from './composition-graph-types';
 import {
   ALLOWED_FUNCTIONS,
   ALLOWED_CONSTANTS,
@@ -107,23 +107,23 @@ export function extractExprRefs(ast: MathNode): Set<string> {
   return refs;
 }
 
-/** Auto-derive an Expr block's INPUT socket names (hybrid port model, B.7 v2).
- *  An input is every FREE symbol across the block's output formulas that is
- *  NOT one of the block's own output names and NOT an allow-listed
- *  function/constant. Returns names in first-appearance order. Unparseable
- *  formulas are skipped (the caller freezes the block's last-good ports). */
-export function deriveExprInputs(node: ExprNode): string[] {
-  const outNames = new Set(node.outputs.map((o) => o.name));
+/** Auto-derive INPUT (param) names from a set of output formulas — every FREE
+ *  symbol across the formulas that is NOT one of the declared local names and
+ *  NOT an allow-listed function/constant, in first-appearance order. Used by
+ *  the v2→v3 hydrate migration (a v2 block's outputs → a def's `params`).
+ *  Unparseable formulas are skipped. */
+export function deriveInputNames(outputs: readonly ExprOut[]): string[] {
+  const localNames = new Set(outputs.map((o) => o.name));
   const seen = new Set<string>();
   const inputs: string[] = [];
-  for (const out of node.outputs) {
+  for (const out of outputs) {
     const parsed = parseExpr(out.formula);
     if (!parsed.ok) continue;
     parsed.ast.traverse((n: any, _path: string, parent: any) => {
       if (n.type !== 'SymbolNode') return;
       if (parent?.type === 'FunctionNode' && parent.fn === n) return; // function name
       if (ALLOWED_CONSTANTS.has(n.name)) return;                      // pi, e, …
-      if (outNames.has(n.name)) return;                               // sibling output
+      if (localNames.has(n.name)) return;                             // sibling output
       if (!seen.has(n.name)) { seen.add(n.name); inputs.push(n.name); }
     });
   }
@@ -185,6 +185,99 @@ export function exprBlockMember(nodeId: string, member: string): string {
 export function rewriteExprLocalRefs(formula: string, blockVar: string, locals: ReadonlySet<string>): string {
   return formula.replace(/(^|[^\w$.])([A-Za-z_$][\w$]*)/g, (m, pre: string, id: string) =>
     locals.has(id) ? `${pre}${blockVar}_${id}` : m);
+}
+
+// ─── ExprDef eval order (B.7 / id 914 v3) ───────────────────────────────────
+//
+// An expression DEFINITION evaluates its four sections in a fixed sequence:
+//   params (declaration order) → consts (declaration order)
+//   → vars (TOPO order among the vars) → outputs (TOPO order among the outputs).
+// `orderExprDef(def)` flattens that into one ordered item list the emitter walks
+// once (one `const V_<name>` per item). Topo edges = freeSymbols(formula) over
+// the SAME-section name set; a cycle within vars or outputs falls back to
+// declaration order + sets `cyclic` (the loud-throw signal in emit).
+
+/** One step of an ExprDef's evaluation, tagged by section + carrying its row. */
+export type OrderedExprItem =
+  | { section: 'param';  param:  ExprParam }
+  | { section: 'const';  konst:  ExprConst }
+  | { section: 'var';    vardef: ExprVar }
+  | { section: 'output'; output: ExprOut };
+
+export interface OrderedExprDef {
+  /** The flat eval order: params → consts → vars(topo) → outputs(topo). */
+  order: OrderedExprItem[];
+  /** A var-cycle or output-cycle forced declaration-order fallback. */
+  cyclic: boolean;
+  /** A name is declared more than once across the four sections. */
+  duplicate: boolean;
+}
+
+/** Topo-order a same-section list of `{name, formula}` rows by their intra-list
+ *  free-symbol edges (a row referencing a SIBLING in the same list emits
+ *  first). Cycle ⇒ declaration order + `cyclic:true`. */
+function topoFormulaNames(items: readonly { name: string; formula: string }[]): { order: string[]; cyclic: boolean } {
+  const byName = new Map(items.map((it) => [it.name, it]));
+  const names = new Set(byName.keys());
+  const colour = new Map<string, 0 | 1 | 2>();
+  const order: string[] = [];
+  let cyclic = false;
+  const visit = (name: string): void => {
+    if (cyclic) return;
+    const c = colour.get(name);
+    if (c === 2) return;
+    if (c === 1) { cyclic = true; return; }
+    const it = byName.get(name);
+    if (!it) return;
+    colour.set(name, 1);
+    for (const dep of freeSymbols(it.formula)) if (names.has(dep) && dep !== name) visit(dep);
+    colour.set(name, 2);
+    order.push(name);
+  };
+  for (const it of items) { visit(it.name); if (cyclic) break; }
+  return cyclic ? { order: items.map((i) => i.name), cyclic: true } : { order, cyclic: false };
+}
+
+/** Flatten an ExprDef into its emit/eval order (B.7 v3). Pure — never throws.
+ *  The emitter (emitExprBlocks) walks `order` once, namespacing each declared
+ *  name to `V_<name>` (V = exprBlockVar(instance.id)). */
+export function orderExprDef(def: ExprDef): OrderedExprDef {
+  const params  = def.params  ?? [];
+  const consts  = def.consts  ?? [];
+  const vars    = def.vars    ?? [];
+  const outputs = def.outputs ?? [];
+
+  // Duplicate detection across the whole flat namespace.
+  const seen = new Set<string>();
+  let duplicate = false;
+  for (const nm of [...params, ...consts, ...vars, ...outputs].map((r) => r.name)) {
+    if (seen.has(nm)) duplicate = true; else seen.add(nm);
+  }
+
+  const order: OrderedExprItem[] = [];
+  for (const p of params) order.push({ section: 'param',  param:  p });
+  for (const c of consts) order.push({ section: 'const',  konst:  c });
+
+  const varOrder = topoFormulaNames(vars);
+  const varByName = new Map(vars.map((v) => [v.name, v]));
+  for (const nm of varOrder.order) { const v = varByName.get(nm); if (v) order.push({ section: 'var', vardef: v }); }
+
+  const outOrder = topoFormulaNames(outputs);
+  const outByName = new Map(outputs.map((o) => [o.name, o]));
+  for (const nm of outOrder.order) { const o = outByName.get(nm); if (o) order.push({ section: 'output', output: o }); }
+
+  return { order, cyclic: varOrder.cyclic || outOrder.cyclic, duplicate };
+}
+
+/** The full flat name set declared by a def — what local references rewrite
+ *  against (`rewriteExprLocalRefs(formula, V, declaredNames(def))`). */
+export function declaredNames(def: ExprDef): Set<string> {
+  return new Set<string>([
+    ...(def.params ?? []).map((p) => p.name),
+    ...(def.consts ?? []).map((c) => c.name),
+    ...(def.vars ?? []).map((v) => v.name),
+    ...(def.outputs ?? []).map((o) => o.name),
+  ]);
 }
 
 // ─── topological order ──────────────────────────────────────────────────────
@@ -395,4 +488,59 @@ export function parseAndValidate(src: string, schema: ExprSchema): { ast: MathNo
   const parsed = parseExpr(src);
   if (!parsed.ok) return { ast: null, errors: [{ msg: parsed.error }] };
   return { ast: parsed.ast, errors: validateExpr(parsed.ast, schema) };
+}
+
+// ─── ExprDef formula validation (BARE local names, B.7 v3) ──────────────────
+//
+// A def's `vars`/`outputs` formulas reference BARE local names (never `p.*`/
+// `e.*`). `validateExprBare(ast, allowedNames)` is the dotted-free sibling of
+// `validateExpr`: a bare SymbolNode must be an allowed EARLIER-declared name or
+// an allow-listed constant; functions stay allow-listed (+ arity); member
+// access (`p.x`) is rejected outright; unsafe node types are rejected.
+
+/** Validate a parsed BARE-name formula AST against the set of names declared
+ *  EARLIER in the def (+ the function/constant allowlist). EMPTY ⇒ safe. */
+export function validateExprBare(ast: MathNode, allowedNames: ReadonlySet<string>): ExprError[] {
+  const errs: ExprError[] = [];
+  ast.traverse((node: any, _path: string, parent: any) => {
+    if (!SAFE_NODE_TYPES.has(node.type)) {
+      errs.push({ node, msg: `unsupported syntax: ${node.type}` });
+      return;
+    }
+    switch (node.type) {
+      case 'FunctionNode': {
+        const callee = node.fn;
+        if (!callee || callee.type !== 'SymbolNode') {
+          errs.push({ node, msg: 'disallowed call (callee must be a plain function name)' });
+          break;
+        }
+        const fn = callee.name;
+        if (!ALLOWED_FUNCTIONS.has(fn)) { errs.push({ node, msg: `disallowed function: ${fn}` }); break; }
+        const ae = arityError(fn, (node.args ?? []).length);
+        if (ae) errs.push({ node, msg: ae });
+        break;
+      }
+      case 'AccessorNode':
+        errs.push({ node, msg: `member access (${describeAccess(node)}) is not allowed in a definition` });
+        break;
+      case 'SymbolNode': {
+        if (parent?.type === 'FunctionNode' && parent.fn === node) break;
+        if (parent?.type === 'AccessorNode' && parent.object === node) break;
+        if (ALLOWED_CONSTANTS.has(node.name)) break;
+        if (allowedNames.has(node.name)) break;
+        errs.push({ node, msg: `unknown name: ${node.name}` });
+        break;
+      }
+    }
+  });
+  return errs;
+}
+
+/** Parse + bare-validate one formula against the EARLIER-declared name set.
+ *  Never throws; a parse failure surfaces as a single error (no AST). */
+export function parseAndValidateBare(formula: string, allowedNames: ReadonlySet<string>): { ast: MathNode | null; errors: ExprError[] } {
+  if (formula.trim() === '') return { ast: null, errors: [] };
+  const parsed = parseExpr(formula);
+  if (!parsed.ok) return { ast: null, errors: [{ msg: parsed.error }] };
+  return { ast: parsed.ast, errors: validateExprBare(parsed.ast, allowedNames) };
 }
