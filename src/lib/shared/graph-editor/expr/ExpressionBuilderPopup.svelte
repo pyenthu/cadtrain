@@ -1,116 +1,157 @@
 <!--
-  ExpressionBuilderPopup.svelte — the calculated-expression builder (B.6 / id
-  914, PR-3). docs/plans/expression-builder.md §4/§7.
+  ExpressionBuilderPopup.svelte — the four-section expression DEFINITION editor
+  (B.7 / id 914, v3). docs/plans/expression-builder.md §v3.5.
 
-  A popover-FIRST surface: anchored to the ƒ/Σ launcher, with a header expand
-  button that grows the SAME content into a full-screen overlay (and back) —
-  NOT a persistent tab (the SketchEditorPane overlay/expand pattern).
+  Edits a reusable per-part `ExprDef` (NOT a single node): four declared
+  sections — PARAMS · CONSTS · VARIABLES · OUTPUTS — each an editable table with
+  a `+ row` and per-row delete + per-row validation. NO host-graph `p.*`/`e.*`
+  here: a def declares all of its own names. The header carries the def name +
+  a tabs/accordions LAYOUT toggle (⊞/≡), persisted in `localStorage`
+  `cad-expr-editor-layout`.
 
-  Two synchronized sections + strict IO:
-    • SchemaPanel  — the allowed inputs (p.* params + e.* exprs) + fn palette.
-    • VISUAL pane  — the parsed AST rendered as a READ-ONLY block tree; each
-                     block rings red iff the validator flags its node.
-    • SRC textarea — the raw mathjs source; the live block tree re-derives.
-    • ValidationBanner + OutputRow — errors + the named e.<name> output + commit.
+  Autocomplete corpus (VARIABLES/OUTPUTS formula fields) = the names declared
+  EARLIER in THIS def + ALLOWED_FUNCTIONS + ALLOWED_CONSTANTS. Commit writes the
+  WHOLE ExprDef back (so every instance updates). The Σ Expressions MENU +
+  drop-instance is PR-3.
 
-  Reuses the pure model layer (parseExpr/validateExpr) merged in PR-1/PR-2 — this
-  component owns ONLY local UI $state (per-instance: it mounts per launcher, and
-  /primitives mounts many panes, so NO module singletons). Interactivity (chip
-  drag into slots) is PR-4; multi-output is PR-5.
+  Per-instance local $state only (mounts per launcher; /primitives mounts many
+  panes → NO module singletons).
 -->
 <script lang="ts">
-  import { setContext } from 'svelte';
   import { clampToViewport } from '../popover-clamp';
-  import { parseExpr, validateExpr, type ExprError, type ExprSchema } from '$lib/cad/graph-exprs';
   import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/cad/expr-schema';
-  import { EXPR_FOCUS_KEY } from './block-util';
-  import SchemaPanel from './SchemaPanel.svelte';
-  import ExpressionVisualPane from './ExpressionVisualPane.svelte';
+  import { parseAndValidateBare } from '$lib/cad/graph-exprs';
+  import type { ExprDef } from '$lib/cad/composition-graph-types';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
-  import ValidationBanner from './ValidationBanner.svelte';
-  import OutputRow from './OutputRow.svelte';
 
   let {
-    schema,
-    initial,
+    def,
     anchor,
     onCommit,
     onCancel,
   }: {
-    /** Allowed inputs (p.* params + OTHER e.* exprs — NOT the one being edited). */
-    schema: ExprSchema;
-    /** The expr being authored/edited. `name: ''` ⇒ a fresh output. */
-    initial: { name: string; src: string };
+    /** The definition being edited (a snapshot — committed back as a whole). */
+    def: ExprDef;
     /** Click point to anchor the popover (ignored when expanded). */
     anchor: { x: number; y: number };
-    onCommit: (e: { name: string; src: string }) => void;
+    onCommit: (def: ExprDef) => void;
     onCancel: () => void;
   } = $props();
 
-  // ─── per-instance local state ─────────────────────────────────────────────
-  // Seeded from `initial` in an $effect (NOT the $state initializer) so reopening
-  // the SAME mounted popup against a different `initial` reseeds, and so Svelte
-  // doesn't warn that the initializer "only captures the initial value".
-  let src = $state('');
+  type Row = { name: string };
+  type ParamRow = { name: string; default: number | null };
+  type ConstRow = { name: string; value: number | null };
+  type FormulaRow = { name: string; formula: string };
+
+  // ─── per-instance local state (seeded from `def`) ──────────────────────────
   let name = $state('');
+  let params = $state<ParamRow[]>([]);
+  let consts = $state<ConstRow[]>([]);
+  let vars = $state<FormulaRow[]>([]);
+  let outputs = $state<FormulaRow[]>([]);
   let expanded = $state(false);
 
-  let seededFrom: { name: string; src: string } | null = null;
+  // Layout pref (tabs ⊞ vs accordions ≡), persisted.
+  let layout = $state<'tabs' | 'accordions'>(((): 'tabs' | 'accordions' => {
+    try { const v = localStorage.getItem('cad-expr-editor-layout'); if (v === 'tabs' || v === 'accordions') return v; } catch {}
+    return 'tabs';
+  })());
+  let activeTab = $state<'params' | 'consts' | 'vars' | 'outputs'>('params');
+  function setLayout(l: 'tabs' | 'accordions') {
+    layout = l;
+    try { localStorage.setItem('cad-expr-editor-layout', l); } catch {}
+  }
+
+  // Seed on def-identity change (reopening the popup against a new def reseeds).
+  let seededFrom: ExprDef | null = null;
   $effect(() => {
-    if (seededFrom !== initial) {
-      seededFrom = initial;
-      src = initial.src ?? '';
-      name = initial.name ?? '';
-    }
+    if (seededFrom === def) return;
+    seededFrom = def;
+    name = def.name ?? '';
+    params = (def.params ?? []).map((p) => ({ name: p.name, default: p.default ?? null }));
+    consts = (def.consts ?? []).map((c) => ({ name: c.name, value: c.value ?? 0 }));
+    vars = (def.vars ?? []).map((v) => ({ name: v.name, formula: v.formula }));
+    outputs = (def.outputs ?? []).map((o) => ({ name: o.name, formula: o.formula }));
   });
 
-  // Focus highlight: blocks read this $state object from context and ring
-  // themselves when their node matches (set by clicking a banner error).
-  const focus = $state<{ node: any }>({ node: null });
-  setContext(EXPR_FOCUS_KEY, focus);
+  // ─── derived name sets ─────────────────────────────────────────────────────
+  let paramNames = $derived(params.map((p) => p.name));
+  let constNames = $derived(consts.map((c) => c.name));
+  let varNames = $derived(vars.map((v) => v.name));
+  let outputNames = $derived(outputs.map((o) => o.name));
+  let allNames = $derived([...paramNames, ...constNames, ...varNames, ...outputNames]);
+  let dupNames = $derived.by(() => {
+    const seen = new Set<string>(); const dup = new Set<string>();
+    for (const n of allNames) { if (n === '') continue; if (seen.has(n)) dup.add(n); else seen.add(n); }
+    return dup;
+  });
 
-  // ─── derived: parse → validate ─────────────────────────────────────────────
-  let parsed = $derived(parseExpr(src));
-  let ast = $derived(parsed.ok ? parsed.ast : null);
-  let srcEmpty = $derived(src.trim() === '');
-  let errors = $derived<ExprError[]>(
-    srcEmpty ? []
-      : ast ? validateExpr(ast, schema)
-      : [{ msg: (parsed as any).error ?? 'parse error' }],
-  );
+  // A row name is bad if blank, not a safe ident, or duplicated.
+  function nameError(n: string): string | null {
+    if (n.trim() === '') return 'name required';
+    if (!isIdentSafe(n)) return 'invalid identifier';
+    if (dupNames.has(n)) return 'duplicate name';
+    return null;
+  }
 
-  // Display lists derived from the schema's dotted member set.
-  let paramNames = $derived([...schema.inputs.dotted].filter((d) => d.startsWith('p.')).map((d) => d.slice(2)));
-  let exprNames = $derived([...schema.inputs.dotted].filter((d) => d.startsWith('e.')).map((d) => d.slice(2)));
-
-  // Autocomplete corpus for the SRC pane: the allowed INPUTS (dotted p.*/e.*)
-  // plus the allowlisted functions + constants. Sourced from the same `schema`
-  // prop + the shared allowlist — no new prop on the popup, so the parent (which
-  // another agent owns) is untouched.
-  let completions = $derived.by<Completion[]>(() => {
+  // Earlier-declared names available to a VARIABLES / OUTPUTS formula row.
+  function varAllowed(i: number): Set<string> {
+    return new Set<string>([...paramNames, ...constNames, ...varNames.slice(0, i)]);
+  }
+  function outAllowed(i: number): Set<string> {
+    return new Set<string>([...paramNames, ...constNames, ...varNames, ...outputNames.slice(0, i)]);
+  }
+  function completionsFor(names: Iterable<string>): Completion[] {
     const out: Completion[] = [];
-    for (const nm of paramNames) out.push({ text: `p.${nm}`, kind: 'param' });
-    for (const nm of exprNames) out.push({ text: `e.${nm}`, kind: 'expr' });
+    for (const n of names) if (n) out.push({ text: n, kind: 'param' });
     for (const fn of ALLOWED_FUNCTIONS) out.push({ text: fn, kind: 'fn' });
     for (const c of ALLOWED_CONSTANTS) out.push({ text: c, kind: 'const' });
     return out;
+  }
+  // First validation issue for a formula row, or null.
+  function formulaError(formula: string, allowed: Set<string>): string | null {
+    if (formula.trim() === '') return 'formula required';
+    const { errors } = parseAndValidateBare(formula, allowed);
+    return errors.length ? errors[0]!.msg : null;
+  }
+
+  let canCommit = $derived.by(() => {
+    if (name.trim() === '') return false;
+    for (const n of allNames) if (nameError(n)) return false;
+    for (let i = 0; i < vars.length; i++) if (formulaError(vars[i]!.formula, varAllowed(i))) return false;
+    for (let i = 0; i < outputs.length; i++) if (formulaError(outputs[i]!.formula, outAllowed(i))) return false;
+    return true;
   });
 
-  // ─── name validation (unique ident, no param-shadow) ───────────────────────
-  let nameError = $derived.by<string | null>(() => {
-    const n = name.trim();
-    if (n === '') return 'output name required';
-    if (!isIdentSafe(n)) return `"${n}" is not a valid identifier`;
-    if (paramNames.includes(n)) return `name shadows param p.${n}`;
-    if (exprNames.includes(n)) return `duplicate expr e.${n}`;
-    return null;
-  });
-
-  let canCommit = $derived(!srcEmpty && !!ast && errors.length === 0 && !nameError);
+  // ─── row mutators (operate on the local $state arrays) ─────────────────────
+  function uniqueName(base: string): string {
+    const used = new Set(allNames);
+    let k = 1; let n = `${base}${k}`;
+    while (used.has(n)) n = `${base}${++k}`;
+    return n;
+  }
+  const addParam = () => { params = [...params, { name: uniqueName('p'), default: null }]; };
+  const addConst = () => { consts = [...consts, { name: uniqueName('c'), value: 0 }]; };
+  const addVar = () => { vars = [...vars, { name: uniqueName('v'), formula: '' }]; };
+  const addOutput = () => { outputs = [...outputs, { name: uniqueName('out'), formula: '' }]; };
+  const delParam = (i: number) => { params = params.filter((_, j) => j !== i); };
+  const delConst = (i: number) => { consts = consts.filter((_, j) => j !== i); };
+  const delVar = (i: number) => { vars = vars.filter((_, j) => j !== i); };
+  const delOutput = (i: number) => { outputs = outputs.filter((_, j) => j !== i); };
 
   function commit() {
     if (!canCommit) return;
-    onCommit({ name: name.trim(), src: src.trim() });
+    const out: ExprDef = {
+      id: def.id,
+      name: name.trim(),
+      params: params.map((p) => (p.default == null || Number.isNaN(p.default)
+        ? { name: p.name.trim() }
+        : { name: p.name.trim(), default: p.default })),
+      consts: consts.map((c) => ({ name: c.name.trim(), value: (c.value == null || Number.isNaN(c.value)) ? 0 : c.value })),
+      vars: vars.map((v) => ({ name: v.name.trim(), formula: v.formula })),
+      outputs: outputs.map((o) => ({ name: o.name.trim(), formula: o.formula })),
+    };
+    onCommit(out);
   }
 
   function onKeydown(ev: KeyboardEvent) {
@@ -118,7 +159,15 @@
     else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(); }
   }
 
-  function focusBlock(node: any) { focus.node = node; }
+  const SECTIONS: Array<{ key: 'params' | 'consts' | 'vars' | 'outputs'; label: string }> = [
+    { key: 'params', label: 'PARAMS' },
+    { key: 'consts', label: 'CONSTS' },
+    { key: 'vars', label: 'VARIABLES' },
+    { key: 'outputs', label: 'OUTPUTS' },
+  ];
+  function sectionCount(k: string): number {
+    return k === 'params' ? params.length : k === 'consts' ? consts.length : k === 'vars' ? vars.length : outputs.length;
+  }
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -128,6 +177,76 @@
   <div class="ge-expr-shade" onclick={onCancel}></div>
 {/if}
 
+<!-- ─── section bodies (shared by tabs + accordions modes) ─────────────────── -->
+{#snippet paramsBody()}
+  <div class="ge-xs-table">
+    {#each params as p, i (i)}
+      {@const err = nameError(p.name)}
+      <div class="ge-xs-row" class:bad={!!err}>
+        <input class="ge-xs-name" type="text" placeholder="name" bind:value={p.name} title={err ?? 'param name → input socket'} />
+        <input class="ge-xs-num" type="number" step="any" placeholder="default" bind:value={p.default} title="optional default (used when the socket is unwired)" />
+        <button class="ge-xs-del" type="button" title="Remove" onclick={() => delParam(i)}>×</button>
+      </div>
+    {/each}
+    <button class="ge-xs-add" type="button" onclick={addParam}>+ row</button>
+  </div>
+{/snippet}
+
+{#snippet constsBody()}
+  <div class="ge-xs-table">
+    {#each consts as c, i (i)}
+      {@const err = nameError(c.name)}
+      <div class="ge-xs-row" class:bad={!!err}>
+        <input class="ge-xs-name" type="text" placeholder="name" bind:value={c.name} title={err ?? 'fixed local value'} />
+        <input class="ge-xs-num" type="number" step="any" placeholder="value" bind:value={c.value} title="constant value" />
+        <button class="ge-xs-del" type="button" title="Remove" onclick={() => delConst(i)}>×</button>
+      </div>
+    {/each}
+    <button class="ge-xs-add" type="button" onclick={addConst}>+ row</button>
+  </div>
+{/snippet}
+
+{#snippet varsBody()}
+  <div class="ge-xs-table">
+    {#each vars as v, i (i)}
+      {@const nErr = nameError(v.name)}
+      {@const fErr = formulaError(v.formula, varAllowed(i))}
+      <div class="ge-xs-row formula" class:bad={!!nErr || !!fErr}>
+        <input class="ge-xs-name" type="text" placeholder="name" bind:value={v.name} title={nErr ?? 'intermediate name'} />
+        <span class="ge-xs-eq">=</span>
+        <ExpressionSrcPane bind:src={v.formula} completions={completionsFor(varAllowed(i))} label="" rows={1} placeholder="od / two" />
+        <button class="ge-xs-del" type="button" title="Remove" onclick={() => delVar(i)}>×</button>
+      </div>
+      {#if fErr}<div class="ge-xs-err">{fErr}</div>{/if}
+    {/each}
+    <button class="ge-xs-add" type="button" onclick={addVar}>+ row</button>
+  </div>
+{/snippet}
+
+{#snippet outputsBody()}
+  <div class="ge-xs-table">
+    {#each outputs as o, i (i)}
+      {@const nErr = nameError(o.name)}
+      {@const fErr = formulaError(o.formula, outAllowed(i))}
+      <div class="ge-xs-row formula" class:bad={!!nErr || !!fErr}>
+        <input class="ge-xs-name out" type="text" placeholder="name" bind:value={o.name} title={nErr ?? 'output name → output socket'} />
+        <span class="ge-xs-eq">=</span>
+        <ExpressionSrcPane bind:src={o.formula} completions={completionsFor(outAllowed(i))} label="" rows={1} placeholder="diff / two" />
+        <button class="ge-xs-del" type="button" title="Remove" onclick={() => delOutput(i)}>×</button>
+      </div>
+      {#if fErr}<div class="ge-xs-err">{fErr}</div>{/if}
+    {/each}
+    <button class="ge-xs-add" type="button" onclick={addOutput}>+ row</button>
+  </div>
+{/snippet}
+
+{#snippet sectionBody(key: string)}
+  {#if key === 'params'}{@render paramsBody()}
+  {:else if key === 'consts'}{@render constsBody()}
+  {:else if key === 'vars'}{@render varsBody()}
+  {:else}{@render outputsBody()}{/if}
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="ge-expr-pop"
@@ -135,24 +254,44 @@
   use:clampToViewport={expanded ? null : anchor}
   style={expanded ? '' : `left: ${anchor.x}px; top: ${anchor.y}px;`}>
   <div class="ge-expr-head">
-    <span class="ge-expr-title">ƒ Expression builder</span>
+    <span class="ge-expr-title">ƒ Expression</span>
+    <input class="ge-expr-defname" type="text" placeholder="definition name" bind:value={name}
+      class:bad={name.trim() === ''} title="Definition name (shown in the Σ menu + on instance cards)" />
     <div class="ge-expr-head-actions">
+      <button type="button" class="ge-expr-iconbtn" class:on={layout === 'tabs'} title="Tabs layout" onclick={() => setLayout('tabs')}>⊞</button>
+      <button type="button" class="ge-expr-iconbtn" class:on={layout === 'accordions'} title="Accordions layout" onclick={() => setLayout('accordions')}>≡</button>
       <button type="button" class="ge-expr-iconbtn" title={expanded ? 'Collapse to popover' : 'Expand to full screen'} onclick={() => (expanded = !expanded)}>{expanded ? '⤡' : '⤢'}</button>
       <button type="button" class="ge-expr-iconbtn" title="Close (Esc)" onclick={onCancel}>✕</button>
     </div>
   </div>
 
   <div class="ge-expr-body">
-    <div class="ge-expr-cols">
-      <div class="ge-expr-schema-col"><SchemaPanel {paramNames} {exprNames} /></div>
-      <div class="ge-expr-visual-col"><ExpressionVisualPane {ast} {errors} hasSrc={!srcEmpty} /></div>
-    </div>
-
-    <ExpressionSrcPane bind:src {completions} />
+    {#if layout === 'tabs'}
+      <div class="ge-xs-tabs">
+        {#each SECTIONS as s (s.key)}
+          <button type="button" class="ge-xs-tab" class:on={activeTab === s.key} onclick={() => (activeTab = s.key)}>
+            {s.label}<span class="ge-xs-tabcount">{sectionCount(s.key)}</span>
+          </button>
+        {/each}
+      </div>
+      <div class="ge-xs-pane">{@render sectionBody(activeTab)}</div>
+    {:else}
+      {#each SECTIONS as s (s.key)}
+        <div class="ge-xs-acc">
+          <div class="ge-xs-acc-head">{s.label}<span class="ge-xs-tabcount">{sectionCount(s.key)}</span></div>
+          {@render sectionBody(s.key)}
+        </div>
+      {/each}
+    {/if}
 
     <div class="ge-expr-foot">
-      <ValidationBanner {errors} {nameError} onErrorClick={focusBlock} />
-      <OutputRow bind:name {canCommit} onCommit={commit} {onCancel} />
+      <span class="ge-expr-foot-msg" class:bad={!canCommit}>
+        {canCommit ? 'ready' : 'fix the highlighted rows'}
+      </span>
+      <div class="ge-expr-foot-actions">
+        <button type="button" class="ge-xs-btn" onclick={onCancel}>Cancel</button>
+        <button type="button" class="ge-xs-btn primary" disabled={!canCommit} onclick={commit}>Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -161,36 +300,76 @@
   .ge-expr-shade { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.35); z-index: 1400; }
   .ge-expr-pop {
     position: fixed; z-index: 1401;
-    width: 520px; max-width: calc(100vw - 24px);
+    width: 460px; max-width: calc(100vw - 24px);
     background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
     box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
     display: flex; flex-direction: column; overflow: hidden;
     font-family: Arial, sans-serif;
   }
-  .ge-expr-pop.expanded {
-    inset: 24px; left: 24px !important; top: 24px !important;
-    width: auto; max-width: none;
-  }
+  .ge-expr-pop.expanded { inset: 24px; left: 24px !important; top: 24px !important; width: auto; max-width: none; }
   .ge-expr-head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 10px; border-bottom: 1px solid #e5e7eb;
-    background: #f8fafc;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc;
   }
-  .ge-expr-title { font: 700 12px Arial; color: #334155; }
+  .ge-expr-title { font: 700 12px Arial; color: #334155; white-space: nowrap; }
+  .ge-expr-defname {
+    flex: 1 1 auto; min-width: 0; font: 700 12px ui-monospace, monospace; color: #0e7490;
+    padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff;
+  }
+  .ge-expr-defname.bad { border-color: #fca5a5; background: #fef2f2; }
   .ge-expr-head-actions { display: flex; gap: 4px; }
   .ge-expr-iconbtn {
-    font: 13px Arial; color: #64748b; background: #fff;
-    border: 1px solid #e2e8f0; border-radius: 5px;
+    font: 13px Arial; color: #64748b; background: #fff; border: 1px solid #e2e8f0; border-radius: 5px;
     width: 24px; height: 24px; cursor: pointer; line-height: 1;
   }
   .ge-expr-iconbtn:hover { background: #f1f5f9; color: #334155; }
-  .ge-expr-body {
-    display: flex; flex-direction: column; gap: 8px;
-    padding: 10px; flex: 1 1 auto; min-height: 0; overflow: auto;
+  .ge-expr-iconbtn.on { background: #0e7490; color: #fff; border-color: #0e7490; }
+  .ge-expr-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+  .ge-xs-tabs { display: flex; gap: 4px; }
+  .ge-xs-tab {
+    flex: 1 1 auto; font: 700 10px Arial; letter-spacing: 0.03em; color: #64748b;
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px 4px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
   }
-  .ge-expr-cols { display: flex; gap: 10px; flex: 1 1 auto; min-height: 110px; }
-  .ge-expr-schema-col { flex: 0 0 150px; min-width: 0; }
-  .ge-expr-visual-col { flex: 1 1 auto; min-width: 0; display: flex; }
-  .ge-expr-pop.expanded .ge-expr-schema-col { flex-basis: 220px; }
-  .ge-expr-foot { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+  .ge-xs-tab.on { background: #0e7490; color: #fff; border-color: #0e7490; }
+  .ge-xs-tabcount {
+    font: 700 9px ui-monospace, monospace; background: rgba(100,116,139,0.18); color: inherit;
+    border-radius: 8px; padding: 0 5px; min-width: 14px; text-align: center;
+  }
+  .ge-xs-tab.on .ge-xs-tabcount { background: rgba(255,255,255,0.25); }
+  .ge-xs-pane { min-height: 120px; }
+  .ge-xs-acc { border: 1px solid #e5e7eb; border-radius: 7px; overflow: hidden; }
+  .ge-xs-acc-head { font: 700 10px Arial; letter-spacing: 0.04em; color: #475569; background: #f8fafc; padding: 5px 8px; display: flex; gap: 6px; align-items: center; }
+
+  .ge-xs-table { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+  .ge-xs-row { display: flex; align-items: center; gap: 5px; }
+  .ge-xs-row.formula :global(.ge-expr-src) { flex: 1 1 auto; min-width: 0; }
+  .ge-xs-name {
+    flex: 0 0 92px; min-width: 0; font: 700 12px ui-monospace, monospace; color: #0e7490;
+    padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff;
+  }
+  .ge-xs-name.out { color: #0369a1; }
+  .ge-xs-num { flex: 1 1 auto; min-width: 0; font: 12px ui-monospace, monospace; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; }
+  .ge-xs-eq { color: #94a3b8; font: 13px ui-monospace, monospace; }
+  .ge-xs-row.bad .ge-xs-name { border-color: #fca5a5; background: #fef2f2; }
+  .ge-xs-del {
+    flex: 0 0 auto; width: 22px; height: 22px; line-height: 1; font: 14px Arial; color: #94a3b8;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 5px; cursor: pointer;
+  }
+  .ge-xs-del:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+  .ge-xs-err { font: 11px Arial; color: #b91c1c; padding: 0 28px 0 98px; }
+  .ge-xs-add {
+    align-self: flex-start; font: 600 11px Arial; color: #0e7490; background: #ecfeff;
+    border: 1px dashed #67e8f9; border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  .ge-xs-add:hover { background: #cffafe; }
+
+  .ge-expr-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+  .ge-expr-foot-msg { font: 600 11px Arial; color: #16a34a; }
+  .ge-expr-foot-msg.bad { color: #b45309; }
+  .ge-expr-foot-actions { display: flex; gap: 6px; }
+  .ge-xs-btn { font: 600 12px Arial; color: #334155; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .ge-xs-btn.primary { background: #0e7490; color: #fff; border-color: #0e7490; }
+  .ge-xs-btn.primary:disabled { background: #cbd5e1; border-color: #cbd5e1; cursor: not-allowed; }
 </style>

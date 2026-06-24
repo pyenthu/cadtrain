@@ -81,10 +81,11 @@ describe('expr block socket geometry (B.7 v2)', () => {
     }
   });
 
-  it('nodeSize height grows with the TALLER of {inputs, outputs}', () => {
-    // formula `a + b + c` ⇒ 3 derived inputs; 1 output ⇒ 3 rows tall.
-    const g = { nodes: {}, layout: {}, params: {} } as unknown as Graph;
-    const node = { id: 'e', type: 'expr', outputs: [{ name: 'out', formula: 'a + b + c' }] };
+  it('nodeSize height grows with the TALLER of {def.params, def.outputs}', () => {
+    // v3: the instance reads THROUGH its def — 3 params, 1 output ⇒ 3 rows tall.
+    const def = { id: 'd', name: 'x', params: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], consts: [], vars: [], outputs: [{ name: 'out', formula: 'a + b + c' }] };
+    const node = { id: 'e', type: 'expr', defId: 'd' };
+    const g = { nodes: { e: node }, layout: {}, params: {}, exprDefs: [def] } as unknown as Graph;
     const { h } = nodeSize(g, node as any);
     expect(h).toBe(EXPR_BODY_TOP + 3 * EXPR_ROW_H + 30);
   });
