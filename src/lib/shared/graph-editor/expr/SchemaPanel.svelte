@@ -1,16 +1,13 @@
 <!--
-  SchemaPanel.svelte — the strictly-controlled IO palette: the part's `p.*`
-  params + already-declared `e.*` exprs + the allowlisted function set. Chips are
-  NON-draggable this PR (drag-into-slot is PR-4) — they document exactly what the
-  expression may reference. Clicking a chip is a no-op for now (a hook point for
-  PR-4 insert).
+  SchemaPanel.svelte — the strictly-controlled INPUT palette: the part's `p.*`
+  params + already-declared `e.*` exprs. These chips document exactly what the
+  expression may reference (a compact at-a-glance reference). The allowlisted
+  FUNCTIONS + constants are NO LONGER listed here — they surface via the SRC
+  pane's type-as-you-go autocomplete (B.7 step 3), so the panel stays compact.
+  Clicking a chip is a no-op for now (a hook point for chip-insert).
 -->
 <script lang="ts">
-  import { ALLOWED_FUNCTIONS } from '$lib/cad/expr-schema';
-
   let { paramNames, exprNames }: { paramNames: string[]; exprNames: string[] } = $props();
-
-  const fns = [...ALLOWED_FUNCTIONS];
 </script>
 
 <div class="ge-expr-schema">
@@ -40,14 +37,7 @@
     </div>
   </div>
 
-  <div class="ge-expr-schema-group">
-    <div class="ge-expr-schema-title">functions</div>
-    <div class="ge-expr-schema-chips">
-      {#each fns as fn}
-        <span class="ge-expr-schema-chip fn">{fn}</span>
-      {/each}
-    </div>
-  </div>
+  <div class="ge-expr-schema-hint">functions &amp; constants — type to autocomplete in SRC</div>
 </div>
 
 <style>
@@ -65,5 +55,5 @@
   }
   .ge-expr-schema-chip.p { color: #166534; background: #dcfce7; border-color: #86efac; }
   .ge-expr-schema-chip.e { color: #6b21a8; background: #f3e8ff; border-color: #d8b4fe; }
-  .ge-expr-schema-chip.fn { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+  .ge-expr-schema-hint { font: italic 10px Arial; color: #cbd5e1; line-height: 1.35; }
 </style>
