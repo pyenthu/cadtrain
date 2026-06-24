@@ -18,10 +18,6 @@
   // before their children in the nodes array.
   const initialNodes = [...ARCH_CONTAINERS, ...ARCH_NODES] as Node<ArchNodeData>[];
 
-  // SvelteFlow needs $state arrays so it can sync internal drag/select state.
-  let nodes = $state<Node<ArchNodeData>[]>(initialNodes);
-  let edges = $state<Edge<ArchEdgeData>[]>(ARCH_EDGES as Edge<ArchEdgeData>[]);
-
   const nodeTypes = { archNode: ArchNode, containerNode: ContainerNode };
 
   // Edge stroke colour per relationship kind
@@ -52,29 +48,37 @@
   }
 
   // Annotate edges with style, animation, arrowheads, and C4 summary labels.
-  let styledEdges = $derived(
-    edges.map((e) => {
-      const kind = e.data?.edgeKind;
-      const isSummary = kind === 'summary';
-      return {
-        ...e,
-        style: edgeStyle(kind),
-        animated: kind === 'flow',
-        markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor(kind), width: 16, height: 16 },
-        type: 'smoothstep',
-        zIndex: isSummary ? 5 : 0,
-        // Surface the relationship label on the bold container-level arrows.
-        ...(isSummary && e.data?.label
-          ? {
-              label: e.data.label,
-              labelStyle: 'fill:#334155;font-weight:700;font-size:11px;',
-              labelBgStyle: 'fill:#ffffff;',
-              labelBgPadding: [6, 3] as [number, number],
-              labelBgBorderRadius: 4,
-            }
-          : {}),
-      };
-    })
+  // The styling is STATIC (it never depends on reactive state), so compute it
+  // once. SvelteFlow OWNS its edges array — it must receive a writable
+  // `$state.raw`, not a read-only `$derived`; passing a derived left every edge
+  // unrendered (markers in <defs> but zero `.svelte-flow__edge-path`).
+  function styleEdge(e: Edge<ArchEdgeData>) {
+    const kind = e.data?.edgeKind;
+    const isSummary = kind === 'summary';
+    return {
+      ...e,
+      style: edgeStyle(kind),
+      animated: kind === 'flow',
+      markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor(kind), width: 16, height: 16 },
+      type: 'smoothstep',
+      zIndex: isSummary ? 5 : 0,
+      // Surface the relationship label on the bold container-level arrows.
+      ...(isSummary && e.data?.label
+        ? {
+            label: e.data.label,
+            labelStyle: 'fill:#334155;font-weight:700;font-size:11px;',
+            labelBgStyle: 'fill:#ffffff;',
+            labelBgPadding: [6, 3] as [number, number],
+            labelBgBorderRadius: 4,
+          }
+        : {}),
+    };
+  }
+
+  // SvelteFlow needs writable `$state.raw` arrays it can own (drag/select/measure).
+  let nodes = $state.raw<Node<ArchNodeData>[]>(initialNodes);
+  let edges = $state.raw<Edge<ArchEdgeData>[]>(
+    (ARCH_EDGES as Edge<ArchEdgeData>[]).map(styleEdge) as Edge<ArchEdgeData>[]
   );
 
   const colorMode: ColorMode = 'light';
@@ -82,8 +86,8 @@
 
 <div class="arch-canvas">
   <SvelteFlow
-    {nodes}
-    edges={styledEdges}
+    bind:nodes
+    bind:edges
     {nodeTypes}
     {colorMode}
     fitView
