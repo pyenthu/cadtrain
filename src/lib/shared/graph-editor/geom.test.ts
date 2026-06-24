@@ -6,6 +6,7 @@ import {
   inlineXformStrip, inlineXformSocket, inlineXformOutput,
   attachedTransforms, transformBaseCall, transformChainBase, isAttachedTransform,
   xformStripAt, xformOutputAt, xformArrows,
+  exprRowTop, exprInputSockY, exprOutputSockY, EXPR_BODY_TOP, EXPR_ROW_H,
   STRIP_W, STRIP_H, STRIP_TOP, PARAM_H, CARD_PAD, CARD_TITLE_H, POLY_VTX_PITCH, POLY_RREF_PITCH,
 } from './geom';
 import type { Graph } from './composition-graph';
@@ -59,6 +60,33 @@ describe('sketch row geometry (cols=1, single-column walk)', () => {
 
   it('first row top is the 36px header offset', () => {
     expect(sketchRowTop(node, 0, 1)).toBe(36);
+  });
+});
+
+describe('expr block socket geometry (B.7 v2)', () => {
+  // Input sockets (left edge) + output sockets (right edge) share ONE row
+  // pitch so a left/right pair on the same visual row line up; indices are
+  // independent (different counts). nodeSize must size to the taller column.
+  it('rows are a cumulative walk from EXPR_BODY_TOP at EXPR_ROW_H pitch', () => {
+    expect(exprRowTop(0)).toBe(EXPR_BODY_TOP);
+    expect(exprRowTop(1)).toBe(EXPR_BODY_TOP + EXPR_ROW_H);
+    expect(exprRowTop(2)).toBe(EXPR_BODY_TOP + 2 * EXPR_ROW_H);
+  });
+
+  it('input + output sockets centre on their row (line-aligned outputs)', () => {
+    for (const i of [0, 1, 2]) {
+      expect(exprInputSockY(i) - exprRowTop(i)).toBe(EXPR_ROW_H / 2);
+      expect(exprOutputSockY(i) - exprRowTop(i)).toBe(EXPR_ROW_H / 2);
+      expect(exprInputSockY(i)).toBe(exprOutputSockY(i));
+    }
+  });
+
+  it('nodeSize height grows with the TALLER of {inputs, outputs}', () => {
+    // formula `a + b + c` ⇒ 3 derived inputs; 1 output ⇒ 3 rows tall.
+    const g = { nodes: {}, layout: {}, params: {} } as unknown as Graph;
+    const node = { id: 'e', type: 'expr', outputs: [{ name: 'out', formula: 'a + b + c' }] };
+    const { h } = nodeSize(g, node as any);
+    expect(h).toBe(EXPR_BODY_TOP + 3 * EXPR_ROW_H + 30);
   });
 });
 

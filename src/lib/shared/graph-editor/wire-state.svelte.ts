@@ -274,6 +274,18 @@ export class WireState {
     this.from = null; this.mouse = null;
   };
 
+  /** Drop a wire onto an Expr block's INPUT socket (B.7 v2). The block's
+   *  inputs are AUTO-DERIVED from its formulas and carry NO stored binding yet
+   *  (ExprNode has only `outputs`), and emitNodeExpr returns null, so there is
+   *  no persistence/emit target to commit a param→input wire to. This handler
+   *  therefore just clears the in-flight wire cleanly (the socket is a live
+   *  drop target so the user gets feedback) — committing the binding is a
+   *  later step (needs the input-binding + emit-consumption model). */
+  endWireOnExprInput = (ev: PointerEvent, _exprId: NodeId, _inputName: string) => {
+    ev.stopPropagation();
+    this.from = null; this.mouse = null;
+  };
+
   /** Drag-wire ending on an EXISTING part row's socket — rebind that index. */
   endWireOnRepeatChildAt = (ev: PointerEvent, repeatId: NodeId, idx: number) => {
     const from = this.from;

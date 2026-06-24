@@ -28,6 +28,10 @@
     setPolyRepeatBindingName,
     setPolyRepeatBindingValue,
     removePolyRepeatBinding,
+    addExprOutput,
+    setExprOutputName,
+    setExprOutputFormula,
+    removeExprOutput,
     removeNode,
     asLiteral,
     STACK_REF_PARAM,
@@ -41,11 +45,13 @@
   import {
     extractParamRefs,
     polySockR, polySockZ, polySockRef,
+    exprInputSockY, exprOutputSockY,
     attachedTransforms,
     xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
     inlineCardH, containerSlotY,
     STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
+  import { deriveExprInputs } from '$lib/cad/graph-exprs';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
   import { producerLabel, parseProfileExpr } from './args';
   import SketchNodeCard from './SketchNodeCard.svelte';
@@ -91,6 +97,7 @@
     openPolyRepeatExprPop,
     openPolyBindingExprPop,
     openPolyRepeatCountExprPop,
+    openExprNodeEditor,
     setHoverVertex,
     clearHoverVertex,
     openPolyPreview,
@@ -141,6 +148,7 @@
     openPolyRepeatExprPop: (ev: MouseEvent, repeatId: string, axis: 'r' | 'z', prefill: string) => void;
     openPolyBindingExprPop: (ev: MouseEvent, repeatId: string, bindingIdx: number, prefill: string) => void;
     openPolyRepeatCountExprPop: (ev: MouseEvent, repeatId: string, prefill: string) => void;
+    openExprNodeEditor: (ev: MouseEvent, exprId: string, outputIdx: number) => void;
     setHoverVertex: (polyId: string, idx: number) => void;
     clearHoverVertex: (polyId: string, idx: number) => void;
     openPolyPreview: (ev: PointerEvent, polyId: string) => void;
@@ -1360,6 +1368,89 @@
                   class={`ge-sock in poly-repeat-in${pr.count?.kind === 'param' ? ' wired' : ''}`}
                   cx="0" cy="57" r="5"
                   onpointerup={(ev) => wire.endWireOnPolyRepeatCount(ev, pr.id)}/>
+
+              {:else if n.type === 'expr'}
+                {@const ex = n as any}
+                {@const exInputs = deriveExprInputs(ex)}
+                <!-- Expr block (B.7 v2) — a floating CALCULATION node (prior art:
+                     poly_repeat). AUTO-DERIVED input sockets on the LEFT edge
+                     (one per free symbol in the formulas) + DECLARED output
+                     sockets on the RIGHT edge (one per output, line-aligned to
+                     its row). Output rows show `name = formula`; the formula is
+                     editable inline (commit on Enter) and via the ✎ popover. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg expr"
+                  width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="10" y="20" class="ge-node-title">ƒ expr · {ex.outputs.length} out</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
+                  data-tip="Delete this expression block"
+                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <foreignObject x="6" y="32" width={size.w - 12} height={size.h - 38} class="ge-fo">
+                  <div class="ge-expr-card" xmlns="http://www.w3.org/1999/xhtml">
+                    <!-- Input gutter — one label per derived input, aligned to
+                         the left-edge sockets. Empty when no free symbols. -->
+                    <div class="ge-expr-inputs">
+                      {#each exInputs as inName (inName)}
+                        <div class="ge-expr-in-label" title={`Input ${inName} (auto-derived from the formulas)`}>{inName}</div>
+                      {/each}
+                      {#if exInputs.length === 0}
+                        <div class="ge-expr-in-label muted">(no inputs)</div>
+                      {/if}
+                    </div>
+                    <!-- Output rows — each `name = formula`, editable inline. -->
+                    <div class="ge-expr-outputs">
+                      {#each (ex.outputs as Array<any>) as out, oIdx (oIdx)}
+                        <div class="ge-expr-out-row">
+                          <input class="ge-poly-input ge-expr-name" type="text" maxlength="16"
+                            value={out.name}
+                            title="Output name (its socket on the right edge)"
+                            onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                            onchange={(e) => { setGraph(setExprOutputName(graph, n.id, oIdx, String((e.target as HTMLInputElement).value))); }}/>
+                          <span class="ge-expr-eq">=</span>
+                          <input class="ge-poly-input expr ge-expr-formula" type="text"
+                            value={out.formula}
+                            placeholder="a + b"
+                            title="Formula — local input names + sibling outputs (commit on Enter)"
+                            onkeydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                            onchange={(e) => { setGraph(setExprOutputFormula(graph, n.id, oIdx, String((e.target as HTMLInputElement).value))); }}/>
+                          <button class="ge-poly-fx" type="button"
+                            title="Edit this output in the expression builder"
+                            onclick={(ev) => openExprNodeEditor(ev as any, n.id, oIdx)}>✎</button>
+                          <button class="ge-poly-del" type="button" title="Remove this output" disabled={ex.outputs.length <= 1}
+                            onclick={() => { setGraph(removeExprOutput(graph, n.id, oIdx)); }}>×</button>
+                        </div>
+                      {/each}
+                      <div class="ge-expr-add-row">
+                        <button class="ge-poly-add" type="button" title="Add another named output"
+                          onclick={() => { setGraph(addExprOutput(graph, n.id)); }}>+ output</button>
+                      </div>
+                    </div>
+                  </div>
+                </foreignObject>
+                <!-- INPUT sockets (left edge) — one per derived input, aligned
+                     to its gutter label. Live drop targets; the param→input
+                     BINDING is deferred (ExprNode stores no input bindings yet),
+                     so the handler just clears the wire. -->
+                {#each exInputs as inName, iIdx (inName)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in expr-in"
+                    cx="0" cy={exprInputSockY(iIdx)} r="5"
+                    onpointerup={(ev) => wire.endWireOnExprInput(ev, n.id, inName)}/>
+                {/each}
+                <!-- OUTPUT sockets (right edge) — one per output, line-aligned to
+                     that output's row. Start a wire toward a consumer. -->
+                {#each (ex.outputs as Array<any>) as out, oIdx (oIdx)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock out expr-out"
+                    cx={size.w} cy={exprOutputSockY(oIdx)} r="5"
+                    onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+                {/each}
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -1421,6 +1512,21 @@
   /* PolyRepeat card (#157) — violet skin matches the parametric-vertex
      palette + the repeat-ref row inside polygons. */
   .ge-node-bg.poly-repeat { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 2; }
+  /* Expr block (B.7 v2) — teal skin so it reads as a CALCULATION node,
+     distinct from the violet profile-loop palette. */
+  .ge-node-bg.expr { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
+  .ge-expr-card { display: flex; gap: 6px; font: 11px Arial; height: 100%; }
+  .ge-expr-inputs { display: flex; flex-direction: column; gap: 0; flex: 0 0 auto; min-width: 40px; }
+  .ge-expr-in-label { height: 26px; line-height: 26px; font: 600 11px ui-monospace, monospace; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ge-expr-in-label.muted { color: #94a3b8; font-style: italic; font-weight: 400; }
+  .ge-expr-outputs { display: flex; flex-direction: column; gap: 0; flex: 1 1 auto; min-width: 0; }
+  .ge-expr-out-row { display: flex; align-items: center; gap: 3px; height: 26px; }
+  .ge-expr-name { flex: 0 0 46px; min-width: 0; text-align: right; color: #0e7490; font-weight: 700; }
+  .ge-expr-eq { color: #64748b; }
+  .ge-expr-formula { flex: 1 1 auto; min-width: 0; }
+  .ge-expr-add-row { display: flex; margin-top: 4px; }
+  .ge-sock.expr-in { fill: #67e8f9; stroke: #0e7490; }
+  .ge-sock.expr-out { fill: #06b6d4; stroke: #0e7490; }
   /* Repeat count input — inline in the title row, big + editable. */
   .ge-repeat-count-inline { width: 100%; box-sizing: border-box; padding: 2px 6px; font: 700 14px ui-monospace, monospace; color: #be185d; background: #fff; border: 1px solid #fbcfe8; border-radius: 4px; text-align: center; cursor: ew-resize; }
   .ge-repeat-count-inline:focus { outline: 1px solid #be185d; cursor: text; }
