@@ -60,6 +60,9 @@
     setTransformAxisValue,
     setTxfmnAxis,
     setViewport,
+    addExprNode,
+    setExprOutputName,
+    setExprOutputFormula,
     addStackPlaceholder,
     addRepeatPlaceholder,
     setRepeatCount,
@@ -262,23 +265,61 @@
   // time; commit writes/updates it into graph.exprs (multi-output = PR-5). The
   // schema excludes the expr being edited so it can't reference itself, and the
   // name can't shadow a param or duplicate another expr (enforced in the popup).
-  let exprPop = $state<{ anchor: { x: number; y: number }; initial: { name: string; src: string } } | null>(null);
+  // `target` is set when the popover is editing ONE OUTPUT of an on-canvas Expr
+  // BLOCK node (B.7 v2, opened by its ✎ button) rather than a part-level
+  // graph.exprs entry (the rail-Σ launcher). Commit routes on it.
+  let exprPop = $state<{
+    anchor: { x: number; y: number };
+    initial: { name: string; src: string };
+    target?: { exprId: string; outputIdx: number };
+  } | null>(null);
   // Schema = the part's param names + OTHER declared expr names (minus the one
-  // being edited). Rebuilt each open.
-  let exprPopSchema = $derived(
-    exprPop
-      ? buildExprSchema(
-          paramEntries.map(([nm]) => nm),
-          (graph.exprs ?? []).map((e) => e.name).filter((nm) => nm !== exprPop!.initial.name),
-        )
-      : null,
-  );
+  // being edited). For a BLOCK output the "other exprs" are the block's SIBLING
+  // output names; for the rail-Σ launcher they're the graph.exprs names. Rebuilt
+  // each open.
+  let exprPopSchema = $derived.by(() => {
+    if (!exprPop) return null;
+    let exprNames: string[];
+    if (exprPop.target) {
+      const node = graph.nodes[exprPop.target.exprId] as any;
+      exprNames = ((node?.outputs ?? []) as Array<{ name: string }>)
+        .map((o) => o.name)
+        .filter((_nm, i) => i !== exprPop!.target!.outputIdx);
+    } else {
+      exprNames = (graph.exprs ?? []).map((e) => e.name).filter((nm) => nm !== exprPop!.initial.name);
+    }
+    return buildExprSchema(paramEntries.map(([nm]) => nm), exprNames);
+  });
   function openExprPop(ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     // Anchor just right of the rail button.
     exprPop = { anchor: { x: r.right + 8, y: r.top }, initial: { name: '', src: '' } };
   }
+  /** Open the expression builder bound to ONE output of an on-canvas Expr block
+   *  (the card's ✎ button). Prefills the output's name + formula; commit writes
+   *  back via setExprOutputName/setExprOutputFormula. */
+  function openExprNodeEditor(ev: MouseEvent, exprId: string, outputIdx: number) {
+    const node = graph.nodes[exprId] as any;
+    const out = node?.outputs?.[outputIdx];
+    if (!out) return;
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    exprPop = {
+      anchor: { x: r.right + 8, y: r.top },
+      initial: { name: out.name, src: out.formula },
+      target: { exprId, outputIdx },
+    };
+  }
   function commitExpr(e: { name: string; src: string }) {
+    const target = exprPop?.target;
+    if (target) {
+      // Editing an on-canvas Expr BLOCK output — write back via the mutators.
+      let g = setExprOutputName(graph, target.exprId, target.outputIdx, e.name);
+      g = setExprOutputFormula(g, target.exprId, target.outputIdx, e.src);
+      graph = g;
+      exprPop = null;
+      return;
+    }
+    // Part-level graph.exprs (rail-Σ launcher).
     const list = (graph.exprs ?? []).slice();
     const idx = list.findIndex((x) => x.name === e.name);
     if (idx >= 0) list[idx] = { name: e.name, src: e.src };
@@ -2502,6 +2543,13 @@
     closePicker();
     graph = addSketch(graph).graph;
   }
+  /** Drop an Expr block (B.7 v2) — a floating calculation node with derived
+   *  input sockets + declared output sockets. Edited inline or via its ✎
+   *  popover. */
+  function dropExpr() {
+    closePicker();
+    graph = addExprNode(graph).graph;
+  }
   /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
   // argStr / argFrom → graph-editor-args.ts (P2/G2).
 
@@ -3990,6 +4038,7 @@
               {openPolyRepeatExprPop}
               {openPolyBindingExprPop}
               {openPolyRepeatCountExprPop}
+              {openExprNodeEditor}
               {setHoverVertex}
               {clearHoverVertex}
               {openPolyPreview}
@@ -4793,6 +4842,9 @@
       </button>
       <button class="ge-pick-item" type="button" onclick={dropSketch}>
         <span class="ge-pick-icon">✐</span><span class="ge-pick-name">sketch</span><span class="ge-pick-hint">line·arc·fillet</span>
+      </button>
+      <button class="ge-pick-item" type="button" onclick={dropExpr}>
+        <span class="ge-pick-icon">ƒ</span><span class="ge-pick-name">expr</span><span class="ge-pick-hint">calc block</span>
       </button>
       <div class="ge-cm-sep"></div>
       <button class="ge-pick-item parent" type="button"

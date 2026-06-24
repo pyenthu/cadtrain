@@ -24,6 +24,7 @@ import {
   type RotNode,
 } from '$lib/cad/composition-graph';
 import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
+import { deriveExprInputs } from '$lib/cad/graph-exprs';
 
 // ─── Params-card geometry constants ────────────────────────────────────────
 // Outer card sits at (CARD_X0, CARD_Y0); the title bar takes CARD_TITLE_H;
@@ -68,6 +69,24 @@ export const STRIP_PAD = 6;       // strip inner horizontal padding (socket x ma
 // ─── Mini sketch-overlay canvas constants ──────────────────────────────────
 export const MINI_PX = 10;
 export const MINI_PY = 10;
+
+// ─── Expr block (B.7 v2) card geometry ──────────────────────────────────────
+// The Expr block is a floating calculation node (prior art: poly_repeat): N
+// AUTO-DERIVED input sockets on the LEFT edge (one per deriveExprInputs name)
+// + N DECLARED output sockets on the RIGHT edge (one per output, line-aligned
+// to that output's row — the Dynamo Code-Block pattern). Body starts under the
+// title + divider at EXPR_BODY_TOP; every row is EXPR_ROW_H tall. Input and
+// output indices are INDEPENDENT (different counts) but share the same row
+// pitch so a left socket and the right socket on the same visual row line up.
+export const EXPR_BODY_TOP = 32;   // title text y≈20 + divider y=28 + 4px gap
+export const EXPR_ROW_H = 26;      // one output row / one input socket slot
+/** Card-local Y of the idx-th row's TOP edge (0 = card top). */
+export function exprRowTop(idx: number): number { return EXPR_BODY_TOP + idx * EXPR_ROW_H; }
+/** Card-local Y of the idx-th INPUT socket centre (left edge). */
+export function exprInputSockY(idx: number): number { return exprRowTop(idx) + EXPR_ROW_H / 2; }
+/** Card-local Y of the idx-th OUTPUT socket centre (right edge), aligned to
+ *  that output's row (line-aligned outputs). */
+export function exprOutputSockY(idx: number): number { return exprRowTop(idx) + EXPR_ROW_H / 2; }
 
 // ─── card obstacle type (passed into `bezier`) ─────────────────────────────
 export type CardObstacle = { id: string; x: number; y: number; w: number; h: number };
@@ -206,6 +225,7 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'repeat') return 170;
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
   if (node.type === 'polygon') return 180; // input + chrome fits at 180
+  if (node.type === 'expr') return 200;    // input-col + output-row (name=formula)
   return 130;
 }
 
@@ -228,6 +248,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'txfmn') return 168;
   if (node.type === 'repeat') return 230;
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
+  if (node.type === 'expr') return 260;    // input gutter + name=formula row
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
     for (const cid of (node as any).children ?? []) {
@@ -353,6 +374,14 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     const bindings = (node as any).bindings ?? [];
     const bindingsH = 28 + bindings.length * 22 + 24; // hdr + rows + add btn
     return { w: 240, h: 154 + bindingsH - 24 };
+  }
+  if (node.type === 'expr') {
+    // Height = the taller of {input sockets, output rows} so neither column
+    // clips, + the trailing "+ output" button row + bottom pad.
+    const outs = (node as any).outputs ?? [];
+    const ins = deriveExprInputs(node as any);
+    const rows = Math.max(1, outs.length, ins.length);
+    return { w, h: EXPR_BODY_TOP + rows * EXPR_ROW_H + 30 };
   }
   return { w, h: 80 };
 }
