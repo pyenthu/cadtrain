@@ -255,45 +255,59 @@ export type SketchNode = {
   scaleY?: ArgValue;
 };
 
-/** One named output of an Expr block — a result `name` + its `formula`. The
- *  formula is mathjs source using ONLY the block's LOCAL names: its declared
- *  `inputs` + the names of OTHER outputs on the same block (local topo). It
- *  never references `p.*`/`e.*` — the graph wiring supplies the input values.
- *  Each output gets its own output socket on the block's right edge. */
-export type ExprOutput = { name: string; formula: string };
+// ─── Expression DEFINITIONS + instances (B.7 / id 914, v3) ──────────────────
+//
+// v3 splits the v2 self-contained Expr block into a reusable per-part
+// DEFINITION (`ExprDef`, on `graph.exprDefs[]`) + thin INSTANCE nodes
+// (`ExprNode{defId,bindings}`). Editing a def updates every instance at once;
+// instances differ only by their per-PARAM input wiring. A def declares ALL of
+// its own names across FOUR sections — it never references the host graph's
+// `p.*`/`e.*`. See docs/plans/expression-builder.md §v3.
 
-/** Expr block (B.7 / id 914, v2) — a first-class CALCULATION node. NOT a
+/** PARAMS section — a declared INPUT. Each param becomes an input socket on
+ *  every instance, wired per instance (else falls back to `default`, else 0). */
+export type ExprParam = { name: string; default?: number };
+/** CONSTS section — a fixed local value, the same for every instance (no
+ *  socket). */
+export type ExprConst = { name: string; value: number };
+/** VARIABLES section — an internal intermediate, evaluated in topo order. Its
+ *  formula references earlier-declared names + the function/constant allowlist;
+ *  no socket. */
+export type ExprVar = { name: string; formula: string };
+/** OUTPUTS section — an exposed result. Each output becomes an output socket on
+ *  every instance; its formula references earlier-declared names + the allowlist. */
+export type ExprOut = { name: string; formula: string };
+
+/** A reusable per-part expression DEFINITION (B.7 v3). One flat name scope:
+ *  `params ∪ consts ∪ vars ∪ outputs` names must be unique. A `vars`/`outputs`
+ *  formula may reference any name declared EARLIER in the eval order
+ *  (params → consts → vars(topo) → outputs(topo)) + the allow-listed
+ *  functions/constants; any other free symbol is a validation error (sockets
+ *  come ONLY from `params`/`outputs`). Lives on `graph.exprDefs[]`,
+ *  serialised in `meta.graph`. */
+export type ExprDef = {
+  id: NodeId;            // stable; instances reference it via `defId`
+  name: string;         // shown in the Σ menu + on the instance card
+  params:  ExprParam[]; // declared INPUTS → input sockets (wired per instance)
+  consts:  ExprConst[]; // fixed local values, same for every instance
+  vars:    ExprVar[];   // internal intermediates (topo order)
+  outputs: ExprOut[];   // exposed results → output sockets
+};
+
+/** Expr INSTANCE node (B.7 v3) — a thin reference to an `ExprDef`. NOT a
  *  geometry producer: it contributes numeric `const` bindings to the emit
- *  prelude (one per output) rather than a Manifold expression.
- *
- *  **Hybrid port model** (prior art: Dynamo Code Block + Unreal Math Expression):
- *  - **inputs are AUTO-DERIVED** from the formulas — every free symbol that is
- *    NOT an output name and NOT an allow-listed function/constant becomes an
- *    INPUT SOCKET on the left edge, wired in from an external value (a `p.*`
- *    param, another node's value, or another block's output). Derivation lives
- *    in `deriveExprInputs` (graph-exprs.ts, mathjs AST walk). Wires are keyed by
- *    input NAME so editing a formula reconciles ports without dropping wires.
- *  - **outputs are DECLARED** — named `{name, formula}` rows, each an OUTPUT
- *    SOCKET on the right edge, referenced wherever its socket is wired. Outputs
- *    are the block's stable contract to downstream nodes (they don't flicker as
- *    you type, unlike Dynamo's per-line outputs).
- *
- *  Formula validation reuses the mathjs engine (`graph-exprs.ts` /
- *  `expr-schema.ts`): a formula's allowed names are
- *  {derived inputs} ∪ {prior output names} ∪ the function/constant allowlist.
- *  See `docs/plans/expression-builder.md` (v0). */
+ *  prelude (params → consts → vars → outputs, namespaced per-instance by
+ *  `exprBlockVar(node.id)`) rather than a Manifold expression. Instances differ
+ *  ONLY by their per-PARAM input wiring (`bindings`). */
 export type ExprNode = {
   id: NodeId;
   type: 'expr';
-  /** Named output formulas → output sockets. Multiple per block. Inputs are
-   *  NOT stored — they are derived from these formulas (see deriveExprInputs). */
-  outputs: ExprOutput[];
-  /** Input WIRES, keyed by the DERIVED input NAME → the wired source value (a
+  /** → ExprDef.id. The def supplies the params/consts/vars/outputs. */
+  defId: NodeId;
+  /** Input WIRES, keyed by the def's PARAM NAME → the wired source value (a
    *  `p.*` param, a literal, or an `expr` referencing another block's emitted
-   *  output const). Name-keyed (not index-keyed) so re-deriving inputs after a
-   *  formula edit reconciles ports without dropping wires; bindings whose name
-   *  no longer derives are pruned. SPARSE/optional → absent ⇒ all inputs emit
-   *  with a safe `0` default. Step 1.5 (B.7 v2). */
+   *  output const). A param absent here falls back to its `default`, else 0.
+   *  SPARSE/optional → absent ⇒ every param emits with its default / 0. */
   bindings?: Record<string, ArgValue>;
 };
 
@@ -376,6 +390,12 @@ export type Graph = {
    *  …;` block ahead of the body; references to `e.<name>` in any ArgValue
    *  `expr` resolve to those consts. See src/lib/cad/graph-exprs.ts. */
   exprs?: GraphExpr[];
+  /** Expression DEFINITIONS (B.7 / id 914, v3) — reusable per-part calc defs,
+   *  instanced by `ExprNode{defId}` nodes. SPARSE + optional → absent/empty ⇒
+   *  byte-identical emit (no instances ⇒ no prelude). Editing a def updates
+   *  every instance. Round-trips via serialiseGraph/hydrateGraph. See
+   *  docs/plans/expression-builder.md §v3 + src/lib/cad/graph-exprs.ts. */
+  exprDefs?: ExprDef[];
 };
 
 /** One part's appearance overrides (all sparse/optional). */

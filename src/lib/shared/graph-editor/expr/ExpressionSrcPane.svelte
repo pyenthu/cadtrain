@@ -24,7 +24,10 @@
   let {
     src = $bindable(),
     completions = [],
-  }: { src: string; completions?: Completion[] } = $props();
+    label = 'SRC',
+    rows = 6,
+    placeholder = 'max((p.od - p.id) / 2, 0)',
+  }: { src: string; completions?: Completion[]; label?: string; rows?: number; placeholder?: string } = $props();
 
   let ta: HTMLTextAreaElement | undefined;
   let caret = $state(0);
@@ -114,22 +117,21 @@
   }
 </script>
 
-<div class="ge-expr-src">
-  <label class="ge-expr-src-label" for="ge-expr-src-ta">SRC</label>
+<div class="ge-expr-src" class:compact={!label}>
+  {#if label}<span class="ge-expr-src-label">{label}</span>{/if}
   <div class="ge-expr-src-wrap">
     <textarea
       bind:this={ta}
-      id="ge-expr-src-ta"
       class="ge-expr-src-ta"
       spellcheck="false"
       autocomplete="off"
-      rows="6"
+      {rows}
       bind:value={src}
       oninput={onInput}
       onkeyup={syncCaret}
       onclick={syncCaret}
       onkeydown={onKeydown}
-      placeholder="max((p.od - p.id) / 2, 0)"></textarea>
+      {placeholder}></textarea>
 
     {#if open}
       <ul class="ge-expr-ac" role="listbox">
@@ -153,6 +155,8 @@
 
 <style>
   .ge-expr-src { display: flex; flex-direction: column; gap: 3px; }
+  .ge-expr-src.compact { flex: 1 1 auto; min-width: 0; gap: 0; }
+  .ge-expr-src.compact .ge-expr-src-ta { resize: none; padding: 4px 6px; line-height: 1.3; min-height: 26px; }
   .ge-expr-src-label { font: 600 10px Arial; letter-spacing: 0.05em; color: #6b7280; }
   .ge-expr-src-wrap { position: relative; }
   .ge-expr-src-ta {
