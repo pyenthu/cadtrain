@@ -82,8 +82,16 @@ const PITCH = 84;        // vertical gap between component nodes
 
 // ──────────────────────────────────────────────────────────
 // CONTAINER + SYSTEM NODES  (must come BEFORE their children)
+//
+// Authored with parent/extent nesting for readability, but FLATTENED to
+// absolute coordinates at export time (see bottom of file).  @xyflow/svelte
+// 1.x drops every edge whose endpoint is a nested child whose parent isn't
+// measured at edge-build time (which happens when this graph renders below the
+// fold) — getEdgePosition() returns null → zero `.svelte-flow__edge-path`
+// elements.  Flattening keeps the C4 container BOXES as plain background nodes
+// while letting edges resolve exactly like the old flat (working) version.
 // ──────────────────────────────────────────────────────────
-export const ARCH_CONTAINERS = [
+const ARCH_CONTAINERS_NESTED = [
   {
     id: 'sys-cadtrain',
     type: 'containerNode',
@@ -192,7 +200,7 @@ export const ARCH_CONTAINERS = [
 // ──────────────────────────────────────────────────────────
 // COMPONENT NODES  (positions are RELATIVE to their parent container)
 // ──────────────────────────────────────────────────────────
-export const ARCH_NODES = [
+const ARCH_NODES_NESTED = [
   // ───────────────── Web App container (routes + GEP + viewer) ─────────────────
   // Column A
   {
@@ -560,6 +568,50 @@ export const ARCH_NODES = [
     } satisfies ArchNodeData,
   },
 ];
+
+// ──────────────────────────────────────────────────────────
+// FLATTEN — parent/extent nesting → absolute coordinates
+//
+// xyflow renders nodes back-to-front in array order, and edges sit visually
+// just above same-zIndex nodes. So we (1) keep the big container/system boxes
+// FIRST (drawn behind), (2) push them to a negative zIndex so the edges draw
+// over their translucent fills, and (3) convert every child's parent-relative
+// position to an absolute one, dropping `parentId`/`extent` so edge endpoints
+// resolve like the flat version did.
+// ──────────────────────────────────────────────────────────
+const CONTAINER_ORIGIN: Record<string, { x: number; y: number }> = {
+  'sys-cadtrain': { x: SYS.x, y: SYS.y },
+  'c-webapp': { x: C.webapp.x, y: C.webapp.y },
+  'c-api': { x: C.api.x, y: C.api.y },
+  'c-kernel': { x: C.kernel.x, y: C.kernel.y },
+  'c-volume': { x: C.volume.x, y: C.volume.y },
+};
+
+type RawNode = {
+  position: { x: number; y: number };
+  parentId?: string;
+  extent?: unknown;
+  zIndex?: number;
+  [k: string]: unknown;
+};
+
+function flattenToAbsolute<T extends RawNode>(nodes: T[], zIndex?: number): T[] {
+  return nodes.map((n) => {
+    const origin = n.parentId ? (CONTAINER_ORIGIN[n.parentId] ?? { x: 0, y: 0 }) : { x: 0, y: 0 };
+    // strip parentId + extent — the nesting is encoded purely in the coordinates now.
+    const { parentId: _p, extent: _e, ...rest } = n;
+    return {
+      ...(rest as T),
+      position: { x: origin.x + n.position.x, y: origin.y + n.position.y },
+      ...(zIndex !== undefined ? { zIndex } : {}),
+    };
+  });
+}
+
+// Containers sit behind the edges (negative zIndex); components keep default 0
+// so they paint above the edges.
+export const ARCH_CONTAINERS = flattenToAbsolute(ARCH_CONTAINERS_NESTED as RawNode[], -1);
+export const ARCH_NODES = flattenToAbsolute(ARCH_NODES_NESTED as RawNode[]);
 
 // ──────────────────────────────────────────────────────────
 // EDGE DEFINITIONS
