@@ -58,23 +58,23 @@
 4. RESEARCH — explore for CAD generation improvement:
    [arxiv 2606.05515](https://arxiv.org/html/2606.05515v1).
 5. Units — centralized repository (diameter in in/mm, z in m/ft, etc.).
-6. SVG build-time profiling — how long does it take to build these SVGs?
+
 7. `r_weld_extrude` phase angle — straighten spiralled triangles (lat/long-style
    perpendicular quads along latitude).
 
 8. Option to promote and search for expressions to global library or personal user based library and search
 
-9. We need a fit/z scale and dia scale capabiltiy fort the src as well.
+9. We need a fit/z scale and dia scale capabiltiy fort the svg as well.
 
 10. We need to redesign the folder interface. i think it is occupying a loot of space.. lets do one thing.. When we collapse the folder sidebar lets have the collpase to be just narrow enough to show the vertical ytab bars on the left.
 
-11. Also we need to rationalize the slider on the bake visualizaiton.. so that it slides about 3 times the length of he rendered part in z.
+11. Also we need to rationalize the slider on the bake visualizaiton.. so that it slides about 2 times the length of he rendered part in z. and also make the slider a little smaller..hal the height.
 
 12. For the scale popover for z and xdia. Lets make sure that when we click out of the popover it disappears.
 
 13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
-14. Repeat card we dont need the card to be so elaborate.. Maybe we just need a nice loop icon.. remove the detailed text inside. Also the long name can be removed.in the top var
+14. Repeat card we dont need the card to be so elaborate..  remove the detailed text inside. Also the long name can be removed.in the top variable is extendign beyond the space.
 
 15. A card delete or a param delete or a node delete should ask for confirmation.
 
