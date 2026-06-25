@@ -17,10 +17,11 @@
    few-shot DB (no data leaves org). `ge-assist` already accepts a `postTurn` override
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
-3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune shipped. LEFT:
-   GEP shell ≤1500 (R6a carve the Polygon/PolyRepeat editor out), module-map header,
-   residual `$state` audit, R7 `builder.ts`/`library.ts` retire, R8 vocab, R9
-   ProfileFnEditor. Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
+3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune + **R6a (poly
+   carve)** shipped → GEP **9455 → 5500 lines**. LEFT: GEP shell ≤1500 (carve the
+   poly_repeat/profile-resolve overlay + the remaining node-card SVGs), module-map
+   header, residual `$state` audit, R7 `builder.ts`/`library.ts` retire, R8 vocab,
+   R9 ProfileFnEditor. Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — poly_repeat-style loop in the sketch editor (model +
    `expandSketchOps` + UI in SketchEditorPane). Plan: `docs/plans/sketch-repeat.md` ·
@@ -35,19 +36,29 @@
 
 8. in the reoeat card... allow for acceptance of params just like we are accepting parts. let the params section be abive parts section and allow multiple params to be added in a list with a node connecter
 
+15. **Expression system — polish pass** (the v3 block system shipped + works; these are the rough edges):
+    dangling-def recovery on instances; clean up the migrated `e.newone`-style invalid formulas;
+    Σ button two-click / tooltip overlap; per-output socket labels; live numeric preview.
+    (Global/personal expr library = PARKED #8.) Plan: `docs/plans/expression-builder.md`.
+
+16. **/design collapsible-tree polish** — the tree is collapsed-by-default + re-fits on
+    toggle (good baseline). LEFT: tune the expand interaction (re-center cleanly, don't drop
+    the subtree below the fold), spacing/aspect, and node/edge styling toward the
+    `mfmesh.up.railway.app/architecture` reference; legend overlaps the rightmost column at
+    fit-zoom. Visual iteration with the user. Files: `src/routes/design/**`.
+
 
 ### Shipped (recent)
 
-- ✅ **Expression system (v3)** — reusable per-part `ExprDef` (four sections
-  PARAMS/CONSTS/VARIABLES/OUTPUTS) + def/instance model + Σ Expressions menu
-  (define · edit · drop-instance · delete-guard) + wiring BOTH ways (param → expr
-  input, and expr output → ANY card: Call arg, polygon coord, mv/rot/txfmn axis,
-  repeat/poly_repeat count, sketch coord/point — bind + rendered line). mathjs
-  validation, 23 unit tests. _(was "Conditional expressions tab".)_ /plan #914.
-  Plan: `docs/plans/expression-builder.md` (v3). _(polish → PARKED #15.)_
-- ✅ **/design C4 architecture graph** — interactive `@xyflow/svelte` route/api/lib/store
-  graph (container/C4 view) + the edges-not-rendering fix (`$state.raw`). /plan #909.
-- ✅ **Modularize R2 — knip dead-code prune** (dead deps + `mime.ts`/`temp-file.ts`).
+- ✅ **R6a — Polygon-editor carve** (modularize #3): `PolyPreviewState` class +
+  `PolyPreview.svelte` lifted out of GraphEditorPane (state + 24 handlers + overlay
+  markup + CSS); coord ƒ-popover stays in the shell. GEP 5873 → 5500; browser-verified
+  on g_collar. /plan modularize lane.
+- ✅ **Expression wiring — output → ANY card** (param→expr input + expr output→Call arg /
+  polygon coord / mv-rot-txfmn axis / repeat count / sketch field — bind + rendered wire).
+- ✅ **/design enriched + collapsible** — 29→56 nodes / 29→65 edges (corrected stale
+  /fem,/forge; added /research,/api/brep) + rebuilt as a collapsible auto-layout tree
+  (collapsed-by-default, `fitView` re-frame on toggle). Polish → open #16.
 
 
 ### PARKED
@@ -68,13 +79,8 @@
 
 11. Also we need to rationalize the slider on the bake visualizaiton.. so that it slides about 3 times the length of he rendered part in z.
 
-12. For the scale. Lets make sure that when we click out of the popover it disappears.
+12. For the scale popover for z and xdia. Lets make sure that when we click out of the popover it disappears.
 
 13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
 14. Repeat card we dont need the card to be so elaborate.. Maybe we just need a nice loop icon.. remove the detailed text inside. Also the long name can be removed.in the top var
-
-15. **Expression system — polish pass** (suggested; the v3 block system shipped + works,
-    these are the rough edges): dangling-def recovery on instances; clean up the migrated
-    `e.newone`-style invalid formulas; Σ button two-click / tooltip overlap; per-output
-    socket labels; optional live numeric preview. Plan: `docs/plans/expression-builder.md`.
