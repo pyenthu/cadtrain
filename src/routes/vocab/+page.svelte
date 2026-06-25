@@ -18,7 +18,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  import ParamGrid from '$lib/shared/ParamGrid.svelte';
+  // Right/left tab bodies — extracted (R8 modularize). The page stays the
+  // shell: data loading, selection, detail-head, the seed Inferred/Proposed
+  // rail, and all bake/infer/promote state live here; these render the
+  // bodies and bubble mutations via callbacks.
+  import BrowsePane from './_tabs/BrowsePane.svelte';
+  import InferredTab from './_tabs/InferredTab.svelte';
+  import ProposedTab from './_tabs/ProposedTab.svelte';
+  import CuratedDetail from './_tabs/CuratedDetail.svelte';
 
   let { data } = $props();
   type Term = string;
@@ -590,53 +597,15 @@
           <div class="empty">no vocabulary-graph.mmd on disk — run <code>bun scripts/render-vocab-graph.ts &gt; docs/parts/vocabulary-graph.mmd</code></div>
         {/if}
       {:else}
-        <div class="browser browser-full">
-          <input
-            type="text"
-            class="browser-search"
-            placeholder="search terms · synonyms · definitions"
-            bind:value={search}
-          />
-          <div class="browser-list">
-            {#each filteredTerms() as { term, entry, seed } (term)}
-              {@const fmt = termFormat(term, entry, seed)}
-              {@const cacheCount = entry?.exemplar ? (cacheByExemplar[entry.exemplar] ?? 0) : 0}
-              <button
-                class="browser-row"
-                class:active={selected === term}
-                class:asm={!seed && entry.kind === 'asm'}
-                class:seed
-                type="button"
-                onclick={() => selectTerm(term)}
-              >
-                <span class="row-kind">{seed ? 'seed' : (entry.kind === 'asm' ? 'asm' : 'rev')}</span>
-                <span class="row-format" class:graph={fmt === 'graph'} class:text={fmt === 'text'}
-                      class:unknown={fmt === 'unknown'} class:missing={fmt === 'missing'}
-                      class:rev={fmt === 'rev'} class:seed={fmt === 'seed'}
-                      title={fmt === 'graph' ? 'Graph-format source — hydrates in /graph-editor'
-                           : fmt === 'text' ? 'Legacy text-body source — shows legacy banner in /graph-editor (regenerate to migrate)'
-                           : fmt === 'missing' ? 'Not saved to volume yet'
-                           : fmt === 'rev' ? 'Single revolved primitive — opens in /primitives'
-                           : fmt === 'seed' ? 'Seed entry — not yet promoted'
-                           : 'Loading format…'}>
-                  {#if fmt === 'graph'}🧬{:else if fmt === 'text'}📝{:else if fmt === 'missing'}∅{:else if fmt === 'unknown'}…{:else}—{/if}
-                </span>
-                {#if cacheCount > 0}
-                  <span class="row-cache-badge" title={`${cacheCount} cached bake${cacheCount === 1 ? '' : 's'} on volume`}>● {cacheCount}</span>
-                {:else}
-                  <span class="row-cache-spacer"></span>
-                {/if}
-                <span class="row-name">{term}</span>
-                <span class="row-rule">{seed
-                  ? `${entry.category} · ${entry.sub_category}${entry.variants?.length > 1 ? ` · ${entry.variants.length} variants` : ''}`
-                  : ruleSummary(entry)}</span>
-              </button>
-            {/each}
-            {#if filteredTerms().length === 0}
-              <div class="empty">no terms match "{search}"</div>
-            {/if}
-          </div>
-        </div>
+        <BrowsePane
+          terms={filteredTerms()}
+          {selected}
+          bind:search
+          {termFormat}
+          {cacheByExemplar}
+          {ruleSummary}
+          onSelect={selectTerm}
+        />
       {/if}
     </section>
 
@@ -818,298 +787,27 @@
             </div>
 
           {#if detailTab === 'inferred'}
-            {@const inf = inferCache[selected!]}
-            <div class="tab-body">
-              <!-- Terse seed description + catalogue chips -->
-              <p class="def-line">{e.description ?? '(no description)'}</p>
-              <div class="info-row">
-                <span class="info-chip cat">{e.category} · {e.sub_category}</span>
-                {#if e.metadata?.tool_comp}
-                  <code class="info-code">{e.metadata.tool_comp}</code>
-                {/if}
-                <span class="info-chip dim">OD {e.dims_from_catalogue?.od_in ?? '—'}" · ID {e.dims_from_catalogue?.id_in ?? '—'}" · L {e.dims_from_catalogue?.length_ft ?? '—'} ft</span>
-                {#if (e.variants?.length ?? 0) > 1}<span class="info-chip variant">{e.variants.length} variants</span>{/if}
-              </div>
-
-              <!-- 2D drawing + Inferred 3D side-by-side -->
-              <div class="view-row">
-                {#if e.compjson_ref && CompJsonSilhouette}
-                  <CompJsonSilhouette ref={e.compjson_ref} title="2D vendor reference" height={300} />
-                {:else}
-                  <div class="empty-card">no compjson_ref on file</div>
-                {/if}
-                <div class="bake-card">
-                  <header class="bake-head">
-                    <div class="bake-title">Inferred 3D · r_revolve</div>
-                    <span class="spacer"></span>
-                    {#if !inf}
-                      <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>Infer</button>
-                    {:else if inf === 'loading'}
-                      <span class="bar-status">inferring…</span>
-                    {:else if 'error' in (inf as any)}
-                      <button class="bar-btn" type="button" onclick={() => runInfer(selected!)}>retry</button>
-                      <span class="bar-status err">err: {(inf as any).error}</span>
-                    {:else}
-                      <span class="bar-meta">{(inf as InferResult).bake?.verts ?? '?'} verts · z={(inf as InferResult).bake?.z_extent ?? '?'} · r={(inf as InferResult).bake?.outer_r ?? '?'}</span>
-                    {/if}
-                  </header>
-                  <div class="bake-body">
-                    {#if !inf}
-                      <div class="bake-cta">
-                        Click <strong>Infer</strong> to derive an axisymmetric profile from the 2D drawing.
-                        <br>Deterministic — half-section + OD-calibration → <code>r_revolve</code> polygon.
-                      </div>
-                    {:else if inf === 'loading'}
-                      <div class="empty">inferring polygon + bake…</div>
-                    {:else if 'error' in (inf as any)}
-                      <div class="error">inference failed: {(inf as any).error}</div>
-                    {:else if !(inf as InferResult).bake?.ok}
-                      <div class="error">bake failed: {(inf as InferResult).bake?.message ?? 'no bake result'}</div>
-                    {:else if PrimitiveDualCanvas}
-                      {@const inferredI = inf as InferResult}
-                      <PrimitiveDualCanvas
-                        id={inferredI.exemplar}
-                        name={inferredI.exemplar}
-                        description=""
-                        args={[]}
-                        source={inferredI.source}
-                        showControls={true}
-                        showLabels={false}
-                      />
-                    {:else}
-                      <div class="empty">3D canvas loading…</div>
-                    {/if}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Inferred details: polygon vertices · warnings · source -->
-              {#if inf && typeof inf === 'object' && !('error' in (inf as any)) && (inf as InferResult).polygon?.length}
-                {@const inf2 = inf as InferResult}
-                <details class="block">
-                  <summary>polygon vertices ({inf2.polygon.length}) · axisymmetric: {inf2.axisymmetric ? 'yes' : 'no'}</summary>
-                  <pre class="code">{inf2.polygon.map(([r, z]: [number, number], i: number) => `  [${i.toString().padStart(2)}]  r=${r.toFixed(4).padStart(8)}  z=${z.toFixed(4).padStart(8)}`).join('\n')}</pre>
-                </details>
-                {#if inf2.internal_features?.length}
-                  <details class="block">
-                    <summary>{inf2.internal_features.length} internal feature{inf2.internal_features.length === 1 ? '' : 's'} (seats / elastomer / marks)</summary>
-                    <pre class="code">{inf2.internal_features.map((f: any, i: number) => `[${i}] ${f.kind} (fill ${f.fill_color}) — ${f.polygon.length} verts`).join('\n')}</pre>
-                  </details>
-                {/if}
-                {#if inf2.warnings?.length}
-                  <details class="block" open>
-                    <summary>{inf2.warnings.length} warning{inf2.warnings.length === 1 ? '' : 's'}</summary>
-                    <ul class="warn-list">
-                      {#each inf2.warnings as w (w)}<li>⚠ {w}</li>{/each}
-                    </ul>
-                  </details>
-                {/if}
-                <details class="block">
-                  <summary>generated source (.rev.ts)</summary>
-                  <pre class="code">{inf2.source}</pre>
-                </details>
-                <div class="promote-footer">
-                  <button class="promote-btn" type="button" disabled={promoteBusy[selected!]}
-                    title="Write the inferred polygon back into vocabulary.seeds.json as the seed's rule and flip status to promoted."
-                    onclick={() => promote(selected!)}
-                  >{promoteBusy[selected!] ? 'promoting…' : '✓ Promote inferred polygon → seeds.json'}</button>
-                  <span class="promote-hint">cheap promotion: stores the auto-polygon (no rich definition)</span>
-                </div>
-              {/if}
-
-              <!-- Catalogue variants table -->
-              {#if e.variants?.length}
-                <details class="block">
-                  <summary>{e.variants.length} catalogue variant{e.variants.length === 1 ? '' : 's'}</summary>
-                  <table class="params-table">
-                    <thead><tr><th>#</th><th>OD"</th><th>ID"</th><th>L ft</th><th>weight</th><th>company</th><th>top thread</th><th>bot thread</th><th>grade</th></tr></thead>
-                    <tbody>
-                      {#each e.variants as v (v.comp_id)}
-                        <tr>
-                          <td><code>{v.comp_id}</code></td>
-                          <td>{v.od_in ?? '—'}</td>
-                          <td>{v.id_in ?? '—'}</td>
-                          <td>{v.length_ft ?? '—'}</td>
-                          <td>{v.weight_lb ?? '—'}</td>
-                          <td>{v.company ?? '—'}</td>
-                          <td>{v.top_thread ?? '—'}</td>
-                          <td>{v.bot_thread ?? '—'}</td>
-                          <td>{v.grade ?? '—'}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </details>
-              {/if}
-              <details class="block">
-                <summary>raw seed JSON</summary>
-                <pre class="code">{JSON.stringify(e, null, 2)}</pre>
-              </details>
-            </div>
+            <InferredTab
+              entry={e}
+              inf={inferCache[selected!]}
+              {PrimitiveDualCanvas}
+              {CompJsonSilhouette}
+              promoteBusy={!!promoteBusy[selected!]}
+              onInfer={() => runInfer(selected!)}
+              onPromote={() => promote(selected!)}
+            />
           {:else if prop}
-            <!-- PROPOSED tab body -->
-            {@const pb = proposedBakeCache[selected!]}
-            <div class="tab-body">
-              <!-- Definition + chips encapsulated in the ⓘ Definition & tags
-                   popover (top-right of detail-head). Tab body focuses on
-                   params + 3D bake — /primitives format. -->
-
-              <!-- 2-col layout: LEFT = canvas (full height of column);
-                   RIGHT = parameters on top, rule + details below. -->
-              <div class="proposed-grid">
-                <div class="proposed-canvas-col">
-                  <div class="bake-card no-head">
-                    <div class="bake-body">
-                      {#if !pb}
-                        <div class="bake-cta">
-                          Click <strong>Bake</strong> to render the hand-drafted <code>{prop.rule?.kind}</code> rule.
-                        </div>
-                      {:else if pb === 'loading'}
-                        <div class="empty">baking proposed source…</div>
-                      {:else if 'error' in (pb as any)}
-                        <div class="error">bake failed: {(pb as any).error}</div>
-                      {:else if !(pb as ProposedBake).bake?.ok}
-                        <div class="error">bake failed: {(pb as ProposedBake).bake?.message ?? 'no bake result'}</div>
-                      {:else if PrimitiveDualCanvas}
-                        {@const proposedPb = pb as ProposedBake}
-                        <PrimitiveDualCanvas
-                          id={proposedPb.exemplar}
-                          name={proposedPb.exemplar}
-                          description=""
-                          args={stableProposedArgs}
-                          source={proposedPb.source}
-                          showControls={true}
-                          showLabels={false}
-                        />
-                      {:else}
-                        <div class="empty">3D canvas loading…</div>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-
-                <div class="proposed-right-col">
-                  <!-- Parameters at top of the right column -->
-                  {#if prop.params}
-                    {@const pmap = paramMap(selected!)}
-                    <div class="pg-acc-wrap">
-                      <div class="pg-acc-head" class:collapsed={!isParamsOpen(selected!)}
-                        role="button" tabindex="0"
-                        aria-expanded={isParamsOpen(selected!)}
-                        onclick={() => toggleParamsOpen(selected!)}
-                        onkeydown={(ek) => { if (ek.key === 'Enter' || ek.key === ' ') { ek.preventDefault(); toggleParamsOpen(selected!); } }}>
-                        <span class="pg-acc-title">Parameters</span>
-                        <span class="pg-acc-count">({Object.keys(prop.params).length})</span>
-                        <div class="pv-spacer"></div>
-                        <span class="pg-acc-hint">drag to re-bake</span>
-                      </div>
-                      {#if isParamsOpen(selected!)}
-                        <div class="pg-acc-body">
-                          <ParamGrid
-                            schema={prop.params as any}
-                            pending={pmap}
-                            applied={pmap}
-                            onPending={(k, v) => paramUpdateByKey(selected!, k, v)}
-                            onCommit={(k, v) => paramUpdateByKey(selected!, k, v)}
-                            variant="fn"
-                          />
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-
-                  <!-- Rule + details below parameters -->
-                  <div class="rule-details-col">
-                    {#if prop.rule}
-                      <!-- Composition tree (visual) — mirrors CompositionEditor's
-                           folder+file row style. boolean_modify renders as a
-                           Subtract/Add/Intersect folder containing the body
-                           call + each modifier shape as a child file. -->
-                      <details class="block" open>
-                        <summary>composition · {prop.rule.kind}{prop.rule.engine ? ` · engine: ${(prop.rule.engine as string[]).join(', ')}` : ''}</summary>
-                        {#if prop.rule.kind === 'boolean_modify' && prop.rule.modifiers?.length}
-                          {@const firstOp = prop.rule.modifiers[0].op}
-                          {@const opGlyph = firstOp === 'subtract' ? '⊖' : firstOp === 'add' ? '⊕' : '⊗'}
-                          {@const bodyVerts = prop.rule.body?.polygon?.length ?? 0}
-                          {@const bodyEngine = (prop.rule.engine as string[])[0] ?? 'r_revolve'}
-                          <div class="ce-tree" role="tree" aria-label="Composition tree">
-                            <div class="ce-row ce-folder" style="--depth: 0">
-                              <span class="ce-icon">📁</span>
-                              <span class="ce-op-chip" data-op={firstOp}>{opGlyph} {firstOp}</span>
-                              <span class="ce-folder-meta">{1 + prop.rule.modifiers.length} operands</span>
-                            </div>
-                            <div class="ce-folder-children">
-                              <details class="ce-row-wrap" open>
-                                <summary class="ce-row ce-file" style="--depth: 1">
-                                  <span class="ce-icon">📄</span>
-                                  <span class="ce-call-name">ƒ {bodyEngine}</span>
-                                  <span class="ce-call-args">(profile, segments)</span>
-                                  <span class="ce-spacer"></span>
-                                  <span class="ce-call-meta">{bodyVerts} verts</span>
-                                </summary>
-                                <div class="ce-detail" style="--depth: 1">
-                                  {#if prop.rule.body?.preamble?.length}
-                                    <div class="ce-detail-label">preamble</div>
-                                    <pre class="ce-detail-code">{prop.rule.body.preamble.join('\n')}</pre>
-                                  {/if}
-                                  {#if prop.rule.body?.polygon?.length}
-                                    <div class="ce-detail-label">polygon · {bodyVerts} verts</div>
-                                    <pre class="ce-detail-code">{prop.rule.body.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-                                  {/if}
-                                </div>
-                              </details>
-
-                              <!-- Modifier calls — one row per shape. -->
-                              {#each prop.rule.modifiers as mod, i (i)}
-                                {@const mGlyph = mod.op === 'subtract' ? '⊖' : mod.op === 'add' ? '⊕' : '⊗'}
-                                <details class="ce-row-wrap" open>
-                                  <summary class="ce-row ce-file" style="--depth: 1" data-op={mod.op}>
-                                    <span class="ce-icon">📄</span>
-                                    <span class="ce-mod-op">{mGlyph}</span>
-                                    <span class="ce-call-name">{mod.shape.kind}</span>
-                                    <span class="ce-call-args">({(Object.entries(mod.shape).filter(([k]) => k !== 'kind').map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', '))})</span>
-                                  </summary>
-                                  <div class="ce-detail" style="--depth: 1">
-                                    {#each Object.entries(mod.shape).filter(([k]) => k !== 'kind') as [k, v] (k)}
-                                      <div class="ce-detail-row">
-                                        <span class="ce-detail-key">{k}</span>
-                                        <span class="ce-detail-val">{typeof v === 'string' ? v : JSON.stringify(v)}</span>
-                                      </div>
-                                    {/each}
-                                  </div>
-                                </details>
-                              {/each}
-                            </div>
-                            <div class="ce-result">= Result</div>
-                          </div>
-                        {:else}
-                          <!-- Fallback for non-boolean_modify rules: show the JSON. -->
-                          <pre class="code">{JSON.stringify(prop.rule, null, 2)}</pre>
-                        {/if}
-                      </details>
-                    {/if}
-                    <details class="block">
-                      <summary>definition</summary>
-                      <p class="def-line rich">{prop.definition}</p>
-                    </details>
-                    {#if prop.expects_bake}
-                      <details class="block">
-                        <summary>expects bake</summary>
-                        <pre class="code">{JSON.stringify(prop.expects_bake, null, 2)}</pre>
-                      </details>
-                    {/if}
-                    <details class="block">
-                      <summary>raw proposed JSON</summary>
-                      <pre class="code">{JSON.stringify(prop, null, 2)}</pre>
-                    </details>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Promote button now lives inline in the title row alongside
-                   Bake — see the detail-head block above. -->
-              {#if promoteProposedStatus}<div class="promote-status">{promoteProposedStatus}</div>{/if}
-            </div>
+            <ProposedTab
+              entry={prop}
+              pb={proposedBakeCache[selected!]}
+              {PrimitiveDualCanvas}
+              pmap={paramMap(selected!)}
+              paramsOpen={isParamsOpen(selected!)}
+              {stableProposedArgs}
+              {promoteProposedStatus}
+              onToggleParams={() => toggleParamsOpen(selected!)}
+              onParamUpdate={(k, v) => paramUpdateByKey(selected!, k, v)}
+            />
           {:else}
             <!-- Proposed tab but no entry on file -->
             <div class="tab-body">
@@ -1122,106 +820,14 @@
           </div>
         {:else}
           <!-- CURATED term — no top tabs, single stacked body. -->
-          {@const sc = sceneCache[e.exemplar]}
-          <div class="tab-body">
-            <p class="def-line rich">{e.definition ?? '(no definition)'}</p>
-            {#if e.synonyms?.length}
-              <div class="chips-row">
-                <span class="chips-label">synonyms</span>
-                {#each e.synonyms as s (s)}<span class="prop-chip syn">{s}</span>{/each}
-              </div>
-            {/if}
-            <div class="info-row">
-              {#if e.extends}
-                <span class="info-chip ext-info">extends {e.extends}</span>
-              {/if}
-              <a class="info-chip link" href="/graph-editor" onclick={(ev) => { ev.preventDefault(); if (typeof window !== 'undefined') window.open(`/graph-editor?id=${e.exemplar}`, '_blank'); }}>open <code>{e.exemplar}</code> in graph editor ↗</a>
-              <span class="info-chip rule">{ruleSummary(e)}</span>
-            </div>
-
-            <!-- 2D (when ref) + 3D side-by-side -->
-            <div class="view-row">
-              {#if e.compjson_ref && CompJsonSilhouette}
-                <CompJsonSilhouette ref={e.compjson_ref} title="2D reference" height={300} />
-              {:else}
-                <div class="empty-card faded">no 2D reference</div>
-              {/if}
-              <div class="bake-card">
-                <header class="bake-head">
-                  <div class="bake-title">3D · {e.kind}</div>
-                  <span class="spacer"></span>
-                </header>
-                <div class="bake-body">
-                  {#if !PrimitiveDualCanvas}
-                    <div class="empty">scene component loading…</div>
-                  {:else if !sc || sc === 'loading'}
-                    <div class="empty">fetching {e.exemplar}…</div>
-                  {:else if sc === 'error'}
-                    <div class="error">couldn't load {e.exemplar} — does it exist on the volume?</div>
-                  {:else}
-                    {@const params = sc as { source: string; args: (number | string)[] }}
-                    <PrimitiveDualCanvas
-                      id={e.exemplar}
-                      name={e.exemplar}
-                      description=""
-                      args={params.args}
-                      source={params.source}
-                      showControls={true}
-                      showLabels={false}
-                    />
-                  {/if}
-                </div>
-              </div>
-            </div>
-
-            {#if e.params}
-              <details class="block" open>
-                <summary>params ({Object.keys(e.params).length})</summary>
-                <table class="params-table">
-                  <thead><tr><th>key</th><th>default</th><th>min</th><th>max</th><th>step</th><th>unit</th></tr></thead>
-                  <tbody>
-                    {#each Object.entries(e.params) as [k, p] (k)}
-                      <tr><td><code>{k}</code></td><td>{(p as any).default}</td><td>{(p as any).min ?? '—'}</td><td>{(p as any).max ?? '—'}</td><td>{(p as any).step ?? '—'}</td><td>{(p as any).unit ?? '—'}</td></tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </details>
-            {/if}
-            {#if e.rule?.kind === 'primitive' && e.rule?.preamble}
-              <details class="block">
-                <summary>preamble ({e.rule.preamble.length} lines)</summary>
-                <pre class="code">{e.rule.preamble.join('\n')}</pre>
-              </details>
-            {/if}
-            {#if e.rule?.kind === 'primitive' && e.rule?.polygon}
-              <details class="block">
-                <summary>polygon ({e.rule.polygon.length} vertices)</summary>
-                <pre class="code">{e.rule.polygon.map((p: string, i: number) => `  [${i}] ${p}`).join('\n')}</pre>
-              </details>
-            {/if}
-            {#if e.rule?.kind === 'compose'}
-              <details class="block">
-                <summary>composition</summary>
-                <pre class="code">{JSON.stringify(e.rule.composition, null, 2)}</pre>
-              </details>
-            {/if}
-            {#if e.expects_bake}
-              <details class="block">
-                <summary>expects bake</summary>
-                <pre class="code">{JSON.stringify(e.expects_bake, null, 2)}</pre>
-              </details>
-            {/if}
-            {#if lock?.terms?.[selected]}
-              <details class="block">
-                <summary>lock entry · drift</summary>
-                <pre class="code">{JSON.stringify(lock.terms[selected], null, 2)}</pre>
-              </details>
-            {/if}
-            <details class="block">
-              <summary>full rule JSON</summary>
-              <pre class="code">{JSON.stringify(e.rule, null, 2)}</pre>
-            </details>
-          </div>
+          <CuratedDetail
+            entry={e}
+            sc={sceneCache[e.exemplar]}
+            lockEntry={lock?.terms?.[selected!]}
+            {PrimitiveDualCanvas}
+            {CompJsonSilhouette}
+            {ruleSummary}
+          />
         {/if}
       {/if}
     </aside>
@@ -1252,9 +858,6 @@
   .vdivider:hover, .vdivider.dragging { background: #cc2222; }
 
   .diagram-pane { display: grid; grid-template-rows: auto 1fr; overflow: hidden; min-height: 0; }
-  .diagram-head { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #f1f5f9; }
-  .diagram-head h2 { margin: 0; font: 600 13px Arial; color: #1f2937; }
-  .diagram-head .hint { font: 11px Arial; color: #9ca3af; }
   .diagram { padding: 12px 16px; overflow: auto; background: #fff; }
   .diagram :global(svg) { max-width: 100%; height: auto; }
   .diagram :global(.node) { transition: filter 80ms; }
@@ -1262,27 +865,6 @@
   .loading, .empty { color: #6b7280; font: 12px Arial; padding: 8px; }
   .error { color: #b91c1c; font: 11px ui-monospace, monospace; padding: 8px; }
   .raw { font: 11px ui-monospace, monospace; color: #475569; }
-
-  .browser { border-top: 1px solid #e5e7eb; max-height: 280px; display: grid; grid-template-rows: auto 1fr; }
-  .browser-search { padding: 6px 12px; border: 0; border-bottom: 1px solid #f1f5f9; font: 13px Arial; outline: none; }
-  .browser-search:focus { background: #f9fafb; }
-  .browser-list { overflow: auto; }
-  .browser-row { display: grid; grid-template-columns: 36px 22px 36px 120px 1fr; align-items: center; gap: 8px; padding: 4px 12px; width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; font: 12px Arial; }
-  .row-cache-badge { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; font: 600 10px ui-monospace, monospace; color: #065f46; background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 9999px; white-space: nowrap; justify-self: start; }
-  .row-cache-spacer { /* maintains grid column when no badge */ }
-  .row-format { font: 13px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', Arial; text-align: center; color: #6b7280; }
-  .row-format.graph { color: #6d28d9; }
-  .row-format.text  { color: #b45309; }
-  .row-format.missing { color: #b91c1c; }
-  .row-format.unknown { color: #d1d5db; font-style: italic; }
-  .browser-row:hover { background: #f9fafb; }
-  .browser-row.active { background: #e0f2fe; }
-  .browser-row.asm .row-kind { background: #dcfce7; color: #14532d; }
-  .browser-row.seed .row-kind { background: #fef3c7; color: #78350f; }
-  .browser-row.seed.active { background: #fffbeb; }
-  .row-kind { padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0c4a6e; font: 600 10px Arial; text-transform: uppercase; text-align: center; }
-  .row-name { font: 600 12px ui-monospace, monospace; color: #1f2937; }
-  .row-rule { color: #6b7280; font: 11px Arial; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .detail-pane { padding: 16px 20px; overflow: auto; background: #fafafa; }
   .detail-empty { color: #6b7280; font: 13px Arial; padding: 12px; }
@@ -1293,94 +875,13 @@
   .detail-kind { background: #e0f2fe; color: #0c4a6e; }
   .detail-kind.asm { background: #dcfce7; color: #14532d; }
   .detail-kind.seed { background: #fef3c7; color: #78350f; }
-  .detail-def { color: #374151; font: 13px Arial; line-height: 1.45; margin: 4px 0 12px; }
-  .syn-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
-  .syn-label { font: 11px Arial; color: #6b7280; }
-  .syn-chip { padding: 1px 8px; border-radius: 9999px; background: #f3f4f6; color: #475569; font: 11px Arial; }
-  .kv-row { display: grid; grid-template-columns: 100px 1fr; gap: 8px; padding: 4px 0; font: 12px Arial; }
-  .kv-key { color: #6b7280; }
-  .kv-val { color: #1f2937; font-family: ui-monospace, monospace; }
-  .kv-val.link { color: #2563eb; text-decoration: underline; cursor: pointer; }
 
-  /* Tab strip between detail-head and the tabbed body. */
-  .tab-strip { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #e5e7eb; margin: 8px 0 12px; padding-bottom: 2px; }
-  .tab-btn { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 6px 10px; font: 600 12px Arial; color: #6b7280; cursor: pointer; }
-  .tab-btn:hover { color: #1f2937; }
-  .tab-btn.active { color: #0c4a6e; border-bottom-color: #0369a1; }
   .tab-spacer { flex: 1; }
-  .tab-exemplar { font: 11px Arial; color: #6b7280; margin-left: 8px; }
-  .tab-exemplar code { font: 11px ui-monospace, monospace; color: #1f2937; }
   .tab-refresh, .bar-btn { font: 600 11px Arial; padding: 3px 10px; border: 1px solid #0369a1; background: #e0f2fe; color: #0c4a6e; border-radius: 4px; cursor: pointer; }
   .tab-refresh:hover:not(:disabled), .bar-btn:hover:not(:disabled) { background: #bae6fd; }
   .tab-refresh:disabled, .bar-btn:disabled { opacity: 0.5; cursor: default; }
   .bar-status { font: 11px ui-monospace, monospace; color: #475569; padding: 0 8px; }
-  /* Scene pane — sized to the detail pane's remaining height so the WebGL canvas fills it.
-     Curated terms with a compjson_ref show the 3D bake left + 2D silhouette right.
-     Seed terms (no rule yet) show only silhouette + variants table. */
-  .scene-pane { min-height: 420px; background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; }
-  .curated-scene { display: grid; grid-template-rows: 1fr; height: calc(100vh - 220px); }
-  .curated-scene.with-ref { grid-template-columns: 1.4fr 1fr; }
-  .bake-3d { overflow: hidden; min-width: 0; }
-  /* Seed scene — 2D drawing + Inferred 3D side-by-side, polygon details
-     below, metadata + variants table at the bottom. Scrolls vertically. */
-  .seed-scene { display: grid; gap: 12px; padding: 12px; height: calc(100vh - 220px); overflow: auto; }
-  .seed-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
-  .seed-row > * { min-width: 0; }
-  .seed-meta { display: grid; gap: 4px; align-content: start; }
-  /* Inferred-3D card — mirrors CompJsonSilhouette card styling so the two
-     panels read as a balanced pair. The PrimitiveDualCanvas takes the
-     remaining vertical space. */
-  .infer-card {
-    display: grid; grid-template-rows: auto 1fr;
-    gap: 4px;
-    background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
-    padding: 8px;
-    min-height: 320px;
-    overflow: hidden;
-  }
-  .infer-card .cap-row { display: flex; align-items: center; gap: 8px; }
-  .infer-card .caption {
-    font: 600 11px Arial; color: #57534e;
-    text-transform: uppercase; letter-spacing: 0.5px;
-  }
-  .infer-card .spacer { flex: 1; }
-  .infer-card .bar-meta { font: 10px ui-monospace, monospace; color: #57534e; }
-  .infer-cta { padding: 24px 16px; text-align: center; color: #57534e; font: 12px Arial; line-height: 1.6; }
-  .infer-cta code { font: 11px ui-monospace, monospace; color: #1e40af; }
-  .empty-card { display: flex; align-items: center; justify-content: center; color: #a8a29e; font: 11px Arial; min-height: 320px; background: #fafaf9; border: 1px dashed #e7e5e4; border-radius: 6px; }
-  .infer-details { display: grid; gap: 6px; padding: 8px 12px; background: #fff; border: 1px solid #e7e5e4; border-radius: 6px; }
-  .infer-details .cap-row { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid #f5f5f4; margin-bottom: 4px; }
-  .infer-details .caption { font: 600 12px Arial; color: #1f2937; }
-  .infer-details .spacer { flex: 1; }
-  .warn-list { margin: 4px 0 0 16px; padding: 0; }
-  .warn-list li { font: 11px Arial; color: #78350f; padding: 2px 0; }
-  .promote-btn { background: #dcfce7; border-color: #15803d; color: #14532d; }
-  .promote-btn:hover:not(:disabled) { background: #bbf7d0; }
-  .promote-status {
-    padding: 8px 12px; margin-top: 8px;
-    background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px;
-    font: 12px Arial; color: #78350f;
-  }
-  /* K.69 — proposed-vocab-entry preview card. Reads as a focused review
-     surface: definition front-and-center, then chips for the structured
-     retrieval fields (synonyms / function / form / variants / references),
-     then the rule + params under collapsible details. Read-only. */
-  .proposal-card {
-    display: grid; grid-template-rows: auto 1fr auto;
-    gap: 8px;
-    padding: 12px 14px;
-    background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px;
-  }
-  .proposal-card .cap-row { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid #fbbf24; }
-  .proposal-card .caption { font: 600 12px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.5px; }
-  .proposal-card .spacer { flex: 1; }
-  .prop-status { font: 11px Arial; color: #92400e; }
-  .prop-grid { display: grid; gap: 10px; }
-  .prop-field { display: grid; gap: 4px; }
-  .prop-label { font: 600 10px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.6px; }
-  .prop-definition { font: 13px/1.55 Arial; color: #1f2937; margin: 0; background: #fff; padding: 8px 10px; border-radius: 4px; border: 1px solid #fde68a; }
-  .prop-val { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .prop-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  /* Definition & tags popover chips (detail-head). */
   .prop-chip { padding: 2px 8px; border-radius: 9999px; font: 11px Arial; background: #fff; border: 1px solid #fde68a; color: #78350f; }
   .prop-chip.kind    { background: #dcfce7; color: #14532d; border-color: #15803d; font-weight: 600; }
   .prop-chip.ext     { background: #e0f2fe; color: #0c4a6e; border-color: #0369a1; font-weight: 600; }
@@ -1392,91 +893,12 @@
   .prop-arrow { font: 11px Arial; color: #92400e; }
   .prop-ref { font: 11px Arial; color: #1d4ed8; text-decoration: none; padding: 2px 8px; background: #fff; border: 1px solid #93c5fd; border-radius: 4px; }
   .prop-ref:hover { background: #dbeafe; }
-  .rule-section { margin: 8px 12px 4px; }
-  /* Composition-tree visual — mirrors CompositionEditor's folder/file row look. */
-  .ce-tree { padding: 4px 0; font: 12px Arial; color: #1f2937; }
-  .ce-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px 2px calc(6px + var(--depth, 0) * 16px); border-radius: 3px; }
-  .ce-row.ce-folder { background: #fff8e6; border: 1px solid #fbbf24; font-weight: 600; }
-  .ce-row.ce-file { background: #f8fafc; border: 1px solid #e2e8f0; cursor: pointer; }
-  .ce-row.ce-file:hover { background: #e0f2fe; }
-  .ce-folder-children { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 2px solid #fbbf24; margin-top: 2px; }
-  .ce-row-wrap { display: flex; flex-direction: column; }
-  .ce-row-wrap summary { list-style: none; }
-  .ce-row-wrap summary::-webkit-details-marker { display: none; }
-  .ce-icon { font-size: 12px; opacity: 0.8; }
-  .ce-op-chip { padding: 1px 8px; border-radius: 9999px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; font: 600 11px Arial; text-transform: uppercase; letter-spacing: 0.5px; }
-  .ce-folder-meta { font: 10px Arial; color: #92400e; margin-left: auto; }
-  .ce-call-name { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #cc2222; }
-  .ce-call-args { font: 11px ui-monospace, monospace; color: #6b7280; }
-  .ce-call-meta { font: 10px Arial; color: #9ca3af; }
-  .ce-spacer { flex: 1; }
-  .ce-mod-op { display: inline-block; min-width: 16px; text-align: center; font: 600 13px Arial; color: #b91c1c; }
-  .ce-row.ce-file[data-op="add"] .ce-mod-op { color: #15803d; }
-  .ce-row.ce-file[data-op="intersect"] .ce-mod-op { color: #6d28d9; }
-  .ce-detail { padding: 6px 8px 8px calc(8px + (var(--depth, 0) + 1) * 16px); background: #fff; border-left: 2px dashed #e2e8f0; margin: 2px 0 2px 14px; display: grid; gap: 3px; }
-  .ce-detail-label { font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-  .ce-detail-code { margin: 0; padding: 6px 8px; font: 11px ui-monospace, monospace; color: #1f2937; background: #fafaf9; border: 1px solid #e5e7eb; border-radius: 3px; overflow: auto; max-height: 220px; }
-  .ce-detail-row { display: grid; grid-template-columns: 130px 1fr; gap: 6px; font: 11px Arial; }
-  .ce-detail-key { font: 11px ui-monospace, monospace; color: #6b7280; }
-  .ce-detail-val { font: 11px ui-monospace, monospace; color: #0c4a6e; }
-  .ce-result { margin: 4px 0 0 16px; padding: 3px 10px; font: 600 11px Arial; color: #14532d; background: #dcfce7; border: 1px solid #86efac; border-radius: 9999px; display: inline-block; }
-  .prop-footer {
-    font: 12px Arial; color: #78350f; line-height: 1.55;
-    padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px;
-  }
-  .prop-footer code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
-  .proposed-3d { display: grid; gap: 4px; background: #fff; padding: 8px; border: 1px solid #fde68a; border-radius: 4px; margin: 4px 0; }
-  .proposed-3d-canvas { height: 380px; overflow: hidden; }
-  /* Vertical-tabs container for Inferred|Proposed bakes in the seed scene. */
-  .bake-vtabs { display: grid; grid-template-columns: 88px 1fr; gap: 0; background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px; overflow: hidden; min-height: 360px; }
-  .vtab-strip { display: flex; flex-direction: column; background: #f5f5f4; border-right: 1px solid #e7e5e4; padding: 6px 0; gap: 4px; }
-  .vtab {
-    background: transparent; border: 0; border-left: 3px solid transparent;
-    padding: 10px 12px; font: 600 12px Arial; color: #57534e;
-    cursor: pointer; text-align: left;
-    transition: background 0.1s;
-  }
-  .vtab:hover:not(:disabled) { background: #e7e5e4; }
-  .vtab.active { background: #fff; color: #0c4a6e; border-left-color: #0369a1; }
-  .vtab:disabled { color: #d6d3d1; cursor: not-allowed; }
-  .vtab-content { padding: 8px 10px; overflow: auto; display: grid; gap: 6px; align-content: start; }
-  .bake-head { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid #f5f5f4; }
-  .bake-head .spacer { flex: 1; }
-  .bake-title { font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; }
-  .bake-head .bar-meta { font: 10px ui-monospace, monospace; color: #57534e; }
-  .bake-head .bar-status { font: 11px Arial; color: #6b7280; }
-  .bake-head .bar-status.err { color: #b91c1c; }
-  /* Param sliders driving the proposed bake live. */
-  .param-sliders { display: grid; gap: 4px; padding: 8px; background: #fff; border: 1px solid #e7e5e4; border-radius: 4px; }
-  .ps-cap { font: 600 10px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; border-bottom: 1px solid #f5f5f4; }
-  .ps-row { display: grid; grid-template-columns: 90px 1fr 70px 30px; gap: 6px; align-items: center; }
-  .ps-key { font: 600 11px ui-monospace, monospace; color: #1f2937; }
-  .ps-slider { width: 100%; }
-  .ps-num { width: 100%; padding: 2px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
-  .ps-unit { font: 10px Arial; color: #6b7280; }
   /* Left-pane tab strip — Topology | Browse. */
   .left-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 12px 0; border-bottom: 1px solid #f1f5f9; }
   .left-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 6px 12px; font: 600 12px Arial; color: #6b7280; cursor: pointer; }
   .left-tab:hover { color: #1f2937; }
   .left-tab.active { color: #0c4a6e; border-bottom-color: #0369a1; }
   .left-tab .tab-count { font: 10px ui-monospace, monospace; color: #6b7280; margin-left: 4px; }
-  /* Browse tab — fills the diagram-pane's 1fr row. min-height: 0 lets the
-     inner list overflow properly inside the grid track. */
-  .browser-full { max-height: none !important; border-top: 0 !important; height: 100%; min-height: 0; }
-  .browser-full .browser-list { min-height: 0; overflow-y: auto; }
-  .prop-actions { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 4px; margin-top: 8px; }
-  .prop-actions-hint { font: 11px Arial; color: #78350f; flex: 1; }
-  .prop-actions-hint code { font: 11px ui-monospace, monospace; background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
-
-  .block { margin-top: 2px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
-  .block summary { padding: 3px 10px; font: 600 12px Arial; color: #1f2937; cursor: pointer; user-select: none; }
-  .block summary:hover { background: #f9fafb; }
-  .block[open] summary { border-bottom: 1px solid #f1f5f9; }
-  .code { padding: 10px 12px; margin: 0; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; overflow: auto; max-height: 320px; }
-  .params-table { width: 100%; border-collapse: collapse; font: 11px Arial; }
-  .params-table th, .params-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; text-align: left; }
-  .params-table th { background: #f9fafb; font-weight: 600; color: #475569; }
-  .params-table td code { font: 600 11px ui-monospace, monospace; color: #0c4a6e; }
 
   /* === K.69 right-pane redesign — Inferred/Proposed top tabs ============ */
   .detail-pane { padding: 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
@@ -1547,73 +969,8 @@
     display: grid; gap: 10px; align-content: start;
   }
   .info-pop-panel .def-line.rich { margin: 0; }
-  /* Accordion shell — copied from /primitives PrimitiveView (.pg-acc-*). */
-  .pg-acc-wrap { border: 3px solid #d4d4dc; border-radius: 4px; background: #fff; padding: 0 3px 1px; margin: 0; }
-  .pg-acc-head {
-    display: flex; align-items: center; gap: 4px;
-    padding: 2px 6px; margin: 0;
-    background: transparent; border: 0;
-    cursor: pointer;
-    border-radius: 3px;
-  }
-  .pg-acc-head:hover { background: #ececf2; color: #cc2222; }
-  .pg-acc-head.collapsed { background: #fafafa; }
-  .pg-acc-title { font: bold 13px Arial; color: #333; flex: 0 0 auto; }
-  .pg-acc-count { font: 11px ui-monospace, monospace; color: #6b7280; }
-  .pg-acc-hint { font: 11px Arial; color: #9ca3af; }
-  .pv-spacer { flex: 1; }
-  .pg-acc-body { padding: 2px 4px 2px; max-height: 320px; overflow-y: auto; }
-  /* Seed-tab host — full-width container; the switcher lives as a popover in
-     the detail-head, not as a vertical rail. */
-  .seed-tab-host { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  /* Tab-switcher popover (replaces the vertical rail). Button sits in the
-     detail-head; click opens a floating panel with the two options. */
-  .tab-popover-wrap { position: relative; }
-  .tab-pop-btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 5px 12px;
-    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
-    font: 600 12px Arial; color: #1f2937;
-    cursor: pointer;
-  }
-  .tab-pop-btn:hover { border-color: #cc2222; color: #cc2222; }
-  .tab-pop-caret { font-size: 9px; color: #6b7280; }
-  .tab-pop-menu {
-    position: absolute; top: calc(100% + 4px); right: 0;
-    min-width: 220px;
-    background: #fff; border: 1px solid #cc2222; border-radius: 6px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
-    padding: 4px 0; z-index: 50;
-  }
-  .tab-pop-item {
-    display: flex; align-items: center; gap: 8px; width: 100%;
-    padding: 6px 12px;
-    background: transparent; border: 0;
-    font: 13px Arial; color: #1f2937;
-    cursor: pointer; text-align: left;
-  }
-  .tab-pop-item:hover:not(:disabled) { background: #fef0f0; color: #cc2222; }
-  .tab-pop-item.active { background: #fee2e2; color: #991b1b; font-weight: 600; }
-  .tab-pop-item:disabled { color: #d1d5db; cursor: not-allowed; }
-  .tab-pop-ic { font-size: 14px; }
-  .tab-pop-sub { font: 10px Arial; color: #9ca3af; margin-left: auto; }
-  /* 2-column params tiles when promoted to the top. */
-  .param-sliders.top-2col {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px;
-    background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px;
-  }
-  .param-sliders.top-2col .ps-cap { grid-column: 1 / -1; font: 600 10px Arial; color: #78350f; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; border-bottom: 1px solid #fbbf24; margin: 0; }
-  .ps-tile { display: grid; gap: 4px; padding: 6px 8px; background: #fff; border: 1px solid #fde68a; border-radius: 4px; }
-  .ps-tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
-  .ps-tile-head .ps-key { font: 600 11px ui-monospace, monospace; color: #1f2937; }
-  .ps-tile-head .ps-unit { font: 10px Arial; color: #92400e; }
-  .ps-tile-ctrls { display: grid; grid-template-columns: 1fr 60px; gap: 4px; align-items: center; }
-  .ps-tile-ctrls .ps-slider { width: 100%; min-width: 0; }
-  .ps-tile-ctrls .ps-num { width: 100%; padding: 2px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 3px; }
-  /* Tab body — scrollable inner column. */
+  /* Tab body — scrollable inner column (the no-proposed-entry empty state). */
   .tab-body { padding: 6px 14px 14px; overflow-y: auto; display: grid; gap: 8px; align-content: start; min-height: 0; }
-  .tab-body .def-line { font: 13px/1.55 Arial; color: #374151; margin: 0; }
-  .tab-body .def-line.rich { font-size: 14px; color: #1f2937; padding: 10px 12px; background: #f8fafc; border-left: 3px solid #0369a1; border-radius: 0 4px 4px 0; }
   /* Compact info-chip row beneath the definition. */
   .info-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .info-chip { padding: 2px 8px; border-radius: 9999px; font: 11px Arial; background: #f3f4f6; color: #475569; border: 1px solid #e5e7eb; }
@@ -1628,51 +985,14 @@
   /* Chip groups — synonyms, function, form, variants, references. */
   .chips-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .chips-label { font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.6px; min-width: 80px; }
-  /* 2D drawing + 3D bake side-by-side. */
-  .view-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; min-height: 320px; }
-  .view-row.solo { grid-template-columns: 1fr; min-height: 420px; }
-  .view-row > * { min-width: 0; }
-  /* 30/70 canvas | rule-details row in the Proposed tab. */
-  .canvas-rule-row { display: grid; grid-template-columns: 3fr 7fr; gap: 12px; align-items: stretch; min-height: 360px; }
-  .canvas-rule-row > * { min-width: 0; }
-  .rule-details-col { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
-  /* New 2-col layout: LEFT = canvas (full height of column); RIGHT =
-     params (top) + rule + details (below). */
-  .proposed-grid { display: grid; grid-template-columns: 4fr 6fr; gap: 10px; align-items: stretch; min-height: 560px; }
-  .proposed-grid > * { min-width: 0; }
-  .proposed-canvas-col { display: flex; flex-direction: column; }
-  .proposed-canvas-col .bake-card { flex: 1 1 auto; }
-  /* Keep the bake-card a flex column so .bake-body has a defined height,
-     otherwise the inner canvas collapses to 0 → auto-fit fires → bake-card
-     grows → loop ("magnification keeps going indefinitely"). */
-  .proposed-canvas-col .bake-card.no-head { display: flex; flex-direction: column; }
-  .proposed-canvas-col .bake-card.no-head .bake-body { flex: 1 1 auto; min-height: 480px; padding: 4px; overflow: hidden; }
-  .proposed-right-col { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-  .proposed-right-col .rule-details-col { max-height: none; flex: 1 1 auto; gap: 2px; }
-  /* Inline bake-info in the title row (replaces the in-card bake-head). */
+  /* Inline bake-info + promote in the detail-head title row. */
   .head-bake-info { font: 11px Arial; color: #6b7280; margin-left: 6px; }
   .head-bake-info code { font: 11px ui-monospace, monospace; color: #0c4a6e; background: #f0f9ff; padding: 1px 5px; border-radius: 3px; }
   .head-bake-stat { font: 11px ui-monospace, monospace; color: #57534e; margin-left: 4px; }
   .head-bake-stat.err { color: #b91c1c; }
   .head-promote { padding: 2px 10px; font: 600 11px Arial; margin-left: 8px; }
-  /* Compact accordions in the right column. */
-  .proposed-right-col .block { margin: 0; }
-  .proposed-right-col .pg-acc-wrap { margin: 0; padding: 0 2px 1px; }
-  .bake-card {
-    display: grid; grid-template-rows: auto 1fr;
-    background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 6px;
-    overflow: hidden;
-  }
-  .bake-card .bake-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #e7e5e4; background: #fff; }
-  .bake-card .bake-head .spacer { flex: 1; }
-  .bake-card .bake-title { font: 600 11px Arial; color: #57534e; text-transform: uppercase; letter-spacing: 0.5px; }
-  .bake-card .bake-body { padding: 6px; overflow: hidden; min-height: 0; }
-  .bake-cta { padding: 24px 16px; text-align: center; color: #57534e; font: 12px Arial; line-height: 1.6; }
-  .bake-cta code { font: 11px ui-monospace, monospace; color: #1e40af; }
-  .empty-card.faded { opacity: 0.6; }
+  /* No-proposed-entry empty state in the seed Proposed branch. */
   .cta-empty { padding: 40px 20px; text-align: center; color: #6b7280; font: 13px/1.6 Arial; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; }
-  /* Promote footer at the bottom of the active tab body. */
-  .promote-footer { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-top: 6px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; }
   .promote-btn {
     font: 600 12px Arial; padding: 6px 14px;
     background: #dcfce7; color: #14532d; border: 1px solid #15803d; border-radius: 4px;
@@ -1682,6 +1002,4 @@
   .promote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .promote-btn.primary { background: #16a34a; color: #fff; border-color: #15803d; }
   .promote-btn.primary:hover:not(:disabled) { background: #15803d; }
-  .promote-hint { font: 11px Arial; color: #166534; flex: 1; }
-  .promote-hint code { font: 11px ui-monospace, monospace; background: #dcfce7; padding: 1px 4px; border-radius: 2px; }
 </style>

@@ -100,6 +100,31 @@ other to match.
 | `.info-popover-wrap` + `.info-pop-btn` + `.info-pop-panel` | Definition & tags popover |
 | `.head-bake-info` + `.head-bake-stat` + `.head-promote` | inline title-row bake controls |
 
+## Tab-body components (`_tabs/`, R8 modularize)
+
+`+page.svelte` is the **shell**: data load (`+page.server.ts`), `selected` +
+`leftTab` + `detailTab` state, the header bar, Topology (Mermaid) diagram, the
+detail-head (kind chip · h2 · Definition&tags popover · Bake/Promote · Refresh ·
+Graph-editor toggle), the seed Inferred/Proposed vertical rail + status lines,
+the graph-editor iframe, and ALL bake/infer/promote `$state` + handlers
+(`inferCache` / `proposedBakeCache` / `sceneCache` / `paramOverrides` etc. stay
+in the shell so caches persist across rail toggles + seed↔curated navigation).
+
+The four tab BODIES are extracted into `_tabs/` as presentational components
+(state in, callbacks out — no own caches):
+
+| Component | Renders | Key props |
+|---|---|---|
+| `BrowsePane.svelte` | left Browse list + search | `terms`, `bind:search`, `termFormat`, `cacheByExemplar`, `ruleSummary`, `onSelect` |
+| `InferredTab.svelte` | seed Inferred body (2D ref + r_revolve bake + polygon/variants) | `entry`, `inf`, `PrimitiveDualCanvas`, `CompJsonSilhouette`, `promoteBusy`, `onInfer`, `onPromote` |
+| `ProposedTab.svelte` | seed Proposed body (canvas + ParamGrid + composition tree) | `entry`(prop), `pb`, `pmap`, `paramsOpen`, `stableProposedArgs`, `onToggleParams`, `onParamUpdate` |
+| `CuratedDetail.svelte` | non-seed stacked body (def + 2D/3D + params + rule blocks) | `entry`, `sc`, `lockEntry`, `PrimitiveDualCanvas`, `CompJsonSilhouette`, `ruleSummary` |
+
+Each carries its OWN scoped CSS (atoms like `.bake-card`/`.block`/`.code` are
+duplicated per component — self-contained by design). `ParamGrid` is imported
+directly by `ProposedTab`; the lazy `PrimitiveDualCanvas`/`CompJsonSilhouette`
+load once in the shell `onMount` and are passed down as props (do NOT fork them).
+
 ## Adding a new view-component
 
 If you want to mount more chrome from `/primitives` in here (e.g. the
