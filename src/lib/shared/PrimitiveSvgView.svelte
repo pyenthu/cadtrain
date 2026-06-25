@@ -162,6 +162,22 @@
     try { localStorage.setItem('ge-svg-lightangle', String(v)); } catch { /* ignore */ }
   }
 
+  // Fit + view-scale — mirror the 3D bake pane (PrimitiveDualCanvas). The SVG
+  // emitter ALREADY reads `scene.xScale` (diameter) + `scene.zScale` (depth) +
+  // `scene.zFocus`, so we drive the SAME shared scene state here: a slider moved
+  // in the SVG view exaggerates BOTH panes identically ("so SVG matches 3D").
+  //   • dia-scale  → scene.xScale  (>1 fattens the radial/diameter)
+  //   • z-scale    → scene.zScale  (<1 squashes the length)
+  //   • ⇕ fit      → frame the whole geometry: drop the exaggeration back to
+  //                  true 1:1 + clear the Z-pan, and flag fitLength so the 3D
+  //                  pane reframes in step.
+  function fitView() {
+    scene.xScale = 1;
+    scene.zScale = 1;
+    scene.zFocus = 0;
+    scene.fitLength = true;
+  }
+
   let size = $state({ w: 0, h: 0 });
   let hasRendered = $state(false);
   let warnHighPoly = $state(false);
@@ -322,8 +338,13 @@
         ? ` · ${emitCount.toLocaleString()} fills`
         : ''}{busy ? ' · re-baking…' : ''}</span>
     {/if}
-    <!-- Resolution (coarse/high) + camera (ortho/persp) folded into one ⚙ popup
-         — coarse + ortho are the defaults, so the toolbar stays uncluttered. -->
+    <!-- Fit — frame the whole geometry (resets dia/depth exaggeration + Z-pan),
+         mirroring the 3D bake pane's ⇕ fit. Pushed to the right of the toolbar. -->
+    <button class="svg-fit" type="button"
+      title="Fit — frame the whole part (reset diameter/depth scale + Z-pan to 1:1)"
+      onclick={fitView}>⇕ fit</button>
+    <!-- Resolution (coarse/high) + camera (ortho/persp) + view-scale folded into
+         one ⚙ popup — defaults keep the toolbar uncluttered. -->
     <div class="svg-settings">
       <button class="svg-gear" class:on={showSettings}
         title="View settings — resolution · camera"
@@ -355,6 +376,26 @@
               <button class="svg-proj-btn" class:on={projection === 'persp'}
                 title="Perspective projection" onclick={() => setProjection('persp')}>persp</button>
             </div>
+          </div>
+          <!-- View-scale — same shared scene.xScale / scene.zScale the 3D bake
+               pane drives, so moving a slider here exaggerates BOTH panes alike.
+               dia (X) fattens the radial/diameter; depth (Z) squashes the length. -->
+          <div class="svg-set-row">
+            <span class="svg-set-lbl">dia ×{scene.xScale.toFixed(2)}</span>
+            <input class="svg-set-range" type="range" min="0.25" max="8" step="0.25"
+              aria-label="Diameter scale"
+              bind:value={scene.xScale} />
+          </div>
+          <div class="svg-set-row">
+            <span class="svg-set-lbl">depth ×{scene.zScale.toFixed(2)}</span>
+            <input class="svg-set-range" type="range" min="0.05" max="2" step="0.05"
+              aria-label="Z-depth scale"
+              bind:value={scene.zScale} />
+          </div>
+          <div class="svg-set-row">
+            <button class="svg-set-reset" type="button"
+              title="Reset diameter / depth exaggeration to true 1:1"
+              onclick={() => { scene.xScale = 1; scene.zScale = 1; }}>1:1 true scale</button>
           </div>
         </div>
       {/if}
@@ -421,8 +462,21 @@
     color: #888;
     white-space: nowrap;
   }
-  /* ⚙ settings popup (resolution + camera) — pushed to the right of the toolbar. */
-  .svg-settings { position: relative; margin-left: auto; display: inline-flex; }
+  /* ⇕ fit — starts the right-hand cluster (push everything after it right). */
+  .svg-fit {
+    margin-left: auto;
+    font-size: 0.78rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    background: #fafafa;
+    color: #555;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .svg-fit:hover { background: #f0f0f0; }
+  /* ⚙ settings popup (resolution + camera + view-scale). */
+  .svg-settings { position: relative; display: inline-flex; }
   .svg-gear {
     font-size: 0.9rem; line-height: 1; width: 1.5rem; height: 1.5rem;
     display: inline-flex; align-items: center; justify-content: center;
@@ -458,6 +512,19 @@
   .svg-proj-btn + .svg-proj-btn { border-left: 1px solid #ddd; }
   .svg-proj-btn:hover { background: #f0f0f0; }
   .svg-proj-btn.on { background: #0369a1; color: #fff; }
+  /* View-scale sliders + reset inside the ⚙ popup. */
+  .svg-set-range { width: 120px; accent-color: #0369a1; }
+  .svg-set-reset {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    width: 100%;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    background: #fafafa;
+    color: #555;
+    cursor: pointer;
+  }
+  .svg-set-reset:hover { background: #f0f0f0; }
   .svg-dials { display: inline-flex; align-items: center; gap: 8px; }
   .svg-dial { display: inline-flex; align-items: center; gap: 4px; font: 600 10px Arial; color: #57534e; }
   .svg-dial span { white-space: nowrap; }
