@@ -11,10 +11,12 @@
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
 3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune + **R6a (poly
-   carve)** shipped → GEP **9455 → 5500 lines**. LEFT: GEP shell ≤1500 (carve the
-   poly_repeat/profile-resolve overlay + the remaining node-card SVGs), module-map
-   header, residual `$state` audit, R7 `builder.ts`/`library.ts` retire, R8 vocab,
-   R9 ProfileFnEditor. Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
+   carve)** shipped → GEP **9455 → 5500 lines**. Honest target **~2,500–3,000** (≤1500
+   needs a large feature carve; review 2026-06-25). LEFT, priority order: Repeat-editor
+   overlay (~250), AI menu (~150) + canvas menu (~80) + ghost toggles (~50), Expr-builder
+   component (~250); then R6b module-map header + residual `$state` audit; R7
+   `builder.ts`/`library.ts` retire, R8 vocab, R9 ProfileFnEditor. Plans:
+   `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — poly_repeat-style loop in the sketch editor (model +
    `expandSketchOps` + UI in SketchEditorPane). Plan: `docs/plans/sketch-repeat.md` ·
