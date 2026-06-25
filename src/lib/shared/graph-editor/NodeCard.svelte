@@ -62,6 +62,7 @@
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
   import { producerLabel, parseProfileExpr, argStr, argFrom } from './args';
   import SketchNodeCard from './SketchNodeCard.svelte';
+  import { DeleteConfirm } from './delete-confirm.svelte';
   import type Popovers from './Popovers.svelte';
   import type { SketchState } from './sketch-state.svelte';
   import type { WireState } from './wire-state.svelte';
@@ -170,6 +171,10 @@
     onResizePointerMove: (ev: PointerEvent) => void;
     onResizePointerUp: (ev: PointerEvent) => void;
   } = $props();
+
+  // Two-step delete confirm for this card's × (first click arms → ✓, second
+  // deletes). One node per NodeCard, so a single instance keyed by n.id suffices.
+  const del = new DeleteConfirm();
 </script>
 
             <g transform="translate({pos.x},{pos.y})" class="ge-node"
@@ -234,7 +239,9 @@
                   onpointerdown={(ev) => { ev.stopPropagation(); toggleNodeGhost(n.id); }}>👁</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); onDeleteNode(n.id); }}>×</text>
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
@@ -580,7 +587,9 @@
                      doesn't crowd the title-row output socket. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 22} y="22" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); onDeleteNode(n.id); }}>×</text>
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 <!-- OUTPUT socket on the title-row RIGHT EDGE (y=16) —
                      same vertical line as the child input on the left. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -668,7 +677,9 @@
                 {/each}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 22} y="22" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); onDeleteNode(n.id); }}>×</text>
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
@@ -736,7 +747,9 @@
                   onpointerdown={(ev) => { ev.stopPropagation(); openRepeatEditor(n.id); }}>✎</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
-                  onpointerdown={(ev) => { ev.stopPropagation(); onDeleteNode(n.id); }}>×</text>
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <!-- Repeat is a pure BUILDER — produces a list of N copies of
                      its child (combine downstream via a Stack). Minimal card:
@@ -811,7 +824,9 @@
                 {#if !isRoot}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
-                    onpointerdown={(ev) => { ev.stopPropagation(); onDeleteNode(n.id); }}>×</text>
+                    class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 {/if}
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <!-- Children slots — for the ROOT (▶ Output) we hide children
@@ -962,10 +977,11 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
                   class:disabled={polyConsumed}
+                  class:armed={del.isArmed(n.id)}
                   data-tip={polyConsumed
                     ? 'Polygon is wired into a Revolve / Extrude — delete the consumer first to unlock this polygon.'
-                    : 'Delete polygon'}
-                  onpointerdown={(ev) => { ev.stopPropagation(); if (!polyConsumed) onDeleteNode(n.id); }}>×</text>
+                    : del.isArmed(n.id) ? 'Click again to delete' : 'Delete polygon'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (!polyConsumed && del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 {@const polyMode = polygonModeFor(n.id)}
                 {@const ax0 = polyMode === 'cartesian' ? 'x' : 'r'}
@@ -1688,6 +1704,8 @@
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }
+  /* Armed (awaiting confirm): ✓ glyph, brighter + bold so the two-step reads. */
+  .ge-node-x.armed { fill: #16a34a; font-weight: 700; }
   /* Polygon 👁 preview-toggle (sits just left of the × delete). */
   .ge-poly-eye { font: 12px Arial; fill: #475569; cursor: pointer; user-select: none; opacity: 0.7; }
   .ge-poly-eye:hover { fill: #0c4a6e; opacity: 1; }

@@ -24,6 +24,7 @@
   import { paramPos, CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_H } from './geom';
   import { STACK_REF_PARAM } from '$lib/cad/composition-graph';
   import { dragNumber } from '$lib/shared/dragNumber';
+  import { DeleteConfirm } from './delete-confirm.svelte';
 
   let {
     paramEntries,
@@ -48,6 +49,10 @@
     onRemoveParam: (name: string) => void;
     onStartParamWire: (ev: PointerEvent, name: string) => void;
   } = $props();
+
+  // Two-step delete confirm — one instance gates all param trash buttons, keyed
+  // by param name (only one row armed at a time).
+  const del = new DeleteConfirm();
 </script>
 
 <!-- PARAMS CARD — tacked outside the pan/zoom group so it stays glued to the
@@ -86,8 +91,9 @@
           }}
           oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
         {#if name !== STACK_REF_PARAM}
-          <button class="trash" type="button" title="Remove p.{name}"
-            onpointerdown={(ev) => { ev.stopPropagation(); onRemoveParam(name); }}>🗑</button>
+          <button class="trash" type="button" class:armed={del.isArmed(name)}
+            title={del.isArmed(name) ? 'Click again to delete p.' + name : 'Remove p.' + name}
+            onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(name)) onRemoveParam(name); }}>{del.isArmed(name) ? '✓' : '🗑'}</button>
         {:else}
           <span class="trash locked" title="Reserved — cannot be deleted">🔒</span>
         {/if}
@@ -148,6 +154,8 @@
     color: #b91c1c; opacity: 0.55; border-radius: 3px;
   }
   .ge-param-chip .trash:hover { opacity: 1; background: rgba(220, 38, 38, 0.12); }
+  /* Armed (awaiting confirm): ✓ glyph on a green wash, fully opaque. */
+  .ge-param-chip .trash.armed { opacity: 1; color: #16a34a; background: rgba(22, 163, 74, 0.16); }
   /* Output socket — base + param variant (the .ge-sock family is shared editor-wide;
      these copies cover this component's one socket type). */
   .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; touch-action: none; }
