@@ -10,6 +10,7 @@
    * browser-only libs are safe. ArchGraph.svelte is imported normally; it in
    * turn imports @xyflow/svelte at module scope which is fine for client-only.
    */
+  import { SvelteFlowProvider } from '@xyflow/svelte';
   import ArchGraph from './ArchGraph.svelte';
 
   const capabilities = [
@@ -130,7 +131,9 @@
       the bake-pipeline edges animate to show data-flow direction.
     </p>
 
-    <ArchGraph />
+    <SvelteFlowProvider>
+      <ArchGraph />
+    </SvelteFlowProvider>
   </section>
 
   <!-- ───────────────────────── Capabilities ───────────────────────── -->

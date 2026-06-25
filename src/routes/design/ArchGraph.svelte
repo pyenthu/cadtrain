@@ -10,7 +10,7 @@
    *
    * SSR is globally off (src/+layout.ts), so the top-level @xyflow import is safe.
    */
-  import { SvelteFlow, Background, BackgroundVariant, Controls, MarkerType, type ColorMode } from '@xyflow/svelte';
+  import { SvelteFlow, Background, BackgroundVariant, Controls, MarkerType, useSvelteFlow, type ColorMode } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
 
   import ArchNode from './nodes/ArchNode.svelte';
@@ -128,8 +128,10 @@
   }
 
   // ── reactive state ────────────────────────────────────────
-  // Default: containers EXPANDED (nothing collapsed).
-  let collapsed = new Set<string>();
+  // Default: containers COLLAPSED — the initial view is a clean system + 4
+  // container nodes; expanding all 56 components at once makes the tree ~3360px
+  // tall so fitView zooms it to an illegible thread. Click a caret to drill in.
+  let collapsed = new Set<string>(['c-webapp', 'c-api', 'c-kernel', 'c-volume']);
 
   const layout0 = computeLayout(collapsed);
   // SvelteFlow OWNS these arrays — they must be writable `$state.raw`, not a
@@ -137,10 +139,16 @@
   let nodes = $state.raw<Node<ArchTreeNode>[]>(buildNodes(layout0, collapsed));
   let edges = $state.raw<Edge<ArchEdgeData>[]>(buildEdges(layout0));
 
+  // fitView from the provider context — re-frame the tree after every
+  // collapse/expand so a newly-expanded subtree doesn't fall below the fold.
+  const { fitView } = useSvelteFlow();
+
   function rebuild() {
     const pos = computeLayout(collapsed);
     nodes = buildNodes(pos, collapsed);
     edges = buildEdges(pos);
+    // let the DOM apply the new node positions, then re-frame with a glide.
+    setTimeout(() => { try { fitView({ padding: 0.18, duration: 420 }); } catch { /* pre-mount */ } }, 60);
   }
 
   function onToggle(id: string) {
