@@ -10,13 +10,11 @@
    few-shot DB (no data leaves org). `ge-assist` already accepts a `postTurn` override
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
-3. **Modularize round 2** — SHIPPED: A–F + R2 knip + R6a + RepeatEditorPane + CanvasMenu
-   + AiMenu → GEP **9455 → 5070**; R6b (module-map header + `$state` audit); R8 (vocab
-   1687→1005); R9 (profile-fn-compose, ProfileFnEditor 1156→925). ⏳ **R7 IN PROGRESS**
-   (subagent) — dead-chain confirmed (builder.ts imported only by /api/primitives/preview
-   for `finalizeManifold`; `builders`/`buildComponent`/`buildPrimitiveManifold` + all of
-   library.ts are dead): strip the legacy ComponentDef path + `git rm library.ts` + rename
-   builder.ts→render-helpers.ts; keep `finalizeManifold`. THE LAST modularize item.
+3. **Modularize round 2 — ✅ COMPLETE.** A–F + R2 knip + R6a + RepeatEditorPane +
+   CanvasMenu + AiMenu → GEP **9455 → 5070**; R6b (module-map header + `$state` audit);
+   R8 (vocab 1687→1005); R9 (profile-fn-compose, ProfileFnEditor 1156→925); **R7**
+   (deleted library.ts + renamed builder.ts→`render-helpers.ts`, cut the dead ComponentDef
+   path, kept `finalizeManifold` — bake-proof verified). The lane is done.
    Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — ✅ SHIPPED 2026-06-25 (PR1–3): model + `expandSketchOps` +
@@ -50,6 +48,10 @@
 - ✅ **Sketch per-axis X/Y scale ⚙ toolbar popover** (was PARKED #2)
 - ✅ Earlier: expr-builder redesign · /design Tree+C4 tabs · landing remodel · R8/R9 · sketch-repeat
 - ✅ **Confirm-on-delete** (card/param/node) — two-step inline arm→confirm (`DeleteConfirm` class) on all NodeCard ×, SketchNodeCard, ParamsCard 🗑 (was PARKED #15)
+- ✅ **R7 — legacy builder/library retired** → `render-helpers.ts`; **modularize round 2 COMPLETE**
+- ✅ **Output node card redesigned** (was PARKED #13) — minimal box+arrow, sockets centered, per-socket × delete, no title/labels/order/cog
+- ✅ **Repeat z-move bug fixed** — `mv`/`rot` now accept scalar args `mv(B,x,y,z)` (was array-only → z dropped) + `addRepeatChild` is txfmn-aware (wired a part's outermost transform so reloaded z-moves survive the repeat); 2 regression tests, geometry verified
+- ✅ **`/fem` + `/forge` archived-reality reconciled** across CLAUDE.md / `/design` / memory
 
 
 ### PARKED
@@ -64,6 +66,5 @@
 
 8. Option to promote and search for expressions to global library or personal user based library and search
 
-13. ⏳ IN PROGRESS (subagent) — The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
 16. Organize source and the server under lib and shared by categories that are logical. Organzie the folders/sub folders as per the categories that are logical.
