@@ -1,87 +1,165 @@
 <script lang="ts">
   /**
-   * ArchGraph.svelte — interactive @xyflow/svelte canvas for /design.
+   * ArchGraph.svelte — collapsible, auto-laid-out architecture TREE for /design.
    *
-   * Top-level import is fine here because SSR is globally OFF for this app
-   * (src/+layout.ts exports ssr = false).  The component is also only ever
-   * mounted from /design, which is a client-only page.
+   * The data (nodes + edges) comes from architecture.ts; layout is COMPUTED here
+   * from the parent/child hierarchy (system → 4 containers → components) by a
+   * small recursive left-to-right tree-layout (x = depth·colWidth, y walks the
+   * visible leaves). Clicking a container/system caret collapses its subtree —
+   * descendants AND their edges vanish — and the whole tree reflows + animates.
+   *
+   * SSR is globally off (src/+layout.ts), so the top-level @xyflow import is safe.
    */
-  import { SvelteFlow, Background, Controls, MiniMap, MarkerType, type ColorMode } from '@xyflow/svelte';
+  import { SvelteFlow, Background, BackgroundVariant, Controls, MarkerType, type ColorMode } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
 
   import ArchNode from './nodes/ArchNode.svelte';
   import ContainerNode from './nodes/ContainerNode.svelte';
-  import { ARCH_NODES, ARCH_CONTAINERS, ARCH_EDGES, type ArchNodeData, type ArchEdgeData } from './architecture';
+  import { ARCH_TREE_NODES, ARCH_EDGES, type ArchTreeNode, type ArchEdgeData } from './architecture';
   import type { Node, Edge } from '@xyflow/svelte';
 
-  // C4 nesting rule: parents (system boundary, then containers) MUST appear
-  // before their children in the nodes array.
-  const initialNodes = [...ARCH_CONTAINERS, ...ARCH_NODES] as Node<ArchNodeData>[];
-
   const nodeTypes = { archNode: ArchNode, containerNode: ContainerNode };
+  const colorMode: ColorMode = 'light';
 
-  // Edge stroke colour per relationship kind
+  // ── tree indices ──────────────────────────────────────────
+  const byId = new Map(ARCH_TREE_NODES.map((n) => [n.id, n]));
+  const childrenOf = new Map<string, string[]>();
+  for (const n of ARCH_TREE_NODES) {
+    if (n.parentId) {
+      const arr = childrenOf.get(n.parentId) ?? [];
+      arr.push(n.id);
+      childrenOf.set(n.parentId, arr);
+    }
+  }
+  const roots = ARCH_TREE_NODES.filter((n) => !n.parentId).map((n) => n.id);
+  const isParent = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
+
+  // ── layout constants ──────────────────────────────────────
+  const COL_W = 340;   // horizontal pitch per depth level
+  const ROW_H = 60;    // vertical pitch per visible leaf row
+  const X0 = 20;
+  const Y0 = 20;
+
+  /** Recursive left-to-right tidy-tree layout over the VISIBLE subtree. */
+  function computeLayout(collapsed: Set<string>): Map<string, { x: number; y: number }> {
+    const pos = new Map<string, { x: number; y: number }>();
+    let cursorY = Y0;
+    function walk(id: string, depth: number): number {
+      const x = X0 + depth * COL_W;
+      const kids = childrenOf.get(id) ?? [];
+      if (kids.length === 0 || collapsed.has(id)) {
+        const y = cursorY;
+        cursorY += ROW_H;
+        pos.set(id, { x, y });
+        return y;
+      }
+      const ys = kids.map((k) => walk(k, depth + 1));
+      const y = (ys[0] + ys[ys.length - 1]) / 2;
+      pos.set(id, { x, y });
+      return y;
+    }
+    for (const r of roots) walk(r, 0);
+    return pos;
+  }
+
+  // ── edge styling ──────────────────────────────────────────
   function edgeColor(kind: string | undefined): string {
     switch (kind) {
       case 'flow':    return '#f97316';
-      case 'calls':   return '#3b82f6';
-      case 'mounts':  return '#6366f1';
-      case 'reads':   return '#a855f7';
-      case 'writes':  return '#a855f7';
       case 'summary': return '#475569';
-      default:        return '#9ca3af';
+      case 'calls':   return '#60a5fa';
+      case 'mounts':  return '#818cf8';
+      case 'reads':
+      case 'writes':  return '#c084fc';
+      default:        return '#cbd5e1';
     }
   }
-
-  // Edge style helpers
-  function edgeStyle(kind: string | undefined): string {
-    const c = edgeColor(kind);
-    switch (kind) {
-      case 'flow':    return `stroke:${c};stroke-width:2;`;
-      case 'calls':   return `stroke:${c};stroke-width:1.5;stroke-dasharray:4 2;`;
-      case 'mounts':  return `stroke:${c};stroke-width:1.5;`;
-      case 'reads':   return `stroke:${c};stroke-width:1.5;stroke-dasharray:2 3;`;
-      case 'writes':  return `stroke:${c};stroke-width:2;`;
-      case 'summary': return `stroke:${c};stroke-width:3;`;          // bold C4 container arrows
-      default:        return `stroke:${c};stroke-width:1.5;`;
-    }
-  }
-
-  // Annotate edges with style, animation, arrowheads, and C4 summary labels.
-  // The styling is STATIC (it never depends on reactive state), so compute it
-  // once. SvelteFlow OWNS its edges array — it must receive a writable
-  // `$state.raw`, not a read-only `$derived`; passing a derived left every edge
-  // unrendered (markers in <defs> but zero `.svelte-flow__edge-path`).
-  function styleEdge(e: Edge<ArchEdgeData>) {
+  function styleEdge(e: Edge<ArchEdgeData>): Edge<ArchEdgeData> {
     const kind = e.data?.edgeKind;
-    const isSummary = kind === 'summary';
+    const c = edgeColor(kind);
+    const pipeline = kind === 'flow' || kind === 'summary';
+    const summary = kind === 'summary';
     return {
       ...e,
-      style: edgeStyle(kind),
+      type: 'bezier',
       animated: kind === 'flow',
-      markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor(kind), width: 16, height: 16 },
-      type: 'smoothstep',
-      zIndex: isSummary ? 5 : 0,
-      // Surface the relationship label on the bold container-level arrows.
-      ...(isSummary && e.data?.label
+      zIndex: summary ? 4 : 0,
+      style: pipeline
+        ? `stroke:${c};stroke-width:${summary ? 2.4 : 1.8};`
+        : `stroke:${c};stroke-width:1.4;stroke-dasharray:5 4;opacity:0.85;`,
+      markerEnd: { type: MarkerType.ArrowClosed, color: c, width: 14, height: 14 },
+      ...(summary && e.data?.label
         ? {
             label: e.data.label,
-            labelStyle: 'fill:#334155;font-weight:700;font-size:11px;',
+            labelStyle: 'fill:#334155;font-weight:700;font-size:10.5px;',
             labelBgStyle: 'fill:#ffffff;',
             labelBgPadding: [6, 3] as [number, number],
-            labelBgBorderRadius: 4,
+            labelBgBorderRadius: 5,
           }
         : {}),
     };
   }
 
-  // SvelteFlow needs writable `$state.raw` arrays it can own (drag/select/measure).
-  let nodes = $state.raw<Node<ArchNodeData>[]>(initialNodes);
-  let edges = $state.raw<Edge<ArchEdgeData>[]>(
-    (ARCH_EDGES as Edge<ArchEdgeData>[]).map(styleEdge) as Edge<ArchEdgeData>[]
-  );
+  // ── build xyflow nodes/edges from a collapsed set ─────────
+  function buildNodes(pos: Map<string, { x: number; y: number }>, collapsed: Set<string>): Node<ArchTreeNode>[] {
+    const out: Node<ArchTreeNode>[] = [];
+    for (const n of ARCH_TREE_NODES) {
+      const p = pos.get(n.id);
+      if (!p) continue; // hidden (ancestor collapsed)
+      const parent = n.treeKind === 'system' || n.treeKind === 'container';
+      out.push({
+        id: n.id,
+        type: parent ? 'containerNode' : 'archNode',
+        position: p,
+        draggable: false,
+        selectable: !parent,
+        data: parent
+          ? ({ ...n, collapsed: collapsed.has(n.id), childCount: childrenOf.get(n.id)?.length ?? 0, onToggle } as unknown as ArchTreeNode)
+          : n,
+        zIndex: parent ? 1 : 2,
+      });
+    }
+    return out;
+  }
+  function buildEdges(pos: Map<string, { x: number; y: number }>): Edge<ArchEdgeData>[] {
+    return (ARCH_EDGES as Edge<ArchEdgeData>[])
+      .filter((e) => pos.has(e.source) && pos.has(e.target))
+      .map(styleEdge);
+  }
 
-  const colorMode: ColorMode = 'light';
+  // ── reactive state ────────────────────────────────────────
+  // Default: containers EXPANDED (nothing collapsed).
+  let collapsed = new Set<string>();
+
+  const layout0 = computeLayout(collapsed);
+  // SvelteFlow OWNS these arrays — they must be writable `$state.raw`, not a
+  // `$derived` (a derived edges array renders zero `.svelte-flow__edge-path`).
+  let nodes = $state.raw<Node<ArchTreeNode>[]>(buildNodes(layout0, collapsed));
+  let edges = $state.raw<Edge<ArchEdgeData>[]>(buildEdges(layout0));
+
+  function rebuild() {
+    const pos = computeLayout(collapsed);
+    nodes = buildNodes(pos, collapsed);
+    edges = buildEdges(pos);
+  }
+
+  function onToggle(id: string) {
+    if (!isParent(id)) return;
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    collapsed = next;
+    rebuild();
+  }
+
+  function expandAll() {
+    collapsed = new Set();
+    rebuild();
+  }
+  function collapseContainers() {
+    collapsed = new Set(['c-webapp', 'c-api', 'c-kernel', 'c-volume']);
+    rebuild();
+  }
 </script>
 
 <div class="arch-canvas">
@@ -91,41 +169,40 @@
     {nodeTypes}
     {colorMode}
     fitView
-    fitViewOptions={{ padding: 0.18 }}
-    minZoom={0.25}
-    maxZoom={2}
+    fitViewOptions={{ padding: 0.16 }}
+    minZoom={0.2}
+    maxZoom={1.8}
+    nodesDraggable={false}
     proOptions={{ hideAttribution: false }}
   >
-    <Background />
-    <Controls />
-    <MiniMap zoomable pannable />
+    <Background variant={BackgroundVariant.Dots} gap={22} size={1} bgColor="#fbfcfe" />
+    <Controls showLock={false} />
   </SvelteFlow>
 
-  <!-- Legend -->
+  <!-- toolbar -->
+  <div class="toolbar">
+    <button type="button" onclick={expandAll}>Expand all</button>
+    <button type="button" onclick={collapseContainers}>Collapse containers</button>
+  </div>
+
+  <!-- legend -->
   <div class="legend">
-    <div class="legend-title">C4 Container view</div>
+    <div class="legend-title">Collapsible tree</div>
     <div class="legend-note">
-      The dashed outer box is the <b>CAD&nbsp;Train</b> system. The four tinted
-      boxes are its <b>containers</b>; nodes inside are their components.
+      <b>System → containers → components.</b> Click a container caret to
+      collapse its subtree; the tree reflows. Click a <b>route</b> to open it.
     </div>
-    <div class="legend-row"><span class="box" style="border-color:#3b82f6"></span>Web App</div>
-    <div class="legend-row"><span class="box" style="border-color:#22c55e"></span>API layer</div>
-    <div class="legend-row"><span class="box" style="border-color:#f97316"></span>CAD kernel</div>
-    <div class="legend-row"><span class="box" style="border-color:#a855f7"></span>Volume store</div>
-    <hr class="legend-hr" />
-    <div class="legend-subtitle">Components</div>
-    <div class="legend-row"><span class="dot" style="background:#3b82f6"></span>route</div>
-    <div class="legend-row"><span class="dot" style="background:#22c55e"></span>api group</div>
-    <div class="legend-row"><span class="dot" style="background:#f97316"></span>lib / pipeline</div>
-    <div class="legend-row"><span class="dot" style="background:#a855f7"></span>store</div>
-    <hr class="legend-hr" />
-    <div class="legend-subtitle">Relationships</div>
-    <div class="legend-row"><span class="line solid" style="background:#475569;height:3px"></span>container → container</div>
-    <div class="legend-row"><span class="line dashed" style="background:#3b82f6"></span>calls API</div>
-    <div class="legend-row"><span class="line solid" style="background:#6366f1"></span>mounts</div>
-    <div class="legend-row"><span class="line animated" style="background:#f97316"></span>data flow</div>
-    <div class="legend-row"><span class="line dashed" style="background:#a855f7"></span>reads store</div>
-    <div class="legend-row"><span class="line solid" style="background:#a855f7"></span>writes store</div>
+    <div class="legend-sub">Components</div>
+    <div class="legend-row"><span class="sw" style="background:#3b82f6"></span>route</div>
+    <div class="legend-row"><span class="sw" style="background:#22c55e"></span>api group</div>
+    <div class="legend-row"><span class="sw" style="background:#f97316"></span>lib / pipeline</div>
+    <div class="legend-row"><span class="sw" style="background:#a855f7"></span>store</div>
+    <hr />
+    <div class="legend-sub">Relationships</div>
+    <div class="legend-row"><span class="ln solid" style="--c:#475569"></span>container flow</div>
+    <div class="legend-row"><span class="ln solid" style="--c:#f97316"></span>data flow</div>
+    <div class="legend-row"><span class="ln dash" style="--c:#60a5fa"></span>calls / mounts</div>
+    <div class="legend-row"><span class="ln dash" style="--c:#c084fc"></span>reads / writes</div>
   </div>
 </div>
 
@@ -133,103 +210,118 @@
   .arch-canvas {
     position: relative;
     width: 100%;
-    height: 720px;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    height: 760px;
+    border: 1px solid #e7ecf2;
+    border-radius: 16px;
     overflow: hidden;
-    background: #f8fafc;
+    background: #fbfcfe;
+    box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(15, 23, 42, 0.04);
   }
 
-  /* legend panel */
+  /* Reflow animation — xyflow positions nodes via transform on the wrapper. */
+  :global(.arch-canvas .svelte-flow__node) {
+    transition: transform 0.34s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  :global(.arch-canvas .svelte-flow__edge-path) {
+    transition: opacity 0.2s ease;
+  }
+  :global(.arch-canvas .svelte-flow__edge.animated .svelte-flow__edge-path) {
+    stroke-dasharray: 6 4;
+  }
+
+  /* toolbar */
+  .toolbar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 12;
+    display: flex;
+    gap: 6px;
+  }
+  .toolbar button {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #334155;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  .toolbar button:hover {
+    border-color: #cbd5e1;
+    background: #fff;
+    color: #0f172a;
+  }
+
+  /* legend */
   .legend {
     position: absolute;
     top: 12px;
     right: 12px;
-    background: rgba(255,255,255,0.93);
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 10px 12px;
+    z-index: 12;
+    min-width: 168px;
+    max-width: 200px;
+    padding: 11px 13px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e7ecf2;
+    border-radius: 11px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
     font-size: 0.72rem;
-    color: #374151;
-    z-index: 10;
-    backdrop-filter: blur(4px);
+    color: #475569;
     line-height: 1.4;
-    min-width: 110px;
   }
   .legend-title {
+    font-size: 0.62rem;
     font-weight: 700;
-    font-size: 0.68rem;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #6b7280;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
     margin-bottom: 6px;
-  }
-  .legend-subtitle {
-    font-weight: 700;
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #9ca3af;
-    margin-bottom: 4px;
   }
   .legend-note {
     font-size: 0.66rem;
-    color: #6b7280;
-    line-height: 1.35;
-    margin-bottom: 8px;
-    max-width: 170px;
+    color: #64748b;
+    margin-bottom: 9px;
   }
   .legend-note b {
-    color: #374151;
+    color: #334155;
   }
-  .box {
-    display: inline-block;
-    width: 12px;
-    height: 9px;
-    border: 1.5px solid;
-    border-radius: 3px;
-    background: rgba(0, 0, 0, 0.02);
-    flex-shrink: 0;
+  .legend-sub {
+    font-size: 0.56rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #94a3b8;
+    margin-bottom: 4px;
   }
   .legend-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     margin-bottom: 3px;
   }
-  .dot {
-    display: inline-block;
+  .sw {
     width: 10px;
     height: 10px;
-    border-radius: 50%;
+    border-radius: 3px;
     flex-shrink: 0;
   }
-  .line {
-    display: inline-block;
+  .ln {
     width: 20px;
-    height: 2px;
+    height: 0;
     flex-shrink: 0;
-    border-radius: 1px;
+    border-top: 2px solid var(--c);
   }
-  .line.dashed {
-    background: repeating-linear-gradient(
-      90deg,
-      currentColor 0, currentColor 4px,
-      transparent 4px, transparent 7px
-    );
-    height: 2px;
+  .ln.dash {
+    border-top-style: dashed;
   }
-  .line.animated {
-    background: repeating-linear-gradient(
-      90deg,
-      #f97316 0, #f97316 4px,
-      transparent 4px, transparent 7px
-    );
-    height: 2px;
-  }
-  .legend-hr {
+  hr {
     border: none;
-    border-top: 1px solid #e5e7eb;
-    margin: 6px 0;
+    border-top: 1px solid #eef2f7;
+    margin: 7px 0;
   }
 </style>
