@@ -241,10 +241,53 @@ export type SketchOpEntry =
       mode?: 'abs' | 'rel' }
   | { op: 'fillet'; radius: ArgValue }
   | { op: 'chamfer'; dist: ArgValue };
+
+/** Sketch REPEAT node (B.2 / id 805) — the `poly_repeat` analog for the 2D
+ *  sketch surface. Holds a PROTOTYPE run of sketch ops that tiles `count`
+ *  times when the sketch is compiled. Like `poly_repeat` it is a SEPARATE
+ *  free-floating card (never appended to any list, referenced only by a
+ *  `SketchRepeatRef` entry in a parent sketch's `ops`), so it never shows as
+ *  an Output. The expansion happens UPSTREAM of `compileSketch` (at both the
+ *  emit + client-preview sites via `expandSketchOps`), so `compileSketch` /
+ *  `sketch.ts` stay untouched and rel-mode prototype ops tile seamlessly
+ *  across iteration boundaries (the running cursor walks the flat op list).
+ *
+ *  The per-iteration ADVANCE `(dr,dz)` is the stride between copies: when set,
+ *  expansion prepends one leading `{op:'line', mode:'rel', r:dr, z:dz}` per
+ *  iteration (the land/gap vertex for racks/combs). `dr=dz=0` ⇒ pure
+ *  self-tiling (threads — the prototype's own rel ops sum to the pitch). `i`
+ *  (loopVar) + `NPts` (= resolved count) + bindings are in scope for prototype
+ *  op exprs (the tapering escape hatch). */
+export type SketchRepeatNode = {
+  id: NodeId;
+  type: 'sketch_repeat';
+  count: ArgValue;                 // iterations (literal/param/expr); clamped ≥0 at eval
+  loopVar: string;                 // default 'i'; in scope for prototype op exprs
+  /** Per-iteration advance of the iteration origin (stride between copies).
+   *  0/absent ⇒ pure self-tiling; non-zero ⇒ a leading rel move per copy. */
+  dr?: ArgValue;
+  dz?: ArgValue;
+  /** Reuse poly_repeat's binding type verbatim — per-iteration named values
+   *  evaluated inside the loop, in scope for the prototype op exprs. */
+  bindings?: PolyRepeatBinding[];
+  /** The prototype run to repeat — same op vocabulary as a sketch, but NO
+   *  nested repeat-refs (forbidden in v1). */
+  ops: SketchOpEntry[];
+};
+
+/** One flat entry in a parent sketch's `ops` list pointing at a separate
+ *  `SketchRepeatNode` whose expanded prototype is spliced in at this row
+ *  (mirrors `PolygonRepeatRef`). The `op` discriminant keeps it distinct from
+ *  the point/corner ops in every `if (op.op === 'line' | …)` switch. */
+export type SketchRepeatRef = { op: 'repeat-ref'; sourceId: NodeId };
+
 export type SketchNode = {
   id: NodeId;
   type: 'sketch';
-  ops: SketchOpEntry[];
+  /** Ordered ops — point/corner ops and/or repeat-refs. A repeat-ref splices
+   *  its source SketchRepeatNode's expanded prototype in at its position.
+   *  Pre-#805 files have only SketchOpEntry rows and round-trip unchanged. */
+  ops: Array<SketchOpEntry | SketchRepeatRef>;
   /** Sampling density of curved sections; defaults to a literal 64. */
   segments?: ArgValue;
   /** Whole-sketch scale in the r (x) and z (y) directions. Absent / undefined
@@ -311,7 +354,7 @@ export type ExprNode = {
   bindings?: Record<string, ArgValue>;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | ExprNode;
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

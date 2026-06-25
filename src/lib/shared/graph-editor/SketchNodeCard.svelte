@@ -21,7 +21,7 @@
   import { sketchSockR, sketchSockZ, sketchSockVal } from './geom';
   import { argStr, argFrom } from './args';
   import {
-    addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp,
+    addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp, addSketchRepeat,
     type Graph,
   } from '$lib/cad/composition-graph';
   import type { SketchState } from './sketch-state.svelte';
@@ -110,6 +110,23 @@
                 onclick={() => { setGraph(removeSketchOp(graph, n.id, idx)); }}>×</button>
             </div>
           </div>
+        {:else if op.op === 'repeat-ref'}
+          {@const src = graph.nodes[op.sourceId]}
+          {@const cnt = (src as any)?.type === 'sketch_repeat' ? argStr((src as any).count) : '?'}
+          <!-- Compact repeat-ref summary — the prototype ops live on the
+               separate ↻ sketch-repeat card (#805). -->
+          <div class="ge-sketch-vtx repeat" style="height: {sketchEntryH(op)}px">
+            <div class="ge-sketch-srow">
+              <span class="ge-sketch-axis repeat" title="Sketch repeat — edit the prototype on its ↻ card">↻ ×{cnt}</span>
+              <span class="ge-sketch-rep-hint">{(src as any)?.type === 'sketch_repeat' ? 'repeat block' : 'missing source'}</span>
+              <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                onclick={() => { setGraph(moveSketchOp(graph, n.id, idx, -1)); }}>▲</button>
+              <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === n.ops.length - 1}
+                onclick={() => { setGraph(moveSketchOp(graph, n.id, idx, 1)); }}>▼</button>
+              <button class="ge-sketch-btn del" type="button" title="Remove repeat" disabled={n.ops.length <= 1}
+                onclick={() => { setGraph(removeSketchOp(graph, n.id, idx)); }}>×</button>
+            </div>
+          </div>
         {:else}
           <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === n.id && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
             <div class="ge-sketch-srow">
@@ -134,6 +151,7 @@
       <button class="ge-sketch-add" type="button" title="Add a Bézier spline" onclick={() => { setGraph(addSketchOp(graph, n.id, 'spline')); }}>+ spline</button>
       <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { setGraph(addSketchOp(graph, n.id, 'fillet')); }}>+ fillet</button>
       <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { setGraph(addSketchOp(graph, n.id, 'chamfer')); }}>+ chamfer</button>
+      <button class="ge-sketch-add repeat" type="button" title="Repeat a run of ops N times (threads / serrations)" onclick={() => { setGraph(addSketchRepeat(graph, n.id).graph); }}>+ repeat</button>
     </div>
   </div>
 </foreignObject>
@@ -149,7 +167,7 @@
     <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockZ(n, idx)} r="4"
       class:wired={op.z?.kind === 'param'} data-tip="Drag a param here → z"
       onpointerup={(ev) => wire.endWireOnSketchCoord(ev, n.id, idx, 'z')}/>
-  {:else}
+  {:else if op.op === 'fillet' || op.op === 'chamfer'}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <circle role="button" tabindex="-1" class="ge-sock in poly-coord" cx="0" cy={sketchSockVal(n, idx)} r="4"
       class:wired={(op.op === 'fillet' ? op.radius : op.dist)?.kind === 'param'} data-tip="Drag a param here"
@@ -192,6 +210,9 @@
   .ge-sketch-axis.spline { color: #0891b2; }
   .ge-sketch-axis.corner { color: #0e7490; }      /* fillet */
   .ge-sketch-axis.corner.chamfer { color: #b45309; }
+  .ge-sketch-axis.repeat { color: #7c3aed; width: auto; }   /* ↻ ×N repeat-ref */
+  .ge-sketch-vtx.repeat { background: rgba(237,233,254,0.9); border-color: #c4b5fd; }
+  .ge-sketch-rep-hint { flex: 1 1 auto; font: 9px Arial; color: #7c3aed; opacity: 0.75; white-space: nowrap; overflow: hidden; }
   .ge-sketch-in { width: 100%; min-width: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; box-sizing: border-box; cursor: text; }
   .ge-sketch-in:hover { background: #faf5ff; }
   .ge-sketch-in:focus { outline: 1px solid #7c3aed; background: #fff; }
@@ -202,6 +223,8 @@
   .ge-sketch-foot { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
   .ge-sketch-add { padding: 2px 6px; font: 600 10px Arial; background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; border-radius: 3px; cursor: pointer; }
   .ge-sketch-add:hover { background: #e9d5ff; }
+  .ge-sketch-add.repeat { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
+  .ge-sketch-add.repeat:hover { background: #ddd6fe; }
   .ge-sketch-fx { width: 16px; height: 17px; padding: 0; flex: none; background: #fff; border: 1px solid #d6d3d1; border-radius: 2px; font: 700 11px serif; color: #57534e; cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .ge-sketch-fx:hover { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
   .ge-sketch-fx.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }

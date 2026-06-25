@@ -40,6 +40,8 @@ export type SketchColLayout = {
  *  line/spline renders a stacked r/z pair (45 = POLY_VTX_PITCH; socket math
  *  adds +12/+31). */
 export function sketchEntryH(op: any): number {
+  // A repeat-ref is one compact summary row (↻ ×N + stride chip + socket).
+  if (op?.op === 'repeat-ref') return 40;
   return op?.op === 'fillet' || op?.op === 'chamfer' ? 24 : 45;
 }
 
