@@ -169,6 +169,8 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setPolygonCoord(this.#getGraph(), polygonId, idx, axis, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== polygonId) {
+      this.#setGraph(setPolygonCoord(this.#getGraph(), polygonId, idx, axis, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
@@ -182,6 +184,8 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setPolyRepeatCount(this.#getGraph(), repeatId, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== repeatId) {
+      this.#setGraph(setPolyRepeatCount(this.#getGraph(), repeatId, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
@@ -214,6 +218,8 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setTransformAxisValue(this.#getGraph(), transformId, axis, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== transformId) {
+      this.#setGraph(setTransformAxisValue(this.#getGraph(), transformId, axis, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
@@ -225,6 +231,8 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setTxfmnAxis(this.#getGraph(), txfmnId, section, axis, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== txfmnId) {
+      this.#setGraph(setTxfmnAxis(this.#getGraph(), txfmnId, section, axis, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
@@ -247,6 +255,8 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setSketchOpField(this.#getGraph(), sketchId, opIdx, field, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== sketchId) {
+      this.#setGraph(setSketchOpField(this.#getGraph(), sketchId, opIdx, field, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
@@ -259,6 +269,8 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'param-out') {
       this.#setGraph(setSketchOpField(this.#getGraph(), sketchId, opIdx, axis, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== sketchId) {
+      this.#setGraph(setSketchOpField(this.#getGraph(), sketchId, opIdx, axis, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
@@ -281,6 +293,8 @@ export class WireState {
     ev.stopPropagation();
     if (from.kind === 'param-out') {
       this.#setGraph(setRepeatCount(this.#getGraph(), repeatId, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== repeatId) {
+      this.#setGraph(setRepeatCount(this.#getGraph(), repeatId, asExpr(exprBlockMember(from.nodeId, from.outName))));
     }
     this.from = null; this.mouse = null;
   };
