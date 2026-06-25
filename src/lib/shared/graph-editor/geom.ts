@@ -374,6 +374,14 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     const bindingsH = 28 + bindings.length * 22 + 24; // hdr + rows + add btn
     return { w: 240, h: 154 + bindingsH - 24 };
   }
+  if (node.type === 'sketch_repeat') {
+    // header + Params head + 2 param rows + bindings (head + rows) +
+    // Prototype-ops head + one row per op + footer + pad (#805).
+    const bindings = (node as any).bindings ?? [];
+    const ops = (node as any).ops ?? [];
+    const h = 28 + 18 + 56 + (24 + bindings.length * 22) + 18 + ops.length * 24 + 30 + 14;
+    return { w: 252, h };
+  }
   if (node.type === 'expr') {
     // Height = the taller of {input sockets = def.params, output rows =
     // def.outputs} so neither column clips, + trailing pad. Reads THROUGH the

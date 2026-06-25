@@ -28,6 +28,18 @@
     setPolyRepeatBindingName,
     setPolyRepeatBindingValue,
     removePolyRepeatBinding,
+    setSketchRepeatCount,
+    setSketchRepeatLoopVar,
+    setSketchRepeatAdvance,
+    addSketchRepeatBinding,
+    setSketchRepeatBindingName,
+    setSketchRepeatBindingValue,
+    removeSketchRepeatBinding,
+    addSketchOp,
+    setSketchOpField,
+    setSketchOpMode,
+    moveSketchOp,
+    removeSketchOp,
     removeNode,
     asLiteral,
     STACK_REF_PARAM,
@@ -48,7 +60,7 @@
     STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
-  import { producerLabel, parseProfileExpr } from './args';
+  import { producerLabel, parseProfileExpr, argStr, argFrom } from './args';
   import SketchNodeCard from './SketchNodeCard.svelte';
   import type Popovers from './Popovers.svelte';
   import type { SketchState } from './sketch-state.svelte';
@@ -1364,6 +1376,116 @@
                   cx="0" cy="57" r="5"
                   onpointerup={(ev) => wire.endWireOnPolyRepeatCount(ev, pr.id)}/>
 
+              {:else if n.type === 'sketch_repeat'}
+                {@const sr = n as any}
+                <!-- Sketch-repeat card (B.2 / #805) — the poly_repeat analog
+                     for the 2D sketch surface. Holds a PROTOTYPE run of sketch
+                     ops that tiles `count`× when the sketch compiles. PARAMS
+                     (count/loopVar/dr/dz) + bindings + the prototype op list
+                     (edited via the same sketch-op mutators). Output splices
+                     into the parent sketch's ↻ repeat-ref row. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg sketch-repeat"
+                  width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="10" y="20" class="ge-node-title">↻ sketch repeat</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
+                  data-tip="Delete repeat (the sketch's ↻ row will show 'missing source')"
+                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <foreignObject x="6" y="32" width={size.w - 12} height={size.h - 38} class="ge-fo">
+                  <div class="ge-poly-repeat-card" xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="ge-prc-section-head">Params</div>
+                    <div class="ge-sr-params">
+                      <span class="ge-prc-label">count</span>
+                      <input class="ge-poly-input" type="text"
+                        value={argStr(sr.count)}
+                        title="Iterations (i = 0..count−1) — a number or p.param / expression"
+                        onchange={(e) => { setGraph(setSketchRepeatCount(graph, sr.id, argFrom((e.target as HTMLInputElement).value))); }}/>
+                      <span class="ge-prc-label">var</span>
+                      <input class="ge-poly-input" type="text" maxlength="6"
+                        value={String(sr.loopVar || 'i')}
+                        title="Loop variable bound in prototype op exprs (NPts = count is also in scope)"
+                        oninput={(e) => { setGraph(setSketchRepeatLoopVar(graph, sr.id, String((e.target as HTMLInputElement).value) || 'i')); }}/>
+                    </div>
+                    <div class="ge-sr-params">
+                      <span class="ge-prc-label" title="Per-iteration advance in r (stride between copies)">Δr</span>
+                      <input class="ge-poly-input" type="text"
+                        value={sr.dr != null ? argStr(sr.dr) : ''} placeholder="0"
+                        title="Per-iteration r advance — a leading rel move per copy (blank = none)"
+                        onchange={(e) => { setGraph(setSketchRepeatAdvance(graph, sr.id, 'dr', argFrom((e.target as HTMLInputElement).value || '0'))); }}/>
+                      <span class="ge-prc-label" title="Per-iteration advance in z (pitch between copies)">Δz</span>
+                      <input class="ge-poly-input" type="text"
+                        value={sr.dz != null ? argStr(sr.dz) : ''} placeholder="0"
+                        title="Per-iteration z advance / pitch — a leading rel move per copy (blank = none)"
+                        onchange={(e) => { setGraph(setSketchRepeatAdvance(graph, sr.id, 'dz', argFrom((e.target as HTMLInputElement).value || '0'))); }}/>
+                    </div>
+                    <!-- Bindings — local per-iteration named values (in scope
+                         for the prototype op exprs alongside i + NPts). -->
+                    <div class="ge-prc-section-head ge-prc-bindings-head">
+                      <span>Bindings ƒ({sr.loopVar || 'i'})</span>
+                      <button class="ge-prc-add" type="button" title="Add a local binding (evaluated each iteration)"
+                        onclick={() => { setGraph(addSketchRepeatBinding(graph, sr.id)); }}>+</button>
+                    </div>
+                    {#each (sr.bindings ?? []) as bind, bIdx (bIdx)}
+                      <div class="ge-prc-bind-row">
+                        <input class="ge-poly-input ge-prc-bind-name" type="text" maxlength="12"
+                          value={bind.name} placeholder="name"
+                          oninput={(e) => { setGraph(setSketchRepeatBindingName(graph, sr.id, bIdx, String((e.target as HTMLInputElement).value))); }}/>
+                        <span class="ge-prc-eq">=</span>
+                        <input class="ge-poly-input expr" type="text"
+                          value={argStr(bind.value)} placeholder="p.thread_height"
+                          onchange={(e) => { setGraph(setSketchRepeatBindingValue(graph, sr.id, bIdx, argFrom((e.target as HTMLInputElement).value))); }}/>
+                        <button class="ge-poly-del ge-prc-bind-del" type="button" title="Remove this binding"
+                          onclick={() => { setGraph(removeSketchRepeatBinding(graph, sr.id, bIdx)); }}>×</button>
+                      </div>
+                    {/each}
+                    <!-- Prototype ops — the run that tiles count×. Edited with
+                         the same sketch-op mutators (the repeat node owns its
+                         own `ops`). NO nested + repeat (v1). -->
+                    <div class="ge-prc-section-head">Prototype ops</div>
+                    {#each (sr.ops as Array<any>) as op, opIdx (opIdx)}
+                      <div class="ge-sr-op-row">
+                        {#if op.op === 'line' || op.op === 'spline'}
+                          <button class="ge-sr-mode" class:rel={op.mode === 'rel'} type="button"
+                            title="Toggle absolute / Δ relative (offset from previous point)"
+                            onclick={() => { setGraph(setSketchOpMode(graph, sr.id, opIdx, op.mode === 'rel' ? 'abs' : 'rel')); }}>{op.op === 'spline' ? '~' : ''}{op.mode === 'rel' ? 'Δ' : 'abs'}</button>
+                          <input class="ge-poly-input ge-sr-coord" type="text" value={argStr(op.r)} title="r / Δr"
+                            onchange={(e) => { setGraph(setSketchOpField(graph, sr.id, opIdx, 'r', argFrom((e.target as HTMLInputElement).value))); }}/>
+                          <input class="ge-poly-input ge-sr-coord" type="text" value={argStr(op.z)} title="z / Δz"
+                            onchange={(e) => { setGraph(setSketchOpField(graph, sr.id, opIdx, 'z', argFrom((e.target as HTMLInputElement).value))); }}/>
+                        {:else}
+                          <span class="ge-sr-mode corner">{op.op === 'fillet' ? 'fil' : 'chm'}</span>
+                          <input class="ge-poly-input ge-sr-coord wide" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
+                            onchange={(e) => { setGraph(setSketchOpField(graph, sr.id, opIdx, op.op === 'fillet' ? 'radius' : 'dist', argFrom((e.target as HTMLInputElement).value))); }}/>
+                        {/if}
+                        <button class="ge-poly-del" type="button" title="Move up" disabled={opIdx === 0}
+                          onclick={() => { setGraph(moveSketchOp(graph, sr.id, opIdx, -1)); }}>▲</button>
+                        <button class="ge-poly-del" type="button" title="Move down" disabled={opIdx === sr.ops.length - 1}
+                          onclick={() => { setGraph(moveSketchOp(graph, sr.id, opIdx, 1)); }}>▼</button>
+                        <button class="ge-poly-del" type="button" title="Remove op" disabled={sr.ops.length <= 1}
+                          onclick={() => { setGraph(removeSketchOp(graph, sr.id, opIdx)); }}>×</button>
+                      </div>
+                    {/each}
+                    <div class="ge-sr-foot">
+                      <button class="ge-sr-add" type="button" title="Add a line" onclick={() => { setGraph(addSketchOp(graph, sr.id, 'line')); }}>+ line</button>
+                      <button class="ge-sr-add" type="button" title="Add a spline" onclick={() => { setGraph(addSketchOp(graph, sr.id, 'spline')); }}>+ spline</button>
+                      <button class="ge-sr-add" type="button" title="Round the previous corner" onclick={() => { setGraph(addSketchOp(graph, sr.id, 'fillet')); }}>+ fillet</button>
+                      <button class="ge-sr-add" type="button" title="Bevel the previous corner" onclick={() => { setGraph(addSketchOp(graph, sr.id, 'chamfer')); }}>+ chamfer</button>
+                    </div>
+                  </div>
+                </foreignObject>
+                <!-- Output socket — its expanded prototype splices into the
+                     parent sketch's ↻ repeat-ref row (auto-wired at create). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out poly-repeat-out"
+                  cx={size.w} cy={size.h / 2} r="6"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+
               {:else if n.type === 'expr'}
                 {@const ex = n as any}
                 {@const exprDef = (graph.exprDefs ?? []).find((d) => d.id === ex.defId)}
@@ -1932,6 +2054,31 @@
   .ge-sock.in.poly-rref-in { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-sock.in.poly-rref-in.wired { fill: #6d28d9; }
   .ge-sock.out.poly-repeat-out { fill: #6d28d9; stroke: #5b21b6; }
+  /* ─── sketch-repeat card (#805) ───────────────────────────────────────── */
+  .ge-node-bg.sketch-repeat { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+  .ge-sr-params {
+    display: grid; grid-template-columns: 34px 1fr 30px 1fr;
+    gap: 4px; align-items: center; margin: 1px 0;
+  }
+  .ge-sr-op-row {
+    display: grid; grid-template-columns: 30px 1fr 1fr 14px 14px 14px;
+    gap: 3px; align-items: center; margin: 1px 0;
+  }
+  .ge-sr-coord.wide { grid-column: span 2; }
+  .ge-sr-mode {
+    height: 17px; padding: 0; background: #fff; border: 1px solid #d6d3d1;
+    border-radius: 2px; font: 700 8px ui-monospace, monospace; color: #7c3aed;
+    cursor: pointer;
+  }
+  .ge-sr-mode:hover { background: #ede9fe; }
+  .ge-sr-mode.rel { color: #ea580c; border-color: #fdba74; }
+  .ge-sr-mode.corner { color: #0e7490; border-color: #99f6e4; cursor: default; display: flex; align-items: center; justify-content: center; }
+  .ge-sr-foot { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .ge-sr-add {
+    padding: 2px 5px; font: 600 9px Arial; background: #ede9fe; color: #5b21b6;
+    border: 1px solid #c4b5fd; border-radius: 3px; cursor: pointer;
+  }
+  .ge-sr-add:hover { background: #ddd6fe; }
   /* NPts input socket on the loop card — yellow-ish so it reads as a
      PARAM input (matches the param-bezier palette elsewhere). Wired
      state fills the dot when count is wire-bound. */
