@@ -155,9 +155,27 @@
     return out;
   }
   function buildEdges(pos: Map<string, { x: number; y: number }>): Edge<ArchEdgeData>[] {
-    return (ARCH_EDGES as Edge<ArchEdgeData>[])
+    // DATA FLOW — the architecture edges (solid pipeline + dashed depends-on).
+    const data = (ARCH_EDGES as Edge<ArchEdgeData>[])
       .filter((e) => pos.has(e.source) && pos.has(e.target))
       .map(styleEdge);
+    // HIERARCHY — the parent→child containment, drawn as faint grey dotted links
+    // UNDER the flow so the structure (which component lives in which container)
+    // reads alongside the pipeline. A collapsed parent has no visible children
+    // (they're absent from `pos`), so its hierarchy links vanish automatically.
+    const hier: Edge<ArchEdgeData>[] = [];
+    for (const [pid, kids] of childrenOf) {
+      if (!pos.has(pid)) continue;
+      for (const k of kids) {
+        if (!pos.has(k)) continue;
+        hier.push({
+          id: `hier-${pid}-${k}`, source: pid, target: k, type: 'bezier',
+          style: 'stroke:#cbd5e1;stroke-width:1;stroke-dasharray:1.5 5;opacity:0.5;',
+          zIndex: -1, selectable: false,
+        } as Edge<ArchEdgeData>);
+      }
+    }
+    return [...hier, ...data];
   }
 
   // ── reactive state ────────────────────────────────────────
@@ -264,6 +282,7 @@
     <div class="legend-row"><span class="ln solid" style="--c:#60a5fa"></span>calls</div>
     <div class="legend-row"><span class="ln dash" style="--c:#818cf8"></span>mounts</div>
     <div class="legend-row"><span class="ln dash" style="--c:#c084fc"></span>reads / writes</div>
+    <div class="legend-row"><span class="ln dot" style="--c:#cbd5e1"></span>contains (hierarchy)</div>
   </div>
 </div>
 
@@ -401,6 +420,10 @@
   }
   .ln.dash {
     border-top-style: dashed;
+  }
+  .ln.dot {
+    border-top-style: dotted;
+    border-top-width: 2px;
   }
   hr {
     border: none;
