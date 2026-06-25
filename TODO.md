@@ -49,6 +49,7 @@
 - ✅ Earlier: expr-builder redesign · /design Tree+C4 tabs · landing remodel · R8/R9 · sketch-repeat
 - ✅ **Confirm-on-delete** (card/param/node) — two-step inline arm→confirm (`DeleteConfirm` class) on all NodeCard ×, SketchNodeCard, ParamsCard 🗑 (was PARKED #15)
 - ✅ **R7 — legacy builder/library retired** → `render-helpers.ts`; **modularize round 2 COMPLETE**
+- ✅ **R2 dead-code sweep** — dropped 8 archive-only npm deps (codemirror chain, lezer, transformers, fflate, prettier; `bun install` −8). Export trimming DEFERRED (manifold-helpers/math-lib are namespace + sandbox-injected → knip mis-roots; needs an injection-aware audit). Green-light candidates noted by the agent.
 - ✅ **Output node card redesigned** (was PARKED #13) — minimal box+arrow, sockets centered, per-socket × delete, no title/labels/order/cog
 - ✅ **Repeat z-move bug fixed** — `mv`/`rot` now accept scalar args `mv(B,x,y,z)` (was array-only → z dropped) + `addRepeatChild` is txfmn-aware (wired a part's outermost transform so reloaded z-moves survive the repeat); 2 regression tests, geometry verified
 - ✅ **`/fem` + `/forge` archived-reality reconciled** across CLAUDE.md / `/design` / memory
