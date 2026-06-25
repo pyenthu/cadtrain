@@ -12,6 +12,20 @@
    */
   import { SvelteFlowProvider } from '@xyflow/svelte';
   import ArchGraph from './ArchGraph.svelte';
+  import C4View from './C4View.svelte';
+
+  // ── Architecture view tabs: "Tree" (existing ArchGraph) | "C4 model" (new) ──
+  const LS_ARCH_TAB = 'design-arch-tab';
+  type ArchTab = 'tree' | 'c4';
+  let archTab = $state<ArchTab>('tree');
+  if (typeof localStorage !== 'undefined') {
+    const t = localStorage.getItem(LS_ARCH_TAB);
+    if (t === 'tree' || t === 'c4') archTab = t;
+  }
+  function setArchTab(t: ArchTab) {
+    archTab = t;
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LS_ARCH_TAB, t);
+  }
 
   const capabilities = [
     {
@@ -123,17 +137,44 @@
       <h2 id="arch-h">Architecture</h2>
     </div>
     <p class="prose section-intro">
-      A collapsible map of the app — one <strong>system</strong> holding four
-      <strong>containers</strong> (Web App · API · CAD kernel · Volume store),
-      each with its component nodes. The layout is computed from the hierarchy,
-      so it reflows whenever you collapse a container. Click a container caret to
-      fold its subtree, a <strong>route</strong> node to jump to the live page;
-      the bake-pipeline edges animate to show data-flow direction.
+      Two views of the same app. <strong>Tree</strong> is a collapsible map — one
+      <strong>system</strong> holding four <strong>containers</strong> (Web App ·
+      API · CAD kernel · Volume store), each with its component nodes; the layout
+      reflows whenever you fold a container, and route nodes jump to the live page.
+      <strong>C4 model</strong> renders the same data as a formal
+      <a href="https://c4model.com" target="_blank" rel="noopener">C4 diagram</a>
+      you can zoom through — Context → Container → Component.
     </p>
 
-    <SvelteFlowProvider>
-      <ArchGraph />
-    </SvelteFlowProvider>
+    <!-- ── view tabs ── -->
+    <div class="arch-tabs" role="tablist" aria-label="Architecture view">
+      <button
+        class="arch-tab"
+        class:active={archTab === 'tree'}
+        role="tab"
+        aria-selected={archTab === 'tree'}
+        onclick={() => setArchTab('tree')}
+      >
+        Tree
+      </button>
+      <button
+        class="arch-tab"
+        class:active={archTab === 'c4'}
+        role="tab"
+        aria-selected={archTab === 'c4'}
+        onclick={() => setArchTab('c4')}
+      >
+        C4&nbsp;model
+      </button>
+    </div>
+
+    {#if archTab === 'tree'}
+      <SvelteFlowProvider>
+        <ArchGraph />
+      </SvelteFlowProvider>
+    {:else}
+      <C4View />
+    {/if}
   </section>
 
   <!-- ───────────────────────── Capabilities ───────────────────────── -->
@@ -359,6 +400,37 @@
   }
   .two-col p {
     margin: 0;
+  }
+
+  /* ───────── Architecture view tabs ───────── */
+  .arch-tabs {
+    display: inline-flex;
+    gap: 0.3rem;
+    margin-bottom: 1.4rem;
+    padding: 0.25rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--paper-alt);
+  }
+  .arch-tab {
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    padding: 0.5rem 1.3rem;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .arch-tab:hover {
+    color: var(--ink);
+  }
+  .arch-tab.active {
+    background: var(--paper);
+    color: var(--accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
 
   /* ───────── Capability cards ───────── */
