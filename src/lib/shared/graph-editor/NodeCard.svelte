@@ -825,55 +825,20 @@
                     onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                     onpointermove={onNodePointerMove}
                     onpointerup={onNodePointerUp}/>
-                  <text x="8" y="17" class="ge-output-tag">▶</text>
-                  <!-- ⚙ reorder / manage popover (same handler as before). -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <text role="button" tabindex="-1" x={boxW - 12} y="17"
-                    class="ge-container-cog" data-tip="Reorder / manage outputs"
-                    onpointerdown={(ev) => popovers!.openContainerPop(ev, n.id)}>⚙</text>
-                  <!-- Input slots — sockets on the box's LEFT edge accept
-                       wired / dropped parts (drop-to-wire preserved). -->
-                  {#each visibleChildren as { cid: childId, origIdx }, i (childId)}
-                    {@const childNode = graph.nodes[childId]}
-                    {@const childLabel = childNode?.type === 'call'
-                      ? `${(childNode as any).alias} · ${(childNode as any).src}`
-                      : childNode?.type === 'method' ? `${(childNode as any).op}(…)`
-                      : childNode?.type === 'mv' ? 'mv(…)'
-                      : childNode?.type === 'rot' ? 'rot(…)'
-                      : childNode?.type === 'stack' ? 'stack(…)'
-                      : childNode?.type === 'repeat' ? `× ${childNode.count?.kind === 'literal' ? childNode.count.value : '…'}`
-                      : '(missing)'}
+                  <!-- Input sockets on the box's LEFT edge — wired/dropped parts.
+                       NO labels / title / reorder rows / cog (minimal per the
+                       user: the arrow says "output", wiring is self-evident;
+                       reorder/remove is done by dragging wires). -->
+                  {#each visibleChildren as { cid: childId }, i (childId)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={containerSlotY(i)} r="5"
                       onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
-                    <text x="10" y={containerSlotY(i) + 4} class="ge-sock-label">{childLabel}</text>
-                    <!-- ▲▼ reorder only when >1 output is wired (rare). -->
-                    {#if visibleChildren.length > 1}
-                      {#if i > 0}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <text role="button" tabindex="-1" class="ge-container-slot-move"
-                          x={boxW - 34} y={containerSlotY(i) + 4}
-                          data-tip="Move up" onpointerdown={(ev) => { ev.stopPropagation(); popovers!.moveChild(n.id, origIdx, -1); }}>▲</text>
-                      {/if}
-                      {#if i < visibleChildren.length - 1}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <text role="button" tabindex="-1" class="ge-container-slot-move"
-                          x={boxW - 22} y={containerSlotY(i) + 4}
-                          data-tip="Move down" onpointerdown={(ev) => { ev.stopPropagation(); popovers!.moveChild(n.id, origIdx, 1); }}>▼</text>
-                      {/if}
-                    {/if}
-                    <!-- × unwire this output -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <text role="button" tabindex="-1" class="ge-container-slot-x"
-                      x={boxW - 11} y={containerSlotY(i) + 4}
-                      onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeContainerChildAt(graph, n.id, origIdx)); }}>×</text>
                   {/each}
-                  <!-- Trailing + drop slot — drop any output socket here. -->
+                  <!-- Trailing + drop socket (no label). -->
                   {@const rootTrailY = containerSlotY(visibleChildren.length)}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={rootTrailY} r="5"
                     onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
-                  <text x="10" y={rootTrailY + 4} class="ge-sock-label trail">+ drop here</text>
                 {:else}
                 {@const title = n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->

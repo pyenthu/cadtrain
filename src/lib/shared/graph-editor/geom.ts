@@ -58,7 +58,7 @@ export const POLY_RREF_PITCH = 38;
 // input sockets (left edge, cx=0) + child labels. A min box width + min card
 // height keep the arrow legible even with zero / one output wired in.
 export const OUTPUT_ARROW_W = 46;   // arrow-head column on the card's right
-export const OUTPUT_BOX_MIN_W = 78; // smallest input box (fits "(missing)")
+export const OUTPUT_BOX_MIN_W = 22; // input box = just the socket column (no labels)
 export const OUTPUT_MIN_H = 56;     // keeps the arrow head legible
 
 // ─── Inline mv/rot transform STRIP geometry ────────────────────────────────
@@ -355,27 +355,11 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   }
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const slots = (node.children?.length ?? 0) + 1;
-    // The ROOT container is the ▶ Output node — render it as a compact
-    // input-box + big arrow (#13). Tight width = a small label box (just wide
-    // enough for the longest child label + remove button) plus the arrow head;
-    // a fixed MINIMUM keeps the arrow legible when there are no children yet.
+    // The ROOT container is the ▶ Output node — a MINIMAL input-box + big arrow
+    // (#13). No labels / title / reorder / cog, so the box is just the socket
+    // column: as narrow as possible (OUTPUT_BOX_MIN_W) + the fixed arrow head.
     if (node.id === (graph as any).root) {
-      const labels: string[] = [];
-      for (const cid of (node as any).children ?? []) {
-        const child = graph.nodes[cid];
-        labels.push(
-          !child ? '(missing)' :
-          child.type === 'call'   ? `${(child as any).alias} · ${(child as any).src}` :
-          child.type === 'method' ? `${(child as any).op}(…)` :
-          child.type === 'mv'     ? 'mv(…)' :
-          child.type === 'rot'    ? 'rot(…)' :
-          child.type === 'stack'  ? 'stack(…)' :
-          child.type === 'repeat' ? '× …' : '…',
-        );
-      }
-      const longest = labels.length ? Math.max(...labels.map((s) => s.length)) : 9;
-      const boxW = Math.max(OUTPUT_BOX_MIN_W, longest * 6 + 22 /*socket+pad*/ + 18 /*× col*/);
-      return { w: boxW + OUTPUT_ARROW_W, h: Math.max(OUTPUT_MIN_H, 34 + slots * 22) };
+      return { w: OUTPUT_BOX_MIN_W + OUTPUT_ARROW_W, h: Math.max(OUTPUT_MIN_H, 22 + slots * 22) };
     }
     return { w, h: Math.max(60, 40 + slots * 22) };
   }
