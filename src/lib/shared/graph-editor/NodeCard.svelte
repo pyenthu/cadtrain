@@ -57,6 +57,7 @@
     attachedTransforms,
     xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
     inlineCardH, containerSlotY,
+    OUTPUT_ARROW_W,
     STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
@@ -795,7 +796,86 @@
               {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
                 {@const isRoot = n.id === rootId}
                 {@const container = n as any}
-                {@const title = isRoot ? '▶ Output' : n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
+                {#if isRoot}
+                  <!-- ▶ OUTPUT NODE (#13) — compact: a small input BOX on the
+                       left (sockets on its left edge, cx=0) feeding a big
+                       right-pointing ARROW (the part's result). Reads as
+                       "inputs → ➜ out". Sized by nodeSize()'s root branch:
+                       boxW = size.w − OUTPUT_ARROW_W, a fixed MINIMUM so the
+                       arrow stays legible. The input sockets + drop-to-wire +
+                       ⚙ reorder all behave exactly as the old card. -->
+                  {@const boxW = size.w - OUTPUT_ARROW_W}
+                  {@const acy = size.h / 2}
+                  {@const visibleChildren = (container.children as string[])
+                    .map((cid: string, origIdx: number) => ({ cid, origIdx }))
+                    .filter(({ cid }) => !consumedSet.has(cid))}
+                  <!-- Big arrow body — doubles as a drag handle. -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <path role="button" tabindex="-1" class="ge-output-arrow"
+                    d={`M ${boxW - 5} ${acy - 11} L ${boxW + 14} ${acy - 11} L ${boxW + 14} ${acy - 19} L ${size.w} ${acy} L ${boxW + 14} ${acy + 19} L ${boxW + 14} ${acy + 11} L ${boxW - 5} ${acy + 11} Z`}
+                    onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                    onpointermove={onNodePointerMove}
+                    onpointerup={onNodePointerUp}/>
+                  <text x={boxW + 13} y={acy + 3} class="ge-output-arrow-label">out</text>
+                  <!-- Input box (drag handle too). -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <rect role="button" tabindex="-1" class="ge-output-box"
+                    x="0" y="4" width={boxW} height={size.h - 8} rx="5"
+                    style="width: {boxW}px; height: {size.h - 8}px"
+                    onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                    onpointermove={onNodePointerMove}
+                    onpointerup={onNodePointerUp}/>
+                  <text x="8" y="17" class="ge-output-tag">▶</text>
+                  <!-- ⚙ reorder / manage popover (same handler as before). -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <text role="button" tabindex="-1" x={boxW - 12} y="17"
+                    class="ge-container-cog" data-tip="Reorder / manage outputs"
+                    onpointerdown={(ev) => popovers!.openContainerPop(ev, n.id)}>⚙</text>
+                  <!-- Input slots — sockets on the box's LEFT edge accept
+                       wired / dropped parts (drop-to-wire preserved). -->
+                  {#each visibleChildren as { cid: childId, origIdx }, i (childId)}
+                    {@const childNode = graph.nodes[childId]}
+                    {@const childLabel = childNode?.type === 'call'
+                      ? `${(childNode as any).alias} · ${(childNode as any).src}`
+                      : childNode?.type === 'method' ? `${(childNode as any).op}(…)`
+                      : childNode?.type === 'mv' ? 'mv(…)'
+                      : childNode?.type === 'rot' ? 'rot(…)'
+                      : childNode?.type === 'stack' ? 'stack(…)'
+                      : childNode?.type === 'repeat' ? `× ${childNode.count?.kind === 'literal' ? childNode.count.value : '…'}`
+                      : '(missing)'}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={containerSlotY(i)} r="5"
+                      onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
+                    <text x="10" y={containerSlotY(i) + 4} class="ge-sock-label">{childLabel}</text>
+                    <!-- ▲▼ reorder only when >1 output is wired (rare). -->
+                    {#if visibleChildren.length > 1}
+                      {#if i > 0}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <text role="button" tabindex="-1" class="ge-container-slot-move"
+                          x={boxW - 34} y={containerSlotY(i) + 4}
+                          data-tip="Move up" onpointerdown={(ev) => { ev.stopPropagation(); popovers!.moveChild(n.id, origIdx, -1); }}>▲</text>
+                      {/if}
+                      {#if i < visibleChildren.length - 1}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <text role="button" tabindex="-1" class="ge-container-slot-move"
+                          x={boxW - 22} y={containerSlotY(i) + 4}
+                          data-tip="Move down" onpointerdown={(ev) => { ev.stopPropagation(); popovers!.moveChild(n.id, origIdx, 1); }}>▼</text>
+                      {/if}
+                    {/if}
+                    <!-- × unwire this output -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" class="ge-container-slot-x"
+                      x={boxW - 11} y={containerSlotY(i) + 4}
+                      onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeContainerChildAt(graph, n.id, origIdx)); }}>×</text>
+                  {/each}
+                  <!-- Trailing + drop slot — drop any output socket here. -->
+                  {@const rootTrailY = containerSlotY(visibleChildren.length)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={rootTrailY} r="5"
+                    onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
+                  <text x="10" y={rootTrailY + 4} class="ge-sock-label trail">+ drop here</text>
+                {:else}
+                {@const title = n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- ROOT CONTAINER WIDTH FIX: the container rect's SVG
                      `width` attribute is being IGNORED by the browser (the
@@ -939,6 +1019,7 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                     onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+                {/if}
                 {/if}
 
               {:else if n.type === 'polygon'}
@@ -1632,6 +1713,12 @@
   .ge-node-bg.polygon { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; }
   .ge-node-bg.container.root { fill: #f0fdf4; stroke: #15803d; stroke-width: 2.5; }
   .ge-node-bg.container.stack { fill: #ecfeff; stroke: #0e7490; }
+  /* ▶ Output node (#13) — compact input box + big result arrow. */
+  .ge-output-box { fill: #f0fdf4; stroke: #15803d; stroke-width: 2; cursor: grab; touch-action: none; }
+  .ge-output-arrow { fill: #15803d; stroke: #166534; stroke-width: 1; cursor: grab; touch-action: none; }
+  .ge-output-arrow:hover { fill: #16a34a; }
+  .ge-output-arrow-label { font: 700 10px Arial; fill: #fff; text-anchor: middle; pointer-events: none; user-select: none; }
+  .ge-output-tag { font: 700 11px Arial; fill: #15803d; pointer-events: none; user-select: none; }
   /* Repeat × N — distinct color so it reads as "iteration", not "container". */
   .ge-node-bg.repeat { fill: #fdf2f8; stroke: #be185d; stroke-width: 2; }
   /* PolyRepeat card (#157) — violet skin matches the parametric-vertex
