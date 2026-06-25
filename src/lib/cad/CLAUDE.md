@@ -15,8 +15,7 @@ src/lib/cad/
 ├── composition-bake.ts      # graph bake orchestration
 ├── composition-tree.ts      # TreeNode model (docs/COMPOSITION.md)
 ├── param-keys.ts            # paramKeysOf(source) — ordered meta.params keys (adaptive dispatch). Drift-snapshot machinery archived 2026-06-12 with PrimitiveView
-├── builder.ts               # legacy ComponentDef builds + LIVE render helpers (finalizeManifold, setRenderZScale, manifoldToGeo/CutVC — used by /api/primitives/preview)
-├── library.ts               # legacy ComponentDef catalog (kept only because builder.ts imports it)
+├── render-helpers.ts        # LIVE render helpers (finalizeManifold, setRenderZScale, manifoldToGeo/CutVC) — used by /api/primitives/preview + bake-worker-core. Was builder.ts; legacy ComponentDef builders + cad/library retired R7 2026-06-26
 ├── manifold-helpers.ts      # raw shape toolkit (cyl, tube, revolve, datums ref/head/tail/mate/align, place, …)
 ├── manifold-helpers-meta.ts # positional-prop schemas for the helpers
 ├── manifold-mesh.ts         # welded-mesh toolkit (gridPatch / capFan / weldAndBuild)
