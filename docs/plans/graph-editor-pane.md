@@ -254,3 +254,61 @@ client-side-execution split (`docs/plans/client-side-execution.md`), and the
 GEP drops ~350-400 lines (sketch markup + CSS out); `bun run build` green; the
 sketch ƒ-popover still fires from BOTH the node card and the editor; recorded
 g_dp_box e2e green. Then **M.5 sketch-repeat** is unblocked.
+
+## 7. R6a — Polygon editor carve (LOCKED spec, 2026-06-25)
+
+> The headline `≤1500` lever. Mirrors the Phase E (Sketch) carve EXACTLY — same
+> shape, same scale, same trap. Do it INLINE (subagents stall on GEP), in two
+> steps, browser-verifying each. Spec locked here; execute fresh.
+
+### What moves vs what STAYS (the load-bearing decision)
+- **MOVES** → the **poly-preview overlay** (the floating SVG vertex editor: the
+  pinned popover that shows the polygon's (r,z) points and lets you drag / insert
+  / delete vertices + zoom/resize/drag the popover) + ALL its state + handlers.
+- **STAYS in the GEP shell** → `polyExprPop` + `closePolyExprPop` /
+  `applyPolyExprPop` / `switchPolyExprAxis` / `insertParamIntoPolyDraft` /
+  `openPoly*ExprPop` / `openTransformAxisExprPop`. **Reason (identical to the
+  Phase-E sketchExprPop fix):** this ONE popover is shared by the polygon node
+  card, the poly_repeat card, AND the mv/rot/txfmn transform axes
+  (`openTransformAxisExprPop` routes here). One popover can't render in two
+  components → it stays in the shell; the extracted component only CALLS
+  `openPolyExprPop`. Also `hoverVertex` + `svgTip` are read by node-card SVGs →
+  stay in shell.
+
+### Step 1 — `poly-preview-state.svelte.ts` (per-instance class, like SketchState)
+Move into a `new`-per-pane class (NOT a module singleton — /primitives mounts N
+panes): the state `polyPreviewFor / polyPreviewPos / polyPreviewPinned /
+polyPreviewView / polyPreviewSize / polyPreviewResize / polyPreviewDrag /
+polyDeleteMode / polyInsertMode / polyInsertHover / polyHoverVertex / polyDrag`
+(GEP L417-870) + their handlers: `polyRepeatModeFor / polygonModeFor /
+start+move+endPolyPreviewResize / start+move+endPolyPreviewDrag /
+snapPolyPreviewToCard / openPolyPreview / fitPolyPreview / zoomPolyPreview /
+appendPolyPoint / togglePolyDeleteMode / deletePolyVertexAt / polyToPoints /
+startPolyVertexDrag / polyDragMove / polyDragEnd / togglePolyInsertMode /
+clearPolyInsertHover / handleSvgInsertMove / handleSvgInsertClick` (GEP
+L373-958, ~24 fns). Takes the per-pane `graph` getter + `setGraph` + `wire` +
+viewport (pan/zoom) like SketchState. Pure point math → reuse `geom.ts` where
+possible. Build green (no markup change yet) before Step 2.
+
+### Step 2 — `PolyPreview.svelte` (the overlay component)
+Extract the poly-preview popover markup (the `{#if polyPreviewFor}` floating
+SVG block + its resize/drag grips + the vertex circles + insert-hover edge) into
+`PolyPreview.svelte`, taking the `PolyPreviewState` instance + `wire` as props;
+graph mutations via `setGraph`. It SETS `polyExprPop` (shell-owned) via a
+callback — never renders it. Carry its own scoped `.ge-poly*` CSS (the
+ParamsCard/SketchEditorPane duplication pattern). GEP mounts it unconditionally
+in the canvas pane (self-guards on `poly.polyPreviewFor`).
+
+### Lessons to honor (paid-for by Phase E/F)
+- INLINE only; large edits via anchor-checked Node line-range scripts (Edit
+  can't match 100+ line `old_string`). 
+- `bun run build` green ≠ works for Svelte → BROWSER-MOUNT-verify a polygon part
+  (e.g. g_collar — has a 5-pt polygon) AND a poly_repeat part (g_star/g_spiral)
+  in BOTH /graph-editor and multi-instance /primitives.
+- Per-instance reactive state = a CLASS, not a module `$state` singleton.
+- Dead-CSS: grep markup, don't trust unused-CSS warnings (compound selectors only).
+
+### Done-when
+GEP drops ~700 lines toward ≤1500; polygon + poly_repeat editing works in both
+surfaces; polyExprPop still fires from the node cards AND the overlay; build +
+graph e2e green.
