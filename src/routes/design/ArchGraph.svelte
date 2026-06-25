@@ -11,7 +11,6 @@
    * SSR is globally off (src/+layout.ts), so the top-level @xyflow import is safe.
    */
   import { SvelteFlow, Background, BackgroundVariant, Controls, MiniMap, MarkerType, useSvelteFlow, type ColorMode } from '@xyflow/svelte';
-  import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force';
   import '@xyflow/svelte/dist/style.css';
 
   import ArchNode from './nodes/ArchNode.svelte';
@@ -47,49 +46,41 @@
     return vis;
   }
 
-  // Depth (for a stable, non-random seed — d3-force from all-origin collapses).
+  // Depth (kept for stable indexing / any depth-keyed styling).
   const depthOf = new Map<string, number>();
   (function () {
     function walk(id: string, d: number) { depthOf.set(id, d); for (const k of childrenOf.get(id) ?? []) walk(k, d + 1); }
     for (const r of roots) walk(r, 0);
   })();
 
-  /** d3-force directed layout over the VISIBLE nodes. Hierarchy (parent→child)
-   *  links are short + stiff so children cluster around their container; the
-   *  architecture edges are longer + soft so related groups drift together.
-   *  Run synchronously to convergence (no animation jitter on every reflow). */
+  // ── layout constants ──────────────────────────────────────
+  const LEVEL_W = 320;   // horizontal pitch per depth level (system 0 → containers 1 → components 2)
+  const ROW_H = 56;      // vertical pitch per visible leaf row
+  const X0 = 20;
+  const Y0 = 20;
+
+  /** Deterministic tidy left-to-right tree over the VISIBLE subtree:
+   *  x = depth column; y walks the visible leaves (each leaf consumes a row);
+   *  a parent sits at the midpoint of its first and last visible child. No
+   *  overlap, no jitter — the same input always lays out identically. */
   function computeLayout(collapsed: Set<string>): Map<string, { x: number; y: number }> {
-    const vis = visibleIds(collapsed);
-    const ids = [...vis];
-    const LEVEL_W = 340;   // horizontal pitch between hierarchy depths (the cascade)
-    type SN = { id: string; x: number; y: number; r: number };
-    const simNodes: SN[] = ids.map((id, i) => {
-      const n = byId.get(id);
-      const isHub = n?.treeKind === 'system' || n?.treeKind === 'container';
-      // cascade seed: x by depth (columns), y fanned by index — the sim starts
-      // already layered so it settles into a tidy left→right cascade, not a blob.
-      // r is tuned to the new COMPACT nodes (~150px wide, ~34px tall) so siblings
-      // sit close but never overlap.
-      return { id, x: 80 + (depthOf.get(id) ?? 0) * LEVEL_W, y: 80 + (i % 18) * 54, r: isHub ? 56 : 44 };
-    });
-    const hierLinks = ids.flatMap((id) =>
-      collapsed.has(id) ? [] : (childrenOf.get(id) ?? []).filter((k) => vis.has(k)).map((k) => ({ source: id, target: k, h: true })));
-    const archLinks = (ARCH_EDGES as Array<{ source: string; target: string }>)
-      .filter((e) => vis.has(e.source) && vis.has(e.target))
-      .map((e) => ({ source: e.source, target: e.target, h: false }));
-    const sim = forceSimulation(simNodes as any)
-      .force('link', forceLink([...hierLinks, ...archLinks] as any).id((d: any) => d.id)
-        .distance((l: any) => (l.h ? 120 : 200)).strength((l: any) => (l.h ? 0.85 : 0.12)))
-      .force('charge', forceManyBody().strength(-460))
-      .force('collide', forceCollide((d: any) => d.r + 8).strength(0.95))
-      // CASCADE: a strong depth→x pull lays the hierarchy out in columns; the
-      // soft y-centering lets charge + collide fan siblings out vertically.
-      .force('x', forceX((d: any) => 80 + (depthOf.get(d.id) ?? 0) * LEVEL_W).strength(0.92))
-      .force('y', forceY(360).strength(0.06))
-      .stop();
-    for (let i = 0; i < 340; i++) sim.tick();
     const pos = new Map<string, { x: number; y: number }>();
-    for (const sn of simNodes) pos.set(sn.id, { x: Math.round(sn.x), y: Math.round(sn.y) });
+    let cursorY = Y0;
+    function walk(id: string, depth: number): number {
+      const x = X0 + depth * LEVEL_W;
+      const kids = childrenOf.get(id) ?? [];
+      if (kids.length === 0 || collapsed.has(id)) {
+        const y = cursorY;
+        cursorY += ROW_H;
+        pos.set(id, { x, y });
+        return y;
+      }
+      const ys = kids.map((k) => walk(k, depth + 1));
+      const y = (ys[0] + ys[ys.length - 1]) / 2;
+      pos.set(id, { x, y });
+      return y;
+    }
+    for (const r of roots) walk(r, 0);
     return pos;
   }
 
