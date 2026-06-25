@@ -11,9 +11,9 @@
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
 3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune + **R6a (poly
-   carve)** shipped → GEP **9455 → 5500 lines**. Honest target **~2,500–3,000** (≤1500
-   needs a large feature carve; review 2026-06-25). LEFT, priority order: Repeat-editor
-   overlay (~250), AI menu (~150) + canvas menu (~80) + ghost toggles (~50), Expr-builder
+   carve)** + **RepeatEditorPane carve** shipped → GEP **9455 → 5248 lines**. Honest
+   target **~2,500–3,000** (≤1500 needs a large feature carve; review 2026-06-25). LEFT,
+   priority order: AI menu (~150) + canvas menu (~80) + ghost toggles (~50), Expr-builder
    component (~250); then R6b module-map header + residual `$state` audit; R7
    `builder.ts`/`library.ts` retire, R8 vocab, R9 ProfileFnEditor. Plans:
    `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
@@ -47,6 +47,12 @@
 
 ### Shipped (recent)
 
+- ✅ **Expression builder redesign** — 3-column layout: vertical rail (PARAMS/CONSTS/
+  VARIABLES, vertical text + accent + count) · active-section editor · permanent OUTPUTS
+  right pane; row input/output sockets; ✓ready/⚠errors footer + Save-gate. (#15 layout done;
+  remaining polish = dangling-def recovery, migrated-formula cleanup, live numeric preview.)
+- ✅ **RepeatEditorPane carve** (modularize #3) — repeat-node overlay (state + `.ge-rep-*`
+  markup + CSS) out of GEP → `RepeatEditorPane.svelte`; GEP 5500 → 5248; browser-verified.
 - ✅ **R6a — Polygon-editor carve** (modularize #3): `PolyPreviewState` class +
   `PolyPreview.svelte` lifted out of GraphEditorPane (state + 24 handlers + overlay
   markup + CSS); coord ƒ-popover stays in the shell. GEP 5873 → 5500; browser-verified
@@ -81,3 +87,5 @@
 13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
 14. Repeat card we dont need the card to be so elaborate.. Maybe we just need a nice loop icon.. remove the detailed text inside. Also the long name can be removed.in the top var
+
+15. A card delete or a param delete or a node delete should ask for confirmation.
