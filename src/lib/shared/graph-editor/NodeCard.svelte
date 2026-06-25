@@ -812,11 +812,10 @@
                   <!-- Big arrow body — doubles as a drag handle. -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <path role="button" tabindex="-1" class="ge-output-arrow"
-                    d={`M ${boxW - 5} ${acy - 11} L ${boxW + 14} ${acy - 11} L ${boxW + 14} ${acy - 19} L ${size.w} ${acy} L ${boxW + 14} ${acy + 19} L ${boxW + 14} ${acy + 11} L ${boxW - 5} ${acy + 11} Z`}
+                    d={`M ${boxW - 4} ${acy - 8} L ${boxW + 9} ${acy - 8} L ${boxW + 9} ${acy - 15} L ${size.w} ${acy} L ${boxW + 9} ${acy + 15} L ${boxW + 9} ${acy + 8} L ${boxW - 4} ${acy + 8} Z`}
                     onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                     onpointermove={onNodePointerMove}
                     onpointerup={onNodePointerUp}/>
-                  <text x={boxW + 13} y={acy + 3} class="ge-output-arrow-label">out</text>
                   <!-- Input box (drag handle too). -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <rect role="button" tabindex="-1" class="ge-output-box"
@@ -836,8 +835,8 @@
                       onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
                     <!-- × unwire this output -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <text role="button" tabindex="-1" class="ge-container-slot-x"
-                      x={boxW - 10} y={sy + 4}
+                    <text role="button" tabindex="-1" class="ge-container-slot-x" font-size="15"
+                      x={boxW - 8} y={sy + 5}
                       onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeContainerChildAt(graph, n.id, origIdx)); }}>×</text>
                   {/each}
                   <!-- Trailing + drop socket (centered with the rest, no ×). -->

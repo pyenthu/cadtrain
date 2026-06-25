@@ -57,8 +57,8 @@ export const POLY_RREF_PITCH = 38;
 // The arrow occupies a fixed-width head on the card's RIGHT; the box holds the
 // input sockets (left edge, cx=0) + child labels. A min box width + min card
 // height keep the arrow legible even with zero / one output wired in.
-export const OUTPUT_ARROW_W = 46;   // arrow-head column on the card's right
-export const OUTPUT_BOX_MIN_W = 32; // socket column + a small × delete (no labels)
+export const OUTPUT_ARROW_W = 30;   // arrow-head column on the card's right
+export const OUTPUT_BOX_MIN_W = 24; // narrow socket column + a small × (no labels)
 export const OUTPUT_MIN_H = 56;     // keeps the arrow head legible
 
 // ─── Inline mv/rot transform STRIP geometry ────────────────────────────────
