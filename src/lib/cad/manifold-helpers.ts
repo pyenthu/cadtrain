@@ -329,10 +329,14 @@ export function tube(outerR: number, innerR: number, length: number) {
 }
 /** @op Translate — shift the part by [x, y, z]. Carries any connection datums
  *  (set via `ref`) along z so `tail(positionedPart)` keeps working for chaining. */
-export function mv(m: any, v: [number, number, number]) {
-  const r = m.translate(v);
-  if (m._refHead !== undefined) r._refHead = m._refHead + v[2];
-  if (m._refTail !== undefined) r._refTail = m._refTail + v[2];
+export function mv(m: any, v: [number, number, number] | number, y?: number, z?: number) {
+  // Forgiving signature: accept BOTH `mv(m, [x,y,z])` AND `mv(m, x, y, z)` —
+  // hand-written repeat/loop bodies naturally use the scalar form, and the old
+  // array-only form silently dropped the extra args (the z reset-to-origin bug).
+  const vec: [number, number, number] = Array.isArray(v) ? v : [v, y ?? 0, z ?? 0];
+  const r = m.translate(vec);
+  if (m._refHead !== undefined) r._refHead = m._refHead + vec[2];
+  if (m._refTail !== undefined) r._refTail = m._refTail + vec[2];
   // `_stackRef` (the per-part STACK REFERENCE — how this part mates inside a
   // stack(); see stack() below) is NOT a z-coordinate, it's an advance amount
   // / sign flag, so it carries through a translate UNSHIFTED. Lets a user wrap
@@ -340,8 +344,10 @@ export function mv(m: any, v: [number, number, number]) {
   if (m._stackRef !== undefined) r._stackRef = m._stackRef;
   return r;
 }
-/** @op Rotate — rotate the part by degrees around [x, y, z]. */
-export function rot(m: any, v: [number, number, number]) { return m.rotate(v); }
+/** @op Rotate — rotate the part by degrees around [x, y, z] (also accepts `rot(m, x, y, z)`). */
+export function rot(m: any, v: [number, number, number] | number, y?: number, z?: number) {
+  return m.rotate(Array.isArray(v) ? v : [v, y ?? 0, z ?? 0]);
+}
 
 /** Re-stamp the per-part STACK REFERENCE on a manifold. Used by emitted
  *  stack() expressions to apply a PER-CHILD OVERRIDE (the Stack node's
