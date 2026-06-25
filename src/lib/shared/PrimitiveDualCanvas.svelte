@@ -431,7 +431,10 @@
     const { min, max } = scene.partZExtent;
     const cz = scene.partCenter.z;
     if (!(max > min)) return { min: -10, max: 10 };
-    const pad = (max - min) * 0.05; // headroom so the ends aren't flush against the stop
+    // #11: total slider travel ≈ 2× the rendered part's z-length. Half the part
+    // length of headroom on EACH side of the extent → span = L + 2·(0.5·L) = 2·L
+    // (was 0.05·L headroom ≈ 1.1·L), so the thumb can scroll well past both ends.
+    const pad = (max - min) * 0.5;
     return { min: min - cz - pad, max: max - cz + pad };
   });
   // Pan STEP scales with ZOOM so the slider stays in sync with what's framed:
@@ -455,7 +458,19 @@
     const c = z < min ? min : z > max ? max : z;
     if (c !== z) scene.zFocus = c;
   });
+
+  // #12: dismiss the X-dia / Z-depth scale popover on a click OUTSIDE it. The
+  // toggle button itself is excluded so its own click still toggles (the open
+  // click bubbles to window — without the guard it would immediately re-close).
+  function closeScaleOnOutside(e: MouseEvent) {
+    if (!scaleMenuOpen) return;
+    const t = e.target as HTMLElement | null;
+    if (t && t.closest('.pd-scale-menu, .pd-scale-btn')) return;
+    scaleMenuOpen = false;
+  }
 </script>
+
+<svelte:window onclick={closeScaleOnOutside} />
 
 <div class="pd-stage">
   {#if showLabels}
@@ -651,7 +666,10 @@
   /* Vertical Z-pan slider, left edge. */
   /* Z-pan vertical slider on the RIGHT edge — keeps the left clear for the
      2D SVG overlay (and the 'Mesh (live)' label sitting top-left). */
-  .pd-zpan { position: absolute; right: 6px; top: 56px; bottom: 16px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  /* #11: half-height slider — anchor at the top and cap the column to ~half the
+     pane (was top:56px→bottom:16px, i.e. nearly the full height). The slider is
+     flex:1 inside, so halving the column halves the slider. */
+  .pd-zpan { position: absolute; right: 6px; top: 56px; height: 46%; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   /* Vertical range slider — modern path: `writing-mode: vertical-lr` alone.
      Drop `appearance: slider-vertical` (deprecated in Chrome 124+, removal
      warned via the runtime banner). Default direction:ltr makes top=min
