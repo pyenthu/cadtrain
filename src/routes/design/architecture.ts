@@ -684,3 +684,59 @@ export const ARCH_EDGES = [
   { id: 'e-ragcorpus-jsonl', source: 'l-rag-corpus', target: 's-rag-corpus', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
   { id: 'e-rule-vocabjson', source: 'l-rule-translator', target: 's-vocab-json', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
 ];
+
+// ──────────────────────────────────────────────────────────
+// TREE VIEW MODEL
+//
+// The collapsible-tree /design surface drives layout from the parent/child
+// HIERARCHY (system → 4 containers → their components) rather than the
+// hand-placed C4 coordinates above. We re-expose the same node data — minus
+// any positions — as a flat list that retains `parentId`, so a layout function
+// can walk the tree and compute x/y itself (and reflow on collapse/expand).
+//
+// treeKind:
+//   'system' | 'container'         — the C4 boxes (collapsible parents)
+//   'route' | 'api' | 'lib' | 'store' — leaf components
+// ──────────────────────────────────────────────────────────
+export type ArchTreeKind = 'system' | 'container' | NodeKind;
+
+export interface ArchTreeNode {
+  id: string;
+  parentId?: string;
+  treeKind: ArchTreeKind;
+  label: string;
+  tech?: string;       // container/system only
+  accent?: string;     // container/system only
+  href?: string;       // route component → clickable
+  blurb?: string;
+  planned?: boolean;
+  archived?: boolean;
+}
+
+export const ARCH_TREE_NODES: ArchTreeNode[] = [
+  ...ARCH_CONTAINERS_NESTED.map((n): ArchTreeNode => {
+    const d = n.data as ContainerNodeData;
+    return {
+      id: n.id,
+      parentId: (n as { parentId?: string }).parentId,
+      treeKind: d.variant,
+      label: d.label,
+      tech: d.tech,
+      accent: d.accent,
+      blurb: d.blurb,
+    };
+  }),
+  ...ARCH_NODES_NESTED.map((n): ArchTreeNode => {
+    const d = n.data as ArchNodeData;
+    return {
+      id: n.id,
+      parentId: (n as { parentId?: string }).parentId,
+      treeKind: d.kind,
+      label: d.label,
+      href: d.href,
+      blurb: d.blurb,
+      planned: d.planned,
+      archived: d.archived,
+    };
+  }),
+];

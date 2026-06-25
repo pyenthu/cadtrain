@@ -122,10 +122,12 @@
       <h2 id="arch-h">Architecture</h2>
     </div>
     <p class="prose section-intro">
-      An interactive map of the app — routes, API groups, pipeline stages, and
-      persistent stores. Pan &amp; zoom freely; click a <strong>route</strong>
-      node to jump to the live page. The bake-pipeline edges animate to show
-      data flow direction.
+      A collapsible map of the app — one <strong>system</strong> holding four
+      <strong>containers</strong> (Web App · API · CAD kernel · Volume store),
+      each with its component nodes. The layout is computed from the hierarchy,
+      so it reflows whenever you collapse a container. Click a container caret to
+      fold its subtree, a <strong>route</strong> node to jump to the live page;
+      the bake-pipeline edges animate to show data-flow direction.
     </p>
 
     <ArchGraph />
