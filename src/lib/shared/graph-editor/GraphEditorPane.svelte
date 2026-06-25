@@ -18,7 +18,7 @@
   Per docs/plans/composition-architecture.md.
 -->
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { scene } from '$lib/shared/scene-state.svelte';
   import {
     newGraph,
@@ -153,6 +153,8 @@
   // sketch.editingSketchId; only SETS sketch.sketchExprPop (popover in shell).
   import SketchEditorPane from './SketchEditorPane.svelte';
   import RepeatEditorPane from './RepeatEditorPane.svelte';
+  import CanvasMenu from './CanvasMenu.svelte';
+  import AiMenu from './AiMenu.svelte';
   import { clampToViewport } from './popover-clamp';
   import { releaseImplicitCapture } from './pointer-capture';
   // Per-pane drag-to-wire state + handlers (Phase C). A per-instance class
@@ -632,87 +634,34 @@
     canvasMenuOpen = true;
   }
   /** ✨ AI-generate popover (RAG Phase 2) — anchored to the rail button
-   *  like the ⚙ canvas menu. Holds the instructions + the description
-   *  textarea; the generated graph opens via props.onGenerated. */
+   *  like the ⚙ canvas menu. The prompt/busy/error/candidate state + the
+   *  generate fetch live in AiMenu.svelte; GEP owns only the open + anchor. */
   let aiMenuOpen = $state(false);
   let aiBtnEl = $state<HTMLButtonElement | null>(null);
   let aiMenuPos = $state<{ left: number; top: number }>({ left: 56, top: 120 });
-  let aiPrompt = $state('');
-  let aiBusy = $state(false);
-  let aiError = $state<string | null>(null);
-  let aiCandidates = $state<string[]>([]);
-  /** Popover width — user-resizable via the native CSS resize grip
-   *  (bottom-right corner); persisted so the chosen width sticks. */
-  let aiMenuW = $state<number>(360);
-  try { const w = Number(localStorage.getItem('ge-ai-menu-w')); if (w >= 264) aiMenuW = Math.min(720, w); } catch { /* SSR/off */ }
-  let aiPanelEl = $state<HTMLDivElement | null>(null);
-  function persistAiMenuW() {
-    if (!aiPanelEl) return;
-    const w = aiPanelEl.offsetWidth;
-    if (w >= 264) {
-      aiMenuW = w;
-      try { localStorage.setItem('ge-ai-menu-w', String(w)); } catch { /* ignore */ }
-    }
-  }
-  async function openAiMenu() {
+  function openAiMenu() {
     if (aiBtnEl) {
       const r = aiBtnEl.getBoundingClientRect();
       aiMenuPos = { left: r.right + 6, top: r.top };
     }
-    aiError = null;
+    // The ✨ button is at the BOTTOM of the rail, so the popover may spill
+    // below the viewport — AiMenu clamps its own top on mount.
     aiMenuOpen = true;
-    // The ✨ button lives at the BOTTOM of the rail, so anchoring the
-    // popover's top to the button spills it below the viewport. After it
-    // renders, measure + clamp so the whole panel stays on-screen (shift
-    // UP if needed, never above a 12px top margin).
-    await tick();
-    if (aiPanelEl) {
-      const h = aiPanelEl.offsetHeight;
-      const margin = 12;
-      const maxTop = window.innerHeight - h - margin;
-      aiMenuPos = { ...aiMenuPos, top: Math.max(margin, Math.min(aiMenuPos.top, maxTop)) };
-    }
   }
-  async function generateFromPrompt() {
-    const prompt = aiPrompt.trim();
-    if (!prompt || aiBusy) return;
-    aiBusy = true;
-    aiError = null;
-    aiCandidates = [];
-    try {
-      const r = await fetch('/api/rag/prompt', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      if (!r.ok) { aiError = `generate ${r.status}: ${(await r.text()).slice(0, 200)}`; return; }
-      const j = await r.json();
-      if (!j?.graph) { aiError = 'no graph in response'; return; }
-      aiCandidates = Array.isArray(j.candidates) ? j.candidates : [];
-      // Hydrate the proposed graph INTO the CURRENT tab (in place) — the
-      // user generates from the open editor and the changes land HERE,
-      // not in a new tab (2026-06-12). Auto-layout since a generated
-      // graph carries no saved positions; set exemplarId so the first
-      // Save lands under the suggested name.
-      try {
-        graph = autoLayoutGraph(hydrateGraph(j.graph));
-      } catch (e) {
-        console.warn('[graph-editor] generated graph failed to hydrate', e);
-        aiError = 'the generated graph could not be loaded';
-        return;
-      }
-      const gid = String(j.id || '').trim();
-      if (/^[a-z_][a-z0-9_]*$/i.test(gid)) exemplarId = gid;
-      // Notify the parent so it can rename the active tab's label (it must
-      // NOT open a new tab — props.id only seeds on mount, so updating it
-      // is a safe relabel, not a remount).
-      props.onGenerated?.(exemplarId, j.graph, aiCandidates);
-      aiPrompt = '';
-      aiMenuOpen = false;
-    } catch (e: any) {
-      aiError = e?.message ?? String(e);
-    } finally {
-      aiBusy = false;
-    }
+  /** AiMenu success handler — hydrate the proposed graph INTO the CURRENT tab
+   *  (in place); the user generates from the open editor and the changes land
+   *  HERE, not in a new tab (2026-06-12). Auto-layout since a generated graph
+   *  carries no saved positions; set exemplarId so the first Save lands under
+   *  the suggested name. THROWS on a bad graph so AiMenu can surface the error
+   *  + keep its panel open. */
+  function handleAiGenerated(id: string, rawGraph: any, candidates: string[]) {
+    graph = autoLayoutGraph(hydrateGraph(rawGraph));
+    const gid = String(id || '').trim();
+    if (/^[a-z_][a-z0-9_]*$/i.test(gid)) exemplarId = gid;
+    // Notify the parent so it can rename the active tab's label (it must NOT
+    // open a new tab — props.id only seeds on mount, so updating it is a safe
+    // relabel, not a remount).
+    props.onGenerated?.(exemplarId, rawGraph, candidates);
   }
 
   /** Canvas-edge boundary toggles (#116). Each edge cycles
@@ -750,6 +699,14 @@
       else if (t === 'repellant') boundTop = 'repellant';
     } catch { /* localStorage blocked — fine */ }
   });
+  /** Set + persist a canvas-edge boundary. Called by CanvasMenu's checkboxes;
+   *  the bound* state stays here because pushApart reads it. */
+  function setBound(edge: 'left' | 'top' | 'right', v: BoundState) {
+    if (edge === 'left') boundLeft = v;
+    else if (edge === 'top') boundTop = v;
+    else boundRight = v;
+    try { localStorage.setItem(`ge-bound-${edge}`, v); } catch { /* ignore */ }
+  }
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
    *  bumps. Reads the current emitted source so manual bakes always
    *  reflect the latest graph state. */
@@ -2935,102 +2892,22 @@
   {/if}
 
   {#if aiMenuOpen}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-canvas-menu-shade" onclick={() => aiMenuOpen = false}></div>
-    <!-- ✨ generate popover — same anchored-dropdown chrome as the ⚙ menu.
-         Instructions live here (not inline in the sidebar): describe →
-         BM25-retrieve similar parts → Claude proposes a graph → opens in
-         a NEW tab; nothing is saved until the user hits Save there. -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="ge-canvas-menu ge-ai-menu"
-      bind:this={aiPanelEl}
-      onpointerup={persistAiMenuW}
-      style="left: {aiMenuPos.left}px; top: {aiMenuPos.top}px; width: {aiMenuW}px">
-      <div class="ge-ai-title">✨ Generate a part</div>
-      <div class="ge-ai-hint">Describe the part in plain words — e.g.
-        <em>flat coil disc, 2 turns, 60 segments</em>. Similar parts are
-        retrieved from the RAG corpus and Claude proposes a parametric
-        graph, opened in a new tab for review. Nothing touches the volume
-        until you Save.</div>
-      <!-- svelte-ignore a11y_autofocus -->
-      <textarea class="ge-ai-input" rows="3" autofocus
-        placeholder="hexagonal prism with a central round bore…"
-        bind:value={aiPrompt}
-        disabled={aiBusy}
-        onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateFromPrompt(); } }}></textarea>
-      <div class="ge-ai-actions">
-        <button class="ge-ai-go" type="button"
-          disabled={aiBusy || !aiPrompt.trim()}
-          onclick={generateFromPrompt}>{aiBusy ? 'generating…' : 'Generate'}</button>
-        {#if aiError}
-          <span class="ge-ai-err" title={aiError}>failed — hover for detail</span>
-        {:else if aiCandidates.length > 0}
-          <span class="ge-ai-from">from: {aiCandidates.join(' · ')}</span>
-        {/if}
-      </div>
-    </div>
+    <AiMenu
+      pos={aiMenuPos}
+      onGenerated={handleAiGenerated}
+      onClose={() => (aiMenuOpen = false)} />
   {/if}
 
   {#if canvasMenuOpen}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-canvas-menu-shade" onclick={() => canvasMenuOpen = false}></div>
-    <!-- Compact Flowbite-style dropdown anchored to the ⚙ button's
-         bounding rect (see openCanvasMenu). Two action rows + a separator
-         + two checkbox rows for the left/right canvas-edge boundaries.
-         The checkbox toggle is BOOLEAN repellant on/off; the small edge
-         buttons on the canvas still expose the tri-state (off →
-         repellant → confiner) cycle for the rare confiner case. -->
-    <div class="ge-canvas-menu"
-      style="left: {canvasMenuPos.left}px; top: {canvasMenuPos.top}px">
-      <button class="ge-cm-row action" type="button"
-        onclick={() => { autoLayout(); canvasMenuOpen = false; }}
-        title="Rearrange nodes left-to-right by depth columns (clean by construction)">
-        <span class="ge-cm-icon">📐</span>
-        <span class="ge-cm-label">Auto-layout</span>
-      </button>
-      <button class="ge-cm-row action" type="button"
-        onclick={() => { pushApart(); canvasMenuOpen = false; }}
-        title="Push overlapping cards apart IN PLACE (keeps your manual arrangement; clears the params card + edge bounds below)">
-        <span class="ge-cm-icon">🧲</span>
-        <span class="ge-cm-label">Push apart</span>
-      </button>
-      <div class="ge-cm-sep"></div>
-      <label class="ge-cm-row check"
-        title="Push nodes away from the LEFT canvas edge during push-apart">
-        <input type="checkbox"
-          checked={boundLeft === 'repellant'}
-          onchange={(ev) => {
-            const on = (ev.currentTarget as HTMLInputElement).checked;
-            boundLeft = on ? 'repellant' : 'off';
-            try { localStorage.setItem('ge-bound-left', boundLeft); } catch { /* ignore */ }
-          }} />
-        <span class="ge-cm-label">Left boundary</span>
-      </label>
-      <label class="ge-cm-row check"
-        title="Push nodes DOWN from the TOP canvas edge during push-apart (keeps cards from drifting off-screen above the PARAMS dock)">
-        <input type="checkbox"
-          checked={boundTop === 'repellant'}
-          onchange={(ev) => {
-            const on = (ev.currentTarget as HTMLInputElement).checked;
-            boundTop = on ? 'repellant' : 'off';
-            try { localStorage.setItem('ge-bound-top', boundTop); } catch { /* ignore */ }
-          }} />
-        <span class="ge-cm-label">Top boundary</span>
-      </label>
-      <label class="ge-cm-row check"
-        title="Push nodes away from the RIGHT canvas edge during push-apart">
-        <input type="checkbox"
-          checked={boundRight === 'repellant'}
-          onchange={(ev) => {
-            const on = (ev.currentTarget as HTMLInputElement).checked;
-            boundRight = on ? 'repellant' : 'off';
-            try { localStorage.setItem('ge-bound-right', boundRight); } catch { /* ignore */ }
-          }} />
-        <span class="ge-cm-label">Right boundary</span>
-      </label>
-    </div>
+    <CanvasMenu
+      pos={canvasMenuPos}
+      onAutoLayout={autoLayout}
+      onPushApart={pushApart}
+      {boundLeft}
+      {boundTop}
+      {boundRight}
+      onSetBound={setBound}
+      onClose={() => (canvasMenuOpen = false)} />
   {/if}
 
   <main class="ge-grid" bind:this={gridEl}
@@ -4189,67 +4066,12 @@
   .ge-vrail-sep { width: 24px; height: 1px; background: #e5e7eb; margin: 4px 0; }
   .ge-vrail-spacer { flex: 1 1 auto; }
 
-  /* ─── Canvas-settings popover (Flowbite-style compact dropdown) ─────── */
-  /* Backdrop covers the viewport so an outside click closes the menu.
-     `position: fixed` matches the menu's own fixed positioning so we don't
-     need to chase a positioned ancestor — works the same whether mounted
-     standalone (/graph-editor) or as a /primitives tab body. */
-  .ge-canvas-menu-shade {
-    position: fixed; inset: 0;
-    z-index: 99;
-  }
-  /* ✨ generate popover — shares the .ge-canvas-menu shell; violet accents
-     match the rest of the AI/parametric family. */
+  /* ─── Rail-button accents (the ⚙ canvas-settings popover moved to
+         CanvasMenu.svelte, the ✨ generate popover to AiMenu.svelte) ──── */
+  /* ✨ generate rail button — violet accents match the AI/parametric family. */
   .ge-vrail-btn.ai { color: #6d28d9; }
   .ge-vrail-btn.ai:hover, .ge-vrail-btn.ai.on { background: #ede9fe; color: #4c1d95; border-color: #a78bfa; }
-  .ge-ai-menu {
-    padding: 8px; gap: 6px;
-    /* User-resizable via the native bottom-right grip; width persisted
-       to localStorage (ge-ai-menu-w). overflow:hidden is required for
-       CSS resize to engage. */
-    resize: horizontal; overflow: hidden;
-    min-width: 264px; max-width: 720px;
-  }
-  .ge-ai-title { font: 700 12px Arial; color: #4c1d95; }
-  .ge-ai-hint { font: 11px Arial; color: #6b7280; line-height: 1.45; }
-  .ge-ai-hint em { color: #5b21b6; font-style: normal; }
-  .ge-ai-input {
-    width: 100%; box-sizing: border-box; resize: vertical;
-    padding: 5px 8px; font: 12px ui-monospace, monospace;
-    border: 1px solid #c4b5fd; border-radius: 4px; background: #faf5ff;
-  }
-  .ge-ai-input:focus { outline: 1px solid #6d28d9; background: #fff; }
-  .ge-ai-input:disabled { opacity: 0.6; }
-  .ge-ai-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .ge-ai-go {
-    padding: 4px 12px; font: 600 12px Arial; cursor: pointer;
-    background: #6d28d9; color: #fff; border: 1px solid #5b21b6; border-radius: 4px;
-  }
-  .ge-ai-go:hover:not(:disabled) { background: #5b21b6; }
-  .ge-ai-go:disabled { opacity: 0.5; cursor: default; }
-  .ge-ai-err { font: 10px Arial; color: #b91c1c; }
-  .ge-ai-from { font: 10px Arial; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ge-canvas-menu {
-    position: fixed;
-    background: #fff; border: 1px solid #d6d3d1; border-radius: 6px;
-    padding: 4px; width: 200px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.06);
-    z-index: 100; display: flex; flex-direction: column;
-  }
-  /* Menu row — uniform height + horizontal layout (icon + label),
-     matches the Flowbite DropdownItem visual rhythm. */
-  .ge-cm-row {
-    display: flex; align-items: center; gap: 8px;
-    width: 100%; padding: 6px 10px; box-sizing: border-box;
-    background: transparent; border: 0; border-radius: 4px; cursor: pointer;
-    font: 500 12px Arial; color: #1f2937;
-    text-align: left;
-  }
-  .ge-cm-row:hover { background: #f3f4f6; color: #0c4a6e; }
-  .ge-cm-row.check { cursor: pointer; user-select: none; }
-  .ge-cm-row.check input { margin: 0; cursor: pointer; accent-color: #cc2222; }
-  .ge-cm-icon { width: 16px; text-align: center; font-size: 13px; line-height: 1; }
-  .ge-cm-label { flex: 1 1 auto; }
+  /* .ge-cm-sep is still used by the +Drop node-pick menu below — keep it. */
   .ge-cm-sep { height: 1px; background: #f1f5f9; margin: 4px 6px; }
   /* ─── Profile-mode 2D preview ────────────────────────────────────── */
   .ge-profile-2d { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
