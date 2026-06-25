@@ -51,16 +51,9 @@
   let outputs = $state<FormulaRow[]>([]);
   let expanded = $state(false);
 
-  // Layout pref (tabs ⊞ vs accordions ≡), persisted.
-  let layout = $state<'tabs' | 'accordions'>(((): 'tabs' | 'accordions' => {
-    try { const v = localStorage.getItem('cad-expr-editor-layout'); if (v === 'tabs' || v === 'accordions') return v; } catch {}
-    return 'tabs';
-  })());
-  let activeTab = $state<'params' | 'consts' | 'vars' | 'outputs'>('params');
-  function setLayout(l: 'tabs' | 'accordions') {
-    layout = l;
-    try { localStorage.setItem('cad-expr-editor-layout', l); } catch {}
-  }
+  // The LEFT rail tabs the inputs/intermediates (params · consts · vars);
+  // OUTPUTS get their own permanent RIGHT pane (the results + output sockets).
+  let activeTab = $state<'params' | 'consts' | 'vars'>('params');
 
   // Seed on def-identity change (reopening the popup against a new def reseeds).
   let seededFrom: ExprDef | null = null;
@@ -168,6 +161,9 @@
   function sectionCount(k: string): number {
     return k === 'params' ? params.length : k === 'consts' ? consts.length : k === 'vars' ? vars.length : outputs.length;
   }
+  // Left-rail tabs = inputs + intermediates; OUTPUTS live in the right pane.
+  const INPUT_SECTIONS = SECTIONS.filter((s) => s.key !== 'outputs');
+  let activeLabel = $derived(SECTIONS.find((s) => s.key === activeTab)?.label ?? 'PARAMS');
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -258,40 +254,43 @@
     <input class="ge-expr-defname" type="text" placeholder="definition name" bind:value={name}
       class:bad={name.trim() === ''} title="Definition name (shown in the Σ menu + on instance cards)" />
     <div class="ge-expr-head-actions">
-      <button type="button" class="ge-expr-iconbtn" class:on={layout === 'tabs'} title="Tabs layout" onclick={() => setLayout('tabs')}>⊞</button>
-      <button type="button" class="ge-expr-iconbtn" class:on={layout === 'accordions'} title="Accordions layout" onclick={() => setLayout('accordions')}>≡</button>
       <button type="button" class="ge-expr-iconbtn" title={expanded ? 'Collapse to popover' : 'Expand to full screen'} onclick={() => (expanded = !expanded)}>{expanded ? '⤡' : '⤢'}</button>
       <button type="button" class="ge-expr-iconbtn" title="Close (Esc)" onclick={onCancel}>✕</button>
     </div>
   </div>
 
   <div class="ge-expr-body">
-    {#if layout === 'tabs'}
-      <div class="ge-xs-tabs">
-        {#each SECTIONS as s (s.key)}
-          <button type="button" class="ge-xs-tab" class:on={activeTab === s.key} onclick={() => (activeTab = s.key)}>
-            {s.label}<span class="ge-xs-tabcount">{sectionCount(s.key)}</span>
-          </button>
-        {/each}
-      </div>
-      <div class="ge-xs-pane">{@render sectionBody(activeTab)}</div>
-    {:else}
-      {#each SECTIONS as s (s.key)}
-        <div class="ge-xs-acc">
-          <div class="ge-xs-acc-head">{s.label}<span class="ge-xs-tabcount">{sectionCount(s.key)}</span></div>
-          {@render sectionBody(s.key)}
-        </div>
+    <!-- LEFT: vertical tab rail — inputs + intermediates (vertical text). -->
+    <div class="ge-xs-rail">
+      {#each INPUT_SECTIONS as s (s.key)}
+        <button type="button" class="ge-xs-vtab {s.key}" class:on={activeTab === s.key}
+          onclick={() => (activeTab = s.key as 'params' | 'consts' | 'vars')}>
+          <span class="ge-xs-vlabel">{s.label}</span>
+          <span class="ge-xs-vcount">{sectionCount(s.key)}</span>
+        </button>
       {/each}
-    {/if}
+    </div>
 
-    <div class="ge-expr-foot">
-      <span class="ge-expr-foot-msg" class:bad={!canCommit}>
-        {canCommit ? 'ready' : 'fix the highlighted rows'}
-      </span>
-      <div class="ge-expr-foot-actions">
-        <button type="button" class="ge-xs-btn" onclick={onCancel}>Cancel</button>
-        <button type="button" class="ge-xs-btn primary" disabled={!canCommit} onclick={commit}>Save</button>
-      </div>
+    <!-- MIDDLE: the active input/intermediate section. -->
+    <div class="ge-xs-editor {activeTab}">
+      <div class="ge-xs-pane-head">{activeLabel}</div>
+      {@render sectionBody(activeTab)}
+    </div>
+
+    <!-- RIGHT: OUTPUTS, always visible — the results + output sockets. -->
+    <div class="ge-xs-outpane">
+      <div class="ge-xs-pane-head out">OUTPUTS<span class="ge-xs-tabcount">{outputs.length}</span></div>
+      {@render outputsBody()}
+    </div>
+  </div>
+
+  <div class="ge-expr-foot">
+    <span class="ge-expr-foot-msg" class:bad={!canCommit}>
+      {canCommit ? '✓ ready' : '⚠ fix the highlighted rows'}
+    </span>
+    <div class="ge-expr-foot-actions">
+      <button type="button" class="ge-xs-btn" onclick={onCancel}>Cancel</button>
+      <button type="button" class="ge-xs-btn primary" disabled={!canCommit} onclick={commit}>Save</button>
     </div>
   </div>
 </div>
@@ -300,7 +299,7 @@
   .ge-expr-shade { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.35); z-index: 1400; }
   .ge-expr-pop {
     position: fixed; z-index: 1401;
-    width: 460px; max-width: calc(100vw - 24px);
+    width: 660px; max-width: calc(100vw - 24px);
     background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
     box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
     display: flex; flex-direction: column; overflow: hidden;
@@ -324,23 +323,42 @@
   }
   .ge-expr-iconbtn:hover { background: #f1f5f9; color: #334155; }
   .ge-expr-iconbtn.on { background: #0e7490; color: #fff; border-color: #0e7490; }
-  .ge-expr-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .ge-expr-body { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 220px; max-height: 56vh; overflow: hidden; }
+  .ge-expr-pop.expanded .ge-expr-body { max-height: none; }
 
-  .ge-xs-tabs { display: flex; gap: 4px; }
-  .ge-xs-tab {
-    flex: 1 1 auto; font: 700 10px Arial; letter-spacing: 0.03em; color: #64748b;
-    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px 4px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 4px;
+  /* LEFT vertical tab rail — vertical text + per-section accent. */
+  .ge-xs-rail { display: flex; flex-direction: column; flex: 0 0 auto; background: #f8fafc; border-right: 1px solid #e5e7eb; }
+  .ge-xs-vtab {
+    flex: 1 1 0; min-height: 62px; width: 40px; cursor: pointer; position: relative;
+    display: flex; flex-direction: column-reverse; align-items: center; justify-content: center; gap: 7px;
+    background: transparent; border: none; border-left: 3px solid transparent; color: #64748b;
   }
-  .ge-xs-tab.on { background: #0e7490; color: #fff; border-color: #0e7490; }
-  .ge-xs-tabcount {
-    font: 700 9px ui-monospace, monospace; background: rgba(100,116,139,0.18); color: inherit;
-    border-radius: 8px; padding: 0 5px; min-width: 14px; text-align: center;
+  .ge-xs-vlabel { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 10px Arial; letter-spacing: 0.14em; }
+  .ge-xs-vcount {
+    font: 700 9px ui-monospace, monospace; background: rgba(100,116,139,0.16); color: inherit;
+    border-radius: 8px; padding: 1px 5px; min-width: 16px; text-align: center;
   }
-  .ge-xs-tab.on .ge-xs-tabcount { background: rgba(255,255,255,0.25); }
-  .ge-xs-pane { min-height: 120px; }
-  .ge-xs-acc { border: 1px solid #e5e7eb; border-radius: 7px; overflow: hidden; }
-  .ge-xs-acc-head { font: 700 10px Arial; letter-spacing: 0.04em; color: #475569; background: #f8fafc; padding: 5px 8px; display: flex; gap: 6px; align-items: center; }
+  .ge-xs-vtab:hover { background: #f1f5f9; color: #334155; }
+  .ge-xs-vtab.on { background: #fff; color: #0f172a; }
+  .ge-xs-vtab.params.on { border-left-color: #3b82f6; }
+  .ge-xs-vtab.consts.on { border-left-color: #64748b; }
+  .ge-xs-vtab.vars.on   { border-left-color: #f59e0b; }
+  .ge-xs-vtab.params.on .ge-xs-vlabel { color: #2563eb; }
+  .ge-xs-vtab.consts.on .ge-xs-vlabel { color: #475569; }
+  .ge-xs-vtab.vars.on   .ge-xs-vlabel { color: #b45309; }
+
+  /* MIDDLE editor + RIGHT outputs panes. */
+  .ge-xs-editor  { flex: 1 1 58%; min-width: 0; overflow: auto; }
+  .ge-xs-outpane { flex: 1 1 42%; min-width: 0; overflow: auto; border-left: 1px solid #eef2f7; background: #fcfcff; }
+  .ge-xs-pane-head {
+    font: 700 10px Arial; letter-spacing: 0.09em; color: #475569;
+    padding: 8px 10px 2px; display: flex; align-items: center; gap: 6px;
+  }
+  .ge-xs-pane-head.out { color: #7c3aed; }
+  .ge-xs-pane-head .ge-xs-tabcount {
+    font: 700 9px ui-monospace, monospace; background: rgba(124,58,237,0.14); color: #7c3aed;
+    border-radius: 8px; padding: 1px 5px; min-width: 16px; text-align: center;
+  }
 
   .ge-xs-table { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
   .ge-xs-row { display: flex; align-items: center; gap: 5px; }
@@ -365,7 +383,7 @@
   }
   .ge-xs-add:hover { background: #cffafe; }
 
-  .ge-expr-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+  .ge-expr-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #e5e7eb; padding: 8px 12px; background: #f8fafc; }
   .ge-expr-foot-msg { font: 600 11px Arial; color: #16a34a; }
   .ge-expr-foot-msg.bad { color: #b45309; }
   .ge-expr-foot-actions { display: flex; gap: 6px; }
