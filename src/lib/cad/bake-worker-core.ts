@@ -26,7 +26,7 @@
 import * as helpers from './manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from './primitive-sandbox';
-import { finalizeManifold, type RenderMaterial } from './builder';
+import { finalizeManifold, type RenderMaterial } from './render-helpers';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
 
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on

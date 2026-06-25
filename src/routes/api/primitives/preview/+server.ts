@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/cad/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
-import { finalizeManifold } from '$lib/cad/builder';
+import { finalizeManifold } from '$lib/cad/render-helpers';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { coerceSmooth } from '$lib/cad/bake-worker-core';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';

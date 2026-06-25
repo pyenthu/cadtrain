@@ -1,7 +1,7 @@
 // Verify the 3→0 fix end-to-end through finalizeManifold (the real bake path).
 import { initManifold } from '../src/lib/cad/manifold-helpers';
 import { revolveProfile, weldAndBuild } from '../src/lib/cad/manifold-mesh';
-import { finalizeManifold } from '../src/lib/cad/builder';
+import { finalizeManifold } from '../src/lib/cad/render-helpers';
 
 await initManifold();
 const profile: [number, number][] = [[0, 0], [1, 0], [1, 3], [0, 3]];
