@@ -28,7 +28,7 @@
   import { argStr, argFrom } from './args';
   import {
     addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp, addSketchRepeat,
-    removeSketchSplinePoint, type Graph,
+    removeSketchSplinePoint, setSketchScale, type Graph,
   } from '$lib/cad/composition-graph';
   import type { SketchState } from './sketch-state.svelte';
   import type { WireState } from './wire-state.svelte';
@@ -60,6 +60,15 @@
     onParamDefault: (name: string, value: number) => void;
     onOpenAddParamPop: (ev: PointerEvent) => void;
   } = $props();
+
+  // ⚙ per-axis scale popover (whole-sketch scaleX / scaleY → compileSketch's
+  // trailing args → baked profile stretches per axis). Local UI flag; the
+  // values themselves live on the sketch node (scaleX/scaleY ArgValue).
+  let scalePopOpen = $state(false);
+  /** Literal value of an ArgValue scale field (1 when absent/non-literal). */
+  function scaleVal(v: any): number {
+    return v && v.kind === 'literal' && typeof v.value === 'number' ? v.value : 1;
+  }
 </script>
 
 {#if sketch.editingSketchId && sketch.sketchEditor}
@@ -88,6 +97,33 @@
           title="{n}-column op layout"
           onclick={() => sketch.setSketchCols(se.node.id, n as 1 | 2 | 3)}>{n}</button>
       {/each}
+      <div class="ge-stool-sep"></div>
+      <!-- ⚙ whole-sketch per-axis scale (X = r, Y = z). 1/1 = no scale. -->
+      <span class="ge-sk-scale-wrap">
+        <button class="ge-stool" class:on={scalePopOpen || scaleVal(se.node.scaleX) !== 1 || scaleVal(se.node.scaleY) !== 1}
+          title="Sketch settings — per-axis scale (X / Y)"
+          onclick={() => (scalePopOpen = !scalePopOpen)}>⚙</button>
+        {#if scalePopOpen}
+          <div class="ge-sk-scale-pop">
+            <div class="ge-sk-scale-hd">Per-axis scale</div>
+            <label class="ge-sk-scale-row">
+              <span class="ge-sk-scale-lbl">X (r)</span>
+              <input class="ge-sk-scale-in" type="number" step="0.1" min="0"
+                value={scaleVal(se.node.scaleX)}
+                onchange={(e) => setGraph(setSketchScale(graph, sid, 'x', { kind: 'literal', value: Number((e.currentTarget as HTMLInputElement).value) || 1 }))} />
+            </label>
+            <label class="ge-sk-scale-row">
+              <span class="ge-sk-scale-lbl">Y (z)</span>
+              <input class="ge-sk-scale-in" type="number" step="0.1" min="0"
+                value={scaleVal(se.node.scaleY)}
+                onchange={(e) => setGraph(setSketchScale(graph, sid, 'y', { kind: 'literal', value: Number((e.currentTarget as HTMLInputElement).value) || 1 }))} />
+            </label>
+            <button class="ge-sk-scale-reset" type="button" title="Reset both axes to 1×"
+              disabled={scaleVal(se.node.scaleX) === 1 && scaleVal(se.node.scaleY) === 1}
+              onclick={() => setGraph(setSketchScale(setSketchScale(graph, sid, 'x', { kind: 'literal', value: 1 }), sid, 'y', { kind: 'literal', value: 1 }))}>Reset 1×1</button>
+          </div>
+        {/if}
+      </span>
     </div>
     <!-- S.2: the 2D draw stage fills the sketcher (minus the tool rail +
          the 3D pane). The PARAMS card + sketch card FLOAT over it as a
@@ -511,6 +547,23 @@
   .ge-stool:hover { background: #f3e8ff; color: #6b21a8; border-color: #c4b5fd; }
   .ge-stool.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
   .ge-stool-sep { width: 1px; height: 16px; background: #e2e8f0; margin: 0 3px; }
+  /* ⚙ per-axis scale popover (anchored below the gear button). */
+  .ge-sk-scale-wrap { position: relative; display: inline-flex; }
+  .ge-sk-scale-pop {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 10px; min-width: 150px;
+    background: #fff; border: 1px solid #d8b4fe; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+  }
+  .ge-sk-scale-hd { font: 700 10px Arial; color: #6b21a8; text-transform: uppercase; letter-spacing: 0.4px; }
+  .ge-sk-scale-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ge-sk-scale-lbl { font: 600 11px ui-monospace, monospace; color: #57534e; }
+  .ge-sk-scale-in { width: 64px; padding: 2px 5px; font: 12px ui-monospace, monospace; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; }
+  .ge-sk-scale-in:focus { outline: 1px solid #7c3aed; }
+  .ge-sk-scale-reset { margin-top: 2px; padding: 3px 6px; font: 600 10px Arial; background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; border-radius: 4px; cursor: pointer; }
+  .ge-sk-scale-reset:hover:not(:disabled) { background: #e9d5ff; }
+  .ge-sk-scale-reset:disabled { opacity: 0.4; cursor: default; }
   /* DRAGGABLE floating top bar (status + corner dial + Done). */
   .ge-sketch-topbar {
     position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px;
