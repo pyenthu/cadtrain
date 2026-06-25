@@ -165,6 +165,47 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(out.source).not.toMatch(/place\(\[/);
   });
 
+  it('Repeat keeps a part\'s inline z-move when its Call id is wired (txfmn promote)', async () => {
+    // Regression: a part with an inline mv (z-move) folds to a `txfmn` on
+    // save+reload (hydrateGraph). The Call card's output-socket resolver only
+    // recognised mv/rot — NOT txfmn — so after a reload the socket wired the
+    // BARE CALL id into the Repeat, dropping the z-move (every copy collapsed
+    // to the origin). addRepeatChild now promotes the wired id to its outermost
+    // transform wrapper, so the z survives.
+    const { addCall, addRepeat, setRepeatOp, asLiteral, wrapInTransform,
+      setTransformAxisValue, addRepeatChild, hydrateGraph } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'g_cube'); g = a.graph;
+    const w = wrapInTransform(g, a.id, 'mv'); g = w.graph;       // inline ⇄
+    g = setTransformAxisValue(g, w.id, 2, asLiteral(5));          // z = 5
+    g = hydrateGraph(JSON.parse(JSON.stringify(g)));             // save→reload: mv folds to txfmn
+    const r = addRepeat(g, '', asLiteral(3)); g = r.graph;
+    g = setRepeatOp(g, r.id, 'place');
+    g = addRepeatChild(g, r.id, a.id);                           // wire the CALL id (post-reload socket)
+    const out = emitGraph(g, { id: 'tZmove' });
+    // The repeated UNIT must be the z-moved part, not the bare call.
+    expect(out.source).toMatch(/place\(Array\.from\(\{ length: 3 \}, \(\) => \w+\)\)/);
+    // And that unit var must carry the z-move (mv(..., [0, 0, 5])).
+    const unit = out.source.match(/place\(Array\.from\(\{ length: 3 \}, \(\) => (\w+)\)\)/)?.[1];
+    expect(unit).toBeTruthy();
+    expect(out.source).toMatch(new RegExp(`const ${unit} = mv\\([^,]+, \\[0, 0, 5\\]\\);`));
+  });
+
+  it('Repeat with a plain Call (no inline transform) stays byte-identical (txfmn promote)', async () => {
+    // Guard: the promote must be a no-op when the part has no wrapper.
+    const { addCall, addRepeat, setRepeatOp, asLiteral, addRepeatChild } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'g_cube'); g = a.graph;
+    const r = addRepeat(g, '', asLiteral(3)); g = r.graph;
+    g = setRepeatOp(g, r.id, 'place');
+    g = addRepeatChild(g, r.id, a.id);
+    expect((g.nodes[r.id] as any).children).toEqual([a.id]);     // child id unchanged
+    const out = emitGraph(g, { id: 'tPlain' });
+    expect(out.source).toMatch(/place\(Array\.from\(\{ length: 3 \}, \(\) => A\)\)/);
+  });
+
   it('Repeat per-part modifiers wrap each part independently (repeat-enhance)', async () => {
     const { addCall, addRepeat, addRepeatChild, addPartModifier, setRepeatOp, asLiteral, asExpr } = await import('./composition-graph');
     const { emitGraph } = await import('./composition-emit');

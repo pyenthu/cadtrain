@@ -362,18 +362,58 @@ export function addRepeatPlaceholder(graph: Graph, parentId?: NodeId) {
   return { graph: next, id: r.id };
 }
 
-/** Append a PART to a Repeat's repeated unit (the PARTS section). Multiple
- *  parts combine per-iteration via place([...]); see RepeatNode doc. */
-export function addRepeatChild(graph: Graph, repeatId: NodeId, childId: NodeId): Graph {
-  return updateRepeat(graph, repeatId, (n) => ({ ...n, children: [...(n.children ?? []), childId] }));
+/** Walk UP from `id` through any mv/rot/txfmn wrappers (a node whose `.child`
+ *  is the current id) to the OUTERMOST transform, returning that wrapper id.
+ *  Returns `id` unchanged when nothing wraps it. Cycle-guarded.
+ *
+ *  Why a repeat child needs this: a part's z-move (and any translate/rotate) is
+ *  an INLINE transform wrapper around its Call. The Call card's output socket is
+ *  supposed to wire that wrapper, but the socket-source resolver only recognises
+ *  mv/rot — NOT the unified `txfmn` a lone mv folds into on save+reload
+ *  (hydrateGraph Pass 3). After a reload the socket falls back to the bare Call
+ *  id, so wiring the part into a Repeat would drop its transform (the repeated
+ *  copies collapse to the origin). Promoting the wired id to its outermost
+ *  transform here makes the Repeat keep the part's own placement regardless of
+ *  whether the Call id or the wrapper id arrives. A part with NO wrapper is
+ *  returned unchanged → existing repeats stay byte-identical. */
+function outermostTransformOf(graph: Graph, id: NodeId): NodeId {
+  let cur = id;
+  const seen = new Set<NodeId>();
+  for (;;) {
+    if (seen.has(cur)) break;
+    seen.add(cur);
+    let wrapper: NodeId | null = null;
+    for (const n of Object.values(graph.nodes)) {
+      if ((n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') &&
+          (n as MvNode | RotNode | TxfmnNode).child === cur) {
+        wrapper = n.id;
+        break;
+      }
+    }
+    if (!wrapper) break;
+    cur = wrapper;
+  }
+  return cur;
 }
 
-/** Rebind the part at `idx` to a different node (drag onto an existing row). */
+/** Append a PART to a Repeat's repeated unit (the PARTS section). Multiple
+ *  parts combine per-iteration via place([...]); see RepeatNode doc. The wired
+ *  id is promoted to its outermost transform wrapper so the part keeps its own
+ *  mv/rot placement (see outermostTransformOf). */
+export function addRepeatChild(graph: Graph, repeatId: NodeId, childId: NodeId): Graph {
+  const resolved = outermostTransformOf(graph, childId);
+  return updateRepeat(graph, repeatId, (n) => ({ ...n, children: [...(n.children ?? []), resolved] }));
+}
+
+/** Rebind the part at `idx` to a different node (drag onto an existing row).
+ *  Promotes the wired id to its outermost transform wrapper (see
+ *  outermostTransformOf) so the part's placement survives. */
 export function setRepeatChildAt(graph: Graph, repeatId: NodeId, idx: number, childId: NodeId): Graph {
+  const resolved = outermostTransformOf(graph, childId);
   return updateRepeat(graph, repeatId, (n) => {
     const children = [...(n.children ?? [])];
     if (idx < 0 || idx >= children.length) return n;
-    children[idx] = childId;
+    children[idx] = resolved;
     return { ...n, children };
   });
 }
