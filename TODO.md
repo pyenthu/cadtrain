@@ -1,4 +1,11 @@
-### Open — build work
+### Open — build work (PENDING)
+
+0. 🔴 **/primitives multi-tab freeze** (regression from the expr v3 merge) — restoring a
+   `/primitives` session that reopens several persisted tabs at once hard-hangs the
+   renderer (sync loop; no console error). `/graph-editor` single-pane is fine; fresh
+   `/primitives` is fine; opening one part is fine. Multi-pane / specific migrated part
+   (a WELLS part with v1 `graph.exprs`→`exprDefs` is the suspect). Workaround: clear
+   `localStorage prim-open-tabs`. NEXT: bisect the 7 parts, fix the mount loop. /plan #920.
 
 1. **RAG multi-shot AI + tab context** — **PARTIAL.** Engine MERGED
    (`ge-assist.*` in `src/lib/shared/graph-editor/`). LEFT: mount the panel/button
@@ -10,18 +17,14 @@
    few-shot DB (no data leaves org). `ge-assist` already accepts a `postTurn` override
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
-3. **Modularize round 2 — shell cleanup** — Phases A–F shipped (NodeCard, sketch
-   consolidation, sketch-load bugfix). LEFT: GEP shell ≤1500 lines, module-map header,
-   residual `$state` audit, dead-code prune (`builder.ts`/`library.ts` chain).
-   Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
+3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune shipped. LEFT:
+   GEP shell ≤1500 (R6a carve the Polygon/PolyRepeat editor out), module-map header,
+   residual `$state` audit, R7 `builder.ts`/`library.ts` retire, R8 vocab, R9
+   ProfileFnEditor. Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — poly_repeat-style loop in the sketch editor (model +
    `expandSketchOps` + UI in SketchEditorPane). Plan: `docs/plans/sketch-repeat.md` ·
    `repeat-and-sketch-repeat.md`.
-
-6. **Conditional expressions tab** — third tab beside PARAMS/PROPS; `e.<name>` calculated
-   /conditional expressions (sparse `graph.exprs[]`, topo eval). Overlaps PARKED #1.
-   Plan: `docs/plans/expressions-tab.md`.
 
 7. **Well schematic → 3D well diagram (`/wells`)** — **PARTIAL.** W0 + W1 shipped
    (WSON, registry, `assembleWell`, Threlte `WellScene`). **NEXT:** port SVTC 3D scene
@@ -31,6 +34,25 @@
    we need to replicate the 3d well sketch fromSVTC... also we can borrow from the same tyhpe of tab design and tool bar design and auto scale etc.
 
 8. in the reoeat card... allow for acceptance of params just like we are accepting parts. let the params section be abive parts section and allow multiple params to be added in a list with a node connecter
+
+15. **Expression system — polish pass** (the v3 block system shipped + works; these are the rough edges):
+    dangling-def recovery on instances; clean up the migrated `e.newone`-style invalid formulas;
+    Σ button two-click / tooltip overlap; per-output socket labels; live numeric preview.
+    (Global/personal expr library = PARKED #8.) Plan: `docs/plans/expression-builder.md`.
+
+
+### Shipped (recent)
+
+- ✅ **Expression system (v3)** — reusable per-part `ExprDef` (four sections
+  PARAMS/CONSTS/VARIABLES/OUTPUTS) + def/instance model + Σ Expressions menu
+  (define · edit · drop-instance · delete-guard) + wiring BOTH ways (param → expr
+  input, and expr output → ANY card: Call arg, polygon coord, mv/rot/txfmn axis,
+  repeat/poly_repeat count, sketch coord/point — bind + rendered line). mathjs
+  validation, 23 unit tests. _(was "Conditional expressions tab".)_ /plan #914.
+  Plan: `docs/plans/expression-builder.md` (v3). _(polish → open #15.)_
+- ✅ **/design C4 architecture graph** — interactive `@xyflow/svelte` route/api/lib/store
+  graph (container/C4 view) + the edges-not-rendering fix (`$state.raw`). /plan #909.
+- ✅ **Modularize R2 — knip dead-code prune** (dead deps + `mime.ts`/`temp-file.ts`).
 
 
 ### PARKED
@@ -45,3 +67,14 @@
 
 8. Option to promote and search for expressions to global library or ersonal user based library and search
 
+9. We need a fit/z scale and dia scale capabiltiy fort the src as well.
+
+10. We need to redesign the folder interface. i think it is occupying a loot of space.. lets do one thing.. When we collapse the folder sidebar lets have the collpase to be just narrow enough to show the vertical ytab bars on the left.
+
+11. Also we need to rationalize the slider on the bake visualizaiton.. so that it slides about 3 times the length of he rendered part in z.
+
+12. For the scale. Lets make sure that when we click out of the popover it disappears.
+
+13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
+
+14. Repeat card we dont need the card to be so elaborate.. Maybe we just need a nice loop icon.. remove the detailed text inside. Also the long name can be removed.in the top var
