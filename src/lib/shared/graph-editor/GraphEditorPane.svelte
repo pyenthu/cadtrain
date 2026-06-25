@@ -135,10 +135,11 @@
     attachedTransforms, isAttachedTransform,
     xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
     inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
-    exprInputSockY,
+    exprInputSockY, exprOutputSockY,
     entryIdxForEvalIdx, miniBez,
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
   } from './geom';
+  import { exprBlockMember } from '$lib/cad/graph-exprs';
   import { dragNumber } from '$lib/shared/dragNumber';
   import RightPane from './RightPane.svelte';
   // The 4 self-contained popovers (container reorder · arg ƒ-expr · profile-kind
@@ -3793,6 +3794,23 @@
                     <path class="ge-wire noderef"
                       d={bezier(cardObstacles,srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, pos.x, argY)}/>
                   {/if}
+                  <!-- EXPR-OUTPUT ref — the arg references an expr instance's
+                       emitted output const (_x_<id>_<out>). Draw a wire from
+                       that instance's right-edge output socket → this arg. -->
+                  {#each allNodes as exn (exn.id)}
+                    {#if exn.type === 'expr'}
+                      {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                      {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                        {#if String((v as any).expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                          {@const srcSize = nodeSize(graph, exn)}
+                          {@const srcPos = nodePos(exn.id)}
+                          {@const cpos = nodePos(n.id)}
+                          {@const cargY = cpos.y + 36 + 14 + argIdx * 22}
+                          <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), cpos.x, cargY)}/>
+                        {/if}
+                      {/each}
+                    {/if}
+                  {/each}
                 {/if}
               {/each}
               <!-- Attached transform axis wires (every mv/rot in the chain that
