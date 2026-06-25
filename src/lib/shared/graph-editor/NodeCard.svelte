@@ -680,6 +680,10 @@
                 {@const countDisplay = countKind === 'param' ? `p.${rep.count.param}`
                   : countKind === 'expr' ? rep.count.expr
                   : String(countLiteral)}
+                <!-- Truncate the count "variable" (a long param name or expr)
+                     so it never overflows the card / collides with ✎ + ×.
+                     SVG <text> ignores CSS ellipsis, so clip the string. -->
+                {@const countShort = countDisplay.length > 11 ? countDisplay.slice(0, 10) + '…' : countDisplay}
                 {@const repOp = (rep.op ?? 'stack') as 'stack' | 'list' | 'place'}
                 {@const repParts = (rep.children ?? []) as string[]}
                 {@const hasBodyExpr = typeof rep.bodyExpr === 'string' && rep.bodyExpr.trim().length > 0}
@@ -714,11 +718,11 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <text role="button" tabindex="-1" x="92" y="22"
                     class="ge-repeat-count-chip" class:param={countKind === 'param'} class:expr={countKind === 'expr'}
-                    title={countKind === 'param' ? `Wired to param — click × on the chip to unwire` : `Expression — edit below`}
-                    onpointerdown={(ev) => ev.stopPropagation()}>{countDisplay}</text>
+                    title={countKind === 'param' ? `Wired to param (${countDisplay}) — click × on the chip to unwire` : `Expression (${countDisplay}) — edit below`}
+                    onpointerdown={(ev) => ev.stopPropagation()}>{countShort}</text>
                   {#if countKind === 'param'}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <text role="button" tabindex="-1" x="92" y="22" dx={countDisplay.length * 7 + 4}
+                    <text role="button" tabindex="-1" x="92" y="22" dx={countShort.length * 7 + 4}
                       class="ge-repeat-count-x"
                       onpointerdown={(ev) => { ev.stopPropagation(); setGraph(setRepeatCount(graph, n.id, asLiteral(graph.params[rep.count.param]?.default ?? 1))); }}>×</text>
                   {/if}
@@ -735,20 +739,15 @@
                   onpointerdown={(ev) => { ev.stopPropagation(); onDeleteNode(n.id); }}>×</text>
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <!-- Repeat is a pure BUILDER — produces a list of N copies of
-                     its child. To combine the list (mate, stack, overlap),
-                     wire the output into a Stack / other consumer. Source
-                     emit defaults to a bare Array.from(...). Legacy parts
-                     without an `op` field still emit stack(Array.from(...))
-                     for backward compat. -->
-                <text x="14" y="52" class="ge-repeat-sub">
-                  builds {countDisplay} × of{repParts.length > 1 ? ` place([${repParts.length} parts])` : ':'}
-                </text>
+                     its child (combine downstream via a Stack). Minimal card:
+                     no verbose descriptor; ✎ opens the Repeat pattern editor. -->
                 <!-- PARTS list — one socket row per repeated part (combined
                      per-iteration via place([...])); a trailing "+ part" socket
                      appends. Each row's socket rebinds that index. -->
                 {#each repParts as cid, ci (cid + ':' + ci)}
                   {@const py = 68 + ci * 24}
-                  {@const cLabel = nodeShortLabel(graph.nodes[cid])}
+                  {@const cLabelRaw = nodeShortLabel(graph.nodes[cid])}
+                  {@const cLabel = cLabelRaw.length > 20 ? cLabelRaw.slice(0, 19) + '…' : cLabelRaw}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={py} r="6"
                     onpointerup={(ev) => wire.endWireOnRepeatChildAt(ev, n.id, ci)}/>
@@ -766,7 +765,7 @@
                     onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeRepeatChildAt(graph, n.id, ci)); }}>×</text>
                 {/each}
                 {#if hasBodyExpr}
-                  <text x="14" y={68 + repParts.length * 24 + 4} class="ge-repeat-sub code">⟨ code body — ✎ to edit ⟩</text>
+                  <!-- code-body repeat: edit via ✎ (no inline body text). -->
                 {:else}
                   <!-- "+ part" drop socket — append a new repeated part. -->
                   {@const addY = 68 + repParts.length * 24}
@@ -1650,8 +1649,6 @@
   .ge-repeat-count-x { font: 12px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-repeat-count-x:hover { fill: #7f1d1d; }
   /* Body labels — "builds a list of N ×" + child name */
-  .ge-repeat-sub { font: 11px Arial; fill: #831843; opacity: 0.85; }
-  .ge-repeat-sub.code { font: italic 11px ui-monospace, monospace; fill: #be185d; }
   .ge-repeat-child { font: 600 12px ui-monospace, monospace; fill: #831843; }
   /* PARTS list rows on the Repeat card (multi-child) */
   .ge-repeat-part-label { font: 600 11px ui-monospace, monospace; fill: #831843; pointer-events: none; }
