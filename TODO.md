@@ -10,12 +10,13 @@
    few-shot DB (no data leaves org). `ge-assist` already accepts a `postTurn` override
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
-3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune + **R6a (poly
-   carve)** + **RepeatEditorPane carve** shipped → GEP **9455 → 5248 lines**. Honest
-   target **~2,500–3,000** (≤1500 needs a large feature carve; review 2026-06-25). LEFT,
-   priority order: AI menu (~150) + canvas menu (~80) + ghost toggles (~50), Expr-builder
-   component (~250); then R6b module-map header + residual `$state` audit; R7
-   `builder.ts`/`library.ts` retire, R8 vocab, R9 ProfileFnEditor. Plans:
+3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune + **R6a (poly)**
+   + **RepeatEditorPane** + **CanvasMenu + AiMenu** carves shipped → GEP **9455 → 5070
+   lines**. Honest target **~2,500–3,000** (≤1500 needs a large feature carve; review
+   2026-06-25). NOTE: ghost toggles are NOT carvable (ghostSet/ghostIds feed the
+   emit/bake pipeline — core state). LEFT, priority order: Expr menu + exprPop handlers
+   carve (~250); then R6b module-map header + residual `$state` audit + honest final
+   count; R7 `builder.ts`/`library.ts` retire, R8 vocab, R9 ProfileFnEditor. Plans:
    `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — poly_repeat-style loop in the sketch editor (model +
@@ -47,23 +48,6 @@
 
 ### Shipped (recent)
 
-- ✅ **Expression builder redesign** — 3-column layout: vertical rail (PARAMS/CONSTS/
-  VARIABLES, vertical text + accent + count) · active-section editor · permanent OUTPUTS
-  right pane; row input/output sockets; ✓ready/⚠errors footer + Save-gate. (#15 layout done;
-  remaining polish = dangling-def recovery, migrated-formula cleanup, live numeric preview.)
-- ✅ **RepeatEditorPane carve** (modularize #3) — repeat-node overlay (state + `.ge-rep-*`
-  markup + CSS) out of GEP → `RepeatEditorPane.svelte`; GEP 5500 → 5248; browser-verified.
-- ✅ **R6a — Polygon-editor carve** (modularize #3): `PolyPreviewState` class +
-  `PolyPreview.svelte` lifted out of GraphEditorPane (state + 24 handlers + overlay
-  markup + CSS); coord ƒ-popover stays in the shell. GEP 5873 → 5500; browser-verified
-  on g_collar. /plan modularize lane.
-- ✅ **Expression wiring — output → ANY card** (param→expr input + expr output→Call arg /
-  polygon coord / mv-rot-txfmn axis / repeat count / sketch field — bind + rendered wire).
-- ✅ **/design enriched + collapsible** — 29→56 nodes / 29→65 edges (corrected stale
-  /fem,/forge; added /research,/api/brep) + rebuilt as a collapsible auto-layout tree
-  (collapsed-by-default, `fitView` re-frame on toggle). Polish → open #16.
-
-
 ### PARKED
 2. Sketch editor — per-axis scale expansion (x/y); settings button in the top toolbar.
 
@@ -89,3 +73,6 @@
 14. Repeat card we dont need the card to be so elaborate.. Maybe we just need a nice loop icon.. remove the detailed text inside. Also the long name can be removed.in the top var
 
 15. A card delete or a param delete or a node delete should ask for confirmation.
+
+16. Organize the server under lib and shared by categories that are logical. Organzie the folders/sub folders as per the categories that are logical.
+
