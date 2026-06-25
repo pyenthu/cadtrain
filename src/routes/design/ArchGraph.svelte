@@ -61,14 +61,14 @@
   function computeLayout(collapsed: Set<string>): Map<string, { x: number; y: number }> {
     const vis = visibleIds(collapsed);
     const ids = [...vis];
+    const LEVEL_W = 400;   // horizontal pitch between hierarchy depths (the cascade)
     type SN = { id: string; x: number; y: number; r: number };
     const simNodes: SN[] = ids.map((id, i) => {
       const n = byId.get(id);
       const isHub = n?.treeKind === 'system' || n?.treeKind === 'container';
-      // deterministic radial seed by index → reproducible layout across reloads
-      const a = (i / Math.max(1, ids.length)) * Math.PI * 2;
-      const rad = 80 + (depthOf.get(id) ?? 0) * 230;
-      return { id, x: 600 + Math.cos(a) * rad, y: 380 + Math.sin(a) * rad, r: isHub ? 96 : 64 };
+      // cascade seed: x by depth (columns), y fanned by index — the sim starts
+      // already layered so it settles into a tidy left→right cascade, not a blob.
+      return { id, x: 80 + (depthOf.get(id) ?? 0) * LEVEL_W, y: 80 + (i % 16) * 72, r: isHub ? 96 : 58 };
     });
     const hierLinks = ids.flatMap((id) =>
       collapsed.has(id) ? [] : (childrenOf.get(id) ?? []).filter((k) => vis.has(k)).map((k) => ({ source: id, target: k, h: true })));
@@ -78,10 +78,12 @@
     const sim = forceSimulation(simNodes as any)
       .force('link', forceLink([...hierLinks, ...archLinks] as any).id((d: any) => d.id)
         .distance((l: any) => (l.h ? 150 : 230)).strength((l: any) => (l.h ? 0.85 : 0.12)))
-      .force('charge', forceManyBody().strength(-820))
-      .force('collide', forceCollide((d: any) => d.r))
-      .force('x', forceX(600).strength(0.045))
-      .force('y', forceY(380).strength(0.045))
+      .force('charge', forceManyBody().strength(-650))
+      .force('collide', forceCollide((d: any) => d.r + 10).strength(0.9))
+      // CASCADE: a strong depth→x pull lays the hierarchy out in columns; the
+      // soft y-centering lets charge + collide fan siblings out vertically.
+      .force('x', forceX((d: any) => 80 + (depthOf.get(d.id) ?? 0) * LEVEL_W).strength(0.92))
+      .force('y', forceY(360).strength(0.06))
       .stop();
     for (let i = 0; i < 340; i++) sim.tick();
     const pos = new Map<string, { x: number; y: number }>();
