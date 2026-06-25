@@ -1,9 +1,10 @@
 <script lang="ts">
   /**
-   * ContainerNode.svelte — a collapsible PARENT card for the /design tree.
-   * Used for the system root and the four C4 containers. Shows a caret (▸/▾)
-   * plus a child-count badge; clicking the card (or caret) collapses/expands
-   * its subtree. The actual toggle is wired by the parent via data.onToggle.
+   * ContainerNode.svelte — a compact collapsible HUB pill for the /design graph.
+   * Used for the system root and the four C4 containers. Shows the label, a
+   * collapse caret (▸/▾) and a child-count badge; clicking the pill (or caret)
+   * collapses/expands its subtree. The toggle is wired by the parent via
+   * data.onToggle. Sized to the mfmesh reference — a pill, not a giant card.
    */
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import type { ArchTreeNode } from '../architecture';
@@ -27,7 +28,7 @@
 
 <button
   type="button"
-  class="group-node"
+  class="hub"
   class:system={isSystem}
   class:collapsed={data.collapsed}
   style="--accent:{accent};"
@@ -35,106 +36,95 @@
   title={data.blurb ?? ''}
   aria-expanded={!data.collapsed}
 >
-  <Handle type="target" position={Position.Left} class="group-handle" />
+  <Handle type="target" position={Position.Left} class="hub-handle" />
+  <span class="bar" aria-hidden="true"></span>
 
   <span class="caret" aria-hidden="true">{data.collapsed ? '▸' : '▾'}</span>
-
-  <span class="text">
-    <span class="label">{data.label}</span>
-    {#if data.tech}<span class="tech">{data.tech}</span>{/if}
-  </span>
-
+  <span class="label">{data.label}</span>
   <span class="count" class:on={data.collapsed}>{data.childCount}</span>
 
-  <Handle type="source" position={Position.Right} class="group-handle" />
+  <Handle type="source" position={Position.Right} class="hub-handle" />
 </button>
 
 <style>
-  .group-node {
+  .hub {
     all: unset;
     box-sizing: border-box;
     position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
-    width: 250px;
-    min-height: 54px;
-    padding: 10px 12px 10px 14px;
+    gap: 7px;
+    width: 168px;
+    min-height: 36px;
+    padding: 6px 9px 6px 6px;
     cursor: pointer;
-    border-radius: 13px;
-    border: 1.5px solid color-mix(in srgb, var(--accent) 40%, #e2e8f0);
-    border-left: 5px solid var(--accent);
-    background:
-      linear-gradient(180deg,
-        color-mix(in srgb, var(--accent) 9%, #ffffff),
-        color-mix(in srgb, var(--accent) 4%, #ffffff));
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05),
-      0 6px 18px rgba(15, 23, 42, 0.07);
-    transition: box-shadow 0.18s ease, transform 0.18s ease,
-      border-color 0.18s ease;
+    border-radius: 9px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, #e2e8f0);
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06),
+      0 4px 12px rgba(15, 23, 42, 0.06);
+    transition: box-shadow 0.16s ease, transform 0.16s ease,
+      border-color 0.16s ease;
   }
-  .group-node:hover {
-    border-color: var(--accent);
-    box-shadow: 0 3px 6px rgba(15, 23, 42, 0.07),
-      0 12px 28px rgba(15, 23, 42, 0.12);
+  .hub:hover {
+    border-color: color-mix(in srgb, var(--accent) 60%, #e2e8f0);
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.07),
+      0 10px 22px rgba(15, 23, 42, 0.12);
     transform: translateY(-1px);
   }
-  .group-node:focus-visible {
+  .hub:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
-  /* the system root — bigger, dashed, neutral */
-  .group-node.system {
-    width: 268px;
-    min-height: 60px;
-    border-style: dashed;
-    border-left-style: solid;
-    border-radius: 16px;
+  /* the system root — slightly larger + a touch heavier */
+  .hub.system {
+    width: 184px;
+    min-height: 40px;
   }
-  .group-node.system .label {
-    font-size: 0.96rem;
+  .hub.system .label {
+    font-size: 0.86rem;
+  }
+
+  /* thick rounded left accent bar (the colored cue from the reference) */
+  .bar {
+    flex: 0 0 auto;
+    width: 5px;
+    align-self: stretch;
+    border-radius: 5px;
+    background: var(--accent);
   }
 
   .caret {
     flex: 0 0 auto;
-    width: 16px;
+    width: 12px;
     text-align: center;
-    font-size: 0.7rem;
+    font-size: 0.66rem;
     color: var(--accent);
-    transition: transform 0.18s ease;
   }
 
-  .text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-    margin-right: auto;
-  }
   .label {
-    font-size: 0.85rem;
-    font-weight: 750;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.79rem;
+    font-weight: 700;
     letter-spacing: -0.01em;
     color: #0f172a;
     line-height: 1.2;
-  }
-  .tech {
-    font-size: 0.6rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: color-mix(in srgb, var(--accent) 55%, #475569);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .count {
     flex: 0 0 auto;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.66rem;
+    font-size: 0.62rem;
     font-weight: 700;
     color: #fff;
     background: var(--accent);
@@ -145,13 +135,13 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
-  :global(.group-handle) {
+  :global(.hub-handle) {
     width: 7px !important;
     height: 7px !important;
     min-width: 0 !important;
     min-height: 0 !important;
     background: var(--accent) !important;
     border: 1.5px solid #fff !important;
-    opacity: 0.5;
+    opacity: 0.6;
   }
 </style>
