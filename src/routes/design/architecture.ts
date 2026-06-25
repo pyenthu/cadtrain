@@ -2,27 +2,27 @@
  * architecture.ts — curated node/edge dataset for the /design interactive graph.
  *
  * Laid out as a **C4 "Container" diagram (level 2)**: one system boundary
- * ("CAD Train") holds four labeled container boxes, and the 29 component nodes
+ * ("CAD Train") holds four labeled container boxes, and ~56 component nodes
  * live INSIDE those containers via xyflow parent/extent nesting.
  *
  *   sys-cadtrain  (system boundary, variant:'system')
- *     ├─ c-webapp  Web App        — route pages + GraphEditorPane + Threlte viewer
- *     ├─ c-api     API layer      — /api/* endpoint groups
- *     ├─ c-kernel  CAD kernel     — composition graph/emit, Manifold WASM, engines, translator
- *     └─ c-volume  Volume store   — persistent parts / vocabulary / caches
+ *     ├─ c-webapp  Web App        — route pages + the GraphEditorPane editor cluster + Threlte viewer
+ *     ├─ c-api     API layer       — /api/* endpoint groups
+ *     ├─ c-kernel  CAD kernel      — composition graph/emit/bake, expr engine, Manifold WASM + welded mesh, engines, loader, RAG, translator
+ *     └─ c-volume  Volume store    — persistent parts / profiles / vocabulary / RAG corpus / caches
  *
  * Component node kinds:
  *   route  — a SvelteKit page route (clickable → navigates)
  *   api    — an HTTP endpoint group
- *   lib    — an engine / pipeline stage
+ *   lib    — an engine / pipeline stage / UI component
  *   store  — a persistent data sink
  *
  * Edge types:
- *   calls   — route → api (fetch / mutation)
- *   mounts  — route → lib (mounts a shared component)
+ *   calls   — route → api (fetch) / api → kernel module
+ *   mounts  — route → lib, or lib → child lib (Svelte component composition)
  *   flow    — pipeline data flow (animated, bake pipeline)
- *   reads   — api → store (read)
- *   writes  — api → store (write)
+ *   reads   — api/lib → store (read)
+ *   writes  — api/lib → store (write)
  *   nav     — user navigation between routes
  *   summary — container → container relationship (C4-level arrow)
  *
@@ -31,6 +31,8 @@
  *   - child `position` is RELATIVE to its parent container's top-left
  *   - children carry `parentId` + `extent:'parent'`
  *   - container/system nodes carry explicit width/height (style string)
+ *   ...then everything is FLATTENED to absolute coordinates at export time
+ *   (see the FLATTEN section) so edge endpoints resolve even below the fold.
  */
 
 export type NodeKind = 'route' | 'api' | 'lib' | 'store';
@@ -63,33 +65,29 @@ export interface ArchEdgeData {
 //
 // Children are positioned RELATIVE to these origins below.
 // ──────────────────────────────────────────────────────────
-const SYS = { x: 0, y: 0, w: 1400, h: 740 };
+const SYS = { x: 0, y: 0, w: 1788, h: 952 };
 
 // container boxes laid left→right inside the system boundary
 const C = {
-  webapp: { x: 24, y: 60, w: 470, h: 600 },
-  api: { x: 534, y: 60, w: 252, h: 660 },
-  kernel: { x: 826, y: 60, w: 252, h: 560 },
-  volume: { x: 1118, y: 60, w: 252, h: 470 },
+  webapp: { x: 24, y: 56, w: 700, h: 862 },
+  api: { x: 748, y: 56, w: 250, h: 862 },
+  kernel: { x: 1026, y: 56, w: 470, h: 790 },
+  volume: { x: 1524, y: 56, w: 240, h: 632 },
 };
 
 // within-container layout constants (relative to each container's top-left)
-const PAD_X = 16;        // left inset for a single column
-const COL_A = 16;        // web-app column A x
-const COL_B = 240;       // web-app column B x
-const HEAD = 48;         // top inset (clears the title chip)
-const PITCH = 84;        // vertical gap between component nodes
+const HEAD = 50;        // top inset (clears the title chip)
+const PITCH = 80;       // vertical gap between component nodes
+const PAD_X = 16;       // single-column left inset (api + volume)
+// web-app is 3 columns: routes · GEP editor cluster · viewer cluster
+const WA = 16, WB = 240, WC = 464;
+// kernel is 2 columns: graph→source pipeline · execution / engines / retrieval
+const KA = 16, KB = 240;
+
+const row = (i: number) => HEAD + PITCH * i;
 
 // ──────────────────────────────────────────────────────────
 // CONTAINER + SYSTEM NODES  (must come BEFORE their children)
-//
-// Authored with parent/extent nesting for readability, but FLATTENED to
-// absolute coordinates at export time (see bottom of file).  @xyflow/svelte
-// 1.x drops every edge whose endpoint is a nested child whose parent isn't
-// measured at edge-build time (which happens when this graph renders below the
-// fold) — getEdgePosition() returns null → zero `.svelte-flow__edge-path`
-// elements.  Flattening keeps the C4 container BOXES as plain background nodes
-// while letting edges resolve exactly like the old flat (working) version.
 // ──────────────────────────────────────────────────────────
 const ARCH_CONTAINERS_NESTED = [
   {
@@ -129,7 +127,7 @@ const ARCH_CONTAINERS_NESTED = [
       variant: 'container',
       tech: 'SvelteKit · Svelte 5',
       accent: '#3b82f6',
-      blurb: 'Client-only SPA (SSR off). Route pages + the GraphEditorPane editor + the Threlte 3D viewer.',
+      blurb: 'Client-only SPA (SSR off). Route pages · the decomposed GraphEditorPane editor · the Threlte 3D viewer.',
     } satisfies ContainerNodeData,
   },
   {
@@ -150,7 +148,7 @@ const ARCH_CONTAINERS_NESTED = [
       variant: 'container',
       tech: 'adapter-node',
       accent: '#22c55e',
-      blurb: 'SvelteKit server endpoints (SSR). Proxy to the volume + run server-side bakes.',
+      blurb: 'SvelteKit server endpoints (SSR). Proxy to the volume, run server-side bakes, dispatch Claude.',
     } satisfies ContainerNodeData,
   },
   {
@@ -171,7 +169,7 @@ const ARCH_CONTAINERS_NESTED = [
       variant: 'container',
       tech: 'ManifoldCAD WASM',
       accent: '#f97316',
-      blurb: 'Graph → source → mesh. Composition graph/emit, the Manifold CSG kernel, engine primitives, the vocabulary translator.',
+      blurb: 'Graph → source → mesh. Composition graph/emit/bake, the expr engine, the Manifold CSG core + welded-mesh toolkit, engine primitives, RAG + the vocabulary translator.',
     } satisfies ContainerNodeData,
   },
   {
@@ -192,7 +190,7 @@ const ARCH_CONTAINERS_NESTED = [
       variant: 'container',
       tech: '$APP_DATA_DIR',
       accent: '#a855f7',
-      blurb: 'One persistent volume — parts, RAG corpus, vocabulary, and the bake cache. Survives redeploys.',
+      blurb: 'One persistent volume — parts, profiles, vocabulary, the RAG corpus and the bake cache. Survives redeploys.',
     } satisfies ContainerNodeData,
   },
 ];
@@ -201,371 +199,356 @@ const ARCH_CONTAINERS_NESTED = [
 // COMPONENT NODES  (positions are RELATIVE to their parent container)
 // ──────────────────────────────────────────────────────────
 const ARCH_NODES_NESTED = [
-  // ───────────────── Web App container (routes + GEP + viewer) ─────────────────
-  // Column A
+  // ═════════════ Web App container ═════════════
+  // ── Column A: route pages ──
   {
-    id: 'r-primitives',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_A, y: HEAD },
-    data: {
-      kind: 'route',
-      label: '/primitives',
-      href: '/primitives',
-      blurb: 'Sidebar of volume parts + multi-tab graph editor (N × GraphEditorPane).',
-    } satisfies ArchNodeData,
+    id: 'r-primitives', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(0) },
+    data: { kind: 'route', label: '/primitives', href: '/primitives',
+      blurb: 'Sidebar of volume parts + multi-tab graph editor (N × GraphEditorPane).' } satisfies ArchNodeData,
   },
   {
-    id: 'r-graph-editor',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_A, y: HEAD + PITCH },
-    data: {
-      kind: 'route',
-      label: '/graph-editor',
-      href: '/graph-editor',
-      blurb: 'The CAD editor — single primitive, full-screen. Mounts GraphEditorPane with ?id=&embed=1.',
-    } satisfies ArchNodeData,
+    id: 'r-graph-editor', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(1) },
+    data: { kind: 'route', label: '/graph-editor', href: '/graph-editor',
+      blurb: 'The CAD editor — single primitive, full-screen. Mounts GraphEditorPane with ?id=&embed=1.' } satisfies ArchNodeData,
   },
   {
-    id: 'r-vocab',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_A, y: HEAD + PITCH * 2 },
-    data: {
-      kind: 'route',
-      label: '/vocab',
-      href: '/vocab',
-      blurb: 'Vocabulary editor — browse, infer, bake, promote vocabulary entries.',
-    } satisfies ArchNodeData,
+    id: 'r-vocab', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(2) },
+    data: { kind: 'route', label: '/vocab', href: '/vocab',
+      blurb: 'Vocabulary editor — browse, infer, bake, promote vocabulary entries.' } satisfies ArchNodeData,
   },
   {
-    id: 'r-fem',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_A, y: HEAD + PITCH * 3 },
-    data: {
-      kind: 'route',
-      label: '/fem',
-      href: '/fem',
-      blurb: 'FEM index + /fem/[id] stress viewer + /fem/[id]/tension 3D viewer. Oilfield units.',
-    } satisfies ArchNodeData,
+    id: 'r-wells', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(3) },
+    data: { kind: 'route', label: '/wells', href: '/wells',
+      blurb: 'WIP: 3D-first well schematic — WSON → 3D well diagram (WellScene). Plan: docs/plans/well-schematic.md.' } satisfies ArchNodeData,
   },
   {
-    id: 'r-wells',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_A, y: HEAD + PITCH * 4 },
-    data: {
-      kind: 'route',
-      label: '/wells',
-      href: '/wells',
-      blurb: 'WIP: 3D-first well schematic — WSON → 3D well diagram. Plan: docs/plans/well-schematic.md.',
-    } satisfies ArchNodeData,
+    id: 'r-research', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(4) },
+    data: { kind: 'route', label: '/research', href: '/research',
+      blurb: 'Markdown research notes — node-editor study, parked leads, findings (rendered via marked).' } satisfies ArchNodeData,
   },
   {
-    id: 'r-forge',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_A, y: HEAD + PITCH * 5 },
-    data: {
-      kind: 'route',
-      label: '/forge',
-      href: '/forge',
-      blurb: 'Image → 3D scaffold via FAL Hunyuan3D v2. Requires FAL_API_KEY.',
-    } satisfies ArchNodeData,
-  },
-  // Column B
-  {
-    id: 'r-volume',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_B, y: HEAD },
-    data: {
-      kind: 'route',
-      label: '/volume',
-      href: '/volume',
-      blurb: 'Volume file manager — browse + manage the persistent data volume.',
-    } satisfies ArchNodeData,
+    id: 'r-volume', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(5) },
+    data: { kind: 'route', label: '/volume', href: '/volume',
+      blurb: 'Volume file manager — browse + manage the persistent data volume.' } satisfies ArchNodeData,
   },
   {
-    id: 'r-plan',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_B, y: HEAD + PITCH },
-    data: {
-      kind: 'route',
-      label: '/plan',
-      href: '/plan',
-      blurb: 'Gantt roadmap — the single source of truth for project scope.',
-    } satisfies ArchNodeData,
+    id: 'r-plan', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(6) },
+    data: { kind: 'route', label: '/plan', href: '/plan',
+      blurb: 'Gantt roadmap — the single source of truth for project scope (HTML/CSS Gantt + details popups).' } satisfies ArchNodeData,
   },
   {
-    id: 'r-design',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_B, y: HEAD + PITCH * 2 },
-    data: {
-      kind: 'route',
-      label: '/design',
-      href: '/design',
-      blurb: 'This page — interactive architecture graph of the project.',
-    } satisfies ArchNodeData,
+    id: 'r-design', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(7) },
+    data: { kind: 'route', label: '/design', href: '/design',
+      blurb: 'This page — interactive C4 architecture graph of the project.' } satisfies ArchNodeData,
   },
   {
-    id: 'l-gep',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_B, y: HEAD + PITCH * 3 },
-    data: {
-      kind: 'lib',
-      label: 'GraphEditorPane',
-      blurb: 'The CAD editor component. Wires nodes, sockets, params. Mounts in /graph-editor (full-screen) and /primitives (multi-tab).',
-    } satisfies ArchNodeData,
+    id: 'r-fem', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(8) },
+    data: { kind: 'route', label: '/fem', archived: true,
+      blurb: 'Archived — FEM stress + 3D tension viewer (moved to archive/src/routes/fem/). Oilfield units.' } satisfies ArchNodeData,
   },
   {
-    id: 'l-threlte',
-    type: 'archNode',
-    parentId: 'c-webapp',
-    extent: 'parent',
-    position: { x: COL_B, y: HEAD + PITCH * 4 },
-    data: {
-      kind: 'lib',
-      label: 'Threlte viewer',
-      blurb: 'Declarative Three.js for Svelte. Mesh / GLB / SVG rendering, cutaway, per-part colour, Z-down convention.',
-    } satisfies ArchNodeData,
+    id: 'r-forge', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WA, y: row(9) },
+    data: { kind: 'route', label: '/forge', archived: true,
+      blurb: 'Archived — Image → 3D scaffold via FAL Hunyuan3D (moved to archive/src/routes/forge/).' } satisfies ArchNodeData,
   },
 
-  // ───────────────── API layer container ─────────────────
+  // ── Column B: GraphEditorPane editor cluster (modularize K.65) ──
   {
-    id: 'a-primitives',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD },
-    data: {
-      kind: 'api',
-      label: '/api/primitives/*',
-      blurb: 'list · save · source · delete · restore · move · rename · recognize · refine · preview · bake-preview · compile · prompts · instructions · profiles/*',
-    } satisfies ArchNodeData,
+    id: 'l-gep', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(0) },
+    data: { kind: 'lib', label: 'GraphEditorPane',
+      blurb: 'THE CAD editor shell. Node-graph canvas + bake. Mounts in /graph-editor (full-screen) and /primitives (one per tab).' } satisfies ArchNodeData,
   },
   {
-    id: 'a-rag',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH },
-    data: {
-      kind: 'api',
-      label: '/api/rag/*',
-      blurb: 'rebuild · stats · scan-refs · prompt — BM25 retrieval + Claude → composition graph for generative authoring.',
-    } satisfies ArchNodeData,
+    id: 'l-nodecard', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(1) },
+    data: { kind: 'lib', label: 'NodeCard',
+      blurb: 'Per-node SVG cards — call/method/mv/rot/repeat/container/polygon/poly_repeat + resize grip (Phase F).' } satisfies ArchNodeData,
   },
   {
-    id: 'a-vocab',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 2 },
-    data: {
-      kind: 'api',
-      label: '/api/vocab/*',
-      blurb: 'regenerate · infer · bake-proposed · promote · promote-proposed — vocabulary lifecycle endpoints.',
-    } satisfies ArchNodeData,
+    id: 'l-rightpane', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(2) },
+    data: { kind: 'lib', label: 'RightPane',
+      blurb: 'The 6-tab right column: 3D bake · SRC · MD · SVG · GLB · BREP. + PARAMS / PROPERTIES cards.' } satisfies ArchNodeData,
   },
   {
-    id: 'a-cache',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 3 },
-    data: {
-      kind: 'api',
-      label: '/api/cache/*',
-      blurb: 'stats (Railway health check) · bake-stats · clear — bake cache management.',
-    } satisfies ArchNodeData,
+    id: 'l-sketch-ed', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(3) },
+    data: { kind: 'lib', label: 'SketchEditorPane',
+      blurb: 'Full-tab sketch editor + SketchNodeCard, backed by the per-instance SketchState class (Phase E).' } satisfies ArchNodeData,
   },
   {
-    id: 'a-volume',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 4 },
-    data: {
-      kind: 'api',
-      label: '/api/volume',
-      blurb: 'Generic CRUD against the persistent volume. Auth via X-Volume-Token. Sub: backup, onedrive.',
-    } satisfies ArchNodeData,
+    id: 'l-wire-state', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(4) },
+    data: { kind: 'lib', label: 'wire-state / sockets',
+      blurb: 'Per-instance WireState class — drag-to-wire sockets (from/mouse, start/endWireOn*) + pointer-capture (Phase C).' } satisfies ArchNodeData,
   },
   {
-    id: 'a-forge',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 5 },
-    data: {
-      kind: 'api',
-      label: '/api/forge/*',
-      blurb: 'generate — Image → 3D via FAL Hunyuan3D v2. Needs FAL_API_KEY.',
-    } satisfies ArchNodeData,
+    id: 'l-expr-menu', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(5) },
+    data: { kind: 'lib', label: 'ExpressionsMenu',
+      blurb: 'The expr/ builder UI — ExpressionBuilderPopup + visual/src panes over the graph-exprs engine.' } satisfies ArchNodeData,
   },
   {
-    id: 'a-manifest',
-    type: 'archNode',
-    parentId: 'c-api',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 6 },
-    data: {
-      kind: 'api',
-      label: '/api/manifest',
-      blurb: 'Machine-readable capability manifest — load-bearing operations, workflow links, LLM-friendly description.',
-    } satisfies ArchNodeData,
+    id: 'l-ge-assist', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(6) },
+    data: { kind: 'lib', label: 'ge-assist ✨',
+      blurb: 'AI multi-shot loop — exposes editor mutation fns as Claude tools to patch the open graph (/api/rag/assist).' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-paramgrid', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WB, y: row(7) },
+    data: { kind: 'lib', label: 'ParamGrid',
+      blurb: 'ParamSchema-driven param card grid. Shared chrome across /primitives + /vocab.' } satisfies ArchNodeData,
   },
 
-  // ───────────────── CAD kernel container ─────────────────
+  // ── Column C: viewer / scene cluster ──
   {
-    id: 'l-comp-graph',
-    type: 'archNode',
-    parentId: 'c-kernel',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD },
-    data: {
-      kind: 'lib',
-      label: 'composition-graph',
-      blurb: 'Node types: Call · Container · Method · Mv · Rot · Repeat · Polygon · PolyRepeat. ArgValue = literal | expr | param.',
-    } satisfies ArchNodeData,
+    id: 'l-threlte', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WC, y: row(0) },
+    data: { kind: 'lib', label: 'Threlte viewer',
+      blurb: 'Declarative Three.js for Svelte. Mesh / GLB / SVG rendering, cutaway, per-part colour, Z-down convention.' } satisfies ArchNodeData,
   },
   {
-    id: 'l-emit',
-    type: 'archNode',
-    parentId: 'c-kernel',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH },
-    data: {
-      kind: 'lib',
-      label: 'composition-emit',
-      blurb: 'Graph → source body (TypeScript). Parts carry meta.graph + emitted body text.',
-    } satisfies ArchNodeData,
+    id: 'l-dualcanvas', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WC, y: row(1) },
+    data: { kind: 'lib', label: 'PrimitiveDualCanvas',
+      blurb: 'Mesh + GLB dual canvas (+ PrimitiveDualScene). smoothShade gate; stable-args prop avoids re-mount loops.' } satisfies ArchNodeData,
   },
   {
-    id: 'l-manifold',
-    type: 'archNode',
-    parentId: 'c-kernel',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 2 },
-    data: {
-      kind: 'lib',
-      label: 'Manifold WASM',
-      blurb: 'WASM CSG kernel. Bakes the emitted source into a triangle mesh. Server-side (preview/bake-preview) or client-side (bake-worker.ts).',
-    } satisfies ArchNodeData,
+    id: 'l-scene-controls', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WC, y: row(2) },
+    data: { kind: 'lib', label: 'SceneControls',
+      blurb: 'Camera / light / zScale + warp toggle; reads the shared scene-state rune store.' } satisfies ArchNodeData,
   },
   {
-    id: 'l-bake-cache',
-    type: 'archNode',
-    parentId: 'c-kernel',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 3 },
-    data: {
-      kind: 'lib',
-      label: 'bake-cache',
-      blurb: 'Server-side bake cache keyed by part + param hash. Survives redeploys on the persistent volume.',
-    } satisfies ArchNodeData,
-  },
-  {
-    id: 'l-stdlib',
-    type: 'archNode',
-    parentId: 'c-kernel',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 4 },
-    data: {
-      kind: 'lib',
-      label: 'stdlib / stdstale',
-      blurb: 'Engine primitives canonical in src/: stdlib/ (active: r_cuboid, r_loft, r_weld_extrude) + stdstale/ (deprecated, still resolvable).',
-    } satisfies ArchNodeData,
-  },
-  {
-    id: 'l-rule-translator',
-    type: 'archNode',
-    parentId: 'c-kernel',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 5 },
-    data: {
-      kind: 'lib',
-      label: 'rule-translator',
-      blurb: 'Deterministic vocabulary → composition graph translator. BM25 retrieval → synonym match → extends → compose → hand-author.',
-    } satisfies ArchNodeData,
+    id: 'l-wellscene', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WC, y: row(3) },
+    data: { kind: 'lib', label: 'WellScene',
+      blurb: 'The /wells 3D well diagram — WSON → assembled Three scene (src/lib/wells/).' } satisfies ArchNodeData,
   },
 
-  // ───────────────── Volume store container ─────────────────
+  // ═════════════ API layer container ═════════════
   {
-    id: 's-primitives-vol',
-    type: 'archNode',
-    parentId: 'c-volume',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD },
-    data: {
-      kind: 'store',
-      label: 'primitives/ (volume)',
-      blurb: 'Flat typed source files: <id>.prim.ts · .asm.ts · profiles .prvl.ts/.prex.ts. Categories: basic/ · completions/ · archive/.',
-    } satisfies ArchNodeData,
+    id: 'a-prim-data', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(0) },
+    data: { kind: 'api', label: '/api/primitives (data)',
+      blurb: 'list · save · source · delete · restore · move · rename · mkdir — proxied to the prod volume.' } satisfies ArchNodeData,
   },
   {
-    id: 's-rag-corpus',
-    type: 'archNode',
-    parentId: 'c-volume',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH },
-    data: {
-      kind: 'store',
-      label: 'ai/rag/parts.jsonl',
-      blurb: 'RAG corpus — BM25 index of all parts for generative authoring retrieval.',
-    } satisfies ArchNodeData,
+    id: 'a-prim-bake', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(1) },
+    data: { kind: 'api', label: '/api/primitives (bake)',
+      blurb: 'preview · bake-preview · compile (dep-inlined script + scriptHash) — stay LOCAL (fast WASM), not proxied.' } satisfies ArchNodeData,
   },
   {
-    id: 's-vocab-json',
-    type: 'archNode',
-    parentId: 'c-volume',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 2 },
-    data: {
-      kind: 'store',
-      label: 'vocabulary.json',
-      blurb: 'Curated vocabulary: docs/parts/vocabulary.json. Single source of truth for part kinds, params, rules.',
-    } satisfies ArchNodeData,
+    id: 'a-prim-ai', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(2) },
+    data: { kind: 'api', label: '/api/primitives (AI)',
+      blurb: 'refine · recognize · describe · prompts · instructions — Claude-assisted (anthropic-api / claude-cli backends).' } satisfies ArchNodeData,
   },
   {
-    id: 's-bake-cache-vol',
-    type: 'archNode',
-    parentId: 'c-volume',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 3 },
-    data: {
-      kind: 'store',
-      label: 'cache/ (volume)',
-      blurb: 'Persistent bake cache — mesh/GLB results keyed by part + param hash. Survives redeploys.',
-    } satisfies ArchNodeData,
+    id: 'a-profiles', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(3) },
+    data: { kind: 'api', label: '/api/primitives/profiles',
+      blurb: 'list · save · delete · resolve · source — profile-function (.prvl/.prex) endpoints.' } satisfies ArchNodeData,
   },
   {
-    id: 's-volume-root',
-    type: 'archNode',
-    parentId: 'c-volume',
-    extent: 'parent',
-    position: { x: PAD_X, y: HEAD + PITCH * 4 },
-    data: {
-      kind: 'store',
-      label: '$APP_DATA_DIR',
-      blurb: 'Volume root: CADTRAIN_VOLUME_ROOT → RAILWAY_VOLUME_MOUNT_PATH → /app_data → ./.dev-volume. All persistent state lives here.',
-    } satisfies ArchNodeData,
+    id: 'a-brep', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(4) },
+    data: { kind: 'api', label: '/api/brep/preview',
+      blurb: 'Server-side OCCT BREP executor — graph → true-curve boundary representation for the BREP tab.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'a-rag', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(5) },
+    data: { kind: 'api', label: '/api/rag/*',
+      blurb: 'rebuild · stats · scan-refs · prompt · assist — BM25 retrieval + Claude → composition graph (generative authoring).' } satisfies ArchNodeData,
+  },
+  {
+    id: 'a-vocab', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(6) },
+    data: { kind: 'api', label: '/api/vocab/*',
+      blurb: 'regenerate · infer · bake-proposed · promote · promote-proposed — vocabulary lifecycle endpoints.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'a-cache', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(7) },
+    data: { kind: 'api', label: '/api/cache/*',
+      blurb: 'stats (Railway health check) · bake-stats · list · entry · clear · delete — bake-cache management.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'a-volume', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(8) },
+    data: { kind: 'api', label: '/api/volume',
+      blurb: 'Generic CRUD against the persistent volume (X-Volume-Token). Sub: backup, onedrive.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'a-manifest', type: 'archNode', parentId: 'c-api', extent: 'parent',
+    position: { x: PAD_X, y: row(9) },
+    data: { kind: 'api', label: '/api/manifest',
+      blurb: 'Machine-readable capability manifest — operations, workflow links, LLM-friendly description.' } satisfies ArchNodeData,
+  },
+
+  // ═════════════ CAD kernel container ═════════════
+  // ── Column A: graph → source pipeline + 2D ──
+  {
+    id: 'l-comp-graph', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(0) },
+    data: { kind: 'lib', label: 'composition-graph',
+      blurb: 'Node-graph model (types/mutate/hydrate): Call · Container · Method · Mv · Rot · Repeat · Polygon · PolyRepeat. ArgValue = literal | expr | param.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-emit', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(1) },
+    data: { kind: 'lib', label: 'composition-emit',
+      blurb: 'Graph → emitted TypeScript body (+ composition-emit-profile for polygon/profile). Parts carry meta.graph + body.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-comp-bake', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(2) },
+    data: { kind: 'lib', label: 'composition-bake',
+      blurb: 'Graph bake orchestration — drives emit → sandbox → Manifold and assembles the result.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-comp-layout', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(3) },
+    data: { kind: 'lib', label: 'composition-layout',
+      blurb: 'Canvas auto-layout — positions nodes/sockets for the GraphEditorPane.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-exprs', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(4) },
+    data: { kind: 'lib', label: 'graph-exprs / expr-schema',
+      blurb: 'The expression engine — typed expr nodes, validation + emit. Feeds parameterised ArgValues into emitted source.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-sketch', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(5) },
+    data: { kind: 'lib', label: 'sketch engine',
+      blurb: 'compileSketch(ops) → (r,z) via Maker.js (line/spline/fillet/chamfer). Injected into the part sandbox as sketch(...).' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-csg2d', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(6) },
+    data: { kind: 'lib', label: 'csg-2d',
+      blurb: 'CrossSection helpers (cs, extrude_csg, ext, resample) — the 2D profile → solid path.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-sandbox', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KA, y: row(7) },
+    data: { kind: 'lib', label: 'primitive-sandbox',
+      blurb: 'Sandboxed exec for part sources — injects the helper + welded-mesh + sketch toolkits, runs the geom function.' } satisfies ArchNodeData,
+  },
+
+  // ── Column B: execution · engines · cache · retrieval ──
+  {
+    id: 'l-manifold-mesh', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(0) },
+    data: { kind: 'lib', label: 'manifold-mesh',
+      blurb: 'The PRIMARY geometry builder — welded toolkit (gridPatch / capFan / weldAndBuild) with explicit Z-segmentation.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-manifold', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(1) },
+    data: { kind: 'lib', label: 'Manifold WASM',
+      blurb: 'WASM CSG core. Bakes emitted source into a triangle mesh — server-side (preview/bake) or client-side (worker).' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-loader', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(2) },
+    data: { kind: 'lib', label: 'primitive-loader',
+      blurb: 'Resolves a part + its meta.uses deps (stdlib-first), feeds the sandbox. Backs /preview + /bake-preview.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-stdlib', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(3) },
+    data: { kind: 'lib', label: 'stdlib engines',
+      blurb: 'Active engine primitives in src/ (r_cuboid · r_loft · r_weld_extrude). Read-only, baked into the build via stdlib.ts.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-stdstale', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(4) },
+    data: { kind: 'lib', label: 'stdstale engines',
+      blurb: 'Deprecated-but-resolvable engines (r_revolve · r_extrude) so legacy parts keep baking.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-bake-cache', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(5) },
+    data: { kind: 'lib', label: 'bake-cache',
+      blurb: 'Server-side bake cache keyed by part + param hash. Persisted on the volume; survives redeploys.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-bake-client', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(6) },
+    data: { kind: 'lib', label: 'client bake (worker)',
+      blurb: 'bake-worker + bake-client — execute the compiled script in a browser Web Worker (💻 toggle). Kills the stale-bake bug.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-rule-translator', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(7) },
+    data: { kind: 'lib', label: 'rule-translator',
+      blurb: 'Deterministic vocabulary → composition graph (authoring/). synonym → extends → compose → hand-author.' } satisfies ArchNodeData,
+  },
+  {
+    id: 'l-rag-corpus', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(8) },
+    data: { kind: 'lib', label: 'rag-corpus / query',
+      blurb: 'Builds + BM25-queries the parts corpus for generative-authoring retrieval (rag-corpus/query/prompt/l1).' } satisfies ArchNodeData,
+  },
+
+  // ═════════════ Volume store container ═════════════
+  {
+    id: 's-primitives-vol', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(0) },
+    data: { kind: 'store', label: 'primitives/ (parts)',
+      blurb: 'Flat typed sources: <id>.prim.ts · .asm.ts. Categories basic/ · completions/<family>/ · archive/.' } satisfies ArchNodeData,
+  },
+  {
+    id: 's-profiles', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(1) },
+    data: { kind: 'store', label: 'profiles (.prvl/.prex)',
+      blurb: 'Profile-function sources — revolve (.prvl.ts) + extrude (.prex.ts) profiles referenced by parts.' } satisfies ArchNodeData,
+  },
+  {
+    id: 's-vocab-json', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(2) },
+    data: { kind: 'store', label: 'vocabulary.json',
+      blurb: 'Curated vocabulary (docs/parts/vocabulary.json) — single source of truth for part kinds, params, rules.' } satisfies ArchNodeData,
+  },
+  {
+    id: 's-rag-corpus', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(3) },
+    data: { kind: 'store', label: 'ai/rag/parts.jsonl',
+      blurb: 'RAG corpus — BM25 index of all parts for generative-authoring retrieval.' } satisfies ArchNodeData,
+  },
+  {
+    id: 's-bake-cache-vol', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(4) },
+    data: { kind: 'store', label: 'cache/ (bakes)',
+      blurb: 'Persistent bake cache — mesh / GLB results keyed by part + param hash.' } satisfies ArchNodeData,
+  },
+  {
+    id: 's-archive', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(5) },
+    data: { kind: 'store', label: 'archive/ (soft-deleted)',
+      blurb: 'Trashed parts, figures and test-recordings — where /api/primitives/delete moves things.' } satisfies ArchNodeData,
+  },
+  {
+    id: 's-volume-root', type: 'archNode', parentId: 'c-volume', extent: 'parent',
+    position: { x: PAD_X, y: row(6) },
+    data: { kind: 'store', label: '$APP_DATA_DIR',
+      blurb: 'Volume root: CADTRAIN_VOLUME_ROOT → RAILWAY_VOLUME_MOUNT_PATH → /app_data → ./.dev-volume. Local dev proxies to prod.' } satisfies ArchNodeData,
   },
 ];
 
@@ -577,7 +560,8 @@ const ARCH_NODES_NESTED = [
 // FIRST (drawn behind), (2) push them to a negative zIndex so the edges draw
 // over their translucent fills, and (3) convert every child's parent-relative
 // position to an absolute one, dropping `parentId`/`extent` so edge endpoints
-// resolve like the flat version did.
+// resolve even when the graph renders below the fold (otherwise
+// getEdgePosition() returns null → zero `.svelte-flow__edge-path` elements).
 // ──────────────────────────────────────────────────────────
 const CONTAINER_ORIGIN: Record<string, { x: number; y: number }> = {
   'sys-cadtrain': { x: SYS.x, y: SYS.y },
@@ -622,40 +606,81 @@ export const ARCH_EDGES = [
   { id: 's-api-kernel', source: 'c-api', target: 'c-kernel', data: { edgeKind: 'summary', label: 'bakes via' } satisfies ArchEdgeData },
   { id: 's-kernel-volume', source: 'c-kernel', target: 'c-volume', data: { edgeKind: 'summary', label: 'reads / writes' } satisfies ArchEdgeData },
 
-  // ── Fine-grained component edges ──
-  // Routes → API calls
-  { id: 'e-prim-api', source: 'r-primitives', target: 'a-primitives', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
-  { id: 'e-prim-rag', source: 'r-primitives', target: 'a-rag', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
-  { id: 'e-ge-api', source: 'r-graph-editor', target: 'a-primitives', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  // ── Routes → API (fetch) ──
+  { id: 'e-prim-data', source: 'r-primitives', target: 'a-prim-data', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-prim-bake', source: 'r-primitives', target: 'a-prim-bake', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-prim-profiles', source: 'r-primitives', target: 'a-profiles', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-prim-rag', source: 'r-primitives', target: 'a-rag', data: { edgeKind: 'calls', label: '✨' } satisfies ArchEdgeData },
+  { id: 'e-ge-data', source: 'r-graph-editor', target: 'a-prim-data', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-ge-bake', source: 'r-graph-editor', target: 'a-prim-bake', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-ge-brep', source: 'r-graph-editor', target: 'a-brep', data: { edgeKind: 'calls', label: 'BREP tab' } satisfies ArchEdgeData },
   { id: 'e-vocab-api', source: 'r-vocab', target: 'a-vocab', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
   { id: 'e-vocab-rag', source: 'r-vocab', target: 'a-rag', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
   { id: 'e-volume-api', source: 'r-volume', target: 'a-volume', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
-  { id: 'e-forge-api', source: 'r-forge', target: 'a-forge', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
   { id: 'e-design-manifest', source: 'r-design', target: 'a-manifest', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
 
-  // Routes → lib (mounts)
+  // ── Routes → lib (mounts) ──
   { id: 'e-prim-gep', source: 'r-primitives', target: 'l-gep', data: { edgeKind: 'mounts', label: 'N tabs' } satisfies ArchEdgeData },
   { id: 'e-ge-gep', source: 'r-graph-editor', target: 'l-gep', data: { edgeKind: 'mounts', label: 'full-screen' } satisfies ArchEdgeData },
-  { id: 'e-prim-threlte', source: 'r-primitives', target: 'l-threlte', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-prim-dual', source: 'r-primitives', target: 'l-dualcanvas', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-wells-scene', source: 'r-wells', target: 'l-wellscene', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-vocab-grid', source: 'r-vocab', target: 'l-paramgrid', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
 
-  // Bake pipeline flow
+  // ── GraphEditorPane internal composition (mounts) ──
+  { id: 'e-gep-nodecard', source: 'l-gep', target: 'l-nodecard', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-gep-rightpane', source: 'l-gep', target: 'l-rightpane', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-gep-sketch', source: 'l-gep', target: 'l-sketch-ed', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-gep-wire', source: 'l-gep', target: 'l-wire-state', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-gep-expr', source: 'l-gep', target: 'l-expr-menu', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-gep-assist', source: 'l-gep', target: 'l-ge-assist', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-rightpane-dual', source: 'l-rightpane', target: 'l-dualcanvas', data: { edgeKind: 'mounts', label: '3D tab' } satisfies ArchEdgeData },
+  { id: 'e-rightpane-ctrl', source: 'l-rightpane', target: 'l-scene-controls', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+  { id: 'e-dual-threlte', source: 'l-dualcanvas', target: 'l-threlte', data: { edgeKind: 'mounts' } satisfies ArchEdgeData },
+
+  // ── Editor → kernel (graph edits flow into the model) ──
   { id: 'e-gep-cg', source: 'l-gep', target: 'l-comp-graph', data: { edgeKind: 'flow', label: 'edit' } satisfies ArchEdgeData },
-  { id: 'e-cg-emit', source: 'l-comp-graph', target: 'l-emit', data: { edgeKind: 'flow', label: 'graph→source' } satisfies ArchEdgeData },
-  { id: 'e-emit-manifold', source: 'l-emit', target: 'l-manifold', data: { edgeKind: 'flow', label: 'bake' } satisfies ArchEdgeData },
+  { id: 'e-assist-cg', source: 'l-ge-assist', target: 'l-comp-graph', data: { edgeKind: 'flow', label: '✨ patch' } satisfies ArchEdgeData },
+  { id: 'e-layout-cg', source: 'l-comp-layout', target: 'l-comp-graph', data: { edgeKind: 'flow', label: 'layout' } satisfies ArchEdgeData },
+
+  // ── Kernel bake pipeline (graph → source → mesh) ──
+  { id: 'e-cg-emit', source: 'l-comp-graph', target: 'l-emit', data: { edgeKind: 'flow', label: 'graph→src' } satisfies ArchEdgeData },
+  { id: 'e-exprs-emit', source: 'l-exprs', target: 'l-emit', data: { edgeKind: 'flow', label: 'expr' } satisfies ArchEdgeData },
+  { id: 'e-sketch-emit', source: 'l-sketch', target: 'l-emit', data: { edgeKind: 'flow', label: 'profile' } satisfies ArchEdgeData },
+  { id: 'e-emit-bake', source: 'l-emit', target: 'l-comp-bake', data: { edgeKind: 'flow', label: 'body' } satisfies ArchEdgeData },
+  { id: 'e-bake-sandbox', source: 'l-comp-bake', target: 'l-sandbox', data: { edgeKind: 'flow' } satisfies ArchEdgeData },
+  { id: 'e-sandbox-manifold', source: 'l-sandbox', target: 'l-manifold', data: { edgeKind: 'flow', label: 'exec' } satisfies ArchEdgeData },
+  { id: 'e-mesh-manifold', source: 'l-manifold-mesh', target: 'l-manifold', data: { edgeKind: 'flow', label: 'weld' } satisfies ArchEdgeData },
+  { id: 'e-csg2d-manifold', source: 'l-csg2d', target: 'l-manifold', data: { edgeKind: 'flow' } satisfies ArchEdgeData },
+  { id: 'e-stdlib-sandbox', source: 'l-stdlib', target: 'l-sandbox', data: { edgeKind: 'flow', label: 'engines' } satisfies ArchEdgeData },
+  { id: 'e-stdstale-sandbox', source: 'l-stdstale', target: 'l-sandbox', data: { edgeKind: 'flow', label: 'legacy' } satisfies ArchEdgeData },
+  { id: 'e-loader-sandbox', source: 'l-loader', target: 'l-sandbox', data: { edgeKind: 'flow', label: 'deps' } satisfies ArchEdgeData },
+
+  // ── Manifold output ──
   { id: 'e-manifold-cache', source: 'l-manifold', target: 'l-bake-cache', data: { edgeKind: 'writes', label: 'cache' } satisfies ArchEdgeData },
   { id: 'e-manifold-threlte', source: 'l-manifold', target: 'l-threlte', data: { edgeKind: 'flow', label: 'mesh/GLB' } satisfies ArchEdgeData },
-  { id: 'e-stdlib-manifold', source: 'l-stdlib', target: 'l-manifold', data: { edgeKind: 'flow', label: 'engines' } satisfies ArchEdgeData },
+  { id: 'e-client-threlte', source: 'l-bake-client', target: 'l-threlte', data: { edgeKind: 'flow', label: '⚡client' } satisfies ArchEdgeData },
 
-  // API → lib
-  { id: 'e-api-prim-manifold', source: 'a-primitives', target: 'l-manifold', data: { edgeKind: 'calls', label: 'preview/bake' } satisfies ArchEdgeData },
-  { id: 'e-api-rag-rule', source: 'a-rag', target: 'l-rule-translator', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  // ── API → kernel ──
+  { id: 'e-apibake-loader', source: 'a-prim-bake', target: 'l-loader', data: { edgeKind: 'calls', label: 'preview' } satisfies ArchEdgeData },
+  { id: 'e-apibake-bake', source: 'a-prim-bake', target: 'l-comp-bake', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-apibake-cache', source: 'a-prim-bake', target: 'l-bake-cache', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
+  { id: 'e-apibake-client', source: 'a-prim-bake', target: 'l-bake-client', data: { edgeKind: 'flow', label: 'compile' } satisfies ArchEdgeData },
+  { id: 'e-apiai-bake', source: 'a-prim-ai', target: 'l-comp-bake', data: { edgeKind: 'calls', label: 'verify' } satisfies ArchEdgeData },
+  { id: 'e-brep-cg', source: 'a-brep', target: 'l-comp-graph', data: { edgeKind: 'calls', label: 'graph→OCCT' } satisfies ArchEdgeData },
+  { id: 'e-rag-corpus', source: 'a-rag', target: 'l-rag-corpus', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
+  { id: 'e-rag-rule', source: 'a-rag', target: 'l-rule-translator', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
   { id: 'e-vocab-rule', source: 'a-vocab', target: 'l-rule-translator', data: { edgeKind: 'calls' } satisfies ArchEdgeData },
-  { id: 'e-api-cache', source: 'a-primitives', target: 'l-bake-cache', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
+  { id: 'e-cache-bakecache', source: 'a-cache', target: 'l-bake-cache', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
 
-  // API / lib → store (reads/writes)
-  { id: 'e-api-prim-vol', source: 'a-primitives', target: 's-primitives-vol', data: { edgeKind: 'writes', label: 'save/delete' } satisfies ArchEdgeData },
-  { id: 'e-api-rag-corpus', source: 'a-rag', target: 's-rag-corpus', data: { edgeKind: 'writes', label: 'rebuild' } satisfies ArchEdgeData },
+  // ── API / kernel → store (reads / writes) ──
+  { id: 'e-data-vol', source: 'a-prim-data', target: 's-primitives-vol', data: { edgeKind: 'writes', label: 'save/delete' } satisfies ArchEdgeData },
+  { id: 'e-data-archive', source: 'a-prim-data', target: 's-archive', data: { edgeKind: 'writes', label: 'trash' } satisfies ArchEdgeData },
+  { id: 'e-profiles-store', source: 'a-profiles', target: 's-profiles', data: { edgeKind: 'writes' } satisfies ArchEdgeData },
+  { id: 'e-rag-jsonl', source: 'a-rag', target: 's-rag-corpus', data: { edgeKind: 'writes', label: 'rebuild' } satisfies ArchEdgeData },
   { id: 'e-vocab-json', source: 'a-vocab', target: 's-vocab-json', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
   { id: 'e-cache-vol', source: 'l-bake-cache', target: 's-bake-cache-vol', data: { edgeKind: 'writes' } satisfies ArchEdgeData },
-  { id: 'e-vol-root', source: 'a-volume', target: 's-volume-root', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
+  { id: 'e-volapi-root', source: 'a-volume', target: 's-volume-root', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
+  { id: 'e-loader-vol', source: 'l-loader', target: 's-primitives-vol', data: { edgeKind: 'reads', label: 'source' } satisfies ArchEdgeData },
+  { id: 'e-ragcorpus-jsonl', source: 'l-rag-corpus', target: 's-rag-corpus', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
+  { id: 'e-rule-vocabjson', source: 'l-rule-translator', target: 's-vocab-json', data: { edgeKind: 'reads' } satisfies ArchEdgeData },
 ];
