@@ -3,8 +3,9 @@
 Parametric 3D CAD pipeline for downhole tool components: **SvelteKit** +
 **ManifoldCAD** (WASM) + **Threlte**. The active editor is a **node-graph
 parametric CAD editor** (`GraphEditorPane`) backed by typed source files on a
-persistent volume, plus vocabulary-driven generative authoring, FEM, and an
-image→3D scaffold.
+persistent volume, plus vocabulary-driven generative authoring and a 3D-first
+well schematic. (FEM + the image→3D/forge scaffold were **archived** 2026-06,
+commit `1d90a16` — landing-only, unused elsewhere; revive from `archive/`.)
 
 ## Where to look for what
 
@@ -12,8 +13,8 @@ Rule numbers below are stable — docs and memories cross-reference them.
 Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 (endpoint catalog + proxy), `src/lib/cad/` (geometry, Manifold gotchas),
 `src/lib/shared/` (shared UI), `src/lib/authoring/` (vocab translators),
-`src/routes/vocab/` + `src/routes/api/vocab/` (vocab editor), `src/lib/fem/`
-+ `src/routes/fem/`, `tests/`. Also:
+`src/routes/vocab/` + `src/routes/api/vocab/` (vocab editor), `src/lib/wells/`
++ `src/routes/wells/`, `tests/`. Also:
 
 - **`docs/CAD_AUTHORING.md`** — volume-part authoring guide, read FIRST
 - `docs/COMPOSITION.md` — .asm.ts composition + TreeNode + editor API
@@ -40,7 +41,7 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 ## Rules for Claude (read me first)
 
 1. **Bun + SvelteKit + adapter-node.** Never adapter-static (API routes need SSR); never add Python to the runtime.
-2. **Product structure.** Active: `/primitives` + `/graph-editor` (CAD), `/vocab`, `/fem`, `/forge`, `/wells` (**3D-first well schematic, WIP** — `src/lib/wells/`, plan `docs/plans/well-schematic.md`), `/volume`, `/plan`. The old `/components` product was deleted 2026-05-27; the old `/archive/*` implementation moved to top-level `archive/` 2026-06-01. New code goes in `src/lib/{cad,fem,forge,authoring}`; cross-domain UI in `src/lib/shared/`.
+2. **Product structure.** Active: `/primitives` + `/graph-editor` (CAD), `/vocab`, `/wells` (**3D-first well schematic, WIP** — `src/lib/wells/`, plan `docs/plans/well-schematic.md`), `/design` (architecture: Tree + C4 tabs), `/research`, `/volume`, `/plan`. **ARCHIVED** (2026-06, `1d90a16`): `/fem` + `/forge` → `archive/src/{routes,lib}/fem` + `.../forge` (landing-only, unused — revive with `git mv` back). The old `/components` product was deleted 2026-05-27; the old `/archive/*` implementation moved to top-level `archive/` 2026-06-01. New code goes in `src/lib/{cad,wells,authoring}`; cross-domain UI in `src/lib/shared/`.
 3. API endpoints use `$env/dynamic/private` (not static) so env vars are read at runtime.
 4. **Durable JSON/JSONL stores get atomic writes** (temp file + rename) — volume caches, `docs/parts/vocabulary*.json`. Never delete one without backup.
 5. Follow plan files in `~/.claude/plans/`. Don't add features outside the current plan's scope.
@@ -60,7 +61,7 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 19. **`/plan` is the single source of truth for the roadmap.** Gantt at `src/routes/plan/+page.svelte` (+ `details.ts` popups). Session task-trackers and memory `todo_*.md` are ephemeral — reconcile INTO `/plan` at session end. Marking `done` is a factual claim — verify first. `/plan` edits are source changes → commit + push.
 20. **Authoring a volume part — use the typed-create scaffolds (Extrude Part / Profile Part / Assembly) or the graph editor; don't hand-name engines.** Profiles live INLINE on the part. The geom function is `export function <id>(positional args)` in `meta.params` order — NOT `geom(p)`; parts show in the Parts tab only as NAMED instances (`const body = ...; return body;`). Dependencies in `meta.uses`.
 21. **Engine primitives — canonical in `src/`, read-only, NOT on the volume.** `stdlib/` = active; `stdstale/` = deprecated-but-resolvable so existing `meta.uses` keep baking. Registry `src/lib/server/stdlib.ts` (`import.meta.glob('?raw')` bakes source into the build). Resolver serves them FIRST + dedupes volume twins; `/api/primitives/{save,delete}` refuse both (403). Add = drop `<id>.ts` into `stdlib/`; deprecate = `git mv` to `stdstale/`.
-22. **FEM is encapsulated** — engine `src/lib/fem/` (pure logic, no Svelte/DOM/Three), UI `src/routes/fem/` (imports formulas from `$lib/fem/*` only). Substantial FEM work via a `FEM-` subagent in worktree isolation; blast radius = those two dirs. Units: oilfield (lbf / ft-lbf / in / ksi). New stages = NEW sub-routes, never tabs.
+22. _(retired 2026-06 — FEM archived)_ ~~**FEM is encapsulated** — engine `src/lib/fem/`, UI `src/routes/fem/`.~~ FEM + `/forge` moved to `archive/` (`1d90a16`). If revived: engine `src/lib/fem/` (pure logic, no Svelte/DOM/Three), UI `src/routes/fem/` imports formulas from `$lib/fem/*` only; oilfield units (lbf / ft-lbf / in / ksi); new stages = NEW sub-routes, never tabs.
 23. **Non-trivial UI flow rebuilds ship with a subagent test spec** in `.claude/agents/<name>.md` (gitignored) BEFORE "done": drives the real UI via `mcp__claude-in-chrome__*` AND verifies server-side via curl; outputs a summary table + GIF; **must run twice with identical output**; patch the spec in-place when a run surfaces a wrinkle. Reference: `.claude/agents/test-dp-build.md`.
 24. **Generative authoring — RAG-then-translate against the vocabulary first.** On a "new part" request, retrieve from `docs/parts/vocabulary.json` and compose via the deterministic translator (`src/lib/authoring/rule-translator.ts`): (1) synonym match → params only, (2) `extends` parent, (3) `kind:'compose'`, (4) hand-author ONLY when nothing fits — and say so before extending the schema. Save via `/api/primitives/save`; bake-verify via `/api/primitives/preview` (report verts/z-extent/outer-r). Patches via `scripts/promote-to-vocab.ts`; regen `vocabulary-graph.mmd` via `bun scripts/render-vocab-graph.ts`. **NEVER hand-author `/tmp/<id>_swap.ts` ad-hoc scripts when a vocab path exists.**
 25. **The welded-mesh system is the PRIMARY geometry builder.** `src/lib/cad/manifold-mesh.ts` (`gridPatch` / `capFan` / `weldAndBuild`, injected via `primitive-sandbox.ts`; memories `welded_mesh_toolkit_shared` + `raw_mesh_helix_pattern`) builds geometry with **explicit, controllable segmentation** — unlike `CrossSection.revolve`, which gives no axial sampling. It exists specifically to (a) **warp smoothly** (enough Z-samples → a smooth sine, not faceted chords) and (b) **build along a spline** for the coming **deviated / curved profiles**. **Segmentation / warp resolution belongs at BUILD time, never as a post-bake mesh rewrite** — subdividing the final welded Manifold's MeshGL OOB-crashes the WASM core and corrupts the singleton so every later bake fails (why warp-subdivide `d41877b` was reverted in `3fb1fa8`). The old client-side `subdivideAlongZ` (`src/lib/shared/warp.ts`) was a render-time stopgap; the durable fix is build-time Z-segmentation in the weld builders.
@@ -123,32 +124,34 @@ bun run record:task <id> # e2e + harvest WEBMs for a /plan task (Rule 12)
 | `/primitives` | Sidebar of volume parts + multi-tab wrapper (GraphEditorPane per tab) |
 | `/primitives/profiles` | Profile-function builder page |
 | `/vocab` | Vocabulary editor (browse/topology · infer · bake · promote) |
-| `/fem` | FEM index + `/fem/[id]` stress + `/fem/[id]/tension` 3D viewer |
-| `/forge` | Image → 3D scaffold (FAL Hunyuan3D; needs `FAL_API_KEY`) |
-| `/wells` | **3D-first well schematic** (WIP) — WSON → 3D well diagram. Plan: `docs/plans/well-schematic.md`; engine `src/lib/wells/`. Old extraction stub replaced. |
+| `/wells` | **3D-first well schematic** (WIP) — WSON → 3D well diagram + SVTC-style left tool rail. Plan: `docs/plans/well-schematic.md`; engine `src/lib/wells/`. |
+| `/design` | Architecture overview — **Tree** (collapsible L→R) + **C4 model** (Context→Container→Component) tabs (`ArchGraph`/`C4View`, `architecture.ts`/`c4.ts`) |
+| `/research` | Research notes route |
 | `/volume` | Volume file manager |
 | `/plan` | Gantt roadmap (Rule 19) |
 
 **Removed/archived**: `/components` (deleted 2026-05-27); `/archive/*` and
-`/api/{identify,refine,accept,feedback,wells,kb}` (→ `archive/src/`,
-2026-06-01). The active `/api/primitives/refine` is a different, current
-endpoint. Full API catalog: `src/routes/api/CLAUDE.md`.
+`/api/{identify,refine,accept,feedback,wells,kb}` (→ `archive/src/`, 2026-06-01);
+**`/fem` + `/forge`** (→ `archive/src/{routes,lib}/{fem,forge}`, 2026-06 `1d90a16`
+— landing-only, unused; `FAL_API_KEY` was forge-only). The active
+`/api/primitives/refine` is a different, current endpoint. Full API catalog:
+`src/routes/api/CLAUDE.md`.
 
 ## Project layout
 
 ```
 src/
 ├── hooks.server.ts      # auth gate + volume proxy (VOLUME_PROXY_PATHS); rate-limit list empty
-├── routes/              # graph-editor/, primitives/(+profiles/), vocab/, fem/, forge/,
-│                        # wells/, volume/, plan/, api/  (+layout: no navbar, pins #app height)
+├── routes/              # graph-editor/, primitives/(+profiles/), vocab/, wells/, design/,
+│                        # research/, volume/, plan/, api/  (+layout: NavMenu top-right, pins #app height)
 └── lib/
     ├── shared/          # GraphEditorPane, PrimitiveView, canvases, FloatingPanel, …
     ├── cad/             # composition-graph/emit/layout/bake, manifold-helpers, stdlib/, stdstale/
     ├── server/          # volume.ts, primitive-paths.ts, primitive-loader.ts, stdlib.ts,
     │                    # bake-cache.ts, rag-corpus.ts, …
     ├── authoring/       # vocabulary → source translators
-    ├── fem/  forge/     # FEM engine · forge lib
-    └── rate_limit.ts
+    ├── wells/           # WSON → 3D well-schematic engine
+    └── rate_limit.ts    # (fem/ + forge/ archived 2026-06 → archive/src/lib/)
 
 archive/                 # TRACKED — archived legacy src (see archive/CADTRAIN_CLEANUP.md)
 docs/                    # CAD_AUTHORING, COMPOSITION, HISTORY, FINDINGS, parts/, plans/, assemblies/
@@ -172,4 +175,4 @@ Dockerfile + docker-entrypoint.sh + railway.toml
 - Node < 22.12 is too old for Vite 8 — use `bun --bun run vite dev` or newer Node.
 - Some ISP DNS resolvers refuse `*.up.railway.app` — prod "down" locally usually isn't (memory `railway_dns_block`).
 - **Z-down convention everywhere**: top = LOWER z; `mv(part,[0,0,+N])` moves down-hole (see `src/lib/cad/CLAUDE.md`).
-- Railway deploy: GitHub `pyenthu/cadtrain` → Dockerfile build; env `ANTHROPIC_API_KEY` (+ optional `FAL_API_KEY`); volume at `/app_data`; health `/api/cache/stats`.
+- Railway deploy: GitHub `pyenthu/cadtrain` → Dockerfile build; env `ANTHROPIC_API_KEY` (`FAL_API_KEY` was forge-only — archived); volume at `/app_data`; health `/api/cache/stats`.

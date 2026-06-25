@@ -113,10 +113,10 @@ export const C4_CONTEXT: C4Diagram = {
     },
     {
       id: 'fal',
-      name: 'FAL',
+      name: 'FAL · archived',
       kind: 'External System',
       tech: 'Hunyuan3D',
-      desc: 'Hosted image→3D model service behind the /forge scaffold.',
+      desc: 'image→3D model service behind /forge — ARCHIVED 2026-06.',
       variant: 'external',
       x: 710,
       y: 430,
@@ -189,10 +189,10 @@ export function buildContainerDiagram(): C4Diagram {
   });
   boxes.push({
     id: 'fal',
-    name: 'FAL',
+    name: 'FAL · archived',
     kind: 'External System',
     tech: 'Hunyuan3D',
-    desc: 'Image → 3D model service.',
+    desc: 'Image → 3D model service (/forge archived 2026-06).',
     variant: 'external',
     x: 710,
     y: 50,
