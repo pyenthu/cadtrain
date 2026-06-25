@@ -24,6 +24,7 @@
     addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp, addSketchRepeat,
     type Graph,
   } from '$lib/cad/composition-graph';
+  import { DeleteConfirm } from './delete-confirm.svelte';
   import type { SketchState } from './sketch-state.svelte';
   import type { WireState } from './wire-state.svelte';
 
@@ -55,6 +56,9 @@
     onNodePointerUp: (ev: PointerEvent) => void;
     onDeleteNode: (id: string) => void;
   } = $props();
+
+  // Two-step delete confirm for the sketch card's × (first click arms → ✓).
+  const del = new DeleteConfirm();
 </script>
 
 <!-- Sketch card (plan M.1) — CAD-operator profile producer:
@@ -77,8 +81,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <text role="button" tabindex="-1" x={size.w - 14} y="22" class="ge-node-x"
   class:disabled={consumed}
-  data-tip={consumed ? 'Wired into a Revolve/Extrude — delete the consumer first.' : 'Delete sketch'}
-  onpointerdown={(ev) => { ev.stopPropagation(); if (!consumed) onDeleteNode(n.id); }}>×</text>
+  class:armed={del.isArmed(n.id)}
+  data-tip={consumed ? 'Wired into a Revolve/Extrude — delete the consumer first.' : del.isArmed(n.id) ? 'Click again to delete' : 'Delete sketch'}
+  onpointerdown={(ev) => { ev.stopPropagation(); if (!consumed && del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
   <div class="ge-sketch" xmlns="http://www.w3.org/1999/xhtml">
@@ -186,6 +191,7 @@
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }
+  .ge-node-x.armed { fill: #16a34a; font-weight: 700; }
   .ge-fo { overflow: visible; }
   .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; touch-action: none; }
   @media (pointer: coarse) {
