@@ -10,50 +10,46 @@
    few-shot DB (no data leaves org). `ge-assist` already accepts a `postTurn` override
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
-3. **Modularize round 2 — shell cleanup** — SHIPPED: Phases A–F + R2 knip + **R6a (poly)**
-   + **RepeatEditorPane** + **CanvasMenu + AiMenu** → GEP **9455 → 5070**; **R6b** (GEP
-   module-map header + `$state` audit, all per-instance); **R9** (pure `profile-fn-compose.ts`
-   + round-trip tests, ProfileFnEditor **1156 → 925**). GEP clean carves done; honest
-   target **~2,500–3,000** (≤1500 needs a large feature carve; review 2026-06-25). NOTE:
-   ghost toggles NOT carvable (ghostSet/ghostIds feed emit/bake); the expr-in-GEP is ~70
-   lines of glue (popup+menu already components), not worth a carve. **R8** SHIPPED
-   2026-06-25 (vocab/+page **1687 → 1005**, 4 `_tabs/*` components + ~130 lines dead CSS).
-   LEFT: **R7** `builder.ts`/`library.ts` retire (needs knip dead-chain confirm) — the
-   last modularize item. Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
+3. **Modularize round 2** — SHIPPED: A–F + R2 knip + R6a + RepeatEditorPane + CanvasMenu
+   + AiMenu → GEP **9455 → 5070**; R6b (module-map header + `$state` audit); R8 (vocab
+   1687→1005); R9 (profile-fn-compose, ProfileFnEditor 1156→925). LEFT: **R7**
+   `builder.ts`/`library.ts` retire (needs knip dead-chain confirm) — the last item.
+   Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
-4. **Sketch repeat op** — ✅ SHIPPED 2026-06-25 (PR1–3): SketchRepeatNode + SketchRepeatRef
-   model + `expandSketchOps` (sketch-repeat.ts) flattening upstream of compileSketch +
-   emit (`Array.from(...).flat()`, two-site agreement test-locked) + `+ repeat` UI in
-   SketchNodeCard/SketchEditorPane + sketch_repeat NodeCard; 13 tests; existing sketch
-   parts byte-identical. LEFT (optional polish): re-wirable ref↔source SVG sockets on the
-   repeat card (built with plain coord inputs for now). Plan: `docs/plans/sketch-repeat.md`.
+4. **Sketch repeat op** — ✅ SHIPPED 2026-06-25 (PR1–3): model + `expandSketchOps` +
+   emit + `+ repeat` UI + sketch_repeat NodeCard; 13 tests; existing parts byte-identical.
+   LEFT (optional): re-wirable ref↔source SVG sockets. Plan: `docs/plans/sketch-repeat.md`.
 
-7. **Well schematic → 3D well diagram (`/wells`)** — **PARTIAL.** W0 + W1 shipped
-   (WSON, registry, `assembleWell`, Threlte `WellScene`). **NEXT:** port SVTC 3D scene
-   layer; DTX+scale; W1.3 real `g_*` bakes; flatten; curvature subdivision via
-   spline→builder contract; W2 2D schematic view; W3 editor/BOM.
-   Plan: `docs/plans/well-schematic.md`.
-   we need to replicate the 3d well sketch fromSVTC... also we can borrow from the same tyhpe of tab design and tool bar design and auto scale etc.
+7. **Well schematic → 3D well diagram (`/wells`)** — **PARTIAL.** W0 + W1 + left tool rail
+   (SVTC-style, 10 tools) shipped. **NEXT:** port SVTC 3D scene layer; DTX+scale; W1.3 real
+   `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3 editor/BOM + wire the
+   tool rail to real placement. Plan: `docs/plans/well-schematic.md`.
 
-8. in the reoeat card... allow for acceptance of params just like we are accepting parts. let the params section be abive parts section and allow multiple params to be added in a list with a node connecter
+8. in the repeat card... allow params just like parts. params section above parts, multiple
+   params in a list with a node connecter.
 
-15. **Expression system — polish pass** (the v3 block system shipped + works; these are the rough edges):
-    dangling-def recovery on instances; clean up the migrated `e.newone`-style invalid formulas;
-    Σ button two-click / tooltip overlap; per-output socket labels; live numeric preview.
-    (Global/personal expr library = PARKED #8.) Plan: `docs/plans/expression-builder.md`.
+15. **Expression system — polish pass** (v3 shipped + works): dangling-def recovery;
+    clean up migrated `e.newone`-style invalid formulas; Σ two-click/tooltip; per-output
+    socket labels; live numeric preview. Plan: `docs/plans/expression-builder.md`.
 
-16. **/design — mostly DONE.** Two view tabs: **Tree** (tidy left→right collapsible tree —
-    compact mfmesh-style nodes, minimap, draggable, solid data-flow + dashed depends-on +
-    dotted hierarchy edges) + **C4 model** (formal C4 diagram, Context→Container→Component
-    level switcher, proper notation + muted externals from `c4.ts`). LEFT (minor polish):
-    expand-all `fitView` zooms the big tree small (drill in one container instead);
-    legend overlaps the graph at fit-zoom. Files: `src/routes/design/**`.
+16. **/design — mostly DONE.** Tree + C4-model tabs. LEFT (minor): expand-all fitView
+    zooms small (drill in one container); legend overlap at fit-zoom. `src/routes/design/**`.
 
 
-### Shipped (recent)
+### Shipped (recent) — UI wave 2026-06-25/26
+
+- ✅ **Global top-right nav menu** (NavMenu in +layout — route dropdown on every page)
+- ✅ **/wells SVTC-style left tool rail** (10 grouped well-component tools + active state)
+- ✅ **/primitives sidebar collapse → thin vertical-tab rail** (was PARKED #10)
+- ✅ **SVG view fit + dia + depth scale** (matches the 3D pane; was PARKED #9)
+- ✅ **Bake z-slider 2× part length + ½ height; scale popover click-outside-close** (#11/#12)
+- ✅ **Repeat node card simplified** (de-cluttered + ellipsis on overflowing title; #14)
+- ✅ **Sketch per-axis X/Y scale ⚙ toolbar popover** (was PARKED #2)
+- ✅ Earlier: expr-builder redesign · /design Tree+C4 tabs · landing remodel · R8/R9 · sketch-repeat
+- ⏳ **Confirm-on-delete** (card/param/node) — subagent in progress (was PARKED #15)
+
 
 ### PARKED
-2. Sketch editor — per-axis scale expansion (x/y); settings button in the top toolbar.
 
 4. RESEARCH — explore for CAD generation improvement:
    [arxiv 2606.05515](https://arxiv.org/html/2606.05515v1).
@@ -64,19 +60,6 @@
 
 8. Option to promote and search for expressions to global library or personal user based library and search
 
-9. We need a fit/z scale and dia scale capabiltiy fort the svg as well.
-
-10. We need to redesign the folder interface. i think it is occupying a loot of space.. lets do one thing.. When we collapse the folder sidebar lets have the collpase to be just narrow enough to show the vertical ytab bars on the left.
-
-11. Also we need to rationalize the slider on the bake visualizaiton.. so that it slides about 2 times the length of he rendered part in z. and also make the slider a little smaller..hal the height.
-
-12. For the scale popover for z and xdia. Lets make sure that when we click out of the popover it disappears.
-
 13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
-14. Repeat card we dont need the card to be so elaborate..  remove the detailed text inside. Also the long name can be removed.in the top variable is extendign beyond the space.
-
-15. A card delete or a param delete or a node delete should ask for confirmation.
-
-16. Organize the server under lib and shared by categories that are logical. Organzie the folders/sub folders as per the categories that are logical.
-
+16. Organize source and the server under lib and shared by categories that are logical. Organzie the folders/sub folders as per the categories that are logical.
