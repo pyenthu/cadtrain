@@ -77,6 +77,13 @@
   function selectTab(name: string) {
     activeTab = name;
     try { localStorage.setItem('prim-active-tab', name); } catch { /* ignore */ }
+    // When the rail is collapsed to its thin vertical-tab strip the scoped
+    // tree is hidden, so picking a folder tab also expands the rail to reveal
+    // that branch's contents (the tabs are the only visible control then).
+    if (sidebarCollapsed) {
+      sidebarCollapsed = false;
+      try { localStorage.setItem('prim-rail-collapsed', '0'); } catch { /* ignore */ }
+    }
   }
   /** The FolderNode the active tab points at (falls back to the first volume
    *  folder so the tree never renders empty after a deleted folder). */
@@ -1079,6 +1086,14 @@
          contents; subfolders within the active branch still expand in place. -->
     <div class="prim-body">
     <nav class="prim-tabrail" role="tablist" aria-label="Top-level folders">
+      <!-- When collapsed the rail shrinks to just this tab strip; the » button
+           re-expands it to the full tree. (Clicking any folder tab expands too,
+           via selectTab.) Hidden when expanded — the header « handles collapse. -->
+      {#if sidebarCollapsed}
+        <button class="prim-tabrail-expand" type="button"
+          title="Expand the sidebar" aria-label="Expand the sidebar"
+          onclick={toggleSidebar}>»</button>
+      {/if}
       {#each topFolders as f (f.path)}
         <!-- Top tabs double as cross-branch drop targets: dropping a part onto
              Basic / Archived moves it there (the tree is scoped to ONE branch,
@@ -1727,14 +1742,33 @@
     font: 13px Arial; color: #475569; cursor: pointer; line-height: 1;
   }
   .prim-rail-collapse:hover { background: #f1f5f9; color: #1e293b; }
-  .prim-root.collapsed .prim-rail,
+  /* Collapsed (desktop + mobile LANDSCAPE): the rail shrinks to a thin
+     vertical-tab strip (VS-Code activity-bar style) — the .prim-tabrail stays
+     visible while the header, filter, RAG foot and the scrolling tree are
+     hidden. The resize divider is gone (nothing to resize at this width). The
+     first grid track sizes to the strip's content (max-content); main fills
+     the rest. Portrait overrides this with its own full-collapse below. */
+  .prim-root.collapsed { grid-template-columns: max-content minmax(0, 1fr); }
   .prim-root.collapsed .prim-rail-divider { display: none; }
-  /* Collapsed (desktop + mobile LANDSCAPE): rail + divider are display:none,
-     so .prim-main is the only grid item left. The base three-column template
-     would auto-place it onto the leading `var(--rail-w)` (0px when collapsed)
-     → blank screen. Collapse to a SINGLE column so main fills the width.
-     Portrait overrides this with its own row template (!important). */
-  .prim-root.collapsed { grid-template-columns: minmax(0, 1fr); }
+  .prim-root.collapsed .prim-rail > header,
+  .prim-root.collapsed .prim-filter-row,
+  .prim-root.collapsed .prim-rag-foot,
+  .prim-root.collapsed .prim-tree-scroll { display: none; }
+  /* The strip owns the rail's right border now (the tree pane is gone). */
+  .prim-root.collapsed .prim-rail { border-right: none; }
+  .prim-root.collapsed .prim-tabrail { border-right: 1px solid #e5e7eb; }
+  /* » re-expand chip pinned at the top of the collapsed tab strip. */
+  .prim-tabrail-expand {
+    flex: 0 0 auto; align-self: center;
+    width: 26px; height: 24px; margin: 0 0 6px; padding: 0;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 4px;
+    font: 14px Arial; color: #475569; cursor: pointer; line-height: 1;
+  }
+  .prim-tabrail-expand:hover { background: #f1f5f9; color: #1e293b; }
+  /* The legacy ☰ expand chips (floating + inline-in-tabstrip) are only needed
+     by the mobile-PORTRAIT full-collapse path (rail hidden there). On desktop
+     / landscape the thin rail's » button replaces them, so hide them. */
+  .prim-rail-expand { display: none; }
   .prim-rail-expand {
     position: absolute; top: 8px; left: 8px; z-index: 30;
     width: 30px; height: 30px; padding: 0;
@@ -1767,10 +1801,14 @@
     }
     .prim-rail-divider { display: none; }
     .prim-rail { border-right: none; border-bottom: 1px solid #e5e7eb; }
-    /* Collapsed: the rail is also display:none, so .prim-main is the ONLY
-       grid item left — it must land on a SINGLE 1fr track. A two-track
-       `0 1fr` would auto-place the lone main onto the leading `0` and blank
-       the whole screen (the "collapse blanks everything" bug). */
+    /* Collapsed: in portrait the rail stacks ABOVE the editor, so the thin
+       vertical-tab strip used on desktop doesn't fit — fall back to the full
+       collapse (rail display:none) and bring back the floating / inline ☰
+       expand chips. .prim-main is then the ONLY grid item left — it must land
+       on a SINGLE 1fr track. A two-track `0 1fr` would auto-place the lone
+       main onto the leading `0` and blank the whole screen. */
+    .prim-root.collapsed .prim-rail { display: none; }
+    .prim-rail-expand { display: inline-flex; align-items: center; justify-content: center; }
     .prim-root.collapsed { grid-template-rows: minmax(0, 1fr) !important; }
     /* Nothing open yet → let the sidebar fill the screen (the empty editor
        below would otherwise be wasted white space). Splits once a part opens. */
