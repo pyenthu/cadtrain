@@ -35,11 +35,6 @@
 
 8. in the reoeat card... allow for acceptance of params just like we are accepting parts. let the params section be abive parts section and allow multiple params to be added in a list with a node connecter
 
-15. **Expression system — polish pass** (the v3 block system shipped + works; these are the rough edges):
-    dangling-def recovery on instances; clean up the migrated `e.newone`-style invalid formulas;
-    Σ button two-click / tooltip overlap; per-output socket labels; live numeric preview.
-    (Global/personal expr library = PARKED #8.) Plan: `docs/plans/expression-builder.md`.
-
 
 ### Shipped (recent)
 
@@ -49,7 +44,7 @@
   input, and expr output → ANY card: Call arg, polygon coord, mv/rot/txfmn axis,
   repeat/poly_repeat count, sketch coord/point — bind + rendered line). mathjs
   validation, 23 unit tests. _(was "Conditional expressions tab".)_ /plan #914.
-  Plan: `docs/plans/expression-builder.md` (v3). _(polish → open #15.)_
+  Plan: `docs/plans/expression-builder.md` (v3). _(polish → PARKED #15.)_
 - ✅ **/design C4 architecture graph** — interactive `@xyflow/svelte` route/api/lib/store
   graph (container/C4 view) + the edges-not-rendering fix (`$state.raw`). /plan #909.
 - ✅ **Modularize R2 — knip dead-code prune** (dead deps + `mime.ts`/`temp-file.ts`).
@@ -65,7 +60,7 @@
 7. `r_weld_extrude` phase angle — straighten spiralled triangles (lat/long-style
    perpendicular quads along latitude).
 
-8. Option to promote and search for expressions to global library or ersonal user based library and search
+8. Option to promote and search for expressions to global library or personal user based library and search
 
 9. We need a fit/z scale and dia scale capabiltiy fort the src as well.
 
@@ -78,3 +73,8 @@
 13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
 14. Repeat card we dont need the card to be so elaborate.. Maybe we just need a nice loop icon.. remove the detailed text inside. Also the long name can be removed.in the top var
+
+15. **Expression system — polish pass** (suggested; the v3 block system shipped + works,
+    these are the rough edges): dangling-def recovery on instances; clean up the migrated
+    `e.newone`-style invalid formulas; Σ button two-click / tooltip overlap; per-output
+    socket labels; optional live numeric preview. Plan: `docs/plans/expression-builder.md`.
