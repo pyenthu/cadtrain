@@ -179,12 +179,13 @@
     {#each params as p, i (i)}
       {@const err = nameError(p.name)}
       <div class="ge-xs-row" class:bad={!!err}>
+        <span class="ge-xs-sock in" title="input socket — wired per instance"></span>
         <input class="ge-xs-name" type="text" placeholder="name" bind:value={p.name} title={err ?? 'param name → input socket'} />
         <input class="ge-xs-num" type="number" step="any" placeholder="default" bind:value={p.default} title="optional default (used when the socket is unwired)" />
         <button class="ge-xs-del" type="button" title="Remove" onclick={() => delParam(i)}>×</button>
       </div>
     {/each}
-    <button class="ge-xs-add" type="button" onclick={addParam}>+ row</button>
+    <button class="ge-xs-add" type="button" onclick={addParam}>+ add param</button>
   </div>
 {/snippet}
 
@@ -198,7 +199,7 @@
         <button class="ge-xs-del" type="button" title="Remove" onclick={() => delConst(i)}>×</button>
       </div>
     {/each}
-    <button class="ge-xs-add" type="button" onclick={addConst}>+ row</button>
+    <button class="ge-xs-add" type="button" onclick={addConst}>+ add const</button>
   </div>
 {/snippet}
 
@@ -215,7 +216,7 @@
       </div>
       {#if fErr}<div class="ge-xs-err">{fErr}</div>{/if}
     {/each}
-    <button class="ge-xs-add" type="button" onclick={addVar}>+ row</button>
+    <button class="ge-xs-add" type="button" onclick={addVar}>+ add variable</button>
   </div>
 {/snippet}
 
@@ -229,10 +230,11 @@
         <span class="ge-xs-eq">=</span>
         <ExpressionSrcPane bind:src={o.formula} completions={completionsFor(outAllowed(i))} label="" rows={1} placeholder="diff / two" />
         <button class="ge-xs-del" type="button" title="Remove" onclick={() => delOutput(i)}>×</button>
+        <span class="ge-xs-sock out" title="output socket — wire to a card"></span>
       </div>
       {#if fErr}<div class="ge-xs-err">{fErr}</div>{/if}
     {/each}
-    <button class="ge-xs-add" type="button" onclick={addOutput}>+ row</button>
+    <button class="ge-xs-add" type="button" onclick={addOutput}>+ add output</button>
   </div>
 {/snippet}
 
@@ -330,7 +332,7 @@
   .ge-xs-rail { display: flex; flex-direction: column; flex: 0 0 auto; background: #f8fafc; border-right: 1px solid #e5e7eb; }
   .ge-xs-vtab {
     flex: 1 1 0; min-height: 62px; width: 40px; cursor: pointer; position: relative;
-    display: flex; flex-direction: column-reverse; align-items: center; justify-content: center; gap: 7px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
     background: transparent; border: none; border-left: 3px solid transparent; color: #64748b;
   }
   .ge-xs-vlabel { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 10px Arial; letter-spacing: 0.14em; }
@@ -348,8 +350,14 @@
   .ge-xs-vtab.vars.on   .ge-xs-vlabel { color: #b45309; }
 
   /* MIDDLE editor + RIGHT outputs panes. */
-  .ge-xs-editor  { flex: 1 1 58%; min-width: 0; overflow: auto; }
-  .ge-xs-outpane { flex: 1 1 42%; min-width: 0; overflow: auto; border-left: 1px solid #eef2f7; background: #fcfcff; }
+  .ge-xs-editor  { flex: 1 1 54%; min-width: 0; overflow: auto; }
+  .ge-xs-outpane { flex: 1 1 46%; min-width: 0; overflow: auto; border-left: 1px solid #eef2f7; background: #fcfcff; }
+
+  /* row sockets — input dot (left) on params, output dot (right) on outputs,
+     mirroring the canvas block's wire sockets. */
+  .ge-xs-sock { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #fff; }
+  .ge-xs-sock.in  { background: #3b82f6; box-shadow: 0 0 0 1px #93c5fd; margin-left: -3px; }
+  .ge-xs-sock.out { background: #a855f7; box-shadow: 0 0 0 1px #d8b4fe; margin-right: -3px; }
   .ge-xs-pane-head {
     font: 700 10px Arial; letter-spacing: 0.09em; color: #475569;
     padding: 8px 10px 2px; display: flex; align-items: center; gap: 6px;
