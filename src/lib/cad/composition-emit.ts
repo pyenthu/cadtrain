@@ -435,6 +435,31 @@ function missingRef(nodeId: NodeId, slot: string, badRef: NodeId): string {
   return `(() => { throw new Error(${JSON.stringify(msg)}); })()`;
 }
 
+/** Render ONE sketch op (line/spline/fillet/chamfer) as an object-literal
+ *  source string — shared by the parent sketch loop AND the sketch_repeat
+ *  prototype spread (#805) so the two emit paths can never drift. Returns ''
+ *  for a repeat-ref / unknown op (the caller handles refs separately). */
+function emitSketchOpObject(o: any): string {
+  if (!o) return '';
+  if (o.op === 'line' || o.op === 'spline') {
+    const modePart = o.mode === 'rel' ? `, mode: 'rel'` : '';
+    if (o.op === 'spline') {
+      const parts = [`op: 'spline'`, `r: ${emitValueExpr(o.r)}`, `z: ${emitValueExpr(o.z)}`];
+      if (Array.isArray(o.pts) && o.pts.length) {
+        parts.push(`pts: [${o.pts.map((c: any[]) => `[${emitValueExpr(c[0])}, ${emitValueExpr(c[1])}]`).join(', ')}]`);
+      }
+      if (Array.isArray(o.h0)) parts.push(`h0: [${emitValueExpr(o.h0[0])}, ${emitValueExpr(o.h0[1])}]`);
+      if (Array.isArray(o.h1)) parts.push(`h1: [${emitValueExpr(o.h1[0])}, ${emitValueExpr(o.h1[1])}]`);
+      if (o.mode === 'rel') parts.push(`mode: 'rel'`);
+      return `{ ${parts.join(', ')} }`;
+    }
+    return `{ op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}${modePart} }`;
+  }
+  if (o.op === 'fillet')  return `{ op: 'fillet', radius: ${emitValueExpr(o.radius)} }`;
+  if (o.op === 'chamfer') return `{ op: 'chamfer', dist: ${emitValueExpr(o.dist)} }`;
+  return '';
+}
+
 function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProducers: Set<NodeId> | undefined, nodes: Record<NodeId, GraphNode>): string | null {
   const ref = (id: NodeId, slot: string) => varNames.get(id) ?? missingRef(node.id, slot, id);
   switch (node.type) {
@@ -622,25 +647,34 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // injected into the part sandbox. Each op's coord/radius/dist field is
       // an ArgValue so it can be param/expr-driven. (plan M.1)
       const ops = ((node as any).ops ?? []).map((o: any) => {
-        if (o.op === 'line' || o.op === 'spline') {
-          // `mode:'rel'` → compileSketch accumulates (r,z) as a Δ from the
-          // previous vertex; emitted verbatim so the bake matches the editor.
-          const modePart = o.mode === 'rel' ? `, mode: 'rel'` : '';
-          if (o.op === 'spline') {
-            const parts = [`op: 'spline'`, `r: ${emitValueExpr(o.r)}`, `z: ${emitValueExpr(o.z)}`];
-            if (Array.isArray(o.pts) && o.pts.length) {
-              parts.push(`pts: [${o.pts.map((c: any[]) => `[${emitValueExpr(c[0])}, ${emitValueExpr(c[1])}]`).join(', ')}]`);
-            }
-            if (Array.isArray(o.h0)) parts.push(`h0: [${emitValueExpr(o.h0[0])}, ${emitValueExpr(o.h0[1])}]`);
-            if (Array.isArray(o.h1)) parts.push(`h1: [${emitValueExpr(o.h1[0])}, ${emitValueExpr(o.h1[1])}]`);
-            if (o.mode === 'rel') parts.push(`mode: 'rel'`);
-            return `{ ${parts.join(', ')} }`;
-          }
-          return `{ op: 'line', r: ${emitValueExpr(o.r)}, z: ${emitValueExpr(o.z)}${modePart} }`;
+        // A repeat-ref (#805) chases its sourceId to the SketchRepeatNode and
+        // emits an `...Array.from(...).flat()` spread of the tiled prototype.
+        // Each iteration returns an ARRAY of op objects (the optional leading
+        // `(dr,dz)` advance + the prototype ops); `.flat()` splices them in.
+        // i / NPts / bindings are in scope — mirrors the polygon repeat-ref.
+        // This MUST stay byte-equivalent to expandSketchOps (sketch-repeat.ts).
+        if (o?.op === 'repeat-ref') {
+          const src = nodes[o.sourceId] as any;
+          if (!src || src.type !== 'sketch_repeat') return '';
+          const count = emitValueExpr(src.count);
+          const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(src.loopVar || '')) ? String(src.loopVar) : 'i';
+          const bindings: Array<{ name: string; value: any }> = Array.isArray(src.bindings) ? src.bindings : [];
+          const valid = bindings.filter((b) => b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name));
+          const bindLines = valid.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
+          const preamble = bindLines ? `const NPts = ${count}; ${bindLines}` : `const NPts = ${count};`;
+          const hasAdvance = src.dr != null || src.dz != null;
+          const drE = src.dr != null ? emitValueExpr(src.dr) : '0';
+          const dzE = src.dz != null ? emitValueExpr(src.dz) : '0';
+          const protoObjs = (Array.isArray(src.ops) ? src.ops : [])
+            .map((po: any) => emitSketchOpObject(po)).filter(Boolean);
+          const items = hasAdvance
+            ? [`{ op: 'line', mode: 'rel', r: ${drE}, z: ${dzE} }`, ...protoObjs]
+            : protoObjs;
+          return `...Array.from({ length: ${count} }, (_, ${loopVar}) => { ${preamble} return [${items.join(', ')}]; }).flat()`;
         }
-        if (o.op === 'fillet')  return `{ op: 'fillet', radius: ${emitValueExpr(o.radius)} }`;
-        if (o.op === 'chamfer') return `{ op: 'chamfer', dist: ${emitValueExpr(o.dist)} }`;
-        return '';
+        // `mode:'rel'` → compileSketch accumulates (r,z) as a Δ from the
+        // previous vertex; emitted verbatim so the bake matches the editor.
+        return emitSketchOpObject(o);
       }).filter(Boolean);
       const seg = (node as any).segments != null ? emitValueExpr((node as any).segments) : '64';
       // Whole-sketch scale → trailing positional args of the `sketch(...)` call
@@ -783,6 +817,13 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
       // children are inputs. The ROOT list is special — its children ARE
       // the function's return value (filtered downstream).
       for (const c of n.children) consumed.add(c);
+    } else if (n.type === 'sketch') {
+      // A sketch's repeat-ref entries consume their SketchRepeatNode source
+      // (#805) so it never double-emits as an Output + its × greys out —
+      // exactly the polygon repeat-ref / __POLY__ precedent.
+      for (const o of (n.ops as any[]) ?? []) {
+        if (o?.op === 'repeat-ref' && o.sourceId) consumed.add(o.sourceId);
+      }
     } else if (n.type === 'call') {
       // Call args carrying a `__POLY__<sourceId>` sentinel expr consume
       // the source node (the polygon, today). Without this, the polygon

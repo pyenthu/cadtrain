@@ -12,6 +12,7 @@ import type {
   NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
+  SketchRepeatNode, SketchRepeatRef,
   ExprNode, ExprDef,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
@@ -148,6 +149,29 @@ export function collectEdges(graph: Graph): Edge[] {
         if (o.op === 'chamfer') push(o.dist,   `ops.${i}.dist`);
       });
       push(node.segments, 'segments');
+    } else if (node.type === 'sketch_repeat') {
+      // The repeat's count/advance + each binding value + each prototype op
+      // ArgValue are param-wireable (#805). Same edge shapes as the sketch arm
+      // (prototype ops live on `ops`) plus count/dr/dz and bindings.
+      const push = (v: any, to: string) => {
+        if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.${to}` });
+      };
+      push(node.count, 'count');
+      push((node as any).dr, 'dr');
+      push((node as any).dz, 'dz');
+      ((node as any).bindings as any[] ?? []).forEach((b, k) => {
+        if (b?.value?.kind === 'param') edges.push({ from: `p.${b.value.param}`, to: `${node.id}.bindings.${k}.value` });
+      });
+      node.ops.forEach((o: any, i: number) => {
+        if (o.op === 'line' || o.op === 'spline') { push(o.r, `ops.${i}.r`); push(o.z, `ops.${i}.z`); }
+        if (o.op === 'spline') {
+          (o.pts ?? []).forEach((pt: any, k: number) => { push(pt?.[0], `ops.${i}.pts.${k}.u`); push(pt?.[1], `ops.${i}.pts.${k}.v`); });
+          if (o.h0) { push(o.h0[0], `ops.${i}.h0.u`); push(o.h0[1], `ops.${i}.h0.v`); }
+          if (o.h1) { push(o.h1[0], `ops.${i}.h1.u`); push(o.h1[1], `ops.${i}.h1.v`); }
+        }
+        if (o.op === 'fillet')  push(o.radius, `ops.${i}.radius`);
+        if (o.op === 'chamfer') push(o.dist,   `ops.${i}.dist`);
+      });
     } else if (node.type === 'expr') {
       // An Expr block's input can be wired to a param — surfaced so the orphan
       // check (slotsForParam) catches a param that's only used by a block input.
@@ -589,7 +613,9 @@ export function addSketch(graph: Graph, parentId?: NodeId): { graph: Graph; id: 
  *  point; fillet/chamfer are corner mods on the preceding point. */
 export function addSketchOp(graph: Graph, sketchId: NodeId, op: SketchOpEntry['op'], afterIdx?: number): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  // Accepts a sketch OR a sketch_repeat node — both own an `ops` list (the
+  // repeat node's `ops` is the prototype run; #805).
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   let entry: SketchOpEntry;
   if (op === 'fillet') entry = { op: 'fillet', radius: asLiteral(0.25) };
   else if (op === 'chamfer') entry = { op: 'chamfer', dist: asLiteral(0.3) };
@@ -603,7 +629,7 @@ export function addSketchOp(graph: Graph, sketchId: NodeId, op: SketchOpEntry['o
 /** Set one ArgValue field (r/z/radius/dist) on a sketch op. */
 export function setSketchOpField(graph: Graph, sketchId: NodeId, idx: number, field: 'r' | 'z' | 'radius' | 'dist', arg: ArgValue): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   if (idx < 0 || idx >= node.ops.length) return graph;
   const ops = node.ops.map((o, i) => (i === idx ? ({ ...o, [field]: arg } as SketchOpEntry) : o));
   return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
@@ -613,12 +639,14 @@ export function setSketchOpField(graph: Graph, sketchId: NodeId, idx: number, fi
  *  fillet/chamfer or on the first point op (always absolute). */
 export function setSketchOpMode(graph: Graph, sketchId: NodeId, idx: number, mode: 'abs' | 'rel'): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   const o = node.ops[idx] as any;
   if (!o || (o.op !== 'line' && o.op !== 'spline')) return graph;
-  // The first point op has no predecessor to offset from → always absolute.
-  const firstPointIdx = node.ops.findIndex((e) => e.op === 'line' || e.op === 'spline');
-  if (idx === firstPointIdx) return graph;
+  // On a top-level sketch the FIRST point op has no predecessor → always
+  // absolute. On a repeat PROTOTYPE the first op is intentionally relative
+  // (it tiles off the previous iteration's end), so the rule doesn't apply.
+  const firstPointIdx = node.ops.findIndex((e) => (e as any).op === 'line' || (e as any).op === 'spline');
+  if (node.type === 'sketch' && idx === firstPointIdx) return graph;
   const ops = node.ops.map((e, i) => (i === idx ? ({ ...e, mode } as SketchOpEntry) : e));
   return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
 }
@@ -627,7 +655,7 @@ export function setSketchOpMode(graph: Graph, sketchId: NodeId, idx: number, mod
  *  fillet/chamfer. */
 export function setSketchOpKind(graph: Graph, sketchId: NodeId, idx: number, kind: 'line' | 'spline'): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   const o = node.ops[idx] as any;
   if (!o || (o.op !== 'line' && o.op !== 'spline')) return graph;
   const ops = node.ops.map((e, i) => (i === idx ? ({ op: kind, r: o.r, z: o.z } as SketchOpEntry) : e));
@@ -636,7 +664,7 @@ export function setSketchOpKind(graph: Graph, sketchId: NodeId, idx: number, kin
 
 export function moveSketchOp(graph: Graph, sketchId: NodeId, idx: number, dir: -1 | 1): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   const j = idx + dir;
   if (idx < 0 || idx >= node.ops.length || j < 0 || j >= node.ops.length) return graph;
   const ops = [...node.ops];
@@ -646,10 +674,25 @@ export function moveSketchOp(graph: Graph, sketchId: NodeId, idx: number, dir: -
 
 export function removeSketchOp(graph: Graph, sketchId: NodeId, idx: number): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   if (node.ops.length <= 1) return graph;
+  if (idx < 0 || idx >= node.ops.length) return graph;
+  const removed = node.ops[idx] as any;
   const ops = node.ops.filter((_, i) => i !== idx);
-  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: { ...node, ops } } });
+  let nodes = { ...graph.nodes, [sketchId]: { ...node, ops } };
+  let layout = graph.layout;
+  // Removing a repeat-ref whose SketchRepeatNode is no longer referenced by
+  // any other entry drops the orphaned source node + its layout (mirrors
+  // removePolygonPoint's repeat-ref cleanup, #805).
+  if (removed?.op === 'repeat-ref') {
+    const srcId = (removed as SketchRepeatRef).sourceId;
+    const stillReferenced = (ops as any[]).some((o) => o?.op === 'repeat-ref' && o.sourceId === srcId);
+    if (!stillReferenced && nodes[srcId]) {
+      const { [srcId]: _drop, ...rest } = nodes; nodes = rest;
+      const { [srcId]: _dropL, ...restL } = layout; layout = restL;
+    }
+  }
+  return finalize({ ...graph, nodes, layout });
 }
 
 export function setSketchSegments(graph: Graph, sketchId: NodeId, seg: ArgValue): Graph {
@@ -680,7 +723,7 @@ function withSplineOp(
   mut: (o: Extract<SketchOpEntry, { op: 'spline' }>) => SketchOpEntry,
 ): Graph {
   const node = graph.nodes[sketchId];
-  if (!node || node.type !== 'sketch') return graph;
+  if (!node || (node.type !== 'sketch' && node.type !== 'sketch_repeat')) return graph;
   const o = node.ops[idx] as any;
   if (!o || o.op !== 'spline') return graph;
   const ops = node.ops.map((e, i) => (i === idx ? mut(o) : e));
@@ -894,6 +937,106 @@ export function addPolygonRepeat(graph: Graph, polygonId: NodeId, afterIdx?: num
     nodes: { ...graph.nodes, [polygonId]: updatedPoly, [repeatId]: repeatNode },
     layout: { ...graph.layout, [repeatId]: xy },
   });
+}
+
+// ─── Sketch REPEAT (B.2 / id 805) ──────────────────────────────────────────
+// Mirrors addPolygonRepeat: a separate free-floating SketchRepeatNode card +
+// a flat {op:'repeat-ref', sourceId} entry spliced into the parent sketch's
+// ops. The prototype run is edited on the repeat card via the SAME sketch-op
+// mutators (addSketchOp/setSketchOpField/…), which now accept a sketch_repeat
+// node. Default = a visibly-periodic 2-op V-tooth that self-tiles 4×.
+
+/** Insert a REPEAT-REF row into a sketch AND drop the corresponding
+ *  SketchRepeatNode as a separate card. `afterIdx` matches addSketchOp
+ *  (-1 = prepend, omitted = append). Returns the new graph + the repeat id. */
+export function addSketchRepeat(graph: Graph, sketchId: NodeId, afterIdx?: number): { graph: Graph; id: NodeId } {
+  const node = graph.nodes[sketchId];
+  if (!node || node.type !== 'sketch') return { graph, id: '' };
+  const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.ops.length)
+    ? afterIdx + 1
+    : node.ops.length;
+
+  const repeatId = newNodeId();
+  const repeatNode: SketchRepeatNode = {
+    id: repeatId,
+    type: 'sketch_repeat',
+    count: asLiteral(4),
+    loopVar: 'i',
+    // A 2-op V-tooth prototype whose own rel ops net a pitch in z (pure
+    // self-tiling — no synthetic advance), so the first drop bakes something
+    // visibly periodic. The user adds a dr/dz stride for racks/combs.
+    ops: [
+      { op: 'line', r: asLiteral(0.3), z: asLiteral(0.25), mode: 'rel' },
+      { op: 'line', r: asLiteral(-0.3), z: asLiteral(0.25), mode: 'rel' },
+    ],
+  };
+  // Layout: 280px right of the sketch + a per-sibling vertical fan.
+  const skXY = graph.layout[sketchId] ?? { x: 80, y: 80 };
+  const existing = Object.values(graph.nodes).filter((n) => n.type === 'sketch_repeat').length;
+  const xy: LayoutXY = { x: skXY.x + 280, y: skXY.y + existing * 40 };
+
+  const ref: SketchRepeatRef = { op: 'repeat-ref', sourceId: repeatId };
+  const ops = [...node.ops.slice(0, insertAt), ref, ...node.ops.slice(insertAt)];
+  const updatedSketch: SketchNode = { ...node, ops };
+
+  const g = finalize({
+    ...graph,
+    nodes: { ...graph.nodes, [sketchId]: updatedSketch, [repeatId]: repeatNode },
+    layout: { ...graph.layout, [repeatId]: xy },
+  });
+  return { graph: g, id: repeatId };
+}
+
+/** Set a SketchRepeatNode's iteration count. */
+export function setSketchRepeatCount(graph: Graph, repeatId: NodeId, count: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, count } } });
+}
+
+/** Set a SketchRepeatNode's loop-variable name. */
+export function setSketchRepeatLoopVar(graph: Graph, repeatId: NodeId, loopVar: string): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, loopVar } } });
+}
+
+/** Set a SketchRepeatNode's per-iteration advance on the r (`'dr'`) or z
+ *  (`'dz'`) axis. */
+export function setSketchRepeatAdvance(graph: Graph, repeatId: NodeId, axis: 'dr' | 'dz', value: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, [axis]: value } } });
+}
+
+// SketchRepeat bindings — reuse the poly_repeat binding shape verbatim.
+export function addSketchRepeatBinding(graph: Graph, repeatId: NodeId): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  const existing = node.bindings ?? [];
+  const used = new Set(existing.map((b) => b.name));
+  let k = existing.length + 1; let name = `b${k}`;
+  while (used.has(name)) name = `b${++k}`;
+  const bindings: PolyRepeatBinding[] = [...existing, { name, value: asLiteral(0) }];
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, bindings } } });
+}
+export function setSketchRepeatBindingName(graph: Graph, repeatId: NodeId, idx: number, name: string): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  const bindings = (node.bindings ?? []).map((b, i) => (i === idx ? { ...b, name } : b));
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, bindings } } });
+}
+export function setSketchRepeatBindingValue(graph: Graph, repeatId: NodeId, idx: number, value: ArgValue): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  const bindings = (node.bindings ?? []).map((b, i) => (i === idx ? { ...b, value } : b));
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, bindings } } });
+}
+export function removeSketchRepeatBinding(graph: Graph, repeatId: NodeId, idx: number): Graph {
+  const node = graph.nodes[repeatId];
+  if (!node || node.type !== 'sketch_repeat') return graph;
+  const bindings = (node.bindings ?? []).filter((_, i) => i !== idx);
+  return finalize({ ...graph, nodes: { ...graph.nodes, [repeatId]: { ...node, bindings } } });
 }
 
 // ─── Expr definitions + instances (B.7 / id 914, v3) ───────────────────────
