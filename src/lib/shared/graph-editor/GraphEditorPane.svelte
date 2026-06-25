@@ -3839,6 +3839,21 @@
                         <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
                       {/if}
                     {/each}
+                    <!-- EXPR-OUTPUT ref → transform axis socket. -->
+                    {@const tpos = nodePos(n.id)}
+                    {@const tsk = xformSocketAt(graph, n.id, xi, i)}
+                    {#each allNodes as exn (exn.id)}
+                      {#if exn.type === 'expr'}
+                        {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                        {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                          {#if String(av.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                            {@const srcSize = nodeSize(graph, exn)}
+                            {@const srcPos = nodePos(exn.id)}
+                            <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), tpos.x + tsk.x, tpos.y + tsk.y)}/>
+                          {/if}
+                        {/each}
+                      {/if}
+                    {/each}
                   {/if}
                 {/each}
               {/each}
@@ -3858,6 +3873,20 @@
                     {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                     {@const pos = nodePos(n.id)}
                     <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + 17)}/>
+                  {/if}
+                {/each}
+                <!-- EXPR-OUTPUT ref → repeat count socket. -->
+                {@const rpos = nodePos(n.id)}
+                {#each allNodes as exn (exn.id)}
+                  {#if exn.type === 'expr'}
+                    {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                    {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                      {#if String((n as any).count.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                        {@const srcSize = nodeSize(graph, exn)}
+                        {@const srcPos = nodePos(exn.id)}
+                        <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), rpos.x, rpos.y + 17)}/>
+                      {/if}
+                    {/each}
                   {/if}
                 {/each}
               {/if}
@@ -3887,6 +3916,19 @@
                       <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, rTopY)}/>
                     {/if}
                   {/each}
+                  <!-- EXPR-OUTPUT ref → polygon r coord. -->
+                  {#each allNodes as exn (exn.id)}
+                    {#if exn.type === 'expr'}
+                      {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                      {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                        {#if String(pt.r.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                          {@const srcSize = nodeSize(graph, exn)}
+                          {@const srcPos = nodePos(exn.id)}
+                          <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), pos.x, rTopY)}/>
+                        {/if}
+                      {/each}
+                    {/if}
+                  {/each}
                 {/if}
                 {#if pt.z?.kind === 'param'}
                   {@const pIdx = paramEntries.findIndex(([nm]) => nm === pt.z.param)}
@@ -3900,6 +3942,19 @@
                     {#if pIdx >= 0 && leftTab === 'params'}
                       {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                       <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, zTopY)}/>
+                    {/if}
+                  {/each}
+                  <!-- EXPR-OUTPUT ref → polygon z coord. -->
+                  {#each allNodes as exn (exn.id)}
+                    {#if exn.type === 'expr'}
+                      {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                      {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                        {#if String(pt.z.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                          {@const srcSize = nodeSize(graph, exn)}
+                          {@const srcPos = nodePos(exn.id)}
+                          <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), pos.x, zTopY)}/>
+                        {/if}
+                      {/each}
                     {/if}
                   {/each}
                 {/if}
@@ -3946,6 +4001,19 @@
                       {#if pIdx >= 0 && leftTab === 'params'}
                         {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom,refName, pIdx)}
                         <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x, pos.y + (sy as number))}/>
+                      {/if}
+                    {/each}
+                    <!-- EXPR-OUTPUT ref → sketch op coord/point socket. -->
+                    {#each allNodes as exn (exn.id)}
+                      {#if exn.type === 'expr'}
+                        {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                        {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                          {#if String(av.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                            {@const srcSize = nodeSize(graph, exn)}
+                            {@const srcPos = nodePos(exn.id)}
+                            <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), pos.x, pos.y + (sy as number))}/>
+                          {/if}
+                        {/each}
                       {/if}
                     {/each}
                   {/if}
@@ -4003,7 +4071,61 @@
                     <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, tgtX, tgtY)}/>
                   {/if}
                 {/each}
+                <!-- EXPR-OUTPUT ref → poly_repeat NPts socket. -->
+                {#each allNodes as exn (exn.id)}
+                  {#if exn.type === 'expr'}
+                    {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                    {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                      {#if String((n as any).count.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                        {@const srcSize = nodeSize(graph, exn)}
+                        {@const srcPos = nodePos(exn.id)}
+                        <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), tgtX, tgtY)}/>
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
               {/if}
+            {:else if n.type === 'txfmn'}
+              <!-- Standalone xform axis wires (B.7 v3). Six axis sockets on the
+                   left edge at cy = 48 + i*24 (rot x/y/z then mv x/y/z; mirrors
+                   NodeCard axisStartY=40 + i*axisRowH=24 + 12 − 4). For each axis
+                   that is param/expr-wired, draw the param-chip wire; for each
+                   that references an expr instance's OUTPUT const, draw the
+                   expr-output wire. -->
+              {@const tpos = nodePos(n.id)}
+              {#each [0, 1, 2, 3, 4, 5] as i (i)}
+                {@const sa = (i % 3) as 0 | 1 | 2}
+                {@const av = (i < 3 ? (n as any).rot : (n as any).offset)?.[sa]}
+                {@const tgtY = tpos.y + 48 + i * 24}
+                {#if av?.kind === 'param'}
+                  {@const pIdx = paramEntries.findIndex(([nm]) => nm === av.param)}
+                  {#if pIdx >= 0 && leftTab === 'params'}
+                    {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, av.param, pIdx)}
+                    <path class="ge-wire param" d={bezier(cardObstacles, ps.x, ps.y, tpos.x, tgtY)}/>
+                  {/if}
+                {:else if av?.kind === 'expr'}
+                  {#each extractParamRefs(av.expr) as refName (refName)}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                    {#if pIdx >= 0 && leftTab === 'params'}
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, refName, pIdx)}
+                      <path class="ge-wire param expr" d={bezier(cardObstacles, ps.x, ps.y, tpos.x, tgtY)}/>
+                    {/if}
+                  {/each}
+                  <!-- EXPR-OUTPUT ref → txfmn axis socket. -->
+                  {#each allNodes as exn (exn.id)}
+                    {#if exn.type === 'expr'}
+                      {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                      {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                        {#if String(av.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                          {@const srcSize = nodeSize(graph, exn)}
+                          {@const srcPos = nodePos(exn.id)}
+                          <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), tpos.x, tgtY)}/>
+                        {/if}
+                      {/each}
+                    {/if}
+                  {/each}
+                {/if}
+              {/each}
             {/if}
           {/each}
 
