@@ -10,14 +10,15 @@
    few-shot DB (no data leaves org). `ge-assist` already accepts a `postTurn` override
    for this backend. Plan: `docs/research/web-llm-functionary.md`.
 
-3. **Modularize round 2 — shell cleanup** — Phases A–F + R2 knip prune + **R6a (poly)**
-   + **RepeatEditorPane** + **CanvasMenu + AiMenu** carves shipped → GEP **9455 → 5070
-   lines**. Honest target **~2,500–3,000** (≤1500 needs a large feature carve; review
-   2026-06-25). NOTE: ghost toggles are NOT carvable (ghostSet/ghostIds feed the
-   emit/bake pipeline — core state). LEFT, priority order: Expr menu + exprPop handlers
-   carve (~250); then R6b module-map header + residual `$state` audit + honest final
-   count; R7 `builder.ts`/`library.ts` retire, R8 vocab, R9 ProfileFnEditor. Plans:
-   `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
+3. **Modularize round 2 — shell cleanup** — SHIPPED: Phases A–F + R2 knip + **R6a (poly)**
+   + **RepeatEditorPane** + **CanvasMenu + AiMenu** → GEP **9455 → 5070**; **R6b** (GEP
+   module-map header + `$state` audit, all per-instance); **R9** (pure `profile-fn-compose.ts`
+   + round-trip tests, ProfileFnEditor **1156 → 925**). GEP clean carves done; honest
+   target **~2,500–3,000** (≤1500 needs a large feature carve; review 2026-06-25). NOTE:
+   ghost toggles NOT carvable (ghostSet/ghostIds feed emit/bake); the expr-in-GEP is ~70
+   lines of glue (popup+menu already components), not worth a carve. LEFT: **R8** vocab/
+   +page (1687 → `_tabs/*`), **R7** `builder.ts`/`library.ts` retire (needs knip dead-chain
+   confirm). Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — poly_repeat-style loop in the sketch editor (model +
    `expandSketchOps` + UI in SketchEditorPane). Plan: `docs/plans/sketch-repeat.md` ·
@@ -37,13 +38,12 @@
     Σ button two-click / tooltip overlap; per-output socket labels; live numeric preview.
     (Global/personal expr library = PARKED #8.) Plan: `docs/plans/expression-builder.md`.
 
-16. **/design — d3-force graph polish** — switched from the tidy-tree to a **d3-force**
-    directed layout (collapsible container hubs + hierarchy & arch-edge links;
-    collapsed-by-default; `fitView` re-frame on toggle). LEFT: tune force params
-    (charge/link distance/collide) for readable spacing, node/edge styling toward the
-    `mfmesh.up.railway.app/architecture` reference, optional drag-to-pin, and fix the
-    legend overlapping the graph at fit-zoom. Visual iteration with the user. Files:
-    `src/routes/design/**` (`ArchGraph.svelte` layout).
+16. **/design — mostly DONE.** Two view tabs: **Tree** (tidy left→right collapsible tree —
+    compact mfmesh-style nodes, minimap, draggable, solid data-flow + dashed depends-on +
+    dotted hierarchy edges) + **C4 model** (formal C4 diagram, Context→Container→Component
+    level switcher, proper notation + muted externals from `c4.ts`). LEFT (minor polish):
+    expand-all `fitView` zooms the big tree small (drill in one container instead);
+    legend overlaps the graph at fit-zoom. Files: `src/routes/design/**`.
 
 
 ### Shipped (recent)
