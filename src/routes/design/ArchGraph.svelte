@@ -10,7 +10,7 @@
    *
    * SSR is globally off (src/+layout.ts), so the top-level @xyflow import is safe.
    */
-  import { SvelteFlow, Background, BackgroundVariant, Controls, MarkerType, useSvelteFlow, type ColorMode } from '@xyflow/svelte';
+  import { SvelteFlow, Background, BackgroundVariant, Controls, MiniMap, MarkerType, useSvelteFlow, type ColorMode } from '@xyflow/svelte';
   import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force';
   import '@xyflow/svelte/dist/style.css';
 
@@ -61,14 +61,16 @@
   function computeLayout(collapsed: Set<string>): Map<string, { x: number; y: number }> {
     const vis = visibleIds(collapsed);
     const ids = [...vis];
-    const LEVEL_W = 400;   // horizontal pitch between hierarchy depths (the cascade)
+    const LEVEL_W = 340;   // horizontal pitch between hierarchy depths (the cascade)
     type SN = { id: string; x: number; y: number; r: number };
     const simNodes: SN[] = ids.map((id, i) => {
       const n = byId.get(id);
       const isHub = n?.treeKind === 'system' || n?.treeKind === 'container';
       // cascade seed: x by depth (columns), y fanned by index — the sim starts
       // already layered so it settles into a tidy left→right cascade, not a blob.
-      return { id, x: 80 + (depthOf.get(id) ?? 0) * LEVEL_W, y: 80 + (i % 16) * 72, r: isHub ? 96 : 58 };
+      // r is tuned to the new COMPACT nodes (~150px wide, ~34px tall) so siblings
+      // sit close but never overlap.
+      return { id, x: 80 + (depthOf.get(id) ?? 0) * LEVEL_W, y: 80 + (i % 18) * 54, r: isHub ? 56 : 44 };
     });
     const hierLinks = ids.flatMap((id) =>
       collapsed.has(id) ? [] : (childrenOf.get(id) ?? []).filter((k) => vis.has(k)).map((k) => ({ source: id, target: k, h: true })));
@@ -77,9 +79,9 @@
       .map((e) => ({ source: e.source, target: e.target, h: false }));
     const sim = forceSimulation(simNodes as any)
       .force('link', forceLink([...hierLinks, ...archLinks] as any).id((d: any) => d.id)
-        .distance((l: any) => (l.h ? 150 : 230)).strength((l: any) => (l.h ? 0.85 : 0.12)))
-      .force('charge', forceManyBody().strength(-650))
-      .force('collide', forceCollide((d: any) => d.r + 10).strength(0.9))
+        .distance((l: any) => (l.h ? 120 : 200)).strength((l: any) => (l.h ? 0.85 : 0.12)))
+      .force('charge', forceManyBody().strength(-460))
+      .force('collide', forceCollide((d: any) => d.r + 8).strength(0.95))
       // CASCADE: a strong depth→x pull lays the hierarchy out in columns; the
       // soft y-centering lets charge + collide fan siblings out vertically.
       .force('x', forceX((d: any) => 80 + (depthOf.get(d.id) ?? 0) * LEVEL_W).strength(0.92))
@@ -106,7 +108,9 @@
   function styleEdge(e: Edge<ArchEdgeData>): Edge<ArchEdgeData> {
     const kind = e.data?.edgeKind;
     const c = edgeColor(kind);
-    const pipeline = kind === 'flow' || kind === 'summary';
+    // SOLID = the pipeline / flow (flow, summary, calls); DASHED = "depends on /
+    // reaches into" (reads, writes, mounts, nav). Restrained, like the reference.
+    const pipeline = kind === 'flow' || kind === 'summary' || kind === 'calls';
     const summary = kind === 'summary';
     return {
       ...e,
@@ -114,9 +118,9 @@
       animated: kind === 'flow',
       zIndex: summary ? 4 : 0,
       style: pipeline
-        ? `stroke:${c};stroke-width:${summary ? 2.4 : 1.8};`
-        : `stroke:${c};stroke-width:1.4;stroke-dasharray:5 4;opacity:0.85;`,
-      markerEnd: { type: MarkerType.ArrowClosed, color: c, width: 14, height: 14 },
+        ? `stroke:${c};stroke-width:${summary ? 2.2 : 1.6};opacity:0.9;`
+        : `stroke:${c};stroke-width:1.3;stroke-dasharray:5 4;opacity:0.7;`,
+      markerEnd: { type: MarkerType.ArrowClosed, color: c, width: 13, height: 13 },
       ...(summary && e.data?.label
         ? {
             label: e.data.label,
@@ -140,7 +144,7 @@
         id: n.id,
         type: parent ? 'containerNode' : 'archNode',
         position: p,
-        draggable: false,
+        draggable: true,
         selectable: !parent,
         data: parent
           ? ({ ...n, collapsed: collapsed.has(n.id), childCount: childrenOf.get(n.id)?.length ?? 0, onToggle } as unknown as ArchTreeNode)
@@ -197,6 +201,16 @@
     collapsed = new Set(['c-webapp', 'c-api', 'c-kernel', 'c-volume']);
     rebuild();
   }
+
+  // MiniMap swatch colour — match each node's accent so the map reads at a glance.
+  const MINI: Record<string, string> = {
+    system: '#475569', container: '#64748b',
+    route: '#3b82f6', api: '#22c55e', lib: '#f97316', store: '#a855f7',
+  };
+  function miniColor(node: Node<ArchTreeNode>): string {
+    const kind = (node.data as ArchTreeNode)?.treeKind;
+    return (node.data as ArchTreeNode)?.accent ?? MINI[kind ?? 'lib'] ?? '#94a3b8';
+  }
 </script>
 
 <div class="arch-canvas">
@@ -209,11 +223,21 @@
     fitViewOptions={{ padding: 0.16 }}
     minZoom={0.2}
     maxZoom={1.8}
-    nodesDraggable={false}
+    nodesDraggable={true}
     proOptions={{ hideAttribution: false }}
   >
     <Background variant={BackgroundVariant.Dots} gap={22} size={1} bgColor="#fbfcfe" />
     <Controls showLock={false} />
+    <MiniMap
+      pannable
+      zoomable
+      nodeColor={miniColor}
+      nodeStrokeColor="#ffffff"
+      nodeStrokeWidth={2}
+      nodeBorderRadius={3}
+      maskColor="rgba(15,23,42,0.06)"
+      bgColor="#ffffff"
+    />
   </SvelteFlow>
 
   <!-- toolbar -->
@@ -224,10 +248,10 @@
 
   <!-- legend -->
   <div class="legend">
-    <div class="legend-title">Collapsible tree</div>
+    <div class="legend-title">Architecture map</div>
     <div class="legend-note">
-      <b>System → containers → components.</b> Click a container caret to
-      collapse its subtree; the tree reflows. Click a <b>route</b> to open it.
+      <b>System → containers → components.</b> Click a <b>▸</b> caret to
+      collapse a hub; the map reflows. Click a <b>route</b> to open it.
     </div>
     <div class="legend-sub">Components</div>
     <div class="legend-row"><span class="sw" style="background:#3b82f6"></span>route</div>
@@ -236,12 +260,18 @@
     <div class="legend-row"><span class="sw" style="background:#a855f7"></span>store</div>
     <hr />
     <div class="legend-sub">Relationships</div>
-    <div class="legend-row"><span class="ln solid" style="--c:#475569"></span>container flow</div>
-    <div class="legend-row"><span class="ln solid" style="--c:#f97316"></span>data flow</div>
-    <div class="legend-row"><span class="ln dash" style="--c:#60a5fa"></span>calls / mounts</div>
+    <div class="legend-row"><span class="ln solid" style="--c:#475569"></span>pipeline / flow</div>
+    <div class="legend-row"><span class="ln solid" style="--c:#60a5fa"></span>calls</div>
+    <div class="legend-row"><span class="ln dash" style="--c:#818cf8"></span>mounts</div>
     <div class="legend-row"><span class="ln dash" style="--c:#c084fc"></span>reads / writes</div>
   </div>
 </div>
+
+<!-- interaction caption under the graph -->
+<p class="arch-caption">
+  Click a <b>route</b> to open it · drag nodes · scroll to zoom · drag canvas to
+  pan · <b>solid</b> = pipeline, <b>dashed</b> = depends-on · click a <b>▸</b> to collapse
+</p>
 
 <style>
   .arch-canvas {
@@ -255,9 +285,25 @@
     box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(15, 23, 42, 0.04);
   }
 
+  .arch-caption {
+    margin: 9px 2px 0;
+    font-size: 0.72rem;
+    color: #94a3b8;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .arch-caption b {
+    color: #64748b;
+    font-weight: 700;
+  }
+
   /* Reflow animation — xyflow positions nodes via transform on the wrapper. */
   :global(.arch-canvas .svelte-flow__node) {
     transition: transform 0.34s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  /* never animate the node you're actively dragging — keep it under the cursor */
+  :global(.arch-canvas .svelte-flow__node.dragging) {
+    transition: none;
   }
   :global(.arch-canvas .svelte-flow__edge-path) {
     transition: opacity 0.2s ease;
