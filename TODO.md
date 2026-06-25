@@ -12,8 +12,11 @@
 
 3. **Modularize round 2** — SHIPPED: A–F + R2 knip + R6a + RepeatEditorPane + CanvasMenu
    + AiMenu → GEP **9455 → 5070**; R6b (module-map header + `$state` audit); R8 (vocab
-   1687→1005); R9 (profile-fn-compose, ProfileFnEditor 1156→925). LEFT: **R7**
-   `builder.ts`/`library.ts` retire (needs knip dead-chain confirm) — the last item.
+   1687→1005); R9 (profile-fn-compose, ProfileFnEditor 1156→925). ⏳ **R7 IN PROGRESS**
+   (subagent) — dead-chain confirmed (builder.ts imported only by /api/primitives/preview
+   for `finalizeManifold`; `builders`/`buildComponent`/`buildPrimitiveManifold` + all of
+   library.ts are dead): strip the legacy ComponentDef path + `git rm library.ts` + rename
+   builder.ts→render-helpers.ts; keep `finalizeManifold`. THE LAST modularize item.
    Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
 4. **Sketch repeat op** — ✅ SHIPPED 2026-06-25 (PR1–3): model + `expandSketchOps` +
@@ -53,6 +56,7 @@
 
 4. RESEARCH — explore for CAD generation improvement:
    [arxiv 2606.05515](https://arxiv.org/html/2606.05515v1).
+
 5. Units — centralized repository (diameter in in/mm, z in m/ft, etc.).
 
 7. `r_weld_extrude` phase angle — straighten spiralled triangles (lat/long-style
@@ -60,6 +64,6 @@
 
 8. Option to promote and search for expressions to global library or personal user based library and search
 
-13. The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
+13. ⏳ IN PROGRESS (subagent) — The output icon/card needs to be made smaller. We need maybe an svg draggable that has a big arrow and a box on the left whch can accept inputs.. the arrow ha sa min size and the sockets on the left
 
 16. Organize source and the server under lib and shared by categories that are logical. Organzie the folders/sub folders as per the categories that are logical.
