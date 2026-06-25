@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css'; // Tailwind directives — kept so flowbite-svelte
   // components (used by /vocab + future pages) still pick up their classes.
+  import NavMenu from '$lib/shared/NavMenu.svelte';
   let { children } = $props();
 
   // Top Flowbite Navbar REMOVED (2026-06-09 — redundant with the
@@ -10,6 +11,7 @@
 </script>
 
 <div class="layout">
+  <NavMenu />
   <main class="content">
     {@render children()}
   </main>
