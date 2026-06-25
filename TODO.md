@@ -46,7 +46,7 @@
 - ✅ **Repeat node card simplified** (de-cluttered + ellipsis on overflowing title; #14)
 - ✅ **Sketch per-axis X/Y scale ⚙ toolbar popover** (was PARKED #2)
 - ✅ Earlier: expr-builder redesign · /design Tree+C4 tabs · landing remodel · R8/R9 · sketch-repeat
-- ⏳ **Confirm-on-delete** (card/param/node) — subagent in progress (was PARKED #15)
+- ✅ **Confirm-on-delete** (card/param/node) — two-step inline arm→confirm (`DeleteConfirm` class) on all NodeCard ×, SketchNodeCard, ParamsCard 🗑 (was PARKED #15)
 
 
 ### PARKED
