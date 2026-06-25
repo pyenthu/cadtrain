@@ -135,6 +135,7 @@
     attachedTransforms, isAttachedTransform,
     xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
     inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
+    exprInputSockY,
     entryIdxForEvalIdx, miniBez,
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
   } from './geom';
@@ -3932,6 +3933,35 @@
                   {/if}
                 {/each}
               {/each}
+            {:else if n.type === 'expr'}
+              <!-- EXPR INSTANCE param wires (B.7 v3). For each PARAM binding
+                   that references a p.<name> chip, draw a bezier from that chip
+                   to the instance's input socket (left edge, line-aligned to the
+                   param's row via exprInputSockY). Without this the binding sets
+                   but no wire is visible. -->
+              {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (n as any).defId)}
+              {@const exBind = (n as any).bindings ?? {}}
+              {#if exDef && leftTab === 'params'}
+                {@const pos = nodePos(n.id)}
+                {#each ((exDef as any).params ?? []) as ep, epIdx (ep.name)}
+                  {@const bind = exBind[ep.name]}
+                  {#if bind?.kind === 'param'}
+                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === bind.param)}
+                    {#if pIdx >= 0}
+                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, bind.param, pIdx)}
+                      <path class="ge-wire param" d={bezier(cardObstacles, ps.x, ps.y, pos.x, pos.y + exprInputSockY(epIdx))}/>
+                    {/if}
+                  {:else if bind?.kind === 'expr'}
+                    {#each extractParamRefs(bind.expr) as refName (refName)}
+                      {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
+                      {#if pIdx >= 0}
+                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, refName, pIdx)}
+                        <path class="ge-wire param expr" d={bezier(cardObstacles, ps.x, ps.y, pos.x, pos.y + exprInputSockY(epIdx))}/>
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
+              {/if}
             {:else if n.type === 'poly_repeat'}
               <!-- PolyRepeat NPts (count) param wire (2026-06-11). When
                    count is kind:'param', draw a bezier from the param
