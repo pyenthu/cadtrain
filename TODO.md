@@ -16,13 +16,17 @@
    + round-trip tests, ProfileFnEditor **1156 → 925**). GEP clean carves done; honest
    target **~2,500–3,000** (≤1500 needs a large feature carve; review 2026-06-25). NOTE:
    ghost toggles NOT carvable (ghostSet/ghostIds feed emit/bake); the expr-in-GEP is ~70
-   lines of glue (popup+menu already components), not worth a carve. LEFT: **R8** vocab/
-   +page (1687 → `_tabs/*`), **R7** `builder.ts`/`library.ts` retire (needs knip dead-chain
-   confirm). Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
+   lines of glue (popup+menu already components), not worth a carve. **R8** SHIPPED
+   2026-06-25 (vocab/+page **1687 → 1005**, 4 `_tabs/*` components + ~130 lines dead CSS).
+   LEFT: **R7** `builder.ts`/`library.ts` retire (needs knip dead-chain confirm) — the
+   last modularize item. Plans: `docs/plans/graph-editor-pane.md` · `modularize-round2.md`.
 
-4. **Sketch repeat op** — poly_repeat-style loop in the sketch editor (model +
-   `expandSketchOps` + UI in SketchEditorPane). Plan: `docs/plans/sketch-repeat.md` ·
-   `repeat-and-sketch-repeat.md`.
+4. **Sketch repeat op** — ✅ SHIPPED 2026-06-25 (PR1–3): SketchRepeatNode + SketchRepeatRef
+   model + `expandSketchOps` (sketch-repeat.ts) flattening upstream of compileSketch +
+   emit (`Array.from(...).flat()`, two-site agreement test-locked) + `+ repeat` UI in
+   SketchNodeCard/SketchEditorPane + sketch_repeat NodeCard; 13 tests; existing sketch
+   parts byte-identical. LEFT (optional polish): re-wirable ref↔source SVG sockets on the
+   repeat card (built with plain coord inputs for now). Plan: `docs/plans/sketch-repeat.md`.
 
 7. **Well schematic → 3D well diagram (`/wells`)** — **PARTIAL.** W0 + W1 shipped
    (WSON, registry, `assembleWell`, Threlte `WellScene`). **NEXT:** port SVTC 3D scene
