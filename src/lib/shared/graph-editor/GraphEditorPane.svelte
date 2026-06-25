@@ -1,21 +1,30 @@
 <!--
-  /graph-editor — Slices 1+4+5 of the visual composition editor.
+  GraphEditorPane.svelte — THE node-graph CAD editor SHELL.
+  Mounted full-screen by /graph-editor and once-per-tab by /primitives.
 
-  Three-pane layout:
-    LEFT (40%)  — SVG graph canvas with Call/Method/Mv/Rot nodes, picker, wires
-    MIDDLE(35%) — live 3D Threlte bake
-    RIGHT (25%) — live .asm.ts source
+  ── MODULE MAP (modularize round 2 — see docs/plans/graph-editor-pane.md) ──
+  This file is the composing SHELL: viewport pan/zoom, the bake-orchestration
+  $effects, the param/properties left card, the SVG wire overlay, and the
+  launcher glue (open*) for the popovers/overlays below. Feature surfaces live
+  in siblings — edit THOSE, not here, for feature work:
+    · geom.ts / args.ts              — pure socket/wire/card math + ArgValue fmt
+    · graph-editor-bake(.svelte).ts  — source/meta parsers + `expected` cache
+    · wire-state.svelte.ts           — WireState class (drag-to-wire)
+    · NodeCard.svelte                — every per-node card (call/mv/rot/poly/…)
+    · sketch-state.svelte.ts + SketchNodeCard + SketchEditorPane  — sketch
+    · poly-preview-state.svelte.ts + PolyPreview.svelte           — polygon 2D
+    · RepeatEditorPane.svelte        — repeat-node overlay
+    · Popovers.svelte / CanvasMenu / AiMenu — anchored popovers + rail menus
+    · expr/ExpressionBuilderPopup + ExpressionsMenu — the Σ expression editor
+    · RightPane.svelte / ParamsCard / PropertiesCard — right column + left card
 
-  Slices delivered:
-    1 (foundation)  — drop one Call, see canvas + bake + source
-    4 (CSG)         — drop ⊖ ⊕ ⊗ method nodes; drag-wire from a node's
-                       output socket to a method's obj/arg input
-    5 (transforms)  — drop mv/rot wrapper nodes; drag-wire to set child;
-                       3 xyz inputs on each transform card
+  STATE RULE: per-instance state is a CLASS (WireState/SketchState/
+  PolyPreviewState) — /primitives mounts N panes, so a module-level $state would
+  LEAK across tabs. The ONE shared singleton is `expected` (graph-editor-bake
+  .svelte.ts) — intentional + idempotent (a primitive's params are tab-invariant).
 
   Save: writes <exemplar>.asm.ts to the volume via /api/primitives/save.
-
-  Per docs/plans/composition-architecture.md.
+  Plans: docs/plans/graph-editor-pane.md · composition-architecture.md.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
