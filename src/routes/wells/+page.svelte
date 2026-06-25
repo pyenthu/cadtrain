@@ -4,6 +4,10 @@
   import { isDeviated, completionExtents } from '$lib/wells/wson';
   import { assembleWell } from '$lib/wells/assemble';
   import WellScene from '$lib/wells/WellScene.svelte';
+  import WellToolbar from './WellToolbar.svelte';
+
+  // Active placement tool for the editor toolbar (scaffold — see WellToolbar).
+  let activeTool = $state('select');
 
   // W0 model + W1 3D assembler (docs/plans/well-schematic.md): the canonical 3D
   // well (parts placed along the survey by depth) is the hero; the breakdown is
@@ -25,6 +29,9 @@
 </script>
 
 <div class="wells">
+  <!-- Far-left editor tool rail (SVTC-style icon toolbar). -->
+  <WellToolbar bind:active={activeTool} />
+
   <aside class="rail">
     <a href="/" class="back">← Home</a>
     <div class="rail-title">WELLS</div>
@@ -47,6 +54,7 @@
           <span class="chip">TD {fmtM(wson.meta.td)}</span>
           <span class="chip">PBTD {fmtM(wson.meta.pbtd)}</span>
           {#if wson.meta.rkbToGl != null}<span class="chip">RKB→GL {wson.meta.rkbToGl} m</span>{/if}
+          <span class="chip tool">⛏ tool: {activeTool}</span>
         </div>
       </header>
 
@@ -140,6 +148,7 @@
   .whead h1 { font-size: 22px; margin: 0 0 8px; color: #fff; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font: 600 11px ui-monospace, monospace; background: #232340; border: 1px solid #34345a; border-radius: 9999px; padding: 2px 10px; color: #aab; }
+  .chip.tool { background: #2a1e26; border-color: #cc2222; color: #ff8a8a; }
 
   .scene3d { position: relative; height: 460px; margin-top: 16px; border: 1px solid #2a2a3e; border-radius: 10px; overflow: hidden; background: radial-gradient(circle at 50% 30%, #20203a 0%, #10101a 80%); }
   .scene-ctl { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 10px; background: rgba(16,16,26,0.8); border: 1px solid #2a2a3e; border-radius: 8px; padding: 6px 12px; }
