@@ -1,12 +1,5 @@
 ### Open — build work (PENDING)
 
-0. 🔴 **/primitives multi-tab freeze** (regression from the expr v3 merge) — restoring a
-   `/primitives` session that reopens several persisted tabs at once hard-hangs the
-   renderer (sync loop; no console error). `/graph-editor` single-pane is fine; fresh
-   `/primitives` is fine; opening one part is fine. Multi-pane / specific migrated part
-   (a WELLS part with v1 `graph.exprs`→`exprDefs` is the suspect). Workaround: clear
-   `localStorage prim-open-tabs`. NEXT: bisect the 7 parts, fix the mount loop. /plan #920.
-
 1. **RAG multi-shot AI + tab context** — **PARTIAL.** Engine MERGED
    (`ge-assist.*` in `src/lib/shared/graph-editor/`). LEFT: mount the panel/button
    in GraphEditorPane + add `route` to `EditorContext`/`readEditorState` + populate
