@@ -41,11 +41,13 @@
     Σ button two-click / tooltip overlap; per-output socket labels; live numeric preview.
     (Global/personal expr library = PARKED #8.) Plan: `docs/plans/expression-builder.md`.
 
-16. **/design collapsible-tree polish** — the tree is collapsed-by-default + re-fits on
-    toggle (good baseline). LEFT: tune the expand interaction (re-center cleanly, don't drop
-    the subtree below the fold), spacing/aspect, and node/edge styling toward the
-    `mfmesh.up.railway.app/architecture` reference; legend overlaps the rightmost column at
-    fit-zoom. Visual iteration with the user. Files: `src/routes/design/**`.
+16. **/design — d3-force graph polish** — switched from the tidy-tree to a **d3-force**
+    directed layout (collapsible container hubs + hierarchy & arch-edge links;
+    collapsed-by-default; `fitView` re-frame on toggle). LEFT: tune force params
+    (charge/link distance/collide) for readable spacing, node/edge styling toward the
+    `mfmesh.up.railway.app/architecture` reference, optional drag-to-pin, and fix the
+    legend overlapping the graph at fit-zoom. Visual iteration with the user. Files:
+    `src/routes/design/**` (`ArchGraph.svelte` layout).
 
 
 ### Shipped (recent)

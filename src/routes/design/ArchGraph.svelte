@@ -11,6 +11,7 @@
    * SSR is globally off (src/+layout.ts), so the top-level @xyflow import is safe.
    */
   import { SvelteFlow, Background, BackgroundVariant, Controls, MarkerType, useSvelteFlow, type ColorMode } from '@xyflow/svelte';
+  import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force';
   import '@xyflow/svelte/dist/style.css';
 
   import ArchNode from './nodes/ArchNode.svelte';
@@ -34,31 +35,57 @@
   const roots = ARCH_TREE_NODES.filter((n) => !n.parentId).map((n) => n.id);
   const isParent = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
 
-  // ── layout constants ──────────────────────────────────────
-  const COL_W = 340;   // horizontal pitch per depth level
-  const ROW_H = 60;    // vertical pitch per visible leaf row
-  const X0 = 20;
-  const Y0 = 20;
-
-  /** Recursive left-to-right tidy-tree layout over the VISIBLE subtree. */
-  function computeLayout(collapsed: Set<string>): Map<string, { x: number; y: number }> {
-    const pos = new Map<string, { x: number; y: number }>();
-    let cursorY = Y0;
-    function walk(id: string, depth: number): number {
-      const x = X0 + depth * COL_W;
-      const kids = childrenOf.get(id) ?? [];
-      if (kids.length === 0 || collapsed.has(id)) {
-        const y = cursorY;
-        cursorY += ROW_H;
-        pos.set(id, { x, y });
-        return y;
-      }
-      const ys = kids.map((k) => walk(k, depth + 1));
-      const y = (ys[0] + ys[ys.length - 1]) / 2;
-      pos.set(id, { x, y });
-      return y;
+  // ── visibility (a node shows unless an ancestor is collapsed) ──────
+  function visibleIds(collapsed: Set<string>): Set<string> {
+    const vis = new Set<string>();
+    function walk(id: string) {
+      vis.add(id);
+      if (collapsed.has(id)) return;
+      for (const k of childrenOf.get(id) ?? []) walk(k);
     }
+    for (const r of roots) walk(r);
+    return vis;
+  }
+
+  // Depth (for a stable, non-random seed — d3-force from all-origin collapses).
+  const depthOf = new Map<string, number>();
+  (function () {
+    function walk(id: string, d: number) { depthOf.set(id, d); for (const k of childrenOf.get(id) ?? []) walk(k, d + 1); }
     for (const r of roots) walk(r, 0);
+  })();
+
+  /** d3-force directed layout over the VISIBLE nodes. Hierarchy (parent→child)
+   *  links are short + stiff so children cluster around their container; the
+   *  architecture edges are longer + soft so related groups drift together.
+   *  Run synchronously to convergence (no animation jitter on every reflow). */
+  function computeLayout(collapsed: Set<string>): Map<string, { x: number; y: number }> {
+    const vis = visibleIds(collapsed);
+    const ids = [...vis];
+    type SN = { id: string; x: number; y: number; r: number };
+    const simNodes: SN[] = ids.map((id, i) => {
+      const n = byId.get(id);
+      const isHub = n?.treeKind === 'system' || n?.treeKind === 'container';
+      // deterministic radial seed by index → reproducible layout across reloads
+      const a = (i / Math.max(1, ids.length)) * Math.PI * 2;
+      const rad = 80 + (depthOf.get(id) ?? 0) * 230;
+      return { id, x: 600 + Math.cos(a) * rad, y: 380 + Math.sin(a) * rad, r: isHub ? 96 : 64 };
+    });
+    const hierLinks = ids.flatMap((id) =>
+      collapsed.has(id) ? [] : (childrenOf.get(id) ?? []).filter((k) => vis.has(k)).map((k) => ({ source: id, target: k, h: true })));
+    const archLinks = (ARCH_EDGES as Array<{ source: string; target: string }>)
+      .filter((e) => vis.has(e.source) && vis.has(e.target))
+      .map((e) => ({ source: e.source, target: e.target, h: false }));
+    const sim = forceSimulation(simNodes as any)
+      .force('link', forceLink([...hierLinks, ...archLinks] as any).id((d: any) => d.id)
+        .distance((l: any) => (l.h ? 150 : 230)).strength((l: any) => (l.h ? 0.85 : 0.12)))
+      .force('charge', forceManyBody().strength(-820))
+      .force('collide', forceCollide((d: any) => d.r))
+      .force('x', forceX(600).strength(0.045))
+      .force('y', forceY(380).strength(0.045))
+      .stop();
+    for (let i = 0; i < 340; i++) sim.tick();
+    const pos = new Map<string, { x: number; y: number }>();
+    for (const sn of simNodes) pos.set(sn.id, { x: Math.round(sn.x), y: Math.round(sn.y) });
     return pos;
   }
 
