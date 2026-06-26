@@ -78,6 +78,28 @@
     }
   }
 
+  // ── Volume ⇄ OneDrive diff (metadata: path + size — fast, no download) ─
+  type DiffEntry = { path: string; status: 'new' | 'gone' | 'changed' | 'match'; local: number | null; remote: number | null };
+  let diffing = $state(false);
+  let diffMsg = $state<string | null>(null);
+  let diff = $state<{ dest: string; counts: Record<string, number>; entries: DiffEntry[] } | null>(null);
+  async function runDiff() {
+    if (diffing) return;
+    diffing = true; diffMsg = 'Comparing volume vs OneDrive…'; diff = null;
+    try {
+      const r = await fetch('/api/volume/onedrive/diff', { method: 'POST' });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.ok === false) throw new Error(j?.message || `${r.status}`);
+      diff = j; diffMsg = null;
+    } catch (e: any) {
+      diffMsg = `Diff failed: ${e?.message ?? e}`;
+    } finally {
+      diffing = false;
+    }
+  }
+  const DIFF_GLYPH: Record<string, string> = { new: '+', gone: '−', changed: '~', match: '=' };
+  const DIFF_LABEL: Record<string, string> = { new: 'only in the volume', gone: 'only on OneDrive', changed: 'size differs', match: 'in sync' };
+
   const TEXT_RE = /\.(json|jsonl|txt|md|ts|tsx|js|mjs|cjs|svelte|css|html?|csv|log|ya?ml|xml|svg)$/i;
   const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
   const VIDEO_RE = /\.(webm|mp4|mov)$/i;
@@ -311,15 +333,53 @@
         title="Mirror the PRODUCTION volume up to OneDrive (APPS/cadtrain) via rclone (dev only)"
         onclick={runOneDrive}
       >{syncing ? '⏳ Syncing…' : '☁ Volume → OneDrive'}</button>
+      <button
+        class="vol-backup"
+        type="button"
+        disabled={diffing}
+        title="Compare the volume against OneDrive (metadata only — fast, no download)"
+        onclick={runDiff}
+      >{diffing ? '⏳ Diffing…' : '⇄ Diff OneDrive'}</button>
     {/if}
     <button class="vol-refresh" type="button" title="Reload" onclick={() => loadDir(currentPath)}>↻</button>
   </header>
 
-  {#if dev && (oneDriveMsg || backupMsg)}
-    {@const flashMsg = oneDriveMsg ?? backupMsg}
+  {#if dev && (oneDriveMsg || backupMsg || diffMsg)}
+    {@const flashMsg = oneDriveMsg ?? backupMsg ?? diffMsg}
     <div class="vol-flash" class:err={(flashMsg ?? '').toLowerCase().includes('failed')}>
       <pre>{flashMsg}</pre>
-      <button class="vol-flash-x" type="button" title="Dismiss" onclick={() => { oneDriveMsg = null; backupMsg = null; }}>×</button>
+      <button class="vol-flash-x" type="button" title="Dismiss" onclick={() => { oneDriveMsg = null; backupMsg = null; diffMsg = null; }}>×</button>
+    </div>
+  {/if}
+
+  {#if dev && diff}
+    {@const drift = diff.counts.new + diff.counts.gone + diff.counts.changed}
+    <div class="vol-diff">
+      <div class="vol-diff-head">
+        <strong>Volume ⇄ {diff.dest}</strong>
+        <span class="vol-diff-pill new">+{diff.counts.new} only in volume</span>
+        <span class="vol-diff-pill gone">−{diff.counts.gone} only on OneDrive</span>
+        <span class="vol-diff-pill changed">~{diff.counts.changed} changed</span>
+        <span class="vol-diff-pill match">={diff.counts.match} match</span>
+        <button class="vol-flash-x" type="button" title="Close diff" onclick={() => (diff = null)}>×</button>
+      </div>
+      {#if drift === 0}
+        <div class="vol-diff-ok">✓ In sync — all {diff.counts.match} files match OneDrive.</div>
+      {:else}
+        <div class="vol-diff-list">
+          {#each diff.entries.filter((e) => e.status !== 'match') as e (e.path)}
+            <div class="vol-diff-row {e.status}">
+              <span class="vol-diff-badge {e.status}" title={DIFF_LABEL[e.status]}>{DIFF_GLYPH[e.status]}</span>
+              <span class="vol-diff-path">{e.path}</span>
+              <span class="vol-diff-size">{e.status === 'changed' ? `${e.local}→${e.remote} B` : e.status === 'new' ? `${e.local} B` : `${e.remote} B`}</span>
+            </div>
+          {/each}
+        </div>
+        <div class="vol-diff-foot">
+          <button class="vol-backup" type="button" disabled={syncing} onclick={runOneDrive}>{syncing ? '⏳ Syncing…' : '☁ Sync all → OneDrive'}</button>
+          <span class="vol-diff-note">Sync mirrors the volume up; replaced/deleted files are kept under {diff.dest}-prev/&lt;ts&gt;.</span>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -513,6 +573,28 @@
     font-size: 16px; line-height: 1; color: #999;
   }
   .vol-flash-x:hover { color: #333; }
+
+  /* ── Volume ⇄ OneDrive diff panel ─────────────────────────────────────── */
+  .vol-diff { border-bottom: 1px solid #e5e7eb; background: #fafafa; font: 12px Arial; }
+  .vol-diff-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; position: relative; }
+  .vol-diff-head strong { color: #334155; }
+  .vol-diff-pill { font: 700 11px ui-monospace, monospace; padding: 2px 7px; border-radius: 10px; border: 1px solid transparent; }
+  .vol-diff-pill.new     { color: #166534; background: #dcfce7; border-color: #bbf7d0; }
+  .vol-diff-pill.gone    { color: #b91c1c; background: #fee2e2; border-color: #fecaca; }
+  .vol-diff-pill.changed { color: #b45309; background: #fef3c7; border-color: #fde68a; }
+  .vol-diff-pill.match   { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
+  .vol-diff-ok { padding: 8px 14px 12px; color: #166534; font-weight: 600; }
+  .vol-diff-list { max-height: 320px; overflow-y: auto; padding: 2px 8px 6px; }
+  .vol-diff-row { display: flex; align-items: center; gap: 8px; padding: 2px 6px; border-radius: 4px; font: 11px ui-monospace, monospace; }
+  .vol-diff-row:hover { background: #fff; }
+  .vol-diff-badge { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 700; color: #fff; }
+  .vol-diff-badge.new { background: #16a34a; }
+  .vol-diff-badge.gone { background: #dc2626; }
+  .vol-diff-badge.changed { background: #d97706; }
+  .vol-diff-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; }
+  .vol-diff-size { flex: none; color: #94a3b8; }
+  .vol-diff-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px 12px; }
+  .vol-diff-note { color: #94a3b8; font-size: 11px; }
 
   .vol-body { flex: 1; display: flex; min-height: 0; }
   .vol-list {
