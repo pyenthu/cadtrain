@@ -124,7 +124,7 @@
     bezier, chipWidthFor, paramCardSize, extractParamRefs, paramSocketPos,
     cardMinWidth, polySockR, polySockZ, polySockRef,
     sketchCols, sketchSockR, sketchSockZ, sketchSockVal,
-    sketchRowVisible, nodeSize, containerSlotY,
+    sketchRowVisible, nodeSize, containerSlotY, rootOutputSockY,
     attachedTransforms, isAttachedTransform,
     xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
     inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
@@ -3391,7 +3391,13 @@
               {#each visKids as childId, i (childId)}
                 {#if graph.nodes[childId]}
                   {@const src = outputSocketAt(graph,childId)}
-                  {@const tgt = containerSlotInputAt(graph,n.id, i)}
+                  <!-- ROOT Output card centers its sockets (rootOutputSockY) —
+                       the wire MUST hit the same Y, else it lands on the wrong
+                       socket. Non-root containers stay top-anchored. -->
+                  {@const rootPos = nodePos(n.id)}
+                  {@const tgt = n.id === graph.root
+                    ? { x: rootPos.x, y: rootPos.y + rootOutputSockY(nodeSize(graph, n).h, i, visKids.length) }
+                    : containerSlotInputAt(graph,n.id, i)}
                   <path class="ge-wire output" class:root={n.id === graph.root}
                     d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
                 {/if}

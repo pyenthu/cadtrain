@@ -413,6 +413,16 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
 /** Input socket Y for the i-th child slot of a container (list/stack/group). */
 export function containerSlotY(i: number): number { return 40 + i * 22; }
 
+/** Card-local Y of the i-th input socket on the compact ROOT Output card (#13).
+ *  The Output card vertically CENTERS its `count` visible (non-consumed) child
+ *  sockets within its height (+ a trailing drop socket at i === count). BOTH the
+ *  rendered socket circle AND the incoming wire endpoint MUST derive from THIS —
+ *  they drifted once: the wire used the top-anchored `containerSlotY(i)` while
+ *  the socket render centered, so wires terminated on the wrong socket. */
+export function rootOutputSockY(cardH: number, i: number, count: number): number {
+  return cardH / 2 - (count * 22) / 2 + i * 22;
+}
+
 /** Layout position of a node (graph.layout[id], origin fallback). */
 export function nodePos(graph: Graph, id: NodeId): { x: number; y: number } {
   return graph.layout[id] ?? { x: 0, y: 0 };

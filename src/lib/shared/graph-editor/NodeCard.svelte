@@ -56,7 +56,7 @@
     exprInputSockY, exprOutputSockY,
     attachedTransforms,
     xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
-    inlineCardH, containerSlotY,
+    inlineCardH, containerSlotY, rootOutputSockY,
     OUTPUT_ARROW_W,
     STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
@@ -827,9 +827,8 @@
                   <!-- Input sockets — vertically CENTERED in the box; a small ×
                        to unwire each. NO labels / title / order / cog (minimal
                        per the user: the arrow says "output"; order isn't needed). -->
-                  {@const sockTop = size.h / 2 - (visibleChildren.length * 22) / 2}
                   {#each visibleChildren as { cid: childId, origIdx }, i (childId)}
-                    {@const sy = sockTop + i * 22}
+                    {@const sy = rootOutputSockY(size.h, i, visibleChildren.length)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={sy} r="5"
                       onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
@@ -840,7 +839,7 @@
                       onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeContainerChildAt(graph, n.id, origIdx)); }}>×</text>
                   {/each}
                   <!-- Trailing + drop socket (centered with the rest, no ×). -->
-                  {@const rootTrailY = sockTop + visibleChildren.length * 22}
+                  {@const rootTrailY = rootOutputSockY(size.h, visibleChildren.length, visibleChildren.length)}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={rootTrailY} r="5"
                     onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
