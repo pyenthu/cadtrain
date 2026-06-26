@@ -21,8 +21,11 @@
     and i+1 (a swept solid along the per-iteration transforms), turning the repeat into a universal
     swept-solid builder — springs, threads, helical ramps, **clean spiral ribbons** (~g_spiral's
     8.6k verts). Welded-mesh path (`manifold-mesh.ts` gridPatch/weld; like r_weld_extrude but along
-    a path). **Prototype IN FLIGHT 2026-06-26** (subagent): a `sweepAlongPath`/`loftStations` helper
-    + spiral bake proof + design writeup (frame torsion / variable spacing / inner-turn self-intersect
+    a path). **HELPERS MERGED 2026-06-26**: `sweepAlongPath(path,section)` + `loftStations(stations)`
+    in manifold-mesh.ts (injected) — bake-verified (spiral sweep 2888 verts, ONE watertight solid,
+    ~9× lighter than the box-pile). LEFT: wire `op:'sweep'` MODE into the repeat node (path = the
+    repeat's per-iteration mv positions; section = the unit's 2D profile). Open problems
+    (frame torsion / variable spacing / inner-turn self-intersect
     / caps). See `g_spiral_repeat.md`. Pairs with #11.
 
 11. **Expression-as-builder — structured + list outputs + loops (unify the 3 repeats)**. **DATA-MODEL
