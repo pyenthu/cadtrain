@@ -431,10 +431,11 @@
     const { min, max } = scene.partZExtent;
     const cz = scene.partCenter.z;
     if (!(max > min)) return { min: -10, max: 10 };
-    // #11: total slider travel ≈ 2× the rendered part's z-length. Half the part
-    // length of headroom on EACH side of the extent → span = L + 2·(0.5·L) = 2·L
-    // (was 0.05·L headroom ≈ 1.1·L), so the thumb can scroll well past both ends.
-    const pad = (max - min) * 0.5;
+    // Total slider travel = 1.25× the rendered part's z-length: 0.125·L of
+    // headroom on EACH side of the extent → span = L + 2·(0.125·L) = 1.25·L.
+    // Narrower than the old 2·L so each pixel of slider travel maps to less z
+    // (finer pan — long parts felt jumpy at 2·L). zFocus 0 = the part centre.
+    const pad = (max - min) * 0.125;
     return { min: min - cz - pad, max: max - cz + pad };
   });
   // Pan STEP scales with ZOOM so the slider stays in sync with what's framed:
@@ -491,8 +492,8 @@
   <!-- Fit-vertical (#11): frame the WHOLE part length. Auto-on for long parts
        at load (bug #10 — long parts cut off until you scroll). -->
   <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
-    title="Fit the whole part length in view (toggle)"
-    onclick={() => (scene.fitLength = !scene.fitLength)}>⇕ fit</button>
+    title="Fit the whole part length in view + centre the Z slider (toggle)"
+    onclick={() => { scene.fitLength = !scene.fitLength; scene.zFocus = 0; }}>⇕ fit</button>
   <!-- Shade mode (Smooth/Auto/Flat) lives in the gear Shade control now — the
        canvas ◐ quick-toggle was removed 2026-06-18 to keep one home. -->
   <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
