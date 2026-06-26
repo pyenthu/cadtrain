@@ -33,7 +33,7 @@ src/lib/shared/
 ├── CompJsonSilhouette.svelte   # K.69 — SVTC compjson half-section as inline SVG (/vocab Inferred tab)
 ├── scene-state.svelte.ts       # shared scene state (zScale, zFocus, …)
 ├── profile-presets.ts (+ .test.ts) / floating-tip.ts
-├── instance-colors.ts          # INSTANCE_PALETTE + colorForInstance(name)
+├── instance-colors.ts          # INSTANCE_PALETTE + DEFAULT_INNER/OUTER colours
 ├── dragNumber.ts / warp.ts / mime.ts / temp-file.ts
 ├── anthropic-api.ts            # SDK key check + client factory
 └── claude-cli.ts               # `claude --print` args + spawn + envelope parse

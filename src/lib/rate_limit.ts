@@ -23,13 +23,3 @@ export function checkRateLimit(ip: string, max: number, windowMs: number): boole
   buckets.set(ip, bucket);
   return true;
 }
-
-/** Read-only inspection for tests / debugging. */
-export function getBucketSize(ip: string): number {
-  return (buckets.get(ip) || []).length;
-}
-
-/** Testing helper: clear all buckets. */
-export function clearRateLimits(): void {
-  buckets.clear();
-}

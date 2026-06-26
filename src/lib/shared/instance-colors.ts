@@ -46,16 +46,6 @@ function hashName(name: string): number {
   return h >>> 0;
 }
 
-/** Resolve the viewer colour for an instance. `override` wins; otherwise
- *  hash the name into the palette. */
-export function colorForInstance(
-  name: string,
-  override?: string | undefined,
-): string {
-  if (override && /^#[0-9a-fA-F]{6}$/.test(override)) return override;
-  return INSTANCE_PALETTE[hashName(name) % INSTANCE_PALETTE.length];
-}
-
 /** Default INNER (cut/interior) colour — the classic cutaway grey. */
 export const DEFAULT_INNER_COLOR = '#888888';
 

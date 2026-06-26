@@ -72,24 +72,9 @@ export function isStdlib(id: string): boolean {
   return byId.has(id);
 }
 
-/** Which directory the id is currently served from. */
-export function stdOriginOf(id: string): StdOrigin | null {
-  return byId.get(id)?.origin ?? null;
-}
-
 /** All resolvable src-side primitive ids (stdlib + stdstale). */
 export function stdlibIds(): string[] {
   return [...byId.keys()];
-}
-
-/** stdlib-only ids — the actively recommended engines. */
-export function stdlibActiveIds(): string[] {
-  return [...byId.entries()].filter(([, v]) => v.origin === 'stdlib').map(([k]) => k);
-}
-
-/** stdstale-only ids — engines kept resolvable but deprecated. */
-export function stdstaleIds(): string[] {
-  return [...byId.entries()].filter(([, v]) => v.origin === 'stdstale').map(([k]) => k);
 }
 
 export interface StdlibEntry {
