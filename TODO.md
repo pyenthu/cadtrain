@@ -55,6 +55,19 @@
    shows the params above the parts ONLY when defined in the popover. Decided: full wireable
    sockets. Plan: `docs/plans/repeat-builder-popup.md`.
 
+13. **Typed ports — a `PortType` class + registry for node sockets** (architecture; user proposal
+    2026-06-26). Every socket (input/output) declares a TYPE (`scalar` · `list<point>` · `geometry` ·
+    later `list<op>`/`list<transform>`/`object`) with HOOKS: render (color/glyph), compatibility
+    (`canFeed(target)` — same elem + card, one→list broadcast), emit (`emitInto`). Replaces the
+    per-kind branches scattered across NodeCard render + wire-state + geom + emit — adding a shape
+    becomes "register a PortType", not a 4-layer sweep. **Payoffs:** (1) GENERATIVE — typed ports make
+    the graph machine-reasonable; a generator/✨AI can enumerate outputs + open slots + auto-wire by
+    type-match; (2) SCALABILITY — the 3-repeat unification (#11) + repeat-as-sweep (#12) fall out as new
+    typed ports/consumers. Incremental migration: registry + 3 core types → retrofit one pair → build
+    #11's expr-list-ref create-affordance ON it → migrate the rest → an `autoWireSuggestions` hook.
+    Plan: `docs/plans/typed-ports.md`. **#11's remaining "wire it" half should be built on THIS**, not
+    more ad-hoc branches.
+
 10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). **v1 SHIPPED 2026-06-26**
     (fbcb0c2): metadata-only diff endpoint `POST /api/volume/onedrive/diff` (walk prod
     /api/volume + `rclone lsjson -R` → path+size compare, no download) + `/volume` panel
