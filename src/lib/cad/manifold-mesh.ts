@@ -249,6 +249,167 @@ export function capFan(
   return { verts, tris };
 }
 
+// ── SWEEP / LOFT — repeat-as-sweep prototype ─────────────────────────────────
+// Loft a continuous welded skin THROUGH an ordered list of cross-section
+// "stations" (framing b) or SWEEP a fixed 2D cross-section along an ordered
+// path (framing a). This is the geometry kernel behind a future repeat-node
+// "sweep" mode: instead of place()-ing N discrete copies of a unit along a
+// path (g_spiral_repeat → a ~26k-vert box-pile), grid ONE skin between
+// consecutive frames → a single light welded solid (like g_spiral's ribbon).
+//
+// Same machinery as revolveProfile: a (u,v) grid → -du×dv winding → mandatory
+// position-weld → weldAndBuild auto-corrects the volume sign, so the caller
+// never has to get the winding perfect. u walks the PATH (stations); v walks
+// the CROSS-SECTION. Build-time segmentation only (Rule 25): denser
+// path/section = more triangles HERE, never a post-bake MeshGL rewrite.
+
+type V3 = [number, number, number];
+const _sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const _cross = (a: V3, b: V3): V3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+const _len = (a: V3): number => Math.hypot(a[0], a[1], a[2]);
+const _norm = (a: V3): V3 => { const l = _len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+/** Fan-triangulate a closed 3D polyline (an end cap). `reverse` flips the
+ *  winding so the two ends of a sweep face opposite ways. weldAndBuild fixes
+ *  the overall sign, so this only needs to be SELF-consistent. */
+function fanCap3D(ring: V3[], reverse: boolean): Patch {
+  const N = ring.length;
+  const verts = new Float32Array(N * 3);
+  for (let j = 0; j < N; j++) { verts[j * 3] = ring[j][0]; verts[j * 3 + 1] = ring[j][1]; verts[j * 3 + 2] = ring[j][2]; }
+  const tris = new Uint32Array((N - 2) * 3);
+  let k = 0;
+  if (reverse) for (let j = N - 1; j > 1; j--) { tris[k++] = 0; tris[k++] = j; tris[k++] = j - 1; }
+  else for (let j = 1; j < N - 1; j++) { tris[k++] = 0; tris[k++] = j; tris[k++] = j + 1; }
+  return { verts, tris };
+}
+
+/**
+ * LOFT (framing b): build a welded solid by gridding the side wall between
+ * consecutive cross-section "stations", each an ordered list of 3D points of
+ * the SAME vertex count `m`, already positioned in space. The side wall is a
+ * (#stations) × (m) grid welded with the toolkit's -du×dv winding; the two
+ * path ends are fan-capped.
+ *
+ *   • closedSection (default true) — the cross-section is a closed loop, so the
+ *     wall wraps from section vert m-1 back to 0 (a tube). false → an open
+ *     ribbon strip (no wrap seam).
+ *   • closedPath (default false) — the path itself loops (last station joins the
+ *     first); suppresses the end caps.
+ *   • caps (default true for an open path) — fan-cap the two ends so the tube is
+ *     a watertight SOLID. Ignored when closedPath.
+ *
+ * Returns the welded Manifold (positive volume — weldAndBuild self-corrects).
+ */
+export function loftStations(
+  stations: V3[][],
+  opts: { closedSection?: boolean; closedPath?: boolean; caps?: boolean } = {},
+): any {
+  const nS = stations.length;
+  if (nS < 2) throw new Error('loftStations needs ≥ 2 stations');
+  const m = stations[0].length;
+  if (m < 2) throw new Error('loftStations needs ≥ 2 points per station');
+  for (const s of stations) if (s.length !== m) throw new Error('every station needs the same vertex count');
+  const closedSection = opts.closedSection !== false;
+  const closedPath = opts.closedPath === true;
+  const caps = opts.caps !== false && !closedPath;
+
+  // Side wall as a single grid patch. Append a duplicate wrap row/col where the
+  // path / section closes so the seam quad is generated; weldAndBuild then
+  // merges the coincident seam verts (same trick revolveProfile relies on).
+  const rows = closedPath ? nS + 1 : nS;
+  const cols = closedSection ? m + 1 : m;
+  const sverts = new Float32Array(rows * cols * 3);
+  for (let r = 0; r < rows; r++) {
+    const st = stations[r % nS];
+    for (let c = 0; c < cols; c++) {
+      const p = st[c % m];
+      const i = (r * cols + c) * 3;
+      sverts[i] = p[0]; sverts[i + 1] = p[1]; sverts[i + 2] = p[2];
+    }
+  }
+  const tris = new Uint32Array((rows - 1) * (cols - 1) * 6);
+  let k = 0;
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const a = r * cols + c, b = a + 1, d = a + cols, e = d + 1;
+      tris[k++] = a; tris[k++] = b; tris[k++] = e;
+      tris[k++] = a; tris[k++] = e; tris[k++] = d;
+    }
+  }
+  const patches: Patch[] = [{ verts: sverts, tris }];
+  if (caps) {
+    patches.push(fanCap3D(stations[0], true));        // start cap (-tangent)
+    patches.push(fanCap3D(stations[nS - 1], false));  // end cap (+tangent)
+  }
+  return weldAndBuild(patches);
+}
+
+/**
+ * SWEEP (framing a): sweep a fixed 2D cross-section along an ordered 3D path
+ * and weld it into ONE solid. At each path point a per-station orthonormal
+ * frame is built from the local tangent + a stable `up` vector (a fixed-up /
+ * "parallel-ish" frame: side = tangent × up, then up' = side × tangent). The
+ * cross-section's local coords are interpreted as (side, up'): `[a, b]` →
+ * `P + a·side + b·up'`. The placed rings become `loftStations`.
+ *
+ * Fixed-up framing is TORSION-FREE for planar-ish paths (the motivating
+ * spiral: a planar XY path with `up = world-Z` keeps `side` horizontal and
+ * `up'` vertical at every station — exactly a spiral WALL). For a genuinely
+ * 3D path that doubles back along `up`, swap in a rotation-minimizing frame
+ * (parallel transport) — see the design notes; this prototype intentionally
+ * keeps the simplest correct frame.
+ *
+ *   • up (default [0,0,1]) — the stable reference; auto-falls-back when the
+ *     tangent is (near-)parallel to it so `side` never degenerates.
+ *   • section: closed 2D loop `[r-side, z-up]`. Trace it consistently; sign is
+ *     auto-corrected by the weld.
+ *   • closedPath / caps / closedSection — forwarded to loftStations.
+ */
+export function sweepAlongPath(
+  path: V3[],
+  section: [number, number][],
+  opts: { up?: V3; closedPath?: boolean; caps?: boolean; closedSection?: boolean } = {},
+): any {
+  const N = path.length;
+  if (N < 2) throw new Error('sweepAlongPath needs ≥ 2 path points');
+  if (!Array.isArray(section) || section.length < 2) throw new Error('section needs ≥ 2 points');
+  const up0: V3 = opts.up ?? [0, 0, 1];
+  const closedPath = opts.closedPath === true;
+  const stations: V3[][] = [];
+  for (let i = 0; i < N; i++) {
+    // Tangent: central difference in the interior; one-sided at open ends;
+    // wrapped for a closed path.
+    let t: V3;
+    if (closedPath) t = _sub(path[(i + 1) % N], path[(i - 1 + N) % N]);
+    else if (i === 0) t = _sub(path[1], path[0]);
+    else if (i === N - 1) t = _sub(path[N - 1], path[N - 2]);
+    else t = _sub(path[i + 1], path[i - 1]);
+    t = _norm(t);
+    // side = t × up; if the tangent is ~parallel to up, pick a fallback up so
+    // the cross product is well-conditioned.
+    let upv: V3 = up0;
+    let side = _cross(t, upv);
+    if (_len(side) < 1e-6) { upv = Math.abs(t[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]; side = _cross(t, upv); }
+    side = _norm(side);
+    upv = _norm(_cross(side, t)); // re-orthogonalize → clean (side, up', tangent) basis
+    const o = path[i];
+    stations.push(section.map(([a, b]): V3 => [
+      o[0] + side[0] * a + upv[0] * b,
+      o[1] + side[1] * a + upv[1] * b,
+      o[2] + side[2] * a + upv[2] * b,
+    ]));
+  }
+  return loftStations(stations, {
+    closedSection: opts.closedSection ?? true,
+    closedPath,
+    caps: opts.caps,
+  });
+}
+
 /**
  * Concatenate patches, position-weld coincident verts (the wasm Mesh
  * constructor does NOT auto-weld), and wrap the result in a Manifold.
