@@ -21,7 +21,7 @@ export type Direction = 'in' | 'out';
 /** A single value, or a FLAT list of them (no nested trees — research decision). */
 export type Cardinality = 'one' | 'list';
 /** The KIND of thing a port carries. */
-export type ElemShape = 'scalar' | 'point' | 'op' | 'transform' | 'geometry' | 'object';
+export type ElemShape = 'scalar' | 'flag' | 'point' | 'op' | 'transform' | 'geometry' | 'object';
 
 /** One field of a COMPOSITE (record) type — a name + the id of its field type. */
 export interface FieldDef { name: string; typeId: string; }
@@ -127,6 +127,14 @@ export function listOf(elemTypeId: string): PortType | undefined {
 /** A plain number — today's scalar expr output / coord / arg. */
 export const PT_SCALAR = registerPortType({
   id: 'scalar', elem: 'scalar', card: 'one', label: 'number', color: '#0e7490',
+});
+/** A boolean toggle. */
+export const PT_FLAG = registerPortType({
+  id: 'flag', elem: 'flag', card: 'one', label: 'flag (bool)', color: '#16a34a', glyph: '✓',
+});
+/** A single [r,z] point. */
+export const PT_POINT = registerPortType({
+  id: 'point', elem: 'point', card: 'one', label: 'point', color: '#4f46e5',
 });
 /** A flat list of [r,z] points — the #11 expr-list output → polygon points / extrude profile. */
 export const PT_LIST_POINT = registerPortType({
