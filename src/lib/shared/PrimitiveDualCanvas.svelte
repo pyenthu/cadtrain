@@ -461,6 +461,14 @@
     if (c !== z) scene.zFocus = c;
   });
 
+  // A NEW part re-enables auto default-scale (so a manual scale on the previous
+  // part doesn't leave the next one un-normalized). PrimitiveDualScene then
+  // computes xScale/zScale from the new bbox. Reading `id` makes it the dep.
+  $effect(() => {
+    id; // eslint-disable-line no-unused-expressions — dependency only
+    scene.scaleAuto = true;
+  });
+
   // #12: dismiss the X-dia / Z-depth scale popover on a click OUTSIDE it. The
   // toggle button itself is excluded so its own click still toggles (the open
   // click bubbles to window — without the guard it would immediately re-close).
@@ -494,7 +502,7 @@
        at load (bug #10 — long parts cut off until you scroll). -->
   <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
     title="Fit the whole part length in view + centre the Z slider (toggle)"
-    onclick={() => { scene.fitLength = !scene.fitLength; scene.zFocus = 0; }}>⇕ fit</button>
+    onclick={() => { scene.fitLength = !scene.fitLength; scene.zFocus = 0; scene.scaleAuto = true; }}>⇕ fit</button>
   <!-- Shade mode (Smooth/Auto/Flat) lives in the gear Shade control now — the
        canvas ◐ quick-toggle was removed 2026-06-18 to keep one home. -->
   <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
@@ -507,11 +515,11 @@
     <div class="pd-scale-menu">
       <div class="pd-scale-row">
         <span class="pd-scale-lbl">X-dia ×{scene.xScale.toFixed(2)}</span>
-        <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale} />
+        <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale} oninput={() => (scene.scaleAuto = false)} />
       </div>
       <div class="pd-scale-row">
         <span class="pd-scale-lbl">Z-depth ×{scene.zScale.toFixed(2)}</span>
-        <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale} />
+        <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale} oninput={() => (scene.scaleAuto = false)} />
       </div>
       <button class="pd-scale-reset" type="button"
         onclick={() => { scene.xScale = 1; scene.zScale = 1; }}>1:1 true scale</button>

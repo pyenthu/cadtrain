@@ -332,6 +332,31 @@
     scene.partZExtent = { min: cz - halfSpan, max: cz + halfSpan };
   });
 
+  // --- Default-scale-on-load (aspect normalization) ---------------------------
+  // Pick xScale/zScale so the displayed aspect ratio reads thick + long-enough-
+  // but-not-too-long. Uses the TRUE bbox dims (ex/ey/ez are pre-view-scale).
+  // L = ez (length), D = max(ex,ey) (≈ diameter). AR = L/D. Correct only the
+  // extremes into a band, splitting the fix evenly between shortening (zScale)
+  // and fattening (xScale): zScale·/·xScale = k, so displayed AR = AR·k.
+  // "Balanced": HI=6, LO=1.2, a=0.5. View-only — never touches the bake.
+  function autoScale(ex: number, ey: number, ez: number): { x: number; z: number } {
+    const L = ez, D = Math.max(ex, ey);
+    if (!(L > 0 && D > 0)) return { x: 1, z: 1 };
+    const AR = L / D, HI = 6, LO = 1.2, a = 0.5;
+    const k = AR > HI ? HI / AR : AR < LO ? LO / AR : 1;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    return { z: clamp(Math.pow(k, a), 0.2, 2), x: clamp(Math.pow(k, a - 1), 0.5, 3) };
+  }
+  // Applies whenever scaleAuto is on and a bbox exists. Reads bbox + scaleAuto
+  // only (NOT xScale/zScale), so writing the scales can't loop. A manual slider
+  // drag clears scaleAuto (PrimitiveDualCanvas), so the user's value then sticks.
+  $effect(() => {
+    if (!scene.scaleAuto || !bbox) return;
+    const { x, z } = autoScale(bbox.ex, bbox.ey, bbox.ez);
+    if (scene.xScale !== x) scene.xScale = x;
+    if (scene.zScale !== z) scene.zScale = z;
+  });
+
   // --- Z-axis light strip (Option A — docs/plans/z-axis-light.md) ---
   // N point lights distributed evenly along the part's visual Z extent at a
   // fixed radial (+Y) offset, so a long/tall part is lit down its whole length

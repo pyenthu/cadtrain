@@ -47,6 +47,11 @@ export const scene = $state({
    *  scale on the whole render group in PrimitiveDualScene; the part on disk +
    *  the bake stay TRUE scale. The camera auto-fit accounts for both. */
   xScale: 1.0,
+  /** When true, xScale/zScale are AUTO-set on each part load to normalize the
+   *  displayed aspect ratio (a long thin tool reads thick + long-but-not-too-long;
+   *  see PrimitiveDualScene's autoScale). Cleared the moment the user drags either
+   *  scale slider (their value then sticks); re-enabled on a new part load + by ⇕ fit. */
+  scaleAuto: true,
   /** Z-axis ("rectangular") light strip — VIEW ONLY. Distributes
    *  `zStripCount` point lights evenly along the part's Z (drilling) extent
    *  at a fixed radial offset (`zStripRadius`), so long thin tools / tall
