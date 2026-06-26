@@ -21,6 +21,20 @@
    shows the params above the parts ONLY when defined in the popover. Decided: full wireable
    sockets. Plan: `docs/plans/repeat-builder-popup.md`.
 
+10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). Show the OneDrive backup
+    (`onedrive:APPS/cadtrain`) ALONGSIDE the live volume and a clear, organized VISUAL DIFF
+    between them, then sync. **Feasible** — `rclone check <src> onedrive:APPS/cadtrain
+    --combined -` already emits the per-file diff: `=` match · `+` only-on-OneDrive ·
+    `-` only-in-volume · `*` differ (`!` = error). Plan: (a) NEW dev-only endpoint
+    `POST /api/volume/onedrive/diff` runs the prod-pull (reuse volume2onedrive.sh's staging
+    walk) → `rclone check staging onedrive:APPS/cadtrain --combined -` → parse into a
+    `{path, status}[]`; (b) `/volume` renders a diff TREE — green=new-on-volume, red=
+    missing-on-OneDrive, amber=changed, grey=match (collapsible by folder, counts per
+    status); (c) actions: "Sync all" (existing onedrive sync) + per-folder / per-file
+    selective sync (`rclone copy <those paths>`); a **Dry run** toggle first (the endpoint
+    already supports `{dryRun}` — just not wired in the UI). Builds on the working
+    `scripts/volume2onedrive.sh` + `/api/volume/onedrive`. Live backup verified 2026-06-26.
+
 
 
 ### Shipped (recent) — 2026-06-25/26
