@@ -21,6 +21,17 @@
 
 ### Shipped (recent) — 2026-06-25/26
 
+- **Expression builder redesign** (popover) — 30/70 split; CONSTS dropped (a param
+  with a default replaces them; not back-compat by design); no section tabs; OUTPUTS
+  are a clickable LIST + edit column (no tabs/sockets/headings); def name lives in
+  the title next to `ƒ`; popover is **draggable** (header) + **resizable** (corner
+  grip). Doc: `docs/plans/expression-builder.md §v3.10`.
+- **Output-card** wire→socket alignment fix (centered `rootOutputSockY`, shared by
+  render + wire).
+- **Z-slider** (bake viz) — range 2×→1.1× part length (5% overshoot/side, finer pan
+  on long parts); `⇕ fit` now recentres the slider.
+- **Dead-code sweep** — removed 6 unused exports + 16 unused files (knip-led).
+
 ### PARKED
 
 4. RESEARCH — explore for CAD generation improvement:
@@ -40,3 +51,6 @@
 18. The repeat expressio n builder needs to be simplified in design.. it should be model
 
 19. BUG. The casing_schjematic... the BREP is delteted error.
+
+
+
