@@ -6,15 +6,16 @@
   `p.*`/`e.*` here: a def declares all of its own names. Commit writes the WHOLE
   ExprDef back (so every instance updates).
 
-  Layout (redesigned 2026-06-26) — a 30 / 70 vertical split:
-    • LEFT pane (30%)  — a plain PARAMS pane (no tabs). Params are the sole
-      declaration section; an UNWIRED param uses its default, which replaces the
-      old CONSTS (dropped entirely — NOT backward-compatible: a def that still
-      references a const name fails validation; redeclare it as a param).
-    • RIGHT pane (70%) — the OUTPUTS: a WIDE, MULTI-LINE function-body editor
-      (room for if/then ternary logic) for the selected output, plus a vertical
-      per-output tab rail on the far right whose tabs carry the OUTPUT SOCKET
-      (mirroring the instance card's output pins).
+  Layout (redesigned 2026-06-26) — a 30 / 70 vertical split. This is a POPOVER,
+  not a node, so it shows NO socket dots and a minimal "ƒ" header (the actions
+  only — expand + close).
+    • LEFT pane (30%)  — the def NAME field (top) + a plain PARAMS table (no
+      tabs). Params are the sole declaration section; an UNWIRED param uses its
+      default, which replaces the old CONSTS (dropped entirely — NOT backward-
+      compatible: a def that still references a const name fails validation).
+    • RIGHT pane (70%) — the OUTPUTS, split columnarly: a clickable LIST of
+      output names (left) + the EDIT column (right) = a WIDE MULTI-LINE
+      function-body editor (if/then ternary) for the selected output.
 
   Autocomplete corpus (OUTPUTS formula fields) = the names declared EARLIER in
   THIS def (params + vars) + ALLOWED_FUNCTIONS + ALLOWED_CONSTANTS.
@@ -171,9 +172,8 @@
     {#each params as p, i (i)}
       {@const err = nameError(p.name)}
       <div class="ge-xs-row" class:bad={!!err}>
-        <span class="ge-xs-sock in" title="input socket — wired per instance"></span>
-        <input class="ge-xs-name" type="text" placeholder="name" bind:value={p.name} title={err ?? 'param name → input socket'} />
-        <input class="ge-xs-num" type="number" step="any" placeholder="default" bind:value={p.default} title="optional default (used when the socket is unwired)" />
+        <input class="ge-xs-name" type="text" placeholder="name" bind:value={p.name} title={err ?? 'param name'} />
+        <input class="ge-xs-num" type="number" step="any" placeholder="default" bind:value={p.default} title="optional default (used when unwired)" />
         <button class="ge-xs-del" type="button" title="Remove" onclick={() => delParam(i)}>×</button>
       </div>
     {/each}
@@ -190,9 +190,8 @@
     {@const fErr = formulaError(row.formula, allowed)}
     <div class="ge-xs-mainedit">
       <div class="ge-xs-edhead">
-        <span class="ge-xs-edkind {kind}">{kind === 'var' ? 'ƒ var' : '→ out'}</span>
-        <input class="ge-xs-name big" class:out={kind === 'output'} type="text" placeholder="name"
-          bind:value={row.name} title={nErr ?? (kind === 'var' ? 'intermediate name' : 'output name → output socket')} />
+        <input class="ge-xs-name big out" type="text" placeholder="output name"
+          bind:value={row.name} title={nErr ?? 'output name'} />
         <button class="ge-xs-del" type="button" title="Remove"
           onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
       </div>
@@ -215,9 +214,7 @@
   use:clampToViewport={expanded ? null : anchor}
   style={expanded ? '' : `left: ${anchor.x}px; top: ${anchor.y}px;`}>
   <div class="ge-expr-head">
-    <span class="ge-expr-title">ƒ Expression</span>
-    <input class="ge-expr-defname" type="text" placeholder="definition name" bind:value={name}
-      class:bad={name.trim() === ''} title="Definition name (shown in the Σ menu + on instance cards)" />
+    <span class="ge-expr-title">ƒ</span>
     <div class="ge-expr-head-actions">
       <button type="button" class="ge-expr-iconbtn" title={expanded ? 'Collapse to popover' : 'Expand to full screen'} onclick={() => (expanded = !expanded)}>{expanded ? '⤡' : '⤢'}</button>
       <button type="button" class="ge-expr-iconbtn" title="Close (Esc)" onclick={onCancel}>✕</button>
@@ -225,36 +222,33 @@
   </div>
 
   <div class="ge-expr-body">
-    <!-- ─── LEFT PANE (30%) — plain PARAMS pane (no tabs) ──────────────────── -->
+    <!-- ─── LEFT PANE (30%) — def NAME + PARAMS (no tabs) ──────────────────── -->
     <div class="ge-xs-pane left">
       <div class="ge-xs-main">
+        <input class="ge-expr-defname" type="text" placeholder="expression name" bind:value={name}
+          class:bad={name.trim() === ''} title="Expression name (shown in the Σ menu + on instance cards)" />
         {@render paramsBody()}
       </div>
     </div>
 
-    <!-- ─── RIGHT PANE (70%) — OUTPUTS: body editor + per-output tab rail ───── -->
+    <!-- ─── RIGHT PANE (70%) — OUTPUTS: a clickable LIST + the edit column ──── -->
     <div class="ge-xs-pane right">
-      <div class="ge-xs-main">
-        <div class="ge-xs-pane-head out">{outputs.length ? `OUTPUT · ${outputs[selOut]?.name ?? ''}` : 'OUTPUTS'}</div>
+      <div class="ge-xs-outlist">
+        {#each outputs as o, i (i)}
+          <button type="button" class="ge-xs-outitem" class:on={selOut === i}
+            onclick={() => (selOut = i)} title={o.name || 'output'}>{o.name || 'out?'}</button>
+        {/each}
+        <button type="button" class="ge-xs-add" onclick={addOutput}>+ add output</button>
+      </div>
+      <div class="ge-xs-outedit">
         {#if outputs.length}
           {@render formulaEditor('output', selOut)}
         {:else}
           <div class="ge-xs-empty">
-            <p>No outputs yet. Each output is a full expression body (multi-line + <code>cond ? a : b</code>) that becomes an output socket.</p>
+            <p>No outputs yet. Each output is a full expression body (multi-line + <code>cond ? a : b</code>).</p>
             <button type="button" class="ge-xs-add" onclick={addOutput}>+ add output</button>
           </div>
         {/if}
-      </div>
-      <div class="ge-xs-rail right">
-        <span class="ge-xs-grouplbl out">OUTPUTS</span>
-        {#each outputs as o, i (i)}
-          <button type="button" class="ge-xs-vtab outputs name" class:on={selOut === i}
-            onclick={() => (selOut = i)} title={o.name || 'output'}>
-            <span class="ge-xs-vlabel">{o.name || 'out?'}</span>
-            <span class="ge-xs-sock out" title="output socket — wire to a card"></span>
-          </button>
-        {/each}
-        <button type="button" class="ge-xs-railadd out" onclick={addOutput} title="Add output">+</button>
       </div>
     </div>
   </div>
@@ -285,13 +279,14 @@
     display: flex; align-items: center; gap: 8px;
     padding: 8px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc;
   }
-  .ge-expr-title { font: 700 12px Arial; color: #334155; white-space: nowrap; }
+  .ge-expr-title { font: 700 15px Arial; color: #334155; white-space: nowrap; }
+  /* def name now lives at the TOP of the LEFT pane (block, full-width). */
   .ge-expr-defname {
-    flex: 1 1 auto; min-width: 0; font: 700 12px ui-monospace, monospace; color: #0e7490;
-    padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff;
+    display: block; width: auto; margin: 8px 12px 2px; font: 700 13px ui-monospace, monospace;
+    color: #0e7490; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff;
   }
   .ge-expr-defname.bad { border-color: #fca5a5; background: #fef2f2; }
-  .ge-expr-head-actions { display: flex; gap: 4px; }
+  .ge-expr-head-actions { display: flex; gap: 4px; margin-left: auto; }
   .ge-expr-iconbtn {
     font: 13px Arial; color: #64748b; background: #fff; border: 1px solid #e2e8f0; border-radius: 5px;
     width: 24px; height: 24px; cursor: pointer; line-height: 1;
@@ -305,62 +300,31 @@
   .ge-xs-pane.left  { flex: 0 0 30%; max-width: 30%; }
   .ge-xs-pane.right { flex: 1 1 70%; border-left: 2px solid #e2e8f0; }
 
-  /* RIGHT pane's vertical OUTPUT tab rail. */
-  .ge-xs-rail { display: flex; flex-direction: column; flex: 0 0 auto; background: #f8fafc; }
-  .ge-xs-rail.right { border-left: 1px solid #e5e7eb; padding: 4px 0; overflow-y: auto; }
-  .ge-xs-railgroup { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 2px 0 6px; }
-  .ge-xs-railgroup.out { border-top: 1px dashed #e2e8f0; margin-top: 2px; }
-  .ge-xs-grouplbl { font: 700 8px Arial; letter-spacing: 0.12em; color: #94a3b8; text-align: center; padding: 4px 0 2px; }
-  .ge-xs-grouplbl.out { color: #7c3aed; }
-
-  .ge-xs-vtab {
-    flex: 1 1 0; min-height: 56px; width: 44px; cursor: pointer; position: relative;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-    background: transparent; border: none; border-left: 3px solid transparent; color: #64748b;
+  /* RIGHT pane = an OUTPUTS list column + the edit column. */
+  .ge-xs-outlist {
+    flex: 0 0 150px; display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 6px; border-right: 1px solid #e5e7eb; background: #f8fafc; overflow-y: auto;
   }
-  .ge-xs-vtab.name { min-height: 40px; flex: 0 0 auto; }
-  .ge-xs-vlabel { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 10px Arial; letter-spacing: 0.1em; max-height: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ge-xs-vtab:hover { background: #f1f5f9; color: #334155; }
-  .ge-xs-vtab.on { background: #fff; color: #0f172a; }
-  .ge-xs-vtab.outputs.on { border-left-color: #a855f7; }
-  .ge-xs-vtab.outputs.on .ge-xs-vlabel { color: #7c3aed; }
-
-  /* output socket pinned to the rail's right edge (= the popup's right edge). */
-  .ge-xs-vtab.outputs .ge-xs-sock.out {
-    position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
+  .ge-xs-outitem {
+    text-align: left; font: 600 12px ui-monospace, monospace; color: #475569;
+    background: transparent; border: none; border-left: 3px solid transparent;
+    padding: 6px 8px; border-radius: 0 4px 4px 0; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .ge-xs-outitem:hover { background: #f1f5f9; color: #334155; }
+  .ge-xs-outitem.on { background: #fff; color: #7c3aed; border-left-color: #a855f7; }
+  .ge-xs-outedit { flex: 1 1 auto; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
 
-  .ge-xs-railadd {
-    align-self: center; width: 26px; height: 22px; margin: 3px auto 0; line-height: 1;
-    font: 700 14px Arial; color: #0e7490; background: #ecfeff; border: 1px dashed #67e8f9;
-    border-radius: 6px; cursor: pointer;
-  }
-  .ge-xs-railadd.out { color: #7c3aed; background: #f5f3ff; border-color: #c4b5fd; }
-  .ge-xs-railadd:hover { filter: brightness(0.97); }
-
-  /* MAIN pane. */
+  /* LEFT pane body (def name + params). */
   .ge-xs-main { flex: 1 1 auto; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
-  .ge-xs-pane-head {
-    font: 700 10px Arial; letter-spacing: 0.06em; color: #475569;
-    padding: 8px 12px 4px; display: flex; align-items: center; gap: 6px;
-  }
-  .ge-xs-pane-head.out { color: #7c3aed; }
 
   /* full-body formula editor. */
-  .ge-xs-mainedit { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; flex: 1 1 auto; min-height: 0; }
+  .ge-xs-mainedit { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 12px; flex: 1 1 auto; min-height: 0; }
   .ge-xs-edhead { display: flex; align-items: center; gap: 6px; }
-  .ge-xs-edkind { font: 700 9px Arial; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 5px; }
-  .ge-xs-edkind.var { color: #b45309; background: #fffbeb; }
-  .ge-xs-edkind.output { color: #7c3aed; background: #f5f3ff; }
   .ge-xs-mainedit :global(.ge-expr-src) { flex: 1 1 auto; min-height: 0; }
   .ge-xs-mainedit :global(.ge-expr-src-ta) { min-height: 180px; resize: vertical; }
   .ge-xs-edhint { margin: 0; font: 11px Arial; color: #94a3b8; line-height: 1.4; }
   .ge-xs-edhint code { font: 11px ui-monospace, monospace; background: #f1f5f9; padding: 0 3px; border-radius: 3px; color: #475569; }
-
-  /* row sockets — input dot (left) on params. */
-  .ge-xs-sock { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #fff; }
-  .ge-xs-sock.in  { background: #3b82f6; box-shadow: 0 0 0 1px #93c5fd; margin-left: -3px; }
-  .ge-xs-sock.out { background: #a855f7; box-shadow: 0 0 0 1px #d8b4fe; }
 
   .ge-xs-table { display: flex; flex-direction: column; gap: 4px; padding: 6px 12px; }
   .ge-xs-row { display: flex; align-items: center; gap: 5px; }
