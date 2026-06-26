@@ -8,16 +8,16 @@
 
   Layout (redesigned 2026-06-26) — a 30 / 70 vertical split:
     • LEFT pane (30%)  — a plain PARAMS pane (no tabs). Params are the sole
-      declaration section; an UNWIRED param uses its default, which covers the
-      old CONSTS case (CONSTS dropped from the UI). VARS data is preserved as
-      pass-through (no UI for now) so existing defs still validate / emit.
+      declaration section; an UNWIRED param uses its default, which replaces the
+      old CONSTS (dropped entirely — NOT backward-compatible: a def that still
+      references a const name fails validation; redeclare it as a param).
     • RIGHT pane (70%) — the OUTPUTS: a WIDE, MULTI-LINE function-body editor
       (room for if/then ternary logic) for the selected output, plus a vertical
       per-output tab rail on the far right whose tabs carry the OUTPUT SOCKET
       (mirroring the instance card's output pins).
 
   Autocomplete corpus (OUTPUTS formula fields) = the names declared EARLIER in
-  THIS def (params + any preserved consts/vars) + ALLOWED_FUNCTIONS + ALLOWED_CONSTANTS.
+  THIS def (params + vars) + ALLOWED_FUNCTIONS + ALLOWED_CONSTANTS.
 
   Per-instance local $state only (mounts per launcher; /primitives mounts many
   panes → NO module singletons).
@@ -44,13 +44,11 @@
   } = $props();
 
   type ParamRow = { name: string; default: number | null };
-  type ConstRow = { name: string; value: number | null };
   type FormulaRow = { name: string; formula: string };
 
   // ─── per-instance local state (seeded from `def`) ──────────────────────────
   let name = $state('');
   let params = $state<ParamRow[]>([]);
-  let consts = $state<ConstRow[]>([]);
   let vars = $state<FormulaRow[]>([]);
   let outputs = $state<FormulaRow[]>([]);
   let expanded = $state(false);
@@ -67,7 +65,6 @@
     seededFrom = def;
     name = def.name ?? '';
     params = (def.params ?? []).map((p) => ({ name: p.name, default: p.default ?? null }));
-    consts = (def.consts ?? []).map((c) => ({ name: c.name, value: c.value ?? 0 }));
     vars = (def.vars ?? []).map((v) => ({ name: v.name, formula: v.formula }));
     outputs = (def.outputs ?? []).map((o) => ({ name: o.name, formula: o.formula }));
     selOut = 0;
@@ -80,10 +77,9 @@
 
   // ─── derived name sets ─────────────────────────────────────────────────────
   let paramNames = $derived(params.map((p) => p.name));
-  let constNames = $derived(consts.map((c) => c.name));
   let varNames = $derived(vars.map((v) => v.name));
   let outputNames = $derived(outputs.map((o) => o.name));
-  let allNames = $derived([...paramNames, ...constNames, ...varNames, ...outputNames]);
+  let allNames = $derived([...paramNames, ...varNames, ...outputNames]);
   let dupNames = $derived.by(() => {
     const seen = new Set<string>(); const dup = new Set<string>();
     for (const n of allNames) { if (n === '') continue; if (seen.has(n)) dup.add(n); else seen.add(n); }
@@ -100,10 +96,10 @@
 
   // Earlier-declared names available to a VARIABLES / OUTPUTS formula row.
   function varAllowed(i: number): Set<string> {
-    return new Set<string>([...paramNames, ...constNames, ...varNames.slice(0, i)]);
+    return new Set<string>([...paramNames, ...varNames.slice(0, i)]);
   }
   function outAllowed(i: number): Set<string> {
-    return new Set<string>([...paramNames, ...constNames, ...varNames, ...outputNames.slice(0, i)]);
+    return new Set<string>([...paramNames, ...varNames, ...outputNames.slice(0, i)]);
   }
   function completionsFor(names: Iterable<string>): Completion[] {
     const out: Completion[] = [];
@@ -148,7 +144,7 @@
       params: params.map((p) => (p.default == null || Number.isNaN(p.default)
         ? { name: p.name.trim() }
         : { name: p.name.trim(), default: p.default })),
-      consts: consts.map((c) => ({ name: c.name.trim(), value: (c.value == null || Number.isNaN(c.value)) ? 0 : c.value })),
+      consts: [], // CONSTS dropped — use a param with a default instead
       vars: vars.map((v) => ({ name: v.name.trim(), formula: v.formula })),
       outputs: outputs.map((o) => ({ name: o.name.trim(), formula: o.formula })),
     };
