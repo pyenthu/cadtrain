@@ -34,6 +34,40 @@ inner edge. This is the substrate for a **"builder" app**: expressions are the
 generators, and you wire structured data (points, ops, transforms, parts)
 between them — a functional dataflow on top of the existing graph.
 
+## Case 1 (canonical first example) — list of points → profile
+
+The spiral outline as ONE expression output (`shape: list<point>`), two maps
+concatenated:
+
+```
+profile_pts =
+  [ ...map(range(NPts), i => {            // outer edge, forward
+        theta = i*turns*tau/NPts; R = r0 + growth*i/NPts;
+        return [R*cos(theta), R*sin(theta)];
+      }),
+    ...map(range(NPts), j => {            // inner edge, reversed
+        idx = NPts-1-j; theta = idx*turns*tau/NPts; R = r0 + growth*idx/NPts - width;
+        return [R*cos(theta), R*sin(theta)];
+      }) ]
+```
+
+**Wire it BOTH ways (decided — support both):**
+- **(a) → a polygon / sketch node's `points` slot.** Preferred for authoring:
+  the profile node renders the **2D sketch preview** (the numbered-point view) so
+  you can SEE and debug the generated outline before it extrudes.
+- **(b) → directly into `r_weld_extrude` / `r_revolve`'s `profile` arg.** The
+  reductive case — the expression IS the profile, no node in between (the extrude
+  already accepts a raw point list via `__POLY__`).
+
+Both are valid drop targets because the socket carries `list<point>`; any slot
+typed to accept a point list takes it. (a) is the default demo because the 2D
+preview is the payoff.
+
+**Element-shape typing.** A `list<point>`, a `list<op>` (sketch ops), and a
+`list<transform>` are DIFFERENT element shapes — the wiring rules must reject a
+point-list into a transform slot, etc. So the output's type is `list<E>` where
+`E ∈ {point | op | transform | scalar | object}`, not just "a list".
+
 ## Why it's plausible (engine already supports it)
 
 The expression engine is **mathjs** (already wired, `parseAndValidateBare`).
