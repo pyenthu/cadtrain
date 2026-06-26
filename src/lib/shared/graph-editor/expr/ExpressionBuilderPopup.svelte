@@ -340,13 +340,15 @@
     cursor: move; user-select: none; touch-action: none;
   }
   .ge-expr-title { font: 700 15px Arial; color: #334155; white-space: nowrap; }
-  /* def name sits in the title, next to the ƒ glyph. */
+  /* def name sits in the title, next to the ƒ glyph — a comfortable fixed-ish
+     width so it doesn't stretch across the whole popover. */
   .ge-expr-defname {
-    flex: 1 1 auto; min-width: 0; font: 700 13px ui-monospace, monospace; color: #0e7490;
+    flex: 0 1 280px; min-width: 0; max-width: 280px; font: 700 13px ui-monospace, monospace; color: #0e7490;
     padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: text;
   }
   .ge-expr-defname.bad { border-color: #fca5a5; background: #fef2f2; }
-  .ge-expr-head-actions { display: flex; gap: 4px; }
+  /* spacer pushes the expand/close buttons to the right edge. */
+  .ge-expr-head-actions { display: flex; gap: 4px; margin-left: auto; }
   .ge-expr-iconbtn {
     font: 13px Arial; color: #64748b; background: #fff; border: 1px solid #e2e8f0; border-radius: 5px;
     width: 24px; height: 24px; cursor: pointer; line-height: 1;
