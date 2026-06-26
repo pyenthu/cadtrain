@@ -1074,6 +1074,27 @@
                           <button class="ge-poly-del" type="button" title="Remove this loop ref (drops the source card too)" disabled={poly.points.length <= 1}
                             onclick={() => { setGraph(removePolygonPoint(graph, n.id, idx)); }}>×</button>
                         </div>
+                      {:else if pt?.kind === 'expr-list-ref'}
+                        <!-- #11 — a list<point> OUTPUT of an expression instance,
+                             spliced into the polygon as its points (the
+                             expr-as-builder path). Summary row only; the formula
+                             is edited on the expression (Σ menu). -->
+                        {@const esrc = graph.nodes[pt.sourceId]}
+                        {@const edef = (esrc as any)?.type === 'expr' ? (graph.exprDefs ?? []).find((d) => d.id === (esrc as any).defId) : null}
+                        {@const eMissing = !esrc || (esrc as any).type !== 'expr' || !edef}
+                        {@const elabel = edef ? `${edef.name} · ${pt.output}` : 'expr list (missing)'}
+                        <div class="ge-poly-rref expr" class:missing={eMissing}
+                          title={eMissing ? 'The expression this points to was deleted' : `list⟨point⟩ from ${elabel}`}>
+                          <span class="ge-poly-rref-glyph" aria-hidden="true">ƒ[]</span>
+                          <span class="ge-poly-rref-label">{elabel}</span>
+                          <span class="ge-poly-rref-spacer"></span>
+                          <button class="ge-poly-mv" type="button" title="Move up" disabled={idx === 0}
+                            onclick={() => { setGraph(movePolygonPoint(graph, n.id, idx, -1)); }}>▲</button>
+                          <button class="ge-poly-mv" type="button" title="Move down" disabled={idx === poly.points.length - 1}
+                            onclick={() => { setGraph(movePolygonPoint(graph, n.id, idx, 1)); }}>▼</button>
+                          <button class="ge-poly-del" type="button" title="Remove this expr-list ref" disabled={poly.points.length <= 1}
+                            onclick={() => { setGraph(removePolygonPoint(graph, n.id, idx)); }}>×</button>
+                        </div>
                       {:else if pt?.kind === 'repeat'}
                         <!-- DEPRECATED — inline repeat block (#154). Hydrate
                              migrates these to repeat-refs on file open, so
@@ -1264,8 +1285,9 @@
                       class="ge-sock in poly-rref-in wired"
                       cx="0" cy={polySockRef(n, idx)} r="6"
                       onpointerup={(ev) => wire.endWireOnPolygonRepeatRef(ev, n.id, idx)}/>
-                  {:else if idx < 8 && pt?.kind !== 'repeat'}
-                    <!-- Vertex r/z sockets — two stacked, one per axis. -->
+                  {:else if idx < 8 && pt?.kind !== 'repeat' && pt?.kind !== 'expr-list-ref'}
+                    <!-- Vertex r/z sockets — two stacked, one per axis. (Repeat-ref
+                         + expr-list-ref rows have no per-coord sockets.) -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <circle role="button" tabindex="-1"
                       class={`ge-sock in poly-coord${pt.r.kind === 'param' ? ' wired' : ''}`}
@@ -2059,6 +2081,9 @@
   }
   .ge-poly-rref:hover { background: #f5f3ff; border-color: #a78bfa; }
   .ge-poly-rref.missing { background: #fff7ed; border-color: #fb923c; }
+  .ge-poly-rref.expr { background: #eef2ff; border-color: #a5b4fc; }
+  .ge-poly-rref.expr .ge-poly-rref-glyph { color: #4338ca; }
+  .ge-poly-rref.expr .ge-poly-rref-label { color: #3730a3; }
   .ge-poly-rref-glyph { font: 700 14px Arial; color: #5b21b6; line-height: 1; }
   .ge-poly-rref-label { font: 600 11px Arial; color: #4c1d95; white-space: nowrap; }
   .ge-poly-rref-spacer { flex: 1 1 auto; }

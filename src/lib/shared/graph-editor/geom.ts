@@ -285,7 +285,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
 }
 
 export function polyEntryH(pt: any): number {
-  if (pt?.kind === 'repeat-ref') return POLY_RREF_PITCH;
+  if (pt?.kind === 'repeat-ref' || pt?.kind === 'expr-list-ref') return POLY_RREF_PITCH;
   if (pt?.kind === 'repeat') return 74; // deprecated inline block
   return POLY_VTX_PITCH;
 }
