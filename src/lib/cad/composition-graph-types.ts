@@ -183,7 +183,19 @@ export type PolygonRepeatRef = {
   kind: 'repeat-ref';
   sourceId: NodeId;
 };
-export type PolygonEntry = PolygonPoint | PolygonRepeat | PolygonRepeatRef;
+/** A reference to an expression INSTANCE's `list<point>` OUTPUT, whose emitted
+ *  array of `[r,z]` pairs is spliced into the polygon's point list at this row
+ *  (#11 expression-as-builder). Mirrors `PolygonRepeatRef`, but the source is
+ *  an `ExprNode` instance + one of its DEF outputs (typed `shape:'list',
+ *  elem:'point'`) instead of a `PolyRepeatNode`. Wired via the polygon's
+ *  per-row input socket, paired with the expr's typed output socket. Lets ONE
+ *  map-expression generate the whole spiral profile (the canonical Case 1). */
+export type PolygonExprListRef = {
+  kind: 'expr-list-ref';
+  sourceId: NodeId;   // → the ExprNode instance whose output supplies the points
+  output: string;     // the def OUTPUT name (shape:'list', elem:'point')
+};
+export type PolygonEntry = PolygonPoint | PolygonRepeat | PolygonRepeatRef | PolygonExprListRef;
 export type PolygonNode = {
   id: NodeId;
   type: 'polygon';
@@ -317,9 +329,30 @@ export type ExprConst = { name: string; value: number };
  *  formula references earlier-declared names + the function/constant allowlist;
  *  no socket. */
 export type ExprVar = { name: string; formula: string };
+/** The SHAPE an OUTPUT socket carries (#11 expression-as-builder). Absent /
+ *  `'scalar'` = a single number (today's behaviour — byte-identical emit).
+ *  `'list'` = a FLAT array materialised by a `map(range(N), f(i)=…)` formula
+ *  (one element-shape per socket; no nested data trees — the research's
+ *  flat-list-only decision). `'object'` is reserved (structured arg). */
+export type ExprOutShape = 'scalar' | 'object' | 'list';
+/** For `shape:'list'`, the ELEMENT shape — the kind of thing each list slot
+ *  holds. `'point'` = `[r,z]` pairs (wired into a polygon points slot / a
+ *  profile arg). `'op'`/`'transform'`/`'scalar'`/`'object'` are reserved for
+ *  the sketch-ops / repeat-transform / scalar-list / record-list consumers.
+ *  Wiring rules reject a mismatched element shape (a point-list into a
+ *  transform slot, etc.). */
+export type ExprOutElem = 'point' | 'op' | 'transform' | 'scalar' | 'object';
 /** OUTPUTS section — an exposed result. Each output becomes an output socket on
- *  every instance; its formula references earlier-declared names + the allowlist. */
-export type ExprOut = { name: string; formula: string };
+ *  every instance; its formula references earlier-declared names + the allowlist.
+ *  `shape`/`elem` are SPARSE + optional: absent ⇒ scalar ⇒ byte-identical emit
+ *  (no migration). A `list` output's formula is compiled to a JS array
+ *  expression (composition-emit.emitExprBlocks → graph-exprs.compileListFormula). */
+export type ExprOut = {
+  name: string;
+  formula: string;
+  shape?: ExprOutShape;
+  elem?: ExprOutElem;   // only meaningful when shape === 'list'
+};
 
 /** A reusable per-part expression DEFINITION (B.7 v3). One flat name scope:
  *  `params ∪ consts ∪ vars ∪ outputs` names must be unique. A `vars`/`outputs`

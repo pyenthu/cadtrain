@@ -110,6 +110,9 @@ export function hydrateGraph(serialised: any): Graph {
         newEntries.push(entry);
       } else if (entry?.kind === 'repeat-ref') {
         newEntries.push(entry);
+      } else if (entry?.kind === 'expr-list-ref') {
+        // #11 expression-as-builder — pass through unchanged.
+        newEntries.push(entry);
       } else {
         // Untagged legacy point (pre-#154 entries with no kind).
         newEntries.push({ kind: 'point', r: entry.r, z: entry.z });
@@ -343,7 +346,14 @@ export function hydrateGraph(serialised: any): Graph {
         }) : [],
         consts: Array.isArray(d.consts) ? d.consts.filter((c: any) => c && str(c.name)).map((c: any) => ({ name: c.name, value: num(c.value) ?? 0 })) : [],
         vars: Array.isArray(d.vars) ? d.vars.filter((v: any) => v && str(v.name)).map((v: any) => ({ name: v.name, formula: str(v.formula) })) : [],
-        outputs: Array.isArray(d.outputs) ? d.outputs.filter((o: any) => o && str(o.name)).map((o: any) => ({ name: o.name, formula: str(o.formula) })) : [],
+        outputs: Array.isArray(d.outputs) ? d.outputs.filter((o: any) => o && str(o.name)).map((o: any) => {
+          // #11 expression-as-builder — preserve the sparse output SHAPE/ELEM
+          // typing. Absent ⇒ scalar ⇒ byte-identical emit (no migration).
+          const out: ExprOut = { name: o.name, formula: str(o.formula) };
+          if (o.shape === 'list' || o.shape === 'object') out.shape = o.shape;
+          if (out.shape === 'list' && typeof o.elem === 'string') out.elem = o.elem;
+          return out;
+        }) : [],
       });
     }
     return out;

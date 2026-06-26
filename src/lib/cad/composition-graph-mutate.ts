@@ -10,10 +10,10 @@
 
 import type {
   NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
-  RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonEntry,
+  RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonExprListRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   SketchRepeatNode, SketchRepeatRef,
-  ExprNode, ExprDef,
+  ExprNode, ExprDef, ExprOutShape, ExprOutElem,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam } from './composition-graph-types';
@@ -979,6 +979,28 @@ export function addPolygonRepeat(graph: Graph, polygonId: NodeId, afterIdx?: num
   });
 }
 
+/** Wire an existing expression INSTANCE's `list<point>` OUTPUT into a polygon's
+ *  point list (#11 expression-as-builder) — inserts an `expr-list-ref` entry.
+ *  The ExprNode + its def (with a `shape:'list', elem:'point'` output) must
+ *  already exist; this only adds the splice row. Same `afterIdx` semantics as
+ *  addPolygonPoint (-1 = prepend, omitted = append). No-op if the polygon or
+ *  the source expr instance is missing. */
+export function addPolygonExprListRef(
+  graph: Graph, polygonId: NodeId, sourceId: NodeId, output: string, afterIdx?: number,
+): Graph {
+  const node = graph.nodes[polygonId];
+  const src = graph.nodes[sourceId];
+  if (!node || node.type !== 'polygon') return graph;
+  if (!src || src.type !== 'expr' || !output) return graph;
+  const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.points.length)
+    ? afterIdx + 1
+    : node.points.length;
+  const ref: PolygonExprListRef = { kind: 'expr-list-ref', sourceId, output };
+  const points = [...node.points.slice(0, insertAt), ref, ...node.points.slice(insertAt)];
+  const updated: PolygonNode = { ...node, points };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
 // ─── Sketch REPEAT (B.2 / id 805) ──────────────────────────────────────────
 // Mirrors addPolygonRepeat: a separate free-floating SketchRepeatNode card +
 // a flat {op:'repeat-ref', sourceId} entry spliced into the parent sketch's
@@ -1209,6 +1231,25 @@ export function setExprDefOutputFormula(graph: Graph, defId: NodeId, idx: number
 }
 export function removeExprDefOutput(graph: Graph, defId: NodeId, idx: number): Graph {
   return mapDef(graph, defId, (d) => ({ ...d, outputs: d.outputs.filter((_, i) => i !== idx) }));
+}
+/** Set an output's SHAPE/ELEM typing (#11 expression-as-builder). Passing
+ *  `shape:'scalar'` (or undefined) CLEARS the fields so the output reverts to a
+ *  byte-identical scalar emit. `elem` only applies when `shape === 'list'`. */
+export function setExprDefOutputShape(
+  graph: Graph, defId: NodeId, idx: number, shape: ExprOutShape | undefined, elem?: ExprOutElem,
+): Graph {
+  return mapDef(graph, defId, (d) => ({
+    ...d,
+    outputs: d.outputs.map((o, i) => {
+      if (i !== idx) return o;
+      const next = { name: o.name, formula: o.formula } as typeof o;
+      if (shape && shape !== 'scalar') {
+        next.shape = shape;
+        if (shape === 'list' && elem) next.elem = elem;
+      }
+      return next;
+    }),
+  }));
 }
 
 // ── Instance PARAM bindings ─────────────────────────────────────────────────
