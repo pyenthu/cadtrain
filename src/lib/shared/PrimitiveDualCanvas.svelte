@@ -431,11 +431,12 @@
     const { min, max } = scene.partZExtent;
     const cz = scene.partCenter.z;
     if (!(max > min)) return { min: -10, max: 10 };
-    // Total slider travel = 1.25× the rendered part's z-length: 0.125·L of
-    // headroom on EACH side of the extent → span = L + 2·(0.125·L) = 1.25·L.
-    // Narrower than the old 2·L so each pixel of slider travel maps to less z
-    // (finer pan — long parts felt jumpy at 2·L). zFocus 0 = the part centre.
-    const pad = (max - min) * 0.125;
+    // Total slider travel = 1.1× the rendered part's z-length: 0.05·L (5%) of
+    // headroom on EACH side of the extent → span = L + 2·(0.05·L) = 1.1·L. So the
+    // thumb scrolls the look-at from just-above the top to just-below the bottom
+    // and only ~5% past either end. zFocus 0 = the part centre. (Set pad = 0 for
+    // EXACTLY the part length with no overshoot.)
+    const pad = (max - min) * 0.05;
     return { min: min - cz - pad, max: max - cz + pad };
   });
   // Pan STEP scales with ZOOM so the slider stays in sync with what's framed:
