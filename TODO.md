@@ -15,7 +15,21 @@
    `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3 editor/BOM + wire the
    tool rail to real placement. Plan: `docs/plans/well-schematic.md`.
 
-11. **Expression-as-builder — structured + list outputs + loops (unify the 3 repeats)**. Let an
+12. **Repeat-as-sweep — loft a continuous skin between consecutive repeat copies** (geometry).
+    Today the part-level repeat `place()`s N DISCRETE copies (heavy + bumpy — g_spiral_repeat is
+    ~26k verts of overlapping box-posts). A "sweep" mode would LOFT one welded skin between copy i
+    and i+1 (a swept solid along the per-iteration transforms), turning the repeat into a universal
+    swept-solid builder — springs, threads, helical ramps, **clean spiral ribbons** (~g_spiral's
+    8.6k verts). Welded-mesh path (`manifold-mesh.ts` gridPatch/weld; like r_weld_extrude but along
+    a path). **Prototype IN FLIGHT 2026-06-26** (subagent): a `sweepAlongPath`/`loftStations` helper
+    + spiral bake proof + design writeup (frame torsion / variable spacing / inner-turn self-intersect
+    / caps). See `g_spiral_repeat.md`. Pairs with #11.
+
+11. **Expression-as-builder — structured + list outputs + loops (unify the 3 repeats)**. **DATA-MODEL
+    step IN FLIGHT 2026-06-26** (subagent): `shape: scalar|object|list` + element-shape on expr
+    outputs, validation allows a `map()` list formula, list<point> wires into polygon points, proven
+    by baking the spiral as ONE expression. Research decisions locked (flat lists, longest-repeat-last
+    lacing, socket-shape typing, no data trees) in the plan. Let an
     expression OUTPUT carry a scalar | object | **list**, with a `map(range(N), i => …)` loop
     inside, and wire the structured output into ANY consumer: list of `[r,z]` → polygon points
     (= poly_repeat), list of ops → sketch ops (= sketch_repeat), list of transforms → place/repeat
