@@ -61,20 +61,54 @@
   // ── OneDrive sync (PROD volume → onedrive:APPS/cadtrain) ─────────────
   let syncing = $state(false);
   let oneDriveMsg = $state<string | null>(null);
+  // Dry-run toggle (shared by "Sync all" + "Sync selected"): preview only,
+  // nothing is written to OneDrive.
+  let dryRun = $state(false);
   async function runOneDrive() {
     if (syncing) return;
-    if (!confirm('Mirror the PRODUCTION volume up to OneDrive (APPS/cadtrain)?\nReplaced/deleted files are kept under APPS/cadtrain-prev/.')) return;
+    if (!dryRun && !confirm('Mirror the PRODUCTION volume up to OneDrive (APPS/cadtrain)?\nReplaced/deleted files are kept under APPS/cadtrain-prev/.')) return;
     syncing = true;
-    oneDriveMsg = 'Syncing to OneDrive…';
+    oneDriveMsg = dryRun ? 'Previewing full sync (dry run)…' : 'Syncing to OneDrive…';
     try {
-      const r = await fetch('/api/volume/onedrive', { method: 'POST' });
+      const r = await fetch('/api/volume/onedrive', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dryRun }),
+      });
       const j = await r.json().catch(() => null);
       if (!r.ok || j?.ok === false) throw new Error(j?.message || j?.output || `${r.status}`);
-      oneDriveMsg = j?.summary || 'Synced → onedrive:APPS/cadtrain';
+      const head = dryRun ? '◑ Dry run — full sync preview (nothing written)' : (j?.summary || 'Synced → onedrive:APPS/cadtrain');
+      oneDriveMsg = j?.output ? `${head}\n\n${j.output}` : head;
     } catch (e: any) {
       oneDriveMsg = `OneDrive sync failed: ${e?.message ?? e}`;
     } finally {
       syncing = false;
+    }
+  }
+
+  // ── Selective sync (only the checked paths → OneDrive, non-destructive) ─
+  let selSyncing = $state(false);
+  async function runSyncSelected() {
+    if (selSyncing) return;
+    const paths = [...selectedPaths];
+    if (paths.length === 0) return;
+    if (!dryRun && !confirm(`Upload ${paths.length} selected file${paths.length === 1 ? '' : 's'} to OneDrive (${diff?.dest})?\nNon-destructive — overwritten files are kept under -prev/<ts>.`)) return;
+    selSyncing = true;
+    oneDriveMsg = dryRun ? `Previewing upload of ${paths.length} file(s) (dry run)…` : `Uploading ${paths.length} file(s)…`;
+    try {
+      const r = await fetch('/api/volume/onedrive/sync-paths', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paths, dryRun }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.ok === false) throw new Error(j?.message || j?.output || `${r.status}`);
+      const head = j?.summary || (dryRun ? 'Dry run complete' : 'Selective sync complete');
+      oneDriveMsg = j?.output ? `${head}\n\n${j.output}` : head;
+    } catch (e: any) {
+      oneDriveMsg = `Selective sync failed: ${e?.message ?? e}`;
+    } finally {
+      selSyncing = false;
     }
   }
 
@@ -86,6 +120,7 @@
   async function runDiff() {
     if (diffing) return;
     diffing = true; diffMsg = 'Comparing volume vs OneDrive…'; diff = null;
+    selectedPaths = new Set(); collapsed = new Set();
     try {
       const r = await fetch('/api/volume/onedrive/diff', { method: 'POST' });
       const j = await r.json().catch(() => null);
@@ -99,6 +134,102 @@
   }
   const DIFF_GLYPH: Record<string, string> = { new: '+', gone: '−', changed: '~', match: '=' };
   const DIFF_LABEL: Record<string, string> = { new: 'only in the volume', gone: 'only on OneDrive', changed: 'size differs', match: 'in sync' };
+
+  // ── Folder-tree grouping of the diff entries (client-side transform) ──
+  // Only non-`match` entries are placed into the tree, so any folder that
+  // appears contains at least one difference. Each folder rolls up its
+  // descendants' +/−/~ counts; `new`+`changed` files are SELECTABLE for a
+  // copy-up (a `gone` file is only on OneDrive — a copy can't act on it).
+  type TreeFile = { kind: 'file'; name: string; path: string; entry: DiffEntry };
+  type TreeDir = {
+    kind: 'dir'; name: string; path: string; children: TreeNode[];
+    counts: { new: number; gone: number; changed: number };
+    selectable: string[]; // descendant file paths eligible for upload
+  };
+  type TreeNode = TreeFile | TreeDir;
+
+  function buildTree(entries: DiffEntry[]): TreeDir {
+    const root: TreeDir = { kind: 'dir', name: '', path: '', children: [], counts: { new: 0, gone: 0, changed: 0 }, selectable: [] };
+    const dirs = new Map<string, TreeDir>([['', root]]);
+    const ensureDir = (path: string): TreeDir => {
+      const existing = dirs.get(path);
+      if (existing) return existing;
+      const idx = path.lastIndexOf('/');
+      const parent = ensureDir(idx >= 0 ? path.slice(0, idx) : '');
+      const d: TreeDir = { kind: 'dir', name: idx >= 0 ? path.slice(idx + 1) : path, path, children: [], counts: { new: 0, gone: 0, changed: 0 }, selectable: [] };
+      dirs.set(path, d);
+      parent.children.push(d);
+      return d;
+    };
+    for (const e of entries) {
+      if (e.status === 'match') continue;
+      const idx = e.path.lastIndexOf('/');
+      const parent = ensureDir(idx >= 0 ? e.path.slice(0, idx) : '');
+      parent.children.push({ kind: 'file', name: idx >= 0 ? e.path.slice(idx + 1) : e.path, path: e.path, entry: e });
+    }
+    const finalize = (d: TreeDir): void => {
+      for (const c of d.children) if (c.kind === 'dir') finalize(c);
+      d.children.sort((a, b) => (a.kind !== b.kind ? (a.kind === 'dir' ? -1 : 1) : a.name.localeCompare(b.name)));
+      for (const c of d.children) {
+        if (c.kind === 'dir') {
+          d.counts.new += c.counts.new; d.counts.gone += c.counts.gone; d.counts.changed += c.counts.changed;
+          d.selectable.push(...c.selectable);
+        } else {
+          const s = c.entry.status;
+          if (s === 'new' || s === 'gone' || s === 'changed') d.counts[s]++;
+          if (s === 'new' || s === 'changed') d.selectable.push(c.path);
+        }
+      }
+    };
+    finalize(root);
+    return root;
+  }
+
+  let tree = $derived(diff ? buildTree(diff.entries) : null);
+
+  // Selection (file paths) + collapse (folder paths). Plain Sets reassigned
+  // on mutation so Svelte tracks them.
+  let selectedPaths = $state(new Set<string>());
+  let collapsed = $state(new Set<string>());
+
+  function isCollapsed(path: string): boolean { return collapsed.has(path); }
+  function toggleCollapse(path: string): void {
+    const next = new Set(collapsed);
+    next.has(path) ? next.delete(path) : next.add(path);
+    collapsed = next;
+  }
+  function toggleFile(path: string): void {
+    const next = new Set(selectedPaths);
+    next.has(path) ? next.delete(path) : next.add(path);
+    selectedPaths = next;
+  }
+  function dirChecked(d: TreeDir): boolean {
+    return d.selectable.length > 0 && d.selectable.every((p) => selectedPaths.has(p));
+  }
+  function dirIndeterminate(d: TreeDir): boolean {
+    const some = d.selectable.some((p) => selectedPaths.has(p));
+    return some && !dirChecked(d);
+  }
+  function toggleDir(d: TreeDir): void {
+    const all = dirChecked(d);
+    const next = new Set(selectedPaths);
+    for (const p of d.selectable) all ? next.delete(p) : next.add(p);
+    selectedPaths = next;
+  }
+  function selectAll(): void { selectedPaths = new Set(tree?.selectable ?? []); }
+  function selectNone(): void { selectedPaths = new Set(); }
+
+  // Action: reflect derived indeterminate state onto the checkbox DOM prop.
+  function indeterminate(node: HTMLInputElement, value: boolean) {
+    node.indeterminate = value;
+    return { update(v: boolean) { node.indeterminate = v; } };
+  }
+
+  function sizeLabel(e: DiffEntry): string {
+    if (e.status === 'changed') return `${e.local}→${e.remote} B`;
+    if (e.status === 'new') return `${e.local} B`;
+    return `${e.remote} B`;
+  }
 
   const TEXT_RE = /\.(json|jsonl|txt|md|ts|tsx|js|mjs|cjs|svelte|css|html?|csv|log|ya?ml|xml|svg)$/i;
   const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
@@ -352,6 +483,48 @@
     </div>
   {/if}
 
+  {#snippet treeRows(nodes: TreeNode[], depth: number)}
+    {#each nodes as node (node.path)}
+      {#if node.kind === 'dir'}
+        <div class="vol-tree-row vt-dir" style="padding-left:{depth * 14 + 4}px">
+          <button class="vol-tree-twist" type="button" onclick={() => toggleCollapse(node.path)} aria-label="toggle folder">{isCollapsed(node.path) ? '▸' : '▾'}</button>
+          <input
+            class="vol-tree-cb"
+            type="checkbox"
+            checked={dirChecked(node)}
+            disabled={node.selectable.length === 0}
+            use:indeterminate={dirIndeterminate(node)}
+            onchange={() => toggleDir(node)}
+            title={node.selectable.length === 0 ? 'nothing here is uploadable (only files removed on OneDrive)' : 'select all uploadable files in this folder'}
+          />
+          <span class="vol-tree-name vt-dirname">{node.name}/</span>
+          <span class="vol-tree-rollup">
+            {#if node.counts.new}<span class="vol-diff-pill new">+{node.counts.new}</span>{/if}
+            {#if node.counts.gone}<span class="vol-diff-pill gone">−{node.counts.gone}</span>{/if}
+            {#if node.counts.changed}<span class="vol-diff-pill changed">~{node.counts.changed}</span>{/if}
+          </span>
+        </div>
+        {#if !isCollapsed(node.path)}
+          {@render treeRows(node.children, depth + 1)}
+        {/if}
+      {:else}
+        <div class="vol-tree-row vt-file {node.entry.status}" style="padding-left:{depth * 14 + 22}px">
+          <input
+            class="vol-tree-cb"
+            type="checkbox"
+            checked={selectedPaths.has(node.path)}
+            disabled={node.entry.status === 'gone'}
+            onchange={() => toggleFile(node.path)}
+            title={node.entry.status === 'gone' ? 'only on OneDrive — a copy-up can’t remove it (use “Sync all”)' : 'select for upload'}
+          />
+          <span class="vol-diff-badge {node.entry.status}" title={DIFF_LABEL[node.entry.status]}>{DIFF_GLYPH[node.entry.status]}</span>
+          <span class="vol-tree-name">{node.name}</span>
+          <span class="vol-diff-size">{sizeLabel(node.entry)}</span>
+        </div>
+      {/if}
+    {/each}
+  {/snippet}
+
   {#if dev && diff}
     {@const drift = diff.counts.new + diff.counts.gone + diff.counts.changed}
     <div class="vol-diff">
@@ -366,18 +539,29 @@
       {#if drift === 0}
         <div class="vol-diff-ok">✓ In sync — all {diff.counts.match} files match OneDrive.</div>
       {:else}
-        <div class="vol-diff-list">
-          {#each diff.entries.filter((e) => e.status !== 'match') as e (e.path)}
-            <div class="vol-diff-row {e.status}">
-              <span class="vol-diff-badge {e.status}" title={DIFF_LABEL[e.status]}>{DIFF_GLYPH[e.status]}</span>
-              <span class="vol-diff-path">{e.path}</span>
-              <span class="vol-diff-size">{e.status === 'changed' ? `${e.local}→${e.remote} B` : e.status === 'new' ? `${e.local} B` : `${e.remote} B`}</span>
-            </div>
-          {/each}
-        </div>
+        {#if tree}
+          <div class="vol-tree-bar">
+            <button class="vol-tree-link" type="button" onclick={selectAll} disabled={(tree.selectable.length === 0)}>Select all ({tree.selectable.length})</button>
+            <button class="vol-tree-link" type="button" onclick={selectNone} disabled={selectedPaths.size === 0}>Clear</button>
+            <span class="vol-tree-selcount">{selectedPaths.size} selected</span>
+          </div>
+          <div class="vol-diff-list">
+            {@render treeRows(tree.children, 0)}
+          </div>
+        {/if}
         <div class="vol-diff-foot">
-          <button class="vol-backup" type="button" disabled={syncing} onclick={runOneDrive}>{syncing ? '⏳ Syncing…' : '☁ Sync all → OneDrive'}</button>
-          <span class="vol-diff-note">Sync mirrors the volume up; replaced/deleted files are kept under {diff.dest}-prev/&lt;ts&gt;.</span>
+          <label class="vol-dryrun" title="Preview only — POSTs with dryRun:true, nothing is written to OneDrive">
+            <input type="checkbox" bind:checked={dryRun} />
+            <span>Dry run (preview)</span>
+          </label>
+          <button
+            class="vol-backup vol-backup-primary"
+            type="button"
+            disabled={selSyncing || syncing || selectedPaths.size === 0}
+            onclick={runSyncSelected}
+          >{selSyncing ? '⏳ …' : `${dryRun ? '◑ Preview' : '☁ Sync'} selected (${selectedPaths.size})`}</button>
+          <button class="vol-backup" type="button" disabled={syncing || selSyncing} onclick={runOneDrive}>{syncing ? '⏳ …' : `${dryRun ? '◑ Preview' : '☁ Sync'} all → OneDrive`}</button>
+          <span class="vol-diff-note">Selected = copy-up (non-destructive). All = full mirror; replaced/deleted files kept under {diff.dest}-prev/&lt;ts&gt;.</span>
         </div>
       {/if}
     </div>
@@ -594,7 +778,29 @@
   .vol-diff-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; }
   .vol-diff-size { flex: none; color: #94a3b8; }
   .vol-diff-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px 12px; }
-  .vol-diff-note { color: #94a3b8; font-size: 11px; }
+  .vol-diff-note { color: #94a3b8; font-size: 11px; flex: 1 1 200px; }
+  .vol-backup-primary { color: #fff; background: #cc2222; border-color: #cc2222; }
+  .vol-backup-primary:hover:not(:disabled) { background: #a91d1d; color: #fff; }
+  .vol-backup-primary:disabled { opacity: 0.5; }
+  .vol-dryrun { display: flex; align-items: center; gap: 5px; font: 11px Arial; color: #475569; cursor: pointer; user-select: none; }
+  .vol-dryrun input { cursor: pointer; }
+
+  /* ── Diff folder tree ─────────────────────────────────────────────────── */
+  .vol-tree-bar { display: flex; align-items: center; gap: 10px; padding: 4px 12px; border-top: 1px solid #eef0f3; }
+  .vol-tree-link { font: 11px Arial; color: #cc2222; background: none; border: none; padding: 1px 2px; cursor: pointer; }
+  .vol-tree-link:hover:not(:disabled) { text-decoration: underline; }
+  .vol-tree-link:disabled { color: #b8bcc4; cursor: default; }
+  .vol-tree-selcount { font: 11px ui-monospace, monospace; color: #64748b; margin-left: auto; }
+  .vol-tree-row { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 0; border-radius: 4px; font: 11px ui-monospace, monospace; }
+  .vol-tree-row:hover { background: #fff; }
+  .vol-tree-twist { width: 16px; flex: none; font: 10px Arial; color: #94a3b8; background: none; border: none; cursor: pointer; padding: 0; }
+  .vol-tree-twist:hover { color: #334155; }
+  .vol-tree-cb { flex: none; width: 13px; height: 13px; margin: 0; cursor: pointer; }
+  .vol-tree-cb:disabled { cursor: default; }
+  .vol-tree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; }
+  .vt-dirname { font-weight: 700; color: #1e293b; }
+  .vol-tree-rollup { flex: none; display: flex; gap: 4px; }
+  .vol-tree-rollup .vol-diff-pill { padding: 0 5px; font-size: 10px; }
 
   .vol-body { flex: 1; display: flex; min-height: 0; }
   .vol-list {

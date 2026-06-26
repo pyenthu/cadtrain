@@ -42,22 +42,52 @@ type VolNode = {
   children?: Record<string, VolNode>;
 };
 
-/** Recursively walk the prod volume over /api/volume → Map<path, size>. */
+/**
+ * Walk the prod volume over /api/volume → Map<path, size>.
+ *
+ * The /api/volume listing is depth-1, so a deep tree needs one HTTP call
+ * per directory. Done sequentially that's ~15s of round-trips; instead we
+ * BFS with a bounded worker pool (CONCURRENCY dirs in flight) — the Map
+ * writes are safe because JS is single-threaded.
+ */
+const CONCURRENCY = 8;
 async function walkVolume(): Promise<Map<string, number>> {
   const hdrs: Record<string, string> = TOKEN ? { 'X-Volume-Token': TOKEN } : {};
   const out = new Map<string, number>();
-  async function walk(rel: string): Promise<void> {
+
+  /** Fetch one dir listing; record its files, return its subdir paths. */
+  async function listDir(rel: string): Promise<string[]> {
     const r = await fetch(`${BASE_URL}/api/volume?path=${encodeURIComponent(rel)}`, { headers: hdrs });
     if (!r.ok) throw new Error(`volume GET ${rel || '/'} → ${r.status}`);
     const node = (await r.json()) as VolNode;
-    if (node.type !== 'dir') return;
+    if (node.type !== 'dir') return [];
+    const subdirs: string[] = [];
     for (const c of Object.values(node.children ?? {})) {
-      if (c.id.split('/').pop()?.startsWith('.') || SKIP.has(c.id.split('/').pop() ?? '')) continue;
-      if (c.type === 'dir') await walk(c.id);
+      const base = c.id.split('/').pop() ?? '';
+      if (base.startsWith('.') || SKIP.has(base)) continue;
+      if (c.type === 'dir') subdirs.push(c.id);
       else out.set(c.id, c.size ?? 0);
     }
+    return subdirs;
   }
-  await walk('');
+
+  const queue: string[] = [''];
+  let active = 0;
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const pump = (): void => {
+      if (settled) return;
+      if (queue.length === 0 && active === 0) { settled = true; resolve(); return; }
+      while (active < CONCURRENCY && queue.length > 0) {
+        const rel = queue.shift()!;
+        active++;
+        listDir(rel)
+          .then((subs) => { queue.push(...subs); active--; pump(); })
+          .catch((e) => { if (!settled) { settled = true; reject(e); } });
+      }
+    };
+    pump();
+  });
   return out;
 }
 
