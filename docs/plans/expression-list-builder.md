@@ -1,0 +1,99 @@
+# Expression-as-builder — structured + list outputs, loops, wired everywhere
+
+**Status:** idea / research, captured 2026-06-26 (from the spiral exploration —
+g_spiral / g_spiral_sketch / g_spiral_repeat showed the same loop+bindings
+pattern re-implemented in THREE places: poly_repeat, sketch_repeat, part-repeat).
+
+## The idea
+
+Today the expression builder (`ExprDef`, §v3.10) outputs **scalars** — a number
+wired into a single arg/coord. Enhance it so an OUTPUT can carry a **data
+structure**: a scalar, an **object**, or a **list** — and let the expression
+contain a **loop** (map over a range). The output SOCKET then carries that
+structured value and wires into any consumer that wants it:
+
+- list of `[r,z]` → a polygon's points (replaces `poly_repeat`)
+- list of sketch ops `{op,mode,r,z}` → a sketch's ops (replaces `sketch_repeat`)
+- list of transforms / placed parts → a `repeat` / `place([...])` (replaces the
+  part-level repeat's bindings+modifiers)
+- object → a structured arg; scalar → a single arg (today)
+
+One generic mechanism subsumes all three repeat node types. The spiral collapses
+to ONE expression with a `map` inside:
+
+```
+spiral_out = map(range(NPts), i => {
+  theta = i*turns*tau/NPts;
+  R = r0 + growth*i/NPts;
+  return [R*cos(theta), R*sin(theta)];   // a list of [r,z] points
+})
+```
+
+…wired straight into a polygon/extrude. A second output (or a concat) gives the
+inner edge. This is the substrate for a **"builder" app**: expressions are the
+generators, and you wire structured data (points, ops, transforms, parts)
+between them — a functional dataflow on top of the existing graph.
+
+## Why it's plausible (engine already supports it)
+
+The expression engine is **mathjs** (already wired, `parseAndValidateBare`).
+mathjs natively supports **arrays, objects/records, `map`, `range`, and inline
+function definitions** — so the math layer can already evaluate a list-of-objects
+output. The work is mostly MODEL + UI + WIRING + EMIT, not a new evaluator:
+
+1. **Model** — an `ExprOutput` gains a `shape: 'scalar' | 'object' | 'list'`
+   (and for list, an element shape). Validation allows non-scalar results.
+2. **Loop affordance** — a `map(range(N), v => …)` builder (or just allow it in
+   the formula textarea) with a loop var in scope, mirroring the repeat bindings.
+3. **Typed output sockets** — the socket advertises its shape; wiring rules only
+   allow a list output into a list-shaped slot (polygon points / sketch ops /
+   repeat), an object into an object slot, a scalar into a scalar slot.
+4. **Emit** — splice the list/object into the consumer's slot (the consumers
+   already accept arrays — polygon `points[]`, sketch `ops[]`, `place([...])`).
+5. **Migration / coexistence** — keep poly_repeat/sketch_repeat/part-repeat
+   working; the expression-list path is an additive, more general option. Later,
+   the repeat nodes could become sugar that *emit* an expression-list under the
+   hood.
+
+## Open questions
+
+- Type system depth: just `scalar|object|list`, or a richer shape (named record
+  fields, list-of-record with known keys)? Start minimal.
+- Where does the loop live — inside the formula (mathjs `map`) or as a structured
+  "for each" UI block? mathjs-in-the-textarea is the cheapest first cut.
+- Validation/cycle rules for list outputs feeding list consumers.
+- Performance: a 720-point spiral as a mathjs map vs the current emitted
+  `Array.from` — bench before committing to the math path for hot loops.
+- Does the WELD/extrude path stay the consumer (clean ribbon), or do we also want
+  the "loft between list items" mode (the swept-solid feature noted in
+  g_spiral_repeat.md)? Likely complementary.
+
+## Prior art to research (the "what else is out there")
+
+- **Grasshopper (Rhino)** — the canonical visual dataflow CAD; its **data trees**
+  (nested lists) + list-management components (graft/flatten/shift/cross-ref) are
+  the reference design for "wire lists of objects." Study its tree model + the
+  pain points (tree matching) before copying.
+- **Dynamo (Revit)** — list-lacing rules (shortest/longest/cross-product) — how
+  it pairs lists across inputs.
+- **Blender Geometry Nodes / Sverchok** — fields + attributes; "everything is a
+  field over a domain" is an alternative to explicit lists.
+- **OpenSCAD list comprehensions** (`[for (i=[0:n]) f(i)]`) — text-generative,
+  the closest to our `map` idea.
+- **CadQuery / replicad** — `eachpoint`, workplane arrays — functional placement
+  over a point set (our repeat-as-sweep cousin).
+- **Houdini** (VEX/attribute wrangle) — the gold standard for per-element data
+  flow; overkill but instructive on copy-to-points / sweeps.
+- **mathjs** docs — confirm `map`/`range`/object support + perf for our sizes.
+
+A focused deep-research pass (the `deep-research` skill) on "visual dataflow CAD
+list/tree models + list-lacing" would de-risk the type/wiring design before any
+code.
+
+## Payoff
+
+- One generic generator instead of three repeat node types.
+- A "builder" surface: wire points → profiles, ops → sketches, transforms →
+  placements, all from typed expression outputs.
+- Sets up data-driven parts (a list output can come from a param table / CSV /
+  the RAG layer) — heterogeneous repeats fall out for free.

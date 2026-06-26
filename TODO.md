@@ -15,6 +15,18 @@
    `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3 editor/BOM + wire the
    tool rail to real placement. Plan: `docs/plans/well-schematic.md`.
 
+11. **Expression-as-builder — structured + list outputs + loops (unify the 3 repeats)**. Let an
+    expression OUTPUT carry a scalar | object | **list**, with a `map(range(N), i => …)` loop
+    inside, and wire the structured output into ANY consumer: list of `[r,z]` → polygon points
+    (= poly_repeat), list of ops → sketch ops (= sketch_repeat), list of transforms → place/repeat
+    (= part-repeat). ONE generic generator subsumes all three repeat node types; the spiral becomes
+    ONE expression with a map. Engine (mathjs) already supports arrays/objects/map/range — work is
+    model (`shape` on outputs) + loop UI + typed output sockets + emit-into-slot. Substrate for a
+    "builder" app (wire points/ops/transforms/parts) + data-driven parts. Research prior art first:
+    Grasshopper data-trees + list-lacing, Dynamo, Blender Geometry Nodes, OpenSCAD comprehensions,
+    CadQuery eachpoint, Houdini copy-to-points (deep-research pass). Plan: `docs/plans/expression-list-builder.md`.
+    Pairs with the repeat-as-sweep / loft-between-copies idea (clean swept solids; see `g_spiral_repeat.md`).
+
 8. **Repeat editor → draggable/resizable POPOVER with wireable params** (parity with the
    2026-06-26 Expression popover). LEFT 30% = params (editable + INPUT sockets, authored
    in the popover); RIGHT 70% = the loop (iterators + parts + transforms + body). Node card
