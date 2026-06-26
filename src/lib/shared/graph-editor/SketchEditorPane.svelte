@@ -215,6 +215,10 @@
       {#if sketch.miniLayout}
         {@const ml = sketch.miniLayout}
         {@const sn = se.node}
+        <!-- opIdx → the point NUMBER shown next to that anchor in the 2D stage
+             ({i+1} over se.anchors), so a card row carries the SAME number as
+             its point. Corner ops (fillet/chamfer) aren't anchors → no number. -->
+        {@const opNum = new Map(se.anchors.map((a, i) => [a.opIdx, i + 1]))}
         {@const scW = sketch.sketchCardSize?.w ?? ml.scW}
         {@const scH = sketch.sketchCardSize?.h ?? ml.sch}
         <svg class="ge-sketch-cards" bind:this={sketch.miniSvgEl}>
@@ -296,6 +300,7 @@
                   {#each (sn.ops as Array<any>) as op, idx (idx)}
                     {#if op.op === 'line' || op.op === 'spline'}
                       <div class="ge-sketch-vtx" class:editing={sketch.sketchExprPop?.sid === sid && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
+                        <span class="ge-sketch-vidx" class:first={opNum.get(idx) === 1}>{opNum.get(idx) ?? ''}</span>
                         <div class="ge-sketch-srow">
                           <button class="ge-sketch-axis" class:spline={op.op === 'spline'} class:rel={op.mode === 'rel'} title="Toggle absolute / Δ relative (offset from previous point)" onclick={() => sketch.toggleSketchOpMode(sid, idx, op)}>{sketch.sketchAxisLabel(op, 'r')}</button>
                           <input class="ge-sketch-in" type="text" value={argStr(op.r)} title={op.mode === 'rel' ? 'Δr — offset from previous point' : 'r — number or p.param'}
@@ -321,6 +326,7 @@
                       {@const src = graph.nodes[op.sourceId]}
                       {@const cnt = (src as any)?.type === 'sketch_repeat' ? argStr((src as any).count) : '?'}
                       <div class="ge-sketch-vtx repeat" style="height: {sketchEntryH(op)}px">
+                        <span class="ge-sketch-vidx">{opNum.get(idx) ?? ''}</span>
                         <div class="ge-sketch-srow">
                           <span class="ge-sketch-axis repeat" title="Sketch repeat — edit the prototype on its ↻ card">↻ ×{cnt}</span>
                           <span class="ge-sketch-rep-hint">{(src as any)?.type === 'sketch_repeat' ? 'repeat block' : 'missing source'}</span>
@@ -334,6 +340,7 @@
                       </div>
                     {:else}
                       <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === sid && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
+                        <span class="ge-sketch-vidx">{opNum.get(idx) ?? ''}</span>
                         <div class="ge-sketch-srow">
                           <span class="ge-sketch-axis corner" class:chamfer={op.op === 'chamfer'} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer distance'}>{op.op === 'fillet' ? 'fillet' : 'chamf'}</span>
                           <input class="ge-sketch-in" type="text" value={argStr(op.op === 'fillet' ? op.radius : op.dist)} title={op.op === 'fillet' ? 'fillet radius' : 'chamfer dist'}
@@ -509,7 +516,10 @@
   /* ─── sketch op rows (shared with SketchNodeCard) ─────────────────────── */
   .ge-sketch { font: 11px ui-monospace, monospace; color: #1f2937; display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .ge-sketch-ops { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .ge-sketch-vtx { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 2px 0 4px; margin: 0; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
+  .ge-sketch-vtx { position: relative; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 2px 0 16px; margin: 0; border: 1px solid #e9d5ff; border-radius: 4px; background: rgba(250,245,255,0.6); }
+  /* point-order number, matching the {i+1} label next to each anchor in the 2D stage. */
+  .ge-sketch-vidx { position: absolute; left: 1px; top: 50%; transform: translateY(-50%); width: 12px; text-align: center; font: 700 9px ui-monospace, monospace; color: #6d28d9; pointer-events: none; }
+  .ge-sketch-vidx.first { color: #15803d; }
   .ge-sketch-vtx.corner { background: rgba(243,232,255,0.85); border-color: #d8b4fe; }
   .ge-sketch-vtx.editing { border-color: #f59e0b; background: rgba(254,243,199,0.7); box-shadow: 0 0 0 1px #f59e0b; }
   .ge-sketch-srow { display: flex; align-items: center; gap: 3px; height: 18px; }
