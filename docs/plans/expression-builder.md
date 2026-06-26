@@ -108,6 +108,10 @@ Repurpose `openExprPop` (the Σ rail button):
 - Deleting a def warns if instances exist (offer: delete instances too / cancel).
 
 ### v3.5 The editor (the four-section builder)
+> **⚠ Editor LAYOUT superseded 2026-06-26 — see §v3.10.** The four sections / tabs
+> / CONSTS table below are the original plan; the shipped editor is now a 30/70
+> split with no CONSTS and no tabs. The DATA MODEL here is still accurate.
+
 Refit the existing `expr/ExpressionBuilderPopup` to edit a **def** (not a node):
 - Header: def name field + the **tabs/accordions toggle** (a small ⊞/≡ button,
   pref persisted in `localStorage` `cad-expr-editor-layout`).
@@ -168,6 +172,32 @@ d.id === n.defId)`):
 ### v3.9 Out of scope (this round)
 Global/cross-part library (volume-backed defs); instance-level param-default
 overrides; typed/units params (kept scalar). All noted for a later phase.
+
+### v3.10 Editor redesign — 2026-06-26 (SUPERSEDES the v3.5 editor layout)
+`ExpressionBuilderPopup` was reworked from the four-section tabbed/accordion
+layout into a **30 / 70 vertical split**. The DATA MODEL is unchanged
+(`ExprDef` still carries `params/consts/vars/outputs`, emit order untouched) —
+this is a UI-only change.
+
+- **CONSTS dropped from the UI** — a param with a `default` covers the same case
+  (an unwired param uses its default). **Not backward-compatible by design**
+  (deliberate, to keep the code simple): a def whose formula still references a
+  bare const NAME now fails validation — redeclare it as a param. On commit the
+  editor writes `consts: []`. (The emit path still *reads* `def.consts` for any
+  unopened legacy def, so existing baked parts are unaffected until re-saved.)
+- **No section tabs.** The LEFT pane (≈30%) is a plain PARAMS table (`+ add
+  param`), no rail, no heading — the rows are self-evident. The
+  tabs/accordions toggle (`cad-expr-editor-layout`) is gone.
+- **OUTPUTS own the RIGHT pane (≈70%):** a wide MULTI-LINE function-body editor
+  (`ExpressionSrcPane`, supports `cond ? a : b` ternary / if-then) for the
+  selected output + a far-right vertical per-output tab rail whose tabs carry
+  the OUTPUT SOCKET. `selOut` drives which output's body fills the pane.
+- **VARS:** no editor UI for now (data preserved as pass-through; still in the
+  autocomplete corpus + validation). Re-expose later if intermediate vars are
+  needed.
+- Popup widened to 860px. Per-instance local `$state` only (no module
+  singletons — `/primitives` mounts many panes).
+- Commits: redesign `c7e0611`, CONSTS-drop `294ef84`.
 
 ---
 
