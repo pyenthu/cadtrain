@@ -21,11 +21,6 @@
    shows the params above the parts ONLY when defined in the popover. Decided: full wireable
    sockets. Plan: `docs/plans/repeat-builder-popup.md`.
 
-9. **3D-bake default scale on load** — auto-set `xScale`/`zScale` so the part reads thick +
-   long-enough-but-not-too-long. Aspect-normalize: `AR=L/D`; `k = AR>HI?HI/AR : AR<LO?LO/AR : 1`;
-   `zScale=clamp(k^a, .2, 2)`, `xScale=clamp(k^(a-1), .5, 3)`. **Confirmed "Balanced": HI=6, LO=1.2,
-   a=0.5.** Apply once per part load behind a `scaleAuto` flag (manual slider drag → scaleAuto=off);
-   `⊙` re-enables. View-only, never touches the bake. (L=`bbox.ez`, D=`max(bbox.ex,bbox.ey)`.)
 
 
 ### Shipped (recent) — 2026-06-25/26
@@ -40,6 +35,9 @@
 - **Z-slider** (bake viz) — range 2×→1.1× part length (5% overshoot/side, finer pan
   on long parts); `⇕ fit` now recentres the slider.
 - **Dead-code sweep** — removed 6 unused exports + 16 unused files (knip-led).
+- **3D-bake default scale on load** — auto `xScale`/`zScale` aspect normalization
+  ("Balanced": HI=6, LO=1.2, a=0.5); `scaleAuto` flag, manual drag sticks, new part /
+  ⇕ fit re-enables. Verified g_collar z×1.55, g_shaft (AR 5) untouched. View-only.
 
 ### PARKED
 
