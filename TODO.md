@@ -29,10 +29,15 @@
     / caps). See `g_spiral_repeat.md`. Pairs with #11.
 
 11. **Expression-as-builder — structured + list outputs + loops (unify the 3 repeats)**. **DATA-MODEL
-    step IN FLIGHT 2026-06-26** (subagent): `shape: scalar|object|list` + element-shape on expr
-    outputs, validation allows a `map()` list formula, list<point> wires into polygon points, proven
-    by baking the spiral as ONE expression. Research decisions locked (flat lists, longest-repeat-last
-    lacing, socket-shape typing, no data trees) in the plan. Let an
+    step MERGED 2026-06-26**: expr OUTPUT gains `shape:scalar|object|list` + `elem:point|op|transform|
+    scalar|object`; new PolygonEntry `expr-list-ref` splices a list<point> output into polygon points;
+    shape-parametrized validation (list grammar = mathjs `concat/map/range`); `compileListFormula`
+    lowers to JS; scalar path byte-identical; 12 tests. PROVEN: spiral as ONE expression bakes
+    identical to g_spiral (8628 verts). **LEFT (the UI step):** 5 element-shape socket VISUALS + the
+    `shape`/`elem` picker on output rows in ExpressionBuilderPopup + drag-to-wire (mutator
+    `addPolygonExprListRef` exists) + lacing (longest-repeat-last, deferred) + wire the profile-graph
+    2D-preview path (composition-emit-profile needs the expr prelude in scope). Research decisions
+    locked (flat lists, longest-repeat-last lacing, socket-shape typing, no data trees). Let an
     expression OUTPUT carry a scalar | object | **list**, with a `map(range(N), i => …)` loop
     inside, and wire the structured output into ANY consumer: list of `[r,z]` → polygon points
     (= poly_repeat), list of ops → sketch ops (= sketch_repeat), list of transforms → place/repeat
