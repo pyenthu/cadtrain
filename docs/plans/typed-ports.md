@@ -99,6 +99,59 @@ retro-fitted so the OLD wiring becomes the FIRST consumer of the new system.
 5. **Generative hook** — an `autoWireSuggestions(graph)` that returns
    type-compatible (output → open-slot) pairs; surface in the ✨ menu later.
 
+## Layer 2 — a visual TYPE DEFINER + manager (user-definable shapes)
+
+PR1 ships BUILT-IN port types (scalar / list<point> / geometry). The bigger
+vision (user, 2026-06-26): let the user **define their own shapes/structures
+visually** and **store them** so nodes become dynamic — their socket shapes come
+from a type registry, not hardcoded.
+
+### Two kinds of type
+- **Primitive** (atoms, built-in): `number` · `flag` (bool) · `point` ([r,z]) ·
+  `text` · `geometry`. (The PR1 registry holds these.)
+- **Composite / RECORD** (user-defined): a NAMED struct of FIELDS, each field a
+  type ref (primitive, another composite, or `list<T>`). Examples:
+  `Point { r: number, z: number }` · `Casing { od: number, id: number,
+  length: number, isLiner: flag }`. A "polygon" is just `list<Point>`. This is
+  the **structure builder** — like defining polygon/number/flag as first-class,
+  composable shapes.
+
+### The definer (visual)
+A panel — same family as the expression builder — to create/edit a composite
+type: add field rows (name + a TYPE picker drawn from the registry), nest a
+composite, `list<…>`-wrap a field. Output = a `TypeDef` written to the registry.
+Renders the shape as a readable tree.
+
+### The manager / store (the "place to store the types as we build")
+A registry that holds built-in + user-defined types, browsable + reusable:
+- **Per-part** `graph.typeDefs[]` (local, like `exprDefs`), AND
+- a **GLOBAL volume library** (`<volume>/types/*.json`, like the vocabulary /
+  RAG corpus) so a `Casing` defined once is reusable across parts.
+Visual surface: a `/types` route or a side panel — list, edit, search, promote
+local → global. Editing a `TypeDef` PROPAGATES to every node/port using it (the
+exprDef→instance pattern), so nodes stay in sync.
+
+### Dynamic nodes
+A node declares its ports by TYPE ID; the registry resolves render / canFeed /
+emit from the (possibly composite) type. So a node's socket SHAPE is data, not
+code — change a type, every node using it updates. This is what makes nodes
+"very dynamic": a `Casing`-typed output, a `list<Casing>` well, a `flag` toggle —
+all from defined shapes.
+
+### Why it compounds
+- **Generative**: typed structures are machine-reasonable — a generator/✨AI can
+  build, validate, and auto-wire by SCHEMA (a `list<Point>` output fits a polygon;
+  a `Casing` fits a casing slot). Schema-directed generation >> prompt templates.
+- **Scalability + reuse**: define `Casing`/`Point`/`Joint` once; every part reuses
+  them. `meta.params` (today: flat numbers) generalises to typed structured
+  params; `exprDefs` (reusable calc) gets a sibling in `typeDefs` (reusable shape).
+
+### Sequencing
+Layer 2 follows the port-types wiring foundation (PR1 done → PR2 retrofit → PR3
+#11 wire-on-registry). Then: (L2a) the `TypeDef` model + per-part registry +
+composite `canFeed`/emit; (L2b) the visual definer panel; (L2c) the global volume
+type library + manager UI + def→instance propagation.
+
 ## Open questions
 
 - Type IDENTITY: nominal (`'list<point>'` string id) vs structural (`{elem,card}`
