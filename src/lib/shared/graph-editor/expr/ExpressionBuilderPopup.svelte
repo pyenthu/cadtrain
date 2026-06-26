@@ -7,8 +7,9 @@
   ExprDef back (so every instance updates).
 
   Layout (redesigned 2026-06-26) — a 30 / 70 vertical split. This is a POPOVER,
-  not a node, so it shows NO socket dots and a minimal "ƒ" header (the actions
-  only — expand + close).
+  not a node, so it shows NO socket dots. The header is DRAGGABLE (grab handle →
+  `pos` overrides the click anchor) and the popup is RESIZABLE (CSS corner grip);
+  the header holds the "ƒ" glyph + the def NAME field + expand/close.
     • LEFT pane (30%)  — the def NAME field (top) + a plain PARAMS table (no
       tabs). Params are the sole declaration section; an UNWIRED param uses its
       default, which replaces the old CONSTS (dropped entirely — NOT backward-
@@ -53,6 +54,13 @@
   let vars = $state<FormulaRow[]>([]);
   let outputs = $state<FormulaRow[]>([]);
   let expanded = $state(false);
+
+  // Draggable popover — the header is the grab handle; `pos` overrides the anchor
+  // once moved. (Resize is the CSS corner grip on .ge-expr-pop, no JS needed.)
+  let popEl = $state<HTMLElement | null>(null);
+  let pos = $state<{ x: number; y: number } | null>(null);
+  let dragging = false;
+  let dragOff = { x: 0, y: 0 };
 
   // Two-pane 30/70 split. LEFT pane (30%) is a plain PARAMS pane (no tabs —
   // params are the sole declaration section now; an unwired param uses its
@@ -157,6 +165,28 @@
     else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(); }
   }
 
+  // ─── drag (header handle) ───────────────────────────────────────────────────
+  function onHeadPointerDown(ev: PointerEvent) {
+    if (expanded || !popEl) return;
+    // Don't start a drag from an interactive control (name field, buttons).
+    if ((ev.target as HTMLElement).closest('button, input, textarea')) return;
+    const r = popEl.getBoundingClientRect();
+    dragOff = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    pos = { x: r.left, y: r.top };
+    dragging = true;
+    (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
+    ev.preventDefault();
+  }
+  function onHeadPointerMove(ev: PointerEvent) {
+    if (!dragging) return;
+    pos = { x: ev.clientX - dragOff.x, y: ev.clientY - dragOff.y };
+  }
+  function onHeadPointerUp(ev: PointerEvent) {
+    if (!dragging) return;
+    dragging = false;
+    (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
+  }
+
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -209,12 +239,17 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  bind:this={popEl}
   class="ge-expr-pop"
   class:expanded
   use:clampToViewport={expanded ? null : anchor}
-  style={expanded ? '' : `left: ${anchor.x}px; top: ${anchor.y}px;`}>
-  <div class="ge-expr-head">
+  style={expanded ? '' : `left: ${(pos ?? anchor).x}px; top: ${(pos ?? anchor).y}px;`}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="ge-expr-head" onpointerdown={onHeadPointerDown}
+    onpointermove={onHeadPointerMove} onpointerup={onHeadPointerUp} onpointercancel={onHeadPointerUp}>
     <span class="ge-expr-title">ƒ</span>
+    <input class="ge-expr-defname" type="text" placeholder="expression name" bind:value={name}
+      class:bad={name.trim() === ''} title="Expression name (shown in the Σ menu + on instance cards)" />
     <div class="ge-expr-head-actions">
       <button type="button" class="ge-expr-iconbtn" title={expanded ? 'Collapse to popover' : 'Expand to full screen'} onclick={() => (expanded = !expanded)}>{expanded ? '⤡' : '⤢'}</button>
       <button type="button" class="ge-expr-iconbtn" title="Close (Esc)" onclick={onCancel}>✕</button>
@@ -222,11 +257,9 @@
   </div>
 
   <div class="ge-expr-body">
-    <!-- ─── LEFT PANE (30%) — def NAME + PARAMS (no tabs) ──────────────────── -->
+    <!-- ─── LEFT PANE (30%) — PARAMS (no tabs; name is in the title) ───────── -->
     <div class="ge-xs-pane left">
       <div class="ge-xs-main">
-        <input class="ge-expr-defname" type="text" placeholder="expression name" bind:value={name}
-          class:bad={name.trim() === ''} title="Expression name (shown in the Σ menu + on instance cards)" />
         {@render paramsBody()}
       </div>
     </div>
@@ -273,27 +306,30 @@
     box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
     display: flex; flex-direction: column; overflow: hidden;
     font-family: Arial, sans-serif;
+    /* draggable (via header) + resizable (corner grip). */
+    height: 460px; min-width: 520px; min-height: 320px; resize: both;
   }
-  .ge-expr-pop.expanded { inset: 24px; left: 24px !important; top: 24px !important; width: auto; max-width: none; }
+  .ge-expr-pop.expanded { inset: 24px; left: 24px !important; top: 24px !important; width: auto; max-width: none; height: auto; resize: none; }
   .ge-expr-head {
     display: flex; align-items: center; gap: 8px;
     padding: 8px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc;
+    cursor: move; user-select: none; touch-action: none;
   }
   .ge-expr-title { font: 700 15px Arial; color: #334155; white-space: nowrap; }
-  /* def name now lives at the TOP of the LEFT pane (block, full-width). */
+  /* def name sits in the title, next to the ƒ glyph. */
   .ge-expr-defname {
-    display: block; width: auto; margin: 8px 12px 2px; font: 700 13px ui-monospace, monospace;
-    color: #0e7490; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff;
+    flex: 1 1 auto; min-width: 0; font: 700 13px ui-monospace, monospace; color: #0e7490;
+    padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: text;
   }
   .ge-expr-defname.bad { border-color: #fca5a5; background: #fef2f2; }
-  .ge-expr-head-actions { display: flex; gap: 4px; margin-left: auto; }
+  .ge-expr-head-actions { display: flex; gap: 4px; }
   .ge-expr-iconbtn {
     font: 13px Arial; color: #64748b; background: #fff; border: 1px solid #e2e8f0; border-radius: 5px;
     width: 24px; height: 24px; cursor: pointer; line-height: 1;
   }
   .ge-expr-iconbtn:hover { background: #f1f5f9; color: #334155; }
-  .ge-expr-body { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 280px; max-height: 60vh; overflow: hidden; }
-  .ge-expr-pop.expanded .ge-expr-body { max-height: none; }
+  /* fills whatever height the popup is dragged to (no fixed cap → resize works). */
+  .ge-expr-body { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 
   /* 30 / 70 vertical split: declarations (left) | outputs (right). */
   .ge-xs-pane { display: flex; align-items: stretch; min-height: 0; min-width: 0; overflow: hidden; }
