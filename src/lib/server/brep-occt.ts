@@ -326,10 +326,16 @@ export async function brepFromSource(
   };
   const r_cuboid = (w: number, h: number, d: number) => wrap(makeBaseBox(Math.max(0.01, w), Math.max(0.01, h), Math.max(0.01, d)));
 
-  // transforms
-  const mv = (s: any, v: number[]) => wrap(unwrap(s).translate([v[0] || 0, v[1] || 0, v[2] || 0]));
+  // transforms — replicad/OCCT transforms DELETE their input shape's handle
+  // after producing the moved copy (replicad Shape.translate/rotate call
+  // this.delete()). A `repeat` that reuses ONE shape across N transforms
+  // (e.g. casing_schematic: Array.from(N, i => mv(B, [0,0,200*i]))) frees B on
+  // the first call and then uses a deleted handle → "This object has been
+  // deleted" (#19). clone() FIRST (non-destructive) so the source survives for
+  // the next iteration — same defensive pattern as compoundOf/stackOcct below.
+  const mv = (s: any, v: number[]) => wrap(unwrap(s).clone().translate([v[0] || 0, v[1] || 0, v[2] || 0]));
   const rot = (s: any, v: number[]) => {
-    let sh = unwrap(s);
+    let sh = unwrap(s).clone();
     if (v[0]) sh = sh.rotate(v[0], [0, 0, 0], [1, 0, 0]);
     if (v[1]) sh = sh.rotate(v[1], [0, 0, 0], [0, 1, 0]);
     if (v[2]) sh = sh.rotate(v[2], [0, 0, 0], [0, 0, 1]);
