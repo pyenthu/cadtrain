@@ -60,7 +60,7 @@ half-section).
 
 Bakes identically to g_spiral at defaults: **8,628 verts**, cross-section
 x∈[−1.15, 1.40] · y∈[−1.28, 1.03] (the r0→r0+growth spiral), z∈[0, 2].
-Lives at `primitives/basic/g_spiral_sketch.asm.ts`. Renders in the editor
+Lives at `primitives/basic/spirals/g_spiral_sketch.asm.ts`. Renders in the editor
 as two `↻ sketch repeat` cards (Bindings ƒ(i)/ƒ(j) + a one-op prototype).
 
 ## Takeaway

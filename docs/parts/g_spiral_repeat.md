@@ -49,5 +49,5 @@ helical ramps, spiral blades) at a fraction of the vertex count.
 ## Params
 
 Identical to g_spiral (NPts, r0, growth, turns, width, length). Lives at
-`primitives/basic/g_spiral_repeat.asm.ts`. Renders + bakes from the Repeat
+`primitives/basic/spirals/g_spiral_repeat.asm.ts`. Renders + bakes from the Repeat
 card (verified 2026-06-26: ✓ ~8.8k tris).
