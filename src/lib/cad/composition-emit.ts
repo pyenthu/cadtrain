@@ -597,7 +597,12 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
         const loopVar = /^[A-Za-z_$][\w$]*$/.test(String((node as any).loopVar || ''))
           ? String((node as any).loopVar) : 'i';
         const bindLines = binds.map((b) => `const ${b.name} = ${emitValueExpr(b.value)};`).join(' ');
-        const preamble = bindLines ? `const N = ${count}; ${bindLines}` : `const N = ${count};`;
+        // Inject the loop count under BOTH `N` (historical) and `NPts` (the name
+        // poly_repeat/sketch_repeat use), so a binding expr like `i*turns*tau/NPts`
+        // works identically across all three repeat flavors.
+        const preamble = bindLines
+          ? `const N = ${count}; const NPts = ${count}; ${bindLines}`
+          : `const N = ${count}; const NPts = ${count};`;
         // Global modifiers wrap the whole place([…]) unit (per-part mods are
         // already folded inside each part). Innermost-first.
         const body = foldMods(child, mods);
