@@ -64,6 +64,31 @@ export const FUNCTION_ARITY: Readonly<Record<string, number | [number, number]>>
   clamp: 3,
 };
 
+/** Extra FUNCTIONS allowed ONLY inside a `shape:'list'` output formula (#11
+ *  expression-as-builder). `range(start, stop)` builds the index list,
+ *  `map(arr, f(i)=…)` fans an inline function over it, `concat(a, b, …)` joins
+ *  the resulting lists (e.g. the spiral's outer + inner edge). They are NOT in
+ *  ALLOWED_FUNCTIONS so a SCALAR formula still rejects them. compileListFormula
+ *  (graph-exprs.ts) lowers each to plain JS — they are never runtime symbols. */
+export const LIST_FUNCTIONS: ReadonlySet<string> = new Set(['map', 'range', 'concat']);
+
+/** Per-function arity for the list builders (same shape as FUNCTION_ARITY). */
+export const LIST_FUNCTION_ARITY: Readonly<Record<string, number | [number, number]>> = {
+  map: 2,
+  range: [1, 2],
+  concat: [1, Infinity],
+};
+
+/** Extra AST node types allowed ONLY in a `shape:'list'` output formula:
+ *  `ArrayNode` (the `[r, z]` element + the top-level list), and
+ *  `FunctionAssignmentNode` (mathjs's `f(i) = …` inline lambda — the per-element
+ *  body). Both stay BANNED in a scalar formula (structurally no arrays / no
+ *  lambdas), preserving the scalar grammar exactly. */
+export const LIST_EXTRA_NODE_TYPES: ReadonlySet<string> = new Set([
+  'ArrayNode',
+  'FunctionAssignmentNode',
+]);
+
 // ─── allowed-input builder ──────────────────────────────────────────────────
 
 /** The allowed-input set for a given schema context. `dotted` holds the full

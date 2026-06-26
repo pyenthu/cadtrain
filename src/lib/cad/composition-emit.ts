@@ -39,6 +39,7 @@ import {
 import {
   emitExprConsts, rewriteExprRefs,
   exprBlockVar, rewriteExprLocalRefs, orderExprDef, declaredNames,
+  compileListFormula,
 } from './graph-exprs';
 
 export interface EmitOptions {
@@ -621,6 +622,15 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // an Array.from spread with the loop's expressions. Bindings (#157)
       // emit as `const` lines inside the arrow body.
       const rows = node.points.map((entry: any) => {
+        if (entry?.kind === 'expr-list-ref') {
+          // #11 — splice an expression instance's list<point> OUTPUT (a JS
+          // array of [r,z], emitted into the prelude as `V_<output>` by
+          // emitExprBlocks) straight into the polygon's points. Mirrors the
+          // poly_repeat repeat-ref below, but the source is an ExprNode.
+          const src = nodes[entry.sourceId] as any;
+          if (!src || src.type !== 'expr' || !entry.output) return '';
+          return `...${exprBlockVar(entry.sourceId)}_${entry.output}`;
+        }
         if (entry?.kind === 'repeat-ref') {
           const src = nodes[entry.sourceId] as any;
           if (!src || src.type !== 'poly_repeat') return '';
@@ -744,7 +754,21 @@ export function emitExprBlocks(graph: Graph): string[] {
       } else if (item.section === 'var') {
         lines.push(`const ${V}_${item.vardef.name} = ${rewriteExprLocalRefs(item.vardef.formula, V, locals)};`);
       } else {
-        lines.push(`const ${V}_${item.output.name} = ${rewriteExprLocalRefs(item.output.formula, V, locals)};`);
+        const out = item.output;
+        if (out.shape === 'list') {
+          // A list output (#11) is compiled from the constrained mathjs grammar
+          // to a JS array expression, THEN its def-local symbols are namespaced
+          // to V_* (same rewrite as a scalar output; loop params + math globals
+          // survive untouched). A bad formula emits a loud throw IIFE rather
+          // than a silent placeholder that would crash WASM downstream.
+          const compiled = compileListFormula(out.formula);
+          const rhs = compiled.ok
+            ? rewriteExprLocalRefs(compiled.js, V, locals)
+            : `(() => { throw new Error(${JSON.stringify('list output "' + out.name + '" error — ' + compiled.error)}); })()`;
+          lines.push(`const ${V}_${out.name} = ${rhs};`);
+        } else {
+          lines.push(`const ${V}_${out.name} = ${rewriteExprLocalRefs(out.formula, V, locals)};`);
+        }
       }
     }
   }

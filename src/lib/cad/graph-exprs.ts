@@ -36,12 +36,15 @@
 // numeric preview will add `evaluateDependencies` if/when needed.
 import { create, parseDependencies, type MathNode } from 'mathjs';
 const { parse } = create(parseDependencies);
-import type { GraphExpr, ExprDef, ExprParam, ExprConst, ExprVar, ExprOut } from './composition-graph-types';
+import type { GraphExpr, ExprDef, ExprParam, ExprConst, ExprVar, ExprOut, ExprOutShape } from './composition-graph-types';
 import {
   ALLOWED_FUNCTIONS,
   ALLOWED_CONSTANTS,
   FUNCTION_ARITY,
   SAFE_NODE_TYPES,
+  LIST_FUNCTIONS,
+  LIST_FUNCTION_ARITY,
+  LIST_EXTRA_NODE_TYPES,
   buildAllowedInputs,
   isIdentSafe,
   type AllowedInputs,
@@ -379,10 +382,9 @@ export function buildExprSchema(paramNames: Iterable<string>, exprNames: Iterabl
   return { inputs: buildAllowedInputs(paramNames, exprNames) };
 }
 
-/** Check a function call's arity against FUNCTION_ARITY. Returns an error
- *  message or null. */
-function arityError(fn: string, argc: number): string | null {
-  const a = FUNCTION_ARITY[fn];
+/** Check a function call's arity against a given spec (exact count or
+ *  `[min,max]` range). Returns an error message or null. */
+function arityErrorWith(fn: string, argc: number, a: number | [number, number] | undefined): string | null {
   if (a == null) return null;
   if (typeof a === 'number') {
     return argc === a ? null : `${fn} expects ${a} argument${a === 1 ? '' : 's'}, got ${argc}`;
@@ -391,6 +393,12 @@ function arityError(fn: string, argc: number): string | null {
   if (argc < min) return `${fn} expects at least ${min} argument${min === 1 ? '' : 's'}, got ${argc}`;
   if (argc > max) return `${fn} expects at most ${max} arguments, got ${argc}`;
   return null;
+}
+
+/** Check a function call's arity against FUNCTION_ARITY. Returns an error
+ *  message or null. */
+function arityError(fn: string, argc: number): string | null {
+  return arityErrorWith(fn, argc, FUNCTION_ARITY[fn]);
 }
 
 /**
@@ -499,11 +507,34 @@ export function parseAndValidate(src: string, schema: ExprSchema): { ast: MathNo
 // access (`p.x`) is rejected outright; unsafe node types are rejected.
 
 /** Validate a parsed BARE-name formula AST against the set of names declared
- *  EARLIER in the def (+ the function/constant allowlist). EMPTY ⇒ safe. */
-export function validateExprBare(ast: MathNode, allowedNames: ReadonlySet<string>): ExprError[] {
+ *  EARLIER in the def (+ the function/constant allowlist). EMPTY ⇒ safe.
+ *
+ *  `shape` selects the grammar (#11 expression-as-builder). The default
+ *  `'scalar'` is byte-identical to the historical validator — arrays / lambdas /
+ *  map / range / concat all REJECTED. `'list'` additionally allows `ArrayNode`,
+ *  `FunctionAssignmentNode` (mathjs `f(i)=…`), and the list builders
+ *  (`map`/`range`/`concat`), and folds each lambda's bound params into the
+ *  allowed-name set so the per-element body can reference its loop var. */
+export function validateExprBare(
+  ast: MathNode, allowedNames: ReadonlySet<string>, shape: ExprOutShape = 'scalar',
+): ExprError[] {
   const errs: ExprError[] = [];
+  const isList = shape === 'list';
+
+  // Fold every lambda's bound params (the `i` in `f(i)=…`) into the allowed set
+  // up front — validation is defence-in-depth (the sandbox is the real
+  // boundary), so a slightly-loose lambda scope is acceptable here.
+  const names = new Set(allowedNames);
+  if (isList) {
+    ast.traverse((node: any) => {
+      if (node.type === 'FunctionAssignmentNode') for (const p of (node.params ?? [])) names.add(p);
+    });
+  }
+  const nodeOk = (t: string) => SAFE_NODE_TYPES.has(t) || (isList && LIST_EXTRA_NODE_TYPES.has(t));
+  const fnOk = (fn: string) => ALLOWED_FUNCTIONS.has(fn) || (isList && LIST_FUNCTIONS.has(fn));
+
   ast.traverse((node: any, _path: string, parent: any) => {
-    if (!SAFE_NODE_TYPES.has(node.type)) {
+    if (!nodeOk(node.type)) {
       errs.push({ node, msg: `unsupported syntax: ${node.type}` });
       return;
     }
@@ -515,8 +546,8 @@ export function validateExprBare(ast: MathNode, allowedNames: ReadonlySet<string
           break;
         }
         const fn = callee.name;
-        if (!ALLOWED_FUNCTIONS.has(fn)) { errs.push({ node, msg: `disallowed function: ${fn}` }); break; }
-        const ae = arityError(fn, (node.args ?? []).length);
+        if (!fnOk(fn)) { errs.push({ node, msg: `disallowed function: ${fn}` }); break; }
+        const ae = arityErrorWith(fn, (node.args ?? []).length, LIST_FUNCTION_ARITY[fn] ?? FUNCTION_ARITY[fn]);
         if (ae) errs.push({ node, msg: ae });
         break;
       }
@@ -527,7 +558,7 @@ export function validateExprBare(ast: MathNode, allowedNames: ReadonlySet<string
         if (parent?.type === 'FunctionNode' && parent.fn === node) break;
         if (parent?.type === 'AccessorNode' && parent.object === node) break;
         if (ALLOWED_CONSTANTS.has(node.name)) break;
-        if (allowedNames.has(node.name)) break;
+        if (names.has(node.name)) break;
         errs.push({ node, msg: `unknown name: ${node.name}` });
         break;
       }
@@ -537,10 +568,80 @@ export function validateExprBare(ast: MathNode, allowedNames: ReadonlySet<string
 }
 
 /** Parse + bare-validate one formula against the EARLIER-declared name set.
- *  Never throws; a parse failure surfaces as a single error (no AST). */
-export function parseAndValidateBare(formula: string, allowedNames: ReadonlySet<string>): { ast: MathNode | null; errors: ExprError[] } {
+ *  Never throws; a parse failure surfaces as a single error (no AST). `shape`
+ *  selects the scalar (default) or list grammar (see validateExprBare). */
+export function parseAndValidateBare(
+  formula: string, allowedNames: ReadonlySet<string>, shape: ExprOutShape = 'scalar',
+): { ast: MathNode | null; errors: ExprError[] } {
   if (formula.trim() === '') return { ast: null, errors: [] };
   const parsed = parseExpr(formula);
   if (!parsed.ok) return { ast: null, errors: [{ msg: parsed.error }] };
-  return { ast: parsed.ast, errors: validateExprBare(parsed.ast, allowedNames) };
+  return { ast: parsed.ast, errors: validateExprBare(parsed.ast, allowedNames, shape) };
+}
+
+// ─── list-formula → JS compiler (#11 expression-as-builder) ──────────────────
+//
+// A `shape:'list'` output's formula is authored in the constrained mathjs
+// grammar (`concat(map(range(0, N), f(i) = [r, z]), …)`) so the SAME validator +
+// parser cover it. The bake sandbox is plain JS, though — so the formula is
+// LOWERED to a JS array expression here (mathjs `map`/`range`/`concat`/lambda
+// have no runtime symbol in the sandbox). The lowering is purely structural
+// (one node type → one JS fragment); symbol NAMES are preserved so the caller's
+// `rewriteExprLocalRefs` can namespace def locals to `V_*` afterward, exactly
+// like a scalar output. Loop params + injected math globals (tau/cos/sin) are
+// NOT def locals, so they survive that rewrite untouched.
+
+/** Lower one parsed mathjs node to a JS source fragment. Throws on an
+ *  unsupported node type (caught + surfaced by compileListFormula). */
+function listNodeToJs(node: any): string {
+  switch (node?.type) {
+    case 'ConstantNode':
+      return typeof node.value === 'string' ? JSON.stringify(node.value) : String(node.value);
+    case 'SymbolNode':
+      return node.name;
+    case 'ParenthesisNode':
+      return `(${listNodeToJs(node.content)})`;
+    case 'OperatorNode': {
+      const args = (node.args ?? []).map(listNodeToJs);
+      if (args.length === 1) return `(${node.op}${args[0]})`;       // unary (e.g. -x)
+      return `(${args.join(` ${node.op} `)})`;
+    }
+    case 'ConditionalNode':
+      return `(${listNodeToJs(node.condition)} ? ${listNodeToJs(node.trueExpr)} : ${listNodeToJs(node.falseExpr)})`;
+    case 'ArrayNode':
+      return `[${(node.items ?? []).map(listNodeToJs).join(', ')}]`;
+    case 'FunctionAssignmentNode':
+      // mathjs `f(i) = body` → a JS arrow lambda `((i) => (body))`.
+      return `((${(node.params ?? []).join(', ')}) => (${listNodeToJs(node.expr)}))`;
+    case 'FunctionNode': {
+      const fn = node.fn?.name;
+      const args = (node.args ?? []).map(listNodeToJs);
+      if (fn === 'range') {
+        // range(stop) | range(start, stop) → [start, …, stop-1] (half-open,
+        // matching the map-over-indices idiom).
+        const start = args.length === 2 ? args[0] : '0';
+        const stop = args.length === 2 ? args[1] : args[0];
+        return `Array.from({ length: Math.max(0, Math.floor((${stop}) - (${start}))) }, (_, __k) => (${start}) + __k)`;
+      }
+      if (fn === 'map')    return `(${args[0]}).map(${args[1]})`;
+      if (fn === 'concat') return `[].concat(${args.join(', ')})`;
+      return `${fn}(${args.join(', ')})`;   // math fn (cos/sin/…) — sandbox-provided
+    }
+    default:
+      throw new Error(`unsupported list-formula node: ${node?.type ?? 'unknown'}`);
+  }
+}
+
+/** Compile a `shape:'list'` output formula to a JS array expression. Returns
+ *  the JS string (symbol names PRESERVED — caller rewrites def locals) or a
+ *  clear error (never throws). An empty formula compiles to `[]`. */
+export function compileListFormula(formula: string): { ok: true; js: string } | { ok: false; error: string } {
+  if (formula.trim() === '') return { ok: true, js: '[]' };
+  const parsed = parseExpr(formula);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  try {
+    return { ok: true, js: listNodeToJs(parsed.ast as any) };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? String(e) };
+  }
 }
