@@ -171,6 +171,50 @@
     if (await mkFolder(path)) { ensureExpanded(parent); ensureExpanded(path); }
   }
 
+  // Structural roots the sidebar depends on — not user-renamable/deletable.
+  const PROTECTED_FOLDERS = new Set(['basic', 'completions', 'archive', 'profiles']);
+  function isEditableFolder(path: string): boolean {
+    return !!path && !PROTECTED_FOLDERS.has(path);
+  }
+  /** Rename a folder's leaf name (parts inside keep their ids). */
+  async function renameFolderPath(path: string) {
+    const leaf = path.split('/').pop() ?? path;
+    const raw = typeof window !== 'undefined' ? window.prompt?.(`Rename folder "${path}" to:`, leaf) : null;
+    if (!raw) return;
+    const name = raw.trim();
+    if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
+    if (name === leaf) return;
+    folderBusy = true;
+    try {
+      const r = await fetch(`/api/primitives/folder/rename?from=${encodeURIComponent(path)}&to=${encodeURIComponent(name)}`, { method: 'POST' });
+      if (!r.ok) { alert(`Rename failed (${r.status}): ${(await r.text()).slice(0, 160)}`); return; }
+      const parent = path.split('/').slice(0, -1).join('/');
+      const newPath = parent ? `${parent}/${name}` : name;
+      await loadList();
+      ensureExpanded(newPath);
+    } catch (e: any) { alert(`Rename error: ${e?.message ?? e}`); }
+    finally { folderBusy = false; }
+  }
+  /** Delete a folder — archives every part inside (recoverable from Archived),
+   *  then removes the empty dir. */
+  async function deleteFolderPath(path: string) {
+    const ok = typeof window !== 'undefined'
+      ? window.confirm?.(`Delete folder "${path}"?\n\nAny parts inside are moved to Archived (recoverable). The folder is then removed.`)
+      : false;
+    if (!ok) return;
+    folderBusy = true;
+    try {
+      const r = await fetch(`/api/primitives/folder/delete?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      if (!r.ok) { alert(`Delete failed (${r.status}): ${(await r.text()).slice(0, 160)}`); return; }
+      const body = await r.json().catch(() => ({ archived: [] as string[] }));
+      await loadList();
+      if (body.archived?.length) alert(`Folder deleted. ${body.archived.length} part(s) moved to Archived.`);
+    } catch (e: any) { alert(`Delete error: ${e?.message ?? e}`); }
+    finally { folderBusy = false; }
+  }
+  function menuRenameFolder() { const p = createMenu?.path; closeCreateMenu(); if (p != null) void renameFolderPath(p); }
+  function menuDeleteFolder() { const p = createMenu?.path; closeCreateMenu(); if (p != null) void deleteFolderPath(p); }
+
   /** Profile entries — `.prvl.ts` (revolve) and `.prex.ts` (extrude) files
    *  living under `<volume>/primitives/profiles/`. Loaded from a sister
    *  endpoint (the profile list is shaped differently from the primitive
@@ -1184,6 +1228,13 @@
           onclick={menuNewPart}>＋ New part here</button>
         <button class="prim-create-menu-item" type="button" role="menuitem"
           disabled={folderBusy} onclick={menuNewFolder}>📁 New folder here</button>
+        {#if isEditableFolder(createMenu.path)}
+          <div class="prim-create-menu-sep"></div>
+          <button class="prim-create-menu-item" type="button" role="menuitem"
+            disabled={folderBusy} onclick={menuRenameFolder}>✎ Rename folder</button>
+          <button class="prim-create-menu-item danger" type="button" role="menuitem"
+            disabled={folderBusy} onclick={menuDeleteFolder}>🗑 Delete folder</button>
+        {/if}
       </div>
     {/if}
 
@@ -1532,6 +1583,7 @@
   }
   .prim-create-menu-item:hover:not(:disabled) { background: #d1fae5; color: #166534; }
   .prim-create-menu-item:disabled { cursor: wait; opacity: 0.5; }
+  .prim-create-menu-sep { height: 1px; margin: 4px 6px; background: #e7e5e4; }
 
   /* "Move to…" dialog — same anchored-popover chrome as the create menu, but
      scrollable (a part can have many destination folders). Reuses
