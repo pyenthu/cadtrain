@@ -38,10 +38,13 @@
     /api/volume + `rclone lsjson -R` → path+size compare, no download) + `/volume` panel
     with colour-coded count pills (new/gone/changed/match), an ✓in-sync state, a list of
     differing files (+/−/~ badges), and "Sync all → OneDrive". Browser-verified (625 match).
-    **LEFT:** (a) collapsible folder TREE grouping (today it's a flat list); (b) per-folder
-    / per-file SELECTIVE sync (`rclone copy <those paths>`, not just sync-all); (c) a
-    **Dry run** toggle (the onedrive endpoint already accepts `{dryRun}`); (d) parallelize
-    the volume walk — sequential per-dir HTTP is ~15s. Builds on `scripts/volume2onedrive.sh`.
+    **v2 SHIPPED 2026-06-26** (merge): collapsible folder TREE grouping (roll-up +/−/~ pills,
+    per-file/folder checkboxes), **Dry run** toggle (routes both syncs through `{dryRun}`),
+    per-file/folder SELECTIVE sync via new `POST /api/volume/onedrive/sync-paths` (rclone COPY,
+    non-destructive, `--backup-dir`, dryRun-verified), + parallelized diff walk (bounded pool).
+    Browser-verified (tree shows real drift: spirals moved → +new, old path → −gone). LEFT
+    (minor): tree default-collapsed for huge diffs; `gone` files aren't selectable (copy can't
+    remove — needs the full mirror).
 
 
 

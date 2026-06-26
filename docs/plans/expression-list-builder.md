@@ -102,7 +102,40 @@ output. The work is mostly MODEL + UI + WIRING + EMIT, not a new evaluator:
   the "loft between list items" mode (the swept-solid feature noted in
   g_spiral_repeat.md)? Likely complementary.
 
-## Prior art to research (the "what else is out there")
+## Research findings (deep-research pass, 2026-06-26) — DESIGN DECISIONS
+
+A 104-agent deep-research pass (Grasshopper, Dynamo, Geometry Nodes/Fields,
+Houdini, CadQuery, OpenSCAD, socket type systems) lands on these concrete calls:
+
+- **Start FLAT — a typed `list<element>`, one element-shape per socket, NO nested
+  data trees.** Grasshopper's universal path-indexed *data tree* is powerful but
+  its own vendor docs name tree-matching the dominant usability burden ("a small
+  change in structure can have big impact"; the Path Mapper is "the least
+  intuitive… can cause a loss of data"). **Do NOT ship graft/flatten/path-map
+  early.** Keep structure flat + explicit; add nesting only if a real case needs it.
+- **Default lacing = longest-list "repeat-last" broadcast** when one output feeds
+  a multi-input consumer (GH's default; a single item broadcasts across a list,
+  two lists pair index-wise). Cheap, predictable, matches user expectation.
+- **Structural element-shape typing, surfaced via socket APPEARANCE** (Blender's
+  field sockets use distinct shapes; it consolidates many geometry-ish kinds onto
+  ONE geometry socket). So: a small fixed set of element shapes
+  (point / op / transform / scalar / object), each a visually distinct socket;
+  wiring allowed only when shapes match. Nominal-ish (named kinds) + visual cue,
+  not a deep structural type system.
+- **One generic `map(range(N), i=>element)` replaces the three repeat nodes** —
+  this is exactly CadQuery's one-mechanism model (`pushPoints` → any construction
+  op fans out per point) and OpenSCAD list comprehensions. Strong external
+  precedent for the unification.
+- **Fields (deferred per-element functions) vs explicit lists**: Blender/Houdini
+  defer evaluation (a function over a domain) rather than materialize a list.
+  For us, the emitted `Array.from` IS the materialized list — fine for our sizes;
+  revisit a deferred/field model only if hot loops or huge counts demand it.
+
+**Net first-cut spec:** flat `list<element>` sockets, 5 element shapes with
+distinct socket visuals, longest-repeat-last broadcast, NO data trees / path
+tools. Grows toward nesting + richer lacing only on demand.
+
+## Prior art (sources surveyed)
 
 - **Grasshopper (Rhino)** — the canonical visual dataflow CAD; its **data trees**
   (nested lists) + list-management components (graft/flatten/shift/cross-ref) are
