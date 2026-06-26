@@ -1105,8 +1105,8 @@
             <button class="prim-folder-add" class:open={createMenu?.path === node.path}
               type="button" aria-haspopup="menu"
               aria-expanded={createMenu?.path === node.path}
-              title={`New part or folder in primitives/${node.path}/`}
-              onclick={(ev) => openCreateMenu(node.path, ev)}>+</button>
+              title={`Folder actions — new part / folder, rename, delete (primitives/${node.path}/)`}
+              onclick={(ev) => openCreateMenu(node.path, ev)}>⋯</button>
           {/if}
         </div>
         {#if open}
