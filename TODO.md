@@ -21,19 +21,15 @@
    shows the params above the parts ONLY when defined in the popover. Decided: full wireable
    sockets. Plan: `docs/plans/repeat-builder-popup.md`.
 
-10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). Show the OneDrive backup
-    (`onedrive:APPS/cadtrain`) ALONGSIDE the live volume and a clear, organized VISUAL DIFF
-    between them, then sync. **Feasible** — `rclone check <src> onedrive:APPS/cadtrain
-    --combined -` already emits the per-file diff: `=` match · `+` only-on-OneDrive ·
-    `-` only-in-volume · `*` differ (`!` = error). Plan: (a) NEW dev-only endpoint
-    `POST /api/volume/onedrive/diff` runs the prod-pull (reuse volume2onedrive.sh's staging
-    walk) → `rclone check staging onedrive:APPS/cadtrain --combined -` → parse into a
-    `{path, status}[]`; (b) `/volume` renders a diff TREE — green=new-on-volume, red=
-    missing-on-OneDrive, amber=changed, grey=match (collapsible by folder, counts per
-    status); (c) actions: "Sync all" (existing onedrive sync) + per-folder / per-file
-    selective sync (`rclone copy <those paths>`); a **Dry run** toggle first (the endpoint
-    already supports `{dryRun}` — just not wired in the UI). Builds on the working
-    `scripts/volume2onedrive.sh` + `/api/volume/onedrive`. Live backup verified 2026-06-26.
+10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). **v1 SHIPPED 2026-06-26**
+    (fbcb0c2): metadata-only diff endpoint `POST /api/volume/onedrive/diff` (walk prod
+    /api/volume + `rclone lsjson -R` → path+size compare, no download) + `/volume` panel
+    with colour-coded count pills (new/gone/changed/match), an ✓in-sync state, a list of
+    differing files (+/−/~ badges), and "Sync all → OneDrive". Browser-verified (625 match).
+    **LEFT:** (a) collapsible folder TREE grouping (today it's a flat list); (b) per-folder
+    / per-file SELECTIVE sync (`rclone copy <those paths>`, not just sync-all); (c) a
+    **Dry run** toggle (the onedrive endpoint already accepts `{dryRun}`); (d) parallelize
+    the volume walk — sequential per-dir HTTP is ~15s. Builds on `scripts/volume2onedrive.sh`.
 
 
 
