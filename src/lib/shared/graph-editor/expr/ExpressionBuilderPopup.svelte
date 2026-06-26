@@ -28,7 +28,7 @@
   import { clampToViewport } from '../popover-clamp';
   import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/cad/expr-schema';
   import { parseAndValidateBare } from '$lib/cad/graph-exprs';
-  import type { ExprDef } from '$lib/cad/composition-graph-types';
+  import type { ExprDef, ExprOutShape, ExprOutElem } from '$lib/cad/composition-graph-types';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
 
   let {
@@ -46,7 +46,8 @@
   } = $props();
 
   type ParamRow = { name: string; default: number | null };
-  type FormulaRow = { name: string; formula: string };
+  // shape/elem only meaningful for OUTPUTS (#11 — list<point> etc.); vars stay scalar.
+  type FormulaRow = { name: string; formula: string; shape?: ExprOutShape; elem?: ExprOutElem };
 
   // ─── per-instance local state (seeded from `def`) ──────────────────────────
   let name = $state('');
@@ -75,7 +76,7 @@
     name = def.name ?? '';
     params = (def.params ?? []).map((p) => ({ name: p.name, default: p.default ?? null }));
     vars = (def.vars ?? []).map((v) => ({ name: v.name, formula: v.formula }));
-    outputs = (def.outputs ?? []).map((o) => ({ name: o.name, formula: o.formula }));
+    outputs = (def.outputs ?? []).map((o) => ({ name: o.name, formula: o.formula, shape: o.shape, elem: o.elem }));
     selOut = 0;
   });
 
@@ -118,9 +119,9 @@
     return out;
   }
   // First validation issue for a formula row, or null.
-  function formulaError(formula: string, allowed: Set<string>): string | null {
+  function formulaError(formula: string, allowed: Set<string>, shape: ExprOutShape = 'scalar'): string | null {
     if (formula.trim() === '') return 'formula required';
-    const { errors } = parseAndValidateBare(formula, allowed);
+    const { errors } = parseAndValidateBare(formula, allowed, shape);
     return errors.length ? errors[0]!.msg : null;
   }
 
@@ -128,7 +129,7 @@
     if (name.trim() === '') return false;
     for (const n of allNames) if (nameError(n)) return false;
     for (let i = 0; i < vars.length; i++) if (formulaError(vars[i]!.formula, varAllowed(i))) return false;
-    for (let i = 0; i < outputs.length; i++) if (formulaError(outputs[i]!.formula, outAllowed(i))) return false;
+    for (let i = 0; i < outputs.length; i++) if (formulaError(outputs[i]!.formula, outAllowed(i), outputs[i]!.shape)) return false;
     return true;
   });
 
@@ -155,7 +156,10 @@
         : { name: p.name.trim(), default: p.default })),
       consts: [], // CONSTS dropped — use a param with a default instead
       vars: vars.map((v) => ({ name: v.name.trim(), formula: v.formula })),
-      outputs: outputs.map((o) => ({ name: o.name.trim(), formula: o.formula })),
+      outputs: outputs.map((o) => ({
+        name: o.name.trim(), formula: o.formula,
+        ...(o.shape === 'list' ? { shape: 'list' as const, elem: (o.elem ?? 'point') } : {}),
+      })),
     };
     onCommit(out);
   }
@@ -216,12 +220,28 @@
   {@const row = kind === 'var' ? vars[i] : outputs[i]}
   {#if row}
     {@const allowed = kind === 'var' ? varAllowed(i) : outAllowed(i)}
+    {@const isList = kind === 'output' && row.shape === 'list'}
     {@const nErr = nameError(row.name)}
-    {@const fErr = formulaError(row.formula, allowed)}
+    {@const fErr = formulaError(row.formula, allowed, kind === 'output' ? (row.shape ?? 'scalar') : 'scalar')}
     <div class="ge-xs-mainedit">
       <div class="ge-xs-edhead">
         <input class="ge-xs-name big out" type="text" placeholder="output name"
           bind:value={row.name} title={nErr ?? 'output name'} />
+        {#if kind === 'output'}
+          <!-- #11 — output TYPE: scalar (today) or a flat list<point> (a map() →
+               wireable into a polygon's points / an extrude profile). -->
+          <select class="ge-xs-shapesel" class:list={isList}
+            value={row.shape === 'list' ? 'list:point' : 'scalar'}
+            title="Output type — a number, or a list of [r,z] points (a map())"
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              if (v === 'list:point') { row.shape = 'list'; row.elem = 'point'; }
+              else { row.shape = undefined; row.elem = undefined; }
+            }}>
+            <option value="scalar">number</option>
+            <option value="list:point">list&lt;point&gt;</option>
+          </select>
+        {/if}
         <button class="ge-xs-del" type="button" title="Remove"
           onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
       </div>
@@ -230,9 +250,13 @@
         completions={completionsFor(allowed)}
         label=""
         rows={expanded ? 18 : 9}
-        placeholder={kind === 'var' ? 'od / two' : 'diff > 0 ? diff : 0'} />
+        placeholder={kind === 'var' ? 'od / two' : isList ? 'map(range(0, N), f(i) = [r0 * cos(i), r0 * sin(i)])' : 'diff > 0 ? diff : 0'} />
       {#if fErr}<div class="ge-xs-err big">{fErr}</div>{/if}
-      <p class="ge-xs-edhint">Full expression body — supports multi-line + ternary <code>cond ? a : b</code> logic. Refers to earlier-declared names + math functions.</p>
+      {#if isList}
+        <p class="ge-xs-edhint">Returns a flat <strong>list of <code>[r,z]</code> points</strong> — build it with <code>map(range(0, N), f(i) = [r, z])</code> (mathjs <code>f(i) = …</code>, not <code>=&gt;</code>), join with <code>concat(…)</code>. Wires into a polygon's points / an extrude profile. Loop var (<code>i</code>) + math funcs in scope.</p>
+      {:else}
+        <p class="ge-xs-edhint">Full expression body — supports multi-line + ternary <code>cond ? a : b</code> logic. Refers to earlier-declared names + math functions.</p>
+      {/if}
     </div>
   {/if}
 {/snippet}
@@ -268,8 +292,8 @@
     <div class="ge-xs-pane right">
       <div class="ge-xs-outlist">
         {#each outputs as o, i (i)}
-          <button type="button" class="ge-xs-outitem" class:on={selOut === i}
-            onclick={() => (selOut = i)} title={o.name || 'output'}>{o.name || 'out?'}</button>
+          <button type="button" class="ge-xs-outitem" class:on={selOut === i} class:list={o.shape === 'list'}
+            onclick={() => (selOut = i)} title={o.shape === 'list' ? `${o.name || 'output'} — list<point>` : (o.name || 'output')}>{#if o.shape === 'list'}<span class="ge-xs-outlistbadge">[ ]</span>{/if}{o.name || 'out?'}</button>
         {/each}
         <button type="button" class="ge-xs-add" onclick={addOutput}>+ add output</button>
       </div>
@@ -349,6 +373,11 @@
   }
   .ge-xs-outitem:hover { background: #f1f5f9; color: #334155; }
   .ge-xs-outitem.on { background: #fff; color: #7c3aed; border-left-color: #a855f7; }
+  .ge-xs-outitem.list { border-left-color: #6366f1; }
+  .ge-xs-outlistbadge { font: 700 9px ui-monospace, monospace; color: #4f46e5; margin-right: 3px; }
+  /* output TYPE picker (scalar | list<point>) in the edit head. */
+  .ge-xs-shapesel { flex: none; font: 600 10px Arial; color: #7c3aed; background: #f5f3ff; border: 1px solid #d8b4fe; border-radius: 4px; padding: 2px 4px; cursor: pointer; }
+  .ge-xs-shapesel.list { color: #4338ca; background: #eef2ff; border-color: #a5b4fc; }
   .ge-xs-outedit { flex: 1 1 auto; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
 
   /* LEFT pane body (def name + params). */
