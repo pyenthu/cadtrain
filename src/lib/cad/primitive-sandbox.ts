@@ -16,7 +16,7 @@
  * proxy), `G` (globalThis, for `G.__cadtrain_manifold__.wasm`), `Math`.
  */
 import * as helpers from './manifold-helpers';
-import { gridPatch, capFan, weldAndBuild, revolveProfile } from './manifold-mesh';
+import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, loftStations } from './manifold-mesh';
 import { resolveProfile } from '$lib/shared/profile-presets';
 import { warpManifoldAlongSpline } from './warp-spline';
 import { cs, extrude_csg, ext, resample } from './csg-2d';
@@ -36,7 +36,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'M', 'CS', 'cyl', 'tube', 'mv', 'rot', 'place', 'zMin', 'zMax', 'zLen', 'ref', 'head', 'tail', 'mate', 'align', 'stack', 'overlay', 'withStackRef', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
   'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
   'helix_band', 'revolve', 'profile_extrude',
-  'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'resolveProfile', 'warpSpline',
+  'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'sweepAlongPath', 'loftStations', 'resolveProfile', 'warpSpline',
   'cs', 'extrude_csg', 'ext', 'resample',
   'sketch',
   '__tag',
@@ -51,7 +51,7 @@ export function sandboxArgValues(): any[] {
     helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-    gridPatch, capFan, weldAndBuild, revolveProfile, resolveProfile, warpManifoldAlongSpline,
+    gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, loftStations, resolveProfile, warpManifoldAlongSpline,
     cs, extrude_csg, ext, resample,
     compileSketch,
     helpers.tagManifold,
