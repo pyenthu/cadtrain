@@ -15,8 +15,17 @@
    `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3 editor/BOM + wire the
    tool rail to real placement. Plan: `docs/plans/well-schematic.md`.
 
-8. in the repeat card... allow params just like parts. params section above parts, multiple
-   params in a list with a node connecter.
+8. **Repeat editor → draggable/resizable POPOVER with wireable params** (parity with the
+   2026-06-26 Expression popover). LEFT 30% = params (editable + INPUT sockets, authored
+   in the popover); RIGHT 70% = the loop (iterators + parts + transforms + body). Node card
+   shows the params above the parts ONLY when defined in the popover. Decided: full wireable
+   sockets. Plan: `docs/plans/repeat-builder-popup.md`.
+
+9. **3D-bake default scale on load** — auto-set `xScale`/`zScale` so the part reads thick +
+   long-enough-but-not-too-long. Aspect-normalize: `AR=L/D`; `k = AR>HI?HI/AR : AR<LO?LO/AR : 1`;
+   `zScale=clamp(k^a, .2, 2)`, `xScale=clamp(k^(a-1), .5, 3)`. **Confirmed "Balanced": HI=6, LO=1.2,
+   a=0.5.** Apply once per part load behind a `scaleAuto` flag (manual slider drag → scaleAuto=off);
+   `⊙` re-enables. View-only, never touches the bake. (L=`bbox.ez`, D=`max(bbox.ex,bbox.ey)`.)
 
 
 ### Shipped (recent) — 2026-06-25/26
