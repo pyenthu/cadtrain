@@ -67,11 +67,14 @@
     #11's expr-list-ref create-affordance ON it → migrate the rest → an `autoWireSuggestions` hook.
     Plan: `docs/plans/typed-ports.md`. **#11's remaining "wire it" half should be built on THIS**, not
     more ad-hoc branches. **PR1 DONE** (port-types.ts registry + scalar/list<point>/geometry, 5 tests).
-    **Layer 2 (planned):** a VISUAL "shape definer" + a type MANAGER/store — user-defined COMPOSITE
-    record types (`Point{r,z}` · `Casing{od,id,length,isLiner:flag}` · polygon = `list<Point>`),
-    per-part `graph.typeDefs[]` + a GLOBAL volume type library, def→instance propagation → nodes become
-    dynamic (socket shape = data). Compounds the generative + reuse story. Sequenced after the wiring
-    foundation. See typed-ports.md §"Layer 2".
+    **Layer 2:** a VISUAL "shape definer" + a type MANAGER/store — user-defined COMPOSITE
+    record types (`Point{r,z}` · `Casing{od,id,length,isLiner:flag}` · polygon = `list<Point>`).
+    **L2a DONE** (port-types.ts: `defineRecordType`/`listOf`, nominal compat, +3 tests).
+    **L2b DONE** (`/primitives/types` + TypeDefinerPanel.svelte — define records from field rows,
+    live signature, save→localStorage, manager rail; browser-verified Casing). **LEFT — L2c:** swap
+    localStorage for a GLOBAL volume type library (`<volume>/types/*.json`) + per-part `graph.typeDefs[]`
+    + def→instance propagation → nodes become dynamic (socket shape = data). Compounds generative +
+    reuse. See typed-ports.md §"Layer 2".
 
 10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). **v1 SHIPPED 2026-06-26**
     (fbcb0c2): metadata-only diff endpoint `POST /api/volume/onedrive/diff` (walk prod
