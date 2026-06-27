@@ -340,13 +340,18 @@
     cursor: move; user-select: none; touch-action: none;
   }
   .ge-expr-title { font: 700 15px Arial; color: #334155; white-space: nowrap; }
-  /* def name sits in the title, next to the ƒ glyph — a comfortable fixed-ish
-     width so it doesn't stretch across the whole popover. */
+  /* def name sits in the title, next to the ƒ glyph — bounded by the LEFT pane
+     (30% split) so it never extends past the params column. The -28px leaves
+     room for the ƒ glyph + gap before it. */
   .ge-expr-defname {
-    flex: 0 1 280px; min-width: 0; max-width: 280px; font: 700 13px ui-monospace, monospace; color: #0e7490;
+    flex: 0 1 calc(30% - 28px); min-width: 0; max-width: calc(30% - 28px); font: 700 13px ui-monospace, monospace; color: #0e7490;
     padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: text;
   }
   .ge-expr-defname.bad { border-color: #fca5a5; background: #fef2f2; }
+  /* no number-spinner arrows on any input in the popover. */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   /* spacer pushes the expand/close buttons to the right edge. */
   .ge-expr-head-actions { display: flex; gap: 4px; margin-left: auto; }
   .ge-expr-iconbtn {
