@@ -152,6 +152,7 @@
   // the popup; GEP owns only the open flag + anchor + commit→graph.exprs wiring.
   import ExpressionBuilderPopup from './expr/ExpressionBuilderPopup.svelte';
   import ExpressionsMenu from './expr/ExpressionsMenu.svelte';
+  import TypeDefinerPopover from '$lib/shared/TypeDefinerPopover.svelte';
   import type { ExprDef } from '$lib/cad/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
@@ -278,6 +279,8 @@
   // of the define → instance → wire flow. Opening it is the Σ rail button's job;
   // the four-section editor (exprPop) is opened FROM the menu (✎ / +).
   let exprMenu = $state<{ anchor: { x: number; y: number } } | null>(null);
+  // ◇ Type Definer popover (typed-ports L2b/c) — the shared composite-type library.
+  let typesPop = $state(false);
   let vrailEl = $state<HTMLElement | null>(null); // the left rail (anchors the Σ menu from the picker)
   // defId → how many ExprNode instances reference it (drives the delete guard).
   let exprInstanceCounts = $derived.by<Record<string, number>>(() => {
@@ -2826,6 +2829,12 @@
       class:on={!!exprMenu || !!exprPop}
       onclick={openExprPop}
       data-tip="Expressions — define reusable calc blocks, then drop instances to wire">Σ</button>
+    <!-- ◇ Type Definer (typed-ports) — define/manage composite record types
+         (Point{r,z}, Casing{…}) in the shared volume library. -->
+    <button class="ge-vrail-btn types" type="button"
+      class:on={typesPop}
+      onclick={() => (typesPop = !typesPop)}
+      data-tip="Types — define composite shapes (records) for the node graph">◇</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -2898,6 +2907,10 @@
       anchor={exprPop.anchor}
       onCommit={commitExpr}
       onCancel={() => (exprPop = null)} />
+  {/if}
+
+  {#if typesPop}
+    <TypeDefinerPopover onClose={() => (typesPop = false)} />
   {/if}
 
   {#if aiMenuOpen}
