@@ -15,7 +15,6 @@
   type DraftField = { name: string; typeId: string; list: boolean };
   type Draft = { id: string; label: string; fields: DraftField[] };
 
-  const LS_KEY = 'cadtrain-type-defs';
   const BUILTINS = ['scalar', 'flag', 'point', 'geometry'];
 
   let defs = $state<Draft[]>([]);          // user-defined composites (source of truth)
@@ -29,7 +28,6 @@
     return allPortTypes().filter((t) => t.card === 'one');
   });
 
-  function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(defs)); } catch { /* private mode */ } }
   function register(d: Draft) {
     for (const f of d.fields) if (f.list) listOf(f.typeId);
     defineRecordType(d.id, d.label || d.id, d.fields
@@ -37,9 +35,16 @@
       .map((f) => ({ name: f.name.trim(), typeId: f.list ? `list<${f.typeId}>` : f.typeId })));
     tick++;
   }
-  function load() {
+  async function load() {
     // built-in primitives (scalar/flag/point/geometry) are already registered.
-    try { defs = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]'); } catch { defs = []; }
+    // Types live on the shared VOLUME (proxied to prod in dev) — L2c.
+    try {
+      const r = await fetch('/api/primitives/types');
+      if (r.ok) defs = (((await r.json())?.types ?? []) as any[]).map((t): Draft => ({
+        id: t.id, label: t.label ?? t.id,
+        fields: (t.fields ?? []).map((f: any) => ({ name: f.name, typeId: f.typeId, list: !!f.list })),
+      }));
+    } catch { /* offline — built-ins still usable */ }
     for (const d of defs) register(d);
   }
   onMount(load);
@@ -79,15 +84,22 @@
     return null;
   });
 
-  function save() {
+  let saving = $state(false);
+  async function save() {
     if (!draft || nameErr) return;
     const cleaned: Draft = { id: draft.id, label: draft.label || draft.id, fields: draft.fields.filter((f) => f.name.trim()) };
     defs = [...defs.filter((d) => d.id !== selId && d.id !== cleaned.id), cleaned];
-    persist(); register(cleaned); selId = cleaned.id;
+    register(cleaned); selId = cleaned.id;
+    saving = true;
+    try {
+      await fetch('/api/primitives/types', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cleaned) });
+    } catch { /* offline — the in-memory registry still has it */ }
+    saving = false;
   }
-  function del(id: string) {
-    defs = defs.filter((d) => d.id !== id); persist();
+  async function del(id: string) {
+    defs = defs.filter((d) => d.id !== id);
     if (selId === id) { draft = null; selId = null; }
+    try { await fetch(`/api/primitives/types?id=${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch { /* offline */ }
   }
 
   // A readable one-line shape signature for preview / list.
