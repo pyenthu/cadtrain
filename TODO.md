@@ -70,11 +70,14 @@
     **Layer 2:** a VISUAL "shape definer" + a type MANAGER/store — user-defined COMPOSITE
     record types (`Point{r,z}` · `Casing{od,id,length,isLiner:flag}` · polygon = `list<Point>`).
     **L2a DONE** (port-types.ts: `defineRecordType`/`listOf`, nominal compat, +3 tests).
-    **L2b DONE** (`/primitives/types` + TypeDefinerPanel.svelte — define records from field rows,
-    live signature, save→localStorage, manager rail; browser-verified Casing). **LEFT — L2c:** swap
-    localStorage for a GLOBAL volume type library (`<volume>/types/*.json`) + per-part `graph.typeDefs[]`
-    + def→instance propagation → nodes become dynamic (socket shape = data). Compounds generative +
-    reuse. See typed-ports.md §"Layer 2".
+    **L2b DONE** (`/primitives/types` page + a draggable ◇ POPOVER in the graph-editor rail +
+    TypeDefinerPanel.svelte — define records from field rows, live signature, manager rail;
+    browser-verified). **L2c DONE** (`/api/primitives/types` GET/POST/DELETE → `<volume>/types/<id>.json`,
+    atomic, in VOLUME_PROXY_PATHS so dev shares the prod library; panel loads/saves via it; endpoint
+    round-trip verified locally — live in dev after the prod redeploy + dev restart). **LEFT:** per-part
+    `graph.typeDefs[]` + def→instance propagation so editing a type updates every node using it (the
+    "dynamic nodes" payoff); then wire a typed port (a Casing output / list<Casing>) into a node = the
+    PR3 create-affordance on the registry. See typed-ports.md §"Layer 2".
 
 10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). **v1 SHIPPED 2026-06-26**
     (fbcb0c2): metadata-only diff endpoint `POST /api/volume/onedrive/diff` (walk prod
