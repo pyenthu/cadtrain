@@ -3945,6 +3945,12 @@
       <button class="ge-pick-item" type="button" onclick={dropExpr}>
         <span class="ge-pick-icon">ƒ</span><span class="ge-pick-name">expr</span><span class="ge-pick-hint">calc block</span>
       </button>
+      <!-- Loop — the standalone Repeat card (build N copies as a list, pre-wired
+           into a Stack). Same drop as container▸repeat, surfaced top-level so it
+           reads as a first-class droppable alongside polygon/sketch/expr. -->
+      <button class="ge-pick-item" type="button" onclick={() => { dropRepeat(); submenuKey = null; }}>
+        <span class="ge-pick-icon">⟳</span><span class="ge-pick-name">Loop</span><span class="ge-pick-hint">× N</span>
+      </button>
       <div class="ge-cm-sep"></div>
       <button class="ge-pick-item parent" type="button"
         class:on={submenuKey === 'solids'}
