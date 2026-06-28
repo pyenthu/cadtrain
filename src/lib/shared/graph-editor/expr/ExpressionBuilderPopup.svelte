@@ -30,7 +30,7 @@
   import { parseAndValidateBare } from '$lib/cad/graph-exprs';
   import type { ExprDef, ExprOutShape, ExprOutElem } from '$lib/cad/composition-graph-types';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
-  import ExprLoopBlocks from './ExprLoopBlocks.svelte';
+  import ExprImperativeBlocks from './ExprImperativeBlocks.svelte';
   import { parseLoops } from '$lib/cad/expr-loops';
   import { isImperative, validateImperative } from '$lib/cad/expr-imperative';
 
@@ -229,7 +229,7 @@
   {#if row}
     {@const allowed = kind === 'var' ? varAllowed(i) : outAllowed(i)}
     {@const isList = kind === 'output' && row.shape === 'list'}
-    {@const loopBuildable = isList && (!!parseLoops(row.formula) || row.formula.trim() === '')}
+    {@const loopBuildable = isList && (isImperative(row.formula) || !!parseLoops(row.formula) || row.formula.trim() === '')}
     {@const showLoops = loopBuildable && loopMode}
     {@const nErr = nameError(row.name)}
     {@const fErr = formulaError(row.formula, allowed, kind === 'output' ? (row.shape ?? 'scalar') : 'scalar')}
@@ -263,7 +263,7 @@
           onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
       </div>
       {#if showLoops}
-        <ExprLoopBlocks bind:formula={row.formula}
+        <ExprImperativeBlocks bind:formula={row.formula}
           variables={[...params.map((p) => p.name), ...vars.map((v) => v.name)].filter(Boolean)} />
       {:else}
         <ExpressionSrcPane
