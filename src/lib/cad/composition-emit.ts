@@ -41,6 +41,7 @@ import {
   exprBlockVar, rewriteExprLocalRefs, orderExprDef, declaredNames,
   compileListFormula,
 } from './graph-exprs';
+import { isImperative, compileImperative } from './expr-imperative';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -770,7 +771,12 @@ export function emitExprBlocks(graph: Graph): string[] {
           // to V_* (same rewrite as a scalar output; loop params + math globals
           // survive untouched). A bad formula emits a loud throw IIFE rather
           // than a silent placeholder that would crash WASM downstream.
-          const compiled = compileListFormula(out.formula);
+          // Two styles: the imperative accumulator (poly=[]; for…; poly.append(…))
+          // compiles to a JS loop; otherwise the functional map/concat form. Both
+          // return { ok, js }; loop-locals (poly/point/i) stay bare, def params → V_*.
+          const compiled = isImperative(out.formula)
+            ? compileImperative(out.formula)
+            : compileListFormula(out.formula);
           const rhs = compiled.ok
             ? rewriteExprLocalRefs(compiled.js, V, locals)
             : `(() => { throw new Error(${JSON.stringify('list output "' + out.name + '" error — ' + compiled.error)}); })()`;

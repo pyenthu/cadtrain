@@ -32,6 +32,7 @@
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
   import ExprLoopBlocks from './ExprLoopBlocks.svelte';
   import { parseLoops } from '$lib/cad/expr-loops';
+  import { isImperative, validateImperative } from '$lib/cad/expr-imperative';
 
   let {
     def,
@@ -125,6 +126,9 @@
   // First validation issue for a formula row, or null.
   function formulaError(formula: string, allowed: Set<string>, shape: ExprOutShape = 'scalar'): string | null {
     if (formula.trim() === '') return 'formula required';
+    // imperative accumulator loops (poly=[]; for…; poly.append(…)) validate via
+    // their own path; everything else via the mathjs grammar.
+    if (shape === 'list' && isImperative(formula)) return validateImperative(formula, allowed);
     const { errors } = parseAndValidateBare(formula, allowed, shape);
     return errors.length ? errors[0]!.msg : null;
   }
