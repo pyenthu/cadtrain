@@ -14,6 +14,7 @@
   import { parseImperative, serializeImperative, type ImperativeProgram } from '$lib/cad/expr-imperative';
   import { parseLoops, type LoopForm } from '$lib/cad/expr-loops';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
+  import ExprCodeEditor from './ExprCodeEditor.svelte';
   import { ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/cad/expr-schema';
 
   let { formula = $bindable(), variables = [], onAddVariable }:
@@ -145,9 +146,9 @@
       </div>
       {#if open}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="ib-body" onfocusout={commit} oninput={() => markDirty(k)}>
-          <ExpressionSrcPane bind:src={lp.body} completions={bodyCompletions(lp.loopVar)}
-            label="" rows={3} acceptOnEnter={false}
+        <div class="ib-body" onfocusout={commit}>
+          <ExprCodeEditor bind:src={lp.body} completions={bodyCompletions(lp.loopVar)}
+            rows={3} onInput={() => markDirty(k)}
             placeholder={`rx = …\nrz = …\n${prog?.accumulators[0]}.append([rx, rz])`} />
           <span class="ib-hint">⏎ newline · ⇥ autocomplete · ✓ update to render</span>
         </div>
