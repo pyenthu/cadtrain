@@ -755,6 +755,9 @@
     // Only fire on text-like editing surfaces — buttons / canvas / etc.
     // shouldn't capture Enter for re-bake.
     if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
+    // multi-line editors (the imperative loop body) opt out: Enter = newline,
+    // and they push to the canvas via their own ✓ tick, not a global re-bake.
+    if (target.hasAttribute('data-enter-newline')) return;
     ev.preventDefault();
     if (target.tagName === 'INPUT') (target as HTMLInputElement).blur();
     runBake();

@@ -134,6 +134,7 @@
       onkeyup={syncCaret}
       onclick={syncCaret}
       onkeydown={onKeydown}
+      data-enter-newline={acceptOnEnter ? undefined : 'true'}
       {placeholder}></textarea>
 
     {#if open}

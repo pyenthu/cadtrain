@@ -139,6 +139,8 @@
           <input class="ib-bound" bind:value={lp.stop} onchange={commit} spellcheck="false" title="count" />
           {#if variables.length}<button class="ib-assign" type="button" title="assign a variable" onclick={() => (customStop = toggleSet(customStop, k))}>▾</button>{/if}
         {/if}
+        <button class="ib-tick" class:dirty={dirty.has(k)} type="button"
+          title="Update the canvas + scene with this loop's edits" onclick={commit}>✓ update</button>
         <button class="ib-del" type="button" title="remove loop" onclick={() => removeLoop(k)}>×</button>
       </div>
       {#if open}
@@ -147,11 +149,7 @@
           <ExpressionSrcPane bind:src={lp.body} completions={bodyCompletions(lp.loopVar)}
             label="" rows={3} acceptOnEnter={false}
             placeholder={`rx = …\nrz = …\n${prog?.accumulators[0]}.append([rx, rz])`} />
-          <div class="ib-bodyfoot">
-            <span class="ib-hint">⏎ newline · ⇥ autocomplete</span>
-            <button class="ib-tick" class:dirty={dirty.has(k)} type="button"
-              title="Update the canvas + scene" onclick={commit}>✓ update</button>
-          </div>
+          <span class="ib-hint">⏎ newline · ⇥ autocomplete · ✓ update to render</span>
         </div>
       {/if}
     </div>
@@ -192,12 +190,11 @@
   .ib-bound.sm { width: 36px; }
   .ib-boundsel { font: 600 12px ui-monospace, monospace; color: #4338ca; border: 1px solid #a5b4fc; border-radius: 5px; padding: 2px 6px; background: #eef2ff; cursor: pointer; }
   .ib-assign { font-size: 10px; color: #7c3aed; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 4px; cursor: pointer; padding: 2px 4px; }
-  .ib-del { margin-left: auto; font: 700 14px Arial; color: #cbd5e1; background: none; border: none; cursor: pointer; }
+  .ib-del { font: 700 14px Arial; color: #cbd5e1; background: none; border: none; cursor: pointer; padding: 0 2px; }
   .ib-del:hover { color: #ef4444; }
   .ib-body { padding: 6px 8px; border-top: 1px solid #ddd6fe; }
-  .ib-bodyfoot { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; }
-  .ib-hint { font: 10px Arial; color: #a5b4fc; }
-  .ib-tick { font: 700 11px Arial; color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 11px; cursor: pointer; }
+  .ib-hint { display: block; margin-top: 4px; font: 10px Arial; color: #a5b4fc; }
+  .ib-tick { margin-left: auto; font: 700 11px Arial; color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 11px; cursor: pointer; white-space: nowrap; }
   .ib-tick:hover { background: #e2e8f0; color: #475569; }
   .ib-tick.dirty { color: #fff; background: #16a34a; border-color: #15803d; box-shadow: 0 0 0 2px #bbf7d0; }
   .ib-tick.dirty:hover { background: #15803d; }
