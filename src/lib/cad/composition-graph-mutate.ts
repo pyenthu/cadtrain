@@ -13,7 +13,7 @@ import type {
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonExprListRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   SketchRepeatNode, SketchRepeatRef,
-  ExprNode, ExprDef, ExprOutShape, ExprOutElem,
+  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam } from './composition-graph-types';
@@ -999,6 +999,37 @@ export function addPolygonExprListRef(
   const points = [...node.points.slice(0, insertAt), ref, ...node.points.slice(insertAt)];
   const updated: PolygonNode = { ...node, points };
   return finalize({ ...graph, nodes: { ...graph.nodes, [polygonId]: updated } });
+}
+
+/**
+ * "+ expr" on a polygon (#11 create-affordance) — the single-action analog of
+ * addPolygonRepeat. Creates a fresh expression DEF with a `list<point>` output
+ * seeded with a baking `map(range(N), f(i)=[r,z])`, drops an INSTANCE, and
+ * splices that output into the polygon's points (an `expr-list-ref`). The user
+ * then edits the formula on the expression (Σ menu / the ◇/Σ popovers). Returns
+ * the new defId/instanceId so the caller can open the editor. No-op (returns
+ * just { graph }) if `polygonId` isn't a polygon.
+ */
+export function addPolygonExprList(
+  graph: Graph, polygonId: NodeId,
+): { graph: Graph; defId?: NodeId; instanceId?: NodeId } {
+  const poly = graph.nodes[polygonId];
+  if (!poly || poly.type !== 'polygon') return { graph };
+  const made = addExprDef(graph);
+  let g = made.graph;
+  const defId = made.id;
+  // A seeded octagon profile (r = 0.5 ± 0.4·cos, z = 0.4·sin) — valid geometry
+  // out of the box so the polygon bakes immediately; the formula is the edit point.
+  const seed: ExprOut = {
+    name: 'pts',
+    formula: 'map(range(0, 8), f(i) = [0.5 + 0.4 * cos(i / 8 * tau), 0.4 * sin(i / 8 * tau)])',
+    shape: 'list', elem: 'point',
+  };
+  g = mapDef(g, defId, (d) => ({ ...d, outputs: [...d.outputs, seed] }));
+  const inst = addExprInstance(g, defId);
+  g = inst.graph;
+  g = addPolygonExprListRef(g, polygonId, inst.id, 'pts');
+  return { graph: g, defId, instanceId: inst.id };
 }
 
 // ─── Sketch REPEAT (B.2 / id 805) ──────────────────────────────────────────

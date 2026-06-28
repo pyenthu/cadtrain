@@ -16,7 +16,7 @@ import {
   addExprDefConst, setExprDefConstName, setExprDefConstValue,
   addExprDefVar, setExprDefVarName, setExprDefVarFormula,
   addExprDefOutput, setExprDefOutputName, setExprDefOutputFormula, setExprDefOutputShape,
-  setExprInputBinding, addPolygon, addPolygonExprListRef, addCall, setCallArg,
+  setExprInputBinding, addPolygon, addPolygonExprListRef, addPolygonExprList, addCall, setCallArg,
   asParam, asLiteral,
 } from './composition-graph';
 import { emitGraph } from './composition-emit';
@@ -196,5 +196,43 @@ describe('spiral as ONE expression → polygon → r_weld_extrude', () => {
     const NPts = 360;
     const pts = evalList(rhs, { p_NPts: NPts, p_r0: 0.4, p_growth: 1, p_turns: 2, p_width: 0.2 });
     expect(pts.length).toBe(2 * NPts);
+  });
+});
+
+describe('addPolygonExprList — the "+ expr" create-affordance (PR3)', () => {
+  it('creates a list<point> def + instance + ref on the polygon in one action', () => {
+    let graph = newGraph();
+    const poly = addPolygon(graph, []); graph = poly.graph;
+    const before = (graph.exprDefs ?? []).length;
+
+    const res = addPolygonExprList(graph, poly.id);
+    graph = res.graph;
+
+    // a fresh def with exactly one list<point> output named 'pts', seeded with a map
+    expect((graph.exprDefs ?? []).length).toBe(before + 1);
+    const def = (graph.exprDefs ?? []).find((d) => d.id === res.defId)!;
+    expect(def.outputs).toHaveLength(1);
+    expect(def.outputs[0]).toMatchObject({ name: 'pts', shape: 'list', elem: 'point' });
+    expect(def.outputs[0]!.formula).toContain('map(');
+
+    // a dropped instance of that def
+    expect(graph.nodes[res.instanceId!]?.type).toBe('expr');
+
+    // the polygon now references the instance output via an expr-list-ref
+    const p = graph.nodes[poly.id] as any;
+    expect(p.points.some((e: any) =>
+      e?.kind === 'expr-list-ref' && e.sourceId === res.instanceId && e.output === 'pts')).toBe(true);
+
+    // the seeded formula validates as a list (would be rejected as a scalar)
+    const allowed = new Set<string>();
+    expect(parseAndValidateBare(def.outputs[0]!.formula, allowed, 'list').errors).toHaveLength(0);
+    expect(parseAndValidateBare(def.outputs[0]!.formula, allowed, 'scalar').errors.length).toBeGreaterThan(0);
+  });
+
+  it('is a no-op on a non-polygon id', () => {
+    const graph = newGraph();
+    const res = addPolygonExprList(graph, 'nope');
+    expect(res.graph).toBe(graph);
+    expect(res.defId).toBeUndefined();
   });
 });

@@ -17,6 +17,7 @@
     setPolygonCoord,
     addPolygonPoint,
     addPolygonRepeat,
+    addPolygonExprList,
     removePolygonPoint,
     movePolygonPoint,
     setPolygonRepeatCount,
@@ -1261,6 +1262,8 @@
                         onclick={() => { setGraph(addPolygonPoint(graph, n.id)); }}>+ vertex</button>
                       <button class="ge-poly-add repeat" type="button" title="Add a REPEAT block — expands to N points via a loop"
                         onclick={() => { setGraph(addPolygonRepeat(graph, n.id)); }}>+ repeat</button>
+                      <button class="ge-poly-add expr" type="button" title="Add an EXPRESSION that emits the points — a map() → list⟨point⟩, edited on the Σ expression"
+                        onclick={() => { setGraph(addPolygonExprList(graph, n.id).graph); }}>+ expr</button>
                     </div>
                   </div>
                 </foreignObject>
@@ -2036,6 +2039,10 @@
     background: #f5f3ff; color: #5b21b6; border-color: #c4b5fd;
   }
   .ge-poly-add.repeat:hover { background: #ede9fe; border-style: solid; border-color: #a78bfa; color: #4c1d95; }
+  .ge-poly-add.expr {
+    background: #eef2ff; color: #4338ca; border-color: #a5b4fc;
+  }
+  .ge-poly-add.expr:hover { background: #e0e7ff; border-style: solid; border-color: #818cf8; color: #3730a3; }
   .ge-poly-repeat {
     margin-bottom: 2px; padding: 4px 4px 4px 6px;
     border: 1px solid #c4b5fd; border-radius: 5px;
