@@ -248,18 +248,16 @@
             <option value="list:point">list&lt;point&gt;</option>
           </select>
         {/if}
-        <button class="ge-xs-del" type="button" title="Remove"
-          onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
-      </div>
-      {#if loopBuildable}
-        <!-- list output (loop or empty): offer the visual FOR-block builder/editor. -->
-        <div class="ge-xs-loopbar">
+        {#if loopBuildable}
+          <!-- loop-view ⇄ text toggle, inline with name/type/delete (compact). -->
           <button class="ge-xs-loptoggle" class:on={loopMode} type="button"
             onclick={() => (loopMode = !loopMode)}
             title={loopMode ? 'Show the raw formula text' : 'Show the visual FOR-loop blocks'}>
-            {loopMode ? '⟨⟩ text' : '↻ loop view'}</button>
-        </div>
-      {/if}
+            {loopMode ? '⟨⟩ text' : '↻ loops'}</button>
+        {/if}
+        <button class="ge-xs-del" type="button" title="Remove"
+          onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
+      </div>
       {#if showLoops}
         <ExprLoopBlocks bind:formula={row.formula}
           variables={[...params.map((p) => p.name), ...vars.map((v) => v.name)].filter(Boolean)} />
@@ -405,11 +403,9 @@
   /* output TYPE picker (scalar | list<point>) in the edit head. */
   .ge-xs-shapesel { flex: none; font: 600 10px Arial; color: #7c3aed; background: #f5f3ff; border: 1px solid #d8b4fe; border-radius: 4px; padding: 2px 4px; cursor: pointer; }
   .ge-xs-shapesel.list { color: #4338ca; background: #eef2ff; border-color: #a5b4fc; }
-  /* loop-view ⇄ text toggle for list outputs. */
-  .ge-xs-loopbar { display: flex; justify-content: flex-end; margin-bottom: 4px; }
-  .ge-xs-loptoggle { font: 600 11px Arial; color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
-  .ge-xs-loptoggle:hover { background: #ede9fe; border-color: #a78bfa; }
-  .ge-xs-loptoggle.on { background: #ede9fe; border-color: #a78bfa; }
+  /* loop-view ⇄ text toggle — compact, inline in the name/type/delete row. */
+  .ge-xs-loptoggle { flex: none; font: 600 11px Arial; color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 5px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+  .ge-xs-loptoggle:hover, .ge-xs-loptoggle.on { background: #ede9fe; border-color: #a78bfa; }
   .ge-xs-outedit { flex: 1 1 auto; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
 
   /* LEFT pane body (def name + params). */
