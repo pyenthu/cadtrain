@@ -275,8 +275,10 @@
           placeholder={kind === 'var' ? 'od / two' : isList ? 'map(range(0, N), f(i) = [r0 * cos(i), r0 * sin(i)])' : 'diff > 0 ? diff : 0'} />
       {/if}
       {#if fErr}<div class="ge-xs-err big">{fErr}</div>{/if}
-      {#if isList}
-        <p class="ge-xs-edhint">Returns a flat <strong>list of <code>[r,z]</code> points</strong> — <code>map(range(0, N), f(i) = [r, z])</code> (mathjs <code>f(i) = …</code>, not <code>=&gt;</code>), join with <code>concat(…)</code>. Wires into a polygon's points / an extrude profile. <strong>Multi-line OK:</strong> put named helpers on their own lines and end with <code>return</code> — e.g.<br/><code>outer(i) = […]</code><br/><code>inner(j) = […]</code><br/><code>return concat(map(range(0,N), outer), map(range(0,N), inner))</code></p>
+      {#if isList && showLoops}
+        <p class="ge-xs-edhint">Builds a <strong>list of <code>[r,z]</code> points</strong> (wires into a polygon / extrude profile). <strong>+ add</strong> a <em>loop</em>, an intermediate <em>expression</em>, or an input <em>variable</em>; type each loop body as<br/><code>rx = …</code><br/><code>rz = …</code><br/><code>poly.append([rx, rz])</code></p>
+      {:else if isList}
+        <p class="ge-xs-edhint">Raw text. Imperative form (<code>poly = []</code> · <code>for i = 0 to N</code> · <code>poly.append([r, z])</code> · <code>return poly</code>) or functional <code>map(range(0,N), f(i)=[r,z])</code> joined with <code>concat(…)</code>. Toggle <strong>↻ loops</strong> for the block builder.</p>
       {:else}
         <p class="ge-xs-edhint">Full expression body — supports multi-line + ternary <code>cond ? a : b</code> logic. Refers to earlier-declared names + math functions.</p>
       {/if}
