@@ -261,7 +261,8 @@
         </div>
       {/if}
       {#if showLoops}
-        <ExprLoopBlocks bind:formula={row.formula} />
+        <ExprLoopBlocks bind:formula={row.formula}
+          variables={[...params.map((p) => p.name), ...vars.map((v) => v.name)].filter(Boolean)} />
       {:else}
         <ExpressionSrcPane
           bind:src={row.formula}
