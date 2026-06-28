@@ -62,7 +62,15 @@
     STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
+  import { portType, listOf } from '$lib/cad/port-types';
   import { producerLabel, parseProfileExpr, argStr, argFrom } from './args';
+
+  // #11/typed-ports — the registry PortType for an expr OUTPUT (drives socket colour).
+  function exprOutPort(out: any) {
+    const id = out?.shape === 'list' ? `list<${out.elem ?? 'point'}>` : (out?.elem ?? 'scalar');
+    if (out?.shape === 'list') listOf(out.elem ?? 'point'); // ensure derived list type is registered
+    return portType(id);
+  }
   import SketchNodeCard from './SketchNodeCard.svelte';
   import { DeleteConfirm } from './delete-confirm.svelte';
   import type Popovers from './Popovers.svelte';
@@ -1288,6 +1296,15 @@
                       class="ge-sock in poly-rref-in wired"
                       cx="0" cy={polySockRef(n, idx)} r="6"
                       onpointerup={(ev) => wire.endWireOnPolygonRepeatRef(ev, n.id, idx)}/>
+                  {:else if idx < 8 && pt?.kind === 'expr-list-ref'}
+                    <!-- expr-list-ref input socket (#11 drag-to-wire) — drag a
+                         list<point> expr OUTPUT here to repoint which expression
+                         supplies the polygon's points. -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <circle role="button" tabindex="-1"
+                      class="ge-sock in poly-elist-in wired"
+                      cx="0" cy={polySockRef(n, idx)} r="6"
+                      onpointerup={(ev) => wire.endWireOnPolygonExprListRef(ev, n.id, idx)}/>
                   {:else if idx < 8 && pt?.kind !== 'repeat' && pt?.kind !== 'expr-list-ref'}
                     <!-- Vertex r/z sockets — two stacked, one per axis. (Repeat-ref
                          + expr-list-ref rows have no per-coord sockets.) -->
@@ -1646,9 +1663,15 @@
                 <!-- OUTPUT sockets (right edge) — one per OUTPUT, line-aligned to
                      its row. Start a wire toward a consumer. -->
                 {#each exOutputs as out, oIdx (out.name)}
+                  {@const opt = exprOutPort(out)}
+                  {@const isList = out.shape === 'list'}
+                  <!-- Output socket coloured by its PORT TYPE (typed-ports): a
+                       list<point> reads indigo + larger; a scalar stays teal. -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1" class="ge-sock out expr-out"
-                    cx={size.w} cy={exprOutputSockY(oIdx)} r="5"
+                  <circle role="button" tabindex="-1" class="ge-sock out expr-out" class:list={isList}
+                    style={opt ? `fill: ${opt.color}; stroke: ${opt.color}` : ''}
+                    cx={size.w} cy={exprOutputSockY(oIdx)} r={isList ? 6 : 5}
+                    data-tip={`${out.name}: ${opt?.label ?? 'value'}${isList ? ' — drag onto a polygon’s ƒ[] row to wire' : ''}`}
                     onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, out.name)}/>
                 {/each}
               {/if}
@@ -2156,6 +2179,9 @@
      than a coord socket so the user can land a wire reliably. */
   .ge-sock.in.poly-rref-in { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-sock.in.poly-rref-in.wired { fill: #6d28d9; }
+  .ge-sock.in.poly-elist-in { fill: #eef2ff; stroke: #4f46e5; stroke-width: 2; }
+  .ge-sock.in.poly-elist-in.wired { fill: #4f46e5; }
+  .ge-sock.out.expr-out.list { stroke-width: 2; }
   .ge-sock.out.poly-repeat-out { fill: #6d28d9; stroke: #5b21b6; }
   /* ─── sketch-repeat card (#805) ───────────────────────────────────────── */
   .ge-node-bg.sketch-repeat { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }

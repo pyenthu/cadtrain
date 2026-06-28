@@ -211,6 +211,31 @@ export class WireState {
     this.from = null; this.mouse = null;
   };
 
+  /** Repoint a polygon's expr-list-ref by dragging an expr OUTPUT onto its
+   *  socket (#11 drag-to-wire). Gated to `shape:'list'` outputs — a scalar
+   *  output can't feed the points slot (the typed-ports compatibility rule). */
+  endWireOnPolygonExprListRef = (ev: PointerEvent, polygonId: NodeId, idx: number) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (!from || from.kind !== 'out' || from.outName == null) { this.from = null; this.mouse = null; return; }
+    const g = this.#getGraph();
+    const src = g.nodes[from.nodeId] as any;
+    let isList = false;
+    if (src?.type === 'expr') {
+      const def = (g.exprDefs ?? []).find((d) => d.id === src.defId);
+      isList = def?.outputs?.find((o: any) => o.name === from.outName)?.shape === 'list';
+    }
+    if (isList) {
+      const poly = g.nodes[polygonId] as any;
+      if (poly?.type === 'polygon' && poly.points[idx]?.kind === 'expr-list-ref') {
+        const points = [...poly.points];
+        points[idx] = { kind: 'expr-list-ref', sourceId: from.nodeId, output: from.outName };
+        this.#setGraph({ ...g, nodes: { ...g.nodes, [polygonId]: { ...poly, points } } });
+      }
+    }
+    this.from = null; this.mouse = null;
+  };
+
   /** Wire a param's output onto one of a mv/rot's three xyz slots. */
   endWireOnTransformAxis = (ev: PointerEvent, transformId: NodeId, axis: 0 | 1 | 2) => {
     ev.stopPropagation();
