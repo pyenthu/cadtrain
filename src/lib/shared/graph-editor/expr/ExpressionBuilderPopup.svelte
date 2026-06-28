@@ -30,6 +30,8 @@
   import { parseAndValidateBare } from '$lib/cad/graph-exprs';
   import type { ExprDef, ExprOutShape, ExprOutElem } from '$lib/cad/composition-graph-types';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
+  import ExprLoopBlocks from './ExprLoopBlocks.svelte';
+  import { parseLoops } from '$lib/cad/expr-loops';
 
   let {
     def,
@@ -55,6 +57,8 @@
   let vars = $state<FormulaRow[]>([]);
   let outputs = $state<FormulaRow[]>([]);
   let expanded = $state(false);
+  // list outputs default to the visual FOR-block view (↻); toggle to raw text.
+  let loopMode = $state(true);
 
   // Draggable popover — the header is the grab handle; `pos` overrides the anchor
   // once moved. (Resize is the CSS corner grip on .ge-expr-pop, no JS needed.)
@@ -221,6 +225,8 @@
   {#if row}
     {@const allowed = kind === 'var' ? varAllowed(i) : outAllowed(i)}
     {@const isList = kind === 'output' && row.shape === 'list'}
+    {@const loopOk = isList && !!parseLoops(row.formula)}
+    {@const showLoops = loopOk && loopMode}
     {@const nErr = nameError(row.name)}
     {@const fErr = formulaError(row.formula, allowed, kind === 'output' ? (row.shape ?? 'scalar') : 'scalar')}
     <div class="ge-xs-mainedit">
@@ -245,12 +251,25 @@
         <button class="ge-xs-del" type="button" title="Remove"
           onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
       </div>
-      <ExpressionSrcPane
-        bind:src={row.formula}
-        completions={completionsFor(allowed)}
-        label=""
-        rows={expanded ? 18 : 9}
-        placeholder={kind === 'var' ? 'od / two' : isList ? 'map(range(0, N), f(i) = [r0 * cos(i), r0 * sin(i)])' : 'diff > 0 ? diff : 0'} />
+      {#if loopOk}
+        <!-- list output that parses as loop(s): offer the visual FOR-block view. -->
+        <div class="ge-xs-loopbar">
+          <button class="ge-xs-loptoggle" class:on={loopMode} type="button"
+            onclick={() => (loopMode = !loopMode)}
+            title={loopMode ? 'Show the raw formula text' : 'Show the visual FOR-loop blocks'}>
+            {loopMode ? '⟨⟩ text' : '↻ loop view'}</button>
+        </div>
+      {/if}
+      {#if showLoops}
+        <ExprLoopBlocks bind:formula={row.formula} />
+      {:else}
+        <ExpressionSrcPane
+          bind:src={row.formula}
+          completions={completionsFor(allowed)}
+          label=""
+          rows={expanded ? 18 : 9}
+          placeholder={kind === 'var' ? 'od / two' : isList ? 'map(range(0, N), f(i) = [r0 * cos(i), r0 * sin(i)])' : 'diff > 0 ? diff : 0'} />
+      {/if}
       {#if fErr}<div class="ge-xs-err big">{fErr}</div>{/if}
       {#if isList}
         <p class="ge-xs-edhint">Returns a flat <strong>list of <code>[r,z]</code> points</strong> — <code>map(range(0, N), f(i) = [r, z])</code> (mathjs <code>f(i) = …</code>, not <code>=&gt;</code>), join with <code>concat(…)</code>. Wires into a polygon's points / an extrude profile. <strong>Multi-line OK:</strong> put named helpers on their own lines and end with <code>return</code> — e.g.<br/><code>outer(i) = […]</code><br/><code>inner(j) = […]</code><br/><code>return concat(map(range(0,N), outer), map(range(0,N), inner))</code></p>
@@ -385,6 +404,11 @@
   /* output TYPE picker (scalar | list<point>) in the edit head. */
   .ge-xs-shapesel { flex: none; font: 600 10px Arial; color: #7c3aed; background: #f5f3ff; border: 1px solid #d8b4fe; border-radius: 4px; padding: 2px 4px; cursor: pointer; }
   .ge-xs-shapesel.list { color: #4338ca; background: #eef2ff; border-color: #a5b4fc; }
+  /* loop-view ⇄ text toggle for list outputs. */
+  .ge-xs-loopbar { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  .ge-xs-loptoggle { font: 600 11px Arial; color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  .ge-xs-loptoggle:hover { background: #ede9fe; border-color: #a78bfa; }
+  .ge-xs-loptoggle.on { background: #ede9fe; border-color: #a78bfa; }
   .ge-xs-outedit { flex: 1 1 auto; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
 
   /* LEFT pane body (def name + params). */
