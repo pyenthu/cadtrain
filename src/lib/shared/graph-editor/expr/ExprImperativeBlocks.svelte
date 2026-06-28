@@ -24,6 +24,7 @@
   let lastSerialized = '';
   let collapsed = $state<Set<number>>(new Set());
   let customStop = $state<Set<number>>(new Set());
+  let customStop2 = $state<Set<number>>(new Set()); // the inner (v) range of a 2D grid loop
   let addOpen = $state(false);
   // loops with body edits not yet pushed to the canvas (the ✓ tick pushes them).
   let dirty = $state<Set<number>>(new Set());
@@ -79,6 +80,22 @@
   }
   const asDropdown = (k: number, stop: string) =>
     variables.length > 0 && !customStop.has(k) && variables.includes(stop);
+
+  // ── 2D / GRID loop ────────────────────────────────────────────────────────
+  // A loop with loopVar2 set is a NESTED grid loop (uv → list<point>). Toggle on
+  // adds an inner `v` iterator; toggle off clears it (back to a plain 1D loop).
+  function toggleGrid(k: number) {
+    const lp = prog!.loops[k]!;
+    if (lp.loopVar2) { lp.loopVar2 = undefined; lp.start2 = undefined; lp.stop2 = undefined; }
+    else { lp.loopVar2 = 'v'; lp.start2 = '0'; lp.stop2 = variables[0] ?? 'N'; }
+    commit();
+  }
+  function onStop2Select(k: number, v: string) {
+    if (v === '__custom') { customStop2 = new Set(customStop2).add(k); return; }
+    prog!.loops[k]!.stop2 = v; commit();
+  }
+  const asDropdown2 = (k: number, stop: string | undefined) =>
+    variables.length > 0 && !customStop2.has(k) && !!stop && variables.includes(stop);
 
   function bodyCompletions(loopVar?: string): Completion[] {
     const out: Completion[] = [];
@@ -140,10 +157,32 @@
           <input class="ib-bound" bind:value={lp.stop} onchange={commit} spellcheck="false" title="count" />
           {#if variables.length}<button class="ib-assign" type="button" title="assign a variable" onclick={() => (customStop = toggleSet(customStop, k))}>▾</button>{/if}
         {/if}
+        <button class="ib-grid" class:on={!!lp.loopVar2} type="button"
+          title={lp.loopVar2 ? 'make 1D (single loop)' : 'make 2D (uv grid → surface)'}
+          onclick={() => toggleGrid(k)}>⊞</button>
         <button class="ib-tick" class:dirty={dirty.has(k)} type="button"
           title="Update the canvas + scene with this loop's edits" onclick={commit}>✓ update</button>
         <button class="ib-del" type="button" title="remove loop" onclick={() => removeLoop(k)}>×</button>
       </div>
+      {#if lp.loopVar2}
+        <!-- second (inner v) iterator row — makes this a uv GRID loop -->
+        <div class="ib-head ib-head2">
+          <span class="ib-sub">↳</span>
+          <input class="ib-var" bind:value={lp.loopVar2} onchange={commit} spellcheck="false" />
+          <span class="ib-eq">=</span>
+          <input class="ib-bound sm" bind:value={lp.start2} onchange={commit} spellcheck="false" title="start" />
+          <span class="ib-dots">…</span>
+          {#if asDropdown2(k, lp.stop2)}
+            <select class="ib-boundsel" value={lp.stop2} onchange={(e) => onStop2Select(k, (e.currentTarget as HTMLSelectElement).value)}>
+              {#each variables as v}<option value={v}>{v}</option>{/each}
+              <option value="__custom">123 custom…</option>
+            </select>
+          {:else}
+            <input class="ib-bound" bind:value={lp.stop2} onchange={commit} spellcheck="false" title="count" />
+            {#if variables.length}<button class="ib-assign" type="button" title="assign a variable" onclick={() => (customStop2 = toggleSet(customStop2, k))}>▾</button>{/if}
+          {/if}
+        </div>
+      {/if}
       {#if open}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="ib-body" onfocusout={commit}>
@@ -191,6 +230,11 @@
   .ib-bound.sm { width: 36px; }
   .ib-boundsel { font: 600 12px ui-monospace, monospace; color: #4338ca; border: 1px solid #a5b4fc; border-radius: 5px; padding: 2px 6px; background: #eef2ff; cursor: pointer; }
   .ib-assign { font-size: 10px; color: #7c3aed; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 4px; cursor: pointer; padding: 2px 4px; }
+  .ib-grid { font-size: 12px; line-height: 1; color: #7c3aed; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 5px; cursor: pointer; padding: 3px 6px; }
+  .ib-grid:hover { background: #ddd6fe; }
+  .ib-grid.on { color: #fff; background: #7c3aed; border-color: #6d28d9; }
+  .ib-head2 { background: #ebe3ff; padding-left: 26px; border-top: 1px solid #ddd6fe; }
+  .ib-sub { font-size: 13px; color: #7c3aed; margin-right: 1px; }
   .ib-del { font: 700 14px Arial; color: #cbd5e1; background: none; border: none; cursor: pointer; padding: 0 2px; }
   .ib-del:hover { color: #ef4444; }
   .ib-body { padding: 6px 8px; border-top: 1px solid #ddd6fe; }

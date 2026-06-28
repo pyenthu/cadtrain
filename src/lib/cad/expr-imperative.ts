@@ -25,8 +25,16 @@ export interface ImpAssign { kind: 'assign'; name: string; expr: string; }
 export interface ImpAppend { kind: 'append'; list: string; expr: string; }
 export type ImpStatement = ImpAssign | ImpAppend;
 /** A loop's body is the raw multi-line statements TEXT (the user types it); the
- *  statements are parsed from it at compile/validate time. */
-export interface ImpLoop { loopVar: string; start: string; stop: string; body: string; }
+ *  statements are parsed from it at compile/validate time.
+ *
+ *  A loop may carry a SECOND iterator (`loopVar2`/`start2`/`stop2`) → it becomes a
+ *  NESTED grid loop emitting a uv grid of points (row-major, `loopVar` OUTER,
+ *  `loopVar2` INNER) — the foundation for parametric surfaces. When `loopVar2` is
+ *  absent it's an ordinary 1D loop (behaviour byte-identical). */
+export interface ImpLoop {
+  loopVar: string; start: string; stop: string; body: string;
+  loopVar2?: string; start2?: string; stop2?: string;
+}
 export interface ImperativeProgram {
   accumulators: string[];   // declared lists (usually one, e.g. 'poly')
   vars: ImpAssign[];        // top-level intermediate values, computed before the loops
@@ -36,6 +44,21 @@ export interface ImperativeProgram {
 
 const ACC_RE = /^([A-Za-z_]\w*)\s*=\s*\[\s*\]$/;
 const FOR_RE = /^for\s+([A-Za-z_]\w*)\s*=\s*(.+?)\s+to\s+(.+)$/;
+// 2D / GRID header: `for u = 0 to Nu, v = 0 to Nv` — a comma after the outer range
+// introduces an inner iterator + its range (the lazy quantifiers + the trailing
+// `, ident = … to …` requirement let bounds contain commas, e.g. `to clamp(N,0)`).
+const FOR2_RE = /^for\s+([A-Za-z_]\w*)\s*=\s*(.+?)\s+to\s+(.+?)\s*,\s*([A-Za-z_]\w*)\s*=\s*(.+?)\s+to\s+(.+)$/;
+
+/** Parse a single `for …` header line into loop fields (grid header first, then the
+ *  ordinary 1D header), or null if it isn't a loop header at all. */
+function parseForHeader(line: string): Omit<ImpLoop, 'body'> | null {
+  const g = line.match(FOR2_RE);
+  if (g) return { loopVar: g[1]!, start: g[2]!.trim(), stop: g[3]!.trim(),
+                  loopVar2: g[4]!, start2: g[5]!.trim(), stop2: g[6]!.trim() };
+  const m = line.match(FOR_RE);
+  if (m) return { loopVar: m[1]!, start: m[2]!.trim(), stop: m[3]!.trim() };
+  return null;
+}
 const APPEND_RE = /^([A-Za-z_]\w*)\.append\(\s*(.+?)\s*\)$/;
 const ASSIGN_RE = /^([A-Za-z_]\w*)\s*=\s*(.+)$/;
 const RETURN_RE = /^return\s+([A-Za-z_]\w*)$/;
@@ -64,12 +87,12 @@ export function parseImperative(src: string): ImperativeProgram | null {
 
   const loops: ImpLoop[] = [];
   while (idx < lines.length - 1) {
-    const fm = lines[idx]!.match(FOR_RE);
-    if (!fm) return null; // expected a `for`
+    const hd = parseForHeader(lines[idx]!);
+    if (!hd) return null; // expected a `for`
     idx++;
     const bodyLines: string[] = [];
     while (idx < lines.length - 1 && !FOR_RE.test(lines[idx]!)) { bodyLines.push(lines[idx]!); idx++; }
-    loops.push({ loopVar: fm[1]!, start: fm[2]!.trim(), stop: fm[3]!.trim(), body: bodyLines.join('\n') });
+    loops.push({ ...hd, body: bodyLines.join('\n') });
   }
   return loops.length ? { accumulators, vars, loops, result } : null;
 }
@@ -125,7 +148,9 @@ export function serializeImperative(p: ImperativeProgram): string {
   const lines: string[] = (p.accumulators ?? []).map((a) => `${a} = []`);
   for (const v of p.vars ?? []) lines.push(`${v.name} = ${v.expr}`);
   for (const lp of p.loops ?? []) {
-    lines.push(`for ${lp.loopVar} = ${lp.start} to ${lp.stop}`);
+    lines.push(lp.loopVar2
+      ? `for ${lp.loopVar} = ${lp.start} to ${lp.stop}, ${lp.loopVar2} = ${lp.start2} to ${lp.stop2}`
+      : `for ${lp.loopVar} = ${lp.start} to ${lp.stop}`);
     for (const bl of (lp.body ?? '').split('\n').map((l) => l.trim()).filter(Boolean)) lines.push(`  ${bl}`);
   }
   lines.push(`return ${p.result}`);
@@ -143,12 +168,14 @@ export function validateImperative(src: string, allowed: ReadonlySet<string>): s
   for (const v of p.vars) locals.add(v.name);
   for (const lp of p.loops) {
     locals.add(lp.loopVar);
+    if (lp.loopVar2) locals.add(lp.loopVar2);
     for (const s of bodyStatements(lp.body)) if (s.kind === 'assign') locals.add(s.name);
   }
   const check = (expr: string) => parseAndValidateBare(expr, locals, 'list').errors[0]?.msg ?? null;
   for (const v of p.vars) { const e = check(v.expr); if (e) return e; }
   for (const lp of p.loops) {
-    const e = check(lp.start) ?? check(lp.stop);
+    const e = check(lp.start) ?? check(lp.stop)
+      ?? (lp.loopVar2 ? (check(lp.start2 ?? '') ?? check(lp.stop2 ?? '')) : null);
     if (e) return e;
     const stmts = bodyStatements(lp.body);
     if (!stmts.length) return `loop "${lp.loopVar}" has no statements — add a ${p.accumulators[0]}.append(…)`;
@@ -188,7 +215,11 @@ export function compileImperative(src: string): { ok: true; js: string } | { ok:
       const stmts = bodyStatements(lp.body).map((s) =>
         s.kind === 'assign' ? `const ${s.name} = ${exprToJs(s.expr)};` : `${s.list}.push(${exprToJs(s.expr)});`,
       ).join(' ');
-      return `for (let ${lp.loopVar} = ${exprToJs(lp.start)}; ${lp.loopVar} < (${exprToJs(lp.stop)}); ${lp.loopVar}++) { ${stmts} }`;
+      const inner = `for (let ${lp.loopVar} = ${exprToJs(lp.start)}; ${lp.loopVar} < (${exprToJs(lp.stop)}); ${lp.loopVar}++)`;
+      if (!lp.loopVar2) return `${inner} { ${stmts} }`;
+      // GRID: u OUTER, v INNER → row-major Nu×Nv iterations; both in body scope.
+      const innerV = `for (let ${lp.loopVar2} = ${exprToJs(lp.start2 ?? '0')}; ${lp.loopVar2} < (${exprToJs(lp.stop2 ?? '0')}); ${lp.loopVar2}++)`;
+      return `${inner} { ${innerV} { ${stmts} } }`;
     }).join(' ');
     return { ok: true, js: `(() => { ${decls} ${varDecls} ${loopJs} return ${p.result}; })()` };
   } catch (e: any) {

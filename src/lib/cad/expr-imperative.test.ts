@@ -11,6 +11,13 @@ function evalList(js: string, vars: Record<string, number>): [number, number][] 
   // eslint-disable-next-line no-new-func
   return new Function(...names, `return (${js});`)(...vals);
 }
+// grid bodies emit 3-element points
+function evalGrid(js: string, vars: Record<string, number>): number[][] {
+  const names = ['cos', 'sin', 'tau', ...Object.keys(vars)];
+  const vals = [Math.cos, Math.sin, tau, ...Object.values(vars)];
+  // eslint-disable-next-line no-new-func
+  return new Function(...names, `return (${js});`)(...vals);
+}
 
 const IMP_SPIRAL = [
   'poly = []',
@@ -106,5 +113,60 @@ describe('imperative loop model', () => {
   it('returns null for non-imperative input', () => {
     expect(parseImperative('[1,2,3]')).toBeNull();
     expect(parseImperative('poly = []\nreturn poly')).toBeNull(); // no loop
+  });
+});
+
+describe('imperative 2D / GRID loop (parametric surface foundation)', () => {
+  const GRID = ['grid = []', 'for u = 0 to 3, v = 0 to 4', '  grid.append([u, v, 0])', 'return grid'].join('\n');
+
+  it('parses the dual-range header into loopVar2/start2/stop2', () => {
+    const p = parseImperative(GRID)!;
+    expect(p).not.toBeNull();
+    expect(p.loops).toHaveLength(1);
+    expect(p.loops[0]).toMatchObject({
+      loopVar: 'u', start: '0', stop: '3', loopVar2: 'v', start2: '0', stop2: '4',
+    });
+  });
+
+  it('compiles to NESTED for-loops and evals to 12 points in ROW-MAJOR order', () => {
+    const r = compileImperative(GRID);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const pts = evalGrid(r.js, {});
+    expect(pts).toHaveLength(12); // Nu(3) × Nv(4)
+    // row-major: u OUTER (0,0),(0,1),(0,2),(0,3),(1,0),…,(2,3)
+    const expected: number[][] = [];
+    for (let u = 0; u < 3; u++) for (let v = 0; v < 4; v++) expected.push([u, v, 0]);
+    expect(pts).toEqual(expected);
+  });
+
+  it('grid bounds may be variables (Nu × Nv in scope)', () => {
+    const src = ['g = []', 'for u = 0 to Nu, v = 0 to Nv', '  g.append([u, v, 0])', 'return g'].join('\n');
+    const r = compileImperative(src);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(evalGrid(r.js, { Nu: 5, Nv: 2 })).toHaveLength(10);
+  });
+
+  it('round-trips: serialize(parse(x)) preserves the dual range', () => {
+    const a = parseImperative(GRID)!;
+    const s = serializeImperative(a);
+    expect(s).toContain('for u = 0 to 3, v = 0 to 4');
+    const b = parseImperative(s)!;
+    expect(b.loops[0]).toMatchObject({
+      loopVar: 'u', start: '0', stop: '3', loopVar2: 'v', start2: '0', stop2: '4',
+    });
+    expect(serializeImperative(b)).toBe(s);
+  });
+
+  it('a 1D loop is unaffected — no loopVar2, byte-identical compile', () => {
+    const oneD = ['poly = []', 'for i = 0 to 5', '  poly.append([i, 0])', 'return poly'].join('\n');
+    const p = parseImperative(oneD)!;
+    expect(p.loops[0]!.loopVar2).toBeUndefined();
+    const r = compileImperative(oneD);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.js).not.toContain('for (let v'); // single loop only
+      expect(evalList(r.js, {}).length).toBe(5);
+    }
   });
 });
