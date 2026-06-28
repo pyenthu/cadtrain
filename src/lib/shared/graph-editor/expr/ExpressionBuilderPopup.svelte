@@ -225,8 +225,8 @@
   {#if row}
     {@const allowed = kind === 'var' ? varAllowed(i) : outAllowed(i)}
     {@const isList = kind === 'output' && row.shape === 'list'}
-    {@const loopOk = isList && !!parseLoops(row.formula)}
-    {@const showLoops = loopOk && loopMode}
+    {@const loopBuildable = isList && (!!parseLoops(row.formula) || row.formula.trim() === '')}
+    {@const showLoops = loopBuildable && loopMode}
     {@const nErr = nameError(row.name)}
     {@const fErr = formulaError(row.formula, allowed, kind === 'output' ? (row.shape ?? 'scalar') : 'scalar')}
     <div class="ge-xs-mainedit">
@@ -251,8 +251,8 @@
         <button class="ge-xs-del" type="button" title="Remove"
           onclick={() => (kind === 'var' ? delVar(i) : delOutput(i))}>×</button>
       </div>
-      {#if loopOk}
-        <!-- list output that parses as loop(s): offer the visual FOR-block view. -->
+      {#if loopBuildable}
+        <!-- list output (loop or empty): offer the visual FOR-block builder/editor. -->
         <div class="ge-xs-loopbar">
           <button class="ge-xs-loptoggle" class:on={loopMode} type="button"
             onclick={() => (loopMode = !loopMode)}
