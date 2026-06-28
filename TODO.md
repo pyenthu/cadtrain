@@ -37,9 +37,11 @@
     (number | list<point>) + list-aware live validation; the `expr-list-ref` render row on the polygon;
     and **"+ expr"** on the polygon (addPolygonExprList — creates a list<point> expr seeded with a map +
     instance + ref in one click) — browser-verified: + expr → polygon row + expr card → BAKES.
-    **LEFT:** the 5 element-shape socket VISUALS on instance cards + drag-to-wire (vs the button) +
-    lacing (longest-repeat-last, deferred) + the profile-graph 2D-preview path (composition-emit-profile
-    needs the expr prelude in scope). Research decisions
+    **SOCKET VISUALS + DRAG-TO-WIRE DONE:** expr output sockets coloured by registry PORT TYPE
+    (list<point> indigo); the polygon expr-list-ref row has an indigo input socket — drag a list<point>
+    output onto it to repoint (wire-state endWireOnPolygonExprListRef, gated to shape:'list'). Button
+    creates, socket repoints (the "+ repeat" split). **LEFT:** lacing (longest-repeat-last, deferred) +
+    the profile-graph 2D-preview path (composition-emit-profile needs the expr prelude in scope). Research decisions
     locked (flat lists, longest-repeat-last lacing, socket-shape typing, no data trees). Let an
     expression OUTPUT carry a scalar | object | **list**, with a `map(range(N), i => …)` loop
     inside, and wire the structured output into ANY consumer: list of `[r,z]` → polygon points
@@ -81,6 +83,13 @@
     `graph.typeDefs[]` + def→instance propagation so editing a type updates every node using it (the
     "dynamic nodes" payoff); then wire a typed port (a Casing output / list<Casing>) into a node = the
     PR3 create-affordance on the registry. See typed-ports.md §"Layer 2".
+    **GENERATIVE HOOK DONE** (port-suggest.ts, 6 tests): `autoWireSuggestions(graph)` enumerates typed
+    outputs x open input slots, filters by `canWire`, dedupes already-wired -> the machine-reasonable
+    "what could wire to what" list (expr-list->polygon covered; call-arg/geometry/op/transform slots
+    deferred + documented in-file). NOT yet surfaced in the UI (a star "suggest wirings" panel is next).
+    **STILL LEFT:** per-part `graph.typeDefs[]` + propagation is blocked on a real CONSUMER — nodes don't
+    use composite types yet (expr outputs use shape/elem, not a typeDef); build composite-type
+    consumption (or surface autoWireSuggestions) before propagation-without-consumers.
 
 10. **Volume ⇄ OneDrive visual diff + selective sync** (`/volume`). **v1 SHIPPED 2026-06-26**
     (fbcb0c2): metadata-only diff endpoint `POST /api/volume/onedrive/diff` (walk prod
