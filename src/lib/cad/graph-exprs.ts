@@ -527,7 +527,14 @@ export function validateExprBare(
   const names = new Set(allowedNames);
   if (isList) {
     ast.traverse((node: any) => {
-      if (node.type === 'FunctionAssignmentNode') for (const p of (node.params ?? [])) names.add(p);
+      if (node.type === 'FunctionAssignmentNode') {
+        names.add(node.name);                                 // a named helper (outer/inner)
+        for (const p of (node.params ?? [])) names.add(p);    // its bound params (i/j)
+      }
+      if (node.type === 'AssignmentNode') {
+        const nm = node.object?.name ?? (node as any).name;
+        if (nm) names.add(nm);                                // an intermediate `name = …`
+      }
     });
   }
   const nodeOk = (t: string) => SAFE_NODE_TYPES.has(t) || (isList && LIST_EXTRA_NODE_TYPES.has(t));
@@ -573,8 +580,11 @@ export function validateExprBare(
 export function parseAndValidateBare(
   formula: string, allowedNames: ReadonlySet<string>, shape: ExprOutShape = 'scalar',
 ): { ast: MathNode | null; errors: ExprError[] } {
-  if (formula.trim() === '') return { ast: null, errors: [] };
-  const parsed = parseExpr(formula);
+  // `return` is sugar for the final line in a multi-line LIST body — drop it
+  // before parsing (mathjs has no return keyword; the last statement is the value).
+  const f = shape === 'list' ? stripReturn(formula) : formula;
+  if (f.trim() === '') return { ast: null, errors: [] };
+  const parsed = parseExpr(f);
   if (!parsed.ok) return { ast: null, errors: [{ msg: parsed.error }] };
   return { ast: parsed.ast, errors: validateExprBare(parsed.ast, allowedNames, shape) };
 }
@@ -627,17 +637,43 @@ function listNodeToJs(node: any): string {
       if (fn === 'concat') return `[].concat(${args.join(', ')})`;
       return `${fn}(${args.join(', ')})`;   // math fn (cos/sin/…) — sandbox-provided
     }
+    case 'BlockNode': {
+      // Multi-line body — statements + a final result. Lower to an IIFE: each
+      // helper/intermediate becomes a `const`, the LAST statement is returned.
+      const blocks = (node.blocks ?? []) as any[];
+      if (!blocks.length) return '[]';
+      const stmts = blocks.map((b) => b.node);
+      const last = stmts[stmts.length - 1];
+      const lead = stmts.slice(0, -1).map((s: any) => {
+        if (s.type === 'FunctionAssignmentNode') return `const ${s.name} = ${listNodeToJs(s)};`;
+        if (s.type === 'AssignmentNode')         return `const ${s.object?.name ?? s.name} = ${listNodeToJs(s.value)};`;
+        return `void (${listNodeToJs(s)});`;   // bare statement (rare) — evaluated, discarded
+      });
+      return `(() => { ${lead.join(' ')} return ${listNodeToJs(last)}; })()`;
+    }
+    case 'AssignmentNode':
+      // a bare assignment used as a value resolves to its right-hand side.
+      return listNodeToJs(node.value);
     default:
       throw new Error(`unsupported list-formula node: ${node?.type ?? 'unknown'}`);
   }
 }
 
+/** `return` is reader-friendly sugar for "this line is the result"; mathjs has
+ *  no return keyword (the LAST statement of a block is its value), so we drop
+ *  the word before parsing. Word-boundaried so `returnValue` etc. are untouched. */
+function stripReturn(formula: string): string {
+  return formula.replace(/\breturn\b/g, ' ');
+}
+
 /** Compile a `shape:'list'` output formula to a JS array expression. Returns
  *  the JS string (symbol names PRESERVED — caller rewrites def locals) or a
- *  clear error (never throws). An empty formula compiles to `[]`. */
+ *  clear error (never throws). An empty formula compiles to `[]`. Supports a
+ *  MULTI-LINE body (named helpers + a `return`) — see listNodeToJs BlockNode. */
 export function compileListFormula(formula: string): { ok: true; js: string } | { ok: false; error: string } {
-  if (formula.trim() === '') return { ok: true, js: '[]' };
-  const parsed = parseExpr(formula);
+  const f = stripReturn(formula);
+  if (f.trim() === '') return { ok: true, js: '[]' };
+  const parsed = parseExpr(f);
   if (!parsed.ok) return { ok: false, error: parsed.error };
   try {
     return { ok: true, js: listNodeToJs(parsed.ast as any) };

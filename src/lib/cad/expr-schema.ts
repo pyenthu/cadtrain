@@ -87,6 +87,11 @@ export const LIST_FUNCTION_ARITY: Readonly<Record<string, number | [number, numb
 export const LIST_EXTRA_NODE_TYPES: ReadonlySet<string> = new Set([
   'ArrayNode',
   'FunctionAssignmentNode',
+  // Multi-line bodies: a BlockNode of AssignmentNode / FunctionAssignmentNode
+  // statements + a final result expr (the `return` line). Lets a dense formula
+  // be broken into readable named helpers — see graph-exprs.listNodeToJs.
+  'BlockNode',
+  'AssignmentNode',
 ]);
 
 // ─── allowed-input builder ──────────────────────────────────────────────────

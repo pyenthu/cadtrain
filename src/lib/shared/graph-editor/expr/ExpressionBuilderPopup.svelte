@@ -253,7 +253,7 @@
         placeholder={kind === 'var' ? 'od / two' : isList ? 'map(range(0, N), f(i) = [r0 * cos(i), r0 * sin(i)])' : 'diff > 0 ? diff : 0'} />
       {#if fErr}<div class="ge-xs-err big">{fErr}</div>{/if}
       {#if isList}
-        <p class="ge-xs-edhint">Returns a flat <strong>list of <code>[r,z]</code> points</strong> — build it with <code>map(range(0, N), f(i) = [r, z])</code> (mathjs <code>f(i) = …</code>, not <code>=&gt;</code>), join with <code>concat(…)</code>. Wires into a polygon's points / an extrude profile. Loop var (<code>i</code>) + math funcs in scope.</p>
+        <p class="ge-xs-edhint">Returns a flat <strong>list of <code>[r,z]</code> points</strong> — <code>map(range(0, N), f(i) = [r, z])</code> (mathjs <code>f(i) = …</code>, not <code>=&gt;</code>), join with <code>concat(…)</code>. Wires into a polygon's points / an extrude profile. <strong>Multi-line OK:</strong> put named helpers on their own lines and end with <code>return</code> — e.g.<br/><code>outer(i) = […]</code><br/><code>inner(j) = […]</code><br/><code>return concat(map(range(0,N), outer), map(range(0,N), inner))</code></p>
       {:else}
         <p class="ge-xs-edhint">Full expression body — supports multi-line + ternary <code>cond ? a : b</code> logic. Refers to earlier-declared names + math functions.</p>
       {/if}

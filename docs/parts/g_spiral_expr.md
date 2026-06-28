@@ -12,12 +12,17 @@ to the original `g_spiral` (8628 verts) but with the profile collapsed from a
 
 ## Composition (3 nodes)
 1. **Expression** (`profile_pts`, `shape:'list', elem:'point'`) — params
-   `NPts, r0, growth, turns, width`; formula is two index-maps joined with
-   `concat`, each `map(range(0, NPts), f(i) = [x, y])`:
-   - outer edge forward: `r = r0 + growth·i/NPts`, `(r·cos θ, r·sin θ)`,
-     `θ = i·turns·τ/NPts`
-   - inner edge reversed: same with `r − width`, index `NPts−1−j`
-   Result = a closed flat spiral band of `2·NPts` `[x,y]` points.
+   `NPts, r0, growth, turns, width`. A **multi-line** body (named helpers + a
+   `return`, the readable form):
+   ```
+   outer(i) = [(r0 + growth*i/NPts)*cos(i*turns*tau/NPts), (r0 + growth*i/NPts)*sin(i*turns*tau/NPts)]
+   inner(j) = [(r0 + growth*(NPts-1-j)/NPts - width)*cos((NPts-1-j)*turns*tau/NPts), (r0 + growth*(NPts-1-j)/NPts - width)*sin((NPts-1-j)*turns*tau/NPts)]
+   return concat(map(range(0, NPts), outer), map(range(0, NPts), inner))
+   ```
+   - `outer(i)` = outer edge forward (`r = r0 + growth·i/NPts`, `θ = i·turns·τ/NPts`)
+   - `inner(j)` = inner edge reversed (`r − width`, index `NPts−1−j`)
+   Result = a closed flat spiral band of `2·NPts` `[x,y]` points. (Compiles
+   identically to the dense one-liner — see `expr-multiline.test.ts`.)
 2. **Polygon** — a single `expr-list-ref` entry splicing the expression's
    `profile_pts` output into its points (the `+ expr` / drag-to-wire affordance).
 3. **`r_weld_extrude`** — extrudes the polygon `length` in z (`divs 12, twist 0,
