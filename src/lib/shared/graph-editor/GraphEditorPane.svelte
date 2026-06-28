@@ -165,6 +165,7 @@
   import SketchEditorPane from './SketchEditorPane.svelte';
   import RepeatEditorPane from './RepeatEditorPane.svelte';
   import CanvasMenu from './CanvasMenu.svelte';
+  import BakeMenu from './BakeMenu.svelte';
   import AiMenu from './AiMenu.svelte';
   import { createAssistSession } from './ge-assist.svelte';
   import { clampToViewport } from './popover-clamp';
@@ -277,15 +278,17 @@
   let exprPopDef = $derived.by<ExprDef | null>(() =>
     exprPop ? ((graph.exprDefs ?? []).find((d) => d.id === exprPop!.defId) ?? null) : null,
   );
-  // The Σ Expressions MENU (B.7 v3 PR-3) — lists graph.exprDefs and is the home
-  // of the define → instance → wire flow. Opening it is the Σ rail button's job;
-  // the four-section editor (exprPop) is opened FROM the menu (✎ / +).
+  // The Expressions MENU (B.7 v3 PR-3) — lists graph.exprDefs and is the home
+  // of the define → instance → wire flow (the expr-def MANAGER: add/edit/drop/
+  // delete). Opened from the ✎ picker's "ƒ expr" item (dropExpr); the four-
+  // section editor (exprPop) is opened FROM the menu (✎ / +). The standalone Σ
+  // rail button was retired 2026-06-28 — the picker item already opened this.
   let exprMenu = $state<{ anchor: { x: number; y: number } } | null>(null);
   // ◇ Type Definer popover (typed-ports L2b/c) — the shared composite-type library.
   let typesPop = $state(false);
   // ✨ Auto-wire suggestions popover (the generative typed-ports hook).
   let suggestPop = $state(false);
-  let vrailEl = $state<HTMLElement | null>(null); // the left rail (anchors the Σ menu from the picker)
+  let vrailEl = $state<HTMLElement | null>(null); // the left rail (kept bound for rail-relative anchoring)
   // defId → how many ExprNode instances reference it (drives the delete guard).
   let exprInstanceCounts = $derived.by<Record<string, number>>(() => {
     const counts: Record<string, number> = {};
@@ -294,11 +297,6 @@
     }
     return counts;
   });
-  /** Σ launcher — open the Expressions menu anchored to the Σ button. */
-  function openExprPop(ev: MouseEvent) {
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    exprMenu = { anchor: { x: r.right + 8, y: r.top } };
-  }
   /** Menu + → create a new (empty) def and open the editor on it right away. */
   function addExprDefAndEdit(ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
@@ -648,6 +646,20 @@
       canvasMenuPos = { left: r.right + 6, top: r.top };
     }
     canvasMenuOpen = true;
+  }
+  /** 🔨 Bake-controls popover — the ONE rail button that consolidates the former
+   *  three bake buttons (🔨 bake-now · ⚡ auto-bake · 💻/☁ local-vs-server). The
+   *  rows + their state live in BakeMenu.svelte; GEP owns open + anchor (mirrors
+   *  the ⚙ canvas menu). */
+  let bakeMenuOpen = $state(false);
+  let bakeBtnEl = $state<HTMLButtonElement | null>(null);
+  let bakeMenuPos = $state<{ left: number; top: number }>({ left: 56, top: 220 });
+  function openBakeMenu() {
+    if (bakeBtnEl) {
+      const r = bakeBtnEl.getBoundingClientRect();
+      bakeMenuPos = { left: r.right + 6, top: r.top };
+    }
+    bakeMenuOpen = true;
   }
   /** ✨ AI-generate popover (RAG Phase 2) — anchored to the rail button
    *  like the ⚙ canvas menu. The prompt/busy/error/candidate state + the
@@ -1870,14 +1882,15 @@
     closePicker();
     graph = addSketch(graph).graph;
   }
-  /** Picker "ƒ expr" item (B.7 v3) — route to the Σ Expressions MENU instead of
-   *  silently dropping an instance of a (possibly empty, unwireable) def. The
-   *  menu is where you define a named expr with params/outputs and THEN drop a
-   *  wireable instance of it. Anchored to the Σ rail button. */
+  /** Picker "ƒ expr" item (B.7 v3) — route to the Expressions MENU (the expr-def
+   *  manager) instead of silently dropping an instance of a (possibly empty,
+   *  unwireable) def. The menu is where you define a named expr with params/
+   *  outputs and THEN drop a wireable instance of it. Anchored to the ✎ picker
+   *  rail button (the Σ rail button was retired 2026-06-28 — this item is now the
+   *  sole launcher for the manager). */
   function dropExpr() {
     closePicker();
-    const btn = vrailEl?.querySelector('.ge-vrail-btn.expr') as HTMLElement | null;
-    const r = btn?.getBoundingClientRect();
+    const r = dropBtnEl?.getBoundingClientRect();
     exprMenu = { anchor: r ? { x: r.right + 8, y: r.top } : { x: 56, y: 120 } };
   }
   /** ArgValue → editable string (literal number, p.<param>, or raw expr). */
@@ -2843,14 +2856,11 @@
       data-tip={wire.connectMode
         ? 'Click-to-connect ON — tap a source socket, then a target (Esc cancels)'
         : 'Click-to-connect — wire two sockets by tapping them, no dragging'}>🔗</button>
-    <!-- ── Authoring group: expressions · types · suggestions ── -->
+    <!-- ── Authoring group: types · suggestions ──
+         (Expressions live in the ✎ picker's "ƒ expr" item — the standalone Σ
+          rail button was retired 2026-06-28 as redundant with that item, which
+          already opened the same expr-def manager menu.) -->
     <div class="ge-vrail-sep"></div>
-    <!-- Σ Expression builder (B.6 / id 914) — open the calculated-expression
-         popover, seeded with the part's param names as the input schema. -->
-    <button class="ge-vrail-btn expr" type="button"
-      class:on={!!exprMenu || !!exprPop}
-      onclick={openExprPop}
-      data-tip="Expressions — define reusable calc blocks, then drop instances to wire">Σ</button>
     <!-- ◇ Type Definer (typed-ports) — define/manage composite record types
          (Point{r,z}, Casing{…}) in the shared volume library. -->
     <button class="ge-vrail-btn types" type="button"
@@ -2867,25 +2877,17 @@
     <div class="ge-vrail-sep"></div>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
-    <button class="ge-vrail-btn bake" type="button" onclick={runBake}
+    <!-- Bake — ONE button consolidating the former three (🔨 bake-now ·
+         ⚡ auto-bake · 💻/☁ local-vs-server). Opens BakeMenu with all three
+         controls. Icon reflects the current mode: ⚡ when auto-bake is on,
+         else 🔨; a ● dot when the source is stale. -->
+    <button class="ge-vrail-btn bake" type="button"
+      bind:this={bakeBtnEl}
+      class:on={bakeMenuOpen}
       class:stale={bakeStale}
-      data-tip={bakeStale ? 'Source changed — click or press Enter to re-bake' : 'Bake now (Enter in any input also bakes)'}>
-      {bakeStale ? '🔨●' : '🔨'}
-    </button>
-    <button class="ge-vrail-btn auto" type="button"
-      class:on={autoBake}
-      onclick={() => setAutoBake(!autoBake)}
-      data-tip={autoBake ? 'Auto-bake ON — toggle off to bake only on demand' : 'Auto-bake OFF — toggle on to bake on every change (700 ms debounce)'}>
-      ⚡
-    </button>
-    <!-- Bake BACKEND toggle (client-exec): 💻 local (Manifold Web Worker) vs
-         ☁ remote (server /api/primitives/preview). Persisted; the bake pane's
-         badge + the SRC ⚡compiled subtab reflect it. -->
-    <button class="ge-vrail-btn bakeloc" type="button"
-      class:on={scene.clientBake}
-      onclick={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} }}
-      data-tip={scene.clientBake ? 'Bake = LOCAL (client Web Worker). Click → switch to remote (server).' : 'Bake = REMOTE (server). Click → switch to local (client Web Worker).'}>
-      {scene.clientBake ? '💻' : '☁'}
+      onclick={() => bakeMenuOpen ? (bakeMenuOpen = false) : openBakeMenu()}
+      data-tip={`Bake — bake now · auto-bake (${autoBake ? 'on' : 'off'}) · backend (${scene.clientBake ? 'local' : 'server'})${bakeStale ? ' · source changed' : ''}`}>
+      {(autoBake ? '⚡' : '🔨') + (bakeStale ? '●' : '')}
     </button>
     {#if ghostIds.length > 0}
       <button class="ge-vrail-btn ghost-clear" type="button"
@@ -2954,6 +2956,18 @@
       session={aiSession}
       onGenerated={handleAiGenerated}
       onClose={() => (aiMenuOpen = false)} />
+  {/if}
+
+  {#if bakeMenuOpen}
+    <BakeMenu
+      pos={bakeMenuPos}
+      {bakeStale}
+      {autoBake}
+      clientBake={scene.clientBake}
+      onBakeNow={runBake}
+      onSetAutoBake={(v) => setAutoBake(v)}
+      onToggleClientBake={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} }}
+      onClose={() => (bakeMenuOpen = false)} />
   {/if}
 
   {#if canvasMenuOpen}
@@ -4113,8 +4127,7 @@
   .ge-vrail-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   /* thin group divider in the rail (authoring tools vs actions). */
   .ge-vrail-sep { width: 20px; height: 1px; background: #d4d4d8; margin: 3px 0; flex: none; }
-  /* authoring group accents — Σ expressions (teal), ◇ types (indigo), ✨ suggest (amber). */
-  .ge-vrail-btn.expr    { color: #0e7490; }
+  /* authoring group accents — ◇ types (indigo), ✨ suggest (amber). */
   .ge-vrail-btn.types   { color: #6d28d9; border-color: #ddd6fe; }
   .ge-vrail-btn.types:hover { background: #f5f3ff; color: #5b21b6; border-color: #a78bfa; }
   .ge-vrail-btn.types.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
@@ -4129,8 +4142,7 @@
     color: #ea580c; border-color: #f97316;
     animation: ge-bake-pulse 1.4s ease-in-out infinite;
   }
-  .ge-vrail-btn.auto    { color: #78716c; }
-  .ge-vrail-btn.auto.on { background: #fef3c7; color: #92400e; border-color: #fbbf24; }
+  .ge-vrail-btn.bake.on { background: #ffedd5; color: #9a3412; border-color: #fb923c; }
   .ge-vrail-btn.ghost-clear { background: #c4b5fd; color: #4c1d95; border-color: #8b5cf6; }
   .ge-vrail-btn.ghost-clear:hover { background: #a78bfa; color: #2e1065; }
   .ge-vrail-btn.connect { color: #0e7490; }
