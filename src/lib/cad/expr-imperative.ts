@@ -74,12 +74,41 @@ export function parseImperative(src: string): ImperativeProgram | null {
   return loops.length ? { accumulators, vars, loops, result } : null;
 }
 
-/** Parse a loop's body TEXT into statements (assign / append); unrecognized lines
- *  are dropped here (validateImperative flags them). */
+const OPEN = '([{', CLOSE = ')]}';
+/** Net bracket balance of `s` (positive = unclosed opens). */
+export function bracketBalance(s: string): number {
+  let d = 0;
+  for (const ch of s) { if (OPEN.includes(ch)) d++; else if (CLOSE.includes(ch)) d--; }
+  return d;
+}
+
+/** Split a body into LOGICAL statements: a newline or `;` ends a statement only
+ *  at bracket-depth 0, so a `poly.append([…, …])` wrapped across lines (or any
+ *  parenthesised expression) parses as ONE statement instead of erroring. */
+export function splitStatements(body: string): string[] {
+  const out: string[] = [];
+  let buf = '', depth = 0;
+  for (const ch of body ?? '') {
+    if (OPEN.includes(ch)) depth++;
+    else if (CLOSE.includes(ch)) depth = Math.max(0, depth - 1);
+    if ((ch === '\n' || ch === ';') && depth === 0) {
+      if (buf.trim()) out.push(buf.trim());
+      buf = '';
+    } else if (ch === '\n') {
+      buf += ' '; // newline INSIDE brackets → join the wrapped statement
+    } else {
+      buf += ch;
+    }
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out;
+}
+
+/** Parse a loop's body TEXT into statements (assign / append); unrecognized
+ *  statements are dropped here (validateImperative flags them with a reason). */
 export function bodyStatements(body: string): ImpStatement[] {
   const out: ImpStatement[] = [];
-  for (const raw of (body ?? '').split('\n')) {
-    const l = raw.trim(); if (!l) continue;
+  for (const l of splitStatements(body)) {
     const ap = l.match(APPEND_RE);
     if (ap) { out.push({ kind: 'append', list: ap[1]!, expr: ap[2]!.trim() }); continue; }
     const as = l.match(ASSIGN_RE);
@@ -122,13 +151,21 @@ export function validateImperative(src: string, allowed: ReadonlySet<string>): s
     const e = check(lp.start) ?? check(lp.stop);
     if (e) return e;
     const stmts = bodyStatements(lp.body);
-    if (!stmts.length) return `loop "${lp.loopVar}" has no statements (add an append)`;
-    // flag any body line that isn't a recognized statement
-    for (const raw of lp.body.split('\n')) {
-      const l = raw.trim(); if (!l) continue;
-      if (!/\.append\(/.test(l) && !/^[A-Za-z_]\w*\s*=/.test(l)) return `unrecognized line: ${l}`;
+    if (!stmts.length) return `loop "${lp.loopVar}" has no statements — add a ${p.accumulators[0]}.append(…)`;
+    // flag any LOGICAL statement (bracket-depth aware) that isn't recognized,
+    // with a reason — unbalanced brackets vs wrong shape.
+    for (const raw of splitStatements(lp.body)) {
+      if (APPEND_RE.test(raw) || ASSIGN_RE.test(raw)) continue;
+      const bal = bracketBalance(raw);
+      const snip = raw.length > 48 ? raw.slice(0, 48) + '…' : raw;
+      if (bal > 0) return `unbalanced "(" or "[" in: ${snip}`;
+      if (bal < 0) return `unbalanced ")" or "]" in: ${snip}`;
+      return `expected "name = …" or "${p.accumulators[0]}.append(…)" — got: ${snip}`;
     }
-    for (const s of stmts) { const se = check(s.expr); if (se) return se; }
+    for (const s of stmts) {
+      if (bracketBalance(s.expr) !== 0) return `unbalanced brackets in: ${s.expr.slice(0, 48)}`;
+      const se = check(s.expr); if (se) return se;
+    }
   }
   return null;
 }

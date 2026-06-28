@@ -1,7 +1,7 @@
 // Imperative loop model (#11 accumulator style) — parse/serialize/compile, and
 // proof the imperative spiral evals to the SAME points as the functional map form.
 import { describe, it, expect } from 'vitest';
-import { parseImperative, serializeImperative, compileImperative, isImperative, bodyStatements } from './expr-imperative';
+import { parseImperative, serializeImperative, compileImperative, isImperative, bodyStatements, splitStatements } from './expr-imperative';
 import { compileListFormula } from './graph-exprs';
 
 const tau = 2 * Math.PI;
@@ -78,6 +78,29 @@ describe('imperative loop model', () => {
     const r = compileImperative(src);
     expect(r.ok).toBe(true);
     if (r.ok) expect(evalList(r.js, {}).length).toBe(5);
+  });
+
+  it('splitStatements: newline at depth 0 splits, inside brackets joins, ; separates', () => {
+    expect(splitStatements('a = 1\nb = 2')).toEqual(['a = 1', 'b = 2']);
+    expect(splitStatements('f([1,\n2,\n3])')).toEqual(['f([1, 2, 3])']);
+    expect(splitStatements('a=1; b=2')).toEqual(['a=1', 'b=2']);
+  });
+
+  it('parses a WRAPPED multi-line append as ONE statement (the reported bug)', () => {
+    const body = 'poly.append([(r0 + growth*i/NPts) * cos(a),\n (r0 + growth*i/NPts) * sin(a)])';
+    const st = bodyStatements(body);
+    expect(st).toHaveLength(1);
+    expect(st[0]).toMatchObject({ kind: 'append', list: 'poly' });
+  });
+
+  it('temp-var split body → assigns + an append, and compiles to the right point count', () => {
+    const body = 'r = r0 + growth*i/NPts\na = i*turns*tau/NPts\npoly.append([r*cos(a), r*sin(a)])';
+    const st = bodyStatements(body);
+    expect(st.map((s) => s.kind)).toEqual(['assign', 'assign', 'append']);
+    const src = ['poly = []', 'for i = 0 to 8', ...body.split('\n').map((l) => '  ' + l), 'return poly'].join('\n');
+    const r = compileImperative(src);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(evalList(r.js, { r0: 0.4, growth: 1, turns: 2, NPts: 8 }).length).toBe(8);
   });
 
   it('returns null for non-imperative input', () => {
