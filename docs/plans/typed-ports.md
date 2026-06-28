@@ -152,6 +152,49 @@ Layer 2 follows the port-types wiring foundation (PR1 done → PR2 retrofit → 
 composite `canFeed`/emit; (L2b) the visual definer panel; (L2c) the global volume
 type library + manager UI + def→instance propagation.
 
+## Composite-type CONSUMPTION (the next substantial step)
+
+The registry, definer, library, generative hook, and the `list<point>`→polygon
+wiring all ship. The missing piece for the "dynamic nodes" vision is a node that
+actually **consumes a user-defined composite type** — without one, per-part
+`graph.typeDefs[]` propagation has nothing to propagate. Two consumer shapes,
+both real work (not a small gap):
+
+### A. Expression OUTPUT typed as a record (producer side)
+Let an `ExprOut` be `shape:'object'` + a new `typeId` (e.g. `Casing`) and emit a
+JS object. Concretely:
+- **Model**: `ExprOut.typeId?: string` (the composite id; for `list<Casing>`:
+  `shape:'list', elem:'object', typeId:'Casing'`).
+- **Picker** (`ExpressionBuilderPopup`): the output-type select loads the library
+  (`/api/primitives/types` → `defineRecordType`) + offers each composite +
+  `list<composite>`.
+- **Validation** (`graph-exprs`): an `isObject` branch + an `OBJECT_EXTRA_NODE_TYPES`
+  allowing `ObjectNode` (today ObjectNode is explicitly EXCLUDED from
+  `SAFE_NODE_TYPES`); the object's field values validate normally.
+- **Emit**: a `compileObjectFormula` (mirror `compileListFormula`) lowering a
+  mathjs `ObjectNode` → a JS object literal; an `out.shape === 'object'` arm in
+  `emitExprBlocks` (sibling of the `'list'` arm at composition-emit.ts:758).
+- **Socket**: extend `exprOutPort(out)` (NodeCard) to map `shape:'object'` →
+  `portType(out.typeId)` so the socket colours by the record type.
+- **Tests**: object formula validates as object / rejects as scalar; emits a JS
+  object; socket type resolves.
+- **CAVEAT**: with no consumer the emitted `const V_casing = {…}` is inert (dead
+  code) — it demonstrates the type reaching the output + the socket + autoWire,
+  but bakes to nothing. Only worth shipping alongside B.
+
+### B. A part/node that ACCEPTS a record (consumer side) — the real payoff
+A node whose params are a typed record (a `Casing`-typed param group), or a slot
+that accepts `list<Casing>`. THIS is what makes A non-inert and gives propagation
+a job: edit `Casing` in the definer → every node typed by it updates. Bigger:
+the params model is flat `ParamSchema` today; grouping params under a composite
+type is a model + ParamsCard change. Design this WITH a concrete domain case
+(e.g. a well = `list<Casing>` driving a stack) so it produces geometry, not just
+type metadata.
+
+**Recommended sequencing**: B first (or A+B together) so the feature produces
+something. A alone is a footgun (a pickable output type that emits dead code).
+Then per-part `graph.typeDefs[]` + def→instance propagation has a real consumer.
+
 ## Open questions
 
 - Type IDENTITY: nominal (`'list<point>'` string id) vs structural (`{elem,card}`
