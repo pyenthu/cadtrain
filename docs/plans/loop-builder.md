@@ -1,8 +1,20 @@
 # Imperative loop builder — UI refinement plan
 
-**Status:** planning (2026-06-28). Refines the imperative accumulator loop builder
-(#11, `expr-imperative.ts` + `ExprImperativeBlocks.svelte`) toward a simpler,
-roomier, type-it-yourself flow. NO code until this is approved.
+**Status:** ✅ **SHIPPED 2026-06-28** (pushed through `4808497`). All of A/B/C below
+done, plus the bracket-depth parser fix + CodeMirror 6 editor. Refined the imperative
+accumulator loop builder (#11, `expr-imperative.ts` + `ExprImperativeBlocks.svelte`)
+into a simpler, roomier, type-it-yourself flow.
+
+**What shipped:** (A) output tabs promoted into the popover TITLE row. (B) loop body =
+ONE resizable autocomplete field; `+ statement` removed; model `ImpLoop.statements[]`
+→ `body:string` + `bodyStatements()`. (C) top `+ add ▾` (variable/expression/loop) +
+top-level `vars[]`. PLUS: Enter=newline (`data-enter-newline` opts out of GraphEditorPane's
+window Enter→re-bake) + a `✓ update` tick per loop (header, dirty-glow); bracket-depth
+`splitStatements()` so wrapped/temp-var bodies parse as one (fixes "unrecognized line");
+`ExprCodeEditor.svelte` = CodeMirror 6 (DSL highlight + brackets + autocomplete + wrap).
+`g_spiral_expr_sketch` re-saved on the volume in the readable R/a/rx/rz form.
+
+**Original plan below (for reference).**
 
 ## Where it is now (shipped, `fc08ee8`)
 A `list<point>` output can be an imperative program — engine + emit + validation +

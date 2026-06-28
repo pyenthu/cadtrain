@@ -40,8 +40,25 @@
     **SOCKET VISUALS + DRAG-TO-WIRE DONE:** expr output sockets coloured by registry PORT TYPE
     (list<point> indigo); the polygon expr-list-ref row has an indigo input socket — drag a list<point>
     output onto it to repoint (wire-state endWireOnPolygonExprListRef, gated to shape:'list'). Button
-    creates, socket repoints (the "+ repeat" split). **LEFT:** lacing (longest-repeat-last, deferred) +
-    the profile-graph 2D-preview path (composition-emit-profile needs the expr prelude in scope). Research decisions
+    creates, socket repoints (the "+ repeat" split).
+    **IMPERATIVE LOOP BUILDER + CodeMirror SHIPPED 2026-06-28 (pushed 4808497):** the list<point> expr
+    is now built/edited as a visual IMPERATIVE accumulator program —
+    `poly = []; for i = 0 to N { rx = …; rz = …; poly.append([rx, rz]) }; return poly` — via
+    `src/lib/cad/expr-imperative.ts` (parse/serialize/compile→JS for-loop; **bracket-depth statement split**
+    so wrapped/temp-var bodies parse as one statement; `validateImperative` w/ real error reasons) +
+    `ExprImperativeBlocks.svelte` (◇ poly accumulator · structured for-headers w/ count dropdown · ONE
+    resizable autocomplete body text field per loop · top `+ add ▾` = variable / expression / loop ·
+    top-level vars computed once above the loops). Emit branches on `isImperative` → `compileImperative`
+    (bakes identical: spiral 2888 verts / functional 8628). Editor UX: output tabs promoted into the
+    popover TITLE row; Enter = newline (`data-enter-newline` opts the body out of GraphEditorPane's window
+    Enter→re-bake) + a **✓ update tick** per loop (dirty-glow; commit-on-blur as the Save flush);
+    **CodeMirror 6** (`ExprCodeEditor.svelte`, lazy-loaded @codemirror/*) for the loop body — DSL syntax
+    highlighting + bracket match + autocomplete + line-wrap. The functional map/concat form auto-CONVERTS
+    to imperative on open; `ExprLoopBlocks.svelte` deleted. **`g_spiral_expr_sketch` re-saved on the volume
+    in the readable R/a/rx/rz form.** Plan: `docs/plans/loop-builder.md`.
+    **LEFT (the #11 payoff, deferred):** wire list<op> → sketch + list<transform> → repeat (retire the 3
+    repeat types); lacing (longest-repeat-last); the profile-graph 2D-preview path; the visual `+` compose
+    operator; CodeMirror on the remaining fields. Research decisions
     locked (flat lists, longest-repeat-last lacing, socket-shape typing, no data trees). Let an
     expression OUTPUT carry a scalar | object | **list**, with a `map(range(N), i => …)` loop
     inside, and wire the structured output into ANY consumer: list of `[r,z]` → polygon points
