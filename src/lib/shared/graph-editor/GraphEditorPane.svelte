@@ -2826,6 +2826,8 @@
       data-tip={wire.connectMode
         ? 'Click-to-connect ON — tap a source socket, then a target (Esc cancels)'
         : 'Click-to-connect — wire two sockets by tapping them, no dragging'}>🔗</button>
+    <!-- ── Authoring group: expressions · types · suggestions ── -->
+    <div class="ge-vrail-sep"></div>
     <!-- Σ Expression builder (B.6 / id 914) — open the calculated-expression
          popover, seeded with the part's param names as the input schema. -->
     <button class="ge-vrail-btn expr" type="button"
@@ -2844,6 +2846,8 @@
       class:on={suggestPop}
       onclick={() => (suggestPop = !suggestPop)}
       data-tip="Suggest wirings — type-compatible output → slot pairs (e.g. a list⟨point⟩ expression into a polygon)">✨</button>
+    <!-- ── end authoring group ── -->
+    <div class="ge-vrail-sep"></div>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -4081,6 +4085,16 @@
   }
   .ge-vrail-btn:hover { background: #eff6ff; color: #0c4a6e; border-color: #93c5fd; }
   .ge-vrail-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* thin group divider in the rail (authoring tools vs actions). */
+  .ge-vrail-sep { width: 20px; height: 1px; background: #d4d4d8; margin: 3px 0; flex: none; }
+  /* authoring group accents — Σ expressions (teal), ◇ types (indigo), ✨ suggest (amber). */
+  .ge-vrail-btn.expr    { color: #0e7490; }
+  .ge-vrail-btn.types   { color: #6d28d9; border-color: #ddd6fe; }
+  .ge-vrail-btn.types:hover { background: #f5f3ff; color: #5b21b6; border-color: #a78bfa; }
+  .ge-vrail-btn.types.on { background: #ede9fe; color: #5b21b6; border-color: #a78bfa; }
+  .ge-vrail-btn.suggest { color: #d97706; }
+  .ge-vrail-btn.suggest:hover { background: #fffbeb; color: #b45309; border-color: #fcd34d; }
+  .ge-vrail-btn.suggest.on { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
   .ge-vrail-btn.save    { color: #15803d; }
   .ge-vrail-btn.save:hover { background: #d1fae5; color: #14532d; border-color: #6ee7b7; }
   .ge-vrail-btn.bake    { color: #ea580c; }
