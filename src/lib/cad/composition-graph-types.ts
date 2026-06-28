@@ -293,13 +293,26 @@ export type SketchRepeatNode = {
  *  the point/corner ops in every `if (op.op === 'line' | …)` switch. */
 export type SketchRepeatRef = { op: 'repeat-ref'; sourceId: NodeId };
 
+/** A reference to an expression INSTANCE's `list<point>` OUTPUT whose emitted
+ *  array of `[r,z]` pairs is spliced into the parent sketch's `ops` at this row
+ *  as a run of `line` ops (#11 expression-as-builder, sketch edition). The
+ *  sketch sibling of `PolygonExprListRef`: the source is an `ExprNode` instance
+ *  + one of its DEF outputs (typed `shape:'list', elem:'point'`). The `op`
+ *  discriminant keeps it distinct from the point/corner/repeat-ref ops in every
+ *  `if (op.op === …)` switch. Lets ONE map-expression generate the whole sketch
+ *  profile (e.g. a parametric spiral), visualised live on the 2D stage AND
+ *  baked parametrically (recomputed at bake, never statically expanded). */
+export type SketchExprListRef = { op: 'expr-list-ref'; sourceId: NodeId; output: string };
+
 export type SketchNode = {
   id: NodeId;
   type: 'sketch';
-  /** Ordered ops — point/corner ops and/or repeat-refs. A repeat-ref splices
-   *  its source SketchRepeatNode's expanded prototype in at its position.
-   *  Pre-#805 files have only SketchOpEntry rows and round-trip unchanged. */
-  ops: Array<SketchOpEntry | SketchRepeatRef>;
+  /** Ordered ops — point/corner ops and/or repeat-refs / expr-list-refs. A
+   *  repeat-ref splices its source SketchRepeatNode's expanded prototype in at
+   *  its position; an expr-list-ref splices an expression instance's
+   *  `list<point>` output as `line` ops. Pre-#805 files have only SketchOpEntry
+   *  rows and round-trip unchanged. */
+  ops: Array<SketchOpEntry | SketchRepeatRef | SketchExprListRef>;
   /** Sampling density of curved sections; defaults to a literal 64. */
   segments?: ArgValue;
   /** Whole-sketch scale in the r (x) and z (y) directions. Absent / undefined
