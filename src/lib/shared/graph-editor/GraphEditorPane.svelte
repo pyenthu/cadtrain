@@ -153,6 +153,7 @@
   import ExpressionBuilderPopup from './expr/ExpressionBuilderPopup.svelte';
   import ExpressionsMenu from './expr/ExpressionsMenu.svelte';
   import TypeDefinerPopover from '$lib/shared/TypeDefinerPopover.svelte';
+  import AutoWireSuggestPanel from './AutoWireSuggestPanel.svelte';
   import type { ExprDef } from '$lib/cad/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
@@ -281,6 +282,8 @@
   let exprMenu = $state<{ anchor: { x: number; y: number } } | null>(null);
   // ◇ Type Definer popover (typed-ports L2b/c) — the shared composite-type library.
   let typesPop = $state(false);
+  // ✨ Auto-wire suggestions popover (the generative typed-ports hook).
+  let suggestPop = $state(false);
   let vrailEl = $state<HTMLElement | null>(null); // the left rail (anchors the Σ menu from the picker)
   // defId → how many ExprNode instances reference it (drives the delete guard).
   let exprInstanceCounts = $derived.by<Record<string, number>>(() => {
@@ -2835,6 +2838,12 @@
       class:on={typesPop}
       onclick={() => (typesPop = !typesPop)}
       data-tip="Types — define composite shapes (records) for the node graph">◇</button>
+    <!-- ✨ Suggested wirings — the generative typed-ports hook: type-matched
+         output→slot pairs you can apply with one click. -->
+    <button class="ge-vrail-btn suggest" type="button"
+      class:on={suggestPop}
+      onclick={() => (suggestPop = !suggestPop)}
+      data-tip="Suggest wirings — type-compatible output → slot pairs (e.g. a list⟨point⟩ expression into a polygon)">✨</button>
     <button class="ge-vrail-btn save" type="button" disabled={saveBusy || emitted.validationErrors.length > 0} onclick={saveGraph}
       data-tip={saveBusy ? 'Saving…' : emitted.validationErrors.length > 0 ? `Fix ${emitted.validationErrors.length} broken reference${emitted.validationErrors.length === 1 ? '' : 's'} before saving` : `Save ${exemplarId} to the volume`}>💾</button>
     <button class="ge-vrail-btn bake" type="button" onclick={runBake}
@@ -2911,6 +2920,10 @@
 
   {#if typesPop}
     <TypeDefinerPopover onClose={() => (typesPop = false)} />
+  {/if}
+
+  {#if suggestPop}
+    <AutoWireSuggestPanel {graph} setGraph={(g) => (graph = g)} onClose={() => (suggestPop = false)} />
   {/if}
 
   {#if aiMenuOpen}
