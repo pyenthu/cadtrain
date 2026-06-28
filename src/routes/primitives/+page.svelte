@@ -22,6 +22,7 @@
    */
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
+  import AiMenu from '$lib/shared/graph-editor/AiMenu.svelte';
   import CacheBrowser from '$lib/shared/CacheBrowser.svelte';
   import {
     type Entry, type FolderNode, MOVE_TARGET_RE,
@@ -665,6 +666,18 @@
   let ragCount = $state<number>(0);
   let ragBusy = $state<boolean>(false);
   let ragError = $state<string | null>(null);
+
+  // ✨ AI "generate a part" popover, anchored to the sidebar button beside the
+  // ↻ RAG rebuild. AiMenu with NO session = generate-only; a success opens the
+  // proposed graph in a FRESH tab via openGeneratedTab (the library-level flow,
+  // distinct from the rail's in-place generate).
+  let genMenuOpen = $state(false);
+  let genBtnEl = $state<HTMLButtonElement | null>(null);
+  let genMenuPos = $state<{ left: number; top: number }>({ left: 56, top: 120 });
+  function openGenMenu() {
+    if (genBtnEl) { const r = genBtnEl.getBoundingClientRect(); genMenuPos = { left: r.right + 6, top: r.top }; }
+    genMenuOpen = true;
+  }
   // Drives the "Xm ago" label without forcing a parent re-render.
   let ragNowTick = $state<number>(Date.now());
 
@@ -1004,7 +1017,17 @@
         title={ragBusy ? 'Rebuilding RAG corpus…' : `Rebuild RAG corpus (${ragCount} parts, ${ragLabel})`}
         disabled={ragBusy}
         onclick={rebuildRag}>{ragBusy ? '…' : '↻'}</button>
+      <!-- ✨ Generate a new part from a description (AI) — opens in a new tab. -->
+      <button class="prim-rag-rebuild ai" type="button" bind:this={genBtnEl}
+        class:active={genMenuOpen}
+        title="Generate a new part from a description (AI)"
+        onclick={() => (genMenuOpen ? (genMenuOpen = false) : openGenMenu())}>✨</button>
     </div>
+    {#if genMenuOpen}
+      <AiMenu pos={genMenuPos}
+        onGenerated={(id, graph) => { openGeneratedTab(id, graph); genMenuOpen = false; }}
+        onClose={() => (genMenuOpen = false)} />
+    {/if}
     <!-- The ✨ AI generate flow lives on the graph editor's vertical rail
          (GraphEditorPane, via the onGenerated prop) — instructions +
          prompt are in its popover, not a sidebar row. -->
@@ -1475,6 +1498,9 @@
     font-weight: 600;
   }
   .prim-rag-rebuild:disabled { cursor: wait; color: #a8a29e; }
+  /* ✨ generate-a-part button — violet accent to match the AI family. */
+  .prim-rag-rebuild.ai { color: #7c3aed; }
+  .prim-rag-rebuild.ai:hover:not(:disabled), .prim-rag-rebuild.ai.active { background: #f5f3ff; border-color: #c4b5fd; color: #6d28d9; }
   /* Quiet footnote under the filter row — count + last refreshed Xm ago.
      Pulls the eye only when something's wrong (error state goes red). */
   .prim-rag-foot {
