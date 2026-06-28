@@ -24,6 +24,8 @@
   let collapsed = $state<Set<number>>(new Set());
   let customStop = $state<Set<number>>(new Set());
   let addOpen = $state(false);
+  // loops with body edits not yet pushed to the canvas (the ✓ tick pushes them).
+  let dirty = $state<Set<number>>(new Set());
 
   function loopsToImperative(form: LoopForm): ImperativeProgram {
     return {
@@ -44,10 +46,12 @@
   });
 
   function commit() {
+    dirty = new Set();
     if (!prog || !prog.loops.length) { lastSerialized = ''; formula = ''; return; }
     const s = serializeImperative($state.snapshot(prog) as ImperativeProgram);
     lastSerialized = s; formula = s;
   }
+  const markDirty = (k: number) => { if (!dirty.has(k)) dirty = new Set(dirty).add(k); };
   function ensureProg(): ImperativeProgram {
     if (!prog) prog = { accumulators: ['poly'], vars: [], loops: [], result: 'poly' };
     return prog;
@@ -139,9 +143,15 @@
       </div>
       {#if open}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="ib-body" onfocusout={commit}>
+        <div class="ib-body" onfocusout={commit} oninput={() => markDirty(k)}>
           <ExpressionSrcPane bind:src={lp.body} completions={bodyCompletions(lp.loopVar)}
-            label="" rows={3} placeholder={`rx = …\nrz = …\n${prog?.accumulators[0]}.append([rx, rz])`} />
+            label="" rows={3} acceptOnEnter={false}
+            placeholder={`rx = …\nrz = …\n${prog?.accumulators[0]}.append([rx, rz])`} />
+          <div class="ib-bodyfoot">
+            <span class="ib-hint">⏎ newline · ⇥ autocomplete</span>
+            <button class="ib-tick" class:dirty={dirty.has(k)} type="button"
+              title="Update the canvas + scene" onclick={commit}>✓ update</button>
+          </div>
         </div>
       {/if}
     </div>
@@ -185,6 +195,12 @@
   .ib-del { margin-left: auto; font: 700 14px Arial; color: #cbd5e1; background: none; border: none; cursor: pointer; }
   .ib-del:hover { color: #ef4444; }
   .ib-body { padding: 6px 8px; border-top: 1px solid #ddd6fe; }
+  .ib-bodyfoot { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; }
+  .ib-hint { font: 10px Arial; color: #a5b4fc; }
+  .ib-tick { font: 700 11px Arial; color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 3px 11px; cursor: pointer; }
+  .ib-tick:hover { background: #e2e8f0; color: #475569; }
+  .ib-tick.dirty { color: #fff; background: #16a34a; border-color: #15803d; box-shadow: 0 0 0 2px #bbf7d0; }
+  .ib-tick.dirty:hover { background: #15803d; }
   .ib-return { font: 600 12px ui-monospace, monospace; color: #6d28d9; }
   .ib-return code { color: #4338ca; }
   .ib-empty { font-size: 12px; color: #64748b; margin: 2px; }

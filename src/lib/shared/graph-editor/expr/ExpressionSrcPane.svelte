@@ -27,7 +27,8 @@
     label = 'SRC',
     rows = 6,
     placeholder = 'max((p.od - p.id) / 2, 0)',
-  }: { src: string; completions?: Completion[]; label?: string; rows?: number; placeholder?: string } = $props();
+    acceptOnEnter = true,
+  }: { src: string; completions?: Completion[]; label?: string; rows?: number; placeholder?: string; acceptOnEnter?: boolean } = $props();
 
   let ta: HTMLTextAreaElement | undefined;
   let caret = $state(0);
@@ -104,6 +105,8 @@
       case 'Tab':
         // Ctrl/Cmd+Enter is the popup's COMMIT chord — let it bubble.
         if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) return;
+        // multi-line callers (the loop body) want Enter = newline; Tab still accepts.
+        if (ev.key === 'Enter' && !acceptOnEnter) return;
         ev.preventDefault();
         accept(matches[sel]);
         break;
