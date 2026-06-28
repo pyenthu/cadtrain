@@ -36,16 +36,27 @@
  * Z-DOWN: z=0 is the TOP, larger z is DEEPER (down-hole). Default = a coarse,
  * legible demo thread (chunky pitch, deep V60 tooth).
  *
- * STANDARD-LIBRARY PRIMITIVE — git-tracked, read-only in the GUI. Imports are
- * for type-checking only; at RUNTIME the sandbox strips them and injects
- * gridPatch / weldAndBuild by name (primitive-sandbox.ts).
+ * DELEGATES TO r_surface (the converged engine — docs/plans/sweep-thread-engine.md
+ * "⭐ THE CONVERGENCE"): this engine is now literally `r_surface(threadFn, Nθ,
+ * Nz, wrapU=true, capLo=true, capHi=true)` — it builds the radial-displacement
+ * surface fn `[r·cosθ, r·sinθ, z]` and hands it to r_surface, which welds the
+ * one gridPatch + caps. r_helical_surface === r_surface(threadFn). The thread's
+ * IDENTITY (tooth / runout / seam / taper) lives in the fn below; r_surface owns
+ * the (manifold-by-construction) meshing. The two end caps stay watertight
+ * because runout zeros the amplitude at z=0 and z=L → the end rings are exact
+ * baseR circles whose centroid is the axis (what the old hand-rolled cap fanned
+ * to), so the geometry is byte-identical to the pre-delegation engine.
+ *
+ * STANDARD-LIBRARY PRIMITIVE — git-tracked, read-only in the GUI. `r_surface`
+ * is resolved + injected by name via `meta.uses` (primitive-loader.ts); it is a
+ * free runtime identifier here (no import — the source ships as raw text and is
+ * transpiled in the sandbox, never type-checked as a module).
  */
-import { gridPatch, weldAndBuild } from '$lib/cad/manifold-mesh';
-import type { Patch } from '$lib/cad/manifold-mesh';
 
 export const meta = {
   id: 'r_helical_surface',
   name: 'r_helical_surface',
+  uses: ['r_surface'],
   description:
     'Helical thread as ONE welded displacement surface r(θ,z) — manifold by construction (no band, no CSG, no inter-turn weld). The sweep axis is the cylinder\'s own (θ,z); the helix lives only in the radius function. profile 0=Square/1=V60/2=ACME; side 0=external (pin rod) / 1=internal (bore plug, SUBTRACT from a tube). Runout fades the thread in/out at both ends.',
   tags: ['welded', 'helix', 'thread', 'displacement', 'surface', 'sweep', 'stdlib'],
@@ -150,45 +161,29 @@ export function r_helical_surface(
     return rb + dir * bump;
   }
 
-  // ─── side wall: ONE displacement-surface gridPatch ───────────────────────
-  const wall = gridPatch(Nth, Nz, (u, v): [number, number, number] => {
+  // ─── the thread surface fn: r(θ,z) → [x,y,z] ─────────────────────────────
+  // The whole thread IDENTITY (tooth/runout/seam/taper) is in `radius()` above;
+  // here it just becomes the converged engine's fn(u,v). u = θ/2π (wraps), v =
+  // z/L (the open axis the caps close).
+  const threadFn = (u: number, v: number): [number, number, number] => {
     const z = v * L;
     const theta = u * 2 * Math.PI;
     const r = radius(u, z);
     return [r * Math.cos(theta), r * Math.sin(theta), z];
-  });
+  };
 
-  // ─── end caps: triangle fans over the wall's end rings ───────────────────
-  // The ring verts re-use the SAME radius()/θ samples as the wall edge, so they
-  // are coincident → weldAndBuild merges them (watertight join). Winding is made
-  // self-consistent with the wall; weldAndBuild's volume-sign net auto-corrects
-  // the global orientation regardless.
-  function capFanCircle(z: number, reverse: boolean): Patch {
-    const verts = new Float32Array((Nth + 1) * 3);
-    // centre vertex (index 0) on the axis
-    verts[0] = 0; verts[1] = 0; verts[2] = z;
-    for (let i = 0; i < Nth; i++) {
-      const u = i / Nth;
-      const theta = u * 2 * Math.PI;
-      const r = radius(u, z);
-      verts[(i + 1) * 3]     = r * Math.cos(theta);
-      verts[(i + 1) * 3 + 1] = r * Math.sin(theta);
-      verts[(i + 1) * 3 + 2] = z;
-    }
-    const tris = new Uint32Array(Nth * 3);
-    let k = 0;
-    for (let i = 0; i < Nth; i++) {
-      const a = 1 + i;
-      const b = 1 + ((i + 1) % Nth);
-      if (reverse) { tris[k++] = 0; tris[k++] = b; tris[k++] = a; }
-      else         { tris[k++] = 0; tris[k++] = a; tris[k++] = b; }
-    }
-    return { verts, tris };
-  }
-  // Top cap (z=0) and bottom cap (z=L) wound OPPOSITE handedness so the two ends
-  // face opposite directions (both consistent with the wall).
-  const topCap = capFanCircle(0, false);
-  const botCap = capFanCircle(L, true);
-
-  return weldAndBuild([wall, topCap, botCap]);
+  // ─── DELEGATE: r_helical_surface === r_surface(threadFn) ─────────────────
+  // wrapU closes the θ-seam (frac(z·tpi − 1) == frac(z·tpi − 0) → coincident →
+  // welded); capLo/capHi fan the two z-ends shut. Because runout zeros the
+  // amplitude at z=0 and z=L, those end rings are exact baseR circles whose
+  // centroid is the axis — identical to the old hand-rolled axis-apex cap fan.
+  return r_surface(threadFn, Nth, Nz, true, true, true);
 }
+
+// r_surface is resolved + injected by name via meta.uses (primitive-loader.ts).
+// Declared here only so a type-check of this file as a module wouldn't flag the
+// free identifier; at runtime the sandbox provides the real engine.
+declare const r_surface: (
+  fn: (u: number, v: number) => [number, number, number],
+  Nu: number, Nv: number, wrapU: boolean, capLo: boolean, capHi: boolean,
+) => any;

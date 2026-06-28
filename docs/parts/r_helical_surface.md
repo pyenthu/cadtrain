@@ -5,6 +5,13 @@
 > **by construction**: no separate band, no inter-turn weld, no CSG.
 > stdlib engine (`src/lib/cad/stdlib/r_helical_surface.ts`), git-tracked,
 > read-only in the GUI (Rule 21).
+>
+> **DELEGATES to `r_surface` (2026-06-28).** This engine now builds its
+> `threadFn` and calls `r_surface(threadFn, Nθ, Nz, true, true, true)` — it IS
+> `r_surface(threadFn)`, the convergence the plan predicted. The thread's
+> identity (tooth/runout/seam/taper) stays here in `radius()`; the meshing moves
+> to the converged engine. Verified **byte-identical** (same vertex multiset, same
+> pre-existing failures) — see `docs/parts/r_surface.md`.
 
 ## The idea (why it can't crack)
 
