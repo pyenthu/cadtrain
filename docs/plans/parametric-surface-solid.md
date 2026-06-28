@@ -62,6 +62,24 @@ all just two different `fn(u,v)`s.
 4. **`r_solid(outer, inner)`** engine + a **tube** demo (no-CSG shell — the proof).
 5. **threaded-box-without-CSG** demo — prove the efficiency claim against `box_thread`.
 
+## Surface card + mini visualizer (user, 2026-06-28)
+A surface output is a grid — you can't read it as text. So surfaces need to be
+FIRST-CLASS in the editor like the polygon is:
+- **a surface NODE CARD** — its own card type for a `shape:'surface'` output (the
+  grid expression), with the 2D/nested-loop builder inside.
+- **a small SURFACE VISUALIZER** — a mini 3D/wireframe thumbnail of the uv grid ON
+  the card (the surface analogue of the polygon's mini-preview / `PolyPreview`), so
+  you SEE the parametric surface as you edit `fn(u,v)`. Lightweight (draw the grid
+  lines / a coarse shaded patch), not a full bake.
+This pairs with piece 2 (the `shape:'surface'` output) — fold it in there.
+
+## p_sq_grove — the canonical demo (user's construction)
+The square-groove part is the two-surface archetype: **a 2-point polygon swept 360°
+(the outer wall) + an inner polygon swept inside (the groove cavity)** → `r_solid`.
+That's the real `p_sq_grove` and it's the **piece-4 `r_solid` demo**. (A single
+`r_surface(fn)` cylinder-with-a-groove is a valid *function-expr* stand-in NOW, but
+the two-surface version is the canonical one once `r_solid` lands.)
+
 ## NURBS later
 The consumer is always "a grid of points." A function generates it now; a NURBS
 evaluator generates it later — same `r_solid`, swappable generator. Nothing to redo.
