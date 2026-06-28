@@ -1,7 +1,7 @@
 /**
- * stdlib + stdstale — the git-tracked, type-checked "standard library"
- * primitives that live in src (src/lib/cad/{stdlib,stdstale}/<id>.ts), NOT
- * on the volume.
+ * stdlib + stdlib/stale — the git-tracked, type-checked "standard library"
+ * primitives that live in src (src/lib/cad/stdlib/<id>.ts, deprecated ones in
+ * src/lib/cad/stdlib/stale/<id>.ts), NOT on the volume.
  *
  * WHY src and not the volume: engine/standard-library primitives are
  * infrastructure, not user content. Keeping them in src buys version
@@ -11,8 +11,8 @@
  * BEFORE the volume so the ids are canonical; /api/primitives/save refuses
  * either origin.
  *
- * WHY two directories: `stdlib/` holds the actively-recommended engine
- * primitives. `stdstale/` holds engines that are being deprecated but kept
+ * WHY two locations: `stdlib/` holds the actively-recommended engine
+ * primitives. `stdlib/stale/` holds engines that are being deprecated but kept
  * resolvable so existing parts that reference them (via meta.uses) keep
  * baking until they're migrated to the replacement. Sidebar renders them
  * as separate groups so the visual signal is clear ("stale — use the new
@@ -28,7 +28,7 @@
  *
  * Adding a stdlib primitive: drop a new `<id>.ts` (exporting `meta` + a
  * function named `<id>`) into src/lib/cad/stdlib/. It auto-registers here.
- * Deprecating: `git mv src/lib/cad/stdlib/<id>.ts src/lib/cad/stdstale/`.
+ * Deprecating: `git mv src/lib/cad/stdlib/<id>.ts src/lib/cad/stdlib/stale/`.
  */
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
@@ -39,7 +39,11 @@ export type StdOrigin = 'stdlib' | 'stdstale';
 const stdlibRaw = import.meta.glob('/src/lib/cad/stdlib/*.ts', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>;
-const stdstaleRaw = import.meta.glob('/src/lib/cad/stdstale/*.ts', {
+// Deprecated engines now live in a `stale/` SUBFOLDER of stdlib (relocated
+// 2026-06-28 from the old top-level stdstale/ dir). Origin stays 'stdstale' so
+// the API/sidebar/picker keep classifying + flagging them unchanged. The main
+// stdlib glob above is non-recursive (*.ts), so it does NOT pick these up.
+const stdstaleRaw = import.meta.glob('/src/lib/cad/stdlib/stale/*.ts', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>;
 

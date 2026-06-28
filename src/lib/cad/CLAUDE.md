@@ -29,8 +29,8 @@ src/lib/cad/
 ├── math-lib.ts              # math injected into profile-fn + sandbox
 ├── mesh-serial.ts           # serialize/rehydrate { full, cutVC } mesh-JSON
 ├── warp-spline.ts           # warp-along-spline path
-├── stdlib/                  # ACTIVE engine primitives (currently r_cuboid) — Rule 21
-└── stdstale/                # DEPRECATED engines (r_revolve, r_extrude, r_weld_extrude) — still resolvable so legacy parts bake
+├── stdlib/                  # ACTIVE engine primitives (r_cuboid, r_loft, r_weld_extrude, r_revolve) — Rule 21
+│   └── stale/               # DEPRECATED engines (r_extrude — 0 consumers) — still resolvable (origin 'stdstale'); relocated 2026-06-28 from top-level stdstale/
 ```
 
 Archived (2026-06-01, in `archive/src/lib/cad/`): `exporter.ts` (SVG
@@ -40,11 +40,14 @@ Archived (2026-06-12): `assembly-deps.ts`'s drift-snapshot half
 now-archived PrimitiveView/CompositionEditor used it. The live
 `paramKeysOf` moved to `param-keys.ts`.
 
-**Engine primitives** (`stdlib/` + `stdstale/`): git-tracked, read-only in
+**Engine primitives** (`stdlib/` + `stdlib/stale/`): git-tracked, read-only in
 the GUI, served BEFORE the volume by the resolver, save/delete refused.
 Registry: `src/lib/server/stdlib.ts` (`import.meta.glob('?raw')` → source
-baked into the build). Deprecate = `git mv` into `stdstale/`. Full contract
-in root CLAUDE.md Rule 21.
+baked into the build; `stdlib/*.ts` is non-recursive so `stale/` is globbed
+separately with origin `'stdstale'`). Deprecate = `git mv` into `stdlib/stale/`.
+**`r_revolve` is ACTIVE** (12 consumers — g_collar/g_shaft/g_dp_*/…, the only
+revolve engine); only `r_extrude` (0 consumers, superseded by r_weld_extrude)
+is in `stale/`. Full contract in root CLAUDE.md Rule 21.
 
 ## Geometry — Z-down convention
 
@@ -107,7 +110,7 @@ primitives reach `CS` + `Mesh` via `G.__cadtrain_manifold__.wasm` directly.
 
 In manifold-3d 3.4.1, `extrude(h, nDivisions, 0)` with `nDivisions > 0` AND `twistDegrees === 0` produces a non-manifold mesh — the intermediate slices are IDENTICAL to top + bottom (no morph), so the triangulator emits coincident triangle pairs and rejects with `"Not manifold"`.
 
-**Fix pattern** (used by both `r_extrude` and `r_weld_extrude` in `src/lib/cad/stdstale/`):
+**Fix pattern** (used by both `r_extrude` in `src/lib/cad/stdlib/stale/` and `r_weld_extrude` in `src/lib/cad/stdlib/`):
 
 ```ts
 const tw = Number(twist ?? 0);

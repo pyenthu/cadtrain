@@ -1600,8 +1600,8 @@
         const d = await r.json() as any;
         // completions is an OBJECT keyed by family ({drill_pipe: [...], packers: [...]}) —
         // flatten its values; basic + stdlib/stdstale + completions are arrays of {id, source, …}.
-        // stdstale carries r_revolve/r_extrude/r_weld_extrude (the engines being phased
-        // out of stdlib but still callable); INCLUDE them so r_revolve + r_extrude
+        // stdstale (origin) now carries only r_extrude (in stdlib/stale/; r_revolve was
+        // promoted to active stdlib 2026-06-28, r_weld_extrude was always stdlib); INCLUDE them so r_extrude
         // are reachable as Calls in the picker (#105 surface step).
         const basicItems = Array.isArray(d.basic) ? d.basic : [];
         const stdlibItems = Array.isArray(d.stdlib) ? d.stdlib : [];
@@ -1952,7 +1952,7 @@
         segments: { kind: 'literal', value: 48 } as any,
       }).graph;
     } else {
-      // r_weld_extrude actual sig (stdstale/r_weld_extrude.ts meta.params):
+      // r_weld_extrude actual sig (stdlib/r_weld_extrude.ts meta.params):
       //   profile · length · divs · twist · taper · segments
       // Earlier draft used `height` (CrossSection.extrude arg name) which
       // didn't match meta.params → drift warning + bake skipped.

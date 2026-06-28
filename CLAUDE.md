@@ -32,8 +32,10 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
   `composition-emit*.ts` (parts carry `meta.graph` + emitted body); bake via
   `composition-bake.ts` + server bake cache (`src/lib/server/bake-cache.ts`).
 - **Engines**: `src/lib/cad/stdlib/` (active: `r_cuboid`, `r_loft`,
-  `r_weld_extrude` — the last used by g_cube/g_spiral/g_star/g_barrel) +
-  `stdstale/` (`r_revolve`, `r_extrude` — deprecated, still resolvable).
+  `r_weld_extrude` — used by g_cube/g_spiral/g_star/g_barrel — and `r_revolve`,
+  the sole revolve engine, 12 consumers) + `src/lib/cad/stdlib/stale/`
+  (`r_extrude` — 0 consumers, superseded by r_weld_extrude; origin `stdstale`,
+  still resolvable; relocated 2026-06-28 from top-level `stdstale/`).
 - **Legacy** lives in the top-level **tracked** `archive/` dir (2026-06-01):
   old `/archive/*` routes, identify/RAG chain, wells extraction, KB endpoints,
   old authoring stack. Invisible to vite/tsc/router. `/wells` is a stub.
@@ -60,7 +62,7 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 18. _(retired)_
 19. **`/plan` is the single source of truth for the roadmap.** Gantt at `src/routes/plan/+page.svelte` (+ `details.ts` popups). Session task-trackers and memory `todo_*.md` are ephemeral — reconcile INTO `/plan` at session end. Marking `done` is a factual claim — verify first. `/plan` edits are source changes → commit + push.
 20. **Authoring a volume part — use the typed-create scaffolds (Extrude Part / Profile Part / Assembly) or the graph editor; don't hand-name engines.** Profiles live INLINE on the part. The geom function is `export function <id>(positional args)` in `meta.params` order — NOT `geom(p)`; parts show in the Parts tab only as NAMED instances (`const body = ...; return body;`). Dependencies in `meta.uses`.
-21. **Engine primitives — canonical in `src/`, read-only, NOT on the volume.** `stdlib/` = active; `stdstale/` = deprecated-but-resolvable so existing `meta.uses` keep baking. Registry `src/lib/server/stdlib.ts` (`import.meta.glob('?raw')` bakes source into the build). Resolver serves them FIRST + dedupes volume twins; `/api/primitives/{save,delete}` refuse both (403). Add = drop `<id>.ts` into `stdlib/`; deprecate = `git mv` to `stdstale/`.
+21. **Engine primitives — canonical in `src/`, read-only, NOT on the volume.** `stdlib/` = active; `stdlib/stale/` = deprecated-but-resolvable so existing `meta.uses` keep baking (origin label stays `'stdstale'`; relocated 2026-06-28 from a top-level `stdstale/` dir). Registry `src/lib/server/stdlib.ts` (`import.meta.glob('?raw')` bakes source into the build; the `stdlib/*.ts` glob is non-recursive so `stale/` is globbed separately). Resolver serves them FIRST + dedupes volume twins; `/api/primitives/{save,delete}` refuse both (403). Add = drop `<id>.ts` into `stdlib/`; deprecate = `git mv` to `stdlib/stale/`. **`r_revolve` is ACTIVE** (the only revolve engine); only `r_extrude` is stale.
 22. _(retired 2026-06 — FEM archived)_ ~~**FEM is encapsulated** — engine `src/lib/fem/`, UI `src/routes/fem/`.~~ FEM + `/forge` moved to `archive/` (`1d90a16`). If revived: engine `src/lib/fem/` (pure logic, no Svelte/DOM/Three), UI `src/routes/fem/` imports formulas from `$lib/fem/*` only; oilfield units (lbf / ft-lbf / in / ksi); new stages = NEW sub-routes, never tabs.
 23. **Non-trivial UI flow rebuilds ship with a subagent test spec** in `.claude/agents/<name>.md` (gitignored) BEFORE "done": drives the real UI via `mcp__claude-in-chrome__*` AND verifies server-side via curl; outputs a summary table + GIF; **must run twice with identical output**; patch the spec in-place when a run surfaces a wrinkle. Reference: `.claude/agents/test-dp-build.md`.
 24. **Generative authoring — RAG-then-translate against the vocabulary first.** On a "new part" request, retrieve from `docs/parts/vocabulary.json` and compose via the deterministic translator (`src/lib/authoring/rule-translator.ts`): (1) synonym match → params only, (2) `extends` parent, (3) `kind:'compose'`, (4) hand-author ONLY when nothing fits — and say so before extending the schema. Save via `/api/primitives/save`; bake-verify via `/api/primitives/preview` (report verts/z-extent/outer-r). Patches via `scripts/promote-to-vocab.ts`; regen `vocabulary-graph.mmd` via `bun scripts/render-vocab-graph.ts`. **NEVER hand-author `/tmp/<id>_swap.ts` ad-hoc scripts when a vocab path exists.**
@@ -148,7 +150,7 @@ src/
 │                        # research/, volume/, plan/, api/  (+layout: NavMenu top-right, pins #app height)
 └── lib/
     ├── shared/          # GraphEditorPane, PrimitiveView, canvases, FloatingPanel, …
-    ├── cad/             # composition-graph/emit/layout/bake, manifold-helpers, stdlib/, stdstale/
+    ├── cad/             # composition-graph/emit/layout/bake, manifold-helpers, stdlib/ (+ stale/)
     ├── server/          # volume.ts, primitive-paths.ts, primitive-loader.ts, stdlib.ts,
     │                    # bake-cache.ts, rag-corpus.ts, …
     ├── authoring/       # vocabulary → source translators
