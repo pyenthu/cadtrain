@@ -34,6 +34,9 @@ import {
   setPolygonCoord,
   addCall,
   removeNode,
+  addMv,
+  addRot,
+  addMethod,
 } from './composition-graph';
 
 /** Optional UI context the pure graph can't carry (selection + active tab). */
@@ -244,6 +247,39 @@ export function dispatchEditorTool(
         if (nodeId === graph.root) return { graph, error: 'the root node cannot be removed' };
         const next = removeNode(graph, nodeId);
         return { graph: next, result: { removed: nodeId } };
+      }
+
+      case 'moveNode': {
+        const nodeId = resolveNodeId(graph, a.node);
+        if (!nodeId) return { graph, error: `node not found: ${String(a.node)}` };
+        const off = [a.dx ?? 0, a.dy ?? 0, a.dz ?? 0].map((v) => coerceArgValue(v));
+        const bad = off.find((v) => typeof v === 'string');
+        if (typeof bad === 'string') return { graph, error: bad };
+        const { graph: next, id } = addMv(graph, nodeId, off as any);
+        return { graph: next, result: { moved: nodeId, by: [a.dx ?? 0, a.dy ?? 0, a.dz ?? 0], mv: id } };
+      }
+
+      case 'rotateNode': {
+        const nodeId = resolveNodeId(graph, a.node);
+        if (!nodeId) return { graph, error: `node not found: ${String(a.node)}` };
+        const rot = [a.rx ?? 0, a.ry ?? 0, a.rz ?? 0].map((v) => coerceArgValue(v));
+        const bad = rot.find((v) => typeof v === 'string');
+        if (typeof bad === 'string') return { graph, error: bad };
+        const { graph: next, id } = addRot(graph, nodeId, rot as any);
+        return { graph: next, result: { rotated: nodeId, by: [a.rx ?? 0, a.ry ?? 0, a.rz ?? 0], rot: id } };
+      }
+
+      case 'csg': {
+        const op = String(a.op ?? '');
+        if (op !== 'subtract' && op !== 'add' && op !== 'intersect') {
+          return { graph, error: '`op` must be subtract | add | intersect' };
+        }
+        const obj = resolveNodeId(graph, a.obj);
+        if (!obj) return { graph, error: `obj node not found: ${String(a.obj)}` };
+        const arg = resolveNodeId(graph, a.arg);
+        if (!arg) return { graph, error: `arg node not found: ${String(a.arg)}` };
+        const { graph: next, id } = addMethod(graph, op, obj, arg);
+        return { graph: next, result: { csg: id, op, obj, arg } };
       }
 
       default:

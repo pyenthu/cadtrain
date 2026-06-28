@@ -16,7 +16,8 @@
  * Phase 1 (safe subset — params · wiring · "add a point"):
  *   getEditorState · addParam · setParamSchema · wireArgToParam ·
  *   setCallArg · addPolygonPoint · setPolygonCoord
- * Phase 2 (structural): addCall · removeNode are here now; addCsg/… still TODO.
+ * Phase 2 (structural + transforms): addCall · removeNode · moveNode · rotateNode
+ *   · csg(subtract/add/intersect) are here now.
  *
  * The one shape the model MUST learn is the `ArgValue` union — every Call arg
  * and every polygon coordinate is one of:
@@ -187,6 +188,44 @@ export const EDITOR_TOOLS: ToolDef[] = [
       'they mean the SELECTED node — its id is `selectedId` in the editor state.',
     params: {
       node: { type: 'string', required: true, desc: 'Node to delete — its id (n_...) or a Call alias (A, B, …).' },
+    },
+  },
+  {
+    name: 'moveNode',
+    desc:
+      'Wrap a node in a MOVE (mv) transform — offset it by [dx, dy, dz]. ' +
+      'Z-DOWN convention: +z moves DOWN-hole (mv [0,0,5] = 5 units toward the ' +
+      'bottom; top = LOWER z). Each offset defaults to 0 and may be a number or an ' +
+      'expression string (p.<param>). Identify the node by id or alias.',
+    params: {
+      node: { type: 'string', required: true, desc: 'Node to move — id (n_...) or Call alias.' },
+      dx: { type: 'number', desc: 'X offset (default 0).' },
+      dy: { type: 'number', desc: 'Y offset (default 0).' },
+      dz: { type: 'number', desc: 'Z offset (default 0). +z = DOWN-hole.' },
+    },
+  },
+  {
+    name: 'rotateNode',
+    desc:
+      'Wrap a node in a ROTATE (rot) transform — rotate it by [rx, ry, rz] DEGREES ' +
+      'about the X/Y/Z axes. Each angle defaults to 0. Identify the node by id or alias.',
+    params: {
+      node: { type: 'string', required: true, desc: 'Node to rotate — id (n_...) or Call alias.' },
+      rx: { type: 'number', desc: 'Rotation about X in degrees (default 0).' },
+      ry: { type: 'number', desc: 'Rotation about Y in degrees (default 0).' },
+      rz: { type: 'number', desc: 'Rotation about Z in degrees (default 0).' },
+    },
+  },
+  {
+    name: 'csg',
+    desc:
+      'Combine two nodes with a boolean operation: obj OP arg → a new method node. ' +
+      'op "subtract" carves arg out of obj (a bore = body subtract hole); "add" ' +
+      'unions them; "intersect" keeps the overlap. Identify obj/arg by id or alias.',
+    params: {
+      op: { type: 'string', required: true, enum: ['subtract', 'add', 'intersect'], desc: 'The boolean operation.' },
+      obj: { type: 'string', required: true, desc: 'The base/left node — id or alias.' },
+      arg: { type: 'string', required: true, desc: 'The operand/right node — id or alias.' },
     },
   },
 ];
