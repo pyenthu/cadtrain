@@ -166,6 +166,7 @@
   import RepeatEditorPane from './RepeatEditorPane.svelte';
   import CanvasMenu from './CanvasMenu.svelte';
   import AiMenu from './AiMenu.svelte';
+  import { createAssistSession } from './ge-assist.svelte';
   import { clampToViewport } from './popover-clamp';
   import { releaseImplicitCapture } from './pointer-capture';
   // Per-pane drag-to-wire state + handlers (Phase C). A per-instance class
@@ -654,6 +655,17 @@
   let aiMenuOpen = $state(false);
   let aiBtnEl = $state<HTMLButtonElement | null>(null);
   let aiMenuPos = $state<{ left: number; top: number }>({ left: 56, top: 120 });
+  /** The per-pane ✨ "edit this part" assist session (multi-shot tool loop →
+   *  /api/rag/assist). A FACTORY per mount (not a singleton) so each /primitives
+   *  tab has its own transcript + busy flag. getGraph/setGraph bridge the loop to
+   *  this pane's live `graph` $state (setGraph triggers the re-bake $effect);
+   *  getCtx feeds readEditorState. selectedId is null until node-selection lands. */
+  let aiSelectedId = $state<string | null>(null);
+  const aiSession = createAssistSession({
+    getGraph: () => graph,
+    setGraph: (g) => { graph = g; },
+    getCtx: () => ({ partId: props.id ?? null, activeTab: null, selectedId: aiSelectedId }),
+  });
   function openAiMenu() {
     if (aiBtnEl) {
       const r = aiBtnEl.getBoundingClientRect();
@@ -2893,13 +2905,14 @@
     <!-- ✨ AI generate sits CENTERED in the gap between ⚙ and reset:
          an equal flex spacer above and below floats it to the midpoint. -->
     <div class="ge-vrail-spacer"></div>
-    {#if props.onGenerated}
-      <button class="ge-vrail-btn ai" type="button"
-        bind:this={aiBtnEl}
-        class:on={aiMenuOpen}
-        onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
-        data-tip="Generate a part from a description (AI)">✨</button>
-    {/if}
+    <!-- ✨ AI — Generate a new part (description → graph) OR Edit the open part
+         (multi-shot tool loop). Always available: the edit session is per-pane,
+         and generate hydrates locally even without the onGenerated tab-relabel. -->
+    <button class="ge-vrail-btn ai" type="button"
+      bind:this={aiBtnEl}
+      class:on={aiMenuOpen}
+      onclick={() => aiMenuOpen ? (aiMenuOpen = false) : openAiMenu()}
+      data-tip="AI — generate a part, or edit the open part">✨</button>
     <div class="ge-vrail-spacer"></div>
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
@@ -2936,6 +2949,7 @@
   {#if aiMenuOpen}
     <AiMenu
       pos={aiMenuPos}
+      session={aiSession}
       onGenerated={handleAiGenerated}
       onClose={() => (aiMenuOpen = false)} />
   {/if}
