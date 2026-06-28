@@ -1,7 +1,7 @@
 // Imperative loop model (#11 accumulator style) — parse/serialize/compile, and
 // proof the imperative spiral evals to the SAME points as the functional map form.
 import { describe, it, expect } from 'vitest';
-import { parseImperative, serializeImperative, compileImperative, isImperative } from './expr-imperative';
+import { parseImperative, serializeImperative, compileImperative, isImperative, bodyStatements } from './expr-imperative';
 import { compileListFormula } from './graph-exprs';
 
 const tau = 2 * Math.PI;
@@ -38,8 +38,9 @@ describe('imperative loop model', () => {
     expect(p.result).toBe('poly');
     expect(p.loops).toHaveLength(2);
     expect(p.loops[0]).toMatchObject({ loopVar: 'i', start: '0', stop: 'NPts' });
-    expect(p.loops[0]!.statements[0]).toMatchObject({ kind: 'assign', name: 'point' });
-    expect(p.loops[0]!.statements[1]).toMatchObject({ kind: 'append', list: 'poly', expr: 'point' });
+    const st0 = bodyStatements(p.loops[0]!.body);
+    expect(st0[0]).toMatchObject({ kind: 'assign', name: 'point' });
+    expect(st0[1]).toMatchObject({ kind: 'append', list: 'poly', expr: 'point' });
   });
 
   it('compiles + evals to the SAME points as the functional map form', () => {
@@ -63,7 +64,7 @@ describe('imperative loop model', () => {
     const b = parseImperative(serializeImperative(a))!;
     expect(b.accumulators).toEqual(a.accumulators);
     expect(b.loops.map((l) => [l.loopVar, l.start, l.stop])).toEqual(a.loops.map((l) => [l.loopVar, l.start, l.stop]));
-    expect(b.loops[0]!.statements).toEqual(a.loops[0]!.statements);
+    expect(bodyStatements(b.loops[0]!.body)).toEqual(bodyStatements(a.loops[0]!.body));
   });
 
   it('isImperative distinguishes the two styles', () => {

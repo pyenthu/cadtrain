@@ -264,7 +264,8 @@
       </div>
       {#if showLoops}
         <ExprImperativeBlocks bind:formula={row.formula}
-          variables={[...params.map((p) => p.name), ...vars.map((v) => v.name)].filter(Boolean)} />
+          variables={[...params.map((p) => p.name), ...vars.map((v) => v.name)].filter(Boolean)}
+          onAddVariable={addParam} />
       {:else}
         <ExpressionSrcPane
           bind:src={row.formula}
@@ -296,6 +297,15 @@
     <span class="ge-expr-title">ƒ</span>
     <input class="ge-expr-defname" type="text" placeholder="expression name" bind:value={name}
       class:bad={name.trim() === ''} title="Expression name (shown in the Σ menu + on instance cards)" />
+    <!-- OUTPUT TABS — promoted into the title row (same level as the name) so the
+         right pane isn't wasting a row. -->
+    <div class="ge-xs-outlist">
+      {#each outputs as o, i (i)}
+        <button type="button" class="ge-xs-outitem" class:on={selOut === i} class:list={o.shape === 'list'}
+          onclick={() => (selOut = i)} title={o.shape === 'list' ? `${o.name || 'output'} — list<point>` : (o.name || 'output')}>{#if o.shape === 'list'}<span class="ge-xs-outlistbadge">[ ]</span>{/if}{o.name || 'out?'}</button>
+      {/each}
+      <button type="button" class="ge-xs-outtab-add" onclick={addOutput} title="Add an output">+</button>
+    </div>
     <div class="ge-expr-head-actions">
       <button type="button" class="ge-expr-iconbtn" title={expanded ? 'Collapse to popover' : 'Expand to full screen'} onclick={() => (expanded = !expanded)}>{expanded ? '⤡' : '⤢'}</button>
       <button type="button" class="ge-expr-iconbtn" title="Close (Esc)" onclick={onCancel}>✕</button>
@@ -310,15 +320,8 @@
       </div>
     </div>
 
-    <!-- ─── RIGHT PANE (70%) — OUTPUTS: a clickable LIST + the edit column ──── -->
+    <!-- ─── RIGHT PANE (70%) — the OUTPUT editor (tabs are in the title row) ─── -->
     <div class="ge-xs-pane right">
-      <div class="ge-xs-outlist">
-        {#each outputs as o, i (i)}
-          <button type="button" class="ge-xs-outitem" class:on={selOut === i} class:list={o.shape === 'list'}
-            onclick={() => (selOut = i)} title={o.shape === 'list' ? `${o.name || 'output'} — list<point>` : (o.name || 'output')}>{#if o.shape === 'list'}<span class="ge-xs-outlistbadge">[ ]</span>{/if}{o.name || 'out?'}</button>
-        {/each}
-        <button type="button" class="ge-xs-add" onclick={addOutput}>+ add output</button>
-      </div>
       <div class="ge-xs-outedit">
         {#if outputs.length}
           {@render formulaEditor('output', selOut)}
@@ -387,22 +390,25 @@
   /* 30 / 70 vertical split: declarations (left) | outputs (right). */
   .ge-xs-pane { display: flex; align-items: stretch; min-height: 0; min-width: 0; overflow: hidden; }
   .ge-xs-pane.left  { flex: 0 0 30%; max-width: 30%; }
-  .ge-xs-pane.right { flex: 1 1 70%; border-left: 2px solid #e2e8f0; }
+  .ge-xs-pane.right { flex: 1 1 70%; border-left: 2px solid #e2e8f0; flex-direction: column; }
 
-  /* RIGHT pane = an OUTPUTS list column + the edit column. */
+  /* OUTPUT tabs — pills in the TITLE row (same level as the name); the right pane
+     is then just the edit area, full width. */
   .ge-xs-outlist {
-    flex: 0 0 150px; display: flex; flex-direction: column; gap: 2px;
-    padding: 8px 6px; border-right: 1px solid #e5e7eb; background: #f8fafc; overflow-y: auto;
+    flex: 1 1 auto; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 3px;
+    overflow-x: auto; overflow-y: hidden; padding: 0 4px;
   }
   .ge-xs-outitem {
-    text-align: left; font: 600 12px ui-monospace, monospace; color: #475569;
-    background: transparent; border: none; border-left: 3px solid transparent;
-    padding: 6px 8px; border-radius: 0 4px 4px 0; cursor: pointer;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex: none; font: 600 12px ui-monospace, monospace; color: #64748b;
+    background: #f1f5f9; border: 1px solid transparent; border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; white-space: nowrap;
   }
-  .ge-xs-outitem:hover { background: #f1f5f9; color: #334155; }
-  .ge-xs-outitem.on { background: #fff; color: #7c3aed; border-left-color: #a855f7; }
-  .ge-xs-outitem.list { border-left-color: #6366f1; }
+  .ge-xs-outitem:hover { background: #e2e8f0; color: #334155; }
+  .ge-xs-outitem.on { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+  .ge-xs-outitem.on.list { color: #4338ca; }
+  .ge-xs-outedit { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .ge-xs-outtab-add { flex: none; font: 700 14px Arial; color: #7c3aed; background: transparent; border: 1px dashed #d8b4fe; border-radius: 6px; padding: 3px 9px; cursor: pointer; line-height: 1; }
+  .ge-xs-outtab-add:hover { background: #f5f3ff; border-color: #a78bfa; }
   .ge-xs-outlistbadge { font: 700 9px ui-monospace, monospace; color: #4f46e5; margin-right: 3px; }
   /* output TYPE picker (scalar | list<point>) in the edit head. */
   .ge-xs-shapesel { flex: none; font: 600 10px Arial; color: #7c3aed; background: #f5f3ff; border: 1px solid #d8b4fe; border-radius: 4px; padding: 2px 4px; cursor: pointer; }

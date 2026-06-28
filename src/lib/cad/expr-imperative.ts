@@ -24,9 +24,12 @@ import { compileListFormula, parseAndValidateBare } from './graph-exprs';
 export interface ImpAssign { kind: 'assign'; name: string; expr: string; }
 export interface ImpAppend { kind: 'append'; list: string; expr: string; }
 export type ImpStatement = ImpAssign | ImpAppend;
-export interface ImpLoop { loopVar: string; start: string; stop: string; statements: ImpStatement[]; }
+/** A loop's body is the raw multi-line statements TEXT (the user types it); the
+ *  statements are parsed from it at compile/validate time. */
+export interface ImpLoop { loopVar: string; start: string; stop: string; body: string; }
 export interface ImperativeProgram {
   accumulators: string[];   // declared lists (usually one, e.g. 'poly')
+  vars: ImpAssign[];        // top-level intermediate values, computed before the loops
   loops: ImpLoop[];
   result: string;           // the accumulator returned
 }
@@ -44,8 +47,13 @@ export function parseImperative(src: string): ImperativeProgram | null {
 
   let idx = 0;
   const accumulators: string[] = [];
-  while (idx < lines.length && ACC_RE.test(lines[idx]!)) {
-    accumulators.push(lines[idx]!.match(ACC_RE)![1]!); idx++;
+  const vars: ImpAssign[] = [];
+  while (idx < lines.length - 1 && !FOR_RE.test(lines[idx]!)) {
+    const acc = lines[idx]!.match(ACC_RE);
+    if (acc) { accumulators.push(acc[1]!); idx++; continue; }
+    const as = lines[idx]!.match(ASSIGN_RE);
+    if (as) { vars.push({ kind: 'assign', name: as[1]!, expr: as[2]!.trim() }); idx++; continue; }
+    return null; // unexpected top-level line
   }
   if (!accumulators.length) return null;
 
@@ -59,19 +67,25 @@ export function parseImperative(src: string): ImperativeProgram | null {
     const fm = lines[idx]!.match(FOR_RE);
     if (!fm) return null; // expected a `for`
     idx++;
-    const loop: ImpLoop = { loopVar: fm[1]!, start: fm[2]!.trim(), stop: fm[3]!.trim(), statements: [] };
-    while (idx < lines.length - 1 && !FOR_RE.test(lines[idx]!)) {
-      const l = lines[idx]!;
-      const ap = l.match(APPEND_RE);
-      if (ap) { loop.statements.push({ kind: 'append', list: ap[1]!, expr: ap[2]!.trim() }); idx++; continue; }
-      const as = l.match(ASSIGN_RE);
-      if (as) { loop.statements.push({ kind: 'assign', name: as[1]!, expr: as[2]!.trim() }); idx++; continue; }
-      return null; // unrecognized statement
-    }
-    if (!loop.statements.length) return null;
-    loops.push(loop);
+    const bodyLines: string[] = [];
+    while (idx < lines.length - 1 && !FOR_RE.test(lines[idx]!)) { bodyLines.push(lines[idx]!); idx++; }
+    loops.push({ loopVar: fm[1]!, start: fm[2]!.trim(), stop: fm[3]!.trim(), body: bodyLines.join('\n') });
   }
-  return loops.length ? { accumulators, loops, result } : null;
+  return loops.length ? { accumulators, vars, loops, result } : null;
+}
+
+/** Parse a loop's body TEXT into statements (assign / append); unrecognized lines
+ *  are dropped here (validateImperative flags them). */
+export function bodyStatements(body: string): ImpStatement[] {
+  const out: ImpStatement[] = [];
+  for (const raw of (body ?? '').split('\n')) {
+    const l = raw.trim(); if (!l) continue;
+    const ap = l.match(APPEND_RE);
+    if (ap) { out.push({ kind: 'append', list: ap[1]!, expr: ap[2]!.trim() }); continue; }
+    const as = l.match(ASSIGN_RE);
+    if (as) { out.push({ kind: 'assign', name: as[1]!, expr: as[2]!.trim() }); continue; }
+  }
+  return out;
 }
 
 /** True when `src` is an imperative loop (vs the functional map form). */
@@ -80,11 +94,10 @@ export function isImperative(src: string): boolean { return parseImperative(src)
 /** Serialize a program back to the DSL (the canonical, parse-able + readable form). */
 export function serializeImperative(p: ImperativeProgram): string {
   const lines: string[] = (p.accumulators ?? []).map((a) => `${a} = []`);
+  for (const v of p.vars ?? []) lines.push(`${v.name} = ${v.expr}`);
   for (const lp of p.loops ?? []) {
     lines.push(`for ${lp.loopVar} = ${lp.start} to ${lp.stop}`);
-    for (const s of lp.statements) {
-      lines.push(s.kind === 'assign' ? `  ${s.name} = ${s.expr}` : `  ${s.list}.append(${s.expr})`);
-    }
+    for (const bl of (lp.body ?? '').split('\n').map((l) => l.trim()).filter(Boolean)) lines.push(`  ${bl}`);
   }
   lines.push(`return ${p.result}`);
   return lines.join('\n');
@@ -98,15 +111,24 @@ export function validateImperative(src: string, allowed: ReadonlySet<string>): s
   if (!p) return 'not a valid loop';
   const locals = new Set<string>(allowed);
   for (const a of p.accumulators) locals.add(a);
+  for (const v of p.vars) locals.add(v.name);
   for (const lp of p.loops) {
     locals.add(lp.loopVar);
-    for (const s of lp.statements) if (s.kind === 'assign') locals.add(s.name);
+    for (const s of bodyStatements(lp.body)) if (s.kind === 'assign') locals.add(s.name);
   }
   const check = (expr: string) => parseAndValidateBare(expr, locals, 'list').errors[0]?.msg ?? null;
+  for (const v of p.vars) { const e = check(v.expr); if (e) return e; }
   for (const lp of p.loops) {
     const e = check(lp.start) ?? check(lp.stop);
     if (e) return e;
-    for (const s of lp.statements) { const se = check(s.expr); if (se) return se; }
+    const stmts = bodyStatements(lp.body);
+    if (!stmts.length) return `loop "${lp.loopVar}" has no statements (add an append)`;
+    // flag any body line that isn't a recognized statement
+    for (const raw of lp.body.split('\n')) {
+      const l = raw.trim(); if (!l) continue;
+      if (!/\.append\(/.test(l) && !/^[A-Za-z_]\w*\s*=/.test(l)) return `unrecognized line: ${l}`;
+    }
+    for (const s of stmts) { const se = check(s.expr); if (se) return se; }
   }
   return null;
 }
@@ -124,13 +146,14 @@ export function compileImperative(src: string): { ok: true; js: string } | { ok:
   if (!p) return { ok: false, error: 'not an imperative loop' };
   try {
     const decls = p.accumulators.map((a) => `let ${a} = [];`).join(' ');
+    const varDecls = (p.vars ?? []).map((v) => `const ${v.name} = ${exprToJs(v.expr)};`).join(' ');
     const loopJs = p.loops.map((lp) => {
-      const stmts = lp.statements.map((s) =>
+      const stmts = bodyStatements(lp.body).map((s) =>
         s.kind === 'assign' ? `const ${s.name} = ${exprToJs(s.expr)};` : `${s.list}.push(${exprToJs(s.expr)});`,
       ).join(' ');
       return `for (let ${lp.loopVar} = ${exprToJs(lp.start)}; ${lp.loopVar} < (${exprToJs(lp.stop)}); ${lp.loopVar}++) { ${stmts} }`;
     }).join(' ');
-    return { ok: true, js: `(() => { ${decls} ${loopJs} return ${p.result}; })()` };
+    return { ok: true, js: `(() => { ${decls} ${varDecls} ${loopJs} return ${p.result}; })()` };
   } catch (e: any) {
     return { ok: false, error: e?.message ?? String(e) };
   }
