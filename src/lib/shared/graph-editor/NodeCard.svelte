@@ -96,6 +96,7 @@
     consumedSet,
     hlVertex,
     polyPreviewFor,
+    selected = false,
     onBringToFront,
     onNodePointerDown,
     onNodePointerMove,
@@ -147,6 +148,8 @@
     consumedSet: Set<string>;
     hlVertex: { polyId: string; idx: number } | null;
     polyPreviewFor: string | null;
+    /** True when this is the AI's "this/here" selection (ge-assist ctx). */
+    selected?: boolean;
     onBringToFront: (id: string) => void;
     onNodePointerDown: (ev: PointerEvent, id: string) => void;
     onNodePointerMove: (ev: PointerEvent) => void;
@@ -187,7 +190,7 @@
   const del = new DeleteConfirm();
 </script>
 
-            <g transform="translate({pos.x},{pos.y})" class="ge-node"
+            <g transform="translate({pos.x},{pos.y})" class="ge-node" class:ai-selected={selected}
               data-node-id={n.id}
               role="group"
               onpointerdown={() => onBringToFront(n.id)}>
@@ -1710,6 +1713,8 @@
   .ge-node-ghost:hover { opacity: 1; }
   .ge-node-ghost.on { opacity: 1; fill: #6d28d9; }
   .ge-node-bg { fill: #fff; stroke: #0369a1; stroke-width: 2; cursor: grab; touch-action: none; }
+  /* AI "this/here" selection — the last-touched card, the ge-assist ctx target. */
+  .ge-node.ai-selected .ge-node-bg { stroke: #7c3aed !important; stroke-width: 3 !important; filter: drop-shadow(0 0 3px rgba(124, 58, 237, 0.55)); }
   .ge-node-bg.method { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
   /* Compact CSG operator circle (subtract/add/intersect) — amber like the old method card. */
   .ge-csg-circle { fill: #fef3c7; stroke: #d97706; stroke-width: 2; cursor: grab; touch-action: none; }

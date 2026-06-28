@@ -1278,6 +1278,8 @@
   function bringToFront(id: string) {
     // Filter out the id (idempotent if not in list), then append.
     zOrder = [...zOrder.filter((x) => x !== id), id];
+    // The last-touched node is the AI's "this/here" selection (ge-assist ctx).
+    aiSelectedId = id;
   }
   function onNodePointerDown(ev: PointerEvent, id: string) {
     if (ev.button !== 0) return;
@@ -3478,6 +3480,7 @@
               {consumedSet}
               {hlVertex}
               polyPreviewFor={polyUI.polyPreviewFor}
+              selected={n.id === aiSelectedId}
               onBringToFront={bringToFront}
               {onNodePointerDown}
               {onNodePointerMove}

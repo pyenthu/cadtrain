@@ -32,6 +32,8 @@ import {
   setCallArg,
   addPolygonPoint,
   setPolygonCoord,
+  addCall,
+  removeNode,
 } from './composition-graph';
 
 /** Optional UI context the pure graph can't carry (selection + active tab). */
@@ -226,6 +228,22 @@ export function dispatchEditorTool(
         if (typeof value === 'string') return { graph, error: value };
         const next = setPolygonCoord(graph, polyId, idx, a.axis, value);
         return { graph: next, result: { polygon: polyId, idx, axis: a.axis, value } };
+      }
+
+      // ── structural (Phase 2) ────────────────────────────────────────────────
+      case 'addCall': {
+        const src = String(a.src ?? '').trim();
+        if (!src) return { graph, error: '`src` (the part id to instance) is required' };
+        const { graph: next, id } = addCall(graph, src);
+        return { graph: next, result: { added: id, src, alias: (next.nodes[id] as CallNode)?.alias } };
+      }
+
+      case 'removeNode': {
+        const nodeId = resolveNodeId(graph, a.node);
+        if (!nodeId) return { graph, error: `node not found: ${String(a.node)}` };
+        if (nodeId === graph.root) return { graph, error: 'the root node cannot be removed' };
+        const next = removeNode(graph, nodeId);
+        return { graph: next, result: { removed: nodeId } };
       }
 
       default:

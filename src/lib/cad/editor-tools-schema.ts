@@ -16,7 +16,7 @@
  * Phase 1 (safe subset — params · wiring · "add a point"):
  *   getEditorState · addParam · setParamSchema · wireArgToParam ·
  *   setCallArg · addPolygonPoint · setPolygonCoord
- * Phase 2 (structural: addCall/addCsg/removeNode/…) is intentionally NOT here.
+ * Phase 2 (structural): addCall · removeNode are here now; addCsg/… still TODO.
  *
  * The one shape the model MUST learn is the `ArgValue` union — every Call arg
  * and every polygon coordinate is one of:
@@ -163,6 +163,30 @@ export const EDITOR_TOOLS: ToolDef[] = [
       idx: { type: 'integer', required: true, desc: '0-based index of the entry to edit.' },
       axis: { type: 'string', required: true, enum: ['r', 'z'], desc: 'Which axis to set: "r" or "z".' },
       value: ARG_VALUE_PARAM,
+    },
+  },
+  // ── Phase 2 (structural) ─────────────────────────────────────────────────
+  {
+    name: 'addCall',
+    desc:
+      'Add a Call node that instances another part by its id (`src`) — the way to ' +
+      'COMPOSE: e.g. add "g_collar", then position or subtract it. The new node ' +
+      'gets an auto alias (A, B, …) and its args default to the part\'s own ' +
+      'defaults; set them afterward with setCallArg / wireArgToParam. Returns the ' +
+      'new node id. The `src` must be an existing primitive/part id.',
+    params: {
+      src: { type: 'string', required: true, desc: 'Part id to instance, e.g. "g_collar", "r_revolve", "g_shaft".' },
+    },
+  },
+  {
+    name: 'removeNode',
+    desc:
+      'Delete a node from the graph by id (or a Call alias). References to it are ' +
+      'severed (container children, method operands, mv/rot targets). The ROOT ' +
+      'node cannot be removed. When the user says "delete this" / "remove this", ' +
+      'they mean the SELECTED node — its id is `selectedId` in the editor state.',
+    params: {
+      node: { type: 'string', required: true, desc: 'Node to delete — its id (n_...) or a Call alias (A, B, …).' },
     },
   },
 ];
