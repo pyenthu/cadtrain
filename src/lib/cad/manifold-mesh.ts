@@ -450,9 +450,30 @@ export function weldAndBuild(patches: Patch[]): any {
     if (idx === undefined) { idx = newPos.length / 3; newPos.push(x, y, z); map.set(key, idx); }
     remap[n] = idx;
   }
-  const newTris = new Uint32Array(allT.length);
-  for (let n = 0; n < allT.length; n++) newTris[n] = remap[allT[n]];
+  // Remap triangles AND drop any the position-weld collapsed: when two of a
+  // triangle's corners merge to the same vertex (a≡b, b≡c or a≡c) the triangle
+  // is a zero-area degenerate spike. Manifold can OOB-crash the WASM core on
+  // such soup (Rule 25) — and the crash corrupts the singleton so EVERY later
+  // bake fails. Dropping them here is a no-op for a clean mesh (a valid mesh has
+  // none) and protects every welded primitive, not just one engine.
+  const keptTris: number[] = [];
+  for (let n = 0; n < allT.length; n += 3) {
+    const a = remap[allT[n]], b = remap[allT[n + 1]], c = remap[allT[n + 2]];
+    if (a === b || b === c || a === c) continue; // weld-collapsed → drop
+    keptTris.push(a, b, c);
+  }
+  const newTris = Uint32Array.from(keptTris);
   const verts3 = new Float32Array(newPos);
+
+  // NaN/Inf guard: a non-finite vertex coordinate (a divide-by-zero / bad fn at
+  // a parameter boundary) reaches the WASM Mesh constructor as garbage and can
+  // OOB-crash + corrupt the core. Fail with a CLEAN, catchable error instead —
+  // the loader turns it into a 400, the singleton stays healthy.
+  for (let n = 0; n < verts3.length; n++) {
+    if (!Number.isFinite(verts3[n])) {
+      throw new Error('weldAndBuild: non-finite vertex coordinate (NaN/Inf) — refusing to build (would corrupt the Manifold core)');
+    }
+  }
 
   let m = new Manifold(new Mesh({ numProp: 3, vertProperties: verts3, triVerts: newTris }));
 

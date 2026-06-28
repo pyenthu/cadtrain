@@ -92,6 +92,28 @@ export function r_surface(
   // genuinely open in u (gridPatch never bridges row nU back to row 0).
   const wall = gridPatch(nU, nV, (u, v): [number, number, number] => fn(u, v));
 
+  // ── EXACT seam closure (wrap) ───────────────────────────────────────────
+  // The wrap weld assumes row nU (u=1) is byte-identical to row 0 (u=0) so the
+  // two seam columns merge. But fn(1,v) and fn(0,v) are only MATHEMATICALLY
+  // equal — floating-point makes them differ by ~1e-16 (e.g. sin(2π) ≠ 0, and
+  // `frac(z·tpi − 1)` ≠ `frac(z·tpi − 0)` bit-for-bit). For a CONTINUOUS fn that
+  // sub-ε wobble welds away, but a fn with a step DISCONTINUITY landing on the
+  // seam (a Square thread tooth: tooth flips 0↔depth across `d == halfFrac`) can
+  // straddle that step between u=0 and u=1 → a FULL thread-depth radial mismatch
+  // at the seam → unmerged verts → boundary edges → "Not manifold", which (when
+  // the degenerate mesh is fed to the core repeatedly) corrupts the WASM
+  // singleton (Rule 25). Fix: overwrite the last u-row with the first u-row so
+  // the seam is closed BY CONSTRUCTION, independent of fn's float behaviour. The
+  // two rows are SUPPOSED to be identical, so this is geometrically a no-op for a
+  // well-behaved fn (it only snaps a ≤ε difference) and is byte-identical to the
+  // pre-fix weld at default resolution; it merely makes the already-intended
+  // coincidence exact. capRing never samples u=1 (i < nU), so caps are unaffected.
+  if (wrap && nU >= 1) {
+    const stride = (nV + 1) * 3;
+    const last = nU * stride;
+    for (let c = 0; c < stride; c++) wall.verts[last + c] = wall.verts[c];
+  }
+
   // ── end caps: fan the open v-ring to its centroid ───────────────────────
   // Sample the ring at the v-edge over u. For a wrapped (closed-in-u) surface
   // the ring is nU DISTINCT points (u = i/nU for i∈[0,nU); u=1 duplicates u=0);
