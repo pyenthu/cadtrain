@@ -23,6 +23,29 @@ because the helix advances exactly one pitch per turn — the azimuthal wrap-wel
 consistent. Single limitation: `(θ,z)→r` is single-valued, so **no undercut /
 overhanging flanks** (that's Option 4's job).
 
+## ⭐ THE CONVERGENCE — one fast + simple formulation (the end goal)
+After the ladder, it all collapses to **one** idea: revolve, extrude, helix, thread,
+flute, lobe are all just **a single parametric surface** `fn(u,v) → [x,y,z]`, laid
+down as ONE welded `gridPatch` + caps. So the final, fast, simple engine is:
+
+> **`r_surface(fn, Nu, Nv, wrapU, capLo, capHi)`** — weld one parametric surface.
+> `fn(u,v)` (u,v ∈ [0,1]) returns the 3D point; `wrapU` merges a closed seam (θ);
+> `capLo/capHi` fan the open v-ends shut. Manifold by construction — no path frame,
+> **no torsion** (it's a direct surface parameterization, not a path sweep), no CSG.
+
+Every prior engine is a one-liner `fn`:
+- **revolve:** `fn(u,v) = [profile_r(v)·cos(u·2π), …·sin(u·2π), profile_z(v)]`
+- **extrude:** `fn(u,v) = [perimeter_x(u), perimeter_y(u), v·L]`
+- **helix / thread:** `fn(u,v) = r(θ=u·2π, z=v·L)` with `r = baseR + tooth(frac(z·tpi−u))`
+  → **`r_helical_surface` is exactly `r_surface` with the thread `fn`.**
+
+The expression system supplies `fn` (a section/surface that is a FUNCTION of the
+parameters — the generalization of "a fixed `list<point>`"). That's the *one fast and
+simple formulation*: **expression → `fn(u,v)` → one welded grid.** `r_sweep`
+(section-along-an-arbitrary-path, Option 3) is the only case `r_surface` doesn't
+cover directly — and it's exactly the case that reintroduces frame torsion (#12), so
+it stays the *general* tool, not the *simple* one. Undercuts (Option 4) stay CSG.
+
 ## The ladder
 Each rung is a shippable superset of the one below; the axis is *how much of the
 geometry the expression owns* and *how manifoldness is guaranteed*.
