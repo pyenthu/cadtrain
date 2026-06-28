@@ -259,6 +259,7 @@
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
                     {#each Object.entries(call.args ?? {}) as [k, v] (k)}
+                      {@const argTip = expected.tips[call.src]?.[k]}
                       <!-- Unified row: [key_label][value_body][trailing_actions]
                            The value_body shows the literal input, the wired
                            param chip body (label-only), or the expression input.
@@ -266,7 +267,8 @@
                            right edge so every row's controls land at the
                            same spot. -->
                       <div class="ge-arg-row">
-                        <button class="ge-arg-key wire-btn" type="button" title="Wire to outer param"
+                        <button class="ge-arg-key wire-btn" type="button"
+                          title={argTip ? `${argTip}\n(click to wire to an outer param)` : 'Wire to outer param'}
                           onclick={(ev) => openWirePop(ev, n.id, k)}>{k}</button>
                         {#if (v as any).kind === 'literal'}
                           <span class="ge-arg-cell">

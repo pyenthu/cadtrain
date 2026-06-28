@@ -20,6 +20,10 @@
 
   export type ParamSchema = {
     label?: string;
+    /** One-line plain-english explanation — shown as the param name's hover
+     *  tooltip (falls back to the label, then the key). Authored on engine /
+     *  part meta.params so a dial is self-explanatory. */
+    desc?: string;
     type?: 'number' | 'boolean' | 'polygon' | 'enum';
     min?: number;
     max?: number;
@@ -68,7 +72,7 @@
     {@const value = num(key)}
     <div class="pr-card" class:dirty={isDirty(key)}>
       <div class="pr-card-head">
-        <span class="pr-keyname" title={ps.label ?? key}>{variant === 'fn' ? key : (ps.label ?? key)}</span>
+        <span class="pr-keyname" title={ps.desc ?? ps.label ?? key}>{variant === 'fn' ? key : (ps.label ?? key)}</span>
         {#if ps.unit}<span class="pr-unit-inline">({ps.unit})</span>{/if}
       </div>
 

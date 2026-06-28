@@ -52,7 +52,7 @@
     graph: any;
     hasSolidProducer: boolean;
     active?: boolean;
-    legacyLoad?: { id: string; reason: 'no-graph' | 'fetch-failed' } | null;
+    legacyLoad?: { id: string; reason: 'no-graph' | 'fetch-failed'; origin?: string } | null;
     sourceText: string;
     cutawayBusy?: boolean;
     cutawayStatus?: string | null;
@@ -329,7 +329,16 @@
     <div class="ge-source-body" class:hidden={rightTab !== 'source'}>
       {#if legacyLoad}
         <div class="ge-legacy-banner">
-          {#if legacyLoad.reason === 'no-graph'}
+          {#if legacyLoad.reason === 'no-graph' && (legacyLoad.origin === 'stdlib' || legacyLoad.origin === 'stdstale')}
+            <strong>{legacyLoad.id}</strong> is a read-only <strong>stdlib engine</strong>,
+            not an editable part — it's a hand-written primitive with no
+            <code>meta.graph</code>, so the node canvas stays empty (and Save is
+            blocked). Engines are meant to be <strong>composed into a part</strong>:
+            open a blank graph and <em>+ Drop</em> <code>{legacyLoad.id}</code> as a
+            node, or open a demo that uses it (e.g. <code>helical_demo</code>,
+            <code>pin_thread</code>) to see + dial it. Its source + params are
+            shown below for reference.
+          {:else if legacyLoad.reason === 'no-graph'}
             <strong>{legacyLoad.id}</strong> opened in legacy mode — its source has
             no <code>meta.graph</code> block, so the canvas can't hydrate. Save
             here to overwrite with a graph-format part. The legacy PrimitiveView

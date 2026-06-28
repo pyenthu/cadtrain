@@ -1062,7 +1062,7 @@
    *  canvas stays empty + a banner surfaces above the source pane explaining
    *  why. The user can still Save a NEW graph alongside the legacy file —
    *  but we don't fight the user with auto-translation. */
-  let legacyLoad = $state<{ id: string; reason: 'no-graph' | 'fetch-failed' } | null>(null);
+  let legacyLoad = $state<{ id: string; reason: 'no-graph' | 'fetch-failed'; origin?: string } | null>(null);
   onMount(async () => {
     // (PrimitiveDualCanvas lazy import moved into RightPane.svelte — P5/G5.)
 
@@ -1133,7 +1133,7 @@
           }
           exemplarId = id;
         } else {
-          legacyLoad = { id, reason: 'no-graph' };
+          legacyLoad = { id, reason: 'no-graph', origin: d.origin };
           exemplarId = id;
           // Banner lives in the source tab — auto-switch so the explanation
           // is visible by default rather than hidden behind the bake tab.

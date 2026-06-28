@@ -32,6 +32,10 @@ export interface ExpectedParams {
   profileKeys: Record<string, Set<string>>;
   /** src → which profile set its profile arg expects (revolve r,z vs cartesian x,y). */
   profileSet: Record<string, 'revolve' | 'cartesian'>;
+  /** src → key → human tooltip (meta `desc` ?? `label`). Surfaced as the arg
+   *  key button's title in NodeCard so an engine's bare arg keys (od, tpi, …)
+   *  are self-explanatory on hover. */
+  tips: Record<string, Record<string, string>>;
 }
 
 export const expected = $state<ExpectedParams>({
@@ -39,6 +43,7 @@ export const expected = $state<ExpectedParams>({
   defaults: {},
   profileKeys: {},
   profileSet: {},
+  tips: {},
 });
 
 // Attempted-once guard — without it a `src` that 404s (renamed/missing
@@ -56,12 +61,19 @@ export function ingestMeta(src: string, params: Record<string, any> | undefined)
   const keys = Object.keys(p);
   const defaults: Record<string, number> = {};
   const profileKeys = new Set<string>();
+  const tips: Record<string, string> = {};
   for (const [k, v] of Object.entries(p as Record<string, any>)) {
     defaults[k] = Number(v?.default ?? 0);
     if (v && typeof v === 'object' && v.type === 'profile') profileKeys.add(k);
+    // Tooltip text for the bare arg key: prefer the authored one-line `desc`,
+    // else the short `label`. Only stored when one exists so the key falls
+    // back to its own name in NodeCard.
+    const tip = (v && typeof v === 'object') ? (v.desc ?? v.label) : undefined;
+    if (typeof tip === 'string' && tip.trim()) tips[k] = tip;
   }
   expected.params = { ...expected.params, [src]: keys };
   expected.defaults = { ...expected.defaults, [src]: defaults };
+  expected.tips = { ...expected.tips, [src]: tips };
   // Infer the profile "set" from the primitive name: r_revolve → revolve (r,z);
   // r_extrude / r_weld_extrude → cartesian (x,y). Only when there ARE profile keys.
   if (profileKeys.size > 0) {
