@@ -22,6 +22,7 @@
   import { argStr, argFrom } from './args';
   import {
     addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp, addSketchRepeat,
+    addSketchExprList,
     type Graph,
   } from '$lib/cad/composition-graph';
   import { DeleteConfirm } from './delete-confirm.svelte';
@@ -132,6 +133,27 @@
                 onclick={() => { setGraph(removeSketchOp(graph, n.id, idx)); }}>×</button>
             </div>
           </div>
+        {:else if op.op === 'expr-list-ref'}
+          {@const esrc = graph.nodes[op.sourceId]}
+          {@const edef = (esrc as any)?.type === 'expr' ? (graph.exprDefs ?? []).find((d) => d.id === (esrc as any).defId) : null}
+          {@const eMissing = !esrc || (esrc as any).type !== 'expr' || !edef}
+          {@const elabel = edef ? `${edef.name} · ${op.output}` : 'expr list (missing)'}
+          <!-- #11 — a list⟨point⟩ OUTPUT of an expression instance, spliced into
+               the sketch as line ops (the expr-as-builder path). Summary row
+               only; the formula is edited on the expression (Σ menu). -->
+          <div class="ge-sketch-vtx expr" class:missing={eMissing} style="height: {sketchEntryH(op)}px"
+            title={eMissing ? 'The expression this points to was deleted' : `list⟨point⟩ from ${elabel}`}>
+            <div class="ge-sketch-srow">
+              <span class="ge-sketch-axis expr" title="Sketch expr-list — edit the formula on its Σ expression">ƒ[]</span>
+              <span class="ge-sketch-rep-hint">{elabel}</span>
+              <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                onclick={() => { setGraph(moveSketchOp(graph, n.id, idx, -1)); }}>▲</button>
+              <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === n.ops.length - 1}
+                onclick={() => { setGraph(moveSketchOp(graph, n.id, idx, 1)); }}>▼</button>
+              <button class="ge-sketch-btn del" type="button" title="Remove expr-list ref" disabled={n.ops.length <= 1}
+                onclick={() => { setGraph(removeSketchOp(graph, n.id, idx)); }}>×</button>
+            </div>
+          </div>
         {:else}
           <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === n.id && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
             <div class="ge-sketch-srow">
@@ -157,6 +179,7 @@
       <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { setGraph(addSketchOp(graph, n.id, 'fillet')); }}>+ fillet</button>
       <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { setGraph(addSketchOp(graph, n.id, 'chamfer')); }}>+ chamfer</button>
       <button class="ge-sketch-add repeat" type="button" title="Repeat a run of ops N times (threads / serrations)" onclick={() => { setGraph(addSketchRepeat(graph, n.id).graph); }}>+ repeat</button>
+      <button class="ge-sketch-add expr" type="button" title="Add an EXPRESSION that emits the profile — a map() → list⟨point⟩, edited on the Σ expression" onclick={() => { setGraph(addSketchExprList(graph, n.id).graph); }}>+ expr</button>
     </div>
   </div>
 </foreignObject>
@@ -217,7 +240,12 @@
   .ge-sketch-axis.corner { color: #0e7490; }      /* fillet */
   .ge-sketch-axis.corner.chamfer { color: #b45309; }
   .ge-sketch-axis.repeat { color: #7c3aed; width: auto; }   /* ↻ ×N repeat-ref */
+  .ge-sketch-axis.expr { color: #2563eb; width: auto; font-weight: 700; }   /* ƒ[] expr-list-ref */
   .ge-sketch-vtx.repeat { background: rgba(237,233,254,0.9); border-color: #c4b5fd; }
+  .ge-sketch-vtx.expr { background: rgba(219,234,254,0.7); border-color: #93c5fd; }
+  .ge-sketch-vtx.expr.missing { background: rgba(254,226,226,0.7); border-color: #fca5a5; }
+  .ge-sketch-add.expr { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+  .ge-sketch-add.expr:hover { background: #bfdbfe; }
   .ge-sketch-rep-hint { flex: 1 1 auto; font: 9px Arial; color: #7c3aed; opacity: 0.75; white-space: nowrap; overflow: hidden; }
   .ge-sketch-in { width: 100%; min-width: 0; padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 2px; box-sizing: border-box; cursor: text; }
   .ge-sketch-in:hover { background: #faf5ff; }

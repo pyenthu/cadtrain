@@ -12,7 +12,7 @@ import type {
   NodeId, ArgValue, CsgOp, CallNode, ContainerNode, MethodNode, MvNode, RotNode, TxfmnNode,
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonExprListRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
-  SketchRepeatNode, SketchRepeatRef,
+  SketchRepeatNode, SketchRepeatRef, SketchExprListRef,
   ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
@@ -1078,6 +1078,59 @@ export function addSketchRepeat(graph: Graph, sketchId: NodeId, afterIdx?: numbe
     layout: { ...graph.layout, [repeatId]: xy },
   });
   return { graph: g, id: repeatId };
+}
+
+/** Wire an existing expression INSTANCE's `list<point>` OUTPUT into a sketch's
+ *  ops (#11 expression-as-builder, sketch edition) — inserts an `expr-list-ref`
+ *  entry. The ExprNode + its def (with a `shape:'list', elem:'point'` output)
+ *  must already exist; this only adds the splice row. Same `afterIdx` semantics
+ *  as addSketchOp (-1 = prepend, omitted = append). No-op if the sketch or the
+ *  source expr instance is missing. Mirrors `addPolygonExprListRef`. */
+export function addSketchExprListRef(
+  graph: Graph, sketchId: NodeId, sourceId: NodeId, output: string, afterIdx?: number,
+): Graph {
+  const node = graph.nodes[sketchId];
+  const src = graph.nodes[sourceId];
+  if (!node || node.type !== 'sketch') return graph;
+  if (!src || src.type !== 'expr' || !output) return graph;
+  const insertAt = (typeof afterIdx === 'number' && afterIdx >= -1 && afterIdx < node.ops.length)
+    ? afterIdx + 1
+    : node.ops.length;
+  const ref: SketchExprListRef = { op: 'expr-list-ref', sourceId, output };
+  const ops = [...node.ops.slice(0, insertAt), ref, ...node.ops.slice(insertAt)];
+  const updated: SketchNode = { ...node, ops };
+  return finalize({ ...graph, nodes: { ...graph.nodes, [sketchId]: updated } });
+}
+
+/**
+ * "+ expr" on a sketch (#11 create-affordance) — the single-action analog of
+ * addSketchRepeat / addPolygonExprList. Creates a fresh expression DEF with a
+ * `list<point>` output seeded with a baking `map(range(0,8), f(i)=[r,z])`
+ * octagon, drops an INSTANCE, and splices that output into the sketch's ops (an
+ * `expr-list-ref`). The user then edits the formula on the expression (Σ menu).
+ * Returns the new defId/instanceId so the caller can open the editor. No-op
+ * (returns just { graph }) if `sketchId` isn't a sketch.
+ */
+export function addSketchExprList(
+  graph: Graph, sketchId: NodeId, afterIdx?: number,
+): { graph: Graph; defId?: NodeId; instanceId?: NodeId } {
+  const sk = graph.nodes[sketchId];
+  if (!sk || sk.type !== 'sketch') return { graph };
+  const made = addExprDef(graph);
+  let g = made.graph;
+  const defId = made.id;
+  // A seeded octagon profile (r = 0.5 ± 0.4·cos, z = 0.4·sin) — valid geometry
+  // out of the box so the sketch bakes immediately; the formula is the edit point.
+  const seed: ExprOut = {
+    name: 'pts',
+    formula: 'map(range(0, 8), f(i) = [0.5 + 0.4 * cos(i / 8 * tau), 0.4 * sin(i / 8 * tau)])',
+    shape: 'list', elem: 'point',
+  };
+  g = mapDef(g, defId, (d) => ({ ...d, outputs: [...d.outputs, seed] }));
+  const inst = addExprInstance(g, defId);
+  g = inst.graph;
+  g = addSketchExprListRef(g, sketchId, inst.id, 'pts', afterIdx);
+  return { graph: g, defId, instanceId: inst.id };
 }
 
 /** Set a SketchRepeatNode's iteration count. */

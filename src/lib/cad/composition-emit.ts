@@ -668,6 +668,15 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
         // `(dr,dz)` advance + the prototype ops); `.flat()` splices them in.
         // i / NPts / bindings are in scope — mirrors the polygon repeat-ref.
         // This MUST stay byte-equivalent to expandSketchOps (sketch-repeat.ts).
+        if (o?.op === 'expr-list-ref') {
+          // #11 — splice an expression instance's list<point> OUTPUT (a JS array
+          // of [r,z], emitted into the prelude as `V_<output>` by emitExprBlocks)
+          // as a run of `line` ops. Recomputed at bake (parametric), NOT statically
+          // expanded — mirrors the polygon expr-list-ref splice (~line 625).
+          const src = nodes[o.sourceId] as any;
+          if (!src || src.type !== 'expr' || !o.output) return '';
+          return `...(${exprBlockVar(o.sourceId)}_${o.output}).map((__p) => ({ op: 'line', r: __p[0], z: __p[1] }))`;
+        }
         if (o?.op === 'repeat-ref') {
           const src = nodes[o.sourceId] as any;
           if (!src || src.type !== 'sketch_repeat') return '';

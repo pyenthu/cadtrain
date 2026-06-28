@@ -338,6 +338,23 @@
                             onclick={() => { setGraph(removeSketchOp(graph, sid, idx)); }}>×</button>
                         </div>
                       </div>
+                    {:else if op.op === 'expr-list-ref'}
+                      {@const esrc = graph.nodes[op.sourceId]}
+                      {@const edef = (esrc as any)?.type === 'expr' ? (graph.exprDefs ?? []).find((d) => d.id === (esrc as any).defId) : null}
+                      {@const elabel = edef ? `${edef.name} · ${op.output}` : 'expr list (missing)'}
+                      <div class="ge-sketch-vtx repeat" style="height: {sketchEntryH(op)}px">
+                        <span class="ge-sketch-vidx">{opNum.get(idx) ?? ''}</span>
+                        <div class="ge-sketch-srow">
+                          <span class="ge-sketch-axis repeat" title="Sketch expr-list — edit the formula on its Σ expression">ƒ[]</span>
+                          <span class="ge-sketch-rep-hint">{elabel}</span>
+                          <button class="ge-sketch-btn" type="button" title="Move up" disabled={idx === 0}
+                            onclick={() => { setGraph(moveSketchOp(graph, sid, idx, -1)); }}>▲</button>
+                          <button class="ge-sketch-btn" type="button" title="Move down" disabled={idx === sn.ops.length - 1}
+                            onclick={() => { setGraph(moveSketchOp(graph, sid, idx, 1)); }}>▼</button>
+                          <button class="ge-sketch-btn del" type="button" title="Remove expr-list ref" disabled={sn.ops.length <= 1}
+                            onclick={() => { setGraph(removeSketchOp(graph, sid, idx)); }}>×</button>
+                        </div>
+                      </div>
                     {:else}
                       <div class="ge-sketch-vtx corner" class:editing={sketch.sketchExprPop?.sid === sid && sketch.sketchExprPop?.opIdx === idx} style="height: {sketchEntryH(op)}px">
                         <span class="ge-sketch-vidx">{opNum.get(idx) ?? ''}</span>
@@ -364,6 +381,7 @@
                   <button class="ge-sketch-add" type="button" title="Round the previous corner" onclick={() => { setGraph(addSketchOp(graph, sid, 'fillet')); }}>+ fillet</button>
                   <button class="ge-sketch-add" type="button" title="Bevel the previous corner" onclick={() => { setGraph(addSketchOp(graph, sid, 'chamfer')); }}>+ chamfer</button>
                   <button class="ge-sketch-add repeat" type="button" title="Repeat a run of ops N times (threads / serrations)" onclick={() => { setGraph(addSketchRepeat(graph, sid).graph); }}>+ repeat</button>
+                  <button class="ge-sketch-add expr" type="button" title="Add an EXPRESSION that emits the profile — a map() → list⟨point⟩, edited on the Σ expression" onclick={() => { setGraph(addSketchExprList(graph, sid).graph); }}>+ expr</button>
                 </div>
               </div>
             </foreignObject>

@@ -44,6 +44,8 @@ import {
   type NodeId,
 } from '$lib/cad/composition-graph';
 import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
+import { expandSketchOps } from '$lib/cad/sketch-repeat';
+import { compileListFormula } from '$lib/cad/graph-exprs';
 import { sketchColLayout } from '$lib/cad/sketch-layout';
 import { sketchCols, CARD_PAD, CARD_TITLE_H, PARAM_H, PARAM_GAP } from './geom';
 import { evalArg, sketchParamScope, argToDraftStr } from './args';
@@ -60,6 +62,66 @@ function ptSegDist(px: number, py: number, ax: number, ay: number, bx: number, b
   t = Math.max(0, Math.min(1, t));
   const cx = ax + t * dx, cy = ay + t * dy;
   return Math.hypot(px - cx, py - cy);
+}
+
+// Math globals available to a compiled list formula (mirrors expr-schema's
+// ALLOWED_FUNCTIONS + ALLOWED_CONSTANTS). compileListFormula lowers
+// range/map/concat to plain JS, so only the bare math fns/consts are injected.
+const LIST_MATH_ENV: Record<string, unknown> = {
+  sin: Math.sin, cos: Math.cos, tan: Math.tan,
+  asin: Math.asin, acos: Math.acos, atan: Math.atan, atan2: Math.atan2,
+  sqrt: Math.sqrt, cbrt: Math.cbrt, hypot: Math.hypot,
+  abs: Math.abs, sign: Math.sign, min: Math.min, max: Math.max,
+  clamp: (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi),
+  pow: Math.pow, exp: Math.exp, log: Math.log, log2: Math.log2, log10: Math.log10,
+  floor: Math.floor, ceil: Math.ceil, round: Math.round,
+  mod: (a: number, b: number) => ((a % b) + b) % b,
+  pi: Math.PI, PI: Math.PI, tau: 2 * Math.PI,
+};
+const LIST_MATH_NAMES = Object.keys(LIST_MATH_ENV);
+const LIST_MATH_VALS = LIST_MATH_NAMES.map((k) => LIST_MATH_ENV[k]);
+
+/** Resolve a sketch `expr-list-ref` to its `[r,z]` points for the 2D preview
+ *  (#11 sketch edition): compile the instance's `list<point>` output formula to
+ *  JS, then evaluate it with the instance's param bindings + the def's consts /
+ *  vars in scope (def locals are referenced bare, same as the bake emit; math
+ *  globals + loop vars survive untouched). Returns `undefined` on any failure
+ *  (missing source, non-list output, bad formula) → the ref contributes no
+ *  points. Pure; lives at module scope so the `sketchEditor` derived can build a
+ *  per-render resolver closure over the live graph + param scope. */
+function evalExprListPoints(
+  graph: Graph, sourceId: NodeId, output: string, scope: Record<string, number>,
+): [number, number][] | undefined {
+  const inst = graph.nodes[sourceId] as any;
+  if (!inst || inst.type !== 'expr') return undefined;
+  const def = (graph.exprDefs ?? []).find((d) => d.id === inst.defId);
+  if (!def) return undefined;
+  const out = (def.outputs ?? []).find((o) => o.name === output);
+  if (!out || out.shape !== 'list') return undefined;
+  const compiled = compileListFormula(out.formula);
+  if (!compiled.ok) return undefined;
+  // Build the def-local name → value scope: params (instance bindings, else
+  // default, else 0), consts, then vars (declaration order). Each is a function
+  // arg name passed alongside the math globals.
+  const names: string[] = [];
+  const vals: number[] = [];
+  const push = (name: string, v: number) => { names.push(name); vals.push(Number.isFinite(v) ? v : 0); };
+  const bindings = inst.bindings ?? {};
+  for (const p of (def.params ?? [])) {
+    const b = bindings[p.name];
+    push(p.name, b != null ? evalArg(b, scope) : (p.default != null ? Number(p.default) : 0));
+  }
+  for (const c of (def.consts ?? [])) push(c.name, Number(c.value));
+  for (const vd of (def.vars ?? [])) {
+    let v = 0;
+    try { v = Number(new Function(...LIST_MATH_NAMES, ...names, `return (${vd.formula});`)(...LIST_MATH_VALS, ...vals)); } catch { v = 0; }
+    push(vd.name, v);
+  }
+  try {
+    const arr = new Function(...LIST_MATH_NAMES, ...names, `return (${compiled.js});`)(...LIST_MATH_VALS, ...vals);
+    if (!Array.isArray(arr)) return undefined;
+    return arr.map((pt: any) => [Number(pt?.[0]) || 0, Number(pt?.[1]) || 0] as [number, number]);
+  } catch { return undefined; }
 }
 
 export class SketchState {
@@ -121,17 +183,18 @@ export class SketchState {
     const node = graph.nodes[this.editingSketchId] as any;
     if (!node || node.type !== 'sketch') return null;
     const p = sketchParamScope(graph);
-    const ops: SketchOp[] = node.ops.map((o: any) => {
-      if (o.op === 'line') return { op: 'line', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode };
-      if (o.op === 'spline') return {
-        op: 'spline', r: evalArg(o.r, p), z: evalArg(o.z, p), mode: o.mode,
-        pts: (o.pts ?? []).map((c: any) => [evalArg(c[0], p), evalArg(c[1], p)] as [number, number]),
-        h0: o.h0 ? [evalArg(o.h0[0], p), evalArg(o.h0[1], p)] as [number, number] : undefined,
-        h1: o.h1 ? [evalArg(o.h1[0], p), evalArg(o.h1[1], p)] as [number, number] : undefined,
-      };
-      if (o.op === 'fillet') return { op: 'fillet', radius: evalArg(o.radius, p) };
-      return { op: 'chamfer', dist: evalArg(o.dist, p) };
-    });
+    // Expand UPSTREAM of compileSketch (shared with emit): repeat-refs tile their
+    // prototype, and expr-list-refs splice an expression instance's list<point>
+    // output as line ops — so the 2D stage VISUALIZES the expression's profile
+    // live + tracks every param edit. Plain line/spline/fillet/chamfer lists
+    // resolve byte-identically to the old inline map.
+    const lookup = (id: NodeId) => {
+      const nn = graph.nodes[id] as any;
+      return nn?.type === 'sketch_repeat' ? nn : undefined;
+    };
+    const evalExprList = (sourceId: NodeId, output: string) => evalExprListPoints(graph, sourceId, output, p);
+    let ops: SketchOp[] = [];
+    try { ops = expandSketchOps(node.ops, lookup, evalArg, p, evalExprList); } catch { ops = []; }
     const seg = node.segments ? evalArg(node.segments, p) : 64;
     let pts: [number, number][] = [];
     try { pts = compileSketch(ops, seg); } catch { pts = []; }

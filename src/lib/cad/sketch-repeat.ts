@@ -19,13 +19,21 @@
  *    iteration boundaries → rel-mode prototype ops tile seamlessly (threads);
  *  - `scaleX/scaleY` (a final multiply in compileSketch) keep working unchanged.
  */
-import type { ArgValue, NodeId, SketchOpEntry, SketchRepeatNode, SketchRepeatRef } from './composition-graph-types';
+import type { ArgValue, NodeId, SketchOpEntry, SketchRepeatNode, SketchRepeatRef, SketchExprListRef } from './composition-graph-types';
 import type { SketchOp } from './sketch';
 
 /** Evaluate one ArgValue to a number against a scope. Injected so the client
  *  preview reuses its own `evalArg` (param scope + expr evaluator) — keeps this
  *  module pure + framework-free. */
 export type EvalArg = (a: ArgValue | undefined, scope: Record<string, number>) => number;
+
+/** Resolve an `expr-list-ref` (#11 sketch edition) to its `[r,z]` points, or
+ *  `undefined` when the source / output / formula can't be resolved. Injected so
+ *  the 2D live preview can compile the expression instance's `list<point>`
+ *  output to numbers (the headline: the expression's profile renders live);
+ *  keeps this module pure + framework-free (the emit path passes no resolver and
+ *  splices the source's prelude const instead). */
+export type EvalExprList = (sourceId: NodeId, output: string) => [number, number][] | undefined;
 
 const IDENT_RE = /^[A-Za-z_$][\w$]*$/;
 
@@ -88,10 +96,11 @@ function expandRepeatNode(src: SketchRepeatNode, evalArg: EvalArg, scope: Record
  * (defensive, mirrors the hydrate guard).
  */
 export function expandSketchOps(
-  ops: Array<SketchOpEntry | SketchRepeatRef>,
+  ops: Array<SketchOpEntry | SketchRepeatRef | SketchExprListRef>,
   lookup: (id: NodeId) => SketchRepeatNode | undefined,
   evalArg: EvalArg,
   scope: Record<string, number>,
+  evalExprList?: EvalExprList,
 ): SketchOp[] {
   const out: SketchOp[] = [];
   for (const entry of ops) {
@@ -99,6 +108,14 @@ export function expandSketchOps(
       const src = lookup((entry as SketchRepeatRef).sourceId);
       if (!src || src.type !== 'sketch_repeat') continue;
       out.push(...expandRepeatNode(src, evalArg, scope));
+    } else if ((entry as any)?.op === 'expr-list-ref') {
+      // #11 — splice an expression instance's list<point> OUTPUT as absolute
+      // `line` ops (already-resolved numbers). No resolver (the emit path) ⇒
+      // skip — emit references the source's prelude const directly instead.
+      const ref = entry as SketchExprListRef;
+      const pts = evalExprList?.(ref.sourceId, ref.output);
+      if (!pts) continue;
+      for (const p of pts) out.push({ op: 'line', r: p[0], z: p[1] });
     } else {
       out.push(resolveOp(entry as SketchOpEntry, evalArg, scope));
     }
