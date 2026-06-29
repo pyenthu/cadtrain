@@ -144,6 +144,14 @@
 4. RESEARCH — explore for CAD generation improvement:
    [arxiv 2606.05515](https://arxiv.org/html/2606.05515v1).
 
+4b. RESEARCH — Blender Geometry-Nodes **FIELDS** for our node graph:
+   `docs/research/blender-fields-for-nodes.md`. Headline: our `r_surface(fn(u,v))`
+   IS a field over a uv domain; our `list<point>`/grid is the materialised (captured)
+   form. Recommend a wireable **field-socket PortType** + an explicit **Capture node**
+   (field→grid/list) — unifies surface/list/displacement and fixes the
+   `r_surface(fn)`-isn't-wireable problem; **avoid** Blender's implicit field inference.
+   Ties to #11 / #13 / `docs/plans/parametric-surface-solid.md`.
+
 5. Units — centralized repository (diameter in in/mm, z in m/ft, etc.).
 
 7. `r_weld_extrude` phase angle — straighten spiralled triangles (lat/long-style
