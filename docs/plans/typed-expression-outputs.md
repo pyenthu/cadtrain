@@ -75,8 +75,18 @@ Today's Type Definer only builds records-with-fields and can't save a list type
 (the `pt3DList` workaround fails with "add at least one field"). Make it useful:
 
 - **First-class LIST types** (define `list<pt3D>` directly, not only via a record
-  field).
-- **Fix the "add at least one field" save bug** (diagnose in `TypeDefinerPanel`).
+  field). Today `TypeDefinerPanel` only calls `defineRecordType()`; the field-type
+  `<select>` offers `card:'one'` types only, so a standalone `list<pt3D>` is
+  impossible → users hit the record-wrapper workaround that trips the bug below. Add
+  a RECORD/LIST kind toggle.
+- **Fix the "add at least one field" save bug** — ROOT CAUSE (TypeDefinerPanel.svelte
+  ~L83): `nameErr = !draft.fields.some(f => f.name.trim())` counts a field only if it
+  has a non-empty trimmed NAME; the name input's `placeholder="field"` makes an
+  unnamed row *look* named, so a row with `list` + a type but a blank name reads as
+  "no field" → Save (`disabled={!!nameErr}`) stays off. Fix: require a real per-row
+  name (drop the masquerading placeholder) and/or count rows by presence, and word
+  the message accurately. (Not a commit-on-blur issue — Svelte 5 `bind:value`
+  commits on input.)
 - **Field type = a dropdown** of known types (built-in + user) instead of free text.
 - Names are **labels on structural types** — nominal when you want it, structural by
   default.
@@ -84,11 +94,17 @@ Today's Type Definer only builds records-with-fields and can't save a list type
 ## Consumers + emit
 
 - Consumers (`r_sweep.path`, polygon points, `r_surface_grid.grid`) declare their
-  **input type**; accept any inferred output that's structurally compatible.
+  **input type**; accept any inferred output that's structurally compatible. Add the
+  typed call-arg slots in `port-suggest` (r_sweep `path`, r_surface_grid `grid`) —
+  the piece the stopgap bypassed.
+- **Object/record emit:** add an `ObjectNode` arm to `listNodeToJs` so a
+  `list<record>` lowers to an array of `{x,y,z}` literals; the rest of the emit path
+  stays elem-agnostic (`emitExprBlocks` / `compileListFormula` branch only on
+  `shape==='list'`, never on `elem` — confirmed).
 - **Record→array adapter:** `r_sweep.path` wants `[x,y,z]` arrays, so a
-  `list<pt3D>` (records `{x,y,z}`) wires through an adapter that projects fields to
-  array order. Structural `list<point3>` needs no adapter.
-- **Object/record emit:** compile `list<record>` to a JS array of objects.
+  `list<pt3D>` (records `{x,y,z}`) wires through a `PortType.feeds`/`emitInto`
+  override (`list<pt3D>.feeds(list<point3>)` injects `.map(o => [o.x,o.y,o.z])`).
+  Structural `list<point3>` needs no adapter.
 
 ## Phasing
 
