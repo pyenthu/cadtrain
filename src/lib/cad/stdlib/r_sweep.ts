@@ -46,11 +46,19 @@
  * self-intersect the swept tube. Keep demo paths gentle; a rotation-minimizing
  * frame (parallel transport) is the eventual upgrade for harsh 3D paths.
  *
- * NO meta.params (an EMPTY block) ON PURPOSE — same reason as r_surface: the
- * first two args are DATA arrays (path, section), not GUI dials. An empty
- * params block makes the loader's signature canonicalisation a no-op
- * (paramKeysOf → []), so path/section/closedPath/caps pass straight through as
- * positional args instead of being reordered/dropped by a meta-keyed rewrite.
+ * meta.params DECLARES THE FOUR POSITIONAL KEYS (path, section, closedPath,
+ * caps) even though they are DATA arrays/flags, not GUI dials (the `data: true`
+ * marker tells the GUI not to draw them). This is REQUIRED, not cosmetic:
+ * primitive-loader.ts's adaptive call boundary only spreads an object-style
+ * call `r_sweep({ path, section, … })` back into positional args when
+ * `paramKeysOf` returns a non-empty key list. The graph editor emits EVERY Call
+ * object-style (composition-emit `emitCallExpr` → `r_sweep({ … })`), so the
+ * earlier EMPTY block (paramKeysOf → []) left the whole `{path,section,…}`
+ * object bound to `path`, `section` undefined → bake "section needs ≥ 2 points".
+ * A hand-authored POSITIONAL call `r_sweep(path, section, false, true)` still
+ * works — it isn't object-inbound, so the boundary passes the args through
+ * untouched. (r_surface, if it carries an empty params block, has the SAME
+ * latent bug for any graph-emitted call — fix it the same way.)
  * The GUI-facing dials live on the volume parts that CALL it (sweep_demo, …).
  *
  * STANDARD-LIBRARY PRIMITIVE — git-tracked, read-only in the GUI. The import
@@ -66,8 +74,21 @@ export const meta = {
   description:
     'Option 3 general sweep: extrude a fixed 2D cross-section along an arbitrary 3D path → ONE welded solid (manifold by construction, no CSG). Routes sweepAlongPath → loftStations → weldAndBuild (the welded-mesh toolkit). Per-station fixed-up frame (side = tangent×up, up\' = side×tangent); torsion-free for gentle/planar-ish paths. path + section are DATA arrays, so this engine is called from a part body, not GUI-dialed.',
   tags: ['welded', 'sweep', 'path', 'tube', 'pipe', 'parametric', 'stdlib'],
-  // Empty ON PURPOSE — see the file header. path/section are data, not dials.
-  params: {},
+  // The four POSITIONAL args, declared in order. These are DATA (not GUI
+  // dials), but the keys MUST exist: the loader's adaptive call boundary
+  // (primitive-loader.ts) spreads an object-style call `r_sweep({ path, … })`
+  // into positional args ONLY when meta.params is non-empty (`metaKeys`). The
+  // graph editor emits EVERY Call object-style (composition-emit's emitCallExpr
+  // → `r_sweep({ … })`), so with an EMPTY params block the whole
+  // `{path,section,…}` object landed in `path`, `section` was undefined, and the
+  // bake died "section needs ≥ 2 points". `data: true` flags them so the GUI
+  // doesn't render them as numeric dials. See the file header.
+  params: {
+    path:       { data: true, label: '3D path points [[x,y,z],…]' },
+    section:    { data: true, label: '2D cross-section [[a,b],…]' },
+    closedPath: { data: true, label: 'path loops (suppress caps)' },
+    caps:       { data: true, label: 'fan-cap the open ends' },
+  },
   material: {
     outer: { color: '#6a7d8a', metallic: 0.55, roughness: 0.4 },
     inner: { color: '#3a3a3a', metallic: 0.1, roughness: 0.9 },
