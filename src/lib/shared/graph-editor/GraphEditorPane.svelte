@@ -963,7 +963,12 @@
    *  for the user to click Bake. */
   $effect(() => {
     const hasNode = Object.values(graph.nodes).some((n) => n.type !== 'list' || n.children.length > 0);
-    if (hasNode && !firstBakeDone && bake !== 'loading') {
+    // `hasSolidProducer` is REQUIRED in this guard. When the graph has nodes but
+    // no solid producer (e.g. a lone polygon), the main bake effect early-returns
+    // with `bake = null` and never sets firstBakeDone — so without this check this
+    // effect would re-fire `bakeNonce++` forever (effect_update_depth_exceeded).
+    // A producer-less graph has nothing to bake; let the 2D preview handle it.
+    if (hasNode && hasSolidProducer && !firstBakeDone && bake !== 'loading') {
       bakeNonce++;
     }
   });
