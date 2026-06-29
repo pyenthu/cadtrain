@@ -88,23 +88,29 @@
     (minor): tree default-collapsed for huge diffs; `gone` files aren't selectable (copy can't
     remove — needs the full mirror).
 
+14. **`r_sweep` not in the GUI add-node menu** — the toolbar "solids" submenu
+    (`GraphEditorPane.svelte` ~line 3997, `dropSolid`) is a HARDCODED list
+    (revolve/extrude/loft); r_sweep isn't in it. Adding it needs seeding BOTH a 3D
+    `path` AND a 2D `section` (unlike revolve/extrude, which take one `profile`
+    producer) — design needed.
 
+15. **Spline-editor interface for the r_sweep PATH** (user idea). The path is a 3D
+    point list; the user wants a proper interactive editor "like a spline editor",
+    and notes there are likely several npm libraries for this. Research npm
+    spline/curve-editor options. NEW lead.
 
-### Shipped (recent) — 2026-06-25/26
+16b. **`r_surface` has the same empty-params latent bug** as r_sweep had — harmless
+    today (its first arg is a closure `fn(u,v)` that can't be graph-wired, so it's
+    never called object-style). Flag only; fix if it ever gets a graph consumer.
 
-- **Expression builder redesign** (popover) — 30/70 split; CONSTS dropped (a param
-  with a default replaces them; not back-compat by design); no section tabs; OUTPUTS
-  are a clickable LIST + edit column (no tabs/sockets/headings); def name lives in
-  the title next to `ƒ`; popover is **draggable** (header) + **resizable** (corner
-  grip). Doc: `docs/plans/expression-builder.md §v3.10`.
-- **Output-card** wire→socket alignment fix (centered `rootOutputSockY`, shared by
-  render + wire).
-- **Z-slider** (bake viz) — range 2×→1.1× part length (5% overshoot/side, finer pan
-  on long parts); `⇕ fit` now recentres the slider.
-- **Dead-code sweep** — removed 6 unused exports + 16 unused files (knip-led).
-- **3D-bake default scale on load** — auto `xScale`/`zScale` aspect normalization
-  ("Balanced": HI=6, LO=1.2, a=0.5); `scaleAuto` flag, manual drag sticks, new part /
-  ⇕ fit re-enables. Verified g_collar z×1.55, g_shaft (AR 5) untouched. View-only.
+17b. **Loop·x/y not in the left toolbar add-menu** — the imperative loop·x/y expr is
+    only creatable via the polygon's "+ expr" button; user wants a top-level toolbar
+    item to drop one standalone.
+
+18b. **`r_surface_grid` surface-grid work** — verified (bakes 6912-vert fluted vase)
+    on branch `feat/surface-grid-expr` (worktree), NOT merged; demo part
+    `surf_expr_demo` not yet saved to volume. The regex-trap that blocked it
+    (description + engine JSDoc both contained `uses:['r_surface_grid']`) is fixed.
 
 ### PARKED
 
