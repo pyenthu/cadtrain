@@ -1940,8 +1940,25 @@
     { r: asLiteral(-1), z: asLiteral( 1) },
   ];
 
-  function dropSolid(op: 'revolve' | 'extrude' | 'loft') {
+  function dropSolid(op: 'revolve' | 'extrude' | 'loft' | 'sweep') {
     closePicker();
+    // SWEEP is the odd one out: r_sweep takes TWO data inputs — a 3D `path` and a
+    // 2D `section` — not a single profile producer. Seed both as inline expr args
+    // (a round 24-gon section + an L-bend path) so the default tube is ROUND; the
+    // user edits them in the ƒ popover or rewires a polygon/expr into either socket.
+    if (op === 'sweep') {
+      graph = addCall(graph, 'r_sweep', {
+        path: { kind: 'expr', expr: '[[0, 0, 0], [3, 0, 0], [3, 3, 0]]' } as any,
+        section: {
+          kind: 'expr',
+          expr: '(() => { const n = 24, r = 0.5; return Array.from({ length: n }, (_, i) => { const a = 2 * Math.PI * i / n; return [r * Math.cos(a), r * Math.sin(a)]; }); })()',
+        } as any,
+        closedPath: { kind: 'literal', value: false } as any,
+        caps: { kind: 'literal', value: true } as any,
+      }).graph;
+      bakeNonce++;
+      return;
+    }
     // Find an existing PROFILE PRODUCER to feed the solid, or create one.
     // REVOLVE defaults to the SKETCH engine (line/spline/fillet (r,z) ops) —
     // smoother, CAD-style half-sections beat a raw polygon, and the sketch
@@ -4011,6 +4028,9 @@
         </button>
         <button class="ge-pick-item" type="button" onclick={() => { dropSolid('loft'); submenuKey = null; }}>
           <span class="ge-pick-icon">◇</span><span class="ge-pick-name">loft</span><span class="ge-pick-hint">bulge</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropSolid('sweep'); submenuKey = null; }}>
+          <span class="ge-pick-icon">⌇</span><span class="ge-pick-name">sweep</span><span class="ge-pick-hint">along path</span>
         </button>
       </div>
     {:else if submenuKey === 'ops'}
