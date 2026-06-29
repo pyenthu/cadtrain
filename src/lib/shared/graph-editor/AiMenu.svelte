@@ -226,10 +226,12 @@
   .ge-ai-menu {
     padding: 8px; gap: 6px;
     /* User-resizable via the native bottom-right grip; width persisted
-       to localStorage (ge-ai-menu-w). overflow:hidden is required for
-       CSS resize to engage. */
-    resize: horizontal; overflow: hidden;
-    min-width: 264px; max-width: 720px;
+       to localStorage (ge-ai-menu-w). A non-visible overflow is required for
+       CSS resize to engage — overflow-x:hidden keeps the grip working while
+       overflow-y:auto + max-height makes the panel SCROLL when its content
+       (esp. the assistant transcript) is taller than the viewport. */
+    resize: horizontal; overflow-x: hidden; overflow-y: auto;
+    min-width: 264px; max-width: 720px; max-height: calc(100vh - 24px);
   }
   .ge-ai-title { font: 700 12px Arial; color: #4c1d95; }
   .ge-ai-hint { font: 11px Arial; color: #6b7280; line-height: 1.45; }
