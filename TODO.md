@@ -94,10 +94,12 @@
     `path` AND a 2D `section` (unlike revolve/extrude, which take one `profile`
     producer) — design needed.
 
-15. **Spline-editor interface for the r_sweep PATH** (user idea). The path is a 3D
-    point list; the user wants a proper interactive editor "like a spline editor",
-    and notes there are likely several npm libraries for this. Research npm
-    spline/curve-editor options. NEW lead.
+15. **Path-editor card for the r_sweep PATH** (user idea). CLARIFIED: r_sweep
+    consumes POINTS (`[[x,y,z],…]`, ≥2), NOT a spline — it frames per-point + lofts
+    straight between. So v1 = a 3D point-list output wired into `r_sweep.path`
+    (Phase A inference already makes `[[x,y,z],…]` → `list<point3>` work). v2 = an
+    interactive SPLINE editor (control points + Catmull-Rom/Bézier, npm lib) that
+    SAMPLES to points for a smooth curved pipe — sugar on top of v1's point output.
 
 16b. **`r_surface` has the same empty-params latent bug** as r_sweep had — harmless
     today (its first arg is a closure `fn(u,v)` that can't be graph-wired, so it's
@@ -111,6 +113,24 @@
     on branch `feat/surface-grid-expr` (worktree), NOT merged; demo part
     `surf_expr_demo` not yet saved to volume. The regex-trap that blocked it
     (description + engine JSDoc both contained `uses:['r_surface_grid']`) is fixed.
+
+20. **Typed expression outputs — structural inference + dynamic wiring** (THE design
+    spine; plan `docs/plans/typed-expression-outputs.md`). An expr is a node that
+    outputs a typed value, wired into a compatible consumer; type INFERRED from
+    structure by default (users never declare), explicit annotation optional
+    (gradual typing — a contract checked vs inference), named types optional.
+    **Phase A SHIPPED** (`struct-type.ts` inference + `'auto'` shape + live badge;
+    `[[x,y,z],…]` literals accepted, any arity). **LEFT:** B typed sockets +
+    plain-language wire-checking · C explicit annotation · D **Type Definer fixes**
+    (first-class list types; the "add at least one field" bug = a field counts only
+    if it has a non-empty NAME while `placeholder="field"` masks an unnamed row,
+    TypeDefinerPanel ~L83; field-type dropdown) · E consumers (r_sweep.path /
+    r_surface_grid) + ObjectNode emit + record→array adapter.
+
+21. **Round out `sweep_demo`'s section** — its `section` is a 4-vertex polygon (wired
+    in), so the tube is a 4-sided bar (jagged SVG — correct, not a renderer bug).
+    Bump the section polygon to ~16–32 verts OR rewire `section` to a circle expr
+    (which re-activates the dead `tubeR`/`nSec` dials). User's call.
 
 ### PARKED
 

@@ -68,27 +68,29 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 24. **Generative authoring — RAG-then-translate against the vocabulary first.** On a "new part" request, retrieve from `docs/parts/vocabulary.json` and compose via the deterministic translator (`src/lib/authoring/rule-translator.ts`): (1) synonym match → params only, (2) `extends` parent, (3) `kind:'compose'`, (4) hand-author ONLY when nothing fits — and say so before extending the schema. Save via `/api/primitives/save`; bake-verify via `/api/primitives/preview` (report verts/z-extent/outer-r). Patches via `scripts/promote-to-vocab.ts`; regen `vocabulary-graph.mmd` via `bun scripts/render-vocab-graph.ts`. **NEVER hand-author `/tmp/<id>_swap.ts` ad-hoc scripts when a vocab path exists.**
 25. **The welded-mesh system is the PRIMARY geometry builder.** `src/lib/cad/manifold-mesh.ts` (`gridPatch` / `capFan` / `weldAndBuild`, injected via `primitive-sandbox.ts`; memories `welded_mesh_toolkit_shared` + `raw_mesh_helix_pattern`) builds geometry with **explicit, controllable segmentation** — unlike `CrossSection.revolve`, which gives no axial sampling. It exists specifically to (a) **warp smoothly** (enough Z-samples → a smooth sine, not faceted chords) and (b) **build along a spline** for the coming **deviated / curved profiles**. **Segmentation / warp resolution belongs at BUILD time, never as a post-bake mesh rewrite** — subdividing the final welded Manifold's MeshGL OOB-crashes the WASM core and corrupts the singleton so every later bake fails (why warp-subdivide `d41877b` was reverted in `3fb1fa8`). The old client-side `subdivideAlongZ` (`src/lib/shared/warp.ts`) was a render-time stopgap; the durable fix is build-time Z-segmentation in the weld builders.
 
-## Current focus (2026-06-26 — resume point)
+## Current focus (2026-06-29 — resume point)
 
 > Keep ≤ 20 lines. Shipped detail → `docs/HISTORY.md` + session-handoff
 > memories; roadmap → `/plan` (Rule 19).
 > **Launch `claude --chrome` for fast visual iteration on /primitives + /vocab.**
 
-- **Latest session**: memory `session_handoff_2026-06-26` — READ IT FIRST.
-- **The "builder" direction** (the live thread): the spiral collapses to ONE
-  expression with a `map` emitting a `list<point>`, wired into polygon/sketch/
-  repeat — ONE typed-list mechanism replacing poly_repeat + sketch_repeat +
-  part-repeat. Plan `docs/plans/expression-list-builder.md` (grounded by a
-  104-agent deep-research: flat list<element>, longest-repeat-last lacing,
-  socket-shape typing, NO data trees). Three demo parts in `basic/spirals/`.
-- **TWO subagent branches IN FLIGHT — review before merge** (isolated worktrees):
-  #11 expression-as-builder DATA MODEL (`list<point>` outputs; agent a183f13b) +
-  repeat-as-sweep prototype (loft a clean skin between repeat copies; agent
-  a81acdcff, touches the Manifold core — check `manifold.volume()` sign + Rule 25).
-- **Shipped this session**: BREP #19 fix, part-repeat NPts injection, OneDrive
-  backup + diff v1/v2, expr popover redesign, auto bake-scale, /primitives folder
-  rename+delete, sketch op-row numbers. All on origin/main through `e56f343`.
-- Plans live in `docs/plans/`; research in `docs/FINDINGS.md`.
+- **Latest session**: memory `session_handoff_2026-06-29` — READ IT FIRST.
+- **THE design spine** (the live thread): **typed expression outputs — structural
+  inference + dynamic wiring**. An expr is a node that outputs a typed value, wired
+  into a compatible consumer; the **type is INFERRED from the structure** (users
+  never declare), explicit annotation is optional (gradual typing — a contract
+  checked against inference), named types (Type Definer) an optional layer. Plan
+  `docs/plans/typed-expression-outputs.md`. **Phase A SHIPPED** (`struct-type.ts`
+  inference + `'auto'` output shape + live badge; `[[x,y,z],…]` literals just work).
+  LEFT: B typed sockets + plain-language wire-checking · C explicit annotation · D
+  Type Definer fixes (list types, "add at least one field" bug) · E consumers +
+  record→array adapter.
+- **r_sweep** (extrude/weld along a 3D path) works end-to-end; `sweep_demo` is a
+  graph-editable bent tube on the volume (section = a wired polygon → bump its
+  vert count or rewire to a circle expr for a round tube; tubeR/nSec are dead).
+- **Branch `fix/poly-wire-regex-and-card-tidy`** (pushed, NOT merged): all this
+  session's work. Merge → main = prod deploy when ready.
+- Plans in `docs/plans/`; research in `docs/FINDINGS.md`.
 
 ## Client-side execution (in progress)
 
