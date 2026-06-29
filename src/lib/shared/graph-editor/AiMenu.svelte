@@ -1,23 +1,18 @@
 <!--
-  AiMenu.svelte — the ✨ AI-generate popover (RAG Phase 2), extracted from
-  GraphEditorPane (modularize K.65, mirrors the RepeatEditorPane / Popovers /
-  CanvasMenu carves).
+  AiMenu.svelte — the ✨ in-canvas AI ASSIST popover, extracted from
+  GraphEditorPane (modularize K.65).
 
-  Owns the CURRENT generate flow: the prompt textarea + busy/error/candidate
-  state, the POST to /api/rag/prompt, and the resizable width (persisted to
-  localStorage `ge-ai-menu-w`). On success it calls `onGenerated(id, rawGraph,
-  candidates)` — GEP's handler hydrates the proposed graph into the open tab and
-  relabels it; if hydration throws, this component surfaces it as an in-panel
-  error and stays open.
+  EDIT-ONLY: in the canvas we are always inside a part, so this is purely the
+  multi-shot assist loop that tool-calls the OPEN part (`session.run` →
+  /api/rag/assist). There is NO Generate-a-new-part mode here — that lives in
+  the sidebar. The panel is DRAGGABLE (header handle) + resizable (CSS grip,
+  width persisted to localStorage `ge-ai-menu-w`) + scrollable (max-height).
 
   GEP OWNS the open/anchor (`aiMenuOpen` + `aiBtnEl` + `aiMenuPos` +
   `openAiMenu`). The button is at the BOTTOM of the rail, so the panel can spill
-  below the viewport — this component clamps its own top on mount (it measures
-  its own height). CSS (.ge-canvas-menu* shell + .ge-ai-*) is duplicated here
-  from GEP so Svelte's scoped CSS applies.
-
-  NOTE: this is the CURRENT generate flow; the planned RAG assist panel
-  (ge-assist.*) is separate and not touched here.
+  below the viewport — this component clamps its own top on mount (until the user
+  drags it). CSS (.ge-canvas-menu* shell + .ge-ai-*) is duplicated here from GEP
+  so Svelte's scoped CSS applies.
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
@@ -26,24 +21,18 @@
 
   let {
     pos,
-    onGenerated,
     onClose,
     session,
   }: {
     /** Viewport position anchored to the ✨ button (GEP's aiMenuPos). */
     pos: { left: number; top: number };
-    /** Called on a successful generate. May throw if the graph can't hydrate —
-     *  this component catches it and shows the in-panel error. */
-    onGenerated: (id: string, graph: any, candidates: string[]) => void;
     onClose: () => void;
-    /** The pane's "edit this part" assist session (multi-shot tool loop). When
-     *  present, a Generate|Edit toggle appears; Edit drives session.run(). */
+    /** The pane's "edit this part" assist session (multi-shot tool loop) —
+     *  the ONLY mode here: in the canvas we're always editing the open part.
+     *  (Generate-a-new-part lives in the sidebar.) */
     session?: AssistSession;
   } = $props();
 
-  /** generate = new graph from a description (/api/rag/prompt, one-shot);
-   *  edit = tool-call this part (session.run → /api/rag/assist, multi-shot). */
-  let mode = $state<'generate' | 'edit'>('generate');
   let editPrompt = $state('');
 
   async function runEdit() {
@@ -58,11 +47,25 @@
     catch { return ''; }
   };
 
-  let aiPrompt = $state('');
-  let aiBusy = $state(false);
-  let aiError = $state<string | null>(null);
-  let aiCandidates = $state<string[]>([]);
   let aiPanelEl = $state<HTMLDivElement | null>(null);
+
+  // ─── drag (header handle) — mirrors the expr popover ──────────────────────
+  let dragPos = $state<{ x: number; y: number } | null>(null);
+  let dragging = false;
+  let dragOff = { x: 0, y: 0 };
+  function onHeadPointerDown(ev: PointerEvent) {
+    if ((ev.target as HTMLElement).closest('button, textarea, input')) return;
+    const r = aiPanelEl?.getBoundingClientRect();
+    if (!r) return;
+    dragOff = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    dragging = true;
+    (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
+  }
+  function onHeadPointerMove(ev: PointerEvent) {
+    if (!dragging) return;
+    dragPos = { x: ev.clientX - dragOff.x, y: ev.clientY - dragOff.y };
+  }
+  function onHeadPointerUp() { dragging = false; }
 
   /** Popover width — user-resizable via the native CSS resize grip
    *  (bottom-right corner); persisted so the chosen width sticks. */
@@ -93,39 +96,6 @@
     }
   }
 
-  async function generateFromPrompt() {
-    const prompt = aiPrompt.trim();
-    if (!prompt || aiBusy) return;
-    aiBusy = true;
-    aiError = null;
-    aiCandidates = [];
-    try {
-      const r = await fetch('/api/rag/prompt', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      if (!r.ok) { aiError = `generate ${r.status}: ${(await r.text()).slice(0, 200)}`; return; }
-      const j = await r.json();
-      if (!j?.graph) { aiError = 'no graph in response'; return; }
-      aiCandidates = Array.isArray(j.candidates) ? j.candidates : [];
-      // Hand the proposed graph to GEP, which hydrates it INTO the current tab
-      // (in place) + relabels. If hydration fails it throws → show the error
-      // and keep the panel open.
-      try {
-        onGenerated(String(j.id || ''), j.graph, aiCandidates);
-      } catch (e) {
-        console.warn('[graph-editor] generated graph failed to hydrate', e);
-        aiError = 'the generated graph could not be loaded';
-        return;
-      }
-      aiPrompt = '';
-      onClose();
-    } catch (e: any) {
-      aiError = e?.message ?? String(e);
-    } finally {
-      aiBusy = false;
-    }
-  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -138,43 +108,19 @@
 <div class="ge-canvas-menu ge-ai-menu"
   bind:this={aiPanelEl}
   onpointerup={persistAiMenuW}
-  style="left: {pos.left}px; top: {topPx}px; width: {aiMenuW}px">
+  style="left: {dragPos ? dragPos.x : pos.left}px; top: {dragPos ? dragPos.y : topPx}px; width: {aiMenuW}px">
+  <!-- drag handle — the whole header bar moves the window -->
+  <div class="ge-ai-head" onpointerdown={onHeadPointerDown}
+    onpointermove={onHeadPointerMove} onpointerup={onHeadPointerUp} onpointercancel={onHeadPointerUp}>
+    <span class="ge-ai-headlabel">✎ AI assist</span>
+    <button class="ge-ai-headx" type="button" onclick={onClose} title="Close">×</button>
+  </div>
   {#if session}
-    <div class="ge-ai-tabs">
-      <button type="button" class:on={mode === 'generate'} onclick={() => (mode = 'generate')}>✨ Generate</button>
-      <button type="button" class:on={mode === 'edit'} onclick={() => (mode = 'edit')}>✎ Edit this part</button>
-    </div>
-  {/if}
-
-  {#if mode === 'generate'}
-    <div class="ge-ai-title">✨ Generate a part</div>
-    <div class="ge-ai-hint">Describe the part in plain words — e.g.
-      <em>flat coil disc, 2 turns, 60 segments</em>. Similar parts are
-      retrieved from the RAG corpus and Claude proposes a parametric
-      graph, opened in a new tab for review. Nothing touches the volume
-      until you Save.</div>
+    <!-- ✎ AI assist — the multi-shot loop tool-calls the OPEN part. We're already
+         in a part, so there's no Generate mode here (that lives in the sidebar). -->
+    <div class="ge-ai-hint">What to change? e.g. <em>add a point at r=2, z=0</em>. Saved on 💾.</div>
     <!-- svelte-ignore a11y_autofocus -->
-    <textarea class="ge-ai-input" rows="3" autofocus
-      placeholder="hexagonal prism with a central round bore…"
-      bind:value={aiPrompt}
-      disabled={aiBusy}
-      onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateFromPrompt(); } }}></textarea>
-    <div class="ge-ai-actions">
-      <button class="ge-ai-go" type="button"
-        disabled={aiBusy || !aiPrompt.trim()}
-        onclick={generateFromPrompt}>{aiBusy ? 'generating…' : 'Generate'}</button>
-      {#if aiError}
-        <span class="ge-ai-err" title={aiError}>failed — hover for detail</span>
-      {:else if aiCandidates.length > 0}
-        <span class="ge-ai-from">from: {aiCandidates.join(' · ')}</span>
-      {/if}
-    </div>
-  {:else if session}
-    <!-- ✎ EDIT — the multi-shot assist loop tool-calls the OPEN part. -->
-    <div class="ge-ai-hint">Tell the assistant what to change on the open part —
-      e.g. <em>add a point at r=2, z=0</em> or <em>wire length to p.OD</em>.
-      It calls editor tools directly (≤6 steps); nothing saved until you hit 💾.</div>
-    <textarea class="ge-ai-input" rows="2"
+    <textarea class="ge-ai-input" rows="2" autofocus
       placeholder="add a point at r=2, z=0…"
       bind:value={editPrompt}
       disabled={session.running}
@@ -233,6 +179,17 @@
     resize: horizontal; overflow-x: hidden; overflow-y: auto;
     min-width: 264px; max-width: 720px; max-height: calc(100vh - 24px);
   }
+  /* draggable header bar (the whole strip is the handle). */
+  .ge-ai-head {
+    display: flex; align-items: center; gap: 6px; margin: -2px 0 2px;
+    cursor: move; user-select: none; touch-action: none;
+  }
+  .ge-ai-headlabel { font: 700 12px Arial; color: #4c1d95; }
+  .ge-ai-headx {
+    margin-left: auto; border: none; background: none; cursor: pointer;
+    font: 700 14px Arial; color: #9ca3af; line-height: 1; padding: 0 2px;
+  }
+  .ge-ai-headx:hover { color: #4c1d95; }
   .ge-ai-title { font: 700 12px Arial; color: #4c1d95; }
   .ge-ai-hint { font: 11px Arial; color: #6b7280; line-height: 1.45; }
   .ge-ai-hint em { color: #5b21b6; font-style: normal; }
