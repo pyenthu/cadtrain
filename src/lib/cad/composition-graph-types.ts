@@ -346,8 +346,14 @@ export type ExprVar = { name: string; formula: string };
  *  `'scalar'` = a single number (today's behaviour — byte-identical emit).
  *  `'list'` = a FLAT array materialised by a `map(range(N), f(i)=…)` formula
  *  (one element-shape per socket; no nested data trees — the research's
- *  flat-list-only decision). `'object'` is reserved (structured arg). */
-export type ExprOutShape = 'scalar' | 'object' | 'list';
+ *  flat-list-only decision). `'object'` is reserved (structured arg).
+ *  `'auto'` (typed-expression-outputs, Phase A) = INFER the shape structurally
+ *  from the formula (struct-type.inferStructure): a literal `[[x,y,z],…]` types
+ *  as a list, a bare arithmetic expression as a scalar. It is the popup's
+ *  default for a freshly-added output; the popup resolves it to a concrete
+ *  `'list'`/scalar on commit so persisted files never carry `'auto'` (hydrate
+ *  keeps only `'list'`/`'object'`). Emit is `'auto'`-tolerant defensively. */
+export type ExprOutShape = 'scalar' | 'object' | 'list' | 'auto';
 /** For `shape:'list'`, the ELEMENT shape — the kind of thing each list slot
  *  holds. `'point'` = `[r,z]` pairs (wired into a polygon points slot / a
  *  profile arg). `'op'`/`'transform'`/`'scalar'`/`'object'` are reserved for

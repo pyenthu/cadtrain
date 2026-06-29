@@ -519,7 +519,12 @@ export function validateExprBare(
   ast: MathNode, allowedNames: ReadonlySet<string>, shape: ExprOutShape = 'scalar',
 ): ExprError[] {
   const errs: ExprError[] = [];
-  const isList = shape === 'list';
+  // `'auto'` (Phase A) validates against the LIST grammar — the permissive
+  // superset — so an array literal `[[x,y,z],…]` is accepted while the formula's
+  // actual structure is inferred separately (struct-type.inferStructure). A
+  // SCALAR formula still validates under `'auto'` (the list grammar is a strict
+  // superset of the scalar grammar). Explicit `'scalar'` still rejects arrays.
+  const isList = shape === 'list' || shape === 'auto';
 
   // Fold every lambda's bound params (the `i` in `f(i)=…`) into the allowed set
   // up front — validation is defence-in-depth (the sandbox is the real
@@ -582,7 +587,7 @@ export function parseAndValidateBare(
 ): { ast: MathNode | null; errors: ExprError[] } {
   // `return` is sugar for the final line in a multi-line LIST body — drop it
   // before parsing (mathjs has no return keyword; the last statement is the value).
-  const f = shape === 'list' ? stripReturn(formula) : formula;
+  const f = (shape === 'list' || shape === 'auto') ? stripReturn(formula) : formula;
   if (f.trim() === '') return { ast: null, errors: [] };
   const parsed = parseExpr(f);
   if (!parsed.ok) return { ast: null, errors: [{ msg: parsed.error }] };

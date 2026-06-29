@@ -28,6 +28,7 @@
   import { clampToViewport } from '../popover-clamp';
   import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/cad/expr-schema';
   import { parseAndValidateBare } from '$lib/cad/graph-exprs';
+  import { inferStructure, structLabel } from '$lib/cad/struct-type';
   import type { ExprDef, ExprOutShape, ExprOutElem } from '$lib/cad/composition-graph-types';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
   import ExprImperativeBlocks from './ExprImperativeBlocks.svelte';
@@ -127,10 +128,31 @@
   function formulaError(formula: string, allowed: Set<string>, shape: ExprOutShape = 'scalar'): string | null {
     if (formula.trim() === '') return 'formula required';
     // imperative accumulator loops (poly=[]; for…; poly.append(…)) validate via
-    // their own path; everything else via the mathjs grammar.
-    if (shape === 'list' && isImperative(formula)) return validateImperative(formula, allowed);
+    // their own path; everything else via the mathjs grammar. `'auto'` accepts
+    // the same forms a list does (the permissive grammar) + surfaces a STRUCTURAL
+    // inference error (mixed row lengths, …) in plain language.
+    if ((shape === 'list' || shape === 'auto') && isImperative(formula)) {
+      return validateImperative(formula, allowed);
+    }
     const { errors } = parseAndValidateBare(formula, allowed, shape);
-    return errors.length ? errors[0]!.msg : null;
+    if (errors.length) return errors[0]!.msg;
+    if (shape === 'auto') {
+      const { error } = inferStructure(formula);
+      if (error) return error;
+    }
+    return null;
+  }
+
+  // The inferred-type BADGE for an `'auto'` output (Phase A real-time feedback):
+  // structLabel of the inferred structure, or 'list<point>' for an imperative
+  // accumulator body. Empty when the formula is blank or inference failed (the
+  // error is surfaced through formulaError instead).
+  function autoBadge(formula: string): string {
+    if (formula.trim() === '') return '';
+    if (isImperative(formula)) return 'list<point>';
+    const { type, error } = inferStructure(formula);
+    if (error || !type) return '';
+    return structLabel(type);
   }
 
   let canCommit = $derived.by(() => {
@@ -149,7 +171,9 @@
     return n;
   }
   const addParam = () => { params = [...params, { name: uniqueName('p'), default: null }]; };
-  const addOutput = () => { outputs = [...outputs, { name: uniqueName('out'), formula: '' }]; selOut = outputs.length - 1; };
+  // New outputs default to 'auto' — the type is INFERRED from the formula
+  // (Phase A). The user can still pin scalar / list<point> explicitly.
+  const addOutput = () => { outputs = [...outputs, { name: uniqueName('out'), formula: '', shape: 'auto' }]; selOut = outputs.length - 1; };
   const delParam = (i: number) => { params = params.filter((_, j) => j !== i); };
   const delVar = (i: number) => { vars = vars.filter((_, j) => j !== i); };
   const delOutput = (i: number) => { outputs = outputs.filter((_, j) => j !== i); };
@@ -164,10 +188,22 @@
         : { name: p.name.trim(), default: p.default })),
       consts: [], // CONSTS dropped — use a param with a default instead
       vars: vars.map((v) => ({ name: v.name.trim(), formula: v.formula })),
-      outputs: outputs.map((o) => ({
-        name: o.name.trim(), formula: o.formula,
-        ...(o.shape === 'list' ? { shape: 'list' as const, elem: (o.elem ?? 'point') } : {}),
-      })),
+      // Resolve the type on commit so persisted files carry a CONCRETE shape
+      // (hydrate keeps only 'list'/'object'/scalar — never 'auto'). An explicit
+      // 'list' stays list; an 'auto' is resolved from its inferred structure
+      // (imperative body or a list-producing formula → list<point>; otherwise
+      // scalar); everything else (loaded scalar / undefined) stays scalar.
+      outputs: outputs.map((o) => {
+        const name = o.name.trim();
+        if (o.shape === 'list') return { name, formula: o.formula, shape: 'list' as const, elem: (o.elem ?? 'point') };
+        if (o.shape === 'auto') {
+          const isList = isImperative(o.formula) || inferStructure(o.formula).type?.kind === 'list';
+          return isList
+            ? { name, formula: o.formula, shape: 'list' as const, elem: (o.elem ?? 'point') }
+            : { name, formula: o.formula };
+        }
+        return { name, formula: o.formula };
+      }),
     };
     onCommit(out);
   }
@@ -238,19 +274,28 @@
         <input class="ge-xs-name big out" type="text" placeholder="output name"
           bind:value={row.name} title={nErr ?? 'output name'} />
         {#if kind === 'output'}
-          <!-- #11 — output TYPE: scalar (today) or a flat list<point> (a map() →
-               wireable into a polygon's points / an extrude profile). -->
-          <select class="ge-xs-shapesel" class:list={isList}
-            value={row.shape === 'list' ? 'list:point' : 'scalar'}
-            title="Output type — a number, or a list of [r,z] points (a map())"
+          {@const isAuto = row.shape === 'auto'}
+          {@const inferLabel = isAuto ? autoBadge(row.formula) : ''}
+          <!-- #11 / Phase A — output TYPE: auto (inferred), scalar, or a flat
+               list<point> (wireable into a polygon's points / an extrude /
+               sweep). `auto` infers the structure from the formula. -->
+          <select class="ge-xs-shapesel" class:list={isList} class:auto={isAuto}
+            value={row.shape === 'list' ? 'list:point' : isAuto ? 'auto' : 'scalar'}
+            title="Output type — auto-infer from the formula, a number, or a list of [r,z] points"
             onchange={(e) => {
               const v = (e.currentTarget as HTMLSelectElement).value;
               if (v === 'list:point') { row.shape = 'list'; row.elem = 'point'; }
+              else if (v === 'auto') { row.shape = 'auto'; row.elem = undefined; }
               else { row.shape = undefined; row.elem = undefined; }
             }}>
+            <option value="auto">auto</option>
             <option value="scalar">number</option>
             <option value="list:point">list&lt;point&gt;</option>
           </select>
+          {#if isAuto && inferLabel}
+            <!-- real-time inferred-type feedback -->
+            <span class="ge-xs-typebadge" title="Inferred structure of this formula">{inferLabel} ✓</span>
+          {/if}
         {/if}
         {#if loopBuildable}
           <!-- loop-view ⇄ text toggle, inline with name/type/delete (compact). -->
@@ -415,6 +460,12 @@
   /* output TYPE picker (scalar | list<point>) in the edit head. */
   .ge-xs-shapesel { flex: none; font: 600 10px Arial; color: #7c3aed; background: #f5f3ff; border: 1px solid #d8b4fe; border-radius: 4px; padding: 2px 4px; cursor: pointer; }
   .ge-xs-shapesel.list { color: #4338ca; background: #eef2ff; border-color: #a5b4fc; }
+  .ge-xs-shapesel.auto { color: #0e7490; background: #ecfeff; border-color: #67e8f9; }
+  /* inferred-type badge (auto outputs) — the live structural feedback. */
+  .ge-xs-typebadge {
+    flex: none; font: 700 10px ui-monospace, monospace; color: #047857;
+    background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+  }
   /* loop-view ⇄ text toggle — compact, inline in the name/type/delete row. */
   .ge-xs-loptoggle { flex: none; font: 600 11px Arial; color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 5px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
   .ge-xs-loptoggle:hover, .ge-xs-loptoggle.on { background: #ede9fe; border-color: #a78bfa; }

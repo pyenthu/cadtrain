@@ -42,6 +42,7 @@ import {
   compileListFormula,
 } from './graph-exprs';
 import { isImperative, compileImperative } from './expr-imperative';
+import { inferStructure } from './struct-type';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -765,7 +766,15 @@ export function emitExprBlocks(graph: Graph): string[] {
         lines.push(`const ${V}_${item.vardef.name} = ${rewriteExprLocalRefs(item.vardef.formula, V, locals)};`);
       } else {
         const out = item.output;
-        if (out.shape === 'list') {
+        // An `'auto'` output (Phase A) is compiled as a LIST when its formula
+        // structurally produces one (an array literal / map / concat, or the
+        // imperative accumulator form); otherwise it falls through to the scalar
+        // path. Explicit `'list'` always takes the list path; everything else
+        // (scalar / undefined) is byte-identical to before — emit is unchanged
+        // for existing parts (none carry `'auto'`).
+        const autoList = out.shape === 'auto'
+          && (isImperative(out.formula) || inferStructure(out.formula).type?.kind === 'list');
+        if (out.shape === 'list' || autoList) {
           // A list output (#11) is compiled from the constrained mathjs grammar
           // to a JS array expression, THEN its def-local symbols are namespaced
           // to V_* (same rewrite as a scalar output; loop params + math globals
@@ -875,7 +884,7 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
       // two outputs when there's really only one (the revolve's solid).
       for (const v of Object.values(n.args)) {
         if (v.kind !== 'expr') continue;
-        const matches = v.expr.match(/__POLY__(n_[a-z0-9_]+)/gi);
+        const matches = v.expr.match(/__POLY__(n_[a-z0-9]+)/gi);
         if (!matches) continue;
         for (const m of matches) consumed.add(m.slice('__POLY__'.length));
       }
