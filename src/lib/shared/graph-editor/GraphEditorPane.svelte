@@ -2747,7 +2747,7 @@
         // only one actual return value (the revolve's solid).
         for (const v of Object.values((n as any).args ?? {})) {
           if ((v as any).kind !== 'expr') continue;
-          const matches = String((v as any).expr ?? '').match(/__POLY__(n_[a-z0-9]+)/gi);
+          const matches = String((v as any).expr ?? '').match(/__POLY__(n_[a-z0-9_]+)/gi);
           if (!matches) continue;
           for (const m of matches) set.add(m.slice('__POLY__'.length));
         }
@@ -3061,7 +3061,7 @@
                        Render a green bezier from the source node's right
                        output socket to the input arg socket, matching the
                        polygon → revolve wire the user just made visible. -->
-                  {@const polyMatch = String((v as any).expr ?? '').match(/^__POLY__(n_[a-z0-9]+)$/i)}
+                  {@const polyMatch = String((v as any).expr ?? '').match(/^__POLY__(n_[a-z0-9_]+)$/i)}
                   {#if polyMatch && graph.nodes[polyMatch[1]]}
                     {@const sourceId = polyMatch[1]}
                     {@const srcSize = nodeSize(graph,graph.nodes[sourceId])}

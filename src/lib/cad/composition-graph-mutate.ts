@@ -1941,7 +1941,7 @@ export function topoOrder(graph: Graph): NodeId[] {
       for (const arg of Object.values(node.args ?? {})) {
         const a = arg as any;
         if (a && a.kind === 'expr' && typeof a.expr === 'string') {
-          const ms = a.expr.match(/__POLY__(n_[a-z0-9]+)/gi);
+          const ms = a.expr.match(/__POLY__(n_[a-z0-9_]+)/gi);
           if (ms) for (const m of ms) visit(m.slice('__POLY__'.length));
         }
       }

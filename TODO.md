@@ -28,48 +28,15 @@
     (frame torsion / variable spacing / inner-turn self-intersect
     / caps). See `g_spiral_repeat.md`. Pairs with #11.
 
-11. **Expression-as-builder — structured + list outputs + loops (unify the 3 repeats)**. **DATA-MODEL
-    step MERGED 2026-06-26**: expr OUTPUT gains `shape:scalar|object|list` + `elem:point|op|transform|
-    scalar|object`; new PolygonEntry `expr-list-ref` splices a list<point> output into polygon points;
-    shape-parametrized validation (list grammar = mathjs `concat/map/range`); `compileListFormula`
-    lowers to JS; scalar path byte-identical; 12 tests. PROVEN: spiral as ONE expression bakes
-    identical to g_spiral (8628 verts). **UI DONE:** the `shape`/`elem` picker on output rows
-    (number | list<point>) + list-aware live validation; the `expr-list-ref` render row on the polygon;
-    and **"+ expr"** on the polygon (addPolygonExprList — creates a list<point> expr seeded with a map +
-    instance + ref in one click) — browser-verified: + expr → polygon row + expr card → BAKES.
-    **SOCKET VISUALS + DRAG-TO-WIRE DONE:** expr output sockets coloured by registry PORT TYPE
-    (list<point> indigo); the polygon expr-list-ref row has an indigo input socket — drag a list<point>
-    output onto it to repoint (wire-state endWireOnPolygonExprListRef, gated to shape:'list'). Button
-    creates, socket repoints (the "+ repeat" split).
-    **IMPERATIVE LOOP BUILDER + CodeMirror SHIPPED 2026-06-28 (pushed 4808497):** the list<point> expr
-    is now built/edited as a visual IMPERATIVE accumulator program —
-    `poly = []; for i = 0 to N { rx = …; rz = …; poly.append([rx, rz]) }; return poly` — via
-    `src/lib/cad/expr-imperative.ts` (parse/serialize/compile→JS for-loop; **bracket-depth statement split**
-    so wrapped/temp-var bodies parse as one statement; `validateImperative` w/ real error reasons) +
-    `ExprImperativeBlocks.svelte` (◇ poly accumulator · structured for-headers w/ count dropdown · ONE
-    resizable autocomplete body text field per loop · top `+ add ▾` = variable / expression / loop ·
-    top-level vars computed once above the loops). Emit branches on `isImperative` → `compileImperative`
-    (bakes identical: spiral 2888 verts / functional 8628). Editor UX: output tabs promoted into the
-    popover TITLE row; Enter = newline (`data-enter-newline` opts the body out of GraphEditorPane's window
-    Enter→re-bake) + a **✓ update tick** per loop (dirty-glow; commit-on-blur as the Save flush);
-    **CodeMirror 6** (`ExprCodeEditor.svelte`, lazy-loaded @codemirror/*) for the loop body — DSL syntax
-    highlighting + bracket match + autocomplete + line-wrap. The functional map/concat form auto-CONVERTS
-    to imperative on open; `ExprLoopBlocks.svelte` deleted. **`g_spiral_expr_sketch` re-saved on the volume
-    in the readable R/a/rx/rz form.** Plan: `docs/plans/loop-builder.md`.
-    **LEFT (the #11 payoff, deferred):** wire list<op> → sketch + list<transform> → repeat (retire the 3
-    repeat types); lacing (longest-repeat-last); the profile-graph 2D-preview path; the visual `+` compose
-    operator; CodeMirror on the remaining fields. Research decisions
-    locked (flat lists, longest-repeat-last lacing, socket-shape typing, no data trees). Let an
-    expression OUTPUT carry a scalar | object | **list**, with a `map(range(N), i => …)` loop
-    inside, and wire the structured output into ANY consumer: list of `[r,z]` → polygon points
-    (= poly_repeat), list of ops → sketch ops (= sketch_repeat), list of transforms → place/repeat
-    (= part-repeat). ONE generic generator subsumes all three repeat node types; the spiral becomes
-    ONE expression with a map. Engine (mathjs) already supports arrays/objects/map/range — work is
-    model (`shape` on outputs) + loop UI + typed output sockets + emit-into-slot. Substrate for a
-    "builder" app (wire points/ops/transforms/parts) + data-driven parts. Research prior art first:
-    Grasshopper data-trees + list-lacing, Dynamo, Blender Geometry Nodes, OpenSCAD comprehensions,
-    CadQuery eachpoint, Houdini copy-to-points (deep-research pass). Plan: `docs/plans/expression-list-builder.md`.
-    Pairs with the repeat-as-sweep / loft-between-copies idea (clean swept solids; see `g_spiral_repeat.md`).
+11. **Expression-as-builder — unify the 3 repeats (the payoff, deferred)**. ONE typed list<element>
+    expr output wired into ANY consumer subsumes poly_repeat / sketch_repeat / part-repeat. The data
+    model, the list<point>→polygon path, typed sockets + drag-to-wire, and the imperative loop builder
+    (+ CodeMirror) are all DONE — see memory `session_handoff_2026-06-28_loop-builder`.
+    **REMAINING:** wire list<op> → sketch + list<transform> → place/repeat (retire the 3 repeat types);
+    lacing (longest-repeat-last); profile-graph 2D-preview path; the visual `+` compose operator;
+    CodeMirror on the remaining fields. Decisions locked (flat lists, longest-repeat-last lacing,
+    socket-shape typing, no data trees). Build the "wire it" half on typed-ports (#13).
+    Plan: `docs/plans/expression-list-builder.md`. Pairs with repeat-as-sweep (#12, `g_spiral_repeat.md`).
 
 8. **Repeat editor → draggable/resizable POPOVER with wireable params** (parity with the
    2026-06-26 Expression popover). LEFT 30% = params (editable + INPUT sockets, authored

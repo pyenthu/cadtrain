@@ -306,7 +306,7 @@
                           {@const expr = (v as any).expr ?? ''}
                           {@const refs = extractParamRefs(expr)}
                           {@const isProfileSlot = !!expected.profileKeys[call.src]?.has(k)}
-                          {@const polyM = String(expr).match(/^__POLY__(n_[a-z0-9]+)$/i)}
+                          {@const polyM = String(expr).match(/^__POLY__(n_[a-z0-9_]+)$/i)}
                           {@const profileDesc = isProfileSlot ? parseProfileExpr(expr) : null}
                           {#if isProfileSlot && polyM && graph.nodes[polyM[1]]}
                             <!-- NODE-REF profile: wired to a polygon/sketch.
@@ -1023,7 +1023,7 @@
                   onpointerup={onNodePointerUp}
                 />
                 {@const polyConsumed = consumedSet.has(n.id)}
-                <text x="10" y="22" class="ge-node-title">◇ polygon · {poly.points.length} pts{polyConsumed ? ' · 🔒' : ''}</text>
+                <text x="10" y="22" class="ge-node-title">◇ polygon{polyConsumed ? ' · 🔒' : ''}</text>
                 <!-- 👁 button — opens a floating SVG popup of the polygon's
                      current 2D shape. Useful when a downstream revolve
                      is showing the 3D BAKE on the right pane and the user

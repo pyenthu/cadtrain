@@ -244,12 +244,12 @@ export function cardAutoWidth(graph: Graph, node: any): number {
     const argKeys = Object.keys(node.args ?? {});
     const titleChars = (node.alias?.length ?? 0) + 3 + (node.src?.length ?? 0); // "A · dt_tube"
     const longestKey = argKeys.length ? Math.max(...argKeys.map((k) => k.length)) : 4;
-    const keyW = Math.max(70, longestKey * 8 + 8);
-    const valueW = 124; // input + ƒ + × comfortably
-    const padding = 22;
+    const keyW = Math.max(64, longestKey * 8 + 8);
+    const valueW = 100; // input + ƒ + × (tightened to save horizontal space)
+    const padding = 18;
     const fromArgs = keyW + valueW + padding;
-    const fromTitle = titleChars * 7 + 50; // ⇄ ↻ × glyphs + side padding
-    return Math.max(220, fromArgs, fromTitle);
+    const fromTitle = titleChars * 7 + 44; // ⇄ ↻ × glyphs + side padding
+    return Math.max(184, fromArgs, fromTitle);
   }
   if (node.type === 'method') return 110;
   if (node.type === 'mv' || node.type === 'rot') return 136;

@@ -60,7 +60,7 @@ export function producerLabel(graph: Graph, id: NodeId): string {
   const n = graph.nodes[id] as any;
   if (!n) return '(missing)';
   if (n.type === 'sketch') return `sketch`;
-  if (n.type === 'polygon') return `polygon · ${(n.points ?? []).length} pts`;
+  if (n.type === 'polygon') return `polygon`;
   return n.type;
 }
 
