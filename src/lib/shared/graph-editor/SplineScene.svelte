@@ -44,16 +44,19 @@
   /** The smooth curve polyline (THREE.CatmullRomCurve3, dense). */
   let curveObj = $state<THREE.Line | null>(null);
   $effect(() => {
-    const old = curveObj;
-    if (vecs.length < 2) { curveObj = null; old?.geometry.dispose(); invalidate(); return; }
+    // Depend ONLY on `vecs` — never read `curveObj` here, or this effect would
+    // depend on the very state it writes and re-fire forever (effect_update_depth
+    // → frozen main thread → the popup can't close/add/edit). Old geometry is
+    // freed in the cleanup return when `vecs` changes or the scene unmounts.
+    if (vecs.length < 2) { curveObj = null; invalidate(); return; }
     const cps = vecs.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     const curve = new THREE.CatmullRomCurve3(cps, false, 'centripetal');
     const dense = curve.getPoints(Math.max(8, vecs.length * 32));
     const g = new THREE.BufferGeometry().setFromPoints(dense);
     const m = new THREE.LineBasicMaterial({ color: 0x7c3aed, linewidth: 2 });
     curveObj = new THREE.Line(g, m);
-    old?.geometry.dispose();
     invalidate();
+    return () => { g.dispose(); m.dispose(); };
   });
 
   /** The N equally-arc-length-spaced samples (the BAKE output preview). */
