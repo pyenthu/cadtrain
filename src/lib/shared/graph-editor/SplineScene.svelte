@@ -105,12 +105,6 @@
     try { return resampleSpline(vecs as Vec3[], Math.max(2, samples)); } catch { return []; }
   });
 
-  /** Auto-fit target = centroid of the control points (OrbitControls focus). */
-  const center = $derived.by<[number, number, number]>(() => {
-    if (vecs.length === 0) return [0, 0, 0];
-    const s = vecs.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]);
-    return [s[0] / vecs.length, s[1] / vecs.length, s[2] / vecs.length];
-  });
 
   // ─── dragging a control point ─────────────────────────────────────────────
   let draggingIdx = $state(-1);
@@ -130,6 +124,19 @@
   const ndc = new THREE.Vector2();
   const hit = new THREE.Vector3();
   const camDir = new THREE.Vector3();
+
+  // OrbitControls focus = centroid of the control points, but FROZEN during a
+  // drag. If the target tracked the centroid live, moving a point would shift
+  // the target → the camera pans/eases toward it every frame (looks like the
+  // view keeps moving / rescaling while you drag). Recompute only when idle.
+  let heldCenter = $state<[number, number, number]>([0, 0, 0]);
+  $effect(() => {
+    if (draggingIdx >= 0) return; // freeze focus mid-drag
+    const n = vecs.length;
+    if (n === 0) { heldCenter = [0, 0, 0]; return; }
+    const s = vecs.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]);
+    heldCenter = [s[0] / n, s[1] / n, s[2] / n];
+  });
 
   // CAPTURE-phase pointerdown on the canvas: if the press lands on a control
   // sphere, start the drag + lock the camera + stopImmediatePropagation so
@@ -196,7 +203,7 @@
 </script>
 
 <T.PerspectiveCamera makeDefault position={[8, 6, 10]} fov={45}>
-  <OrbitControls bind:ref={orbit} enableDamping enabled={orbitEnabled} target={center} />
+  <OrbitControls bind:ref={orbit} enableDamping enabled={orbitEnabled} target={heldCenter} />
 </T.PerspectiveCamera>
 
 <T.AmbientLight intensity={0.8} />
