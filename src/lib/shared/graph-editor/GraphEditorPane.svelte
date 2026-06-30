@@ -3158,6 +3158,19 @@
                       {/each}
                     {/if}
                   {/each}
+                  <!-- SPLINE-OUTPUT ref — a `spline` node emits _x_<id>_path; its
+                       output socket sits at the node's right edge, vertically
+                       centred (NodeCard: cx=size.w, cy=size.h/2). The expr loop
+                       above skips it (type!=='expr'), so draw its wire here. -->
+                  {#each allNodes as sn (sn.id)}
+                    {#if sn.type === 'spline' && String((v as any).expr ?? '').includes(exprBlockMember(sn.id, 'path'))}
+                      {@const srcSize = nodeSize(graph, sn)}
+                      {@const srcPos = nodePos(sn.id)}
+                      {@const cpos = nodePos(n.id)}
+                      {@const cargY = cpos.y + 36 + 14 + argIdx * 22}
+                      <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, cpos.x, cargY)}/>
+                    {/if}
+                  {/each}
                 {/if}
               {/each}
               <!-- Attached transform axis wires (every mv/rot in the chain that

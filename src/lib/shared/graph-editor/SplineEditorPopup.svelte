@@ -37,6 +37,10 @@
   } = $props();
 
   let selectedIdx = $state(-1);
+  /** Pinned = non-modal: drop the click-catching backdrop so the user can edit
+   *  the spline AND interact with the bake canvas behind it without the popup
+   *  closing. Toggled by the 📌 header button; close only via ×. */
+  let pinned = $state(false);
 
   /** Append a control point — offset from the last one so it's grabbable. */
   function addPoint() {
@@ -107,7 +111,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="ge-canvas-menu-shade" onclick={onClose}></div>
+{#if !pinned}<div class="ge-canvas-menu-shade" onclick={onClose}></div>{/if}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="ge-canvas-menu ge-spline-popup"
   bind:this={panelEl}
@@ -116,10 +120,12 @@
   <div class="ge-sp-head" onpointerdown={onHeadPointerDown}
     onpointermove={onHeadPointerMove} onpointerup={onHeadPointerUp} onpointercancel={onHeadPointerUp}>
     <span class="ge-sp-headlabel">⌇ {title}</span>
+    <button class="ge-sp-pin" class:on={pinned} type="button" onclick={() => (pinned = !pinned)}
+      title={pinned ? 'Unpin — clicking outside closes again' : 'Pin — keep open while you use the bake canvas'}>📌</button>
     <button class="ge-sp-headx" type="button" onclick={onClose} title="Close">×</button>
   </div>
 
-  <div class="ge-sp-hint">Drag a <b>violet</b> handle to move a control point · <b>green</b> dots are the N spaced samples (the baked path). Orbit = drag empty space.</div>
+  <div class="ge-sp-hint">Drag a <b>violet</b> handle to move a control point · <b>click the curve</b> to insert a point mid-run · <b>green</b> dots are the N spaced samples (the baked path). Orbit = drag empty space.</div>
 
   <div class="ge-sp-canvas">
     <Canvas>
@@ -152,7 +158,10 @@
   }
   .ge-sp-head { display: flex; align-items: center; gap: 6px; margin: -2px 0 2px; cursor: move; user-select: none; touch-action: none; }
   .ge-sp-headlabel { font: 700 12px Arial; color: #5b21b6; }
-  .ge-sp-headx { margin-left: auto; border: none; background: none; cursor: pointer; font: 700 14px Arial; color: #9ca3af; line-height: 1; padding: 0 2px; }
+  .ge-sp-pin { margin-left: auto; border: none; background: none; cursor: pointer; font: 12px Arial; line-height: 1; padding: 0 2px; opacity: 0.45; filter: grayscale(1); }
+  .ge-sp-pin:hover { opacity: 0.8; }
+  .ge-sp-pin.on { opacity: 1; filter: none; }
+  .ge-sp-headx { border: none; background: none; cursor: pointer; font: 700 14px Arial; color: #9ca3af; line-height: 1; padding: 0 2px; }
   .ge-sp-headx:hover { color: #5b21b6; }
   .ge-sp-hint { font: 11px Arial; color: #6b7280; line-height: 1.4; }
   .ge-sp-hint b { color: #5b21b6; font-weight: 700; }
