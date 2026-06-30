@@ -71,6 +71,9 @@
     setViewport,
     addExprDef,
     addExprInstance,
+    addSpline,
+    setSplinePoints,
+    setSplineSamples,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -167,6 +170,7 @@
   import CanvasMenu from './CanvasMenu.svelte';
   import BakeMenu from './BakeMenu.svelte';
   import AiMenu from './AiMenu.svelte';
+  import SplineEditorPopup from './SplineEditorPopup.svelte';
   import { createAssistSession } from './ge-assist.svelte';
   import { clampToViewport } from './popover-clamp';
   import { releaseImplicitCapture } from './pointer-capture';
@@ -1887,6 +1891,40 @@
     closePicker();
     graph = addSketch(graph).graph;
   }
+  /** Drop a `spline` PATH node (TODO #15) — a free-floating producer whose 3D
+   *  control points are edited in the SplineEditorPopup; its output (list<point3>)
+   *  wires into a Call's `path` arg (r_sweep). Opens the editor immediately so
+   *  the user sees the 3D scene. */
+  function dropSpline() {
+    closePicker();
+    const made = addSpline(graph);
+    graph = made.graph;
+    openSplineEditor(undefined, made.id);
+  }
+
+  // ─── spline-editor popup (TODO #15) ───────────────────────────────────────
+  // GEP owns the open + anchor; SplineEditorPopup is self-contained chrome.
+  let splineEditId = $state<string | null>(null);
+  let splinePopPos = $state<{ left: number; top: number }>({ left: 120, top: 80 });
+  function openSplineEditor(ev: MouseEvent | undefined, id: string) {
+    const node = graph.nodes[id] as any;
+    if (!node || node.type !== 'spline') return;
+    if (ev) splinePopPos = { left: ev.clientX + 12, top: Math.max(12, ev.clientY - 40) };
+    else splinePopPos = { left: 120, top: 80 };
+    splineEditId = id;
+  }
+  /** Live node behind the open popup (reactive — so edits reflect immediately). */
+  let splineNode = $derived(splineEditId ? (graph.nodes[splineEditId] as any) : null);
+  function onSplinePoints(pts: [number, number, number][]) {
+    if (!splineEditId) return;
+    graph = setSplinePoints(graph, splineEditId, pts);
+    bakeNonce++;
+  }
+  function onSplineSamples(n: number) {
+    if (!splineEditId) return;
+    graph = setSplineSamples(graph, splineEditId, asLiteral(n));
+    bakeNonce++;
+  }
   /** Picker "ƒ expr" item (B.7 v3) — route to the Expressions MENU (the expr-def
    *  manager) instead of silently dropping an instance of a (possibly empty,
    *  unwireable) def. The menu is where you define a named expr with params/
@@ -2980,6 +3018,16 @@
       onClose={() => (aiMenuOpen = false)} />
   {/if}
 
+  {#if splineEditId && splineNode}
+    <SplineEditorPopup
+      pos={splinePopPos}
+      points={splineNode.points ?? []}
+      samples={splineNode.samples?.kind === 'literal' ? Number(splineNode.samples.value) : 32}
+      onPointsChange={onSplinePoints}
+      onSamplesChange={onSplineSamples}
+      onClose={() => (splineEditId = null)} />
+  {/if}
+
   {#if bakeMenuOpen}
     <BakeMenu
       pos={bakeMenuPos}
@@ -3537,6 +3585,7 @@
               {openPolyBindingExprPop}
               {openPolyRepeatCountExprPop}
               {openExprDefEditor}
+              onOpenSplineEditor={openSplineEditor}
               {setHoverVertex}
               {clearHoverVertex}
               openPolyPreview={polyUI.openPolyPreview}
@@ -3980,6 +4029,10 @@
       </button>
       <button class="ge-pick-item" type="button" onclick={dropExpr}>
         <span class="ge-pick-icon">ƒ</span><span class="ge-pick-name">expr</span><span class="ge-pick-hint">calc block</span>
+      </button>
+      <!-- Spline PATH (TODO #15) — 3D control points → list<point3> → r_sweep.path. -->
+      <button class="ge-pick-item" type="button" onclick={dropSpline}>
+        <span class="ge-pick-icon">⌇</span><span class="ge-pick-name">spline</span><span class="ge-pick-hint">3D path</span>
       </button>
       <!-- Loop — the standalone Repeat card (build N copies as a list, pre-wired
            into a Stack). Same drop as container▸repeat, surfaced top-level so it
