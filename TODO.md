@@ -28,6 +28,15 @@
     an `op:'sweep'` mode into the repeat node (frame torsion / variable spacing / caps).
     `g_spiral_repeat.md`. Pairs #11.
 
+23. **Generalize `r_sweep` — varying section per station** (future; subsumes `r_loft` +
+    extrude-taper). r_sweep already lofts rings between path stations (`loftStations`) with a
+    FIXED section. Let the section VARY per station — a scale curve `s(t)` and/or a true blend
+    between DIFFERENT cross-sections — and ONE engine covers: r_loft (barrel/waist/flare via
+    `s(t)`), r_weld_extrude's taper, AND a "real" loft (A→B section blend). `r_loft` has zero
+    volume consumers, so folding it in later is low-risk. Same one-engine unification spirit as
+    #11 / #20. Keep r_loft + r_sweep separate until this lands (they're orthogonal today:
+    loft = varying radius on a straight axis, sweep = fixed section on a bent path).
+
 13. **Typed ports.** Registry + composite record types + type definer + `autoWireSuggestions`
     all DONE. LEFT: per-part `graph.typeDefs[]` + def→instance propagation — blocked on a real
     CONSUMER, so build composite-type consumption first (= #20 Phase E). Plan: `docs/plans/typed-ports.md`.
