@@ -97,9 +97,18 @@
 15. **Path-editor card for the r_sweep PATH** (user idea). CLARIFIED: r_sweep
     consumes POINTS (`[[x,y,z],…]`, ≥2), NOT a spline — it frames per-point + lofts
     straight between. So v1 = a 3D point-list output wired into `r_sweep.path`
-    (Phase A inference already makes `[[x,y,z],…]` → `list<point3>` work). v2 = an
-    interactive SPLINE editor (control points + Catmull-Rom/Bézier, npm lib) that
-    SAMPLES to points for a smooth curved pipe — sugar on top of v1's point output.
+    (Phase A inference already makes `[[x,y,z],…]` → `list<point3>` work).
+    **v2 = a SPLINE-EDITOR card** (user, 2026-06-30): port three.js'
+    `webgl_geometry_spline_editor` (draggable control points + Catmull-Rom curve in
+    a 3D scene; https://threejs.org/examples/webgl_geometry_spline_editor.html) into
+    a graph-editor POPOVER card. The card's OUTPUT = the curve sampled to N
+    **EQUALLY-SPACED (arc-length) points** — three.js `Curve.getSpacedPoints(N)`, NOT
+    `getPoints` (uniform-t clusters on a Catmull-Rom) — so r_sweep gets EVEN ring
+    spacing and the tube is uniform. Output is a `list<point3>` that drops straight
+    into `r_sweep.path` (seamless — same type the path slot already accepts). A "path
+    producer" node, same popover pattern as the expr/AI windows. Control points
+    persist on the node; N (sample density) is a param. Builds on v1's point output.
+    Pairs with the typed-output socket work (#20).
 
 16b. **`r_surface` has the same empty-params latent bug** as r_sweep had — harmless
     today (its first arg is a closure `fn(u,v)` that can't be graph-wired, so it's
