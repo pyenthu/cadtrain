@@ -70,6 +70,7 @@
 
   /** Hand-edit a single coordinate from the XYZ table. */
   let showTable = $state(false);
+  const r3 = (v: number) => Math.round((Number(v) || 0) * 1000) / 1000; // display ≤3 dp
   function setCoord(i: number, axis: 0 | 1 | 2, raw: string) {
     const v = Number(raw);
     if (!Number.isFinite(v)) return;
@@ -161,9 +162,9 @@
       {#each points as p, i (i)}
         <div class="ge-sp-trow" class:sel={i === selectedIdx}>
           <span class="ge-sp-tidx" role="button" tabindex="-1" onclick={() => (selectedIdx = i)}>{i}</span>
-          <input type="number" step="0.1" value={p[0]} onchange={(e) => setCoord(i, 0, (e.target as HTMLInputElement).value)} />
-          <input type="number" step="0.1" value={p[1]} onchange={(e) => setCoord(i, 1, (e.target as HTMLInputElement).value)} />
-          <input type="number" step="0.1" value={p[2]} onchange={(e) => setCoord(i, 2, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={r3(p[0])} onchange={(e) => setCoord(i, 0, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={r3(p[1])} onchange={(e) => setCoord(i, 1, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={r3(p[2])} onchange={(e) => setCoord(i, 2, (e.target as HTMLInputElement).value)} />
         </div>
       {/each}
     </div>

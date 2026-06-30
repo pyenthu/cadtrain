@@ -180,7 +180,8 @@
     ndc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     ray.setFromCamera(ndc, camera.current);
     if (ray.ray.intersectPlane(plane, hit)) {
-      const next = points.map((p, k): Vec3 => (k === draggingIdx ? [hit.x, hit.y, hit.z] : (p as Vec3)));
+      const r3 = (v: number) => Math.round(v * 1000) / 1000; // keep stored coords clean (3 dp)
+      const next = points.map((p, k): Vec3 => (k === draggingIdx ? [r3(hit.x), r3(hit.y), r3(hit.z)] : (p as Vec3)));
       onPointsChange(next);
     }
   }
