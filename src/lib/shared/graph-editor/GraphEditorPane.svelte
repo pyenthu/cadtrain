@@ -3036,7 +3036,7 @@
       clientBake={scene.clientBake}
       onBakeNow={runBake}
       onSetAutoBake={(v) => setAutoBake(v)}
-      onToggleClientBake={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} }}
+      onToggleClientBake={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} bakeNonce++; /* re-bake so the badge + geometry reflect the new backend immediately (else it looks stuck on the last backend) */ }}
       onClose={() => (bakeMenuOpen = false)} />
   {/if}
 
