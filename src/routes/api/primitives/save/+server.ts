@@ -50,7 +50,7 @@ export const POST = async ({ request }) => {
   // 3-level resolver depth (primitive-paths.ts findPrim). No traversal (no '.',
   // no leading slash); `profiles` is reserved.
   const TARGET_RE = /^[a-z][a-z0-9_]*(\/[a-z][a-z0-9_]*){0,2}$/i;
-  if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir) || targetDir.split('/')[0] === 'profiles')) {
+  if (targetDir != null && (typeof targetDir !== 'string' || !TARGET_RE.test(targetDir) || targetDir.split('/')[0].toLowerCase() === 'profiles')) {
     throw error(400, `bad dir "${targetDir}" — must be 1–3 segments of [a-z][a-z0-9_]* under primitives/ (not profiles)`);
   }
   if (typeof source !== 'string' || !source.trim()) {

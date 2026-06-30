@@ -884,7 +884,7 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
       // two outputs when there's really only one (the revolve's solid).
       for (const v of Object.values(n.args)) {
         if (v.kind !== 'expr') continue;
-        const matches = v.expr.match(/__POLY__(n_[a-z0-9]+)/gi);
+        const matches = v.expr.match(/__POLY__(n_[a-z0-9_]+)/gi);
         if (!matches) continue;
         for (const m of matches) consumed.add(m.slice('__POLY__'.length));
       }

@@ -5,7 +5,7 @@
  * `tube` compose rule from docs/parts/vocabulary.json and asserts the
  * output has:
  *   • meta.graph JSON block (proves the new emitter wired in correctly)
- *   • aliased Calls (A + B) referencing the right exemplar (dt_shaft)
+ *   • aliased Calls (A + B) referencing the right exemplar (g_shaft)
  *   • kind:'expr' ArgValues for "p.od / 2" + "p.od/2 - p.wall"
  *   • kind:'param' ArgValues for clean "p.length" refs
  *   • kind:'literal' for the segments: 64 number
@@ -33,10 +33,12 @@ describe('rule-translator — graph emit path (Phase 14)', () => {
     // 1. Meta.graph block present.
     expect(src).toContain('graph: {');
 
-    // 2. Both Calls aliased correctly + reference dt_shaft.
+    // 2. Both Calls aliased correctly + reference g_shaft.
     expect(src).toMatch(/alias:\s*['"]A['"]/);
     expect(src).toMatch(/alias:\s*['"]B['"]/);
-    expect(src).toMatch(/src:\s*['"]dt_shaft['"]/);
+    // The `shaft` vocab term resolves to its current exemplar `g_shaft`
+    // (renamed from dt_shaft in the g_* parts migration).
+    expect(src).toMatch(/src:\s*['"]g_shaft['"]/);
 
     // 3. Method node (subtract) present.
     expect(src).toMatch(/op:\s*['"]subtract['"]/);
@@ -59,7 +61,8 @@ describe('rule-translator — graph emit path (Phase 14)', () => {
     expect(src).toMatch(/length:\s*\{/);
 
     // 8. Function signature takes `p` (body uses p.od / p.wall / p.length).
-    expect(src).toMatch(/export function dt_tube\(p\)/);
+    // Named after the term's exemplar `g_tube` (renamed from dt_tube).
+    expect(src).toMatch(/export function g_tube\(p\)/);
 
     // 9. Trace tag — provenance for drift detection.
     expect(src).toMatch(/generated_from:\s*\{/);

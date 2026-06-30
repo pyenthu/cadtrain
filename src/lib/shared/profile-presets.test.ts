@@ -39,15 +39,17 @@ describe('profile registry — defaults reproduce the legacy presets', () => {
 describe('resolveProfile descriptor union', () => {
   it('passes a legacy bare array through unchanged', () => {
     const arr: Pt[] = [[1, 2], [3, 4], [5, 6]];
-    expect(resolveProfile(arr)).toBe(arr);
+    // resolveProfile returns a clampFinite()-sanitised COPY (NaN/Infinity guard),
+    // so assert value-equality, not reference identity.
+    expect(resolveProfile(arr)).toStrictEqual(arr);
   });
   it('returns { points } directly (detached profile)', () => {
     const pts: Pt[] = [[0, 0], [1, 0], [0, 1]];
-    expect(resolveProfile({ points: pts })).toBe(pts);
+    expect(resolveProfile({ points: pts })).toStrictEqual(pts);
   });
   it('prefers points over _gen on a re-linkable detached profile', () => {
     const pts: Pt[] = [[0, 0], [2, 0], [1, 2]];
-    expect(resolveProfile({ points: pts, _gen: { kind: 'rect', params: {} } })).toBe(pts);
+    expect(resolveProfile({ points: pts, _gen: { kind: 'rect', params: {} } })).toStrictEqual(pts);
   });
   it('merges partial params over defaults', () => {
     const out = resolveProfile({ kind: 'rect', params: { w: 2 } });

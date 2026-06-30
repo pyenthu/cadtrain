@@ -7,6 +7,12 @@ import {
   newNodeId,
   type TreeNode,
 } from './composition-tree';
+import { partHashId } from './part-id';
+
+// emitNode stamps each Call `__tag(<expr>, partHashId(fn))` so the
+// color-by-source LUT (analyzeAssembly) matches the bake's mesh originalIDs.
+// The hash is deterministic per fn name; build the expected wrapper with it.
+const TAG = (inner: string, fn: string) => `__tag(${inner}, ${partHashId(fn)})`;
 
 /** Minimal .asm.ts skeleton the source-level writers can mutate against. */
 const ASM_SKELETON = `
@@ -33,7 +39,7 @@ describe('composition-tree — Call inline transforms (mv / rot)', () => {
         { type: 'literal', id: newNodeId(), value: 'p.length' },
       ],
     };
-    expect(emitNode(call)).toBe('shaft(p.od, p.length)');
+    expect(emitNode(call)).toBe(TAG('shaft(p.od, p.length)', 'shaft'));
   });
 
   it('wraps in mv(...) when mv set', () => {
@@ -46,7 +52,7 @@ describe('composition-tree — Call inline transforms (mv / rot)', () => {
         { type: 'literal', id: newNodeId(), value: '5' },
       ],
     };
-    expect(emitNode(call)).toBe('mv(shaft(p.od), [0, 0, 5])');
+    expect(emitNode(call)).toBe(TAG('mv(shaft(p.od), [0, 0, 5])', 'shaft'));
   });
 
   it('wraps in rot(mv(...)) when both set — mv inner, rot outer', () => {
@@ -64,7 +70,7 @@ describe('composition-tree — Call inline transforms (mv / rot)', () => {
         { type: 'literal', id: newNodeId(), value: '90' },
       ],
     };
-    expect(emitNode(call)).toBe('rot(mv(shaft(), [0, 0, 5]), [0, 0, 90])');
+    expect(emitNode(call)).toBe(TAG('rot(mv(shaft(), [0, 0, 5]), [0, 0, 90])', 'shaft'));
   });
 
   it('round-trips through serialize → parse', () => {
@@ -106,6 +112,6 @@ describe('composition-tree — Call inline transforms (mv / rot)', () => {
       ],
     };
     const out = applyToSource(ASM_SKELETON, 'tube_demo', [], call);
-    expect(out).toContain('return mv(shaft(), [0, 0, 5]);');
+    expect(out).toContain(`return ${TAG('mv(shaft(), [0, 0, 5])', 'shaft')};`);
   });
 });
