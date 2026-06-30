@@ -68,6 +68,16 @@
     onSamplesChange(v);
   }
 
+  /** Hand-edit a single coordinate from the XYZ table. */
+  let showTable = $state(false);
+  function setCoord(i: number, axis: 0 | 1 | 2, raw: string) {
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return;
+    const next = points.map((p, k): Vec3 =>
+      k !== i ? p : (axis === 0 ? [v, p[1], p[2]] : axis === 1 ? [p[0], v, p[2]] : [p[0], p[1], v]));
+    onPointsChange(next);
+  }
+
   // ─── drag (header handle) — mirrors AiMenu ────────────────────────────────
   let panelEl = $state<HTMLDivElement | null>(null);
   let dragPos = $state<{ x: number; y: number } | null>(null);
@@ -137,11 +147,27 @@
     <button class="ge-sp-btn" type="button" onclick={addPoint} title="Append a control point">+ point</button>
     <button class="ge-sp-btn" type="button" onclick={removePoint} disabled={points.length <= 2}
       title="Remove the selected (or last) control point">− point</button>
-    <span class="ge-sp-count">{points.length} pts</span>
+    <button class="ge-sp-btn" class:on={showTable} type="button" onclick={() => (showTable = !showTable)}
+      title="Edit point X/Y/Z values by hand">{showTable ? '▾' : '▸'} xyz</button>
     <label class="ge-sp-n" title="Number of equally-spaced output samples (r_sweep.path resolution)">
       N <input type="number" min="2" max="512" step="1" value={samples} onchange={onSamplesInput} />
     </label>
   </div>
+
+  {#if showTable}
+    <!-- hand-edit X/Y/Z — tightly spaced, internally scrollable -->
+    <div class="ge-sp-table">
+      <div class="ge-sp-trow head"><span>#</span><span>x</span><span>y</span><span>z</span></div>
+      {#each points as p, i (i)}
+        <div class="ge-sp-trow" class:sel={i === selectedIdx}>
+          <span class="ge-sp-tidx" role="button" tabindex="-1" onclick={() => (selectedIdx = i)}>{i}</span>
+          <input type="number" step="0.1" value={p[0]} onchange={(e) => setCoord(i, 0, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={p[1]} onchange={(e) => setCoord(i, 1, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={p[2]} onchange={(e) => setCoord(i, 2, (e.target as HTMLInputElement).value)} />
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -173,4 +199,11 @@
   .ge-sp-count { font: 11px ui-monospace, monospace; color: #6b7280; }
   .ge-sp-n { margin-left: auto; font: 600 12px Arial; color: #374151; display: flex; align-items: center; gap: 4px; }
   .ge-sp-n input { width: 60px; padding: 3px 6px; font: 12px ui-monospace, monospace; border: 1px solid #c4b5fd; border-radius: 4px; }
+  .ge-sp-btn.on { background: #ddd6fe; }
+  .ge-sp-table { max-height: 132px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 4px; }
+  .ge-sp-trow { display: grid; grid-template-columns: 22px 1fr 1fr 1fr; gap: 3px; align-items: center; padding: 1px 3px; }
+  .ge-sp-trow.head { position: sticky; top: 0; background: #f5f3ff; font: 700 10px Arial; color: #6d28d9; text-align: center; }
+  .ge-sp-trow.sel { background: #fef3c7; }
+  .ge-sp-tidx { font: 11px ui-monospace, monospace; color: #6b7280; text-align: center; cursor: pointer; }
+  .ge-sp-table input { width: 100%; box-sizing: border-box; padding: 1px 4px; font: 11px ui-monospace, monospace; border: 1px solid #ddd; border-radius: 3px; }
 </style>

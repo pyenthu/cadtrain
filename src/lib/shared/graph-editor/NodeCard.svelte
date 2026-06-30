@@ -1696,9 +1696,10 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <!-- a nice curved spline (slightly thick) = the card's identity -->
+                <!-- a nice curved spline (slightly thick) = the card's identity;
+                     kept in the LOWER band so it never crosses the ✎ / × buttons. -->
                 <path class="ge-spline-preview" fill="none"
-                  d={`M 12 ${sh - 12} C ${sw * 0.30} ${sh - 12} ${sw * 0.22} ${sh * 0.5} ${sw * 0.5} ${sh * 0.5} C ${sw * 0.78} ${sh * 0.5} ${sw * 0.70} 13 ${sw - 16} 13`}/>
+                  d={`M 9 ${sh - 11} Q ${sw * 0.30} ${sh - 22} ${sw * 0.52} ${sh - 15} T ${sw - 10} ${sh - 13}`}/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x={sw - 30} y="16" class="ge-node-x"
                   data-tip="Edit this spline's control points in 3D"

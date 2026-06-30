@@ -131,19 +131,37 @@
   const hit = new THREE.Vector3();
   const camDir = new THREE.Vector3();
 
-  function onSphereDown(i: number, e: any) {
-    e.stopPropagation?.();
-    selectedIdx = i;
-    draggingIdx = i;
-    if (orbit) orbit.enabled = false; // lock the camera immediately on grab
-    // Drag plane = perpendicular to the view direction, through the point — so
-    // the handle tracks the cursor regardless of orbit angle.
+  // CAPTURE-phase pointerdown on the canvas: if the press lands on a control
+  // sphere, start the drag + lock the camera + stopImmediatePropagation so
+  // OrbitControls (a bubble-phase listener on the same canvas) NEVER sees this
+  // press → zero camera rotation while dragging a point. Empty-space presses
+  // fall through untouched, so orbiting still works there. This is race-free
+  // (capture runs before bubble), unlike relying on the reactive `enabled` prop.
+  function onDown(ev: PointerEvent) {
+    const dom = renderer?.domElement;
+    if (!dom || vecs.length === 0) return;
+    const rect = dom.getBoundingClientRect();
+    ndc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    ray.setFromCamera(ndc, camera.current);
+    let hitIdx = -1, hitAlong = Infinity;
+    for (let i = 0; i < vecs.length; i++) {
+      const c = new THREE.Vector3(vecs[i]![0], vecs[i]![1], vecs[i]![2]);
+      if (ray.ray.distanceToPoint(c) <= 0.36) {
+        const along = ray.ray.origin.distanceToSquared(c);
+        if (along < hitAlong) { hitAlong = along; hitIdx = i; }
+      }
+    }
+    if (hitIdx < 0) return; // empty space → leave it for OrbitControls
+    ev.stopImmediatePropagation();
+    selectedIdx = hitIdx;
+    draggingIdx = hitIdx;
+    if (orbit) orbit.enabled = false;
     const cam = camera.current;
     cam.getWorldDirection(camDir);
-    const p = vecs[i]!;
+    const p = vecs[hitIdx]!;
     plane.setFromNormalAndCoplanarPoint(camDir, new THREE.Vector3(p[0], p[1], p[2]));
-    const native = e.nativeEvent as PointerEvent | undefined;
-    try { (native?.target as Element | undefined)?.setPointerCapture?.(native!.pointerId); } catch { /* ignore */ }
+    try { dom.setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
   }
 
   function onMove(ev: PointerEvent) {
@@ -166,9 +184,11 @@
   $effect(() => {
     const dom = renderer?.domElement;
     if (!dom) return;
+    dom.addEventListener('pointerdown', onDown, true); // capture → beats OrbitControls
     dom.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => {
+      dom.removeEventListener('pointerdown', onDown, true);
       dom.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
@@ -208,8 +228,7 @@
   <T.Mesh
     position={[p[0], p[1], p[2]]}
     onpointerenter={() => (hoverIdx = i)}
-    onpointerleave={() => { if (draggingIdx < 0) hoverIdx = -1; }}
-    onpointerdown={(e: any) => onSphereDown(i, e)}>
+    onpointerleave={() => { if (draggingIdx < 0) hoverIdx = -1; }}>
     <T.SphereGeometry args={[0.28, 16, 16]} />
     <T.MeshStandardMaterial
       color={i === selectedIdx ? 0xf59e0b : 0x7c3aed}
