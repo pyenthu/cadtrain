@@ -43,8 +43,10 @@ import {
   type NodeId,
   type MvNode,
   type RotNode,
+  type CallNode,
 } from '$lib/cad/composition-graph';
 import { exprBlockMember } from '$lib/cad/graph-exprs';
+import { checkOutputFeeds, slotExpectedType, POLYGON_POINTS } from '$lib/cad/wire-check';
 import { releaseImplicitCapture } from './pointer-capture';
 
 /** wireFrom is either a node's output socket OR a param's output chip. On
@@ -70,6 +72,10 @@ export class WireState {
   pointerMoved = false;
   /** client px where the arming pointerdown happened (drag-vs-tap threshold). */
   downAt = { x: 0, y: 0 };
+  /** Plain-language reason the LAST drop was refused (typed-expression-outputs,
+   *  Phase B). Null when the last wire was accepted. The shell surfaces it as a
+   *  transient message; cleared when a new wire is armed. */
+  lastReject = $state<string | null>(null);
 
   #getGraph: () => Graph;
   #setGraph: (g: Graph) => void;
@@ -94,6 +100,7 @@ export class WireState {
   armWire = (ev: PointerEvent) => {
     this.justArmed = true;
     this.pointerMoved = false;
+    this.lastReject = null;            // a fresh wire clears the stale reject hint
     this.downAt = { x: ev.clientX, y: ev.clientY };
   };
 
@@ -146,6 +153,17 @@ export class WireState {
       this.#setGraph(setCallArg(this.#getGraph(), callId, key, asParam(from.paramName)));
     } else if (from.kind === 'out' && from.nodeId !== callId) {
       if (from.outName != null) {
+        // Structural wire-check (Phase B): block an expr output whose inferred
+        // structure can't feed this engine's DATA slot (r_sweep.path wants
+        // list<point3>, .section wants list<point2>). Unmodelled slots / unknown
+        // structures pass through (conservative — don't over-block).
+        const g = this.#getGraph();
+        const call = g.nodes[callId] as CallNode | undefined;
+        const expect = call?.type === 'call' ? slotExpectedType(call.src, key) : null;
+        if (expect) {
+          const feed = checkOutputFeeds(g, from.nodeId, from.outName, expect);
+          if (!feed.ok) { this.lastReject = feed.reason; this.from = null; this.mouse = null; return; }
+        }
         // Wire from an Expr block's named OUTPUT → reference its emitted numeric
         // const `<blockvar>_<outName>` (emitExprBlocks prelude). The arg becomes
         // a plain `expr` ArgValue carrying that identifier.
@@ -212,26 +230,21 @@ export class WireState {
   };
 
   /** Repoint a polygon's expr-list-ref by dragging an expr OUTPUT onto its
-   *  socket (#11 drag-to-wire). Gated to `shape:'list'` outputs — a scalar
-   *  output can't feed the points slot (the typed-ports compatibility rule). */
+   *  socket (#11 drag-to-wire). Structural wire-check (Phase B): the points slot
+   *  wants a list of 2D points — a scalar / a 3D-points output is refused with a
+   *  plain-language reason; an unknown structure passes (conservative). */
   endWireOnPolygonExprListRef = (ev: PointerEvent, polygonId: NodeId, idx: number) => {
     ev.stopPropagation();
     const from = this.from;
     if (!from || from.kind !== 'out' || from.outName == null) { this.from = null; this.mouse = null; return; }
     const g = this.#getGraph();
-    const src = g.nodes[from.nodeId] as any;
-    let isList = false;
-    if (src?.type === 'expr') {
-      const def = (g.exprDefs ?? []).find((d) => d.id === src.defId);
-      isList = def?.outputs?.find((o: any) => o.name === from.outName)?.shape === 'list';
-    }
-    if (isList) {
-      const poly = g.nodes[polygonId] as any;
-      if (poly?.type === 'polygon' && poly.points[idx]?.kind === 'expr-list-ref') {
-        const points = [...poly.points];
-        points[idx] = { kind: 'expr-list-ref', sourceId: from.nodeId, output: from.outName };
-        this.#setGraph({ ...g, nodes: { ...g.nodes, [polygonId]: { ...poly, points } } });
-      }
+    const feed = checkOutputFeeds(g, from.nodeId, from.outName, POLYGON_POINTS);
+    if (!feed.ok) { this.lastReject = feed.reason; this.from = null; this.mouse = null; return; }
+    const poly = g.nodes[polygonId] as any;
+    if (poly?.type === 'polygon' && poly.points[idx]?.kind === 'expr-list-ref') {
+      const points = [...poly.points];
+      points[idx] = { kind: 'expr-list-ref', sourceId: from.nodeId, output: from.outName };
+      this.#setGraph({ ...g, nodes: { ...g.nodes, [polygonId]: { ...poly, points } } });
     }
     this.from = null; this.mouse = null;
   };

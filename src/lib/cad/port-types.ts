@@ -16,6 +16,11 @@
  * structural/tree typing" guidance.
  */
 
+import {
+  checkFeed, listOfPoints, T_SCALAR,
+  type StructType, type FeedCheck,
+} from './struct-type';
+
 /** A socket's flow direction. */
 export type Direction = 'in' | 'out';
 /** A single value, or a FLAT list of them (no nested trees — research decision). */
@@ -144,3 +149,72 @@ export const PT_LIST_POINT = registerPortType({
 export const PT_GEOMETRY = registerPortType({
   id: 'geometry', elem: 'geometry', card: 'one', label: 'geometry', color: '#cc2222',
 });
+
+// ── arity-specific point lists (typed-expression-outputs, Phase B) ────────────
+// `list<point>` (PT_LIST_POINT) is arity-agnostic [r,z]/[x,y]. These two pin the
+// coordinate count so a 2D-points output can't silently wire into a 3D-path slot
+// (r_sweep.path) and vice-versa. Distinct colours so 2D vs 3D read apart.
+/** A list of [x, y] pairs — polygon points, r_sweep.section. */
+export const PT_LIST_POINT2 = registerPortType({
+  id: 'list<point2>', elem: 'point', card: 'list', of: 'point',
+  label: 'list of 2D points', color: '#4f46e5', glyph: '[]',
+});
+/** A list of [x, y, z] triples — r_sweep.path, a 3D point grid. */
+export const PT_LIST_POINT3 = registerPortType({
+  id: 'list<point3>', elem: 'point', card: 'list', of: 'point',
+  label: 'list of 3D points', color: '#0ea5e9', glyph: '[]',
+});
+
+// ── socket colour by inferred structure (Phase B, item 1) ─────────────────────
+/**
+ * Stable socket colour for an inferred OUTPUT structure — reuses the registry
+ * PortType colours so an inferred type and an explicitly-annotated one of the
+ * same kind read identically. One colour per STRUCTURAL kind:
+ *   scalar → teal · list<point2> → indigo · list<point3> → sky ·
+ *   list<number> → cyan · record / list<record> → violet · unknown → slate.
+ */
+export function structColor(t: StructType | null): string {
+  if (!t) return '#94a3b8';                               // unknown / not-yet-built
+  switch (t.kind) {
+    case 'scalar':  return PT_SCALAR.color;               // teal
+    case 'flag':    return PT_FLAG.color;                 // green
+    case 'record':  return '#7c3aed';                     // violet (defineRecordType default)
+    case 'unknown': return '#94a3b8';                     // slate
+    case 'list': {
+      if (t.of.kind === 'list' && t.of.of.kind === 'scalar') {
+        // a list of points — colour by arity (2D indigo, 3D sky, else generic indigo)
+        if (t.of.len === 3) return PT_LIST_POINT3.color;  // sky
+        return PT_LIST_POINT.color;                       // indigo (2D / any arity)
+      }
+      if (t.of.kind === 'scalar') return '#0891b2';       // list<number> — cyan
+      if (t.of.kind === 'record') return '#7c3aed';       // list<record> — violet
+      return PT_LIST_POINT.color;
+    }
+  }
+}
+
+// ── structural wire-checking (Phase B, item 2) ────────────────────────────────
+/** Map a registry PortType to the structural shape a slot of that type expects.
+ *  Returns null for types we don't structurally model (geometry, records, …) —
+ *  the caller treats null as "allow" (don't over-block). */
+function portTypeToExpect(target: PortType): StructType | null {
+  switch (target.id) {
+    case 'scalar':       return T_SCALAR;
+    case 'list<point3>': return listOfPoints(3);
+    case 'list<point2>': return listOfPoints(2);
+    case 'list<point>':  return listOfPoints();   // any arity
+    default:             return null;
+  }
+}
+
+/**
+ * Structural variant of `canFeed` — accepts an INFERRED source StructType (from
+ * `struct-type.inferStructure`) rather than a registry PortType, and returns a
+ * plain-language reason when the wire is incompatible. Conservative: a null /
+ * unknown source, or a target whose shape we don't model, is allowed.
+ */
+export function canFeedStruct(src: StructType | null, target: PortType): FeedCheck {
+  const expect = portTypeToExpect(target);
+  if (!expect) return { ok: true, reason: null };
+  return checkFeed(src, expect);
+}

@@ -6,7 +6,11 @@
  * scalar, and the `range`/`map`/`concat` list builders infer correctly.
  */
 import { describe, it, expect } from 'vitest';
-import { inferStructure, structLabel, type StructType } from './struct-type';
+import {
+  inferStructure, structLabel, checkFeed,
+  listOfPoints, T_SCALAR, T_LIST_POINT2, T_LIST_POINT3,
+  type StructType,
+} from './struct-type';
 
 /** Convenience — infer + label in one shot (throws if inference errored). */
 function label(formula: string): string {
@@ -113,5 +117,81 @@ describe('inferStructure — robustness', () => {
 
   it('the `return` sugar is stripped before inference', () => {
     expect(label('return [[0,0,0],[1,1,1]]')).toBe('list<point3>');
+  });
+});
+
+// ─── structural compatibility (Phase B) ───────────────────────────────────────
+
+/** Infer a formula and check it against an expected slot structure. */
+function feed(formula: string, expect_: StructType) {
+  return checkFeed(inferStructure(formula).type, expect_);
+}
+
+describe('checkFeed — list<point3> path slot', () => {
+  it('list<point3> output FEEDS a path slot', () => {
+    expect(feed('[[0,2,2],[2,0,1]]', T_LIST_POINT3)).toEqual({ ok: true, reason: null });
+  });
+
+  it('a map producing point3 rows feeds a path slot', () => {
+    const r = feed('map(range(0,4), f(i)=[cos(i),sin(i),i])', T_LIST_POINT3);
+    expect(r.ok).toBe(true);
+  });
+
+  it('list<point2> is REJECTED on a path slot with a plain-language reason', () => {
+    const r = feed('[[0,2],[2,0]]', T_LIST_POINT3);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe(
+      'this needs a list of 3D points like [x, y, z], but the output is a list of 2D points like [x, y]',
+    );
+  });
+
+  it('a flat list of numbers is REJECTED on a path slot', () => {
+    const r = feed('[1, 2, 3]', T_LIST_POINT3);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe(
+      'this needs a list of 3D points like [x, y, z], but the output is a list of plain numbers',
+    );
+  });
+
+  it('a single number is REJECTED on a path slot', () => {
+    const r = feed('5', T_LIST_POINT3);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe(
+      'this needs a list of 3D points like [x, y, z], but the output is a single number',
+    );
+  });
+});
+
+describe('checkFeed — list<point2> section / polygon slot', () => {
+  it('list<point2> FEEDS a section slot', () => {
+    expect(feed('[[0,2],[2,0]]', T_LIST_POINT2)).toEqual({ ok: true, reason: null });
+  });
+
+  it('list<point3> is REJECTED on a 2D section slot', () => {
+    const r = feed('[[0,2,2],[2,0,1]]', T_LIST_POINT2);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe(
+      'this needs a list of 2D points like [x, y], but the output is a list of 3D points like [x, y, z]',
+    );
+  });
+
+  it('an any-arity point list accepts both 2D and 3D', () => {
+    expect(feed('[[0,2],[2,0]]', listOfPoints()).ok).toBe(true);
+    expect(feed('[[0,2,2],[2,0,1]]', listOfPoints()).ok).toBe(true);
+  });
+});
+
+describe('checkFeed — scalar slot + conservative allow', () => {
+  it('a scalar feeds a scalar slot', () => {
+    expect(feed('(r0 + width) / 2', T_SCALAR)).toEqual({ ok: true, reason: null });
+  });
+  it('a list is rejected on a scalar slot', () => {
+    expect(feed('[[0,0],[1,1]]', T_SCALAR).ok).toBe(false);
+  });
+  it('an empty / null source is ALLOWED (never over-block)', () => {
+    expect(checkFeed(null, T_LIST_POINT3)).toEqual({ ok: true, reason: null });
+  });
+  it('an unknown source is ALLOWED (never over-block)', () => {
+    expect(checkFeed({ kind: 'unknown' }, T_LIST_POINT3)).toEqual({ ok: true, reason: null });
   });
 });

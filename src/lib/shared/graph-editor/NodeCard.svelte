@@ -62,14 +62,31 @@
     STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
-  import { portType, listOf } from '$lib/cad/port-types';
+  import { portType, listOf, structColor } from '$lib/cad/port-types';
+  import { inferStructure, structLabel } from '$lib/cad/struct-type';
+  import { isImperative } from '$lib/cad/expr-imperative';
   import { producerLabel, parseProfileExpr, argStr, argFrom } from './args';
 
-  // #11/typed-ports — the registry PortType for an expr OUTPUT (drives socket colour).
+  // typed-expression-outputs (Phase B) — the SOCKET descriptor for an expr
+  // OUTPUT: colour + label + whether it draws as a list. An EXPLICIT annotation
+  // (shape:'list'/'scalar', not 'auto') wins via the registry PortType; an
+  // 'auto'/unset output is typed by INFERRING the formula's structure, so the
+  // socket colour tracks what was actually built ([[x,y,z],…] → sky list<point3>).
   function exprOutPort(out: any) {
-    const id = out?.shape === 'list' ? `list<${out.elem ?? 'point'}>` : (out?.elem ?? 'scalar');
-    if (out?.shape === 'list') listOf(out.elem ?? 'point'); // ensure derived list type is registered
-    return portType(id);
+    const explicit = out?.shape && out.shape !== 'auto';
+    if (explicit) {
+      const id = out.shape === 'list' ? `list<${out.elem ?? 'point'}>` : (out.elem ?? 'scalar');
+      if (out.shape === 'list') listOf(out.elem ?? 'point'); // ensure derived list type is registered
+      const pt = portType(id);
+      if (pt) return { color: pt.color, label: pt.label, isList: out.shape === 'list' };
+    }
+    // 'auto' / unset → infer from the formula. An imperative (loop-builder) body
+    // always materialises a flat point list.
+    if (isImperative(out?.formula ?? '')) {
+      return { color: structColor({ kind: 'list', of: { kind: 'list', of: { kind: 'scalar' } } }), label: 'list of points', isList: true };
+    }
+    const t = inferStructure(out?.formula ?? '').type;
+    return { color: structColor(t), label: structLabel(t), isList: t?.kind === 'list' };
   }
   import SketchNodeCard from './SketchNodeCard.svelte';
   import { DeleteConfirm } from './delete-confirm.svelte';
@@ -1669,14 +1686,15 @@
                      its row. Start a wire toward a consumer. -->
                 {#each exOutputs as out, oIdx (out.name)}
                   {@const opt = exprOutPort(out)}
-                  {@const isList = out.shape === 'list'}
-                  <!-- Output socket coloured by its PORT TYPE (typed-ports): a
-                       list<point> reads indigo + larger; a scalar stays teal. -->
+                  {@const isList = opt.isList}
+                  <!-- Output socket coloured by its INFERRED (or annotated) type
+                       (typed-expression-outputs Phase B): a point-list reads
+                       indigo/sky + larger; a scalar stays teal. -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <circle role="button" tabindex="-1" class="ge-sock out expr-out" class:list={isList}
-                    style={opt ? `fill: ${opt.color}; stroke: ${opt.color}` : ''}
+                    style={`fill: ${opt.color}; stroke: ${opt.color}`}
                     cx={size.w} cy={exprOutputSockY(oIdx)} r={isList ? 6 : 5}
-                    data-tip={`${out.name}: ${opt?.label ?? 'value'}${isList ? ' — drag onto a polygon’s ƒ[] row to wire' : ''}`}
+                    data-tip={`${out.name}: ${opt.label}${isList ? ' — drag onto a polygon’s ƒ[] row to wire' : ''}`}
                     onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, out.name)}/>
                 {/each}
               {/if}
