@@ -117,6 +117,7 @@
     openPolyBindingExprPop,
     openPolyRepeatCountExprPop,
     openExprDefEditor,
+    onOpenSplineEditor,
     setHoverVertex,
     clearHoverVertex,
     openPolyPreview,
@@ -170,6 +171,8 @@
     openPolyBindingExprPop: (ev: MouseEvent, repeatId: string, bindingIdx: number, prefill: string) => void;
     openPolyRepeatCountExprPop: (ev: MouseEvent, repeatId: string, prefill: string) => void;
     openExprDefEditor: (ev: MouseEvent, defId: string) => void;
+    /** Open the 3D spline-editor popup for a `spline` node (TODO #15). */
+    onOpenSplineEditor: (ev: MouseEvent, id: string) => void;
     setHoverVertex: (polyId: string, idx: number) => void;
     clearHoverVertex: (polyId: string, idx: number) => void;
     openPolyPreview: (ev: PointerEvent, polyId: string) => void;
@@ -1679,6 +1682,45 @@
                     data-tip={`${out.name}: ${opt?.label ?? 'value'}${isList ? ' — drag onto a polygon’s ƒ[] row to wire' : ''}`}
                     onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, out.name)}/>
                 {/each}
+              {:else if n.type === 'spline'}
+                {@const sp = n as any}
+                {@const splinePort = portType('list<point3>')}
+                {@const nPts = Array.isArray(sp.points) ? sp.points.length : 0}
+                {@const nSamp = sp.samples?.kind === 'literal' ? sp.samples.value : (sp.samples?.kind === 'param' ? `p.${sp.samples.param}` : '·')}
+                <!-- Spline PATH producer (TODO #15) — a free-floating value node
+                     holding 3D control points edited in the SplineEditorPopup
+                     (✎). Its single output socket (list<point3>) wires into a
+                     Call's `path` arg (r_sweep) exactly like an expr list output. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg spline"
+                  width={size.w} height={size.h} rx="6"
+                  style="width: {size.w}px; height: {size.h}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="10" y="20" class="ge-node-title">⌇ spline</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 32} y="20" class="ge-node-x"
+                  data-tip="Edit this spline's control points in 3D"
+                  onpointerdown={(ev) => { ev.stopPropagation(); onOpenSplineEditor(ev as any, n.id); }}>✎</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 14} y="20" class="ge-node-x"
+                  data-tip="Delete this spline node"
+                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <text x="10" y="48" class="ge-spline-row">{nPts} control pts</text>
+                <text x="10" y="66" class="ge-spline-row muted">N = {nSamp} samples</text>
+                <text x="10" y="84" class="ge-spline-link"
+                  role="button" tabindex="-1"
+                  onpointerdown={(ev) => { ev.stopPropagation(); onOpenSplineEditor(ev as any, n.id); }}>✎ edit points</text>
+                <!-- OUTPUT socket (right edge, centered) — list<point3> → r_sweep.path.
+                     `'path'` matches emitSplineBlocks' exprBlockMember(id,'path'). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out expr-out list"
+                  style={splinePort ? `fill: ${splinePort.color}; stroke: ${splinePort.color}` : ''}
+                  cx={size.w} cy={size.h / 2} r="6"
+                  data-tip={`path: ${splinePort?.label ?? 'list of 3D points'} — drag onto a sweep’s path arg`}
+                  onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, 'path')}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -1751,6 +1793,12 @@
   /* Expr block (B.7 v2) — teal skin so it reads as a CALCULATION node,
      distinct from the violet profile-loop palette. */
   .ge-node-bg.expr { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
+  /* Spline PATH producer (TODO #15) — violet family, matches list<point3>. */
+  .ge-node-bg.spline { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+  .ge-spline-row { font: 12px Arial; fill: #4c1d95; }
+  .ge-spline-row.muted { fill: #8b5cf6; font-size: 11px; }
+  .ge-spline-link { font: 600 11px Arial; fill: #6d28d9; cursor: pointer; text-decoration: underline; user-select: none; }
+  .ge-spline-link:hover { fill: #4c1d95; }
   .ge-expr-card { display: flex; gap: 6px; font: 11px Arial; height: 100%; }
   .ge-expr-inputs { display: flex; flex-direction: column; gap: 0; flex: 0 0 auto; min-width: 40px; }
   .ge-expr-in-label { height: 26px; line-height: 26px; font: 600 11px ui-monospace, monospace; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

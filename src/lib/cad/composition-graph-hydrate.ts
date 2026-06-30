@@ -185,6 +185,21 @@ export function hydrateGraph(serialised: any): Graph {
     migratedNodes[id] = n;
   }
 
+  // Spline path producers (TODO #15) — defensive normalisation so a hand-edited
+  // / partial file always has a well-formed control-point array + a samples
+  // ArgValue (a bare number is lifted to a literal). Idempotent.
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id] as any;
+    if (n?.type !== 'spline') continue;
+    if (!Array.isArray(n.points)) n.points = [];
+    n.points = n.points
+      .filter((p: any) => Array.isArray(p))
+      .map((p: any) => [Number(p[0]) || 0, Number(p[1]) || 0, Number(p[2]) || 0]);
+    if (n.samples == null) n.samples = { kind: 'literal', value: 32 };
+    else if (typeof n.samples === 'number') n.samples = { kind: 'literal', value: n.samples };
+    migratedNodes[id] = n;
+  }
+
   // Migrate legacy mv/rot wrapper nodes → the unified TxfmnNode (mirror the
   // {kind:'repeat'}→PolyRepeat precedent: forward, one-way, lossless). The
   // editor only ever produced mv-OUTER / rot-INNER (rotate-then-translate), so:

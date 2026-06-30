@@ -140,6 +140,15 @@ export const PT_POINT = registerPortType({
 export const PT_LIST_POINT = registerPortType({
   id: 'list<point>', elem: 'point', card: 'list', label: 'list of points', color: '#4f46e5', glyph: '[]',
 });
+/** A single 3D `[x,y,z]` point. Shares the `point` elem (structurally compatible
+ *  with 2D points), so a `list<point3>` can also feed a `list<point>` slot. */
+export const PT_POINT3 = registerPortType({
+  id: 'point3', elem: 'point', card: 'one', label: '3D point', color: '#7c3aed',
+});
+/** A flat list of 3D points — the spline path producer (#15) → r_sweep.path. */
+export const PT_LIST_POINT3 = registerPortType({
+  id: 'list<point3>', elem: 'point', card: 'list', of: 'point3', label: 'list of 3D points', color: '#7c3aed', glyph: '[]',
+});
 /** A baked solid — a part / Manifold output feeding a CSG/compose/Output slot. */
 export const PT_GEOMETRY = registerPortType({
   id: 'geometry', elem: 'geometry', card: 'one', label: 'geometry', color: '#cc2222',

@@ -406,7 +406,29 @@ export type ExprNode = {
   bindings?: Record<string, ArgValue>;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode;
+/** Spline PATH producer (TODO #15) — a free-floating node that holds a set of
+ *  3D CONTROL POINTS edited interactively in the three.js SplineEditorPopup, and
+ *  OUTPUTS the centripetal-Catmull-Rom curve through them sampled to `samples`
+ *  equally-spaced (arc-length) `[x,y,z]` points (a `list<point3>`). Its output
+ *  socket wires into a Call's `path` arg (r_sweep) the same way an Expr block's
+ *  `list<point>` output wires into a consumer.
+ *
+ *  Like an ExprNode it is NEVER a root-list child — it contributes a PRELUDE
+ *  const (`emitSplineBlocks` → `const _x_<id>_path = resampleSpline([...], N)`),
+ *  not a geometry value. The bake recomputes the points with the PURE-JS
+ *  `resampleSpline` (no three.js in the Manifold sandbox); the editor uses
+ *  three.js only for the GUI. `samples` is an ArgValue so it can later be
+ *  param/expr-wired. */
+export type SplineNode = {
+  id: NodeId;
+  type: 'spline';
+  /** Control points `[x,y,z]` — dragged in the popover. ≥ 2 for a curve. */
+  points: [number, number, number][];
+  /** N output points (equally arc-length spaced). Default ~32. */
+  samples: ArgValue;
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

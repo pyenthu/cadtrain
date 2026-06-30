@@ -13,7 +13,7 @@ import type {
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonExprListRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   SketchRepeatNode, SketchRepeatRef, SketchExprListRef,
-  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem,
+  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam } from './composition-graph-types';
@@ -1229,6 +1229,48 @@ export function addExprInstance(graph: Graph, defId: NodeId, at?: LayoutXY): { g
     layout: { ...graph.layout, [id]: xy },
   });
   return { graph: g, id };
+}
+
+// ─── Spline PATH producer helpers (TODO #15) ────────────────────────────────
+
+/** Create a `spline` node seeded with a gentle 3-point bend so it bakes a
+ *  visible curve immediately. Like an Expr INSTANCE it is FREE-FLOATING — added
+ *  to nodes + layout only, NEVER appended to the root list (it's a value
+ *  producer, not a geometry output). Wire its output socket into a Call's `path`
+ *  arg (r_sweep) to use it. */
+export function addSpline(graph: Graph, at?: LayoutXY): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: SplineNode = {
+    id, type: 'spline',
+    points: [
+      [0, 0, 0],
+      [3, 1.5, 0],
+      [6, 0, 0],
+    ],
+    samples: asLiteral(32),
+  };
+  const existing = Object.values(graph.nodes).filter((n) => n.type === 'spline').length;
+  const xy: LayoutXY = at ?? { x: 120 + (existing % 4) * 240, y: 360 + existing * 40 };
+  const g = finalize({
+    ...graph,
+    nodes: { ...graph.nodes, [id]: node },
+    layout: { ...graph.layout, [id]: xy },
+  });
+  return { graph: g, id };
+}
+
+/** Replace a spline node's control points. */
+export function setSplinePoints(graph: Graph, id: NodeId, points: [number, number, number][]): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'spline') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: { ...node, points } } });
+}
+
+/** Set the spline's output sample count (N equally-spaced points). */
+export function setSplineSamples(graph: Graph, id: NodeId, samples: ArgValue): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'spline') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: { ...node, samples } } });
 }
 
 /** Immutable update of one def by id (no-op if the id is unknown). */

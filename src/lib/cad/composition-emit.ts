@@ -38,7 +38,7 @@ import {
 } from './composition-graph';
 import {
   emitExprConsts, rewriteExprRefs,
-  exprBlockVar, rewriteExprLocalRefs, orderExprDef, declaredNames,
+  exprBlockVar, exprBlockMember, rewriteExprLocalRefs, orderExprDef, declaredNames,
   compileListFormula,
 } from './graph-exprs';
 import { isImperative, compileImperative } from './expr-imperative';
@@ -409,6 +409,19 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     bodyText = `${block}\n${bodyText}`;
   }
 
+  // ── Spline path blocks (TODO #15) ──────────────────────────────────────
+  // Each spline node emits ONE prelude const: the centripetal Catmull-Rom curve
+  // through its control points, resampled to N equally-spaced [x,y,z] points via
+  // the pure-JS `resampleSpline` (injected into the sandbox; NO three.js at bake).
+  // A consumer Call arg wired to the spline's output references this same const
+  // (`_x_<id>_path`, exprBlockMember(id,'path')). ABSENT ⇒ no spline nodes ⇒ no
+  // prelude ⇒ byte-identical to today.
+  const splineBlockLines = emitSplineBlocks(graph);
+  if (splineBlockLines.length > 0) {
+    const block = splineBlockLines.map((l) => `  ${l}`).join('\n');
+    bodyText = `${block}\n${bodyText}`;
+  }
+
   for (const [id, varName] of varNames.entries()) {
     const node = graph.nodes[id];
     if (!node || (node.type !== 'polygon' && node.type !== 'sketch')) continue;
@@ -722,6 +735,10 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // whatever arg sockets they're wired into. They are never a geometry
       // value, so they contribute nothing to this node-expression pass.
       return null;
+    case 'spline':
+      // Spline path producers emit a prelude const (see emitSplineBlocks), not a
+      // geometry value — nothing in this node-expression pass.
+      return null;
   }
 }
 
@@ -795,6 +812,32 @@ export function emitExprBlocks(graph: Graph): string[] {
         }
       }
     }
+  }
+  return lines;
+}
+
+// ─── Spline path-producer prelude (TODO #15) ────────────────────────────────
+//
+// Each `spline` node lowers to ONE prelude const binding the resampled curve:
+//   const _x_<id>_path = resampleSpline([[x,y,z], …], <N>);
+// `_x_<id>_path` is exprBlockMember(id, 'path') — the SAME identifier the wire
+// handler computes (wire.startExprOutWire(ev, id, 'path') → endWireOnCallArg →
+// exprBlockMember(id, 'path')), so a Call's `path` arg wired to the spline's
+// output references this const. `resampleSpline` is injected into the sandbox by
+// name (primitive-sandbox.ts), so the bake stays three.js-free.
+
+/** The PRELUDE `const` lines for every spline node (empty when there are none —
+ *  the byte-identical guarantee). */
+export function emitSplineBlocks(graph: Graph): string[] {
+  const lines: string[] = [];
+  for (const node of Object.values(graph.nodes)) {
+    if (!node || node.type !== 'spline') continue;
+    const pts = Array.isArray((node as any).points) ? (node as any).points : [];
+    const ptsLit = `[${pts
+      .map((p: any[]) => `[${Number(p?.[0]) || 0}, ${Number(p?.[1]) || 0}, ${Number(p?.[2]) || 0}]`)
+      .join(', ')}]`;
+    const samples = (node as any).samples != null ? emitValueExpr((node as any).samples) : '32';
+    lines.push(`const ${exprBlockMember(node.id, 'path')} = resampleSpline(${ptsLit}, ${samples});`);
   }
   return lines;
 }
