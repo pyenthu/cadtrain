@@ -400,6 +400,25 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     bodyText = rewriteExprRefs(bodyText);
   }
 
+  // ── Spline path blocks (TODO #15) ──────────────────────────────────────
+  // Each spline node emits ONE prelude const: the centripetal Catmull-Rom curve
+  // through its control points, resampled to N equally-spaced [x,y,z] points via
+  // the pure-JS `resampleSpline` (injected into the sandbox; NO three.js at bake).
+  // A consumer Call arg wired to the spline's output references this same const
+  // (`_x_<id>_path`, exprBlockMember(id,'path')). ABSENT ⇒ no spline nodes ⇒ no
+  // prelude ⇒ byte-identical to today.
+  //
+  // ORDER: prepend BEFORE the expr blocks so the expr-block prelude lands ABOVE
+  // it — a spline with a WIRED points source (TODO #26) references an expr
+  // instance's `_x_<id>_<out>` const, which must be declared first (JS `const`
+  // TDZ). A manual-points spline references nothing, so the order is immaterial
+  // for it (still byte-identical).
+  const splineBlockLines = emitSplineBlocks(graph);
+  if (splineBlockLines.length > 0) {
+    const block = splineBlockLines.map((l) => `  ${l}`).join('\n');
+    bodyText = `${block}\n${bodyText}`;
+  }
+
   // ── Expr blocks (B.7 / id 914 v2) ──────────────────────────────────────
   // Each floating Expr node emits a numeric PRELUDE: one `const <blockvar>_<in>`
   // per derived input (from its wired binding, or a safe 0) then one
@@ -408,23 +427,11 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // so the prelude must sit ahead of the whole body. ABSENT/EMPTY ⇒ no expr
   // nodes ⇒ no prelude ⇒ byte-identical to today. Kept OUT of the
   // rewriteExprRefs pass above: expr-block consts use their own `<blockvar>_`
-  // namespace, never the `e.*` one.
+  // namespace, never the `e.*` one. Prepended AFTER the spline block so it sits
+  // above (a wired spline reads an expr-output const declared here).
   const exprBlockLines = emitExprBlocks(graph);
   if (exprBlockLines.length > 0) {
     const block = exprBlockLines.map((l) => `  ${l}`).join('\n');
-    bodyText = `${block}\n${bodyText}`;
-  }
-
-  // ── Spline path blocks (TODO #15) ──────────────────────────────────────
-  // Each spline node emits ONE prelude const: the centripetal Catmull-Rom curve
-  // through its control points, resampled to N equally-spaced [x,y,z] points via
-  // the pure-JS `resampleSpline` (injected into the sandbox; NO three.js at bake).
-  // A consumer Call arg wired to the spline's output references this same const
-  // (`_x_<id>_path`, exprBlockMember(id,'path')). ABSENT ⇒ no spline nodes ⇒ no
-  // prelude ⇒ byte-identical to today.
-  const splineBlockLines = emitSplineBlocks(graph);
-  if (splineBlockLines.length > 0) {
-    const block = splineBlockLines.map((l) => `  ${l}`).join('\n');
     bodyText = `${block}\n${bodyText}`;
   }
 
@@ -838,10 +845,21 @@ export function emitSplineBlocks(graph: Graph): string[] {
   const lines: string[] = [];
   for (const node of Object.values(graph.nodes)) {
     if (!node || node.type !== 'spline') continue;
-    const pts = Array.isArray((node as any).points) ? (node as any).points : [];
-    const ptsLit = `[${pts
-      .map((p: any[]) => `[${Number(p?.[0]) || 0}, ${Number(p?.[1]) || 0}, ${Number(p?.[2]) || 0}]`)
-      .join(', ')}]`;
+    // WIRED control-points source (TODO #26) OVERRIDES the manual literal: emit
+    // the wired producer's output var (an expr instance's `_x_<id>_<out>` const,
+    // or a `p.<param>`) in place of the `[[x,y,z],…]` array. `resampleSpline`
+    // still smooths + arc-length-resamples the runtime array. Absent ⇒ the
+    // manual literal (byte-identical to before).
+    const pxpr = (node as any).pointsExpr as ArgValue | undefined;
+    let ptsLit: string;
+    if (pxpr && (pxpr.kind === 'expr' || pxpr.kind === 'param')) {
+      ptsLit = emitValueExpr(pxpr);
+    } else {
+      const pts = Array.isArray((node as any).points) ? (node as any).points : [];
+      ptsLit = `[${pts
+        .map((p: any[]) => `[${Number(p?.[0]) || 0}, ${Number(p?.[1]) || 0}, ${Number(p?.[2]) || 0}]`)
+        .join(', ')}]`;
+    }
     const samples = (node as any).samples != null ? emitValueExpr((node as any).samples) : '32';
     // The spline OWNS loop-ness: a closed spline resamples around the full ring
     // (no reflected endpoints). Consumers wired to this path auto-follow the flag

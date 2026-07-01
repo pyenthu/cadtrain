@@ -211,6 +211,12 @@ export function hydrateGraph(serialised: any): Graph {
     // `closed` normalises to a strict boolean; absent / falsy ⇒ false (an OPEN
     // curve, today's behaviour). The path producer owns loop-ness (auto-follow).
     n.closed = n.closed === true;
+    // `pointsExpr` (TODO #26) — a WIRED control-points source. Keep it only when
+    // it is a well-formed ArgValue (expr/param); anything else is dropped so the
+    // node falls back to its manual `points`. Absent ⇒ manual (byte-identical).
+    if (n.pointsExpr != null && !(n.pointsExpr?.kind === 'expr' || n.pointsExpr?.kind === 'param')) {
+      delete n.pointsExpr;
+    }
     migratedNodes[id] = n;
   }
 

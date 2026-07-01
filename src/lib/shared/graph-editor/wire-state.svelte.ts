@@ -39,6 +39,7 @@ import {
   addRepeatChild,
   setRepeatChildAt,
   setExprInputBinding,
+  setSplinePointsExpr,
   type Graph,
   type NodeId,
   type MvNode,
@@ -46,7 +47,7 @@ import {
   type CallNode,
 } from '$lib/cad/composition-graph';
 import { exprBlockMember } from '$lib/cad/graph-exprs';
-import { checkOutputFeeds, slotExpectedType, POLYGON_POINTS } from '$lib/cad/wire-check';
+import { checkOutputFeeds, slotExpectedType, POLYGON_POINTS, SPLINE_POINTS } from '$lib/cad/wire-check';
 import { releaseImplicitCapture } from './pointer-capture';
 
 /** wireFrom is either a node's output socket OR a param's output chip. On
@@ -246,6 +247,26 @@ export class WireState {
       points[idx] = { kind: 'expr-list-ref', sourceId: from.nodeId, output: from.outName };
       this.#setGraph({ ...g, nodes: { ...g.nodes, [polygonId]: { ...poly, points } } });
     }
+    this.from = null; this.mouse = null;
+  };
+
+  /** Drop a wire onto a spline node's CONTROL-POINTS input socket (TODO #26).
+   *  The source must be an expr instance's `list<point>` OUTPUT; wiring it makes
+   *  those points the spline's control points (OVERRIDING its manual `points`),
+   *  which the spline still smooths + arc-length-resamples. Structural
+   *  wire-check: the slot wants a list of points of ANY arity (`list<point2|3>`);
+   *  a scalar / plain-number output is refused with a plain-language reason, an
+   *  unknown structure passes (conservative). */
+  endWireOnSplinePoints = (ev: PointerEvent, splineId: NodeId) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (!from || from.kind !== 'out' || from.outName == null || from.nodeId === splineId) {
+      this.from = null; this.mouse = null; return;
+    }
+    const g = this.#getGraph();
+    const feed = checkOutputFeeds(g, from.nodeId, from.outName, SPLINE_POINTS);
+    if (!feed.ok) { this.lastReject = feed.reason; this.from = null; this.mouse = null; return; }
+    this.#setGraph(setSplinePointsExpr(g, splineId, asExpr(exprBlockMember(from.nodeId, from.outName))));
     this.from = null; this.mouse = null;
   };
 

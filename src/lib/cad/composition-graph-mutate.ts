@@ -1273,6 +1273,20 @@ export function setSplineSamples(graph: Graph, id: NodeId, samples: ArgValue): G
   return finalize({ ...graph, nodes: { ...graph.nodes, [id]: { ...node, samples } } });
 }
 
+/** WIRE / UNWIRE the spline's control-points source (TODO #26). Passing an
+ *  ArgValue makes that producer's `list<point2|3>` output the spline's control
+ *  points (OVERRIDING the manual `points`); passing null UNWIRES — removes the
+ *  field so the manual array is used again. The manual `points` are preserved
+ *  either way (never cleared), so unwiring restores exactly what was there. */
+export function setSplinePointsExpr(graph: Graph, id: NodeId, value: ArgValue | null): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'spline') return graph;
+  const next = { ...node } as SplineNode;
+  if (value == null) delete next.pointsExpr;
+  else next.pointsExpr = value;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: next } });
+}
+
 /** Toggle the spline between a CLOSED loop and an OPEN curve. The path producer
  *  owns loop-ness: a sweep whose `path` is wired to this spline auto-follows
  *  (emit forces closedPath/caps from this flag — see composition-emit). */

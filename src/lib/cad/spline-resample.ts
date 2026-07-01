@@ -76,7 +76,10 @@ function evalSegment(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, u: number): Vec3 {
  *  is `n · perSeg` points around the ring, with the closing edge implicit
  *  (dense[last] → dense[0]). The OPEN path is byte-identical to before. */
 export function denseSampleSpline(points: Vec3[], perSeg = 64, closed = false): Vec3[] {
-  const pts = points.filter((p) => Array.isArray(p) && p.length >= 3).map((p) => [Number(p[0]), Number(p[1]), Number(p[2])] as Vec3);
+  // Accept 2D OR 3D control points (#26 lets a wired `list<point2|3>` drive the
+  // spline): a 2D `[x,y]` pads to `[x,y,0]`. A 3D point is byte-identical
+  // (Number(p[2]) unchanged; only a MISSING z coerces to 0).
+  const pts = points.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [Number(p[0]), Number(p[1]), Number(p[2]) || 0] as Vec3);
   if (pts.length < 2) return pts.slice();
   const n = pts.length;
   if (closed) {

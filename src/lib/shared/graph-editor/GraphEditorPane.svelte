@@ -76,6 +76,7 @@
     setSplinePoints,
     setSplineSamples,
     setSplineClosed,
+    setSplinePointsExpr,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -1965,6 +1966,12 @@
     graph = setSplineClosed(graph, splineEditId, v);
     bakeNonce++;
   }
+  /** Drop the wired control-points source (#26) → back to the manual points. */
+  function onSplineUnwire() {
+    if (!splineEditId) return;
+    graph = setSplinePointsExpr(graph, splineEditId, null);
+    bakeNonce++;
+  }
   /** Picker "ƒ expr" item (B.7 v3) — route to the Expressions MENU (the expr-def
    *  manager) instead of silently dropping an instance of a (possibly empty,
    *  unwireable) def. The menu is where you define a named expr with params/
@@ -3066,9 +3073,11 @@
       points={splineNode.points ?? []}
       samples={splineNode.samples?.kind === 'literal' ? Number(splineNode.samples.value) : 32}
       closed={splineNode.closed === true}
+      wired={splineNode.pointsExpr != null}
       onPointsChange={onSplinePoints}
       onSamplesChange={onSplineSamples}
       onClosedChange={onSplineClosed}
+      onUnwire={onSplineUnwire}
       onClose={() => (splineEditId = null)} />
   {/if}
 
@@ -3531,6 +3540,30 @@
                   <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + 68 + ci * 24)} fill="none"/>
                 {/if}
               {/each}
+            {:else if n.type === 'spline'}
+              <!-- Spline control-POINTS input wire (#26) — when the spline's
+                   pointsExpr references an expr instance's output const
+                   (_x_<id>_<out>), draw a wire from that instance's right-edge
+                   output socket → the spline's left-edge input socket (centered
+                   at sh/2, matching NodeCard's cx=0, cy=sh/2). -->
+              {@const px = (n as any).pointsExpr}
+              {#if px?.kind === 'expr'}
+                {@const spos = nodePos(n.id)}
+                {@const ssize = nodeSize(graph, n)}
+                {@const tgtY = spos.y + ssize.h / 2}
+                {#each allNodes as exn (exn.id)}
+                  {#if exn.type === 'expr'}
+                    {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                    {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                      {#if String(px.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                        {@const srcSize = nodeSize(graph, exn)}
+                        {@const srcPos = nodePos(exn.id)}
+                        <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), spos.x, tgtY)}/>
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
+              {/if}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each visible child of a container shows as
                    a bezier from the child's output socket → the container's
