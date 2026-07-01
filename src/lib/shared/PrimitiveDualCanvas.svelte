@@ -180,7 +180,7 @@
   // on (name, source) — NOT on params. So param SCRUBBING reuses the cached
   // script and skips the /compile round-trip, baking locally each tick. Keyed on
   // name|source; bounded LRU. Only successes are cached.
-  type CompiledEntry = { supported: boolean; script?: string; scriptHash?: string; reason?: string };
+  type CompiledEntry = { supported: boolean; script?: string; scriptHash?: string; reason?: string; partColors?: any };
   const compileCache = new Map<string, CompiledEntry>();
   const COMPILE_CACHE_MAX = 24;
   async function getCompiled(name: string, src: string, signal: AbortSignal): Promise<CompiledEntry> {
@@ -192,7 +192,7 @@
       body: JSON.stringify({ name, source: src }), signal,
     });
     const cd = await cr.json();
-    const entry: CompiledEntry = { supported: !!cd?.supported, script: cd?.script, scriptHash: cd?.scriptHash, reason: cd?.reason };
+    const entry: CompiledEntry = { supported: !!cd?.supported, script: cd?.script, scriptHash: cd?.scriptHash, reason: cd?.reason, partColors: cd?.partColors };
     if (entry.supported && entry.script) {
       compileCache.set(key, entry);
       while (compileCache.size > COMPILE_CACHE_MAX) compileCache.delete(compileCache.keys().next().value as string);
@@ -256,7 +256,10 @@
         if (cd?.supported && cd.script) {
           const options = { cutaway: cutFlag, instanced: true,
             ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
-            ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), colorOuter, colorInner };
+            ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), colorOuter, colorInner,
+            // #86: color-by-source LUT from compile → client bake tints each
+            // subpart in its own colour (a single override still wins in finalize).
+            ...(cd.partColors ? { parts: cd.partColors } : {}) };
           const _tb0 = performance.now();
           const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
           const _tBake = performance.now() - _tb0;

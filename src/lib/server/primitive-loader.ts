@@ -118,8 +118,17 @@ export function assemblePrimitiveBody(
   depNames: string[],
   stripMetaFromBody = false,
 ): AssembledBody {
-  const toTranspile = stripMetaFromBody ? stripMetaBlock(source) : source;
-  let body = transpile(tagInstanceSources(toTranspile));
+  // Instance-tag on the FULL source (which still carries `meta.uses`) BEFORE any
+  // meta strip — recognizeComposite needs `uses` to know which calls are parts.
+  // #86: the compiler path (stripMetaFromBody=true) previously stripped meta
+  // first, so `usesOf` saw nothing and NO `__tag(...)` was spliced → client
+  // (client-exec) bakes carried no source IDs and color-by-source was impossible.
+  // Tagging is name-based (`partHashId(instanceName)`), so it stays invariant to
+  // meta churn — scriptHash is unaffected by meta-only edits, executor↔compiler
+  // parity holds, and stripMetaBlock still removes the untouched meta block after.
+  const tagged = tagInstanceSources(source);
+  const toTranspile = stripMetaFromBody ? stripMetaBlock(tagged) : tagged;
+  let body = transpile(toTranspile);
   // ALIAS POLICY — rewrite a dep's call sites in the body to a collision-proof
   // alias when any of:
   //   (a) the body declares a `const/let/var <dep>` shadowing the dep arg

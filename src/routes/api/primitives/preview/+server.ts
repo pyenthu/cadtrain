@@ -6,7 +6,7 @@ import { finalizeManifold } from '$lib/cad/render-helpers';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { coerceSmooth } from '$lib/cad/bake-worker-core';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
-import { analyzeParts } from '$lib/server/part-colors';
+import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
 import { hashBakeKey, readBakeCache, writeBakeCache, type BakeCacheOptions } from '$lib/server/bake-cache';
 
 // POST /api/primitives/preview
@@ -296,8 +296,15 @@ export const POST = async ({ request, fetch }) => {
   // Per-part color table (color-by-source). Matches the hashId stamping
   // buildPrimitiveGeom applied; inactive for leaves / unrecognized sources
   // → finalizeManifold falls back to the material / legacy path.
+  // #86: colour each subpart in ITS OWN authored colour. resolveDepColors reads
+  // every meta.uses dep's meta (colorOuter/colorInner/material) and analyzeParts
+  // folds it into the color-by-source LUT (parent's instanceColors override still
+  // wins; leaves / unresolved deps fall back to the palette → byte-identical).
   let parts: any = undefined;
-  try { parts = analyzeParts(source); } catch { /* legacy color path */ }
+  try {
+    const depColors = await resolveDepColors(source, fetch);
+    parts = analyzeParts(source, depColors);
+  } catch { /* legacy color path */ }
   // cutaway: undefined → threshold-based auto-skip (default)
   //          true       → force compute (caller wants the slice)
   //          false      → force skip (fast path)

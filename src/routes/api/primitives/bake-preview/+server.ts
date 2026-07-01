@@ -3,7 +3,7 @@ import * as helpers from '$lib/cad/manifold-helpers';
 import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
 import { buildGlbBytes, DEFAULT_OUTER_HEX, DEFAULT_INNER_HEX, type ColorOverride } from '$lib/server/manifold-bake';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
-import { analyzeParts } from '$lib/server/part-colors';
+import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
 
 // POST /api/primitives/bake-preview
 //   { id, name, source, params }
@@ -92,8 +92,12 @@ export const POST = async ({ request, fetch }) => {
       return typeof v === 'string' ? v : Number(v ?? 0);
     }));
 
+  // #86: subpart-own colours in the GLB export too (same LUT the live Mesh uses).
   let parts: any = undefined;
-  try { parts = analyzeParts(source); } catch { /* legacy color path */ }
+  try {
+    const depColors = await resolveDepColors(source, fetch);
+    parts = analyzeParts(source, depColors);
+  } catch { /* legacy color path */ }
   const r = await buildGlbBytes(geom, valuesRecord, material, parts, override);
   mark('bake', t); // includes the WASM geom rebuild + GLB export (full + cut)
   if (!r.ok) throw error(400, `bake failed: ${r.error}`);
