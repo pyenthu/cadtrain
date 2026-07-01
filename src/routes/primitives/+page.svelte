@@ -263,6 +263,39 @@
   function menuRenameFolder() { const p = createMenu?.path; closeCreateMenu(); if (p != null) void renameFolderPath(p); }
   function menuDeleteFolder() { const p = createMenu?.path; closeCreateMenu(); if (p != null) void deleteFolderPath(p); }
 
+  /** Move a folder between the two USER tabs (BASIC ↔ WELL). A WELL folder
+   *  (`completions/<family>`) moves to `basic/<leaf>`; any BASIC folder (a
+   *  top-level user folder or `basic/<f>`) moves to `completions/<leaf>`. The
+   *  folder + its parts travel together as a real dir relocation (Rule 16);
+   *  the tree re-groups it under the new tab on the next /list. INTERNAL
+   *  (Archived / Stdlib / Stale) is excluded — those rows never expose the ⋯
+   *  menu, and `completions`/`basic` roots aren't editable (PROTECTED). */
+  function moveFolderDestFor(path: string): { label: string; dest: string } | null {
+    if (!isEditableFolder(path)) return null;
+    const leaf = path.split('/').pop() ?? path;
+    return path.startsWith('completions/')
+      ? { label: 'Basic', dest: `basic/${leaf}` }
+      : { label: 'Well', dest: `completions/${leaf}` };
+  }
+  async function moveFolderToTab(from: string, dest: string) {
+    folderBusy = true;
+    try {
+      const r = await fetch(`/api/primitives/folder/move?from=${encodeURIComponent(from)}&to=${encodeURIComponent(dest)}`, { method: 'POST' });
+      if (!r.ok) { alert(`Move folder failed (${r.status}): ${(await r.text()).slice(0, 160)}`); return; }
+      // Switch to the destination tab so the moved folder is visible right away.
+      selectTab(dest.startsWith('completions/') ? 'completions' : 'basic');
+      await loadList();
+      ensureExpanded(dest);
+    } catch (e: any) { alert(`Move folder error: ${e?.message ?? e}`); }
+    finally { folderBusy = false; }
+  }
+  function menuMoveFolder() {
+    const p = createMenu?.path; closeCreateMenu();
+    if (p == null) return;
+    const t = moveFolderDestFor(p);
+    if (t) void moveFolderToTab(p, t.dest);
+  }
+
   /** Profile entries — `.prvl.ts` (revolve) and `.prex.ts` (extrude) files
    *  living under `<volume>/primitives/profiles/`. Loaded from a sister
    *  endpoint (the profile list is shaped differently from the primitive
@@ -1313,7 +1346,13 @@
         <button class="prim-create-menu-item" type="button" role="menuitem"
           disabled={folderBusy} onclick={menuNewFolder}>📁 New folder here</button>
         {#if isEditableFolder(createMenu.path)}
+          {@const mt = moveFolderDestFor(createMenu.path)}
           <div class="prim-create-menu-sep"></div>
+          {#if mt}
+            <button class="prim-create-menu-item" type="button" role="menuitem"
+              title={`Move this folder (and its parts) to the ${mt.label} tab — primitives/${mt.dest}/`}
+              disabled={folderBusy} onclick={menuMoveFolder}>↔ Move to {mt.label}</button>
+          {/if}
           <button class="prim-create-menu-item" type="button" role="menuitem"
             disabled={folderBusy} onclick={menuRenameFolder}>✎ Rename folder</button>
           <button class="prim-create-menu-item danger" type="button" role="menuitem"
