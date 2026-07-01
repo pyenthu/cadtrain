@@ -118,6 +118,7 @@
     type RotNode,
   } from '$lib/cad/composition-graph';
   import { emitGraph, consumedByCall } from '$lib/cad/composition-emit';
+  import { resolveWiredSplinePoints } from '$lib/cad/spline-eval';
   import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
@@ -1949,6 +1950,17 @@
   }
   /** Live node behind the open popup (reactive — so edits reflect immediately). */
   let splineNode = $derived(splineEditId ? (graph.nodes[splineEditId] as any) : null);
+  /** The CONTROL POINTS the editor renders. When the spline's points are WIRED
+   *  from an expression (#26), evaluate that expression's output live (reuses the
+   *  bake's emitExprBlocks lowering) so the popup shows the RESOLVED points, not
+   *  the stale manual handles. Unwired ⇒ the manual `points`. `$derived` so it
+   *  tracks graph / param / expression edits. */
+  let splineDisplayPoints = $derived.by<[number, number, number][]>(() => {
+    const n = splineNode;
+    if (!n) return [];
+    if (n.pointsExpr != null) return resolveWiredSplinePoints(graph, n.pointsExpr);
+    return (n.points ?? []) as [number, number, number][];
+  });
   function onSplinePoints(pts: [number, number, number][]) {
     if (!splineEditId) return;
     graph = setSplinePoints(graph, splineEditId, pts);
@@ -3070,7 +3082,7 @@
   {#if splineEditId && splineNode}
     <SplineEditorPopup
       pos={splinePopPos}
-      points={splineNode.points ?? []}
+      points={splineDisplayPoints}
       samples={splineNode.samples?.kind === 'literal' ? Number(splineNode.samples.value) : 32}
       closed={splineNode.closed === true}
       wired={splineNode.pointsExpr != null}

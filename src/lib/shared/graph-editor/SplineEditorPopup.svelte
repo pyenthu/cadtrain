@@ -148,18 +148,26 @@
     <button class="ge-sp-headx" type="button" onclick={onClose} title="Close">×</button>
   </div>
 
-  <div class="ge-sp-hint">Drag a <b>violet</b> handle to move a control point · <b>click the curve</b> to insert a point mid-run · <b>green</b> dots are the N spaced samples (the baked path). Orbit = drag empty space.</div>
+  <div class="ge-sp-hint">
+    {#if wired}
+      <b>violet</b> handles = the expression’s control points (read-only) · <b>green</b> dots are the N spaced samples (the baked path). Orbit = drag anywhere.
+    {:else}
+      Drag a <b>violet</b> handle to move a control point · <b>click the curve</b> to insert a point mid-run · <b>green</b> dots are the N spaced samples (the baked path). Orbit = drag empty space.
+    {/if}
+  </div>
 
   {#if wired}
     <div class="ge-sp-wired">
-      <span>⚡ <b>points: from a wired expression</b> — the control points come from an expression’s output, not this editor.</span>
+      <span>⚡ <b>points: from a wired expression</b> — {points.length > 0
+        ? `showing the ${points.length} resolved point${points.length === 1 ? '' : 's'} from the expression (read-only).`
+        : 'the expression has no points yet — fix the expression to see the curve.'}</span>
       {#if onUnwire}<button class="ge-sp-btn" type="button" onclick={onUnwire} title="Detach the expression and edit points by hand again">use manual points</button>{/if}
     </div>
   {/if}
 
   <div class="ge-sp-canvas">
     <Canvas>
-      <SplineScene {points} {samples} {closed} bind:selectedIdx {onPointsChange} />
+      <SplineScene {points} {samples} {closed} interactive={!wired} bind:selectedIdx {onPointsChange} />
     </Canvas>
   </div>
 
@@ -183,9 +191,9 @@
       {#each points as p, i (i)}
         <div class="ge-sp-trow" class:sel={i === selectedIdx}>
           <span class="ge-sp-tidx" role="button" tabindex="-1" onclick={() => (selectedIdx = i)}>{i}</span>
-          <input type="number" step="0.1" value={r3(p[0])} onchange={(e) => setCoord(i, 0, (e.target as HTMLInputElement).value)} />
-          <input type="number" step="0.1" value={r3(p[1])} onchange={(e) => setCoord(i, 1, (e.target as HTMLInputElement).value)} />
-          <input type="number" step="0.1" value={r3(p[2])} onchange={(e) => setCoord(i, 2, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={r3(p[0])} disabled={wired} onchange={(e) => setCoord(i, 0, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={r3(p[1])} disabled={wired} onchange={(e) => setCoord(i, 1, (e.target as HTMLInputElement).value)} />
+          <input type="number" step="0.1" value={r3(p[2])} disabled={wired} onchange={(e) => setCoord(i, 2, (e.target as HTMLInputElement).value)} />
         </div>
       {/each}
     </div>
