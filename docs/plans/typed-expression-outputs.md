@@ -110,11 +110,65 @@ Today's Type Definer only builds records-with-fields and can't save a list type
 
 | Phase | What | Notes |
 |---|---|---|
-| **A** | Structural inference engine + array-literal support + real-time badge/errors | the keystone; kills ArrayNode error |
-| **B** | Typed output sockets + structural wire-checking (plain-language reasons) | builds on port-types canFeed |
+| **A** | Structural inference engine + array-literal support + real-time badge/errors | the keystone; kills ArrayNode error · **SHIPPED** |
+| **B** | Typed output sockets + structural wire-checking (plain-language reasons) | builds on port-types canFeed · **SHIPPED (draft, see below)** |
 | **C** | Gradual explicit annotation (optional contract, checked vs inference) | registry-backed |
 | **D** | Type Definer fixes — list types, save bug, field-type dropdown | makes "build types" usable |
 | **E** | Consumers declare input types + record emit + record→array adapter | closes the loop end-to-end |
+
+## Phase B — what shipped (draft, branch `worktree-agent-a2305d766500241a7`)
+
+**Pure engine (fully unit-tested):**
+- `struct-type.ts` — `checkFeed(src, expect): { ok, reason }`: a CONSERVATIVE
+  structural compatibility check that returns a PLAIN-LANGUAGE reason on a
+  confident mismatch (scalar↔list, wrong point arity, numbers-where-points-
+  needed) and ALLOWS anything it can't pin down (null / unknown / un-modelled).
+  Plus expected-type builders `listOfPoints(arity?)`, `T_SCALAR`,
+  `T_LIST_POINT2`, `T_LIST_POINT3`.
+- `port-types.ts` — `structColor(StructType)` (one stable colour per kind, reusing
+  the registry colours: scalar=teal · list<point2>=indigo · list<point3>=sky ·
+  list<number>=cyan · record=violet · unknown=slate), `canFeedStruct(src, target)`
+  (the canFeed extension that takes an inferred StructType), and the two
+  arity-pinned list PortTypes `PT_LIST_POINT2` / `PT_LIST_POINT3`.
+- `wire-check.ts` (new) — the consumer slot table `slotExpectedType(src, key)`
+  (r_sweep.path→list<point3>, r_sweep.section→list<point2>) + `POLYGON_POINTS`
+  (list<point2>), `inferGraphOutputStruct(graph, nodeId, out)` (resolves an expr
+  instance's def-output formula → structure; imperative builder → point list),
+  and `checkOutputFeeds(...)` (the editor verdict).
+
+**UI:**
+- `NodeCard.svelte` — the expr OUTPUT socket is now coloured by its INFERRED type
+  (an explicit annotation still wins via the registry); socket size/label track
+  the resolved structure.
+- `wire-state.svelte.ts` — `endWireOnPolygonExprListRef` (polygon points) and the
+  expr-output→call-arg branch of `endWireOnCallArg` (r_sweep.path/section) now run
+  `checkOutputFeeds` and REFUSE an incompatible drop, storing the plain reason in
+  `wire.lastReject`.
+- `GraphEditorPane.svelte` — a transient red banner surfaces `wire.lastReject`
+  ("⛔ Can't connect — this needs a list of 3D points like [x, y, z], …").
+
+Sample reject messages:
+- path slot ← 2D points: *"this needs a list of 3D points like [x, y, z], but the
+  output is a list of 2D points like [x, y]"*
+- path slot ← flat numbers: *"…but the output is a list of plain numbers"*
+- path slot ← a scalar: *"…but the output is a single number"*
+- 2D section/polygon slot ← 3D points: *"this needs a list of 2D points like
+  [x, y], but the output is a list of 3D points like [x, y, z]"*
+
+**Deferred (not in this slice):**
+- **Live green/red hover-tinting** of candidate target slots DURING the drag (the
+  pure `checkFeed`/`canFeedStruct` is ready for it; it needs per-slot
+  pointerenter/hover state in the large GEP shell). Today the verdict is enforced
+  at DROP with a clear reason banner.
+- **`r_surface_grid.grid`** — the engine doesn't exist yet on this branch; the
+  slot table has a clear extension point for it.
+- **port-suggest call-arg slots** (auto-wire SUGGESTIONS for r_sweep) — left to
+  Phase E; suggestions are arity-blind (expr outputs are typed by shape/elem, not
+  arity), so adding them here would over-suggest. The blocking wire-CHECK is
+  arity-aware and authoritative.
+- **record → [x,y,z] adapter** (a `list<record>` feeding a point slot) — Phase E;
+  today such a wire is refused with "a list of records".
+- **Explicit annotation as a contract** checked vs inference — Phase C.
 
 ## Stopgap
 

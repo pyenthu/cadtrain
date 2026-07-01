@@ -3069,6 +3069,14 @@
       {#if wire.from && wire.tapConnect}
         <div class="ge-connect-hint">🔗 Tap a target socket to connect · <kbd>Esc</kbd> to cancel</div>
       {/if}
+      {#if wire.lastReject}
+        <!-- typed-expression-outputs Phase B — plain-language reason the last
+             wire was refused (e.g. "this needs 3D points like [x, y, z], …"). -->
+        <div class="ge-wire-reject" role="status" aria-live="polite">
+          ⛔ Can’t connect — {wire.lastReject}
+          <button class="ge-wire-reject-x" onclick={() => (wire.lastReject = null)} aria-label="dismiss">×</button>
+        </div>
+      {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <svg
@@ -4415,6 +4423,20 @@
     background: rgba(255,255,255,0.25); border-radius: 3px; padding: 0 4px;
     font: 600 11px ui-monospace, monospace;
   }
+  /* typed-expression-outputs Phase B — incompatible-wire reason banner. */
+  .ge-wire-reject {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 21; padding: 6px 12px; border-radius: 8px; max-width: 80%;
+    background: #b91c1c; color: #fff; font: 600 12px Arial; line-height: 1.35;
+    box-shadow: 0 2px 10px rgba(185, 28, 28, 0.4);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ge-wire-reject-x {
+    background: rgba(255,255,255,0.22); border: 0; color: #fff; cursor: pointer;
+    border-radius: 4px; width: 18px; height: 18px; font: 700 13px Arial; line-height: 1;
+    flex: 0 0 auto;
+  }
+  .ge-wire-reject-x:hover { background: rgba(255,255,255,0.4); }
   /* + param button + delete × on canvas chip + add-param popover rows. */
   .ge-param-card-x { font: 13px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   .ge-param-add-bg { fill: #fef3c7; stroke: #d97706; stroke-width: 2; stroke-dasharray: 4 3; cursor: pointer; }

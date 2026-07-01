@@ -260,6 +260,145 @@ function inferFunction(node: any): InferResult {
   return ok({ kind: 'scalar' });
 }
 
+// ─── structural compatibility (typed-expression-outputs, Phase B) ─────────────
+//
+// A consumer slot (r_sweep.path, a polygon's points, …) declares the STRUCTURE
+// it expects. `checkFeed` compares an inferred OUTPUT structure against that
+// expectation and, on a mismatch, returns a PLAIN-LANGUAGE reason ("this needs
+// 3D points like [x, y, z], but the output is a list of 2D points") — never type
+// jargon. It is deliberately CONSERVATIVE: anything it can't pin down (an empty
+// formula, an `unknown` shape) is ALLOWED, so the checker never over-blocks a
+// wire it merely failed to understand.
+
+/** The outcome of a wire-compatibility check. `reason` is a human sentence on
+ *  failure, null on success. */
+export interface FeedCheck {
+  ok: boolean;
+  reason: string | null;
+}
+
+/** A list-of-points expectation. `arity` is the required coordinate count
+ *  (2 → [x,y], 3 → [x,y,z]); omit it to accept points of ANY arity (the generic
+ *  `list<point>` slot). */
+export function listOfPoints(arity?: number): StructType {
+  return { kind: 'list', of: { kind: 'list', of: { kind: 'scalar' }, len: arity } };
+}
+/** A plain scalar expectation (a single-number slot). */
+export const T_SCALAR: StructType = { kind: 'scalar' };
+/** `list<point2>` — a list of [x, y] pairs (polygon points, r_sweep.section). */
+export const T_LIST_POINT2: StructType = listOfPoints(2);
+/** `list<point3>` — a list of [x, y, z] triples (r_sweep.path, a 3D grid). */
+export const T_LIST_POINT3: StructType = listOfPoints(3);
+
+/** `[x, y]` / `[x, y, z]` / `[… N numbers]` — a sample row of the given arity. */
+function sampleRow(arity?: number): string {
+  if (arity === 2) return '[x, y]';
+  if (arity === 3) return '[x, y, z]';
+  if (typeof arity === 'number') return `[a list of ${arity} numbers]`;
+  return '[x, y, …]';
+}
+
+/** Is this descriptor a POINT (a fixed-or-any-arity list of scalars)? Returns
+ *  the arity (a number, or undefined for "any/unknown arity"), else null. */
+function asPoint(t: StructType): { arity: number | undefined } | null {
+  if (t.kind === 'list' && t.of.kind === 'scalar') return { arity: t.len };
+  return null;
+}
+
+/** Plain-language name for what an OUTPUT actually is — the right half of a
+ *  reject sentence ("…but the output is <this>"). */
+function describeValue(t: StructType): string {
+  switch (t.kind) {
+    case 'scalar':  return 'a single number';
+    case 'flag':    return 'a true/false flag';
+    case 'record':  return 'a record';
+    case 'unknown': return 'a value of an unknown shape';
+    case 'list': {
+      if (t.of.kind === 'scalar') return 'a list of plain numbers';
+      if (t.of.kind === 'record') return 'a list of records';
+      const inner = asPoint(t.of);
+      if (inner) {
+        return typeof inner.arity === 'number'
+          ? `a list of ${inner.arity}D points like ${sampleRow(inner.arity)}`
+          : 'a list of points';
+      }
+      return 'a list';
+    }
+  }
+}
+
+/** Plain-language name for what a SLOT needs — the left half ("this needs <this>"). */
+function describeExpect(t: StructType): string {
+  if (t.kind === 'scalar') return 'a single number';
+  if (t.kind === 'list') {
+    const pt = asPoint(t.of);
+    if (pt) {
+      return typeof pt.arity === 'number'
+        ? `a list of ${pt.arity}D points like ${sampleRow(pt.arity)}`
+        : 'a list of points';
+    }
+    if (t.of.kind === 'scalar') return 'a list of numbers';
+    return 'a list';
+  }
+  return 'a value';
+}
+
+/**
+ * Can an inferred OUTPUT structure `src` feed a slot that expects `expect`?
+ * Returns `{ ok, reason }` — a human sentence when it can't. Conservative:
+ *   • `src == null` (empty / not-yet-built) → allowed,
+ *   • `src.kind === 'unknown'` → allowed (we couldn't infer it; don't block),
+ *   • a structure the table doesn't model → allowed.
+ * Only a CONFIDENT mismatch (scalar↔list, wrong point arity, numbers-where-
+ * points-needed) is blocked.
+ */
+export function checkFeed(src: StructType | null, expect: StructType): FeedCheck {
+  if (!src || src.kind === 'unknown') return { ok: true, reason: null };
+
+  const reject = (): FeedCheck => ({
+    ok: false,
+    reason: `this needs ${describeExpect(expect)}, but the output is ${describeValue(src)}`,
+  });
+
+  // Slot wants a single number.
+  if (expect.kind === 'scalar') {
+    if (src.kind === 'scalar') return { ok: true, reason: null };
+    if (src.kind === 'list') return reject();
+    return { ok: true, reason: null };               // flag/record/… — don't over-block
+  }
+
+  // Slot wants a list (of points, or of numbers).
+  if (expect.kind === 'list') {
+    if (src.kind !== 'list') return reject();         // a scalar/record into a list slot
+
+    const wantPoint = asPoint(expect.of);             // expected element is a point?
+    const gotPoint = asPoint(src.of);                 // produced element is a point?
+
+    if (wantPoint) {
+      // Expected a list of points.
+      if (src.of.kind === 'unknown') return { ok: true, reason: null };
+      if (!gotPoint) return reject();                 // numbers / records, not points
+      // Arity check (only when BOTH arities are known and the slot pins one).
+      if (
+        typeof wantPoint.arity === 'number' &&
+        typeof gotPoint.arity === 'number' &&
+        wantPoint.arity !== gotPoint.arity
+      ) {
+        return reject();
+      }
+      return { ok: true, reason: null };
+    }
+
+    // Expected a list of plain numbers.
+    if (expect.of.kind === 'scalar') {
+      if (src.of.kind === 'scalar' || src.of.kind === 'unknown') return { ok: true, reason: null };
+      return reject();
+    }
+  }
+
+  return { ok: true, reason: null };                  // unmodelled expectation — allow
+}
+
 /**
  * Infer the structure of an expression-output formula. Never throws: a parse
  * failure or a structural inconsistency surfaces as `{ type: null, error }`.
