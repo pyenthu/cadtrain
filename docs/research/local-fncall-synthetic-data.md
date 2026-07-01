@@ -32,7 +32,100 @@ parallel stack.** Tie into #27 (feedback/RL DB), #2 (web-llm local backend),
 5. **Only then** consider a LoRA fine-tune (Unsloth, ~1–3k pairs) to zero-out the local model's schema overhead — the #2 endgame.
 6. Graph/vector-server (Neo4j/Chroma) stays a parked experiment unless multi-hop relation retrieval is proven needed.
 
+## In-browser deployment (WebLLM + MLC + XGrammar)
+
+**This is the DEPLOYMENT half of this doc's fine-tune endgame (step 5 above) and a
+REFINEMENT of #2** (`docs/research/web-llm-functionary.md` — read it for the runtime
+landscape §3, the integration seam §6, the honest risk table §8, and the spike plan
+§9; this section does not repeat them). #2 covers running a *general* instruct model
+(Qwen2.5-1.5B) in the browser with XGrammar + a local few-shot DB. This section covers
+the extra piece unique to #28: **compiling and shipping OUR fine-tuned model** so it
+emits our editor-tool syntax natively. Where #2 says "Qwen2.5-1.5B + generic instruct +
+big few-shot prompt", #28's endgame says "smaller fine-tuned Coder-0.5B + near-zero
+prompt". Same runtime, same seam, same `dispatchEditorTool` — different weights.
+
+### Why it fits: the whole fn-call turn runs in the browser, no server
+The model output is a tool call against the LIVE in-memory composition `Graph`, executed
+by `dispatchEditorTool` (`src/lib/cad/editor-tools.ts`) — no round-trip. Client-side
+*geometry* execution already exists in spirit (the bake-worker, `docs/plans/client-side-execution.md`);
+this adds client-side *reasoning*. The "graph" the model edits is our in-memory
+composition `Graph`, NOT a graph database — ignore the Cytoscape/Neo4j/graph-lib framing
+in the source research (see #5 in the mapping above: Neo4j/Chroma stay a parked
+experiment). Any local store here is IndexedDB/Cache-Storage for MODEL WEIGHTS and the
+TF-IDF few-shot corpus (#2 §5.1), not for the graph.
+
+### Model choice — Qwen2.5-Coder-0.5B (smaller than #2's 1.5B)
+- **WebLLM natively supports Qwen2.5-Coder-0.5B** (in `prebuiltAppConfig`; VERIFY the
+  exact MLC id + q4 size online — #2 §7). Coder tuning suits terse structured-call
+  emission; 0.5B is the latency floor #2 §3 already flags for the single-tool case.
+- **4-bit quant ≈ <350 MB** (well under #2's ~1.5 GB for the 1.5B). Caches in the browser
+  (Cache Storage API) after first visit → **fully offline + fast thereafter**; a short
+  tool call is sub-second once resident (VERIFY tok/s in the Spike-0 bench).
+- Trade-off vs #2's 1.5B: **less headroom for semantics.** 0.5B is only viable BECAUSE
+  it's fine-tuned on our syntax (steps 2–5) + XGrammar-constrained; a *stock* 0.5B would
+  be worse than the 1.5B. This is the whole reason #28 and #2 are one story: the fine-tune
+  is what buys down the size.
+
+### XGrammar CFG constrained to OUR editor-tool call syntax
+- Pass XGrammar a strict CFG/regex so the model can ONLY emit tokens matching our exact
+  tool-call shape — the tool NAMES from `EDITOR_TOOLS` (`src/lib/cad/editor-tools-schema.ts`)
+  and args drawn from the `ArgValue` union (`literal | expr | param`). Output is then
+  *guaranteed* parseable by `dispatchEditorTool` — no regex-scrape, no malformed-JSON
+  failure mode (the #2 §5.3 improvement over SVTC's regex parse).
+- Grammar shape is a policy choice: either the JSON `{name, input}` form (feed it from a
+  new `toJsonSchema()` — the third lowering of `EDITOR_TOOLS` alongside `toClaudeTools()`
+  / `toolListText()`, #2 §6) OR a terser `function_name(param="value")` surface form the
+  source research names, which the fine-tune can be trained to prefer for fewer tokens.
+  **Same source of truth either way** — the CFG is generated FROM `EDITOR_TOOLS`, never
+  hand-maintained, so it can't drift from `dispatchEditorTool`.
+
+### Zero-system-prompt-after-fine-tune
+- Once the model is fine-tuned on our synthetic+real dataset (this doc, steps 2–5), it
+  knows the tool syntax NATIVELY → we can **DROP the tool-schema system prompt** (~0 base
+  tokens per call). For a local model with no prompt-caching, that base-token saving is
+  the real lever (unlike the cloud model, where caching already amortizes the schema —
+  Open Question 1). Few-shot exemplars can still be injected for HARD cases, but the
+  standing schema block goes to zero.
+
+### Deploy pipeline (the concrete build step this section adds)
+1. **Fine-tune** (Python, DEV-ONLY — never in the prod container, Rule 1): Unsloth/LoRA on
+   the synthetic+real JSONL (steps 2–5; ~1–3k pairs → ~95% per step 4) → merged HF weights.
+2. **MLC-LLM compile (AOT)**: `mlc_llm convert_weight` + `gen_config` + `compile` → a
+   `.wasm` model library (WebGPU/WGSL kernels via the TVM runtime) + quantized weight
+   shards. This is a REAL, non-trivial build step (weight conversion + kernel config),
+   run offline in the dev/CI toolchain, not at runtime.
+3. **Host the ~350 MB artifacts** statically: an HF model repo OR our own static assets
+   (served by adapter-node; they're immutable, long-cache). First visit downloads once,
+   Cache-Storage keeps them offline after.
+4. **Load in-browser**: `import('@mlc-ai/web-llm')` in the Web Worker (#2 §6 — NEVER the
+   bake/render thread), pass the CUSTOM model URL to `CreateMLCEngine(...)` via an
+   `appConfig.model_list` entry pointing at our hosted `.wasm` + weights.
+5. **Infer + dispatch**: `engine.chat.completions.create({messages, temperature:0,
+   max_tokens:~30})` with the XGrammar CFG → raw call string/object → `dispatchEditorTool`
+   on the live `Graph`. Default OFF behind the same `backend: 'anthropic' | 'webllm'`
+   toggle #2 §6 defines; Anthropic stays default + fallback.
+
+### Honest realism (this is a conditional-GO spike, not a plan of record)
+- **XGrammar guarantees SYNTAX, not SEMANTICS.** A valid `setCallArg(...)` is not a
+  *correct* one. Picking the right tool + the right `ArgValue` (esp. the `param` vs
+  `literal` vs `expr` choice our schema flags) is exactly where a 0.5B is weakest — and
+  where the #28 dataset (steps 2–5) has to carry the load. No dataset → no accuracy, CFG
+  or not.
+- **MLC compile is a real build step** (step 2) and **hosting ~350 MB of model assets** is
+  a real deploy cost + a bundle/CI concern.
+- **0.5B accuracy is the OPEN RISK** → gate exactly as #2 §9: a `/primitives`-scoped
+  Spike-0 bench, ship opt-in "offline edits (beta)" ONLY if it clears the accuracy bar
+  (#2 sets ≥90% tool / ≥85% args), else shelve as a documented finding. A fine-tuned 0.5B
+  MIGHT clear a scoped single-tool bar that a stock 0.5B can't — that's the bet — but it
+  must be measured, not assumed.
+- **Sequence, unchanged:** the near-term win is **few-shot injection (step 3, no
+  training)** — that lands the accuracy/token benefit with zero fine-tune and zero WebLLM
+  deploy. Fine-tune + MLC compile + in-browser deploy (this section) is the LATER endgame,
+  attempted only after few-shot has proven the dataset and the seam.
+
 ## Open questions
 - Does compact-TS actually beat our prompt-caching for the CLOUD model? (Likely not — cache already amortizes it.) It matters for the LOCAL model.
 - Can the browser web-llm host both the embedding model (few-shot search) AND the fn-call model, fully offline?
 - Synthetic-vs-real ratio + dedup so synthetic phrasing doesn't drown real corrections.
+- Does a FINE-TUNED Qwen2.5-Coder-0.5B clear the #2 §9 accuracy bar that a stock 0.5B can't — i.e. is the fine-tune enough to drop from 1.5B to 0.5B? (Spike-0 bench, fine-tuned vs stock, 0.5B vs 1.5B.)
+- Surface-form `function_name(param="value")` CFG vs JSON `{name,input}` CFG — which is fewer tokens AND more reliable for a fine-tuned 0.5B?
