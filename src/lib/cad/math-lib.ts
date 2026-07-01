@@ -34,6 +34,9 @@ const {
 // in profile/part expressions. `tau` saves one keystroke vs `2 * PI`; `deg(x)`
 // reads as "x in degrees" inline.
 const tau = 2 * Math.PI;
+// lowercase `pi` — ALLOWED_CONSTANTS (expr-schema) permits it, but only PI/tau were
+// injected, so a formula using `pi` baked to "pi is not defined". Inject it too.
+const pi = Math.PI;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 const deg = (x: number) => (x * Math.PI) / 180;
@@ -43,5 +46,5 @@ export {
   abs, acos, asin, atan, atan2, ceil, cos, cosh, exp, floor, hypot,
   log, log2, log10, max, min, pow, round, sign, sin, sinh, sqrt, tan, tanh, trunc,
   PI, E, LN2, LN10, LOG2E, LOG10E, SQRT2, SQRT1_2,
-  tau, lerp, clamp, deg, rad,
+  tau, pi, lerp, clamp, deg, rad,
 };
