@@ -1,6 +1,20 @@
 import { json, error } from '@sveltejs/kit';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { readScriptCache, writeScriptCache } from '$lib/server/script-cache';
+import { analyzeParts, resolveDepColors, type PartColorLUT } from '$lib/server/part-colors';
+
+/** #86 — the per-source colour-by-source LUT for the CLIENT bake. Computed here
+ *  (compile has both the source AND fetch) and returned so the worker can tint
+ *  each subpart in its own colour, matching /api/primitives/preview. Computed
+ *  OUTSIDE the script cache (colours can change without changing scriptHash,
+ *  since the compiled script strips meta) and fully tolerant — any failure just
+ *  omits it → the client falls back to the single override / legacy look. */
+async function partColorsFor(source: string, fetch: typeof globalThis.fetch): Promise<PartColorLUT | undefined> {
+  try {
+    const lut = analyzeParts(source, await resolveDepColors(source, fetch));
+    return lut.active ? lut : undefined;
+  } catch { return undefined; }
+}
 
 // GET /api/primitives/compile?name=<id>
 //
@@ -40,15 +54,18 @@ async function compileAndCache(name: string, source: string | undefined, bust: b
   if (!src) return json({ supported: false, kernel: 'manifold', reason: `primitive "${name}" returned empty source` });
 
   const { script, scriptHash, depNames } = await compilePrimitiveScript(src, name, fetch);
+  // #86 subpart colours — always fresh (not from the script cache) so a colour
+  // edit is reflected even on a scriptHash cache hit.
+  const partColors = await partColorsFor(src, fetch);
 
   // Cache by (id, scriptHash) — keyed on the script, so a live edit (different
   // source → different hash) caches separately from the saved part.
   if (!bust) {
     const hit = await readScriptCache(name, scriptHash);
-    if (hit) return json({ script: hit, scriptHash, kernel: 'manifold', supported: true, cached: true, depNames });
+    if (hit) return json({ script: hit, scriptHash, kernel: 'manifold', supported: true, cached: true, depNames, partColors });
   }
   writeScriptCache(name, scriptHash, script).catch((e) => console.warn('[script-cache] write failed:', e?.message ?? e));
-  return json({ script, scriptHash, kernel: 'manifold', supported: true, cached: false, depNames });
+  return json({ script, scriptHash, kernel: 'manifold', supported: true, cached: false, depNames, partColors });
 }
 
 // GET ?name=<id> — compile the SAVED part by name.

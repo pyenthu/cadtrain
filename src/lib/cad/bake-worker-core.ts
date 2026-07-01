@@ -26,7 +26,7 @@
 import * as helpers from './manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from './primitive-sandbox';
-import { finalizeManifold, type RenderMaterial } from './render-helpers';
+import { finalizeManifold, type RenderMaterial, type PartColorLUT } from './render-helpers';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
 
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
@@ -61,6 +61,12 @@ export interface BakeOptions {
   instanced?: boolean;
   /** Optional appearance passthrough (PR3 may thread meta.material here). */
   material?: RenderMaterial;
+  /** #86 — per-source colour LUT (color-by-source). Computed server-side by
+   *  /api/primitives/compile (analyzeParts + resolveDepColors) and threaded in
+   *  so the CLIENT bake tints each subpart in its own colour, exactly like the
+   *  server /preview path. Absent / inactive → the single colorOuter/colorInner
+   *  override or the legacy red/grey heuristic (byte-identical to before). */
+  parts?: PartColorLUT;
 }
 
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -171,11 +177,15 @@ export async function runCompiledManifold(
   }
 
   const _tFin0 = _now();
+  // #86: activate color-by-source on the client bake when the compile step
+  // supplied a usable LUT (a composed part whose subparts carry colours). A
+  // single-part override (colorOuter/colorInner) still wins inside finalize.
+  const partsLut = options.parts && options.parts.active ? options.parts : undefined;
   const result = finalizeManifold(
     manifold,
     maxOD,
     options.material,
-    undefined,
+    partsLut,
     {
       skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto',
       zScale: zArg,
