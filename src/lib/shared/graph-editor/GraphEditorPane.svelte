@@ -1308,7 +1308,13 @@
     // selects swathes of text AND the native selection-drag can swallow the
     // pointerup so the card "sticks" to the cursor (never releases).
     ev.preventDefault();
-    bringToFront(id);
+    // Highlight NOW (cheap — only the selected card's `selected` prop flips), but
+    // DON'T bringToFront here: that reassigns `zOrder` → `allNodes` re-sorts →
+    // the {#each} REORDERS this node's <g> in the DOM mid-pointerdown, which
+    // disrupts the just-started drag gesture (first press selects but won't drag;
+    // a second press — now already on top, no reorder — drags). Defer the z-order
+    // pop to pointerup, once the gesture is done.
+    aiSelectedId = id;
     dragging = id;
     dragMoved = false;
     dragStart = { x: ev.clientX, y: ev.clientY };
@@ -1351,6 +1357,9 @@
       dragLive = null; // drop the transient overlay; graph is now the source of truth
       (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
       dragging = null;
+      // NOW pop to front (z-order) — the gesture is finished, so the DOM reorder
+      // it triggers can't disrupt an in-flight drag (see onNodePointerDown).
+      bringToFront(id);
       // A no-move tap on a compact CSG circle opens its action popover (the
       // native click is suppressed by pointerdown's preventDefault).
       if (!dragMoved) {
