@@ -443,6 +443,17 @@ export type SplineNode = {
    *  `closedPath: closed, caps: !closed`). SPARSE + optional → absent ⇒ false ⇒
    *  an OPEN curve, byte-identical to today. */
   closed?: boolean;
+  /** PLOT-in-the-main-3D-bake diagnostic overlay (VIEW-ONLY, TODO #24). When
+   *  true the editor draws this spline's resolved curve + control points as a
+   *  coloured overlay INSIDE the main bake scene (so several splines — e.g. an
+   *  r_sweep path + section — can be seen RELATIVE to each other + the swept
+   *  mesh, not just each in its own popup). Never touches emit / bake / the GLB.
+   *  SPARSE + optional → absent/false ⇒ no overlay, zero overhead. */
+  plot?: boolean;
+  /** Optional explicit overlay colour (`#rrggbb`) for the plot. Absent ⇒ the
+   *  editor auto-assigns a distinct colour per plotted spline (path vs section
+   *  read apart). VIEW-ONLY, like `plot`. */
+  plotColor?: string;
 };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode;

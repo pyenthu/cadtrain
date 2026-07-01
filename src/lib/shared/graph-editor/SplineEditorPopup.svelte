@@ -23,10 +23,12 @@
     samples,
     closed = false,
     wired = false,
+    plot = false,
     title = 'spline path',
     onPointsChange,
     onSamplesChange,
     onClosedChange,
+    onPlotChange,
     onUnwire,
     onClose,
   }: {
@@ -39,10 +41,15 @@
     /** Control points are driven by a WIRED expression (#26) — the manual editor
      *  is disabled until unwired. */
     wired?: boolean;
+    /** PLOT this spline in the main 3D bake (#24) — diagnostic overlay so several
+     *  splines read relative to each other + the swept mesh. VIEW-ONLY. */
+    plot?: boolean;
     title?: string;
     onPointsChange: (pts: Vec3[]) => void;
     onSamplesChange: (n: number) => void;
     onClosedChange: (v: boolean) => void;
+    /** Toggle the main-bake plot overlay (#24). */
+    onPlotChange?: (v: boolean) => void;
     /** Drop the wired source → back to manual points (#26). */
     onUnwire?: () => void;
     onClose: () => void;
@@ -179,6 +186,10 @@
       title="Edit point X/Y/Z values by hand">{showTable ? '▾' : '▸'} xyz</button>
     <button class="ge-sp-btn" class:on={closed} type="button" onclick={() => onClosedChange(!closed)}
       title="Closed loop — the path wraps last→first. A sweep fed by this spline auto-follows: closed ⇒ watertight ring (no end caps); open ⇒ capped tube.">{closed ? '◯ loop' : '⌇ open'}</button>
+    {#if onPlotChange}
+      <button class="ge-sp-btn" class:on={plot} type="button" onclick={() => onPlotChange?.(!plot)}
+        title="Plot this spline in the main 3D bake — a coloured overlay curve + control points, so multiple splines (e.g. an r_sweep path + section) can be seen relative to each other and the swept geometry. View-only.">📈 plot</button>
+    {/if}
     <label class="ge-sp-n" title="Number of equally-spaced output samples (r_sweep.path resolution)">
       N <input type="number" min="2" max="512" step="1" value={samples} onchange={onSamplesInput} />
     </label>

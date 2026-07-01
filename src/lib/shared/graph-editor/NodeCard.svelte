@@ -42,6 +42,7 @@
     moveSketchOp,
     removeSketchOp,
     removeNode,
+    setSplinePlot,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -1546,6 +1547,7 @@
                 {@const splinePort = portType('list<point3>')}
                 {@const ptsPort = portType('list<point3>')}
                 {@const wired = (n as any).pointsExpr != null}
+                {@const plotted = (n as any).plot === true}
                 {@const sw = size.w}
                 {@const sh = size.h}
                 <!-- Spline PATH producer (TODO #15) — minimal card: a curved-spline
@@ -1586,6 +1588,12 @@
                 <text role="button" tabindex="-1" x={sw - 24} y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
                   data-tip="Delete this spline node"
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
+                <!-- 📈 plot-in-main-3D-bake toggle (TODO #24) — VIEW-ONLY overlay.
+                     Bottom-left corner so it doesn't fight ✎/× on the compact card. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x="12" y={sh - 6} class="ge-sp-plot" class:on={plotted}
+                  data-tip="Plot this spline in the main 3D bake (overlay curve + points, so several splines read relative to each other + the swept mesh). View-only."
+                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(setSplinePlot(graph, n.id, !plotted)); }}>📈</text>
                 <!-- OUTPUT socket (right edge, centered) — list<point3> → r_sweep.path.
                      `'path'` matches emitSplineBlocks' exprBlockMember(id,'path'). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1737,6 +1745,10 @@
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
   /* Spline card ✎/× — larger glyph = bigger click target on the compact card. */
   .ge-node-x.ge-sp-glyph { font-size: 17px; }
+  /* Spline 📈 plot-in-main-bake toggle (TODO #24) — dim when off, full when on. */
+  .ge-sp-plot { font: 12px Arial; cursor: pointer; user-select: none; opacity: 0.4; filter: grayscale(1); }
+  .ge-sp-plot:hover { opacity: 0.85; filter: none; }
+  .ge-sp-plot.on { opacity: 1; filter: none; }
   .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }
   /* Armed (awaiting confirm): ✓ glyph, brighter + bold so the two-step reads. */
   .ge-node-x.armed { fill: #16a34a; font-weight: 700; }
