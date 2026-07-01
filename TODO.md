@@ -33,6 +33,15 @@
     text MIRROR (a small DSL → the same JS IIFE, NOT the real CoffeeScript compiler). Extends #11/#20.
     Plan: `docs/plans/expr-visual-editor.md`.
 
+32. **Undo / redo for the graph editor** (user, 2026-07-01). No undo today — an accidental
+    delete/wire/edit needs a reload to revert. Add a PER-INSTANCE history CLASS (like
+    WireState/SketchState — /primitives mounts N panes) `{past,present,future}` of graph snapshots
+    (mutators already return new graphs); route all graph writes through ONE `commit(next,{coalesceKey?})`
+    choke point (pairs with #22); Cmd/Ctrl+Z undo · Cmd/Ctrl+Shift+Z redo + ↶/↷ toolbar buttons
+    (distinct from the ↺ restore). Coalesce drags (one entry via the dragLive pointerup commit) +
+    param typing. View-only actions (pan/zoom/tab/select) not undoable. Session-only; autosave
+    unaffected. Plan: `docs/plans/undo-redo.md`.
+
 12. **Repeat-as-sweep** — loft one welded skin between consecutive repeat copies. Helpers
     `sweepAlongPath`/`loftStations` merged. LEFT: wire an `op:'sweep'` mode into the repeat node
     (frame torsion / spacing / caps). `g_spiral_repeat.md`. Pairs #11.
