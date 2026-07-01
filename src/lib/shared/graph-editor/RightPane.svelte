@@ -85,6 +85,30 @@
     } catch { /* svg view unavailable */ }
   });
 
+  // ─── Keep the 3D canvas MOUNTED across the `bake==='loading'` sentinel ─────
+  // `bake` cycles object → 'loading' → object on EVERY re-bake (first load also
+  // fires several as expected-params / drift settle during hydration). If the
+  // template swaps the canvas out for a "baking…" placeholder on each 'loading',
+  // the PrimitiveDualCanvas UNMOUNTS + REMOUNTS every cycle — and a fresh canvas
+  // instance resets its content-key bake dedup (lastRebuildKey='') so it re-bakes
+  // the SAME geometry ~4× on load, churning the main thread (which now runs the
+  // bake, client-bake being default) → node press/drag feels laggy right after a
+  // part opens. Holding the last SUCCESSFUL bake lets us render the canvas from it
+  // during the transient 'loading', keeping ONE instance alive: identical
+  // successive (source,args) collapse to a single bake via the canvas's own key
+  // dedup, while a REAL edit changes them → the key flips → a fresh bake (bake
+  // freshness preserved — no stale geometry). A genuine bake ERROR (bake.ok
+  // false) still replaces the canvas with the error panel below.
+  let lastGoodBake = $state<any>(null);
+  $effect(() => {
+    if (typeof bake === 'object' && bake && bake.ok) lastGoodBake = bake;
+  });
+  // What the canvas + bake-meta render from: the live bake when it's a good
+  // object, else the last good one (so 'loading'/transient states don't remount).
+  const displayBake = $derived(
+    (typeof bake === 'object' && bake && bake.ok) ? bake : lastGoodBake,
+  );
+
   // ─── Tab selection + persistence (ge-right-tab) ───────────────────────────
   onMount(() => {
     try {
@@ -239,9 +263,9 @@
         <!-- Profile mode: the 2D resolved-polygon preview is a parent-scoped
              snippet (drag-wired to the parent's polygon machinery). -->
         {@render profilePreview?.()}
-      {:else if !bake}<div class="ge-empty">Drop nodes to bake.</div>
-      {:else if bake === 'loading'}<div class="ge-empty">baking…</div>
-      {:else if !bake.ok}
+      {:else if !bake && !lastGoodBake}<div class="ge-empty">Drop nodes to bake.</div>
+      {:else if bake === 'loading' && !lastGoodBake}<div class="ge-empty">baking…</div>
+      {:else if typeof bake === 'object' && bake && !bake.ok}
         <div class="ge-err">
           <div>{bake.message ?? 'bake failed'}</div>
           {#if /EMPTY solid|stack: item|degenerate|parameter 0 has unknown type|memory access out of bounds/.test(bake.message ?? '')}
@@ -280,16 +304,20 @@
             {/if}
           {/if}
         </div>
-      {:else if PrimitiveDualCanvas && (active ?? true)}
+      {:else if PrimitiveDualCanvas && displayBake && (active ?? true)}
+        <!-- Render from displayBake (last good bake) so the canvas stays MOUNTED
+             across the transient bake==='loading' — see lastGoodBake note above.
+             Identical (source,args) then cache-dedup to a single bake on load. -->
         <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-          args={bake.args ?? paramDefaults}
-          source={bake.source}
+          args={displayBake.args ?? paramDefaults}
+          source={displayBake.source}
           colorOuter={graph.colorOuter} colorInner={graph.colorInner}
           bakeGlb={false}
           onRebuild={onRebuild}
           showControls={true} showLabels={false}/>
+        {#if bake === 'loading'}<div class="ge-baking-badge">baking…</div>{/if}
         <!-- Cache status row + Rebuild button (Phase 1.5) -->
-        {@const bakeMeta = (bake as any).bake ?? {}}
+        {@const bakeMeta = (displayBake as any).bake ?? {}}
         <div class="ge-bake-meta">
           <!-- Draft toggle + Rebuild moved into the 3D canvas (under the
                ⚙ scale gear): the canvas owns the adjustable segment count +
@@ -518,10 +546,13 @@
   .ge-legacy-banner { padding: 8px 12px; font: 11px ui-monospace, monospace; line-height: 1.5; color: #78350f; background: #fef3c7; border-bottom: 1px solid #fbbf24; }
   .ge-legacy-banner strong { color: #92400e; }
   .ge-legacy-banner a { color: #0369a1; }
-  .ge-bake-body { overflow: hidden; min-height: 0; }
+  .ge-bake-body { overflow: hidden; min-height: 0; position: relative; }
   /* .ge-empty + base .ge-err are shared with the parent (the parent-scoped
      profile-preview snippet uses them too) — duplicated here for the pane. */
   .ge-empty { padding: 20px; text-align: center; color: #9ca3af; font: 12px Arial; }
+  /* "baking…" badge shown OVER the (still-mounted) canvas during a re-bake, so
+     the canvas no longer unmounts on the transient bake==='loading'. */
+  .ge-baking-badge { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 8; padding: 2px 10px; border-radius: 12px; font: 600 10px ui-monospace, monospace; background: rgba(17,24,39,0.72); color: #e5e7eb; pointer-events: none; }
   .ge-err { padding: 20px; color: #b91c1c; font: 12px ui-monospace, monospace; display: flex; flex-direction: column; gap: 10px; }
   .ge-err-hint { padding: 10px 12px; background: #fef3c7; color: #78350f; border: 1px solid #fbbf24; border-radius: 4px; font: 11px Arial; line-height: 1.4; }
   .ge-err-hint code { font: 11px ui-monospace, monospace; background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 2px; }
