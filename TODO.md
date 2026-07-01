@@ -82,6 +82,9 @@
 
 2. **web-llm local backend** — in-browser Qwen2.5-1.5B + XGrammar, default-OFF (no data leaves
    org); ge-assist accepts a `postTurn` override. Plan: `docs/research/web-llm-functionary.md`.
+   **Deploying a FINE-TUNED smaller model** (Coder-0.5B via MLC compile + custom-URL
+   `CreateMLCEngine` + zero-prompt) = the #28 endgame, detailed in
+   `docs/research/local-fncall-synthetic-data.md` → "In-browser deployment (WebLLM + MLC + XGrammar)".
 
 27. **AI feedback / RL database (thumbs + correction, learn-as-you-use)** (user, SVTC parity).
     A 👍/👎 + free-text "what was wrong / what I wanted" control on each AI turn in `AiMenu.svelte`
@@ -109,6 +112,15 @@
     experiment (heavy; Rule 1 no Python in prod; a JSONL corpus + in-process/web-llm vector index
     fits better). Sequence: land #27 P1 → synthetic seed → RAG-P3 few-shot → benchmark TS-vs-JSON
     for the local model → optional fine-tune. Research: `docs/research/local-fncall-synthetic-data.md`.
+    **In-browser DEPLOYMENT of the fine-tuned model** (the deploy half of the fine-tune endgame,
+    refines #2): Qwen2.5-**Coder-0.5B** (4-bit ≈ <350 MB, offline via Cache-Storage) → MLC-LLM AOT
+    compile (`.wasm` + weight shards) → host static / HF → custom-URL `CreateMLCEngine` in a Web
+    Worker → XGrammar CFG constrained to OUR `EDITOR_TOOLS`/`ArgValue` syntax → output →
+    `dispatchEditorTool` on the in-memory `Graph`, no server; fine-tune → drop the schema prompt
+    (zero-prompt). Honest: XGrammar = syntax not semantics (needs the dataset), MLC compile is a real
+    build step, ~350 MB hosting, 0.5B accuracy = the open risk → conditional-GO spike; few-shot
+    injection (step 3) is the near-term win BEFORE any fine-tune/WebLLM deploy. See that doc's
+    "In-browser deployment (WebLLM + MLC + XGrammar)" section.
 
 7. **Well schematic → 3D well diagram (`/wells`)** — PARTIAL (W0 + W1 + tool rail). NEXT: SVTC 3D
    scene layer; DTX+scale; real `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3

@@ -51,6 +51,14 @@ Default OFF; Anthropic stays default + fallback.
 - **Decision: CONDITIONAL GO for a time-boxed spike.** Ship as opt-in "offline
   edits (beta)" only if a scoped bench clears ≥90% tool + ≥85% arg accuracy;
   otherwise shelve as a documented finding. Anthropic path unaffected.
+- **Deploying OUR fine-tuned model (the #28 endgame).** This doc runs a *general*
+  instruct model with a big few-shot prompt. The **deployment of a FINE-TUNED**
+  model — compile our own Qwen2.5-**Coder-0.5B** via MLC-LLM, host the ~350 MB
+  `.wasm`+weights, load it via a custom-URL `CreateMLCEngine`, and drop the
+  system prompt (zero-prompt inference) — lives in
+  `docs/research/local-fncall-synthetic-data.md` → **"In-browser deployment
+  (WebLLM + MLC + XGrammar)"**. Same runtime/seam/`dispatchEditorTool` as here,
+  smaller weights bought by the fine-tune.
 
 ---
 
