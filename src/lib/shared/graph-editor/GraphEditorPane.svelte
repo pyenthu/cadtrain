@@ -1580,6 +1580,20 @@
     if (dragging === id && dragLive) return { x: dragLive.x, y: dragLive.y };
     return graph.layout[id] ?? { x: 0, y: 0 };
   }
+  // Socket positions that honor the live drag overlay: the geom helpers read
+  // graph.layout (not updated until pointerup), so during a drag we shift the
+  // dragged endpoint's socket by (dragLive − committed layout) → connected wires
+  // follow the card in real time. dragShift is 0 for any non-dragged node.
+  function dragShift(id: NodeId): { dx: number; dy: number } {
+    if (id === dragging && dragLive) {
+      const base = graph.layout[id] ?? { x: 0, y: 0 };
+      return { dx: dragLive.x - base.x, dy: dragLive.y - base.y };
+    }
+    return { dx: 0, dy: 0 };
+  }
+  function outSock(id: NodeId) { const s = outputSocketAt(graph, id); const d = dragShift(id); return { x: s.x + d.dx, y: s.y + d.dy }; }
+  function inSock(id: NodeId, slot: 'obj' | 'arg' | 'child') { const s = inputSocketAt(graph, id, slot); const d = dragShift(id); return { x: s.x + d.dx, y: s.y + d.dy }; }
+  function slotIn(id: NodeId, i: number) { const s = containerSlotInputAt(graph, id, i); const d = dragShift(id); return { x: s.x + d.dx, y: s.y + d.dy }; }
   // ─── inline mv/rot transform STRIPS + socket positions ──────────────────
   // The strip geometry + socket/output position math (inlineXform*, nodeSize,
   // outputSocketAt / inputSocketAt / containerSlotInputAt, the STRIP_* consts)
@@ -3480,26 +3494,26 @@
           {#each allNodes as n (n.id)}
             {#if n.type === 'method'}
               {#if (n as any).obj && graph.nodes[(n as any).obj]}
-                {@const src = outputSocketAt(graph,(n as any).obj)}
-                {@const tgt = inputSocketAt(graph,n.id, 'obj')}
+                {@const src = outSock((n as any).obj)}
+                {@const tgt = inSock(n.id, 'obj')}
                 <path class="ge-wire obj" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
               {#if (n as any).arg && graph.nodes[(n as any).arg]}
-                {@const src = outputSocketAt(graph,(n as any).arg)}
-                {@const tgt = inputSocketAt(graph,n.id, 'arg')}
+                {@const src = outSock((n as any).arg)}
+                {@const tgt = inSock(n.id, 'arg')}
                 <path class="ge-wire arg" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
             {:else if n.type === 'mv' || n.type === 'rot'}
               {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outputSocketAt(graph,(n as any).child)}
-                {@const tgt = inputSocketAt(graph,n.id, 'child')}
+                {@const src = outSock((n as any).child)}
+                {@const tgt = inSock(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
             {:else if n.type === 'txfmn'}
               <!-- txfmn child wire — same left-edge child socket as mv/rot. -->
               {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outputSocketAt(graph,(n as any).child)}
-                {@const tgt = inputSocketAt(graph,n.id, 'child')}
+                {@const src = outSock((n as any).child)}
+                {@const tgt = inSock(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
               {/if}
             {:else if n.type === 'repeat'}
@@ -3508,7 +3522,7 @@
               {@const pos = nodePos(n.id)}
               {#each ((n as any).children ?? []) as cid, ci (cid + ':' + ci)}
                 {#if graph.nodes[cid]}
-                  {@const src = outputSocketAt(graph, cid)}
+                  {@const src = outSock(cid)}
                   <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + 68 + ci * 24)} fill="none"/>
                 {/if}
               {/each}
@@ -3523,14 +3537,14 @@
                 : (n as any).children) as string[]}
               {#each visKids as childId, i (childId)}
                 {#if graph.nodes[childId]}
-                  {@const src = outputSocketAt(graph,childId)}
+                  {@const src = outSock(childId)}
                   <!-- ROOT Output card centers its sockets (rootOutputSockY) —
                        the wire MUST hit the same Y, else it lands on the wrong
                        socket. Non-root containers stay top-anchored. -->
                   {@const rootPos = nodePos(n.id)}
                   {@const tgt = n.id === graph.root
                     ? { x: rootPos.x, y: rootPos.y + rootOutputSockY(nodeSize(graph, n).h, i, visKids.length) }
-                    : containerSlotInputAt(graph,n.id, i)}
+                    : slotIn(n.id, i)}
                   <path class="ge-wire output" class:root={n.id === graph.root}
                     d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
                 {/if}
@@ -3540,7 +3554,7 @@
 
           <!-- In-flight wire being dragged -->
           {#if wire.from && wire.mouse}
-            {@const src = outputSocketAt(graph,wire.from.nodeId)}
+            {@const src = outSock(wire.from.nodeId)}
             <path class="ge-wire in-flight" d={bezier(cardObstacles,src.x, src.y, wire.mouse.x, wire.mouse.y)} fill="none"/>
           {/if}
 
