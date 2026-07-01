@@ -28,7 +28,6 @@
 import {
   topoOrder,
   setLayout,
-  inlineTransformOf,
   type Graph,
   type NodeId,
   type LayoutXY,
@@ -61,18 +60,12 @@ export interface AutoLayoutOptions {
   obstaclePadding?: number;
 }
 
-/** Same predicate hydrateGraph uses when filling missing layout entries —
- *  an inline mv/rot wrapper for a Call doesn't render on the main canvas,
- *  so it doesn't get its own laid-out position. */
-function isInlineWrapper(graph: Graph, id: NodeId): boolean {
-  const n = graph.nodes[id];
-  if (!n || (n.type !== 'mv' && n.type !== 'rot')) return false;
-  const childId = (n as any).child;
-  if (!childId) return false;
-  const child = graph.nodes[childId];
-  if (child?.type !== 'call') return false;
-  // The wrapper "belongs" to the Call iff inlineTransformOf points back at it.
-  return inlineTransformOf(graph, childId, n.type) === id;
+/** #25 — mv/rot transforms are ALWAYS standalone chainable nodes now; none are
+ *  hidden as strips on a Call, so every one participates in auto-layout like any
+ *  other single-child node. Kept as a constant-false predicate so the layout
+ *  filters below keep their shape. */
+function isInlineWrapper(_graph: Graph, _id: NodeId): boolean {
+  return false;
 }
 
 /** Walk this node's data-flow predecessors (the nodes whose output it
@@ -328,12 +321,7 @@ export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
   const pos: Record<string, LayoutXY> = {};
   const size: Record<string, { w: number; h: number }> = {};
   for (const id of Object.keys(graph.nodes)) {
-    const n = graph.nodes[id]!;
-    // Inline-wrapper test mirrors hydrateGraph's check.
-    if ((n.type === 'mv' || n.type === 'rot') && n.child) {
-      const child = graph.nodes[n.child];
-      if (child?.type === 'call' && inlineTransformOf(graph, n.child, n.type) === id) continue;
-    }
+    // #25 — mv/rot are standalone nodes; no inline-wrapper skip here.
     const layoutXY = graph.layout[id];
     if (!layoutXY) continue; // no position to push around
     ids.push(id);
