@@ -74,6 +74,7 @@
     addSpline,
     setSplinePoints,
     setSplineSamples,
+    setSplineClosed,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -1925,6 +1926,13 @@
     graph = setSplineSamples(graph, splineEditId, asLiteral(n));
     bakeNonce++;
   }
+  function onSplineClosed(v: boolean) {
+    if (!splineEditId) return;
+    // The spline owns loop-ness; a sweep wired to its path auto-follows (emit
+    // forces closedPath/caps). Nudge the bake so the change re-renders.
+    graph = setSplineClosed(graph, splineEditId, v);
+    bakeNonce++;
+  }
   /** Picker "ƒ expr" item (B.7 v3) — route to the Expressions MENU (the expr-def
    *  manager) instead of silently dropping an instance of a (possibly empty,
    *  unwireable) def. The menu is where you define a named expr with params/
@@ -3023,8 +3031,10 @@
       pos={splinePopPos}
       points={splineNode.points ?? []}
       samples={splineNode.samples?.kind === 'literal' ? Number(splineNode.samples.value) : 32}
+      closed={splineNode.closed === true}
       onPointsChange={onSplinePoints}
       onSamplesChange={onSplineSamples}
+      onClosedChange={onSplineClosed}
       onClose={() => (splineEditId = null)} />
   {/if}
 

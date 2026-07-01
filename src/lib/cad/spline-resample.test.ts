@@ -92,3 +92,70 @@ describe('resampleSpline — equal arc-length spacing', () => {
     expect(denseSampleSpline([])).toEqual([]);
   });
 });
+
+describe('resampleSpline — closed loop', () => {
+  const SQUARE: Vec3[] = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0]];
+
+  /** Chord gaps around a CLOSED loop — includes the wrap edge (last → first). */
+  function loopGaps(pts: Vec3[]): number[] {
+    const g = gaps(pts);
+    const a = pts[pts.length - 1]!;
+    const b = pts[0]!;
+    g.push(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+    return g;
+  }
+
+  it('spaces N points equally AROUND a square loop (wrap included)', () => {
+    const out = resampleSpline(SQUARE, 40, true);
+    expect(out.length).toBe(40);
+    const g = loopGaps(out);            // 40 gaps: 39 consecutive + 1 wrap
+    expect(g.length).toBe(40);
+    const { mean, max, min } = stats(g);
+    // Every gap (INCLUDING the closing wrap) within ~4% of the mean ⇒ the last
+    // sample is one even step before the first (no duplicate, no big seam gap).
+    expect((max - min) / mean).toBeLessThan(0.04);
+  });
+
+  it('does NOT duplicate the first control point as the last sample', () => {
+    const out = resampleSpline(SQUARE, 24, true);
+    const first = out[0]!;
+    const last = out[out.length - 1]!;
+    // Open would end AT the last control point; closed ends a step before start.
+    const d = Math.hypot(last[0] - first[0], last[1] - first[1], last[2] - first[2]);
+    expect(d).toBeGreaterThan(0.5);
+    // First sample still starts at the first control point.
+    expect(first[0]).toBeCloseTo(0, 4);
+    expect(first[1]).toBeCloseTo(0, 4);
+  });
+
+  it('closed and open outputs differ for the same control points', () => {
+    const openOut = resampleSpline(SQUARE, 32, false);
+    const closedOut = resampleSpline(SQUARE, 32, true);
+    expect(closedOut.length).toBe(openOut.length);
+    const differ = closedOut.some((p, i) =>
+      Math.hypot(p[0] - openOut[i]![0], p[1] - openOut[i]![1], p[2] - openOut[i]![2]) > 1e-6);
+    expect(differ).toBe(true);
+  });
+
+  it('closed-loop total length ≈ the square perimeter', () => {
+    const out = resampleSpline(SQUARE, 200, true);
+    const total = loopGaps(out).reduce((s, x) => s + x, 0);
+    const perimeter = 40; // 4 × 10
+    // A centripetal Catmull-Rom loop through the 4 corners rounds the corners +
+    // bulges the edges; its length lands within ~20% of the straight perimeter.
+    expect(total).toBeGreaterThan(perimeter * 0.8);
+    expect(total).toBeLessThan(perimeter * 1.2);
+  });
+
+  it('open path stays byte-identical when closed omitted vs explicit false', () => {
+    const a = resampleSpline(SQUARE, 30);
+    const b = resampleSpline(SQUARE, 30, false);
+    expect(a).toEqual(b);
+  });
+
+  it('denseSampleSpline closed loop wraps without duplicating the start', () => {
+    const dense = denseSampleSpline(SQUARE, 16, true);
+    expect(dense.length).toBe(SQUARE.length * 16); // n segments × perSeg, no dup
+    expect(dense[0]).toEqual([0, 0, 0]);           // starts at first control pt
+  });
+});

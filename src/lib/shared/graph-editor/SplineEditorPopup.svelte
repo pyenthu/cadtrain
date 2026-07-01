@@ -21,18 +21,23 @@
     pos,
     points,
     samples,
+    closed = false,
     title = 'spline path',
     onPointsChange,
     onSamplesChange,
+    onClosedChange,
     onClose,
   }: {
     /** Viewport position anchored to the ✎ trigger (GEP's splinePopPos). */
     pos: { left: number; top: number };
     points: Vec3[];
     samples: number;
+    /** Loop the curve (last→first). A sweep fed by this spline auto-follows it. */
+    closed?: boolean;
     title?: string;
     onPointsChange: (pts: Vec3[]) => void;
     onSamplesChange: (n: number) => void;
+    onClosedChange: (v: boolean) => void;
     onClose: () => void;
   } = $props();
 
@@ -140,7 +145,7 @@
 
   <div class="ge-sp-canvas">
     <Canvas>
-      <SplineScene {points} {samples} bind:selectedIdx {onPointsChange} />
+      <SplineScene {points} {samples} {closed} bind:selectedIdx {onPointsChange} />
     </Canvas>
   </div>
 
@@ -150,6 +155,8 @@
       title="Remove the selected (or last) control point">− point</button>
     <button class="ge-sp-btn" class:on={showTable} type="button" onclick={() => (showTable = !showTable)}
       title="Edit point X/Y/Z values by hand">{showTable ? '▾' : '▸'} xyz</button>
+    <button class="ge-sp-btn" class:on={closed} type="button" onclick={() => onClosedChange(!closed)}
+      title="Closed loop — the path wraps last→first. A sweep fed by this spline auto-follows: closed ⇒ watertight ring (no end caps); open ⇒ capped tube.">{closed ? '◯ loop' : '⌇ open'}</button>
     <label class="ge-sp-n" title="Number of equally-spaced output samples (r_sweep.path resolution)">
       N <input type="number" min="2" max="512" step="1" value={samples} onchange={onSamplesInput} />
     </label>
