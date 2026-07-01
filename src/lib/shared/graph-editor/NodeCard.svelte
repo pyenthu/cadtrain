@@ -1558,13 +1558,13 @@
                   onpointerup={onNodePointerUp}/>
                 <!-- inline row: ✎ (left) · curved-spline glyph (middle) · × (right) -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x="8" y={sh / 2 + 4} class="ge-node-x"
+                <text role="button" tabindex="-1" x="13" y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
                   data-tip="Edit this spline's control points in 3D"
                   onpointerdown={(ev) => { ev.stopPropagation(); onOpenSplineEditor(ev as any, n.id); }}>✎</text>
                 <path class="ge-spline-preview" fill="none"
-                  d={`M 24 ${sh * 0.64} Q ${sw * 0.42} ${sh * 0.26} ${sw * 0.56} ${sh * 0.5} T ${sw - 30} ${sh * 0.5}`}/>
+                  d={`M 30 ${sh * 0.64} Q ${sw * 0.44} ${sh * 0.26} ${sw * 0.58} ${sh * 0.5} T ${sw - 34} ${sh * 0.5}`}/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={sw - 20} y={sh / 2 + 4} class="ge-node-x"
+                <text role="button" tabindex="-1" x={sw - 24} y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
                   data-tip="Delete this spline node"
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
                 <!-- OUTPUT socket (right edge, centered) — list<point3> → r_sweep.path.
@@ -1716,6 +1716,8 @@
   }
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  /* Spline card ✎/× — larger glyph = bigger click target on the compact card. */
+  .ge-node-x.ge-sp-glyph { font-size: 17px; }
   .ge-node-x.disabled { fill: #cbd5e1; cursor: not-allowed; }
   /* Armed (awaiting confirm): ✓ glyph, brighter + bold so the two-step reads. */
   .ge-node-x.armed { fill: #16a34a; font-weight: 700; }

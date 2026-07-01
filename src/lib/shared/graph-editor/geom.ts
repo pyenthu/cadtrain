@@ -227,7 +227,7 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
   if (node.type === 'polygon') return 180; // input + chrome fits at 180
   if (node.type === 'expr') return 200;    // input-col + output-row (name=formula)
-  if (node.type === 'spline') return 76;   // min width — inline row
+  if (node.type === 'spline') return 92;   // min width — inline row (+20%, bigger click targets)
   return 130;
 }
 
@@ -251,7 +251,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'repeat') return 230;
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
-  if (node.type === 'spline') return 92;   // inline row: edit | curve | x | socket
+  if (node.type === 'spline') return 110;  // inline row: edit | curve | x | socket (+20%)
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
     for (const cid of (node as any).children ?? []) {
@@ -405,7 +405,7 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     const rows = Math.max(1, outs.length, ins.length);
     return { w, h: EXPR_BODY_TOP + rows * EXPR_ROW_H + 30 };
   }
-  if (node.type === 'spline') return { w, h: 32 };
+  if (node.type === 'spline') return { w, h: 40 }; // +20% height for click targets
   return { w, h: 80 };
 }
 

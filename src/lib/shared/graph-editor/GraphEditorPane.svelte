@@ -1284,7 +1284,7 @@
   }
 
   // ─── drag-to-move node cards ────────────────────────────────────────────
-  let dragging: string | null = null;
+  let dragging = $state<string | null>(null);
   let dragOrig = { x: 0, y: 0 }; let dragStart = { x: 0, y: 0 };
   // Tracks whether a node pointer-gesture actually MOVED — distinguishes a drag
   // from a click (pointerdown preventDefault suppresses the native click event,
@@ -1322,10 +1322,16 @@
   // Stash the latest target and apply at most once per painted frame.
   let dragRaf = 0;
   let dragPending: { x: number; y: number; w?: number } | null = null;
+  // Live drag position — a TRANSIENT overlay applied by nodePos() to the dragged
+  // node ONLY, so a drag never reassigns `graph`. Reassigning `graph` per frame
+  // re-ran every graph-dependent $derived (emit / bake / expected-params / layout)
+  // 60×/sec → the card trailed the cursor + the constant re-render dropped the
+  // pointer capture ("slips"). We commit to `graph` once, on pointerup.
+  let dragLive = $state<{ x: number; y: number; w?: number } | null>(null);
   function flushDrag() {
     dragRaf = 0;
     if (!dragging || !dragPending) return;
-    graph = setLayout(graph, dragging, dragPending);
+    dragLive = dragPending;
   }
   function onNodePointerMove(ev: PointerEvent) {
     if (!dragging) return;
@@ -1342,6 +1348,7 @@
       // Flush the final position so the card lands exactly where released.
       if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
       if (dragPending) { graph = setLayout(graph, dragging, dragPending); dragPending = null; }
+      dragLive = null; // drop the transient overlay; graph is now the source of truth
       (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
       dragging = null;
       // A no-move tap on a compact CSG circle opens its action popover (the
@@ -1559,6 +1566,9 @@
   // endWireOnSketchCoord / endWireOnSketchPoint / endWireOnContainerSlot →
   // wire-state.svelte.ts (Phase C); called as `wire.*`.
   function nodePos(id: NodeId): { x: number; y: number } {
+    // Transient drag overlay: the dragged node follows `dragLive` (updated per
+    // rAF) so a drag never rewrites `graph`. Everything else reads graph.layout.
+    if (dragging === id && dragLive) return { x: dragLive.x, y: dragLive.y };
     return graph.layout[id] ?? { x: 0, y: 0 };
   }
   // ─── inline mv/rot transform STRIPS + socket positions ──────────────────
