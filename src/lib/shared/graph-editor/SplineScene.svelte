@@ -41,6 +41,17 @@
   interactivity();
   const { camera, renderer, invalidate } = useThrelte();
 
+  // XYZ axes for the spline path editor — visible colored tubes + arrowheads
+  // (X red · Y green · Z blue), so orientation reads at a glance. Plain meshes
+  // (no font/CDN dependency → offline-safe). Cylinder/cone default to +Y; the
+  // rotation aligns each to its axis, positioned from the origin outward.
+  const AXIS_LEN = 6;
+  const AXES = [
+    { key: 'x', c: 0xef4444, pos: [AXIS_LEN / 2, 0, 0], tip: [AXIS_LEN, 0, 0], rot: [0, 0, -Math.PI / 2] },
+    { key: 'y', c: 0x22c55e, pos: [0, AXIS_LEN / 2, 0], tip: [0, AXIS_LEN, 0], rot: [0, 0, 0] },
+    { key: 'z', c: 0x3b82f6, pos: [0, 0, AXIS_LEN / 2], tip: [0, 0, AXIS_LEN], rot: [Math.PI / 2, 0, 0] },
+  ];
+
   // ─── derived geometry ─────────────────────────────────────────────────────
   const vecs = $derived(points.filter((p) => Array.isArray(p) && p.length >= 3));
 
@@ -213,7 +224,17 @@
 <T.AmbientLight intensity={0.8} />
 <T.DirectionalLight position={[10, 15, 10]} intensity={1.1} />
 <T.GridHelper args={[20, 20, 0xcccccc, 0xeeeeee]} />
-<T.AxesHelper args={[3]} />
+<!-- XYZ axes — colored tubes + arrowheads (X red · Y green · Z blue). -->
+{#each AXES as ax (ax.key)}
+  <T.Mesh position={ax.pos} rotation={ax.rot}>
+    <T.CylinderGeometry args={[0.035, 0.035, AXIS_LEN, 8]} />
+    <T.MeshBasicMaterial color={ax.c} />
+  </T.Mesh>
+  <T.Mesh position={ax.tip} rotation={ax.rot}>
+    <T.ConeGeometry args={[0.13, 0.4, 10]} />
+    <T.MeshBasicMaterial color={ax.c} />
+  </T.Mesh>
+{/each}
 
 <!-- PROJECTION of the curve onto the ground plane (y=0) — its flattened grey
      footprint, NOT a rendered shadow (a CAD-style projection for depth read). -->
