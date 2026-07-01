@@ -86,11 +86,16 @@
   // semantics the old inline card + the GEP onTransform* handlers used —
   // self-contained here via setTransformAxisValue (mirrors csgPop's pattern).
   let transformPop = $state<{ nodeId: NodeId; x: number; y: number } | null>(null);
+  // Pinned = non-modal: drop the click-catching backdrop so you can edit the
+  // x/y/z AND orbit/browse the 3D bake canvas without the popover closing.
+  // Toggled by the 📌 header button; close only via × / done when pinned.
+  let txPinned = $state(false);
   export function openTransformPop(ev: MouseEvent, nodeId: NodeId) {
     ev.stopPropagation();
+    txPinned = false;
     transformPop = { nodeId, x: ev.clientX, y: ev.clientY };
   }
-  function closeTransformPop() { transformPop = null; }
+  function closeTransformPop() { transformPop = null; txPinned = false; }
   function txLiteral(axis: 0 | 1 | 2, value: number) {
     if (!transformPop) return;
     graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asLiteral(Number.isFinite(value) ? value : 0));
@@ -310,10 +315,17 @@
     {@const field = (isRot ? tn.rot : tn.offset) as any[]}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="ge-wire-shade" onclick={closeTransformPop}></div>
+    {#if !txPinned}<div class="ge-wire-shade" onclick={closeTransformPop}></div>{/if}
     <div class="ge-wire-pop ge-tx-pop"
       style="left: {Math.min(transformPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 220)}px; top: {transformPop.y}px">
-      <div class="ge-wire-head">{isRot ? '↻ rot' : '⇄ mv'} · {isRot ? 'rx / ry / rz' : 'x / y / z'}</div>
+      <div class="ge-wire-head ge-tx-head">
+        <span>{isRot ? '↻ rot' : '⇄ mv'} · {isRot ? 'rx / ry / rz' : 'x / y / z'}</span>
+        <span class="ge-tx-head-btns">
+          <button class="ge-tx-pin" class:on={txPinned} type="button" onclick={() => (txPinned = !txPinned)}
+            title={txPinned ? 'Unpin — clicking outside closes again' : 'Pin — keep open while you orbit/browse the 3D canvas'}>📌</button>
+          <button class="ge-tx-headx" type="button" onclick={closeTransformPop} title="Close">×</button>
+        </span>
+      </div>
       {#each [0, 1, 2] as i (i)}
         {@const axis = field[i] as any}
         {@const label = (isRot ? 'r' : '') + ['x', 'y', 'z'][i]}
@@ -516,6 +528,13 @@
 
   /* ── mv / rot transform (x/y/z) popover ─────────────────────────────── */
   .ge-tx-pop { min-width: 200px; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .ge-tx-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .ge-tx-head-btns { display: inline-flex; gap: 2px; align-items: center; }
+  .ge-tx-pin, .ge-tx-headx { background: none; border: none; cursor: pointer; padding: 0 3px; line-height: 1; opacity: 0.65; }
+  .ge-tx-pin:hover, .ge-tx-headx:hover { opacity: 1; }
+  .ge-tx-pin { font-size: 12px; filter: grayscale(1); }
+  .ge-tx-pin.on { opacity: 1; filter: none; }
+  .ge-tx-headx { font: 700 14px Arial; color: #b91c1c; }
   .ge-tx-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; }
   .ge-tx-key { width: 22px; flex: 0 0 auto; font: 600 12px ui-monospace, monospace; color: #6d28d9; }
   .ge-tx-input { flex: 1 1 auto; min-width: 0; box-sizing: border-box; padding: 3px 6px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; color: #1f2937; }
