@@ -122,6 +122,24 @@
     injection (step 3) is the near-term win BEFORE any fine-tune/WebLLM deploy. See that doc's
     "In-browser deployment (WebLLM + MLC + XGrammar)" section.
 
+29. **Complete + document the AI function library (capability source-of-truth)** (user, 2026-07-01).
+    Trigger: the AI refused "add a circular spline" — no `addSpline` tool exists. AUDIT: the 12
+    shipped `EDITOR_TOOLS` are a strict SUBSET of the editor's ~110 public mutators / picker node
+    types. MISSING create tools for Spline (`addSpline`/`setSplinePoints`/`setSplineClosed` — the
+    concrete gap: the AI literally cannot make a spline/circular spline), Polygon, Sketch, Expr,
+    Repeat, Container/Stack; MISSING the whole Sketch/Expr/Repeat edit surface, `describeNode`,
+    `unwireArg`, `removeParam`, `setPartColor`/`setPartMaterial`, and the typed expr-list wiring.
+    §E of `ai-multishot-assist.md` is itself incomplete (never lists the spline). PLAN: grow
+    `editor-tools-schema.ts` into ONE registry (intent phrasings + tool signature + backing
+    mutator + nodeType/category) that GENERATES every machine form — `toClaudeTools()` (cloud),
+    `toolListText()` (prompt), new `toJsonSchema()`/XGrammar CFG (local model) — so they never
+    drift; the registry IS the documentation the #27 md-ingest indexes + seeds #28 synthetic
+    prompt→call pairs + #27 few-shot. Add a CI sync test that FAILS when a picker-creatable node
+    type or public mutator has no tool + no allow-list entry (so "add a spline" can't silently
+    become impossible again). Foundational under memory `ai_data_residency_local_first` (the local
+    runtime model is trained/constrained entirely from this registry). Ties #1/#2/#27/#28. Plan:
+    `docs/plans/ai-tool-library.md`.
+
 7. **Well schematic → 3D well diagram (`/wells`)** — PARTIAL (W0 + W1 + tool rail). NEXT: SVTC 3D
    scene layer; DTX+scale; real `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3
    editor/BOM + wire the tool rail to placement. Plan: `docs/plans/well-schematic.md`.
