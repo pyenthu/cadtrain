@@ -129,12 +129,10 @@
     cardMinWidth, polySockR, polySockZ, polySockRef,
     sketchCols, sketchSockR, sketchSockZ, sketchSockVal,
     sketchRowVisible, nodeSize, containerSlotY, rootOutputSockY,
-    attachedTransforms, isAttachedTransform,
-    xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
-    inlineCardH, outputSocketAt, inputSocketAt, containerSlotInputAt,
+    outputSocketAt, inputSocketAt, containerSlotInputAt,
     exprInputSockY, exprOutputSockY,
     entryIdxForEvalIdx, miniBez,
-    CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP, STRIP_W, STRIP_H,
+    CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP,
   } from './geom';
   import { exprBlockMember } from '$lib/cad/graph-exprs';
   import { PolyPreviewState } from './poly-preview-state.svelte';
@@ -2608,13 +2606,11 @@
       graph = wrapInTransform(graph, callId, kind).graph;
     }
   }
-  /** Attached transforms should NOT render on the main canvas — their xyz
-   *  inputs surface as STRIPS inside their base Call card instead. This now
-   *  catches free-standing mv/rot whose `.child` chain reaches a Call (not just
-   *  the directly-wrapping inline case); a transform wrapping a Method/Stack/etc.
-   *  stays a normal card. */
-  function isInlineWrapper(nodeId: NodeId): boolean {
-    return isAttachedTransform(graph, nodeId);
+  /** #25 — mv/rot transforms are ALWAYS standalone chainable icon nodes now;
+   *  none are hidden as strips on a Call. Kept as a (constant-false) predicate
+   *  so the render/layout filters that referenced it keep their shape. */
+  function isInlineWrapper(_nodeId: NodeId): boolean {
+    return false;
   }
 
   // ─── assembly-level params (Slice 3 first cut) ──────────────────────────
@@ -3100,11 +3096,6 @@
             <pattern id="ge-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M40 0 L0 0 0 40" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
             </pattern>
-            <!-- Sequence-arrow head for the inline transform-chain arrows. -->
-            <marker id="ge-xform-arrowhead" viewBox="0 0 8 8" refX="6" refY="4"
-              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0 0 L8 4 L0 8 z" fill="#7c3aed"/>
-            </marker>
           </defs>
           <rect x="-2000" y="-2000" width="4000" height="4000" fill="url(#ge-grid)"/>
 
@@ -3191,50 +3182,9 @@
                   {/each}
                 {/if}
               {/each}
-              <!-- Attached transform axis wires (every mv/rot in the chain that
-                   bottoms out at this Call) — endpoints come from xformSocketAt()
-                   so each wire lands on the moved strip socket exactly. -->
-              {#each attachedTransforms(graph, n.id) as xId, xi (xId)}
-                {@const xn = graph.nodes[xId]}
-                {@const vals = xn.type === 'rot' ? (xn as RotNode).rot : (xn as MvNode).offset}
-                {#each [0,1,2] as i (i)}
-                  {@const av = vals[i] as any}
-                  {#if av.kind === 'param'}
-                    {@const pIdx = paramEntries.findIndex(([nm]) => nm === av.param)}
-                    {#if pIdx >= 0 && leftTab === 'params'}
-                      {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, av.param, pIdx)}
-                      {@const pos = nodePos(n.id)}
-                      {@const sk = xformSocketAt(graph, n.id, xi, i)}
-                      <path class="ge-wire param" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
-                    {/if}
-                  {:else if av.kind === 'expr'}
-                    {#each extractParamRefs(av.expr) as refName (refName)}
-                      {@const pIdx = paramEntries.findIndex(([nm]) => nm === refName)}
-                      {#if pIdx >= 0 && leftTab === 'params'}
-                        {@const ps = paramSocketPos(CARD_Y0, PARAM_W, pan, zoom, refName, pIdx)}
-                        {@const pos = nodePos(n.id)}
-                        {@const sk = xformSocketAt(graph, n.id, xi, i)}
-                        <path class="ge-wire param expr" d={bezier(cardObstacles,ps.x, ps.y, pos.x + sk.x, pos.y + sk.y)}/>
-                      {/if}
-                    {/each}
-                    <!-- EXPR-OUTPUT ref → transform axis socket. -->
-                    {@const tpos = nodePos(n.id)}
-                    {@const tsk = xformSocketAt(graph, n.id, xi, i)}
-                    {#each allNodes as exn (exn.id)}
-                      {#if exn.type === 'expr'}
-                        {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
-                        {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
-                          {#if String(av.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
-                            {@const srcSize = nodeSize(graph, exn)}
-                            {@const srcPos = nodePos(exn.id)}
-                            <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), tpos.x + tsk.x, tpos.y + tsk.y)}/>
-                          {/if}
-                        {/each}
-                      {/if}
-                    {/each}
-                  {/if}
-                {/each}
-              {/each}
+              <!-- (#25) mv/rot transforms are standalone icon nodes — their
+                   axes are edited in the click-popover, not via per-axis strip
+                   sockets, so no attached-transform axis wires render here. -->
             {:else if n.type === 'repeat'}
               <!-- Repeat count param-wire — chip → top-left count socket -->
               {#if (n as any).count?.kind === 'param'}
@@ -3589,8 +3539,6 @@
               {ghostSet}
               rootId={graph.root}
               onOpenTab={props.onOpenTab}
-              STRIP_W={STRIP_W}
-              STRIP_H={STRIP_H}
               {expected}
               {consumedSet}
               {hlVertex}
@@ -3608,9 +3556,6 @@
               {toggleArgExprMode}
               {unwireArgToLiteral}
               {openWirePop}
-              {onTransformAxis}
-              {onTransformAxisExprEdit}
-              {openTransformAxisExprPop}
               {openPolyExprPop}
               {openPolyRepeatExprPop}
               {openPolyBindingExprPop}
@@ -4933,35 +4878,8 @@
   .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }
   .ge-drift-btn { font: 700 14px Arial; fill: #d97706; cursor: pointer; user-select: none; }
   .ge-drift-btn:hover { fill: #92400e; }
-  /* Inline mv/rot transform block — compact HORIZONTAL layout (x/y/z side by
-     side); sockets render as SVG along the bottom edge (see markup). */
-  /* Inline transform STRIPS hang off the Call card's right edge — each is a
-     small bordered card (header + x/y/z inputs). Sized to the foreignObject
-     (STRIP_W × STRIP_H in script). */
-  .ge-inline-xform { box-sizing: border-box; width: 100%; height: 100%;
-    font: 11px Arial; color: #1f2937; padding: 3px 5px; display: flex;
-    flex-direction: column; gap: 1px; border: 1px solid #c4b5fd;
-    border-radius: 5px; background: #f5f3ff;
-    box-shadow: 0 1px 2px rgba(76, 29, 149, 0.12); }
-  .ge-inline-xform.mv  { color: #5b21b6; border-color: #c4b5fd; background: #f5f3ff; }
-  .ge-inline-xform.rot { color: #831843; border-color: #f9a8d4; background: #fdf2f8; }
-  .ge-inline-hdr { font: 700 9px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0; }
-  .ge-inline-axes { display: flex; gap: 3px; align-items: flex-start; }
-  /* Label ABOVE the input (stacked) so each axis is a narrow column → the whole
-     strip is narrower than a label-beside-input row. */
-  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
-  .ge-inline-axkey { font: 600 8px Arial; color: #9ca3af; text-align: center; line-height: 1.1; }
-  .ge-inline-input { width: 100%; min-width: 0; box-sizing: border-box; font: 11px Arial; padding: 1px 2px;
-    border: 1px solid #d1d5db; border-radius: 3px; text-align: center; background: #fff;
-    /* No number spinners — they clutter the tiny strips. */
-    appearance: textfield; -moz-appearance: textfield; }
-  .ge-inline-input::-webkit-inner-spin-button,
-  .ge-inline-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .ge-inline-input:focus { outline: none; border-color: #7c3aed; }
-  .ge-inline-pchip { display: inline-flex; align-items: center; gap: 1px; max-width: 100%; overflow: hidden;
-    white-space: nowrap; text-overflow: ellipsis; font: 600 10px Arial; color: #5b21b6;
-    background: #ede9fe; border-radius: 3px; padding: 1px 3px; }
-  .ge-arg-row.tight { padding: 0; }
+  /* (Inline mv/rot transform STRIP styles removed #25 — mv/rot are standalone
+     icon nodes now; strips no longer render off the Call card.) */
   .ge-canvas-hint { font: 13px Arial; fill: #9ca3af; }
 
   .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; touch-action: none; }
@@ -5004,10 +4922,6 @@
      "value flow" rather than "param injection". */
   .ge-wire.noderef { stroke: #c2410c; stroke-width: 2.4; fill: none; opacity: 0.9; }
   .ge-wire.in-flight { stroke: #15803d; stroke-dasharray: 6 4; }
-  /* Inline transform-chain SEQUENCE arrows — show the op order (card → strips
-     → output). Subtle purple, non-interactive (sits under the sockets). */
-  .ge-xform-arrow { stroke: #7c3aed; stroke-width: 1.4; fill: none; opacity: 0.7;
-    stroke-linecap: round; pointer-events: none; }
   /* output: piping a node into a container's slot. Green = "this is what the
      function returns / what gets stacked". root variant is slightly thicker
      to mark "this lands in the function's final return". */

@@ -46,8 +46,6 @@
     STACK_REF_PARAM,
     type Graph,
     type NodeId,
-    type RotNode,
-    type MvNode,
   } from '$lib/cad/composition-graph';
   import { dragNumber } from '$lib/shared/dragNumber';
   import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
@@ -55,11 +53,8 @@
     extractParamRefs,
     polySockR, polySockZ, polySockRef,
     exprInputSockY, exprOutputSockY,
-    attachedTransforms,
-    xformStripAt, xformSocketAt, xformOutputAt, xformArrows,
-    inlineCardH, containerSlotY, rootOutputSockY,
+    containerSlotY, rootOutputSockY,
     OUTPUT_ARROW_W,
-    STRIP_W as DEFAULT_STRIP_W, STRIP_H as DEFAULT_STRIP_H,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
   import { portType, listOf, structColor } from '$lib/cad/port-types';
@@ -107,8 +102,6 @@
     ghostSet,
     rootId,
     onOpenTab,
-    STRIP_W = DEFAULT_STRIP_W,
-    STRIP_H = DEFAULT_STRIP_H,
     expected,
     consumedSet,
     hlVertex,
@@ -126,9 +119,6 @@
     toggleArgExprMode,
     unwireArgToLiteral,
     openWirePop,
-    onTransformAxis,
-    onTransformAxisExprEdit,
-    openTransformAxisExprPop,
     openPolyExprPop,
     openPolyRepeatExprPop,
     openPolyBindingExprPop,
@@ -160,8 +150,6 @@
     ghostSet: Record<string, boolean>;
     rootId: string;
     onOpenTab?: (id: string) => void;
-    STRIP_W?: number;
-    STRIP_H?: number;
     expected: ExpectedParams;
     consumedSet: Set<string>;
     hlVertex: { polyId: string; idx: number } | null;
@@ -180,9 +168,6 @@
     toggleArgExprMode: (id: string, key: string) => void;
     unwireArgToLiteral: (id: string, key: string) => void;
     openWirePop: (ev: MouseEvent, id: string, key: string) => void;
-    onTransformAxis: (id: string, axis: 0 | 1 | 2, value: number) => void;
-    onTransformAxisExprEdit: (id: string, axis: 0 | 1 | 2, expr: string) => void;
-    openTransformAxisExprPop: (ev: MouseEvent, id: string, axis: 0 | 1 | 2) => void;
     openPolyExprPop: (ev: MouseEvent, polygonId: string, idx: number, axis: 'r' | 'z', currentExpr: string) => void;
     openPolyRepeatExprPop: (ev: MouseEvent, repeatId: string, axis: 'r' | 'z', prefill: string) => void;
     openPolyBindingExprPop: (ev: MouseEvent, repeatId: string, bindingIdx: number, prefill: string) => void;
@@ -218,10 +203,8 @@
                 {@const call = n as any}
                 {@const inlineMv  = inlineTransformOf(graph, n.id, 'mv')}
                 {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
-                {@const xforms    = attachedTransforms(graph, n.id)}
-                {@const cardH     = inlineCardH(graph,n.id)}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={cardH} rx="6"
+                <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={size.h} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
@@ -410,76 +393,13 @@
                     {/each}
                   </div>
                 </foreignObject>
-                <!-- Attached transforms: compact STRIPS hanging off the card's
-                     RIGHT edge, cascading down-then-right. One strip per mv/rot
-                     in attachedTransforms() — the chain that bottoms out at this
-                     Call (inline-registered AND free-standing), ordered nearest-
-                     call-first. Strip i sits at col=⌊i/2⌋, row=i%2; its 3 axis
-                     sockets face OUTWARD (top edge for row 0, bottom for row 1).
-                     Strip/socket/output geometry comes from xformStripAt /
-                     xformSocketAt / xformOutputAt so the visible sockets, the
-                     param→axis wire endpoints, and outputSocketAt() stay in
-                     lockstep. -->
-                {#each xforms as xId, xi (xId)}
-                  {@const xn = graph.nodes[xId]}
-                  {@const isRot = xn.type === 'rot'}
-                  {@const st = xformStripAt(graph, n.id, xi)}
-                  {@const vals = isRot ? (xn as RotNode).rot : (xn as MvNode).offset}
-                  {@const axisKeys = isRot ? ['rx','ry','rz'] : ['x','y','z']}
-                  <foreignObject x={st.x} y={st.y} width={STRIP_W} height={STRIP_H}>
-                    <div class="ge-inline-xform" class:rot={isRot} class:mv={!isRot} xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="ge-inline-hdr">{isRot ? '↻ rot' : '⇄ mv'}</div>
-                      <div class="ge-inline-axes">
-                        {#each axisKeys as axis, i (axis)}
-                          {@const av = vals[i] as any}
-                          <div class="ge-inline-axis">
-                            <span class="ge-inline-axkey">{axis}</span>
-                            {#if av.kind === 'param'}
-                              <span class="ge-inline-pchip" title="p.{av.param}">p.{av.param}<button
-                                class="ge-arg-pchip-x" type="button"
-                                onclick={() => wire.unwireTransformAxis(xId, i as 0|1|2)}>×</button></span>
-                            {:else}
-                              <input class="ge-inline-input" type="number" step={isRot ? 1 : 0.5}
-                                value={av.kind === 'literal' ? av.value : 0}
-                                use:dragNumber={{ step: isRot ? 1 : 0.5, get: () => Number(av.value ?? 0),
-                                  set: (val) => onTransformAxis(xId, i as 0|1|2, val) }}
-                                oninput={(e) => onTransformAxis(xId, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                              />
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
-                    </div>
-                  </foreignObject>
-                  <!-- row 0 → sockets on the strip's TOP edge; row 1 → BOTTOM -->
-                  {#each [0,1,2] as i (i)}
-                    {@const sk = xformSocketAt(graph, n.id, xi, i)}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in param tiny"
-                      cx={sk.x} cy={sk.y} r="4"
-                      onpointerup={(ev) => wire.endWireOnTransformAxis(ev, xId, i as 0|1|2)}/>
-                  {/each}
-                {/each}
-                <!-- Sequence arrows: card → strip0 → (↓) strip1 → (→) strip2 → …
-                     → wrapper output, so the operation order reads at a glance.
-                     Endpoints derive from the same strip/output geometry. -->
-                {#each xformArrows(graph, n.id) as ar (ar.x1 + '_' + ar.y1 + '_' + ar.x2 + '_' + ar.y2)}
-                  <path class="ge-xform-arrow" d={`M ${ar.x1} ${ar.y1} L ${ar.x2} ${ar.y2}`}
-                    marker-end="url(#ge-xform-arrowhead)"/>
-                {/each}
+                <!-- Output — the Call's OWN right edge (#25). mv/rot transforms
+                     are STANDALONE chainable icon nodes now, never strips on this
+                     Call; a transform wires FROM this output via its `.child`
+                     input. Emit is unchanged (`mv(A,…)` still wraps this Call). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <!-- Output: when the Call carries attached transforms the visible
-                     output is the OUTERMOST transform's output (the fully
-                     transformed result), so wires originate from that wrapper id
-                     (last in chain order). It exits the strip cluster's right edge
-                     at the outermost (row-0) strip's centre — same point
-                     outputSocketAt() returns. Without this downstream methods
-                     would bypass the transform — emit would be `A.subtract(B)`
-                     instead of `mv(A,...).subtract(B)`. -->
-                {@const outPt = xforms.length ? xformOutputAt(graph, n.id) : { x: size.w, y: cardH / 2 }}
-                {@const outSrc = xforms.length ? xforms[xforms.length - 1] : n.id}
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={outPt.x} cy={outPt.y} r="6"
-                  onpointerdown={(ev) => wire.startWire(ev, outSrc)}/>
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
                 <!-- Per-arg input sockets on the left edge of the Call card.
                      Drag a param chip's output socket onto one to wire. -->
                 {#each Object.keys(call.args ?? {}) as ak, ai (ak)}
@@ -2273,35 +2193,8 @@
   .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }
   .ge-drift-btn { font: 700 14px Arial; fill: #d97706; cursor: pointer; user-select: none; }
   .ge-drift-btn:hover { fill: #92400e; }
-  /* Inline mv/rot transform block — compact HORIZONTAL layout (x/y/z side by
-     side); sockets render as SVG along the bottom edge (see markup). */
-  /* Inline transform STRIPS hang off the Call card's right edge — each is a
-     small bordered card (header + x/y/z inputs). Sized to the foreignObject
-     (STRIP_W × STRIP_H in script). */
-  .ge-inline-xform { box-sizing: border-box; width: 100%; height: 100%;
-    font: 11px Arial; color: #1f2937; padding: 3px 5px; display: flex;
-    flex-direction: column; gap: 1px; border: 1px solid #c4b5fd;
-    border-radius: 5px; background: #f5f3ff;
-    box-shadow: 0 1px 2px rgba(76, 29, 149, 0.12); }
-  .ge-inline-xform.mv  { color: #5b21b6; border-color: #c4b5fd; background: #f5f3ff; }
-  .ge-inline-xform.rot { color: #831843; border-color: #f9a8d4; background: #fdf2f8; }
-  .ge-inline-hdr { font: 700 9px Arial; color: inherit; text-transform: uppercase; letter-spacing: 0.5px; padding: 0; }
-  .ge-inline-axes { display: flex; gap: 3px; align-items: flex-start; }
-  /* Label ABOVE the input (stacked) so each axis is a narrow column → the whole
-     strip is narrower than a label-beside-input row. */
-  .ge-inline-axis { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
-  .ge-inline-axkey { font: 600 8px Arial; color: #9ca3af; text-align: center; line-height: 1.1; }
-  .ge-inline-input { width: 100%; min-width: 0; box-sizing: border-box; font: 11px Arial; padding: 1px 2px;
-    border: 1px solid #d1d5db; border-radius: 3px; text-align: center; background: #fff;
-    /* No number spinners — they clutter the tiny strips. */
-    appearance: textfield; -moz-appearance: textfield; }
-  .ge-inline-input::-webkit-inner-spin-button,
-  .ge-inline-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .ge-inline-input:focus { outline: none; border-color: #7c3aed; }
-  .ge-inline-pchip { display: inline-flex; align-items: center; gap: 1px; max-width: 100%; overflow: hidden;
-    white-space: nowrap; text-overflow: ellipsis; font: 600 10px Arial; color: #5b21b6;
-    background: #ede9fe; border-radius: 3px; padding: 1px 3px; }
-  .ge-arg-row.tight { padding: 0; }
+  /* (Inline mv/rot transform STRIP styles removed #25 — mv/rot are standalone
+     icon nodes now; strips no longer render off the Call card.) */
   .ge-xform-btn { font: 13px Arial; fill: #6b7280; cursor: pointer; user-select: none; }
   .ge-xform-btn:hover { fill: #6d28d9; }
   .ge-xform-btn.on { fill: #6d28d9; font-weight: bold; }

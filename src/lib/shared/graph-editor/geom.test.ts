@@ -3,11 +3,9 @@ import {
   polyEntryH, polyRowTop, polySockR, polySockZ, polySockRef,
   sketchRowTop, sketchSockR, sketchSockZ, sketchSockVal,
   entryIdxForEvalIdx, nodeSize, cardMinWidth, chipWidthFor, paramCardSize, paramPos,
-  inlineXformStrip, inlineXformSocket, inlineXformOutput,
-  attachedTransforms, transformBaseCall, transformChainBase, isAttachedTransform,
-  xformStripAt, xformOutputAt, xformArrows,
+  nodePos, outputSocketAt, inputSocketAt,
   exprRowTop, exprInputSockY, exprOutputSockY, EXPR_BODY_TOP, EXPR_ROW_H,
-  STRIP_W, STRIP_H, STRIP_TOP, PARAM_H, CARD_PAD, CARD_TITLE_H, POLY_VTX_PITCH, POLY_RREF_PITCH,
+  PARAM_H, CARD_PAD, CARD_TITLE_H, POLY_VTX_PITCH, POLY_RREF_PITCH,
 } from './geom';
 import type { Graph } from './composition-graph';
 
@@ -164,10 +162,10 @@ describe('card sizing', () => {
   });
 });
 
-describe('inline mv/rot strip + output socket consistency', () => {
-  // A call wrapped by an inline rot transform, sitting inside the root list so
-  // inlineTransformOf recognises it as inline. The output socket and the row-0
-  // strip sockets must stay in lockstep (the "connector disconnects" bug).
+describe('mv/rot are STANDALONE chainable icon nodes (#25)', () => {
+  // rot(call): rot.child = c (a Call). The transform renders as its own icon;
+  // its output is its own right edge, and it auto-places offset from its child
+  // when it lacks a persisted layout slot.
   const graph = {
     root: 'root',
     nodes: {
@@ -175,49 +173,37 @@ describe('inline mv/rot strip + output socket consistency', () => {
       r: { id: 'r', type: 'rot', child: 'c', rot: [] },
       c: { id: 'c', type: 'call', src: 'x', args: {} },
     },
-    layout: { c: { x: 100, y: 50 } },
+    layout: { c: { x: 100, y: 50 } }, // only the Call has a slot
     params: {},
   } as unknown as Graph;
 
-  it('row-0 axis sockets sit on the strip top edge', () => {
-    const strip = inlineXformStrip(graph, 'c', 'rot')!;
-    expect(strip).not.toBeNull();
-    expect(strip.row).toBe(0);
-    const sock = inlineXformSocket(graph, 'c', 'rot', 0)!;
-    expect(sock.y).toBe(strip.y); // top edge for row 0
+  it('the transform output sits on its OWN right edge (not on the Call)', () => {
+    const size = nodeSize(graph, graph.nodes.r);   // {40,40} icon
+    const pos = nodePos(graph, 'r');               // auto-placed
+    const out = outputSocketAt(graph, 'r');
+    expect(out).toEqual({ x: pos.x + size.w, y: pos.y + size.h / 2 });
   });
 
-  it('single-transform output sits at the strip cluster right edge, mid-strip', () => {
-    const strip = inlineXformStrip(graph, 'c', 'rot')!;
-    const out = inlineXformOutput(graph, 'c');
-    expect(out.x).toBe(strip.x + STRIP_W);
-    expect(out.y).toBe(STRIP_TOP + STRIP_H / 2);
-  });
-});
-
-describe('transform CHAIN walk (standalone mv/rot auto-attach)', () => {
-  // A standalone mv whose `.child` is a Call resolves to that Call.
-  it('a standalone mv whose child is a Call resolves to that Call', () => {
-    const g = {
-      root: 'root',
-      nodes: {
-        root: { id: 'root', type: 'list', children: ['m'] },
-        m: { id: 'm', type: 'mv', child: 'c', offset: [] },
-        c: { id: 'c', type: 'call', src: 'x', args: {} },
-      },
-      layout: { c: { x: 0, y: 0 } },
-      params: {},
-    } as unknown as Graph;
-    expect(transformChainBase(g, 'm')).toBe('c');
-    expect(transformBaseCall(g, 'm')).toEqual({ callId: 'c', chain: ['m'] });
-    expect(attachedTransforms(g, 'c')).toEqual(['m']);
-    expect(isAttachedTransform(g, 'm')).toBe(true);
+  it('a layout-less mv/rot AUTO-PLACES offset to the right of its child', () => {
+    const cp = nodePos(graph, 'c');                // {100,50}
+    const cs = nodeSize(graph, graph.nodes.c);
+    const rp = nodePos(graph, 'r');
+    expect(rp).toEqual({ x: cp.x + cs.w + 60, y: cp.y });
   });
 
-  // A rot→mv chain on a Call lists BOTH transforms, nearest-call-first.
-  // Wiring: container → mv → rot → call  (rot.child=call, mv.child=rot), so the
-  // transform nearest the Call (rot) comes first, its wrapper (mv) second.
-  it('a chain rot→mv on a Call lists both in chain order', () => {
+  it('a persisted layout slot wins over the auto-place fallback', () => {
+    const g2 = { ...graph, layout: { ...graph.layout, r: { x: 5, y: 7 } } } as unknown as Graph;
+    expect(nodePos(g2, 'r')).toEqual({ x: 5, y: 7 });
+  });
+
+  it('the child input socket is on the transform icon LEFT edge', () => {
+    const size = nodeSize(graph, graph.nodes.r);
+    const pos = nodePos(graph, 'r');
+    const tgt = inputSocketAt(graph, 'r', 'child');
+    expect(tgt).toEqual({ x: pos.x, y: pos.y + size.h / 2 });
+  });
+
+  it('a rot→mv chain auto-places each transform, cascading right', () => {
     const g = {
       root: 'root',
       nodes: {
@@ -229,35 +215,9 @@ describe('transform CHAIN walk (standalone mv/rot auto-attach)', () => {
       layout: { c: { x: 0, y: 0 } },
       params: {},
     } as unknown as Graph;
-    expect(attachedTransforms(g, 'c')).toEqual(['r', 'm']);
-    // both transforms see the same base Call + full chain
-    expect(transformBaseCall(g, 'm')).toEqual({ callId: 'c', chain: ['r', 'm'] });
-    expect(transformBaseCall(g, 'r')).toEqual({ callId: 'c', chain: ['r', 'm'] });
-    // strips cascade: rot index 0 (row 0), mv index 1 (row 1, same column)
-    expect(xformStripAt(g, 'c', 0).row).toBe(0);
-    expect(xformStripAt(g, 'c', 1).row).toBe(1);
-    // output socket clears 1 column (2 strips → 1 col)
-    const out = xformOutputAt(g, 'c');
-    expect(out.x).toBe(xformStripAt(g, 'c', 0).x + STRIP_W);
-    // sequence arrows connect card → strip0 → strip1 → output
-    expect(xformArrows(g, 'c').length).toBeGreaterThanOrEqual(3);
-  });
-
-  // A mv wrapping a Method (not a Call) stays a normal card → null.
-  it('a mv wrapping a Method resolves to null', () => {
-    const g = {
-      root: 'root',
-      nodes: {
-        root: { id: 'root', type: 'list', children: ['m'] },
-        m: { id: 'm', type: 'mv', child: 'meth', offset: [] },
-        meth: { id: 'meth', type: 'method', op: 'subtract', obj: 'a', arg: 'b' },
-      },
-      layout: {},
-      params: {},
-    } as unknown as Graph;
-    expect(transformChainBase(g, 'm')).toBe('meth');
-    expect(transformBaseCall(g, 'm')).toBeNull();
-    expect(isAttachedTransform(g, 'm')).toBe(false);
-    expect(attachedTransforms(g, 'meth')).toEqual([]);
+    const rp = nodePos(g, 'r');
+    const mp = nodePos(g, 'm');
+    expect(rp.x).toBeGreaterThan(nodePos(g, 'c').x);   // r right of c
+    expect(mp.x).toBeGreaterThan(rp.x);                // m right of r
   });
 });
