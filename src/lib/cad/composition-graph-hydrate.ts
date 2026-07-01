@@ -14,7 +14,7 @@ import { absToChord } from './sketch';
 
 import type {
   Graph, GraphNode, ContainerNode, LayoutXY, Viewport, PolygonNode, PolygonEntry,
-  PolyRepeatNode, SketchNode, TxfmnNode, ArgValue, GraphExpr, ExprDef, ExprOut,
+  PolyRepeatNode, SketchNode, ArgValue, GraphExpr, ExprDef, ExprOut,
 } from './composition-graph-types';
 import { newNodeId, asLiteral } from './composition-graph-types';
 import { setLayout, defaultCallPosition, collectEdges } from './composition-graph-mutate';
@@ -203,93 +203,34 @@ export function hydrateGraph(serialised: any): Graph {
     migratedNodes[id] = n;
   }
 
-  // Migrate legacy mv/rot wrapper nodes → the unified TxfmnNode (mirror the
-  // {kind:'repeat'}→PolyRepeat precedent: forward, one-way, lossless). The
-  // editor only ever produced mv-OUTER / rot-INNER (rotate-then-translate), so:
-  //   • mv(rot(C))  → ONE txfmn{ child:C, rot, offset }                (the fold)
-  //   • lone mv     → txfmn{ rot:0, offset }
-  //   • lone rot    → txfmn{ rot, offset:0 }
-  //   • rot(mv(C))  → translate-THEN-rotate, which a single rot-then-mv card
-  //     can't express → WARN and KEEP the two legacy nodes (geometry preserved;
-  //     emit still handles MvNode/RotNode). MvNode/RotNode stay resolvable types.
+  // Transforms are SEPARATE mv / rot cards (2026-07-01). The old fold that
+  // migrated mv/rot → a unified `txfmn` (xform) card was REMOVED — it re-ran on
+  // every load, so a saved mv reappeared as an xform card. mv/rot now stay as
+  // they are; a rotate-then-translate reads as an mv whose child is a rot node
+  // (two small chained cards). We also UNFOLD any legacy `txfmn` still in a
+  // saved graph back into mv/rot so old parts convert too. emit handles
+  // MvNode/RotNode directly.
   {
     const ns = migratedNodes as Record<string, any>;
-    // Inbound reference count for an id — a fold is only safe when the inner
-    // node is consumed solely by the wrapper we're collapsing.
-    const refCount = (targetId: string): number => {
-      let c = 0;
-      for (const n of Object.values(ns)) {
-        if (!n) continue;
-        if (n.type === 'list' || n.type === 'stack' || n.type === 'group') {
-          c += (n.children as string[]).filter((x) => x === targetId).length;
-        } else if (n.type === 'method') {
-          if (n.obj === targetId) c++;
-          if (n.arg === targetId) c++;
-        } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
-          if (n.child === targetId) c++;
-        } else if (n.type === 'repeat') {
-          c += ((n.children as string[]) ?? []).filter((x) => x === targetId).length;
-        }
-      }
-      return c;
-    };
-    const handled = new Set<string>();   // ids already folded-away or deliberately kept
-
-    // Pass 1 — mv(rot(C)) → one txfmn (taking the mv's id so parent refs hold).
+    const isZero3 = (v: any): boolean =>
+      Array.isArray(v) && v.every((c: any) => c?.kind === 'literal' && Number(c.value) === 0);
     for (const id of Object.keys(ns)) {
-      const mv = ns[id];
-      if (!mv || mv.type !== 'mv') continue;
-      const inner = mv.child ? ns[mv.child] : null;
-      if (inner && inner.type === 'rot' && refCount(mv.child) === 1) {
-        ns[id] = {
-          id, type: 'txfmn',
-          child: inner.child ?? null,
-          rot: inner.rot,
-          offset: mv.offset,
-        } as TxfmnNode;
-        delete ns[mv.child];               // inner rot is absorbed
-        delete migratedLayout[mv.child];
-        handled.add(id);
-        handled.add(mv.child);
-      }
-    }
-
-    // Pass 2 — detect rot(mv(C)) (translate-then-rotate): warn + keep BOTH
-    // legacy nodes (skip them in the lone-conversion pass).
-    for (const id of Object.keys(ns)) {
-      const rt = ns[id];
-      if (!rt || rt.type !== 'rot' || handled.has(id)) continue;
-      const inner = rt.child ? ns[rt.child] : null;
-      if (inner && inner.type === 'mv' && !handled.has(rt.child)) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[hydrateGraph] rot(mv(...)) at ${id} is translate-then-rotate — kept ` +
-          `as two legacy nodes (a single TXFMN card expresses only rotate-then-translate).`,
-        );
-        handled.add(id);
-        handled.add(rt.child);
-      }
-    }
-
-    // Pass 3 — lift remaining lone mv / rot into single-field txfmn (id kept).
-    for (const id of Object.keys(ns)) {
-      if (handled.has(id)) continue;
-      const n = ns[id];
-      if (!n) continue;
-      if (n.type === 'mv') {
-        ns[id] = {
-          id, type: 'txfmn',
-          child: n.child ?? null,
-          rot: [asLiteral(0), asLiteral(0), asLiteral(0)],
-          offset: n.offset,
-        } as TxfmnNode;
-      } else if (n.type === 'rot') {
-        ns[id] = {
-          id, type: 'txfmn',
-          child: n.child ?? null,
-          rot: n.rot,
-          offset: [asLiteral(0), asLiteral(0), asLiteral(0)],
-        } as TxfmnNode;
+      const t = ns[id];
+      if (!t || t.type !== 'txfmn') continue;
+      const hasRot = !isZero3(t.rot);
+      const hasMv = !isZero3(t.offset);
+      if (hasRot && hasMv) {
+        // Mixed txfmn = rotate-then-translate = mv(rot(child)). Split into an
+        // mv (keeps this id so parent refs hold) wrapping a NEW rot node.
+        const rotId = `${id}_rot`;
+        ns[rotId] = { id: rotId, type: 'rot', child: t.child ?? null, rot: t.rot };
+        ns[id] = { id, type: 'mv', child: rotId, offset: t.offset };
+        const lay = migratedLayout[id];
+        if (lay) migratedLayout[rotId] = { x: (lay.x ?? 0) - 60, y: lay.y ?? 0 };
+      } else if (hasRot) {
+        ns[id] = { id, type: 'rot', child: t.child ?? null, rot: t.rot };
+      } else {
+        ns[id] = { id, type: 'mv', child: t.child ?? null, offset: t.offset };
       }
     }
   }

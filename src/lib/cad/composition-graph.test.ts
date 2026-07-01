@@ -470,7 +470,10 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
   const listN = (id: string, children: string[]) =>
     ({ id, type: 'list', children });
 
-  it('migration folds mv(rot(C)) into one txfmn (rot-inner/mv-outer); emit byte-identical', () => {
+  // 2026-07-01: transforms are SEPARATE mv/rot cards — the mv/rot→txfmn fold was
+  // removed (it re-ran on load so a saved mv reappeared as an xform card), and a
+  // legacy txfmn UNFOLDS back into mv/rot on load.
+  it('mv(rot(C)) stays as separate mv + rot cards (no fold); emit byte-identical', () => {
     const serialised = {
       root: 'n_root00',
       nodes: {
@@ -482,19 +485,17 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
       params: {}, imports: ['dt_box'], layout: {},
     };
     const g = hydrateGraph(serialised);
-    // The inner rot is absorbed; the mv's id now carries a txfmn.
-    expect(g.nodes['n_rot000']).toBeUndefined();
-    const tx = g.nodes['n_mv0000'] as any;
-    expect(tx.type).toBe('txfmn');
-    expect(tx.child).toBe('n_call00');
-    expect(tx.rot).toEqual([asLiteral(0), asLiteral(0), asLiteral(90)]);
-    expect(tx.offset).toEqual([asLiteral(0), asLiteral(0), asLiteral(5)]);
+    // No fold: both nodes stay as-is.
+    expect((g.nodes['n_mv0000'] as any).type).toBe('mv');
+    expect((g.nodes['n_rot000'] as any).type).toBe('rot');
+    expect((g.nodes['n_mv0000'] as any).child).toBe('n_rot000');
     const r = emitGraph(g, { id: 't' });
-    expect(r.body).toContain('mv(rot(A, [0, 0, 90]), [0, 0, 5])');
+    expect(r.body).toContain('rot(A, [0, 0, 90])');
+    expect(r.body).toContain('mv(_rot_obj_1, [0, 0, 5])');
     expect(r.validationErrors).toEqual([]);
   });
 
-  it('migration lifts a lone mv into a txfmn{rot:0, offset}', () => {
+  it('a lone mv stays an mv card (no txfmn fold)', () => {
     const serialised = {
       root: 'n_root00',
       nodes: {
@@ -506,15 +507,14 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
     };
     const g = hydrateGraph(serialised);
     const tx = g.nodes['n_mv0000'] as any;
-    expect(tx.type).toBe('txfmn');
-    expect(tx.rot).toEqual([asLiteral(0), asLiteral(0), asLiteral(0)]);
+    expect(tx.type).toBe('mv');
     expect(tx.offset).toEqual([asLiteral(0), asLiteral(0), asLiteral(5)]);
     const r = emitGraph(g, { id: 't' });
     expect(r.body).toContain('mv(A, [0, 0, 5])');
     expect(r.body).not.toContain('rot(');
   });
 
-  it('migration lifts a lone rot into a txfmn{rot, offset:0}', () => {
+  it('a lone rot stays a rot card (no txfmn fold)', () => {
     const serialised = {
       root: 'n_root00',
       nodes: {
@@ -526,15 +526,14 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
     };
     const g = hydrateGraph(serialised);
     const tx = g.nodes['n_rot000'] as any;
-    expect(tx.type).toBe('txfmn');
+    expect(tx.type).toBe('rot');
     expect(tx.rot).toEqual([asLiteral(0), asLiteral(0), asLiteral(90)]);
-    expect(tx.offset).toEqual([asLiteral(0), asLiteral(0), asLiteral(0)]);
     const r = emitGraph(g, { id: 't' });
     expect(r.body).toContain('rot(A, [0, 0, 90])');
     expect(r.body).not.toContain('mv(');
   });
 
-  it('migration WARNS and KEEPS two nodes for rot(mv(C)) (translate-then-rotate)', () => {
+  it('rot(mv(C)) stays as two separate cards (no fold, no warn)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const serialised = {
       root: 'n_root00',
@@ -547,17 +546,37 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
       params: {}, imports: ['dt_box'], layout: {},
     };
     const g = hydrateGraph(serialised);
-    // Both legacy nodes are KEPT (not mis-folded into one card).
     expect((g.nodes['n_rot000'] as any).type).toBe('rot');
     expect((g.nodes['n_mv0000'] as any).type).toBe('mv');
-    expect(warn).toHaveBeenCalled();
     const r = emitGraph(g, { id: 't' });
-    // Geometry preserved: the two legacy nodes emit as two consts exactly as
-    // before the migration — translate first (inner mv), then rotate (outer rot).
     expect(r.body).toContain('mv(A, [0, 0, 5])');
     expect(r.body).toMatch(/rot\(_mv_obj_1, \[0, 0, 90\]\)/);
     expect(r.validationErrors).toEqual([]);
     warn.mockRestore();
+  });
+
+  it('a legacy txfmn unfolds into separate mv + rot cards on load', () => {
+    const serialised = {
+      root: 'n_root00',
+      nodes: {
+        n_root00: listN('n_root00', ['n_tx0000']),
+        n_tx0000: { id: 'n_tx0000', type: 'txfmn', child: 'n_call00',
+          rot: [asLiteral(0), asLiteral(0), asLiteral(90)], offset: [asLiteral(0), asLiteral(0), asLiteral(5)] },
+        n_call00: callN('n_call00', 'A'),
+      },
+      params: {}, imports: ['dt_box'], layout: {},
+    };
+    const g = hydrateGraph(serialised);
+    // txfmn is gone: unfolded to an mv (keeps the id) wrapping a NEW rot node.
+    const mv = g.nodes['n_tx0000'] as any;
+    expect(mv.type).toBe('mv');
+    const rot = g.nodes[mv.child] as any;
+    expect(rot.type).toBe('rot');
+    expect(rot.child).toBe('n_call00');
+    const r = emitGraph(g, { id: 't' });
+    expect(r.body).toContain('rot(A, [0, 0, 90])');
+    expect(r.body).toContain('mv(_rot_obj_1, [0, 0, 5])');
+    expect(r.validationErrors).toEqual([]);
   });
 });
 

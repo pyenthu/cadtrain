@@ -4119,9 +4119,6 @@
         <button class="ge-pick-item" type="button" onclick={() => { dropRot(); submenuKey = null; }}>
           <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">rx ry rz</span>
         </button>
-        <button class="ge-pick-item" type="button" onclick={() => { dropTxfmn(); submenuKey = null; }}>
-          <span class="ge-pick-icon">⇆</span><span class="ge-pick-name">xform</span><span class="ge-pick-hint">rot + mv</span>
-        </button>
       </div>
     {:else if submenuKey === 'container'}
       <div class="ge-picker ge-picker-flyout"
