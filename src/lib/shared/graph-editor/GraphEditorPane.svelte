@@ -69,6 +69,7 @@
     setTransformAxisValue,
     setTxfmnAxis,
     setViewport,
+    setViewScale,
     addExprDef,
     addExprInstance,
     addSpline,
@@ -2758,6 +2759,10 @@
     saveStatus = `saving ${exemplarId}…`;
     // Capture current viewport into the graph BEFORE serialising.
     graph = setViewport(graph, pan, zoom);
+    // Capture the editor's per-part VIEW scale (VIEW-ONLY). Persist only a
+    // MANUAL scale (scene.scaleAuto off — the user dragged a slider); an
+    // auto-normalized scale is DROPPED so the part re-auto-scales on next open.
+    graph = setViewScale(graph, scene.zScale, scene.xScale, !scene.scaleAuto);
     try {
       // Unified save — one endpoint, one body shape. The graph emit walks
       // every node type uniformly (composition-emit.ts handles polygon

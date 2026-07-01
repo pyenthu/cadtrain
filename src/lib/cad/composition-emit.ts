@@ -357,6 +357,10 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     ...(graph.colorOuter ? { colorOuter: graph.colorOuter } : {}),
     ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
+    // Editor VIEW scale (VIEW-ONLY) — sparse top-level mirror of the values in
+    // the serialised graph block. Present only when a MANUAL scale was saved.
+    ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),
+    ...(graph.viewXScale != null ? { viewXScale: graph.viewXScale } : {}),
     ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
     params: graph.params,
     graph: serialiseGraph(graph),
@@ -1034,6 +1038,10 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     ...(graph.colorOuter ? { colorOuter: graph.colorOuter } : {}),
     ...(graph.colorInner ? { colorInner: graph.colorInner } : {}),
     ...(graph.material ? { material: graph.material } : {}),
+    // Editor VIEW scale (VIEW-ONLY) — sparse so legacy files stay byte-identical.
+    // hydrateGraph reads these back into graph.viewZScale / graph.viewXScale.
+    ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),
+    ...(graph.viewXScale != null ? { viewXScale: graph.viewXScale } : {}),
     ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
     // Calculated expressions (B.6 / id 914) — sparse so legacy files stay
     // byte-identical. hydrateGraph reads these back into graph.exprs.

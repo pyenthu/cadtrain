@@ -263,6 +263,42 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(g3.partAppearance).toBeUndefined();
   });
 
+  it('per-part VIEW scale: setViewScale capture + emit + hydrate round-trip', async () => {
+    const { addCall, setViewScale, hydrateGraph } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    // manual=true → the current scale persists onto the graph.
+    g = setViewScale(g, 0.4, 2.5, true);
+    expect(g.viewZScale).toBe(0.4);
+    expect(g.viewXScale).toBe(2.5);
+    // Emit writes it into meta (both the top-level mirror + the graph block).
+    const out = emitGraph(g, { id: 'tVS' });
+    expect(out.source).toContain('viewZScale');
+    expect(out.source).toContain('viewXScale');
+    // Hydrate restores a finite positive number; junk/absent → undefined.
+    const g2 = hydrateGraph({
+      nodes: { [a.id]: { id: a.id, type: 'call', src: 'dt_box', alias: 'A', args: {} }, root: { id: 'root', type: 'list', children: [a.id] } },
+      root: 'root', params: {}, imports: [], layout: {},
+      viewZScale: 0.4, viewXScale: 2.5,
+    } as any);
+    expect(g2.viewZScale).toBe(0.4);
+    expect(g2.viewXScale).toBe(2.5);
+    // manual=false (auto-normalized) → the fields are DROPPED so the part
+    // re-auto-scales on next open.
+    const gAuto = setViewScale(g, 0.4, 2.5, false);
+    expect(gAuto.viewZScale).toBeUndefined();
+    expect(gAuto.viewXScale).toBeUndefined();
+    // Bad / non-positive values do not hydrate.
+    const g3 = hydrateGraph({
+      nodes: { [a.id]: { id: a.id, type: 'call', src: 'dt_box', alias: 'A', args: {} }, root: { id: 'root', type: 'list', children: [a.id] } },
+      root: 'root', params: {}, imports: [], layout: {},
+      viewZScale: 0, viewXScale: 'nope',
+    } as any);
+    expect(g3.viewZScale).toBeUndefined();
+    expect(g3.viewXScale).toBeUndefined();
+  });
+
   it('legacy Repeat {child} hydrates to children:[child] (repeat-enhance fold)', async () => {
     const { hydrateGraph } = await import('./composition-graph');
     // A serialised graph in the OLD single-`child` shape.

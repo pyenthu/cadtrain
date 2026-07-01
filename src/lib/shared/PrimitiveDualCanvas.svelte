@@ -16,8 +16,16 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+    /** Saved per-part editor VIEW scale (VIEW-ONLY) for the PRIMARY open part.
+     *  When set, opening this part APPLIES the saved z/x exaggeration to `scene`
+     *  and disables auto-normalize (scene.scaleAuto = false); when both are
+     *  undefined the part auto-normalizes on load as before. Only the editor's
+     *  primary canvas passes these — a nested subpart never does, so a subpart's
+     *  saved scale can't leak into the parent/viewer scale. */
+    viewZScale?: number;
+    viewXScale?: number;
     /** Geometry backend. 'manifold' (default) → /api/primitives/preview (the 3D +
      *  GLB tabs, byte-identical). 'brep' → /api/brep/preview (server-side OCCT
      *  true-curve mesh); the GLB half, segment dial + ⬇GLB are suppressed and the
@@ -483,12 +491,22 @@
     if (c !== z) scene.zFocus = c;
   });
 
-  // A NEW part re-enables auto default-scale (so a manual scale on the previous
+  // On a NEW part load: if this (PRIMARY) part has a SAVED view scale, APPLY it
+  // and pin auto-normalize OFF so the user's saved z/x exaggeration sticks;
+  // otherwise re-enable auto default-scale (so a manual scale on the previous
   // part doesn't leave the next one un-normalized). PrimitiveDualScene then
   // computes xScale/zScale from the new bbox. Reading `id` makes it the dep.
+  // (A nested subpart never receives viewZScale/viewXScale, so its saved scale
+  // can't override the parent/viewer scale.)
   $effect(() => {
     id; // eslint-disable-line no-unused-expressions — dependency only
-    scene.scaleAuto = true;
+    if (viewZScale != null || viewXScale != null) {
+      if (viewZScale != null) scene.zScale = viewZScale;
+      if (viewXScale != null) scene.xScale = viewXScale;
+      scene.scaleAuto = false;
+    } else {
+      scene.scaleAuto = true;
+    }
   });
 
   // #12: dismiss the X-dia / Z-depth scale popover on a click OUTSIDE it. The

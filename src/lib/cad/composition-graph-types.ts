@@ -499,6 +499,17 @@ export type Graph = {
   colorOuter?: string;
   colorInner?: string;
   material?: string;
+  /** PER-PART editor VIEW scale (VIEW-ONLY exaggeration — never geometry/bake).
+   *  `viewZScale` = Z/length exaggeration, `viewXScale` = X/diameter ("xDia")
+   *  exaggeration; they mirror `scene.zScale` / `scene.xScale`. SPARSE/optional:
+   *  present only when the user set a MANUAL scale (i.e. `scene.scaleAuto` was
+   *  off at save time) — absent means "no saved scale", so the editor
+   *  auto-normalizes on open as before. Captured scene→graph at save and
+   *  restored ONLY when the part is the editor's PRIMARY open part (a nested
+   *  subpart defers to the parent/viewer scale — its saved value is never read).
+   *  Round-trips via serialiseGraph/hydrateGraph + a top-level meta mirror. */
+  viewZScale?: number;
+  viewXScale?: number;
   /** PER-PART appearance overrides, keyed by output-part node id (the Output
    *  list's Call children, shown as A/B/C…). Sparse: a part absent here uses
    *  the part-level colour above. Round-trips via `meta.partAppearance` +
