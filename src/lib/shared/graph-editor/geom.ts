@@ -345,7 +345,10 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   // CSG method (subtract/add/intersect) renders as a COMPACT CIRCLE operator
   // (glyph + A-top/B-bottom inputs + right output) — fixed size, ignore auto-width.
   if (node.type === 'method') return { w: 40, h: 40 };
-  if (node.type === 'mv' || node.type === 'rot') return { w, h: 110 };
+  // mv / rot now render as a COMPACT ICON (glyph + left child input + right
+  // output), x/y/z edited in a click popover — mirror the method icon's fixed
+  // size, ignore auto-width. (Was a full ~92×110 inline-xyz card.)
+  if (node.type === 'mv' || node.type === 'rot') return { w: 40, h: 40 };
   // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
   // label. Fixed height matches the card render's block layout below.
   if (node.type === 'txfmn') return { w, h: 226 };
@@ -625,8 +628,9 @@ export function outputSocketAt(graph: Graph, id: NodeId): { x: number; y: number
       const o = xformOutputAt(graph, bc.callId);
       return { x: hp.x + o.x, y: hp.y + o.y };
     }
-    // Free-standing transform wrapping a Method/Stack/etc. → title-row right edge.
-    return { x: p.x + w, y: p.y + 16 };
+    // Free-standing icon wrapping a Method/Stack/etc. → right edge, vertically
+    // centred (cy = h/2), matching the compact-icon render + the left input.
+    return { x: p.x + w, y: p.y + h / 2 };
   }
   // txfmn is always a standalone card — output on the title-row right edge.
   if (node.type === 'txfmn') return { x: p.x + w, y: p.y + 16 };
@@ -644,9 +648,14 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
     const { w, h } = nodeSize(graph, node);
     return slot === 'obj' ? { x: p.x + w / 2, y: p.y } : { x: p.x + w / 2, y: p.y + h };
   }
-  // mv / rot put their child socket on the LEFT EDGE, aligned with the title
-  // row (y=16). Repeat keeps the legacy bottom-edge position via its renderer.
-  if (slot === 'child' && (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn')) {
+  // mv / rot are now COMPACT ICONS — child socket on the LEFT EDGE, vertically
+  // centred (cy = h/2), matching the render + the right-edge output.
+  if (slot === 'child' && (node.type === 'mv' || node.type === 'rot')) {
+    const { h } = nodeSize(graph, node);
+    return { x: p.x, y: p.y + h / 2 };
+  }
+  // txfmn keeps its full card: child socket aligned with the title row (y=16).
+  if (slot === 'child' && node.type === 'txfmn') {
     return { x: p.x, y: p.y + 16 };
   }
   /* child (legacy left-edge for method/repeat) */

@@ -505,113 +505,34 @@
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'mv' || n.type === 'rot'}
-                {@const t = n as any}
-                {@const fieldName = n.type === 'mv' ? 'offset' : 'rot'}
-                {@const axisRowH = 24}
-                {@const axisStartY = 40}
+                {@const glyph = n.type === 'mv' ? '⇄' : '↻'}
+                {@const cx = size.w / 2}
+                {@const cy = size.h / 2}
+                <!-- COMPACT transform operator (mirrors the CSG method icon):
+                     a small glyph card — child shape wires in on the LEFT, the
+                     transformed result out the RIGHT. The x/y/z values are
+                     edited in a click POPOVER (openTransformPop) rather than an
+                     inline card, so the node stays a small icon. No per-axis
+                     drag sockets — param-wire an axis via a ƒ expression
+                     (`p.<name>`) in the popover. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg transform" class:rot={n.type === 'rot'}
-                  width={size.w} height={size.h} rx="6"
+                  width={size.w} height={size.h} rx="8"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}
                 />
-                <text x="14" y="22" class="ge-node-title">
-                  {n.type === 'mv' ? '⇄ mv' : '↻ rot'}
-                </text>
-                <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
-                <!-- CHILD socket on the LEFT EDGE, vertically aligned with
-                     the title row. Implicit — no label since the position
-                     itself communicates "shape comes in here". Sits at the
-                     top of the same left-edge column as the axis sockets.
-                     inputSocketAt('child') reports this point so existing
-                     wires draw correctly. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy="16" r="6"
+                <text role="button" tabindex="-1" x={cx} y={cy + 7} class="ge-xform-glyph" text-anchor="middle"
+                  data-tip={n.type === 'mv' ? 'mv — edit x/y/z' : 'rot — edit rx/ry/rz'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); popovers!.openTransformPop(ev, n.id); }}>{glyph}</text>
+                <!-- CHILD input — LEFT edge, vertically centred. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={cy} r="6"
                   onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
-                <!-- Each axis row: edge socket + label + input + × — same
-                     column model as the params card so wiring is obvious
-                     + the right edge stays consistent. -->
-                <foreignObject x="14" y={axisStartY - 4} width={size.w - 18} height={3 * axisRowH + 6}>
-                  <div class="ge-xyz" xmlns="http://www.w3.org/1999/xhtml">
-                    {#each ['x','y','z'] as axisLabel, i (axisLabel)}
-                      {@const axis = (t as any)[fieldName][i]}
-                      <div class="ge-arg-row">
-                        <span class="ge-arg-key axis">{n.type === 'mv' ? '' : 'r'}{axisLabel}</span>
-                        {#if axis.kind === 'param'}
-                          <!-- Wired param. ƒ opens the shared expression
-                               popover (consistent with polygon/loop ƒ
-                               buttons, 2026-06-11) prefilled with `p.<name>`
-                               so the user can compose like `p.od / 2`. × unwires
-                               back to literal 0. -->
-                          <span class="ge-arg-cell wired">
-                            <span class="ge-arg-pchip" title="Wired to param">p.{axis.param}</span>
-                            <span class="ge-arg-actions">
-                              <button class="ge-arg-action fx" type="button"
-                                title="Edit expression (e.g. p.wall / 2)"
-                                onclick={(ev) => openTransformAxisExprPop(ev as any, n.id, i as 0|1|2)}>ƒ</button>
-                              <button class="ge-arg-action x" type="button" title="Unwire — back to literal"
-                                onclick={() => onTransformAxis(n.id, i as 0|1|2, 0)}>×</button>
-                            </span>
-                          </span>
-                        {:else if axis.kind === 'expr'}
-                          <!-- Expression mode — inline text input PLUS ƒ
-                               opens the popover for chip-assisted editing
-                               (same as polygon/loop). -->
-                          <span class="ge-arg-cell">
-                            <input class="ge-arg-input expr" type="text"
-                              placeholder="e.g. p.od / 2"
-                              value={axis.expr}
-                              oninput={(e) => onTransformAxisExprEdit(n.id, i as 0|1|2, (e.target as HTMLInputElement).value)}
-                            />
-                            <span class="ge-arg-actions">
-                              <button class="ge-arg-action fx on" type="button"
-                                title="Edit expression in popover"
-                                onclick={(ev) => openTransformAxisExprPop(ev as any, n.id, i as 0|1|2)}>ƒ</button>
-                            </span>
-                          </span>
-                        {:else}
-                          <span class="ge-arg-cell">
-                            <input class="ge-arg-input" type="number" step={n.type === 'mv' ? 0.5 : 1}
-                              value={axis.value}
-                              use:dragNumber={{
-                                step: n.type === 'mv' ? 0.5 : 1,
-                                get: () => Number(axis.value ?? 0),
-                                set: (val) => onTransformAxis(n.id, i as 0|1|2, val),
-                              }}
-                              oninput={(e) => onTransformAxis(n.id, i as 0|1|2, Number((e.target as HTMLInputElement).value))}
-                            />
-                            <span class="ge-arg-actions">
-                              <button class="ge-arg-action fx" type="button"
-                                title="Write an expression"
-                                onclick={(ev) => openTransformAxisExprPop(ev as any, n.id, i as 0|1|2)}>ƒ</button>
-                            </span>
-                          </span>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                </foreignObject>
-                <!-- Per-axis input sockets — ON the left edge (cx=0). Drag a
-                     param chip onto one and the axis becomes wired (via
-                     endWireOnTransformAxis). -->
-                {#each [0, 1, 2] as i}
-                  {@const cy = axisStartY + i * axisRowH + axisRowH / 2 - 4}
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1" class="ge-sock in param tiny" cx="0" cy={cy} r="4"
-                    onpointerup={(ev) => wire.endWireOnTransformAxis(ev, n.id, i as 0|1|2)}/>
-                {/each}
-                <!-- × delete — moved further from the right edge so it
-                     doesn't crowd the title-row output socket. -->
+                <!-- OUTPUT — RIGHT edge, vertically centred. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 22} y="22" class="ge-node-x"
-                  class:armed={del.isArmed(n.id)}
-                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
-                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
-                <!-- OUTPUT socket on the title-row RIGHT EDGE (y=16) —
-                     same vertical line as the child input on the left. -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={cy} r="6"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
               {:else if n.type === 'txfmn'}
@@ -1725,7 +1646,7 @@
                    x=size.w, vertically centred). Two short stacked
                    strokes give the classic "↘" resize-handle look at
                    ~10 × 10 px. The Output card (root) skips the grip. -->
-              {#if n.id !== rootId && n.type !== 'method'}
+              {#if n.id !== rootId && n.type !== 'method' && n.type !== 'mv' && n.type !== 'rot'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <g class="ge-resize-corner"
                   data-tip="Drag to resize"
@@ -1767,6 +1688,9 @@
   .ge-csg-trash:hover { opacity: 1; }
   .ge-node-bg.transform { fill: #ede9fe; stroke: #6d28d9; stroke-width: 2; }
   .ge-node-bg.transform.rot { fill: #fce7f3; stroke: #be185d; }
+  /* Compact mv/rot icon glyph (mirrors ge-csg-glyph but in transform-purple). */
+  .ge-xform-glyph { fill: #6d28d9; font: 700 20px Arial; cursor: pointer; user-select: none; }
+  .ge-xform-glyph:hover { fill: #4c1d95; }
   .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }
   /* Polygon card — warm peach background (matches the `.prvl` tag in the
      sidebar + the +Add Vertex CTA). Stroke amber to differentiate from

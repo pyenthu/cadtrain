@@ -31,6 +31,7 @@
     setStackChildCount,
     setStackChildRef,
     setMethodInput,
+    setTransformAxisValue,
     removeNode,
     STACK_REF_PARAM,
     type Graph,
@@ -76,6 +77,49 @@
   function closeCsgPop() { csgPop = null; }
   function csgDeleteOp() { if (csgPop) { graph = removeNode(graph, csgPop.nodeId); csgPop = null; } }
   function csgClearInput(slot: 'obj' | 'arg') { if (csgPop) { graph = setMethodInput(graph, csgPop.nodeId, slot, ''); csgPop = null; } }
+
+  // ─── mv / rot transform (x/y/z) popover ─────────────────────────────────
+  // Click the compact mv/rot ICON to open a little editor with THREE rows
+  // (x/y/z; rx/ry/rz for rot). Each row is a literal number input, a ƒ toggle
+  // to an inline expression (compose `p.<name> / 2`, incl. param-wiring an axis
+  // by expression), and an × to unwire a param back to literal 0. Same per-axis
+  // semantics the old inline card + the GEP onTransform* handlers used —
+  // self-contained here via setTransformAxisValue (mirrors csgPop's pattern).
+  let transformPop = $state<{ nodeId: NodeId; x: number; y: number } | null>(null);
+  export function openTransformPop(ev: MouseEvent, nodeId: NodeId) {
+    ev.stopPropagation();
+    transformPop = { nodeId, x: ev.clientX, y: ev.clientY };
+  }
+  function closeTransformPop() { transformPop = null; }
+  function txLiteral(axis: 0 | 1 | 2, value: number) {
+    if (!transformPop) return;
+    graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asLiteral(Number.isFinite(value) ? value : 0));
+  }
+  function txExprEdit(axis: 0 | 1 | 2, expr: string) {
+    if (!transformPop) return;
+    graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asExpr(expr));
+  }
+  /** ƒ toggle: literal/param → expression (seeded) and expression → literal
+   *  (recovering a plain number, else 0). Mirrors GEP toggleTransformAxisExprMode. */
+  function txToggleFx(axis: 0 | 1 | 2, cur: any) {
+    if (!transformPop) return;
+    if (cur?.kind === 'expr') {
+      const n = Number(cur.expr);
+      graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asLiteral(Number.isFinite(n) ? n : 0));
+      return;
+    }
+    const seed = cur?.kind === 'param' ? `p.${cur.param}` : String(cur?.value ?? 0);
+    graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asExpr(seed));
+  }
+  function txUnwire(axis: 0 | 1 | 2) {
+    if (!transformPop) return;
+    graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asLiteral(0));
+  }
+  function txDelete() {
+    if (!transformPop) return;
+    graph = removeNode(graph, transformPop.nodeId);
+    transformPop = null;
+  }
   export function moveChild(containerId: NodeId, index: number, delta: -1 | 1) {
     const node = graph.nodes[containerId] as any;
     if (!node || !Array.isArray(node.children)) return;
@@ -259,6 +303,51 @@
   </div>
 {/if}
 
+{#if transformPop}
+  {@const tn = graph.nodes[transformPop.nodeId] as any}
+  {#if tn && (tn.type === 'mv' || tn.type === 'rot')}
+    {@const isRot = tn.type === 'rot'}
+    {@const field = (isRot ? tn.rot : tn.offset) as any[]}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeTransformPop}></div>
+    <div class="ge-wire-pop ge-tx-pop"
+      style="left: {Math.min(transformPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 220)}px; top: {transformPop.y}px">
+      <div class="ge-wire-head">{isRot ? '↻ rot' : '⇄ mv'} · {isRot ? 'rx / ry / rz' : 'x / y / z'}</div>
+      {#each [0, 1, 2] as i (i)}
+        {@const axis = field[i] as any}
+        {@const label = (isRot ? 'r' : '') + ['x', 'y', 'z'][i]}
+        <div class="ge-tx-row">
+          <span class="ge-tx-key">{label}</span>
+          {#if axis?.kind === 'param'}
+            <span class="ge-tx-pchip" title="Wired to param">p.{axis.param}</span>
+            <button class="ge-tx-fx" type="button" title="Edit as an expression (e.g. p.wall / 2)"
+              onclick={() => txToggleFx(i as 0 | 1 | 2, axis)}>ƒ</button>
+            <button class="ge-tx-x" type="button" title="Unwire — back to literal 0"
+              onclick={() => txUnwire(i as 0 | 1 | 2)}>×</button>
+          {:else if axis?.kind === 'expr'}
+            <input class="ge-tx-input expr" type="text" placeholder="e.g. p.od / 2"
+              value={axis.expr}
+              oninput={(e) => txExprEdit(i as 0 | 1 | 2, (e.target as HTMLInputElement).value)} />
+            <button class="ge-tx-fx on" type="button" title="Back to a number"
+              onclick={() => txToggleFx(i as 0 | 1 | 2, axis)}>ƒ</button>
+          {:else}
+            <input class="ge-tx-input" type="number" step={isRot ? 1 : 0.5}
+              value={axis?.value ?? 0}
+              oninput={(e) => txLiteral(i as 0 | 1 | 2, Number((e.target as HTMLInputElement).value))} />
+            <button class="ge-tx-fx" type="button" title="Write an expression"
+              onclick={() => txToggleFx(i as 0 | 1 | 2, axis)}>ƒ</button>
+          {/if}
+        </div>
+      {/each}
+      <div class="ge-expr-pop-row right">
+        <button class="ge-param-add ghost" type="button" onclick={txDelete}>🗑 delete</button>
+        <button class="ge-param-add" type="button" onclick={closeTransformPop}>done</button>
+      </div>
+    </div>
+  {/if}
+{/if}
+
 {#if containerPop}
   {@const cnode = graph.nodes[containerPop.containerId] as any}
   {@const ctitle = cnode?.id === graph.root ? '▶ Output' : cnode?.type === 'stack' ? '↕ Stack' : cnode?.type === 'group' ? '{} Group' : '[ ] List'}
@@ -424,6 +513,20 @@
   .ge-csg-pop-btn:hover { background: #fef3c7; }
   .ge-csg-pop-btn.danger { color: #b91c1c; border-top: 1px solid #fef3c7; }
   .ge-csg-pop-btn.danger:hover { background: #fee2e2; }
+
+  /* ── mv / rot transform (x/y/z) popover ─────────────────────────────── */
+  .ge-tx-pop { min-width: 200px; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .ge-tx-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; }
+  .ge-tx-key { width: 22px; flex: 0 0 auto; font: 600 12px ui-monospace, monospace; color: #6d28d9; }
+  .ge-tx-input { flex: 1 1 auto; min-width: 0; box-sizing: border-box; padding: 3px 6px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; color: #1f2937; }
+  .ge-tx-input:focus { outline: 1px solid #6d28d9; }
+  .ge-tx-input.expr { background: #faf5ff; color: #5b21b6; }
+  .ge-tx-pchip { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 11px ui-monospace, monospace; color: #4c1d95; background: #ede9fe; border: 1px solid #c4b5fd; border-radius: 4px; padding: 3px 7px; }
+  .ge-tx-fx { flex: 0 0 auto; font: 600 12px Arial; color: #78350f; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 4px; padding: 2px 7px; cursor: pointer; }
+  .ge-tx-fx:hover { background: #fde68a; }
+  .ge-tx-fx.on { background: #fbbf24; color: #fff; }
+  .ge-tx-x { flex: 0 0 auto; font: 600 12px Arial; color: #b91c1c; background: transparent; border: 1px solid #fecaca; border-radius: 4px; padding: 2px 7px; cursor: pointer; }
+  .ge-tx-x:hover { background: #fee2e2; }
   .ge-container-table { width: 100%; border-collapse: collapse; font: 11px Arial; }
   .ge-container-table th { text-align: left; padding: 4px 6px; font: 600 10px Arial; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; }
   .ge-container-table td { padding: 4px 6px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
