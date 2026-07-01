@@ -38,6 +38,12 @@ make it a generic, simpler source of truth:
      resampling of a *parametric* curve (sub-mode 1).
 - UI: a toggle on the spline popup — "manual points" ⇄ "from expression" (opens the loop/expr
   builder from #11). Reduces a manual-points spline + sweep to one expression → sweep.
+- **Wireable form (#26):** rather than an embedded expression, give the spline a POINTS INPUT
+  socket (typed `list<point2|3>`) so ANY point producer — an expr node, a param table, a future
+  data source — feeds its control points by wiring: `expr → spline → sweep`. The spline still
+  smooths + arc-length-resamples. This is the "nodes feed nodes" substrate — visually powerful
+  and the seed of a connected-universe generative drawing/design/imagination tool: every node's
+  output is a wire into another's input, composable without limit. Rides typed ports (#20/#926).
 
 ## Relationship / sequencing
 - Both ride the typed-output spine: a spline is a **typed point-source** (`list<point2|3>`),

@@ -42,6 +42,14 @@
     replaces N control points; parametric path/section, fewer ops (reuses the #11 loop builder).
     Build after #926 typed sockets. Pairs with #23. Plan: `docs/plans/spline-generic-source.md`.
 
+26. **Wire a point-set INTO the spline card** (user, 2026-07-01) — the concrete wiring form of
+    #24B. Give the spline a POINTS INPUT socket (typed `list<point2|3>`) so a function/expression
+    output — or any point producer — feeds its control points: **expr → spline → sweep**. The
+    spline still smooths + arc-length-resamples the wired points. Nodes feeding nodes = a
+    "connected universe" substrate toward a generative drawing/design tool. Rides typed ports
+    (#20/#926 — the input socket type-checks list<point>) + reuses the expr-list wiring (#11).
+    Plan: `docs/plans/spline-generic-source.md`.
+
 13. **Typed ports.** Registry + record types + definer + `autoWireSuggestions` on main. LEFT:
     per-part `graph.typeDefs[]` + def→instance propagation — blocked on a real CONSUMER, so
     build composite-type consumption first (= #20 Phase E). Plan: `docs/plans/typed-ports.md`.
