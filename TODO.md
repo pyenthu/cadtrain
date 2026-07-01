@@ -46,6 +46,14 @@
     for expression-sourced points; MANUAL points (no wired function) apply edits directly, no flag.
     Plan: `docs/plans/spline-generic-source.md`.
 
+86. **Respect individual subpart colors + materials in the render** (user, 2026-07-01) —
+    per-part viewer colour Phase B (Phase A done; memory `per_part_viewer_colour`). A composed
+    part renders as one colour today; each SUBPART's own `meta.color`/`meta.material` (already
+    persisted via `graph.color`/`graph.material` in composition-emit) should tint that subpart's
+    geometry in the 3D scene (+ GLB). Route: carry per-part colour/material through `GeomAcc.add`
+    so the scene/GLB paints each contributed sub-geometry with its own colour instead of a single
+    part colour. VIEW-only; don't change bake topology.
+
 13. **Typed ports.** Registry + record types + definer + `autoWireSuggestions` on main. LEFT:
     per-part `graph.typeDefs[]` + def→instance propagation — blocked on a real CONSUMER, so
     build composite-type consumption first (= #20 Phase E). Plan: `docs/plans/typed-ports.md`.
