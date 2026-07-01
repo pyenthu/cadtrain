@@ -265,7 +265,8 @@
   {#if row}
     {@const allowed = kind === 'var' ? varAllowed(i) : outAllowed(i)}
     {@const isList = kind === 'output' && row.shape === 'list'}
-    {@const loopBuildable = isList && (isImperative(row.formula) || !!parseLoops(row.formula) || row.formula.trim() === '')}
+    {@const isAutoList = kind === 'output' && row.shape === 'auto' && (isImperative(row.formula) || !!parseLoops(row.formula))}
+    {@const loopBuildable = (isList && (isImperative(row.formula) || !!parseLoops(row.formula) || row.formula.trim() === '')) || isAutoList}
     {@const showLoops = loopBuildable && loopMode}
     {@const nErr = nameError(row.name)}
     {@const fErr = formulaError(row.formula, allowed, kind === 'output' ? (row.shape ?? 'scalar') : 'scalar')}
@@ -320,8 +321,8 @@
           placeholder={kind === 'var' ? 'od / two' : isList ? 'map(range(0, N), f(i) = [r0 * cos(i), r0 * sin(i)])' : 'diff > 0 ? diff : 0'} />
       {/if}
       {#if fErr}<div class="ge-xs-err big">{fErr}</div>{/if}
-      {#if isList && showLoops}
-        <p class="ge-xs-edhint">Builds a <strong>list of <code>[r,z]</code> points</strong> (wires into a polygon / extrude profile). <strong>+ add</strong> a <em>loop</em>, an intermediate <em>expression</em>, or an input <em>variable</em>; type each loop body as<br/><code>rx = …</code><br/><code>rz = …</code><br/><code>poly.append([rx, rz])</code></p>
+      {#if showLoops}
+        <p class="ge-xs-edhint">Builds a <strong>list of <code>[x, y, z]</code> points</strong> (wires into a polygon / extrude profile). <strong>+ add</strong> a <em>loop</em>; inside it use <strong>+ step</strong> for an <em>add point</em>, a <em>set</em>, or an <em>if / then</em> — the loop, accumulator, and <code>if</code> frame are managed for you.</p>
       {:else if isList}
         <p class="ge-xs-edhint">Raw text. Imperative form (<code>poly = []</code> · <code>for i = 0 to N</code> · <code>poly.append([r, z])</code> · <code>return poly</code>) or functional <code>map(range(0,N), f(i)=[r,z])</code> joined with <code>concat(…)</code>. Toggle <strong>↻ loops</strong> for the block builder.</p>
       {:else}
