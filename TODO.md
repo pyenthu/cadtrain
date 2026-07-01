@@ -98,6 +98,18 @@
     (optional) preference/fine-tune. Reconcile task 905 + TODO #1's "optional fix-errors sink" here.
     Plan: `docs/plans/ai-feedback-rl.md`.
 
+28. **Local fn-call model + synthetic prompt→call data** (user research, 2026-07-01) — CONSOLIDATE
+    with #27/#2/#1, don't build a parallel stack. Levers: (a) compact TypeScript-notation tool
+    schemas (only wins OFF prompt-cache → for the LOCAL model; we already cache the cloud schema);
+    (b) Claude-generated SYNTHETIC {user_prompt, minimized_call} pairs (domain×tool matrix) seeding
+    the #27 JSONL corpus; (c) spend the dataset two ways — near-term FEW-SHOT injection via RAG
+    Phase-3 embeddings (top-3 nearest pairs, no training), later a LoRA fine-tune (Unsloth,
+    ~1–3k pairs → ~95%) of a small model (Qwen2.5-1.5B #2 target / Mistral-7B) that emits our call
+    syntax natively so the schema prompt can be dropped. Neo4j/Chroma graph+vector server = PARKED
+    experiment (heavy; Rule 1 no Python in prod; a JSONL corpus + in-process/web-llm vector index
+    fits better). Sequence: land #27 P1 → synthetic seed → RAG-P3 few-shot → benchmark TS-vs-JSON
+    for the local model → optional fine-tune. Research: `docs/research/local-fncall-synthetic-data.md`.
+
 7. **Well schematic → 3D well diagram (`/wells`)** — PARTIAL (W0 + W1 + tool rail). NEXT: SVTC 3D
    scene layer; DTX+scale; real `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3
    editor/BOM + wire the tool rail to placement. Plan: `docs/plans/well-schematic.md`.
