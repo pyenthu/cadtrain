@@ -26,6 +26,7 @@
     points,
     samples,
     closed = false,
+    interactive = true,
     selectedIdx = $bindable(-1),
     onPointsChange,
   }: {
@@ -33,6 +34,10 @@
     samples: number;
     /** Loop the curve (last→first). Mirrors the spline node's `closed` flag. */
     closed?: boolean;
+    /** When false, the control points are READ-ONLY (dragging + click-to-insert
+     *  are disabled): the handles come from a WIRED expression (#26), not manual
+     *  editing. Orbit + the samples/curve still render. */
+    interactive?: boolean;
     /** Currently-selected control point (for the remove button + highlight). */
     selectedIdx?: number;
     onPointsChange: (pts: Vec3[]) => void;
@@ -97,6 +102,7 @@
     return p.distanceTo(a.clone().add(ab.multiplyScalar(t)));
   }
   function onCurveClick(e: any) {
+    if (!interactive) return;           // wired points are read-only (#26)
     e.stopPropagation?.();
     const P: THREE.Vector3 | undefined = e.point;
     if (!P || vecs.length < 2) return;
@@ -159,6 +165,7 @@
   // fall through untouched, so orbiting still works there. This is race-free
   // (capture runs before bubble), unlike relying on the reactive `enabled` prop.
   function onDown(ev: PointerEvent) {
+    if (!interactive) return;           // wired points are read-only (#26) → orbit only
     const dom = renderer?.domElement;
     if (!dom || vecs.length === 0) return;
     const rect = dom.getBoundingClientRect();
@@ -259,7 +266,7 @@
 {#each vecs as p, i (i)}
   <T.Mesh
     position={[p[0], p[1], p[2]]}
-    onpointerenter={() => (hoverIdx = i)}
+    onpointerenter={() => { if (interactive) hoverIdx = i; }}
     onpointerleave={() => { if (draggingIdx < 0) hoverIdx = -1; }}>
     <T.SphereGeometry args={[0.28, 16, 16]} />
     <T.MeshStandardMaterial
