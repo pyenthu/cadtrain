@@ -22,7 +22,8 @@ export const MOVE_TARGET_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|complet
 /** Display label for a top-level folder name. */
 export function tabLabel(name: string): string {
   if (name === 'archive') return 'Archived';
-  if (name === 'stdlib' || name === 'stdstale') return name;
+  if (name === 'stdlib') return 'Stdlib';
+  if (name === 'stdstale') return 'Stale';
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
