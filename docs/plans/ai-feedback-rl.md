@@ -1,6 +1,8 @@
 # Plan — AI feedback / RL database (thumbs + correction, learn-as-you-use)
 
-**Status:** architecture (2026-07-01)
+**Status:** architecture (2026-07-01). Detail sheet under
+**`docs/plans/ai-master-plan.md` (the north star)** — this = P1 (capture) + P2
+(corpus/few-shot) + P4 (optional fine-tune), the incremental-knowledge flywheel.
 **TODO:** #27
 **User intent (verbatim):** *"In SVTC I can report false/wrong prompt responses
 with a message. I want a reinforcement-learning DATABASE built AS WE USE the

@@ -1,6 +1,8 @@
 # Plan — Context-Aware AI Function Mapping for the Graph Editor ✨
 
-**Status:** proposed (research + design, 2026-06-15)
+**Status:** SHIPPED (Phase-1 registry + dispatcher + `/api/rag/assist` are on
+main). Detail sheet under **`docs/plans/ai-master-plan.md` (the north star)** —
+this = P0. Header "proposed" is stale; kept for its design rationale.
 **Goal (user's words):** "The ✨ AI button should be relevant to the window
 we're working in. Map some basic editor functions into the AI system — e.g.
 mapping a node to a param, adding a point, adding a node — so if the functions

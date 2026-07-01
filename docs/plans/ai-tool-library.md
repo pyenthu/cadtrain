@@ -1,7 +1,10 @@
 # Plan — AI Function Library: the capability SOURCE OF TRUTH
 
 **Status:** proposed (2026-07-01). PLANNING + AUDIT only — no implementation in
-this doc's commit.
+this doc's commit. Detail sheet under **`docs/plans/ai-master-plan.md` (the
+north star)** — this = P0 (registry foundation) + P1 (complete-the-tools,
+`addSpline` first); the registry it defines is the source of truth the whole
+system generates from.
 
 **Trigger.** A user asked the in-browser AI to "add a circular spline" and it
 refused: *"the tools don't include a way to create a spline node (only addCall /

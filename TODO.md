@@ -1,5 +1,16 @@
 ### Open — build work (PENDING)
 
+0. **AI MASTER PLAN (umbrella / north star)** — ONE self-improving, local-first tool-calling
+   assistant fusing #1/#2/#27/#28/#29 into a single system: [function-library registry (source
+   of truth)] → generates [cloud JSON schema · prompt · local XGrammar CFG] → [multi-shot loop
+   on the live Graph] ← retrieval/few-shot from [one corpus: parts+docs+simplified+feedback] →
+   [feedback grows the corpus] → [local WebLLM runtime + optional fine-tune], under
+   data-residency (memory `ai_data_residency_local_first` — cloud Claude is dev/build-time only).
+   Roadmap: **P0** reconcile+registry (mostly SHIPPED) → **P1** complete tools (addSpline first)
+   + feedback capture → **P2** corpus unification + few-shot (embeddings, no training) → **P3**
+   WebLLM local runtime → **P4** synthetic data + optional LoRA → zero-prompt local. #1/#2/#27/
+   #28/#29 below are PHASES of this. Plan: `docs/plans/ai-master-plan.md`.
+
 20. **Typed expression outputs — structural inference + dynamic wiring** (THE design spine).
     An expr is a node that outputs a typed value, wired into a compatible consumer; type
     INFERRED from structure by default, explicit annotation optional. Phase A on main
@@ -76,18 +87,23 @@
 17. **Loop·x/y in the left toolbar add-menu** — today only creatable via the polygon's "+ expr";
     add a top-level toolbar item to drop one standalone.
 
-1. **RAG / AI assist.** Engine merged; the in-canvas edit-this-part panel is mounted (AiMenu edit
-   mode). LEFT: `route` in `EditorContext`/`readEditorState`, `selectedId` on node-click, optional
-   `/api/ai/fix-errors` sink. Plan: `docs/plans/ai-rag-system.md`.
+1. **RAG / AI assist.** [MASTER PLAN P0 (shipped) + P1 remainder]. Engine merged; the in-canvas
+   edit-this-part panel is mounted (AiMenu edit mode); loop + prompt-cache split + proxy-path all
+   SHIPPED. LEFT (P1): `route` in `EditorContext`/`readEditorState`, `selectedId` on node-click.
+   The "optional `/api/ai/fix-errors` sink" is SUPERSEDED by #27's `verdict:'error'` feedback rows
+   — do not build it. Plan: `docs/plans/ai-master-plan.md` (detail: `ai-rag-system.md`).
 
-2. **web-llm local backend** — in-browser Qwen2.5-1.5B + XGrammar, default-OFF (no data leaves
-   org); ge-assist accepts a `postTurn` override. Plan: `docs/research/web-llm-functionary.md`.
+2. **web-llm local backend** — [MASTER PLAN P3] the data-residency RUNTIME. In-browser
+   Qwen2.5-1.5B + XGrammar (CFG from the registry's `toJsonSchema()`), default-OFF (no data leaves
+   org); ge-assist already accepts a `postTurn` override (the seam exists). Plan:
+   `docs/plans/ai-master-plan.md` (detail: `docs/research/web-llm-functionary.md`).
    **Deploying a FINE-TUNED smaller model** (Coder-0.5B via MLC compile + custom-URL
    `CreateMLCEngine` + zero-prompt) = the #28 endgame, detailed in
    `docs/research/local-fncall-synthetic-data.md` → "In-browser deployment (WebLLM + MLC + XGrammar)".
 
 27. **AI feedback / RL database (thumbs + correction, learn-as-you-use)** (user, SVTC parity).
-    A 👍/👎 + free-text "what was wrong / what I wanted" control on each AI turn in `AiMenu.svelte`
+    [MASTER PLAN P1 capture + P2 corpus/few-shot + P4 optional fine-tune] — the incremental-
+    knowledge flywheel. A 👍/👎 + free-text "what was wrong / what I wanted" control on each AI turn in `AiMenu.svelte`
     records a verdict (approved | disapproved | corrected — the last diffed from the graph the user
     ended with) to an append-only volume store `ai/feedback/turns.jsonl` (`POST /api/ai/feedback`,
     Rule 4/13), folding in the never-built `fix-errors.jsonl`/`logFixError` sink (§H of
@@ -101,8 +117,9 @@
     (optional) preference/fine-tune. Reconcile task 905 + TODO #1's "optional fix-errors sink" here.
     Plan: `docs/plans/ai-feedback-rl.md`.
 
-28. **Local fn-call model + synthetic prompt→call data** (user research, 2026-07-01) — CONSOLIDATE
-    with #27/#2/#1, don't build a parallel stack. Levers: (a) compact TypeScript-notation tool
+28. **Local fn-call model + synthetic prompt→call data** (user research, 2026-07-01) —
+    [MASTER PLAN P2 synthetic seed + few-shot · P4 fine-tune/MLC deploy = the zero-prompt endgame].
+    CONSOLIDATE with #27/#2/#1, don't build a parallel stack. Levers: (a) compact TypeScript-notation tool
     schemas (only wins OFF prompt-cache → for the LOCAL model; we already cache the cloud schema);
     (b) Claude-generated SYNTHETIC {user_prompt, minimized_call} pairs (domain×tool matrix) seeding
     the #27 JSONL corpus; (c) spend the dataset two ways — near-term FEW-SHOT injection via RAG
@@ -123,7 +140,8 @@
     "In-browser deployment (WebLLM + MLC + XGrammar)" section.
 
 29. **Complete + document the AI function library (capability source-of-truth)** (user, 2026-07-01).
-    Trigger: the AI refused "add a circular spline" — no `addSpline` tool exists. AUDIT: the 12
+    [MASTER PLAN P0 registry foundation + P1 complete-the-tools] — the source of truth the whole
+    system generates from. Trigger: the AI refused "add a circular spline" — no `addSpline` tool exists. AUDIT: the 12
     shipped `EDITOR_TOOLS` are a strict SUBSET of the editor's ~110 public mutators / picker node
     types. MISSING create tools for Spline (`addSpline`/`setSplinePoints`/`setSplineClosed` — the
     concrete gap: the AI literally cannot make a spline/circular spline), Polygon, Sketch, Expr,
