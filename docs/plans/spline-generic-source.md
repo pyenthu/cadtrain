@@ -38,6 +38,10 @@ make it a generic, simpler source of truth:
      resampling of a *parametric* curve (sub-mode 1).
 - UI: a toggle on the spline popup — "manual points" ⇄ "from expression" (opens the loop/expr
   builder from #11). Reduces a manual-points spline + sweep to one expression → sweep.
+- **Wireable form (#26) — SHIPPED (accdf8e):** the spline has a typed `list<point2|3>` points-input
+  socket; a wired expr output drives its control points (`expr → spline → r_sweep`), scalar refused,
+  unwired = manual points (byte-identical emit). `SplineNode.pointsExpr` + `emitSplineBlocks` switch +
+  TDZ ordering fix. LEFT: override-tracking (below). Original spec:
 - **Wireable form (#26):** rather than an embedded expression, give the spline a POINTS INPUT
   socket (typed `list<point2|3>`) so ANY point producer — an expr node, a param table, a future
   data source — feeds its control points by wiring: `expr → spline → sweep`. The spline still

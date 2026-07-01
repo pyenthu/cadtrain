@@ -52,7 +52,10 @@
     replaces N control points; parametric path/section, fewer ops (reuses the #11 loop builder).
     Build after #926 typed sockets. Pairs with #23. Plan: `docs/plans/spline-generic-source.md`.
 
-26. **Wire a point-set INTO the spline card** (user, 2026-07-01) — the concrete wiring form of
+26. **Wire a point-set INTO the spline card** — **WIRING SHIPPED** (accdf8e): spline has a
+    typed `list<point2|3>` points-input socket; a wired expr output drives its control points
+    (`expr → spline → r_sweep`), scalar refused, unwired = manual (byte-identical). LEFT: the
+    **override tracking** below (manual edit over an expression-sourced point). The concrete wiring form of
     #24B. Give the spline a POINTS INPUT socket (typed `list<point2|3>`) so a function/expression
     output — or any point producer — feeds its control points: **expr → spline → sweep**. The
     spline still smooths + arc-length-resamples the wired points. Nodes feeding nodes = a
