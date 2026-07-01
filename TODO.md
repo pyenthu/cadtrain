@@ -140,6 +140,15 @@
     runtime model is trained/constrained entirely from this registry). Ties #1/#2/#27/#28. Plan:
     `docs/plans/ai-tool-library.md`.
 
+30. **Custom tabs + local/cloud folders** (user, 2026-07-01; PLAN ONLY). Beyond the fixed
+    INTERNAL/BASIC/WELL rail: user-added CUSTOM tabs (named, colored) + per-folder ORIGIN —
+    **CLOUD = tied to the USER ID** (private per-user volume space, GATED on the OAuth identity
+    port `oauth-identity.md`) vs **LOCAL = a machine folder** via the File System Access API
+    (`showDirectoryPicker`, IndexedDB handle, client-side bake, no auth — data-residency).
+    Cloud vs local vs custom shown in distinct colors + legend. Sequence: LOCAL folders +
+    local-backed custom tabs FIRST (no OAuth), then CLOUD per-user tabs/folders once OAuth lands.
+    Builds on the shipped 3-tab sidebar + folder-move. Plan: `docs/plans/custom-tabs-local-folders.md`.
+
 7. **Well schematic → 3D well diagram (`/wells`)** — PARTIAL (W0 + W1 + tool rail). NEXT: SVTC 3D
    scene layer; DTX+scale; real `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3
    editor/BOM + wire the tool rail to placement. Plan: `docs/plans/well-schematic.md`.
