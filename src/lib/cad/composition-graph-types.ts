@@ -426,6 +426,12 @@ export type SplineNode = {
   points: [number, number, number][];
   /** N output points (equally arc-length spaced). Default ~32. */
   samples: ArgValue;
+  /** CLOSED loop — the curve wraps last→first, so the resampled path forms a
+   *  ring with no reflected endpoints. The PATH PRODUCER owns loop-ness: a
+   *  sweep whose `path` arg is wired to this spline AUTO-FOLLOWS it (emit forces
+   *  `closedPath: closed, caps: !closed`). SPARSE + optional → absent ⇒ false ⇒
+   *  an OPEN curve, byte-identical to today. */
+  closed?: boolean;
 };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode;

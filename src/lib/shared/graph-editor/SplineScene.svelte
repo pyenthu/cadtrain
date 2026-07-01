@@ -25,11 +25,14 @@
   let {
     points,
     samples,
+    closed = false,
     selectedIdx = $bindable(-1),
     onPointsChange,
   }: {
     points: Vec3[];
     samples: number;
+    /** Loop the curve (last→first). Mirrors the spline node's `closed` flag. */
+    closed?: boolean;
     /** Currently-selected control point (for the remove button + highlight). */
     selectedIdx?: number;
     onPointsChange: (pts: Vec3[]) => void;
@@ -52,8 +55,8 @@
     // freed in the cleanup return when `vecs` changes or the scene unmounts.
     if (vecs.length < 2) { curveObj = null; invalidate(); return; }
     const cps = vecs.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
-    const curve = new THREE.CatmullRomCurve3(cps, false, 'centripetal');
-    const g = new THREE.TubeGeometry(curve, Math.max(16, vecs.length * 24), 0.06, 10, false);
+    const curve = new THREE.CatmullRomCurve3(cps, closed, 'centripetal');
+    const g = new THREE.TubeGeometry(curve, Math.max(16, vecs.length * 24), 0.06, 10, closed);
     const m = new THREE.MeshStandardMaterial({ color: 0x7c3aed, roughness: 0.5 });
     curveObj = new THREE.Mesh(g, m);
     invalidate();
@@ -66,8 +69,8 @@
   $effect(() => {
     if (vecs.length < 2) { projObj = null; invalidate(); return; }
     const flat = vecs.map((p) => new THREE.Vector3(p[0], 0, p[2]));
-    const curve = new THREE.CatmullRomCurve3(flat, false, 'centripetal');
-    const g = new THREE.TubeGeometry(curve, Math.max(16, vecs.length * 24), 0.03, 8, false);
+    const curve = new THREE.CatmullRomCurve3(flat, closed, 'centripetal');
+    const g = new THREE.TubeGeometry(curve, Math.max(16, vecs.length * 24), 0.03, 8, closed);
     const m = new THREE.MeshBasicMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.5 });
     projObj = new THREE.Mesh(g, m);
     invalidate();
@@ -102,7 +105,7 @@
   /** The N equally-arc-length-spaced samples (the BAKE output preview). */
   const sampledPts = $derived.by<Vec3[]>(() => {
     if (vecs.length < 2) return [];
-    try { return resampleSpline(vecs as Vec3[], Math.max(2, samples)); } catch { return []; }
+    try { return resampleSpline(vecs as Vec3[], Math.max(2, samples), closed); } catch { return []; }
   });
 
 

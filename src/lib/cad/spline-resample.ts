@@ -65,10 +65,36 @@ function evalSegment(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, u: number): Vec3 {
 
 /** Densely sample the whole spline → a polyline of points. `perSeg` samples
  *  per segment (the resolution of the arc-length table; higher = more accurate
- *  equal spacing). Returns the control points verbatim when < 2 are given. */
-export function denseSampleSpline(points: Vec3[], perSeg = 64): Vec3[] {
+ *  equal spacing). Returns the control points verbatim when < 2 are given.
+ *
+ *  `closed` (default false) makes the curve a LOOP: no reflected phantom
+ *  endpoints — every segment's neighbours WRAP (p0 of the first seg = the last
+ *  control point; p3 of the last seg = the first control point) and one extra
+ *  closing segment runs from the last control point back to the first. The dense
+ *  loop does NOT repeat the start vertex — each segment contributes its s=0..
+ *  perSeg−1 samples (the endpoint is the next segment's start), so the polyline
+ *  is `n · perSeg` points around the ring, with the closing edge implicit
+ *  (dense[last] → dense[0]). The OPEN path is byte-identical to before. */
+export function denseSampleSpline(points: Vec3[], perSeg = 64, closed = false): Vec3[] {
   const pts = points.filter((p) => Array.isArray(p) && p.length >= 3).map((p) => [Number(p[0]), Number(p[1]), Number(p[2])] as Vec3);
   if (pts.length < 2) return pts.slice();
+  const n = pts.length;
+  if (closed) {
+    // Loop — n segments, each pts[i] → pts[(i+1)%n], neighbours wrapped. Each
+    // segment emits s=0..perSeg−1 (skip the shared endpoint) so no duplicates;
+    // dense[0] = pts[0] and the ring closes via dense[last] → dense[0].
+    const out: Vec3[] = [];
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n]!;
+      const p1 = pts[i]!;
+      const p2 = pts[(i + 1) % n]!;
+      const p3 = pts[(i + 2) % n]!;
+      for (let s = 0; s < perSeg; s++) {
+        out.push(evalSegment(p0, p1, p2, p3, s / perSeg));
+      }
+    }
+    return out;
+  }
   if (pts.length === 2) {
     // Straight line — just lerp (centripetal needs ≥ 2 segments to differ).
     const out: Vec3[] = [];
@@ -79,7 +105,6 @@ export function denseSampleSpline(points: Vec3[], perSeg = 64): Vec3[] {
     return out;
   }
   const out: Vec3[] = [];
-  const n = pts.length;
   for (let i = 0; i < n - 1; i++) {
     const p1 = pts[i]!;
     const p2 = pts[i + 1]!;
@@ -102,30 +127,43 @@ export function denseSampleSpline(points: Vec3[], perSeg = 64): Vec3[] {
  *
  * @param points  control points `[[x,y,z], …]` (≥ 2 for a curve).
  * @param samples N output points (≥ 2). Clamped to ≥ 2.
+ * @param closed  loop the curve (default false). For a closed curve the N
+ *                samples are spaced `k/N · totalLoopLength` (k = 0..N−1) around
+ *                the FULL ring, so the last sample is one step BEFORE the first
+ *                (no duplicate) — feed straight to a closed sweep. An OPEN curve
+ *                spaces `k/(N−1) · totalLength` and hits both endpoints exactly
+ *                (byte-identical to before).
  * @param perSeg  internal dense-sampling resolution per segment (default 64).
  */
-export function resampleSpline(points: Vec3[], samples: number, perSeg = 64): Vec3[] {
+export function resampleSpline(points: Vec3[], samples: number, closed = false, perSeg = 64): Vec3[] {
   const N = Math.max(2, Math.floor(Number(samples) || 2));
-  const dense = denseSampleSpline(points, perSeg);
+  const dense = denseSampleSpline(points, perSeg, closed);
   if (dense.length === 0) return [];
   if (dense.length === 1) return Array.from({ length: N }, () => dense[0]!.slice() as Vec3);
 
+  // For a closed loop, append the start vertex as the explicit closing point so
+  // the cumulative table covers the wrap edge (dense[last] → dense[0]); the
+  // resample targets never reach it, so it's never emitted as a sample.
+  const loop = closed ? [...dense, dense[0]!] : dense;
+
   // Cumulative arc length along the dense polyline.
   const cum: number[] = [0];
-  for (let i = 1; i < dense.length; i++) {
-    cum.push(cum[i - 1]! + len(sub(dense[i]!, dense[i - 1]!)));
+  for (let i = 1; i < loop.length; i++) {
+    cum.push(cum[i - 1]! + len(sub(loop[i]!, loop[i - 1]!)));
   }
   const total = cum[cum.length - 1]!;
-  if (total <= 1e-9) return Array.from({ length: N }, () => dense[0]!.slice() as Vec3);
+  if (total <= 1e-9) return Array.from({ length: N }, () => loop[0]!.slice() as Vec3);
 
   const out: Vec3[] = [];
   let j = 0;
   for (let k = 0; k < N; k++) {
-    const target = (k / (N - 1)) * total;
+    // Closed → space 0..(N−1)/N of the loop (last sample ≠ first). Open →
+    // 0..1 inclusive so both endpoints are hit exactly.
+    const target = closed ? (k / N) * total : (k / (N - 1)) * total;
     while (j < cum.length - 2 && cum[j + 1]! < target) j++;
     const segLen = cum[j + 1]! - cum[j]! || 1e-9;
     const u = Math.min(1, Math.max(0, (target - cum[j]!) / segLen));
-    out.push(add(scale(dense[j]!, 1 - u), scale(dense[j + 1]!, u)));
+    out.push(add(scale(loop[j]!, 1 - u), scale(loop[j + 1]!, u)));
   }
   return out;
 }

@@ -1273,6 +1273,15 @@ export function setSplineSamples(graph: Graph, id: NodeId, samples: ArgValue): G
   return finalize({ ...graph, nodes: { ...graph.nodes, [id]: { ...node, samples } } });
 }
 
+/** Toggle the spline between a CLOSED loop and an OPEN curve. The path producer
+ *  owns loop-ness: a sweep whose `path` is wired to this spline auto-follows
+ *  (emit forces closedPath/caps from this flag — see composition-emit). */
+export function setSplineClosed(graph: Graph, id: NodeId, closed: boolean): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'spline') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: { ...node, closed: closed === true } } });
+}
+
 /** Immutable update of one def by id (no-op if the id is unknown). */
 function mapDef(graph: Graph, defId: NodeId, fn: (d: ExprDef) => ExprDef): Graph {
   const defs = graph.exprDefs ?? [];

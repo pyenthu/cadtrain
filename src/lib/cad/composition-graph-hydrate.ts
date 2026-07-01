@@ -197,6 +197,9 @@ export function hydrateGraph(serialised: any): Graph {
       .map((p: any) => [Number(p[0]) || 0, Number(p[1]) || 0, Number(p[2]) || 0]);
     if (n.samples == null) n.samples = { kind: 'literal', value: 32 };
     else if (typeof n.samples === 'number') n.samples = { kind: 'literal', value: n.samples };
+    // `closed` normalises to a strict boolean; absent / falsy ⇒ false (an OPEN
+    // curve, today's behaviour). The path producer owns loop-ness (auto-follow).
+    n.closed = n.closed === true;
     migratedNodes[id] = n;
   }
 

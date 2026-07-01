@@ -33,6 +33,8 @@ import {
   type NodeId,
   type ExprNode,
   type ExprDef,
+  type SplineNode,
+  asLiteral,
   topoOrder,
   STACK_REF_PARAM,
 } from './composition-graph';
@@ -480,7 +482,7 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
   const ref = (id: NodeId, slot: string) => varNames.get(id) ?? missingRef(node.id, slot, id);
   switch (node.type) {
     case 'call':
-      return emitCallExpr(node.src, node.args);
+      return emitCallExpr(node.src, node.args, nodes);
     case 'list':
     case 'group':
       return `[${node.children.map((c, i) => ref(c, `children[${i}]`)).join(', ')}]`;
@@ -837,15 +839,45 @@ export function emitSplineBlocks(graph: Graph): string[] {
       .map((p: any[]) => `[${Number(p?.[0]) || 0}, ${Number(p?.[1]) || 0}, ${Number(p?.[2]) || 0}]`)
       .join(', ')}]`;
     const samples = (node as any).samples != null ? emitValueExpr((node as any).samples) : '32';
-    lines.push(`const ${exprBlockMember(node.id, 'path')} = resampleSpline(${ptsLit}, ${samples});`);
+    // The spline OWNS loop-ness: a closed spline resamples around the full ring
+    // (no reflected endpoints). Consumers wired to this path auto-follow the flag
+    // (see the `call` arg emit → closedPath / caps). Absent ⇒ false ⇒ open.
+    const closed = (node as any).closed === true;
+    lines.push(`const ${exprBlockMember(node.id, 'path')} = resampleSpline(${ptsLit}, ${samples}, ${closed});`);
   }
   return lines;
 }
 
-function emitCallExpr(src: string, args: Record<string, ArgValue>): string {
-  const keys = Object.keys(args);
+/** The `spline` node whose OUTPUT the given `path` ArgValue references, or null.
+ *  A wired path arg is `{kind:'expr', expr:'_x_<splineId>_path'}` (exactly
+ *  `exprBlockMember(splineId,'path')`); we match that against every spline node.
+ *  Only a genuine spline source qualifies — hand-authored / expr-IIFE paths
+ *  (any other expr string) return null, so their explicit closedPath is kept. */
+function splineSourceOfPath(pathArg: ArgValue | undefined, nodes: Record<NodeId, GraphNode>): SplineNode | null {
+  if (!pathArg || pathArg.kind !== 'expr') return null;
+  for (const n of Object.values(nodes)) {
+    if (n && n.type === 'spline' && exprBlockMember(n.id, 'path') === pathArg.expr) return n as SplineNode;
+  }
+  return null;
+}
+
+function emitCallExpr(src: string, args: Record<string, ArgValue>, nodes?: Record<NodeId, GraphNode>): string {
+  // AUTO-FOLLOW (spline owns loop-ness): when a call's `path` arg is wired to a
+  // spline node's output, the spline decides whether the sweep is a loop —
+  // OVERRIDE closedPath + caps from its `closed` flag (closed ⇒ closedPath:true,
+  // caps:false ; open ⇒ closedPath:false, caps:true). A path from any other
+  // source (hand-authored expr IIFE, literal) is left untouched, so those keep
+  // whatever closedPath/caps the graph stored. Only spreads keys when a spline
+  // source is found ⇒ byte-identical emit for every non-spline call.
+  let effArgs = args;
+  const sp = nodes ? splineSourceOfPath(args.path, nodes) : null;
+  if (sp) {
+    const closed = sp.closed === true;
+    effArgs = { ...args, closedPath: asLiteral(closed), caps: asLiteral(!closed) };
+  }
+  const keys = Object.keys(effArgs);
   if (keys.length === 0) return `${src}({})`;
-  const lines = keys.map((k) => `${k}: ${emitValueExpr(args[k]!)}`);
+  const lines = keys.map((k) => `${k}: ${emitValueExpr(effArgs[k]!)}`);
   return `${src}({ ${lines.join(', ')} })`;
 }
 
