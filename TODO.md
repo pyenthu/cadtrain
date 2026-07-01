@@ -48,6 +48,11 @@
     spline still smooths + arc-length-resamples the wired points. Nodes feeding nodes = a
     "connected universe" substrate toward a generative drawing/design tool. Rides typed ports
     (#20/#926 — the input socket type-checks list<point>) + reuses the expr-list wiring (#11).
+    **Override tracking:** when points come from a WIRED expression, a manual edit to a point is
+    flagged as an OVERRIDE (per-point dirty flag / delta) so we know which points diverged from
+    the expression output — the expression stays live for un-edited points, manual edits persist
+    across re-evaluation, and a "reset to expression" affordance is possible. The flag is ONLY
+    for expression-sourced points; MANUAL points (no wired function) apply edits directly, no flag.
     Plan: `docs/plans/spline-generic-source.md`.
 
 13. **Typed ports.** Registry + record types + definer + `autoWireSuggestions` on main. LEFT:

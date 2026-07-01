@@ -44,6 +44,11 @@ make it a generic, simpler source of truth:
   smooths + arc-length-resamples. This is the "nodes feed nodes" substrate — visually powerful
   and the seed of a connected-universe generative drawing/design/imagination tool: every node's
   output is a wire into another's input, composable without limit. Rides typed ports (#20/#926).
+- **Override tracking (expression-sourced only):** when the control points come from a wired
+  expression, a manual edit to a point is flagged as an OVERRIDE (per-point dirty flag / delta),
+  so the expression stays live for un-edited points while manual edits persist across
+  re-evaluation (+ a "reset to expression" affordance). MANUAL-only points (no wired function)
+  apply edits directly — no flag needed. (Blender's capture/override pattern, scoped to points.)
 
 ## Relationship / sequencing
 - Both ride the typed-output spine: a spline is a **typed point-source** (`list<point2|3>`),
