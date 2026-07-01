@@ -14,6 +14,14 @@
     list<transform> → place/repeat (retire the 3 repeat types); lacing (longest-repeat-last);
     profile 2D-preview; visual `+` compose. Build on #20/#13. Plan: `docs/plans/expression-list-builder.md`.
 
+31. **Visual expression editor — for + if/then, no code** (user, 2026-07-01). Finish the multi-line
+    expr-OUTPUT editor so non-programmers build a list<point> (etc.) output VISUALLY with just FOR
+    loops + IF/THEN — no JS/TS, no variable declarations (the builder owns the vars). `expr-imperative.ts`
+    already has for/assign/append; ADD `if` to the model+compile, finish `ExprImperativeBlocks` as the
+    primary visual path (for/if-then/set/add-point blocks, nestable, live preview), + a CoffeeScript-ish
+    text MIRROR (a small DSL → the same JS IIFE, NOT the real CoffeeScript compiler). Extends #11/#20.
+    Plan: `docs/plans/expr-visual-editor.md`.
+
 12. **Repeat-as-sweep** — loft one welded skin between consecutive repeat copies. Helpers
     `sweepAlongPath`/`loftStations` merged. LEFT: wire an `op:'sweep'` mode into the repeat node
     (frame torsion / spacing / caps). `g_spiral_repeat.md`. Pairs #11.
