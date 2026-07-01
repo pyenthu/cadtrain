@@ -507,8 +507,10 @@
        canvas ◐ quick-toggle was removed 2026-06-18 to keep one home. -->
   <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
   {#if meshBackend && meshStatus === 'ok'}
-    <span class="pd-backend-badge {meshBackend}"
-      title={meshBackend === 'client' ? 'Baked client-side (Manifold Web Worker)' : 'Baked server-side (/api/primitives/preview)'}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+    <span class="pd-backend-badge {meshBackend}" role="button" tabindex="-1"
+      title={meshBackend === 'client' ? 'Baked client-side (Web Worker) — click to switch to server' : 'Baked server-side — click to switch to client'}
+      onclick={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} }}>
       {meshBackend === 'client' ? '⚡ client' : '☁ server'}</span>
   {/if}
   {#if scaleMenuOpen}
@@ -642,8 +644,9 @@
   .pd-backend-badge {
     position: absolute; top: 30px; left: 175px; z-index: 6;
     padding: 2px 8px; border-radius: 4px; font: 700 10px Arial; letter-spacing: 0.3px;
-    pointer-events: none;
+    pointer-events: auto; cursor: pointer; user-select: none;
   }
+  .pd-backend-badge:hover { filter: brightness(0.96); }
   .pd-backend-badge.client { background: #ecfdf5; border: 1px solid #34d399; color: #047857; }
   .pd-backend-badge.server { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
   .pd-bake-tools { position: absolute; top: 30px; left: 130px; z-index: 6; display: flex; align-items: center; gap: 4px; }

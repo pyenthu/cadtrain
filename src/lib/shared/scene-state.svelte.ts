@@ -96,7 +96,7 @@ export const scene = $state({
    *  default), true = client (compile → Manifold Web Worker, the client-exec
    *  path). Persisted in localStorage (`cad-client-bake`); the SceneControls
    *  toggle flips it and the canvas re-bakes reactively. */
-  clientBake: typeof localStorage !== 'undefined' && localStorage.getItem('cad-client-bake') === '1',
+  clientBake: typeof localStorage === 'undefined' || localStorage.getItem('cad-client-bake') !== '0', // client-first: default ON, opt OUT to server via '0'
   zDirLight: true,
   zDirIntensity: 1,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera
