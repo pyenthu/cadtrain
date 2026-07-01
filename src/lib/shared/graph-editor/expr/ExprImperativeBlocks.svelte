@@ -22,6 +22,7 @@
    */
   import {
     parseImperative, serializeImperative, serializeStatements, bodyStatements,
+    importLiteralPointList,
     type ImperativeProgram, type ImpStatement, type ImpIf, type ImpAssign,
   } from '$lib/cad/expr-imperative';
   import { parseLoops, type LoopForm } from '$lib/cad/expr-loops';
@@ -38,7 +39,10 @@
     loopVar2?: string; start2?: string; stop2?: string;
     stmts: ImpStatement[];
   };
-  type Ui = { accumulators: string[]; vars: ImpAssign[]; loops: UiLoop[]; result: string };
+  // `stmts` = TOP-LEVEL statements (add-point / set / if at the ROOT, outside any
+  // loop) — this is where a LITERAL point list imports to (one append per point),
+  // and where the user can add root-level points / ifs / a for-loop among them.
+  type Ui = { accumulators: string[]; vars: ImpAssign[]; stmts: ImpStatement[]; loops: UiLoop[]; result: string };
 
   let ui = $state<Ui | null>(null);
   let lastSerialized = '';
@@ -55,6 +59,7 @@
     return {
       accumulators: [...p.accumulators],
       vars: structuredClone(p.vars ?? []),
+      stmts: structuredClone(p.stmts ?? []),
       loops: p.loops.map((l) => ({
         loopVar: l.loopVar, start: l.start, stop: l.stop,
         loopVar2: l.loopVar2, start2: l.start2, stop2: l.stop2,
@@ -76,19 +81,35 @@
 
   $effect(() => {
     if (formula === lastSerialized) return;
+    // 1) an imperative program (loops / top-level stmts) parses directly;
+    // 2) a functional map/concat converts to loops;
+    // 3) a LITERAL point list `[[…]]` imports to top-level add-point blocks
+    //    (NO data loss — the whole reason the toggle used to be hidden);
+    // 4) an empty formula becomes an empty program (shows the "+ step" palette).
     let p = parseImperative(formula);
     if (!p) { const f = parseLoops(formula); if (f) p = loopsToImperative(f); }
+    if (!p) { const st = importLiteralPointList(formula); if (st) p = { accumulators: ['poly'], vars: [], stmts: st, loops: [], result: 'poly' }; }
+    if (!p && formula.trim() === '') p = { accumulators: ['poly'], vars: [], stmts: [], loops: [], result: 'poly' };
+    // A non-empty formula we CAN'T turn into blocks → ui stays null; commit()
+    // then preserves the raw text (never wipes it).
     ui = p ? toUi(p) : null;
     collapsedIfs = new Set();
   });
 
   function commit() {
     openPalette = null;
-    if (!ui || !ui.loops.length) { lastSerialized = ''; formula = ''; return; }
+    // Couldn't turn the formula into blocks → DON'T touch it (no data loss).
+    if (!ui) return;
     const snap = $state.snapshot(ui) as Ui;
+    // Only a GENUINELY empty program clears the formula; a program with points,
+    // vars, or loops is serialized. This is the fix for the literal-wipe bug.
+    if (!snap.stmts.length && !snap.loops.length && !snap.vars.length) {
+      lastSerialized = ''; formula = ''; return;
+    }
     const prog: ImperativeProgram = {
       accumulators: snap.accumulators,
       vars: snap.vars,
+      stmts: snap.stmts as ImpStatement[],
       loops: snap.loops.map((l) => ({
         loopVar: l.loopVar, start: l.start, stop: l.stop,
         loopVar2: l.loopVar2, start2: l.start2, stop2: l.stop2,
@@ -101,7 +122,7 @@
   }
 
   function ensureUi(): Ui {
-    if (!ui) ui = { accumulators: ['poly'], vars: [], loops: [], result: 'poly' };
+    if (!ui) ui = { accumulators: ['poly'], vars: [], stmts: [], loops: [], result: 'poly' };
     return ui;
   }
   function toggleSet<T>(set: Set<T>, k: T): Set<T> {
@@ -144,21 +165,25 @@
   }
 
   // ── statement-body mutators (operate on a body's ImpStatement[] in-place) ────
+  // Default expressions must be VALID in scope: inside a loop use its var (`[i,0]`);
+  // at the ROOT (no loop var) use a literal `[0, 0, 0]` so the point is well-formed.
+  const pointExpr = (loopVar: string) => (loopVar ? `[${loopVar}, 0]` : `[0, 0, 0]`);
+  const ifCond = (loopVar: string) => (loopVar ? `${loopVar} > 0` : `1 > 0`);
   function addPoint(list: ImpStatement[], loopVar: string) {
-    list.push({ kind: 'append', list: acc(), expr: `[${loopVar || 'i'}, 0]` }); openPalette = null; commit();
+    list.push({ kind: 'append', list: acc(), expr: pointExpr(loopVar) }); openPalette = null; commit();
   }
   function addSet(list: ImpStatement[]) {
     list.push({ kind: 'assign', name: uniqueName('v'), expr: '0' }); openPalette = null; commit();
   }
   function addIf(list: ImpStatement[], loopVar: string) {
-    list.push({ kind: 'if', cond: `${loopVar || 'i'} > 0`,
-      then: [{ kind: 'append', list: acc(), expr: `[${loopVar || 'i'}, 0]` }] }); openPalette = null; commit();
+    list.push({ kind: 'if', cond: ifCond(loopVar),
+      then: [{ kind: 'append', list: acc(), expr: pointExpr(loopVar) }] }); openPalette = null; commit();
   }
   function removeStmt(list: ImpStatement[], s: ImpStatement) {
     const i = list.indexOf(s); if (i >= 0) list.splice(i, 1); commit();
   }
   function addElse(s: ImpIf, loopVar: string) {
-    s.else = [{ kind: 'append', list: acc(), expr: `[${loopVar || 'i'}, 0]` }]; commit();
+    s.else = [{ kind: 'append', list: acc(), expr: pointExpr(loopVar) }]; commit();
   }
   function removeElse(s: ImpIf) { s.else = undefined; commit(); }
 
@@ -203,11 +228,11 @@
   const asDropdown2 = (k: number, stop: string | undefined) =>
     variables.length > 0 && !customStop2.has(k) && !!stop && variables.includes(stop);
 
-  // completions for a loop's body expression fields (loop vars + names + fns).
-  function loopCompletions(lp: UiLoop): Completion[] {
+  // completions for a body's expression fields (the given loop vars + names + fns).
+  function bodyCompletions(loopVars: string[]): Completion[] {
     const out: Completion[] = [];
     const push = (t: string) => { if (t) out.push({ text: t, kind: 'param' }); };
-    push(lp.loopVar); if (lp.loopVar2) push(lp.loopVar2);
+    for (const lv of loopVars) push(lv);
     for (const a of ui?.accumulators ?? []) push(a);
     for (const v of ui?.vars ?? []) push(v.name);
     for (const n of allAssignNames()) push(n);
@@ -216,6 +241,10 @@
     for (const c of ALLOWED_CONSTANTS) out.push({ text: c, kind: 'const' });
     return out;
   }
+  const loopCompletions = (lp: UiLoop): Completion[] =>
+    bodyCompletions([lp.loopVar, ...(lp.loopVar2 ? [lp.loopVar2] : [])]);
+  // root-level body has no loop var in scope.
+  const rootCompletions = (): Completion[] => bodyCompletions([]);
 </script>
 
 <!-- ── recursive statement-body renderer: if / add-point / set ───────────────── -->
@@ -314,6 +343,13 @@
     </div>
   {/each}
 
+  <!-- ROOT-LEVEL statements: add-point / set / if OUTSIDE any loop. A literal
+       point list lands here (one add-point per point); the "+ step" palette lets
+       the user add more, or wrap them in an if — a for is added via "+ add". -->
+  {#if ui}
+    {@render stmtBody(ui.stmts, '', rootCompletions())}
+  {/if}
+
   {#each ui?.loops ?? [] as lp, k (k)}
     {@const open = !collapsedLoops.has(k)}
     {@const comps = loopCompletions(lp)}
@@ -365,10 +401,12 @@
     </div>
   {/each}
 
-  {#if ui && ui.loops.length}
+  {#if ui && (ui.loops.length || ui.stmts.length)}
     <div class="ib-return">return <code>{ui.result}</code></div>
+  {:else if !ui}
+    <p class="ib-empty">This formula can't be shown as blocks — switch to <b>⟨⟩ text</b> to edit it.</p>
   {:else}
-    <p class="ib-empty">Nothing yet — use <b>+ add</b> (top right) to add a loop.</p>
+    <p class="ib-empty">Nothing yet — use <b>+ step</b> to add a point, or <b>+ add</b> (top right) for a loop.</p>
   {/if}
 </div>
 

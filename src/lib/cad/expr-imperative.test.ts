@@ -1,7 +1,7 @@
 // Imperative loop model (#11 accumulator style) — parse/serialize/compile, and
 // proof the imperative spiral evals to the SAME points as the functional map form.
 import { describe, it, expect } from 'vitest';
-import { parseImperative, serializeImperative, serializeStatements, compileImperative, validateImperative, isImperative, bodyStatements, splitStatements, type ImpIf } from './expr-imperative';
+import { parseImperative, serializeImperative, serializeStatements, compileImperative, validateImperative, isImperative, bodyStatements, splitStatements, importLiteralPointList, type ImpIf, type ImperativeProgram } from './expr-imperative';
 import { compileListFormula } from './graph-exprs';
 
 const tau = 2 * Math.PI;
@@ -112,7 +112,70 @@ describe('imperative loop model', () => {
 
   it('returns null for non-imperative input', () => {
     expect(parseImperative('[1,2,3]')).toBeNull();
-    expect(parseImperative('poly = []\nreturn poly')).toBeNull(); // no loop
+    expect(parseImperative('poly = []\nreturn poly')).toBeNull(); // no loop, no stmt
+    expect(parseImperative('[[-1,0,0],[1,2,4],[4,3,1]]')).toBeNull(); // a bare literal stays functional
+  });
+});
+
+// The literal-wipe regression fix (#B.7): a LITERAL list<point> output must be
+// importable into add-point blocks WITHOUT losing the points, and must survive
+// the blocks ↔ text round-trip as an equivalent (same-points) program.
+describe('literal point list → top-level add-point blocks (no-wipe import)', () => {
+  const LITERAL = '[[-1,0,0],[1,2,4],[4,3,1]]';
+
+  it('importLiteralPointList turns a literal into one append per row', () => {
+    const st = importLiteralPointList(LITERAL)!;
+    expect(st).not.toBeNull();
+    expect(st).toHaveLength(3);
+    expect(st.every((s) => s.kind === 'append' && s.list === 'poly')).toBe(true);
+    // exact coordinates preserved (the points the wipe used to destroy)
+    expect(st.map((s) => s.expr.replace(/\s/g, ''))).toEqual(['[-1,0,0]', '[1,2,4]', '[4,3,1]']);
+  });
+
+  it('a bare literal is NOT imperative (emit/inference contract unchanged)', () => {
+    expect(isImperative(LITERAL)).toBe(false);
+    expect(importLiteralPointList('map(range(0,3), f(i)=[i,0])')).toBeNull(); // not a literal
+    expect(importLiteralPointList('[1,2,3]')).toBeNull();                     // flat list, not rows
+  });
+
+  it('imported program serializes, re-parses, and compiles to the SAME points', () => {
+    const prog: ImperativeProgram = {
+      accumulators: ['poly'], vars: [], stmts: importLiteralPointList(LITERAL)!, loops: [], result: 'poly',
+    };
+    const text = serializeImperative(prog);
+    expect(text).toContain('poly.append([-1, 0, 0])');
+    // the serialized text is now recognized as an imperative program (top-level stmts)
+    expect(isImperative(text)).toBe(true);
+    const back = parseImperative(text)!;
+    expect(back.stmts).toHaveLength(3);
+    expect(back.loops).toHaveLength(0);
+    const r = compileImperative(text);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(evalGrid(r.js, {})).toEqual([[-1, 0, 0], [1, 2, 4], [4, 3, 1]]);
+  });
+
+  it('validates top-level appends and flags a bad one', () => {
+    const good = ['poly = []', 'poly.append([0, 0])', 'poly.append([1, 1])', 'return poly'].join('\n');
+    expect(validateImperative(good, new Set())).toBeNull();
+    const bad = ['poly = []', 'poly.append([bogus, 0])', 'return poly'].join('\n');
+    expect(validateImperative(bad, new Set())).toMatch(/bogus/);
+  });
+
+  it('top-level statements coexist with a for-loop and keep order', () => {
+    const src = [
+      'poly = []',
+      'poly.append([0, 0, 0])',
+      'for i = 0 to 3',
+      '  poly.append([i, 1, 0])',
+      'return poly',
+    ].join('\n');
+    const p = parseImperative(src)!;
+    expect(p.stmts).toHaveLength(1);
+    expect(p.loops).toHaveLength(1);
+    expect(serializeImperative(p)).toBe(src);
+    const r = compileImperative(src);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(evalGrid(r.js, {})).toEqual([[0, 0, 0], [0, 1, 0], [1, 1, 0], [2, 1, 0]]);
   });
 });
 
