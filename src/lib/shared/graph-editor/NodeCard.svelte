@@ -1692,20 +1692,20 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg spline"
                   width={sw} height={sh} rx="6"
+                  data-tip="Spline path → r_sweep.path (list of 3D points). ✎ edit control points in 3D · drag the right socket into a sweep's path."
                   style="width: {sw}px; height: {sh}px"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <!-- a nice curved spline (slightly thick) = the card's identity; a
-                     NARROW glyph on the LEFT, vertically centred, inline with the buttons. -->
-                <path class="ge-spline-preview" fill="none"
-                  d={`M 8 ${sh * 0.66} Q ${sw * 0.18} ${sh * 0.26} ${sw * 0.34} ${sh * 0.5} T ${sw * 0.56} ${sh * 0.46}`}/>
+                <!-- inline row: ✎ (left) · curved-spline glyph (middle) · × (right) -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={sw - 30} y={sh / 2 + 4} class="ge-node-x"
+                <text role="button" tabindex="-1" x="8" y={sh / 2 + 4} class="ge-node-x"
                   data-tip="Edit this spline's control points in 3D"
                   onpointerdown={(ev) => { ev.stopPropagation(); onOpenSplineEditor(ev as any, n.id); }}>✎</text>
+                <path class="ge-spline-preview" fill="none"
+                  d={`M 24 ${sh * 0.64} Q ${sw * 0.42} ${sh * 0.26} ${sw * 0.56} ${sh * 0.5} T ${sw - 30} ${sh * 0.5}`}/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={sw - 13} y={sh / 2 + 4} class="ge-node-x"
+                <text role="button" tabindex="-1" x={sw - 20} y={sh / 2 + 4} class="ge-node-x"
                   data-tip="Delete this spline node"
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
                 <!-- OUTPUT socket (right edge, centered) — list<point3> → r_sweep.path.

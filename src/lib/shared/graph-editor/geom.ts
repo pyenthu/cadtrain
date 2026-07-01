@@ -258,7 +258,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'repeat') return 230;
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
-  if (node.type === 'spline') return 84;   // narrow inline card
+  if (node.type === 'spline') return 92;   // inline row: edit | curve | x | socket
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
     for (const cid of (node as any).children ?? []) {
