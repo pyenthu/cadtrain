@@ -25,15 +25,6 @@
     separate until this lands (orthogonal today: loft = varying radius / straight; sweep = fixed
     section / bent path). Same unification spirit as #11/#20.
 
-25. **Detach transforms (mv/rot/xform) from the Call card → standalone chainable nodes**
-    (user, 2026-07-01). Stop ATTACHING transforms to a part's card (the `⇄`/`↻` inline
-    strips); CHAIN standalone mv/rot icon nodes instead (`part → mv → rot → out`). One
-    render/emit path (drop the inline-strip + `xformSocketAt` + `attachedTransforms` code),
-    transforms become first-class wireable nodes (generative + networkable). Load-bearing:
-    a hydrate MIGRATION that materializes existing attached transforms into standalone nodes
-    (bake-parity tested) BEFORE removing the inline path. Standalone mv/rot icon + xyz popover
-    already shipped. Plan: `docs/plans/detach-transforms.md`. Pairs with #11/#13/#20.
-
 24. **Spline as a generic point-source + expression-driven points** (user, 2026-07-01). Make the
     spline THE curve source of truth. (A) Feed a spline into `r_sweep.section` (2D), not just
     `path` (3D) — a `dim:2|3` flag → `list<point2>`/`list<point3>`, wired by type (#926) into any
