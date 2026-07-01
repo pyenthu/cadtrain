@@ -161,7 +161,16 @@
   // shading round, so the draft phase is barely noticeable. Plan: bake-perf.md.
   const DRAFT_SEG = 64;
   const DRAFT_SETTLE_MS = 220;
+  // Leading debounce for the DRAFT pass. A burst of key changes (e.g. a fast
+  // param scrub, or several re-keys in the same tick) that arrives within this
+  // window collapses to ONE draft+full instead of one pair per key — the pending
+  // draft is cancelled + rescheduled on each call. Kept tiny so a genuine single
+  // edit still feels near-instant (< the ~50ms perceptible threshold). The main
+  // mount-time churn is fixed upstream (RightPane keeps the canvas mounted across
+  // 'loading'); this is defense-in-depth for within-instance re-key bursts.
+  const DRAFT_LEAD_MS = 24;
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let draftLeadTimer: ReturnType<typeof setTimeout> | null = null;
   // Perf logs ([bake-client]/[bake-worker]/finalize) opt-in via this flag.
   function bakeTimingsOn(): boolean {
     try { return localStorage.getItem('cad-bake-timings') === '1'; } catch { return false; }
@@ -350,11 +359,23 @@
   // Continuous scrubbing keeps resetting the timer → only coarse bakes until the
   // user settles. Skipped (single full bake) for BREP, GLB-only, or already-coarse.
   function scheduleBake(bust = false) {
+    // Cancel BOTH the pending draft-lead AND the pending full so a burst of
+    // re-keys collapses to a single draft+full (coalesce).
+    if (draftLeadTimer) { clearTimeout(draftLeadTimer); draftLeadTimer = null; }
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     const full = effSegments ?? 256;
-    if (isBrep || !bakeMesh || full <= DRAFT_SEG) { rebuild(bust); return; }
-    rebuildMesh(bust, DRAFT_SEG);                       // coarse mesh, instant
-    draftTimer = setTimeout(() => { draftTimer = null; rebuild(false); }, DRAFT_SETTLE_MS); // full mesh + GLB on settle
+    if (isBrep || !bakeMesh || full <= DRAFT_SEG) {
+      // Single full bake (no draft phase) — still lead-debounced so a burst
+      // collapses to one bake instead of one per key.
+      draftLeadTimer = setTimeout(() => { draftLeadTimer = null; rebuild(bust); }, DRAFT_LEAD_MS);
+      return;
+    }
+    // Coarse draft after a tiny lead (collapses bursts), then full on settle.
+    draftLeadTimer = setTimeout(() => {
+      draftLeadTimer = null;
+      rebuildMesh(bust, DRAFT_SEG);                     // coarse mesh, ~instant
+      draftTimer = setTimeout(() => { draftTimer = null; rebuild(false); }, DRAFT_SETTLE_MS); // full mesh + GLB on settle
+    }, DRAFT_LEAD_MS);
   }
   // 🔄 button: force a FRESH bake (?bust=1) — clears the local fetch cache so the
   // server result is re-fetched, and notifies the parent (editor clears its own
@@ -372,6 +393,7 @@
     // tells the browser the context is reclaimable immediately.
     meshAc?.abort(); glbAc?.abort(); brepAc?.abort();
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+    if (draftLeadTimer) { clearTimeout(draftLeadTimer); draftLeadTimer = null; }
     if (glbBlobUrl) URL.revokeObjectURL(glbBlobUrl);
     try { renderer?.dispose(); renderer?.forceContextLoss(); } catch { /* already lost */ }
     renderer = null;
