@@ -54,6 +54,15 @@
     so the scene/GLB paints each contributed sub-geometry with its own colour instead of a single
     part colour. VIEW-only; don't change bake topology.
 
+27. **Sidebar reorg — 3 main vertical tabs (INTERNAL / BASIC / WELL)** (done on branch
+    `worktree-agent-adc9d069837d40bdb`, presentation-only). The `/primitives` left vertical
+    rail collapses from per-top-folder tabs (Basic · Completions · Archived · stdlib ·
+    stdstale · user folders) into THREE: **INTERNAL** (nests folders ARCHIVED / STDLIB /
+    STALE), **BASIC** (volume `basic/` + any other user top folder), **WELL** (volume
+    `completions/<family>/…`, keeps the family sub-tree). Regroups the SAME dirs (Rule 16 —
+    location IS category); no files move. `activeView` derived replaces `activeNode`/
+    `activeKind`; create/trash/move/list untouched. Plan: `docs/plans/sidebar-reorg.md`.
+
 13. **Typed ports.** Registry + record types + definer + `autoWireSuggestions` on main. LEFT:
     per-part `graph.typeDefs[]` + def→instance propagation — blocked on a real CONSUMER, so
     build composite-type consumption first (= #20 Phase E). Plan: `docs/plans/typed-ports.md`.

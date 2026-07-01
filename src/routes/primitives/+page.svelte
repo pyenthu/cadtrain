@@ -86,18 +86,65 @@
       try { localStorage.setItem('prim-rail-collapsed', '0'); } catch { /* ignore */ }
     }
   }
-  /** The FolderNode the active tab points at (falls back to the first volume
-   *  folder so the tree never renders empty after a deleted folder). */
-  let activeNode = $derived.by<FolderNode | null>(() => {
-    if (activeTab === '__stdlib') return stdlibNode;
-    if (activeTab === '__stdstale') return stdstaleNode;
-    return topFolders.find((f) => f.name === activeTab) ?? topFolders[0] ?? null;
-  });
-  let activeKind = $derived<'volume' | 'archive' | 'stdlib' | 'stdstale'>(
-    activeTab === '__stdlib' ? 'stdlib'
-      : activeTab === '__stdstale' ? 'stdstale'
-      : activeNode?.name === 'archive' ? 'archive' : 'volume',
+  /** Sidebar reorg (docs/plans/sidebar-reorg.md): the rail collapses to THREE
+   *  fixed main tabs. `activeTab` is now one of these sentinels:
+   *    '__internal' → ARCHIVED + STDLIB + STALE folders (system / read-only / trash)
+   *    'basic'      → the volume basic/ branch (+ any other user top folder)
+   *    'completions'→ the WELL branch (completions/<family>/…)
+   *  BASIC = 'basic' and WELL = 'completions' keep real dir names so drag-drop
+   *  `to=` paths + the create target stay valid on-volume dirs (Rule 16). */
+  const INTERNAL_TAB = '__internal';
+  type RowKind = 'volume' | 'archive' | 'stdlib' | 'stdstale';
+  interface RenderFolder { node: FolderNode; kind: RowKind; }
+  interface RenderFile { entry: Entry; dir: string; kind: RowKind; }
+  /** The volume `archive/` folder (soft-deleted parts). Falls back to an empty
+   *  synthetic node so INTERNAL still renders the ARCHIVED row before /list lands. */
+  let archiveNode = $derived<FolderNode>(
+    topFolders.find((f) => f.name === 'archive') ?? { name: 'archive', path: 'archive', parts: [], children: [] },
   );
+  let basicNode = $derived<FolderNode | null>(topFolders.find((f) => f.name === 'basic') ?? null);
+  let completionsNode = $derived<FolderNode | null>(topFolders.find((f) => f.name === 'completions') ?? null);
+  /** Extra user-created top-level volume folders (anything that isn't a known
+   *  bucket) surface UNDER Basic so nothing becomes unreachable. */
+  let extraFolders = $derived(topFolders.filter((f) => !['basic', 'completions', 'archive'].includes(f.name)));
+  /** What the active main tab renders: folder rows (each with its own kind) +
+   *  direct file rows + the create-target dir (null = no create in this tab). */
+  let activeView = $derived.by<{ folders: RenderFolder[]; files: RenderFile[]; createPath: string | null }>(() => {
+    if (activeTab === INTERNAL_TAB) {
+      return {
+        folders: [
+          { node: archiveNode, kind: 'archive' },
+          { node: stdlibNode, kind: 'stdlib' },
+          { node: stdstaleNode, kind: 'stdstale' },
+        ],
+        files: [],
+        createPath: null,
+      };
+    }
+    if (activeTab === 'completions') {
+      const n = completionsNode;
+      return {
+        folders: (n?.children ?? []).map((c) => ({ node: c, kind: 'volume' as const })),
+        files: (n?.parts ?? []).map((e) => ({ entry: e, dir: 'completions', kind: 'volume' as const })),
+        createPath: n ? 'completions' : null,
+      };
+    }
+    // BASIC (default) — basic's own subtree PLUS any other user top folder.
+    const n = basicNode;
+    return {
+      folders: [
+        ...(n?.children ?? []).map((c) => ({ node: c, kind: 'volume' as const })),
+        ...extraFolders.map((f) => ({ node: f, kind: 'volume' as const })),
+      ],
+      files: (n?.parts ?? []).map((e) => ({ entry: e, dir: 'basic', kind: 'volume' as const })),
+      createPath: 'basic',
+    };
+  });
+  /** Apply the global sort mode to a render-folder / render-file list. */
+  const sortRenderFolders = (xs: RenderFolder[]) =>
+    sortMode === 'alpha' ? [...xs].sort((a, b) => a.node.name.localeCompare(b.node.name)) : xs;
+  const sortRenderFiles = (xs: RenderFile[]) =>
+    sortMode === 'alpha' ? [...xs].sort((a, b) => a.entry.id.localeCompare(b.entry.id)) : xs;
   /** ⛁ Cache inspector — when on, the MAIN area shows <CacheBrowser/> instead
    *  of the per-part editor tabs. Toggled from a footer row in the tree. */
   let showCache = $state(false);
@@ -772,7 +819,13 @@
       const sm = localStorage.getItem('prim-sidebar-sort');
       if (sm === 'alpha' || sm === 'default') sortMode = sm;
       const at = localStorage.getItem('prim-active-tab');
-      if (at) activeTab = at;
+      // Normalize legacy per-folder tab ids into the 3-tab scheme
+      // (archive / __stdlib / __stdstale → INTERNAL; completions → WELL; else BASIC).
+      if (at) {
+        activeTab = (at === INTERNAL_TAB || at === 'basic' || at === 'completions')
+          ? at
+          : (['archive', '__stdlib', '__stdstale'].includes(at) ? INTERNAL_TAB : 'basic');
+      }
     } catch { /* ignore */ }
   });
 
@@ -1146,44 +1199,53 @@
       </div>
     {/snippet}
 
-    <!-- Body = a thin LEFT vertical-tab rail (one filing-cabinet tab per
-         top-level folder, plus the read-only stdlib/stdstale branches) +
-         the scoped file tree to its right. Each tab SCOPES the tree to that
-         one top-level branch — selecting 'Archived' shows only archive/'s
-         contents; subfolders within the active branch still expand in place. -->
+    <!-- Body = a thin LEFT vertical-tab rail of THREE main tabs (Internal /
+         Basic / Well) + the scoped file tree to its right. Each tab SCOPES the
+         tree to that group (activeView) — Internal nests ARCHIVED / STDLIB /
+         STALE folders; Basic + Well show their volume subtrees; subfolders
+         within a branch still expand/collapse in place. See
+         docs/plans/sidebar-reorg.md. -->
     <div class="prim-body">
-    <nav class="prim-tabrail" role="tablist" aria-label="Top-level folders">
+    <!-- THREE fixed main tabs (docs/plans/sidebar-reorg.md):
+           INTERNAL → ARCHIVED / STDLIB / STALE folders (system / read-only / trash)
+           BASIC    → volume basic/ parts (+ any other user top folder)
+           WELL     → volume completions/<family>/…  (downhole completions)
+         BASIC + WELL double as cross-branch drop targets (drop a part onto them
+         to move it to basic / — completions rejects a bare drop, needs a family);
+         INTERNAL routes a drop to archive/ (soft delete). -->
+    <nav class="prim-tabrail" role="tablist" aria-label="Primitive categories">
       <!-- When collapsed the rail shrinks to just this tab strip; the » button
-           re-expands it to the full tree. (Clicking any folder tab expands too,
-           via selectTab.) Hidden when expanded — the header « handles collapse. -->
+           re-expands it to the full tree. (Clicking any tab expands too, via
+           selectTab.) Hidden when expanded — the header « handles collapse. -->
       {#if sidebarCollapsed}
         <button class="prim-tabrail-expand" type="button"
           title="Expand the sidebar" aria-label="Expand the sidebar"
           onclick={toggleSidebar}>»</button>
       {/if}
-      {#each topFolders as f (f.path)}
-        <!-- Top tabs double as cross-branch drop targets: dropping a part onto
-             Basic / Archived moves it there (the tree is scoped to ONE branch,
-             so this is how a drag reaches a different top-level folder). The
-             bare `completions` container + user folders aren't valid `to`s, so
-             isDropTarget rejects them. -->
-        <button class="prim-tabbtn" class:active={activeTab === f.name}
-          class:drop-target={dragOverPath === f.path}
-          role="tab" type="button" aria-selected={activeTab === f.name}
-          title={`primitives/${f.name}/`}
-          ondragover={(ev) => onFolderDragOver(ev, f.path, f.name === 'archive' ? 'archive' : 'volume')}
-          ondragleave={() => onFolderDragLeave(f.path)}
-          ondrop={(ev) => onFolderDrop(ev, f.path, f.name === 'archive' ? 'archive' : 'volume')}
-          onclick={() => selectTab(f.name)}>{tabLabel(f.name)}</button>
-      {/each}
-      <button class="prim-tabbtn src" class:active={activeTab === '__stdlib'}
-        role="tab" type="button" aria-selected={activeTab === '__stdlib'}
-        title="stdlib engine sources (read-only)"
-        onclick={() => selectTab('__stdlib')}>stdlib</button>
-      <button class="prim-tabbtn src" class:active={activeTab === '__stdstale'}
-        role="tab" type="button" aria-selected={activeTab === '__stdstale'}
-        title="stdstale engine sources (read-only)"
-        onclick={() => selectTab('__stdstale')}>stdstale</button>
+      <button class="prim-tabbtn src" class:active={activeTab === INTERNAL_TAB}
+        class:drop-target={dragOverPath === 'archive'}
+        role="tab" type="button" aria-selected={activeTab === INTERNAL_TAB}
+        title="Internal — archived parts + read-only engine sources (stdlib / stale). Drop a part here to archive it."
+        ondragover={(ev) => onFolderDragOver(ev, 'archive', 'archive')}
+        ondragleave={() => onFolderDragLeave('archive')}
+        ondrop={(ev) => onFolderDrop(ev, 'archive', 'archive')}
+        onclick={() => selectTab(INTERNAL_TAB)}>Internal</button>
+      <button class="prim-tabbtn" class:active={activeTab === 'basic'}
+        class:drop-target={dragOverPath === 'basic'}
+        role="tab" type="button" aria-selected={activeTab === 'basic'}
+        title="Basic — general parts (primitives/basic/)"
+        ondragover={(ev) => onFolderDragOver(ev, 'basic', 'volume')}
+        ondragleave={() => onFolderDragLeave('basic')}
+        ondrop={(ev) => onFolderDrop(ev, 'basic', 'volume')}
+        onclick={() => selectTab('basic')}>Basic</button>
+      <button class="prim-tabbtn" class:active={activeTab === 'completions'}
+        class:drop-target={dragOverPath === 'completions'}
+        role="tab" type="button" aria-selected={activeTab === 'completions'}
+        title="Well — downhole completions (primitives/completions/<family>/)"
+        ondragover={(ev) => onFolderDragOver(ev, 'completions', 'volume')}
+        ondragleave={() => onFolderDragLeave('completions')}
+        ondrop={(ev) => onFolderDrop(ev, 'completions', 'volume')}
+        onclick={() => selectTab('completions')}>Well</button>
     </nav>
 
     <!-- ONE expand/collapse file tree. Volume folders first (archive subtree
@@ -1199,33 +1261,32 @@
            directly in this top-level folder (volume only) + the global
            ＋folder to add a new top-level folder. -->
       <div class="prim-tree-toolbar">
-        {#if activeKind === 'volume' && activeNode}
+        {#if activeView.createPath}
           <button class="prim-mini" type="button"
-            title={`New part or folder in primitives/${activeNode.path}/`}
-            onclick={(ev) => openCreateMenu(activeNode.path, ev)}>＋ new</button>
+            title={`New part or folder in primitives/${activeView.createPath}/`}
+            onclick={(ev) => openCreateMenu(activeView.createPath!, ev)}>＋ new</button>
         {/if}
         <button class="prim-mini" type="button"
           title="New top-level folder — creates primitives/<name>/ on the volume"
           disabled={folderBusy} onclick={addTopFolder}>＋ folder</button>
       </div>
 
-      <!-- The tree is SCOPED to the active tab: render only that branch's
-           subfolders (expand/collapse in place) + its direct files. The tab
-           itself is the branch header, so there's no redundant top folder row. -->
-      {#if activeNode}
-        {@const kids = sortFolders(activeNode.children, sortMode).filter((n) => !filter.trim() || subtreeMatches(n, pass))}
-        {@const files = sortBy(activeNode.parts).filter(pass)}
-        {#each kids as c (c.path)}
-          {@render folderNode(c, 0, activeKind)}
+      <!-- The tree is SCOPED to the active MAIN tab (activeView). Each folder row
+           carries its own kind so INTERNAL can nest archive (permanent-delete) +
+           read-only stdlib / stale side-by-side; Basic/Well render their volume
+           subtree. The tab itself is the branch header — no redundant top row. -->
+      {#if activeView}
+        {@const vFolders = sortRenderFolders(activeView.folders).filter((rf) => !filter.trim() || subtreeMatches(rf.node, pass))}
+        {@const vFiles = sortRenderFiles(activeView.files).filter((rf) => pass(rf.entry))}
+        {#each vFolders as rf (rf.node.path)}
+          {@render folderNode(rf.node, 0, rf.kind)}
         {/each}
-        {#each files as e (e.id)}
-          {@render partRow(e, 0, activeKind, activeNode.path)}
+        {#each vFiles as rf (rf.entry.id)}
+          {@render partRow(rf.entry, 0, rf.kind, rf.dir)}
         {/each}
-        {#if kids.length === 0 && files.length === 0}
+        {#if vFolders.length === 0 && vFiles.length === 0}
           <div class="prim-empty">{filter.trim() ? 'no matches' : 'empty'}</div>
         {/if}
-      {:else}
-        <div class="prim-empty">no folder</div>
       {/if}
 
       <!-- ⛁ Bake-cache inspector — a non-folder leaf; selecting it swaps the
