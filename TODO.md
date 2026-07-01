@@ -83,6 +83,21 @@
 2. **web-llm local backend** — in-browser Qwen2.5-1.5B + XGrammar, default-OFF (no data leaves
    org); ge-assist accepts a `postTurn` override. Plan: `docs/research/web-llm-functionary.md`.
 
+27. **AI feedback / RL database (thumbs + correction, learn-as-you-use)** (user, SVTC parity).
+    A 👍/👎 + free-text "what was wrong / what I wanted" control on each AI turn in `AiMenu.svelte`
+    records a verdict (approved | disapproved | corrected — the last diffed from the graph the user
+    ended with) to an append-only volume store `ai/feedback/turns.jsonl` (`POST /api/ai/feedback`,
+    Rule 4/13), folding in the never-built `fix-errors.jsonl`/`logFixError` sink (§H of
+    ai-multishot-assist). Unifies the 3 sources the user named — (a) the repo `.md` docs indexed
+    (`docs.jsonl`), (b) LLM/deterministic SIMPLIFICATIONS of them into short few-shot prompts
+    (`simplified.jsonl`), (c) the approved/disapproved/corrected turns — all retrieved alongside
+    `parts.jsonl`. Closes the loop WITHOUT training first: approved → positive few-shot,
+    disapproved → avoid-list/demotion, corrected → vocab promotion (`promote-to-vocab.ts`
+    precedent) + self-repair; optional DPO/local-SLM fine-tune only once volume warrants (Phase 4).
+    Phases: 1 capture+store+browse · 2 md-ingest+simplify · 3 feedback→few-shot/promotion · 4
+    (optional) preference/fine-tune. Reconcile task 905 + TODO #1's "optional fix-errors sink" here.
+    Plan: `docs/plans/ai-feedback-rl.md`.
+
 7. **Well schematic → 3D well diagram (`/wells`)** — PARTIAL (W0 + W1 + tool rail). NEXT: SVTC 3D
    scene layer; DTX+scale; real `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3
    editor/BOM + wire the tool rail to placement. Plan: `docs/plans/well-schematic.md`.
