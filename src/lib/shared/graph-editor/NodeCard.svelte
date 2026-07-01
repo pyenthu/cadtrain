@@ -1544,19 +1544,37 @@
                 {/each}
               {:else if n.type === 'spline'}
                 {@const splinePort = portType('list<point3>')}
+                {@const ptsPort = portType('list<point3>')}
+                {@const wired = (n as any).pointsExpr != null}
                 {@const sw = size.w}
                 {@const sh = size.h}
                 <!-- Spline PATH producer (TODO #15) — minimal card: a curved-spline
                      glyph + ✎ edit + × close + the list<point3> output socket. All
-                     the detail (points, N, 3D edit) lives in SplineEditorPopup. -->
+                     the detail (points, N, 3D edit) lives in SplineEditorPopup.
+                     LEFT edge carries a control-POINTS input socket (TODO #26):
+                     wire an expr's list<point> output here to drive the control
+                     points; unwired uses the manual points. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <rect role="button" tabindex="-1" class="ge-node-bg spline"
+                <rect role="button" tabindex="-1" class="ge-node-bg spline" class:wired
                   width={sw} height={sh} rx="6"
-                  data-tip="Spline path → r_sweep.path (list of 3D points). ✎ edit control points in 3D · drag the right socket into a sweep's path."
+                  data-tip="Spline path → r_sweep.path (list of 3D points). Wire an expr's points into the LEFT socket to drive control points · ✎ edit manually in 3D · drag the RIGHT socket into a sweep's path."
                   style="width: {sw}px; height: {sh}px"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
+                <!-- POINTS INPUT socket (left edge, centered) — accepts an expr's
+                     list<point2|3> output as the spline's control points (#26).
+                     `wire.endWireOnSplinePoints` type-checks + stores pointsExpr. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in expr-in list" class:wired
+                  style={ptsPort ? `fill: ${ptsPort.color}; stroke: ${ptsPort.color}` : ''}
+                  cx="0" cy={sh / 2} r="6"
+                  data-tip={wired ? 'points: from a wired expression — drop another to repoint' : `points: ${ptsPort?.label ?? 'list of points'} — wire an expr’s points output here to drive the control points`}
+                  onpointerup={(ev) => wire.endWireOnSplinePoints(ev, n.id)}/>
+                {#if wired}
+                  <!-- wired badge — the manual editor is overridden by the expr -->
+                  <text x="11" y="12" class="ge-sp-wired-badge">ƒ pts</text>
+                {/if}
                 <!-- inline row: ✎ (left) · curved-spline glyph (middle) · × (right) -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <text role="button" tabindex="-1" x="13" y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
@@ -1653,6 +1671,9 @@
   .ge-node-bg.expr { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
   /* Spline PATH producer (TODO #15) — violet family, matches list<point3>. */
   .ge-node-bg.spline { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+  /* Wired-points state (#26) — a deeper fill so it reads as "expression-driven". */
+  .ge-node-bg.spline.wired { fill: #ede9fe; stroke: #6d28d9; }
+  .ge-sp-wired-badge { font: 700 9px ui-monospace, monospace; fill: #6d28d9; pointer-events: none; }
   .ge-spline-preview { stroke: #7c3aed; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; fill: none; pointer-events: none; }
   .ge-expr-card { display: flex; gap: 6px; font: 11px Arial; height: 100%; }
   .ge-expr-inputs { display: flex; flex-direction: column; gap: 0; flex: 0 0 auto; min-width: 40px; }

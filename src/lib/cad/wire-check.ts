@@ -36,6 +36,12 @@ import type { Graph, NodeId, ExprNode } from './composition-graph-types';
  *  points. */
 export const POLYGON_POINTS: StructType = listOfPoints(2);
 
+/** The spline CONTROL-POINTS input (TODO #26) — a list of points of ANY arity
+ *  (`list<point2|3>`): a 3D producer feeds a path spline, a 2D producer a planar
+ *  one. `listOfPoints()` (no arity) accepts both; a scalar / plain-number list is
+ *  still refused by `checkFeed`. */
+export const SPLINE_POINTS: StructType = listOfPoints();
+
 /**
  * What STRUCTURE does call `src`'s arg `key` expect? Returns null for args we
  * don't model — the caller treats null as "allow" (don't over-block). Keyed by

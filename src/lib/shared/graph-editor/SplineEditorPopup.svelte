@@ -22,10 +22,12 @@
     points,
     samples,
     closed = false,
+    wired = false,
     title = 'spline path',
     onPointsChange,
     onSamplesChange,
     onClosedChange,
+    onUnwire,
     onClose,
   }: {
     /** Viewport position anchored to the ✎ trigger (GEP's splinePopPos). */
@@ -34,10 +36,15 @@
     samples: number;
     /** Loop the curve (last→first). A sweep fed by this spline auto-follows it. */
     closed?: boolean;
+    /** Control points are driven by a WIRED expression (#26) — the manual editor
+     *  is disabled until unwired. */
+    wired?: boolean;
     title?: string;
     onPointsChange: (pts: Vec3[]) => void;
     onSamplesChange: (n: number) => void;
     onClosedChange: (v: boolean) => void;
+    /** Drop the wired source → back to manual points (#26). */
+    onUnwire?: () => void;
     onClose: () => void;
   } = $props();
 
@@ -143,6 +150,13 @@
 
   <div class="ge-sp-hint">Drag a <b>violet</b> handle to move a control point · <b>click the curve</b> to insert a point mid-run · <b>green</b> dots are the N spaced samples (the baked path). Orbit = drag empty space.</div>
 
+  {#if wired}
+    <div class="ge-sp-wired">
+      <span>⚡ <b>points: from a wired expression</b> — the control points come from an expression’s output, not this editor.</span>
+      {#if onUnwire}<button class="ge-sp-btn" type="button" onclick={onUnwire} title="Detach the expression and edit points by hand again">use manual points</button>{/if}
+    </div>
+  {/if}
+
   <div class="ge-sp-canvas">
     <Canvas>
       <SplineScene {points} {samples} {closed} bind:selectedIdx {onPointsChange} />
@@ -150,8 +164,8 @@
   </div>
 
   <div class="ge-sp-controls">
-    <button class="ge-sp-btn" type="button" onclick={addPoint} title="Append a control point">+ point</button>
-    <button class="ge-sp-btn" type="button" onclick={removePoint} disabled={points.length <= 2}
+    <button class="ge-sp-btn" type="button" onclick={addPoint} disabled={wired} title={wired ? 'Points come from a wired expression' : 'Append a control point'}>+ point</button>
+    <button class="ge-sp-btn" type="button" onclick={removePoint} disabled={wired || points.length <= 2}
       title="Remove the selected (or last) control point">− point</button>
     <button class="ge-sp-btn" class:on={showTable} type="button" onclick={() => (showTable = !showTable)}
       title="Edit point X/Y/Z values by hand">{showTable ? '▾' : '▸'} xyz</button>
@@ -199,6 +213,8 @@
   .ge-sp-headx:hover { color: #5b21b6; }
   .ge-sp-hint { font: 11px Arial; color: #6b7280; line-height: 1.4; }
   .ge-sp-hint b { color: #5b21b6; font-weight: 700; }
+  .ge-sp-wired { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px solid #c4b5fd; background: #f5f3ff; border-radius: 4px; font: 11px Arial; color: #4c1d95; }
+  .ge-sp-wired b { color: #5b21b6; }
   .ge-sp-canvas { width: 100%; height: 320px; min-height: 240px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fafafa; overflow: hidden; }
   .ge-sp-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .ge-sp-btn { padding: 4px 10px; font: 600 12px Arial; cursor: pointer; background: #ede9fe; color: #4c1d95; border: 1px solid #c4b5fd; border-radius: 4px; }

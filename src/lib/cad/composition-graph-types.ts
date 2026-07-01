@@ -424,6 +424,17 @@ export type SplineNode = {
   type: 'spline';
   /** Control points `[x,y,z]` — dragged in the popover. ≥ 2 for a curve. */
   points: [number, number, number][];
+  /** WIRED control-points source (TODO #26). When present it OVERRIDES the
+   *  manual `points` array: the spline resamples the wired producer's
+   *  `list<point2|3>` output instead of the literal points. Encoded like every
+   *  other wired arg — `{kind:'expr', expr:'_x_<srcId>_<out>'}` (exprBlockMember)
+   *  for an expr instance's output. The spline STILL smooths + arc-length-
+   *  resamples the wired points (its value-add over a plain expr→sweep). SPARSE +
+   *  optional → absent ⇒ manual points ⇒ byte-identical emit. Unwiring
+   *  (setSplinePointsExpr(…, null)) deletes the field and restores the manual
+   *  array. Per-point manual-edit-over-expression OVERRIDE tracking (#26) is
+   *  deferred — for now wired ⇒ expr points, unwired ⇒ manual points. */
+  pointsExpr?: ArgValue;
   /** N output points (equally arc-length spaced). Default ~32. */
   samples: ArgValue;
   /** CLOSED loop — the curve wraps last→first, so the resampled path forms a
