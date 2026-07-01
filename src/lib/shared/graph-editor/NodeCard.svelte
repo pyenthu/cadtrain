@@ -1502,13 +1502,14 @@
                           <div class="ge-expr-in-label muted">(no params)</div>
                         {/if}
                       </div>
-                      <!-- Output rows — read-only `name = formula` summary. -->
+                      <!-- Output rows — name-only label next to each output socket.
+                           The ` = formula` value was dropped: it overflowed the card
+                           into the output socket. Name stays the socket's label; the
+                           formula is kept as the row's hover title. -->
                       <div class="ge-expr-outputs">
                         {#each exOutputs as out (out.name)}
                           <div class="ge-expr-out-row ge-expr-ro">
-                            <span class="ge-expr-name">{out.name}</span>
-                            <span class="ge-expr-eq">=</span>
-                            <span class="ge-expr-formula" title={out.formula}>{out.formula}</span>
+                            <span class="ge-expr-name" title={out.formula}>{out.name}</span>
                           </div>
                         {/each}
                         {#if exOutputs.length === 0}
@@ -1659,11 +1660,8 @@
   .ge-expr-in-label.muted { color: #94a3b8; font-style: italic; font-weight: 400; }
   .ge-expr-outputs { display: flex; flex-direction: column; gap: 0; flex: 1 1 auto; min-width: 0; }
   .ge-expr-out-row { display: flex; align-items: center; gap: 3px; height: 26px; }
-  .ge-expr-name { flex: 0 0 46px; min-width: 0; text-align: right; color: #0e7490; font-weight: 700; }
-  .ge-expr-eq { color: #64748b; }
-  .ge-expr-formula { flex: 1 1 auto; min-width: 0; }
+  .ge-expr-name { flex: 1 1 auto; min-width: 0; text-align: right; color: #0e7490; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ge-expr-ro .ge-expr-name { font: 700 11px ui-monospace, monospace; }
-  .ge-expr-ro .ge-expr-formula { font: 11px ui-monospace, monospace; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ge-expr-add-row { display: flex; margin-top: 4px; }
   .ge-sock.expr-in { fill: #67e8f9; stroke: #0e7490; }
   .ge-sock.expr-out { fill: #06b6d4; stroke: #0e7490; }
