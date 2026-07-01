@@ -19,7 +19,7 @@
  * (poly/point/i) are bare + survive. Returns null when it isn't this shape (caller
  * falls back to the functional path).
  */
-import { compileListFormula, parseAndValidateBare } from './graph-exprs';
+import { compileListFormula, parseAndValidateBare, parseExpr } from './graph-exprs';
 
 export interface ImpAssign { kind: 'assign'; name: string; expr: string; }
 export interface ImpAppend { kind: 'append'; list: string; expr: string; }
@@ -45,6 +45,7 @@ export interface ImpLoop {
 export interface ImperativeProgram {
   accumulators: string[];   // declared lists (usually one, e.g. 'poly')
   vars: ImpAssign[];        // top-level intermediate values, computed before the loops
+  stmts?: ImpStatement[];   // top-level statements (add-point / set / if) run before the loops — e.g. a literal point list imported as appends
   loops: ImpLoop[];
   result: string;           // the accumulator returned
 }
@@ -77,20 +78,35 @@ const IF_RE = /^if\s+(.+)$/;
 const ELSE_RE = /^else$/;
 const END_RE = /^end$/;
 
-/** Parse the imperative loop DSL, or null if `src` isn't that shape. */
+/** Parse the imperative loop DSL, or null if `src` isn't that shape. Handles both
+ *  a loop program (accumulator + for-loops + return) AND a loop-free program with
+ *  only TOP-LEVEL statements (accumulator + `poly.append(…)`/`if …` + return) — the
+ *  latter is what an imported LITERAL point list serializes to. A bare array
+ *  literal (`[[…]]`, a single line) stays non-imperative → null (see the length
+ *  guard) so the emit + inference contract for literals is unchanged. */
 export function parseImperative(src: string): ImperativeProgram | null {
   const lines = (src ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
-  if (lines.length < 4) return null; // accumulator + for + ≥1 stmt + return
+  if (lines.length < 3) return null; // accumulator + ≥1 stmt/loop + return
 
   let idx = 0;
   const accumulators: string[] = [];
   const vars: ImpAssign[] = [];
+  const topLines: string[] = []; // top-level statement lines (append / if) before the first loop
+  let sawStmt = false;
   while (idx < lines.length - 1 && !FOR_RE.test(lines[idx]!)) {
-    const acc = lines[idx]!.match(ACC_RE);
-    if (acc) { accumulators.push(acc[1]!); idx++; continue; }
-    const as = lines[idx]!.match(ASSIGN_RE);
-    if (as) { vars.push({ kind: 'assign', name: as[1]!, expr: as[2]!.trim() }); idx++; continue; }
-    return null; // unexpected top-level line
+    const line = lines[idx]!;
+    const acc = line.match(ACC_RE);
+    if (acc && !sawStmt) { accumulators.push(acc[1]!); idx++; continue; }
+    // a LEADING plain assignment (before any append/if) is a top-level VARIABLE;
+    // from the first append/if onward everything is a top-level STATEMENT body.
+    const looksStmt = APPEND_RE.test(line) || IF_RE.test(line) || ELSE_RE.test(line) || END_RE.test(line);
+    if (!sawStmt && !looksStmt) {
+      const as = line.match(ASSIGN_RE);
+      if (as) { vars.push({ kind: 'assign', name: as[1]!, expr: as[2]!.trim() }); idx++; continue; }
+      return null; // unexpected top-level line
+    }
+    sawStmt = true;
+    topLines.push(line); idx++;
   }
   if (!accumulators.length) return null;
 
@@ -98,6 +114,8 @@ export function parseImperative(src: string): ImperativeProgram | null {
   if (!retM) return null;
   const result = retM[1]!;
   if (!accumulators.includes(result)) return null;
+
+  const stmts = topLines.length ? bodyStatements(topLines.join('\n')) : [];
 
   const loops: ImpLoop[] = [];
   while (idx < lines.length - 1) {
@@ -108,7 +126,26 @@ export function parseImperative(src: string): ImperativeProgram | null {
     while (idx < lines.length - 1 && !FOR_RE.test(lines[idx]!)) { bodyLines.push(lines[idx]!); idx++; }
     loops.push({ ...hd, body: bodyLines.join('\n') });
   }
-  return loops.length ? { accumulators, vars, loops, result } : null;
+  return (loops.length || stmts.length)
+    ? { accumulators, vars, stmts, loops, result }
+    : null;
+}
+
+/** Import a raw ARRAY-LITERAL point list `[[a,b,c], …]` (or `[[a,b], …]`) into
+ *  top-level append statements — `<acc>.append([a,b,c])` per row — so a LITERAL
+ *  `list<point>` formula can be edited as blocks WITHOUT losing the data (the
+ *  block builder then shows one add-point block per literal point). Returns null
+ *  when `src` is not an array-of-array literal (the caller keeps the raw text).
+ *  Deliberately SEPARATE from parseImperative so isImperative stays false for a
+ *  bare literal (the emit + inference contract for literals is unchanged). */
+export function importLiteralPointList(src: string, acc = 'poly'): ImpAppend[] | null {
+  const parsed = parseExpr((src ?? '').replace(/\breturn\b/g, ' '));
+  if (!parsed.ok) return null;
+  const ast: any = parsed.ast;
+  if (ast?.type !== 'ArrayNode') return null;
+  const items: any[] = ast.items ?? [];
+  if (!items.length || !items.every((it) => it?.type === 'ArrayNode')) return null;
+  return items.map((it) => ({ kind: 'append', list: acc, expr: String(it.toString()) }));
 }
 
 const OPEN = '([{', CLOSE = ')]}';
@@ -201,6 +238,9 @@ export function isImperative(src: string): boolean { return parseImperative(src)
 export function serializeImperative(p: ImperativeProgram): string {
   const lines: string[] = (p.accumulators ?? []).map((a) => `${a} = []`);
   for (const v of p.vars ?? []) lines.push(`${v.name} = ${v.expr}`);
+  // top-level statements (add-point / set / if) — flat, before the loops.
+  const topText = serializeStatements(p.stmts ?? []);
+  if (topText) for (const l of topText.split('\n')) lines.push(l);
   for (const lp of p.loops ?? []) {
     lines.push(lp.loopVar2
       ? `for ${lp.loopVar} = ${lp.start} to ${lp.stop}, ${lp.loopVar2} = ${lp.start2} to ${lp.stop2}`
@@ -233,6 +273,7 @@ export function validateImperative(src: string, allowed: ReadonlySet<string>): s
       else if (s.kind === 'if') { collect(s.then); if (s.else) collect(s.else); }
     }
   };
+  collect(p.stmts ?? []);
   for (const lp of p.loops) {
     locals.add(lp.loopVar);
     if (lp.loopVar2) locals.add(lp.loopVar2);
@@ -255,6 +296,7 @@ export function validateImperative(src: string, allowed: ReadonlySet<string>): s
     return null;
   };
   for (const v of p.vars) { const e = check(v.expr); if (e) return e; }
+  const topErr = checkStmts(p.stmts ?? []); if (topErr) return topErr;
   for (const lp of p.loops) {
     const e = check(lp.start) ?? check(lp.stop)
       ?? (lp.loopVar2 ? (check(lp.start2 ?? '') ?? check(lp.stop2 ?? '')) : null);
@@ -294,6 +336,7 @@ export function compileImperative(src: string): { ok: true; js: string } | { ok:
   try {
     const decls = p.accumulators.map((a) => `let ${a} = [];`).join(' ');
     const varDecls = (p.vars ?? []).map((v) => `const ${v.name} = ${exprToJs(v.expr)};`).join(' ');
+    const topJs = compileStatements(p.stmts ?? []); // top-level add-point / set / if
     const loopJs = p.loops.map((lp) => {
       const stmts = compileStatements(bodyStatements(lp.body));
       const inner = `for (let ${lp.loopVar} = ${exprToJs(lp.start)}; ${lp.loopVar} < (${exprToJs(lp.stop)}); ${lp.loopVar}++)`;
@@ -302,7 +345,7 @@ export function compileImperative(src: string): { ok: true; js: string } | { ok:
       const innerV = `for (let ${lp.loopVar2} = ${exprToJs(lp.start2 ?? '0')}; ${lp.loopVar2} < (${exprToJs(lp.stop2 ?? '0')}); ${lp.loopVar2}++)`;
       return `${inner} { ${innerV} { ${stmts} } }`;
     }).join(' ');
-    return { ok: true, js: `(() => { ${decls} ${varDecls} ${loopJs} return ${p.result}; })()` };
+    return { ok: true, js: `(() => { ${decls} ${varDecls} ${topJs} ${loopJs} return ${p.result}; })()` };
   } catch (e: any) {
     return { ok: false, error: e?.message ?? String(e) };
   }

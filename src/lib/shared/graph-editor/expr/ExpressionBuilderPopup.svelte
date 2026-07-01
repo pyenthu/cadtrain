@@ -265,8 +265,11 @@
   {#if row}
     {@const allowed = kind === 'var' ? varAllowed(i) : outAllowed(i)}
     {@const isList = kind === 'output' && row.shape === 'list'}
-    {@const isAutoList = kind === 'output' && row.shape === 'auto' && (isImperative(row.formula) || !!parseLoops(row.formula))}
-    {@const loopBuildable = (isList && (isImperative(row.formula) || !!parseLoops(row.formula) || row.formula.trim() === '')) || isAutoList}
+    {@const isAutoList = kind === 'output' && row.shape === 'auto' && (isImperative(row.formula) || !!parseLoops(row.formula) || inferStructure(row.formula).type?.kind === 'list')}
+    <!-- The block builder is safe to open on ANY list output — a literal
+         `[[…]]` is imported into add-point blocks (no wipe), so gate purely on
+         the output being a list (explicit list<point> or an inferred auto-list). -->
+    {@const loopBuildable = isList || isAutoList}
     {@const showLoops = loopBuildable && loopMode}
     {@const nErr = nameError(row.name)}
     {@const fErr = formulaError(row.formula, allowed, kind === 'output' ? (row.shape ?? 'scalar') : 'scalar')}
