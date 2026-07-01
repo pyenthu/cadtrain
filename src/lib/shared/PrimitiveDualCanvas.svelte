@@ -610,11 +610,23 @@
            (profile, height, twist, divs). Smooth-shade only when |twist| > 0.
          All other primitives keep flatShading (cube/hex stay faceted). -->
     {@const twistArg = Number((args as any[])?.[2] ?? 0)}
+    <!-- Welded-CURVE engines (r_sweep along a path/spline, r_loft, r_surface,
+         r_helical_surface) build NON-PLANAR quads, so flatShading exposes every
+         section/path facet — forcing the user to add lots of points. Their smooth
+         normals (calculateNormals(0,60)) are already baked; smooth-shade them so a
+         ROUND tube reads round with FEW points (the 60° crease keeps genuine sharp
+         section corners hard). Match the ENGINE id AND any PART that composes one of
+         these engines (its meta.uses / body references the id) so spline-sweep parts
+         smooth too — not just the bare engine preview. -->
+    {@const usesWeldedCurve =
+      typeof source === 'string' && /\br_(sweep|loft|surface|helical_surface)\b/.test(source)}
     <!-- BREP carries OCCT exact-surface normals → smooth-shade the solid so the
          true curvature reads (the cut half-section is faceted regardless). -->
     {@const smoothShadeAuto =
       isBrep ||
       id === 'r_weld_extrude' ||
+      id === 'r_sweep' || id === 'r_loft' || id === 'r_surface' || id === 'r_helical_surface' ||
+      usesWeldedCurve ||
       (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
     <!-- The user's SceneControls "Shading" override wins over the per-part
          heuristic: 'auto' keeps the heuristic, 'smooth'/'flat' force it.
