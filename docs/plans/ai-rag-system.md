@@ -1,6 +1,8 @@
 # Plan — The CAD-editor AI assistant: RAG + multi-shot tool loop + tab context + dual backend
 
-**Status:** architecture (umbrella plan, 2026-06-16)
+**Status:** architecture (2026-06-16). NOTE: the true umbrella is now
+**`docs/plans/ai-master-plan.md` (the north star)**, which fuses this with #27/
+#28/#29; this is a P0/P1/P3 detail sheet. Phase-1 loop is SHIPPED.
 **Author intent (the three requirements):**
 1. A **RAG-based assistant with MULTI-SHOT prompting**, modeled on the sibling
    repo `~/code/SVTC/src/lib/ai/` (its `toolSchema.js` + `tools.js`

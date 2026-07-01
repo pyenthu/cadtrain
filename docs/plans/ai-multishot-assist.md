@@ -1,6 +1,10 @@
 # Plan — Multi-shot in-context AI assist (tool loop + tab context + fix-errors.jsonl)
 
-**Status:** proposed (Phase 1.5 / 2 wiring, 2026-06-15)
+**Status:** loop SHIPPED (`ge-assist.ts`/`.svelte.ts`, `/api/rag/assist` proxy +
+prompt-cache split + `VOLUME_PROXY_PATHS`, AiMenu edit mode). Detail sheet under
+**`docs/plans/ai-master-plan.md`** — this = P0/P1. §H `fix-errors.jsonl` sink is
+SUPERSEDED by #27 (`ai-feedback-rl.md`) — do NOT build a second sink. Header
+"proposed" is stale.
 **Supersedes the open half of** `docs/plans/ai-function-mapping.md` (which built
 Phase 1: the tool registry + dispatcher + the single-turn `/api/rag/assist`
 proxy). This plan is the *client loop + tab context + error-capture* wiring that
