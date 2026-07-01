@@ -25,6 +25,14 @@
     separate until this lands (orthogonal today: loft = varying radius / straight; sweep = fixed
     section / bent path). Same unification spirit as #11/#20.
 
+24. **Spline as a generic point-source + expression-driven points** (user, 2026-07-01). Make the
+    spline THE curve source of truth. (A) Feed a spline into `r_sweep.section` (2D), not just
+    `path` (3D) — a `dim:2|3` flag → `list<point2>`/`list<point3>`, wired by type (#926) into any
+    point-list slot (path/section/polygon). (B) Source the spline's points from a
+    function/expression (`map(range(N), i => …)`) instead of manual dragging — one expr node
+    replaces N control points; parametric path/section, fewer ops (reuses the #11 loop builder).
+    Build after #926 typed sockets. Pairs with #23. Plan: `docs/plans/spline-generic-source.md`.
+
 13. **Typed ports.** Registry + record types + definer + `autoWireSuggestions` on main. LEFT:
     per-part `graph.typeDefs[]` + def→instance propagation — blocked on a real CONSUMER, so
     build composite-type consumption first (= #20 Phase E). Plan: `docs/plans/typed-ports.md`.
