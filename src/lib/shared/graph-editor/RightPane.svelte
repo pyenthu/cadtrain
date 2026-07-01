@@ -312,6 +312,7 @@
           args={displayBake.args ?? paramDefaults}
           source={displayBake.source}
           colorOuter={graph.colorOuter} colorInner={graph.colorInner}
+          viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
           bakeGlb={false}
           onRebuild={onRebuild}
           showControls={true} showLabels={false}/>
@@ -440,6 +441,7 @@
             args={bake.args ?? paramDefaults}
             source={bake.source}
             colorOuter={graph.colorOuter} colorInner={graph.colorInner}
+            viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             bakeMesh={false}
             showControls={true} showLabels={false}/>
         {:else}
@@ -460,6 +462,7 @@
             backend="brep"
             brepSource={bake.source}
             brepParams={brepParamValues}
+            viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (brepMeta = m)}
             showControls={true} showLabels={false}/>
           <!-- Cache/fresh badge row — mirrors the 3D-bake .ge-bake-meta. -->

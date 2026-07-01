@@ -44,6 +44,17 @@ export function setViewport(graph: Graph, pan: LayoutXY, zoom: number): Graph {
   return { ...graph, viewport: { pan: { ...pan }, zoom } };
 }
 
+/** Capture (or clear) the editor's per-part VIEW scale on the graph, called at
+ *  save time. When `manual` is true (the user set a scale — `scene.scaleAuto`
+ *  is off) the z/x exaggeration is persisted so reopening the part restores it;
+ *  when false (auto-normalized) the fields are DROPPED so the part re-auto-scales
+ *  on the next open. VIEW-ONLY — never affects geometry or bake output. */
+export function setViewScale(graph: Graph, z: number, x: number, manual: boolean): Graph {
+  const { viewZScale: _z, viewXScale: _x, ...rest } = graph;
+  if (!manual || !Number.isFinite(z) || !Number.isFinite(x)) return rest;
+  return { ...rest, viewZScale: z, viewXScale: x };
+}
+
 /** Hydrate a serialised meta.graph block back into a runnable Graph.
  *
  *  serialiseGraph(g) drops `edges` (rebuildable from args) and `layout`
@@ -310,6 +321,14 @@ export function hydrateGraph(serialised: any): Graph {
      serialised.material.trim() !== 'none')
       ? serialised.material.trim()
       : undefined;
+  // Editor VIEW scale (VIEW-ONLY). Sparse: restore only a finite positive
+  // number so legacy files (+ auto-scaled parts, which never persist a value)
+  // stay undefined → the editor auto-normalizes on open. Never touches
+  // geometry/bake; only the PRIMARY-open-part load path reads these.
+  const posNumOrUndef = (v: any) =>
+    (typeof v === 'number' && Number.isFinite(v) && v > 0) ? v : undefined;
+  const savedViewZScale = posNumOrUndef(serialised.viewZScale);
+  const savedViewXScale = posNumOrUndef(serialised.viewXScale);
   // Per-part appearance overrides (sparse, keyed by node id). Sanitise each
   // entry's fields the same way as the part-level colours.
   const savedPartAppearance = (() => {
@@ -421,6 +440,8 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedColorOuter ? { colorOuter: savedColorOuter } : {}),
     ...(savedColorInner ? { colorInner: savedColorInner } : {}),
     ...(savedMaterial ? { material: savedMaterial } : {}),
+    ...(savedViewZScale != null ? { viewZScale: savedViewZScale } : {}),
+    ...(savedViewXScale != null ? { viewXScale: savedViewXScale } : {}),
     ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),
     ...(savedExprs ? { exprs: savedExprs } : {}),
     ...(exprDefsOut.length ? { exprDefs: exprDefsOut } : {}),
