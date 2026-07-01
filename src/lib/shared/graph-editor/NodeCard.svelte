@@ -1696,16 +1696,16 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <!-- a nice curved spline (slightly thick) = the card's identity;
-                     kept in the LOWER band so it never crosses the ✎ / × buttons. -->
+                <!-- a nice curved spline (slightly thick) = the card's identity; a
+                     NARROW glyph on the LEFT, vertically centred, inline with the buttons. -->
                 <path class="ge-spline-preview" fill="none"
-                  d={`M 9 ${sh - 11} Q ${sw * 0.30} ${sh - 22} ${sw * 0.52} ${sh - 15} T ${sw - 10} ${sh - 13}`}/>
+                  d={`M 8 ${sh * 0.66} Q ${sw * 0.18} ${sh * 0.26} ${sw * 0.34} ${sh * 0.5} T ${sw * 0.56} ${sh * 0.46}`}/>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={sw - 30} y="16" class="ge-node-x"
+                <text role="button" tabindex="-1" x={sw - 30} y={sh / 2 + 4} class="ge-node-x"
                   data-tip="Edit this spline's control points in 3D"
                   onpointerdown={(ev) => { ev.stopPropagation(); onOpenSplineEditor(ev as any, n.id); }}>✎</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={sw - 13} y="16" class="ge-node-x"
+                <text role="button" tabindex="-1" x={sw - 13} y={sh / 2 + 4} class="ge-node-x"
                   data-tip="Delete this spline node"
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
                 <!-- OUTPUT socket (right edge, centered) — list<point3> → r_sweep.path.
