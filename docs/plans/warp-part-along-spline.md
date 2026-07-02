@@ -1,6 +1,9 @@
 # Warp a part along a spline — a general bend/deform node
 
-**Status:** planning (2026-07-02). User: "warp a part along a spline… can we build that
+**Status:** geometry core SHIPPED (2026-07-02, merge c12873f — items 2–4 in
+warp-spline.ts: 3D RMF paths + right-handed frame + validity warn); NODE + editor
+card (items 1 & 5) DEFERRED pending the GraphEditorPane modularization reorg
+(/plan #940). See the Progress section below. User: "warp a part along a spline… can we build that
 logic… may be simpler and faster." Take ANY already-baked part/solid and **bend it
 along a spline** — a general deform, not a sweep engine. Distinct from the annular
 sweep (which BUILDS a hollow tube); this DEFORMS an existing solid.

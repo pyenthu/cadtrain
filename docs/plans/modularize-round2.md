@@ -1,5 +1,11 @@
 # Plan — Modularize cadtrain, Round 2 (K.65 continuation)
 
+> **ACTIVE FOCUS 2026-07-02:** the GraphEditorPane modularization reorg is the
+> current priority (/plan #940). GEP has drifted back to ~5,328 lines; an audit
+> was just completed and the next cut is the layout-actions extraction, following
+> the R6/R2–R10 sequence here + in `docs/plans/graph-editor-pane.md`. This unblocks
+> the deferred warp NODE + editor card (`docs/plans/warp-part-along-spline.md` items 1 & 5).
+>
 > **Status:** PARTIAL — R1 (bake-cache deja-vu fix) + R5 (GEP E+F) shipped;
 > R2/R3/R4/R6/R7/R8/R9/R10 remain. Author: 2026-06-16. Re-verified 2026-06-23.
 > **Builds on** (does not replace)
