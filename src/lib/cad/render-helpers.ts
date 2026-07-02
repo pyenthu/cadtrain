@@ -154,6 +154,21 @@ function clampCrease(a?: number): number {
   return Math.max(1, Math.min(180, a));
 }
 
+/** Vertex-count ceiling for the JS crease-aware normal pass. AT OR BELOW this,
+ *  ALWAYS recompute render normals crease-aware (smooth under the crease angle,
+ *  hard above it) instead of trusting Manifold's `calculateNormals`. That's the
+ *  fix for the blocky STRAIGHT sweep: calculateNormals returns VALID-but-
+ *  PER-FACET (flat) normals on a perfect straight prism — the ~15° chord facets
+ *  are below the 60° crease yet come back un-smoothed — so the old
+ *  "recompute only when DEGENERATE (all-zero)" trigger never fired and the wall
+ *  read faceted. The crease-aware pass is validated correct for ALL cases (cube
+ *  90° edges stay sharp, square-tube corners stay sharp, cylinder/revolve stay
+ *  smooth), so applying it always simply subsumes the degenerate case too.
+ *  calculateNormals scales super-linearly; the JS pass is ~linear and cheap on
+ *  typical parts (<10k verts), so the only reason to fall back to the baked
+ *  normals is a genuinely huge mesh (perf) — logged when it happens. */
+const CREASE_AWARE_MAX_VERTS = 60_000;
+
 export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number; smooth?: { minSharpAngle?: number; tolerance?: number } }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
@@ -443,11 +458,32 @@ export function creaseAwareCornerNormals(pos: Float32Array, tri: Uint32Array, cr
     const l = Math.hypot(nx, ny, nz) || 1;
     faceU[t * 3] = nx / l; faceU[t * 3 + 1] = ny / l; faceU[t * 3 + 2] = nz / l;
   }
-  // Vertex → incident triangles.
+  // Adjacency by WELDED POSITION, not raw vertex index. `calculateNormals` (run
+  // upstream in manifoldToGeo/CutVC) SPLITS vertices at sharp edges, and welded
+  // sweep meshes can carry coincident-but-distinct indices along a seam. With
+  // index-based adjacency the two facets meeting at a smooth circumferential
+  // edge reference DIFFERENT indices, so each corner only sees its own facet →
+  // PER-FACET (flat) normals even on a smooth cylinder/sweep wall (the blocky
+  // straight-sweep bug). Quantising positions merges those coincident corners so
+  // a smooth band averages across its facets; the crease-angle filter below
+  // still keeps genuinely sharp face-pairs (caps, box corners) distinct.
+  const weldOf = new Int32Array(nv);
+  const weldMap = new Map<string, number>();
+  const q = (x: number) => Math.round(x * 1e4);
+  for (let i = 0; i < nv; i++) {
+    const key = `${q(pos[i * 3])},${q(pos[i * 3 + 1])},${q(pos[i * 3 + 2])}`;
+    let rep = weldMap.get(key);
+    if (rep === undefined) { rep = i; weldMap.set(key, i); }
+    weldOf[i] = rep;
+  }
+  // Welded-rep → incident triangles (reps are indices in 0..nv, so a sparse
+  // array keyed by rep avoids a second Map in the hot loop).
   const inc: number[][] = new Array(nv);
-  for (let i = 0; i < nv; i++) inc[i] = [];
   for (let t = 0; t < nt; t++) {
-    inc[tri[t * 3]].push(t); inc[tri[t * 3 + 1]].push(t); inc[tri[t * 3 + 2]].push(t);
+    for (let k = 0; k < 3; k++) {
+      const rep = weldOf[tri[t * 3 + k]];
+      (inc[rep] ?? (inc[rep] = [])).push(t);
+    }
   }
   const cosThresh = Math.cos((creaseDeg * Math.PI) / 180);
   const out = new Float32Array(nt * 9);
@@ -456,7 +492,7 @@ export function creaseAwareCornerNormals(pos: Float32Array, tri: Uint32Array, cr
     for (let k = 0; k < 3; k++) {
       const v = tri[t * 3 + k];
       let sx = 0, sy = 0, sz = 0;
-      const list = inc[v];
+      const list = inc[weldOf[v]];
       for (let j = 0; j < list.length; j++) {
         const t2 = list[j];
         // Include t2 when its face is within the crease angle of THIS face
@@ -526,14 +562,22 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   const fullColorHex = override ? override.outer : material ? material.outer.color : null;
   const fullRgb = fullColorHex ? hexToRgb(fullColorHex) : null;
   const geo = new THREE.BufferGeometry();
-  // calculateNormals returns ALL-ZERO normals on some welded/revolved meshes
-  // (numProp becomes 6 but the normal slots stay zero) — most acutely a
-  // perfectly-straight PRISM sweep, whose entire side wall comes back zero and
-  // would flat-shade under smooth mode. When the baked normals are VALID keep
-  // the byte-identical INDEXED path; when DEGENERATE fall back to CREASE-AWARE
-  // smooth normals (a non-indexed corner buffer) so a straight sweep reads
-  // smooth while genuine sharp edges — caps, box corners — stay hard.
-  if (nrm && !normalsDegenerate(nrm)) {
+  // Manifold's calculateNormals is NOT trustworthy for smoothing: on a perfect
+  // STRAIGHT prism sweep it returns VALID but PER-FACET (flat) normals — the
+  // ~15° circumferential chord facets sit below the 60° crease yet come back
+  // un-smoothed — and on some welded/revolved meshes it returns ALL-ZERO
+  // normals outright. The old trigger only recomputed when DEGENERATE, so the
+  // straight sweep (valid-but-flat) slipped through and rendered blocky. Fix:
+  // ALWAYS recompute CREASE-AWARE render normals (a non-indexed corner buffer)
+  // under the vert ceiling — smooth where dihedral < crease, sharp above — so a
+  // straight sweep reads smooth while cube/square-tube corners stay hard; ONLY
+  // fall back to the baked INDEXED normals on a huge mesh (perf), and only when
+  // they're non-degenerate.
+  const useBaked = nv > CREASE_AWARE_MAX_VERTS && nrm && !normalsDegenerate(nrm);
+  if (useBaked && (globalThis as any).__bakeTimings) {
+    try { console.log(`[bake] crease-aware normals skipped (nv=${nv} > ${CREASE_AWARE_MAX_VERTS}) — using baked calculateNormals`); } catch {}
+  }
+  if (useBaked) {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setIndex(new THREE.BufferAttribute(tri, 1));
     geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
@@ -644,7 +688,14 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
-  if (norms.length === pos.length && !normalsDegenerate(norms as unknown as Float32Array)) {
+  // Same trigger broadening as manifoldToGeo: PREFER crease-aware smooth normals
+  // (calculateNormals is per-facet/flat on a straight prism cross-section, which
+  // would face the cut wall faceted); only trust the baked normals on a huge mesh
+  // (perf) and only when they're present + non-degenerate.
+  const cutUseBaked = nv > CREASE_AWARE_MAX_VERTS
+    && norms.length === pos.length
+    && !normalsDegenerate(norms as unknown as Float32Array);
+  if (cutUseBaked) {
     // Scatter Manifold-computed per-vertex normals into the non-indexed
     // buffer (3 vertices per triangle, same layout as outPos).
     const outNrm = new Float32Array(nt * 9);
@@ -657,8 +708,9 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
     }
     geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   } else {
-    // Degenerate/missing baked normals (the straight-prism sweep case) → recompute
-    // CREASE-AWARE smooth normals from the indexed topology instead of a flat
+    // Default path (small/medium meshes) + the degenerate/missing-normal case →
+    // recompute CREASE-AWARE smooth normals from the indexed topology instead of
+    // trusting calculateNormals (per-facet/flat on a straight prism) or a flat
     // per-triangle `computeVertexNormals` (which would face the cross-section
     // flat). Winding is outward-consistent (Manifold canonicalises it) → these
     // face the right way; sharp edges (>crease) stay hard.
@@ -789,15 +841,17 @@ function colorBySourceGeo(
 
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
-  // Baked normals come back ALL-ZERO on welded/revolved meshes — recompute
-  // CREASE-AWARE smooth normals from the INDEXED topology (a non-indexed
-  // computeVertexNormals would be FLAT; a fully-smooth one would round genuine
-  // sharp edges). `creaseNrm` is per-CORNER (nt*9, tri-corner order), so it
-  // indexes with the same `idx + v*3` as outPos. Used when baked normals are
-  // missing/degenerate; either way we always emit a per-vertex normal buffer.
+  // calculateNormals is per-facet/flat on a straight prism and ALL-ZERO on some
+  // welded/revolved meshes — so PREFER crease-aware smooth normals recomputed
+  // from the INDEXED topology (a non-indexed computeVertexNormals would be FLAT;
+  // a fully-smooth one would round genuine sharp edges). `creaseNrm` is per-
+  // CORNER (nt*9, tri-corner order), so it indexes with the same `idx + v*3` as
+  // outPos. Recompute under the vert ceiling OR whenever baked normals are
+  // missing/degenerate; only trust the baked normals on a huge mesh (perf).
+  // Either way we always emit a per-vertex normal buffer.
   const nv = vp.length / np;
   let creaseNrm: Float32Array | null = null;
-  if (!hasNrm || bakedNormalsDegenerate(vp, np, nv)) {
+  if (nv <= CREASE_AWARE_MAX_VERTS || !hasNrm || bakedNormalsDegenerate(vp, np, nv)) {
     const p = new Float32Array(nv * 3);
     for (let i = 0; i < nv; i++) { p[i * 3] = vp[i * np]; p[i * 3 + 1] = vp[i * np + 1]; p[i * 3 + 2] = vp[i * np + 2]; }
     creaseNrm = creaseAwareCornerNormals(p, tri, crease);

@@ -178,4 +178,44 @@ describe('finalizeManifold end-to-end — straight-Z sweep renders smooth', () =
     }
     expect(sideChecked).toBeGreaterThan(0);
   });
+
+  it('straight-Z sweep side wall is SMOOTH: every shared circumferential position carries ONE normal (multi-normal-pos == 0)', () => {
+    // Mirrors the decoded-bake repro exactly: a 24-gon section swept up a
+    // straight Z path. calculateNormals returns VALID-but-PER-FACET normals here
+    // (every shared side position had >1 distinct normal = flat/blocky). With the
+    // ALWAYS-crease-aware trigger the side wall must collapse to ONE radial
+    // normal per shared position → multi-normal-pos == 0.
+    const n = 24, r = 1.5;
+    const section: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      const a = (2 * Math.PI * i) / n;
+      section.push([+(Math.cos(a) * r).toFixed(4), +(Math.sin(a) * r).toFixed(4)]);
+    }
+    const m = sweepAlongPath([[0, 0, 0], [0, 0, 2.5], [0, 0, 5]], section);
+    const res = finalizeManifold(m, r * 1.5, undefined, undefined, { skipCutaway: true });
+    const posAttr = res.full.getAttribute('position');
+    const nrmAttr = res.full.getAttribute('normal');
+    const P = posAttr.array as Float32Array;
+    const N = nrmAttr.array as Float32Array;
+    const idxArr = res.full.index ? (res.full.index.array as ArrayLike<number>) : null;
+    const count = idxArr ? idxArr.length : P.length / 3;
+    // Group DISTINCT normals per rounded side-wall position.
+    const key = (x: number, y: number, z: number) => `${x.toFixed(2)}|${y.toFixed(2)}|${z.toFixed(2)}`;
+    const nkey = (x: number, y: number, z: number) => `${x.toFixed(2)}|${y.toFixed(2)}|${z.toFixed(2)}`;
+    const byPos = new Map<string, Set<string>>();
+    for (let i = 0; i < count; i++) {
+      const vi = idxArr ? idxArr[i] : i;
+      const px = P[vi * 3], py = P[vi * 3 + 1], pz = P[vi * 3 + 2];
+      const nx = N[vi * 3], ny = N[vi * 3 + 1], nz = N[vi * 3 + 2];
+      if (Math.hypot(px, py) < 0.5) continue; // skip cap-centre
+      if (Math.abs(nz) >= 0.5) continue;      // side wall only (skip cap faces)
+      const k = key(px, py, pz);
+      if (!byPos.has(k)) byPos.set(k, new Set());
+      byPos.get(k)!.add(nkey(nx, ny, nz));
+    }
+    let multiNormalPos = 0;
+    for (const s of byPos.values()) if (s.size > 1) multiNormalPos++;
+    expect(byPos.size).toBeGreaterThan(0);
+    expect(multiNormalPos).toBe(0);
+  });
 });
