@@ -83,3 +83,155 @@ export async function tfDemoBox(w = 4, h = 4, d = 4): Promise<TfMeshData> {
   const box = (tf as any).boxMesh(w, h, d);
   return tfMeshData(box);
 }
+
+/**
+ * Topology / watertightness stats for a TrueForm `Mesh`, computed with tf's OWN
+ * predicates (topology/sync + geometry/sync). This is the honest "is it a valid
+ * solid?" check — the KNOWN TrueForm weakness is booleans / swept caps that come
+ * back non-watertight (open boundary loops) or non-manifold (>2 faces on an edge).
+ *
+ * - `closed`   = `isClosed` — no boundary edges → watertight (the key flag).
+ * - `manifold` = `isManifold` — every edge shared by ≤ 2 faces.
+ * - `euler`    = V − E + F (a closed genus-g surface has χ = 2 − 2g).
+ * - `boundaryLoops` = number of open boundary paths (0 for a watertight solid;
+ *   an uncapped swept tube has 2 — one per open end).
+ * - `signedVolume` / `volume` are only meaningful for a closed mesh.
+ */
+export interface TfMeshStats {
+  tris: number;
+  verts: number;
+  closed: boolean;
+  manifold: boolean;
+  euler: number;
+  boundaryLoops: number;
+  signedVolume: number;
+  volume: number;
+}
+
+/** Run tf's topology/geometry predicates over a mesh handle → plain stats. */
+export function tfAnalyze(tf: Tf, mesh: any): TfMeshStats {
+  const t = tf as any;
+  const tris = mesh.numberOfFaces as number;
+  const verts = mesh.numberOfPoints as number;
+  const closed = !!t.isClosed(mesh);
+  const manifold = !!t.isManifold(mesh);
+  const euler = Number(t.eulerCharacteristic(mesh));
+  let boundaryLoops = 0;
+  try {
+    boundaryLoops = t.boundaryPaths(mesh).length as number;
+  } catch {
+    boundaryLoops = closed ? 0 : -1;
+  }
+  // Volume calls throw / return NaN on an open mesh — guard so the demo never
+  // crashes on an intentionally open sweep.
+  let signedVolume = NaN;
+  let volume = NaN;
+  if (closed) {
+    try { signedVolume = Number(t.signedVolume(mesh)); } catch { /* ignore */ }
+    try { volume = Number(t.volume(mesh)); } catch { /* ignore */ }
+  }
+  return { tris, verts, closed, manifold, euler, boundaryLoops, signedVolume, volume };
+}
+
+/** A demo result: flat mesh data for the adapter + tf's own topology verdict. */
+export interface TfDemoResult {
+  data: TfMeshData;
+  stats: TfMeshStats;
+}
+
+/**
+ * SWEEP demo — the real payoff. TrueForm has no revolve/loft/extrude, but
+ * `tubeMesh(curves, radius, radialSegments)` sweeps a circular section along a
+ * 3D polyline using parallel-transport frames (RMF) — i.e. a genuine pipe/sweep.
+ * Here we sweep along a HELIX to prove tf builds smooth curved geometry from an
+ * algorithm-driven path (a coil / spring — the kind of thing `CrossSection`
+ * can't do without axial sampling).
+ *
+ * NOTE ON WATERTIGHTNESS: `tubeMesh` does NOT cap the ends, so an open helix
+ * comes back with 2 boundary loops (`closed:false`). That is CORRECT for an
+ * uncapped sweep, not a defect. Pass `closedPath:true` to sweep along a full
+ * loop (→ a torus-like closed tube, `closed:true`, genus 1) to see a watertight
+ * result from the same primitive.
+ */
+export async function tfSweepDemo(opts: {
+  coilRadius?: number;
+  tubeRadius?: number;
+  pitch?: number;
+  turns?: number;
+  ptsPerTurn?: number;
+  radialSegments?: number;
+  closedPath?: boolean;
+} = {}): Promise<TfDemoResult> {
+  const tf = await ensureTf();
+  const t = tf as any;
+  const {
+    coilRadius = 6,
+    tubeRadius = 1.2,
+    pitch = 3.5,
+    turns = 3,
+    ptsPerTurn = 64,
+    radialSegments = 24,
+    closedPath = false,
+  } = opts;
+
+  const n = Math.max(4, Math.round(turns * ptsPerTurn));
+  const pts = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    // A closed path samples one full circle (no pitch); an open path spirals.
+    const a = closedPath ? (i / n) * 2 * Math.PI : (i / ptsPerTurn) * 2 * Math.PI;
+    pts[i * 3 + 0] = coilRadius * Math.cos(a);
+    pts[i * 3 + 1] = coilRadius * Math.sin(a);
+    pts[i * 3 + 2] = closedPath ? 0 : (i / ptsPerTurn) * pitch;
+  }
+
+  // A `Curves` = paths (offset-blocked index blocks) over a shared point buffer.
+  // One path spanning all n points; +1 wrapping index when the path is closed.
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) idx.push(i);
+  if (closedPath) idx.push(0);
+  const offsets = t.ndarray(new Int32Array([0, idx.length]), [2]);
+  const data = t.ndarray(new Int32Array(idx), [idx.length]);
+  const paths = t.offsetBlockedBuffer(offsets, data);
+  const crv = t.curves(paths, pts);
+
+  const mesh = t.tubeMesh(crv, tubeRadius, radialSegments);
+  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
+}
+
+/**
+ * BOOLEAN demo — exercises the CSG kernel + directly tests the memory's caveat
+ * that TrueForm's boolean is not automatically watertight. Builds a bored pipe
+ * (a downhole-relevant solid): an outer solid cylinder MINUS a taller, narrower
+ * inner cylinder that punches all the way through → a hollow tube capped by two
+ * annular faces. A correct boolean returns this `closed:true`, `manifold:true`,
+ * genus-1 (χ = 0). `tfAnalyze` reports whether tf actually delivered that.
+ */
+export async function tfBooleanDemo(opts: {
+  outerRadius?: number;
+  innerRadius?: number;
+  height?: number;
+  segments?: number;
+} = {}): Promise<TfDemoResult> {
+  const tf = await ensureTf();
+  const t = tf as any;
+  const { outerRadius = 6, innerRadius = 3.5, height = 16, segments = 64 } = opts;
+  const outer = t.cylinderMesh(outerRadius, height, segments);
+  // Slightly taller so the bore fully punches through both caps (no coplanar
+  // coincident faces → cleaner boolean).
+  const inner = t.cylinderMesh(innerRadius, height + 4, segments);
+  const res = t.booleanDifference(outer, inner);
+  const mesh = res.mesh;
+  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
+}
+
+/** Which demo the TF tab renders. `box` is the original from-scratch primitive. */
+export type TfDemoKind = 'box' | 'sweep' | 'boolean';
+
+/** Dispatch a TF-tab demo by kind. Returns mesh data (+ stats for sweep/boolean). */
+export async function tfDemo(kind: TfDemoKind): Promise<TfDemoResult> {
+  if (kind === 'sweep') return tfSweepDemo();
+  if (kind === 'boolean') return tfBooleanDemo();
+  const tf = await ensureTf();
+  const box = (tf as any).boxMesh(4, 4, 4);
+  return { data: tfMeshData(box), stats: tfAnalyze(tf, box) };
+}
