@@ -28,7 +28,7 @@ src/lib/cad/
 ├── part-id.ts               # hashId stamping for color-by-source
 ├── math-lib.ts              # math injected into profile-fn + sandbox
 ├── mesh-serial.ts           # serialize/rehydrate { full, cutVC } mesh-JSON
-├── warp-spline.ts           # warp-along-spline path
+├── warp-spline.ts           # bend a BUILT solid along a spline (Manifold.warp) — planar world-Y frame OR 3D RMF (right-handed, det+1); opt-in genus/volume validity warn. Plan docs/plans/warp-part-along-spline.md
 ├── stdlib/                  # ACTIVE engine primitives (r_cuboid, r_loft, r_weld_extrude, r_revolve) — Rule 21
 │   └── stale/               # DEPRECATED engines (r_extrude — 0 consumers) — still resolvable (origin 'stdstale'); relocated 2026-06-28 from top-level stdstale/
 ```
