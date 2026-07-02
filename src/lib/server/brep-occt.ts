@@ -229,7 +229,11 @@ export async function brepFromSource(
   await ensureOC();
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
-  const { draw, makeBaseBox, makeCompound, drawPolysides } = replicad;
+  const { resampleSpline } = await import('$lib/cad/spline-resample');
+  const {
+    draw, makeBaseBox, makeCompound, drawPolysides,
+    assembleWire, makeLine, genericSweep,
+  } = replicad;
 
   const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
   if (!m) return null;
@@ -326,6 +330,73 @@ export async function brepFromSource(
   };
   const r_cuboid = (w: number, h: number, d: number) => wrap(makeBaseBox(Math.max(0.01, w), Math.max(0.01, h), Math.max(0.01, d)));
 
+  // ── r_sweep — extrude a fixed 2D cross-section along a 3D PATH (exact-curve
+  // BRep pipe). OCCT counterpart of the Manifold sweepAlongPath: instead of a
+  // welded triangle grid, build a smooth BSpline spine wire + a profile wire,
+  // and pipe them with BRepOffsetAPI_MakePipeShell (replicad.genericSweep), which
+  // caps the ends and MakeSolid()s → a watertight B-rep solid. The exact kernel
+  // then produces a CLEAN annular cap under a concentric subtract, where the
+  // Manifold mesh boolean slivers on the tilted coplanar caps (the spike).
+  //
+  // The section's local coords `[a,b]` are planted in a stable start-frame
+  // (side,up ⟂ start tangent) exactly like the Manifold path; genericSweep's
+  // forceProfileSpineOthogonality transports it torsion-minimised along the
+  // spine. 3D section points [x,y,0] use their first two coords (matches the
+  // Manifold r_sweep, which destructures `[a,b]` off each entry).
+  const V = {
+    sub: (a: number[], b: number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+    cross: (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+    norm: (a: number[]) => { const L = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / L, a[1] / L, a[2] / L]; },
+    dot: (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  };
+  const asPath = (p: any): number[][] =>
+    (typeof p === 'string' ? JSON.parse(p) : p).map((q: any) => [Number(q[0]) || 0, Number(q[1]) || 0, Number(q[2]) || 0]);
+  const sweepOcct = (path: number[][], section2d: any[], closedPath: boolean) => {
+    const pathPts = asPath(path);
+    if (pathPts.length < 2) throw new Error('r_sweep: path needs ≥2 points');
+    const sec = (typeof section2d === 'string' ? JSON.parse(section2d) : section2d)
+      .map((s: any) => [Number(s[0]) || 0, Number(s[1]) || 0]);
+    if (sec.length < 3) throw new Error('r_sweep: section needs ≥3 points');
+
+    // Spine: a POLYLINE wire through the (already arc-length-resampled) path
+    // points — NOT a BSpline approximation. makeBSplineApproximation over
+    // near-cusp arc-length samples (a straight run into a sharp bend, e.g. the
+    // sweep_tube_demo path) produces a curve that sends OCCT's
+    // BRepOffsetAPI_MakePipeShell into a pathological / effectively-infinite
+    // build (observed: >4 min at 99% CPU, never returns). A polyline spine
+    // builds in ~1ms, sweeps in ~300ms, and is byte-for-byte the same path the
+    // Manifold sweep rides — identical fidelity, no approximation risk.
+    const spinePath = closedPath ? [...pathPts, pathPts[0]] : pathPts;
+    const spineEdges: any[] = [];
+    for (let i = 0; i < spinePath.length - 1; i++) spineEdges.push(makeLine(spinePath[i], spinePath[i + 1]));
+    const spineWire = assembleWire(spineEdges);
+
+    // Stable start frame ⟂ the start tangent (mirrors sweepFrames' seed).
+    const t = V.norm(V.sub(pathPts[1], pathPts[0]));
+    let up = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const side = V.norm(V.cross(t, up));
+    up = V.norm(V.cross(side, t));
+    const P0 = pathPts[0];
+    const pt3 = (a: number, b: number) => [
+      P0[0] + side[0] * a + up[0] * b,
+      P0[1] + side[1] * a + up[1] * b,
+      P0[2] + side[2] * a + up[2] * b,
+    ];
+    // Closed polyline profile wire in that plane (faceted, like the Manifold wall).
+    const edges: any[] = [];
+    for (let i = 0; i < sec.length; i++) {
+      const a = pt3(sec[i][0], sec[i][1]);
+      const b = pt3(sec[(i + 1) % sec.length][0], sec[(i + 1) % sec.length][1]);
+      edges.push(makeLine(a, b));
+    }
+    const profileWire = assembleWire(edges);
+    return wrap(genericSweep(profileWire, spineWire, { forceProfileSpineOthogonality: true }));
+  };
+  const r_sweep = (a: any, section?: any, closedPath?: any) => {
+    if (a && a.path !== undefined) return sweepOcct(a.path, a.section, a.closedPath === true);
+    return sweepOcct(a, section, closedPath === true);
+  };
+
   // transforms — replicad/OCCT transforms DELETE their input shape's handle
   // after producing the moved copy (replicad Shape.translate/rotate call
   // this.delete()). A `repeat` that reuses ONE shape across N transforms
@@ -393,7 +464,7 @@ export async function brepFromSource(
   // A composed body calls sub-parts as `g_dp_box({ wall: p.wall, … })`; the
   // named-args object IS the sub-part's `p`. Engines are already injected, so
   // only non-engine meta.uses need resolving (transitively).
-  const ENGINES = new Set(['r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid']);
+  const ENGINES = new Set(['r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep']);
   const parseUses = (src: string): string[] => {
     const m2 = src.match(/uses:\s*\[([\s\S]*?)\]/);
     if (!m2) return [];
@@ -413,12 +484,12 @@ export async function brepFromSource(
   // all built before any runs).
   const depFns: Record<string, (args?: any) => any> = {};
   const NAMES = [
-    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid',
+    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep', 'resampleSpline',
     'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group', 'cos', 'sin', 'tan', 'tau', 'PI',
     'sqrt', 'abs', 'min', 'max', 'pow', 'floor', 'round',
   ];
   const baseVals = (p: any) => [
-    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid,
+    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep, resampleSpline,
     mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf, Math.cos, Math.sin, Math.tan, 2 * Math.PI, Math.PI,
     Math.sqrt, Math.abs, Math.min, Math.max, Math.pow, Math.floor, Math.round,
   ];
