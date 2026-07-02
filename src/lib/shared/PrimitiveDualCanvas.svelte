@@ -117,8 +117,72 @@
     const childVerts = pos.count;
     const inst = (geo as any)?.instanced;
     const n = inst ? (inst.count ?? inst.instances?.length ?? 1) : 1;
-    return { tris: childTris * n, verts: childVerts * n, instanced: !!inst, count: n, childTris };
+    // STRAY / degenerate triangles — near-zero-area tris (the coplanar slivers a
+    // CSG boolean leaves at tilted coincident caps; memory r_sweep_normals_and_twist).
+    // Cheap per-bake scan of the child mesh; surfaced as the ⚠ badge + Remove button.
+    const stray = countStrayTris(g) * n;
+    return { tris: childTris * n, verts: childVerts * n, instanced: !!inst, count: n, childTris, stray };
   });
+  // Count near-zero-area triangles (< 1% of the mean triangle area). Works on
+  // indexed or non-indexed BufferGeometry. Absolute detector for degenerate/
+  // sliver strays; genus needs the Manifold (server) so it's not computed here.
+  function countStrayTris(g: any): number {
+    const pos = g?.getAttribute?.('position'); if (!pos) return 0;
+    const P = pos.array as ArrayLike<number>;
+    const idx = g.index?.array as ArrayLike<number> | undefined;
+    const nt = idx ? Math.floor(idx.length / 3) : Math.floor(P.length / 9);
+    if (nt < 1) return 0;
+    const areas = new Float64Array(nt); let sum = 0;
+    for (let t = 0; t < nt; t++) {
+      const a = (idx ? idx[t * 3] : t * 3) * 3, b = (idx ? idx[t * 3 + 1] : t * 3 + 1) * 3, c = (idx ? idx[t * 3 + 2] : t * 3 + 2) * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+      const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const ar = 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz); areas[t] = ar; sum += ar;
+    }
+    const thr = (sum / nt) * 1e-2; let stray = 0;
+    for (let t = 0; t < nt; t++) if (areas[t] < thr) stray++;
+    return stray;
+  }
+  // Remove-strays (v0 — client-side): rebuild the live-mesh geometry dropping the
+  // near-zero-area tris + re-weld normals. A STARTING POINT; the durable removal
+  // (Manifold merge/simplify or the annular-sweep rebuild) is TBD — see the badge.
+  function removeStrays() {
+    const g = (geo as any)?.full as any; if (!g) return;
+    const pos = g.getAttribute('position'); const P = pos.array as ArrayLike<number>;
+    const idx = g.index?.array as ArrayLike<number> | undefined;
+    const nt = idx ? Math.floor(idx.length / 3) : Math.floor(P.length / 9);
+    const nrmAttr = g.getAttribute('normal'); const colAttr = g.getAttribute('color');
+    const outP: number[] = [], outN: number[] = [], outC: number[] = [];
+    let sum = 0; const areas = new Float64Array(nt);
+    for (let t = 0; t < nt; t++) {
+      const ai = idx ? idx[t * 3] : t * 3, bi = idx ? idx[t * 3 + 1] : t * 3 + 1, ci = idx ? idx[t * 3 + 2] : t * 3 + 2;
+      const a = ai * 3, b = bi * 3, c = ci * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+      const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const ar = 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz); areas[t] = ar; sum += ar;
+    }
+    const thr = (sum / nt) * 1e-2;
+    const push = (i: number) => {
+      const p = i * 3; outP.push(P[p], P[p + 1], P[p + 2]);
+      if (nrmAttr) { const na = nrmAttr.array as ArrayLike<number>; outN.push(na[p], na[p + 1], na[p + 2]); }
+      if (colAttr) { const ca = colAttr.array as ArrayLike<number>; outC.push(ca[p], ca[p + 1], ca[p + 2]); }
+    };
+    for (let t = 0; t < nt; t++) {
+      if (areas[t] < thr) continue;
+      const ai = idx ? idx[t * 3] : t * 3, bi = idx ? idx[t * 3 + 1] : t * 3 + 1, ci = idx ? idx[t * 3 + 2] : t * 3 + 2;
+      push(ai); push(bi); push(ci);
+    }
+    // Lazy-import THREE only inside the handler (canvas already pulls it in).
+    import('three').then((THREE) => {
+      const ng = new THREE.BufferGeometry();
+      ng.setAttribute('position', new THREE.BufferAttribute(new Float32Array(outP), 3));
+      if (outN.length) ng.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(outN), 3));
+      if (outC.length) ng.setAttribute('color', new THREE.BufferAttribute(new Float32Array(outC), 3));
+      geo = { ...(geo as any), full: ng }; geoVersion++;
+    });
+  }
   let scaleMenuOpen = $state(false);
   let meshStatus = $state<'idle'|'building'|'ok'|'error'>('idle');
   /** Which backend produced the current live mesh — shown as a badge. */
@@ -659,7 +723,7 @@
        BREP appends the OCCT bake time. -->
   {#if stats}
     <div class="pd-stats" title={stats.instanced ? `${stats.childTris.toLocaleString()} tris/child × ${stats.count} instances` : ''}>
-      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}
+      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}{#if stats.stray > 0} · <span class="pd-stray" title="Near-zero-area (degenerate/sliver) triangles — usually coplanar strays a CSG boolean left at tilted coincident caps.">⚠ {stats.stray.toLocaleString()} stray</span> <button class="pd-stray-btn" type="button" onclick={removeStrays} title="Remove strays (v0): drops the near-zero-area triangles + re-welds. NOTE: for a curved-hollow CSG the genus stays corrupted (phantom handles) — this is cosmetic; the durable fix is the annular sweep. We'll refine the real removal later.">remove</button>{/if}
     </div>
   {/if}
 </div>
@@ -718,6 +782,9 @@
   .pd-seg { display: inline-flex; align-items: center; gap: 3px; font: 600 10px Arial; color: #57534e; background: rgba(255,255,255,0.9); border: 1px solid #d6d3d1; border-radius: 4px; padding: 1px 4px; }
   .pd-seg input { width: 40px; font: 10px ui-monospace, monospace; color: #57534e; border: 1px solid #e7e5e4; border-radius: 3px; padding: 1px 3px; background: #fff; }
   .pd-stats { position: absolute; bottom: 6px; left: 12px; z-index: 6; font: 600 10px ui-monospace, monospace; color: #78716c; background: rgba(255,255,255,0.82); border-radius: 3px; padding: 1px 6px; pointer-events: none; }
+  .pd-stray { color: #b45309; font-weight: 700; }
+  .pd-stray-btn { pointer-events: auto; cursor: pointer; font: 700 9px ui-monospace, monospace; color: #b45309; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 3px; padding: 0 4px; margin-left: 2px; }
+  .pd-stray-btn:hover { background: #fde68a; }
   .pd-scale-menu {
     position: absolute; top: 56px; left: 12px; z-index: 7;
     display: flex; flex-direction: column; gap: 8px;
