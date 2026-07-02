@@ -17,7 +17,7 @@
   import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
 
-  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep';
+  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf';
 
   let {
     /* ── INPUT (parent → pane) — pass STABLE references ── */
@@ -116,7 +116,7 @@
   onMount(() => {
     try {
       const t = localStorage.getItem('ge-right-tab');
-      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'tf') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function setRightTab(t: RightTab) {
@@ -259,6 +259,10 @@
       type="button" role="tab" aria-selected={rightTab === 'brep'}
       data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve · extrude · loft · CSG · composed parts."
       onclick={() => setRightTab('brep')}>BREP</button>
+    <button class="ge-pane-tab" class:active={rightTab === 'tf'}
+      type="button" role="tab" aria-selected={rightTab === 'tf'}
+      data-tip="TF — TrueForm (Polydera) client-side exact-mesh kernel. Runs the WASM boolean/generator kernel on the MAIN THREAD (no worker); from-scratch generators + booleans."
+      onclick={() => setRightTab('tf')}>TF</button>
   </div>
   <div class="ge-pane-bodies">
     <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
@@ -486,6 +490,14 @@
         {:else}
           <div class="ge-empty">No source yet — bake the part first.</div>
         {/if}
+      {/if}
+    </div>
+    <!-- TF tab — TrueForm (Polydera) client-side exact-mesh kernel. Runs the
+         WASM boolean/generator kernel on the MAIN THREAD (no worker). Commit 1
+         is a placeholder; the canvas (backend="tf") is wired in commit 3. -->
+    <div class="ge-glb-body" class:hidden={rightTab !== 'tf'}>
+      {#if rightTab === 'tf'}
+        <div class="ge-empty">tf engine — WIP (main-thread TrueForm; box render coming)</div>
       {/if}
     </div>
   </div>
