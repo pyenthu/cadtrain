@@ -159,3 +159,16 @@ When the manifold returned by `CrossSection.extrude(height, nDivisions, twistDeg
 **Fix**: `extrude(L, n, 0, [1, 1])`, not `extrude(L, n, 0, 1)`.
 
 See `~/.claude/projects/-Users-neerajsethi-code-cadtrain/memory/manifold_extrude_scaletop_warp_bug.md` for the discovery trail. Discovered 2026-05-19 while authoring v5.
+
+### r_sweep DEGENERATE / SLIVER caps — two distinct defects (2026-07-02)
+
+A curved hollow sweep (`s_tube` = `sweep(outerR).subtract(sweep(innerR))`) rendered with a **tangled fan of degenerate/sliver triangles at the end caps**. Long debug — the root causes are NOT what they first look like (it is NOT an originalID race, NOT WASM-singleton corruption, and manifold-3d 3.5.1 does NOT fix it — all empirically disproven). Two SEPARATE deterministic defects:
+
+**Defect 1 — self-intersecting section (author bug).** An expr circle formula divided by a hardcoded constant while looping `num_pts` (`tau*i/12` with `num_pts=24`) → the section wrapped ~twice → a self-overlapping loop → malformed swept solid (genus 1, wrong volume) → degenerate caps. Fix: `tau*i/12` → `tau*i/num_pts`. **A single sweep of a clean section is 0 slivers.** TODO: warn on self-intersecting sweeps (genus/volume or 2D segment-cross check) — memory `todo_sweep_self_intersection_check`.
+
+**Defect 2 — tilted coincident caps in a curved hollow SUBTRACT.** Subtracting two coaxial *curved* sweeps gives two **tilted, coincident cap planes** whose independent triangulations don't align → **Manifold's v3 MESH boolean corrupts them** (~137 degenerate + sliver tris, non-watertight). This is a mesh-boolean limitation, not a bug in our code. Key facts:
+- **Straight path = clean** (axis-perpendicular caps subtract fine); **revolve hollow (`g_tube`) = clean** (rect section never self-intersects, axis-perp caps). Only *curved sweep − curved sweep* slivers.
+- **TrueForm** (mesh boolean) does NOT fix it (default: ~28 degenerate, not watertight). **BREP/OCCT** (exact kernel, `genericSweep`) DOES → 0 degenerate/0 sliver (shipped in `brep-occt.ts`), ~40-100× slower + display-mesh T-junctions.
+- **Durable engine-agnostic fix = ANNULAR SECTION**: do the CSG in 2D on the section (a CrossSection with a hole) + sweep ONCE → one welded mesh, no 3D boolean → no coincident caps. Plan `docs/plans/annular-csg2d-section-sweep.md`.
+
+**Diagnose by DECODING cap triangles** (never eyeball): `/api/primitives/preview` → `full = {positions[], normals[]}` (non-indexed). Count near-zero-area tris; group side/cap verts by rounded POSITION. Test on the STRAIGHT/curved cases separately (curved masks/reveals defect 2; a single sweep isolates defect 1). Full trail: memory `r_sweep_normals_and_twist`.
