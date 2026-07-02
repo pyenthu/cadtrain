@@ -337,6 +337,12 @@ const ARCH_NODES_NESTED = [
     data: { kind: 'lib', label: 'WellScene',
       blurb: 'The /wells 3D well diagram — WSON → assembled Three scene (src/lib/wells/).' } satisfies ArchNodeData,
   },
+  {
+    id: 'l-coi', type: 'archNode', parentId: 'c-webapp', extent: 'parent',
+    position: { x: WC, y: row(4) },
+    data: { kind: 'lib', label: 'cross-origin isolation',
+      blurb: 'App-wide invariant: every response carries COOP:same-origin + COEP:require-corp (hooks.server.ts in prod · a vite dev-server middleware in dev) → self.crossOriginIsolated = true, which lets TrueForm\'s pthread WASM use SharedArrayBuffer. FORBIDS any non-same-origin / non-CORP subresource (a CDN font/script would be COEP-blocked); cadtrain serves assets same-origin + proxies its API under /api/*.' } satisfies ArchNodeData,
+  },
 
   // ═════════════ API layer container ═════════════
   {
@@ -506,6 +512,12 @@ const ARCH_NODES_NESTED = [
     data: { kind: 'lib', label: 'rag-corpus / query',
       blurb: 'Builds + BM25-queries the parts corpus for generative-authoring retrieval (rag-corpus/query/prompt/l1).' } satisfies ArchNodeData,
   },
+  {
+    id: 'l-trueform', type: 'archNode', parentId: 'c-kernel', extent: 'parent',
+    position: { x: KB, y: row(9) },
+    data: { kind: 'lib', label: 'TrueForm (tf) — client',
+      blurb: 'The 3rd geometry engine (TF tab). @polydera/trueform exact-mesh WASM kernel run CLIENT-SIDE on the main thread (trueform-client/adapter). Renders a from-scratch box today (proves the kernel inits); client + server are both the goal. Its pthread pool transfers a SharedArrayBuffer, so it needs cross-origin isolation.' } satisfies ArchNodeData,
+  },
 
   // ═════════════ Volume store container ═════════════
   {
@@ -659,6 +671,11 @@ export const ARCH_EDGES = [
   { id: 'e-manifold-cache', source: 'l-manifold', target: 'l-bake-cache', data: { edgeKind: 'writes', label: 'cache' } satisfies ArchEdgeData },
   { id: 'e-manifold-threlte', source: 'l-manifold', target: 'l-threlte', data: { edgeKind: 'flow', label: 'mesh/GLB' } satisfies ArchEdgeData },
   { id: 'e-client-threlte', source: 'l-bake-client', target: 'l-threlte', data: { edgeKind: 'flow', label: '⚡client' } satisfies ArchEdgeData },
+
+  // ── Geometry-engine matrix: BREP (server OCCT, via a-brep above) · TrueForm (client) ──
+  { id: 'e-ge-tf', source: 'r-graph-editor', target: 'l-trueform', data: { edgeKind: 'calls', label: 'TF tab' } satisfies ArchEdgeData },
+  { id: 'e-tf-threlte', source: 'l-trueform', target: 'l-threlte', data: { edgeKind: 'flow', label: 'tf mesh' } satisfies ArchEdgeData },
+  { id: 'e-coi-tf', source: 'l-coi', target: 'l-trueform', data: { edgeKind: 'flow', label: 'enables SAB' } satisfies ArchEdgeData },
 
   // ── API → kernel ──
   { id: 'e-apibake-loader', source: 'a-prim-bake', target: 'l-loader', data: { edgeKind: 'calls', label: 'preview' } satisfies ArchEdgeData },
