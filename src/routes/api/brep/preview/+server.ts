@@ -35,12 +35,28 @@ export const POST = async ({ request, fetch }) => {
     }
     // Part source → full graph→OCCT executor (revolve · extrude · loft · CSG).
     if (typeof source === 'string' && source.trim()) {
-      const mesh = await brepFromSource(source, (paramValues && typeof paramValues === 'object') ? paramValues : {}, opts, fetch);
+      const params = (paramValues && typeof paramValues === 'object') ? paramValues : {};
+      let mesh;
+      try {
+        mesh = await brepFromSource(source, params, opts, fetch);
+      } catch (cutErr) {
+        // The OCCT half-section CUT can throw a raw emscripten exception (a bare
+        // numeric pointer) for some swept / boolean solids while the UNCUT solid
+        // builds fine. Degrade gracefully: retry without the cut so BREP still
+        // renders the solid (no half-section) instead of failing to a number.
+        if (opts.cut) mesh = await brepFromSource(source, params, { ...opts, cut: false }, fetch);
+        else throw cutErr;
+      }
       if (!mesh) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
       return json({ supported: true, ...mesh });
     }
     return json({ supported: false, reason: 'provide { kind:"revolve", profile } or { source, paramValues }' });
   } catch (e: any) {
-    return json({ supported: false, reason: String(e?.message ?? e).slice(0, 200) });
+    // OCCT/emscripten throws a RAW NUMBER (a heap pointer) as the exception — do
+    // not surface that as the "reason" (it reads as a garbage count in the tab).
+    const reason = (e == null || typeof e === 'number' || typeof e === 'bigint')
+      ? `OCCT/WASM internal error (${String(e)})`
+      : String(e?.message ?? e).slice(0, 200);
+    return json({ supported: false, reason });
   }
 };
