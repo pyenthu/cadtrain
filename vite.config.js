@@ -6,12 +6,25 @@ import tailwindcss from '@tailwindcss/vite';
 //   new Worker(new URL("trueform_wasm.js", import.meta.url), { type: "module" })
 // Vite's `worker-import-meta-url` plugin statically matches that literal and
 // tries to bundle the emscripten glue AS a worker entry — which parse-fails the
-// production build. We run TrueForm on the MAIN THREAD (the TF engine tab); with
-// no SharedArrayBuffer (no COOP/COEP headers) the pthread worker is never spawned
-// at runtime, so defeating the static matcher is behaviour-neutral. Replacing the
-// string literal with `String("…")` keeps the same runtime URL while hiding it
-// from the matcher. The "*.wasm" literal is left intact so Vite still emits the
-// wasm asset. enforce:'pre' so this runs before worker-import-meta-url.
+// production build. Replacing the string literal with `String("…")` keeps the
+// same runtime URL while hiding it from the matcher; the "*.wasm" literal is
+// left intact so Vite still emits the wasm asset. enforce:'pre' so this runs
+// before worker-import-meta-url. This makes the BUILD pass — it does NOT change
+// TrueForm's runtime behaviour.
+//
+// ⚠ RUNTIME BLOCKER (verified 2026-07-02): trueform@0.9.8 is compiled WITH
+// pthreads. At tf.init() it pre-creates a worker pool sized to
+// navigator.hardwareConcurrency (no InitOption to disable) and transfers the
+// WASM memory (a SharedArrayBuffer) to each worker. SharedArrayBuffer transfer
+// REQUIRES a cross-origin-isolated context, so tf.init() throws
+//   DataCloneError: SharedArrayBuffer transfer requires self.crossOriginIsolated
+// unless the document is served with COOP:same-origin + COEP:require-corp (or
+// credentialless). Running on the main thread does NOT avoid this. Confirmed:
+// adding those two headers makes the TF-tab box render (12 tris / 8 verts). To
+// ship the TF tab, enable cross-origin isolation app-wide (dev: server.headers
+// via a configureServer middleware — plain server.headers don't reach SvelteKit
+// SSR responses; prod: set them in hooks.server.ts / adapter) — an app-wide
+// decision (affects all cross-origin subresources).
 function trueformWorkerFix() {
   return {
     name: 'trueform-worker-fix',

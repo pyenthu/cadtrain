@@ -15,8 +15,15 @@
  * excluded from Vite optimizeDeps (see vite.config) so the dep is served raw and
  * its `new URL("trueform_wasm.wasm", import.meta.url)` resolves next to the file.
  *
- * TrueForm falls back to single-threaded execution when SharedArrayBuffer is
- * unavailable (no COOP/COEP headers) — fine for the main-thread bake path.
+ * ⚠ CROSS-ORIGIN ISOLATION REQUIRED (verified 2026-07-02): trueform@0.9.8 is
+ * built WITH pthreads. `tf.init()` pre-creates a worker pool (sized to
+ * navigator.hardwareConcurrency — no opt-out) and transfers the WASM memory
+ * (a SharedArrayBuffer) to each worker, which THROWS
+ *   DataCloneError: SharedArrayBuffer transfer requires self.crossOriginIsolated
+ * unless the document is served with COOP:same-origin + COEP:require-corp (or
+ * credentialless). Running on the MAIN THREAD does not avoid this — there is no
+ * single-threaded fallback in this build. The TF tab therefore only works under
+ * cross-origin isolation; enabling it is an app-wide call (see vite.config).
  */
 
 /** The lazily-imported + initialised TrueForm module (`import * as tf`). */
