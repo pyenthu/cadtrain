@@ -272,6 +272,19 @@ const _cross = (a: V3, b: V3): V3 => [
 ];
 const _len = (a: V3): number => Math.hypot(a[0], a[1], a[2]);
 const _norm = (a: V3): V3 => { const l = _len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const _dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const _scale = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+/** Rotate v about the UNIT axis k by angle θ (Rodrigues' formula). */
+const _rotAbout = (v: V3, k: V3, ang: number): V3 => {
+  const c = Math.cos(ang), s = Math.sin(ang);
+  const kv = _cross(k, v);
+  const kd = _dot(k, v) * (1 - c);
+  return [
+    v[0] * c + kv[0] * s + k[0] * kd,
+    v[1] * c + kv[1] * s + k[1] * kd,
+    v[2] * c + kv[2] * s + k[2] * kd,
+  ];
+};
 
 /** Fan-triangulate a closed 3D polyline (an end cap). `reverse` flips the
  *  winding so the two ends of a sweep face opposite ways. weldAndBuild fixes
@@ -348,23 +361,110 @@ export function loftStations(
   return weldAndBuild(patches);
 }
 
+/** One placed sweep station: origin + the orthonormal (side, up, tangent) basis
+ *  the 2D cross-section `[a, b]` maps into as `o + a·side + b·up`. */
+export type SweepFrame = { o: V3; side: V3; up: V3; tangent: V3 };
+
+/**
+ * ROTATION-MINIMIZING FRAMES (parallel transport) along an ordered 3D path —
+ * the twist-free framing behind `sweepAlongPath`. Uses the DOUBLE-REFLECTION
+ * method (Wang, Jüttler, Zheng & Liu, ACM TOG 2008): the standard robust RMF
+ * approximation. The reference normal is carried forward frame-to-frame by two
+ * reflections (across the chord, then onto the next tangent) instead of being
+ * recomputed from a fixed `up` each station — so the section never ROLLS, and
+ * (crucially) it does NOT degenerate when the path runs ~parallel to `up`
+ * (the old `side = tangent × up` cross product collapsed there, e.g. a
+ * straight-along-Z path with the default `up = world-Z`).
+ *
+ * SEED (station 0) reproduces the OLD fixed-up convention exactly so planar
+ * sweeps are unchanged at the seed and torsion-free thereafter (for a planar
+ * path RMF == the old fixed-up frame):
+ *   side0 = tangent0 × up ;  up0' = side0 × tangent0 ;  reference r0 = up0'
+ * and at every station  side = tangent × r,  up = r,  so `[a,b]` → o + a·side + b·up.
+ *
+ *   • up (default [0,0,1]) — only the SEED reference; auto-falls-back when the
+ *     first tangent is ~parallel to it.
+ *   • closedPath — wrapped central-difference tangents; the residual seam twist
+ *     (frame carried once around vs the seed) is distributed EVENLY across the
+ *     stations so the tube closes without a visible seam kink.
+ */
+export function sweepFrames(
+  path: V3[],
+  opts: { up?: V3; closedPath?: boolean } = {},
+): SweepFrame[] {
+  const N = path.length;
+  const up0: V3 = opts.up ?? [0, 0, 1];
+  const closedPath = opts.closedPath === true;
+
+  // Per-station unit tangents (central difference interior; one-sided open ends;
+  // wrapped for a closed path). A degenerate (zero) tangent inherits the prior.
+  const tan: V3[] = [];
+  for (let i = 0; i < N; i++) {
+    let t: V3;
+    if (closedPath) t = _sub(path[(i + 1) % N], path[(i - 1 + N) % N]);
+    else if (i === 0) t = _sub(path[1], path[0]);
+    else if (i === N - 1) t = _sub(path[N - 1], path[N - 2]);
+    else t = _sub(path[i + 1], path[i - 1]);
+    tan.push(_len(t) < 1e-12 ? (i > 0 ? tan[i - 1] : ([0, 0, 1] as V3)) : _norm(t));
+  }
+
+  // Seed reference r0 = up0' (⟂ tangent0, in the up0 plane) — matches the old
+  // fixed-up frame at station 0.
+  const t0 = tan[0];
+  let side0 = _cross(t0, up0);
+  if (_len(side0) < 1e-6) { const alt: V3 = Math.abs(t0[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]; side0 = _cross(t0, alt); }
+  side0 = _norm(side0);
+  let r: V3 = _norm(_cross(side0, t0)); // r0 = up'
+  const refs: V3[] = [r];
+
+  // Double-reflection: carry r from station i to i+1.
+  for (let i = 0; i < N - 1; i++) {
+    const v1 = _sub(path[i + 1], path[i]);
+    const c1 = _dot(v1, v1) || 1e-20;
+    const rL = _sub(r, _scale(v1, (2 / c1) * _dot(v1, r)));           // reflect r across the chord
+    const tL = _sub(tan[i], _scale(v1, (2 / c1) * _dot(v1, tan[i]))); // reflect tangent_i
+    const v2 = _sub(tan[i + 1], tL);
+    const c2 = _dot(v2, v2) || 1e-20;
+    let rNext = _sub(rL, _scale(v2, (2 / c2) * _dot(v2, rL)));        // reflect onto tangent_{i+1}
+    // Re-orthogonalize against the next tangent + renormalize (float-drift guard).
+    rNext = _norm(_sub(rNext, _scale(tan[i + 1], _dot(rNext, tan[i + 1]))));
+    refs.push(rNext);
+    r = rNext;
+  }
+
+  // Closed path: propagate refs[N-1] across the seam edge (N-1 → 0), measure the
+  // angle vs refs[0] about the shared tangent, and unwind it evenly per station.
+  if (closedPath && N > 2) {
+    const v1 = _sub(path[0], path[N - 1]);
+    const c1 = _dot(v1, v1) || 1e-20;
+    const rL = _sub(refs[N - 1], _scale(v1, (2 / c1) * _dot(v1, refs[N - 1])));
+    const tL = _sub(tan[N - 1], _scale(v1, (2 / c1) * _dot(v1, tan[N - 1])));
+    const v2 = _sub(tan[0], tL);
+    const c2 = _dot(v2, v2) || 1e-20;
+    let arrived = _sub(rL, _scale(v2, (2 / c2) * _dot(v2, rL)));
+    arrived = _norm(_sub(arrived, _scale(tan[0], _dot(arrived, tan[0]))));
+    const projB = _norm(_sub(refs[0], _scale(tan[0], _dot(refs[0], tan[0]))));
+    const ang = Math.atan2(_dot(_cross(arrived, projB), tan[0]), _dot(arrived, projB));
+    for (let i = 0; i < N; i++) refs[i] = _rotAbout(refs[i], tan[i], -ang * (i / N));
+  }
+
+  return refs.map((rr, i) => ({ o: path[i], up: rr, side: _norm(_cross(tan[i], rr)), tangent: tan[i] }));
+}
+
 /**
  * SWEEP (framing a): sweep a fixed 2D cross-section along an ordered 3D path
- * and weld it into ONE solid. At each path point a per-station orthonormal
- * frame is built from the local tangent + a stable `up` vector (a fixed-up /
- * "parallel-ish" frame: side = tangent × up, then up' = side × tangent). The
- * cross-section's local coords are interpreted as (side, up'): `[a, b]` →
- * `P + a·side + b·up'`. The placed rings become `loftStations`.
+ * and weld it into ONE solid. Each path point gets a rotation-minimizing frame
+ * (`sweepFrames`, double-reflection parallel transport); the cross-section's
+ * local coords `[a, b]` are placed as `P + a·side + b·up`, and the placed rings
+ * become `loftStations`.
  *
- * Fixed-up framing is TORSION-FREE for planar-ish paths (the motivating
- * spiral: a planar XY path with `up = world-Z` keeps `side` horizontal and
- * `up'` vertical at every station — exactly a spiral WALL). For a genuinely
- * 3D path that doubles back along `up`, swap in a rotation-minimizing frame
- * (parallel transport) — see the design notes; this prototype intentionally
- * keeps the simplest correct frame.
+ * The RMF replaced the old per-station fixed-up frame (`side = tangent × up`),
+ * which ROLLED the section on 3D paths and DEGENERATED when the path ran
+ * ~parallel to `up` (a straight-along-Z path lost its `side` → flat/garbage).
+ * The seed frame reproduces the old fixed-up basis, so the planar spiral WALL
+ * case is unchanged; everything downstream is twist-free.
  *
- *   • up (default [0,0,1]) — the stable reference; auto-falls-back when the
- *     tangent is (near-)parallel to it so `side` never degenerates.
+ *   • up (default [0,0,1]) — the SEED reference only (see sweepFrames).
  *   • section: closed 2D loop `[r-side, z-up]`. Trace it consistently; sign is
  *     auto-corrected by the weld.
  *   • closedPath / caps / closedSection — forwarded to loftStations.
@@ -377,32 +477,13 @@ export function sweepAlongPath(
   const N = path.length;
   if (N < 2) throw new Error('sweepAlongPath needs ≥ 2 path points');
   if (!Array.isArray(section) || section.length < 2) throw new Error('section needs ≥ 2 points');
-  const up0: V3 = opts.up ?? [0, 0, 1];
   const closedPath = opts.closedPath === true;
-  const stations: V3[][] = [];
-  for (let i = 0; i < N; i++) {
-    // Tangent: central difference in the interior; one-sided at open ends;
-    // wrapped for a closed path.
-    let t: V3;
-    if (closedPath) t = _sub(path[(i + 1) % N], path[(i - 1 + N) % N]);
-    else if (i === 0) t = _sub(path[1], path[0]);
-    else if (i === N - 1) t = _sub(path[N - 1], path[N - 2]);
-    else t = _sub(path[i + 1], path[i - 1]);
-    t = _norm(t);
-    // side = t × up; if the tangent is ~parallel to up, pick a fallback up so
-    // the cross product is well-conditioned.
-    let upv: V3 = up0;
-    let side = _cross(t, upv);
-    if (_len(side) < 1e-6) { upv = Math.abs(t[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]; side = _cross(t, upv); }
-    side = _norm(side);
-    upv = _norm(_cross(side, t)); // re-orthogonalize → clean (side, up', tangent) basis
-    const o = path[i];
-    stations.push(section.map(([a, b]): V3 => [
-      o[0] + side[0] * a + upv[0] * b,
-      o[1] + side[1] * a + upv[1] * b,
-      o[2] + side[2] * a + upv[2] * b,
-    ]));
-  }
+  const frames = sweepFrames(path, { up: opts.up, closedPath });
+  const stations: V3[][] = frames.map((f) => section.map(([a, b]): V3 => [
+    f.o[0] + f.side[0] * a + f.up[0] * b,
+    f.o[1] + f.side[1] * a + f.up[1] * b,
+    f.o[2] + f.side[2] * a + f.up[2] * b,
+  ]));
   return loftStations(stations, {
     closedSection: opts.closedSection ?? true,
     closedPath,

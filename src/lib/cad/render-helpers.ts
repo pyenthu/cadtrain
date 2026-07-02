@@ -378,38 +378,98 @@ function tryInstanceFinalize(
   } as ComponentResult & { cutawaySkipped: boolean; instances: any; timings: { full: number; cut: number } };
 }
 
-/** True when the extracted vertex normals are degenerate (the first verts are
- *  all the zero vector) — calculateNormals sometimes returns an all-zero normal
- *  buffer on welded/revolved meshes, which would leave smooth shading unlit. A
- *  valid mesh's leading normals are never all exactly zero. */
+/** True when the extracted per-vertex normals are DEGENERATE — Manifold's
+ *  `calculateNormals` returns zero-length normals on some welded/revolved meshes
+ *  (most acutely a perfectly-straight PRISM sweep, where the WHOLE side wall
+ *  comes back zero), which would leave smooth shading unlit / mis-shaded. A
+ *  HEALTHY mesh has NO exactly-zero vertex normals, so we scan the ENTIRE buffer
+ *  (not just the leading verts — the failure can spare the caps and zero only the
+ *  side wall, which the old 50-vert peek missed) and flag it when a non-trivial
+ *  fraction are zero-length. */
 function normalsDegenerate(nrm: Float32Array): boolean {
-  const n = Math.min(nrm.length, 150); // first ~50 verts
-  for (let i = 0; i < n; i++) if (nrm[i] !== 0) return false;
-  return true;
+  const nv = (nrm.length / 3) | 0;
+  if (nv === 0) return false;
+  let zero = 0;
+  for (let i = 0; i < nv; i++) {
+    if (nrm[i * 3] === 0 && nrm[i * 3 + 1] === 0 && nrm[i * 3 + 2] === 0) zero++;
+  }
+  return zero / nv > 0.01; // >1% zero-length → the calculateNormals failure mode
 }
 
 /** Degeneracy check for normals stored STRIDED in a vertProperties buffer
- *  (np floats/vert, normals at slots 3..5) — the color-by-source path. */
+ *  (np floats/vert, normals at slots 3..5) — the color-by-source path. Same
+ *  whole-buffer scan as normalsDegenerate. */
 function bakedNormalsDegenerate(vp: Float32Array, np: number, nv: number): boolean {
-  const lim = Math.min(nv, 50);
-  for (let i = 0; i < lim; i++) {
-    if (vp[i * np + 3] !== 0 || vp[i * np + 4] !== 0 || vp[i * np + 5] !== 0) return false;
+  if (nv === 0) return false;
+  let zero = 0;
+  for (let i = 0; i < nv; i++) {
+    if (vp[i * np + 3] === 0 && vp[i * np + 4] === 0 && vp[i * np + 5] === 0) zero++;
   }
-  return true;
+  return zero / nv > 0.01;
 }
 
-/** Smooth per-vertex normals from the INDEXED (position + triVerts) topology,
- *  so a non-indexed builder (color-by-source / cutVC) can scatter SMOOTH normals
- *  instead of flat ones. Winding is outward-consistent (Manifold canonicalises
- *  it) → these face outward. Returns one normal per indexed vertex (nv*3). */
-function indexedSmoothNormals(vp: Float32Array, np: number, nv: number, tri: Uint32Array): Float32Array {
-  const p = new Float32Array(nv * 3);
-  for (let i = 0; i < nv; i++) { p[i * 3] = vp[i * np]; p[i * 3 + 1] = vp[i * np + 1]; p[i * 3 + 2] = vp[i * np + 2]; }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(p, 3));
-  g.setIndex(new THREE.BufferAttribute(tri, 1));
-  g.computeVertexNormals();
-  return g.getAttribute('normal').array as Float32Array;
+/**
+ * CREASE-AWARE smooth normals from INDEXED (position + triVerts) topology.
+ *
+ * The robust fallback when `calculateNormals` degenerates (all-zero on a welded
+ * straight-prism sweep). Plain `computeVertexNormals` would either FLAT-shade a
+ * non-indexed buffer or smooth EVERYTHING (rounding genuine sharp edges — a
+ * cube's corners, a square-tube's edges). This instead computes ONE normal per
+ * triangle CORNER: for a corner at vertex v of face f, average the AREA-weighted
+ * normals of the faces incident to v whose unit normal is within `creaseDeg` of
+ * f's — so coplanar-ish faces (a cylinder's side band, revolve rings) shade
+ * smooth while faces meeting across a sharp edge (>creaseDeg dihedral: caps, box
+ * corners) keep DISTINCT normals → the edge stays hard.
+ *
+ * `pos` is the deduped vertex positions (nv*3); `tri` indexes into it. Returns
+ * per-corner normals laid out NON-INDEXED as nt*9 (3 verts × xyz per triangle),
+ * matching the outPos ordering the non-indexed builders already use.
+ */
+export function creaseAwareCornerNormals(pos: Float32Array, tri: Uint32Array, creaseDeg: number): Float32Array {
+  const nt = (tri.length / 3) | 0;
+  const nv = (pos.length / 3) | 0;
+  // Per-face area-weighted normal (raw cross, |·| = 2·area) + its unit direction.
+  const faceN = new Float32Array(nt * 3);
+  const faceU = new Float32Array(nt * 3);
+  for (let t = 0; t < nt; t++) {
+    const a = tri[t * 3], b = tri[t * 3 + 1], c = tri[t * 3 + 2];
+    const ax = pos[a * 3], ay = pos[a * 3 + 1], az = pos[a * 3 + 2];
+    const bx = pos[b * 3], by = pos[b * 3 + 1], bz = pos[b * 3 + 2];
+    const cx = pos[c * 3], cy = pos[c * 3 + 1], cz = pos[c * 3 + 2];
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+    const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    faceN[t * 3] = nx; faceN[t * 3 + 1] = ny; faceN[t * 3 + 2] = nz;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    faceU[t * 3] = nx / l; faceU[t * 3 + 1] = ny / l; faceU[t * 3 + 2] = nz / l;
+  }
+  // Vertex → incident triangles.
+  const inc: number[][] = new Array(nv);
+  for (let i = 0; i < nv; i++) inc[i] = [];
+  for (let t = 0; t < nt; t++) {
+    inc[tri[t * 3]].push(t); inc[tri[t * 3 + 1]].push(t); inc[tri[t * 3 + 2]].push(t);
+  }
+  const cosThresh = Math.cos((creaseDeg * Math.PI) / 180);
+  const out = new Float32Array(nt * 9);
+  for (let t = 0; t < nt; t++) {
+    const ux = faceU[t * 3], uy = faceU[t * 3 + 1], uz = faceU[t * 3 + 2];
+    for (let k = 0; k < 3; k++) {
+      const v = tri[t * 3 + k];
+      let sx = 0, sy = 0, sz = 0;
+      const list = inc[v];
+      for (let j = 0; j < list.length; j++) {
+        const t2 = list[j];
+        // Include t2 when its face is within the crease angle of THIS face
+        // (always include self). Area weight comes from faceN's magnitude.
+        const dot = ux * faceU[t2 * 3] + uy * faceU[t2 * 3 + 1] + uz * faceU[t2 * 3 + 2];
+        if (t2 === t || dot >= cosThresh) { sx += faceN[t2 * 3]; sy += faceN[t2 * 3 + 1]; sz += faceN[t2 * 3 + 2]; }
+      }
+      const l = Math.hypot(sx, sy, sz) || 1;
+      const o = t * 9 + k * 3;
+      out[o] = sx / l; out[o + 1] = sy / l; out[o + 2] = sz / l;
+    }
+  }
+  return out;
 }
 
 // Shading: use Manifold's calculateNormals(propIdx=0, minSharpAngle=60°)
@@ -439,7 +499,7 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   // Color-by-source path: go NON-INDEXED + per-triangle color from the
   // Manifold relation (parts can't share a vertex color where they meet).
   // calculateNormals preserves the relation (verified — spike TEST 4).
-  if (!override && parts?.active) return colorBySourceGeo(withNormals, parts, material, false, 0);
+  if (!override && parts?.active) return colorBySourceGeo(withNormals, parts, material, false, 0, crease);
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
@@ -457,16 +517,6 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
       nrm[i * 3 + 2] = vp[i * np + 5];
     }
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setIndex(new THREE.BufferAttribute(tri, 1));
-  // calculateNormals returns ALL-ZERO normals on some welded/revolved meshes
-  // (numProp becomes 6 but the normal slots stay zero) — that leaves smooth
-  // shading (flatShading:false) with nothing to shade. Detect the degenerate
-  // case + recompute valid smooth vertex normals from the indexed geometry
-  // (radial on a swept surface — exactly what we want for smooth mode).
-  if (nrm && !normalsDegenerate(nrm)) geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  else geo.computeVertexNormals();
   // When a per-part override OR a material is declared, bake a uniform
   // per-vertex `color` = outer so ComponentScene's full (non-cutaway) branch
   // can render with `vertexColors` and match the cutaway pane + GLB pane.
@@ -474,11 +524,41 @@ function manifoldToGeo(manifold: any, material?: RenderMaterial, parts?: PartCol
   // legacy/no-colour path so the existing hardcoded `color="#cc2222"` render
   // is byte-identical.
   const fullColorHex = override ? override.outer : material ? material.outer.color : null;
-  if (fullColorHex) {
-    const [r, g, b] = hexToRgb(fullColorHex);
-    const col = new Float32Array(nv * 3);
-    for (let i = 0; i < nv; i++) { col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = b; }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const fullRgb = fullColorHex ? hexToRgb(fullColorHex) : null;
+  const geo = new THREE.BufferGeometry();
+  // calculateNormals returns ALL-ZERO normals on some welded/revolved meshes
+  // (numProp becomes 6 but the normal slots stay zero) — most acutely a
+  // perfectly-straight PRISM sweep, whose entire side wall comes back zero and
+  // would flat-shade under smooth mode. When the baked normals are VALID keep
+  // the byte-identical INDEXED path; when DEGENERATE fall back to CREASE-AWARE
+  // smooth normals (a non-indexed corner buffer) so a straight sweep reads
+  // smooth while genuine sharp edges — caps, box corners — stay hard.
+  if (nrm && !normalsDegenerate(nrm)) {
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(new THREE.BufferAttribute(tri, 1));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    if (fullRgb) {
+      const [r, g, b] = fullRgb;
+      const col = new Float32Array(nv * 3);
+      for (let i = 0; i < nv; i++) { col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = b; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+  } else {
+    const nt = (tri.length / 3) | 0;
+    const outNrm = creaseAwareCornerNormals(pos, tri, crease);
+    const outPos = new Float32Array(nt * 9);
+    const outCol = fullRgb ? new Float32Array(nt * 9) : null;
+    for (let i = 0; i < nt; i++) {
+      for (let v = 0; v < 3; v++) {
+        const vi = tri[i * 3 + v];
+        const o = i * 9 + v * 3;
+        outPos[o] = pos[vi * 3]; outPos[o + 1] = pos[vi * 3 + 1]; outPos[o + 2] = pos[vi * 3 + 2];
+        if (outCol && fullRgb) { outCol[o] = fullRgb[0]; outCol[o + 1] = fullRgb[1]; outCol[o + 2] = fullRgb[2]; }
+      }
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
+    if (outCol) geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
   }
   return geo;
 }
@@ -493,7 +573,7 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
   // Color-by-source path: per-triangle color from the relation. SECTION_ID
   // (the cut-box) → cross-section color; subtractive parts already remapped
   // to the body color upstream; unknown/anonymous tools → body.
-  if (!override && parts?.active) return colorBySourceGeo(withNormals, parts, material, true, maxOD);
+  if (!override && parts?.active) return colorBySourceGeo(withNormals, parts, material, true, maxOD, crease);
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const tri = mesh.triVerts as Uint32Array;
@@ -577,9 +657,13 @@ function manifoldToCutVC(manifold: any, maxOD: number, material?: RenderMaterial
     }
     geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   } else {
-    // Degenerate/missing baked normals → recompute (winding is outward-consistent
-    // — Manifold canonicalises it — so these face the right way).
-    geo.computeVertexNormals();
+    // Degenerate/missing baked normals (the straight-prism sweep case) → recompute
+    // CREASE-AWARE smooth normals from the indexed topology instead of a flat
+    // per-triangle `computeVertexNormals` (which would face the cross-section
+    // flat). Winding is outward-consistent (Manifold canonicalises it) → these
+    // face the right way; sharp edges (>crease) stay hard.
+    const posF32 = new Float32Array(pos);
+    geo.setAttribute('normal', new THREE.BufferAttribute(creaseAwareCornerNormals(posF32, tri, crease), 3));
   }
   return geo;
 }
@@ -687,6 +771,7 @@ function colorBySourceGeo(
   _material: RenderMaterial | undefined,
   _isCut: boolean,
   _maxOD: number,
+  crease: number = DEFAULT_CREASE_ANGLE,
 ): THREE.BufferGeometry {
   const mesh = withNormals.getMesh();
   const vp = mesh.vertProperties as Float32Array;
@@ -704,13 +789,19 @@ function colorBySourceGeo(
 
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
-  // Baked normals come back ALL-ZERO on welded/revolved meshes — recompute smooth
-  // normals from the INDEXED topology (a non-indexed computeVertexNormals would be
-  // FLAT). Use them when the baked normals are missing or degenerate; either way
-  // we always emit a normal buffer (smooth shading needs per-vertex normals).
+  // Baked normals come back ALL-ZERO on welded/revolved meshes — recompute
+  // CREASE-AWARE smooth normals from the INDEXED topology (a non-indexed
+  // computeVertexNormals would be FLAT; a fully-smooth one would round genuine
+  // sharp edges). `creaseNrm` is per-CORNER (nt*9, tri-corner order), so it
+  // indexes with the same `idx + v*3` as outPos. Used when baked normals are
+  // missing/degenerate; either way we always emit a per-vertex normal buffer.
   const nv = vp.length / np;
-  const smoothNrm = (!hasNrm || bakedNormalsDegenerate(vp, np, nv))
-    ? indexedSmoothNormals(vp, np, nv, tri) : null;
+  let creaseNrm: Float32Array | null = null;
+  if (!hasNrm || bakedNormalsDegenerate(vp, np, nv)) {
+    const p = new Float32Array(nv * 3);
+    for (let i = 0; i < nv; i++) { p[i * 3] = vp[i * np]; p[i * 3 + 1] = vp[i * np + 1]; p[i * 3 + 2] = vp[i * np + 2]; }
+    creaseNrm = creaseAwareCornerNormals(p, tri, crease);
+  }
   const outNrm = new Float32Array(nt * 9);
   for (let i = 0; i < nt; i++) {
     const id = ids[i];
@@ -727,10 +818,10 @@ function colorBySourceGeo(
       outCol[idx + v * 3]     = rgb[0];
       outCol[idx + v * 3 + 1] = rgb[1];
       outCol[idx + v * 3 + 2] = rgb[2];
-      if (smoothNrm) {
-        outNrm[idx + v * 3]     = smoothNrm[vi * 3];
-        outNrm[idx + v * 3 + 1] = smoothNrm[vi * 3 + 1];
-        outNrm[idx + v * 3 + 2] = smoothNrm[vi * 3 + 2];
+      if (creaseNrm) {
+        outNrm[idx + v * 3]     = creaseNrm[idx + v * 3];
+        outNrm[idx + v * 3 + 1] = creaseNrm[idx + v * 3 + 1];
+        outNrm[idx + v * 3 + 2] = creaseNrm[idx + v * 3 + 2];
       } else {
         outNrm[idx + v * 3]     = vp[vi * np + 3];
         outNrm[idx + v * 3 + 1] = vp[vi * np + 4];
