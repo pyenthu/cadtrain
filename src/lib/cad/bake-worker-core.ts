@@ -32,7 +32,7 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
  *  an upgraded WASM build never serves a mesh baked by the old kernel (plan §8
  *  "bust the IndexedDB cache on kernel-version change"). */
-export const KERNEL_VERSION = 'manifold-3d@3.4.1+nrm4'; // +nrm4: ALWAYS crease-aware render normals under vert ceiling (fixes per-facet/flat straight-sweep normals, not just all-zero) — busts stale flat-normal sweep caches
+export const KERNEL_VERSION = 'manifold-3d@3.4.1+cap1'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling
 
 /** Render options — the subset of /api/primitives/preview's request body that
  *  affects the baked geometry. All optional; absent → the byte-identical default
