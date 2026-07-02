@@ -224,8 +224,13 @@
   });
 </script>
 
-<T.PerspectiveCamera makeDefault position={[8, 6, 10]} fov={45}>
-  <OrbitControls bind:ref={orbit} enableDamping enabled={orbitEnabled} target={heldCenter} />
+<!-- Z-DOWN to match the main bake canvas (up = [0,0,-1]): X → right, Y → out of
+     the screen, Z → down. Camera mostly on +Y (y toward viewer) with a slight
+     +X/-Z tilt for depth. minPolarAngle 0 / maxPolarAngle π gives full up/down
+     (around-X) rotation freedom. -->
+<T.PerspectiveCamera makeDefault position={[2, 11, -3]} fov={45} up={[0, 0, -1]}>
+  <OrbitControls bind:ref={orbit} enableDamping enabled={orbitEnabled} target={heldCenter}
+    minPolarAngle={0} maxPolarAngle={Math.PI} />
 </T.PerspectiveCamera>
 
 <T.AmbientLight intensity={0.8} />
