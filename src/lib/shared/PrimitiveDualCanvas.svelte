@@ -16,8 +16,12 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
+    /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
+     *  control points, drawn INSIDE the live-mesh group so they align with the
+     *  baked geometry. VIEW-ONLY; passed straight through to PrimitiveDualScene. */
+    overlays?: import('$lib/shared/PrimitiveDualScene.svelte').SplineOverlay[];
     /** Saved per-part editor VIEW scale (VIEW-ONLY) for the PRIMARY open part.
      *  When set, opening this part APPLIES the saved z/x exaggeration to `scene`
      *  and disables auto-normalize (scene.scaleAuto = false); when both are
@@ -637,7 +641,7 @@
       : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

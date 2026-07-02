@@ -1296,6 +1296,27 @@ export function setSplineClosed(graph: Graph, id: NodeId, closed: boolean): Grap
   return finalize({ ...graph, nodes: { ...graph.nodes, [id]: { ...node, closed: closed === true } } });
 }
 
+/** Toggle the PLOT-in-the-main-3D-bake diagnostic overlay for a spline (TODO
+ *  #24). VIEW-ONLY: `plot=true` draws this spline's curve + control points as a
+ *  coloured overlay in the main bake scene; `plot=false` deletes the field
+ *  (kept sparse → absent ⇒ no overlay, byte-identical emit). Never affects the
+ *  emitted body / bake. `color` (optional `#rrggbb`) pins an explicit overlay
+ *  colour; passing undefined leaves auto-assignment (per-plotted-spline
+ *  distinct colours) to the editor. */
+export function setSplinePlot(graph: Graph, id: NodeId, plot: boolean, color?: string): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'spline') return graph;
+  const next = { ...node } as SplineNode;
+  if (plot === true) {
+    next.plot = true;
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) next.plotColor = color;
+  } else {
+    delete next.plot;
+    // keep plotColor so re-enabling restores the chosen colour
+  }
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: next } });
+}
+
 /** Immutable update of one def by id (no-op if the id is unknown). */
 function mapDef(graph: Graph, defId: NodeId, fn: (d: ExprDef) => ExprDef): Graph {
   const defs = graph.exprDefs ?? [];

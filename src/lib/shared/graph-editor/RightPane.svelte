@@ -35,6 +35,7 @@
     restartBusy = false,
     restartStatus = null,
     mdAiBusy = false,
+    splineOverlays = undefined,    // TODO #24 — plotted-spline diagnostic overlays for the 3D bake
     /* ── BINDABLE (shared two-way) ── */
     rightTab = $bindable('bake'),  // pane owns persistence; parent sets 'source' on legacy load
     drawingMd = $bindable(''),     // parent state (feeds emitGraph) — bound by the MD textarea
@@ -60,6 +61,8 @@
     restartBusy?: boolean;
     restartStatus?: string | null;
     mdAiBusy?: boolean;
+    /** TODO #24 — plotted-spline diagnostic overlays; forwarded to the 3D bake. */
+    splineOverlays?: import('$lib/shared/PrimitiveDualScene.svelte').SplineOverlay[];
     rightTab?: RightTab;
     drawingMd?: string;
     onRebuild?: () => void;
@@ -314,6 +317,7 @@
           colorOuter={graph.colorOuter} colorInner={graph.colorInner}
           viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
           bakeGlb={false}
+          overlays={splineOverlays}
           onRebuild={onRebuild}
           showControls={true} showLabels={false}/>
         {#if bake === 'loading'}<div class="ge-baking-badge">baking…</div>{/if}

@@ -217,6 +217,11 @@ export function hydrateGraph(serialised: any): Graph {
     if (n.pointsExpr != null && !(n.pointsExpr?.kind === 'expr' || n.pointsExpr?.kind === 'param')) {
       delete n.pointsExpr;
     }
+    // `plot` (TODO #24) — VIEW-ONLY diagnostic-overlay flag. Kept SPARSE: only a
+    // strict-true value survives (absent ⇒ no overlay, byte-identical). Any
+    // well-formed `#rrggbb` plotColor is kept; anything else is dropped.
+    if (n.plot === true) n.plot = true; else delete n.plot;
+    if (!(typeof n.plotColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(n.plotColor))) delete n.plotColor;
     migratedNodes[id] = n;
   }
 

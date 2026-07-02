@@ -1,4 +1,15 @@
 <script module lang="ts">
+  /** One plotted spline's diagnostic overlay (TODO #24). `curve` = the dense
+   *  resampled polyline (from resampleSpline — the SAME curve the bake uses),
+   *  `points` = the control points (spheres). VIEW-ONLY. */
+  export type SplineOverlay = {
+    id: string;
+    color: string;
+    curve: [number, number, number][];
+    points: [number, number, number][];
+    closed?: boolean;
+  };
+
   // Module-scoped guard so RectAreaLightUniformsLib.init() (which rebuilds the
   // LTC area-light lookup textures) runs ONCE across every mounted instance of
   // this scene, not once per /primitives tab.
@@ -36,6 +47,7 @@
     showCutaway = false,
     offset = 4.5,
     stackAxis = 'x',
+    overlays = [],
     smoothShade = false,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
@@ -50,6 +62,11 @@
      *  (Z / drilling) axis, separated by the part's own extent plus a small
      *  gap, with the camera auto-fit to the combined bounding box. */
     stackAxis?: 'x' | 'z';
+    /** Per-spline DIAGNOSTIC overlays (TODO #24) — each plotted spline's resolved
+     *  curve + control points, drawn as a coloured tube + spheres INSIDE the
+     *  live-mesh group so they align with (and scale with) the baked geometry.
+     *  VIEW-ONLY; empty ⇒ nothing drawn, zero cost. */
+    overlays?: SplineOverlay[];
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -298,6 +315,57 @@
       cx: 0, // x centred at scene origin
       cy: (miny + maxy) / 2,
       cz: (minz + maxz) / 2,
+    };
+  });
+
+  // --- spline diagnostic overlays (TODO #24) ---------------------------------
+  // Build ONE THREE.Group per plotted spline (a coloured tube along its resolved
+  // curve + a sphere at each control point). They render INSIDE the live-mesh
+  // group (same view-scale + meshPos transform) so they align with + scale with
+  // the baked geometry. Radius sizes from the part bbox so the tubes read at any
+  // scale; a fixed fallback before geometry loads. Empty overlays ⇒ no objects.
+  let overlayObjs = $derived.by<THREE.Object3D[]>(() => {
+    if (!overlays || overlays.length === 0) return [];
+    const maxDim = bbox ? Math.max(bbox.ex, bbox.ey, bbox.ez) : 8;
+    const tubeR = Math.max(0.03, maxDim * 0.008);
+    const sphR = tubeR * 3;
+    const out: THREE.Object3D[] = [];
+    for (const ov of overlays) {
+      const grp = new THREE.Group();
+      const col = new THREE.Color(ov.color || '#7c3aed');
+      const curve = (ov.curve ?? []).filter((p) => Array.isArray(p) && p.length >= 3);
+      if (curve.length >= 2) {
+        const cps = curve.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+        // Dense points already trace the true (resampleSpline) curve; a
+        // CatmullRomCurve3 through them gives a smooth tube to sweep.
+        const path = new THREE.CatmullRomCurve3(cps, !!ov.closed, 'centripetal');
+        const tg = new THREE.TubeGeometry(path, Math.max(24, curve.length), tubeR, 8, !!ov.closed);
+        const tm = new THREE.MeshBasicMaterial({ color: col });
+        grp.add(new THREE.Mesh(tg, tm));
+      }
+      const pts = (ov.points ?? []).filter((p) => Array.isArray(p) && p.length >= 3);
+      if (pts.length > 0) {
+        // Share ONE sphere geometry + material across this overlay's handles.
+        const sg = new THREE.SphereGeometry(sphR, 12, 12);
+        const sm = new THREE.MeshBasicMaterial({ color: col });
+        for (const p of pts) {
+          const m = new THREE.Mesh(sg, sm);
+          m.position.set(p[0], p[1], p[2]);
+          grp.add(m);
+        }
+      }
+      out.push(grp);
+    }
+    return out;
+  });
+  // Free the overlay GPU resources when the set is rebuilt / the scene unmounts.
+  $effect(() => {
+    const objs = overlayObjs;
+    invalidate(); // request a frame so a toggle shows without an orbit nudge
+    return () => {
+      for (const g of objs) {
+        g.traverse((o: any) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+      }
     };
   });
 
@@ -612,6 +680,11 @@
   <T.Mesh position={[AX_LEN/2,0,0]} rotation={[0,0,-Math.PI/2]}><T.CylinderGeometry args={[AX_R,AX_R,AX_LEN,12]} /><T.MeshBasicMaterial color="#ff3030" /></T.Mesh>
   <T.Mesh position={[0,AX_LEN/2,0]}><T.CylinderGeometry args={[AX_R,AX_R,AX_LEN,12]} /><T.MeshBasicMaterial color="#30c030" /></T.Mesh>
   <T.Mesh position={[0,0,AX_LEN/2]} rotation={[Math.PI/2,0,0]}><T.CylinderGeometry args={[AX_R,AX_R,AX_LEN,12]} /><T.MeshBasicMaterial color="#3060ff" /></T.Mesh>
+  <!-- Spline diagnostic overlays (TODO #24) — sit in the LIVE-mesh group so they
+       align with (+ scale with) the baked geometry. VIEW-ONLY. -->
+  {#each overlayObjs as ov (ov.uuid)}
+    <T is={ov} />
+  {/each}
 </T.Group>
 
 <!-- BOTTOM — baked GLB, stacked below the mesh on the part (Z) axis. The view

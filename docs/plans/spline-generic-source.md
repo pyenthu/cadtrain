@@ -63,3 +63,11 @@ make it a generic, simpler source of truth:
   imperative loop builder for the point formula).
 - Pairs with #23 (generalize r_sweep to a varying section) — a spline *section* + a spline
   *path* + varying section = fully spline-driven swept solids.
+
+## Related TODO
+- **#24 — spline "plot in the main 3D bake" overlay (SHIPPED):** a per-spline `plot` flag
+  (📈 toggle in the SplineEditorPopup + on the node card) draws each plotted spline's resolved
+  curve + control points as a distinct-coloured overlay INSIDE the main bake scene (same
+  scaled/oriented group as the mesh), so multiple splines — e.g. an r_sweep **path** + **section**
+  — read relative to each other AND the swept geometry. VIEW-ONLY (no emit/bake change). Reuses
+  `resolveWiredSplinePoints` (#26) + `resampleSpline`. Plan: `docs/plans/spline-plot-overlay.md`.
