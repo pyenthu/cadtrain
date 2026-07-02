@@ -2,11 +2,77 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
+// TrueForm's emscripten glue spawns its pthread worker via
+//   new Worker(new URL("trueform_wasm.js", import.meta.url), { type: "module" })
+// Vite's `worker-import-meta-url` plugin statically matches that literal and
+// tries to bundle the emscripten glue AS a worker entry — which parse-fails the
+// production build. Replacing the string literal with `String("…")` keeps the
+// same runtime URL while hiding it from the matcher; the "*.wasm" literal is
+// left intact so Vite still emits the wasm asset. enforce:'pre' so this runs
+// before worker-import-meta-url. This makes the BUILD pass — it does NOT change
+// TrueForm's runtime behaviour.
+//
+// ⚠ RUNTIME BLOCKER (verified 2026-07-02): trueform@0.9.8 is compiled WITH
+// pthreads. At tf.init() it pre-creates a worker pool sized to
+// navigator.hardwareConcurrency (no InitOption to disable) and transfers the
+// WASM memory (a SharedArrayBuffer) to each worker. SharedArrayBuffer transfer
+// REQUIRES a cross-origin-isolated context, so tf.init() throws
+//   DataCloneError: SharedArrayBuffer transfer requires self.crossOriginIsolated
+// unless the document is served with COOP:same-origin + COEP:require-corp (or
+// credentialless). Running on the main thread does NOT avoid this. Confirmed:
+// adding those two headers makes the TF-tab box render (12 tris / 8 verts). To
+// ship the TF tab, enable cross-origin isolation app-wide (dev: server.headers
+// via a configureServer middleware — plain server.headers don't reach SvelteKit
+// SSR responses; prod: set them in hooks.server.ts / adapter) — an app-wide
+// decision (affects all cross-origin subresources).
+function trueformWorkerFix() {
+  return {
+    name: 'trueform-worker-fix',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.includes('@polydera/trueform')) return null;
+      if (!code.includes('new URL("trueform_wasm.js",import.meta.url)')) return null;
+      const out = code.replaceAll(
+        'new URL("trueform_wasm.js",import.meta.url)',
+        'new URL(String("trueform_wasm.js"),import.meta.url)',
+      );
+      return { code: out, map: null };
+    },
+  };
+}
+
+// Cross-origin isolation for the DEV + PREVIEW servers. trueform@0.9.8 (pthreads)
+// transfers a SharedArrayBuffer at tf.init(), which requires the document to be
+// cross-origin-isolated (self.crossOriginIsolated === true). That needs the two
+// headers below on the top-level document response.
+//
+// ⚠ Plain `server.headers` in the vite config do NOT reach SvelteKit's SSR page
+// responses (the sveltekit() middleware writes those itself). Setting them via a
+// `configureServer`/`configurePreviewServer` middleware that runs BEFORE the
+// sveltekit handler DOES land them on every response (headers are set on `res`
+// before the body is written). Prod parity lives in src/hooks.server.ts.
+function crossOriginIsolation() {
+  const setHeaders = (_req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    next();
+  };
+  return {
+    name: 'cross-origin-isolation',
+    configureServer(server) {
+      server.middlewares.use(setHeaders);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(setHeaders);
+    },
+  };
+}
+
 export default defineConfig({
   // Tailwind v4 Vite plugin — replaces the v3 postcss.config.cjs setup.
   // Required by the Flowbite-Svelte quickstart so `@import "tailwindcss"`
   // + `@source "..."` directives in src/app.css get processed.
-  plugins: [tailwindcss(), sveltekit()],
+  plugins: [trueformWorkerFix(), crossOriginIsolation(), tailwindcss(), sveltekit()],
   server: {
     port: 3333,
     // Suppress the full-page error overlay. Parse / build errors still
@@ -41,7 +107,13 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['manifold-3d'],
+    // manifold-3d + @polydera/trueform ship emscripten WASM glue that resolves
+    // its .wasm sibling via `new URL("*.wasm", import.meta.url)`. If Vite
+    // pre-bundles them, import.meta.url points at .vite/deps (no sibling .wasm)
+    // and the wasm 404s. Excluding them serves the raw dep from node_modules so
+    // the URL resolves next to the real file. (TrueForm = the client-side TF
+    // engine tab — lazy-imported only when that tab first opens.)
+    exclude: ['manifold-3d', '@polydera/trueform'],
   },
   ssr: {
     // Bundle svelte/compiler into the server output (matches SVTC pattern).
