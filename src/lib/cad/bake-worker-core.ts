@@ -32,7 +32,7 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
  *  an upgraded WASM build never serves a mesh baked by the old kernel (plan §8
  *  "bust the IndexedDB cache on kernel-version change"). */
-export const KERNEL_VERSION = 'manifold-3d@3.4.1+nrm3'; // +nrm3: crease-aware degenerate-normal recompute (2026-07) — busts stale flat/zero-normal sweep caches
+export const KERNEL_VERSION = 'manifold-3d@3.4.1+nrm4'; // +nrm4: ALWAYS crease-aware render normals under vert ceiling (fixes per-facet/flat straight-sweep normals, not just all-zero) — busts stale flat-normal sweep caches
 
 /** Render options — the subset of /api/primitives/preview's request body that
  *  affects the baked geometry. All optional; absent → the byte-identical default
