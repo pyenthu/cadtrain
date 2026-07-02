@@ -319,6 +319,7 @@
           bakeGlb={false}
           overlays={splineOverlays}
           onRebuild={onRebuild}
+          autoScaleOwner={rightTab === 'bake'}
           showControls={true} showLabels={false}/>
         {#if bake === 'loading'}<div class="ge-baking-badge">baking…</div>{/if}
         <!-- Cache status row + Rebuild button (Phase 1.5) -->
@@ -447,7 +448,7 @@
             colorOuter={graph.colorOuter} colorInner={graph.colorInner}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             bakeMesh={false}
-            autoScaleOwner={false}
+            autoScaleOwner={rightTab === 'glb'}
             showControls={true} showLabels={false}/>
         {:else}
           <div class="ge-empty">No geometry yet — bake the part first (open the 3D bake tab).</div>
@@ -469,7 +470,7 @@
             brepParams={brepParamValues}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (brepMeta = m)}
-            autoScaleOwner={false}
+            autoScaleOwner={rightTab === 'brep'}
             showControls={true} showLabels={false}/>
           <!-- Cache/fresh badge row — mirrors the 3D-bake .ge-bake-meta. -->
           <div class="ge-bake-meta">
