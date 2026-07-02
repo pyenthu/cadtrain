@@ -66,7 +66,7 @@
  * sweepAlongPath by name (primitive-sandbox.ts), exactly like r_surface's
  * gridPatch/weldAndBuild.
  */
-import { sweepAlongPath } from '$lib/cad/manifold-mesh';
+import { sweepAlongPath, type Section2D } from '$lib/cad/manifold-mesh';
 
 export const meta = {
   id: 'r_sweep',
@@ -97,13 +97,15 @@ export const meta = {
 
 export function r_sweep(
   path: [number, number, number][],
-  section: [number, number][],
+  section: Section2D,
   closedPath: boolean,
   caps: boolean,
 ): any {
-  // The section is always a closed loop (a tube wall); the two ends cap to a
-  // watertight solid unless the path itself closes. weldAndBuild (inside
-  // sweepAlongPath → loftStations) position-welds the section seam and
+  // section is EITHER a single closed loop (a solid tube wall) OR an ANNULAR
+  // region `{ outer, holes }` / CrossSection (a hollow tube — swept as ONE
+  // welded mesh with a holes-aware cap, no 3D boolean; see sweepAnnular). The
+  // two ends cap to a watertight solid unless the path itself closes.
+  // weldAndBuild (inside sweepAlongPath) position-welds the seam(s) and
   // auto-corrects the global volume sign, so the section winding is free.
   return sweepAlongPath(path, section, {
     closedPath: closedPath === true,
