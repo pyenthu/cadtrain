@@ -447,6 +447,7 @@
             colorOuter={graph.colorOuter} colorInner={graph.colorInner}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             bakeMesh={false}
+            autoScaleOwner={false}
             showControls={true} showLabels={false}/>
         {:else}
           <div class="ge-empty">No geometry yet — bake the part first (open the 3D bake tab).</div>
@@ -468,6 +469,7 @@
             brepParams={brepParamValues}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (brepMeta = m)}
+            autoScaleOwner={false}
             showControls={true} showLabels={false}/>
           <!-- Cache/fresh badge row — mirrors the 3D-bake .ge-bake-meta. -->
           <div class="ge-bake-meta">

@@ -43,6 +43,12 @@
   let {
     geo = null,
     geoVersion = 0,
+    // Only the PRIMARY canvas (the main 3D-bake pane) may auto-normalize the
+    // SHARED scene.xScale/zScale. Secondary canvases (GLB / BREP), which mount
+    // ALONGSIDE the 3D-bake canvas, must pass false — otherwise two scenes with
+    // different bboxes both write the shared scale to different targets and
+    // ping-pong → effect_update_depth_exceeded (frozen renderer). 2026-07-02.
+    autoScaleOwner = true,
     glbUrl = null,
     showCutaway = false,
     offset = 4.5,
@@ -419,7 +425,7 @@
   // only (NOT xScale/zScale), so writing the scales can't loop. A manual slider
   // drag clears scaleAuto (PrimitiveDualCanvas), so the user's value then sticks.
   $effect(() => {
-    if (!scene.scaleAuto || !bbox) return;
+    if (!autoScaleOwner || !scene.scaleAuto || !bbox) return;
     const { x, z } = autoScale(bbox.ex, bbox.ey, bbox.ez);
     if (scene.xScale !== x) scene.xScale = x;
     if (scene.zScale !== z) scene.zScale = z;
