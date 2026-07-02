@@ -133,6 +133,8 @@
   // OCCT-buildable solid come back supported:false → the reason shows in-chrome.
   // brepMeta is fed by the canvas's onBakeMeta and drives the cached/fresh badge.
   let brepMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
+  // TF tab — client-side TrueForm bake meta (drives the fresh/error badge).
+  let tfMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -493,11 +495,35 @@
       {/if}
     </div>
     <!-- TF tab — TrueForm (Polydera) client-side exact-mesh kernel. Runs the
-         WASM boolean/generator kernel on the MAIN THREAD (no worker). Commit 1
-         is a placeholder; the canvas (backend="tf") is wired in commit 3. -->
+         WASM boolean/generator kernel on the MAIN THREAD (no worker) in the
+         SHARED PrimitiveDualCanvas chrome (backend="tf"). The ~31MB WASM is
+         lazy-loaded only when this tab first opens. Commit 3 renders a
+         from-scratch TrueForm box (tfDemoBox). -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'tf'}>
       {#if rightTab === 'tf'}
-        <div class="ge-empty">tf engine — WIP (main-thread TrueForm; box render coming)</div>
+        {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
+          <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
+            args={bake.args ?? paramDefaults}
+            source={bake.source}
+            backend="tf"
+            brepSource={bake.source}
+            brepParams={brepParamValues}
+            viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
+            onBakeMeta={(m) => (tfMeta = m)}
+            autoScaleOwner={active && rightTab === 'tf'}
+            showControls={true} showLabels={false}/>
+          <!-- Cache/fresh badge row — mirrors the BREP .ge-bake-meta. -->
+          <div class="ge-bake-meta">
+            {#if tfMeta && tfMeta.supported === false}
+              <span class="ge-cache-badge skipped" title="TrueForm could not build this part.">{tfMeta.reason ?? 'no TF path for this part'}</span>
+            {:else if tfMeta}
+              <span class="ge-cache-badge fresh" title="Built client-side by the TrueForm WASM kernel (main thread)">fresh · {Math.round(tfMeta.ms)} ms TF</span>
+            {/if}
+            <span class="ge-bake-meta-spacer"></span>
+          </div>
+        {:else}
+          <div class="ge-empty">No source yet — bake the part first.</div>
+        {/if}
       {/if}
     </div>
   </div>

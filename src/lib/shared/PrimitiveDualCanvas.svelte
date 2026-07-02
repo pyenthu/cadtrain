@@ -33,8 +33,10 @@
     /** Geometry backend. 'manifold' (default) → /api/primitives/preview (the 3D +
      *  GLB tabs, byte-identical). 'brep' → /api/brep/preview (server-side OCCT
      *  true-curve mesh); the GLB half, segment dial + ⬇GLB are suppressed and the
-     *  segment dial is relabelled to the OCCT linear-deflection `tol`. */
-    backend?: 'manifold' | 'brep';
+     *  segment dial is relabelled to the OCCT linear-deflection `tol`. 'tf' →
+     *  the client-side, MAIN-THREAD TrueForm kernel ($lib/shared/trueform-client);
+     *  like BREP it suppresses the GLB half + routes to its own bake path. */
+    backend?: 'manifold' | 'brep' | 'tf';
     /** BREP mode: the emitted part source POSTed to /api/brep/preview. */
     brepSource?: string;
     /** BREP mode: param name → current value (graph.params order ↔ bake.args). */
@@ -98,7 +100,13 @@
   // BREP backend (server-side OCCT). When on, the GLB half is suppressed and the
   // segment dial becomes the OCCT linear-deflection `tol` dial.
   let isBrep = $derived(backend === 'brep');
-  let effBakeGlb = $derived(isBrep ? false : bakeGlb);
+  // TrueForm backend (client-side, main-thread WASM). Like BREP it suppresses
+  // the GLB half + routes to its own bake path (rebuildTf); unlike BREP it runs
+  // entirely in the browser via $lib/shared/trueform-client.
+  let isTf = $derived(backend === 'tf');
+  let effBakeGlb = $derived((isBrep || isTf) ? false : bakeGlb);
+  // TrueForm bake time (ms) for the current mesh — appended to the stats line.
+  let tfMs = $state<number | null>(null);
   // In-canvas adjustable OCCT tolerance (the relabelled "tol" dial). undefined →
   // the prop default (tolerance). Drives the BREP fetch + fetch-cache key.
   let tolOverride = $state<number | undefined>(undefined);
@@ -427,11 +435,42 @@
       emit(data, false);
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason: String(e?.message ?? e) }); } }
   }
+  // TrueForm backend: run the client-side, MAIN-THREAD TrueForm kernel and build
+  // a THREE.BufferGeometry from the result. Commit 3 renders a from-scratch
+  // TrueForm box (proves the kernel loads + generates in-browser); a later commit
+  // will run the part body through tf booleans. Errors surface the real WASM
+  // message in the canvas + the parent badge (supported:false).
+  let tfAc: AbortController | null = null;
+  async function rebuildTf(_bust = false) {
+    meshStatus = 'building'; brepReason = null; err = null;
+    tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
+    try {
+      const [{ tfDemoBox }, { tfMeshToGeo }] = await Promise.all([
+        import('$lib/shared/trueform-client'),
+        import('$lib/shared/trueform-adapter'),
+      ]);
+      if (ac.signal.aborted) return;
+      const t0 = performance.now();
+      const data = await tfDemoBox();
+      if (ac.signal.aborted) return;
+      const g = tfMeshToGeo(data);
+      geo = { full: g }; geoVersion++;
+      tfMs = performance.now() - t0; meshStatus = 'ok'; err = null;
+      const tris = data.faces.length / 3, verts = data.points.length / 3;
+      onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || ac.signal.aborted) return;
+      err = 'TF: ' + (e?.message ?? e); meshStatus = 'error'; brepReason = 'TrueForm: ' + (e?.message ?? e);
+      onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason: String(e?.message ?? e) });
+    }
+  }
+
   // Mesh FIRST, then GLB — so the fast mesh (~2 s) renders before the slow GLB
   // bake (~20 s) hogs Node's single thread. Each is gated by its prop so the
   // mesh-only 3D tab never triggers the GLB bake, and the lazy GLB tab never
-  // re-bakes the mesh. BREP routes to its own server-side OCCT fetch.
+  // re-bakes the mesh. BREP/TF route to their own bake paths.
   async function rebuild(bust = false, segArg?: number) {
+    if (isTf) { await rebuildTf(bust); return; }
     if (isBrep) { await rebuildBrep(bust); return; }
     if (bakeMesh) await rebuildMesh(bust, segArg);
     if (effBakeGlb) rebuildGlb(bust);
@@ -447,7 +486,7 @@
     if (draftLeadTimer) { clearTimeout(draftLeadTimer); draftLeadTimer = null; }
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     const full = effSegments ?? 256;
-    if (isBrep || !bakeMesh || full <= DRAFT_SEG) {
+    if (isBrep || isTf || !bakeMesh || full <= DRAFT_SEG) {
       // Single full bake (no draft phase) — still lead-debounced so a burst
       // collapses to one bake instead of one per key.
       draftLeadTimer = setTimeout(() => { draftLeadTimer = null; rebuild(bust); }, DRAFT_LEAD_MS);
@@ -474,7 +513,7 @@
     // unmounting inactive tabs' canvases is freeing the browser's ~16
     // context budget. dispose() drops GPU resources; forceContextLoss()
     // tells the browser the context is reclaimable immediately.
-    meshAc?.abort(); glbAc?.abort(); brepAc?.abort();
+    meshAc?.abort(); glbAc?.abort(); brepAc?.abort(); tfAc?.abort();
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     if (draftLeadTimer) { clearTimeout(draftLeadTimer); draftLeadTimer = null; }
     if (glbBlobUrl) URL.revokeObjectURL(glbBlobUrl);
@@ -500,7 +539,9 @@
     // body is unaffected so it cache-hits (the GLB pane warps via its own shader).
     // BREP keys on its own request shape (source/params/tolerance/cut); the
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
-    const key = isBrep
+    const key = isTf
+      ? JSON.stringify({ b: 'tf', src: brepSource ?? source ?? '', p: brepParams ?? {}, cut: scene.showCutaway })
+      : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
     if (!Scene || key === lastRebuildKey) return;
@@ -509,7 +550,7 @@
   });
   let lastGlbCut: boolean | null = null;
   $effect(() => {
-    if (isBrep) return; // no GLB half in BREP mode
+    if (isBrep || isTf) return; // no GLB half in BREP/TF mode
     if (!Scene || glbCut === lastGlbCut) return;
     const first = lastGlbCut === null; // initial run is covered by rebuild()
     lastGlbCut = glbCut;
@@ -715,15 +756,16 @@
   {:else}
     <div class="pd-loading">loading…</div>
   {/if}
-  {#if glbBlobUrl && !isBrep}<button class="pd-dl" type="button" title="Download {id}.glb" onclick={downloadGlb}>⬇ GLB</button>{/if}
+  {#if glbBlobUrl && !isBrep && !isTf}<button class="pd-dl" type="button" title="Download {id}.glb" onclick={downloadGlb}>⬇ GLB</button>{/if}
   {#if err}<div class="pd-err">{err}</div>{/if}
-  <!-- BREP: no OCCT-buildable solid for this part (revolve / extrude / loft / CSG only). -->
-  {#if isBrep && brepReason}<div class="pd-brep-reason">{brepReason}</div>{/if}
+  <!-- BREP: no OCCT-buildable solid for this part (revolve / extrude / loft / CSG only).
+       TF: reuses the same centred-message chrome for its "no path" / error text. -->
+  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason">{brepReason}</div>{/if}
   <!-- Part stats at the bottom: tri / vert count (instanced → child × N).
        BREP appends the OCCT bake time. -->
   {#if stats}
     <div class="pd-stats" title={stats.instanced ? `${stats.childTris.toLocaleString()} tris/child × ${stats.count} instances` : ''}>
-      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}{#if stats.stray > 0} · <span class="pd-stray" title="Near-zero-area (degenerate/sliver) triangles — usually coplanar strays a CSG boolean left at tilted coincident caps.">⚠ {stats.stray.toLocaleString()} stray</span> <button class="pd-stray-btn" type="button" onclick={removeStrays} title="Remove strays (v0): drops the near-zero-area triangles + re-welds. NOTE: for a curved-hollow CSG the genus stays corrupted (phantom handles) — this is cosmetic; the durable fix is the annular sweep. We'll refine the real removal later.">remove</button>{/if}
+      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}{#if isTf && tfMs != null} · {Math.round(tfMs)}ms TF{/if}{#if stats.stray > 0} · <span class="pd-stray" title="Near-zero-area (degenerate/sliver) triangles — usually coplanar strays a CSG boolean left at tilted coincident caps.">⚠ {stats.stray.toLocaleString()} stray</span> <button class="pd-stray-btn" type="button" onclick={removeStrays} title="Remove strays (v0): drops the near-zero-area triangles + re-welds. NOTE: for a curved-hollow CSG the genus stays corrupted (phantom handles) — this is cosmetic; the durable fix is the annular sweep. We'll refine the real removal later.">remove</button>{/if}
     </div>
   {/if}
 </div>
