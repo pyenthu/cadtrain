@@ -1,6 +1,6 @@
 # TrueForm as an experimental parallel engine (a tab below BREP)
 
-**Status:** planning (2026-07-02). **Not a migration.** Manifold stays the primary
+**Status:** SHIPPED — tab + init proof (2026-07-02, merge 3f4989e). **Not a migration.** Manifold stays the primary
 kernel. Add TrueForm (Polydera) as a THIRD, opt-in engine backend — a **TRUEFORM
 tab** in the graph-editor right pane, directly **below BREP** — so we can bake the
 same part through Manifold / OCCT-BREP / TrueForm and compare, especially on the
@@ -123,3 +123,17 @@ lean on the Manifold fix (3.5.1 / per-instance `.asOriginal()`, [[r_sweep_normal
 - The bug that motivated this: [[r_sweep_normals_and_twist]] + the running
   originalID-race deep-dive.
 - Client-side execution direction (favor in-browser TrueForm): `docs/plans/client-side-execution.md`.
+
+## Progress (2026-07-02 — SHIPPED)
+- **tf engine tab SHIPPED** (merge `3f4989e`, commits `7ff76c0` shell / `68f09f5`
+  vite worker-fix + optimizeDeps exclude + client adapter / `4738e48` main-thread
+  from-scratch box render). A `tf` right-pane tab sits below BREP; `@polydera/trueform@0.9.8`
+  WASM is lazy-loaded on first open and renders a from-scratch box on the MAIN thread
+  (proof of init after 3 worker-init stalls → main-thread-first retry).
+- **Cross-origin isolation (COOP/COEP) SHIPPED** app-wide (merge `8f205bd`; comment
+  fix `2f653e2`) in `hooks.server.ts` + a vite dev middleware — unlocks
+  `SharedArrayBuffer` for TrueForm's pthreads. Verified non-regressing; prod-facing invariant.
+- **LEFT:** per-part geometry (only the demo box today, not real part booleans) +
+  a client/server toggle; then P3 the eval matrix (does tf bake `s_tube`'s concentric
+  hollow curved sweep with a clean annular cap where Manifold slivers?).
+- Roadmap: `/plan` #931 (done) under the multi-engine umbrella #939.
