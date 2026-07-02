@@ -2,11 +2,37 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
+// TrueForm's emscripten glue spawns its pthread worker via
+//   new Worker(new URL("trueform_wasm.js", import.meta.url), { type: "module" })
+// Vite's `worker-import-meta-url` plugin statically matches that literal and
+// tries to bundle the emscripten glue AS a worker entry — which parse-fails the
+// production build. We run TrueForm on the MAIN THREAD (the TF engine tab); with
+// no SharedArrayBuffer (no COOP/COEP headers) the pthread worker is never spawned
+// at runtime, so defeating the static matcher is behaviour-neutral. Replacing the
+// string literal with `String("…")` keeps the same runtime URL while hiding it
+// from the matcher. The "*.wasm" literal is left intact so Vite still emits the
+// wasm asset. enforce:'pre' so this runs before worker-import-meta-url.
+function trueformWorkerFix() {
+  return {
+    name: 'trueform-worker-fix',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.includes('@polydera/trueform')) return null;
+      if (!code.includes('new URL("trueform_wasm.js",import.meta.url)')) return null;
+      const out = code.replaceAll(
+        'new URL("trueform_wasm.js",import.meta.url)',
+        'new URL(String("trueform_wasm.js"),import.meta.url)',
+      );
+      return { code: out, map: null };
+    },
+  };
+}
+
 export default defineConfig({
   // Tailwind v4 Vite plugin — replaces the v3 postcss.config.cjs setup.
   // Required by the Flowbite-Svelte quickstart so `@import "tailwindcss"`
   // + `@source "..."` directives in src/app.css get processed.
-  plugins: [tailwindcss(), sveltekit()],
+  plugins: [trueformWorkerFix(), tailwindcss(), sveltekit()],
   server: {
     port: 3333,
     // Suppress the full-page error overlay. Parse / build errors still
@@ -41,7 +67,13 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['manifold-3d'],
+    // manifold-3d + @polydera/trueform ship emscripten WASM glue that resolves
+    // its .wasm sibling via `new URL("*.wasm", import.meta.url)`. If Vite
+    // pre-bundles them, import.meta.url points at .vite/deps (no sibling .wasm)
+    // and the wasm 404s. Excluding them serves the raw dep from node_modules so
+    // the URL resolves next to the real file. (TrueForm = the client-side TF
+    // engine tab — lazy-imported only when that tab first opens.)
+    exclude: ['manifold-3d', '@polydera/trueform'],
   },
   ssr: {
     // Bundle svelte/compiler into the server output (matches SVTC pattern).
