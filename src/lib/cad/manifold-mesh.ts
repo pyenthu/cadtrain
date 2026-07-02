@@ -591,6 +591,70 @@ export function sweepFrames(
   return refs.map((rr, i) => ({ o: path[i], up: rr, side: _norm(_cross(tan[i], rr)), tangent: tan[i] }));
 }
 
+// ── SECTION SELF-INTERSECTION CHECK (cheap 2D, pre-build) ─────────────────────
+// A swept solid is only well-formed when its 2D cross-section is a SIMPLE
+// polygon (no edge crosses another). A self-intersecting section — the classic
+// author bug being a circle expr that divides by a hardcoded count while looping
+// a different point count (`tau*i/12` with 24 pts → the loop wraps ~twice) —
+// produces a malformed swept solid: degenerate / sliver end caps, wrong genus,
+// and a topologically broken mesh, with NO error today. This is the deterministic
+// segment×segment test used to diagnose that class of bug (memory
+// `todo_sweep_self_intersection_check` / `r_sweep_normals_and_twist` defect 1).
+// It only WARNS — some intentional shapes may self-cross, and the caller still
+// builds — so it never changes geometry output.
+
+/** Do the two 2D segments (a,b) and (c,d) intersect (inclusive of endpoints +
+ *  collinear overlap)? Standard orientation test with a small epsilon so float
+ *  noise on a shared/near-touching vertex doesn't read as a crossing. */
+function segments2DIntersect(a: V2, b: V2, c: V2, d: V2): boolean {
+  const EPS = 1e-9;
+  const orient = (p: V2, q: V2, r: V2) => {
+    const v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    return v > EPS ? 1 : v < -EPS ? -1 : 0;
+  };
+  const onSeg = (p: V2, q: V2, r: V2) => // r collinear with p-q; is it ON the segment?
+    Math.min(p[0], q[0]) - EPS <= r[0] && r[0] <= Math.max(p[0], q[0]) + EPS &&
+    Math.min(p[1], q[1]) - EPS <= r[1] && r[1] <= Math.max(p[1], q[1]) + EPS;
+  const o1 = orient(a, b, c);
+  const o2 = orient(a, b, d);
+  const o3 = orient(c, d, a);
+  const o4 = orient(c, d, b);
+  if (o1 !== o2 && o3 !== o4) return true;         // proper crossing
+  if (o1 === 0 && onSeg(a, b, c)) return true;      // collinear touch / overlap
+  if (o2 === 0 && onSeg(a, b, d)) return true;
+  if (o3 === 0 && onSeg(c, d, a)) return true;
+  if (o4 === 0 && onSeg(c, d, b)) return true;
+  return false;
+}
+
+/**
+ * Does the 2D section loop self-intersect? Tests every pair of NON-ADJACENT
+ * edges (adjacent edges legitimately share a vertex; any OTHER intersection —
+ * proper crossing, endpoint touch or collinear overlap — makes the polygon
+ * non-simple). `closed` (default true) includes the wrap-around edge
+ * `verts[N-1]→verts[0]`. O(n²), cheap for the tens-to-hundreds of section
+ * points a sweep uses. Returns false for degenerate input (< 4 verts — nothing
+ * can self-cross).
+ */
+export function sectionSelfIntersects(loop: [number, number][], closed = true): boolean {
+  if (!Array.isArray(loop) || loop.length < 4) return false;
+  const N = loop.length;
+  const nEdges = closed ? N : N - 1;
+  const end = (i: number): number => (i + 1) % N; // wraps only matters when closed
+  for (let i = 0; i < nEdges; i++) {
+    const a = loop[i], b = loop[end(i)];
+    for (let j = i + 1; j < nEdges; j++) {
+      // Skip edges that share a vertex (adjacent along the loop) — they touch by
+      // construction, not by self-intersection.
+      if (j === i + 1) continue;                          // edge i's end == edge j's start
+      if (closed && i === 0 && j === nEdges - 1) continue; // edge j's end (0) == edge i's start
+      const c = loop[j], d = loop[end(j)];
+      if (segments2DIntersect(a, b, c, d)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * SWEEP (framing a): sweep a fixed 2D cross-section along an ordered 3D path
  * and weld it into ONE solid. Each path point gets a rotation-minimizing frame
@@ -630,6 +694,14 @@ export function sweepAlongPath(
   }
   const loop = section as [number, number][];
   if (!Array.isArray(loop) || loop.length < 2) throw new Error('section needs ≥ 2 points');
+  // Cheap pre-build sanity: a self-intersecting section yields degenerate/sliver
+  // caps + broken topology with no error. WARN (non-blocking) — memory
+  // todo_sweep_self_intersection_check.
+  if ((opts.closedSection ?? true) && sectionSelfIntersects(loop)) {
+    console.warn(
+      `[r_sweep] sweep section is SELF-INTERSECTING (${loop.length}-pt loop) — the swept solid will get degenerate/sliver end caps and broken topology (wrong genus). Common cause: a section expr dividing by a hardcoded count instead of the loop's point count (e.g. tau*i/12 while looping 24 pts wraps the loop twice). See memory todo_sweep_self_intersection_check.`,
+    );
+  }
   const closedPath = opts.closedPath === true;
   const frames = sweepFrames(path, { up: opts.up, closedPath });
   const stations: V3[][] = frames.map((f) => placeLoop(f, loop));
@@ -748,6 +820,22 @@ export function sweepAnnular(
   const holes = (holesIn ?? [])
     .filter((h) => Array.isArray(h) && h.length >= 3)
     .map((h) => (signedArea2(h) > 0 ? h.slice().reverse() : h.slice()));
+
+  // Cheap pre-build sanity (WARN, non-blocking) — a self-intersecting outer or
+  // hole loop breaks the region triangulation → degenerate caps. See memory
+  // todo_sweep_self_intersection_check.
+  if (sectionSelfIntersects(outer)) {
+    console.warn(
+      `[r_sweep] annular sweep OUTER boundary is SELF-INTERSECTING (${outer.length}-pt loop) — the region triangulation + end caps will be malformed. See memory todo_sweep_self_intersection_check.`,
+    );
+  }
+  holes.forEach((h, hi) => {
+    if (sectionSelfIntersects(h)) {
+      console.warn(
+        `[r_sweep] annular sweep HOLE #${hi} is SELF-INTERSECTING (${h.length}-pt loop) — the region triangulation + end caps will be malformed. See memory todo_sweep_self_intersection_check.`,
+      );
+    }
+  });
 
   const frames = sweepFrames(path, { up: opts.up, closedPath });
 
