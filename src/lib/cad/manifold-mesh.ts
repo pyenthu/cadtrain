@@ -286,17 +286,144 @@ const _rotAbout = (v: V3, k: V3, ang: number): V3 => {
   ];
 };
 
-/** Fan-triangulate a closed 3D polyline (an end cap). `reverse` flips the
- *  winding so the two ends of a sweep face opposite ways. weldAndBuild fixes
- *  the overall sign, so this only needs to be SELF-consistent. */
-function fanCap3D(ring: V3[], reverse: boolean): Patch {
+type V2 = [number, number];
+
+/** Best-fit plane normal of a closed 3D loop via Newell's method (robust for a
+ *  non-planar-ish or non-convex ring — it integrates the signed projected area
+ *  over the whole loop rather than trusting any single triple). */
+function newellNormal(ring: V3[]): V3 {
+  let nx = 0, ny = 0, nz = 0;
   const N = ring.length;
-  const verts = new Float32Array(N * 3);
-  for (let j = 0; j < N; j++) { verts[j * 3] = ring[j][0]; verts[j * 3 + 1] = ring[j][1]; verts[j * 3 + 2] = ring[j][2]; }
-  const tris = new Uint32Array((N - 2) * 3);
+  for (let i = 0; i < N; i++) {
+    const a = ring[i], b = ring[(i + 1) % N];
+    nx += (a[1] - b[1]) * (a[2] + b[2]);
+    ny += (a[2] - b[2]) * (a[0] + b[0]);
+    nz += (a[0] - b[0]) * (a[1] + b[1]);
+  }
+  return [nx, ny, nz];
+}
+
+/**
+ * Ear-clip triangulate a simple (possibly NON-CONVEX) 2D polygon `p`, given in
+ * order. Returns triangle index triples into `p`'s ORIGINAL 0..N-1 numbering,
+ * each wound in the SAME direction as the input vertex order (so the union of
+ * the triangles' boundary edges reproduces the polygon's index-order perimeter
+ * — exactly like the old vertex-0 fan did for a convex polygon, which keeps the
+ * cap watertight against the side wall). O(n²). Returns null when no ear can be
+ * found (a self-intersecting section) → caller falls back to a centroid fan.
+ */
+export function earClip2D(p: V2[]): number[][] | null {
+  const N = p.length;
+  if (N < 3) return null;
+  // (b-a) × (c-a) z-component — 2× the signed area of triangle (a,b,c).
+  const cross2 = (a: V2, b: V2, c: V2) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  // Polygon orientation from its signed area (index order). All ear + inside
+  // tests are taken relative to this sign, so BOTH windings are handled without
+  // reversing the list (which would flip the boundary the wall welds to).
+  let area2 = 0;
+  for (let i = 0; i < N; i++) area2 += cross2(p[0], p[i], p[(i + 1) % N]);
+  const sign = area2 >= 0 ? 1 : -1;
+  const EPS = 1e-12;
+  // pt strictly inside triangle (a,b,c), which is wound with orientation `sign`.
+  const inTri = (pt: V2, a: V2, b: V2, c: V2) =>
+    sign * cross2(a, b, pt) > EPS &&
+    sign * cross2(b, c, pt) > EPS &&
+    sign * cross2(c, a, pt) > EPS;
+
+  const idx: number[] = [];
+  for (let i = 0; i < N; i++) idx.push(i);
+  const tris: number[][] = [];
+  let guard = N * N + 8;
+  while (idx.length > 3) {
+    if (guard-- <= 0) return null; // safety — no progress
+    let clipped = false;
+    for (let i = 0; i < idx.length; i++) {
+      const n = idx.length;
+      const i0 = idx[(i - 1 + n) % n], i1 = idx[i], i2 = idx[(i + 1) % n];
+      const a = p[i0], b = p[i1], c = p[i2];
+      if (sign * cross2(a, b, c) <= EPS) continue; // reflex / collinear tip
+      let ear = true;
+      for (let j = 0; j < n; j++) {
+        const vj = idx[j];
+        if (vj === i0 || vj === i1 || vj === i2) continue;
+        if (inTri(p[vj], a, b, c)) { ear = false; break; }
+      }
+      if (!ear) continue;
+      tris.push([i0, i1, i2]);
+      idx.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) return null; // no ear this pass → not a simple polygon
+  }
+  tris.push([idx[0], idx[1], idx[2]]);
+  return tris;
+}
+
+/**
+ * Triangulate a closed 3D polyline (an end cap) for an ARBITRARY simple
+ * (possibly non-convex) planar-ish section. Fits the ring's best-fit plane
+ * (Newell normal + centroid), projects to a 2D in-plane basis, ear-clips, and
+ * maps the triangles back onto the SAME ring vertices (so weld + crease-aware
+ * normals + watertightness hold). A naive vertex-0 fan is only valid for a
+ * CONVEX polygon — the non-convex `resampleSpline` sections used by r_sweep made
+ * it emit triangles that cross OUTSIDE the loop → overlapping/degenerate sliver
+ * caps. Ear-clipping never crosses the boundary.
+ *
+ * `reverse` flips the winding so the two ends of a sweep face opposite ways;
+ * weldAndBuild fixes the overall sign, so this only needs to be SELF-consistent
+ * (and the non-reverse boundary matches the old fan's index-order perimeter, so
+ * a convex section still welds identically — no regression).
+ *
+ * Fallback: if ear-clipping fails (a self-intersecting section), fan from the
+ * centroid (an extra vertex) instead of vertex 0 — still never crosses for a
+ * star-convex loop and is far better than a vertex-0 fan.
+ */
+export function fanCap3D(ring: V3[], reverse: boolean): Patch {
+  const N = ring.length;
+  const ringVerts = new Float32Array(N * 3);
+  for (let j = 0; j < N; j++) { ringVerts[j * 3] = ring[j][0]; ringVerts[j * 3 + 1] = ring[j][1]; ringVerts[j * 3 + 2] = ring[j][2]; }
+  if (N < 3) return { verts: ringVerts, tris: new Uint32Array(0) };
+
+  // Best-fit plane → in-plane basis → project ring to 2D → ear-clip.
+  let tris2d: number[][] | null = null;
+  const nrm0 = newellNormal(ring);
+  const nl = _len(nrm0);
+  if (nl > 1e-12) {
+    const nrm: V3 = [nrm0[0] / nl, nrm0[1] / nl, nrm0[2] / nl];
+    const ref: V3 = Math.abs(nrm[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const u = _norm(_cross(ref, nrm));
+    const v = _cross(nrm, u); // unit (nrm ⟂ u, both unit)
+    const p2: V2[] = ring.map((pt): V2 => [_dot(pt, u), _dot(pt, v)]);
+    tris2d = earClip2D(p2);
+  }
+
+  if (tris2d) {
+    const tris = new Uint32Array(tris2d.length * 3);
+    let k = 0;
+    for (const [a, b, c] of tris2d) {
+      if (reverse) { tris[k++] = a; tris[k++] = c; tris[k++] = b; }
+      else { tris[k++] = a; tris[k++] = b; tris[k++] = c; }
+    }
+    return { verts: ringVerts, tris };
+  }
+
+  // Fallback — centroid fan (star-convex safe). Append the centroid vertex.
+  let cx = 0, cy = 0, cz = 0;
+  for (const pt of ring) { cx += pt[0]; cy += pt[1]; cz += pt[2]; }
+  cx /= N; cy /= N; cz /= N;
+  const verts = new Float32Array((N + 1) * 3);
+  verts.set(ringVerts);
+  verts[N * 3] = cx; verts[N * 3 + 1] = cy; verts[N * 3 + 2] = cz;
+  const ci = N;
+  const tris = new Uint32Array(N * 3);
   let k = 0;
-  if (reverse) for (let j = N - 1; j > 1; j--) { tris[k++] = 0; tris[k++] = j; tris[k++] = j - 1; }
-  else for (let j = 1; j < N - 1; j++) { tris[k++] = 0; tris[k++] = j; tris[k++] = j + 1; }
+  for (let j = 0; j < N; j++) {
+    const a = j, b = (j + 1) % N;
+    if (reverse) { tris[k++] = ci; tris[k++] = b; tris[k++] = a; }
+    else { tris[k++] = ci; tris[k++] = a; tris[k++] = b; }
+  }
   return { verts, tris };
 }
 
