@@ -50,6 +50,7 @@
     "@gltf-transform/core": "^4.3.0",
     "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@polydera/trueform": "0.9.8",
     "@threlte/core": "^8.5.9",
     "@threlte/extras": "^9.14.5",
     "@xyflow/svelte": "^1.6.1",
