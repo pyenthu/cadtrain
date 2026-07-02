@@ -57,6 +57,13 @@ async function ensureOC(): Promise<void> {
   return _ocReady;
 }
 
+/** Drop the cached OCCT instance so the NEXT ensureOC() re-inits a FRESH WASM
+ *  heap. Call after an emscripten throw (a bare numeric heap pointer) — those
+ *  corrupt the shared OCCT singleton, and without a reset EVERY later BREP bake
+ *  fails until a server restart. Re-init is ~seconds but only happens after a
+ *  genuine failure, so the BREP tab self-heals on the next bake. */
+function resetOC(): void { _ocReady = null; }
+
 /**
  * Extract the (r,z) revolve profile from an emitted part body by running it
  * with a CAPTURING `r_revolve` (+ the `sketch` helper + Math globals + the
@@ -527,14 +534,20 @@ export async function brepFromSource(
   }
 
   const t0 = Date.now();
-  let solid: any;
   try {
-    solid = runBody(source, paramValues);
+    const solid = runBody(source, paramValues);
+    if (!solid) return null;
+    return meshBrepSolid(solid, opts, t0);
   } catch (e: any) {
-    throw new Error('BREP build failed: ' + (e?.message ?? e));
+    const raw = e?.message ?? e;
+    // An emscripten/OCCT throw is a BARE NUMBER (a heap pointer) — a strong sign
+    // the OCCT WASM heap is corrupted. Reset the singleton so the NEXT bake (and
+    // the endpoint's uncut retry) re-inits a fresh instance and self-heals,
+    // instead of every later BREP bake failing until a manual server restart.
+    // Normal Errors (bad input, "no function body") don't reset.
+    if (typeof e === 'number' || typeof e === 'bigint' || /^\s*\d+\s*$/.test(String(raw))) resetOC();
+    throw new Error('BREP build failed: ' + raw);
   }
-  if (!solid) return null;
-  return meshBrepSolid(solid, opts, t0);
 }
 
 /** Resolve a part/engine source by name. stdlib (local, canonical) first; then
