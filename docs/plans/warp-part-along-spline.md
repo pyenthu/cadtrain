@@ -42,6 +42,33 @@ what's missing is a first-class NODE + the fixes below.
    along a 3D spline (reuse `sweepFrames`).
 5. UI: a modifier card in the graph (like mv/rot), with the spline sub-editor.
 
+## Progress (2026-07-02) — geometry core (items 2–4) SHIPPED
+The `warp-spline.ts` reuse path was extended so the deform is correct + robust; the
+NODE + UI (items 1 & 5) are deliberately deferred (a large new composition-graph +
+GraphEditorPane subsystem — not invented in one pass). Immediately usable TODAY via
+the existing `warpSpline(<solid>, <points>, opts)` sandbox injection (hand-authored
+parts + the future node both call it).
+- **Item 2 (refine dial):** `opts.refine` already self-limits (skips > 1200-tri
+  meshes); kept + documented. The UI dial lands with the node (item 5).
+- **Item 3 (robustness):** the 3D branch builds an explicitly RIGHT-HANDED frame
+  (`N = side`, `B = tangent × N`, `det[N,B,T] = +1`) so `warp` never emits an
+  inverted (negative-volume) solid — the frame-handedness inversion is fixed by
+  construction. New `warpValidity(m, genusBefore)` + `opts.validate` (opt-in, it
+  forces the lazy warp to evaluate) warns on negative volume / a genus bump
+  (self-intersecting too-tight bend). Unit-tested.
+- **Item 4 (3D paths):** `warpManifoldAlongSpline` now accepts `Pt3[]` and, when the
+  path has real out-of-plane (y) variation, routes through `spline3DFrames` — the
+  RMF (`sweepFrames`, double-reflection) carried along the 3D curve. A planar path
+  (`Pt2[]`, or `Pt3[]` with ~constant y) stays on the proven world-Y frame,
+  byte-identical to before. Tests: `src/lib/cad/warp-spline.test.ts`.
+- **LEFT — items 1 & 5 (the node + card):** a `warp`/bend MODIFIER node (analogous to
+  `TxfmnNode`) wrapping an upstream solid + a wired `SplineNode`, emitting
+  `warpSpline(...)`. Touches composition-graph types/mutate/hydrate + composition-emit
+  (new `case`) + composition-layout/geom (card sizes) + `NodeCard.svelte` (render arm)
+  + `GraphEditorPane` (add-menu + handlers, spline sub-editor popover) +
+  `recognize-composite.ts` (already detects the `warpSpline(inner, path, opts)` wrap
+  spans). Sizable, GEP-touching — schedule as its own step.
+
 ## Why it's attractive
 - Reuses existing warp logic → small build. Bends ANY part (not just tubes): pipes,
   ramps, deviated tools, curved brackets — "deviated / curved profiles" (Rule 25's goal).
