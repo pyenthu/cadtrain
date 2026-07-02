@@ -428,6 +428,42 @@ export function fanCap3D(ring: V3[], reverse: boolean): Patch {
 }
 
 /**
+ * Grid the SIDE WALL between consecutive cross-section stations into ONE patch
+ * (no caps, no weld). Each station is an ordered list of `m` positioned 3D
+ * points. The wall is a (#stations)×(m) grid with the toolkit's -du×dv winding;
+ * a duplicate wrap row/col is appended where the section (closedSection) and/or
+ * the path (closedPath) closes so the seam quad is generated (weldAndBuild later
+ * merges the coincident seam verts). Extracted from `loftStations` so the
+ * ANNULAR sweep can grid the outer + each hole loop as separate wall patches
+ * and weld them together with the annular caps in ONE `weldAndBuild`.
+ */
+function wallPatch(stations: V3[][], closedSection: boolean, closedPath: boolean): Patch {
+  const nS = stations.length;
+  const m = stations[0].length;
+  const rows = closedPath ? nS + 1 : nS;
+  const cols = closedSection ? m + 1 : m;
+  const sverts = new Float32Array(rows * cols * 3);
+  for (let r = 0; r < rows; r++) {
+    const st = stations[r % nS];
+    for (let c = 0; c < cols; c++) {
+      const p = st[c % m];
+      const i = (r * cols + c) * 3;
+      sverts[i] = p[0]; sverts[i + 1] = p[1]; sverts[i + 2] = p[2];
+    }
+  }
+  const tris = new Uint32Array((rows - 1) * (cols - 1) * 6);
+  let k = 0;
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const a = r * cols + c, b = a + 1, d = a + cols, e = d + 1;
+      tris[k++] = a; tris[k++] = b; tris[k++] = e;
+      tris[k++] = a; tris[k++] = e; tris[k++] = d;
+    }
+  }
+  return { verts: sverts, tris };
+}
+
+/**
  * LOFT (framing b): build a welded solid by gridding the side wall between
  * consecutive cross-section "stations", each an ordered list of 3D points of
  * the SAME vertex count `m`, already positioned in space. The side wall is a
@@ -457,30 +493,7 @@ export function loftStations(
   const closedPath = opts.closedPath === true;
   const caps = opts.caps !== false && !closedPath;
 
-  // Side wall as a single grid patch. Append a duplicate wrap row/col where the
-  // path / section closes so the seam quad is generated; weldAndBuild then
-  // merges the coincident seam verts (same trick revolveProfile relies on).
-  const rows = closedPath ? nS + 1 : nS;
-  const cols = closedSection ? m + 1 : m;
-  const sverts = new Float32Array(rows * cols * 3);
-  for (let r = 0; r < rows; r++) {
-    const st = stations[r % nS];
-    for (let c = 0; c < cols; c++) {
-      const p = st[c % m];
-      const i = (r * cols + c) * 3;
-      sverts[i] = p[0]; sverts[i + 1] = p[1]; sverts[i + 2] = p[2];
-    }
-  }
-  const tris = new Uint32Array((rows - 1) * (cols - 1) * 6);
-  let k = 0;
-  for (let r = 0; r < rows - 1; r++) {
-    for (let c = 0; c < cols - 1; c++) {
-      const a = r * cols + c, b = a + 1, d = a + cols, e = d + 1;
-      tris[k++] = a; tris[k++] = b; tris[k++] = e;
-      tris[k++] = a; tris[k++] = e; tris[k++] = d;
-    }
-  }
-  const patches: Patch[] = [{ verts: sverts, tris }];
+  const patches: Patch[] = [wallPatch(stations, closedSection, closedPath)];
   if (caps) {
     patches.push(fanCap3D(stations[0], true));        // start cap (-tangent)
     patches.push(fanCap3D(stations[nS - 1], false));  // end cap (+tangent)
@@ -593,29 +606,181 @@ export function sweepFrames(
  *
  *   • up (default [0,0,1]) — the SEED reference only (see sweepFrames).
  *   • section: closed 2D loop `[r-side, z-up]`. Trace it consistently; sign is
- *     auto-corrected by the weld.
+ *     auto-corrected by the weld. ALSO accepts an ANNULAR section — an object
+ *     `{ outer, holes }` or a Manifold `CrossSection` — which routes to
+ *     `sweepAnnular` (a hollow tube as ONE welded mesh with a holes-aware cap,
+ *     no 3D boolean).
  *   • closedPath / caps / closedSection — forwarded to loftStations.
  */
 export function sweepAlongPath(
   path: V3[],
-  section: [number, number][],
+  section: Section2D,
   opts: { up?: V3; closedPath?: boolean; caps?: boolean; closedSection?: boolean } = {},
 ): any {
   const N = path.length;
   if (N < 2) throw new Error('sweepAlongPath needs ≥ 2 path points');
-  if (!Array.isArray(section) || section.length < 2) throw new Error('section needs ≥ 2 points');
+  // ANNULAR / region section (outer + holes, or a CrossSection) → sweepAnnular.
+  const ann = asAnnular(section);
+  if (ann) {
+    return sweepAnnular(path, ann.outer, ann.holes, {
+      up: opts.up,
+      closedPath: opts.closedPath === true,
+      caps: opts.caps,
+    });
+  }
+  const loop = section as [number, number][];
+  if (!Array.isArray(loop) || loop.length < 2) throw new Error('section needs ≥ 2 points');
   const closedPath = opts.closedPath === true;
   const frames = sweepFrames(path, { up: opts.up, closedPath });
-  const stations: V3[][] = frames.map((f) => section.map(([a, b]): V3 => [
-    f.o[0] + f.side[0] * a + f.up[0] * b,
-    f.o[1] + f.side[1] * a + f.up[1] * b,
-    f.o[2] + f.side[2] * a + f.up[2] * b,
-  ]));
+  const stations: V3[][] = frames.map((f) => placeLoop(f, loop));
   return loftStations(stations, {
     closedSection: opts.closedSection ?? true,
     closedPath,
     caps: opts.caps,
   });
+}
+
+// ── ANNULAR / region cross-section sweep — ONE welded hollow solid, no 3D CSG ──
+// Sweep an outer loop AND one-or-more hole loops along the path (each an
+// independent wall grid), then close BOTH ends with a HOLES-AWARE triangulation
+// of the 2D region (outer minus holes) planted in the start + end frames. The
+// caps' boundary verts coincide (by position) with the wall verts at those
+// stations, so weldAndBuild stitches everything into ONE manifold solid — the
+// material BETWEEN outer and holes. This is the durable, engine-agnostic fix for
+// defect 2 (a curved concentric hollow SUBTRACT gives two tilted, coincident cap
+// planes whose independent triangulations don't align → Manifold's mesh boolean
+// corrupts them into sliver caps). Doing the CSG in 2D on the SECTION avoids the
+// 3D boolean entirely → no coincident caps → no slivers, and it's faster (no
+// mesh boolean). See docs/plans/annular-csg2d-section-sweep.md + memory
+// r_sweep_normals_and_twist (defect 2).
+
+/** A 2D annular / region cross-section: an outer boundary loop + zero-or-more
+ *  hole loops (Phase 1: typically one hole). */
+export type AnnularSection = { outer: [number, number][]; holes?: [number, number][][] };
+/** What `sweepAlongPath` accepts for `section`: a single closed loop (the
+ *  original), an annular region, or a Manifold `CrossSection`. */
+export type Section2D = [number, number][] | AnnularSection | any;
+
+/** Place a 2D loop `[a,b]` into a sweep frame as `o + a·side + b·up`. */
+function placeLoop(f: SweepFrame, loop: [number, number][]): V3[] {
+  return loop.map(([a, b]): V3 => [
+    f.o[0] + f.side[0] * a + f.up[0] * b,
+    f.o[1] + f.side[1] * a + f.up[1] * b,
+    f.o[2] + f.side[2] * a + f.up[2] * b,
+  ]);
+}
+
+/** 2× the signed area of a 2D loop (CCW > 0). */
+function signedArea2(loop: [number, number][]): number {
+  let a2 = 0;
+  const n = loop.length;
+  for (let i = 0; i < n; i++) {
+    const p = loop[i], q = loop[(i + 1) % n];
+    a2 += p[0] * q[1] - q[0] * p[1];
+  }
+  return a2;
+}
+
+/**
+ * Coerce a `section` argument to `{ outer, holes }` IFF it's a region (an
+ * `{ outer, … }` object or a Manifold `CrossSection`); otherwise return null so
+ * the caller keeps the single-loop path (full back-compat). A plain point list
+ * (`[[a,b],…]`) is an Array without an `outer` field → null.
+ */
+function asAnnular(section: Section2D): { outer: [number, number][]; holes: [number, number][][] } | null {
+  if (!section || typeof section !== 'object') return null;
+  // Manifold CrossSection → polygons; classify the largest-area loop as the
+  // outer boundary, the rest as holes (Phase 1 is one hole, but N is free).
+  if (typeof (section as any).toPolygons === 'function') {
+    const polys: [number, number][][] = (section as any).toPolygons();
+    if (!Array.isArray(polys) || polys.length === 0) return null;
+    let oi = 0, best = -Infinity;
+    for (let i = 0; i < polys.length; i++) {
+      const a = Math.abs(signedArea2(polys[i]));
+      if (a > best) { best = a; oi = i; }
+    }
+    const outer = polys[oi];
+    const holes = polys.filter((_, i) => i !== oi);
+    return { outer, holes };
+  }
+  if (Array.isArray((section as any).outer)) {
+    const a = section as AnnularSection;
+    return { outer: a.outer, holes: a.holes ?? [] };
+  }
+  return null;
+}
+
+/** Holes-aware triangulation of the 2D region [outer, …holes] via Manifold's
+ *  `triangulate`. Returns triangle index triples into the CONCATENATED point
+ *  list (outer first, then each hole in order). Computed ONCE in 2D + reused for
+ *  both end caps. */
+function annularCapTris(outer: [number, number][], holes: [number, number][][]): [number, number, number][] {
+  const wasm = (globalThis as any).__cadtrain_manifold__?.wasm;
+  if (!wasm || typeof wasm.triangulate !== 'function') {
+    throw new Error('annular sweep: manifold not initialised (triangulate unavailable) — call initManifold() first');
+  }
+  return wasm.triangulate([outer, ...holes]) as [number, number, number][];
+}
+
+/**
+ * Sweep an ANNULAR section (outer + holes) along `path` → ONE welded solid.
+ * Walls: the outer loop + each hole loop each gridded via `wallPatch`. Caps: the
+ * holes-aware region triangulation planted in the start + end frames (winding
+ * flipped for the start so both ends face outward; weldAndBuild fixes the global
+ * sign). No 3D boolean, no coincident caps → no defect-2 slivers.
+ */
+export function sweepAnnular(
+  path: V3[],
+  outerIn: [number, number][],
+  holesIn: [number, number][][],
+  opts: { up?: V3; closedPath?: boolean; caps?: boolean } = {},
+): any {
+  const N = path.length;
+  if (N < 2) throw new Error('sweepAnnular needs ≥ 2 path points');
+  if (!Array.isArray(outerIn) || outerIn.length < 3) throw new Error('annular section: outer needs ≥ 3 points');
+  const closedPath = opts.closedPath === true;
+  const caps = opts.caps !== false && !closedPath;
+
+  // Normalise winding so the region is well-formed for `triangulate` + the walls
+  // are mutually consistent: outer CCW (positive area), holes CW (negative
+  // area). Copy before reversing so we never mutate the caller's arrays.
+  const outer = signedArea2(outerIn) < 0 ? outerIn.slice().reverse() : outerIn.slice();
+  const holes = (holesIn ?? [])
+    .filter((h) => Array.isArray(h) && h.length >= 3)
+    .map((h) => (signedArea2(h) > 0 ? h.slice().reverse() : h.slice()));
+
+  const frames = sweepFrames(path, { up: opts.up, closedPath });
+
+  const patches: Patch[] = [];
+  // Outer wall + one wall per hole (each a closed-section tube skin).
+  patches.push(wallPatch(frames.map((f) => placeLoop(f, outer)), true, closedPath));
+  for (const h of holes) patches.push(wallPatch(frames.map((f) => placeLoop(f, h)), true, closedPath));
+
+  if (caps) {
+    const capTris = annularCapTris(outer, holes); // triangulate ONCE in 2D
+    const all2d: [number, number][] = [outer, ...holes].flat() as [number, number][];
+    const capPatch = (f: SweepFrame, reverse: boolean): Patch => {
+      const M = all2d.length;
+      const verts = new Float32Array(M * 3);
+      for (let j = 0; j < M; j++) {
+        const [a, b] = all2d[j];
+        verts[j * 3]     = f.o[0] + f.side[0] * a + f.up[0] * b;
+        verts[j * 3 + 1] = f.o[1] + f.side[1] * a + f.up[1] * b;
+        verts[j * 3 + 2] = f.o[2] + f.side[2] * a + f.up[2] * b;
+      }
+      const tris = new Uint32Array(capTris.length * 3);
+      let k = 0;
+      for (const [a, b, c] of capTris) {
+        if (reverse) { tris[k++] = a; tris[k++] = c; tris[k++] = b; }
+        else { tris[k++] = a; tris[k++] = b; tris[k++] = c; }
+      }
+      return { verts, tris };
+    };
+    patches.push(capPatch(frames[0], true));       // start cap (-tangent)
+    patches.push(capPatch(frames[N - 1], false));  // end cap (+tangent)
+  }
+
+  return weldAndBuild(patches);
 }
 
 /**
