@@ -48,6 +48,28 @@ src/lib/shared/
 > the graph editor took over. Revive with `git mv` back. See
 > `archive/CADTRAIN_CLEANUP.md`.
 
+## RULE: the `scene` module singleton — ONLY the active pane may write it
+
+`scene` (`scene-state.svelte.ts`) is a **module-level `$state` singleton** shared
+by EVERY mounted `PrimitiveDualScene`. **`/primitives` mounts ALL open tab panes at
+once** (`{#each tabs}` — inactive ones stay mounted to preserve graph state), so N
+panes share ONE `scene`. If more than one pane WRITES `scene.xScale/zScale/partCenter/
+partZExtent/cam` (e.g. the `scaleAuto` / camera-fit effects), panes on
+differently-sized parts write different targets → **synchronous ping-pong →
+`effect_update_depth_exceeded` → frozen renderer** (bit hard 2026-07-02; also the
+never-root-caused /plan task 920 multi-tab freeze).
+
+**Rule:** every effect that WRITES the shared `scene` must be gated so **only the
+ACTIVE tab's VISIBLE canvas** runs it. The mechanism: an `autoScaleOwner` prop
+(`PrimitiveDualScene`/`PrimitiveDualCanvas`), set by `RightPane` to
+`active && rightTab === '<thisTab>'` (`active` = the /primitives tab is the current
+one; `rightTab` = which right-pane sub-tab is showing). Gate ALL singleton writes on
+it (scaleAuto, partCenter/partZExtent, camera-fit, zFocus clamp, viewZScale apply) —
+not just some, or the un-gated one still ping-pongs. Same lesson as per-instance
+reactive state being a CLASS not a module singleton (`WireState`/`SketchState`): if
+state is genuinely per-pane, don't put it in a module singleton; if it's shared UI
+for the ACTIVE part (like `scene`), only the active pane may write it.
+
 ## Pattern: shared components rendered in multiple routes
 
 `/primitives` and `/vocab` SHARE chrome where possible
