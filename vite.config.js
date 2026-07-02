@@ -41,11 +41,38 @@ function trueformWorkerFix() {
   };
 }
 
+// Cross-origin isolation for the DEV + PREVIEW servers. trueform@0.9.8 (pthreads)
+// transfers a SharedArrayBuffer at tf.init(), which requires the document to be
+// cross-origin-isolated (self.crossOriginIsolated === true). That needs the two
+// headers below on the top-level document response.
+//
+// ⚠ Plain `server.headers` in the vite config do NOT reach SvelteKit's SSR page
+// responses (the sveltekit() middleware writes those itself). Setting them via a
+// `configureServer`/`configurePreviewServer` middleware that runs BEFORE the
+// sveltekit handler DOES land them on every response (headers are set on `res`
+// before the body is written). Prod parity lives in src/hooks.server.ts.
+function crossOriginIsolation() {
+  const setHeaders = (_req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    next();
+  };
+  return {
+    name: 'cross-origin-isolation',
+    configureServer(server) {
+      server.middlewares.use(setHeaders);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(setHeaders);
+    },
+  };
+}
+
 export default defineConfig({
   // Tailwind v4 Vite plugin — replaces the v3 postcss.config.cjs setup.
   // Required by the Flowbite-Svelte quickstart so `@import "tailwindcss"`
   // + `@source "..."` directives in src/app.css get processed.
-  plugins: [trueformWorkerFix(), tailwindcss(), sveltekit()],
+  plugins: [trueformWorkerFix(), crossOriginIsolation(), tailwindcss(), sveltekit()],
   server: {
     port: 3333,
     // Suppress the full-page error overlay. Parse / build errors still

@@ -133,6 +133,25 @@ function applyCors(res: Response, cors: Record<string, string>): Response {
 }
 
 /**
+ * Cross-origin isolation (PROD). trueform@0.9.8 (pthreads) transfers a
+ * SharedArrayBuffer at tf.init(), which throws unless the document is
+ * cross-origin-isolated (self.crossOriginIsolated === true). That requires
+ * these two headers on the top-level document response. Dev/preview parity
+ * lives in the `crossOriginIsolation()` vite plugin (vite.config.js).
+ *
+ * ⚠ App-wide decision: COEP:require-corp blocks cross-origin subresources
+ * (fonts / images / scripts) that don't opt in via CORP/CORS. cadtrain serves
+ * its assets same-origin, so this is safe here; audit before adding a
+ * third-party CDN embed.
+ */
+function applyCrossOriginIsolation(res: Response): Response {
+  const headers = new Headers(res.headers);
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+/**
  * Request middleware: optional auth + rate limiting + logging.
  */
 export const handle: Handle = async ({ event, resolve }) => {
@@ -232,5 +251,5 @@ export const handle: Handle = async ({ event, resolve }) => {
   console.log(
     `[${response.status}] ${event.request.method} ${path} — ${duration}ms`
   );
-  return applyCors(response, cors);
+  return applyCrossOriginIsolation(applyCors(response, cors));
 };
